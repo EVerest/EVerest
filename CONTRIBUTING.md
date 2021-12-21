@@ -14,7 +14,7 @@ If you just need help or have a question, refer to [SUPPORT.md](SUPPORT.md).
 
 To contribute code to the project, first read over the [governance policies] page to understand the roles involved. 
 
-Each contribution must meet the [TODO coding style] and include..
+Each contribution must meet the [Java Script](https://github.com/EVerest/everest-framework/blob/main/.eslintrc.json) or [C++](https://github.com/EVerest/everest-framework/blob/main/.clang-format) *coding style* and include:
 
 * Tests and documentation to explain the functionality.
 * Any new files have [copyright and license headers]
