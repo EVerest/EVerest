@@ -32,6 +32,7 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.todo',
     'sphinxcontrib.contentui',
+    'sphinx.ext.autosectionlabel'
 ]
 
 

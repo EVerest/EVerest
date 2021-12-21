@@ -1,5 +1,8 @@
 .. _index:
 
+.. image:: img/everest_horizontal-color.svg
+    :align: right
+
 EVerest
 ==================
 *Current status of Q3 2021*
@@ -10,20 +13,11 @@ The EVerest project was initiated by PIONIX GmbH, to help with the electrificati
 .. toctree::
    :maxdepth: 1
 
-   doc_workspace
+   doc_framework
+   doc_overview-tools
    doc_tutorial_intro
-   doc_styleguide_intro
-   how_to_git/index
-   docker_setup
-
-Modules:
-
-.. toctree::
-   :maxdepth: 1
-   :glob:
-   
-   module_docs/_build/*
-
+   doc_everest_modules
+   doc_pionix_belay-box
 
 Indices and tables
 ==================
