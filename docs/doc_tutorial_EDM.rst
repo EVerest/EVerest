@@ -80,7 +80,7 @@ The **edm** dependency manager uses `CPM <https://github.com/cpm-cmake/CPM.cmake
 
 Building everest
 ****************
-Make sure you have installed `ev_cli <file:///home/julian/checkout/everest-workspace/everest/docs/_build/doc_tutorial_EV-CLI.html>`_ first.
+Make sure you have installed `ev_cli <doc_tutorial_EV-CLI.html>`_ first.
 You can now use the following commands to build everest-core:
 
 .. code-block:: bash
