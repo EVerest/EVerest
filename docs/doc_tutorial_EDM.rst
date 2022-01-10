@@ -37,7 +37,10 @@ Please make sure you are running a sufficiently recent version of **Python3 (>=3
 Installing edm
 **************
 
-Now you can clone this repository and install **edm**:
+Now you can clone this repository and install **edm**: 
+(make sure you have `set up your ssh key in github <https://www.atlassian.com/git/tutorials/git-ssh>`_ first!)
+
+A script for the steps below can be found `here <https://github.com/EVerest/everest-utils/tree/main/everest-cpp>`_.
 
 .. code-block:: bash
 
@@ -77,6 +80,7 @@ The **edm** dependency manager uses `CPM <https://github.com/cpm-cmake/CPM.cmake
 
 Building everest
 ****************
+Make sure you have installed `ev_cli <file:///home/julian/checkout/everest-workspace/everest/docs/_build/doc_tutorial_EV-CLI.html>`_ first.
 You can now use the following commands to build everest-core:
 
 .. code-block:: bash

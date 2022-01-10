@@ -8,6 +8,15 @@ This python project currently consists of the following packages
 
 - `ev_cli`: EVerest module auto generation
 
+Install
+~~~~~~~
+
+To install `ev_cli`::
+
+    cd everest-utils/ev-dev-tool
+    python3 -m pip install .
+
+
 The `ev_cli` package comes with a command line tool, named ``ev-cli``.
 It has the following subcommands
 
