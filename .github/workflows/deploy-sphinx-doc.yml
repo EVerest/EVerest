@@ -1,0 +1,57 @@
+name: Build and deploy sphinx documentation
+
+on:
+  push:
+    branches:    
+      - main
+
+jobs:
+  build-and-deploy-sphinx:
+    name: Build and deploy sphinx documentation 
+    strategy:
+      matrix:
+        os: [ubuntu-20.04]
+    runs-on: ${{matrix.os}}
+    container: 
+      image: ghcr.io/everest/ci-env:latest
+      credentials:
+        username: ${{github.actor}}
+        password: ${{secrets.SA_GITHUB_PAT}}
+    steps:
+    - name: Checkout everest
+      uses: actions/checkout@v2
+      with:
+        repository: everest/everest
+        path: everest
+        token: ${{secrets.SA_GITHUB_PAT}}
+
+    - name: Build sphinx doc
+      run: make -C everest/docs html
+
+    - name: Checkout everest.github.io
+      uses: actions/checkout@v2
+      with:
+        repository: everest/everest.github.io
+        path:  everest_github_io
+        token: ${{secrets.SA_GITHUB_PAT}}
+
+    - name: Add ssh key
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{secrets.SA_GITHUB_SSH_KEY}}
+        known_hosts: unnecessary
+
+    - name: Configure git
+      run: |
+        git config --global user.email "compiler@pionix.de"
+        git config --global user.name "Github Service Account"
+
+    - name: Update documentation build and push it
+      run: |
+        rm -rf everest_github_io/docs/*
+        cp -r everest/docs/_build/html/* everest_github_io/docs
+        touch everest_github_io/docs/.nojekyll
+        cd everest_github_io
+        git add --all
+        git commit -m "Update doc build"
+        git push
