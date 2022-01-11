@@ -25,5 +25,5 @@ All project management related documents incl. our roadmap can be found [here](t
 ## Governance
 EVerest is a project hosted by the [LF Energy Foundation](https://lfenergy.org). This project's techincal charter is located in [CHARTER.md](tsc/CHARTER.md) and has established it's own processes for managing day-to-day processes in the project at [GOVERNANCE.md](GOVERNANCE.md).
 
-## Reporting Issues
+## Reporting Issues 
 To report a problem, you can open an [issue](https://github.com/EVerest/everest/issues) in repository against a specific workflow. If the issue is senstive in nature or a security related issue, please do not report in the issue tracker but instead email everest-tsc@lists.lfenergy.org.
