@@ -16,12 +16,9 @@ The EVerest project was initiated by PIONIX GmbH, to help with the electrificati
    doc_framework
    doc_overview-tools
    doc_tutorial_intro
-   doc_everest_modules
-   doc_pionix_belay-box
 
 Indices and tables
 ==================
 
 * :ref:`genindex`
-* :ref:`modindex`
 * :ref:`search`
