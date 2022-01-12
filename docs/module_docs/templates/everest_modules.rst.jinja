@@ -1,0 +1,11 @@
+.. everest_modules
+
+EVerest Modules
+###############
+
+.. toctree::
+   :maxdepth: 1
+   {% for module in module_list %}
+   modules/{{ module -}}
+   {% endfor %}
+{###}

@@ -1,0 +1,36 @@
+{
+    "description": "PN532 RFID/NFC token provider returning the token as soon as the tag can be read by the reader",
+    "metadata": {
+        "authors": [
+            "Thilo Molitor"
+        ],
+        "license": "https://opensource.org/licenses/Apache-2.0"
+    },
+    "provides": {
+        "main": {
+            "config": {
+                "baud_rate": {
+                    "default": 115200,
+                    "description": "Serial baud rate to use when communicating with PN532 hardware",
+                    "maximum": 230400,
+                    "minimum": 9600,
+                    "type": "integer"
+                },
+                "serial_port": {
+                    "default": "/dev/ttyS0",
+                    "description": "Serial port the PN532 hardware is connected to",
+                    "type": "string"
+                },
+                "timeout": {
+                    "default": 30,
+                    "description": "Time a new token is valid (in s)",
+                    "maximum": 120,
+                    "minimum": 0,
+                    "type": "number"
+                }
+            },
+            "description": "Implementation of PN532 RFID/NFC token provider",
+            "interface": "auth_token_provider"
+        }
+    }
+}

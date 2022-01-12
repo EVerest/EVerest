@@ -1,0 +1,54 @@
+{
+    "description": "This module implements the SLAC protocol needed by the iso15118 module",
+    "metadata": {
+        "authors": [
+            "open-plc-toolkit by Qualcomm Atheros, Inc. et al",
+            "Cornelius Claussen (Pionix GmbH)"
+        ],
+        "base_license": "https://directory.fsf.org/wiki/License:BSD-3-Clause-Clear",
+        "license": "https://opensource.org/licenses/Apache-2.0"
+    },
+    "provides": {
+        "main": {
+            "config": {
+                "device": {
+                    "default": "eth1",
+                    "description": "Ethernet device used for PLC",
+                    "type": "string"
+                },
+                "nid": {
+                    "default": "026BCBA5354E08",
+                    "description": "NID (Network Identification Key)",
+                    "type": "string"
+                },
+                "nmk": {
+                    "default": "B59319D7E8157BA001B018669CCEE30D",
+                    "description": "NMK (Network Membership Key)",
+                    "type": "string"
+                },
+                "number_of_sounds": {
+                    "default": 10,
+                    "description": "SLAC number of sounds",
+                    "type": "integer"
+                },
+                "sid": {
+                    "default": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                    "description": "SID (Station Identifier)",
+                    "type": "string"
+                },
+                "time_to_sound": {
+                    "default": 6,
+                    "description": "SLAC time to sound",
+                    "type": "integer"
+                },
+                "timeout": {
+                    "default": 2000,
+                    "description": "SLAC timeout in milliseconds",
+                    "type": "integer"
+                }
+            },
+            "description": "open-plc-tools SLAC implementation",
+            "interface": "ISO15118_3_SLAC"
+        }
+    }
+}

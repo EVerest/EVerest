@@ -25,6 +25,10 @@ jobs:
         path: everest
         token: ${{secrets.SA_GITHUB_PAT}}
 
+    - name: Generate documentation of everest_modules
+      working-directory: ./everest
+      run: python3 docs/module_docs/doc_writer.py
+
     - name: Build sphinx doc
       run: make -C everest/docs html
 
