@@ -1,0 +1,45 @@
+{
+    "description": "Dummy token provider always returning one configured token",
+    "metadata": {
+        "authors": [
+            "Thilo Molitor"
+        ],
+        "license": "https://opensource.org/licenses/Apache-2.0"
+    },
+    "provides": {
+        "main": {
+            "config": {
+                "sleep": {
+                    "default": 15,
+                    "description": "Time to wait between every publish of our dummy token string (in s)",
+                    "maximum": 120,
+                    "minimum": 0,
+                    "type": "number"
+                },
+                "timeout": {
+                    "default": 10,
+                    "description": "Time our dummy token is valid (in s)",
+                    "maximum": 120,
+                    "minimum": 0,
+                    "type": "number"
+                },
+                "token": {
+                    "default": "DEADC0DE",
+                    "description": "Dummy token string to return",
+                    "maxLength": 20,
+                    "minLength": 1,
+                    "type": "string"
+                },
+                "type": {
+                    "default": "dummy",
+                    "description": "Type to report for our dummy token",
+                    "maxLength": 32,
+                    "minLength": 2,
+                    "type": "string"
+                }
+            },
+            "description": "Main implementation of dummy token provider always returning one configured token",
+            "interface": "auth_token_provider"
+        }
+    }
+}

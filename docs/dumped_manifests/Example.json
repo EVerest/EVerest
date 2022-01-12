@@ -1,0 +1,57 @@
+{
+    "description": "Simple example module written in C++",
+    "enable_external_mqtt": true,
+    "metadata": {
+        "authors": [
+            "Kai-Uwe Hermann"
+        ],
+        "license": "https://opensource.org/licenses/Apache-2.0"
+    },
+    "provides": {
+        "example": {
+            "config": {
+                "current": {
+                    "description": "The current the physical connector can supply",
+                    "maximum": 60,
+                    "minimum": 1,
+                    "type": "number"
+                },
+                "enum_test": {
+                    "description": "A config value that tests the enum type",
+                    "enum": [
+                        "one",
+                        "two",
+                        "three"
+                    ],
+                    "type": "string"
+                },
+                "enum_test2": {
+                    "description": "Another config value that tests the enum type",
+                    "enum": [
+                        1,
+                        2,
+                        3
+                    ],
+                    "type": "integer"
+                }
+            },
+            "description": "This implements an example interface that uses multiple framework features",
+            "interface": "example_child"
+        },
+        "store": {
+            "description": "This implements the kvs interface, mostly for testing multiple interfaces in one manifest",
+            "interface": "kvs"
+        }
+    },
+    "requires": {
+        "kvs": {
+            "interface": "kvs"
+        },
+        "optional:solar": {
+            "interface": "power"
+        },
+        "powerin": {
+            "interface": "power_in"
+        }
+    }
+}

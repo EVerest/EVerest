@@ -1,0 +1,41 @@
+{
+    "description": "Dummy token validator always returning the same configured token validation result for every token",
+    "metadata": {
+        "authors": [
+            "Thilo Molitor"
+        ],
+        "license": "https://opensource.org/licenses/Apache-2.0"
+    },
+    "provides": {
+        "main": {
+            "config": {
+                "sleep": {
+                    "default": 0.5,
+                    "description": "Time to wait before returning the dumy validation result (in s)",
+                    "maximum": 120,
+                    "minimum": 0,
+                    "type": "number"
+                },
+                "validation_reason": {
+                    "default": "Token valid",
+                    "description": "Dummy validation reason to return",
+                    "minLength": 5,
+                    "type": "string"
+                },
+                "validation_result": {
+                    "default": "Accepted",
+                    "description": "Dummy validation result to return",
+                    "enum": [
+                        "Accepted",
+                        "Blocked",
+                        "Expired",
+                        "Invalid"
+                    ],
+                    "type": "string"
+                }
+            },
+            "description": "Main implementation of dummy token validator always returning the same configured token validation result for every token",
+            "interface": "auth_token_validator"
+        }
+    }
+}

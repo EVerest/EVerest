@@ -1,0 +1,45 @@
+{
+    "config": {
+        "ChargePointConfigPath": {
+            "default": "charge_point_config.json",
+            "description": "Path to the configuration file",
+            "type": "string"
+        },
+        "DatabasePath": {
+            "default": "/tmp/ocpp_1_6_charge_point",
+            "description": "Path to the persistent SQLite database folder",
+            "type": "string"
+        },
+        "SchemasPath": {
+            "default": "/tmp/ocpp_1_6_charge_point",
+            "description": "Path to the schemas folder in which the OCPP 1.6 schemas reside",
+            "type": "string"
+        }
+    },
+    "description": "A OCPP charge point / charging station module, currently targeting OCPP-J 1.6",
+    "enable_external_mqtt": true,
+    "metadata": {
+        "authors": [
+            "Kai-Uwe Hermann"
+        ],
+        "license": "https://opensource.org/licenses/Apache-2.0"
+    },
+    "provides": {
+        "auth_validator": {
+            "description": "Validates the provided auth token with OCPP",
+            "interface": "auth_token_validator"
+        },
+        "main": {
+            "description": "This is a OCPP 1.6 charge point",
+            "interface": "ocpp_1_6_charge_point"
+        }
+    },
+    "requires": {
+        "evse_manager": {
+            "interface": "evse_manager"
+        },
+        "powermeter": {
+            "interface": "powermeter"
+        }
+    }
+}

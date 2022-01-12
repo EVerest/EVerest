@@ -1,0 +1,33 @@
+{
+    "description": "This modules provides the data logging for the EnergyManager",
+    "enable_external_mqtt": true,
+    "metadata": {
+        "authors": [
+            "Andreas Heinrich"
+        ],
+        "license": "https://opensource.org/licenses/Apache-2.0"
+    },
+    "provides": {
+        "main": {
+            "config": {
+                "file_path_prefix": {
+                    "description": "Path prefix to logfile",
+                    "type": "string"
+                }
+            },
+            "description": "This is the pid_controller interface of the module EnergyManager, it provides config options",
+            "interface": "empty"
+        }
+    },
+    "requires": {
+        "emgr": {
+            "interface": "energy_manager"
+        },
+        "pm_ev": {
+            "interface": "powermeter"
+        },
+        "pm_grid": {
+            "interface": "powermeter"
+        }
+    }
+}

@@ -1,0 +1,44 @@
+{
+    "description": "SIL simulator for YETI hardware v1.0",
+    "enable_external_mqtt": true,
+    "metadata": {
+        "authors": [
+            "Cornelius Claussen"
+        ],
+        "license": "https://opensource.org/licenses/Apache-2.0"
+    },
+    "provides": {
+        "board_support": {
+            "description": "provides the board support Interface to low level control control pilot, relais, rcd, motor lock",
+            "interface": "board_support_AC"
+        },
+        "debug_keepalive": {
+            "description": "Provides the keepalive as a json object",
+            "interface": "debug_json"
+        },
+        "debug_powermeter": {
+            "description": "Provides the powermeter as a json object",
+            "interface": "debug_json"
+        },
+        "debug_state": {
+            "description": "Provides the state as a json object",
+            "interface": "debug_json"
+        },
+        "debug_yeti": {
+            "description": "provides the debug information of the charging driver",
+            "interface": "debug_json"
+        },
+        "powermeter": {
+            "description": "provides the Yeti Internal Power Meter",
+            "interface": "powermeter"
+        },
+        "yeti_extras": {
+            "description": "extra functionality special for Yeti",
+            "interface": "yeti_extras"
+        },
+        "yeti_simulation_control": {
+            "description": "Interface for the Yeti HIL simulator",
+            "interface": "yeti_simulation_control"
+        }
+    }
+}

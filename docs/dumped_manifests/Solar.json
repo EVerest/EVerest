@@ -1,0 +1,16 @@
+{
+    "description": "Simple dummy implementation of a solar module",
+    "metadata": {
+        "authors": [
+            "Kai-Uwe Hermann",
+            "Thilo Molitor"
+        ],
+        "license": "https://opensource.org/licenses/Apache-2.0"
+    },
+    "provides": {
+        "main": {
+            "description": "Main implementation of the module Solar",
+            "interface": "power"
+        }
+    }
+}

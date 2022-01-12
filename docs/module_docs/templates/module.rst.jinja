@@ -1,0 +1,47 @@
+.. {{name}}
+
+******************************
+{{ name }}
+******************************
+
+Description
+###########
+{{ manifest.description}}
+
+Implemented interfaces
+######################
+{% for implementation in manifest.provides -%}
+
+| **{{ implementation }}**:*{{ manifest.provides[implementation].interface}}*
+| {{ manifest.provides[implementation].description}}
+
+{% endfor -%}
+
+Configuration
+#############
+{% for config_entry in manifest.config -%}
+
+| **{{ config_entry }}**:*{{ manifest.config[config_entry].type}}*
+| *default:    {{ manifest.config[config_entry].default }}*
+| {{ manifest.config[config_entry].description }}
+
+{% endfor -%}
+
+Requirements
+############
+{% for req in manifest.requires -%}
+
+| **{{ req }}**:*{{manifest.requires[req].interface}}*
+{% endfor -%}
+
+{###}
+Metadata
+########
+Authors
+*******
+{% for author in manifest.metadata.authors -%}
+| {{ author }}
+{% endfor -%}
+License
+*******
+{{ manifest.metadata.license }}

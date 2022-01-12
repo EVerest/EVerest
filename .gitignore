@@ -25,3 +25,5 @@ Network Trash Folder
 Temporary Items
 .apdisk
 
+docs/generated/*
+docs/_build/*
