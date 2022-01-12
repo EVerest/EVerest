@@ -16,10 +16,7 @@ The EVerest project was initiated by PIONIX GmbH, to help with the electrificati
    doc_framework
    doc_overview-tools
    doc_tutorial_intro
-<<<<<<< HEAD
-=======
    generated/everest_modules
->>>>>>> Add auto documentation of everest_modules
 
 Indices and tables
 ==================
