@@ -1,27 +1,17 @@
 .. doc_tutorial_EDM
 
+***
 EDM
-###
+***
 
-EVerest dev environment
-***********************
 So far this is the edm - the Everest Dependency Manager which helps you orchestrating the dependencies between the different everest repositories.
 
-Dependency Manager for EVerest
-******************************
+.. contents::
+	:local:
+	:backlinks: none
 
-* :ref:`Dependency Manager for EVerest <Dependency Manager for EVerest>`
-   + :ref:`Install and Quick Start<Install and Quick Start>`
-   + :ref:`Installing edm <Installing edm>`
-   + :ref:`Enabling CPM_SOURCE_CACHE <Enabling CPM_SOURCE_CACHE>`
-   + :ref:`Building everest <Building everest>`
-   + :ref:`Python packages needed to run edm <Python packages needed to run edm>`
-* :ref:`Setting up CMake integration <Setting up CMake integration>`
-* :ref:`Setting up a workspace <Setting up a workspace>`
-* :ref:`Updating a workspace <Updating a workspace>`
-* :ref:`Using the EDM CMake module and dependencies.yaml <Using the EDM CMake module and dependencies.yaml>`
-* :ref:`Create a workspace config from an existing directory tree <Create a workspace config from an existing directory tree>`
-* :ref:`Git information at a glance <Git information at a glance>`
+Dependency Manager for EVerest
+##############################
 
 Install and Quick Start
 ***********************
@@ -100,7 +90,7 @@ The following Python3 packages are needed to run the **edm** dependency manager.
 + PyYAML >= 5.4
 
 Setting up CMake integration
-****************************
+############################
 To use the EDM CMake module you must register it in the CMake package registry. You can use the following command to achieve this:
 
 .. code-block:: bash
@@ -110,7 +100,7 @@ To use the EDM CMake module you must register it in the CMake package registry. 
 This will create a file at ~/.cmake/packages/EDM/edm that points to the directory in which the EDM CMake module has been installed. You probably have to do this only once after the initial installation, but be advised that this might have to be done again if you reinstall edm with a different version of Python.
 
 Setting up a workspace
-**********************
+######################
 A sample workspace config, everest-complete.yaml, for the EVerest project is provided in the root directory of this repository. You can set up this workspace with the following command.
 
 .. code-block:: bash
@@ -118,7 +108,7 @@ A sample workspace config, everest-complete.yaml, for the EVerest project is pro
 	edm --register-cmake-module --config ../everest-complete.yaml --workspace ~/checkout/everest-workspace
 
 Updating a workspace
-********************
+####################
 To update a workspace you can edit the workspace-config.yaml file in the root of the workspace. You can then use the following command to apply these changes.
 
 .. code-block:: bash
@@ -138,7 +128,7 @@ An attempt will be made to switch branches to the ones specified in the config, 
 Repositories also WILL NOT be pulled, you should check the state of your repositories afterwards with the commands described in :ref:`Git information at a glance <Git information at a glance>`
 
 Using the EDM CMake module and dependencies.yaml
-************************************************
+################################################
 
 To use edm from CMake you have to add the following line to the top-level CMakeLists.txt file in the respective source repository:
 
@@ -184,7 +174,7 @@ You can overwrite the git_tag in your workspace.yaml, so you can use a developme
 	  timer	:
 
 Create a workspace config from an existing directory tree
-*********************************************************
+#########################################################
 Suppose you already have a directory tree that you want to save into a config file. You can do this with the following command:
 
 .. code-block:: bash
@@ -212,7 +202,7 @@ If you want to include all repositories, including external dependencies, in the
 	edm --create-config custom-config.yaml --external-in-config
 
 Git information at a glance
-***************************
+###########################
 You can get a list of all git repositories in the current directory and their state using the following command.
 
 .. code-block:: bash

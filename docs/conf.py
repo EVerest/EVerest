@@ -79,3 +79,5 @@ napoleon_attr_annotations = True
 
 # latex settings
 latex_engine = 'xelatex'
+
+autosectionlabel_prefix_document = True
