@@ -22,7 +22,7 @@ Every module needs a manifest file that describes the module and its dependencie
 Make sure to familiarize yourself with json and json-schema. You will need it to define the config for your module as well as new interface definitions.
 Good documentation can be found here: https://json-schema.org/understanding-json-schema/reference/
 
-Commented example manifest (all descriptions are mandatory and used to atogeneate your module's documentation):
+Commented example manifest (all descriptions are mandatory and used to autogenerate your module's documentation):
 
 .. code-block:: javascript
     :linenos:
@@ -32,7 +32,7 @@ Commented example manifest (all descriptions are mandatory and used to atogeneat
         "config": {
             // Config set for the whole module (including possible default values) declared as json schema
             "some_config_key": {
-                "description": This is a module-global config key"
+                "description": "This is a module-global config key",
                 "type": "string",
                 // if you don't specify a default, the config key must be specified in the everest config,
                 // if a default is present, the config key can be omitted in your everest config.
@@ -41,7 +41,7 @@ Commented example manifest (all descriptions are mandatory and used to atogeneat
         },
         "provides": {
             // List all provided interface implementations of this module alongside their interface implementation specific config.
-            // You can use an arbitrary name, butthis name has to be specified in the everest config file when this module is loaded.
+            // You can use an arbitrary name, but this name has to be specified in the everest config file when this module is loaded.
             // For a module containing only one implementation you should use "main".
             "main": {
                 "description": "This is the implementation of the interface 'interface_definition_used'.",
@@ -65,7 +65,7 @@ Commented example manifest (all descriptions are mandatory and used to atogeneat
                 }
             }
         },
-        // this part lists all requirements on other modules, your module has
+        // this part lists all requirements on other modules, which your module may have
         "requires": {
             "requirement_name_used_in_config_file_later_on": {
                 "description": "Some optional text describing this dependency",
@@ -76,7 +76,7 @@ Commented example manifest (all descriptions are mandatory and used to atogeneat
             }
         },
         "metadata": {
-            "base_license": "URI pointing to the base license of your module if you use code from another poject under a different license"
+            "base_license": "URI pointing to the base license of your module if you use code from another poject under a different license",
             // license and authors is required
             "license": "URI pointing to the license of your module, like: https://opensource.org/licenses/Apache-2.0",
             "authors": ["Your name", "Some more name", "Third author name", "etc."]
