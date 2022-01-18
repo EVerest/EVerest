@@ -57,9 +57,6 @@ use
 
     self.car_config_user = {"name": "Renault Zoe", "power_min": 41, "power_max": 52, "battery_voltage": 400}
 
-
-Try to reduce variables when possbile
-=====================================
 Don't use different types for one variable. 
 
 .. code-block:: python
