@@ -2,7 +2,7 @@ How To: Develop New Modules
 ***************************
 
 0. Introduction
-__________________________
+^^^^^^^^^^^^^^^
 You need to set up your workspace according to https://github.com/EVerest/everest-dev-environment/blob/main/dependency_manager/README.md
 Make sure you can build the everest-core project before you start to develop modules.
 After this, install the ev-cli tool by going into the directory everest-utils/ev-dev-tools/ inside your workspace and call:: 
@@ -11,7 +11,7 @@ After this, install the ev-cli tool by going into the directory everest-utils/ev
 
 
 1. New directory
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^
 Create a new directory inside the modules directory of the everest-core directory inside your workspace.
 The name of your directory is the name of your new module.
 Please use the prefix "Js" for JavaScript modules to make them distinguishable from C++ modules without looking into the directory.
@@ -86,7 +86,7 @@ Commented example manifest (all descriptions are mandatory and used to autogener
 
 
 3.1. Writing a Jsmodule: Creating some more essential files
-###########################################################
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 If you want to write a JavaScript module, you can copy over the *CMakeLists.txt* file found in the module directory *JsPN532TokenProvider*.
 The *CMakeLists.txt* file is dynamic and will infer your module's name from the directory name it resides in.
@@ -96,7 +96,7 @@ You can specify an empty object `{}` if you do not have any dependencies on exte
 The EVerest build system will automatically install all needed dependencies using npm.
 
 3.2. Writing a C++ module: Creating some more essential files
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 To create the needed (template) files for your C++ module you have to use the *ev-cli* tool installed in :ref:`step 0 <0. Introduction>`.
 Call:: 
 
@@ -104,12 +104,12 @@ Call::
 
 inside the *everest-core* directory in your workspace.
 It will create a directory for each "provides" key in the manifest and a top-level C++ file named *"<module_name>.cpp"*.
-The top-level C++ file contains an init method and a ready method called on module load and framework ready events (see step 4: :ref:`module lifecycle <4. Module lifecycle>`).
+The top-level C++ file contains an init method and a ready method called on module load and framework ready events (see step 4 :ref:`Module lifecycle <4. Module lifecycle>`.
 The C++ files in the generated subdirs contain all CMDs and VARs you have to implement to implement the interface you specified in your manifest.
 The methods "init" and "ready" can be implemented on the interface implementation level, too.
 
 4. Module lifecycle
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^
 Every module resides in it's own process invoked by the manager.
 Upon loading a module the `init()` method will be invoked by the framework.
 Once all modules are loaded and initialized, the framework will call the `ready()` method.
@@ -118,7 +118,7 @@ VARs can only be published inside the ready() method or after the ready() method
 Correspondingly other modules will only receive new published VARs or get CMDs after their ready() method was called.
 
 5. Interface files
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^
 Make sure to familiarize yourself with json and json-schema. You will need it to define new interface definitions.
 Good documentation can be found here: https://json-schema.org/understanding-json-schema/reference/
 
