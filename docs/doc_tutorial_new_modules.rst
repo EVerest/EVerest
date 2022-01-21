@@ -175,7 +175,7 @@ With all of this theroretical background in mind, let's look at an actual real w
                     "additionalProperties": false
                 }
             }
-        }
+        },
         "vars": {
             "authorized": {
                 "description": "New validated auth token provided",
@@ -190,7 +190,7 @@ Interface definitions can inherit from other interface definitions. This means y
 new **VARs**/**CMDs**. You *can not* overwrite the definition of a **VAR**/**CMD** from the parent interface in the child, nor can you remove a **VAR**/**CMD** defined in the parent.
 
 If one module requires another to implement a base interface, other modules derived from this one will need to match this requirement.
-The module defining the requirement will not be able to use **VARs**/**CMDs** defined in the derived interface, only the ones defined in the interface it defined its requirement.
+The module defining the requirement will not be able to use **VARs**/**CMDs** defined in the derived interface, only the ones defined in the interface it defined its requirement
 for (and the **VARs**/**CMDs** defined in the parent interfaces of this interface, of course).
 For three interface definitions A, B and C defined like this: 
 
