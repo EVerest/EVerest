@@ -59,9 +59,11 @@ Commented example manifest (all descriptions are mandatory and used to autogener
                         "default": 42
                     },
                     "some_other_config_key": {
+		        "description": "This is some other config key",
                         "type": "string",
                         "minLength": 10,
                         "maxLength": 100
+		    }
                 }
             }
         },
@@ -72,6 +74,7 @@ Commented example manifest (all descriptions are mandatory and used to autogener
                 "interface": "the_interface_definition_the_required_module_has_to_implement"
             },
             "some_other_requirement_id": {
+	        "description": "Some other optional text describing this dependency",
                 "interface": "other_interface"
             }
         },
@@ -100,7 +103,7 @@ The EVerest build system will automatically install all needed dependencies usin
 To create the needed (template) files for your C++ module you have to use the *ev-cli* tool installed in :ref:`step 0 <0. Introduction>`.
 Call:: 
 
-	edm-cli mod create <your_module_name>
+	ev-cli mod create <your_module_name>
 
 inside the *everest-core* directory in your workspace.
 It will create a directory for each "provides" key in the manifest and a top-level C++ file named *"<module_name>.cpp"*.
@@ -116,6 +119,7 @@ Once all modules are loaded and initialized, the framework will call the `ready(
 Only in the ready() method or after the method was called, the module is allowed to call CMDs of other modules.
 VARs can only be published inside the ready() method or after the ready() method was called.
 Correspondingly other modules will only receive new published VARs or get CMDs after their ready() method was called.
+Modules cannot be stopped or unloaded.The creator of a new module is responsible to provide internal functionality to disable the module's inner workings, should that be a desired state.
 
 5. Interface files
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -127,14 +131,14 @@ An interface definition can contain two different kinds of declarations: **VARs*
 A **CMD** is an RPC command, the module implementing the interface provides for other modules. It can take zero or more named arguments and optionally return a result.
 A **VAR** is a value that is published by the module implementing the interface and can be consumed by other modules having a requirement for this interface
 (e.g. require a module implementing this interface).
-Thus **VARs** exhibit a push semantics where the publishing module drives the data exchange (e.g. decides when to publish something) whereas **CMDs** exhibit a pull semantics
+Thus **VARs** exhibit push semantics where the publishing module drives the data exchange (e.g. decides when to publish something) whereas **CMDs** exhibit pull semantics
 (e.g. the module *calling* the **CMD** drives the data exchange).
 Furthermore exchanging data via **VARs** means the *consuming* module has to define a requirement for the publishing module in it's manifest
 whereas exchanging data via **CMDs** means the *calling* module (not the module consuming the cmd call) has to require the module it wants to call the **CMD** from.
 Using **CMDs** is bidirectional (arguments and return values) whereas using **VARs** is unidirectional (e.g. you need module A and module B to define a requirement for each other
 and let each of them publish a **VAR**, if you want to do a bidirectional data exchange via **VARs**).
 
-Arguments and return values of **CMDs** as well as the values published in **CMDs** have to be described using json-schema (like the config entries in the manifes.json).
+Arguments and return values of **CMDs** as well as the values published in **CMDs** have to be described using json-schema (like the config entries in the manifest.json).
 
 With all of this theroretical background in mind, let's look at an actual real world example (all description fields are mandatory):
 
@@ -171,7 +175,7 @@ With all of this theroretical background in mind, let's look at an actual real w
                     "additionalProperties": false
                 }
             }
-        }
+        },
         "vars": {
             "authorized": {
                 "description": "New validated auth token provided",
@@ -183,9 +187,9 @@ With all of this theroretical background in mind, let's look at an actual real w
     }
 
 Interface definitions can inherit from other interface definitions. This means you can extend a definition by inheriting from it and adding
-new **VARs**/**CMDs**. You *can not* overwrite the definition of a **VAR**/**CMD** from the parent interface in the child nor can you remove a **VAR**/**CMD** defined in the parent.
+new **VARs**/**CMDs**. You *can not* overwrite the definition of a **VAR**/**CMD** from the parent interface in the child, nor can you remove a **VAR**/**CMD** defined in the parent.
 
-If modules require other modules implementing a base interface, all modules implementing an interface derived from this base interface will match this requirement.
+If one module requires another to implement a base interface, other modules derived from this one will need to match this requirement.
 The module defining the requirement will not be able to use **VARs**/**CMDs** defined in the derived interface, only the ones defined in the interface it defined its requirement
 for (and the **VARs**/**CMDs** defined in the parent interfaces of this interface, of course).
 For three interface definitions A, B and C defined like this: 
