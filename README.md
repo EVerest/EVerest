@@ -5,6 +5,9 @@
 The primary goal of EVerest is to develop and maintain an open source software stack for EV charging infrastructure. EVerest is developed having modularity and customizability in mind, so it consists of a framework to configure several interchangeable modules which are coupled by MQTT with each other. EVerest will help to speed the adoption to e-mobility by utilizing all the open source advantages for the EV charging world. It will also enable new features for local energy management, PV-integration, and many more.  
 The EVerest project was initiated by PIONIX GmbH, to help with the electrification of the mobility sector.
 
+For questions and support please join the [EVerest mailing list](https://lists.lfenergy.org/g/everest).
+There is also a calendar for monthly dev calls.
+
 A complete documentation can be found [here](https://everest.github.io).
 
 ## Build & Install
@@ -13,7 +16,7 @@ A complete documentation can be found [here](https://everest.github.io).
 
 ## Discussion
 
-You can connect with the community in a variety of ways...
+You can connect with the community in a variety of ways:
 
 - [EVerest mailing list](https://lists.lfenergy.org/g/everest)
 - [EVerest TSC mailing list / Sensitive Topics](https://lists.lfenergy.org/g/everest-tsc)
