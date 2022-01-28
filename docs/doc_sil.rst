@@ -14,6 +14,23 @@ To create the nodered dashboard, open a webbrowser of your choice and open the u
 	http://localhost:1880/
 
 This will open the nodered flowchart editor. 
+
+First we install the neccesary nodes.
+Click on *Manage Palette* in the upper right corner menu:
+
+.. image:: img/manage-palette.png
+
+Make sure you have installed the following nodes by typing their names in the *Search modules* bar in the *Install section*:
+
+.. image:: img/install-dashboard.png
+
+- node-red
+- node-red-contrib-ui-actions
+- node-red-contrib-ui-level
+- node-red-dashboard
+- node-red-node-ui-table
+
+Now we import the flow:
 In the upper right corner menu select *IMPORT*:
 
 .. image:: img/importflow.png
