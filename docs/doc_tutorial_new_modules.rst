@@ -98,6 +98,8 @@ This file lists all dependencies on external nodejs packages your module has, li
 You can specify an empty object `{}` if you do not have any dependencies on external packages.
 The EVerest build system will automatically install all needed dependencies using npm.
 
+.. image:: img/diagram1.svg
+
 3.2. Writing a C++ module: Creating some more essential files
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 To create the needed (template) files for your C++ module you have to use the *ev-cli* tool installed in :ref:`step 0 <0. Introduction>`.
@@ -197,3 +199,37 @@ For three interface definitions A, B and C defined like this:
 **A** ===derived from===> **B** ===derived from===> **C**
 
 If module X requires a module implementing interface B, it can use **VARs**/**CMDs** defined in **C** or **B**, but not those defined in **A**.
+
+6. Example Js Modules
+^^^^^^^^^^^^^^^^^^^^^
+
+As an example of inter-module communication we will create two new modules:
+- a "writer" module (JsExampleWriter), which will send data to other modules and provide a function to control its own data-rate
+- and a "reader" module which will receive data from the "writer" module and control its data-rate
+
+The new modules will be interconnected like this:
+
+.. image:: img/diagram2.svg
+
+The JsExampleWriter module will provide two different interface objects: 
+- an external variable ("writer-published-var") which provides data to other modules
+- an external function ("set-tx-prescaler") with which other modules can control the writer module's data-rate
+
+.. image:: img/diagram3.svg
+
+The JsExampleReader module will: 
+- subsribe to the variable "writer-published-var" (of connection "example-writer-connection") and
+- control the data-rate of the JsExampleWriter module via function "set_tx_prescaler"
+
+.. image:: img/diagram4.svg
+
+The linking of both modules will be defined in the configuration ("./config/config-sil.json"), where the JsExampleReader module receives a connection ("example-writer-connection") to the "example_writer"'s submodule ("example_writer_submodule").
+
+.. image:: img/diagram5.svg
+
+6.1 Further steps to make the project buildable
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+So far, the modules have been written (each in their corresponding folder in "./modules/"), each module has defined an own interface (in the "./interfaces/" folder; note that the JsExampleReader's interface is currently empty, as it provides no interface for other modules to use) and both modules have been linked (and possibly received configuration values) in the project's config file ("./config/config-sil.json"). The last thing missing is to add the modules' names ("JsExampleWriter" and "JsExampleReader") to the project's module list (EVEREST_MODULES_LIST in "./modules/CmakeLists.txt").
+
+If the modules' code is correct, the project can now be successfully built from the "./everest-core/build/" folder (e.g. run cmake .. && make -j$(nproc) install) and executed (run from same folder .././run-sil.sh).
