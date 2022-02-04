@@ -12,7 +12,6 @@ These Tutorials guide you to understand the development process, rules and conce
    :maxdepth: 1
 
    doc_tutorial_new_modules
-   doc_styleguide_intro
    how_to_git/index
    doc_docker_setup
    doc_sil
