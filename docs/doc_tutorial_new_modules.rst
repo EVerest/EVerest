@@ -91,54 +91,57 @@ Commented example manifest (all descriptions are mandatory and used to autogener
 3.1. Writing a Jsmodule: Creating some more essential files
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-If you want to write a JavaScript module, you can copy over the *CMakeLists.txt* file found in the module directory *JsPN532TokenProvider*.
-The *CMakeLists.txt* file is dynamic and will infer your module's name from the directory name it resides in.
-You need to create a *package.json* file, too.
+If you want to write a JavaScript module, you can copy over the ``CMakeLists.txt`` file found in the module directory ``JsPN532TokenProvider``.
+The ``CMakeLists.txt`` file is dynamic and will infer your module's name from the directory name it resides in.
+You need to create a ``package.json`` file, too.
 This file lists all dependencies on external nodejs packages your module has, like it's done in any other nodejs project.
-You can specify an empty object `{}` if you do not have any dependencies on external packages.
-The EVerest build system will automatically install all needed dependencies using npm.
+You can specify an empty object ``{}`` if you do not have any dependencies on external packages.
+The EVerest build system will automatically install all needed dependencies using ``npm``.
+
+.. image:: img/diagram1.svg
+
+[Image 1: Files to create/modify when adding a new module]
 
 3.2. Writing a C++ module: Creating some more essential files
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-To create the needed (template) files for your C++ module you have to use the *ev-cli* tool installed in :ref:`step 0 <0. Introduction>`.
+To create the needed (template) files for your C++ module you have to use the ``ev-cli`` tool installed in :ref:`step 0 <0. Introduction>`.
 Call:: 
 
 	ev-cli mod create <your_module_name>
 
-inside the *everest-core* directory in your workspace.
-It will create a directory for each "provides" key in the manifest and a top-level C++ file named *"<module_name>.cpp"*.
-The top-level C++ file contains an init method and a ready method called on module load and framework ready events (see step 4 :ref:`Module lifecycle <4. Module lifecycle>`.
-The C++ files in the generated subdirs contain all CMDs and VARs you have to implement to implement the interface you specified in your manifest.
-The methods "init" and "ready" can be implemented on the interface implementation level, too.
+inside the ``everest-core`` directory in your workspace.
+It will create a directory for each ``provides`` key in the manifest and a top-level C++ file named ``<module_name>.cpp``.
+The top-level C++ file contains an ``init()`` method and a ``ready()`` method called on module load and framework ``ready()`` events (see step 4 :ref:`Module lifecycle <4. Module lifecycle>`).
+The C++ files in the generated subdirs contain all ``CMDs`` and ``VARs`` you have to implement to implement the interface you specified in your manifest.
+The methods ``init()`` and ``ready()`` can be implemented on the interface implementation level, too.
 
 4. Module lifecycle
 ^^^^^^^^^^^^^^^^^^^
 Every module resides in it's own process invoked by the manager.
-Upon loading a module the `init()` method will be invoked by the framework.
-Once all modules are loaded and initialized, the framework will call the `ready()` method.
-Only in the ready() method or after the method was called, the module is allowed to call CMDs of other modules.
-VARs can only be published inside the ready() method or after the ready() method was called.
-Correspondingly other modules will only receive new published VARs or get CMDs after their ready() method was called.
-Modules cannot be stopped or unloaded.The creator of a new module is responsible to provide internal functionality to disable the module's inner workings, should that be a desired state.
+Upon loading a module the ``init()`` method will be invoked by the framework.
+Once all modules are loaded and initialized, the framework will call the ``ready()`` method.
+Only in the ``ready()`` method or after the method was called, the module is allowed to call ``CMDs`` of other modules.
+``VARs`` can only be published inside the ``ready()`` method or after the ``ready()`` method was called.
+Correspondingly other modules will only receive new published ``VARs`` or get ``CMDs`` after their ``ready()`` method was called.
+Modules cannot be stopped or unloaded. The creator of a new module is responsible to provide internal functionality to disable the module's inner workings, should that be a desired state.
 
 5. Interface files
 ^^^^^^^^^^^^^^^^^^
 Make sure to familiarize yourself with json and json-schema. You will need it to define new interface definitions.
 Good documentation can be found here: https://json-schema.org/understanding-json-schema/reference/
 
-The interface definitions that modules can implement or require are located in the everest-framework/interfaces directory inside your workspace.
-An interface definition can contain two different kinds of declarations: **VARs** and **CMDs**.
-A **CMD** is an RPC command, the module implementing the interface provides for other modules. It can take zero or more named arguments and optionally return a result.
-A **VAR** is a value that is published by the module implementing the interface and can be consumed by other modules having a requirement for this interface
+The interface definitions that modules can implement or require are located in the ``/everest-framework/interfaces`` directory inside your workspace.
+An interface definition can contain two different kinds of declarations: ``VARs`` and ``CMDs``.
+A ``CMD`` is an RPC command, the module implementing the interface provides for other modules. It can take zero or more named arguments and optionally return a result.
+A ``VAR`` is a value that is published by the module implementing the interface and can be consumed by other modules having a requirement for this interface
 (e.g. require a module implementing this interface).
-Thus **VARs** exhibit push semantics where the publishing module drives the data exchange (e.g. decides when to publish something) whereas **CMDs** exhibit pull semantics
-(e.g. the module *calling* the **CMD** drives the data exchange).
-Furthermore exchanging data via **VARs** means the *consuming* module has to define a requirement for the publishing module in it's manifest
-whereas exchanging data via **CMDs** means the *calling* module (not the module consuming the cmd call) has to require the module it wants to call the **CMD** from.
-Using **CMDs** is bidirectional (arguments and return values) whereas using **VARs** is unidirectional (e.g. you need module A and module B to define a requirement for each other
-and let each of them publish a **VAR**, if you want to do a bidirectional data exchange via **VARs**).
+Thus ``VARs`` exhibit push semantics where the publishing module drives the data exchange (e.g. decides when to publish something) whereas ``CMDs`` exhibit pull semantics
+(e.g. the module *calling* the ``CMD`` drives the data exchange).
+Furthermore exchanging data via ``VARs`` means the *consuming* module has to define a requirement for the publishing module in it's manifest
+whereas exchanging data via ``CMDs`` means the *calling* module (not the module consuming the cmd call) has to require the module it wants to call the ``CMD`` from.
+Using ``CMDs`` is bidirectional (arguments and return values) whereas using ``VARs`` is unidirectional (e.g. you need module A and module B to define a requirement for each other and let each of them publish a ``VAR`` if you want to do a bidirectional data exchange via ``VARs``).
 
-Arguments and return values of **CMDs** as well as the values published in **CMDs** have to be described using json-schema (like the config entries in the manifest.json).
+Arguments and return values of ``CMDs`` as well as the values published in ``CMDs`` have to be described using json-schema (like the config entries in the ``manifest.json``).
 
 With all of this theroretical background in mind, let's look at an actual real world example (all description fields are mandatory):
 
@@ -187,13 +190,51 @@ With all of this theroretical background in mind, let's look at an actual real w
     }
 
 Interface definitions can inherit from other interface definitions. This means you can extend a definition by inheriting from it and adding
-new **VARs**/**CMDs**. You *can not* overwrite the definition of a **VAR**/**CMD** from the parent interface in the child, nor can you remove a **VAR**/**CMD** defined in the parent.
+new ``VARs``/``CMDs``. You *can not* overwrite the definition of a ``VAR``/``CMD`` from the parent interface in the child, nor can you remove a ``VAR``/``CMD`` defined in the parent.
 
 If one module requires another to implement a base interface, other modules derived from this one will need to match this requirement.
-The module defining the requirement will not be able to use **VARs**/**CMDs** defined in the derived interface, only the ones defined in the interface it defined its requirement
-for (and the **VARs**/**CMDs** defined in the parent interfaces of this interface, of course).
+The module defining the requirement will not be able to use ``VARs``/``CMDs`` defined in the derived interface, only the ones defined in the interface it defined its requirement
+for (and the ``VARs``/``CMDs`` defined in the parent interfaces of this interface, of course).
 For three interface definitions A, B and C defined like this: 
 
 **A** ===derived from===> **B** ===derived from===> **C**
 
-If module X requires a module implementing interface B, it can use **VARs**/**CMDs** defined in **C** or **B**, but not those defined in **A**.
+If module X requires a module implementing interface **B**, it can use ``VARs``/``CMDs`` defined in **C** or **B**, but not those defined in **A**.
+
+6. Example Js Modules
+^^^^^^^^^^^^^^^^^^^^^
+
+As an example of inter-module communication we will create two new modules:
+	* a "writer" module (JsExampleWriter), which will send data to other modules and provide a function to control its own data-rate
+	* and a "reader" module which will receive data from the "writer" module and control its data-rate
+
+The new modules will be interconnected like this:
+
+.. image:: img/diagram2.svg
+[Image 2: Connections between two modules]
+
+The JsExampleWriter module will provide two different interface objects: 
+	* an external variable ("writer-published-var") which provides data to other modules
+	* an external function ("set-tx-prescaler") with which other modules can control the writer module's data-rate
+
+.. image:: img/diagram3.svg
+[Image 3: Relevant file contents for writer module (JsExampleWriter)]
+
+The JsExampleReader module will: 
+	* subsribe to the variable "writer-published-var" (of connection "example-writer-connection") and
+	* control the data-rate of the JsExampleWriter module via function "set_tx_prescaler"
+
+.. image:: img/diagram4.svg
+[Image 4: Relevant file contents for reader module (JsExampleReader)]
+
+The linking of both modules will be defined in the configuration (``/config/config-sil.json``), where the JsExampleReader module receives a connection ("example-writer-connection") to the "example_writer" submodule ("example_writer_submodule").
+
+.. image:: img/diagram5.svg
+[Image 5: Interconnection of key-value-elements between two modules' json files (and the configuration file)]
+
+6.1 Further steps to make the project buildable
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+So far, the modules have been written (each in their corresponding folder in "/modules/"), each module has defined an own interface (in the ``/interfaces/`` folder; note that the JsExampleReader's interface is currently empty, as it provides no interface for other modules to use) and both modules have been linked (and possibly received configuration values) in the project's config file (``/config/config-sil.json``). The last thing missing is to add the modules' names ("JsExampleWriter" and "JsExampleReader") to the project's module list (``EVEREST_MODULES_LIST`` in ``/modules/CmakeLists.txt``).
+
+If the modules' code is correct, the project can now be successfully built from the ``/everest-core/build/`` folder (e.g. run ``cmake .. && make -j$(nproc) install``) and executed (run from same folder ``../run-sil.sh``).
