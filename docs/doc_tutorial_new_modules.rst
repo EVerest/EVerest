@@ -56,11 +56,11 @@ Commented example manifest (all descriptions are mandatory and used to autogener
                         // the default value for the config key must be specified in the everest config
                     },
                     "some_other_config_key": {
-		        		"description": "This is some other config key",
+                        "description": "This is some other config key",
                         "type": "string",
                         "minLength": 10,
                         "maxLength": 100
-		    		}
+                    }
                 }
             }
         },
@@ -71,7 +71,7 @@ Commented example manifest (all descriptions are mandatory and used to autogener
                 "interface": "the_interface_definition_the_required_module_has_to_implement"
             },
             "some_other_requirement_id": {
-	        "description": "Some other optional text describing this dependency",
+            "description": "Some other optional text describing this dependency",
                 "interface": "other_interface"
             }
         },
@@ -143,7 +143,7 @@ With all of this theroretical background in mind, let's look at an actual real w
                 "description": "New validated auth token provided",
                 "type": "string",
                 "minLength": 1,
-                "maxLength":  20
+                "maxLength": 20
             }
         }
     }
