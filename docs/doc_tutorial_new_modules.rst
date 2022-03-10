@@ -34,10 +34,8 @@ Commented example manifest (all descriptions are mandatory and used to autogener
             // Config set for the whole module (including possible default values) declared as JSON schema
             "some_config_key": {
                 "description": "This is a module-global config key",
-                "type": "string",
-                // if you don't specify a default, the config key must be specified in the everest config,
-                // if a default is present, the config key can be omitted in your everest config.
-                "default": "some default value if this key is not provided in everest config"
+                "type": "string"
+                // the default value for the config key must be specified in the everest config
             }
         },
         "provides": {
@@ -54,10 +52,8 @@ Commented example manifest (all descriptions are mandatory and used to autogener
                         "description": "This is a config key only visible to the part of your module implementing 'main'.",
                         "type": "integer",
                         "min": 4,
-                        "max": 64,
-                        // if you don't specify a default, the config key must be specified in the everest config,
-                        // if a default is present, the config key can be omitted in your everest config.
-                        "default": 42
+                        "max": 64
+                        // the default value for the config key must be specified in the everest config
                     },
                     "some_other_config_key": {
 		        		"description": "This is some other config key",
@@ -88,7 +84,7 @@ Commented example manifest (all descriptions are mandatory and used to autogener
         "enable_external_mqtt": false       // default value if not specified
     }
 
-3. Interface files
+1. Interface files
 ^^^^^^^^^^^^^^^^^^
 Make sure to familiarize yourself with JSON and JSON-schema. You will need it to define new interface definitions.
 Good documentation can be found here: https://json-schema.org/understanding-json-schema/reference/
