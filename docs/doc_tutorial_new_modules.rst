@@ -84,7 +84,7 @@ Commented example manifest (all descriptions are mandatory and used to autogener
         "enable_external_mqtt": false       // default value if not specified
     }
 
-1. Interface files
+3. Interface files
 ^^^^^^^^^^^^^^^^^^
 Make sure to familiarize yourself with JSON and JSON-schema. You will need it to define new interface definitions.
 Good documentation can be found here: https://json-schema.org/understanding-json-schema/reference/
