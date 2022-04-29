@@ -3,10 +3,12 @@
 How To: Simulate EVerest in software
 ####################################
 
-A successful `build <https://github.com/EVerest/everest-dev-environment/blob/main/dependency_manager/README.md#building-everest>`_ of everest is required.
+A successful `build <https://github.com/EVerest/everest-core#ubuntu-2004>`_ of everest is required.
 First we need to run the docker container for **mqtt**, **ocpp**, **nodered** and **steve**.
-In the workspace folder: *everest-utils/docker/* run the following command::
 
+(this can take a while on first run)::
+	
+	cd ~/checkout/everest-workspace/everest-utils/docker
 	sudo docker-compose up -d
 
 To create the nodered dashboard, open a webbrowser of your choice and open the url::
@@ -45,8 +47,9 @@ Now deploy the flow:
 .. image:: img/deployflow.png
 
 
-Change directory to  *everest-core/build/* and run the simulation with the following command::
+Run the Everest simulation with the following commands::
 
+	cd ~/checkout/everest-workspace/everest-core/build/
 	.././run_sil.sh
 
 To view the running dashboard, open a webbrowser of your choice and open::
