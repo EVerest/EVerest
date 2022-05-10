@@ -1,32 +1,38 @@
-# EVerest Roadmap
-as of 2021-11-03
-## Work in progress:
+# EVerest Features and Roadmap
+as of 2022-05-10
+
+## Done (Mainly):
 EVerest is currently running only with a dedicated HW setup of Pionix, aiming to solve two minimum viable use cases:  
 1. Smart charging at home
 2. Public AC charging with integration of std. OCPP backend
 
 To enable this, we are currently incorporating the following standards and technologies.
 * ISO 15118 (AC wired charging)
+  + SLAC / ISO 15118-3 in C++ (done)
+  + ISO 15118-2 AC charging (preliminary external java dependencies, will be replaced)
 * EN 61851
-* OCPP 1.6 (JSON) - Core Profile
+* OCPP 1.6+ (JSON) - All profiles and security extensions
 * Modbus
 * Sunspec
 * MQTT framework to easily configure loosely coupled modules
 * NFC authentication
 * NodeRed integration
-* Packetization
-* Smart Charging based on energy prices and solar production
-* Price API form: aWATTar, Tibber
-* Solar forecast API: https://forecast.solar/ 
+* Smart charging: based on energy prices and limiting based on grid constraints 
+  + Price API form: aWATTar, Tibber
+  + Solar forecast API: https://forecast.solar/ 
 
-## Planned:
-Our vision is that EVerest enables every way of (at least a bit) smart charging, in all situations, from home to Work and even Public AC and DC unidirectional and bidirectional grid friendly charging. Moving forward, we have quite a list of things we want to add, and this is probably far from complete:
-* Prio 1: Web User Interface
+## Work in Progress:
+* Packetization
+* OTA update support
+* Smart charging: based on solar generation and dynamic load balancing 
+* Web User Interface
   + For Configuration (Factory, Installation, User)
   + For just end users
   + For display on optional embedded (touch) screens
-* Prio 2: Backend Integration: https://www.openchargealliance.org/
-  + OCPP 1.6 - all optional profiles
+
+## Planned:
+Our vision is that EVerest enables every way of (at least a bit) smart charging, in all situations, from home to Work and even Public AC and DC unidirectional and bidirectional grid friendly charging. Moving forward, we have quite a list of things we want to add, and this is probably far from complete:
+* Further backend integrations: https://www.openchargealliance.org/
   + OCPP 2.0.1
 * Car Compatibility
   + Test with various OEMs
@@ -43,4 +49,3 @@ Our vision is that EVerest enables every way of (at least a bit) smart charging,
   + Smart Meter Integration
 * More HW drivers for e.g. Meters, other AC and DC charging controllers
 * Payment APIs
-
