@@ -7,6 +7,10 @@ EVerest is currently running only with a dedicated HW setup of Pionix, aiming to
 2. Public AC charging with integration of std. OCPP backend
 
 To enable this, we are currently incorporating the following standards and technologies.
+* EVerest core interconnecting all charging protocols and interfaces.
+* MQTT framework to easily configure loosely coupled modules
+* Hardware abstraction layer
+* Software in the loop simulation
 * ISO 15118 (AC wired charging)
   + SLAC / ISO 15118-3 in C++ (done)
   + ISO 15118-2 AC charging (preliminary external java dependencies, will be replaced)
@@ -14,7 +18,6 @@ To enable this, we are currently incorporating the following standards and techn
 * OCPP 1.6+ (JSON) - All profiles and security extensions
 * Modbus
 * Sunspec
-* MQTT framework to easily configure loosely coupled modules
 * NFC authentication
 * NodeRed integration
 * Smart charging: based on energy prices and limiting based on grid constraints 
