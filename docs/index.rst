@@ -16,6 +16,7 @@ There is also a calendar for monthly dev calls.
 .. toctree::
    :maxdepth: 1
 
+   how_to_contribute/how_to_contribute_overview
    doc_framework
    doc_overview-tools
    doc_tutorial_intro
