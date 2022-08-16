@@ -11,6 +11,6 @@ have a look at the :ref:`How To: Work on issues <how_to_work_on_issues>`.
 
 #. Fill in the issue with the bug you want to report.
 
-#. Link the `Issue Tracking` project to the issue.
+#. Link the `Issue Tracking` project to the issue under `Projects`.
 
 #. Submit the issue.

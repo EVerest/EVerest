@@ -10,18 +10,18 @@ Issue states
     New created public issues are unconfirmed. The issue can be moved by team members to
     `Untriangled`_ by validating, reproducing or otherwise that this is a bug or a feature request.
 
-* Untriangled
+* Untriaged
     Conirmed issues that haven't been reviewed for priority or assignment. This is the default 
     for new created issues by team members. The issue can be moved to `Available`_ after an
     importancy and urgency has been assigned.
 
 * Available
-    Confirmed and triangled but not assigned issues that are available to work on.
+    Confirmed and triaged but not assigned issues that are available to work on.
     The issue can be moved to `Assigned / Planned`_ after it has been assigned to a team member.
 
 * Assigned / Planned
-    Confirmed and triangled issues that are assigned to someone who planned to work on them.
-    The issue can be moved to `In Progress`_ after this person has started working on it.
+    Confirmed and triaged issues that are assigned to someone who planned to work on them.
+    The issue can be moved to `In Progress`_ after this the person has started working on it.
 
 * In Progress / Started
     Assigned issues that are currently being worked on.
