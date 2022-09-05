@@ -1,9 +1,9 @@
 name: Build and deploy sphinx documentation
 
-on:
-  push:
-    branches:    
-      - main
+on:  
+  schedule:
+    - cron: '0 1 * * *'
+  workflow_dispatch:
 
 jobs:
   build-and-deploy-sphinx:
