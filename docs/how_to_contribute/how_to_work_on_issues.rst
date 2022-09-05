@@ -7,11 +7,11 @@ Issue states
 ************
 
 * Unconfirmed
-    New created public issues are unconfirmed. The issue can be moved by team members to
+    Newly created public issues are unconfirmed. The issue can be moved by team members to
     `Untriangled`_ by validating, reproducing or otherwise that this is a bug or a feature request.
 
 * Untriaged
-    Conirmed issues that haven't been reviewed for priority or assignment. This is the default 
+    Confirmed issues that haven't been reviewed for priority or assignment. This is the default 
     for new created issues by team members. The issue can be moved to `Available`_ after an
     importancy and urgency has been assigned.
 
@@ -33,7 +33,7 @@ Issue states
     The issue can be moved to `Closed`_ after a team member has approved it and merged all linked pull requests.
 
 * Closed
-    Issues that are done or closed by other reasons.
+    Issues that are done or closed for other reasons.
 
 Start working on an issue
 *************************
@@ -55,4 +55,4 @@ Start working on an issue
     to review your code. If no code changes are requested and the issue is approved by a team member, the 
     pull request will be merged and the issue will be moved to `Closed`_.
 
-#. After a team meber has approved the issue, it should be moved to `Closed`_ automatically by merging all linked pull requests.
+#. After a team member has approved the issue, it should be moved to `Closed`_ automatically by merging all linked pull requests.
