@@ -59,6 +59,9 @@ html_static_path = ['_static']
 
 master_doc = 'index'
 
+# sphinx standard settings
+file_insertion_enabled = True
+
 # sphinx.ext.todo settings
 todo_include_todos = True
 
