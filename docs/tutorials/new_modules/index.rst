@@ -1,6 +1,8 @@
 How To: Develop New Modules
 ***************************
 
+.. _introduction:
+
 0. Introduction
 ^^^^^^^^^^^^^^^
 You need to set up your workspace according to https://github.com/EVerest/everest-dev-environment/blob/main/dependency_manager/README.md
@@ -91,8 +93,8 @@ Good documentation can be found here: https://json-schema.org/understanding-json
 
 The interface definitions that modules can implement or require are located in the ``/everest-core/interfaces/`` directory inside your workspace.
 An interface definition can contain two different kinds of declarations, ``VARs`` and ``CMDs``.
-    * A ``CMD`` is an RPC command, the module implementing the interface provides for other modules. It can take zero or more named arguments and optionally return a result.
-    * A ``VAR`` is a value that is published by the module implementing the interface and can be consumed by other modules having a requirement for this interface (e.g. require a module implementing this interface).
+* A ``CMD`` is an RPC command, the module implementing the interface provides for other modules. It can take zero or more named arguments and optionally return a result.
+* A ``VAR`` is a value that is published by the module implementing the interface and can be consumed by other modules having a requirement for this interface (e.g. require a module implementing this interface).
 
 Thus ``VARs`` exhibit push semantics where the publishing module drives the data exchange (e.g. decides when to publish something) whereas ``CMDs`` exhibit pull semantics (e.g. the module *calling* the ``CMD`` drives the data exchange).
 
@@ -185,7 +187,8 @@ The EVerest build system will automatically install all needed dependencies usin
 
 4.2. Writing a C++ module: Creating some more essential files
 -------------------------------------------------------------
-To create the needed (template) files for your C++ module you have to use the ``ev-cli`` tool installed in :ref:`step 0 <0. Introduction>`.
+To create the needed (template) files for your C++ module you have 
+to use the ``ev-cli`` tool installed in :ref:`step 0 <introduction>`.
 
 At this point you should have created both a ``manifest.json`` file and an *interface JSON file*:
 
@@ -197,9 +200,15 @@ Call (from inside the ``/everest-core/`` directory in your workspace)::
 
 	ev-cli mod create <your_module_name>
 
-It will create a subdirectory for each ``provides`` key in the manifest and also a top-level C++ file named ``<module_name>.cpp``.
+It will create a subdirectory for each ``provides`` key in 
+the manifest and also a top-level C++ file named ``<module_name>.cpp``.
 
-The top-level C++ file contains an ``init()`` method and a ``ready()`` method called on module load and framework ``ready()`` events (see step 5 :ref:`Module lifecycle <5. Module lifecycle>`). The implementation for extended functionality should be done on interface level (one step below in the submodules), though.
+The top-level C++ file contains an ``init()`` 
+method and a ``ready()`` method called on module load 
+and framework ``ready()`` events 
+(see step 5 :ref:`Module lifecycle <module_lifecycle>`). 
+The implementation for extended functionality should be 
+done on interface level (one step below in the submodules), though.
 
 The C++ files in the generated subdirs (interface implementation level) contain all ``CMDs`` and ``VARs`` you have to define to implement the interface you specified in your manifest.
 
@@ -208,6 +217,8 @@ The resulting C++ module should look similar to this:
 .. image:: img/diagram7.svg
 
 [Image 4: Files of a C++ module]
+
+.. _module_lifecycle:
 
 5. Module lifecycle
 ^^^^^^^^^^^^^^^^^^^
@@ -231,6 +242,8 @@ Here are some examples given. Corresponding code files can be found amidst the `
 6.1 Module components
 ---------------------
 
+.. _example_js_modules:
+
 6.1.1. Example Js modules
 =========================
 
@@ -241,6 +254,7 @@ As an example of inter-module communication we will create two new modules:
 The new modules will be interconnected like this:
 
 .. image:: img/diagram2.svg
+
 [Image 5: Connections between two modules]
 
 The **JsExampleWriter** module will provide two different interface objects: 
@@ -248,6 +262,7 @@ The **JsExampleWriter** module will provide two different interface objects:
 	* an external function (``set-tx-prescaler()``) with which other modules can control the writer module's data-rate
 
 .. image:: img/diagram3.svg
+
 [Image 6: Relevant file contents for writer module (*JsExampleWriter*)]
 
 The **JsExampleReader** module will: 
@@ -255,18 +270,20 @@ The **JsExampleReader** module will:
 	* control the data-rate of the *JsExampleWriter* module via function ``set_tx_prescaler()``
 
 .. image:: img/diagram4.svg
+
 [Image 7: Relevant file contents for reader module (*JsExampleReader*)]
 
 The linking of both modules will be defined in the configuration (``/everest-core/config/config-sil.json``), where the *JsExampleReader* module receives a connection ("*example-writer-connection*") to the "*example_writer*" submodule ("*example_writer_submodule*").
 
 .. image:: img/diagram5.svg
+
 [Image 8: Interconnection of key-value-elements between two modules' JSON files (and the configuration file)]
 
 6.1.2. Example C++ modules
 ==========================
 The C++ example will use the same setting as the previously outlined Js example: Two modules; one that publishes data and can be controlled by publicly accessable commands and one module to subscribe to the published data and call the other module's command function.
 
-The interconnection will be the same as in :ref:`Image 5 <6.1.1. Example Js modules>`.
+The interconnection will be the same as in :ref:`Image 5 <example_js_modules>`.
 
 While in the Js modules all extended functionality was created directly in the top-level files, in the C++ modules this will happen lower, inside the interface implementation level documents (``<submodule-name>Impl.<hpp/cpp>``).
 
@@ -283,14 +300,16 @@ Commands:
 Now, let's have a look at the C++ example writer module. This module **publishes** a variable and waits for incomming calls to its **command** function. In the example here, the published variable is simply a counter. The command function is used to set a prescaler for the timed loop that governs the publishing of the aforementioned variable. The module's basic setup is as follows:
 
 .. image:: img/diagram8.svg
+
 [Image 9: Relevant file contents for C++ writer module (*CppExampleWriter*)]
 
 The C++ example reader module **subscribes** to the variable which the example writer module publishes. It then uses the variable's value in a **call** to the example writer's command function. The most important parts of the example reader module's functionality can be seen the following image:
 
 .. image:: img/diagram9.svg
+
 [Image 10: Relevant file contents for C++ reader module (*CppExampleReader*)]
 
-For a more detailed overview of the connections between **manifest**, **interface JSON file**, **configuration** and module **code**, please see :ref:`Image 8<6.1.1. Example Js modules>`.
+For a more detailed overview of the connections between **manifest**, **interface JSON file**, **configuration** and module **code**, please see :ref:`Image 8<example_js_modules>`.
 
 6.2. Further steps to make the project buildable
 ------------------------------------------------

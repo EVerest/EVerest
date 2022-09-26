@@ -1,4 +1,4 @@
-.. doc_tutorial_intro:
+.. _tutorial_intro:
 
 Tutorials
 #############
@@ -11,7 +11,8 @@ These Tutorials guide you to understand the development process, rules and conce
 .. toctree::
    :maxdepth: 1
 
-   doc_tutorial_new_modules
+   new_modules/index
    how_to_git/index
-   doc_docker_setup
-   doc_sil
+   docker_setup
+   run_sil/index
+   sphinx
