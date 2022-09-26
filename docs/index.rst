@@ -25,7 +25,6 @@ There is also a calendar for monthly dev calls.
     generated/everest_modules
     generated/everest_interfaces
     generated/everest_types
-    included/everest_core/index
 
 Indices and tables
 ==================

@@ -6,14 +6,134 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-deploy-sphinx:
-    name: Build and deploy sphinx documentation 
+  dump-json-data:
+    name: Dump json-data (manifests, interfaces and types)
+    strategy:
+      matrix:
+        os: [ubuntu-20.04]
+    runs-on: ${{ matrix.os }}
+    container:
+      image: ghcr.io/everest/everest-ci-env:main
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.SA_GITHUB_PAT }}
+    steps:
+    - name: Add EVerest package Repository
+      shell: bash
+      run: |
+          wget -qO - https://pionix-update.de/debian_repository/public.key | apt-key add -
+          tee -a /etc/apt/sources.list <<< "deb https://pionix-update.de/debian_repository nightly main"
+          apt update
+    - name: Install everest-sil
+      run: |
+        apt install -y everest-sil
+    
+    - name: Create json-data directory
+      run: |
+        mkdir -p json-data
+        mkdir -p json-data/manifests
+        mkdir -p json-data/interfaces
+        mkdir -p json-data/types
+    - name: Dump EVerest modules
+      run: |
+        chmod -R 776 /opt/everest/bin/
+        bash /opt/everest/conf/run-sil.sh --dumpmanifests json-data/manifests
+    - name: Copy interface.json files
+      run: |
+        cp -r /opt/everest/share/everest/interfaces/* json-data/interfaces
+    - name: Copy type.json files
+      run: |
+        cp -r /opt/everest/share/everest/types/* json-data/types
+    
+    - name: Upload json-data artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: json-data
+        path: |
+          json-data/*
+    - name: Clean up
+      if: ${{ ! env.ACT }}
+      run: |
+        rm -rf json-data
+  
+  pull-includes:
+    name: Pull includes
+    strategy:
+      matrix:
+        os: [ubuntu-20.04]
+    runs-on: ${{ matrix.os }}
+    container: 
+      image: ghcr.io/everest/everest-ci-env:main
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.SA_GITHUB_PAT }}
+    steps:
+    - name: Checkout EVerest/everest-core
+      uses: actions/checkout@v2
+      with:
+        repository: everest/everest-core
+        ref: main
+        path: everest-core
+        token: ${{secrets.SA_GITHUB_PAT}}
+        fetch-depth: 0
+    - name: Upload docs/ dir as artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: everest-core-docs
+        path: everest-core/docs/*
+
+  generate-rst-files:
+    needs: [dump-json-data, pull-includes]
+    name: Generate rst data
+    strategy:
+      matrix:
+        os: [ubuntu-20.04]
+    runs-on: ${{ matrix.os }}
+    container: 
+      image: ghcr.io/everest/everest-ci-env:main
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.SA_GITHUB_PAT }}
+    steps:
+    # Prepare working directory
+    - name: Checkout EVerest/EVerest
+      uses: actions/checkout@v2
+      with:
+        repository: everest/everest
+        ref: ${{ github.ref }}
+        path: everest
+        token: ${{secrets.SA_GITHUB_PAT}}
+        fetch-depth: 0
+    - name: Download json-data artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: json-data
+        path: json-data
+    - name: Download everest-core-docs artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: everest-core-docs
+        path: everest-core-docs
+
+    - name: Process json-files
+      run: |
+        python3 everest/docs/scripts/process_jsons.py -o generated-rst/ -j json-data/ -t everest/docs/templates/ -m everest-core-docs/modules/
+
+    - name: Upload generated rst files
+      uses: actions/upload-artifact@v3
+      with:
+        name: generated-rst
+        path: generated-rst/*
+
+  build-sphinx:
+    needs: [generate-rst-files, pull-includes]
+    name: Build sphinx documentation 
     strategy:
       matrix:
         os: [ubuntu-20.04]
     runs-on: ${{matrix.os}}
     container: 
-      image: ghcr.io/everest/ci-env:latest
+      image: ghcr.io/everest/everest-ci-env:main
       credentials:
         username: ${{github.actor}}
         password: ${{secrets.SA_GITHUB_PAT}}
@@ -24,38 +144,75 @@ jobs:
         repository: everest/everest
         path: everest
         token: ${{secrets.SA_GITHUB_PAT}}
-
-    - name: Generate documentation of everest_modules
-      working-directory: ./everest
-      run: python3 docs/module_docs/doc_writer.py
+        ref: ${{github.ref}}
+        fetch-depth: 0
+    - name: Download generated rst files
+      uses: actions/download-artifact@v3
+      with:
+        name: generated-rst
+        path: everest/docs/generated/
+    - name: Download everest-core docs
+      uses: actions/download-artifact@v3
+      with:
+        name: everest-core-docs
+        path: everest/docs/included/everest_core/
 
     - name: Build sphinx doc
       run: make -C everest/docs html
-
-    - name: Checkout everest.github.io
-      uses: actions/checkout@v2
+    
+    - name: Upload generated html files
+      uses: actions/upload-artifact@v3
       with:
-        repository: everest/everest.github.io
-        path:  everest_github_io
-        token: ${{secrets.SA_GITHUB_PAT}}
+        name: docs-html
+        path: everest/docs/_build/html/
 
+  deploy-sphinx:
+    needs: build-sphinx
+    name: Deploy sphinx documentation
+    strategy:
+      matrix:
+        os: [ubuntu-20.04]
+    runs-on: ${{matrix.os}}
+    container: 
+      image: ghcr.io/everest/everest-ci-env:main
+      credentials:
+        username: ${{github.actor}}
+        password: ${{secrets.SA_GITHUB_PAT}}
+    steps:
     - name: Add ssh key
       uses: shimataro/ssh-key-action@v2
       with:
-        key: ${{secrets.SA_GITHUB_SSH_KEY}}
+        key: ${{ secrets.SA_GITHUB_SSH_KEY }}
         known_hosts: unnecessary
-
     - name: Configure git
       run: |
         git config --global user.email "compiler@pionix.de"
         git config --global user.name "Github Service Account"
 
-    - name: Update documentation build and push it
+    - name: Download generated html files
+      uses: actions/download-artifact@v3
+      with:
+        name: docs-html
+        path: docs-html
+    - name: Checkout everest.github.io
+      uses: actions/checkout@v2
+      with:
+        repository: everest/everest.github.io
+        path: everest_github_io
+        token: ${{secrets.SA_GITHUB_PAT}}
+        ref: main
+        fetch-depth: 0
+
+    - name: Update doc and push it
       run: |
         rm -rf everest_github_io/docs/*
-        cp -r everest/docs/_build/html/* everest_github_io/docs
+        cp -r docs-html/* everest_github_io/docs
         touch everest_github_io/docs/.nojekyll
         cd everest_github_io
         git add --all
-        git commit -m "Update doc build"
+        git commit -m "Update doc build $(date -R)"
+    - name: Push updated doc to everest.github.io
+      if: ${{ !env.ACT }}
+      run: |
+        cd everest_github_io
         git push
