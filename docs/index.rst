@@ -14,12 +14,18 @@ For questions and support please join the `EVerest mailing list <https://lists.l
 There is also a calendar for monthly dev calls.
 
 .. toctree::
-   :maxdepth: 1
+    :numbered:
+    :maxdepth: 2
+    :glob:
 
-   doc_framework
-   doc_overview-tools
-   doc_tutorial_intro
-   generated/everest_modules
+    general/*
+    dev_tools/index
+    tutorials/index
+    misc/*
+    generated/everest_modules
+    generated/everest_interfaces
+    generated/everest_types
+    included/everest_core/index
 
 Indices and tables
 ==================

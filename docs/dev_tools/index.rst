@@ -6,6 +6,6 @@ EVerest development tools
 .. toctree:: 
    :maxdepth: 1
    
-   doc_tutorial_EDM 
-   doc_tutorial_EV-CLI
-   doc_docker_setup
+   edm
+   ev_cli
+   /tutorials/docker_setup

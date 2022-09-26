@@ -39,7 +39,7 @@ A script for the steps below can be found `here <https://github.com/EVerest/ever
 	python3 -m pip install .
 	edm --register-cmake-module --config ../everest-complete.yaml --workspace ~/checkout/everest-workspace
 
-The last command registers the :ref:`EDM CMake module <Setting up CMake integration>` and creates a workspace in the *~/checkout/everest-workspace* directory from a `config that is shipped with this repository <https://github.com/EVerest/everest-dev-environment/blob/main/everest-complete.yaml>`_. The workspace will have the following structure containing all current dependencies for everest:
+The last command registers the :ref:`EDM CMake module <cmake_integration_setup>` and creates a workspace in the *~/checkout/everest-workspace* directory from a `config that is shipped with this repository <https://github.com/EVerest/everest-dev-environment/blob/main/everest-complete.yaml>`_. The workspace will have the following structure containing all current dependencies for everest:
 
 .. code-block:: bash
 
@@ -62,9 +62,14 @@ The workspace-config.yaml contains a copy of the config that was used to create 
 
 Enabling CPM_SOURCE_CACHE
 *************************
-The **edm** dependency manager uses `CPM <https://github.com/cpm-cmake/CPM.cmake>`_ for its CMake integration. This means you *can* and **should** set the *CPM_SOURCE_CACHE* environment variable. This makes sure that dependencies that you do not manage in the workspace are not re-downloaded multiple times. For detailed information and other useful environment variables please refer to the `CPM Documentation <https://github.com/cpm-cmake/CPM.cmake/blob/master/README.md#CPM_SOURCE_CACHE>`_.
+The **edm** dependency manager uses `CPM <https://github.com/cpm-cmake/CPM.cmake>`_ 
+for its CMake integration. This means you *can* and **should** set the 
+*CPM_SOURCE_CACHE* environment variable. This makes sure that dependencies 
+that you do not manage in the workspace are not re-downloaded multiple times. 
+For detailed information and other useful environment variables please 
+refer to the `CPM Documentation <https://github.com/cpm-cmake/CPM.cmake/blob/master/README.md#CPM_SOURCE_CACHE>`_.
 
-.. code-block:: python
+.. code-block:: bash
 
 	export CPM_SOURCE_CACHE=$HOME/.cache/CPM
 
@@ -88,6 +93,8 @@ The following Python3 packages are needed to run the **edm** dependency manager.
 + Python >= 3.6
 + Jinja2 >= 3.0
 + PyYAML >= 5.4
+
+.. _cmake_integration_setup:
 
 Setting up CMake integration
 ############################
@@ -125,7 +132,7 @@ Be advised that even if you remove a repository from the config file it WILL NOT
 
 An attempt will be made to switch branches to the ones specified in the config, however this will be aborted if the repository is dirty.
 
-Repositories also WILL NOT be pulled, you should check the state of your repositories afterwards with the commands described in :ref:`Git information at a glance <Git information at a glance>`
+Repositories also WILL NOT be pulled, you should check the state of your repositories afterwards with the commands described in :ref:`Git information at a glance <git_information_at_a_glance>`
 
 Using the EDM CMake module and dependencies.yaml
 ################################################
@@ -200,6 +207,8 @@ If you want to include all repositories, including external dependencies, in the
 .. code-block:: bash
 
 	edm --create-config custom-config.yaml --external-in-config
+
+.. _git_information_at_a_glance:
 
 Git information at a glance
 ###########################
