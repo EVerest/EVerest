@@ -13,7 +13,7 @@ jobs:
         os: [ubuntu-20.04]
     runs-on: ${{ matrix.os }}
     container:
-      image: ghcr.io/everest/everest-ci-env:ah_add_docker_ci_env_deployment
+      image: ghcr.io/everest/everest-ci-env:main
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.SA_GITHUB_PAT }}
@@ -63,7 +63,7 @@ jobs:
         os: [ubuntu-20.04]
     runs-on: ${{ matrix.os }}
     container: 
-      image: ghcr.io/everest/everest-ci-env:ah_add_docker_ci_env_deployment
+      image: ghcr.io/everest/everest-ci-env:main
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.SA_GITHUB_PAT }}
@@ -72,7 +72,7 @@ jobs:
       uses: actions/checkout@v2
       with:
         repository: everest/everest-core
-        ref: ah_add_handwritten_doc
+        ref: main
         path: everest-core
         token: ${{secrets.SA_GITHUB_PAT}}
         fetch-depth: 0
@@ -90,7 +90,7 @@ jobs:
         os: [ubuntu-20.04]
     runs-on: ${{ matrix.os }}
     container: 
-      image: ghcr.io/everest/everest-ci-env:ah_add_docker_ci_env_deployment
+      image: ghcr.io/everest/everest-ci-env:main
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.SA_GITHUB_PAT }}
@@ -133,7 +133,7 @@ jobs:
         os: [ubuntu-20.04]
     runs-on: ${{matrix.os}}
     container: 
-      image: ghcr.io/everest/everest-ci-env:ah_add_docker_ci_env_deployment
+      image: ghcr.io/everest/everest-ci-env:main
       credentials:
         username: ${{github.actor}}
         password: ${{secrets.SA_GITHUB_PAT}}
@@ -174,7 +174,7 @@ jobs:
         os: [ubuntu-20.04]
     runs-on: ${{matrix.os}}
     container: 
-      image: ghcr.io/everest/everest-ci-env:ah_add_docker_ci_env_deployment
+      image: ghcr.io/everest/everest-ci-env:main
       credentials:
         username: ${{github.actor}}
         password: ${{secrets.SA_GITHUB_PAT}}
