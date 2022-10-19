@@ -15,4 +15,6 @@ These Tutorials guide you to understand the development process, rules and conce
    how_to_git/index
    docker_setup
    run_sil/index
-   sphinx
+   how_to_sphinx/style_guide
+   how_to_sphinx/general
+   how_to_act/index
