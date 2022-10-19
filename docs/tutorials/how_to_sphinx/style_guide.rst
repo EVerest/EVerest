@@ -1,8 +1,8 @@
-.. _tutorial_sphinx:
+.. _tutorial_sphinx_style_code:
 
-##############
-How To: Sphinx
-##############
+##################
+Sphinx style guide
+##################
 
 .. contents::
     :local:
