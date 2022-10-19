@@ -210,7 +210,8 @@ jobs:
         touch everest_github_io/docs/.nojekyll
         cd everest_github_io
         git add --all
-        git commit -m "Update doc build $(date -R)"
+        git diff-index --quiet HEAD || git commit -m "Update doc build $(date -R)"
+
     - name: Push updated doc to everest.github.io
       if: ${{ !env.ACT }}
       run: |
