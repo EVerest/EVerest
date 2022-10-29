@@ -1,6 +1,6 @@
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/5386/badge)](https://bestpractices.coreinfrastructure.org/projects/5386)
 
-![EVerest Logo](docs/everest_horizontal-color.svg)
+![EVerest Logo](docs/img/everest_horizontal-color.svg)
 
 The primary goal of EVerest is to develop and maintain an open source software stack for EV charging infrastructure. EVerest is developed having modularity and customizability in mind, so it consists of a framework to configure several interchangeable modules which are coupled by MQTT with each other. EVerest will help to speed the adoption to e-mobility by utilizing all the open source advantages for the EV charging world. It will also enable new features for local energy management, PV-integration, and many more.  
 The EVerest project was initiated by PIONIX GmbH, to help with the electrification of the mobility sector.
