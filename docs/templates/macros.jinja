@@ -104,8 +104,8 @@
 {#################################}
 
 {### Renders a multiline documentation ###}
-{%  macro documentaton(lines) %}
-{%      for line in lines.items() %}
+{%  macro documentation(lines) %}
+{%      for line in lines %}
 {{ line }}
 {%      endfor %}
 {%  endmacro %}
@@ -120,7 +120,7 @@
 {%      endif %}
  {{ var_data.description }}
 {%      if 'documentation' in var_data %}
-{{ documentation(var_data.documentation.items()) | indent(1, True) -}}
+{{ documentation(var_data['documentation']) | indent(1, True) -}}
 {%      endif %}
 {%      set ignore_keys = ['default', 'description', 'type', 'properties', 'documentation', '$ref'] %}
 {%      set mapping_result = mapping( var_name, var_data.items(), ignore_keys, False) %}
@@ -176,7 +176,7 @@
 {{ cmd_result(cmd_data['result']) | indent(1, True) -}}
 {%      endif %}
 {%      if 'documentation' in cmd_data %}
-{{ documentation(cmd_data.documentation.items()) | indent(1, True) -}}
+{{ documentation(cmd_data['documentation']) | indent(1, True) -}}
 {%      endif %}
 {%  endmacro %}
 
@@ -227,7 +227,7 @@
 **{{ name }}**:{{ ref(interface_target, data.interface) }}
  {{ data.description }}
 {%      if 'documentation' in data %}
-{{ documentation(data.documentation.items()) | indent(1, True) -}}
+{{ documentation(data['documentation']) | indent(1, True) -}}
 {%      endif %}
 {%      set ignore_keys = ['description', 'interface', 'documentation'] %}
 {%      set mapping_result = mapping( name, data.items(), ignore_keys, False) %}
