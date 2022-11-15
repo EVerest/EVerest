@@ -26,4 +26,5 @@ Temporary Items
 .apdisk
 
 docs/generated/*
+docs/included/*
 docs/_build/*
