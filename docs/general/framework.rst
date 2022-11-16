@@ -1,7 +1,9 @@
-.. doc_framework
+.. doc_framework:
 
 EVerest framework
 #################
+
+See our Quick Start Guide for a fast overview and first steps to create new modules: :ref:`general/quick_start_guide:a real quick guide to everest`
 
 EVerest uses the principle of loose coupling of modules that allow configuration during runtime.
 
