@@ -147,14 +147,14 @@ You can use make or ninja with cmake. The examples here are given with make.
 Setup cross compile environment
 -------------------------------
 
-First, make sure you have successfully built EVerest on your laptop as 
+First, make sure you have successfully built EVerest natively on your laptop as 
 described here: https://github.com/EVerest/everest-core#everest-core
 
 Download and untar the bullseye-toolchain:
 
 .. code-block:: bash
 
-  wget https://tbd.tbd/bullseye.tgz
+  wget http://build.pionix.de:8888/release/toolchains/bullseye-toolchain.tgz
   tar xfz bullseye-toolchain.tgz
 
 Change directory to everest-core in your workspace e.g.:
