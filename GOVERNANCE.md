@@ -8,7 +8,7 @@ This project aims to be governed in a transparent, accessible way for the benefi
 
 The contributor role is the starting role for anyone participating in the project and wishing to contribute code.
 
-# Process for becoming a contributor
+### Process for becoming a contributor
 
 * Review the [Contribution Guidelines] to ensure your contribution is inline with the project's coding and styling guidelines.
 * Submit your code as a PR with the appropriate DCO signoff
@@ -38,9 +38,9 @@ If a committer is no longer interested or cannot perform the committer duties li
 should volunteer to be moved to emeritus status. In extreme cases this can also occur by a vote of
 the committers per the voting process below.
 
-## Lead
+## Lead / TSC Chair
 
-The project committers will elect a lead ( and optionally a co-lead ) which will be the primary point of contact for the project and representative to the TAC upon becoming an Active stage project. The lead(s) will be responsible for the overall project health and direction, coordination of activities, and working with other projects and committees as needed for the continuted growth of the project.
+A TSC member voted on by the TSC acts as a lead ( and optionally a co-lead ) which will be the primary point of contact for the project and representative to the TAC upon becoming an Active stage project. The lead(s) will be responsible for the overall project health and direction, coordination of activities, and working with other projects and committees as needed for the continuted growth of the project.
 
 # Release Process
 
