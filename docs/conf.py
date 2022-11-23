@@ -65,6 +65,7 @@ html_sidebars = {
 
 smv_released_pattern = r'^refs/heads/main$'
 smv_latest_version = 'main'
+smv_remote_whitelist = r'^.*$'
 
 master_doc = 'index'
 
