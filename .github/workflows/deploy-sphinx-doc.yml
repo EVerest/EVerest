@@ -13,7 +13,7 @@ jobs:
         os: [ubuntu-20.04]
     runs-on: ${{ matrix.os }}
     container: 
-      image: ghcr.io/everest/everest-ci-env:main
+      image: ghcr.io/everest/everest-ci-env:feature-deploy-multiple-doc-versions
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.SA_GITHUB_PAT }}
