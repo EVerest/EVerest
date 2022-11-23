@@ -35,9 +35,13 @@ jobs:
         path: everest-core
         token: ${{secrets.SA_GITHUB_PAT}}
         fetch-depth: 0
+    - name: Determine absolute path of everest-core
+      id: everest-core-path
+      run: |
+        echo "::set-output name=everest-core-path::$(pwd)/everest-core"
 
     - name: Prebuild and build all branches/version of sphinx doc
-      run: sphinx-multiversion everest/docs docs-html/ -D smv_prebuild_command='python3 ${SPHINX_MULTIVERSION_SOURCEDIR}/scripts/prebuild-everest-doc.py --doc-directory ${SPHINX_MULTIVERSION_SOURCEDIR}/ --core-directory $(pwd)/everest-core'
+      run: sphinx-multiversion everest/docs docs-html/ -D smv_prebuild_command='python3 ${SPHINX_MULTIVERSION_SOURCEDIR}/scripts/prebuild-everest-doc.py --doc-directory ${SPHINX_MULTIVERSION_SOURCEDIR}/ --core-directory ${{ steps.everest-core-path.outputs.everest-core-path }}'
     - name: Copy redirect index.html
       run: cp everest/docs/index.html docs-html/
 
