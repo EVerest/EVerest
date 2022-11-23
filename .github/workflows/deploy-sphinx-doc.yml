@@ -36,19 +36,16 @@ jobs:
         token: ${{secrets.SA_GITHUB_PAT}}
         fetch-depth: 0
 
-    - name: Prebuild sphinx doc
-      run: |
-        python3 everest/docs/scripts/prebuild-everest-doc.py \
-          --doc-directory everest/docs/ \
-          --core-directory everest-core/
-    - name: Build sphinx doc
-      run: make -C everest/docs html
-    
+    - name: Prebuild and build all branches/version of sphinx doc
+      run: sphinx-multiversion everest/docs docs-html/ -D smv_prebuild_command='python3 ${SPHINX_MULTIVERSION_SOURCEDIR}/scripts/prebuild-everest-doc.py --doc-directory ${SPHINX_MULTIVERSION_SOURCEDIR}/ --core-directory $(pwd)/everest-core'
+    - name: Copy redirect index.html
+      run: cp everest/docs/index.html docs-html/
+
     - name: Upload generated html files
       uses: actions/upload-artifact@v3
       with:
         name: docs-html
-        path: everest/docs/_build/html/
+        path: docs-html/
 
   deploy-sphinx:
     needs: build-sphinx
@@ -77,7 +74,7 @@ jobs:
       uses: actions/download-artifact@v3
       with:
         name: docs-html
-        path: docs-html
+        path: docs-html/
     - name: Checkout everest.github.io
       uses: actions/checkout@v2
       with:

@@ -32,9 +32,9 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.todo',
     'sphinxcontrib.contentui',
-    'sphinx.ext.autosectionlabel'
+    'sphinx.ext.autosectionlabel',
+    "sphinx_multiversion"
 ]
-
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -56,6 +56,15 @@ html_theme = 'sphinxdoc'
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
+
+html_sidebars = {
+    '**': [
+        'versioning.html',
+    ],
+}
+
+smv_released_pattern = r'^refs/heads/main$'
+smv_latest_version = 'main'
 
 master_doc = 'index'
 
