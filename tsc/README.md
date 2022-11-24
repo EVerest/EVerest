@@ -1,6 +1,6 @@
 # Technical Steering Committee (TSC) for EVerest
 
-The Technical Steering Committee (TSC) is the governing body of the Planetary Software Organization, as described in its [CHARTER](CHARTER.md).
+The Technical Steering Committee (TSC) is the governing body of the EVerest Project, as described in its [CHARTER](CHARTER.md).
 
 This directory contains all materials related to this project.
 
