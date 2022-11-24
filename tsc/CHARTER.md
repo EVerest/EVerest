@@ -10,7 +10,7 @@ This charter (the "Charter") sets forth the responsibilities and procedures for 
 
 ## 2. Technical Steering Committee
   * **a.** The Technical Steering Committee (the "TSC") will be responsible for all technical oversight of the open source Project.
-  * **b.** The TSC voting members are initially the Project's Committers. At the inception of the project, the Committers of the Project will be as set forth within the "CONTRIBUTING" file within the Project's code repository. The TSC may choose an alternative approach for determining the voting members of the TSC, and any such alternative approach will be documented in the CONTRIBUTING file. Any meetings of the Technical Steering Committee are intended to be open to the public, and can be conducted electronically, via teleconference, or in person.
+  * **b.** The TSC voting members are listed in the [Members] file. The TSC may choose an alternative approach for determining the voting members of the TSC, and any such alternative approach will be documented in the CONTRIBUTING file. Any meetings of the Technical Steering Committee are intended to be open to the public, and can be conducted electronically, via teleconference, or in person.
   * **c.** TSC projects generally will involve Contributors and Committers. The TSC may adopt or modify roles so long as the roles are documented in the CONTRIBUTING file. Unless otherwise documented:
     * **i.** Contributors include anyone in the technical community that contributes code, documentation, or other technical artifacts to the Project;
     * **ii.** Committers are Contributors who have earned the ability to modify ("commit") source code, documentation or other technical artifacts in a project's repository; and
@@ -65,3 +65,5 @@ This charter (the "Charter") sets forth the responsibilities and procedures for 
 
 ## 8. Amendments
   * **a.** This charter may be amended by a two-thirds vote of the entire TSC and is subject to approval by LF Projects.
+
+[Members]: MEMBERS.md
