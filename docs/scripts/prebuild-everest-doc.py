@@ -104,7 +104,7 @@ def main():
         args.doc_dir.mkdir()
 
     generated_dir: Path = (args.doc_dir / "generated")
-    included_dir: Path = (args.doc_dir / "included/everest_core")
+    included_dir: Path = (args.doc_dir / "included/modules")
     template_dir: Path = (args.doc_dir / "templates")
 
     # setup templates
