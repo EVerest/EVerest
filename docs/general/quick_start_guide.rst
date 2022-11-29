@@ -331,3 +331,10 @@ This allows you to do setup things that relate only to your current module in th
 .. attention:: 
 
   We will add additional documentation here soon to get you an idea about how vars can be published and how to interact with required modules from the outside. We will show callback functions and events and how all this works together in your module.
+
+***************************
+Further Sources For EVerest 
+***************************
+
+* See our videos on our `EVerest-YouTube-Channel <https://www.youtube.com/@lfe_everest>`_
+* Join our conversation at the `EVerest Mailing List <https://lists.lfenergy.org/g/everest>`_. We are also there to help you out with any questions there.
