@@ -1,4 +1,4 @@
-[![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/5386/badge)](https://bestpractices.coreinfrastructure.org/projects/5386)
+[![OpenSSF Best Practices](https://bestpractices.coreinfrastructure.org/projects/6739/badge)](https://bestpractices.coreinfrastructure.org/projects/6739)
 
 ![EVerest Logo](docs/img/everest_horizontal-color.svg)
 
