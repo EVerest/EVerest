@@ -4,67 +4,15 @@
 A Real Quick Guide To EVerest
 ################################################
 
-****************************
-EVerest - Framework Overview
-****************************
-EVerest is a modular framework for setting up a full stack environment for EV charging.
-
-You can think of it as an operating system for EV chargers with implementations of communication protocols, software modules for representations of hardware devices (chargers, cars, …) and tools for simulating the charging process.
-
-Some very high level overviews of the framework can be seen here:
-
-.. image:: img/quick-start-high-level-1.png
-
-The EVerest framework helps with building your dedicated development scenario with all needed modules for your specific developer's use case.
-
-Modules in EVerest can be everything like hardware drivers, protocols, authentication logic and more. Build up your development scenario as needed and enhance it by adding your own additional modules.
-
-Another way to look at EVerest is the layer architecture:
-
-.. image:: img/quick-start-high-level-2.png
-
-Depending on your project use case, you can define the suitable module stack and set module connections and module parameters.
-
-Additionally, you have some tools and helpers that work with the framework which makes your EVerest developer's life easier:
-
-.. image:: img/quick-start-high-level-3.png
-
-Lets have a short look at those tools right away:
-
-- **Admin Panel**: See all modules connections and dependencies including the parameters set for the modules.
-- **EVerest Dependency Manager** (edm): A tool that helps you getting all needed repositories from Git for your specific setup.
-- **ev-cli**: Generates module and interface scaffolds based on templates. This way you can start implementing new modules very fast.
-- **MQTT Explorer**: Great for debugging the messages sent between your modules during development phase.
-- **NodeRed** for simulating your EVerest setup
-- **SteVe**: Just in case you want to test your EVerest instance with some OCPP backend functionality: SteVe is an external tool that lets you do exactly that.
-
-How to setup and use those tools will be shown later.
-
-*************
-Prerequisites
-*************
-
-To get EVerest running and develop new modules, you will need some things prepared:
-
-Hardware
-========
-It is recommended to have at least 4GB of RAM available to build EVerest. More CPU cores will optionally boost the build process, while requiring more RAM accordingly.
-
-Operating System
-================
-EVerest has been tested with Ubuntu, OpenSUSE and Fedora 36. In general, it can be expected to run on Linux-based systems.
+************************************
+Prepare Your Development Environment
+************************************
 
 Needed Packages
 ===============
-Needed packages to get EVerest properly running:
+You will need Python, Jinja2, PyYAML, a compiler and some more system libraries set up. See the detailed page for `setting up your development environment <detail_pre_setup.html>`_ to see some examples for operating systems.
 
-- Python (greater than 3.6)
-- Jinja2
-- PyYAML
-
-See the section about prerequisites here: `Prerequisites for EVerest <https://github.com/EVerest/everest-core#prerequisites>`_ to get all needed packages setup for your dedicated system.
-
-After having finished the Prerequisites paragraph, join here again as we will continue for setting up all needed EVerest Git repositories.
+After having created your environment, return back here, where we will go on with downloading and installing EVerest.
 
 ********************
 Download And Install
@@ -135,10 +83,49 @@ If you get an error during the build process stating that ev-cli is installed in
 Simulating EVerest
 ******************
 
+Prepare The Helpers
+===================
+EVerest comes with prepared Docker containers, which are needed for simulation and further development. To get this working, make sure you have Docker and Docker-Compose installed during the previous install phase. (If not, see install instructions for `Docker <https://docs.docker.com/engine/install/#server>`_ and `Docker-Compose <https://docs.docker.com/compose/install/#install-compose)>`_!)
+
+In order for custom or local containers being able to talk to the services, provided by the docker-compose containers, we need to create a common docker network. It is called `infranet_network` and needs to be created by the following command (IPv6 is enabled for containers which might it):
+
+.. code-block:: bash
+
+  docker network create --driver bridge --ipv6  --subnet fd00::/80 infranet_network --attachable
+
+Now, change into the directory of the local everest-utils repo, which should have been cloned from Git by EDM before.
+
+Enter directory `docker` and startup some containers:
+
+.. code-block:: bash
+
+  docker-compose up -d
+
+This will give you the following services up and running:
+
+- **Mosquitto MQTT broker** (service name: mqtt-server) with ports
+
+  - ``1883``: mqtt tcp connection
+  - ``9001``: mqtt websocket connection
+
+- **mariadb** (service name: ocpp-db), sql database needed by **SteVe**
+
+  - ``3306``: sql tcp connection
+
+- **SteVe** (service name: steve) on port 8180 with endpoints
+
+  - ``:8180/steve/manager/home``: web interface (login = admin:1234)
+  - ``:8180/steve/services/CentralSystemService``: SOAP endpoint for
+    OCPP
+  - ``:8180/steve/websocket/CentralSystemService/(chargeBoxId)``:
+    WebSocket/JSON endpoint for OCPP
+
+That makes us ready for entering the simulation phase described in the next chapter.
+
 Software in a loop
 ==================
 
-You will have to setup and run an MQTT Broker first. Please check this documentation here to set it up with the help of a docker container: `How to simulate EVerest <https://everest.github.io/tutorials/run_sil/index.html#how-to-simulate-everest-in-software>`_
+Make sure you have prepared the helpers necessary for simulating EVerest as shown in the `previous section <quick_start_guide.html#prepare-the-helpers>`_.
 
 After having done that, change to the directory /everest-core/build/, which has been created during EVerest install.
 
@@ -160,7 +147,7 @@ This will let us control the simulation with the help of NodeRed.
 
 You can analyse the output of the two scripts in the terminal windows to get a little bit of insights about what is going on and which ports are used etc.
 
-If everything worked well, you will be able to reach a charging web GUI at *localhost:1880/ui*.
+If everything worked well, you will be able to reach a web GUI showing a charging process at *localhost:1880/ui*.
 
 With that GUI, you can simulate charging states of a charging process in an electric vehicle.
 
@@ -177,9 +164,9 @@ You will have to install and run it via npm. After that, you can reach the Admin
 
 A detailed walk-through to assist you with that is in preparation.
 
-***************
-Module Overview
-***************
+************
+Module Setup
+************
 
 What parts does a module in EVerest consist of?
 
@@ -187,115 +174,9 @@ What parts does a module in EVerest consist of?
 - Types definition
 - Module implementation
 
-Let's have a quick look to those parts in the following sections.
+Get a more detailed insight into the module config and implementation files on the `EVerest Module Concept page <detail_module_concept.html>`_.
 
-.. important:: 
-
-  This documentation has been written during a work in progress which would change interface and types definitions from JSON to YAML. This will be reflected in short here.
-
-Interfaces
-==========
-
-An interface generally describes a specific object in the EVerest world. Those objects can be device types, protocol standards, authentication instances and so on.
-
-Everything that you will want to integrate into EVerest as a module will need to have an interface definition.
-
-A short view on an interface describing a powermeter:
-
-.. code-block:: json
-
-  {
-    "description": "This interface defines a generic powermeter for 5 wire TN networks.",
-    "cmds": {
-        "get_signed_meter_value": {
-            "description": "Returns a signed meter value with the given auth token",
-            "arguments": {
-                "auth_token": {
-                    "description": "Auth token",
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 20
-                }
-            },
-            "result": {
-                "description": "Signed meter value",
-                "type": "string"
-            }
-        }
-    },
-    "vars": {
-        "powermeter": {
-            "description": "Measured dataset",
-            "type": "object",
-            "$ref": "/powermeter#/Powermeter"
-        }
-    }
-  }
-
-The description simply tells you in short, which type of object the interface describes.
-
-Interfaces have commands (cmds) which can be called on the implementing modules based on that interface.
-
-Besides that, the vars can by consumed by other modules in an asynchronous way.
-
-Both cmds and vars can be defined as simple data types (string, bool etc) or as object type - in case you want to have a more sophisticated structure than a simple type.
-
-Those object types have to be defined. In EVerest, we do this as a Type Definition.
-
-Types
-=====
-
-A short view on how the powermeter type could look like:
-
-.. code-block:: json
-
-  {
-    "description": "Powermeter types",
-    "types": {
-        "Powermeter": {
-            "description": "Measured dataset",
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-                "timestamp",
-                "energy_Wh_import"
-            ],
-            "properties": {
-                "timestamp": {
-                    "description": "Timestamp of measurement",
-                    "type": "number"
-                },
-                "meter_id": {
-                    "description": "A (user defined) meter if (e.g. id printed on the case)",
-                    "type": "string"
-                }
-            }
-        }
-    }
-  }
-
-This type has been used and referenced in the powermeter interface.
-
-You can understand the interface description as the description of a general powermeter device and the powermeter type as a data object that is used by a powermeter device to exchange measurement information.
-
-The type definition tells EVerest which properties this type has. This is the data structure of the type. The JSON key *required* defines what is needed.
-
-With this, we have now interfaces and types set. Let's have a look at the module:
-
-Modules
-=======
-
-Each module resides in the modules directory as a subdirectory.
-
-In that directory are several files:
-
-- manifest.json to give information about what the module provides (the interfaces which this module implements including the parameters needed for the interfaces) and which interface implementations are required for connections to this module
-- .cpp and .hpp code files for the implementations
-- CMakeList.txt file to define needed libraries for the cmake run
-- Implementations of interfaces in separate code files
-
-How the code files look like and what is needed for a quick start, we will see in the next section in which we implement a simple module.
-
+Here, we want to go on with setting up a module template to use that as a base for our own implementation.
 
 *************************
 Implementing a New Module
@@ -331,10 +212,3 @@ This allows you to do setup things that relate only to your current module in th
 .. attention:: 
 
   We will add additional documentation here soon to get you an idea about how vars can be published and how to interact with required modules from the outside. We will show callback functions and events and how all this works together in your module.
-
-***************************
-Further Sources For EVerest 
-***************************
-
-* See our videos on our `EVerest-YouTube-Channel <https://www.youtube.com/@lfe_everest>`_
-* Join our conversation at the `EVerest Mailing List <https://lists.lfenergy.org/g/everest>`_. We are also there to help you out with any questions there.

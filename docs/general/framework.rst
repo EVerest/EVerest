@@ -2,36 +2,70 @@
 
 EVerest framework
 #################
+You can think of EVerest as an operating system for EV chargers with implementations of communication protocols, software modules for representations of hardware devices (chargers, cars, …) and tools for simulating the charging process.
 
-See our Quick Start Guide for a fast overview and first steps to create new modules: :ref:`general/quick_start_guide:a real quick guide to everest`
+It's a full stack environment for EV charging.
 
-EVerest uses the principle of loose coupling of modules that allow configuration during runtime.
+*********************
+A Visual Introduction
+*********************
 
-Modules
--------
+A first very high level overview of the framework can be seen here:
 
-`Modules <https://github.com/EVerest/everest-core/tree/main/modules>`_ consist of one or more interfaces.
-Each module is defined by its `manifest.json` file:
+.. image:: img/quick-start-high-level-1.png
 
-+----------------+-----------------------------------------------+------------------------------------------------------------------+
-|    JSON KEY    |    description                                | value type                                                       |
-+================+===============================================+==================================================================+
-| *description*  | useful description of what the module does    | string                                                           |
-+----------------+-----------------------------------------------+------------------------------------------------------------------+
-| *provides*     | interfaces provided by the module,            | {<interface id1>: {interface, description, [config]},            |
-|                | can be required by other modules              | <interface id2>: {interface, description, [config]}, ... }       |
-+----------------+-----------------------------------------------+------------------------------------------------------------------+
-| *requires*     | interfaces required by the module,            | {<interface id1>: {interface}, <interface id2>: {interface},...} |
-|                | needs to be provided by other module(s)       |                                                                  |
-+----------------+-----------------------------------------------+------------------------------------------------------------------+
-| *metadata*     | metadata                                      | {license: <string>, authors: <array>}                            |
-+----------------+-----------------------------------------------+------------------------------------------------------------------+
+The EVerest framework helps with building your dedicated development scenario with all needed modules for your specific developer's use case. The modules are connected by using the principle of loose coupling.
 
-An example module can be found `here <https://github.com/EVerest/everest-core/tree/main/modules/Example>`_.
+Modules in EVerest can be everything like hardware drivers, protocols, authentication logic and more. Build up your development scenario as needed and enhance it by adding your own additional modules.
 
-Interfaces
-----------
+Another way to look at EVerest is its layer architecture:
 
-WIP
+.. image:: img/quick-start-high-level-2.png
 
+Depending on your project use case, you can define the suitable module stack and configure module connections and module parameters.
 
+What modules EVerest already delivers as ready-to-use implementations and which features they currently ship will be explained in detail in the modules documentation.
+
+*****************
+Tools And Helpers
+*****************
+
+Additionally, you have some tools and helpers that work with the framework which makes your EVerest developer's life easier:
+
+.. image:: img/quick-start-high-level-3.png
+
+To understand the benefit delivered by those tools, let's have a sneak preview:
+
+- **Admin Panel**: Tool to show all modules connections and dependencies including the parameters set for the modules.
+- **EVerest Dependency Manager** (edm): Tool that helps you getting all needed repositories from Git for your specific setup.
+- **ev-cli**: Generates module and interface scaffolds based on templates. This way you can start implementing new modules very fast.
+- **MQTT Explorer**: Great for debugging the messages sent between your modules during development phase.
+- **NodeRed** for simulating your EVerest setup
+- **SteVe**: Just in case you want to test your EVerest instance with some OCPP backend functionality: SteVe is an external tool that lets you do exactly that.
+
+How to setup and use those tools will be shown later.
+
+*************************************
+System Requirements and Prerequisites
+*************************************
+
+What is needed to run EVerest?
+
+Hardware
+========
+It is recommended to have at least 4GB of RAM available to build EVerest. More CPU cores will optionally boost the build process, while requiring more RAM accordingly.
+
+We have setup EVerest successfully on Raspberry Pi 4.
+
+Operating System
+================
+EVerest has been tested with Ubuntu, OpenSUSE and Fedora 36. In general, it can be expected to run on most Linux-based systems.
+
+Libraries And Tools
+===================
+
+To create your development environment with all needed tools, libraries and compilers, the section "Prepare Your Environment" in our `Quick Start Guide <./quick_start_guide.html>`_ will walk you through the setup phase.
+
+That guide will also give you a first overview how modules look like and how to get a first simulation running.
+
+That's your next step: `Quick Start Guide <./quick_start_guide.html>`_
