@@ -167,7 +167,7 @@ Crosscompile by changing the given paths accordingly:
 
 .. code-block:: bash
 
-  cmake -DCMAKE_FIND_ROOT_PATH=/full-path-to/everest-core/cmake -DCMAKE_TOOLCHAIN_FILE=/full-path-to/bullseye-toolchain/toolchain.cmake -DCMAKE_INSTALL_PREFIX=./dist  -S . -B build-cross
+  cmake -DCMAKE_FIND_ROOT_PATH=/full-path-to/everest-core/cmake -DCMAKE_TOOLCHAIN_FILE=/full-path-to/bullseye-toolchain/toolchain.cmake -DCMAKE_CROSSCOMPILING=1 -DCMAKE_INSTALL_PREFIX=./dist  -S . -B build-cross
 
 
 Now build EVerest with the following commands:
