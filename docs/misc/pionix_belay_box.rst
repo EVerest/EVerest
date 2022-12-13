@@ -163,32 +163,35 @@ Change directory to everest-core in your workspace e.g.:
 
   cd ~/checkout/everest-workspace/everest-core
 
-Crosscompile by changing the given paths accordingly:
+Cross-compile by changing the given paths accordingly:
 
 .. code-block:: bash
 
-  cmake -DCMAKE_FIND_ROOT_PATH=/full-path-to/everest-core/cmake -DCMAKE_TOOLCHAIN_FILE=/full-path-to/bullseye-toolchain/toolchain.cmake -DCMAKE_CROSSCOMPILING=1 -DCMAKE_INSTALL_PREFIX=./dist  -S . -B build-cross
+  cmake \
+   -DCMAKE_TOOLCHAIN_FILE=/full-path-to/bullseye-toolchain/toolchain.cmake \
+   -DCMAKE_INSTALL_PREFIX=/mnt/user_data/opt/everest \
+   -S . -B build-cross
 
 
 Now build EVerest with the following commands:
 
 .. code-block:: bash
 
-  cd build-cross && make -j$(nproc)
-  make -j$(nproc) install
+  make -j$(nproc) -C build-cross
+  make -j$(nproc) DESTDIR=./dist -C build-cross install
 
 Deploy a custom EVerest on BelayBox
 -----------------------------------
 
-The binaries are now installed under ``build/dist``.
-You can use ``rsync`` within the ``build`` folder to copy the files to 
+The binaries are now installed under ``build-cross/dist``.
+You can use ``rsync`` within the ``build-cross`` folder to copy the files to 
 BelayBox:
 
-`rsync -a dist/* everest@the.ip.add.res:/mnt/user_data/opt/everest`
+``rsync -a build-cross/dist/mnt/user_data/opt/everest/* everest@the.ip.add.res:/mnt/user_data/opt/everest``
 
 The first time you need to create the folder ``/mnt/user_data/opt/everest`` 
 on the BelayBox before syncing
-(`ssh everest@the.ip.add.res mkdir -p /mnt/user_data/opt/everest`)
+(``ssh everest@the.ip.add.res mkdir -p /mnt/user_data/opt/everest``)
 
 You can also copy to another folder on the BelayBox, but using 
 ``/mnt/user_data/opt/everest`` will make your new custom everest installation
