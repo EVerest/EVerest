@@ -20,6 +20,14 @@ The EVerest project was initiated by PIONIX GmbH to help with the electrificatio
 **************************
 Find Your Way Into EVerest
 **************************
+If you want to choose video rather than text and code for a quick dive-in, **have a look at our webinar first**:
+
+.. image:: /img/webinar-how-everest-ecosystem-simplifies-charging-use-cases-screenshot.png
+  :alt: Screenshot of the webinar video How EVerest Ecosystem simplifies Charging Use Cases
+  :target: https://www.youtube.com/watch?v=OJ6kjHRPkyY
+
+Click for watching on YouTube: `Webinar: How the EVerest Ecosystem will simplify Charging Use Cases <https://www.youtube.com/watch?v=OJ6kjHRPkyY>`_
+
 We prepared a path to get step by step into the EVerest world. It will lead you from a high level overview right into understanding how to implement modules for your dedicated hardware scenarios or developer use cases.
 
 To walk this path, simple go on reading and follow the table of contents below.
