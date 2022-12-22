@@ -8,6 +8,12 @@ Introduction
 
 Detailed description of the hardware
 ------------------------------------
+While we will add some more information regarding the hardware here in future, we are very happy to point you to the open hardware design and open source firmware repositories of the BelayBox:
+
+* `Yeti and Yak Hardware Reference Design <https://github.com/PionixPublic/reference-hardware>`_
+* `Yeti Firmware <https://github.com/PionixPublic/yeti-firmware>`_
+
+For more information about vendors working with EVerest, contact us via the `EVerest mailing list <https://lists.lfenergy.org/g/everest>`_. 
 
 Installation/mounting
 ---------------------
