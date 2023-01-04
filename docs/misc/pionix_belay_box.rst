@@ -132,9 +132,9 @@ Update Yeti's microcontroller firmware
 The Yeti Power Board is controlled by an STM32 microcontroller that is 
 responsible for the lowest level state machine and all electrical safety.
 In the future updates will be installed automatically, for now they can be 
-installed manually. The firmware will be open sourced soon, for now binary
-images are available from Pionix if needed. In your normal workflow updating
-this firmware is not needed.
+installed manually. The firmware has been open sourced, see `Yeti Firmware <https://github.com/PionixPublic/yeti-firmware>`_
+
+In your normal workflow updating this firmware is not needed.
 
 The microcontroller is not protected (remember this is a dev kit and not
 a real product), you can use the update tool that comes with the yeti
