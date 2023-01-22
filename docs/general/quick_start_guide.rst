@@ -165,20 +165,30 @@ You will have to install and run it via npm. After that, you can reach the Admin
 Below are detailed steps of how to get it working.
 
 1. Clone the Everest Admin Panel by running the following command in a terminal window: 
-.. code-block:: bash 
-          git clone https://github.com/EVerest/everest-admin-panel.git
 
-2. Go to the cloned directory by running
 .. code-block:: bash
-          cd everest-admin-panel
+
+  git clone https://github.com/EVerest/everest-admin-panel.git
+  
+2. Go to the cloned directory by running
+
+.. code-block:: bash
+
+  cd everest-admin-panel
 
 3. Install via npm by running
+
 .. code-block:: bash
-          npm install. 
+
+  npm install
+
 This process might take a while.
 
 4. Launch the panel by running npm
-.. code-block:: bash run serve.        
+
+.. code-block:: bash
+
+  bash run serve        
 
 The panel should be running on port 8080, and can be accessed on: http://localhost:8080/
 
