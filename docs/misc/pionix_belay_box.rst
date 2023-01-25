@@ -15,7 +15,7 @@ While we will add some more information regarding the hardware here in future, w
 
 For more information about vendors working with EVerest, contact us via the `EVerest mailing list <https://lists.lfenergy.org/g/everest>`_. 
 
-Installation/mounting
+Installation / Mounting
 ---------------------
 
 Raspbian
@@ -74,11 +74,10 @@ Mounted under ``/mnt/factory_data``
 Only writable partition. All data generated during the use of the box will be
 stored here. Also various configuration overrides can be set here, see Cheat
 sheet.
-Mounted under ``/mnt/user_data``. Format this partition to reset the BelayBox
-to factory defaults.
+Mounted under ``/mnt/user_data``.
 
 
-Using Online updates
+Using Online Updates
 --------------------
 
 BelayBox comes with a very simple online update tool that is controlled by 
@@ -91,10 +90,8 @@ service:
 ``ota-update.timer``: This is the systemd timer unit that starts 
 ``ota-update.service`` on regular intervals.
 
-To disable online updates use ``sudo systemctl disable ota-update.timer``.
-The online update updates always the full root partition, partial updates
-are not implemented yet. All data that needs to survive the update needs
-to be stored in ``/mnt/user_data``.
+To disable online updates use ``sudo systemctl disable ota-update.service``.
+The online update updates always the full root partition. All data that needs to survive the update needs to be stored in ``/mnt/user_data``.
 
 The root partition should normally never be modified, it is read only. All 
 changes will also be lost on the next online update.
@@ -212,27 +209,15 @@ Reference Cheat sheet
 
 * rw: make root partition read/writable
 * ro: make it read only again
-* /mnt/user_data/etc/wpa_supplicant.conf: file containing wifi settings
-* /mnt/user_data/opt/everest/<everest binaries TBD> force the use of custom 
-    everest build or config by automated start of ``everest-dev.service``
-    instead of ``everest.service``
-* /mnt/user_data/etc/update_channel contains either stable or unstable to 
-    define release channels
-* /mnt/user_data/etc/wireguard/<wireguard interface name>.conf for a wireguard 
-    VPN configuration
-* /mnt/user_data/user-config/config-deploy-devboard.json for a persistent user 
-    config containing only the diffs to the default config.
-* to stop automatic updates: rw; sudo systemctl disable ota-update.timer
-* /mnt/user_data/etc/mosquitto/conf.d: 
-    here you can add additional config files
-    for the mqtt broker. For example a “public_mqtt.conf” file with the 
-    following contents:
+* /mnt/user_data/etc/wpa_supplicant/wpa_supplicant.conf: file containing wifi settings
+* /mnt/user_data/opt/everest/<crosscompiled everest binaries> force the use of custom everest build or config by automated start of ``everest-dev.service`` instead of ``everest.service``
+* /mnt/user_data/etc/update_channel contains either stable or unstable to define release channels
+* /mnt/user_data/etc/wireguard/wg0.conf for a wireguard VPN configuration
+* /mnt/user_data/user-config/config-deploy-devboard.yaml for a persistent user config containing only the diffs to the default config.
+* to stop automatic updates: rw; sudo systemctl disable ota-update.service
+* /mnt/user_data/etc/mosquitto/conf.d: here you can add additional config files for the mqtt broker. For example a “public_mqtt.conf” file with the following contents:
     ``listener 1883``
-    ``allow_anonymous true`` to allow anonymous external connections to the 
-    mqtt broker for debugging purposes
+    ``allow_anonymous true`` to allow anonymous external connections to the mqtt broker for debugging purposes
 * ``sudo journalctl -fu everest.service``: watch the output of everest.service 
-* ``sudo journalctl -fu everest-dev.service``: 
-    watch the output of ``everest-dev.service`` 
-* ``sudo /opt/everest/bin/run.sh``
-    run EVerst in the terminal (Make sure the 
-    systemd service is not running)
+* ``sudo journalctl -fu everest-dev.service``: watch the output of ``everest-dev.service`` 
+* ``sudo /opt/everest/bin/manager --conf /opt/everest/conf/config-deploy-devboard.yaml``: run EVerest in the terminal. Make sure the systemd service is not running.
