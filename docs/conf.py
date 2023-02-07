@@ -32,9 +32,16 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.todo',
     'sphinxcontrib.contentui',
-    'sphinx.ext.autosectionlabel'
+    'sphinx.ext.autosectionlabel',
+    'sphinxcontrib.rsvgconverter',
 ]
 
+pdf_documents = [(
+    'index', # main document
+    u'everest-documentation', # output file
+    u'EVerest', # title
+    u'Pionix GmbH' # author
+),]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -82,5 +89,11 @@ napoleon_attr_annotations = True
 
 # latex settings
 latex_engine = 'xelatex'
+preamble=''
+with open('latex_preamble.tex','r+') as f:
+  preamble = f.read()
+latex_elements = {
+    'preamble': preamble,
+}
 
 autosectionlabel_prefix_document = True
