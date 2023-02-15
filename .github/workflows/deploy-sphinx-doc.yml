@@ -1,57 +1,142 @@
-name: Build and deploy sphinx documentation
+name: Build and deploy EVerest documentation
 
 on:  
   schedule:
     - cron: '0 1 * * *'
   workflow_dispatch:
+    inputs:
+      build_pdf:
+        description: 'Build PDF documentation'
+        default: 'false'
+        required: true
+        type: boolean
+      build_html:
+        description: 'Build HTML documentation'
+        default: 'true'
+        required: true
+        type: boolean
+      deploy_html:
+        description: 'Deploy HTML documentation'
+        default: 'true'
+        required: true
+        type: boolean
+      snapshot_file:
+        description: '<owner>/<repo>/<ref>:<path-to-snapshot.yaml>'
+        default: 'everest/everest/main:docs/example-snapshot.yaml'
+        required: true
+        type: string
 
 jobs:
-  build-sphinx:
-    name: Build sphinx documentation
+  checkout-snapshot-file:
+    name: Checkout snapshot file
     strategy:
+      matrix:
+        os: [ubuntu-20.04]
+      max-parallel: 1
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    container: 
+      image: ghcr.io/everest/everest-ci-env:main
+    env:
+      SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+    steps:
+    - name: Setup ssh key and known_hosts
+      run: |
+        mkdir -p /root/.ssh
+        ssh-keyscan github.com >> /root/.ssh/known_hosts
+        echo "${{ secrets.SA_GITHUB_SSH_KEY }}" > /root/.ssh/github_actions
+        chmod 600 /root/.ssh/github_actions
+        ssh-agent -a ${SSH_AUTH_SOCK} > /dev/null
+        ssh-add /root/.ssh/github_actions
+    # Unfortunately, github doesn't support git-archive requests
+    # svn export would be a workaround here, but it doesn't support
+    # all types of references (e.g. commit hashes)
+    # So we have to clone the full repository temporarily and
+    # extract the snapshot file from there.
+    - name: Checkout snapshot file
+      run: |
+        mkdir -p everest-workspace
+        owner=$(echo ${{ inputs.snapshot_file }} | cut -d':' -f1 | cut -d'/' -f1)
+        repo=$(echo ${{ inputs.snapshot_file }} | cut -d':' -f1 | cut -d'/' -f2)
+        ref=$(echo ${{ inputs.snapshot_file }} | cut -d':' -f1 | cut -d'/' -f3-) # ref can contain slashes
+        path=$(echo ${{ inputs.snapshot_file }} | cut -d':' -f2 )
+        git clone -b ${ref} --depth=1 git@github.com:${owner}/${repo}.git tmp-repo
+        cd tmp-repo && git archive HEAD:$(dirname ${path}) $(basename ${path}) | tar -C ../everest-workspace -xf -
+        cd .. && rm -rf tmp-repo && mv everest-workspace/$(basename ${path}) everest-workspace/snapshot.yaml
+    - name: Upload snapshot file
+      uses: actions/upload-artifact@v3
+      with:
+        name: snapshot-file
+        path: |
+          everest-workspace/snapshot.yaml
+        retention-days: 2
+  build-doc:
+    name: Build EVerest sphinx documentation
+    needs: checkout-snapshot-file
+    strategy:
+      max-parallel: 1
+      fail-fast: false
       matrix:
         os: [ubuntu-20.04]
     runs-on: ${{ matrix.os }}
     container: 
       image: ghcr.io/everest/everest-ci-env:main
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.SA_GITHUB_PAT }}
+    env:
+      SSH_AUTH_SOCK: /tmp/ssh_agent.sock
     steps:
-    # Prepare working directory
-    - name: Checkout EVerest/EVerest
-      uses: actions/checkout@v2
-      with:
-        repository: everest/everest
-        ref: ${{ github.ref }}
-        path: everest
-        token: ${{secrets.SA_GITHUB_PAT}}
-        fetch-depth: 0
-    - name: Checkout EVerest/everest-core
-      uses: actions/checkout@v2
-      with:
-        repository: everest/everest-core
-        ref: main
-        path: everest-core
-        token: ${{secrets.SA_GITHUB_PAT}}
-        fetch-depth: 0
+    - name: Setup ssh key and known_hosts
+      run: |
+        mkdir -p /root/.ssh
+        ssh-keyscan github.com >> /root/.ssh/known_hosts
+        echo "${{ secrets.SA_GITHUB_SSH_KEY }}" > /root/.ssh/github_actions
+        chmod 600 /root/.ssh/github_actions
+        ssh-agent -a ${SSH_AUTH_SOCK} > /dev/null
+        ssh-add /root/.ssh/github_actions
 
-    - name: Prebuild sphinx doc
+    # Setup workspace
+    - name: Download snaphot file
+      uses: actions/download-artifact@v3
+      with:
+        name: snapshot-file
+        path: |
+          everest-workspace
+    - name: Checkout snapshot
+      run: |
+        edm init --config snapshot.yaml
+      working-directory: everest-workspace
+
+    - name: Prebuild EVerest rst doc
       run: |
         python3 everest/docs/scripts/prebuild-everest-doc.py \
           --doc-directory everest/docs/ \
           --core-directory everest-core/
-    - name: Build sphinx doc
-      run: make -C everest/docs html
-    
+      working-directory: everest-workspace
+
+    - name: Build html sphinx doc
+      if: ${{ inputs.build_html }}
+      run: make html
+      working-directory: everest-workspace/everest/docs    
     - name: Upload generated html files
+      if: ${{ inputs.build_html }}
       uses: actions/upload-artifact@v3
       with:
         name: docs-html
-        path: everest/docs/_build/html/
+        path: everest-workspace/everest/docs/_build/html/
 
-  deploy-sphinx:
-    needs: build-sphinx
+    - name: Build pdf sphinx doc
+      if: ${{ inputs.build_pdf }}
+      run: buf_size=1000000 make latexpdf
+      working-directory: everest-workspace/everest/docs
+    - name: Upload generated pdf files
+      if: ${{ inputs.build_pdf }}
+      uses: actions/upload-artifact@v3
+      with:
+        name: docs-pdf
+        path: everest-workspace/everest/docs/_build/latex/
+
+  deploy-html-doc:
+    if: ${{ inputs.build_html && inputs.deploy_html }}
+    needs: build-doc
     name: Deploy sphinx documentation
     strategy:
       matrix:
@@ -59,15 +144,17 @@ jobs:
     runs-on: ${{matrix.os}}
     container: 
       image: ghcr.io/everest/everest-ci-env:main
-      credentials:
-        username: ${{github.actor}}
-        password: ${{secrets.SA_GITHUB_PAT}}
+    env:
+      SSH_AUTH_SOCK: /tmp/ssh_agent.sock
     steps:
-    - name: Add ssh key
-      uses: shimataro/ssh-key-action@v2
-      with:
-        key: ${{ secrets.SA_GITHUB_SSH_KEY }}
-        known_hosts: unnecessary
+    - name: Setup ssh key and known_hosts
+      run: |
+        mkdir -p /root/.ssh
+        ssh-keyscan github.com >> /root/.ssh/known_hosts
+        echo "${{ secrets.SA_GITHUB_SSH_KEY }}" > /root/.ssh/github_actions
+        chmod 600 /root/.ssh/github_actions
+        ssh-agent -a ${SSH_AUTH_SOCK} > /dev/null
+        ssh-add /root/.ssh/github_actions
     - name: Configure git
       run: |
         git config --global user.email "compiler@pionix.de"
