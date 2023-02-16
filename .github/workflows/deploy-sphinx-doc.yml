@@ -5,24 +5,34 @@ on:
     - cron: '0 1 * * *'
   workflow_dispatch:
     inputs:
+      is_release:
+        description: 'Is this snapshot a release?'
+        default: 'false'
+        required: true
+        type: boolean
       build_pdf:
-        description: 'Build PDF documentation'
+        description: 'Build PDF documentation?'
         default: 'false'
         required: true
         type: boolean
       build_html:
-        description: 'Build HTML documentation'
+        description: 'Build HTML documentation?'
         default: 'true'
         required: true
         type: boolean
       deploy_html:
-        description: 'Deploy HTML documentation'
+        description: 'Deploy HTML documentation?'
         default: 'true'
         required: true
         type: boolean
       snapshot_file:
-        description: '<owner>/<repo>/<ref>:<path-to-snapshot.yaml>'
+        description: 'Snapshot file location: <owner>/<repo>/<ref>:<path-to-snapshot.yaml>'
         default: 'everest/everest/main:docs/example-snapshot.yaml'
+        required: true
+        type: string
+      github_pages_repo:
+        description: 'GithubPages repo: <owner>/<repo>'
+        default: 'everest/everest.github.io'
         required: true
         type: string
 
@@ -39,6 +49,8 @@ jobs:
       image: ghcr.io/everest/everest-ci-env:main
     env:
       SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+    outputs:
+      snapshot_name: ${{ steps.checkout-snapshot-file.outputs.snapshot_name }}
     steps:
     - name: Setup ssh key and known_hosts
       run: |
@@ -54,6 +66,7 @@ jobs:
     # So we have to clone the full repository temporarily and
     # extract the snapshot file from there.
     - name: Checkout snapshot file
+      id: checkout-snapshot-file
       run: |
         mkdir -p everest-workspace
         owner=$(echo ${{ inputs.snapshot_file }} | cut -d':' -f1 | cut -d'/' -f1)
@@ -63,6 +76,7 @@ jobs:
         git clone -b ${ref} --depth=1 git@github.com:${owner}/${repo}.git tmp-repo
         cd tmp-repo && git archive HEAD:$(dirname ${path}) $(basename ${path}) | tar -C ../everest-workspace -xf -
         cd .. && rm -rf tmp-repo && mv everest-workspace/$(basename ${path}) everest-workspace/snapshot.yaml
+        echo "::set-output name=snapshot_name::$(basename ${path} | cut -d'.' -f1)"
     - name: Upload snapshot file
       uses: actions/upload-artifact@v3
       with:
@@ -109,12 +123,13 @@ jobs:
       run: |
         python3 everest/docs/scripts/prebuild-everest-doc.py \
           --doc-directory everest/docs/ \
-          --core-directory everest-core/
+          --core-directory everest-core/ \
+          --snapshot-file snapshot.yaml
       working-directory: everest-workspace
 
     - name: Build html sphinx doc
       if: ${{ inputs.build_html }}
-      run: make html
+      run: make -e SPHINXOPTS="-D version='${{ needs.checkout-snapshot-file.outputs.snapshot_name }}'" html
       working-directory: everest-workspace/everest/docs    
     - name: Upload generated html files
       if: ${{ inputs.build_html }}
@@ -125,7 +140,7 @@ jobs:
 
     - name: Build pdf sphinx doc
       if: ${{ inputs.build_pdf }}
-      run: buf_size=1000000 make latexpdf
+      run: buf_size=1000000 make -e SPHINXOPTS="-D version='${{ needs.checkout-snapshot-file.outputs.snapshot_name }}'" latexpdf
       working-directory: everest-workspace/everest/docs
     - name: Upload generated pdf files
       if: ${{ inputs.build_pdf }}
@@ -136,16 +151,17 @@ jobs:
 
   deploy-html-doc:
     if: ${{ inputs.build_html && inputs.deploy_html }}
-    needs: build-doc
+    needs: [build-doc, checkout-snapshot-file]
     name: Deploy sphinx documentation
     strategy:
       matrix:
         os: [ubuntu-20.04]
-    runs-on: ${{matrix.os}}
+    runs-on: ${{ matrix.os }}
     container: 
       image: ghcr.io/everest/everest-ci-env:main
     env:
       SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+      GITHUB_PAGES_REPO: ${{ inputs.github_pages_repo }}
     steps:
     - name: Setup ssh key and known_hosts
       run: |
@@ -165,26 +181,52 @@ jobs:
       with:
         name: docs-html
         path: docs-html
-    - name: Checkout everest.github.io
+    - name: Checkout ${{ env.GITHUB_PAGES_REPO }}
       uses: actions/checkout@v2
       with:
-        repository: everest/everest.github.io
-        path: everest_github_io
+        repository: ${{ env.GITHUB_PAGES_REPO }}
+        path: ${{ env.GITHUB_PAGES_REPO }}
         token: ${{secrets.SA_GITHUB_PAT}}
         ref: main
         fetch-depth: 0
+    - name: Download snapshot file
+      uses: actions/download-artifact@v3
+      with:
+        name: snapshot-file
+        path: |
+          everest-workspace
+    - name: Checkout snapshot
+      run: |
+        edm init --config snapshot.yaml
+      working-directory: everest-workspace
 
     - name: Update doc and push it
       run: |
-        rm -rf everest_github_io/docs/*
-        cp -r docs-html/* everest_github_io/docs
-        touch everest_github_io/docs/.nojekyll
-        cd everest_github_io
+        mkdir -p docs
+        touch docs/.nojekyll
+        mkdir docs/${{ needs.checkout-snapshot-file.outputs.snapshot_name }}
+        cp -r ../../docs-html/* docs/${{ needs.checkout-snapshot-file.outputs.snapshot_name }}/
+      working-directory: ${{ env.GITHUB_PAGES_REPO }}
+    - name: Ensure that the latest release is the default one and create a versions index
+      if: ${{ inputs.is_release }}
+      run: |
+        python3 everest-workspace/everest/docs/scripts/deploy-everest-doc.py \
+          --template-directory everest-workspace/everest/docs/templates/ \
+          --html-root-directory ${{ env.GITHUB_PAGES_REPO }}/docs/ \
+          --release-name ${{ needs.checkout-snapshot-file.outputs.snapshot_name }}
+    - name: Create a verions index
+      run: |
+        python3 everest-workspace/everest/docs/scripts/deploy-everest-doc.py \
+          --template-directory everest-workspace/everest/docs/templates/ \
+          --html-root-directory ${{ env.GITHUB_PAGES_REPO }}/docs/
+    - name: Commit updated github pages
+      run: |
         git add --all
-        git diff-index --quiet HEAD || git commit -m "Update doc build $(date -R)"
+        git diff-index --quiet HEAD || git commit -m "Add doc build snapshot ${{ needs.checkout-snapshot-file.outputs.snapshot_name }}"
+      working-directory: ${{ env.GITHUB_PAGES_REPO }}
 
-    - name: Push updated doc to everest.github.io
+    - name: Push updated doc to ${{ env.GITHUB_PAGES_REPO }}
       if: ${{ !env.ACT }}
       run: |
-        cd everest_github_io
         git push
+      working-directory: ${{ env.GITHUB_PAGES_REPO }}
