@@ -1,10 +1,13 @@
 .. _index:
 
+.. admonition:: Current Version |version|
+
+    You are looking at the documentation for the |version| release of EVerest.
+    See `snapshot file <./misc/snapshot.html>`_ for further version mapping.
+    See `verions index <../versions_index.html>`_ for other versions.
+
 .. image:: img/everest_horizontal-color.svg
     :align: right
-
-
-*This documentation was last updated in December 2022.*
 
 ***************
 What Is EVerest
@@ -49,10 +52,11 @@ But now let's dive in the EVerest journey to get you on board. Start on top leve
     general/quick_start_guide
     dev_tools/index
     tutorials/index
-    misc/*
+    misc/pionix_belay_box
     generated/everest_modules
     generated/everest_interfaces
     generated/everest_types
+    misc/snapshot
 
 Indices and tables
 ==================

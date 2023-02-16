@@ -10,13 +10,11 @@ from typing import List, NamedTuple
 import jinja2
 import yaml
 from pathlib import Path
-from shutil import copytree
-
+from shutil import copytree, copyfile
 
 class YAMLItem(NamedTuple):
     name: str
     path: Path
-
 
 YAMLItemList = List[YAMLItem]
 
@@ -96,6 +94,15 @@ def main():
         required=True,
         help="EVerest core directory"
     )
+    parser.add_argument(
+        '--snapshot-file',
+        '-s',
+        type=Path,
+        dest='snapshot_file',
+        action='store',
+        required=True,
+        help="Path to the snapshot file"
+    )
 
     args = parser.parse_args()
 
@@ -106,6 +113,11 @@ def main():
     generated_dir: Path = (args.doc_dir / "generated")
     included_dir: Path = (args.doc_dir / "included/modules")
     template_dir: Path = (args.doc_dir / "templates")
+
+    # Place the snapshot file in doc directory
+    if not args.snapshot_file.is_file():
+        raise FileNotFoundError(f"Snapshot file: '{ args.snapshot_file }' doesn't exist")
+    copyfile(args.snapshot_file, args.doc_dir / "misc/snapshot.yaml")
 
     # setup templates
     if not template_dir.is_dir():
@@ -129,11 +141,11 @@ def main():
     handwritten_modules: List[str] = []
     custom_doc_path: Path = args.core_dir / "docs/modules"
     if custom_doc_path.is_dir():
-        for item in custom_doc_path.iterdir():
-            if item.suffix != ".rst":
-                continue
-            handwritten_modules.append(item.stem)
-
+        handwritten_modules.extend(
+            item.stem
+            for item in custom_doc_path.iterdir()
+            if item.suffix == ".rst"
+        )
         included_dir.mkdir(exist_ok=True, parents=True)
         copytree(custom_doc_path, included_dir, dirs_exist_ok=True)
 
