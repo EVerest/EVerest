@@ -117,7 +117,7 @@ def main():
     # Place the snapshot file in doc directory
     if not args.snapshot_file.is_file():
         raise FileNotFoundError(f"Snapshot file: '{ args.snapshot_file }' doesn't exist")
-    copyfile(args.snapshot_file, args.doc_dir / "misc/snapshot.yaml")
+    copyfile(args.snapshot_file, args.doc_dir / "appendix/snapshot.yaml")
 
     # setup templates
     if not template_dir.is_dir():
