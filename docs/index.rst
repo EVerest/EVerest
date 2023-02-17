@@ -48,15 +48,15 @@ But now let's dive in the EVerest journey to get you on board. Start on top leve
     :maxdepth: 2
     :glob:
 
-    general/framework
-    general/quick_start_guide
+    general/*
+    general/*/index
     dev_tools/index
     tutorials/index
-    misc/pionix_belay_box
-    generated/everest_modules
-    generated/everest_interfaces
-    generated/everest_types
-    misc/snapshot
+    hardware/*
+    hardware/*/index
+    generated/*
+    appendix/*
+    appendix/*/index
 
 Indices and tables
 ==================
