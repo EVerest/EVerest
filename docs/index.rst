@@ -3,7 +3,7 @@
 .. admonition:: Current Version |version|
 
     You are looking at the documentation for the |version| release of EVerest.
-    See `snapshot file <./misc/snapshot.html>`_ for further version mapping.
+    See `snapshot file <./appendix/snapshot.html>`_ for further version mapping.
     See `verions index <../versions_index.html>`_ for other versions.
 
 .. image:: img/everest_horizontal-color.svg
