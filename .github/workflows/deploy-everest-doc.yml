@@ -223,12 +223,16 @@ jobs:
         python3 everest-workspace/everest/docs/scripts/deploy-everest-doc.py \
           --template-directory everest-workspace/everest/docs/templates/ \
           --html-root-directory ${{ env.GITHUB_PAGES_REPO }}/docs/ \
-          --release-name ${{ needs.checkout-snapshot-file.outputs.snapshot_name }}
+          --is-release True \
+          --version-name ${{ needs.checkout-snapshot-file.outputs.snapshot_name }}
     - name: Create a verions index
+      if: ${{ !inputs.is_release }}
       run: |
         python3 everest-workspace/everest/docs/scripts/deploy-everest-doc.py \
           --template-directory everest-workspace/everest/docs/templates/ \
-          --html-root-directory ${{ env.GITHUB_PAGES_REPO }}/docs/
+          --html-root-directory ${{ env.GITHUB_PAGES_REPO }}/docs/ \
+          --is-release False \
+          --version-name ${{ needs.checkout-snapshot-file.outputs.snapshot_name }}
     - name: Commit updated github pages
       run: |
         git add --all

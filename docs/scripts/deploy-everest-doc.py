@@ -1,7 +1,8 @@
 import argparse
-from typing import List, NamedTuple
+from typing import List
 import jinja2
 from pathlib import Path
+import shutil
 
 def process_redirect(
     template: jinja2.Template,
@@ -45,13 +46,21 @@ def main():
         help="HTML root directory"
     )
     parser.add_argument(
-        '--release-name',
-        '-n',
+        '--version-name',
+        '-v',
         type=str,
-        dest='release_name',
+        dest='version_name',
         action='store',
-        default=None,
-        help="Name of the release"
+        required=True,
+        help="Version name"
+    )
+    parser.add_argument(
+        '--is-release',
+        type=bool,
+        dest='is_release',
+        action='store',
+        default=False,
+        help="Is release"
     )
     args = parser.parse_args()
 
@@ -76,12 +85,17 @@ def main():
         out_path=args.html_root_dir / "versions_index.html"
     )
 
-    if args.release_name is not None:
+    if args.is_release:
         process_redirect(
             template=env.get_template("redirect.html.jinja"),
-            release_name=args.release_name,
+            release_name=args.version_name,
             out_path=args.html_root_dir / "index.html"
         )
+
+    shutil.move(
+        args.html_root_dir / args.version_name / "404.html",
+        args.html_root_dir / "404.html"
+    )
 
 if __name__ == "__main__":
     main()
