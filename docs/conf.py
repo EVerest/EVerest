@@ -34,6 +34,7 @@ extensions = [
     'sphinxcontrib.contentui',
     'sphinx.ext.autosectionlabel',
     'sphinxcontrib.rsvgconverter',
+    'notfound.extension'
 ]
 
 pdf_documents = [(
@@ -97,3 +98,5 @@ latex_elements = {
 }
 
 autosectionlabel_prefix_document = True
+
+notfound_urls_prefix = '/nightly/'
