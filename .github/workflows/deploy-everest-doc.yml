@@ -35,6 +35,11 @@ on:
         default: 'everest/everest.github.io'
         required: true
         type: string
+      overwrite_existing:
+        description: 'Overwrite existing documentation?'
+        default: 'false'
+        required: true
+        type: boolean
 
 jobs:
   checkout-snapshot-file:
@@ -200,6 +205,11 @@ jobs:
         edm init --config snapshot.yaml
       working-directory: everest-workspace
 
+    - name: Remove old doc
+      if: ${{ inputs.overwrite_existing }}
+      run: |
+        rm -rf docs/${{ needs.checkout-snapshot-file.outputs.snapshot_name }}
+      working-directory: ${{ env.GITHUB_PAGES_REPO }}
     - name: Update doc and push it
       run: |
         mkdir -p docs
