@@ -25,6 +25,16 @@ def process_versions_index(
     )
     out_path.write_text(output)
 
+def overwrite_latest(
+    html_root: Path,
+    version_name: str
+):
+    latest_path = html_root / "latest"
+    release_path = html_root / version_name
+    if latest_path.exists():
+        shutil.rmtree(latest_path)
+    shutil.copytree(release_path, latest_path)
+
 def main():
     parser = argparse.ArgumentParser(description='Process versions_index.html.jinja and place redirect.html in the output directory')
     parser.add_argument(
@@ -80,6 +90,10 @@ def main():
         lstrip_blocks=True
     )
     if args.is_release:
+        overwrite_latest(
+            html_root=args.html_root_dir,
+            version_name=args.version_name
+        )
         process_redirect(
             template=env.get_template("redirect.html.jinja"),
             release_name=args.version_name,
