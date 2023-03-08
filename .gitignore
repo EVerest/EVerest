@@ -28,3 +28,5 @@ Temporary Items
 docs/generated/*
 docs/included/*
 docs/_build/*
+
+**/__pycache__/**

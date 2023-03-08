@@ -79,22 +79,19 @@ def main():
         trim_blocks=True,
         lstrip_blocks=True
     )
-    process_versions_index(
-        template=env.get_template("versions_index.html.jinja"),
-        version_list=version_list,
-        out_path=args.html_root_dir / "versions_index.html"
-    )
-
     if args.is_release:
         process_redirect(
             template=env.get_template("redirect.html.jinja"),
             release_name=args.version_name,
             out_path=args.html_root_dir / "index.html"
         )
-
-    shutil.move(
-        args.html_root_dir / args.version_name / "404.html",
-        args.html_root_dir / "404.html"
+        shutil.copy(
+            args.html_root_dir / args.version_name / "404.html",
+            args.html_root_dir / "404.html"
+        )
+    shutil.copy(
+        args.html_root_dir / args.version_name / "versions_index.html",
+        args.html_root_dir / "versions_index.html"
     )
 
 if __name__ == "__main__":
