@@ -13,7 +13,9 @@
 import os
 import sys
 sys.path.insert(0, os.path.abspath('../src'))
+sys.path.append(os.path.abspath("./_ext"))
 
+from sphinx.application import Sphinx
 
 # -- Project information -----------------------------------------------------
 
@@ -34,7 +36,7 @@ extensions = [
     'sphinxcontrib.contentui',
     'sphinx.ext.autosectionlabel',
     'sphinxcontrib.rsvgconverter',
-    'notfound.extension'
+    'staticpages.extension',
 ]
 
 pdf_documents = [(
@@ -99,4 +101,20 @@ latex_elements = {
 
 autosectionlabel_prefix_document = True
 
-notfound_urls_prefix = '/nightly/'
+notfound_page = {
+    'pagename': '404',
+    'urls_prefix': '/latest/',
+}
+deployed_versions = os.getenv('EVEREST_DEPLOYED_VERSIONS', "v0.0.1,v0.0.2,v0.0.3").split(',')
+versionsindex_page = {
+    'pagename': 'versions_index',
+    'urls_prefix': '/latest/',
+    'template': 'versions_index.html',
+    'context': {
+        'versions': deployed_versions
+    }
+}
+staticpages_pages = [
+    notfound_page,
+    versionsindex_page,
+]

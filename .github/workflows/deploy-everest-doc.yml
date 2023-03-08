@@ -80,6 +80,26 @@ jobs:
         cd tmp-repo && git archive HEAD:$(dirname ${path}) $(basename ${path}) | tar -C ../everest-workspace -xf -
         cd .. && rm -rf tmp-repo && mv everest-workspace/$(basename ${path}) everest-workspace/snapshot.yaml
         echo "::set-output name=snapshot_name::$(basename ${path} | cut -d'.' -f1)"
+    - name: Add GithubPages repo to snapshot
+      shell: python3 {0}
+      run: |
+        import yaml
+        from os.path import basename
+        with open('snapshot.yaml', 'r') as f:
+          snapshot = yaml.safe_load(f)
+        snapshot["${{ inputs.github_pages_repo }}".split('/')[-1]] = {
+          'git': 'git@github.com:${{ inputs.github_pages_repo }}.git',
+          'git_tag': 'main',
+        }
+        with open('snapshot.yaml', 'w') as f:
+          yaml.safe_dump(snapshot, f, default_flow_style=False)
+      working-directory: everest-workspace
+    - name: Update snapshot file
+      run: |
+        edm init --config snapshot.yaml
+        edm snapshot snapshot.yaml
+      working-directory: everest-workspace
+
     - name: Upload snapshot file
       uses: actions/upload-artifact@v3
       with:
@@ -121,6 +141,22 @@ jobs:
       run: |
         edm init --config snapshot.yaml
       working-directory: everest-workspace
+    - name: List all deployed versions
+      id: list-deployed-versions
+      shell: python3 {0}
+      run: |
+        from typing import List
+        import os
+        from pathlib import Path
+
+        version_list: List[str] = []
+        version_list.extend(
+          item.name for item in (Path("${{ inputs.github_pages_repo }}".split('/')[-1]) / "docs").iterdir() if item.is_dir()
+        )
+        version_list.append("${{ needs.checkout-snapshot-file.outputs.snapshot_name}}")
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+          print(f"versions={ ','.join(str(version) for version in version_list) }", file=f)
+      working-directory: everest-workspace
 
     - name: Prebuild EVerest rst doc
       run: |
@@ -132,8 +168,11 @@ jobs:
 
     - name: Build html sphinx doc
       if: ${{ inputs.build_html }}
-      run: make -e SPHINXOPTS="-D version='${{ needs.checkout-snapshot-file.outputs.snapshot_name }}'" html
-      working-directory: everest-workspace/everest/docs    
+      env:
+        EVEREST_DEPLOYED_VERSIONS: ${{ steps.list-deployed-versions.outputs.versions }}
+      run: |
+        make -e SPHINXOPTS="-D version='${{ needs.checkout-snapshot-file.outputs.snapshot_name }}'" html
+      working-directory: everest-workspace/everest/docs
     - name: Upload generated html files
       if: ${{ inputs.build_html }}
       uses: actions/upload-artifact@v3
@@ -143,7 +182,10 @@ jobs:
 
     - name: Build pdf sphinx doc
       if: ${{ inputs.build_pdf }}
-      run: buf_size=1000000 make -e SPHINXOPTS="-D version='${{ needs.checkout-snapshot-file.outputs.snapshot_name }}'" latexpdf
+      env:
+        EVEREST_DEPLOYED_VERSIONS: ${{ steps.list-deployed-versions.outputs.versions }}
+        buf_size: 1000000
+      run: make -e SPHINXOPTS="-D version='${{ needs.checkout-snapshot-file.outputs.snapshot_name }}'" latexpdf
       working-directory: everest-workspace/everest/docs
     - name: Upload generated pdf files
       if: ${{ inputs.build_pdf }}
