@@ -151,4 +151,4 @@ You can find some examples of module connection definitions in the `everest-core
 Where To Go Next
 ================
 
-If you came here via the Quick Start Guide, here is your way back to action: `Quick Start Guide to setup a module <quick_start_guide.html#module-setup>`_.
+If you came here via the Quick Start Guide, here is your way back to action: `Quick Start Guide to setup a module <02_quick_start_guide.html#module-setup>`_.
