@@ -2,14 +2,16 @@
 
 ## Supported Versions
 
-So far we have not released any official version jet. Later you will find here a table of verions of EVerest supported with security updates.
+Since the beginning of 2023 we are releasing versions of EVerest in a monthly cadence, the specifics of this release process are outlined in [RELEASE.md](RELEASE.md).
 
-Later on it will contain a table like this:
+At the moment we only support the most recent release of EVerest with (security) updates.
+
 | Version | Supported          |
 | ------- | ------------------ |
-| x.y.z   | :white_check_mark: |
-| a.b.c   | :x:                |
-| < d.0   | :x:                |
+| 2023.3.0   | :white_check_mark: |
+| 2023.2.1   | :x:                |
+| 2023.2.0   | :x:                |
+| 2023.1.0   | :x:                |
 
 ## Reporting a Vulnerability
 
