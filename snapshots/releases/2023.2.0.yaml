@@ -1,0 +1,8 @@
+everest-core:
+  git: git@github.com:EVerest/everest-core.git
+  git_rev: dc6334e20343075112098071348cb8e6cc5315be
+  git_tag: 2023.2.0
+everest:
+  git: git@github.com:EVerest/EVerest.git
+  git_rev: 58058a339a1a74afa29aa9132adcc7e7ac486061
+  git_tag: 2023.2.1
