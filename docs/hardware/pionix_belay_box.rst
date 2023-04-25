@@ -25,7 +25,8 @@ The BelayBox hardware
 =====================
 Inside, the BelayBox consists mainly of the Yeti board - an AC charger for
 electric vehicles (EV) supporting IEC-61851-1 and SAE J1772 - and the Yak
-board, which is a high-level control board for EV charging stations.
+board, which is a high-level control board for EV charging stations supporting
+ISO 15118-2 (with ISO 15118-20 on its way) and DIN SPEC70121.
 
 As both Yeti and Yak Board are also released as Open Hardware under CERN Open
 Hardware Licence Version 2 (Permissive), we are very happy to point you to the
@@ -112,7 +113,7 @@ In order to flash the emmC, please install "rpiboot" as described in here:
 
 `<https://github.com/raspberrypi/usbboot/blob/master/Readme.md#building>`_
 
-After successful install, execute 
+After successful install, execute
 
 ``sudo ./rpiboot``
 
@@ -186,8 +187,8 @@ That's how we start:
 
 .. image:: img/cable-set-1-overview.jpg
 
-The **10-position cable between Yeti and Yak** is mandatory to connect Yak to Yeti and to power the Yak
-board from the Yeti power supply.
+The **10-position cable between Yeti and Yak** is mandatory to connect Yak to
+Yeti and to power the Yak board from the Yeti power supply.
 
 .. image:: img/cable-set-2.jpg
 
@@ -258,9 +259,9 @@ any other open PCB parts to prevent damage to the boards.
 Raspbian
 ========
 
-BelayBox uses Raspian (a debian flavour for the Raspberry Pi) as a main 
+BelayBox uses Raspian (a debian flavour for the Raspberry Pi) as a main
 operating system for development purposes.
-For deployment on real products you should consider using Yocto or similar 
+For deployment on real products you should consider using Yocto or similar
 instead.
 
 For further information like the partitioning scheme and updating Raspbian,
@@ -316,8 +317,8 @@ You can use make or ninja with cmake. The examples here are given with make.
 Setup cross compile environment
 ===============================
 
-First, make sure you have successfully built EVerest natively on your laptop as 
-described here: https://github.com/EVerest/everest-core#everest-core
+First, make sure you have successfully built EVerest natively on your laptop
+as described here: https://github.com/EVerest/everest-core#everest-core
 
 Download and untar the bullseye-toolchain:
 
@@ -353,21 +354,23 @@ Deploy a custom EVerest on BelayBox
 -----------------------------------
 
 The binaries are now installed under ``build-cross/dist``.
-You can use ``rsync`` within the ``build-cross`` folder to copy the files to 
+You can use ``rsync`` within the ``build-cross`` folder to copy the files to
 BelayBox:
 
-``rsync -a build-cross/dist/mnt/user_data/opt/everest/* everest@the.ip.add.res:/mnt/user_data/opt/everest``
+.. code-block:: bash
 
-The first time you need to create the folder ``/mnt/user_data/opt/everest`` 
+  rsync -a build-cross/dist/mnt/user_data/opt/everest/* everest@the.ip.add.res:/mnt/user_data/opt/everest
+
+The first time you need to create the folder ``/mnt/user_data/opt/everest``
 on the BelayBox before syncing
 (``ssh everest@the.ip.add.res mkdir -p /mnt/user_data/opt/everest``)
 
-You can also copy to another folder on the BelayBox, but using 
+You can also copy to another folder on the BelayBox, but using
 ``/mnt/user_data/opt/everest`` will make your new custom everest installation
 auto start at boot (see ``everest-dev.service``). This way you can have a
 custom installation and still use the online updates for the base system.
 
-If you do it for the first time, reboot BelayBox so that 
+If you do it for the first time, reboot BelayBox so that
 ``everest-dev.service`` is used from now-on instead of ``everest.service``.
 
 BelayBox Further Information
