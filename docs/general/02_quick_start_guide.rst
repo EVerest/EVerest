@@ -62,6 +62,18 @@ That is all to install ev-cli. You can find the binary file of ev-cli in your HO
 
 In a later step, we will use ev-cli to create module stubs.
 
+Packages for ISO 15118 communication
+------------------------------------
+
+To be able to build EVerest with ISO 15118 capability, you will have to
+install the needed requirements for Josev:
+
+.. code-block:: bash
+
+  cd ~/checkout/everest-workspace/Josev
+  python3 -m pip install -r requirements.txt
+
+
 Build EVerest
 =============
 
