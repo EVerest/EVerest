@@ -6,8 +6,8 @@
 {{ funcs.documentation(data.documentation) | rst_indent() -}}
 {%  endif %}
 
-{%  if include_handwritten %}
-.. include:: ../../included/modules/{{ name }}.rst
+{%  if doc_path != None %}
+For a detailed handwritten documentation see {{ funcs.ref("everest_modules_handwritten_" + name, "here")}}
 {%  endif %}
 
 {%  if data.config %}

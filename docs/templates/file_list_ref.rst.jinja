@@ -1,9 +1,0 @@
-{% import 'macros.jinja' as funcs %}
-{{ funcs.explicit_target(refname) }}
-{{ funcs.h1(headline) }}
-.. toctree::
-   :maxdepth: 1
-
-{% for file in file_list | sort() %}
-   {{ file }}
-{% endfor %}
