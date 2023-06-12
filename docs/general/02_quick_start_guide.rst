@@ -97,49 +97,39 @@ Simulating EVerest
 
 Prepare The Helpers
 ===================
-EVerest comes with prepared Docker containers, which are needed for simulation and further development. To get this working, make sure you have Docker and Docker-Compose installed during the previous install phase. (If not, see install instructions for `Docker <https://docs.docker.com/engine/install/#server>`_ and `Docker-Compose <https://docs.docker.com/compose/install/#install-compose)>`_!)
+EVerest comes with prepared Docker containers. One of them is needed to get the
+EVerest simulation running. This documentation section shows the necessary
+steps to start the simulation and get the user interface running.
 
-In order for custom or local containers being able to talk to the services, provided by the docker-compose containers, we need to create a common docker network. It is called `infranet_network` and needs to be created by the following command (IPv6 is enabled for containers which might it):
+To get all this working, make sure you have Docker and Docker-Compose installed during the previous install phase. (If not, see install instructions for `Docker <https://docs.docker.com/engine/install/#server>`_ and `Docker-Compose <https://docs.docker.com/compose/install/#install-compose)>`_!)
+
+In order for custom or local containers being able to talk to the services,
+provided by the docker-compose containers, we need to create a common docker
+network. It is called `infranet_network` and needs to be created by the
+following command (IPv6 is enabled for containers which might need it):
 
 .. code-block:: bash
 
   docker network create --driver bridge --ipv6  --subnet fd00::/80 infranet_network --attachable
 
-Now, change into the directory of the local everest-utils repo, which should have been cloned from Git by EDM before.
-
-Enter directory `docker` and startup some containers:
+Now, change into your workspace directory (e.g. ~/checkout/everest-workspace)
+and enter the directory with the prepared docker container to start them up:
 
 .. code-block:: bash
 
-  docker-compose up -d
+  cd {EVerest Workspace Directory}/everest-utils/docker
+  sudo docker-compose up -d mqtt-server
 
-This will give you the following services up and running:
-
-- **Mosquitto MQTT broker** (service name: mqtt-server) with ports
-
-  - ``1883``: mqtt tcp connection
-  - ``9001``: mqtt websocket connection
-
-- **mariadb** (service name: ocpp-db), sql database needed by **SteVe**
-
-  - ``3306``: sql tcp connection
-
-- **SteVe** (service name: steve) on port 8180 with endpoints
-
-  - ``:8180/steve/manager/home``: web interface (login = admin:1234)
-  - ``:8180/steve/services/CentralSystemService``: SOAP endpoint for
-    OCPP
-  - ``:8180/steve/websocket/CentralSystemService/(chargeBoxId)``:
-    WebSocket/JSON endpoint for OCPP
-
-That makes us ready for entering the simulation phase described in the next chapter.
+That makes us ready for entering the simulation phase described in the next
+chapter.
 
 Software in a loop
 ==================
 
 Make sure you have prepared the helpers necessary for simulating EVerest as shown in the `previous section <02_quick_start_guide.html#prepare-the-helpers>`_.
 
-After having done that, change to the directory /everest-core/build/, which has been created during EVerest install.
+After having done that, change to the directory /everest-core/build/, which has
+been created during EVerest install.
 
 We will startup EVerest now with a software-in-a-loop (SIL) config.
 
@@ -147,23 +137,32 @@ Start the software-in-a-loop simulation via script:
 
 .. code-block:: bash
 
-  ./run-scripts/run-sil.sh
+  ~/checkout/everest-workspace/everest-core/build/run-scripts/run-sil.sh
 
 In a new terminal window, run the NodeRed script:
 
 .. code-block:: bash
 
-  ./run-scripts/nodered-sil.sh
+  ~/checkout/everest-workspace/everest-core/build/run-scripts/nodered-sil.sh
 
-This will let us control the simulation with the help of NodeRed.
+For a user interface, just direct your browser to `http://localhost:1880/ui` -
+the needed web-server has already been started via the shell scripts.
 
-You can analyse the output of the two scripts in the terminal windows to get a little bit of insights about what is going on and which ports are used etc.
+This will let us control the simulation in a very simple GUI.
 
-If everything worked well, you will be able to reach a web GUI showing a charging process at *localhost:1880/ui*.
+You can analyse the output of the two shell scripts in the terminal windows to
+get a little bit of insights about what is going on and which ports are used
+etc.
 
-With that GUI, you can simulate charging states of a charging process in an electric vehicle.
+In the GUI, you can simulate car charging sessions using the available buttons,
+e.g. `CAR PLUGIN`, `PAUSE`, `RESUME` and so on:
 
-You can play around with that a little bit to see some output in your two terminal windows. Try to get a first idea!
+.. image:: img/quick-start-sil-gui.png
+
+Your own simulations
+====================
+
+To use simulation with your own custom flows, visit `Tuturial For Simulating EVerest <../tutorials/run_sil/index.html>`_.
 
 Admin Panel
 ===========
@@ -221,6 +220,6 @@ When initialising, the EVerest framework will call all init() functions of all m
 
 This allows you to do setup things that relate only to your current module in the init() function and all stuff requiring other modules being initialised in your ready() function.
 
-.. attention:: 
+.. hint:: 
 
   We will add additional documentation here soon to get you an idea about how vars can be published and how to interact with required modules from the outside. We will show callback functions and events and how all this works together in your module.
