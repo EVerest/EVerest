@@ -283,7 +283,9 @@ def setup(app):
         'urls_prefix': '/en/latest/',
     }]
     app.add_config_value('staticpages_pages', default_pages, 'html')
-    
+    # FIXME this config shouldn't exist, see _ext/staticpages/utils.py
+    app.add_config_value('staticpages_urls_prefix', None, 'html')
+
     if sphinx.version_info > (1, 8, 0):
         app.connect('config-inited', validate_configs)
     else:

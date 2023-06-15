@@ -118,3 +118,4 @@ staticpages_pages = [
     notfound_page,
     versionsindex_page,
 ]
+staticpages_urls_prefix = '/latest/'
