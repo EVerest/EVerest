@@ -67,6 +67,17 @@ html_theme = 'sphinxdoc'
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
+html_sidebars = {
+  '**': [
+#    'localtoc.html',
+    'globaltoc.html',
+    'relations.html',
+    'sourcelink.html',
+    'comunity_sidebar.html',
+    'searchbox.html',
+  ]
+}
+
 master_doc = 'index'
 
 # sphinx standard settings
@@ -101,11 +112,12 @@ latex_elements = {
 
 autosectionlabel_prefix_document = True
 
+deployed_versions = os.getenv('EVEREST_DEPLOYED_VERSIONS', "v0.0.1,v0.0.2,v0.0.3").split(',')
+
 notfound_page = {
     'pagename': '404',
     'urls_prefix': '/latest/',
 }
-deployed_versions = os.getenv('EVEREST_DEPLOYED_VERSIONS', "v0.0.1,v0.0.2,v0.0.3").split(',')
 versionsindex_page = {
     'pagename': 'versions_index',
     'urls_prefix': '/latest/',
