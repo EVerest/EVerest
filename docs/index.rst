@@ -20,9 +20,44 @@ EVerest will help to speed the adoption to e-mobility by utilizing all the open 
 
 The EVerest project was initiated by PIONIX GmbH to help with the electrification of the mobility sector and is an official project of the Linux Foundation Energy.
 
+******************************************
+Contact And Get In Touch
+******************************************
+
+You might want to reach out and stay in touch with us via the following channels:
+
+.. |link_mailinglist| raw:: html
+
+    <a href="https://lists.lfenergy.org/g/everest" target="_blank">
+        <img src="_static/icons/mail.svg" style="height: 0.8em;"> EVerest mailing list
+    </a>
+
+.. |link_twitter| raw:: html
+
+    <a href="https://twitter.com/everestincharge" target="_blank">
+        <img src="_static/icons/twitter.svg" style="height: 0.8em"> Twitter
+    </a>
+
+.. |link_mastodon| raw:: html
+
+    <a href="https://fosstodon.org/@EVerest" target="_blank">
+        Mastodon
+    </a>
+
+.. |link_youtube| raw:: html
+
+        <a href="https://www.youtube.com/@lfe_everest" target="_blank">
+            <img src="_static/icons/youtube.svg" style="height: 0.8em"> YouTube Channel
+        </a>
+
+* |link_mailinglist|: You will get your questions answered and will also get regular information about our public meetups to which you are invited to join. A tech meetup for all contributors is currently held once a week.
+* |link_youtube|: Stay up-to-date with webinars and get insights from the Technical Steering Committee recordings.
+* Don't forget to follow us on |link_twitter| or |link_mastodon|.
+
 **************************
 Find Your Way Into EVerest
 **************************
+
 If you want to choose video rather than text and code for a quick dive-in, **have a look at our webinar first**:
 
 .. image:: /img/webinar-how-everest-ecosystem-simplifies-charging-use-cases-screenshot.png
@@ -35,11 +70,9 @@ We prepared a path to get step by step into the EVerest world. It will lead you 
 
 To walk this path, simple go on reading and follow the table of contents below.
 
-Besides that, you might want to reach out and stay in touch with us via the following channels:
-
-* `EVerest mailing list <https://lists.lfenergy.org/g/everest>`_: You will get your questions answered and will also get regular information about our public meetups to which you are invited to join. A tech meetup for all contributors is currently held once a week.
-* `YouTube-Channel <https://www.youtube.com/@lfe_everest>`_: Stay up-to-date with webinars and get insights from the Technical Steering Committee recordings.
-* Don't forget to follow us on `Twitter <https://twitter.com/everestincharge>`_ or `Mastodon <https://fosstodon.org/@EVerest>`_
+******************************************
+Table Of Contents
+******************************************
 
 But now let's dive in the EVerest journey to get you on board. Start on top level with the first chapter and walk the path down to your first module implementation.
 
