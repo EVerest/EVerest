@@ -58,17 +58,12 @@ def replace_uris(app, doctree, nodetype, nodeattr):
             # correct link
             uri = olduri.split('/')[-1]
 
-        if app.config.versionsindex_no_urls_prefix:
-            uri = '/{imagedir}{filename}'.format(
-                filename=uri,
-                imagedir=imagedir,
-            )
-        else:
-            uri = '{prefix}{imagedir}{filename}'.format(
-                prefix=app.config.versionsindex_urls_prefix or '/',
-                imagedir=imagedir,
-                filename=uri,
-            )
+        uri = '{prefix}{imagedir}{filename}'.format(
+            prefix=app.config.staticpages_urls_prefix or '/',
+            imagedir=imagedir,
+            filename=uri,
+        )
+
         node.replace_attr(nodeattr, uri)
 
         # Force adding the image to the builder so it's copied at ``Builder.copy_image_files``
