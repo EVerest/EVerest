@@ -1,0 +1,6 @@
+everest:
+  git: git@github.com:EVerest/EVerest.git
+  git_tag: rework-contact-section
+everest-core:
+  git: git@github.com:EVerest/everest-core.git
+  git_tag: main
