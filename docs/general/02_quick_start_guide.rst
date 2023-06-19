@@ -39,26 +39,43 @@ Python and its tools pip, setuptools and wheel have already been installed in th
   git clone git@github.com:EVerest/everest-dev-environment.git
   cd everest-dev-environment/dependency_manager
   python3 -m pip install .
-  edm --config ../everest-complete.yaml --workspace ~/checkout/everest-workspace
 
-(In future, as your system has edm properly setup, you can always initialise a new workspace by calling *edm init*.)
+To let edm prepare the most common repos for a simple start with EVerest,
+let us use a default config file and set a workspace directory for the repos.
+Set your preferred directory instead of `{EVerest Workspace Directory}`, e.g.
+use `~/checkout/everest-workspace`.
 
-edm will now prepare the most common repos to start with. It will also create a YAML file which describes your newly created workspace. You can change that YAML file later if you want to adopt the workspace to another scenario.
+.. code-block:: bash
 
-The YAML file can be found in the directory which you have chosen as workspace directory. In the above example, it is located at ~/checkout/everest-workspace.
+  edm --config ../everest-complete.yaml --workspace {EVerest Workspace Directory}
+
+(In future, as your system has edm properly setup, you can always initialise a
+new workspace by calling *edm init*.)
+
+edm will now prepare the most common repos to start with. It will also create a
+YAML file which describes your newly created workspace. You can change that
+YAML file later if you want to adopt the workspace to another scenario.
+
+The YAML file can be found in the directory which you have chosen as workspace
+directory. In the above example, it is located at
+
+`{EVerest Workspace Directory}`.
 
 EVerest Command Line Interface: ev-cli
 --------------------------------------
 
-In its current version, ev-cli supports you by generating module templates. It is also necessary to build EVerest.
+In its current version, ev-cli supports you by generating module templates. It
+is also necessary to build EVerest.
 
-To install ev-cli, change into the everest-utils/ev-dev-tools/ directory and install ev-cli:
+To install ev-cli, change into the everest-utils/ev-dev-tools/ directory and
+install ev-cli:
 
 .. code-block:: bash
 
   python3 -m pip install .
 
-That is all to install ev-cli. You can find the binary file of ev-cli in your HOME directory in .local/bin/
+That is all to install ev-cli. You can find the binary file of ev-cli in your
+HOME directory in .local/bin/
 
 In a later step, we will use ev-cli to create module stubs.
 
@@ -70,7 +87,7 @@ install the needed requirements for Josev:
 
 .. code-block:: bash
 
-  cd ~/checkout/everest-workspace/Josev
+  cd {EVerest Workspace Directory}/Josev
   python3 -m pip install -r requirements.txt
 
 
@@ -81,15 +98,19 @@ Now it is time to build EVerest:
 
 .. code-block:: bash
 
-  cd ~/checkout/everest-workspace/everest-core
+  cd {EVerest Workspace Directory}/everest-core
   mkdir build
   cd build
   cmake ..
   make install
 
-edm helped you to keep it that simple. Let's now dive into simulating our current workspace.
+edm helped you to keep it that simple. Let's now dive into simulating our
+current workspace.
 
-If you get an error during the build process stating that ev-cli is installed in an old version, go to your everest-workspace directory and call *edm --git-pull*. This will update the EVerest repositories. After that, repeat building ev-cli and you should be good to go again.
+If you get an error during the build process stating that ev-cli is installed
+in an old version, go to your everest workspace directory and call *edm
+--git-pull*. This will update the EVerest repositories. After that, repeat
+building ev-cli and you should be good to go again.
 
 ******************
 Simulating EVerest
@@ -97,11 +118,16 @@ Simulating EVerest
 
 Prepare The Helpers
 ===================
-EVerest comes with prepared Docker containers. One of them is needed to get the
-EVerest simulation running. This documentation section shows the necessary
-steps to start the simulation and get the user interface running.
+EVerest comes with prepared Docker containers. The one that starts Mosquitto
+(an MQTT broker) is required to run EVerest. This documentation section shows
+the necessary steps to start the simulation and get the user interface running.
 
-To get all this working, make sure you have Docker and Docker-Compose installed during the previous install phase. (If not, see install instructions for `Docker <https://docs.docker.com/engine/install/#server>`_ and `Docker-Compose <https://docs.docker.com/compose/install/#install-compose)>`_!)
+Further tools are not required to run EVerest (e.g. StEVe for OCPP). Further
+information about EVerest Docker containers can be found on the
+`EVerest Docker Setup page <../tutorials/docker_setup.html>`_.
+
+.. hint::
+  To get all this working, make sure you have Docker and Docker-Compose installed during the previous install phase. (If not, see install instructions for `Docker <https://docs.docker.com/engine/install/#server>`_ and `Docker-Compose <https://docs.docker.com/compose/install/#install-compose)>`_!)
 
 In order for custom or local containers being able to talk to the services,
 provided by the docker-compose containers, we need to create a common docker
@@ -112,8 +138,8 @@ following command (IPv6 is enabled for containers which might need it):
 
   docker network create --driver bridge --ipv6  --subnet fd00::/80 infranet_network --attachable
 
-Now, change into your workspace directory (e.g. ~/checkout/everest-workspace)
-and enter the directory with the prepared docker container to start them up:
+Now, change into your workspace directory and enter the directory with the
+prepared docker container to start them up:
 
 .. code-block:: bash
 
@@ -137,13 +163,13 @@ Start the software-in-a-loop simulation via script:
 
 .. code-block:: bash
 
-  ~/checkout/everest-workspace/everest-core/build/run-scripts/run-sil.sh
+  {EVerest Workspace Directory}/everest-core/build/run-scripts/run-sil.sh
 
 In a new terminal window, run the NodeRed script:
 
 .. code-block:: bash
 
-  ~/checkout/everest-workspace/everest-core/build/run-scripts/nodered-sil.sh
+  {EVerest Workspace Directory}/everest-core/build/run-scripts/nodered-sil.sh
 
 For a user interface, just direct your browser to `http://localhost:1880/ui` -
 the needed web-server has already been started via the shell scripts.
@@ -167,11 +193,13 @@ To use simulation with your own custom flows, visit `Tuturial For Simulating EVe
 Admin Panel
 ===========
 
-The Admin Panel gives you a nice overview of the modules and the connections between them.
+The Admin Panel gives you a nice overview of the modules and the connections
+between them.
 
 As it resides in an own repository, which is not delivered automatically by edm in default, you will have to get the repo manually here: `EVerest Admin Panel <https://github.com/EVerest/everest-admin-panel>`_
 
-You will have to install and run it via npm. After that, you can reach the Admin Panel locally via your standard web port 80.
+You will have to install and run it via npm. After that, you can reach the
+Admin Panel locally via your standard web port 80.
 
 A detailed walk-through to assist you with that is in preparation.
 
@@ -187,17 +215,21 @@ What parts does a module in EVerest consist of?
 
 Get a more detailed insight into the module config and implementation files on the `EVerest Module Concept page <04_detail_module_concept.html>`_.
 
-Here, we want to go on with setting up a module template to use that as a base for our own implementation.
+Here, we want to go on with setting up a module template to use that as a base
+for our own implementation.
 
 *************************
 Implementing a New Module
 *************************
 
-To create a new module in EVerest, we need to do some small steps shown in the following. No worries: We will go through them in more detail afterwards.
+To create a new module in EVerest, we need to do some small steps shown in the
+following. No worries: We will go through them in more detail afterwards.
 
 - Create a new subdirectory in the modules directory.
-- Create a CMakeLists.txt (or borrow it from another module) with all needed libraries to build the module
-- Create a manifest with information about which interface implementations are provided and which interfaces are required from connected modules.
+- Create a CMakeLists.txt (or borrow it from another module) with all needed
+  libraries to build the module
+- Create a manifest with information about which interface implementations are
+  provided and which interfaces are required from connected modules.
 
 Now, let's make ev-cli do its job of generating a module stub from a template:
 
@@ -207,7 +239,8 @@ Now, let's make ev-cli do its job of generating a module stub from a template:
 
 The name of the module is the one given as directory name.
 
-You will see that you get cpp and hpp files for your main module class and also for the interfaces to be implemented.
+You will see that you get cpp and hpp files for your main module class and also
+for the interfaces to be implemented.
 
 You main cpp file will have to special functions:
 
@@ -216,10 +249,14 @@ You main cpp file will have to special functions:
   void MyModuleName::init() {}
   void MyModuleName::ready() {}
 
-When initialising, the EVerest framework will call all init() functions of all modules one after the other. After having initialised all modules in that way, the framework calls the ready() functions.
+When initialising, the EVerest framework will call all init() functions of all
+modules one after the other. After having initialised all modules in that way,
+the framework calls the ready() functions.
 
-This allows you to do setup things that relate only to your current module in the init() function and all stuff requiring other modules being initialised in your ready() function.
+This allows you to do setup things that relate only to your current module in
+the init() function and all stuff requiring other modules being initialised in
+your ready() function.
 
-.. hint:: 
+.. hint::
 
   We will add additional documentation here soon to get you an idea about how vars can be published and how to interact with required modules from the outside. We will show callback functions and events and how all this works together in your module.
