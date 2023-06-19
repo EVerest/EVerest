@@ -42,7 +42,7 @@ Docker container:
   docker stop everest_nodered
   docker run --rm --network host --name everest_nodered --mount type=bind,source=/{EVerest Workspace Directory}/everest-core/config/nodered/config-sil-flow.json,target=/data/flows.json everest-nodered
 
-Your modified flow will now be used for your Simulation GUI at `http://localhost/1880/gui`.
+Your modified flow will now be used for your Simulation GUI at `http://localhost:1880/gui`.
 
 .. hint:: 
 

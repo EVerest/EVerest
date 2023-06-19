@@ -83,7 +83,7 @@ Packages for ISO 15118 communication
 ------------------------------------
 
 To be able to build EVerest with ISO 15118 capability, you will have to
-install the needed requirements for Josev:
+install the requirements for Josev:
 
 .. code-block:: bash
 
@@ -122,12 +122,12 @@ EVerest comes with prepared Docker containers. The one that starts Mosquitto
 (an MQTT broker) is required to run EVerest. This documentation section shows
 the necessary steps to start the simulation and get the user interface running.
 
-Further tools are not required to run EVerest (e.g. StEVe for OCPP). Further
+Further tools are not required to run EVerest (e.g. SteVe for OCPP). Further
 information about EVerest Docker containers can be found on the
 `EVerest Docker Setup page <../tutorials/docker_setup.html>`_.
 
 .. hint::
-  To get all this working, make sure you have Docker and Docker-Compose installed during the previous install phase. (If not, see install instructions for `Docker <https://docs.docker.com/engine/install/#server>`_ and `Docker-Compose <https://docs.docker.com/compose/install/#install-compose)>`_!)
+  To get all this working, make sure you have docker and docker-compose installed during the previous install phase. (If not, see install instructions for `docker <https://docs.docker.com/engine/install/#server>`_ and `docker-compose <https://docs.docker.com/compose/install/#install-compose)>`_!)
 
 In order for custom or local containers being able to talk to the services,
 provided by the docker-compose containers, we need to create a common docker
@@ -139,7 +139,8 @@ following command (IPv6 is enabled for containers which might need it):
   docker network create --driver bridge --ipv6  --subnet fd00::/80 infranet_network --attachable
 
 Now, change into your workspace directory and enter the directory with the
-prepared docker container to start them up:
+prepared docker containers. Start the the mosquitto broker which will be
+used by EVerest for the communication between the EVerest modules:
 
 .. code-block:: bash
 
@@ -152,27 +153,32 @@ chapter.
 Software in a loop
 ==================
 
-Make sure you have prepared the helpers necessary for simulating EVerest as shown in the `previous section <02_quick_start_guide.html#prepare-the-helpers>`_.
+In the following, we will start EVerest as a simple AC charging station with
+software-in-the-loop configuration. This means that all hardware related
+parts like Powermeter, RFID-Reader or even actual Electric Vehicles are
+loaded as simulated modules.
 
-After having done that, change to the directory /everest-core/build/, which has
-been created during EVerest install.
+.. hint::
 
-We will startup EVerest now with a software-in-a-loop (SIL) config.
+  Make sure you have prepared the helpers necessary for simulating EVerest as shown in the `previous section <02_quick_start_guide.html#prepare-the-helpers>`_.
 
-Start the software-in-a-loop simulation via script:
+Change to the directory `everest-core/build`, which has been created during
+EVerest install.
+
+Start EVerest with a software-in-the-loop configuration via script:
 
 .. code-block:: bash
 
   {EVerest Workspace Directory}/everest-core/build/run-scripts/run-sil.sh
 
-In a new terminal window, run the NodeRed script:
+In a new terminal window, run the Node-RED script:
 
 .. code-block:: bash
 
   {EVerest Workspace Directory}/everest-core/build/run-scripts/nodered-sil.sh
 
 For a user interface, just direct your browser to `http://localhost:1880/ui` -
-the needed web-server has already been started via the shell scripts.
+the required web-server has already been started via the shell scripts.
 
 This will let us control the simulation in a very simple GUI.
 
@@ -226,8 +232,8 @@ To create a new module in EVerest, we need to do some small steps shown in the
 following. No worries: We will go through them in more detail afterwards.
 
 - Create a new subdirectory in the modules directory.
-- Create a CMakeLists.txt (or borrow it from another module) with all needed
-  libraries to build the module
+- Create a CMakeLists.txt (or borrow it from another module) with all
+  required libraries to build the module
 - Create a manifest with information about which interface implementations are
   provided and which interfaces are required from connected modules.
 
