@@ -49,7 +49,7 @@ jobs:
       fail-fast: false
     runs-on: ${{ matrix.os }}
     container: 
-      image: ghcr.io/everest/everest-ci-env:main
+      image: ghcr.io/everest/everest-ci-env:feature-use-specific-versions
     env:
       SSH_AUTH_SOCK: /tmp/ssh_agent.sock
     outputs:
@@ -117,7 +117,7 @@ jobs:
         os: [ubuntu-20.04]
     runs-on: ${{ matrix.os }}
     container: 
-      image: ghcr.io/everest/everest-ci-env:main
+      image: ghcr.io/everest/everest-ci-env:feature-use-specific-versions
     env:
       SSH_AUTH_SOCK: /tmp/ssh_agent.sock
     steps:
@@ -203,7 +203,7 @@ jobs:
         os: [ubuntu-20.04]
     runs-on: ${{ matrix.os }}
     container: 
-      image: ghcr.io/everest/everest-ci-env:main
+      image: ghcr.io/everest/everest-ci-env:feature-use-specific-versions
     env:
       SSH_AUTH_SOCK: /tmp/ssh_agent.sock
       GITHUB_PAGES_REPO: ${{ inputs.github_pages_repo }}
