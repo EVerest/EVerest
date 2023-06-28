@@ -18,17 +18,17 @@ EVerest Dependency Manager (edm).
 
 Starting from edm version 0.5, edm also helps you with getting a dedicated
 release of EVerest. First of all, see a list of available releases:
-```
+```bash
 edm init --list
 ```
 That will result in an output like
-```
+```txt
 [edm]: Available everest-core releases: 2023.5.0, 2023.3.0, 2023.2.1, 2023.2.0, 2023.1.0, 2022.12.1, 2022.12.0, 2022-11.0
 ```
 with the most current releases shown first.
 
 To checkout your favourite release, like in the following case `2023.5.0`:
-```
+```bash
 edm init 2023.5.0
 ```
 
