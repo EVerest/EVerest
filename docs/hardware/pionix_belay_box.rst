@@ -9,6 +9,14 @@ Introduction
 The BelayBox is a reference platform specifically designed for development and
 testing of the open source software EVerest.
 
+Inside the box, a Raspberry Pi is built in and we are officially part of the
+"Powered by Raspberry Pi" scheme:
+
+.. image:: img/powered-by-pi.png
+  :width: 300
+  :alt: Logo Powered by Raspberry Pi for Charging Development Kit BelayBox
+  :align: center
+
 BelayBox can be utilized by individuals, research facilities and companies
 alike to
 
