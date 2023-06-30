@@ -63,8 +63,8 @@ at GitHub on the page about
 The EVerest-specific process is as follows:
 
 Assuming you wish to create a new release for the everest-core repository,
-which is the main EVerest repo. On the repo page, click on **Releases** in the
-right side-column. The button **Draft a new release** leads you to the release
+which is the main EVerest repo. On the repo page, click on __Releases__ in the
+right side-column. The button __Draft a new release__ leads you to the release
 creation form.
 
 You can create a new Git tag right on that page. That is the tag on which the
@@ -72,4 +72,4 @@ release will be based. Remember the correct versioning name pattern:
 _YEAR.MONTH.INDEX_, e.g. 2022.12.1
 
 > INFO: _Just tell them about some stuff about how edm knows where to
-get the compatible versions of the other repos and so on._
+> get the compatible versions of the other repos and so on._
