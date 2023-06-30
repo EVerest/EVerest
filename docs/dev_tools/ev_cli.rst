@@ -1,5 +1,7 @@
 .. doc_EV-CLI
 
+.. _evcli doc:
+
 ======
 ev-cli
 ======

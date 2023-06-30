@@ -1,5 +1,7 @@
 .. quick_start:
 
+.. _Quick Start Guide:
+
 ################################################
 A Real Quick Guide To EVerest
 ################################################
@@ -10,9 +12,11 @@ Prepare Your Development Environment
 
 Needed Packages
 ===============
-You will need Python, Jinja2, PyYAML, a compiler and some more system libraries set up. See the detailed page for `setting up your development environment <03_detail_pre_setup.html>`_ to see some examples for operating systems.
+You will need Python, Jinja2, PyYAML, a compiler and some more system libraries set up. See the detailed page for :ref:`setting up your development environment <Prepare Dev Environment>` to see some examples for operating systems.
 
 After having created your environment, return back here, where we will go on with downloading and installing EVerest.
+
+.. _Quick Start Download and Install:
 
 ********************
 Download And Install
@@ -95,6 +99,8 @@ If you get an error during the build process stating that ev-cli is installed in
 Simulating EVerest
 ******************
 
+.. _Quick Start Prepare Helpers:
+
 Prepare The Helpers
 ===================
 EVerest comes with prepared Docker containers, which are needed for simulation and further development. To get this working, make sure you have Docker and Docker-Compose installed during the previous install phase. (If not, see install instructions for `Docker <https://docs.docker.com/engine/install/#server>`_ and `Docker-Compose <https://docs.docker.com/compose/install/#install-compose)>`_!)
@@ -137,7 +143,7 @@ That makes us ready for entering the simulation phase described in the next chap
 Software in a loop
 ==================
 
-Make sure you have prepared the helpers necessary for simulating EVerest as shown in the `previous section <02_quick_start_guide.html#prepare-the-helpers>`_.
+Make sure you have prepared the helpers necessary for simulating EVerest as shown in the :ref:`previous section <Quick Start Prepare Helpers>`.
 
 After having done that, change to the directory /everest-core/build/, which has been created during EVerest install.
 
@@ -176,6 +182,8 @@ You will have to install and run it via npm. After that, you can reach the Admin
 
 A detailed walk-through to assist you with that is in preparation.
 
+.. _Quick Start Module Setup:
+
 ************
 Module Setup
 ************
@@ -186,7 +194,7 @@ What parts does a module in EVerest consist of?
 - Types definition
 - Module implementation
 
-Get a more detailed insight into the module config and implementation files on the `EVerest Module Concept page <04_detail_module_concept.html>`_.
+Get a more detailed insight into the module config and implementation files on the :ref:`EVerest Module Concept page <Module Concept>`.
 
 Here, we want to go on with setting up a module template to use that as a base for our own implementation.
 

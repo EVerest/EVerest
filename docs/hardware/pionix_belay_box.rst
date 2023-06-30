@@ -265,7 +265,7 @@ For deployment on real products you should consider using Yocto or similar
 instead.
 
 For further information like the partitioning scheme and updating Raspbian,
-section `BelayBox Further Information`_ .
+section :ref:`BelayBox Further Information <BelayBox Further Info>`.
 
 EVerest
 =======
@@ -372,6 +372,8 @@ custom installation and still use the online updates for the base system.
 
 If you do it for the first time, reboot BelayBox so that
 ``everest-dev.service`` is used from now-on instead of ``everest.service``.
+
+.. _BelayBox Further Info:
 
 BelayBox Further Information
 ****************************
