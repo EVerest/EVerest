@@ -1,6 +1,6 @@
 .. doc_EV-CLI
 
-.. _evcli doc:
+.. _evcli_main:
 
 ======
 ev-cli

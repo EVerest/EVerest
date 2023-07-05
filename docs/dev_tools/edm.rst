@@ -75,7 +75,7 @@ refer to the `CPM Documentation <https://github.com/cpm-cmake/CPM.cmake/blob/mas
 
 Building everest
 ****************
-Make sure you have installed :ref:`ev_cli <evcli doc>` first.
+Make sure you have installed :ref:`ev_cli <evcli_main>` first.
 You can now use the following commands to build everest-core:
 
 .. code-block:: bash

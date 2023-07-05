@@ -1,6 +1,6 @@
 .. detail_pre_setup:
 
-.. _Prepare Dev Environment:
+.. _preparedevenv_main:
 
 ####################################
 Prepare Your Development Environment
@@ -49,4 +49,5 @@ Tested with Fedora 36. Here is how to get your needed libraries with `dnf`.
   sudo dnf update
   sudo dnf install make automake gcc gcc-c++ kernel-devel python3-pip git rsync wget cmake doxygen graphviz clang-tools-extra cppcheck maven java-11-openjdk java-11-openjdk-devel boost-devel nodejs nodejs-devel npm openssl-devel libsqlite3x-devel curl rfkill libpcap-devel
 
-Now, it's time to continue with the :ref:`Quick Start Guide to install EVerest <Quick Start Download and Install>`.
+Now, it's time to continue with the
+:ref:`Quick Start Guide to install EVerest <quickstartguide_download_install>`.
