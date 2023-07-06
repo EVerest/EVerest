@@ -32,15 +32,21 @@ Get The Needed EVerest Repositories
 EVerest Dependency Manager - edm
 --------------------------------
 
-As EVerest is highly modular, you will need multiple repos, which can be found on GitHub.
+As EVerest is highly modular, you will need multiple repos, which can be found
+on GitHub.
 
-To get the right repos as needed, the EVerest Dependency Manager - short edm - will help you.
+To get the right repos as needed, the EVerest Dependency Manager - short edm -
+will help you.
 
 To start with that, let's get edm ready to work.
 
-You will first of all need to pull *everest-dev-environment* to your development environment.
+You will first of all need to pull *everest-dev-environment* to your
+development environment.
 
-Python and its tools pip, setuptools and wheel have already been installed in the Prerequisites section above. So, you can pull the said repository and install the dependency manager, which will reside inside of .local/bin/ in your HOME directory:
+Python and its tools pip, setuptools and wheel have already been installed in
+the Prerequisites section above. So, you can pull the said repository and
+install the dependency manager, which will reside inside of .local/bin/ in your
+HOME directory:
 
 .. code-block:: bash
 
@@ -49,11 +55,18 @@ Python and its tools pip, setuptools and wheel have already been installed in th
   python3 -m pip install .
   edm --config ../everest-complete.yaml --workspace ~/checkout/everest-workspace
 
-(In future, as your system has edm properly setup, you can always initialise a new workspace by calling *edm init*.)
+(In future, as your system has edm properly setup, you can always initialise a
+new workspace by calling *edm init*.)
 
-edm will now prepare the most common repos to start with. It will also create a YAML file which describes your newly created workspace. You can change that YAML file later if you want to adopt the workspace to another scenario.
+edm will now prepare the most common repos to start with. It will also create a
+YAML file which describes your newly created workspace. You can change that
+YAML file later if you want to adopt the workspace to another scenario.
 
-The YAML file can be found in the directory which you have chosen as workspace directory. In the above example, it is located at ~/checkout/everest-workspace.
+The YAML file can be found in the directory which you have chosen as workspace
+directory. In the above example, it is located at ~/checkout/everest-workspace.
+
+More details about edm, see the dedicated
+:ref:`edm page in this documentation <edm_main>`.
 
 EVerest Command Line Interface: ev-cli
 --------------------------------------

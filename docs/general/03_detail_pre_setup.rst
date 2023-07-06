@@ -13,10 +13,26 @@ To get EVerest running properly, you will mainly need the following packages:
 * PyYAML
 * Compiler:
 
-  * GCC 9 (lower versions could work with some tweaking but are not recommended)
-  * Clang (starting with version 12) has been used with EVerest but is not officially supported.
+  * GCC 9 (lower versions could work with some tweaking but are not
+    recommended)
+  * Clang (starting with version 12) has been used with EVerest but is not
+    officially supported.
 
-A complete list of libraries to be installed is given by the following best practices which setup a development environment on a number of operating systems.
+Make sure you have the Python packages pip, setuptools and wheel available,
+which are needed for the EVerest dependency manager:
+
+.. code-block:: bash
+
+  python3 -m pip install --upgrade pip setuptools wheel
+
+To get the repositories from GitHub to your local development environment,
+please
+`set your SSH key in GitHub <https://www.atlassian.com/git/tutorials/git-ssh>`_
+.
+
+A complete list of libraries to be installed is given by the following best
+practices which setup a development environment on a number of operating
+systems.
 
 Ubuntu
 ======
