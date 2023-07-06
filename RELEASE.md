@@ -45,12 +45,17 @@ to the current version and enjoy the more convenient way.
 
 ## Create a New Release
 
-### Define the features
+### Define the features and repo versions
 Make sure that you are clear with the EVerest core developer team that all
 new release features have been finished, tested and documented in the
 changelog.
 
-If unsure about that, discussion about such topics takes place in the weekly
+Development in several EVerest repositories other than everest-core will still
+go on. Make sure that stable versions of repositories have been tagged and
+configured in the everest-core repository in file dependencies.yaml. This way,
+those versions will be part of the new EVerest release.
+
+If unsure about all that, discussion about such topics takes place in the weekly
 tech meeting (announced via the
 [EVerest Mailinglist](https://lists.lfenergy.org/g/everest).
 
@@ -62,14 +67,14 @@ at GitHub on the page about
 
 The EVerest-specific process is as follows:
 
-Assuming you wish to create a new release for the everest-core repository,
-which is the main EVerest repo. On the repo page, click on __Releases__ in the
-right side-column. The button __Draft a new release__ leads you to the release
-creation form.
+To create a new official EVerest release, you will have to create a new release
+of the main EVerest repository in GitHub - which is everest-core. On the repo
+page, click on __Releases__ in the right side-column. The button __Draft a new release__ leads you to the release creation form.
 
 You can create a new Git tag right on that page. That is the tag on which the
 release will be based. Remember the correct versioning name pattern:
 _YEAR.MONTH.INDEX_, e.g. 2022.12.1
 
-> INFO: _Just tell them about some stuff about how edm knows where to
-> get the compatible versions of the other repos and so on._
+When using edm to get a new release version, edm knows from the
+dependencies.yaml which tags of all repositories to checkout for serving
+a stable release workspace.
