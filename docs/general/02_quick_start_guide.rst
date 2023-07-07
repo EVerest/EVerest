@@ -201,6 +201,7 @@ In the GUI, you can simulate car charging sessions using the available buttons,
 e.g. `CAR PLUGIN`, `PAUSE`, `RESUME` and so on:
 
 .. image:: img/quick-start-sil-gui.png
+  :width: 200px
 
 Your own simulations
 ====================
