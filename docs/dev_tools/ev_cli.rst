@@ -1,5 +1,7 @@
 .. doc_EV-CLI
 
+.. _evcli_main:
+
 ======
 ev-cli
 ======
@@ -25,7 +27,7 @@ It has the following subcommands
   manifest definitions
 
 - interface:
-  auto generation of c++ header files for defined interfaces
+  auto generation of C++ header files for defined interfaces
 
 - helpers:
   utility commands
@@ -48,10 +50,10 @@ common:
   definitions (default: ``../everest-framework``)
 
 - `--clang-format-file`:
-  if c++output should be formatted, set this to the path of the
+  if C++ output should be formatted, set this to the path of the
   .clang-format file
 
-Generating c++ header files for defined interfaces
+Generating C++ header files for defined interfaces
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Assuming that the interface definitions in json format are located at
@@ -69,7 +71,7 @@ header file will be generated.  The former represents the `implementers`
 view, and the latter the `users` view of the interface, when used in a
 module.
 
-Creating and updating auto generated files for modules (c++ only)
+Creating and updating auto generated files for modules (C++ only)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Assuming the modules are located at ``./modules`` and the initial
@@ -183,9 +185,9 @@ subcommands:
    would recreate the ``CMakeLists.txt`` and the
    ``main/SampleInterfaceImpl.cpp`` files, whereas::
 
-    ev-clie module update Example --only module.hpp
+    ev-cli module update Example --only module.hpp
 
-   would update only the module header file ``Example.hpp``
+   would update only the module header file ``Example.hpp``.
 
 
 Auto generating NodeJS modules

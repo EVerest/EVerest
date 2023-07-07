@@ -1,5 +1,7 @@
 .. quick_start:
 
+.. _quickstartguide_main:
+
 ################################################
 A Real Quick Guide To EVerest
 ################################################
@@ -10,9 +12,15 @@ Prepare Your Development Environment
 
 Needed Packages
 ===============
-You will need Python, Jinja2, PyYAML, a compiler and some more system libraries set up. See the detailed page for `setting up your development environment <03_detail_pre_setup.html>`_ to see some examples for operating systems.
+You will need Python, Jinja2, PyYAML, a compiler and some more system libraries
+set up. See the detailed page for
+:ref:`setting up your development environment <preparedevenv_main>` to see some
+examples for operating systems.
 
-After having created your environment, return back here, where we will go on with downloading and installing EVerest.
+After having created your environment, return back here, where we will go on
+with downloading and installing EVerest.
+
+.. _quickstartguide_download_install:
 
 ********************
 Download And Install
@@ -116,6 +124,8 @@ building ev-cli and you should be good to go again.
 Simulating EVerest
 ******************
 
+.. _quickstartguide_helpers:
+
 Prepare The Helpers
 ===================
 EVerest comes with prepared Docker containers. The one that starts Mosquitto
@@ -160,7 +170,8 @@ loaded as simulated modules.
 
 .. hint::
 
-  Make sure you have prepared the helpers necessary for simulating EVerest as shown in the `previous section <02_quick_start_guide.html#prepare-the-helpers>`_.
+  Make sure you have prepared the helpers necessary for simulating EVerest as
+  shown in the :ref:`previous section <quickstartguide_helpers>`.
 
 Change to the directory `everest-core/build`, which has been created during
 EVerest install.
@@ -209,6 +220,8 @@ Admin Panel locally via your standard web port 80.
 
 A detailed walk-through to assist you with that is in preparation.
 
+.. _quickstartguide_modulesetup:
+
 ************
 Module Setup
 ************
@@ -219,7 +232,8 @@ What parts does a module in EVerest consist of?
 - Types definition
 - Module implementation
 
-Get a more detailed insight into the module config and implementation files on the `EVerest Module Concept page <04_detail_module_concept.html>`_.
+Get a more detailed insight into the module config and implementation files on
+the :ref:`EVerest Module Concept page <moduleconcept_main>`.
 
 Here, we want to go on with setting up a module template to use that as a base
 for our own implementation.
@@ -248,7 +262,7 @@ The name of the module is the one given as directory name.
 You will see that you get cpp and hpp files for your main module class and also
 for the interfaces to be implemented.
 
-You main cpp file will have to special functions:
+Your main cpp file will have two special functions:
 
 .. code-block:: c++
 

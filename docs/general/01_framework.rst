@@ -64,8 +64,12 @@ EVerest has been tested with Ubuntu, OpenSUSE and Fedora 36. In general, it can 
 Libraries And Tools
 ===================
 
-To create your development environment with all needed tools, libraries and compilers, the section "Prepare Your Environment" in our `Quick Start Guide <./02_quick_start_guide.html>`_ will walk you through the setup phase.
+To create your development environment with all needed tools, libraries and
+compilers, the section "Prepare Your Environment" in our
+:ref:`Quick Start Guide <quickstartguide_main>` will walk you through the setup
+phase.
 
-That guide will also give you a first overview how modules look like and how to get a first simulation running.
+That guide will also give you a first overview how modules look like and how to
+get a first simulation running.
 
-That's your next step: `Quick Start Guide <./02_quick_start_guide.html>`_
+That's your next step: :ref:`Quick Start Guide <quickstartguide_main>`
