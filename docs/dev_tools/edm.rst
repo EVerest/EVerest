@@ -91,7 +91,7 @@ You can now use the following commands to build the repository everest-core:
   cmake ..
   make install
 
-Python Packages Needed to Run edm
+Python packages needed to run edm
 *********************************
 The following Python3 packages are needed to run **edm**. If you installed edm
 using the guide above they were already installed automatically.
@@ -102,7 +102,7 @@ using the guide above they were already installed automatically.
 
 .. _cmake_integration_setup:
 
-Setting Up a Workspace
+Setting up a workspace
 ######################
 A sample workspace config, everest-complete.yaml, for the EVerest project is
 provided in the root directory of this repository. You can set up this
@@ -112,7 +112,7 @@ workspace with the following command.
 
   edm --config ../everest-complete.yaml --workspace ~/checkout/everest-workspace
 
-Updating a Workspace
+Updating a workspace
 ####################
 To update a workspace you can edit the workspace-config.yaml file in the root
 of the workspace. You can then use the following command to apply these
@@ -141,7 +141,7 @@ has the same effect.
   repositories afterwards with the commands described in
   :ref:`Git information at a glance <git_information_at_a_glance>`
 
-Using the edm CMake Module and dependencies.yaml
+Using the edm CMake module and dependencies.yaml
 ################################################
 
 To use edm from CMake you have to add the following line to the top-level
@@ -190,7 +190,7 @@ development version in your workspace:
 	    git_tag: devel
 	  timer	:
 
-Create a Workspace Config From an Existing Directory Tree
+Create a workspace config from an existing directory tree
 #########################################################
 Suppose you already have a directory tree that you want to save into a config
 file. You can do this with the following command:
@@ -224,7 +224,7 @@ the config you can use the following command.
 
 .. _git_information_at_a_glance:
 
-Git Information At a Glance
+Git information at a glance
 ###########################
 You can get a list of all git repositories in the current directory and their
 state using the following command.
@@ -251,3 +251,6 @@ This creates output that is similar to the following example.
   [edm]: "everest-deploy-devkit" @ branch: main [remote: origin/main] [clean]
   [edm]: "libtimer" @ branch: main [remote: origin/main] [dirty]
   [edm]: 2/4 repositories are dirty.
+
+Further information can be seen as shell output by calling edm with parameter
+**-h** or **--help**. 
