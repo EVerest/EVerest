@@ -226,7 +226,7 @@ The name of the module is the one given as directory name.
 
 You will see that you get cpp and hpp files for your main module class and also for the interfaces to be implemented.
 
-You main cpp file will have to special functions:
+Your main cpp file will have two special functions:
 
 .. code-block:: c++
 
