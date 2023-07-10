@@ -116,18 +116,18 @@ Updating a workspace
 ####################
 To update a workspace you can edit the workspace-config.yaml file in the root
 of the workspace. You can then use the following command to apply these
-changes.
+changes:
 
 .. code-block:: bash
 
-  edm --workspace ~/checkout/everest-workspace --update
+  edm init --workspace ~/checkout/everest-workspace
 
 If you are currently in the everest-workspace directory the following command
 has the same effect.
 
 .. code-block:: bash
 
-  edm --update
+  edm init
 
 .. attention::
 
