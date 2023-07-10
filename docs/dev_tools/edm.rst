@@ -3,7 +3,7 @@
 .. _edm_main:
 
 ***
-EDM
+edm
 ***
 
 edm stands for EVerest dependency manager. It helps you orchestrating the
@@ -22,7 +22,8 @@ Install and Quick Start
 To install the **edm** dependency manager for EVerest you have to perform the
 following steps.
 
-Please make sure you are running a sufficiently recent version of **Python3 (>=3.6)** and that you are able to install Python packages from source. Usually you just have to ensure that you have **pip**, **setuptools** and **wheel** available. Refer to the `Python Installing Packages <https://packaging.python.org/tutorials/installing-packages/#requirements-for-installing-packages>`_ documentation for indepth guidance if any problems arise.
+Please make sure you are running a sufficiently recent version of **Python3 (>=3.6)** and that you are able to install Python packages from source.
+Usually, you just have to ensure that you have **pip**, **setuptools** and **wheel** available. Refer to the `Python Installing Packages <https://packaging.python.org/tutorials/installing-packages/#requirements-for-installing-packages>`_ documentation for indepth guidance if any problems arise.
 
 .. code-block:: bash
 
@@ -43,7 +44,11 @@ A script for the steps below can be found `here <https://github.com/EVerest/ever
   python3 -m pip install .
   edm --config ../everest-complete.yaml --workspace ~/checkout/everest-workspace
 
-The last command creates a workspace in the *~/checkout/everest-workspace* directory from a `config that is shipped with this repository <https://github.com/EVerest/everest-dev-environment/blob/main/everest-complete.yaml>`_. The workspace will have the following structure containing all current dependencies for EVerest:
+The last command creates a workspace in the *~/checkout/everest-workspace* directory
+from a `config that is shipped with this repository
+<https://github.com/EVerest/everest-dev-environment/blob/main/everest-complete.yaml>`_.
+The workspace will have the following structure containing all current dependencies
+for EVerest:
 
 .. code-block:: bash
 
@@ -199,7 +204,7 @@ file. You can do this with the following command:
 
   edm --create-config custom-config.yaml
 
-This is a short form of
+This is a short form of:
 
 .. code-block:: bash
 
@@ -216,7 +221,7 @@ following command.
   edm --create-config custom-config.yaml --include-remotes git@github.com:EVerest/everest* git@github.com:EVerest/liblog.git
 
 If you want to include all repositories, including external dependencies, in
-the config you can use the following command.
+the config you can use the following command:
 
 .. code-block:: bash
 
@@ -227,20 +232,20 @@ the config you can use the following command.
 Git information at a glance
 ###########################
 You can get a list of all git repositories in the current directory and their
-state using the following command.
+state using the following command:
 
 .. code-block:: bash
 
   edm --git-info --git-fetch
 
 If you want to know the state of all repositories in a workspace you can use
-the following command.
+the following command:
 
 .. code-block:: bash
 
   edm --workspace ~/checkout/everest-workspace --git-info --git-fetch
 
-This creates output that is similar to the following example.
+This creates output that is similar to the following example:
 
 .. code-block:: bash
 
