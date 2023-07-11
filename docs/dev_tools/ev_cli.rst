@@ -34,11 +34,9 @@ It has the following subcommands
 - helpers:
   utility commands
 
-There exist short forms, for all subcommands and options. Simply call::
+To see a list of all subcommands and options, simply call:
 
     ev-cli --help
-
-for getting the list of short forms.
 
 Both the `module` and `interface` command have the following options in
 common:
