@@ -242,7 +242,7 @@ jobs:
           everest-workspace
     - name: Checkout snapshot
       run: |
-        edm init --config snapshot.yaml
+        edm --config snapshot.yaml --workspace .
       working-directory: everest-workspace
 
     - name: Remove old doc
