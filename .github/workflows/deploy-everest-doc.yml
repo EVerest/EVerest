@@ -87,17 +87,17 @@ jobs:
         from os.path import basename
         with open('snapshot.yaml', 'r') as f:
           snapshot = yaml.safe_load(f)
-        snapshot["${{ inputs.github_pages_repo }}".split('/')[-1]] = {
-          'git': 'git@github.com:${{ inputs.github_pages_repo }}.git',
-          'git_tag': 'main',
-        }
+          snapshot["${{ inputs.github_pages_repo }}".split('/')[-1]] = {
+            'git': 'git@github.com:${{ inputs.github_pages_repo }}.git',
+            'git_tag': 'main',
+          }
         with open('snapshot.yaml', 'w') as f:
           yaml.safe_dump(snapshot, f, default_flow_style=False)
       working-directory: everest-workspace
     - name: Update snapshot file
       run: |
-        edm init --config snapshot.yaml
-        edm snapshot snapshot.yaml
+        edm --config snapshot.yaml --workspace .
+        edm snapshot snapshot.yaml --recursive
       working-directory: everest-workspace
 
     - name: Upload snapshot file
@@ -139,7 +139,7 @@ jobs:
           everest-workspace
     - name: Checkout snapshot
       run: |
-        edm init --config snapshot.yaml
+        edm --config snapshot.yaml --workspace .
       working-directory: everest-workspace
     - name: List all deployed versions
       id: list-deployed-versions
