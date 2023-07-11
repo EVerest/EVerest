@@ -18,26 +18,6 @@ To install `ev_cli`::
     cd everest-utils/ev-dev-tools
     python3 -m pip install .
 
-For ISO 15118 communication, install Josev and some CA certificates:
-
-.. code-block:: bash
-
-  cd ~/checkout/everest-workspace/Josev
-  python3 -m pip install -r requirements.txt
-  cd ~/checkout/everest-workspace/Josev/iso15118/shared/pki
-  ./create_certs.sh -v iso-2 -i ~/checkout/everest-workspace/everest-core
-
-This will enable ISO 15118 communication including Plug&Charge and install The
-required CA certificates inside *config/certs/ca* and the client certificates,
-private keys and password files inside *config/certs/client*.
-
-.. attention::
-
-  This will generate an example PKI setup that can only be used for testing
-  and simulation. It will not work and is not recommended for production.
-
-The script for setting up PKI can also be used with the EvseV2G module.
-
 ev-cli command line interface
 -----------------------------
 
