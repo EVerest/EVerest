@@ -21,11 +21,14 @@ To install the dependency manager for EVerest you have to perform the following
 steps.
 
 Please make sure you are running a sufficiently recent version of **Python3 (>=3.6)** and that you are able to install Python packages from source.
-Usually, you just have to ensure that you have **pip**, **setuptools** and **wheel** available. Refer to the `Python Installing Packages <https://packaging.python.org/tutorials/installing-packages/#requirements-for-installing-packages>`_ documentation for indepth guidance if any problems arise.
+See the *python3* command below for upgrading the required packages. Refer to
+the
+`Python Installing Packages <https://packaging.python.org/tutorials/installing-packages/#requirements-for-installing-packages>`_
+documentation for indepth guidance if any problems arise.
 
 .. code-block:: bash
 
-	python3 -m pip install --upgrade pip setuptools wheel
+  python3 -m pip install --upgrade pip setuptools wheel jstyleson jsonschema
 
 Installing edm
 **************
@@ -64,8 +67,8 @@ The last command registers the :ref:`edm CMake module <cmake_integration_setup>`
 The workspace-config.yaml contains a copy of the config that was used to create
 this workspace.
 
-Enabling CPM_SOURCE_CACHE
-*************************
+Enabling CPM_SOURCE_CACHE and setting PATH
+******************************************
 The EVerest dependency manager uses
 `CPM <https://github.com/cpm-cmake/CPM.cmake>`_
 for its CMake integration. This means you *can* and **should** set the
@@ -74,9 +77,12 @@ that you do not manage in the workspace are not re-downloaded multiple times.
 For detailed information and other useful environment variables please
 refer to the `CPM Documentation <https://github.com/cpm-cmake/CPM.cmake/blob/master/README.md#CPM_SOURCE_CACHE>`_.
 
+Also set the PATH variable:
+
 .. code-block:: bash
 
 	export CPM_SOURCE_CACHE=$HOME/.cache/CPM
+	export PATH=$PATH:/home/$(whoami)/.local/bin
 
 Building EVerest
 ****************

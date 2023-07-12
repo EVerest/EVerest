@@ -98,6 +98,25 @@ install the requirements for Josev:
   cd {EVerest Workspace Directory}/Josev
   python3 -m pip install -r requirements.txt
 
+For ISO 15118 communication including Plug&Charge, install Josev and some CA certificates:
+
+.. code-block:: bash
+
+  cd ~/checkout/everest-workspace/Josev
+  python3 -m pip install -r requirements.txt
+  cd ~/checkout/everest-workspace/Josev/iso15118/shared/pki
+  ./create_certs.sh -v iso-2 -i ~/checkout/everest-workspace/everest-core
+
+This will enable ISO 15118 communication including Plug&Charge and install The
+required CA certificates inside *config/certs/ca* and the client certificates,
+private keys and password files inside *config/certs/client*.
+
+.. attention::
+
+  This will generate an example PKI setup that can only be used for testing
+  and simulation. It will not work and is not recommended for production.
+
+The script for setting up PKI can also be used with the EvseV2G module.
 
 Build EVerest
 =============
@@ -111,6 +130,18 @@ Now it is time to build EVerest:
   cd build
   cmake ..
   make install
+
+.. hint::
+
+  In case you have more than one CPU core and more RAM availble you can use the
+  following command to significantly speed up the build process:
+
+  *cmake  -j$(nproc) ..*
+
+  *make -j$(nproc) install*
+
+  *$(nproc)* puts out the core count of your machine, so it is using all
+  available CPU cores. You can also specify any number of CPU cores you like.
 
 edm helped you to keep it that simple. Let's now dive into simulating our
 current workspace.
