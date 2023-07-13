@@ -134,18 +134,6 @@ has the same effect.
 
   edm init
 
-.. attention::
-
-  Be advised that even if you remove a repository from the config file it WILL
-  NOT be deleted from the workspace.
-
-  An attempt will be made to switch branches to the ones specified in the
-  config, however this will be aborted if the repository is dirty.
-
-  Repositories also WILL NOT be pulled, you should check the state of your
-  repositories afterwards with the commands described in
-  :ref:`Git information at a glance <git_information_at_a_glance>`
-
 Using the edm CMake module and dependencies.yaml
 ################################################
 
