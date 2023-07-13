@@ -87,7 +87,6 @@ But now let's dive in the EVerest journey to get you on board. Start on top leve
     tutorials/index
     hardware/*
     hardware/*/index
-    generated/*
     appendix/*
     appendix/*/index
 

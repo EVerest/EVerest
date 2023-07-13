@@ -96,8 +96,8 @@ jobs:
       working-directory: everest-workspace
     - name: Update snapshot file
       run: |
-        edm init --config snapshot.yaml
-        edm snapshot snapshot.yaml
+        edm --config snapshot.yaml --workspace .
+        edm snapshot snapshot.yaml --recursive
       working-directory: everest-workspace
 
     - name: Upload snapshot file
@@ -139,7 +139,7 @@ jobs:
           everest-workspace
     - name: Checkout snapshot
       run: |
-        edm init --config snapshot.yaml
+        edm --config snapshot.yaml --workspace .
       working-directory: everest-workspace
     - name: List all deployed versions
       id: list-deployed-versions
@@ -242,7 +242,7 @@ jobs:
           everest-workspace
     - name: Checkout snapshot
       run: |
-        edm init --config snapshot.yaml
+        edm --config snapshot.yaml --workspace .
       working-directory: everest-workspace
 
     - name: Remove old doc

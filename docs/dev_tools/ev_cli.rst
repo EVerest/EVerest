@@ -15,9 +15,11 @@ Install
 
 To install `ev_cli`::
 
-    cd everest-utils/ev-dev-tool
+    cd everest-utils/ev-dev-tools
     python3 -m pip install .
 
+ev-cli command line interface
+-----------------------------
 
 The `ev_cli` package comes with a command line tool, named ``ev-cli``.
 It has the following subcommands
@@ -32,11 +34,9 @@ It has the following subcommands
 - helpers:
   utility commands
 
-There exist short forms, for all subcommands and options.  Simply call::
+To see a list of all subcommands and options, simply call:
 
     ev-cli --help
-
-for getting the list of short forms.
 
 Both the `module` and `interface` command have the following options in
 common:

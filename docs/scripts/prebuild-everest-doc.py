@@ -11,15 +11,33 @@ import jinja2
 import yaml
 from pathlib import Path
 from shutil import copytree, copyfile
+import logging as log
+from enum import Enum
+
+# Paths for modules, modules doc, interfaces, types: doc_dir/<path>
+class OutputPath:
+    MODULES = Path("_generated/modules")
+    MODULES_DOC = Path("_included/modules_doc")
+    INTERFACES = Path("_generated/interfaces")
+    TYPES = Path("_generated/types")
+
+class FileType(Enum):
+    MODULE = "module"
+    INTERFACE = "interface"
+    TYPE = "type"
 
 class YAMLItem(NamedTuple):
     name: str
     path: Path
+    type: FileType
+    out_path: Path
+    template: jinja2.Template
+    doc_path: Path = None
+    target_doc_path: Path = None
 
 YAMLItemList = List[YAMLItem]
 
 # Jinja filters
-
 
 def rst_indent(input):
     lines = input.splitlines()
@@ -33,46 +51,123 @@ def make_rst_ref(input):
     return output
 
 
-def process_index_file(
-    template: jinja2.Template,
-    file_list: YAMLItemList,
-    entry_ref_prefix: str,
-    refname: str,
-    headline: str,
-    out_path: Path,
-):
-
-    prefix_list = [f"{ entry_ref_prefix }/{ item.name }" for item in file_list]
-    output = template.render(
-        file_list=prefix_list,
-        refname=refname,
-        headline=headline,
-    )
-    out_path.write_text(output)
-
-
 def process_file_list(
-    template: jinja2.Template,
     file_list: YAMLItemList,
-    out_dir: Path,
-    handwritten_modules: list
 ):
-    if not out_dir.is_dir():
-        out_dir.mkdir(parents=True)
-
     for item in file_list:
-        include_handwritten = False
-        if item.name in handwritten_modules:
-            include_handwritten = True
+        if not item.out_path.parent.is_dir():
+            item.out_path.parent.mkdir(parents=True)
         print(f"Process { item.path }")
-        output = template.render(
+        output = item.template.render(
             name=item.name,
             data=yaml.safe_load(item.path.read_text()),
-            include_handwritten=include_handwritten,
+            doc_path=item.doc_path,
         )
+        item.out_path.write_text(output)
 
-        (out_dir / item.name).with_suffix(".rst").write_text(output)
+        if (
+            item.doc_path is not None
+        ):
+            if item.type != FileType.MODULE:
+                raise Exception(f"Doc path is only allowed for modules, not for { item.type }")
+            if not item.target_doc_path.parent.is_dir():
+                item.target_doc_path.parent.mkdir(parents=True)
+            if item.doc_path.is_dir():
+                copytree(item.doc_path, item.target_doc_path)
+            else:
+                copyfile(item.doc_path, item.target_doc_path)
 
+
+def generate_module_list(args, templates):
+    file_list: YAMLItemList = []
+    for module_dir in [
+        *args.generate_module_list,
+        *(args.core_dir / "modules").iterdir(),
+    ]:
+        manifest_path = module_dir / "manifest.yaml"
+        if not manifest_path.is_file():
+            log.error(f"Module: '{ module_dir }' doesn't have a manifest file")
+            continue
+        if (
+            module_dir.name in args.ignore_module_list
+            and module_dir not in args.generate_module_list
+        ):
+            log.info(f"Ignoring module: '{ module_dir }'")
+            continue
+        doc_path = None
+        if (
+            (module_dir / "doc.rst").is_file()
+            and (module_dir / "docs").is_dir()
+        ):
+            log.error(f"Found multiple handwritten module documentation for: { module_dir.name }")
+            doc_path = (module_dir / "docs")
+        elif (module_dir / "doc.rst").is_file():
+            doc_path = (module_dir / "doc.rst")
+        elif (module_dir / "docs").is_dir():
+            doc_path = (module_dir / "docs")
+        out_path = args.doc_dir / OutputPath.MODULES / f"{ module_dir.name }.rst"
+        target_doc_path = args.doc_dir / OutputPath.MODULES_DOC / f"{ module_dir.name }.rst"
+        file_list.append(YAMLItem(
+            name = module_dir.name,
+            path = manifest_path,
+            type = FileType.MODULE,
+            out_path = out_path,
+            template = templates["module.rst"],
+            doc_path = doc_path,
+            target_doc_path = target_doc_path,
+        ))
+    return file_list
+
+
+def generate_interface_list(args, templates):
+    file_list = []
+    for item in [
+        *args.generate_interface_list,
+        *(args.core_dir / "interfaces").iterdir(),
+    ]:
+        if item.suffix != ".yaml":
+            continue
+        if (
+            item.stem in args.ignore_interface_list
+            and item not in args.generate_interface_list
+        ):
+            log.info(f"Ignoring interface: '{ item }'")
+            continue
+        out_path = args.doc_dir / OutputPath.INTERFACES / f"{ item.stem }.rst"
+        file_list.append(YAMLItem(
+            name = item.stem,
+            path = item,
+            type = FileType.INTERFACE,
+            out_path = out_path,
+            template = templates["interface.rst"],
+        ))
+        log.info(f"Adding interface: '{ item }' to the list of interfaces to generate")
+    return file_list
+
+def generate_type_list(args, templates):
+    file_list = []
+    for item in [
+        *args.generate_type_list,
+        *(args.core_dir / "types").iterdir(),
+    ]:
+        if item.suffix != ".yaml":
+            continue
+        if (
+            item.stem in args.ignore_type_list
+            and item not in args.generate_type_list
+        ):
+            log.info(f"Ignoring type: '{ item }'")
+            continue
+        out_path = args.doc_dir / OutputPath.TYPES / f"{ item.stem }.rst"       
+        file_list.append(YAMLItem(
+            name = item.stem,
+            path = item,
+            type = FileType.TYPE,
+            out_path = out_path,
+            template = templates["types.rst"],
+        ))
+        log.info(f"Adding type: '{ item }' to the list of types to generate")
+    return file_list
 
 def main():
     parser = argparse.ArgumentParser(description='Process YAML files and jinja2 templates to generate documentation.')
@@ -103,6 +198,60 @@ def main():
         required=True,
         help="Path to the snapshot file"
     )
+    parser.add_argument(
+        '--do-not-generate-module',
+        type=str,
+        dest='ignore_module_list',
+        action='append',
+        required=False,
+        default=[],
+        help="Add module to List of modules to ignore"
+    )
+    parser.add_argument(
+        '--do-not-generate-interface',
+        type=str,
+        dest='ignore_interface_list',
+        action='append',
+        required=False,
+        default=[],
+        help="Add interface to List of interfaces to ignore"
+    )
+    parser.add_argument(
+        '--do-not-generate-type',
+        type=str,
+        dest='ignore_type_list',
+        action='append',
+        required=False,
+        default=[],
+        help="Add type to List of types to ignore"
+    )
+    parser.add_argument(
+        '--generate-module',
+        type=Path,
+        dest='generate_module_list',
+        action='append',
+        required=False,
+        default=[],
+        help="Add module to List of modules to generate additionaly to the default ones"
+    )
+    parser.add_argument(
+        '--generate-interface',
+        type=Path,
+        dest='generate_interface_list',
+        action='append',
+        required=False,
+        default=[],
+        help="Add interface to List of interfaces to generate additionaly to the default ones"
+    )
+    parser.add_argument(
+        '--generate-type',
+        type=Path,
+        dest='generate_type_list',
+        action='append',
+        required=False,
+        default=[],
+        help="Add type to List of types to generate additionaly to the default ones"
+    )
 
     args = parser.parse_args()
 
@@ -110,8 +259,6 @@ def main():
     if not args.doc_dir.is_dir():
         args.doc_dir.mkdir()
 
-    generated_dir: Path = (args.doc_dir / "generated")
-    included_dir: Path = (args.doc_dir / "included/modules")
     template_dir: Path = (args.doc_dir / "templates")
 
     # Place the snapshot file in doc directory
@@ -130,84 +277,22 @@ def main():
     )
     env.filters['rst_indent'] = rst_indent
     env.filters['make_rst_ref'] = make_rst_ref
-
-
+    templates = {
+        "module.rst": env.get_template("module.rst.jinja"),
+        "interface.rst": env.get_template("interface.rst.jinja"),
+        "types.rst": env.get_template("types.rst.jinja"),
+    }
 
     # check if everest core directory is valid
     if not args.core_dir.is_dir():
         raise FileNotFoundError(f"Everest core path: '{ args.core_dir }' doesn't exist")
 
-    # check for hand written modules
-    handwritten_modules: List[str] = []
-    custom_doc_path: Path = args.core_dir / "docs/modules"
-    if custom_doc_path.is_dir():
-        handwritten_modules.extend(
-            item.stem
-            for item in custom_doc_path.iterdir()
-            if item.suffix == ".rst"
-        )
-        included_dir.mkdir(exist_ok=True, parents=True)
-        copytree(custom_doc_path, included_dir, dirs_exist_ok=True)
-
-    # start generating from YAMLs
-    # modules
-    file_list: YAMLItemList = []
-    for module_path in (args.core_dir / "modules").iterdir():
-        manifest_path = module_path / "manifest.yaml"
-        if not manifest_path.is_file():
-            continue
-        file_list.append(YAMLItem(module_path.stem, manifest_path))
-
+    file_list: YAMLItemList = generate_module_list(args, templates)
+    file_list += generate_interface_list(args, templates)
+    file_list += generate_type_list(args, templates)
     process_file_list(
-        env.get_template("module.rst.jinja"),
         file_list,
-        generated_dir / "modules",
-        handwritten_modules
     )
-    process_index_file(
-        env.get_template("file_list_ref.rst.jinja"),
-        file_list,
-        "modules",
-        "everest_modules",
-        "EVerest Modules",
-        generated_dir / "everest_modules.rst",
-    )
-
-    # interfaces
-    file_list = [YAMLItem(item.stem, item)
-                 for item in (args.core_dir / "interfaces").iterdir() if item.suffix == ".yaml"]
-    process_file_list(
-        env.get_template("interface.rst.jinja"),
-        file_list,
-        generated_dir / "interfaces",
-        handwritten_modules
-    )
-    process_index_file(
-        env.get_template("file_list_ref.rst.jinja"),
-        file_list,
-        "interfaces",
-        "everest_interfaces",
-        "EVerest Interfaces",
-        generated_dir / "everest_interfaces.rst",
-    )
-
-    # types
-    file_list = [YAMLItem(item.stem, item) for item in (args.core_dir / "types").iterdir() if item.suffix == ".yaml"]
-    process_file_list(
-        env.get_template("types.rst.jinja"),
-        file_list,
-        generated_dir / "types",
-        handwritten_modules
-    )
-    process_index_file(
-        env.get_template("file_list_ref.rst.jinja"),
-        file_list,
-        "types",
-        "everest_types",
-        "EVerest Types",
-        generated_dir / "everest_types.rst",
-    )
-
 
 if __name__ == "__main__":
     main()
