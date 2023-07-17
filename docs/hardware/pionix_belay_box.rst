@@ -399,6 +399,7 @@ Reference Cheat Sheet
 * to stop automatic updates: rw; sudo systemctl disable ota-update.service
 * /mnt/user_data/etc/mosquitto/conf.d: here you can add additional config files for the mqtt broker. For example a “public_mqtt.conf” file with the following contents:
     ``listener 1883``
+    
     ``allow_anonymous true`` to allow anonymous external connections to the mqtt broker for debugging purposes
 * ``sudo journalctl -fu everest.service``: watch the output of everest.service 
 * ``sudo journalctl -fu everest-dev.service``: watch the output of ``everest-dev.service`` 
@@ -480,3 +481,46 @@ to re-mount root read-write/read-only.
 In rw mode you can e.g. use ``sudo apt install ...`` to install new software.
 
 Disable online update if you need the changes to stay.
+
+Factory reset
+=============
+
+For a factory reset of the BelayBox, the following partition has to be
+formatted:
+
+.. code-block:: bash
+
+  /mnt/user_data/
+
+Before that, all services accessing that partition have to be stopped:
+
+.. code-block:: bash
+
+  sudo systemctl stop everest
+  sudo systemctl stop nodered
+
+.. hint::
+  Depending of your setup, the EVerest service could also be called
+  *everest-dev* or *everest-rpi* instead of just *everest*.
+
+After this, unmount the partition:
+
+.. code-block:: bash
+
+  sudo umount /dev/mmcblk0p6
+
+Finally, formatting can start:
+
+.. code-block:: bash
+
+  sudo mkfs -t ext4 /dev/mmcblk0p6
+
+Confirm with "y" as soon as you are happy with losing all previous
+configuation settings (e.g. WiFi credentials).
+
+After formatting, reboot the BelayBox to let it setup the factory default
+configuration:
+
+.. code-block:: bash
+
+  sudo reboot
