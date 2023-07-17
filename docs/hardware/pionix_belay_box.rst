@@ -399,6 +399,7 @@ Reference Cheat Sheet
 * to stop automatic updates: rw; sudo systemctl disable ota-update.service
 * /mnt/user_data/etc/mosquitto/conf.d: here you can add additional config files for the mqtt broker. For example a “public_mqtt.conf” file with the following contents:
     ``listener 1883``
+    
     ``allow_anonymous true`` to allow anonymous external connections to the mqtt broker for debugging purposes
 * ``sudo journalctl -fu everest.service``: watch the output of everest.service 
 * ``sudo journalctl -fu everest-dev.service``: watch the output of ``everest-dev.service`` 
