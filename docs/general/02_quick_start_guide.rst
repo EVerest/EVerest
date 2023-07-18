@@ -2,9 +2,9 @@
 
 .. _quickstartguide_main:
 
-################################################
+################################
 A Kind Of Quick Guide To EVerest
-################################################
+################################
 
 ************************************
 Prepare Your Development Environment
@@ -203,8 +203,8 @@ e.g. `CAR PLUGIN`, `PAUSE`, `RESUME` and so on:
 .. image:: img/quick-start-sil-gui.png
   :width: 200px
 
-Having a very first basic feeling for that will be enough for now. We will
-dig deeper into things later in a module tutorial.
+Having a very first basic feeling for that will be enough for now. We are
+preparing a module tutorial, in which we will dig deeper into things.
 
 Admin panel and simulations
 ===========================
@@ -268,9 +268,6 @@ You reached the phase of writing a new EVerest module. Congrats!
 
 For this Quick Start Guide, we will give you a rocket start of understanding
 the basic elements of the EVerest module concept.
-
-After that, you might have a look into our "Implementing an EVerest module"
-tutorial and the Module Concept page, which gives you all the details.
 
 So, let's dig into the overview:
 
