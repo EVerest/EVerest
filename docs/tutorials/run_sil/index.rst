@@ -1,5 +1,7 @@
 .. doc_sil
 
+.. _tutorial_sil_main:
+
 Tutorial: Simulate EVerest in Software
 ######################################
 
