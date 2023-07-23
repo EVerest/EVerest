@@ -21,6 +21,10 @@ Each contribution must meet the [Java Script](.eslintrc.json) or [C++](.clang-fo
 * A [Developer Certificate of Origin signoff].
 * Submitted to the project as a pull request.
 
+Each commit message and pull request description should have enough information
+in it so that other contributors can understand what has been changed and
+eventually which impact the change will have.
+
 EVerest is licensed under the [Apache License 2.0](LICENSE.md) license. Contributions should abide by that standard license.
 
 Project committers will review the contribution in a timely manner, and advise of any changes needed to merge the request.
