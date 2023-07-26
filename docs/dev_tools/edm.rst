@@ -166,30 +166,6 @@ repository. It should look like this:
 	  git_tag: main
 	  options: ["BUILD_EXAMPLES OFF"]
 
-If you want to automatically check out certain dependencies into a workspace
-you can add a **workspace.yaml** file to the root of your source repository. It
-should look like this:
-
-.. code-block:: bash
-
-	---
-	workspace: ~/workspace
-	local_dependencies:
-	  liblog:
-	  libtimer:
-
-You can overwrite the git_tag in your workspace.yaml, so you can use a
-development version in your workspace:
-
-.. code-block:: bash
-
-	---
-	workspace: ~/workspace
-	local_dependencies:
-	  liblog:
-	    git_tag: devel
-	  timer	:
-
 Create a workspace config from an existing directory tree
 #########################################################
 Suppose you already have a directory tree that you want to save into a config
