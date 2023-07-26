@@ -32,15 +32,21 @@ Get The Needed EVerest Repositories
 EVerest Dependency Manager - edm
 --------------------------------
 
-As EVerest is highly modular, you will need multiple repos, which can be found on GitHub.
+As EVerest is highly modular, you will need multiple repos, which can be found
+on GitHub.
 
-To get the right repos as needed, the EVerest Dependency Manager - short edm - will help you.
+To get the right repos as needed, the EVerest Dependency Manager - short edm -
+will help you.
 
 To start with that, let's get edm ready to work.
 
-You will first of all need to pull *everest-dev-environment* to your development environment.
+You will first of all need to pull *everest-dev-environment* to your
+development environment.
 
-Python and its tools pip, setuptools and wheel have already been installed in the Prerequisites section above. So, you can pull the said repository and install the dependency manager, which will reside inside of .local/bin/ in your HOME directory:
+Python and its tools pip, setuptools and wheel have already been installed in
+the Prerequisites section above. So, you can pull the said repository and
+install the dependency manager, which will reside inside of .local/bin/ in your
+HOME directory:
 
 .. code-block:: bash
 
@@ -68,6 +74,9 @@ The YAML file can be found in the directory which you have chosen as workspace
 directory. In the above example, it is located at
 
 `{EVerest Workspace Directory}`.
+
+More details about edm, see the dedicated
+:ref:`edm page in this documentation <edm_main>`.
 
 EVerest Command Line Interface: ev-cli
 --------------------------------------
