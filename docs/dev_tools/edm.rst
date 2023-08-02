@@ -45,13 +45,18 @@ A script for the steps below can be found `here <https://github.com/EVerest/ever
   git clone git@github.com:EVerest/everest-dev-environment.git
   cd everest-dev-environment/dependency_manager
   python3 -m pip install .
-  edm --config ../everest-complete.yaml --workspace ~/checkout/everest-workspace
+  edm init --workspace ~/checkout/everest-workspace
 
-The last command creates a workspace in the *~/checkout/everest-workspace* directory
-from a `config that is shipped with this repository
-<https://github.com/EVerest/everest-dev-environment/blob/main/everest-complete.yaml>`_.
-The workspace will have the following structure containing all current dependencies
-for EVerest:
+The last command creates a workspace in the *~/checkout/everest-workspace*
+directory from the most recent release of EVerest. If you want the most recent
+main you can use:
+
+.. code-block:: bash
+
+  edm init main --workspace ~/checkout/everest-workspace
+
+The workspace will have the following structure containing all current
+dependencies for EVerest:
 
 .. code-block:: bash
 
@@ -68,7 +73,7 @@ for EVerest:
 	├── libtimer
 	├── open-plc-utils
 	├── RISE-V2G
-	└── workspace-config.yamleverest-core
+	└── workspace-config.yaml
 
 The workspace-config.yaml contains a copy of the config that was used to create
 this workspace.
