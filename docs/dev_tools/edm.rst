@@ -47,15 +47,16 @@ A script for the steps below can be found `here <https://github.com/EVerest/ever
   python3 -m pip install .
   edm init --workspace ~/checkout/everest-workspace
 
-The last command creates a workspace in the *~/checkout/everest-workspace* directory
-from the most recent release of everest. If you want the most recent main you can use:
+The last command creates a workspace in the *~/checkout/everest-workspace*
+directory from the most recent release of EVerest. If you want the most recent
+main you can use:
 
 .. code-block:: bash
 
   edm init main --workspace ~/checkout/everest-workspace
 
-The workspace will have the following structure containing all current dependencies
-for EVerest:
+The workspace will have the following structure containing all current
+dependencies for EVerest:
 
 .. code-block:: bash
 
