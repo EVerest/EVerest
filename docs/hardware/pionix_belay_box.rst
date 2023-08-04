@@ -27,7 +27,7 @@ alike to
 and anything else you want to quickly do without building your own EVerest
 compatible charger first.
 
-The BelayBox is not meant to be used for private usage or outdoor charging,
+The BelayBox is not meant to be used for private usage or outdoor charging.
 
 The BelayBox hardware
 =====================
@@ -42,6 +42,9 @@ schematics and design files and also the firmware:
 
 * `Yeti and Yak Hardware Reference Design <https://github.com/PionixPublic/reference-hardware>`_
 * `Yeti Firmware <https://github.com/PionixPublic/yeti-firmware>`_
+
+The 3D files of the BelayBox case components can be downloaded here:
+`BelayBox 3D files <https://a360.co/45erK90>`_.
 
 For more information about vendors working with EVerest,
 contact us via
