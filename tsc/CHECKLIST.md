@@ -39,42 +39,42 @@ This is a checklist for TSC's to review as part of the intake process. The TSC s
 			- [x] Slack or IRC ( create [service desk request] to setup Slack project channel - refer to [guidelines]( https://wiki.lfenergy.org/display/HOME/Project+Collaboration+Tools#ProjectCollaborationTools-Slack) )
 		- [ ] Website ( if needed )
 		- [x] CI/build environment ( if needed )
-		- [ ] Add project to [LFX Insights](https://insights.lfx.linuxfoundation.org/) ( create [service desk request] to trigger )
-		- [ ] Add project to [LFX Security](https://security.lfx.linuxfoundation.org/) ( create [service desk request] to trigger )
+		- [x] Add project to [LFX Insights](https://insights.lfx.linuxfoundation.org/) ( create [service desk request] to trigger )
+		- [x] Add project to [LFX Security](https://security.lfx.linuxfoundation.org/) ( create [service desk request] to trigger )
 	- Project assets
 		- [ ] Domain name ( create [service desk request] to create/transfer )
 		- [ ] Social media accounts ( create [service desk request] to setup/transfer - if needed )
-		- [ ] Logo(s) ( create [service desk request] to create ); will be added to [artwork repo](https://artwork.lfenergy.org) in SVG and PNG format and color/black/white )
+		- [x] Logo(s) ( create [service desk request] to create ); will be added to [artwork repo](https://artwork.lfenergy.org) in SVG and PNG format and color/black/white )
 	- Outreach
-		- [ ] New project annoucement done ( create [service desk request] to trigger )
-		- [ ] Project added to LF Energy properties
-			- [ ] Website ( https://lfenergy.org/projects )
-			- [ ] LF Energy landscape ( https://l.lfenergy.org )
+		- [x] New project annoucement done ( create [service desk request] to trigger )
+		- [x] Project added to LF Energy properties
+			- [x] Website ( https://lfenergy.org/projects )
+			- [x] LF Energy landscape ( https://l.lfenergy.org )
 - Early Adoption requirements ( see https://wiki.lfenergy.org/display/HOME/Technical+Project+Lifecycle#TechnicalProjectLifecycle-EarlyAdoption )
   - Demonstrate growth in the project’s community, including
-	- [ ] Growth in the number of commits to the project, number of project committers, and organizational diversity of contributions and committers.
-	- [ ] Production or planned production use of the project by at least two independent end users which, in the TAC’s judgment, are of adequate quality and scope.
+	- [x] Growth in the number of commits to the project, number of project committers, and organizational diversity of contributions and committers.
+	- [x] Production or planned production use of the project by at least two independent end users which, in the TAC’s judgment, are of adequate quality and scope.
   - Technical Governance of the project is operational, as measured by:
-	- [ ] A Technical Steering Committee with at least 5 members and a chairperson elected by the members, holding regular open meetings.
-	- [ ] Achievement of the Core Infrastructure Initiative’s Best Practice badge at the ‘Passing’ Level ( apply at https://bestpractices.coreinfrastructure.org/en )
-	- [ ] Development of a growth plan, to be done in conjunction with their project mentor(s) at the TAC. This plan should address the following points:
+	- [x] A Technical Steering Committee with at least 5 members and a chairperson elected by the members, holding regular open meetings.
+	- [x] Achievement of the Core Infrastructure Initiative’s Best Practice badge at the ‘Passing’ Level ( apply at https://bestpractices.coreinfrastructure.org/en )
+	- [x] Development of a growth plan, to be done in conjunction with their project mentor(s) at the TAC. This plan should address the following points:
 		- Release plans for the next 18 months.
 		- Target end-users.
 		- Identification of any regulatory or standards body requirements for deployment, and plans for implementation.
 		- Plans for growth of project contributors and committers to support the growth plan.
 			- Since these metrics can vary significantly depending on the type, scope and size of a project, the TAC has final judgement over the level of activity that is adequate to meet these criteria.
-	- [ ] Identification of any infrastructure resources needed to fulfill the growth plan.
-	- [ ] Prepare and schedule presentation to the TAC of the project’s growth, technical governance, and growth plan ( link to presentation deck )
-	- [ ] Receive the affirmative majority vote of the TAC and Governing Board
+	- [x] Identification of any infrastructure resources needed to fulfill the growth plan.
+	- [x] Prepare and schedule presentation to the TAC of the project’s growth, technical governance, and growth plan ( link to presentation deck )
+	- [x] Receive the affirmative majority vote of the TAC and Governing Board
 - Graduated Project requirements
-  	- [ ] Have a defined governing body of at least 5 or more members (owners and core maintainers), of which no more than 1/3 is affiliated with the same employer. In the case there are 5 governing members, 2 may be from the same employer.
-	- [ ] Have fulfilled or are on track to complete the growth plan defined in the Early Adoption stage proposal.
-	- [ ] Have a healthy number of contributions or committers from at least three organizations, with any one organization not composing more than 50% of the contributions or committers. Committers must be identified within the project in a COMMITTERS file.
-	- [ ] Have a public list of project adopters for at least the primary repo (e.g., ADOPTERS.md or logos on the project website).
-	- [ ] Achievement of the Core Infrastructure Initiative Best Practices badge at the Gold level.
-	- [ ] Prepare and schedule presentation to the TAC on the fulfillment of these requirements ( provide link to presentation ).
-	- [ ] Receive a ⅔ majority vote from the TAC a to move to Graduated stage ( provide date ).
-	- [ ] Prepare and schedule presentation to the Governing Board on the fulfillment of these requirements ( provide link to presentation ).
-	- [ ] Receive a majority vote of the Governing Board to move to Graduated stage ( provide date ).
+  	- [x] Have a defined governing body of at least 5 or more members (owners and core maintainers), of which no more than 1/3 is affiliated with the same employer. In the case there are 5 governing members, 2 may be from the same employer.
+	- [x] Have fulfilled or are on track to complete the growth plan defined in the Early Adoption stage proposal.
+	- [x] Have a healthy number of contributions or committers from at least three organizations, with any one organization not composing more than 50% of the contributions or committers. Committers must be identified within the project in a COMMITTERS file.
+	- [x] Have a public list of project adopters for at least the primary repo (e.g., ADOPTERS.md or logos on the project website).
+	- [x] Achievement of the Core Infrastructure Initiative Best Practices badge at the Gold level.
+	- [x] Prepare and schedule presentation to the TAC on the fulfillment of these requirements ( provide link to presentation ).
+	- [x] Receive a ⅔ majority vote from the TAC a to move to Graduated stage ( provide date ).
+	- [x] Prepare and schedule presentation to the Governing Board on the fulfillment of these requirements ( provide link to presentation ).
+	- [x] Receive a majority vote of the Governing Board to move to Graduated stage ( provide date ).
 
 [service desk request]: https://github.com/lf-energy/foundation/issues/new/choose
