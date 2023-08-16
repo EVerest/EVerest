@@ -59,17 +59,13 @@ We have setup EVerest successfully on Raspberry Pi 4.
 
 Operating System
 ================
-EVerest has been tested with Ubuntu, OpenSUSE and Fedora 36. In general, it can be expected to run on most Linux-based systems.
+EVerest has been tested with Ubuntu, OpenSUSE and Fedora 36. In general, it can
+be expected to run on most Linux-based systems.
 
 Libraries And Tools
 ===================
 
 To create your development environment with all needed tools, libraries and
-compilers, the section "Prepare Your Environment" in our
-:ref:`Quick Start Guide <quickstartguide_main>` will walk you through the setup
-phase.
-
-That guide will also give you a first overview how modules look like and how to
-get a first simulation running.
-
-That's your next step: :ref:`Quick Start Guide <quickstartguide_main>`
+compilers, the section
+:ref:`Prepare Your Environment <preparedevenv_main>` will walk you through the
+setup phase.

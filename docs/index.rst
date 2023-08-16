@@ -81,12 +81,14 @@ But now let's dive in the EVerest journey to get you on board. Start on top leve
     :maxdepth: 2
     :glob:
 
-    general/*
-    general/*/index
+    general/01_framework
+    general/02_detail_pre_setup
+    general/03_quick_start_guide
+    general/04_detail_module_concept
+    general/05_existing_modules
     dev_tools/index
     tutorials/index
     hardware/*
-    hardware/*/index
     appendix/*
     appendix/*/index
 

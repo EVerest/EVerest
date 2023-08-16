@@ -67,4 +67,4 @@ Tested with Fedora 36, 37 and 38. Here is how to get your needed libraries with
   sudo dnf install make automake gcc gcc-c++ kernel-devel python3-pip python3-devel git rsync wget cmake doxygen graphviz clang-tools-extra cppcheck maven java-17-openjdk java-17-openjdk-devel boost-devel nodejs nodejs-devel npm openssl openssl-devel libsqlite3x-devel curl rfkill libpcap-devel libevent-devel
 
 Now, it's time to continue with the
-:ref:`Quick Start Guide to install EVerest <quickstartguide_download_install>`.
+:ref:`Quick Start Guide to install EVerest <quickstartguide_main>`.

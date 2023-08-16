@@ -13,12 +13,11 @@ Prepare Your Development Environment
 Needed Packages
 ===============
 You will need Python, Jinja2, PyYAML, a compiler and some more system libraries
-set up. See the detailed page for
-:ref:`setting up your development environment <preparedevenv_main>` to see some
-examples for operating systems.
+set up. If not already done, see the detailed page for
+:ref:`setting up your development environment <preparedevenv_main>`.
 
-After having created your environment, return back here, where we will go on
-with downloading and installing EVerest.
+After having created your environment, we can go on downloading and installing
+EVerest.
 
 .. _quickstartguide_download_install:
 
