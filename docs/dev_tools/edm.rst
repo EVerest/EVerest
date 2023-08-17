@@ -119,32 +119,26 @@ using the guide above they were already installed automatically.
 
 .. _cmake_integration_setup:
 
-Setting up a workspace
-######################
-A sample workspace config, everest-complete.yaml, for the EVerest project is
-provided in the root directory of this repository. You can set up this
-workspace with the following command.
-
-.. code-block:: bash
-
-  edm --config ../everest-complete.yaml --workspace ~/checkout/everest-workspace
-
-Updating a workspace
-####################
-To update a workspace you can edit the workspace-config.yaml file in the root
-of the workspace. You can then use the following command to apply these
-changes:
+Setting up and updating a workspace
+###################################
+For letting **edm** do the work of setting up an initial EVerest workspace,
+do this:
 
 .. code-block:: bash
 
   edm init --workspace ~/checkout/everest-workspace
 
 If you are currently in the everest-workspace directory the following command
-has the same effect.
+has the same effect:
 
 .. code-block:: bash
 
   edm init
+
+Advanced users would eventually want to use their customized lib versions or
+branches of repos. This can be achieved by editing the workspace-config.yaml
+file in the root of the workspace. An **edm init** will setup your current
+workspace accordingly.
 
 Using the edm CMake module and dependencies.yaml
 ################################################
