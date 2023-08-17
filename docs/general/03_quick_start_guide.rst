@@ -60,7 +60,7 @@ use `~/checkout/everest-workspace`.
 
 .. code-block:: bash
 
-  edm --config ../everest-complete.yaml --workspace {EVerest Workspace Directory}
+  edm init --workspace {EVerest Workspace Directory}
 
 (In future, as your system has edm properly setup, you can always initialise a
 new workspace by calling *edm init*.)
