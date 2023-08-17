@@ -53,6 +53,21 @@ HOME directory:
   cd everest-dev-environment/dependency_manager
   python3 -m pip install .
 
+The EVerest dependency manager uses
+`CPM <https://github.com/cpm-cmake/CPM.cmake>`_ for its CMake integration.
+This means you can and should set the CPM_SOURCE_CACHE environment variable.
+This makes sure that dependencies that you do not manage in the workspace are
+not re-downloaded multiple times. For detailed information and other useful
+environment variables please refer to the
+`CPM Documentation <https://github.com/cpm-cmake/CPM.cmake/blob/master/README.md#CPM_SOURCE_CACHE>`_.
+
+Also set the PATH variable:
+
+.. code-block:: bash
+
+  export CPM_SOURCE_CACHE=$HOME/.cache/CPM
+  export PATH=$PATH:/home/$(whoami)/.local/bin
+
 To let edm prepare the most common repos for a simple start with EVerest,
 let us use a default config file and set a workspace directory for the repos.
 Set your preferred directory instead of `{EVerest Workspace Directory}`, e.g.
@@ -76,24 +91,6 @@ directory. In the above example, it is located at
 
 More details about edm, see the dedicated
 :ref:`edm page in this documentation <edm_main>`.
-
-Set environment variables
--------------------------
-
-The EVerest dependency manager uses
-`CPM <https://github.com/cpm-cmake/CPM.cmake>`_ for its CMake integration.
-This means you can and should set the CPM_SOURCE_CACHE environment variable.
-This makes sure that dependencies that you do not manage in the workspace are
-not re-downloaded multiple times. For detailed information and other useful
-environment variables please refer to the
-`CPM Documentation <https://github.com/cpm-cmake/CPM.cmake/blob/master/README.md#CPM_SOURCE_CACHE>`_.
-
-Also set the PATH variable:
-
-.. code-block:: bash
-
-  export CPM_SOURCE_CACHE=$HOME/.cache/CPM
-  export PATH=$PATH:/home/$(whoami)/.local/bin
 
 EVerest Command Line Interface: ev-cli
 --------------------------------------
