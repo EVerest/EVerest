@@ -20,17 +20,76 @@ EVerest will help to speed the adoption to e-mobility by utilizing all the open 
 
 The EVerest project was initiated by PIONIX GmbH to help with the electrification of the mobility sector and is an official project of the Linux Foundation Energy.
 
-******************************************
-Contact And Get In Touch
-******************************************
+***************
+EVerest Compass
+***************
 
-You might want to reach out and stay in touch with us via the following channels:
+You are currently on the main documentation page of EVerest.
+
+There are quite a few other resources that you might want to check out:
+
+Direct contact
+==============
 
 .. |link_mailinglist| raw:: html
 
     <a href="https://lists.lfenergy.org/g/everest" target="_blank">
-        <img src="_static/icons/mail.svg" style="height: 0.8em;"> EVerest mailing list
+        <img src="_static/icons/mail.svg" style="height: 0.8em;"> <b>EVerest mailing list</b>
     </a>
+
+The easiest and fastest way to connect to the steadily growing EVerest
+community is the |link_mailinglist|.
+
+You will get your questions answered and will also get regular information
+about our public meetups to which you are invited to join.
+
+A **weekly tech meetup** for
+all contributors is currently held once a week.
+
+Meet us here each Tuesday at 3pm in CET time-zone:
+
+Join via Google Meet:
+https://meet.google.com/wnv-aadq-irt
+
+Or dial:
+(DE) +49 40 8081616135
+PIN: 964783404#
+
+More phone numbers:
+https://tel.meet/wnv-aadq-irt?pin=4305012153510&hs=7
+
+Tech resources about EVerest
+============================
+
+.. |link_github| raw:: html
+
+  <a href="https://github.com/EVerest" target="_blank">
+    <b>EVerest repositories on GitHub</b>
+  </a>
+
+.. |link_roadmap| raw:: html
+
+    <a href="https://github.com/EVerest/EVerest/blob/main/tsc/ROADMAP.md" target="_blank">
+      <b>roadmap on GitHub</b>
+    </a>
+
+.. |link_youtube| raw:: html
+
+        <a href="https://www.youtube.com/@lfe_everest" target="_blank">
+            <img src="_static/icons/youtube.svg" style="height: 0.8em"> <b>YouTube Channel</b>
+        </a>
+
+Find the source code, current Pull Requests and an issue tracking on our
+home at |link_github|.
+
+For getting at least a rough overview of the things we already implemented
+and what is planned for the near future, see our |link_roadmap|.
+
+With our |link_youtube| channel, you can stay up-to-date with webinars and get
+insights from the Technical Steering Committee recordings.
+
+Social Media
+============
 
 .. |link_twitter| raw:: html
 
@@ -44,19 +103,11 @@ You might want to reach out and stay in touch with us via the following channels
         Mastodon
     </a>
 
-.. |link_youtube| raw:: html
+Don't forget to follow us on |link_twitter| or |link_mastodon|.
 
-        <a href="https://www.youtube.com/@lfe_everest" target="_blank">
-            <img src="_static/icons/youtube.svg" style="height: 0.8em"> YouTube Channel
-        </a>
-
-* |link_mailinglist|: You will get your questions answered and will also get regular information about our public meetups to which you are invited to join. A tech meetup for all contributors is currently held once a week.
-* |link_youtube|: Stay up-to-date with webinars and get insights from the Technical Steering Committee recordings.
-* Don't forget to follow us on |link_twitter| or |link_mastodon|.
-
-**************************
-Find Your Way Into EVerest
-**************************
+**************************************
+Find Your Way Into EVerest Development
+**************************************
 
 If you want to choose video rather than text and code for a quick dive-in, **have a look at our webinar first**:
 
