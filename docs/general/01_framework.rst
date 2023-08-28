@@ -51,9 +51,6 @@ System Requirements and Prerequisites
 
 What is needed to run EVerest?
 
-.. index::
-    pair: Hardware; Requirements
-
 Hardware
 ========
 It is recommended to have at least 4GB of RAM available to build EVerest. More CPU cores will optionally boost the build process, while requiring more RAM accordingly.
