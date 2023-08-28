@@ -21,18 +21,12 @@ EVerest.
 
 .. _quickstartguide_download_install:
 
-.. index:: 
-  single: install
-
 ********************
 Download And Install
 ********************
 
 Get The Needed EVerest Repositories
 ===================================
-
-.. index::
-  single: edm
 
 EVerest Dependency Manager - edm
 --------------------------------
@@ -97,9 +91,6 @@ directory. In the above example, it is located at
 
 More details about edm, see the dedicated
 :ref:`edm page in this documentation <edm_main>`.
-
-.. index::
-  single: ev-cli
 
 EVerest Command Line Interface: ev-cli
 --------------------------------------
@@ -183,9 +174,6 @@ If you get an error during the build process stating that ev-cli is installed
 in an old version, go to your everest workspace directory and call *edm
 --git-pull*. This will update the EVerest repositories. After that, repeat
 building ev-cli and you should be good to go again.
-
-.. index:: 
-  single: Simulation
 
 ******************
 Simulating EVerest
@@ -327,9 +315,6 @@ Next, let's see how fast we can create a new module in EVerest.
 
 .. _quickstartguide_modulesetup:
 
-.. index:: 
-  single: Modules; General
-
 *****************************
 Understanding EVerest Modules
 *****************************
@@ -366,9 +351,6 @@ How does all that look like? Read the next section!
 
 Basic elements of a module
 ==========================
-
-.. index:: 
-  single: Modules; Manifest
 
 Module manifest
 ---------------
@@ -416,9 +398,6 @@ will require to work in the EVerest workspace.
 
 In EVerest, you find a manifest file for each module. See the module
 directories in *{EVerest Workspace Directory}/everest-core/modules*.
-
-.. index:: 
-  single: Modules; Interfaces
 
 Interfaces
 ----------
@@ -480,9 +459,6 @@ type. This way, you can create structs or classes (however you would call a
 bunch of simple data-types grouped inside of one logical unit) for publishing.
 
 Let's have a look at a type definition in the next section.
-
-.. index:: 
-  single: Modules; Types
 
 Types
 -----

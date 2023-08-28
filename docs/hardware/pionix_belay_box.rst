@@ -3,9 +3,6 @@
 Pionix BelayBox
 ################
 
-.. index::
-  single: BelayBox; Main Page
-
 Introduction
 ************
 
@@ -31,9 +28,6 @@ and anything else you want to quickly do without building your own EVerest
 compatible charger first.
 
 The BelayBox is not meant to be used for private usage or outdoor charging.
-
-.. index::
-  pair: BelayBox; Hardware
 
 The BelayBox hardware
 =====================
@@ -283,9 +277,6 @@ instead.
 
 For further information like the partitioning scheme and updating Raspbian,
 section :ref:`BelayBox Further Information <belaybox_furtherinfo>`.
-
-.. index::
-  single: BelayBox; Integrate EVerest
 
 EVerest
 =======
