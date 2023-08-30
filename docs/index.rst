@@ -18,7 +18,8 @@ The modular software architecture fosters customizability and lets you configure
 
 EVerest will help to speed the adoption to e-mobility by utilizing all the open source advantages for the EV charging world. It will also enable new features for local energy management, PV-integration and many more.
 
-The EVerest project was initiated by PIONIX GmbH to help with the electrification of the mobility sector and is an official project of the Linux Foundation Energy.
+The EVerest project was initiated by `PIONIX GmbH <https://pionix.com>`_
+(`Pionix at LinkedIn <https://www.linkedin.com/company/pionix-gmbh>`_) to help with the electrification of the mobility sector and is an official project of the Linux Foundation Energy.
 
 ***************
 EVerest Compass
