@@ -32,6 +32,9 @@ There are quite a few other resources that you might want to check out:
 Direct contact
 ==============
 
+Mailing list
+------------
+
 .. |link_mailinglist| raw:: html
 
     <a href="https://lists.lfenergy.org/g/everest" target="_blank">
@@ -43,6 +46,9 @@ community is the |link_mailinglist|.
 
 You will get your questions answered and will also get regular information
 about our public meetups to which you are invited to join.
+
+Weekly tech meetup
+------------------
 
 A **weekly tech meetup** for
 all contributors is currently held once a week.
@@ -58,6 +64,22 @@ PIN: 964783404#
 
 More phone numbers:
 https://tel.meet/wnv-aadq-irt?pin=4305012153510&hs=7
+
+1:1 meetup
+----------
+
+If you do not want to start talking about your requirements and projects in
+a big round, we can also give you the possibility to talk in a 1-on-1 meetup
+with a community guide.
+
+Just book a 30-minute meetup here:
+https://calendly.com/manuel-ziegler-pionix/30min
+
+.. hint:: 
+    In this meetup, we will try to understand your dedicated requirements and
+    see where in the EVerest ecosystem you can contribute or get support. If
+    there is a need for technically deeper exchange, we can plan to set your
+    topic on the agenda of the weekly tech meetup.
 
 Tech resources about EVerest
 ============================
