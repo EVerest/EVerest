@@ -35,7 +35,7 @@ jobs:
     name: Prepare snapshot file create or checkout snapshot file
     runs-on: ubuntu-22.04
     container: 
-      image: ghcr.io/everest/everest-ci-env:main
+      image: ghcr.io/everest/everest-ci-env:bump-versions
     env:
       SSH_AUTH_SOCK: /tmp/ssh_agent.sock
     outputs:
@@ -150,6 +150,7 @@ jobs:
         cp ${{ steps.determine-snapshot-file.outputs.path }} everest-workspace/snapshot.yaml
     - name: Update snapshot file
       run: |
+        cat snapshot.yaml
         edm --config snapshot.yaml --workspace .
         edm snapshot snapshot.yaml --recursive
       working-directory: everest-workspace
