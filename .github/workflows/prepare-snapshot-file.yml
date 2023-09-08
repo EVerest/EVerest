@@ -38,6 +38,8 @@ jobs:
       image: ghcr.io/everest/everest-ci-env:bump-versions
     outputs:
       version_name: $${{ steps.set-version-name.outputs.version_name }}
+    env:
+      SSH_AUTH_SOCK: /tmp/ssh_agent.sock
     steps:
     - name: Parse github pages repo input
       id: parse-github-pages-repo-input
@@ -60,6 +62,7 @@ jobs:
       uses: everest/everest-ci/github-actions/setup-ssh@feature/add-render-jinja2-action
       with:
         ssh-key: ${{ secrets.SA_GITHUB_SSH_KEY }}
+        ssh-agent-socket: ${{ env.SSH_AUTH_SOCK }}
     - name: Checkout snapshot file
       if: ${{ inputs.snapshot_file != '' }}
       id: checkout-snapshot-file
