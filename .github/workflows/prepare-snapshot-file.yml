@@ -1,4 +1,4 @@
-name: Build and deploy EVerest documentation
+name: Prepare snapshot file
 
 on:
   workflow_call:
@@ -31,8 +31,8 @@ on:
         description: 'SSH key for github.com'
         required: true
 jobs:
-  checkout-snapshot-file:
-    name: Checkout snapshot file
+  prepare-snapshot-file:
+    name: Prepare snapshot file create or checkout snapshot file
     runs-on: ubuntu-22.04
     container: 
       image: ghcr.io/everest/everest-ci-env:main
