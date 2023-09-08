@@ -24,9 +24,8 @@ on:
         required: true
         type: boolean
       snapshot_file:
-        description: 'Snapshot file location: <owner>/<repo>/<ref>:<path-to-snapshot.yaml>'
-        default: 'everest/everest/main:snapshots/example-snapshot.yaml'
-        required: true
+        description: 'Snapshot file location: <owner>/<repo>/<path-to-snapshot.yaml>@<ref>'
+        default: ''
         type: string
       github_pages_repo:
         description: 'GithubPages repo: <owner>/<repo>@<ref>'
@@ -43,6 +42,7 @@ jobs:
   checkout-snapshot-file:
     uses: ./.github/workflows/prepare-snapshot-file.yml
     with:
+      snapshot_file: ${{ inputs.snapshot_file }}
       github_pages_repo: ${{ inputs.github_pages_repo }}
 
   build-doc:

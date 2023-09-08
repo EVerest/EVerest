@@ -6,7 +6,6 @@ on:
       snapshot_file:
         description: 'Snapshot file location: <owner>/<repo>/<path-to-snapshot.yaml>@<ref>'
         default: ''
-        required: true
         type: string
       github_pages_repo:
         description: 'GithubPages repo: <owner>/<repo>@<ref>'
@@ -21,7 +20,6 @@ on:
       version_name:
         description: 'Version name'
         default: ''
-        required: true
         type: string
     outputs:
       version_name:
