@@ -107,7 +107,7 @@ jobs:
       shell: python3 {0}
       run: |
         import yaml, pathlib, os
-        path = Path("./data.yaml").absolute()
+        path = pathlib.Path("./data.yaml").absolute()
         data = {
           'everest_core_ref': '${{ inputs.everest_core_ref }}',
           'everest_ref': '${{ github.ref }}',
