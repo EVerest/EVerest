@@ -1,0 +1,165 @@
+name: Build and deploy EVerest documentation
+
+on:
+  workflow_call:
+    inputs:
+      snapshot_file:
+        description: 'Snapshot file location: <owner>/<repo>/<path-to-snapshot.yaml>@<ref>'
+        default: ''
+        required: true
+        type: string
+      github_pages_repo:
+        description: 'GithubPages repo: <owner>/<repo>@<ref>'
+        default: 'everest/everest.github.io@main'
+        required: true
+        type: string
+      everest_core_ref:
+        description: 'EVerest core ref: <ref>'
+        default: 'main'
+        required: true
+        type: string
+      version_name:
+        description: 'Version name'
+        default: ''
+        required: true
+        type: string
+    outputs:
+      version_name:
+        description: 'Version name'
+        value: ${{ jobs.checkout-snapshot-file.outputs.version_name }}}
+      artefact_name:
+        description: 'Artefact name'
+        value: snapshot-file
+
+      
+
+jobs:
+  checkout-snapshot-file:
+    name: Checkout snapshot file
+    runs-on: ubuntu-22.04
+    container: 
+      image: ghcr.io/everest/everest-ci-env:main
+    env:
+      SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+    outputs:
+      version_name: $${{ steps.set-version-name.outputs.version_name }}
+    steps:
+    - name: Parse github pages repo input
+      id: parse-github-pages-repo-input
+      shell: python3 {0}
+      run: |
+        import os
+        parts = "${{ inputs.github_pages_repo }}".split('@')
+        if len(parts) == 1:
+          parts.append('main')
+        elif len(parts) != 2:
+          raise ValueError(f'Invalid github pages repo input: ${{ inputs.github_pages_repo }}')
+        owner, repo = parts[0].split('/', 1)
+        ref = parts[1]
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+          f.write(f'owner={ owner }\n')
+          f.write(f'repo={ repo }\n')
+          f.write(f'ref={ ref }\n')
+    - name: Setup SSH
+      #   LTODO: switch to main branch
+      uses: everest/everest-ci/github-actions/setup-ssh@feature/add-render-jinja2-action
+      with:
+        ssh-key: ${{ secrets.SA_GITHUB_SSH_KEY }}
+    - name: Checkout snapshot file
+      if: ${{ inputs.snapshot_file }} != ''
+      id: checkout-snapshot-file
+      #   LTODO: switch to main branch
+      use: everest/everest-ci/github-actions/pull-single-file@feature/add-render-jinja2-action
+      with:
+        github_path: ${{ inputs.snapshot_file }}
+        output_path: .
+    - name: Set version name
+      id: set-version-name
+      shell: python3 {0}
+      run: |
+        import os
+        version_name = "${{ inputs.version_name }}"
+        if "version_name" == "" and "${{ inputs.snapshot_file }}" != "":
+          version_name = "${{ steps.checkout-snapshot-file.outputs.input_filename }}"
+        else:
+          version_name = "no-version-name-provided"
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+          f.write(f'version_name={ version_name }\n')
+    - name: Check for github pages repo
+      if: ${{ inputs.snapshot_file }} != ''
+      shell: python3 {0}
+      run: |
+        import yaml
+        directory = "${{ steps.checkout-snapshot-file.outputs.output_directory }}"
+        filename = "${{ steps.checkout-snapshot-file.outputs.output_filename }}"
+        reponame = "${{ steps.parse-github-pages-repo-input.outputs.repo }}"
+        with open(f'{ directory }/{ filename }', 'r') as f:
+          snapshot = yaml.safe_load(f)
+        if not reponame in snapshot:
+          raise ValueError('GithubPages repo not found in snapshot file: ${{ inputs.github_pages_repo }}')
+    - name: Checkout everest repo
+      if : ${{ inputs.snapshot_file }} == ''
+      uses: actions/checkout@v3
+      with:
+        repository: everest/everest
+        ref: ${{ github.ref }}
+        path: everest
+    - name: Create data file for template rendering
+      if: ${{ inputs.snapshot_file }} == ''
+      id: create-data-file
+      shell: python3 {0}
+      run: |
+        import yaml, pathlib, os
+        path = Path("./data.yaml").absolute()
+        data = {
+          'everest_core_ref': '${{ inputs.everest_core_ref }}',
+          'everest_ref': '${{ github.ref }}',
+          'github_pages_repo': {
+            'owner': '${{ steps.parse-github-pages-repo-input.outputs.owner }}',
+            'repo': '${{ steps.parse-github-pages-repo-input.outputs.repo }}',
+            'ref': '${{ steps.parse-github-pages-repo-input.outputs.ref }}'
+          }
+        }
+        with open(path, 'w') as f:
+          yaml.dump(data, f)
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+          f.write(f'output_file={ path }\n')
+    - name: Create snapshot file
+      id: create-snapshot-file
+      if : ${{ inputs.snapshot_file }} == ''
+      #  LTODO: switch to main branch
+      uses: everest/everest-ci/github-actions/render-jinja2@feature/add-render-jinja2-action
+      with:
+        template_file: everest/.github/workflows/reusable/snapshot.yaml.j2
+        data_file: ${{ create-data-file.outputs.output_file }}
+        output_file: ${{ steps.set-version-name.outputs.version_name }}.yaml
+    # LTODO: Think about separate action for this
+    - name: Determine snapshot file path
+      id: determine-snapshot-file
+      shell: python3 {0}
+      run: |
+        import pathlib, os
+        if "${{ inputs.snapshot_file }}" != "":
+          directory = "${{ steps.checkout-snapshot-file.outputs.output_directory }}"
+          filename = "${{ steps.checkout-snapshot-file.outputs.output_filename }}"
+          snapshot_file = pathlib.Path(f'{ directory }/{ filename }')
+        else:
+          snapshot_file = pathlib.Path("${{ steps.create-snapshot-file.outputs.output_file }}")
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+          f.write(f'path={ snapshot_file.absolute() }\n')
+    - name: Setup workspace
+      run: |
+        mkdir -p everest-workspace
+        cp ${{ steps.determine-snapshot-file.outputs.path }} everest-workspace/snapshot.yaml
+    - name: Update snapshot file
+      run: |
+        edm --config snapshot.yaml --workspace .
+        edm snapshot snapshot.yaml --recursive
+      working-directory: everest-workspace
+    - name: Upload snapshot file
+      uses: actions/upload-artifact@v3
+      with:
+        name: snapshot-file
+        path: |
+          everest-workspace/snapshot.yaml
+        retention-days: 2

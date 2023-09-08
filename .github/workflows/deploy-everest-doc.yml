@@ -29,8 +29,8 @@ on:
         required: true
         type: string
       github_pages_repo:
-        description: 'GithubPages repo: <owner>/<repo>'
-        default: 'everest/everest.github.io'
+        description: 'GithubPages repo: <owner>/<repo>@<ref>'
+        default: 'everest/everest.github.io@main'
         required: true
         type: string
       overwrite_existing:
@@ -41,72 +41,10 @@ on:
 
 jobs:
   checkout-snapshot-file:
-    name: Checkout snapshot file
-    strategy:
-      matrix:
-        os: [ubuntu-20.04]
-      max-parallel: 1
-      fail-fast: false
-    runs-on: ${{ matrix.os }}
-    container: 
-      image: ghcr.io/everest/everest-ci-env:main
-    env:
-      SSH_AUTH_SOCK: /tmp/ssh_agent.sock
-    outputs:
-      snapshot_name: ${{ steps.checkout-snapshot-file.outputs.snapshot_name }}
-    steps:
-    - name: Setup ssh key and known_hosts
-      run: |
-        mkdir -p /root/.ssh
-        ssh-keyscan github.com >> /root/.ssh/known_hosts
-        echo "${{ secrets.SA_GITHUB_SSH_KEY }}" > /root/.ssh/github_actions
-        chmod 600 /root/.ssh/github_actions
-        ssh-agent -a ${SSH_AUTH_SOCK} > /dev/null
-        ssh-add /root/.ssh/github_actions
-    # Unfortunately, github doesn't support git-archive requests
-    # svn export would be a workaround here, but it doesn't support
-    # all types of references (e.g. commit hashes)
-    # So we have to clone the full repository temporarily and
-    # extract the snapshot file from there.
-    - name: Checkout snapshot file
-      id: checkout-snapshot-file
-      run: |
-        mkdir -p everest-workspace
-        owner=$(echo ${{ inputs.snapshot_file }} | cut -d':' -f1 | cut -d'/' -f1)
-        repo=$(echo ${{ inputs.snapshot_file }} | cut -d':' -f1 | cut -d'/' -f2)
-        ref=$(echo ${{ inputs.snapshot_file }} | cut -d':' -f1 | cut -d'/' -f3-) # ref can contain slashes
-        path=$(echo ${{ inputs.snapshot_file }} | cut -d':' -f2 )
-        git clone -b ${ref} --depth=1 git@github.com:${owner}/${repo}.git tmp-repo
-        cd tmp-repo && git archive HEAD:$(dirname ${path}) $(basename ${path}) | tar -C ../everest-workspace -xf -
-        cd .. && rm -rf tmp-repo && mv everest-workspace/$(basename ${path}) everest-workspace/snapshot.yaml
-        echo "::set-output name=snapshot_name::$(basename ${path} | cut -d'.' -f1)"
-    - name: Add GithubPages repo to snapshot
-      shell: python3 {0}
-      run: |
-        import yaml
-        from os.path import basename
-        with open('snapshot.yaml', 'r') as f:
-          snapshot = yaml.safe_load(f)
-        snapshot["${{ inputs.github_pages_repo }}".split('/')[-1]] = {
-          'git': 'git@github.com:${{ inputs.github_pages_repo }}.git',
-          'git_tag': 'main',
-        }
-        with open('snapshot.yaml', 'w') as f:
-          yaml.safe_dump(snapshot, f, default_flow_style=False)
-      working-directory: everest-workspace
-    - name: Update snapshot file
-      run: |
-        edm --config snapshot.yaml --workspace .
-        edm snapshot snapshot.yaml --recursive
-      working-directory: everest-workspace
+    uses: ./.github/workflows/reusable/prepare-snapshot-file.yml
+    with:
+      github_pages_repo: ${{ inputs.github_pages_repo }}
 
-    - name: Upload snapshot file
-      uses: actions/upload-artifact@v3
-      with:
-        name: snapshot-file
-        path: |
-          everest-workspace/snapshot.yaml
-        retention-days: 2
   build-doc:
     name: Build EVerest sphinx documentation
     needs: checkout-snapshot-file
@@ -134,7 +72,7 @@ jobs:
     - name: Download snaphot file
       uses: actions/download-artifact@v3
       with:
-        name: snapshot-file
+        name: ${{ needs.checkout-snapshot-file.outputs.artefact_name }}
         path: |
           everest-workspace
     - name: Checkout snapshot
@@ -153,7 +91,7 @@ jobs:
         version_list.extend(
           item.name for item in (Path("${{ inputs.github_pages_repo }}".split('/')[-1]) / "docs").iterdir() if item.is_dir()
         )
-        version_list.append("${{ needs.checkout-snapshot-file.outputs.snapshot_name}}")
+        version_list.append("${{ needs.checkout-snapshot-file.outputs.version_name}}")
         with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
           print(f"versions={ ','.join(str(version) for version in version_list) }", file=f)
       working-directory: everest-workspace
@@ -171,7 +109,7 @@ jobs:
       env:
         EVEREST_DEPLOYED_VERSIONS: ${{ steps.list-deployed-versions.outputs.versions }}
       run: |
-        make -e SPHINXOPTS="-D version='${{ needs.checkout-snapshot-file.outputs.snapshot_name }}'" html
+        make -e SPHINXOPTS="-D version='${{ needs.checkout-snapshot-file.outputs.version_name }}'" html
       working-directory: everest-workspace/everest/docs
     - name: Upload generated html files
       if: ${{ inputs.build_html }}
@@ -185,7 +123,7 @@ jobs:
       env:
         EVEREST_DEPLOYED_VERSIONS: ${{ steps.list-deployed-versions.outputs.versions }}
         buf_size: 1000000
-      run: make -e SPHINXOPTS="-D version='${{ needs.checkout-snapshot-file.outputs.snapshot_name }}'" latexpdf
+      run: make -e SPHINXOPTS="-D version='${{ needs.checkout-snapshot-file.outputs.version_name }}'" latexpdf
       working-directory: everest-workspace/everest/docs
     - name: Upload generated pdf files
       if: ${{ inputs.build_pdf }}
@@ -237,7 +175,7 @@ jobs:
     - name: Download snapshot file
       uses: actions/download-artifact@v3
       with:
-        name: snapshot-file
+        name: ${{ needs.checkout-snapshot-file.outputs.artefact_name }}
         path: |
           everest-workspace
     - name: Checkout snapshot
@@ -248,14 +186,14 @@ jobs:
     - name: Remove old doc
       if: ${{ inputs.overwrite_existing }}
       run: |
-        rm -rf docs/${{ needs.checkout-snapshot-file.outputs.snapshot_name }}
+        rm -rf docs/${{ needs.checkout-snapshot-file.outputs.version_name }}
       working-directory: ${{ env.GITHUB_PAGES_REPO }}
     - name: Update doc and push it
       run: |
         mkdir -p docs
         touch docs/.nojekyll
-        mkdir docs/${{ needs.checkout-snapshot-file.outputs.snapshot_name }}
-        cp -r ../../docs-html/* docs/${{ needs.checkout-snapshot-file.outputs.snapshot_name }}/
+        mkdir docs/${{ needs.checkout-snapshot-file.outputs.version_name }}
+        cp -r ../../docs-html/* docs/${{ needs.checkout-snapshot-file.outputs.version_name }}/
       working-directory: ${{ env.GITHUB_PAGES_REPO }}
     - name: Ensure that the latest release is the default one and create a versions index
       if: ${{ inputs.is_release }}
@@ -264,7 +202,7 @@ jobs:
           --template-directory everest-workspace/everest/docs/templates/ \
           --html-root-directory ${{ env.GITHUB_PAGES_REPO }}/docs/ \
           --is-release True \
-          --version-name ${{ needs.checkout-snapshot-file.outputs.snapshot_name }}
+          --version-name ${{ needs.checkout-snapshot-file.outputs.version_name }}
     - name: Create a verions index
       if: ${{ !inputs.is_release }}
       run: |
@@ -272,11 +210,11 @@ jobs:
           --template-directory everest-workspace/everest/docs/templates/ \
           --html-root-directory ${{ env.GITHUB_PAGES_REPO }}/docs/ \
           --is-release False \
-          --version-name ${{ needs.checkout-snapshot-file.outputs.snapshot_name }}
+          --version-name ${{ needs.checkout-snapshot-file.outputs.version_name }}
     - name: Commit updated github pages
       run: |
         git add --all
-        git diff-index --quiet HEAD || git commit -m "Add doc build snapshot ${{ needs.checkout-snapshot-file.outputs.snapshot_name }}"
+        git diff-index --quiet HEAD || git commit -m "Add doc build snapshot ${{ needs.checkout-snapshot-file.outputs.version_name }}"
       working-directory: ${{ env.GITHUB_PAGES_REPO }}
 
     - name: Push updated doc to ${{ env.GITHUB_PAGES_REPO }}
