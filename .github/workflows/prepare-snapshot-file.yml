@@ -38,8 +38,6 @@ jobs:
       image: ghcr.io/everest/everest-ci-env:bump-versions
     outputs:
       version_name: $${{ steps.set-version-name.outputs.version_name }}
-    env:
-      SSH_AUTH_SOCK: /tmp/ssh_agent.sock
     steps:
     - name: Parse github pages repo input
       id: parse-github-pages-repo-input
@@ -62,7 +60,8 @@ jobs:
       uses: everest/everest-ci/github-actions/setup-ssh@feature/add-render-jinja2-action
       with:
         ssh-key: ${{ secrets.SA_GITHUB_SSH_KEY }}
-        ssh-agent-socket: ${{ env.SSH_AUTH_SOCK }}
+        home-directory: /root
+        known-hosts: github.com
     - name: Checkout snapshot file
       if: ${{ inputs.snapshot_file != '' }}
       id: checkout-snapshot-file
@@ -145,12 +144,6 @@ jobs:
           snapshot_file = pathlib.Path("${{ steps.create-snapshot-file.outputs.output_file }}")
         with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
           f.write(f'path={ snapshot_file.absolute() }\n')
-    - name: DEBUG
-      run: |
-        echo $SSH_AUTH_SOCK
-        echo $SSH_AGENT_PID
-        ssh -T git@github.com
-        git clone git@github.com:EVerest/everest-core.git
     - name: Setup workspace
       run: |
         mkdir -p everest-workspace
