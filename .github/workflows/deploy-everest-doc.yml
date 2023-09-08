@@ -41,7 +41,7 @@ on:
 
 jobs:
   checkout-snapshot-file:
-    uses: ./.github/workflows/reusable/prepare-snapshot-file.yml
+    uses: ./.github/workflows/prepare-snapshot-file.yml
     with:
       github_pages_repo: ${{ inputs.github_pages_repo }}
 
