@@ -10,12 +10,10 @@ on:
       github_pages_repo:
         description: 'GithubPages repo: <owner>/<repo>@<ref>'
         default: 'everest/everest.github.io@main'
-        required: true
         type: string
       everest_core_ref:
         description: 'EVerest core ref: <ref>'
         default: 'main'
-        required: true
         type: string
       version_name:
         description: 'Version name'

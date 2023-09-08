@@ -6,22 +6,18 @@ on:
       is_release:
         description: 'Is this snapshot a release?'
         default: 'false'
-        required: true
         type: boolean
       build_pdf:
         description: 'Build PDF documentation?'
         default: 'false'
-        required: true
         type: boolean
       build_html:
         description: 'Build HTML documentation?'
         default: 'true'
-        required: true
         type: boolean
       deploy_html:
         description: 'Deploy HTML documentation?'
         default: 'true'
-        required: true
         type: boolean
       snapshot_file:
         description: 'Snapshot file location: <owner>/<repo>/<path-to-snapshot.yaml>@<ref>'
@@ -30,12 +26,10 @@ on:
       github_pages_repo:
         description: 'GithubPages repo: <owner>/<repo>@<ref>'
         default: 'everest/everest.github.io@main'
-        required: true
         type: string
       overwrite_existing:
         description: 'Overwrite existing documentation?'
         default: 'false'
-        required: true
         type: boolean
 
 jobs:
