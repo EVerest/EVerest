@@ -26,6 +26,10 @@ on:
       artefact_name:
         description: 'Artefact name'
         value: snapshot-file
+    secrets:
+      SA_GITHUB_SSH_KEY:
+        description: 'SSH key for github.com'
+        required: true
 jobs:
   checkout-snapshot-file:
     name: Checkout snapshot file
