@@ -63,7 +63,7 @@ jobs:
       with:
         ssh-key: ${{ secrets.SA_GITHUB_SSH_KEY }}
     - name: Checkout snapshot file
-      if: ${{ inputs.snapshot_file }} != ''
+      if: ${{ inputs.snapshot_file != '' }}
       id: checkout-snapshot-file
       #   LTODO: switch to main branch
       uses: everest/everest-ci/github-actions/pull-single-file@feature/add-render-jinja2-action
@@ -83,7 +83,7 @@ jobs:
         with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
           f.write(f'version_name={ version_name }\n')
     - name: Check for github pages repo
-      if: ${{ inputs.snapshot_file }} != ''
+      if: ${{ inputs.snapshot_file != '' }}
       shell: python3 {0}
       run: |
         import yaml
@@ -95,14 +95,14 @@ jobs:
         if not reponame in snapshot:
           raise ValueError('GithubPages repo not found in snapshot file: ${{ inputs.github_pages_repo }}')
     - name: Checkout everest repo
-      if : ${{ inputs.snapshot_file }} == ''
+      if : ${{ inputs.snapshot_file == '' }}
       uses: actions/checkout@v3
       with:
         repository: everest/everest
         ref: ${{ github.ref }}
         path: everest
     - name: Create data file for template rendering
-      if: ${{ inputs.snapshot_file }} == ''
+      if: ${{ inputs.snapshot_file == '' }}
       id: create-data-file
       shell: python3 {0}
       run: |
@@ -123,7 +123,7 @@ jobs:
           f.write(f'output_file={ path }\n')
     - name: Create snapshot file
       id: create-snapshot-file
-      if : ${{ inputs.snapshot_file }} == ''
+      if : ${{ inputs.snapshot_file == '' }}
       #  LTODO: switch to main branch
       uses: everest/everest-ci/github-actions/render-jinja2@feature/add-render-jinja2-action
       with:
