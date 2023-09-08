@@ -126,7 +126,7 @@ jobs:
       uses: everest/everest-ci/github-actions/render-jinja2@feature/add-render-jinja2-action
       with:
         template_file: everest/.github/workflows/snapshot.yaml.j2
-        data_file: ${{ create-data-file.outputs.output_file }}
+        data_file: ${{ steps.create-data-file.outputs.output_file }}
         output_file: ${{ steps.set-version-name.outputs.version_name }}.yaml
     # LTODO: Think about separate action for this
     - name: Determine snapshot file path
