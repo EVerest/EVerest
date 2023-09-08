@@ -144,6 +144,10 @@ jobs:
           snapshot_file = pathlib.Path("${{ steps.create-snapshot-file.outputs.output_file }}")
         with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
           f.write(f'path={ snapshot_file.absolute() }\n')
+    - name: DEBUG
+      run: |
+        ssh -T git@github.com
+        git clone git@github.com:EVerest/everest-core.git
     - name: Setup workspace
       run: |
         mkdir -p everest-workspace
