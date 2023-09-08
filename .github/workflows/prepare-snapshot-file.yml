@@ -36,8 +36,6 @@ jobs:
     runs-on: ubuntu-22.04
     container: 
       image: ghcr.io/everest/everest-ci-env:bump-versions
-    env:
-      SSH_AUTH_SOCK: /tmp/ssh_agent.sock
     outputs:
       version_name: $${{ steps.set-version-name.outputs.version_name }}
     steps:
@@ -146,6 +144,8 @@ jobs:
           f.write(f'path={ snapshot_file.absolute() }\n')
     - name: DEBUG
       run: |
+        echo $SSH_AUTH_SOCK
+        echo $SSH_AGENT_PID
         ssh -T git@github.com
         git clone git@github.com:EVerest/everest-core.git
     - name: Setup workspace
