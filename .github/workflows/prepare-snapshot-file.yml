@@ -30,9 +30,6 @@ on:
       artefact_name:
         description: 'Artefact name'
         value: snapshot-file
-
-      
-
 jobs:
   checkout-snapshot-file:
     name: Checkout snapshot file
@@ -69,7 +66,7 @@ jobs:
       if: ${{ inputs.snapshot_file }} != ''
       id: checkout-snapshot-file
       #   LTODO: switch to main branch
-      use: everest/everest-ci/github-actions/pull-single-file@feature/add-render-jinja2-action
+      uses: everest/everest-ci/github-actions/pull-single-file@feature/add-render-jinja2-action
       with:
         github_path: ${{ inputs.snapshot_file }}
         output_path: .
