@@ -32,6 +32,8 @@ There are quite a few other resources that you might want to check out:
 Direct contact
 ==============
 
+.. _index_mailinglist:
+
 Mailing list
 ------------
 
@@ -162,6 +164,7 @@ But now let's dive in the EVerest journey to get you on board. Start on top leve
     general/05_existing_modules
     dev_tools/index
     tutorials/index
+    general/faq
     hardware/*
     appendix/*
     appendix/*/index
