@@ -1,11 +1,11 @@
-name: PreviewEVerest doc build
+name: Preview EVerest doc build
 
 on:  
   pull_request:
   workflow_dispatch:
-  push:
 jobs:
   preview-build-and-deploy:
+    if: False
     name: Preview build and deploy
     uses: ./.github/workflows/build-and-deploy-doc.yml
     with:
@@ -18,3 +18,34 @@ jobs:
       version_name: ${{ github.ref_name }}
     secrets:
       SA_GITHUB_SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
+  update-comment:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check for comment
+        id: find-comment
+        # LTODO: Change to main
+        uses: everest/everest-ci/github-actions/find-issue-comment@feature/add-render-jinja2-action
+        with:
+          owner: everest
+          repo: everest
+          issue_number: ${{ github.event.pull_request.number }}
+          token: ${{ secrets.SA_GITHUB_PAT }}
+          user: pionix-compiler
+      - name: Create comment
+        if: ${{ steps.find-comment.outputs.success == 'False' }}
+        uses: everest/everest-ci/github-actions/create-issue-comment@feature/add-render-jinja2-action
+        with:
+          owner: everest
+          repo: everest
+          issue_number: ${{ github.event.pull_request.number }}
+          token: ${{ secrets.SA_GITHUB_PAT }}
+          body: Hello world!
+      - name: Update comment
+        if: ${{ steps.find-comment.outputs.success == 'True' }}
+        uses: everest/everest-ci/github-actions/update-issue-comment@feature/add-render-jinja2-action
+        with:
+          owner: everest
+          repo: everest
+          token: ${{ secrets.SA_GITHUB_PAT }}
+          comment_id: ${{ steps.find-comment.outputs.comment_id }}
+          body: Update!
