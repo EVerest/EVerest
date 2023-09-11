@@ -52,17 +52,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     container: 
       image: ghcr.io/everest/everest-ci-env:main
-    env:
-      SSH_AUTH_SOCK: /tmp/ssh_agent.sock
     steps:
     - name: Setup ssh key and known_hosts
-      run: |
-        mkdir -p /root/.ssh
-        ssh-keyscan github.com >> /root/.ssh/known_hosts
-        echo "${{ secrets.SA_GITHUB_SSH_KEY }}" > /root/.ssh/github_actions
-        chmod 600 /root/.ssh/github_actions
-        ssh-agent -a ${SSH_AUTH_SOCK} > /dev/null
-        ssh-add /root/.ssh/github_actions
+      #   LTODO: switch to main branch
+      uses: everest/everest-ci/github-actions/setup-ssh@feature/add-render-jinja2-action
+      with:
+        ssh-key: ${{ secrets.SA_GITHUB_SSH_KEY }}
+        home-directory: /root
+        known-hosts: github.com
 
     # Setup workspace
     - name: Download snaphot file
@@ -140,13 +137,12 @@ jobs:
       image: ghcr.io/everest/everest-ci-env:main
     steps:
     - name: Setup ssh key and known_hosts
-      run: |
-        mkdir -p /root/.ssh
-        ssh-keyscan github.com >> /root/.ssh/known_hosts
-        echo "${{ secrets.SA_GITHUB_SSH_KEY }}" > /root/.ssh/github_actions
-        chmod 600 /root/.ssh/github_actions
-        ssh-agent -a ${SSH_AUTH_SOCK} > /dev/null
-        ssh-add /root/.ssh/github_actions
+      #   LTODO: switch to main branch
+      uses: everest/everest-ci/github-actions/setup-ssh@feature/add-render-jinja2-action
+      with:
+        ssh-key: ${{ secrets.SA_GITHUB_SSH_KEY }}
+        home-directory: /root
+        known-hosts: github.com
     - name: Configure git
       run: |
         git config --global user.email "compiler@pionix.de"
