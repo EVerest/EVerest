@@ -40,91 +40,17 @@ jobs:
       github_pages_repo: ${{ inputs.github_pages_repo }}
     secrets:
       SA_GITHUB_SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
-
   build-doc:
-    name: Build EVerest sphinx documentation
     needs: checkout-snapshot-file
-    strategy:
-      max-parallel: 1
-      fail-fast: false
-      matrix:
-        os: [ubuntu-20.04]
-    runs-on: ${{ matrix.os }}
-    container: 
-      image: ghcr.io/everest/everest-ci-env:main
-    steps:
-    - name: Setup ssh key and known_hosts
-      #   LTODO: switch to main branch
-      uses: everest/everest-ci/github-actions/setup-ssh@feature/add-render-jinja2-action
-      with:
-        ssh-key: ${{ secrets.SA_GITHUB_SSH_KEY }}
-        home-directory: /root
-        known-hosts: github.com
-
-    # Setup workspace
-    - name: Download snaphot file
-      uses: actions/download-artifact@v3
-      with:
-        name: ${{ needs.checkout-snapshot-file.outputs.artefact_name }}
-        path: |
-          everest-workspace
-    - name: Checkout snapshot
-      run: |
-        edm --config snapshot.yaml --workspace .
-      working-directory: everest-workspace
-    - name: List all deployed versions
-      id: list-deployed-versions
-      shell: python3 {0}
-      run: |
-        from typing import List
-        import os
-        from pathlib import Path
-
-        version_list: List[str] = []
-        version_list.extend(
-          item.name for item in Path("${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}/docs").iterdir() if item.is_dir()
-        )
-        version_list.append("${{ needs.checkout-snapshot-file.outputs.version_name}}")
-        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-          print(f"versions={ ','.join(str(version) for version in version_list) }", file=f)
-      working-directory: everest-workspace
-
-    - name: Prebuild EVerest rst doc
-      run: |
-        python3 everest/docs/scripts/prebuild-everest-doc.py \
-          --doc-directory everest/docs/ \
-          --core-directory everest-core/ \
-          --snapshot-file snapshot.yaml
-      working-directory: everest-workspace
-
-    - name: Build html sphinx doc
-      if: ${{ inputs.build_html }}
-      env:
-        EVEREST_DEPLOYED_VERSIONS: ${{ steps.list-deployed-versions.outputs.versions }}
-      run: |
-        make -e SPHINXOPTS="-D version='${{ needs.checkout-snapshot-file.outputs.version_name }}'" html
-      working-directory: everest-workspace/everest/docs
-    - name: Upload generated html files
-      if: ${{ inputs.build_html }}
-      uses: actions/upload-artifact@v3
-      with:
-        name: docs-html
-        path: everest-workspace/everest/docs/_build/html/
-
-    - name: Build pdf sphinx doc
-      if: ${{ inputs.build_pdf }}
-      env:
-        EVEREST_DEPLOYED_VERSIONS: ${{ steps.list-deployed-versions.outputs.versions }}
-        buf_size: 1000000
-      run: make -e SPHINXOPTS="-D version='${{ needs.checkout-snapshot-file.outputs.version_name }}'" latexpdf
-      working-directory: everest-workspace/everest/docs
-    - name: Upload generated pdf files
-      if: ${{ inputs.build_pdf }}
-      uses: actions/upload-artifact@v3
-      with:
-        name: docs-pdf
-        path: everest-workspace/everest/docs/_build/latex/
-
+    uses: ./.github/workflows/build-doc.yml
+    with:
+      build_pdf: ${{ inputs.build_pdf }}
+      build_html: ${{ inputs.build_html }}
+      github_pages_repo_name: ${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}
+      snapshot_artefact_name: ${{ needs.checkout-snapshot-file.outputs.artefact_name }}
+      version_name: ${{ needs.checkout-snapshot-file.outputs.version_name }}
+    secrets:
+      SA_GITHUB_SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
   deploy-html-doc:
     if: ${{ inputs.build_html && inputs.deploy_html }}
     needs: [build-doc, checkout-snapshot-file]
@@ -144,14 +70,15 @@ jobs:
         home-directory: /root
         known-hosts: github.com
     - name: Configure git
-      run: |
-        git config --global user.email "compiler@pionix.de"
-        git config --global user.name "Github Service Account"
-
+      #  LTODO: switch to main branch
+      uses: everest/everest-ci/github-actions/configure-git@feature/add-render-jinja2-action
+      with:
+        email: compiler@pionxi.de
+        name: Github Service Account
     - name: Download generated html files
       uses: actions/download-artifact@v3
       with:
-        name: docs-html
+        name: ${{ needs.build-doc.outputs.html_artefact_name }}
         path: docs-html
     - name: Download snapshot file
       uses: actions/download-artifact@v3

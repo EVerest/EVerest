@@ -1,0 +1,174 @@
+name: Build sphinx doc
+
+env:
+  PREBUILD_ARTEFACT_NAME: everest-workspace-prebuild
+  HTML_ARTEFACT_NAME: docs-html
+  PDF_ARTEFACT_NAME: docs-pdf
+
+on:
+  workflow_call:
+    inputs:
+      github_pages_repo_name:
+        description: "Name of the github pages repo"
+        required: true
+        type: string
+      snapshot_artefact_name:
+        description: "Name of the artefact to download"
+        required: true
+        type: string
+      build_pdf:
+        description: "Build pdf documentation"
+        required: false
+        default: true
+        type: boolean
+      build_html:
+        description: "Build html documentation"
+        required: false
+        default: true
+        type: boolean
+      version_name:
+        description: "Name of the version to build"
+        required: true
+        type: string
+    outputs:
+      html_artefact_name:
+        description: "Name of the html artefact"
+        value: $HTML_ARTEFACT_NAME
+      pdf_artefact_name:
+        description: "Name of the pdf artefact"
+        value: $PDF_ARTEFACT_NAME
+    secrets:
+      SA_GITHUB_SSH_KEY:
+        description: 'SSH key for github.com'
+        required: true
+jobs:
+  prepare-build-parameters:
+    name: Prepare build
+    runs-on: ubuntu-22.04
+    container: 
+      image: ghcr.io/everest/everest-ci-env:main
+    outputs:
+      versions: ${{ steps.list-deployed-versions.outputs.versions }}
+    steps:
+      - name: Setup ssh key and known_hosts
+        #   LTODO: switch to main branch
+        uses: everest/everest-ci/github-actions/setup-ssh@feature/add-render-jinja2-action
+        with:
+          ssh-key: ${{ secrets.SA_GITHUB_SSH_KEY }}
+          home-directory: /root
+          known-hosts: github.com
+      # Setup workspace
+      - name: Download snaphot file
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ inputs.snapshot_artefact_name }}
+          path: |
+            everest-workspace
+      - name: Checkout snapshot
+        run: |
+          edm --config snapshot.yaml --workspace .
+        working-directory: everest-workspace
+      - name: List all deployed versions
+        id: list-deployed-versions
+        shell: python3 {0}
+        run: |
+          from typing import List
+          import os
+          from pathlib import Path
+          
+          version_name = "${{ inputs.version_name }}"
+          version_list: List[str] = []
+          version_list.extend(
+            item.name for item in Path("docs/").iterdir() if item.is_dir()
+          )
+          if version_name not in version_list:
+            version_list.append(version_name)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+            f.write(f"versions={ ','.join(str(version) for version in version_list) }")
+        working-directory: everest-workspace/${{ inputs.github_pages_repo_name }}
+  prebuild:
+    name: Prebuild EVerest sphinx documentation
+    runs-on: ubuntu-22.04
+    container: 
+      image: ghcr.io/everest/everest-ci-env:main
+    steps:
+      - name: Setup ssh key and known_hosts
+        #   LTODO: switch to main branch
+        uses: everest/everest-ci/github-actions/setup-ssh@feature/add-render-jinja2-action
+        with:
+          ssh-key: ${{ secrets.SA_GITHUB_SSH_KEY }}
+          home-directory: /root
+          known-hosts: github.com
+      # Setup workspace
+      - name: Download snaphot file
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ inputs.snapshot_artefact_name }}
+          path: |
+            everest-workspace
+      - name: Checkout snapshot
+        run: |
+          edm --config snapshot.yaml --workspace .
+        working-directory: everest-workspace
+      - name: Prebuild EVerest rst doc
+        run: |
+          python3 everest/docs/scripts/prebuild-everest-doc.py \
+            --doc-directory everest/docs/ \
+            --core-directory everest-core/ \
+            --snapshot-file snapshot.yaml
+        working-directory: everest-workspace
+      - name: Upload everest-workspace
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.PREBUILD_ARTEFACT_NAME }}
+          path: everest-workspace
+  build-html:
+    name: Build html sphinx documentation
+    if: ${{ inputs.build_html }}
+    needs: [prepare-build-parameters, prebuild]
+    runs-on: ubuntu-22.04
+    container: 
+      image: ghcr.io/everest/everest-ci-env:main
+    steps:
+      - name: Download everest-workspace
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ env.PREBUILD_ARTEFACT_NAME }}
+          path: |
+            everest-workspace
+      - name: Build html sphinx doc
+        env:
+          EVEREST_DEPLOYED_VERSIONS: ${{ needs.prepare-build-parameters.outputs.versions }}
+        run: |
+          make -e SPHINXOPTS="-D version='${{ inputs.version_name }}'" html
+        working-directory: everest-workspace/everest/docs
+      - name: Upload generated html files
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.HTML_ARTEFACT_NAME }}}
+          path: everest-workspace/everest/docs/_build/html/
+  build-pdf:
+    name: Build pdf sphinx documentation
+    if: ${{ inputs.build_pdf }}
+    needs: [prepare-build-parameters, prebuild]
+    runs-on: ubuntu-22.04
+    container: 
+      image: ghcr.io/everest/everest-ci-env:main
+    steps:
+      - name: Download everest-workspace
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ env.PREBUILD_ARTEFACT_NAME }}
+          path: |
+            everest-workspace
+      - name: Build pdf sphinx doc
+        env:
+          EVEREST_DEPLOYED_VERSIONS: ${{ needs.prepare-build-parameters.outputs.versions }}
+          buf_size: 1000000
+        run: make -e SPHINXOPTS="-D version='${{ inputs.version_name }}'" latexpdf
+        working-directory: everest-workspace/everest/docs
+      - name: Upload generated pdf files
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.PDF_ARTEFACT_NAME }}
+          path: everest-workspace/everest/docs/_build/latex/
