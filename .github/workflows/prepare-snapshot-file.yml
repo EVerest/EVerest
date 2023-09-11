@@ -22,10 +22,19 @@ on:
     outputs:
       version_name:
         description: 'Version name'
-        value: ${{ jobs.checkout-snapshot-file.outputs.version_name }}}
+        value: ${{ jobs.checkout-snapshot-file.outputs.version_name }}
       artefact_name:
         description: 'Artefact name'
         value: snapshot-file
+      github_pages_repo_owner:
+        description: 'GithubPages repo owner'
+        value: ${{ jobs.prepare-snapshot-file.outputs.github_pages_repo_owner }}
+      github_pages_repo_name:
+        description: 'GithubPages repo name'
+        value: ${{ jobs.prepare-snapshot-file.outputs.github_pages_repo_name }}
+      github_pages_repo_ref:
+        description: 'GithubPages repo ref'
+        value: ${{ jobs.prepare-snapshot-file.outputs.github_pages_repo_ref }}
     secrets:
       SA_GITHUB_SSH_KEY:
         description: 'SSH key for github.com'
@@ -37,7 +46,10 @@ jobs:
     container: 
       image: ghcr.io/everest/everest-ci-env:bump-versions
     outputs:
-      version_name: $${{ steps.set-version-name.outputs.version_name }}
+      version_name: ${{ steps.set-version-name.outputs.version_name }}
+      github_pages_repo_name: ${{ steps.parse-github-pages-repo-input.outputs.repo }}
+      github_pages_repo_owner: ${{ steps.parse-github-pages-repo-input.outputs.owner }}
+      github_pages_repo_ref: ${{ steps.parse-github-pages-repo-input.outputs.ref }}
     steps:
     - name: Parse github pages repo input
       id: parse-github-pages-repo-input

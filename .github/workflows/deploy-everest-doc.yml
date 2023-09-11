@@ -85,7 +85,7 @@ jobs:
 
         version_list: List[str] = []
         version_list.extend(
-          item.name for item in (Path("${{ inputs.github_pages_repo }}".split('/')[-1]) / "docs").iterdir() if item.is_dir()
+          item.name for item in Path("${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}/docs").iterdir() if item.is_dir()
         )
         version_list.append("${{ needs.checkout-snapshot-file.outputs.version_name}}")
         with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
@@ -138,9 +138,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     container: 
       image: ghcr.io/everest/everest-ci-env:main
-    env:
-      SSH_AUTH_SOCK: /tmp/ssh_agent.sock
-      GITHUB_PAGES_REPO: ${{ inputs.github_pages_repo }}
     steps:
     - name: Setup ssh key and known_hosts
       run: |
@@ -160,14 +157,6 @@ jobs:
       with:
         name: docs-html
         path: docs-html
-    - name: Checkout ${{ env.GITHUB_PAGES_REPO }}
-      uses: actions/checkout@v2
-      with:
-        repository: ${{ env.GITHUB_PAGES_REPO }}
-        path: ${{ env.GITHUB_PAGES_REPO }}
-        token: ${{secrets.SA_GITHUB_PAT}}
-        ref: main
-        fetch-depth: 0
     - name: Download snapshot file
       uses: actions/download-artifact@v3
       with:
@@ -183,38 +172,40 @@ jobs:
       if: ${{ inputs.overwrite_existing }}
       run: |
         rm -rf docs/${{ needs.checkout-snapshot-file.outputs.version_name }}
-      working-directory: ${{ env.GITHUB_PAGES_REPO }}
+      working-directory: everest-workspace/${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}
     - name: Update doc and push it
       run: |
         mkdir -p docs
         touch docs/.nojekyll
         mkdir docs/${{ needs.checkout-snapshot-file.outputs.version_name }}
         cp -r ../../docs-html/* docs/${{ needs.checkout-snapshot-file.outputs.version_name }}/
-      working-directory: ${{ env.GITHUB_PAGES_REPO }}
+      working-directory: everest-workspace/${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}
     - name: Ensure that the latest release is the default one and create a versions index
       if: ${{ inputs.is_release }}
       run: |
-        python3 everest-workspace/everest/docs/scripts/deploy-everest-doc.py \
-          --template-directory everest-workspace/everest/docs/templates/ \
-          --html-root-directory ${{ env.GITHUB_PAGES_REPO }}/docs/ \
+        python3 everest/docs/scripts/deploy-everest-doc.py \
+          --template-directory everest/docs/templates/ \
+          --html-root-directory ${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}/docs/ \
           --is-release True \
           --version-name ${{ needs.checkout-snapshot-file.outputs.version_name }}
+      working-directory: everest-workspace
     - name: Create a verions index
       if: ${{ !inputs.is_release }}
       run: |
-        python3 everest-workspace/everest/docs/scripts/deploy-everest-doc.py \
-          --template-directory everest-workspace/everest/docs/templates/ \
-          --html-root-directory ${{ env.GITHUB_PAGES_REPO }}/docs/ \
+        python3 everest/docs/scripts/deploy-everest-doc.py \
+          --template-directory everest/docs/templates/ \
+          --html-root-directory ${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}/docs/ \
           --is-release False \
           --version-name ${{ needs.checkout-snapshot-file.outputs.version_name }}
+      working-directory: everest-workspace
     - name: Commit updated github pages
       run: |
         git add --all
         git diff-index --quiet HEAD || git commit -m "Add doc build snapshot ${{ needs.checkout-snapshot-file.outputs.version_name }}"
-      working-directory: ${{ env.GITHUB_PAGES_REPO }}
+      working-directory: everest-workspace/${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}
 
-    - name: Push updated doc to ${{ env.GITHUB_PAGES_REPO }}
+    - name: Push updated doc to github pages repo
       if: ${{ !env.ACT }}
       run: |
         git push
-      working-directory: ${{ env.GITHUB_PAGES_REPO }}
+      working-directory: everest-workspace/${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}
