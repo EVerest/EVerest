@@ -33,10 +33,10 @@ on:
     outputs:
       html_artefact_name:
         description: "Name of the html artefact"
-        value: $HTML_ARTEFACT_NAME
+        value: ${{ jobs.build-html.outputs.html_artefact_name }}
       pdf_artefact_name:
         description: "Name of the pdf artefact"
-        value: $PDF_ARTEFACT_NAME
+        value: ${{ jobs.build-pdf.outputs.pdf_artefact_name }}}
     secrets:
       SA_GITHUB_SSH_KEY:
         description: 'SSH key for github.com'
@@ -129,6 +129,8 @@ jobs:
     runs-on: ubuntu-22.04
     container: 
       image: ghcr.io/everest/everest-ci-env:main
+    outputs:
+      html_artefact_name: ${{ env.HTML_ARTEFACT_NAME }}
     steps:
       - name: Download everest-workspace
         uses: actions/download-artifact@v3
@@ -145,7 +147,7 @@ jobs:
       - name: Upload generated html files
         uses: actions/upload-artifact@v3
         with:
-          name: ${{ env.HTML_ARTEFACT_NAME }}}
+          name: ${{ env.HTML_ARTEFACT_NAME }}
           path: everest-workspace/everest/docs/_build/html/
   build-pdf:
     name: Build pdf sphinx documentation
@@ -154,6 +156,8 @@ jobs:
     runs-on: ubuntu-22.04
     container: 
       image: ghcr.io/everest/everest-ci-env:main
+    outputs:
+      pdf_artefact_name: ${{ env.PDF_ARTEFACT_NAME }}
     steps:
       - name: Download everest-workspace
         uses: actions/download-artifact@v3

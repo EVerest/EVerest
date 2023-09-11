@@ -7,18 +7,22 @@ on:
         description: 'Snapshot file location: <owner>/<repo>/<path-to-snapshot.yaml>@<ref>'
         default: ''
         type: string
+        required: false
       github_pages_repo:
         description: 'GithubPages repo: <owner>/<repo>@<ref>'
         default: 'everest/everest.github.io@main'
         type: string
+        required: false
       everest_core_ref:
         description: 'EVerest core ref: <ref>'
         default: 'main'
         type: string
+        required: false
       version_name:
         description: 'Version name'
         default: ''
         type: string
+        required: false
     outputs:
       version_name:
         description: 'Version name'

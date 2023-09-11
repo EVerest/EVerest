@@ -5,32 +5,39 @@ on:
     inputs:
       is_release:
         description: 'Is this snapshot a release?'
-        default: 'false'
+        default: false
         type: boolean
+        required: false
       build_pdf:
         description: 'Build PDF documentation?'
-        default: 'false'
+        default: true
         type: boolean
+        required: false
       build_html:
         description: 'Build HTML documentation?'
-        default: 'true'
+        default: true
         type: boolean
+        required: false
       deploy_html:
         description: 'Deploy HTML documentation?'
-        default: 'true'
+        default: true
         type: boolean
+        required: false
       snapshot_file:
         description: 'Snapshot file location: <owner>/<repo>/<path-to-snapshot.yaml>@<ref>'
         default: ''
         type: string
+        required: false
       github_pages_repo:
         description: 'GithubPages repo: <owner>/<repo>@<ref>'
         default: 'everest/everest.github.io@main'
         type: string
+        required: false
       overwrite_existing:
         description: 'Overwrite existing documentation?'
-        default: 'false'
+        default: false
         type: boolean
+        required: false
 
 jobs:
   checkout-snapshot-file:
