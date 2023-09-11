@@ -172,7 +172,7 @@ jobs:
     - name: Update doc and push it
       run: |
         mkdir -p docs
-        touch docs/.nojekyll
+        touch docs/.nojekyll  
         mkdir docs/${{ needs.checkout-snapshot-file.outputs.version_name }}
         cp -r ../../docs-html/* docs/${{ needs.checkout-snapshot-file.outputs.version_name }}/
       working-directory: everest-workspace/${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}
@@ -203,5 +203,6 @@ jobs:
     - name: Push updated doc to github pages repo
       if: ${{ !env.ACT }}
       run: |
+        git checkout ${{ needs.checkout-snapshot-file.outputs.github_pages_repo_ref }}
         git push
       working-directory: everest-workspace/${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}

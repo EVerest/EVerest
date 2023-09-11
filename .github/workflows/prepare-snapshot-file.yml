@@ -162,7 +162,6 @@ jobs:
         cp ${{ steps.determine-snapshot-file.outputs.path }} everest-workspace/snapshot.yaml
     - name: Update snapshot file
       run: |
-        cat snapshot.yaml
         edm --config snapshot.yaml --workspace .
         edm snapshot snapshot.yaml --recursive
       working-directory: everest-workspace
