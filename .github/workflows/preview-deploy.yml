@@ -1,22 +1,20 @@
-name: Nightly EVerest doc build
+name: PreviewEVerest doc build
 
 on:  
-  schedule:
-    - cron: '0 1 * * *'
+  pull_request:
   workflow_dispatch:
   push:
 jobs:
-  nightly-build-and-deploy:
-    name: Nightly build and deploy
+  preview-build-and-deploy:
+    name: Preview build and deploy
     uses: ./.github/workflows/build-and-deploy-doc.yml
     with:
       is_release: false
       build_pdf: true
       build_html: true
       deploy_html: true
-      # LTODO: change to main
-      snapshot_file: everest/everest/snapshots/nightly.yaml@feature/add-doc-preview
-      github_pages_repo: everest/everest.github.io@main
+      github_pages_repo: everest/doc-preview@main
       overwrite_existing: true
+      version_name: ${{ github.ref_name }}
     secrets:
       SA_GITHUB_SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}

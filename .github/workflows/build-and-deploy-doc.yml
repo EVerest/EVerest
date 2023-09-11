@@ -38,6 +38,11 @@ on:
         default: false
         type: boolean
         required: false
+      version_name:
+        description: 'Version name'
+        default: ''
+        type: string
+        required: false
   workflow_call:
     inputs:
       is_release:
@@ -75,6 +80,11 @@ on:
         default: false
         type: boolean
         required: false
+      version_name:
+        description: 'Version name'
+        default: ''
+        type: string
+        required: false
     secrets:
       SA_GITHUB_SSH_KEY:
         description: 'SSH key for github access'
@@ -87,6 +97,7 @@ jobs:
     with:
       snapshot_file: ${{ inputs.snapshot_file }}
       github_pages_repo: ${{ inputs.github_pages_repo }}
+      version_name: ${{ inputs.version_name }}
     secrets:
       SA_GITHUB_SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
   build-doc:
