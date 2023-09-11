@@ -38,9 +38,51 @@ on:
         default: false
         type: boolean
         required: false
+  workflow_call:
+    inputs:
+      is_release:
+        description: 'Is this snapshot a release?'
+        default: false
+        type: boolean
+        required: false
+      build_pdf:
+        description: 'Build PDF documentation?'
+        default: true
+        type: boolean
+        required: false
+      build_html:
+        description: 'Build HTML documentation?'
+        default: true
+        type: boolean
+        required: false
+      deploy_html:
+        description: 'Deploy HTML documentation?'
+        default: true
+        type: boolean
+        required: false
+      snapshot_file:
+        description: 'Snapshot file location: <owner>/<repo>/<path-to-snapshot.yaml>@<ref>'
+        default: ''
+        type: string
+        required: false
+      github_pages_repo:
+        description: 'GithubPages repo: <owner>/<repo>@<ref>'
+        default: 'everest/everest.github.io@main'
+        type: string
+        required: false
+      overwrite_existing:
+        description: 'Overwrite existing documentation?'
+        default: false
+        type: boolean
+        required: false
+    secrets:
+      SA_GITHUB_SSH_KEY:
+        description: 'SSH key for github access'
+        required: true
 
 jobs:
   checkout-snapshot-file:
+    name: Checkout snapshot file
     uses: ./.github/workflows/prepare-snapshot-file.yml
     with:
       snapshot_file: ${{ inputs.snapshot_file }}
@@ -48,6 +90,7 @@ jobs:
     secrets:
       SA_GITHUB_SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
   build-doc:
+    name: Build sphinx documentation
     needs: checkout-snapshot-file
     uses: ./.github/workflows/build-doc.yml
     with:
@@ -58,85 +101,18 @@ jobs:
       version_name: ${{ needs.checkout-snapshot-file.outputs.version_name }}
     secrets:
       SA_GITHUB_SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
-  deploy-html-doc:
-    if: ${{ inputs.build_html && inputs.deploy_html }}
-    needs: [build-doc, checkout-snapshot-file]
-    name: Deploy sphinx documentation
-    strategy:
-      matrix:
-        os: [ubuntu-20.04]
-    runs-on: ${{ matrix.os }}
-    container: 
-      image: ghcr.io/everest/everest-ci-env:main
-    steps:
-    - name: Setup ssh key and known_hosts
-      #   LTODO: switch to main branch
-      uses: everest/everest-ci/github-actions/setup-ssh@feature/add-render-jinja2-action
-      with:
-        ssh-key: ${{ secrets.SA_GITHUB_SSH_KEY }}
-        home-directory: /root
-        known-hosts: github.com
-    - name: Configure git
-      #  LTODO: switch to main branch
-      uses: everest/everest-ci/github-actions/configure-git@feature/add-render-jinja2-action
-      with:
-        email: compiler@pionxi.de
-        name: Github Service Account
-    - name: Download generated html files
-      uses: actions/download-artifact@v3
-      with:
-        name: ${{ needs.build-doc.outputs.html_artefact_name }}
-        path: docs-html
-    - name: Download snapshot file
-      uses: actions/download-artifact@v3
-      with:
-        name: ${{ needs.checkout-snapshot-file.outputs.artefact_name }}
-        path: |
-          everest-workspace
-    - name: Checkout snapshot
-      run: |
-        edm --config snapshot.yaml --workspace .
-      working-directory: everest-workspace
+  deploy-doc:
+    name: Deploy HTML documentation
+    needs: [checkout-snapshot-file, build-doc]
+    uses: ./.github/workflows/deploy-doc.yml
+    with:
+      html_artefact_name: ${{ needs.build-doc.outputs.html_artefact_name }}
+      snapshot_artefact_name: ${{ needs.checkout-snapshot-file.outputs.artefact_name }}
+      overwrite_existing: ${{ inputs.overwrite_existing }}
+      version_name: ${{ needs.checkout-snapshot-file.outputs.version_name }}
+      github_pages_repo_name: ${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}
+      github_pages_repo_ref: ${{ needs.checkout-snapshot-file.outputs.github_pages_repo_ref }}
+      is_release: ${{ inputs.is_release }}
+    secrets:
+      SA_GITHUB_SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
 
-    - name: Remove old doc
-      if: ${{ inputs.overwrite_existing }}
-      run: |
-        rm -rf docs/${{ needs.checkout-snapshot-file.outputs.version_name }}
-      working-directory: everest-workspace/${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}
-    - name: Update doc and push it
-      run: |
-        mkdir -p docs
-        touch docs/.nojekyll  
-        mkdir docs/${{ needs.checkout-snapshot-file.outputs.version_name }}
-        cp -r ../../docs-html/* docs/${{ needs.checkout-snapshot-file.outputs.version_name }}/
-      working-directory: everest-workspace/${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}
-    - name: Ensure that the latest release is the default one and create a versions index
-      if: ${{ inputs.is_release }}
-      run: |
-        python3 everest/docs/scripts/deploy-everest-doc.py \
-          --template-directory everest/docs/templates/ \
-          --html-root-directory ${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}/docs/ \
-          --is-release True \
-          --version-name ${{ needs.checkout-snapshot-file.outputs.version_name }}
-      working-directory: everest-workspace
-    - name: Create a verions index
-      if: ${{ !inputs.is_release }}
-      run: |
-        python3 everest/docs/scripts/deploy-everest-doc.py \
-          --template-directory everest/docs/templates/ \
-          --html-root-directory ${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}/docs/ \
-          --is-release False \
-          --version-name ${{ needs.checkout-snapshot-file.outputs.version_name }}
-      working-directory: everest-workspace
-    - name: Commit updated github pages
-      run: |
-        git add --all
-        git diff-index --quiet HEAD || git commit -m "Add doc build snapshot ${{ needs.checkout-snapshot-file.outputs.version_name }}"
-      working-directory: everest-workspace/${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}
-
-    - name: Push updated doc to github pages repo
-      if: ${{ !env.ACT }}
-      run: |
-        git checkout ${{ needs.checkout-snapshot-file.outputs.github_pages_repo_ref }}
-        git push
-      working-directory: everest-workspace/${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}
