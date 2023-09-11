@@ -22,7 +22,7 @@ on:
     outputs:
       version_name:
         description: 'Version name'
-        value: ${{ jobs.checkout-snapshot-file.outputs.version_name }}
+        value: ${{ jobs.prepare-snapshot-file.outputs.version_name }}
       artefact_name:
         description: 'Artefact name'
         value: snapshot-file
