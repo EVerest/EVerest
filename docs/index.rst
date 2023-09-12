@@ -4,7 +4,7 @@
 
     You are looking at the documentation for the |version| release of EVerest.
     See `snapshot file <./appendix/snapshot.html>`_ for further version mapping.
-    See `verions index <../versions_index.html>`_ for other versions.
+    See `versions index <../versions_index.html>`_ for other versions.
 
 .. image:: img/everest_horizontal-color.svg
     :align: right
@@ -144,7 +144,7 @@ Click for watching on YouTube: `Webinar: How the EVerest Ecosystem will simplify
 
 We prepared a path to get step by step into the EVerest world. It will lead you from a high level overview right into understanding how to implement modules for your dedicated hardware scenarios or developer use cases.
 
-To walk this path, simple go on reading and follow the table of contents below.
+To walk this path, simply read on and follow the table of contents below.
 
 ******************************************
 Table Of Contents
