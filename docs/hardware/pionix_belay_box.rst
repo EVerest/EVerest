@@ -403,12 +403,18 @@ Reference Cheat Sheet
 
 Make root partition read/writable
 ---------------------------------
+
+Use the following command:
+
 .. code-block:: bash
 
   rw
 
 Make it read only again
 -----------------------
+
+Use the following command:
+
 .. code-block:: bash
 
   ro
@@ -494,6 +500,12 @@ Run EVerest in terminal
 .. code-block:: bash
 
   sudo /opt/everest/bin/manager --conf /opt/everest/conf/config-deploy-devboard.yaml
+
+or for using the custom user config:
+
+.. code-block:: bash
+
+  sudo /opt/everest/bin/manager --conf /mnt/user_data/etc/everest/custom.yaml
 
 Make sure the systemd service is not running.
 
