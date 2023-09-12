@@ -392,21 +392,113 @@ BelayBox Further Information
 Reference Cheat Sheet
 =====================
 
-* rw: make root partition read/writable
-* ro: make it read only again
-* /mnt/user_data/etc/wpa_supplicant/wpa_supplicant.conf: file containing wifi settings
-* /mnt/user_data/opt/everest/<crosscompiled everest binaries> force the use of custom everest build or config by automated start of ``everest-dev.service`` instead of ``everest.service``
-* /mnt/user_data/etc/update_channel contains either stable or unstable to define release channels
-* /mnt/user_data/etc/wireguard/wg0.conf for a wireguard VPN configuration
-* /mnt/user_data/user-config/config-deploy-devboard.yaml for a persistent user config containing only the diffs to the default config.
-* to stop automatic updates: rw; sudo systemctl disable ota-update.service
-* /mnt/user_data/etc/mosquitto/conf.d: here you can add additional config files for the mqtt broker. For example a “public_mqtt.conf” file with the following contents:
-    ``listener 1883``
-    
-    ``allow_anonymous true`` to allow anonymous external connections to the mqtt broker for debugging purposes
-* ``sudo journalctl -fu everest.service``: watch the output of everest.service 
-* ``sudo journalctl -fu everest-dev.service``: watch the output of ``everest-dev.service`` 
-* ``sudo /opt/everest/bin/manager --conf /opt/everest/conf/config-deploy-devboard.yaml``: run EVerest in the terminal. Make sure the systemd service is not running.
+Make root partition read/writable
+---------------------------------
+
+Use the following command:
+
+.. code-block:: bash
+
+  rw
+
+Make it read only again
+-----------------------
+
+Use the following command:
+
+.. code-block:: bash
+
+  ro
+
+File containing wifi settings
+-----------------------------
+.. code-block:: bash
+
+  /mnt/user_data/etc/wpa_supplicant/wpa_supplicant.conf
+
+Use of custom everest build or config
+-------------------------------------
+Force the use of custom everest build or config by automated start of
+``everest-dev.service`` instead of ``everest.service``
+
+.. code-block:: bash
+
+  /mnt/user_data/opt/everest/<crosscompiled everest binaries>
+
+Define release channels
+-----------------------
+Contains either stable or unstable to define release channels:
+
+.. code-block:: bash
+
+  /mnt/user_data/etc/update_channel
+
+Wireguard VPN configuration
+---------------------------
+.. code-block:: bash
+
+  /mnt/user_data/etc/wireguard/wg0.config
+
+Persistent user config
+----------------------
+Via a complete config:
+
+.. code-block:: bash
+
+  /mnt/user_data/etc/everest/custom.yaml
+
+Via a config file containing only the diffs to the default config:
+
+.. code-block:: bash
+
+  /mnt/user_data/user-config/config-deploy-devboard.yaml
+
+Stop automatic updates
+----------------------
+.. code-block:: bash
+
+  rw; sudo systemctl disable ota-update.service
+
+Additional config files for the mqtt broker
+-------------------------------------------
+.. code-block:: bash
+
+  /mnt/user_data/etc/mosquitto/conf.d
+
+This is the place where you can add for example a “public_mqtt.conf” file with the following contents:
+
+.. code-block:: bash
+
+  listener 1883
+  allow_anonymous true
+
+With this, you allow anonymous external connections to the mqtt broker for
+debugging purposes.
+
+Watch the output of everest.service
+-----------------------------------
+
+.. code-block:: bash
+
+  sudo journalctl -fu everest.service
+
+For watching the output of everest-dev.service, set service name to
+*everest-dev.service*.
+
+Run EVerest in terminal
+-----------------------
+
+.. code-block:: bash
+
+  sudo /opt/everest/bin/manager --conf /opt/everest/conf/config-deploy-devboard.yaml
+
+or for using the custom user config:
+
+.. code-block:: bash
+
+  sudo /opt/everest/bin/manager --conf /mnt/user_data/etc/everest/custom.yaml
+
+Make sure the systemd service is not running.
 
 Raspbian partitioning scheme
 ============================
