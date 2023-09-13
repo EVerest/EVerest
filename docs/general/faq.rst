@@ -2,9 +2,9 @@
 
 .. _faq_main:
 
-##########################
-Frequently Asked Questions
-##########################
+#############################################
+Frequently Asked Questions And Best Practices
+#############################################
 
 This page will grow with questions from the mailing list and topics that
 come up regularly in our EVerest development life. It is always a good idea
@@ -123,3 +123,29 @@ can sometimes happen on Raspberry Pies, for example.
 You may try to connect from a desktop PC to IP_OF_THE_RASPBERRY:8849. This way,
 the client-side processing of the Admin Panel javascript code gets offloaded
 from the Raspberry and it might be able to process the save faster.
+
+Another hint for environments with very limited ressources is to fill in the
+workspace information into the yaml config manually without using the Admin
+Panel.
+
+Energy management
+=================
+
+**How does the EVSE Manager use information like `grid_connection_point`
+(with parameters `fuse_limit_A` and `phase_count`) or `energy_manager`
+(e.g. `nominal_ac_voltage`?**
+
+The EVSE Manager module defaults to 0A/0W energy consumption and requires that
+some other module allocates power through the `energy` interface.
+
+The `energy manager` just supplies whatever the limit on the power path is,
+and the fuse module is just loaded to model the typical input fuse limit of
+the charger connection (so the energy manager will limit to that even if the
+car is requesting more).
+
+As a visualization, imagine the energy management in EVerest as a tree
+structure. What makes energy management in EVerest quite flexible is the
+concept of having constraints and limits you can provide to it. For each node
+in that tree, limits can be provided which are recognized by the energy
+manager which calculates the energy that is to be provided by the EVSE
+managers.

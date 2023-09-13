@@ -113,6 +113,10 @@ and what is planned for the near future, see our |link_roadmap|.
 With our |link_youtube| channel, you can stay up-to-date with webinars and get
 insights from the Technical Steering Committee recordings.
 
+And last but not least, also have a look at section
+:ref:`FAQ And Best Practices <faq_main>` in this documentation
+page to find topics that sometimes people get stuck with.
+
 Social Media
 ============
 
