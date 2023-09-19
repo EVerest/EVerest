@@ -2,22 +2,25 @@
 How To: OCPP1.6 in EVerest
 **************************
 
-EVerest provides a complete implementation of OCPP1.6J, supporting all feature profiles including Plug&Charge and the Security Extensions.
-Find the repository of libocpp here: https://github.com/EVerest/libocpp 
+EVerest provides a complete implementation of Open Charge Point Protocol (OCPP) 1.6J, 
+supporting all feature profiles including Plug&Charge and the Security Extensions.
+
+The code of `libocpp` is at https://github.com/EVerest/libocpp
+
 This is a tutorial about how to setup and configure OCPP1.6 in EVerest.
 
 This tutorial includes:
 
-- How the libocpp is integrated into everest-core
+- How the `libocpp` is integrated into `everest-core`
 - How to run EVerest with the default OCPP1.6J configuration connecting to SteVe
 - How to configure OCPP within EVerest
 - How to connect to different CSMS
 - What's relevant when configuring the OCPP module 
 - Where to find and how to configure the OCPP logging
 
-.. _prequesites:
+.. _prerequisites:
 
-Prerequesites
+Prerequisites
 =============
 
 If you're new to EVerest start with our `Quick Start Guide <02_quick_start_guide.html>`_ 
@@ -27,26 +30,27 @@ If you have done that successfully, you can move on with this tutorial.
 
 .. _integration:
 
-Integration of libocpp into everest-core
+Integration of `libocpp` into `everest-core`
 ========================================
 
-The actual OCPP1.6J implementation is located in https://github.com/EVerest/libocpp . This library is then used within the 
-`OCPP <https://github.com/EVerest/everest-core/tree/main/modules/OCPP>`_ module of everest-core. The OCPP module within everest-core
-handles the integration of OCPP into the EVerest framework. The module registers callbacks that are then triggered by the libocpp,
-like a callback for a pausing charging or unlocking a connector. In addition the module calls the event handlers of the libocpp
-so that it can track the state of the charging station and trigger OCPP messages accordingly (e.g. MeterValues.req , StatusNotification.req).
+The actual OCPP1.6J implementation is located in https://github.com/EVerest/libocpp . 
+This library is then used within the `OCPP <https://github.com/EVerest/everest-core/tree/main/modules/OCPP>`_ module of `everest-core`.
+The OCPP module handles the integration of OCPP into the EVerest framework. 
+It registers callbacks that are then triggered by the `libocpp`, like a callback for a pausing charging or unlocking a connector. 
+In addition the module calls the event handlers of the `libocpp` so that it can track the state of the charging station and trigger OCPP messages accordingly (e.g. MeterValues.req , StatusNotification.req).
 
 .. _run_with_steve:
 
 Run EVerest with SteVe
 ======================
 
-EVerest's everest-core repository provides a configuration that you can use to run EVerest with OCPP. By default this configuration
-is connecting to the Open Source CSMS `SteVe <https://github.com/steve-community/steve>`_. Simply run
+EVerest's `everest-core` repository provides a configuration that you can use to run EVerest with OCPP.
+By default this configuration is connecting to the Open Source CSMS `SteVe <https://github.com/steve-community/steve>`_.
+Simply run
 
 .. code-block:: bash
 
-    ./run-scripts/run-sil-ocpp.sh
+    ${EVEREST_WORKSPACE:?}/everest-core/build/run-scripts/run-sil-ocpp.sh
 
 to start EVerest with OCPP1.6J. Don't forget to add the default chargepoint id *cp001* to SteVe.
 
@@ -129,11 +133,11 @@ Here's a short overview of the purpose of each profile in the configuration file
 - SmartCharging: Includes configuration parameters that apply when the feature profile SmartCharging is implemented
 - PnC: Used for Plug&Charge and includes configuration parameters that have been introduced within the OCPP1.6J Plug&Charge Whitepaper
 
-EVerest's libocpp supports all configuration parameters that are specified within OCPP1.6. Despite that, it is possible to omit configuration parameters 
+EVerest's `libocpp` supports all configuration parameters that are specified within OCPP1.6. Despite that, it is possible to omit configuration parameters 
 that are not required and it is even possible to omit a whole feature profile in the configuration file if it is not supported. This means that
-the configuration of the libocpp provides maximum flexibility and can be tailored to your specific charging station.
+the configuration of the `libocpp` provides maximum flexibility and can be tailored to your specific charging station.
 
-You can specify the path to this configuration file  inside the everest configuration file using the configuration parameter ChargePointConfigPath 
+You can specify the path to this configuration file  inside the `everest-core` configuration file using the configuration parameter ChargePointConfigPath 
 of the OCPP module within everest-core. This defaults to *ocpp-config.json*. If this path is relative the default path for the ocpp configuration
 dist/share/everest/modules/OCPP will be prepended. 
 
@@ -241,21 +245,21 @@ Please note that this is not a complete configuration but it is only showing mod
 Let's break this configuration down step by step.
 We can see the configuration of four modules within the everest configuration file (ocpp, system, auth,
 token_provider_rfid). The System and the JsDummyTokenProviderManual modules are simply loaded and need no configuration.
-For OCPP, the ChargePointConfigPath is specified and it has connections to:
+For OCPP, the ChargePointConfigPath is specified and it has connections to
 
-- evse_manager (not present in this config for reasons of clarity)
-- system
-- auth
-  - main: to provide and validate authorization requests
-  - reservation: to handle reservations
+- `evse_manager` (not present in this config for reasons of clarity)
+- `system`
+- `auth`
+  - `main`: to provide and validate authorization requests
+  - `reservation`: to handle reservations
   
-For the Auth module, the connection_timeout and the selection_algorithm is configured and it has connections
+For the Auth module, the `connection_timeout` and the `selection_algorithm` is configured and it has connections to
 
-- ocpp
-  - auth_provider: to handle RemoteStartTransaction.req
-  - auth_validator: to trigger Authorize.req
-- token_provider_rfid
-- evse_manager :to provide authorization when provided token was validated 
+- `ocpp`
+  - `auth_provider`: to handle RemoteStartTransaction.req
+  - `auth_validator`: to trigger Authorize.req
+- `token_provider_rfid`
+- `evse_manager`: to provide authorization when provided token was validated 
 
 This configuration will start EVerest with OCPP1.6. Authorization requests can be published by OCPP (using 
 RemoteStartTransaction.req) or by a manual token provider (e.g. RFID-Reader). Authorization requests are 
