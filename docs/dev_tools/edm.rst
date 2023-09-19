@@ -36,7 +36,6 @@ Installing edm
 **************
 
 Now you can clone this repository and install **edm**:
-(make sure you have `set up your ssh key in github <https://www.atlassian.com/git/tutorials/git-ssh>`_ first!)
 
 A script for the steps below can be found `here <https://github.com/EVerest/everest-utils/tree/main/everest-cpp>`_.
 

@@ -37,14 +37,6 @@ which are needed for the EVerest dependency manager:
 
   python3 -m pip install --upgrade pip setuptools wheel
 
-Encryption Setup for GitHub
-===========================
-
-To get the repositories from GitHub to your local development environment,
-please
-`set your SSH key in GitHub <https://www.atlassian.com/git/tutorials/git-ssh>`_
-.
-
 A complete list of libraries to be installed is given by the following best
 practices which setup a development environment on a number of operating
 systems.
