@@ -6,6 +6,18 @@
 Prepare Your Development Environment
 ####################################
 
+A Word on System Environments
+=============================
+
+For a native build, EVerest requires a Linux based system. One reason for that
+is for example Linux socket header files we use for networking.
+
+To get building done on a Windows or Mac system, you can use WSL2 (Windows) or
+Docker / Podman (Mac).
+
+Required Packages
+=================
+
 To get EVerest running properly, you will mainly need the following packages:
 
 * Python (greater than 3.6)
@@ -25,6 +37,9 @@ which are needed for the EVerest dependency manager:
 
   python3 -m pip install --upgrade pip setuptools wheel
 
+Encryption Setup for GitHub
+===========================
+
 To get the repositories from GitHub to your local development environment,
 please
 `set your SSH key in GitHub <https://www.atlassian.com/git/tutorials/git-ssh>`_
@@ -34,8 +49,11 @@ A complete list of libraries to be installed is given by the following best
 practices which setup a development environment on a number of operating
 systems.
 
+Tested Environments
+===================
+
 Ubuntu
-======
+------
 
 Use `apt` to get your needed libraries installed:
 
@@ -47,7 +65,7 @@ Use `apt` to get your needed libraries installed:
 Please make sure to have `nodejs` installed with minimum version 10.20 for `node_api` version 6+. For updating to a supported version, please follow the install procedure here: `<https://github.com/nodesource/distributions/blob/master/README.md#installation-instructions>`_.
 
 OpenSUSE
-========
+--------
 Use `zypper` to get your needed libraries installed:
 
 .. code-block:: bash
@@ -57,7 +75,7 @@ Use `zypper` to get your needed libraries installed:
   zypper install -y git rsync wget cmake doxygen graphviz clang-tools cppcheck boost-devel libboost_filesystem-devel libboost_log-devel libboost_program_options-devel libboost_system-devel libboost_thread-devel maven java-11-openjdk java-11-openjdk-devel nodejs nodejs-devel npm python3-pip gcc-c++ libopenssl-devel sqlite3-devel libpcap-dev libevent-devel
 
 Fedora
-======
+------
 Tested with Fedora 36, 37 and 38. Here is how to get your needed libraries with
 `dnf`.
 
