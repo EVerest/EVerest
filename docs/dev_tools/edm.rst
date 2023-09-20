@@ -36,13 +36,12 @@ Installing edm
 **************
 
 Now you can clone this repository and install **edm**:
-(make sure you have `set up your ssh key in github <https://www.atlassian.com/git/tutorials/git-ssh>`_ first!)
 
 A script for the steps below can be found `here <https://github.com/EVerest/everest-utils/tree/main/everest-cpp>`_.
 
 .. code-block:: bash
 
-  git clone git@github.com:EVerest/everest-dev-environment.git
+  git clone https://github.com/EVerest/everest-dev-environment
   cd everest-dev-environment/dependency_manager
   python3 -m pip install .
   edm init --workspace ~/checkout/everest-workspace
@@ -157,11 +156,11 @@ repository. It should look like this:
 
 	---
 	liblog:
-	  git: git@github.com:EVerest/liblog.git
+	  git: https://github.com/EVerest/liblog
 	  git_tag: main
 	  options: ["BUILD_EXAMPLES OFF"]
 	libtimer:
-	  git: git@github.com:EVerest/libtimer.git
+	  git: https://github.com/EVerest/libtimer
 	  git_tag: main
 	  options: ["BUILD_EXAMPLES OFF"]
 
@@ -178,7 +177,7 @@ This is a short form of:
 
 .. code-block:: bash
 
-  edm --create-config custom-config.yaml --include-remotes git@github.com:EVerest/*
+  edm --create-config custom-config.yaml --include-remotes https://github.com/EVerest/*
 
 and only includes repositories from the EVerest namespace. You can add as many
 remotes to this list as you want.
@@ -188,7 +187,7 @@ following command.
 
 .. code-block:: bash
 
-  edm --create-config custom-config.yaml --include-remotes git@github.com:EVerest/everest* git@github.com:EVerest/liblog.git
+  edm --create-config custom-config.yaml --include-remotes https://github.com/EVerest/everest* https://github.com/EVerest/liblog.git
 
 If you want to include all repositories, including external dependencies, in
 the config you can use the following command:

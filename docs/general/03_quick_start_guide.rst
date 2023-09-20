@@ -49,7 +49,7 @@ HOME directory:
 
 .. code-block:: bash
 
-  git clone git@github.com:EVerest/everest-dev-environment.git
+  git clone https://github.com/EVerest/everest-dev-environment
   cd everest-dev-environment/dependency_manager
   python3 -m pip install .
 
