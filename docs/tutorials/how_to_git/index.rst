@@ -140,7 +140,7 @@ you can do the following:
   /main_repo$ git checkout -b wip/new_stuff develop
   /main_repo$ # do some work, add and commit
   /main_repo$ # add private repo as additional remote, called 'private'
-  /main_repo$ git remote add private git@github.com:PrivateUser/PrivateRepo.git
+  /main_repo$ git remote add private https://github.com/PrivateUser/PrivateRepo
   /main_repo$ git push private
 
 Now, the branch ``wip/new_stuff`` will be pushed to your private
