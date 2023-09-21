@@ -443,7 +443,6 @@ An easy one as an example:
       type: integer
     limits:
       description: Describe this struct that gets published.
-      type: object
       $ref: /typedef#/Limits
 
 A short interface file, but lots to learn here:
@@ -458,8 +457,8 @@ of type *integer* rounds things up for the one CMD of this interface.
 
 VARs are pieces of information which get published for the network of
 listening modules regularly. We have two VARs in this example. The first one
-is of type *integer*, the second one has type *object* and a reference to a
-type. This way, you can create structs or classes (however you would call a
+is of type *integer*, the second one is a reference to a type definition.
+This way, you can create structs or classes (however you would call a
 bunch of simple data-types grouped inside of one logical unit) for publishing.
 
 Let's have a look at a type definition in the next section.
@@ -493,7 +492,7 @@ An easy definition of a type could look like this:
           type: boolean
         property_2:
           description: Describe the second property.
-          type: number 
+          type: number
 
 You can see one defined type here. It has two properties. A property could
 again be another type reference.
