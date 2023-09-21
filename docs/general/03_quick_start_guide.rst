@@ -122,7 +122,8 @@ install the requirements for Josev:
   cd {EVerest Workspace Directory}/Josev
   python3 -m pip install -r requirements.txt
 
-For ISO 15118 communication including Plug&Charge, install Josev and some CA certificates:
+For ISO 15118 communication including Plug&Charge, install Josev and some CA
+certificates:
 
 .. code-block:: bash
 
@@ -139,6 +140,9 @@ private keys and password files inside *config/certs/client*.
 
   This will generate an example PKI setup that can only be used for testing
   and simulation. It will not work and is not recommended for production.
+
+  As the shell script uses the Java `keytool`, it is required for this
+  procedure to have Java installed.
 
 The script for setting up PKI can also be used with the EvseV2G module.
 
