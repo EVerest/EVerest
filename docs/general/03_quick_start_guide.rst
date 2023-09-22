@@ -164,8 +164,6 @@ Now it is time to build EVerest:
   In case you have more than one CPU core and more RAM availble you can use the
   following command to significantly speed up the build process:
 
-  *cmake  -j$(nproc) ..*
-
   *make -j$(nproc) install*
 
   *$(nproc)* puts out the core count of your machine, so it is using all
