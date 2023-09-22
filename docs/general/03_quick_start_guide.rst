@@ -241,7 +241,9 @@ Start EVerest with a software-in-the-loop configuration via script:
 
   {EVerest Workspace Directory}/everest-core/build/run-scripts/run-sil.sh
 
-In a new terminal window, run the Node-RED script:
+In a new terminal window, run the following Node-RED script. If you are not
+logged in as root, you will need to run this via `sudo`:
+
 
 .. code-block:: bash
 
