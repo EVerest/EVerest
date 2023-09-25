@@ -120,19 +120,13 @@ page to find topics that sometimes people get stuck with.
 Social Media
 ============
 
-.. |link_twitter| raw:: html
+.. |link_x| raw:: html
 
-    <a href="https://twitter.com/everestincharge" target="_blank">
-        <img src="_static/icons/twitter.svg" style="height: 0.8em"> Twitter
+    <a href="https://x.com/everestincharge" target="_blank">
+       follow us on X
     </a>
 
-.. |link_mastodon| raw:: html
-
-    <a href="https://fosstodon.org/@EVerest" target="_blank">
-        Mastodon
-    </a>
-
-Don't forget to follow us on |link_twitter| or |link_mastodon|.
+Don't forget to |link_x|.
 
 **************************************
 Find Your Way Into EVerest Development
