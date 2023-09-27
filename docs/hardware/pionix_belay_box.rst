@@ -50,6 +50,11 @@ For more information about vendors working with EVerest,
 contact us via
 the `EVerest mailing list <https://lists.lfenergy.org/g/everest>`_.
 
+Getting support
+===============
+If you already have purchased a BelayBox, you can get support by creating
+an issue via our `support page <http://support.pionix.com>`_.
+
 Setting up Hardware and Software
 ********************************
 
