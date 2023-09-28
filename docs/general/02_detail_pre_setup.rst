@@ -92,3 +92,24 @@ Tested with Fedora 36, 37 and 38. Here is how to get your needed libraries with
 
 Now, it's time to continue with the
 :ref:`Quick Start Guide to install EVerest <quickstartguide_main>`.
+
+Troubleshooting
+===============
+
+Some common problems during setting up your environment are collected here.
+
+Java dependency
+---------------
+Java is not required for running the core of EVerest. However, it is required
+if you want to install certificates for ISO 15118 communication as currently
+the Java Keytool is used. Also the EXI (Efficient XML Interchange) part of
+Josev requires Java.
+
+Python versions with pyenv
+--------------------------
+If you use `pyenv` for running multiple Python version in parallel on your
+system, you probably will see `cmake` not using the Python version activated
+by `pyenv`.
+
+One solution to this is to run `cmake` with the `PYTHON_EXECUTABLE` flag. See
+`cmake` documentation for more information on this.

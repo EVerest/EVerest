@@ -11,8 +11,11 @@ come up regularly in our EVerest development life. It is always a good idea
 to have a look here when running into problems before asking for help via
 the :ref:`mailing list <index_mailinglist>`.
 
+EVerest modules
+===============
+
 Debug a single module
-=====================
+---------------------
 
 **How can I debug a single module?**
 
@@ -98,8 +101,33 @@ from the root folder of everest-core, assuming you have already created the
   "set detach-on-fork off" and "follow-fork-mode" depending on what you want to
   achieve.
 
+Energy management
+-----------------
+
+**How does the EVSE Manager use information like `grid_connection_point`
+(with parameters `fuse_limit_A` and `phase_count`) or `energy_manager`
+(e.g. `nominal_ac_voltage`?**
+
+The EVSE Manager module defaults to 0A/0W energy consumption and requires that
+some other module allocates power through the `energy` interface.
+
+The `energy manager` just supplies whatever the limit on the power path is,
+and the fuse module is just loaded to model the typical input fuse limit of
+the charger connection (so the energy manager will limit to that even if the
+car is requesting more).
+
+As a visualization, imagine the energy management in EVerest as a tree
+structure. What makes energy management in EVerest quite flexible is the
+concept of having constraints and limits you can provide to it. For each node
+in that tree, limits can be provided which are recognized by the energy
+manager which calculates the energy that is to be provided by the EVSE
+managers.
+
+Errors, warnings and Troubleshooting
+====================================
+
 RPC communication timeout
-=========================
+-------------------------
 
 **In the Admin Panel, I sometimes get the following error when saving a config
 file:**
@@ -128,24 +156,17 @@ Another hint for environments with very limited ressources is to fill in the
 workspace information into the yaml config manually without using the Admin
 Panel.
 
-Energy management
-=================
+EVerest OCPP 2.0.1 setup
+------------------------
+After successfully setting up EVerest and configured the
+`libocpp module <https://github.com/EVerest/libocpp>`_, I get errors about
+a failed websocket connection.
 
-**How does the EVSE Manager use information like `grid_connection_point`
-(with parameters `fuse_limit_A` and `phase_count`) or `energy_manager`
-(e.g. `nominal_ac_voltage`?**
+The `libocpp` module of EVerest operates - for now - as an OCPP client.
+You will need to choose a backend system capable of OCPP 2.0.1 (like SteVe
+for OCPP 1.6).
 
-The EVSE Manager module defaults to 0A/0W energy consumption and requires that
-some other module allocates power through the `energy` interface.
-
-The `energy manager` just supplies whatever the limit on the power path is,
-and the fuse module is just loaded to model the typical input fuse limit of
-the charger connection (so the energy manager will limit to that even if the
-car is requesting more).
-
-As a visualization, imagine the energy management in EVerest as a tree
-structure. What makes energy management in EVerest quite flexible is the
-concept of having constraints and limits you can provide to it. For each node
-in that tree, limits can be provided which are recognized by the energy
-manager which calculates the energy that is to be provided by the EVSE
-managers.
+You may want to have a look at https://github.com/mobilityhouse/ocpp and
+implement message handlers to get the communication working. Or you can have
+a look at https://github.com/thoughtworks/maeve-csms. Note: This has not been
+officially tested by us.
