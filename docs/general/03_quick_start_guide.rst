@@ -378,7 +378,8 @@ Starting with the manifest file, which could look like this:
   requires:
     some_implementation:
       interface: externalinterface
-      description: What do I expect from the required external implementation?
+      min_connections: 0
+      max_connections: 2
   enable_external_mqtt: true
   metadata:
     license: https://spdx.org/licenses/Apache-2.0.html
@@ -399,6 +400,9 @@ section.
 Line 11 starts with the requirements of your own module. This is the other
 side: Your module tells the EVerest module framework which implementations it
 will require to work in the EVerest workspace.
+
+With the `min_connections` and `max_connections` key you can configure how
+many connections are required or allowed for your module.
 
 In EVerest, you find a manifest file for each module. See the module
 directories in *{EVerest Workspace Directory}/everest-core/modules*.
