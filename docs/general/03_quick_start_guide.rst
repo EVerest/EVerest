@@ -297,8 +297,8 @@ You should see a rather empty page like that:
   :width: 360px
 
 Click on the menu symbol on the upper left corner of the page, then click on
-config. A left side column with further menu items opens. Choose *Available
-configs":
+config. A left side column with further menu items opens. Choose `Available
+configs`:
 
 .. image:: img/quick-start-admin-panel-2.png
   :width: 360px
@@ -574,7 +574,8 @@ with implementing your specific scenarios?
 Good news is: We are working on a tutorial currently to show a short practical
 example of implementing an EVerest module.
 
-During waiting time, join us anytime in our weekly tech meeting. There are great people who are glad to give you a hint and push you in the right
+During waiting time, join us anytime in our weekly tech meeting. There are
+great people who are glad to give you a hint and push you in the right
 direction.
 
 Thanks for being a part of the EVerest community.

@@ -126,6 +126,8 @@ managers.
 Errors, warnings and Troubleshooting
 ====================================
 
+.. _faq_gnu_compilers:
+
 Compiling with GNU compilers
 ----------------------------
 Building EVerest, you might want to use a GNU compiler. Handing over the flag

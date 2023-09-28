@@ -29,6 +29,7 @@ To get EVerest running properly, you will mainly need the following packages:
     recommended)
   * Clang (starting with version 12) has been used with EVerest but is not
     officially supported.
+  * See also :ref:`the FAQ entry about GNU compilers <faq_gnu_compilers>`!
 
 Make sure you have the Python packages pip, setuptools and wheel available,
 which are needed for the EVerest dependency manager:
