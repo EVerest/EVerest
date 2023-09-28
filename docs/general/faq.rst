@@ -138,7 +138,7 @@ Solution is simple: Use `g++` instead::
 
   cmake -D CMAKE_CXX_COMPILER=g++
 
-`g++` will link std C++ files automatically, which `gcc` won't do.
+`g++` will link std C++ files automatically ([besides others](https://stackoverflow.com/a/173007/1168315)) which `gcc` won't do.
 
 RPC communication timeout
 -------------------------
