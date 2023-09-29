@@ -98,6 +98,13 @@ Troubleshooting
 
 Some common problems during setting up your environment are collected here.
 
+Maven dependency
+----------------
+For EVerest releases older than 2023.9.0 (released end of September 2023),
+Maven is required for EVerest to run. Should you need to run one of those
+versions, make sure you install the `maven` package with the package manager
+of your choice.
+
 Java dependency
 ---------------
 Java is not required for running the core of EVerest. However, it is required
