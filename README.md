@@ -20,6 +20,7 @@ You can connect with the community in a variety of ways:
 
 - [EVerest mailing list](https://lists.lfenergy.org/g/everest)
 - [EVerest TSC mailing list / Sensitive Topics](https://lists.lfenergy.org/g/everest-tsc)
+- Join the weekly meetings
 
 ## Contributing
 Anyone can contribute to the EVerest project - learn more at [CONTRIBUTING.md](CONTRIBUTING.md). 
