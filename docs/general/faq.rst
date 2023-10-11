@@ -126,6 +126,23 @@ managers.
 Errors, warnings and Troubleshooting
 ====================================
 
+.. _faq_gnu_compilers:
+
+Compiling with GNU compilers
+----------------------------
+Building EVerest, you might want to use a GNU compiler. Handing over the flag
+`CMAKE_CXX_COMPILER` to `cmake` lets you do that.
+
+However, when using `gcc`, you might get errors about some
+`unreferenced symbols` or linking issues.
+
+Solution is simple: Use `g++` instead::
+
+  cmake -D CMAKE_CXX_COMPILER=g++
+
+`g++` will link std C++ files automatically
+(`besides others <https://stackoverflow.com/a/173007/1168315>`_) which `gcc` won't do.
+
 RPC communication timeout
 -------------------------
 
