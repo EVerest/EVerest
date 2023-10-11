@@ -2,61 +2,78 @@
 How To: OCPP1.6 in EVerest
 **************************
 
-EVerest provides a complete implementation of OCPP1.6J, supporting all feature profiles including Plug&Charge and the Security Extensions.
-Find the repository of libocpp here: https://github.com/EVerest/libocpp 
+EVerest provides a complete implementation of Open Charge Point Protocol
+(OCPP) 1.6J, supporting all feature profiles including Plug&Charge and the
+Security Extensions.
+
+The code of `libocpp` is at https://github.com/EVerest/libocpp
+
 This is a tutorial about how to setup and configure OCPP1.6 in EVerest.
 
 This tutorial includes:
 
-- How the libocpp is integrated into everest-core
-- How to run EVerest with the default OCPP1.6J configuration connecting to SteVe
+- How the `libocpp` is integrated into `everest-core`
+- How to run EVerest with the default OCPP1.6J configuration connecting to
+  SteVe
 - How to configure OCPP within EVerest
 - How to connect to different CSMS
-- What's relevant when configuring the OCPP module 
+- What's relevant when configuring the OCPP module
 - Where to find and how to configure the OCPP logging
 
-.. _prequesites:
+.. _prerequisites:
 
-Prerequesites
+Prerequisites
 =============
 
-If you're new to EVerest start with our `Quick Start Guide <02_quick_start_guide.html>`_ 
-to get a simulation in EVerest running for the first time. It is important that you have set up the required docker containers for Mosquitto and SteVe,
-which we will use as an example CSMS.
+If you're new to EVerest start with our
+`Quick Start Guide <02_quick_start_guide.html>`_
+to get a simulation in EVerest running for the first time.
+It is important that you have set up the required docker containers for
+Mosquitto and SteVe, which we will use as an example CSMS.
 If you have done that successfully, you can move on with this tutorial.
 
 .. _integration:
 
-Integration of libocpp into everest-core
-========================================
+Integration of `libocpp` into `everest-core`
+============================================
 
-The actual OCPP1.6J implementation is located in https://github.com/EVerest/libocpp . This library is then used within the 
-`OCPP <https://github.com/EVerest/everest-core/tree/main/modules/OCPP>`_ module of everest-core. The OCPP module within everest-core
-handles the integration of OCPP into the EVerest framework. The module registers callbacks that are then triggered by the libocpp,
-like a callback for a pausing charging or unlocking a connector. In addition the module calls the event handlers of the libocpp
-so that it can track the state of the charging station and trigger OCPP messages accordingly (e.g. MeterValues.req , StatusNotification.req).
+The actual OCPP1.6J implementation is located in
+https://github.com/EVerest/libocpp .
+This library is then used within the
+`OCPP <https://github.com/EVerest/everest-core/tree/main/modules/OCPP>`_
+module of `everest-core`.
+The OCPP module handles the integration of OCPP into the EVerest framework.
+It registers callbacks that are then triggered by the `libocpp`, like a
+callback for a pausing charging or unlocking a connector.
+In addition the module calls the event handlers of the `libocpp` so that it
+can track the state of the charging station and trigger OCPP messages
+accordingly (e.g. MeterValues.req , StatusNotification.req).
 
 .. _run_with_steve:
 
 Run EVerest with SteVe
 ======================
 
-EVerest's everest-core repository provides a configuration that you can use to run EVerest with OCPP. By default this configuration
-is connecting to the Open Source CSMS `SteVe <https://github.com/steve-community/steve>`_. Simply run
+EVerest's `everest-core` repository provides a configuration that you can use to run EVerest with OCPP.
+By default this configuration is connecting to the Open Source CSMS `SteVe <https://github.com/steve-community/steve>`_.
+Simply run
 
 .. code-block:: bash
 
-    ./run-scripts/run-sil-ocpp.sh
+    ${EVEREST_WORKSPACE:?}/everest-core/build/run-scripts/run-sil-ocpp.sh
 
-to start EVerest with OCPP1.6J. Don't forget to add the default chargepoint id *cp001* to SteVe.
+to start EVerest with OCPP1.6J. Don't forget to add the default chargepoint id
+*cp001* to SteVe.
 
 .. _configure_ocpp:
 
 Configuring OCPP
 ================
 
-In order to connect to a different CSMS, you have to modify the connection details within the ocpp configuration file. The ocpp config is a separate
-file in which all configuration keys of OCPP1.6 plus some internal parameters can be configured. This is an example for a ocpp configuration:
+In order to connect to a different CSMS, you have to modify the connection
+details within the ocpp configuration file. The ocpp config is a separate
+file in which all configuration keys of OCPP1.6 plus some internal parameters
+can be configured. This is an example for a ocpp configuration:
 
 .. code-block:: json
 
@@ -118,45 +135,65 @@ file in which all configuration keys of OCPP1.6 plus some internal parameters ca
         }
     }
 
-The configuration keys are split up into the feature profiles that are specified in OCPP1.6 plus the extra profiles *Internal*, *Security* and *PnC*.
+The configuration keys are split up into the feature profiles that are
+specified in OCPP1.6 plus the extra profiles *Internal*, *Security* and *PnC*.
 Here's a short overview of the purpose of each profile in the configuration file:
 
-- Internal: Used for internal configuration keys that are not specified in OCPP1.6
+- Internal: Used for internal configuration keys that are not specified in
+  OCPP1.6
 - Core: Includes Core configuration keys of OCPP1.6
-- FirmwareManagement: Includes configuration keys that apply when the feature profile FirmwareManagement is implemented
-- Security: Includes configuration parameters that have been introduced within the OCPP1.6J Security Whitepaper
-- LocalAuthListManagement: Includes configuration parameters that apply when the feature profile LocalAuthListManagement is implemented
-- SmartCharging: Includes configuration parameters that apply when the feature profile SmartCharging is implemented
-- PnC: Used for Plug&Charge and includes configuration parameters that have been introduced within the OCPP1.6J Plug&Charge Whitepaper
+- FirmwareManagement: Includes configuration keys that apply when the feature
+  profile FirmwareManagement is implemented
+- Security: Includes configuration parameters that have been introduced within
+  the OCPP1.6J Security Whitepaper
+- LocalAuthListManagement: Includes configuration parameters that apply when
+  the feature profile LocalAuthListManagement is implemented
+- SmartCharging: Includes configuration parameters that apply when the feature
+  profile SmartCharging is implemented
+- PnC: Used for Plug&Charge and includes configuration parameters that have
+  been introduced within the OCPP1.6J Plug&Charge Whitepaper
 
-EVerest's libocpp supports all configuration parameters that are specified within OCPP1.6. Despite that, it is possible to omit configuration parameters 
+EVerest's `libocpp` supports all configuration parameters that are specified
+within OCPP1.6. Despite that, it is possible to omit configuration parameters
 that are not required and it is even possible to omit a whole feature profile in the configuration file if it is not supported. This means that
-the configuration of the libocpp provides maximum flexibility and can be tailored to your specific charging station.
+the configuration of the `libocpp` provides maximum flexibility and can be tailored to your specific charging station.
 
-You can specify the path to this configuration file  inside the everest configuration file using the configuration parameter ChargePointConfigPath 
-of the OCPP module within everest-core. This defaults to *ocpp-config.json*. If this path is relative the default path for the ocpp configuration
-dist/share/everest/modules/OCPP will be prepended. 
+You can specify the path to this configuration file  inside the `everest-core`
+configuration file using the configuration parameter ChargePointConfigPath
+of the OCPP module within everest-core. This defaults to *ocpp-config.json*.
+If this path is relative the default path for the ocpp configuration
+dist/share/everest/modules/OCPP will be prepended.
 
 .. _different_csms:
 
 Connect to a different CSMS
 ===========================
 
-To connect to a different CSMS, you have to modify the connection details of the ocpp configuration file. This includes the parameter *CentralSystemURI*
-and it might also include to change the parameters *AuthorizationKey* and *SecurityProfile*. Here's a short overview of the purpose of the parameters:
+To connect to a different CSMS, you have to modify the connection details of
+the ocpp configuration file. This includes the parameter *CentralSystemURI*
+and it might also include to change the parameters *AuthorizationKey* and
+*SecurityProfile*. Here's a short overview of the purpose of the parameters:
 
 - CentralSystemURI: Specifies the endpoint of the CSMS.
-    - Must not include ws:// or wss:// (this will be prepended based on the SecurityProfile setting)
-    - Must include the ChargePointId in the end
-- SecurityProfile: Specifies the SecurityProfile which defines type of transport layer connection between ChargePoint and CSMS
-    - Can have the value 0, 1, 2 or 3
-    - SecurityProfile 0: Unsecure transport without Basic Authentication (ws://)
-    - SecurityProfile 1: Unsecure transport with Basic Authentication (ws://)
-    - SecurityProfile 2: TLS with Basic authentication (wss://)
-    - SecurityProfile 3: TLS with client side certificates (wss://)
+
+  - Must not include ws:// or wss:// (this will be prepended based on the
+    SecurityProfile setting)
+  - Must include the ChargePointId in the end
+
+- SecurityProfile: Specifies the SecurityProfile which defines type of
+  transport layer connection between ChargePoint and CSMS
+
+  - Can have the value 0, 1, 2 or 3
+  - SecurityProfile 0: Unsecure transport without Basic Authentication (ws://)
+  - SecurityProfile 1: Unsecure transport with Basic Authentication (ws://)
+  - SecurityProfile 2: TLS with Basic authentication (wss://)
+  - SecurityProfile 3: TLS with client side certificates (wss://)
+
 - AuthorizationKey: Specifies the password used for HTTP Basic Authentication
-    - Must be set if SecurityProfile is 1 or 2, can be omitted if SecurityProfile is 0 or 3
-    - Minimal length: 16 bytes
+
+  - Must be set if SecurityProfile is 1 or 2, can be omitted if
+    SecurityProfile is 0 or 3
+  - Minimal length: 16 bytes
 
 Modify these parameters according to the connection requirements of the CSMS. Find all available configuration keys
 and their descriptions in `here <https://github.com/EVerest/libocpp/tree/main/config/v16/profile_schemas>`_
@@ -172,27 +209,40 @@ Take a look into `EVerest Module Concept <04_module_concept.html>`_ for that.
 To configure the OCPP module of everest-core, find the available configuration parameters `in the manifest
 of the module <https://github.com/EVerest/everest-core/blob/main/modules/OCPP/manifest.yaml>`_.
 
-To start OCPP within EVerest, you have to load the OCPP module by including this in the everest configuration file.
-As you can see in the manifest of the OCPP module, it provides the following EVerest interfaces:
+To start OCPP within EVerest, you have to load the OCPP module by including
+this in the everest configuration file.
+As you can see in the manifest of the OCPP module, it provides the following
+EVerest interfaces:
 
 - main: This interface is used to stop and restart the OCPP module
-- auth_validator: This interface is used to validate authorization requests against the CSMS (e.g. request from RFID-Reader). 
-If an authorization is requested within EVerest, OCPP will validate this request using the OCPP Authorize message
-- auth_provider: This interface is used when OCPP requests authorization using a RemoteStartTransaction.req by the CSMS
+- auth_validator: This interface is used to validate authorization requests
+  against the CSMS (e.g. request from RFID-Reader). If an authorization is
+  requested within EVerest, OCPP will validate this request using the OCPP
+  Authorize message
+- auth_provider: This interface is used when OCPP requests authorization using
+  a RemoteStartTransaction.req by the CSMS
 
-To summarize, the OCPP module provides (RemoteStartTransaction.req initiated by CSMS) and validates (Authorize.req initiated 
-by ChargePoint) authorization requests. Take a look at the Auth module of everest-core to dive deeper into how authorization
-is handled within EVerest.
+To summarize, the OCPP module provides (RemoteStartTransaction.req initiated
+by CSMS) and validates (Authorize.req initiated by ChargePoint) authorization
+requests.
+Take a look at the Auth module of everest-core to dive deeper into how
+authorization is handled within EVerest.
 
 In addtion, OCPP requires connection(s) to the following interfaces:
-- evse_manager: This connection is used to listen to events and to be able to control the EVSE
-- connector_zero_sink: This connection is used to report SmartCharging limits set for connector 0
-- reservation: This connection is used to handle reservation requests of OCPP
-- auth: This connection is used to be able to listen to authorization requests and provide authorization requests
-- system: This connection is used to be able to handle system wide operations like diagnostics uploads, resets, etc.
 
-You have to make sure that OCPP is correctly wired with other modules within the everest configuration. This is how
-the configuration of OCPP and relevant modules could look like.
+- evse_manager: This connection is used to listen to events and to be able to
+  control the EVSE
+- connector_zero_sink: This connection is used to report SmartCharging limits
+  set for connector 0
+- reservation: This connection is used to handle reservation requests of OCPP
+- auth: This connection is used to be able to listen to authorization requests
+  and provide authorization requests
+- system: This connection is used to be able to handle system wide operations
+  like diagnostics uploads, resets, etc.
+
+You have to make sure that OCPP is correctly wired with other modules within
+the everest configuration. This is how the configuration of OCPP and relevant
+modules could look like.
 
 .. code-block:: yaml
 
@@ -236,32 +286,35 @@ the configuration of OCPP and relevant modules could look like.
             - module_id: evse_manager
               implementation_id: evse
 
-Please note that this is not a complete configuration but it is only showing modules that are relevant for OCPP.
+Please note that this is not a complete configuration but it is only showing
+modules that are relevant for OCPP.
 
 Let's break this configuration down step by step.
 We can see the configuration of four modules within the everest configuration file (ocpp, system, auth,
 token_provider_rfid). The System and the JsDummyTokenProviderManual modules are simply loaded and need no configuration.
-For OCPP, the ChargePointConfigPath is specified and it has connections to:
+For OCPP, the ChargePointConfigPath is specified and it has connections to
 
-- evse_manager (not present in this config for reasons of clarity)
-- system
-- auth
-  - main: to provide and validate authorization requests
-  - reservation: to handle reservations
-  
-For the Auth module, the connection_timeout and the selection_algorithm is configured and it has connections
+- `evse_manager` (not present in this config for reasons of clarity)
+- `system`
+- `auth`
+  - `main`: to provide and validate authorization requests
+  - `reservation`: to handle reservations
 
-- ocpp
-  - auth_provider: to handle RemoteStartTransaction.req
-  - auth_validator: to trigger Authorize.req
-- token_provider_rfid
-- evse_manager :to provide authorization when provided token was validated 
+For the Auth module, the `connection_timeout` and the `selection_algorithm` is
+configured and it has connections to
 
-This configuration will start EVerest with OCPP1.6. Authorization requests can be published by OCPP (using 
-RemoteStartTransaction.req) or by a manual token provider (e.g. RFID-Reader). Authorization requests are 
-received and forwarded by the Auth module. The only token validator that is configured is the OCPP module,
-which will use the Authorize.req as well as AuthorizationCache and LocalAuthListManagement to validate the
-requests.
+- `ocpp`
+  - `auth_provider`: to handle RemoteStartTransaction.req
+  - `auth_validator`: to trigger Authorize.req
+- `token_provider_rfid`
+- `evse_manager`: to provide authorization when provided token was validated
+
+This configuration will start EVerest with OCPP1.6. Authorization requests can
+be published by OCPP (using RemoteStartTransaction.req) or by a manual token
+provider (e.g. RFID-Reader). Authorization requests are received and forwarded
+by the Auth module. The only token validator that is configured is the OCPP
+module, which will use the Authorize.req as well as AuthorizationCache and
+LocalAuthListManagement to validate the requests.
 
 .. _logging:
 
@@ -270,13 +323,14 @@ Logging
 
 The implementation allows to log all OCPP messages in different formats
 
-The default logging path is /tmp/everest_ocpp_logs but can be set using the configuration parameter *MessageLogPath* 
-of the OCPP module of everest-core. Within the ocpp configuration file, you can configure *LogMessages*, to enable 
-or disable logging and  *LogMessagesFormat* to specify to one or more log formats. For the latter, you can specify
-the following values:
+The default logging path is /tmp/everest_ocpp_logs but can be set using the
+configuration parameter *MessageLogPath* of the OCPP module of everest-core.
+Within the ocpp configuration file, you can configure *LogMessages*, to enable
+or disable logging and  *LogMessagesFormat* to specify to one or more log
+formats. For the latter, you can specify the following values:
 
-- console: Logs all OCPP messages 
+- console: Logs all OCPP messages
 - log: Logs all OCPP messages in a text file
 - html: Logs all OCPP messages using a html format (recommended)
-- session_logging: Logs all OCPP messages in html format into a path that is optionally provided by the EvseManager at the 
-  start of a session
+- session_logging: Logs all OCPP messages in html format into a path that is
+  optionally provided by the EvseManager at the start of a session
