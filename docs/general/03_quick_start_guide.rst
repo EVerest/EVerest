@@ -34,18 +34,18 @@ EVerest Dependency Manager - edm
 As EVerest is highly modular, you will need multiple repos, which can be found
 on GitHub.
 
-To get the right repos as needed, the EVerest Dependency Manager - short edm -
-will help you.
+To get the right repos as needed, the EVerest Dependency Manager - short
+`edm` - will help you.
 
-To start with that, let's get edm ready to work.
+To start with that, let's get `edm` ready to work.
 
-You will first of all need to pull *everest-dev-environment* to your
+You will first of all need to pull `everest-dev-environment` to your
 development environment.
 
 Python and its tools pip, setuptools and wheel have already been installed in
 the Prerequisites section above. So, you can pull the said repository and
-install the dependency manager, which will reside inside of .local/bin/ in your
-HOME directory:
+install the dependency manager, which will reside inside of `.local/bin/` in
+your HOME directory:
 
 .. code-block:: bash
 
@@ -55,7 +55,7 @@ HOME directory:
 
 The EVerest dependency manager uses
 `CPM <https://github.com/cpm-cmake/CPM.cmake>`_ for its CMake integration.
-This means you can and should set the CPM_SOURCE_CACHE environment variable.
+This means you can and should set the `CPM_SOURCE_CACHE` environment variable.
 This makes sure that dependencies that you do not manage in the workspace are
 not re-downloaded multiple times. For detailed information and other useful
 environment variables please refer to the
@@ -77,8 +77,8 @@ use `~/checkout/everest-workspace`.
 
   edm init --workspace {EVerest Workspace Directory}
 
-(In future, as your system has edm properly setup, you can always initialise a
-new workspace by calling *edm init*.)
+(In future, as your system has `edm` properly set up, you can always
+initialise a new workspace by calling `edm init`.)
 
 edm will now prepare the most common repos to start with. It will also create a
 YAML file which describes your newly created workspace. You can change that
@@ -86,28 +86,26 @@ YAML file later if you want to adopt the workspace to another scenario.
 
 The YAML file can be found in the directory which you have chosen as workspace
 directory. In the above example, it is located at
-
 `{EVerest Workspace Directory}`.
 
 More details about edm, see the dedicated
 :ref:`edm page in this documentation <edm_main>`.
 
-EVerest Command Line Interface: ev-cli
---------------------------------------
+EVerest Command Line Interface: `ev-cli`
+----------------------------------------
 
-In its current version, ev-cli supports you by generating module templates. It
-is also necessary to build EVerest.
+In its current version, `ev-cli` supports you by generating module templates.
+It is also necessary to build EVerest.
 
-To install ev-cli, change into the everest-utils/ev-dev-tools/ directory and
-install ev-cli:
+To install `ev-cli`, run:
 
 .. code-block:: bash
 
   cd {EVerest Workspace Directory}/everest-utils/ev-dev-tools
   python3 -m pip install .
 
-That is all to install ev-cli. You can find the binary file of ev-cli in your
-HOME directory in .local/bin/
+That is all to install `ev-cli`. You can find the binary file in your
+HOME directory in `.local/bin/`.
 
 In a later step, we will use ev-cli to create module stubs.
 
@@ -127,14 +125,14 @@ certificates:
 
 .. code-block:: bash
 
-  cd ~/checkout/everest-workspace/Josev
+  cd {EVerest Workspace Directory}/Josev
   python3 -m pip install -r requirements.txt
-  cd ~/checkout/everest-workspace/Josev/iso15118/shared/pki
-  ./create_certs.sh -v iso-2 -i ~/checkout/everest-workspace/everest-core
+  cd {EVerest Workspace Directory}/Josev/iso15118/shared/pki
+  ./create_certs.sh -v iso-2 -i {EVerest Workspace Directory}/everest-core
 
-This will enable ISO 15118 communication including Plug&Charge and install The
-required CA certificates inside *config/certs/ca* and the client certificates,
-private keys and password files inside *config/certs/client*.
+This will enable ISO 15118 communication including Plug&Charge and install the
+required CA certificates inside `config/certs/ca` and the client certificates,
+private keys and password files inside `config/certs/client`.
 
 .. attention::
 

@@ -4,7 +4,7 @@
 
     You are looking at the documentation for the |version| release of EVerest.
     See `snapshot file <./appendix/snapshot.html>`_ for further version mapping.
-    See `verions index <../versions_index.html>`_ for other versions.
+    See `versions index <../versions_index.html>`_ for other versions.
 
 .. image:: img/everest_horizontal-color.svg
     :align: right
@@ -12,11 +12,16 @@
 ***************
 What Is EVerest
 ***************
-EVerest is an open source modular framework for setting up a full stack environment for EV charging.
+EVerest is an open source modular framework for setting up a full stack
+environment for EV charging.
 
-The modular software architecture fosters customizability and lets you configure your dedicated charging scenarios based on interchangeable modules. All this is glued together by MQTT.
+The modular software architecture fosters customizability and lets you
+configure your dedicated charging scenarios based on interchangeable modules.
+All this is glued together by MQTT.
 
-EVerest will help to speed the adoption to e-mobility by utilizing all the open source advantages for the EV charging world. It will also enable new features for local energy management, PV-integration and many more.
+EVerest will help to speed the adoption to e-mobility by utilizing all the open
+source advantages for the EV charging world. It will also enable new features
+for local energy management, PV-integration and many more.
 
 The EVerest project was initiated by `PIONIX GmbH <https://pionix.com>`_
 (`Pionix at LinkedIn <https://www.linkedin.com/company/pionix-gmbh>`_) to help with the electrification of the mobility sector and is an official project of the Linux Foundation Energy.
@@ -77,7 +82,7 @@ with a community guide.
 Just book a 30-minute meetup here:
 https://calendly.com/manuel-ziegler-pionix/30min
 
-.. hint:: 
+.. hint::
     In this meetup, we will try to understand your dedicated requirements and
     see where in the EVerest ecosystem you can contribute or get support. If
     there is a need for technically deeper exchange, we can plan to set your
@@ -140,15 +145,19 @@ If you want to choose video rather than text and code for a quick dive-in, **hav
 
 Click for watching on YouTube: `Webinar: How the EVerest Ecosystem will simplify Charging Use Cases <https://www.youtube.com/watch?v=OJ6kjHRPkyY>`_
 
-We prepared a path to get step by step into the EVerest world. It will lead you from a high level overview right into understanding how to implement modules for your dedicated hardware scenarios or developer use cases.
+We prepared a path to get step by step into the EVerest world. It will lead you
+from a high level overview right into understanding how to implement modules
+for your dedicated hardware scenarios or developer use cases.
 
-To walk this path, simple go on reading and follow the table of contents below.
+To walk this path, simply read on and follow the table of contents below.
 
-******************************************
+*****************
 Table Of Contents
-******************************************
+*****************
 
-But now let's dive in the EVerest journey to get you on board. Start on top level with the first chapter and walk the path down to your first module implementation.
+But now let's dive in the EVerest journey to get you on board. Start on top
+level with the first chapter and walk the path down to your first module
+implementation.
 
 .. toctree::
     :numbered:
