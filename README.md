@@ -6,7 +6,7 @@ The primary goal of EVerest is to develop and maintain an open source software s
 The EVerest project was initiated by PIONIX GmbH, to help with the electrification of the mobility sector.
 
 For questions and support please join the [EVerest mailing list](https://lists.lfenergy.org/g/everest).
-There is also a calendar for monthly dev calls.
+There is also a calendar for weekly dev calls.
 
 A complete documentation can be found [here](https://everest.github.io).
 
@@ -20,7 +20,6 @@ You can connect with the community in a variety of ways:
 
 - [EVerest mailing list](https://lists.lfenergy.org/g/everest)
 - [EVerest TSC mailing list / Sensitive Topics](https://lists.lfenergy.org/g/everest-tsc)
-- [EVerest channel on LF Energy Slack](https://slack.lfenergy.org)
 
 ## Contributing
 Anyone can contribute to the EVerest project - learn more at [CONTRIBUTING.md](CONTRIBUTING.md). 
