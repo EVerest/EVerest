@@ -30,7 +30,7 @@ scenarios to EVerest configurations, let's have a look at some simple
 connection scenarios and step by step walk on to some more complex ones.
 
 If you want to have a very quick overview without the details, see the
-next section. We will go more into detail in the other sections.
+upcoming section. We will go more into detail in the other sections.
 
 Quick overview
 ==============
@@ -39,28 +39,29 @@ Quick overview
 
 Start analyzing this picture at module `evse_manager`.
 
-To the right, you will see two protocol implementations for ISO 15118 and
+To the right, you will see two **protocol implementations** for ISO 15118 and
 SLAC. (This picture will be updated soon as the JsRiseV2G module is
 deprecated.)
 
 At the bottom of the EvseManager, the `yeti_driver` module is the
-implementation of the board support but also provides an implementation of
-a powermeter.
+implementation of the **board support** but also provides an implementation of
+a **powermeter**.
 
 The connection from the Yeti driver to the 'car_simulator' module is only
-needed in simulation scenarios and will not be used in production scenarios.
+needed in **simulation scenarios** and will not be used in production
+scenarios.
 
-The EvseManager has a connection to the authentication functionality on top of
-it. A `token_provider` (e.g. a driver for an RFID device), a `token_validator`
-(checking if tokens are valid) and an `auth` module decide if energy is allowed
-to be delivered via one of the connected EvseManagers.
+The EvseManager has a connection to the **authentication** functionality on
+top of it. A `token_provider` (e.g. a driver for an RFID device), a
+`token_validator` (checking if tokens are valid) and an `auth` module decide
+if energy is allowed to be delivered via one of the connected EvseManagers.
 
-The connection from EvseManager to the left is the source of power that is
-needed for the charging process to work - eventually with energy management
+The connection from EvseManager to the left is the **source of power** that is
+needed for the charging process to work - eventually with **energy management**
 logic.
 
-All this will now be explained in much more detail including the rest of
-modules not written about up to now.
+All this will now be explained in much more detail including the modules in
+the picture that we haven't talked about yet.
 
 Charging station and charging points
 ====================================
@@ -136,10 +137,49 @@ identify a token as an allowed consumer for energy.
 The auth module can have multiple token validators which will be called one
 after the other. If one of them can validate the token, power can flow.
 
+Car simulation
+==============
+
+One big strength of EVerest is the integrated possibility to allow for
+simulating real world scenarios with a charging car connected to an EVSE.
+
+Simply connect a `car_simulator` module to the board support module of an
+EvseManager like shown here:
+
+.. image:: img/module-config-car-sim.png
+    :width: 360px
+
+The modules in the upper part of this picture have been described earlier.
+The car_simulator takes the role of a car to enable proper communication
+between car and EVSE.
+
+In fact, this simulates the voltages and the PWM duty cycle. (Hint: If you
+start a Node-RED simulation with EVerest, the car simulator module is the
+instance that controls the simulation regarding charging power and charging
+status).
+
+As the EvseManager "talks" ISO 15118 in this example (see the connection of
+the `iso15118_charger` module), it makes sense to also enable ISO 15118
+for the car simulation. The `iso15118_car` module does exactly that.
+
+One interesting detail is the connection of the SLAC module not only to the
+EvseManager but also to the car simulation module. This is due to the fact
+that SLAC sets up the physical communication between the EVSE and car
+(simulation).
+
+Energy management
+=================
+
 `TODO
-Show scenarios with car simulation. Show energy management scenario. Show
+Show energy management scenario. Show
 multiple EvseManager configurations.`
 
+******************************
+Module functionality in detail
+******************************
+
+`TODO: This section is yet to be created. Existing module documentation listed
+here are eventually to be updated.`
 
 .. toctree::
     :maxdepth: 1
