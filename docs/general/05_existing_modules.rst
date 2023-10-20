@@ -1,3 +1,7 @@
+.. existing_modules:
+
+.. _existing_modules_main:
+
 ###############
 EVerest Modules
 ###############
@@ -5,8 +9,10 @@ EVerest Modules
 In the following, we will dive into some exemplatory scenarios to show how
 modules can interact with each other.
 
-Additionally, also a place for explaining module features in more detail will
-grow here.
+To understand the tool side, we will look at the mechanisms of the Admin Panel.
+
+Additionally, there will be a section which explains module features in more
+detail soon.
 
 ******************************************
 Module connections for dedicated use cases
@@ -15,7 +21,7 @@ Module connections for dedicated use cases
 EVerest is a modular framework.
 
 For devices like powermeters or hardware boards, you will have implementations
-as a driver module. Energy management logic, authentication or protocol
+of a driver module. Energy management logic, authentication or protocol
 implementations - everything is delivered (or can be implemented by you) via
 a module.
 
@@ -29,15 +35,84 @@ To understand connections for different use cases and how to map hardware
 scenarios to EVerest configurations, let's have a look at some simple
 connection scenarios and step by step walk on to some more complex ones.
 
-If you want to have a very quick overview without the details, see the
-upcoming section. We will go more into detail in the other sections.
+If you want to have a very quick overview without the details, see
+:ref:`Quick Overview <existing_modules_quick_overview>` on this page.
+
+More detailed scenarios and special relations between modules are shown
+afterwards.
+
+But first, let's have one look at the Admin Panel and how you can build your
+own configuration.
+
+Module configuration with the Admin Panel
+=========================================
+
+Having started MQTT, the EVerest manager process and Node-RED as shown in the
+:ref:`dedicated Quick Start Guide sections <quickstartguide_helpers>`, you can
+startup the Admin Panel on your machine with the following URL::
+
+    http://localhost:8849/
+
+Open some "Available config" from the left side-menu will bring you to some
+preset configurations.
+
+Each box represents a module in EVerest.
+
+.. image:: img/1-admin-panel-explanation.png
+
+In this picture, you see five modules with their connections.
+
+The Admin Panel helps you with all needed steps to setup your dedicated
+configuration scenario:
+
+* Setup all modules that you need for a use case,
+* connect those modules,
+* set the configuration of the modules
+* analyze which implementations the modules require or provide.
+
+Add modules to the configuration
+--------------------------------
+
+TODO: WRITE ON HERE!
+
+Separate section
+----------------
+
+Each module has blue and/or yellow circles. They represent the interface
+implementations that the modules require from (yellow) repectively provide
+for other modules (blue).
+
+If you click on one of those circles, you will get more information about the
+exact interface implementation that is provided or required:
+
+.. image:: img/2-admin-panel-requirement.png
+    :width: 300px
+
+.. image:: img/3-admin-panel-provides.png
+    :width: 300px
+
+The first picture shows the information that you get after clicking on the
+EvseManager's lower yellow circle. You see that the EvseManager requires an
+implementation of SLAC which is described in the interface called `slac` in
+EVerest.
+
+The second picture is the information you get after clicking on the middle
+blue circle of the EvseManager module. It tells that the EvseManager module
+provides an implementation of the interface `evse_manager`.
+
+Although this is no big surprise, the other blue circles of EvseManager will
+tell you that it also provides implementations of the interfaces `energy` and
+`auth_token_provider` - which could be a little bit more surprising. More to
+that later when talking about the configurable use cases in EVerest.
+
+.. _existing_modules_quick_overview:
 
 Quick overview
 ==============
 
-.. image:: img/module-config-overview.png
+Start analyzing the following picture at module `evse_manager`.
 
-Start analyzing this picture at module `evse_manager`.
+.. image:: img/module-config-overview.png
 
 To the right, you will see two **protocol implementations** for ISO 15118 and
 SLAC. (This picture will be updated soon as the JsRiseV2G module is

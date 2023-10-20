@@ -307,8 +307,9 @@ flows here. For a first intro, you may want to take a look at *config-sil*.
 After opening it, you can see a diagram representation of some modules with
 connections between them.
 
-The role of each module in this system will be explained on page
-:ref:`Module Concept <moduleconcept_main>`.
+The role of each module in this system and how to configure an EVerest module
+environment with the Admin Panel will be explained on page
+:ref:`EVerest Modules <existing_modules_main>`.
 
 To see how to create your own custom flows for simulations, visit the
 :ref:`Tutorial for simulating EVerest <tutorial_sil_main>`.
