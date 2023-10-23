@@ -58,9 +58,9 @@ Weekly tech meetup
 ------------------
 
 A **weekly tech meetup** for
-all contributors is currently held once a week.
+the whole community and interested people is currently held once a week.
 
-Meet us here each Tuesday at 3pm in CET time-zone:
+Meet us here each Tuesday at 4pm in CET time-zone:
 
 Join via Google Meet:
 https://meet.google.com/wnv-aadq-irt
