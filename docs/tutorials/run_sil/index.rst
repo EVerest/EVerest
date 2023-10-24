@@ -12,7 +12,7 @@ data flows.
   
   How to set up and run an already pre-configured simulation in
   EVerest can be found in the Quick Start Guide section
-  `Simulating EVerest <../../general/02_quick_start_guide.html#simulating-everest>`_.
+  :ref:`Simulating EVerest <quickstartguide_simulate>`.
 
 In order to run your own modifications of the NodeRed flow, best create a
 backup of the JSON file located here:
