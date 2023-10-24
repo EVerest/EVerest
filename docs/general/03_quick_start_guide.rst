@@ -175,6 +175,8 @@ in an old version, go to your everest workspace directory and call *edm
 --git-pull*. This will update the EVerest repositories. After that, repeat
 building ev-cli and you should be good to go again.
 
+.. _quickstartguide_simulate:
+
 ******************
 Simulating EVerest
 ******************
