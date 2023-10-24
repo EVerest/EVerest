@@ -2,9 +2,9 @@
 
 .. _existing_modules_main:
 
-###############
-EVerest Modules
-###############
+#############################
+EVerest Module Configurations
+#############################
 
 In the following, we will dive into some exemplatory scenarios to show how
 modules can interact with each other.
@@ -24,6 +24,12 @@ For devices like powermeters or hardware boards, you will have implementations
 of a driver module. Energy management logic, authentication or protocol
 implementations - everything is delivered (or can be implemented by you) via
 a module.
+
+This could look like this:
+
+.. image:: img/module-config-overview.png
+
+The mechanisms behind this will be explained later.
 
 The real magic of EVerest will be unleashed by wiring those modules together.
 Based on the connections of modules, the core modules of EVerest will provide
@@ -73,23 +79,54 @@ configuration scenario:
 Add modules to the configuration
 --------------------------------
 
-TODO: WRITE ON HERE!
+Being on the Admin Panel page, you will see a blank page.
 
-Separate section
-----------------
+Click on the menu symbol at the upper left corner to open the main menu and
+click on `Config`. A new left side-menu will appear.
 
-Each module has blue and/or yellow circles. They represent the interface
-implementations that the modules require from (yellow) repectively provide
-for other modules (blue).
+There, you can see three menu items. Choose `Available modules` to access the
+list of existing modules. After left-clicking on the plus sign right to the
+module name, it will be shown in the main canvas.
+
+.. hint::
+    Click on the name to get a short description of the module.
+
+This way, you can add all modules that you will need.
+
+To start with an existing configuration, that you can then adjust to your
+needs, click on the `Available configs` menu item in the left side-menu and
+choose an existing configuration.
+
+.. warning::
+    Be aware that by loading an existing configuration, all your
+    modules or changes will be discarded. So, be sure to save your
+    setup by clicking on the `save` symbol in the lower right corner of the
+    canvas.
+
+Next, let's see how modules can be connected to each other.
+
+Module connections and module parameters
+----------------------------------------
+
+Each module has blue and/or yellow circles.
+
+.. image:: img/1-1-admin-panel-module-explained.png
+    :width: 200px
+    :align: center
+
+They represent the interface implementations that the modules require from
+(yellow) repectively provide for other modules (blue).
 
 If you click on one of those circles, you will get more information about the
 exact interface implementation that is provided or required:
 
 .. image:: img/2-admin-panel-requirement.png
     :width: 300px
+    :align: center
 
 .. image:: img/3-admin-panel-provides.png
     :width: 300px
+    :align: center
 
 The first picture shows the information that you get after clicking on the
 EvseManager's lower yellow circle. You see that the EvseManager requires an
@@ -100,10 +137,38 @@ The second picture is the information you get after clicking on the middle
 blue circle of the EvseManager module. It tells that the EvseManager module
 provides an implementation of the interface `evse_manager`.
 
+To close the information box again, click on `Discard Selection`.
+
 Although this is no big surprise, the other blue circles of EvseManager will
 tell you that it also provides implementations of the interfaces `energy` and
 `auth_token_provider` - which could be a little bit more surprising. More to
 that later when talking about the configurable use cases in EVerest.
+
+A module has also parameters that determine the behaviour of the module in
+a dedicated environment. You can see the parameters of a module by clicking
+on the module's title. In a right side-bar, all config parameters will be
+listed:
+
+.. image:: img/4-admin-panel-module-parameters.png
+    :width: 320px
+
+For getting some information on the meaning of those parameters, click on the
+i-symbol to the right of each parameter.
+
+Time to connect one module to another one.
+
+Assuming, you have the EvseManager and a GenericPowermeter added to your
+canvas.
+
+Click on the blue circle at the right of the GenericPowermeter (it provides
+a powermeter implementation) and after that click on the middle yellow circle
+to the left of the EvseManager (which represents the requirement for a
+powermeter implementation).
+
+A grey connection line between the modules is drawn:
+
+.. image:: img/5-admin-panel-connect-modules.png
+    :width: 360px
 
 .. _existing_modules_quick_overview:
 
