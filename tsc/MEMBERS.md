@@ -1,5 +1,5 @@
 # Technical Steering Committee Members
-Last updated: 2022-11-24
+Last updated: 2023-10-26
 
 Commitee Members:
 - (Chair) Marco Möller [Pionix] ([@caller](https://github.com/caller))
