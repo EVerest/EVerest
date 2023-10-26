@@ -21,17 +21,19 @@ Module connections for dedicated use cases
 EVerest is a modular framework.
 
 For devices like powermeters or hardware boards, you will have implementations
-of a driver module. Energy management logic, authentication or protocol
-implementations - everything is delivered (or can be implemented by you) via
-a module.
+of a corresponding driver module. Fields like energy management,
+authentication or protocol implementations - everything is delivered (or can
+be implemented by you) via an EVerest module.
 
-This could look like this:
+All those modules required for a dedicated system environment will have to be
+connected so that they an communicate with each other. Such a configuration
+could look like this:
 
 .. image:: img/module-config-overview.png
 
-The mechanisms behind this will be explained later.
+The functional mechanisms behind this will be explained later.
 
-The real magic of EVerest will be unleashed by wiring those modules together.
+The real magic of EVerest will be unleashed by wiring the modules together.
 Based on the connections of modules, the core modules of EVerest will provide
 fancy stuff like automatic power-sharing between multiple EvseManagers or the
 correct representation of the charging environment inside the backend instances
@@ -55,18 +57,19 @@ Module configuration with the Admin Panel
 
 Having started MQTT, the EVerest manager process and Node-RED as shown in the
 :ref:`dedicated Quick Start Guide sections <quickstartguide_helpers>`, you can
-startup the Admin Panel on your machine with the following URL::
+access the Admin Panel on your machine with the following URL::
 
     http://localhost:8849/
 
-Open some "Available config" from the left side-menu will bring you to some
-preset configurations.
+Right in the beginning, the Admin Panel will just show a blank page.
 
-Each box represents a module in EVerest.
+As soon as we will start working with module configurations, you will see
+something like the following picture, in which each box represents a module in
+EVerest:
 
 .. image:: img/1-admin-panel-explanation.png
 
-In this picture, you see five modules with their connections.
+You can see five modules with their connections.
 
 The Admin Panel helps you with all needed steps to setup your dedicated
 configuration scenario:
@@ -78,8 +81,6 @@ configuration scenario:
 
 Add modules to the configuration
 --------------------------------
-
-Being on the Admin Panel page, you will see a blank page.
 
 Click on the menu symbol at the upper left corner to open the main menu and
 click on `Config`. A new left side-menu will appear.
@@ -114,8 +115,8 @@ Each module has blue and/or yellow circles.
     :width: 200px
     :align: center
 
-They represent the interface implementations that the modules require from
-(yellow) repectively provide for other modules (blue).
+They represent the interface implementations that the modules require (yellow)
+from respectively provide (blue) for other modules.
 
 If you click on one of those circles, you will get more information about the
 exact interface implementation that is provided or required:
@@ -139,10 +140,10 @@ provides an implementation of the interface `evse_manager`.
 
 To close the information box again, click on `Discard Selection`.
 
-Although this is no big surprise, the other blue circles of EvseManager will
-tell you that it also provides implementations of the interfaces `energy` and
-`auth_token_provider` - which could be a little bit more surprising. More to
-that later when talking about the configurable use cases in EVerest.
+The other blue circles of EvseManager will tell you that it also provides
+implementations of the interfaces `energy` and `auth_token_provider` - which
+could be a little bit surprising, but we will learn about that in later
+sections when talking about the configurable use cases in EVerest.
 
 A module has also parameters that determine the behaviour of the module in
 a dedicated environment. You can see the parameters of a module by clicking
@@ -155,25 +156,26 @@ listed:
 For getting some information on the meaning of those parameters, click on the
 i-symbol to the right of each parameter.
 
-Time to connect one module to another one.
+Now, it is time to connect one module to another one.
 
 Assuming, you have the EvseManager and a GenericPowermeter added to your
-canvas.
+canvas, click on the blue circle at the right of the GenericPowermeter (it
+provides a powermeter implementation) and after that click on the middle
+yellow circle to the left of the EvseManager (which represents the requirement
+for a powermeter implementation).
 
-Click on the blue circle at the right of the GenericPowermeter (it provides
-a powermeter implementation) and after that click on the middle yellow circle
-to the left of the EvseManager (which represents the requirement for a
-powermeter implementation).
-
-A grey connection line between the modules is drawn:
+You have created a connection between those two modules, which is indicated by
+a grey line between the modules:
 
 .. image:: img/5-admin-panel-connect-modules.png
     :width: 360px
 
+In a next step, let's look at an example module configuration.
+
 .. _existing_modules_quick_overview:
 
-Quick overview
-==============
+Very quick overview
+===================
 
 Start analyzing the following picture at module `evse_manager`.
 
@@ -310,9 +312,18 @@ that SLAC sets up the physical communication between the EVSE and car
 Energy management
 =================
 
-`TODO
-Show energy management scenario. Show
-multiple EvseManager configurations.`
+One simple scenario for energy management can be realized by connecting two
+EvseManagers with a grid connection module:
+
+.. image:: img/6-admin-panel-energy-management-two-evse.png
+
+In this case, as long as no other energy management logic is provided (e.g.
+via OCPP or other energy management implementations), there will be automatic
+power sharing between the two EvseManagers.
+
+More sophisticated energy management which is done for more than only one
+physical charging device will be possible soon as we are implementing a
+solution for remote communication between multiple EVerest instances.
 
 ******************************
 Module functionality in detail
