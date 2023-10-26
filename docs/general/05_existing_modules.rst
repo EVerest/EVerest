@@ -325,6 +325,15 @@ More sophisticated energy management which is done for more than only one
 physical charging device will be possible soon as we are implementing a
 solution for remote communication between multiple EVerest instances.
 
+DC charging
+===========
+
+A short hint for realizing DC charging:
+
+.. image:: img/7-admin-panel-dc-with-imd-and-dc-power.png
+
+A more detailed use case will follow.
+
 ******************************
 Module functionality in detail
 ******************************
