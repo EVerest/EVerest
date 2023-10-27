@@ -216,8 +216,6 @@ connection to work in a meaningful way.
 
 See this simple part of a module network:
 
-`TODO: Clean deprecated ISO15118-Rise-Module! Make pictures in EVerest CI.`
-
 .. image:: img/module-config-charging-station.png
 
 The picture above shows a part of a module configuration from the EVerest
@@ -225,29 +223,29 @@ Admin Panel. Yellow connection points show requirements for interface
 implementations, blue ones show interface implementations that the module
 provides. For more information on that, see the Module Concept page.
 
-The EvseManager has basic charging logic implemented (IEC 61851, PWM State
+The **EvseManager** has basic charging logic implemented (IEC 61851, PWM State
 Machine). It knows the status of the current charging session regarding time of
 charging start, point of times to pause the session or the amount of energy
 already delivered to the output.
 
-For measuring the energy, a powermeter is necessary. The Yeti Driver module in
-the example above is a board support implementation, but also delivers an
-implementation of a powermeter. This is why you see two connections between the
-EvseManager and the YetiDriver: Each connection stands for one interface
-implementation that is provided from one module to another one that requires
-it.
+For measuring the energy, a powermeter is necessary. The **Yeti Driver**
+module in the example above is a board support implementation, but also
+delivers an implementation of a powermeter. This is why you see two
+connections between the EvseManager and the YetiDriver: Each connection
+stands for one interface implementation that is provided from one module to
+another one that requires it.
 
 This way, you could connect another powermeter module but keep the Yeti Driver
 module for board support. That makes things nicely flexible.
 
 Another two connections go from the EvseManager to two protocol
-implementations: ISO 15118 and SLAC. Such connections to protocol
+implementations: **ISO 15118** and **SLAC**. Such connections to protocol
 implementations allow the EvseManager to “talk” to other devices using that
 protocol. E.g. if you connect the EvseManager via the board module to a car,
 the car also needs to “know” about ISO 15118 so that communication can work.
 
 The connection to the left is needed for the EvseManager to get power from
-somewhere. In the example above, the grid connection module will deliver
+somewhere. In the example above, the **grid connection** module will deliver
 energy. This is the part where in more complex scenarios an energy management
 logic can be set up or loadbalancing between more than one EvseManagers will
 take place.
@@ -260,12 +258,12 @@ will need some kind of authentication mechanism. Let's take a look at the
 following part of an EVerest configuration:
 
 .. image:: img/module-config-auth.png
-    :width: 300px
+    :width: 400px
 
-We already know the two modules at the bottom of the picture. You can see the
-auth module, which obviously plays a big role for authentication. This module
-provides an implementation for managing authentication but also reservation of
-charging points.
+We already know the module in the lower left corner of the picture. You can
+see the auth module, which obviously plays a big role for authentication. This
+module provides an implementation for managing authentication but also
+reservation of charging points.
 
 Easily put, the auth module takes an authentication token, gives the token to
 some instances which can validate tokens and as soon as a validation arrives,
@@ -291,7 +289,7 @@ EvseManager like shown here:
 .. image:: img/module-config-car-sim.png
     :width: 360px
 
-The modules in the upper part of this picture have been described earlier.
+The modules in the left part of this picture have been described earlier.
 The car_simulator takes the role of a car to enable proper communication
 between car and EVSE.
 
@@ -300,9 +298,10 @@ start a Node-RED simulation with EVerest, the car simulator module is the
 instance that controls the simulation regarding charging power and charging
 status).
 
-As the EvseManager "talks" ISO 15118 in this example (see the connection of
-the `iso15118_charger` module), it makes sense to also enable ISO 15118
-for the car simulation. The `iso15118_car` module does exactly that.
+See the `iso15118_car` module connected to the car simulator module. This
+enables ISO 15118 compliant communication for the car simulator. If we
+assume that the EvseManager also has a connection to a ISO 15118 protocol
+implementation (as seen in configuration before), this should work out well.
 
 One interesting detail is the connection of the SLAC module not only to the
 EvseManager but also to the car simulation module. This is due to the fact
