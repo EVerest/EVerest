@@ -422,8 +422,8 @@ a file ``config-<CONFIG_NAME>.yaml``.
 It will then generate a run script for this configuration.
 
 You must then "activate" this configuraton by adapting the
-``$EVEREST_TUTORIAL_DIR/CMakeLists.file`` removing the commenting `#` before
-the `add_subdirectory(config)` instruction, i.e.:
+``$EVEREST_TUTORIAL_DIR/CMakeLists.txt`` file removing the commenting `#`
+before the `add_subdirectory(config)` instruction, i.e.:
 
     # config
     # (not needed if you do not need a run script for your configuration)
@@ -480,7 +480,7 @@ and debug it.
 Exploring with MQTT Explorer
 ----------------------------
 The open-source tool `MQTT Explorer <https://github.com/thomasnordquist/MQTT-Explorer>`_  can be utilized to
-observer the module communication in EVerest.
+observe the module communication in EVerest.
 
 With your MQTT broker running on localhost:1883, you should be able to connect
 right away when opening MQTT explorer.
@@ -581,9 +581,6 @@ of our implementation:
 * Add a variable to your interface, and publish it;
 * Add a second module which requires the ``interface_tutorial_module`` interface and sends commands or subscribes to variables.
 
-
-
-
-
-
-
+.. hint::
+    This section is yet to come. Want to help us with that? Feel free and create
+    a suggestion for this. 
