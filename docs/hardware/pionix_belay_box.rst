@@ -52,8 +52,14 @@ the `EVerest mailing list <https://lists.lfenergy.org/g/everest>`_.
 
 Getting support
 ===============
+
+See also the `BelayBox manual <https://pionix.com/user-manual-belaybox>`_.
+
 If you already have purchased a BelayBox, you can get support by creating
 an issue via our `support page <http://support.pionix.com>`_.
+
+If you need additional parts for your BelayBox, see the
+`Pionix Online Shop <https://shop.pionix.com>`_.
 
 Setting up Hardware and Software
 ********************************
@@ -624,3 +630,20 @@ configuration:
 .. code-block:: bash
 
   sudo reboot
+
+Troubleshooting
+***************
+
+Yeti errors or EVerest not starting
+===================================
+
+Should your log output tell you something about "Yeti reset not successful"
+or the EVerest modules get terminated right after EVerest started, it could
+be due to the Yeti interface not being connected properly.
+
+In this case, check the connections and the cable harness.
+
+Should everything look fine, check if the Yeti firmware is running properly
+by looking at the Yeti LED. It should flash in a fast frequency. If it is on
+or off without flashing, the firmware could not be started or is not
+installed.

@@ -175,6 +175,8 @@ in an old version, go to your everest workspace directory and call *edm
 --git-pull*. This will update the EVerest repositories. After that, repeat
 building ev-cli and you should be good to go again.
 
+.. _quickstartguide_simulate:
+
 ******************
 Simulating EVerest
 ******************
@@ -461,8 +463,16 @@ of type *integer* rounds things up for the one CMD of this interface.
 VARs are pieces of information which get published for the network of
 listening modules regularly. We have two VARs in this example. The first one
 is of type *integer*, the second one is a reference to a type definition.
-This way, you can create structs or classes (however you would call a
-bunch of simple data-types grouped inside of one logical unit) for publishing.
+
+This way, you can create structs or classes (however you would call a bunch
+of simple data-types grouped inside of one logical unit) for publishing.
+
+.. note::
+
+  In some yaml interface files in the EVerest GitHub project, you will still
+  find an additional type attribute besides a `$ref` attribute. In most cases,
+  the type will be of value `object`. This is considered bad practice and will
+  be deprecated in future versions.
 
 Let's have a look at a type definition in the next section.
 
@@ -506,36 +516,6 @@ interface - the ev-cli tool - generate the implementation stubs.
 Generate the stub files
 =======================
 
-.. hint::
-
-  We will change the directory structure soon to make it more intuitive.
-  Please be aware of some changes here.
-
-To create a new module in EVerest, create a new directory inside of the
-*everest-core/modules* directory. Create a manifest file (or copy an existing
-one) like described above.
-
-After that prepare a interface yaml which will reside in the
-*everest-core/interfaces* directory.
-
-Eventually, you have also used types, which will go into the
-*everest-core/types* directory.
-
-Now, it is time for the EVerest tool *ev-cli* to create the stub files:
-
-.. code-block:: bash
-
-  cd {EVerest Workspace Directory}/everest-core
-  ev-cli mod create MyModuleName
-
-The name of the module is the one given as directory name.
-
-You will see that you get cpp and hpp files for your main module class and also
-for the interfaces to be implemented.
-
-.. hint:: It is also possible to work with Javascript or Python. At this point
-  we will focus on C++.
-
 Your main cpp file will have two special functions:
 
 .. code-block:: c++
@@ -558,9 +538,9 @@ handler methods for the CMDs you have declared in the interface files.
 You can walk through the generated files in your new module directory and
 have a look at the prepared classes.
 
-***************
-One Deep Breath
-***************
+******************************
+One Deep Breath And Next Steps
+******************************
 
 You made it. Great!
 
@@ -570,11 +550,13 @@ learnt about EVerest.
 You might have generated stub files now but still are not sure how to procede
 with implementing your specific scenarios?
 
-Good news is: We are working on a tutorial currently to show a short practical
-example of implementing an EVerest module.
+Good news: A tutorial about developing EVerest modules is waiting for you.
 
-During waiting time, join us anytime in our weekly tech meeting. There are
-great people who are glad to give you a hint and push you in the right
-direction.
+:ref:`Continue with the tutorial here! <tutorial_create_modules_main>`
 
-Thanks for being a part of the EVerest community.
+Or - if you rather would like to have more theoretical input about EVerest
+modules - continue
+:ref:`with the EVerest Module Concept page <moduleconcept_main>`.
+
+See you in our :ref:`weekly tech meetings <index_contact>` and thanks for
+being a part of the EVerest community!
