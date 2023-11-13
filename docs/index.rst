@@ -34,6 +34,8 @@ You are currently on the main documentation page of EVerest.
 
 There are quite a few other resources that you might want to check out:
 
+.. _index_contact:
+
 Direct contact
 ==============
 
