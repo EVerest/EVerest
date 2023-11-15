@@ -13,7 +13,7 @@ The contributor role is the starting role for anyone participating in the projec
 #### Process for becoming a contributor
 
 * Review the [Contribution Guidelines] to ensure your contribution is inline with the project's coding and styling guidelines.
-* Submit your code as a PR with the appropriate DCO signoff
+* Submit your code as a PR with the appropriate DCO sign-off
 * Have your submission approved by the committer(s) and merged into the codebase.
 
 ### Committer
@@ -42,7 +42,7 @@ the committers per the voting process below.
 
 ### Technical Steering Committee (TSC)
 
-The technical steering committee (TSC) is responsible for the overall project health and direction, coordination of activities, and working with other projects and committees as needed for the continuted growth of the project.
+The technical steering committee (TSC) is responsible for the overall project health and direction, coordination of activities, and working with other projects and committees as needed for the continued growth of the project.
 
 See [TSC Readme](tsc/README.md) for details.
 
