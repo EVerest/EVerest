@@ -83,7 +83,7 @@ Use `zypper` to get your needed libraries installed:
 
 Fedora
 ------
-Tested with Fedora 36, 37 and 38. Here is how to get your needed libraries with
+Tested with Fedora 37, 38 and 39. Here is how to get your needed libraries with
 `dnf`.
 
 .. code-block:: bash
