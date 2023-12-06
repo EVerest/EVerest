@@ -64,7 +64,7 @@ Setup
         GITHUB_ACTOR="username_of_the_service_account"
 
     If you don't have access to the service account, don't
-    want to use it or just texting something out locally, 
+    want to use it or just testing something out locally, 
     you can use your own github token and
     your own ssh key:
 
@@ -79,7 +79,7 @@ Setup
 Usage
 ******************************************
 
-List availavle jobs:
+List available jobs:
 ==========================================
 
 To see all jobs in your workflows for an specific event use:

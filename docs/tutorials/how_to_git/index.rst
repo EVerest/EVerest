@@ -1,6 +1,6 @@
-**********
-How to git
-**********
+***********
+How To: Git
+***********
 
 Main concept
 ============
@@ -132,7 +132,7 @@ to have it backup'd somewhere.  You can push this branch to a private
 repository.  Let's say for example, the main repository is located at
 ``https://github.com/SomeProject/SomeRepo`` and you have a private
 repository at ``https://github.com/PrivateUser/PrivateRepo``.
-Furthermore the main repository is checked out in ``/main_repo``, the
+Furthermore the main repository is checked out in ``/main_repo``, then
 you can do the following:
 
 .. code:: bash
@@ -150,7 +150,7 @@ remote name is usually origin.
 
 .. _workhorse-example:
 
-Workhorse example
+Workflow example
 =================
 
 Visualization of the branching structure
