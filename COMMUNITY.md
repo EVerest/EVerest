@@ -2,10 +2,10 @@
 
 There are a few ways to connect with the EVerest project:
 
-* EVerest [mailing list](https://lists.lfenergy.org/g/everest)
-* EVerest [Technical Steering Committee mailing list / Sensitive Topics](https://lists.lfenergy.org/g/everest-tsc)
-* EVerest [channel on LF Energy Slack](https://slack.lfenergy.org)
-* Issue [tracker](https://github.com/EVerest/EVerest/issues)
+*   [EVerest mailing list](https://lists.lfenergy.org/g/everest)
+*   [EVerest Technical Steering Committee mailing list / Sensitive Topics](https://lists.lfenergy.org/g/everest-tsc)
+*   [EVerest channel on LF Energy Slack](https://slack.lfenergy.org)
+*   [Issue tracker](https://github.com/EVerest/EVerest/issues)
 
 ## How to ask for help
 
