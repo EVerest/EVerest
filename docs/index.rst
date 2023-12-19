@@ -56,23 +56,25 @@ community is the |link_mailinglist|.
 You will get your questions answered and will also get regular information
 about our public meetups to which you are invited to join.
 
+Please check also the announcement list (also via the link above).
+Go with that one if you want to receive only the most important
+news about EVerest and not all the detailed information and
+questions from the community.
+
 Weekly tech meetup
 ------------------
 
 A **weekly tech meetup** for
 the whole community and interested people is currently held once a week.
 
-Meet us here each Tuesday at 4pm in CET time-zone:
+Meet us here each Tuesday at 4pm in CE(S)T time-zone:
 
-Join via Google Meet:
-https://meet.google.com/wnv-aadq-irt
+Join here:
 
-Or dial:
-(DE) +49 40 8081616135
-PIN: 964783404#
+https://zoom-lfx.platform.linuxfoundation.org/meeting/92086494169?password=b2df6774-bc19-46f9-8c71-bbd13a0266a1
 
-More phone numbers:
-https://tel.meet/wnv-aadq-irt?pin=4305012153510&hs=7
+More info like access via phone (user account required):
+https://lists.lfenergy.org/g/everest/calendar
 
 1:1 meetup
 ----------
