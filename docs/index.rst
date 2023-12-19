@@ -173,6 +173,7 @@ implementation.
     general/03_quick_start_guide
     general/04_detail_module_concept
     general/05_existing_modules
+    general/06_everest_testing_framework
     dev_tools/index
     tutorials/index
     general/faq
