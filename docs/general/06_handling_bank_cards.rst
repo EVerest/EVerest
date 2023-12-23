@@ -21,6 +21,7 @@ Normal Flow
 
 Interrupted charging
 --------------------
+**NOTE**: This is not yet represnted in the interfaces.
 
 - Customer pays with the card
 - The charging never starts
@@ -35,6 +36,11 @@ depending on the bank/terminal there could be a limit on maximum transaction amo
 - Customer charges a lot of electricity over some reasonably long time
 - Once current session costs are at the limit, session is stopped
 - Transaction is committed to bank
+
+This has no representation on the interface level, it should be implemented as
+a module. Module subscribes to the session cost, and once it reaches the limit,
+it tells the EevsManager to stop the session. The session is finished and committed
+as usual after that.
 
 To long session
 ---------------
