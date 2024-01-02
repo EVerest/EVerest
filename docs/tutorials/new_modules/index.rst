@@ -323,7 +323,7 @@ Adding ``modules/CMakeLists.txt``
 Next, ``$EVEREST_TUTORIAL_DIR/modules/CMakeLists.txt`` essentially tells CMake
 where to look for modules, in order to add them to the build.
 
-It contains a single line per module, which in our example looks as follows::
+It contains a single line per module. To proceed, create the file and then add the following line, as per our example::
 
     ev_add_module(TutorialModule)
 
