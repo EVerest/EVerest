@@ -433,6 +433,8 @@ After that, once more run cmake::
 
     cd $EVEREST_TUTORIAL_DIR/build
     CMAKE_PREFIX_PATH=$EVEREST_WORKSPACE cmake --install-prefix $EVEREST_TUTORIAL_DIR/dist ..
+    make
+    make install
 
 
 Running EVerest
