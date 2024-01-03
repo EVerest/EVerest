@@ -76,6 +76,12 @@ https://zoom-lfx.platform.linuxfoundation.org/meeting/92086494169?password=b2df6
 More info like access via phone (user account required):
 https://lists.lfenergy.org/g/everest/calendar
 
+Zulip chat
+----------
+
+EVerest has channels on the Zulip instance of Linux Foundation Energy.
+You can find us here: https://lfenergy.zulipchat.com/
+
 1:1 meetup
 ----------
 
