@@ -125,8 +125,6 @@ certificates:
 
 .. code-block:: bash
 
-  cd {EVerest Workspace Directory}/Josev
-  python3 -m pip install -r requirements.txt
   cd {EVerest Workspace Directory}/Josev/iso15118/shared/pki
   ./create_certs.sh -v iso-2 -i {EVerest Workspace Directory}/everest-core
 
