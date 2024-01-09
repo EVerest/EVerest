@@ -132,17 +132,6 @@ And last but not least, also have a look at section
 :ref:`FAQ And Best Practices <faq_main>` in this documentation
 page to find topics that sometimes people get stuck with.
 
-Social Media
-============
-
-.. |link_x| raw:: html
-
-    <a href="https://x.com/everestincharge" target="_blank">
-       follow us on X
-    </a>
-
-Don't forget to |link_x|.
-
 **************************************
 Find Your Way Into EVerest Development
 **************************************
