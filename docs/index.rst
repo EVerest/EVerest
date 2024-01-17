@@ -56,31 +56,61 @@ community is the |link_mailinglist|.
 You will get your questions answered and will also get regular information
 about our public meetups to which you are invited to join.
 
-Please check also the announcement list (also via the link above).
-Go with that one if you want to receive only the most important
-news about EVerest and not all the detailed information and
-questions from the community.
+We have two separate mailing lists: One with all detailed questions and
+toipcs all around EVerest and another one with only summaries of important
+information - called "announcement list".
 
-Weekly tech meetup
-------------------
-
-A **weekly tech meetup** for
-the whole community and interested people is currently held once a week.
-
-Meet us here each Tuesday at 4pm in CE(S)T time-zone:
-
-Join here:
-
-https://zoom-lfx.platform.linuxfoundation.org/meeting/92086494169?password=b2df6774-bc19-46f9-8c71-bbd13a0266a1
-
-More info like access via phone (user account required):
-https://lists.lfenergy.org/g/everest/calendar
+Depending of how much detail you want to get, choose one of them.
 
 Zulip chat
 ----------
 
-EVerest has channels on the Zulip instance of Linux Foundation Energy.
+On the Zulip instance of Linux Foundation Energy, there are chat channels for
+EVerest.
+
+This is for more direct exchange and for dedicated work on EVerest topics. We
+have created working groups (see below) to focus on special topics in EVerest.
+
+So, the best place to be near to where the development thought exchange
+happens, Zulip is the place to go.
+
 You can find us here: https://lfenergy.zulipchat.com/
+
+Weekly tech meetup and working groups
+-------------------------------------
+
+Since the beginning of 2024 we organize our community and development
+exchange in the format of working groups.
+The formerly called **weekly tech meetup** is now one of those working
+groups. Now, we simply call it "General Working Group".
+
+Those are all EVerest working groups:
+
+- General (for general topics and to get a common ground for updates from the
+  other working groups)
+- Car Communication (car/charger communication with topics ISO 15118, EXI,
+  SLAC, CHAdeMO etc)
+- Cloud Communication (communication between charger and backends in cloud
+  with topics OCPP 1.6, 2.0.1, 2.1 etc)
+- EVerest Framework and Tools (framework topics and tools like edm, ev-cli
+  etc)
+- Testing and CI
+
+You might wanna join us in the general working group to meet the community
+without having focused on a special area of EVerest (yet).
+
+For the General Working Group, meet us here each Tuesday at 4pm in CE(S)T
+time-zone:
+
+https://zoom-lfx.platform.linuxfoundation.org/meeting/92086494169?password=b2df6774-bc19-46f9-8c71-bbd13a0266a1
+
+To see links to the meetings of all other working groups, see the
+LFE EVerest calendar (user account required):
+
+https://lists.lfenergy.org/g/everest/calendar
+
+Additionally, you might want to join the working group chat channels in Zulip.
+See the "Zulip chat" section above to see how to get there!
 
 1:1 meetup
 ----------
