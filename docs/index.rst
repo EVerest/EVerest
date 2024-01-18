@@ -50,17 +50,28 @@ Mailing list
         <img src="_static/icons/mail.svg" style="height: 0.8em;"> <b>EVerest mailing list</b>
     </a>
 
+.. |link_announcementlist| raw:: html
+
+    <a href="https://lists.lfenergy.org/g/everest-announce" target="_blank">
+        <img src="_static/icons/mail.svg" style="height: 0.8em;"> <b>EVerest announcement list</b>
+    </a>
+
 The easiest and fastest way to connect to the steadily growing EVerest
-community is the |link_mailinglist|.
+community is the mailing list.
 
-You will get your questions answered and will also get regular information
-about our public meetups to which you are invited to join.
+We have set up two separate mailing lists:
 
-We have two separate mailing lists: One with all detailed questions and
-toipcs all around EVerest and another one with only summaries of important
-information - called "announcement list".
+1. A detailed mailing list with all developer's exchange. Subscribe here: |link_mailinglist|.
+2. An announcement list where important news or events get shared. Subscribe here: |link_announcementlist|.
 
-Depending of how much detail you want to get, choose one of them.
+Recommendation is to subscribe at least to the announcement list and optionally - if you
+want to get the real detailed talk - also subscribe to the general list.
+
+In the general list, you can get your questions answered and you can read into the
+thoughts and development use cases of your community colleagues.
+
+The announcment list will give you summaries of EVerest achievements and info about
+our public meetups to which you are invited to join.
 
 Zulip chat
 ----------
