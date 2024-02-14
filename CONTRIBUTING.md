@@ -14,7 +14,7 @@ If you just need help or have a question, refer to
 [COMMUNITY.md](COMMUNITY.md).
 
 To contribute code to the project, first read over the [governance policies]
-page to understand the roles involved. 
+page to understand the roles involved.
 
 Each code contribution must include:
 
@@ -31,7 +31,7 @@ of code contributions.
 
 Every pull request for a feature request must link an issue. Pull request for
 bugfixes do not necessarily need to link an issue, but they should contain a
-proper description of the bug that is fixed. 
+proper description of the bug that is fixed.
 
 Each contribution must meet the [Java Script](.eslintrc.json) or
 [C++](.clang-format) *coding style* (part of every repository).
