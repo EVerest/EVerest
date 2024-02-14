@@ -26,7 +26,7 @@ Prerequisites
 =============
 
 If you're new to EVerest start with our
-`Quick Start Guide <02_quick_start_guide.html>`_
+:ref:`Quick Start Guide <quickstartguide_main>`
 to get a simulation in EVerest running for the first time.
 It is important that you have set up the required docker containers for
 Mosquitto and SteVe, which we will use as an example CSMS.
@@ -204,7 +204,7 @@ Configuring OCPP within EVerest
 ===============================
 
 To be able to follow the further explanations, you should be familiar with the configuration of EVerest modules.
-Take a look into `EVerest Module Concept <04_module_concept.html>`_ for that.
+Take a look into :ref:`EVerest Module Concept <moduleconcept_main>` for that.
 
 To configure the OCPP module of everest-core, find the available configuration parameters `in the manifest
 of the module <https://github.com/EVerest/everest-core/blob/main/modules/OCPP/manifest.yaml>`_.
