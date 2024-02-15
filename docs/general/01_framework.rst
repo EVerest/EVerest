@@ -26,6 +26,7 @@ Having this in mind, you can take a look at the following high level overview
 of the framework:
 
 .. image:: img/0-0-everest-top-level-diagram.png
+  :width: 760px
 
 The upper part (light grey background) of this picture is part of EVerest. The
 lower part of the picture shows two technologies that are used by EVerest but
@@ -59,6 +60,7 @@ Examples of EVerest Modules
 This picture shows some of the main modules in EVerest:
 
 .. image:: img/0-3-everest-top-level-diagram-module-categories.png
+  :width: 450px
 
 The central module in EV charging scenarios will be the EvseManager.
 It consists of some central controlling logic for charging configurations.
@@ -77,6 +79,7 @@ To get an idea, what an EVerest module consists of, see the following
 illustration:
 
 .. image:: img/0-1-everest-top-level-diagram-module-details.png
+  :width: 450px
 
 The top box within the dashed line shows the definition of a module in EVerest.
 The heart of it is the manifest file.
@@ -106,6 +109,7 @@ Having defined EVerest modules, they need to have a way to communicate.
 This illustration shows what is happening there:
 
 .. image:: img/0-2-everest-top-level-diagram-module-communication.png
+  :width: 450px
 
 Module A and Module B are communicating via an MQTT broker.
 
