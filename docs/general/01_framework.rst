@@ -79,7 +79,7 @@ To get an idea, what an EVerest module consists of, see the following
 illustration:
 
 .. image:: img/0-1-everest-top-level-diagram-module-details.png
-  :width: 450px
+  :width: 520px
 
 The top box within the dashed line shows the definition of a module in EVerest.
 The heart of it is the manifest file.
