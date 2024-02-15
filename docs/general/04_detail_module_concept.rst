@@ -118,7 +118,7 @@ Requiring interface implementations
 Just like a module can provide the same interface multiple times, it can also
 require multiple implementations of the same interface.
 For example, there could be one energy manager component, which communicates
-with multiple power supply or EVSE manager modules.```
+with multiple power supply or EVSE manager modules.
 
 Therefore, modules have a set of **interface requirements** with unique
 IDs, each of which is for a particular interface and must be satisfied by
