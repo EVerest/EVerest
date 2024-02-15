@@ -7,6 +7,10 @@ There are a few ways to connect with the EVerest project:
 *   [EVerest channel on LF Energy Zulip](https://lfenergy.zulipchat.com/)
 *   [Issue tracker](https://github.com/EVerest/EVerest/issues)
 
+Every week, there are technical meetings and working groups open for everyone.
+
+See the [EVerest calendar](https://lists.lfenergy.org/g/everest/calendar) for the dates.
+
 ## How to ask for help
 
 If you have trouble installing, building, or using EVerest, but there's not yet reason to suspect you've encountered a genuine bug,
