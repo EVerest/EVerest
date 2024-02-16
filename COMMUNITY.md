@@ -9,7 +9,8 @@ There are a few ways to connect with the EVerest project:
 
 Every week, there are technical meetings and working groups open for everyone.
 
-See the [EVerest calendar](https://lists.lfenergy.org/g/everest/calendar) for the dates.
+See the [EVerest calendar](https://lists.lfenergy.org/g/everest/calendar) for
+the dates.
 
 ## How to ask for help
 

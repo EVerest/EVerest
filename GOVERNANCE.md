@@ -55,7 +55,9 @@ the committers per the voting process below.
 
 ### Technical Steering Committee (TSC)
 
-The technical steering committee (TSC) is responsible for the overall project health and direction, coordination of activities, and working with other projects and committees as needed for the continued growth of the project.
+The technical steering committee (TSC) is responsible for the overall project
+health and direction, coordination of activities, and working with other
+projects and committees as needed for the continued growth of the project.
 
 See [TSC Readme](tsc/README.md) for details.
 
