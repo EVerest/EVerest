@@ -1,3 +1,7 @@
+.. bank_transaction:
+
+.. _bank_transaction_main:
+
 #################
 Bank Card Payment
 #################
