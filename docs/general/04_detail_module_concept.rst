@@ -35,6 +35,12 @@ A typical EVerest deployment consists of the following components:
   :width: 360px
   :align: center
 
+.. note::
+
+  EVerest provides integration for modules written in C++, Javascript, Python
+  or Rust.
+  We will use notation for C++ below.
+
 ********
 Concepts
 ********

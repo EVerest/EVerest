@@ -18,6 +18,18 @@ The EVerest framework helps with building your dedicated development scenario wi
 
 Modules in EVerest can be everything like hardware drivers, protocols, authentication logic and more. Build up your development scenario as needed and enhance it by adding your own additional modules.
 
+.. note::
+
+  Modules can be implemented in C++, Javascript, Python or Rust.
+
+  As especially Python and Rust were not part in the very early version of
+  EVerest, we appreciate feedback about your experience in using those
+  languages.
+
+  Write us via
+  :ref:`Zulip <index_zulip>` or drop us a line on the
+  :ref:`Mailing list <index_mailinglist>`.
+
 Another way to look at EVerest is its layer architecture:
 
 .. image:: img/quick-start-high-level-2.png
