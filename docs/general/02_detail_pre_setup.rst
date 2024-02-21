@@ -38,6 +38,14 @@ which are needed for the EVerest dependency manager:
 
   python3 -m pip install --upgrade pip setuptools wheel
 
+.. note::
+
+  Depending on the programming language that you will use for implementing
+  custom modules, you might need additional tools for compilation and similar
+  use cases. If you stumble over some trouble that is caused by EVerest -
+  especially when using other languages than C++ -, drop us a line or consider
+  creating a GitHub issue.
+
 A complete list of libraries to be installed is given by the following best
 practices which setup a development environment on a number of operating
 systems.

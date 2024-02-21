@@ -327,6 +327,11 @@ You reached the phase of writing a new EVerest module. Congrats!
 For this Quick Start Guide, we will give you a rocket start of understanding
 the basic elements of the EVerest module concept.
 
+.. note::
+
+  Modules can be implemented in C++, Javascript, Python or Rust.
+  We will stick to C++ in the examples below.
+
 So, let's dig into the overview:
 
 EVerest is a modular framework. So, there are lots of modules for different

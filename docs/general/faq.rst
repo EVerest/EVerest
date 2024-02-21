@@ -187,3 +187,62 @@ You may want to have a look at https://github.com/mobilityhouse/ocpp and
 implement message handlers to get the communication working. Or you can have
 a look at https://github.com/thoughtworks/maeve-csms. Note: This has not been
 officially tested by us.
+
+Testing
+=======
+
+.. _faq_testing:
+
+Unit tests
+----------
+
+**How can I run the unit tests?**
+
+To run the unit tests, you need to build with the cmake flag `-DBUILD_TESTING=ON`
+and then run `make test` in the build directory.
+
+**How do I name test targets in CMake?**
+
+Test targets should be prefixed by the project name, to avoid conflicts when Building
+libraries as dependency for other projects.
+The best practice is to use the following naming scheme:
+
+.. code-block:: cmake
+
+  add_executable(${PROJECT_NAME}_tests)
+
+Furthermore, the unit test should be include by the following condition:
+
+.. code-block:: cmake
+
+  if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
+    add_executable(${PROJECT_NAME}_tests)
+  endif()
+
+This ensures that the test is only build when the project is build as a standalone project or
+when the project is build as a dependency and the BUILD_TESTING flag is set and the ${PROJECT_NAME}_BUILD_TESTING flag is set.
+
+Integration tests
+-----------------
+
+**How can I run the integration tests?**
+
+To run the integration tests, you need to build and install everest-core:
+
+.. code-block:: bash
+
+  make
+  make install
+
+Then you need to install the testing tool:
+
+.. code-block:: bash
+
+  make install_everest_testing
+
+Now you can run the integration tests in the source directory:
+
+.. code-block:: bash
+
+  cd ${SOURCE_DIR}/tests
+  pytest --everest-prefix ${INSTALL_PREFIX} core_tests/*.py framework_tests/*.py
