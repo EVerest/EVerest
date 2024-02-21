@@ -1,7 +1,20 @@
 # Release Process
 ## General Infos About Versioning
+### Types of releases
 
-EVerest will create releases on a monthly base. This frequency is related to the monthly Technical Steering Committee meetings.
+EVerest releasing happens in the following way:
+
+- source code releases once a month (around the TSC meeting every 4th Thursday
+  in a month) and
+- stability releases every three months (March, June, September and December)
+  at the same point in time.
+
+A feature freeze phase of two weeks will precede the stability releases.
+In that timeframe, testing with focus on stability will be conducted.
+No new features will be merged into the release candidate branch during that
+time.
+
+### Tagnames and features of a release
 
 For the everest-core repository, the releases are tagged using the following name pattern: _YEAR.MONTH.INDEX_, e.g. 2022.12.1
 
@@ -57,7 +70,8 @@ those versions will be part of the new EVerest release.
 
 If unsure about all that, discussion about such topics takes place in the weekly
 tech meeting (announced via the
-[EVerest Mailinglist](https://lists.lfenergy.org/g/everest).
+[EVerest Mailinglist](https://lists.lfenergy.org/g/everest) (especially see
+the calendar there).
 
 ### Create a new release on GitHub
 

@@ -32,6 +32,18 @@ The upper part (light grey background) of this picture is part of EVerest. The
 lower part of the picture shows two technologies that are used by EVerest but
 are not part of the EVerest repositories.
 
+.. note::
+
+  Modules can be implemented in C++, Javascript, Python or Rust.
+
+  As especially Python and Rust were not part in the very early version of
+  EVerest, we appreciate feedback about your experience in using those
+  languages.
+
+  Write us via
+  :ref:`Zulip <index_zulip>` or drop us a line on the
+  :ref:`Mailing list <index_mailinglist>`.
+
 The EVerest framework launches all modules that are configured for your
 workspace.
 You will see later how configuration of modules and dependencies is done.

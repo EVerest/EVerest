@@ -73,6 +73,8 @@ thoughts and development use cases of your community colleagues.
 The announcment list will give you summaries of EVerest achievements and info about
 our public meetups to which you are invited to join.
 
+.. _index_zulip:
+
 Zulip chat
 ----------
 
