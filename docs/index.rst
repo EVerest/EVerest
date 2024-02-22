@@ -39,6 +39,26 @@ There are quite a few other resources that you might want to check out:
 Direct contact
 ==============
 
+.. _index_zulip:
+
+Zulip chat
+----------
+
+On the Zulip instance of Linux Foundation Energy, there are chat channels for
+EVerest.
+
+This is for thought exchange, for questions and talks about dedicated work on
+EVerest topics. Feel free to to drop your own questions and dive into
+communication with other EVerest enthusiasts.
+
+We have created working groups (see below) to focus on
+special topics in EVerest and get the development communication structured.
+You will see those working groups as streams in Zulip.
+
+So, the best place to be near development thought exchange is Zulip.
+
+You can find us here: https://lfenergy.zulipchat.com/
+
 .. _index_mailinglist:
 
 Mailing list
@@ -56,38 +76,18 @@ Mailing list
         <img src="_static/icons/mail.svg" style="height: 0.8em;"> <b>EVerest announcement list</b>
     </a>
 
-The easiest and fastest way to connect to the steadily growing EVerest
-community is the mailing list.
+Another way to connect to the steadily growing EVerest community is the mailing
+list.
 
 We have set up two separate mailing lists:
 
-1. A detailed mailing list with all developer's exchange. Subscribe here: |link_mailinglist|.
-2. An announcement list where important news or events get shared. Subscribe here: |link_announcementlist|.
+1. The most important one is the announcement list. Important news or events
+   all around EVerest are shared there. Subscribe here: |link_announcementlist|.
+2. Optionally, you can subscribe to the detailed mailing list with all
+   developer's exchange: |link_mailinglist|.
 
-Recommendation is to subscribe at least to the announcement list and optionally - if you
-want to get the real detailed talk - also subscribe to the general list.
-
-In the general list, you can get your questions answered and you can read into the
-thoughts and development use cases of your community colleagues.
-
-The announcment list will give you summaries of EVerest achievements and info about
-our public meetups to which you are invited to join.
-
-.. _index_zulip:
-
-Zulip chat
-----------
-
-On the Zulip instance of Linux Foundation Energy, there are chat channels for
-EVerest.
-
-This is for more direct exchange and for dedicated work on EVerest topics. We
-have created working groups (see below) to focus on special topics in EVerest.
-
-So, the best place to be near to where the development thought exchange
-happens, Zulip is the place to go.
-
-You can find us here: https://lfenergy.zulipchat.com/
+If you do not want to ask your questions in the Zulip chat, you can use the
+detailed mailinglist to get your questions answered.
 
 Weekly tech meetup and working groups
 -------------------------------------
