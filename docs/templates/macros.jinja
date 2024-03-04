@@ -9,14 +9,10 @@
 
 {### Renders a sequence ###}
 {%  macro sequence(key, data) %}
-{{ key + ': ' -}}
+{{ key }}:
 {%      for entry in data %}
-{{ entry -}}
-{%          if not loop.last %}
-{{ ', ' -}}
-{%          endif %}
+  - {{ entry }}
 {%      endfor %}
-
 {%  endmacro %}
 
 {### Renders a mapping ###}
@@ -31,7 +27,7 @@
 {%              if sub_data is mapping %}
 {{ mapping(sub_key, sub_data.items(), [], True) | indent(indent_width, True) -}}
 {%              elif sub_data is string %}
-{{ keyvalue(sub_key, sub_value) | indent(indent_width, True) -}}
+{{ keyvalue(sub_key, sub_data) | indent(indent_width, True) -}}
 {%              elif sub_data is sequence %}
 {{ sequence(sub_key, sub_data) | indent(indent_width, True) -}}
 {%              endif %}
@@ -111,8 +107,25 @@
 {%  endmacro %}
 
 {### Renders a single var ###}
-{%  macro var(var_name, var_data) %}
-**{{ var_name }}**:*{{ var_data.type }}*
+{% macro var(var_name, var_data, show_required=true, required=None) %}
+{% if required == None %}
+{%      set required = 'default' not in var_data %}
+{% endif %}
+{% set optional = '' %}
+{% if show_required == true %}
+{%      if required == true %}
+{%          set optional = '<required>' %}
+{%      elif required == false %}
+{%          set optional = '<optional>' %}
+{%      else %}
+{%          include "required needs to be set" %}
+{%      endif %}
+{% endif %}
+{% set var_type = var_data.type %}
+{% if not var_data.type %}
+{%      set var_type = "string/object" %}
+{% endif %}
+**{{ var_name }}**:*{{ var_type }}* {{ optional }}
 {%-     if '$ref' in var_data %}{{ ' (' + ref(var_data['$ref'], var_data['$ref'] | make_rst_ref()) + ')' }}{% endif +%}
 {# Add default value for config entries #}
 {%      if 'default' in var_data %}
@@ -122,14 +135,24 @@
 {%      if 'documentation' in var_data %}
 {{ documentation(var_data['documentation']) | indent(1, True) -}}
 {%      endif %}
-{%      set ignore_keys = ['default', 'description', 'type', 'properties', 'documentation', '$ref'] %}
+{%      set ignore_keys = ['default', 'description', 'type', 'properties', 'documentation', '$ref', 'required', 'items'] %}
 {%      set mapping_result = mapping( var_name, var_data.items(), ignore_keys, False) %}
 {%      if mapping_result != '' %}
 {{ mapping_result | indent(1, True) -}}
 {%      endif %}
 {%      if var_data.type == 'object' and 'properties' in var_data %}
  properties:
-{{ vars(var_data.properties.items()) | indent(2, True) -}}
+{%          if not 'required' in var_data %}
+{%              set all_required = True %}
+{%              set required_array = [] %}
+{%          else %}
+{%              set all_required = False %}
+{%              set required_array = var_data.required %}
+{%          endif %}
+{{ vars(var_data.properties.items(), True, required_array, all_required) | indent(2, True) -}}
+{%      endif %}
+{%      if var_data.type == 'array' and 'items' in var_data %}
+{{          var('array_item', var_data['items'], False, True) | indent(1, True) }}
 {%      endif %}
 {%      if '$ref' in var_data %}
  **There is an extended definition for this object** {{ ref(var_data['$ref'], 'here') }}.
@@ -137,20 +160,30 @@
 {%  endmacro %}
 
 {### Renders a list of vars ###}
-{%  macro vars(vars) %}
+{% macro vars(vars, show_required=true, required=[], all_required=False) %}
 {%      for var_name, var_data in vars %}
-{{ var(var_name, var_data) -}}
+{%          if show_required == true %}
+{%              if all_required %}
+{%                  set is_required = True %}
+{%              else %}
+{%                  set is_required = var_name in required %}
+{%              endif %}
+{%          else %}
+{%              set is_required = None %}
+{%          endif %}
+{{          var(var_name, var_data, show_required, is_required) -}}
 {%      endfor %}
-{%  endmacro %}
+{% endmacro %}
+
 
 {### Renders cmd result ###}
 {%  macro cmd_result(result_data) %}
-{{ var('Result', result_data) -}}
+{{ var('Result', result_data, False) -}}
 {%  endmacro %}
 
 {### Renders single cmd argument ###}
 {%  macro cmd_argument(arg_name, arg_data) %}
-{{ var(arg_name, arg_data) -}}
+{{ var(arg_name, arg_data, True) -}}
 {%  endmacro %}
 
 {### Renders cmd arguments ###}
@@ -195,7 +228,7 @@
 {%  macro type(type_name, type_data, file_name) %}
 {%      set target_name = '/' + file_name + '#/' + type_name %}
 {{ explicit_target(target_name) -}}
-{{ var(type_name, type_data) | rst_indent() -}}
+{{ var(type_name, type_data, False) | rst_indent() -}}
 {%  endmacro %}
 
 {### Renders a list of types ###}
@@ -211,7 +244,7 @@
 
 {### Renders a single config entry ###}
 {%  macro config_entry(name, data) %}
-{{ var(name, data) -}}
+{{ var(name, data, True) -}}
 {%  endmacro %}
 
 {### Renders a list of config entries ###}
@@ -249,8 +282,20 @@
 
 {### Renders a single requirement ###}
 {%  macro req(name, data) %}
+{%      set min_conns = data.min_connections %}
+{%      set max_conns = data.max_connections %}
+{%      if not data.min_connections %}
+{%          set min_conns = 1 %}
+{%      endif %}
+{%      if not data.max_connections %}
+{%          set max_conns = 1 %}
+{%      endif %}
+{%      set conns = min_conns|string + ".." + max_conns|string %}
+{%      if min_conns == max_conns %}
+{%          set conns = min_conns|string %}
+{%      endif %}
 {%      set interface_target = 'everest_interfaces_' + data.interface %}
-**{{ name }}**:{{ ref(interface_target, data.interface) }}
+**{{ name }}**:{{ ref(interface_target, data.interface) }} {{conns}}
 {%      set ignore_keys = ['interface'] %}
 {%      set mapping_result = mapping( name, data.items(), ignore_keys, False) %}
 {%      if mapping_result != '' %}

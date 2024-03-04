@@ -8,7 +8,7 @@
 
 {%  if data.vars %}
 {{ funcs.h2('Variables') -}}
-{{ funcs.vars(data.vars.items()) | rst_indent() -}}
+{{ funcs.vars(data.vars.items(), False) | rst_indent() -}}
 {%  endif %}
 
 {% if data.cmds %}
