@@ -129,7 +129,12 @@
 {%-     if '$ref' in var_data %}{{ ' (' + ref(var_data['$ref'], var_data['$ref'] | make_rst_ref()) + ')' }}{% endif +%}
 {# Add default value for config entries #}
 {%      if 'default' in var_data %}
-*default: {{ var_data.default }}*
+{%        if var_data.default is string %}
+{%          set var_default = "\"" + var_data.default + "\"" %}
+{%        else %}
+{%          set var_default = var_data.default %}
+{%        endif %}
+*default: {{ var_default }}*
 {%      endif %}
  {{ var_data.description }}
 {%      if 'documentation' in var_data %}
@@ -282,13 +287,15 @@
 
 {### Renders a single requirement ###}
 {%  macro req(name, data) %}
-{%      set min_conns = data.min_connections %}
-{%      set max_conns = data.max_connections %}
-{%      if not data.min_connections %}
+{%      if not 'min_connections' in data %}
 {%          set min_conns = 1 %}
+{%      else %}
+{%          set min_conns = data.min_connections %}
 {%      endif %}
-{%      if not data.max_connections %}
+{%      if not 'max_connections' in data %}
 {%          set max_conns = 1 %}
+{%      else %}
+{%          set max_conns = data.max_connections %}
 {%      endif %}
 {%      set conns = min_conns|string + ".." + max_conns|string %}
 {%      if min_conns == max_conns %}
