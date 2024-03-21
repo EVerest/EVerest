@@ -28,6 +28,7 @@ the simulated EV.
 FIXME: Refer to some good documentation about Plug&Charge
 
 The components included in this setup are the following:
+
 1. Charging Station (SECC): The EVerest stack provides the software running on
    the charger. It provides the ISO 15118 and OCPP implementations.
 2. Electric Vehicle (EVCC): The EV is simulated using the software in the
