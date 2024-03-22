@@ -7,7 +7,7 @@ Configure Plug&Charge
 #################
 
 This is a guide for how to configure EVerest to enable its Plug&Charge functionalities. 
-For a tutorial on how to do Plug&Charge in the EVerest SIL, please refer to TODO: Link!. 
+For a tutorial on how to do Plug&Charge in the EVerest SIL, please refer to TODO: https://github.com/EVerest/EVerest/blob/pg-how-to-pnc/docs/tutorials/how_to_plug_and_charge/index.rst . 
 
 *************************
 Plug&Charge Authorization
