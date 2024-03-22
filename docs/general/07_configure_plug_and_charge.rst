@@ -73,14 +73,16 @@ the evse_security.yaml (link) interface, in order to execute the following comma
 There are more commands provided by the evse_security.yaml (link) interface, which are not included in the Plug&Charge
 process.
 
-Step 1:
+Step 1
+======
 
 This step is triggered by a physical connection between the EV and the charger. A TLS connection is required 
 between the EV and the charger to allow Plug&Charge, so the EvseV2G module retrieves the SECC leaf certificate 
 chain and private key from via the evse_security.yaml interface and sets up a TLS server, to which the EV
 can connect as a TLS client.
 
-Step 2:
+Step 2
+======
 
 When charger and EV have agreed on Contract being the selected payment option, we have something going on
 that we can call a Plug&Charge process. The EV sends its contract certificate chain and requests authorization
@@ -89,21 +91,29 @@ contains data the authorization request, including the contract certificate and 
 
 The ProvidedIdToken is transmitted via the evse_manager.yaml interface to the EvseManager module.
 
-Step 3:
+Step 3
+======
+
 The EvseManager module implements the token_provider.yaml interface and can therefore publish the 
 ProvidedIdToken (link) containing the contract certificate and OCSP data within EVerest to the central
 authorization module in EVerest: Auth.
 
-Step 4:
+Step 4
+======
+
 The Auth module sends commands containing the ProvidedIdToken to its registered token_validator(s) (link),
 which are OCPP/OCPP201 in the case of Plug&Charge. The OCPP module(s) validate the token based on the requirements
 specified in the OCPP protocol (either validating locally or by the CSMS).
 
-Step 5:
+Step 5
+======
+
 In case the validation was successful, the Auth module notifies the EvseManager using the authorize command,
 that authorization is present and the charging session can be started.
 
-Step 6:
+Step 6
+======
+
 The EvseManager forwards the authorization response to the EvseV2G module, which can then send the 
 awaited ISO15118 response to the EV.
 
@@ -131,24 +141,28 @@ for OCPP2.0.1.
 
 We need to take a closer look at the configuration of the EvseManager, EvseV2G, Auth and EvseSecurity.
 
-EvseManager:
+EvseManager
+===========
 
 * In case of AC, make sure that `ac_hlc_enabled` is set to `true` in order to allow ISO15118 communication
 * Make sure `payment_enable_contract` is set to `true`
 
-EvseV2G:
+EvseV2G
+===========
 
 * Make sure `tls_security` is set to `allow` or `force`.
 * If `verify_contract_cert_chain` is `true` the EvseV2G module attempts to verify the contract certificate chain
 locally. It is recommended to set this to `false`, because this validation is also executed and handled in OCPP.
 
-Auth:
+Auth
+====
 
 * Make sure the EvseManager module is listed as a connection of `token_provider`. This is important, because only
 in this case the ProvidedIdToken including the contract certificate is actually received by the Auth module.
 * Make sure the OCPP module is configured as the single `token_validator`.
 
-EvseSecurity:
+EvseSecurity
+============
 
 Please refer to the documentation of the EvseSecurity module for information on the ISO15118 configuration of 
-this module (link). 
+this module (https://github.com/EVerest/everest-core/blob/main/modules/EvseSecurity/doc.rst). 
