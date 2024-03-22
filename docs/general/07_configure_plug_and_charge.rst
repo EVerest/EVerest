@@ -44,7 +44,8 @@ in EVerest:
 
 Let's have a look step by step:
 
-Step 0:
+Step 0
+======
 
 Before a Plug&Charge session can start, the following certificates and keys should be installed on 
 the charger:
