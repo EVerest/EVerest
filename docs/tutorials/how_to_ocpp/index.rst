@@ -2,13 +2,19 @@
 How To: OCPP1.6 in EVerest
 **************************
 
+.. note::
+
+  EVerest has an implementation of OCPP 1.6J and 2.0.1. This tutorial is about
+  the 1.6 implementation. To get documentation about all implemented versions,
+  see `the GitHub repository libocpp <https://github.com/EVerest/libocpp>`_.
+
 EVerest provides a complete implementation of Open Charge Point Protocol
 (OCPP) 1.6J, supporting all feature profiles including Plug&Charge and the
 Security Extensions.
 
 The code of `libocpp` is at https://github.com/EVerest/libocpp
 
-This is a tutorial about how to setup and configure OCPP1.6 in EVerest.
+This is a tutorial about how to setup and configure OCPP 1.6 in EVerest.
 
 This tutorial includes:
 
@@ -73,7 +79,15 @@ Configuring OCPP
 In order to connect to a different CSMS, you have to modify the connection
 details within the ocpp configuration file. The ocpp config is a separate
 file in which all configuration keys of OCPP1.6 plus some internal parameters
-can be configured. This is an example for a ocpp configuration:
+can be configured.
+
+You can specify the path to this configuration file inside the `everest-core`
+configuration file using the configuration parameter ChargePointConfigPath
+of the OCPP module within everest-core. This defaults to *ocpp-config.json*.
+If this path is relative the default path for the ocpp configuration
+dist/share/everest/modules/OCPP will be prepended.
+
+This here is an example for an ocpp configuration:
 
 .. code-block:: json
 
@@ -154,15 +168,11 @@ Here's a short overview of the purpose of each profile in the configuration file
   been introduced within the OCPP1.6J Plug&Charge Whitepaper
 
 EVerest's `libocpp` supports all configuration parameters that are specified
-within OCPP1.6. Despite that, it is possible to omit configuration parameters
-that are not required and it is even possible to omit a whole feature profile in the configuration file if it is not supported. This means that
-the configuration of the `libocpp` provides maximum flexibility and can be tailored to your specific charging station.
-
-You can specify the path to this configuration file  inside the `everest-core`
-configuration file using the configuration parameter ChargePointConfigPath
-of the OCPP module within everest-core. This defaults to *ocpp-config.json*.
-If this path is relative the default path for the ocpp configuration
-dist/share/everest/modules/OCPP will be prepended.
+within OCPP 1.6. Despite that, it is possible to omit configuration parameters
+that are not required and it is even possible to omit a whole feature profile
+in the configuration file if it is not supported. This means that the
+configuration of the `libocpp` provides maximum flexibility and can be
+tailored to your specific charging station.
 
 .. _different_csms:
 
