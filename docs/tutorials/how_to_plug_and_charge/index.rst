@@ -25,8 +25,6 @@ The process we are going to simulate covers a complete AC Plug&Charge process
 including a CertificateInstallation request to install a virtual contract in
 the simulated EV.
 
-FIXME: Refer to some good documentation about Plug&Charge
-
 The components included in this setup are the following:
 
 1. Charging Station (SECC): The EVerest stack provides the software running on
@@ -51,7 +49,7 @@ Let's get started step by step
    instructions described here to set it up:
    https://github.com/EVerest/ocpp-csms
 
-3. Run everest-core with either 
+3. Run everest-core with either OCPP1.6 or OCPP2.0.1 using the prepared run-scripts. Make sure the the endpoint `localhost:9000/<id>` is specified in the respective ocpp configuration file (OCPP2.0.1 config defaults to this address, while for OCPP1.6 the default is different).
 
 ```bash
 ./run_scripts/run-sil-ocpp201-pnc.sh 
@@ -63,10 +61,8 @@ or
 ./run_scripts/run-sil-ocpp-pnc.sh 
 ```
 
-Make sure Node-RED is running.
+Make sure Node-RED is running and access the UI on `localhost:1880/ui`.
 
-In Node-RED select:
+In Node-RED select AC ISO 15118-2 from the Car Simulation dropdown and click "Car Plugin". This will initiate the EV plugin and start the Plug&Charge process.
 
-Car Simulation: AC ISO 15118-2 and click "Car Plugin".
-
-Check the OCPP logs. By default located in /tmp/everest_ocpp_logs
+Check the EVerest console and OCPP logs. By default OCPP logs are located in /tmp/everest_ocpp_logs .
