@@ -1,13 +1,13 @@
-.. bank_transaction:
+.. configure_plug_and_charge_main:
 
-.. _bank_transaction_main:
+.. _configure_plug_and_charge_main:
 
-#################
+#####################
 Configure Plug&Charge
-#################
+#####################
 
 This is a guide for how to configure EVerest to enable its Plug&Charge functionalities. 
-For a tutorial on how to do Plug&Charge in the EVerest SIL, please refer to TODO: https://github.com/EVerest/EVerest/blob/pg-how-to-pnc/docs/tutorials/how_to_plug_and_charge/index.rst . 
+For a tutorial on how to do Plug&Charge in the EVerest SIL, please refer to :ref:`How To: Plug&Charge with EVerest Software in the loop <how_to_pnc>`.
 
 *************************
 Plug&Charge Authorization
@@ -25,7 +25,7 @@ The Authorization process in EVerest
 
 In essence, the Plug&Charge Authorization runs like any other authorization in EVerest,
 like local RFID authorization or remote authorization.  Have a look at how the authorization
-process in EVerest in designed [here](link to Auth).
+process in EVerest in designed within the `Documentation of the Auth module <https://github.com/EVerest/everest-core/blob/main/modules/Auth/README.md>`_.
 
 ************************
 Involved EVerest modules
@@ -57,7 +57,7 @@ the charger:
 
 These certificates and keys can be installed during provisioning of the charger, or they can be 
 installed using OCPP1.6 or OCPP2.0.1. The paths to store these files can be configured in the 
-EvseSecurity module. Please see https://github.com/EVerest/everest-core/blob/main/modules/EvseSecurity/doc.rst
+EvseSecurity module. Please see `Documentation of the EvseSecurity <https://github.com/EVerest/everest-core/blob/main/modules/EvseSecurity/doc.rst>`_
 for further information on how to do the configuration for this module.
 
 In the visualization step 0. shows the process represents the previously described process of 
@@ -118,7 +118,9 @@ Step 6
 The EvseManager forwards the authorization response to the EvseV2G module, which can then send the 
 awaited ISO15118 response to the EV.
 
-.. note:: We have taken some shortcuts and ignored some further communication going on during the full process,
+.. note::
+    
+    We have taken some shortcuts and ignored some further communication going on during the full process,
     but these steps cover what's important for Plug&Charge in EVerest.
 
 
@@ -130,6 +132,7 @@ Now that we know everything comes together for Plug&Charge in EVerest, we can ha
 actually configured.
 
 The following two configuration files are relevant and require a correct setup and activation for Plug&Charge:
+
 * EVerest configuration file (yaml)
 * OCPP configuration file (.json)
 
@@ -165,5 +168,5 @@ in this case the ProvidedIdToken including the contract certificate is actually 
 EvseSecurity
 ============
 
-Please refer to the documentation of the EvseSecurity module for information on the ISO15118 configuration of 
-this module (https://github.com/EVerest/everest-core/blob/main/modules/EvseSecurity/doc.rst). 
+Please refer to `Documentation of the EvseSecurity module <https://github.com/EVerest/everest-core/blob/main/modules/EvseSecurity/doc.rst>`_ 
+for information on the ISO15118 configuration. 
