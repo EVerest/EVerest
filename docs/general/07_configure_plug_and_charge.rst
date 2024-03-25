@@ -39,7 +39,7 @@ in EVerest:
 .. image:: img/plug_and_charge_modules.png
     :align: center
 
-.. note:: 
+.. note::
     
     This visualization only presents the interfaces and connections between them that are
     relevant for Plug&Charge.
