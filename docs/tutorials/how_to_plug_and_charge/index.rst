@@ -1,3 +1,5 @@
+.. _how_to_pnc:
+
 **************************
 How To: Plug&Charge with EVerest Software in the loop
 **************************
