@@ -245,8 +245,8 @@ logged in as root, you will need to run this via `sudo`:
 
   {EVerest Workspace Directory}/everest-core/build/run-scripts/nodered-sil.sh
 
-For a user interface, just direct your browser to `http://localhost:1880/ui` -
-the required web-server has already been started via the shell scripts.
+For a user interface, just direct your browser to `<http://localhost:1880/ui>`_
+- the required web-server has already been started via the shell scripts.
 
 This will let us control the simulation in a very simple GUI.
 
@@ -285,9 +285,7 @@ Having run through the *Software-in-the-loop* section, you will already have
 prepared access to the admin panel. Just open your browser and direct it to
 port 8849 - the height of Mount EVerest in meters.
 
-.. code-block:: bash
-
-  http://localhost:8849
+`<http://localhost:8849>`_
 
 You should see a rather empty page like that:
 
