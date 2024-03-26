@@ -1,0 +1,9 @@
+everest-core:
+  git: git@github.com:EVerest/everest-core.git
+  git_tag: {{ everest_core_ref }}
+everest:
+  git: git@github.com:EVerest/EVerest.git
+  git_tag: {{ everest_ref }}
+{{ github_pages_repo.repo }}:
+  git: git@github.com:{{ github_pages_repo.owner }}/{{ github_pages_repo.repo }}.git
+  git_tag: {{ github_pages_repo.ref }}

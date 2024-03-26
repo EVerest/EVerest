@@ -1,0 +1,114 @@
+name: Deploy sphinx doc to github pages
+on:
+  workflow_call:
+    inputs:
+      html_artefact_name:
+        description: "Name of the html artefact"
+        required: true
+        type: string
+      snapshot_artefact_name:
+        description: "Name of the snapshot artefact"
+        required: true
+        type: string
+      overwrite_existing:
+        description: "Overwrite existing doc"
+        required: true
+        type: boolean
+      version_name:
+        description: "Version name"
+        required: true
+        type: string
+      github_pages_repo_name:
+        description: "Name of the github pages repo"
+        required: true
+        type: string
+      github_pages_repo_ref:
+        description: "Ref of the github pages repo"
+        required: true
+        type: string
+      is_release:
+        description: "Is this a release"
+        required: true
+        type: boolean
+    secrets:
+      SA_GITHUB_SSH_KEY:
+        description: "SSH key for github service account"
+        required: true
+jobs:
+  deploy-html-doc:
+    name: Deploy sphinx documentation
+    runs-on: ubuntu-22.04
+    container: 
+      image: ghcr.io/everest/everest-ci-env:main
+    steps:
+    - name: Setup ssh key and known_hosts
+      #   LTODO: switch to main branch
+      uses: everest/everest-ci/github-actions/setup-ssh@feature/add-render-jinja2-action
+      with:
+        ssh-key: ${{ secrets.SA_GITHUB_SSH_KEY }}
+        home-directory: /root
+        known-hosts: github.com
+    - name: Configure git
+      #  LTODO: switch to main branch
+      uses: everest/everest-ci/github-actions/configure-git@feature/add-render-jinja2-action
+      with:
+        email: compiler@pionxi.de
+        name: Github Service Account
+    - name: Download generated html files
+      uses: actions/download-artifact@v3
+      with:
+        name: ${{ inputs.html_artefact_name }}
+        path: docs-html
+    - name: Download snapshot file
+      uses: actions/download-artifact@v3
+      with:
+        name: ${{ inputs.snapshot_artefact_name}}
+        path: |
+          everest-workspace
+    - name: Checkout snapshot
+      run: |
+        edm --config snapshot.yaml --workspace .
+      working-directory: everest-workspace
+
+    - name: Remove old doc
+      if: ${{ inputs.overwrite_existing }}
+      run: |
+        rm -rf docs/${{ inputs.version_name }}
+      working-directory: everest-workspace/${{ inputs.github_pages_repo_name }}
+    - name: Update doc
+      run: |
+        mkdir -p docs
+        touch docs/.nojekyll  
+        mkdir docs/${{ inputs.version_name }}
+        cp -r ../../docs-html/* docs/${{ inputs.version_name }}/
+      working-directory: everest-workspace/${{ inputs.github_pages_repo_name }}
+    - name: Ensure that the latest release is the default one and create a versions index
+      if: ${{ inputs.is_release }}
+      run: |
+        python3 everest/docs/scripts/deploy-everest-doc.py \
+          --template-directory everest/docs/templates/ \
+          --html-root-directory ${{ inputs.github_pages_repo_name }}/docs/ \
+          --is-release True \
+          --version-name ${{ inputs.version_name }}
+      working-directory: everest-workspace
+    - name: Create a versions index
+      if: ${{ !inputs.is_release }}
+      run: |
+        python3 everest/docs/scripts/deploy-everest-doc.py \
+          --template-directory everest/docs/templates/ \
+          --html-root-directory ${{ inputs.github_pages_repo_name }}/docs/ \
+          --is-release False \
+          --version-name ${{ inputs.version_name }}
+      working-directory: everest-workspace
+    - name: Commit updated github pages
+      run: |
+        git add --all
+        git diff-index --quiet HEAD || git commit -m "Add doc build snapshot ${{ inputs.version_name }}"
+      working-directory: everest-workspace/${{ inputs.github_pages_repo_name }}
+
+    - name: Push updated doc to github pages repo
+      if: ${{ !env.ACT }}
+      run: |
+        git checkout ${{ inputs.github_pages_repo_ref }}
+        git push
+      working-directory: everest-workspace/${{ inputs.github_pages_repo_name }}
