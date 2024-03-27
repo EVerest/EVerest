@@ -100,8 +100,71 @@ Standup the Dev Docker Environment
     * Press `CMD + Shift + P`
     * type `Dev Containers: Open Folder in Container...`
 
-    .. image:: docs/tutorials/how_to_mac/img/shot1_cmd_p.png
+    .. image:: img/shot1_cmd_p.png
       :width: 400
       :alt: Use the Command Pallet to open the Dev Container
 
-#.
+#. Navigate and open the docker/everest-playground folder.
+
+    .. image:: img/shot2_open_folder.png
+      :width: 400
+
+    This will open the EVerest Playground as a VSCode dev container.
+
+#. Initialize your environment
+
+    Now we run commands inside the Playground based on the instructions from the `/everest-cpp/README.md` file.
+
+    Initialize the EVerest workspace sourcing the `./init.sh` file:
+
+    .. image:: img/shot3_init.png
+      :width: 400
+      :alt: ./init.sh
+
+    The working directory will be changed to `everest-core/build`. Here you can build the project:
+
+    .. code-block::
+
+        cmake .. && make install
+
+
+    You can also use `make's -j flag <https://www.gnu.org/software/make/manual/html_node/Parallel.html>`_ to speed up
+    the build:
+
+    .. code-block::
+
+        cmake .. && make install -j12
+
+    .. image:: img/shot4_install.png
+      :width: 400
+      :alt: ./make install
+
+    Now you're ready to go.
+
+******************************************
+EVerest SIL Simulation
+******************************************
+
+    .. code-block::
+
+        ./dist/bin/manager --config ../config/config-sil-dc.yaml
+
+    This starts the EVerest Manager with the modules loaded determined by the `config-sil-dc.yaml` config file.
+
+    You can interact with it using the Node-RED UI by opening your browser to `http://localhost:8849/`.
+
+    .. image:: img/shot5_admin_panel.png
+      :width: 400
+      :alt: EVerest Admin Panel
+
+Stopping things
+==========================================
+
+    .. code-block::
+
+        Code > File > Close Remost Connection
+
+Resources
+==========================================
+
+* `Node-RED <https://nodered.org/>`_
