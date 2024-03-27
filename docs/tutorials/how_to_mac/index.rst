@@ -101,13 +101,11 @@ Standup the Dev Docker Environment
     * type `Dev Containers: Open Folder in Container...`
 
     .. image:: img/shot1_cmd_p.png
-      :width: 400
       :alt: Use the Command Pallet to open the Dev Container
 
 #. Navigate and open the docker/everest-playground folder.
 
     .. image:: img/shot2_open_folder.png
-      :width: 400
 
     This will open the EVerest Playground as a VSCode dev container.
 
@@ -118,7 +116,6 @@ Standup the Dev Docker Environment
     Initialize the EVerest workspace sourcing the `./init.sh` file:
 
     .. image:: img/shot3_init.png
-      :width: 400
       :alt: ./init.sh
 
     The working directory will be changed to `everest-core/build`. Here you can build the project:
@@ -136,7 +133,6 @@ Standup the Dev Docker Environment
         cmake .. && make install -j12
 
     .. image:: img/shot4_install.png
-      :width: 400
       :alt: ./make install
 
     Now you're ready to go.
@@ -154,7 +150,6 @@ EVerest SIL Simulation
     You can interact with it using the Node-RED UI by opening your browser to `http://localhost:8849/`.
 
     .. image:: img/shot5_admin_panel.png
-      :width: 400
       :alt: EVerest Admin Panel
 
 Stopping things
