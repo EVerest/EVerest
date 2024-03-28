@@ -211,6 +211,8 @@ implementation.
     general/03_quick_start_guide
     general/04_detail_module_concept
     general/05_existing_modules
+    general/06_handling_bank_cards
+    general/07_configure_plug_and_charge
     dev_tools/index
     tutorials/index
     general/faq
