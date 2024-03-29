@@ -76,7 +76,7 @@ Standup the Dev Docker Environment
 
 #. Stand up the background Docker network and containers
 
-    Create the infranet_network Docker network:
+    From the project root of everest-utils, create the infranet_network Docker network:
 
     .. code-block::
 
@@ -86,8 +86,8 @@ Standup the Dev Docker Environment
 
     .. code-block::
 
-        docker compose -f "./everest-utils/docker/docker-compose-dev.yml" up -d mqtt-server
-        docker compose -f "./everest-utils/docker/docker-compose-dev.yml" up -d nodered
+        docker compose -f "./docker/docker-compose.yml" up -d mqtt-server
+        docker compose -f "./docker/docker-compose.yml" up -d nodered
 
     There is also a script version of this inside the EVerest Utilities repository.
 
