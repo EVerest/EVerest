@@ -33,6 +33,16 @@ Every pull request for a feature request must link an issue. Pull request for
 bugfixes do not necessarily need to link an issue, but they should contain a
 proper description of the bug that is fixed.
 
+You can use draft pull requests if you want to share your current state
+and start a discussion about your changes. As soon as a draft pull request
+is converted to be ready for review, the CODEOWNERS will be automatically
+notified and start the review process.
+
+If reviewers require changes to your PR, please keep the commit history clean
+and do not rebase and force push to your branch, so that the changes can be
+tracked and reviewers can quickly identify if the required changes have been
+addressed.
+
 Each contribution must meet the [Java Script](.eslintrc.json) or
 [C++](.clang-format) *coding style* (part of every repository).
 
