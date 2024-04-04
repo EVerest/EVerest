@@ -1,4 +1,6 @@
-.. _tutorial_mac
+.. tutorial_mac:
+
+.. _tutorial_mac_main:
 
 ##########################################
 How To: Develop on a Mac
@@ -157,7 +159,7 @@ Stopping things
 
     .. code-block::
 
-        Code > File > Close Remost Connection
+        Code > File > Close Remote Connection
 
 Resources
 ==========================================
