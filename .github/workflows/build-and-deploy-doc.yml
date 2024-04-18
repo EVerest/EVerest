@@ -1,0 +1,129 @@
+name: Build and deploy EVerest documentation
+
+on:
+  workflow_dispatch:
+    inputs:
+      is_release:
+        description: 'Is this snapshot a release?'
+        default: false
+        type: boolean
+        required: false
+      build_pdf:
+        description: 'Build PDF documentation?'
+        default: true
+        type: boolean
+        required: false
+      build_html:
+        description: 'Build HTML documentation?'
+        default: true
+        type: boolean
+        required: false
+      deploy_html:
+        description: 'Deploy HTML documentation?'
+        default: true
+        type: boolean
+        required: false
+      snapshot_file:
+        description: 'Snapshot file location: <owner>/<repo>/<path-to-snapshot.yaml>@<ref>'
+        default: ''
+        type: string
+        required: false
+      github_pages_repo:
+        description: 'GithubPages repo: <owner>/<repo>@<ref>'
+        default: 'everest/everest.github.io@main'
+        type: string
+        required: false
+      overwrite_existing:
+        description: 'Overwrite existing documentation?'
+        default: false
+        type: boolean
+        required: false
+      version_name:
+        description: 'Version name'
+        default: ''
+        type: string
+        required: false
+  workflow_call:
+    inputs:
+      is_release:
+        description: 'Is this snapshot a release?'
+        default: false
+        type: boolean
+        required: false
+      build_pdf:
+        description: 'Build PDF documentation?'
+        default: true
+        type: boolean
+        required: false
+      build_html:
+        description: 'Build HTML documentation?'
+        default: true
+        type: boolean
+        required: false
+      deploy_html:
+        description: 'Deploy HTML documentation?'
+        default: true
+        type: boolean
+        required: false
+      snapshot_file:
+        description: 'Snapshot file location: <owner>/<repo>/<path-to-snapshot.yaml>@<ref>'
+        default: ''
+        type: string
+        required: false
+      github_pages_repo:
+        description: 'GithubPages repo: <owner>/<repo>@<ref>'
+        default: 'everest/everest.github.io@main'
+        type: string
+        required: false
+      overwrite_existing:
+        description: 'Overwrite existing documentation?'
+        default: false
+        type: boolean
+        required: false
+      version_name:
+        description: 'Version name'
+        default: ''
+        type: string
+        required: false
+    secrets:
+      SA_GITHUB_SSH_KEY:
+        description: 'SSH key for github access'
+        required: true
+
+jobs:
+  checkout-snapshot-file:
+    name: Checkout snapshot file
+    uses: ./.github/workflows/prepare-snapshot-file.yml
+    with:
+      snapshot_file: ${{ inputs.snapshot_file }}
+      github_pages_repo: ${{ inputs.github_pages_repo }}
+      version_name: ${{ inputs.version_name }}
+    secrets:
+      SA_GITHUB_SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
+  build-doc:
+    name: Build sphinx documentation
+    needs: checkout-snapshot-file
+    uses: ./.github/workflows/build-doc.yml
+    with:
+      build_pdf: ${{ inputs.build_pdf }}
+      build_html: ${{ inputs.build_html }}
+      github_pages_repo_name: ${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}
+      snapshot_artefact_name: ${{ needs.checkout-snapshot-file.outputs.artefact_name }}
+      version_name: ${{ needs.checkout-snapshot-file.outputs.version_name }}
+    secrets:
+      SA_GITHUB_SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
+  deploy-doc:
+    name: Deploy HTML documentation
+    needs: [checkout-snapshot-file, build-doc]
+    uses: ./.github/workflows/deploy-doc.yml
+    with:
+      html_artefact_name: ${{ needs.build-doc.outputs.html_artefact_name }}
+      snapshot_artefact_name: ${{ needs.checkout-snapshot-file.outputs.artefact_name }}
+      overwrite_existing: ${{ inputs.overwrite_existing }}
+      version_name: ${{ needs.checkout-snapshot-file.outputs.version_name }}
+      github_pages_repo_name: ${{ needs.checkout-snapshot-file.outputs.github_pages_repo_name }}
+      github_pages_repo_ref: ${{ needs.checkout-snapshot-file.outputs.github_pages_repo_ref }}
+      is_release: ${{ inputs.is_release }}
+    secrets:
+      SA_GITHUB_SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
+
