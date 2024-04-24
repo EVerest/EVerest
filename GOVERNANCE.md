@@ -57,7 +57,7 @@ be resolved by voting. The voting process is a simple majority in which each com
 
 This project, just like all of open source, is a global community. In addition to the [Code of Conduct], this project will:
 
-* Keep all communucation on open channels ( mailing list, forums, chat ).
+* Keep all communication on open channels ( mailing list, forums, chat ).
 * Be respectful of time and language differences between community members ( such as scheduling meetings, email/issue responsiveness, etc ).
 * Ensure tools are able to be used by community members regardless of their region.
 

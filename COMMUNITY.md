@@ -5,6 +5,7 @@ There are a few ways to connect with the EVerest project:
 *   [EVerest mailing list](https://lists.lfenergy.org/g/everest)
 *   [EVerest Technical Steering Committee mailing list / Sensitive Topics](https://lists.lfenergy.org/g/everest-tsc)
 *   [EVerest channel on LF Energy Zulip](https://lfenergy.zulipchat.com/)
+*   [EVerest Working Groups](https://everest.github.io/nightly/#weekly-tech-meetup-and-working-groups)
 *   [Issue tracker](https://github.com/EVerest/EVerest/issues)
 
 ## How to ask for help
