@@ -16,7 +16,7 @@ format of working groups. The working groups with their chair persons and the
 technical leads are:
 
 - General Working Group
--- Chair: Janek Metzner
+-- Chair: Janek Metzner ([@janekmelectric](https://github.com/janekmelectric))
 
 - Car Communication WG
 -- Chair: Tim Valbert
@@ -24,6 +24,7 @@ technical leads are:
 
 - Cloud Communication WG
 -- Chair: Robert de Leeuw
+-- Tech Lead: Piet Gömpel ([@Pietfried](https://github.com/pietfried))
 
 - EVerest Framework & Tools WG
 -- Chair: Manuel Ziegler ([@Krealyt](https://github.com/krealyt))
@@ -31,6 +32,9 @@ technical leads are:
 
 - Testing & CI WG
 -- Chair: Benjamin Mosler
+-- Tech Leads: Andreas Heinrich and Kai-Uwe Hermann
+   ([@andistorm](https://github.com/andistorm) and
+   [@hikinggrass](https://github.com/hikinggrass))
 
 More details about the working groups and how to get there, see:
 [EVerest Working Groups](https://everest.github.io/nightly/#weekly-tech-meetup-and-working-groups)
