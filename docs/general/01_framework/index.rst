@@ -158,3 +158,11 @@ To create your development environment with all needed tools, libraries and
 compilers, the section
 :ref:`Prepare Your Environment <preparedevenv_main>` will walk you through the
 setup phase.
+
+******
+More
+******
+
+.. toctree::
+
+  error_framework
