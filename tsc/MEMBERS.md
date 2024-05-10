@@ -15,24 +15,24 @@ Regular exchange about the ongoing open source development is done in the
 format of working groups. The working groups with their chair persons and the
 technical leads are:
 
-- General Working Group
--- Chair: Janek Metzner ([@janekmelectric](https://github.com/janekmelectric))
+* General Working Group
+  * Chair: Janek Metzner ([@janekmelectric](https://github.com/janekmelectric))
 
-- Car Communication WG
--- Chair: Tim Valbert
--- Tech Lead: Sebastian Lukas ([@SebaLukas](https://github.com/SebaLukas))
+* Car Communication WG
+  * Chair: Tim Valbert
+  * Tech Lead: Sebastian Lukas ([@SebaLukas](https://github.com/SebaLukas))
 
-- Cloud Communication WG
--- Chair: Robert de Leeuw
--- Tech Lead: Piet Gömpel ([@Pietfried](https://github.com/pietfried))
+* Cloud Communication WG
+  * Chair: Robert de Leeuw
+  * Tech Lead: Piet Gömpel ([@Pietfried](https://github.com/pietfried))
 
-- EVerest Framework & Tools WG
--- Chair: Manuel Ziegler ([@Krealyt](https://github.com/krealyt))
--- Tech Lead: Kai-Uwe Hermann ([@hikinggrass](https://github.com/hikinggrass))
+* EVerest Framework & Tools WG
+  * Chair: Manuel Ziegler ([@Krealyt](https://github.com/krealyt))
+  * Tech Lead: Kai-Uwe Hermann ([@hikinggrass](https://github.com/hikinggrass))
 
-- Testing & CI WG
--- Chair: Benjamin Mosler
--- Tech Leads: Andreas Heinrich and Kai-Uwe Hermann
+* Testing & CI WG
+  * Chair: Benjamin Mosler
+  * Tech Leads: Andreas Heinrich and Kai-Uwe Hermann
    ([@andistorm](https://github.com/andistorm) and
    [@hikinggrass](https://github.com/hikinggrass))
 
