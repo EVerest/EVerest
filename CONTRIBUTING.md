@@ -18,20 +18,24 @@ page to understand the roles involved.
 
 ## Discussing and Communication
 
-We encourage contributors to engage in discussions, whether it's about proposing 
-new features, reporting bugs, or seeking clarification on project-related matters.
-While GitHub issues are a valuable tool for tracking tasks and issues, we find that
-real-time communication often leads to faster resolution and clearer understanding.
+We encourage contributors to engage in discussions, whether it's about
+proposing new features, reporting bugs, or seeking clarification on
+project-related matters.
+While GitHub issues are a valuable tool for tracking tasks and issues, we find
+that real-time communication often leads to faster resolution and clearer
+understanding.
 
-To facilitate such discussions, we utilize Zulip chat as our primary communication 
-platform. Zulip offers a threaded chat experience that helps keep conversations 
-organized and searchable, making it easier to follow discussions even if you join midway.
+To facilitate such discussions, we utilize Zulip chat as our primary
+communication platform. Zulip offers a threaded chat experience that helps
+keep conversations organized and searchable, making it easier to follow
+discussions even if you join midway.
 
-If a discussion leads to actionable tasks or decisions, summarize the outcome and create 
-a corresponding GitHub issue. This allows for clear tracking and enables contributors 
-to start working on the agreed-upon tasks.
+If a discussion leads to actionable tasks or decisions, summarize the outcome
+and create a corresponding GitHub issue. This allows for clear tracking and
+enables contributors to start working on the agreed-upon tasks.
 
-Join the Zulip chat here: https://lfenergy.zulipchat.com/
+Join the Zulip chat here:
+[EVerest channel on LF Energy Zulip](https://lfenergy.zulipchat.com/)
 
 ## Pull requests
 
