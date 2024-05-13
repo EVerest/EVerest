@@ -16,6 +16,25 @@ If you just need help or have a question, refer to
 To contribute code to the project, first read over the [governance policies]
 page to understand the roles involved.
 
+## Discussing and Communication
+
+We encourage contributors to engage in discussions, whether it's about proposing 
+new features, reporting bugs, or seeking clarification on project-related matters.
+While GitHub issues are a valuable tool for tracking tasks and issues, we find that
+real-time communication often leads to faster resolution and clearer understanding.
+
+To facilitate such discussions, we utilize Zulip chat as our primary communication 
+platform. Zulip offers a threaded chat experience that helps keep conversations 
+organized and searchable, making it easier to follow discussions even if you join midway.
+
+If a discussion leads to actionable tasks or decisions, summarize the outcome and create 
+a corresponding GitHub issue. This allows for clear tracking and enables contributors 
+to start working on the agreed-upon tasks.
+
+Join the Zulip chat here: https://lfenergy.zulipchat.com/
+
+## Pull requests
+
 Each code contribution must include:
 
 * Tests and documentation to explain the functionality.
@@ -43,15 +62,20 @@ and do not rebase and force push to your branch, so that the changes can be
 tracked and reviewers can quickly identify if the required changes have been
 addressed.
 
+Project committers will review the contribution in a timely manner, and advise
+of any changes needed to merge the request.
+
+## Coding Style
+
 Each contribution must meet the [Java Script](.eslintrc.json) or
 [C++](.clang-format) *coding style* (part of every repository).
+
+## License
 
 EVerest is licensed under the [Apache License 2.0](LICENSE.md) license.
 Contributions should abide by that standard license.
 
-Project committers will review the contribution in a timely manner, and advise
-of any changes needed to merge the request.
-
+## References
 
 [governance policies]: GOVERNANCE.md
 [Technical Charter]: tsc/CHARTER.md
