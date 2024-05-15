@@ -140,6 +140,45 @@ Standup the Dev Docker Environment
     Now you're ready to go.
 
 ******************************************
+Troubleshooting
+******************************************
+
+#. napi error when building EVerest in a VSCode DevContainer
+
+    .. code-block::
+
+        [ 13%] Building CXX object _deps/everest-framework-build/everestjs/CMakeFiles/everestjs.dir/everestjs.cpp.o
+        /workspace/everest-cpp/everest-framework/everestjs/everestjs.cpp:9:10: fatal error: napi.h: No such file or directory
+            9 | #include <napi.h>
+
+        Error: Cannot find module '/home/docker/.vscode-server/data/User/workspaceStorage/5c87aec9a1f3f4ba6ae2c223ac523699/ms-vscode.js-debug/bootloader.js'
+        Require stack:
+        - internal/preload
+            at Function.Module._resolveFilename (internal/modules/cjs/loader.js:815:15)
+            at Function.Module._load (internal/modules/cjs/loader.js:667:27)
+            at Module.require (internal/modules/cjs/loader.js:887:19)
+            at Module._preloadModules (internal/modules/cjs/loader.js:1158:12)
+            at loadPreloadModules (internal/bootstrap/pre_execution.js:446:5)
+            at prepareMainThreadExecution (internal/bootstrap/pre_execution.js:74:3)
+            at internal/main/run_main_module.js:7:1 {
+        code: 'MODULE_NOT_FOUND',
+        requireStack: [ 'internal/preload' ]
+        }
+        FATALInstallation of node-addon-api failed
+
+    This error seems to be related to `this issue
+<https://github.com/microsoft/vscode-js-debug/issues/374#issuecomment-622239998 />`_, caused by the VSCode debugger extension. 
+
+    Solution: 
+    - Cmd + Shift + P
+    - type Toggle Auto Attach then ENTER
+    - Set to disabled.
+
+    .. image:: img/shot6_toggle_auto_attach.png
+      :alt: EVerest Admin Panel
+
+
+******************************************
 EVerest SIL Simulation
 ******************************************
 
