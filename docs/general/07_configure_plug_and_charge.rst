@@ -25,7 +25,7 @@ The Authorization process in EVerest
 
 In essence, the Plug&Charge Authorization runs like any other authorization in EVerest,
 like local RFID authorization or remote authorization.  Have a look at how the authorization
-process in EVerest in designed within the `Documentation of the Auth module <https://github.com/EVerest/everest-core/blob/main/modules/Auth/README.md>`_.
+process in EVerest in designed within the `Documentation of the Auth module <https://everest.github.io/nightly/_included/modules_doc/EvseSecurity.html#everest-modules-handwritten-auth>`_.
 
 ************************
 Involved EVerest modules
