@@ -206,7 +206,7 @@ implementation.
     :maxdepth: 2
     :glob:
 
-    general/01_framework
+    general/01_framework/index
     general/02_detail_pre_setup
     general/03_quick_start_guide
     general/04_detail_module_concept
