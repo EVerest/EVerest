@@ -1,6 +1,6 @@
 .. doc_framework:
 
-EVerest framework
+EVerest Framework
 #################
 You can think of EVerest as an operating system for EV chargers with
 implementations of communication protocols, software modules for

@@ -117,10 +117,10 @@ time-zone:
 
 https://zoom-lfx.platform.linuxfoundation.org/meeting/92086494169?password=b2df6774-bc19-46f9-8c71-bbd13a0266a1
 
-To see links to the meetings of all other working groups, see the
-LFE EVerest calendar (user account required):
+To see links to the meetings of all other working groups, see the publicly
+available LFE EVerest calendar:
 
-https://lists.lfenergy.org/g/everest/calendar
+https://zoom-lfx.platform.linuxfoundation.org/meetings/everest
 
 Additionally, you might want to join the working group chat channels in Zulip.
 See the "Zulip chat" section above to see how to get there!
