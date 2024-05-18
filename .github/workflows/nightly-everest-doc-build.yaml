@@ -18,7 +18,7 @@ jobs:
       SA_GITHUB_USERNAME: pionix-compiler
       NIGHTLY_REF: main
       INPUT_IS_RELEASE: false
-      INPUT_BUILD_PDF: true
+      INPUT_BUILD_PDF: false
       INPUT_BUILD_HTML: true
       INPUT_DEPLOY_HTML: true
       INPUT_SNAPSHOT_FILE: everest/everest/main:snapshots/nightly.yaml
