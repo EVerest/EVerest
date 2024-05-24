@@ -15,7 +15,7 @@ is for example Linux socket header files we use for networking.
 To get building done on a Windows or Mac system, you can use WSL2 (Windows) or
 Docker / Podman (Mac).
 
-For Mac, see the :ref:`How-to for MAC setup <_tutorial_mac_main>`.
+For Mac, see the :ref:`How-to for MAC setup <tutorial_mac_main>`.
 
 Required Packages
 =================
