@@ -704,15 +704,15 @@ This section describes the handling of specific error types.
 Currently it is still under construction, so please check regularly for
 updates.
 
-1. The *VendorError* is a generic error type which is used with vendor specific
-  sub_types, which can be for example vendor specific error codes. The
-  *VendorError* is raised as a higher excalation level than the
-  *VendorWarning*.
-
-2. The *VendorWarning* is a generic error type which is used with vendor
-  specific sub_types, which can be for example vendor specific error codes.
-  The *VendorWarning* is raised as a lower excalation level than the
-  *VendorError*.
+* The *evse_board_support/VendorError* is a generic error type which is used
+with vendor specific sub_types, which can be for example vendor specific
+error codes. The *evse_board_support/VendorError* is raised to prevent charging
+in `EVSEManager` module. The `EVSEManager` needs to require the
+`evse_board_support` module.
+* The *evse_board_support/VendorWarning* is a generic error type which is used
+with vendor specific sub_types, which can be for example vendor specific
+error codes. The *evse_board_support/VendorWarning* is raised to report an
+error that does not prevent charging in `EVSEManager` module.
 
 ****************************
 Architecture
