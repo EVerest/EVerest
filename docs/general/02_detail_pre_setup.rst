@@ -58,7 +58,11 @@ Tested Environments
 Ubuntu
 ------
 
-Tested with Ubuntu 20.04 and 22.04.
+.. warning::
+
+  Ubuntu 20.04 is not supported anymore. Please use Ubuntu 22.04 or newer.
+
+Tested with Ubuntu 22.04.
 
 Use `apt` to get your needed libraries installed:
 
@@ -68,18 +72,6 @@ Use `apt` to get your needed libraries installed:
   sudo apt install -y python3-pip git rsync wget cmake doxygen graphviz build-essential clang-tidy cppcheck openjdk-17-jdk npm docker docker-compose libboost-all-dev nodejs libssl-dev libsqlite3-dev clang-format curl rfkill libpcap-dev libevent-dev pkg-config libcap-dev
 
 Please make sure to have `nodejs` installed with minimum version 10.20 for `node_api` version 6+. For updating to a supported version, please follow the install procedure here: `<https://github.com/nodesource/distributions/blob/master/README.md#installation-instructions>`_.
-
-.. note::
-
-  Using Ubuntu 20.04, it will be required to use clang-format version greater
-  than 11. To date, `apt` does only install an older version, so we install
-  version 12 manually:
-
-  `sudo apt install clang-format-12`
-
-  Then make Ubuntu use version 12:
-
-  `sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-12 100`
 
 OpenSUSE
 --------
