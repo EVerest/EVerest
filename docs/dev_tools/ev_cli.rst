@@ -2,26 +2,61 @@
 
 .. _evcli_main:
 
-======
+######
 ev-cli
-======
+######
 
 This python project currently consists of the following packages
 
-- `ev_cli`: EVerest module auto generation
+- ``ev_cli``: EVerest module auto generation
 
+*******
+Purpose
+*******
+
+``ev_cli`` has mainly two purposes. One is to generate C++ header files for defined interfaces, the other one
+is to create/update auto generated files for modules (C++ only).
+The first one is done in the build process of ``everest-core``. For this
+you don't need to install ``ev-dev-tools`` by yourself, it happens automatically during the build process.
+
+For the second purpose you need to install ``ev-dev-tools`` to use it during development.
+
+.. _evcli_install:
+
+*******
 Install
-~~~~~~~
+*******
 
-To install `ev_cli`::
+There are two possibilites to use/install ``ev-dev-tools``.
+You can use the automatically installed version from python venv in build directory or
+you can install the python package manually.
 
-    cd everest-utils/ev-dev-tools
-    python3 -m pip install .
+Use automatically installed `ev-dev-tools` from python venv
+===========================================================
 
+Build ``everest-core`` as explained in the :ref:`Quick Start Guide <quickstartguide_download_install>`.
+This will create a python venv in your build directory.
+You can activate it with:
+
+.. code-block:: bash
+
+    cd build/
+    source ./venv/bin/activate
+
+Install `ev-dev-tools` manually
+===============================
+
+To install ``ev_cli`` manually from github repository:
+
+.. code-block:: bash
+
+    python3 -m pip install git+https://github.com/everest/everest-utils.git@main#subdirectory=ev-dev-tools
+
+*****************************
 ev-cli command line interface
------------------------------
+*****************************
 
-The `ev_cli` package comes with a command line tool, named ``ev-cli``.
+The ``ev_cli`` package comes with a command line tool, named ``ev-cli``.
 It has the following subcommands
 
 - module:
@@ -53,8 +88,9 @@ common:
   if C++ output should be formatted, set this to the path of the
   .clang-format file
 
+
 Generating C++ header files for defined interfaces
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+==================================================
 
 Assuming that the interface definitions in json format are located at
 ``./interfaces/*.json``, simply::
@@ -72,7 +108,7 @@ view, and the latter the `users` view of the interface, when used in a
 module.
 
 Creating and updating auto generated files for modules (C++ only)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+================================================================= 
 
 Assuming the modules are located at ``./modules`` and the initial
 skeleton for a module named `Example` with its manifest in
@@ -191,6 +227,6 @@ subcommands:
 
 
 Auto generating NodeJS modules
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+==============================
 
 **tbd**
