@@ -705,14 +705,14 @@ Currently it is still under construction, so please check regularly for
 updates.
 
 * The *evse_board_support/VendorError* is a generic error type which is used
-with vendor specific sub_types, which can be for example vendor specific
-error codes. The *evse_board_support/VendorError* is raised to prevent charging
-in `EVSEManager` module. The `EVSEManager` needs to require the
-`evse_board_support` module.
+  with vendor specific sub_types, which can be for example vendor specific
+  error codes. The *evse_board_support/VendorError* is raised to prevent charging
+  in `EVSEManager` module. The `EVSEManager` needs to require the
+  `evse_board_support` module.
 * The *evse_board_support/VendorWarning* is a generic error type which is used
-with vendor specific sub_types, which can be for example vendor specific
-error codes. The *evse_board_support/VendorWarning* is raised to report an
-error that does not prevent charging in `EVSEManager` module.
+  with vendor specific sub_types, which can be for example vendor specific
+  error codes. The *evse_board_support/VendorWarning* is raised to report an
+  error that does not prevent charging in `EVSEManager` module.
 
 ****************************
 Architecture
