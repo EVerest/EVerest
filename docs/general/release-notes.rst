@@ -123,7 +123,7 @@ The YetiDriver has been fully ported to the new BSP interface. For additional
 information and changes, see
 `the corresponding PR <https://github.com/EVerest/everest-core/pull/595>`_.
 
-MQTT topic for OCPP transaction state and ID
+Extended OCPP interface for transaction state and ID
 --------------------------------------------
 
 The OCPP-related information of TransactionEvents are published as topics via
