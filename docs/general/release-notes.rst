@@ -126,7 +126,9 @@ information and changes, see
 Extended OCPP interface for transaction state and ID
 --------------------------------------------
 
-The OCPP-related information of TransactionEvents are published as part of the [OCPP interface](https://everest.github.io/nightly/_generated/interfaces/ocpp.html). Also the transaction ID received from a CSMS is a now published.
+The OCPP-related information of TransactionEvents are published as part of the
+`OCPP interface <https://everest.github.io/nightly/_generated/interfaces/ocpp.html>`_.
+Also the transaction ID received from a CSMS is now published.
 
 See the
 `pull request about the added topics <https://github.com/EVerest/everest-core/pull/569>`_
