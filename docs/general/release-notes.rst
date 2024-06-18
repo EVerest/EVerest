@@ -10,7 +10,7 @@ See also our detailed release information based on all PRs and source code
 commits on GitHub:
 `EVerest releases <https://github.com/EVerest/everest-core/releases>`_
 
-The EVerest releases will come monthly. A release for a dedicated month can be
+EVerest releases are scheduled monthly. A release for a dedicated month can be
 expected in the beginning of the following month. Each third release (March,
 June, September and December) will be a stable releases including a two week
 feature freeze phase before the release date.
