@@ -60,7 +60,7 @@ Admin Panel improvements
 The EVerest Admin Panel has been part of EVerest for quite some time now. It
 was time to improve the handling and stability of that.
 
-Please, be aware that it is still a beta-stage frontend tool which can be used
+Please be aware that it is still a beta-stage frontend tool which can be used
 for managing EVerest instances, do some nice fast experiments with module
 configurations and comes also as a hosted version now without the need of
 setting up the whole environment on your end for a first step.
