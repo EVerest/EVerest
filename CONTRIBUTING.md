@@ -1,14 +1,17 @@
 # Contributing to EVerest
 
-Thank you for your interest in contributing to EVerest. This document explains
-our contribution process and how to contribute a bug fix or change.
+Thank you for your interest in contributing to EVerest.
+
+This document explains our contribution process and how to contribute a bug fix
+or change.
 
 For a description of the roles and responsibilities of the various members of
-the EVerest community, see the [governance policies], and for further details,
-see the project's [Technical Charter]. Briefly, Contributors are anyone who
-submits content to the project, Committers review and approve such
-submissions, and the Technical Steering Committee provides general project
-oversight.
+the EVerest community, see the [governance policy], and for further details,
+see the project's [Technical Charter].
+
+Briefly, Contributors are anyone who submits content to the project, Committers
+review and approve such submissions, and the Technical Steering Committee
+provides general project oversight.
 
 If you just need help or have a question, refer to
 [COMMUNITY.md](COMMUNITY.md).
@@ -81,7 +84,7 @@ Contributions should abide by that standard license.
 
 ## References
 
-[governance policies]: GOVERNANCE.md
+[governance policy]: GOVERNANCE.md
 [Technical Charter]: tsc/CHARTER.md
 [copyright and license headers]: https://github.com/lf-energy/tac/blob/main/process/contribution_guidelines.md#license
 [Developer Certificate of Origin signoff]: https://github.com/lf-energy/tac/blob/main/process/contribution_guidelines.md#contribution-sign-off
