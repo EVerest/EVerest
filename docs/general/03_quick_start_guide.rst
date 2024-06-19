@@ -91,23 +91,30 @@ directory. In the above example, it is located at
 More details about edm, see the dedicated
 :ref:`edm page in this documentation <edm_main>`.
 
-EVerest Command Line Interface: `ev-cli`
+EVerest Command Line Interface: ``ev-cli``
 ----------------------------------------
 
-In its current version, `ev-cli` supports you by generating module templates.
+In its current version, ``ev-cli`` supports you by generating module templates.
 It is also necessary to build EVerest.
 
-To install `ev-cli`, run:
+.. note::
+
+  The latter one is already satisfied by an automatic installation in a python venv during
+  the build process. To use this installation also for generating module files you can
+  source it as explained :ref:`here <evcli_install>`.
+
+To install it manually run:
 
 .. code-block:: bash
 
   cd {EVerest Workspace Directory}/everest-utils/ev-dev-tools
   python3 -m pip install .
 
-That is all to install `ev-cli`. You can find the binary file in your
+
+That is all to install ``ev-cli``. You can find the binary file in your
 HOME directory in `.local/bin/`.
 
-In a later step, we will use ev-cli to create module stubs.
+In a later step, we will use ``ev-cli`` to create module stubs.
 
 Packages for ISO 15118 communication
 ------------------------------------
@@ -172,6 +179,12 @@ If you get an error during the build process stating that ev-cli is installed
 in an old version, go to your everest workspace directory and call *edm
 --git-pull*. This will update the EVerest repositories. After that, repeat
 building ev-cli and you should be good to go again.
+
+.. hint::
+
+  This error shouldn't occur if ``ev-cli`` is installed automatically during the build process.
+  It is highly recommended to always use the automatic installed ``ev-cli`` version, since this
+  is specified by the `dependencies.yaml` and verified by ci workflow.
 
 .. _quickstartguide_simulate:
 
@@ -245,8 +258,8 @@ logged in as root, you will need to run this via `sudo`:
 
   {EVerest Workspace Directory}/everest-core/build/run-scripts/nodered-sil.sh
 
-For a user interface, just direct your browser to `http://localhost:1880/ui` -
-the required web-server has already been started via the shell scripts.
+For a user interface, just direct your browser to `<http://localhost:1880/ui>`_
+- the required web-server has already been started via the shell scripts.
 
 This will let us control the simulation in a very simple GUI.
 
@@ -285,9 +298,7 @@ Having run through the *Software-in-the-loop* section, you will already have
 prepared access to the admin panel. Just open your browser and direct it to
 port 8849 - the height of Mount EVerest in meters.
 
-.. code-block:: bash
-
-  http://localhost:8849
+`<http://localhost:8849>`_
 
 You should see a rather empty page like that:
 
@@ -326,6 +337,11 @@ You reached the phase of writing a new EVerest module. Congrats!
 
 For this Quick Start Guide, we will give you a rocket start of understanding
 the basic elements of the EVerest module concept.
+
+.. note::
+
+  Modules can be implemented in C++, Javascript, Python or Rust.
+  We will stick to C++ in the examples below.
 
 So, let's dig into the overview:
 

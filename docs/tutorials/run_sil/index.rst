@@ -22,7 +22,7 @@ backup of the JSON file located here:
   ~/checkout/everest-workspace/everest-core/config/nodered/config-sil-flow.json
 
 To do the modifications, best use the NodeRed GUI that you can reach via
-browser with URL `http://localhost:1880`.
+browser with URL `<http://localhost:1880>`_.
 
 If you are ready with your changes, download your new JSON file with the help
 of the NodeRed GUI:
@@ -44,7 +44,7 @@ Docker container:
   docker stop everest_nodered
   docker run --rm --network host --name everest_nodered --mount type=bind,source=/{EVerest Workspace Directory}/everest-core/config/nodered/config-sil-flow.json,target=/data/flows.json everest-nodered
 
-Your modified flow will now be used for your Simulation GUI at `http://localhost:1880/ui`.
+Your modified flow will now be used for your Simulation GUI at `<http://localhost:1880/ui>`_.
 
 .. hint:: 
 

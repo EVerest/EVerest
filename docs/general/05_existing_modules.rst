@@ -346,3 +346,7 @@ here are eventually to be updated.`
 
     /_included/modules_doc/*
     /_included/modules_doc/*/index.rst
+
+Addtionally, you can have a look at the documentation regarding interfaces
+for a bank transaction process here:
+:ref:`Bank Transaction Handling <bank_transaction_main>`

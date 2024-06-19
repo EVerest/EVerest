@@ -15,6 +15,8 @@ is for example Linux socket header files we use for networking.
 To get building done on a Windows or Mac system, you can use WSL2 (Windows) or
 Docker / Podman (Mac).
 
+For Mac, see the :ref:`How-to for MAC setup <tutorial_mac_main>`.
+
 Required Packages
 =================
 
@@ -38,6 +40,14 @@ which are needed for the EVerest dependency manager:
 
   python3 -m pip install --upgrade pip setuptools wheel
 
+.. note::
+
+  Depending on the programming language that you will use for implementing
+  custom modules, you might need additional tools for compilation and similar
+  use cases. If you stumble over some trouble that is caused by EVerest -
+  especially when using other languages than C++ -, drop us a line or consider
+  creating a GitHub issue.
+
 A complete list of libraries to be installed is given by the following best
 practices which setup a development environment on a number of operating
 systems.
@@ -48,7 +58,11 @@ Tested Environments
 Ubuntu
 ------
 
-Tested with Ubuntu 20.04 and 22.04.
+.. warning::
+
+  Ubuntu 20.04 is not supported anymore. Please use Ubuntu 22.04 or newer.
+
+Tested with Ubuntu 22.04.
 
 Use `apt` to get your needed libraries installed:
 
@@ -58,18 +72,6 @@ Use `apt` to get your needed libraries installed:
   sudo apt install -y python3-pip git rsync wget cmake doxygen graphviz build-essential clang-tidy cppcheck openjdk-17-jdk npm docker docker-compose libboost-all-dev nodejs libssl-dev libsqlite3-dev clang-format curl rfkill libpcap-dev libevent-dev pkg-config libcap-dev
 
 Please make sure to have `nodejs` installed with minimum version 10.20 for `node_api` version 6+. For updating to a supported version, please follow the install procedure here: `<https://github.com/nodesource/distributions/blob/master/README.md#installation-instructions>`_.
-
-.. note::
-
-  Using Ubuntu 20.04, it will be required to use clang-format version greater
-  than 11. To date, `apt` does only install an older version, so we install
-  version 12 manually:
-
-  `sudo apt install clang-format-12`
-
-  Then make Ubuntu use version 12:
-
-  `sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-12 100`
 
 OpenSUSE
 --------
@@ -83,7 +85,7 @@ Use `zypper` to get your needed libraries installed:
 
 Fedora
 ------
-Tested with Fedora 37, 38 and 39. Here is how to get your needed libraries with
+Tested with Fedora 38, 39 and 40. Here is how to get your needed libraries with
 `dnf`.
 
 .. code-block:: bash
