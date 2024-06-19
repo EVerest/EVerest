@@ -6,7 +6,7 @@ This document explains our contribution process and how to contribute a bug fix
 or change.
 
 For a description of the roles and responsibilities of the various members of
-the EVerest community, see the [governance policy], and for further details,
+the EVerest community, see the [Governance Policy], and for further details,
 see the project's [Technical Charter].
 
 Briefly, Contributors are anyone who submits content to the project, Committers
@@ -16,7 +16,7 @@ provides general project oversight.
 If you just need help or have a question, refer to
 [COMMUNITY.md](COMMUNITY.md).
 
-To contribute code to the project, first read over the [governance policies]
+To contribute code to the project, first read over the [Governance Policy]
 page to understand the roles involved.
 
 ## Discussing and Communication
@@ -45,7 +45,7 @@ Join the Zulip chat here:
 Each code contribution must include:
 
 * Tests and documentation to explain the functionality.
-* Any new files have [copyright and license headers]
+* Any new files have [Copyright and license headers]
 * A [Developer Certificate of Origin signoff].
 * Submitted to the project as a pull request.
 
@@ -84,12 +84,15 @@ Contributions should abide by that standard license.
 
 ## References
 
-[governance policy]
+[Governance Policy]
+
 [Technical Charter]
-[copyright and license headers]
+
+[Copyright and license headers]
+
 [Developer Certificate of Origin signoff]
 
-[governance policy]: GOVERNANCE.md
+[Governance Policy]: GOVERNANCE.md
 [Technical Charter]: tsc/CHARTER.md
-[copyright and license headers]: https://github.com/lf-energy/tac/blob/main/process/contribution_guidelines.md#license
+[Copyright and license headers]: https://github.com/lf-energy/tac/blob/main/process/contribution_guidelines.md#license
 [Developer Certificate of Origin signoff]: https://github.com/lf-energy/tac/blob/main/process/contribution_guidelines.md#contribution-sign-off
