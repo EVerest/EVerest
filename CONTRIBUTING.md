@@ -84,6 +84,11 @@ Contributions should abide by that standard license.
 
 ## References
 
+[governance policy]
+[Technical Charter]
+[copyright and license headers]
+[Developer Certificate of Origin signoff]
+
 [governance policy]: GOVERNANCE.md
 [Technical Charter]: tsc/CHARTER.md
 [copyright and license headers]: https://github.com/lf-energy/tac/blob/main/process/contribution_guidelines.md#license
