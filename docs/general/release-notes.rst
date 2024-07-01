@@ -18,10 +18,38 @@ feature freeze phase before the release date.
 Here are the some high-level changes for the last releases (starting from the
 most recent one backwards):
 
-2024.6.0
-========
+2024.6.0 - LATEST STABLE
+========================
 
-t.b.d. when end-of-June TSC / release tagging approaches.
+New EXI implementation and license improvement
+----------------------------------------------
+
+The EvseV2G module is now using libcbv2g as EXI implementation instead of
+OpenV2G's implementation. This means, that the EVerest project has been freed
+from commercial-unfriendly licenses as the LGPLv3 is not part of EVerest
+anymore with this change.
+
+The libcbv2g has been released in the 0.2.0 version with improved cmake
+integration, refactoring of unit tests and a simple CI in it.
+
+Version information displayed
+-----------------------------
+
+EVerest manager displays version information at startup including also the
+version of everest-core.
+
+A flag can be set at startup that allows also displaying the version numbers
+of other modules used in your EVerest build.
+
+Further mentions of changes
+---------------------------
+
+Further improvements regarding Bazel builds have been done (reading of
+dependencies.yaml on the fly).
+
+Ubuntu 20.04 not supported anymore.
+
+CableCheck as been adapted to IEC-23 (2023).
 
 2024.5.0
 ========
@@ -35,8 +63,8 @@ in some cases the system could continue working.
 OCPP 1.6: ChargeX - MREC
 ------------------------
 
-The Minimum Required Error Codes (MREC) have been implemented for OCPP version
-1.6 - version 2.0.1 implementation will follow.
+The Minimum Required Error Codes (MREC) have been refactored. Further
+development will follow in next releases.
 
 New BSP driver: Phytec phyVERSO
 -------------------------------
@@ -146,8 +174,8 @@ counterpart of the EvseManager to be able to simulate charging sessions.
 
 A C++ implementation will be coming soon.
 
-2024.3.0 - LATEST STABLE
-========================
+2024.3.0
+========
 
 Plug & Charge
 -------------
