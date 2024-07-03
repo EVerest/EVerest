@@ -671,6 +671,7 @@ Install latest Yocto version
 ----------------------------
 
 .. note::
+
   From June 2024 on, we will start changing the Debian-based to a Yocto-based
   image. As we will need some time to update our documentation accordingly,
   see a quick overview of how you can setup your hardware in the meantime.
@@ -686,6 +687,11 @@ image instead.
 The Yeti MCU also needs the corresponding firmware for the new Yocto image.
 The firmware is included in the new image.
 
+.. note::
+
+  If you have purchased the YETI board after June 2024 the new firmware 2.1 is
+  already on the YETI board.
+
 Run these two commands once booted into the new image (the first one is very
 important - do not update while EVerest/BaseCamp is running!):
 
@@ -695,6 +701,13 @@ important - do not update while EVerest/BaseCamp is running!):
   yeti_fwupdate /dev/serial0 /usr/share/everest/modules/YetiDriver/firmware/yetiR1_2.1_firmware.bin
 
 After that, reset both Yeti and Yak!
+
+The new ssh login credentials for the Yocto image are:
+
+.. code-block:: bash
+
+  user: root
+  pw: basecamp
 
 If you have the new Yocto installed already, you can update to this version
 using this command:
@@ -713,7 +726,7 @@ update:
 Use new toolchain for cross-compiling
 -------------------------------------
 
-If you want to cross compile something for this image, this is the toolchain to
+If you want to cross compile your EVerest version, this is the toolchain to
 use:
 
 .. code-block:: bash
@@ -767,9 +780,9 @@ Once the build is complete, you can rsync directly to belaybox like this:
 
 .. code-block:: bash
 
-  DESTDIR=dist ninja install/strip && rsync -av dist/var/everest root@10.10.10.152:/var
+  DESTDIR=dist ninja install/strip && rsync -av dist/var/everest root@the.ip.add.ress:/var
 
-Replace the IP address with the correct one.
+Replace the IP address placeholder with the correct one.
 
 Then log into the BelayBox and stop the systemd service:
 
@@ -785,6 +798,17 @@ Then you can run your self-compiled version like this:
 
 Further potential necessary steps
 ---------------------------------
+
+The new ssh login credentials for the Yocto image are:
+
+.. code-block:: bash
+
+  user: root
+  pw: basecamp
+
+The default config yaml file being used by the basecamp.service is the symlink
+in /etc/everest/basecamp.yaml. It points to the config to be used. This can be
+changed to a config to your liking.
 
 Should you see any "Unknown config entry" errors when starting the manager
 process, delete the corresponding config entries from the yaml file you are
