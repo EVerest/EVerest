@@ -279,6 +279,14 @@ preparing a module tutorial, in which we will dig deeper into things.
 Admin panel and simulations
 ===========================
 
+.. important::
+
+  Currently, the Admin Panel should be considered as alpha. There is already
+  active development to create a standalone version of it. For more
+  information on this, see the
+  `Admin Panel GitHub repository <https://github.com/EVerest/everest-admin-panel>`_
+  .
+
 You can glue together the modules of EVerest (and also your custom ones) with
 the help of EVerest's framework mechanisms. This way, you define simulation
 flows with which you can test and analyze complicated systems.
@@ -288,7 +296,7 @@ in a nice network of modules. As it would be a little bit exhausting to
 configure everything via code or config files, there is a nice helper: The
 admin panel.
 
-It gives you a nice overview of modules and connections between them. In a nice
+It gives you an overview of modules and connections between them. In a
 diagram, you can see and understand the simulation with all interfaces,
 configs, data flows and so on.
 

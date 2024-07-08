@@ -6,6 +6,15 @@
 EVerest Module Configurations
 #############################
 
+.. important::
+
+  This page often refers to the Admin Panel of EVerest.
+  Please be aware, that currently, the Admin Panel should be considered as
+  alpha. There is already active development to create a standalone version of
+  it. For more information on this, see the
+  `Admin Panel GitHub repository <https://github.com/EVerest/everest-admin-panel>`_
+  .
+
 In the following, we will dive into some exemplatory scenarios to show how
 modules can interact with each other.
 
