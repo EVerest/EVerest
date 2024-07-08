@@ -1,7 +1,18 @@
 .. doc_pionix_belay-box
 
 Pionix BelayBox
-################
+###############
+
+.. important::
+  This page about the BelayBox is outdated as we are currently moving things
+  from the Debian-based to a newer Yocto-based image. The documentation will
+  be updated soon. Until that, we have created temporary
+  :ref:`quick-and-dirty instructions at the end of this docs <belaybox_new_yocto_based>`
+  .
+
+  So, if you are seeing references to Raspbian, you might rather have a look
+  to the temporary quick-and-dirty section how things work with the current
+  development status. 
 
 Introduction
 ************
@@ -278,8 +289,12 @@ power through the 12V DC barrel connector shown in the upper right corner of
 the Yeti board in the image above. Make sure the WiFi antenna does not touch
 any other open PCB parts to prevent damage to the boards.
 
-Raspbian
-========
+Raspbian (soon to be outdated)
+=======================
+
+.. important::
+  See troubleshooting section for a temporary quick-and-dirty for the new
+  Yocto-based approach.
 
 BelayBox uses Raspian (a debian flavour for the Raspberry Pi) as a main
 operating system for development purposes.
@@ -647,3 +662,154 @@ Should everything look fine, check if the Yeti firmware is running properly
 by looking at the Yeti LED. It should flash in a fast frequency. If it is on
 or off without flashing, the firmware could not be started or is not
 installed.
+
+.. _belaybox_new_yocto_based:
+Temporary quick-and-dirty docs: New Yocto-based build
+=====================================================
+
+Install latest Yocto version
+----------------------------
+
+.. note::
+
+  From June 2024 on, we will start changing the Debian-based to a Yocto-based
+  image. As we will need some time to update our documentation accordingly,
+  see a quick overview of how you can setup your hardware in the meantime.
+
+For a new board (or previous Debian-based board), download the complete SD
+image:
+
+`<http://build.pionix.de:8888/release/yocto/belaybox-image-raspberrypi4-20240613154507.rootfs.wic.bz2>`_
+
+Use balena etcher as described in the manual above, but use the downloaded
+image instead.
+
+The Yeti MCU also needs the corresponding firmware for the new Yocto image.
+The firmware is included in the new image.
+
+.. note::
+
+  If you have purchased the YETI board after June 2024 the new firmware 2.1 is
+  already on the YETI board.
+
+Run these two commands once booted into the new image (the first one is very
+important - do not update while EVerest/BaseCamp is running!):
+
+.. code-block:: bash
+
+  systemctl stop basecamp
+  yeti_fwupdate /dev/serial0 /usr/share/everest/modules/YetiDriver/firmware/yetiR1_2.1_firmware.bin
+
+After that, reset both Yeti and Yak!
+
+The new ssh login credentials for the Yocto image are:
+
+.. code-block:: bash
+
+  user: root
+  pw: basecamp
+
+If you have the new Yocto installed already, you can update to this version
+using this command:
+
+.. code-block:: bash
+
+  rauc install http://build.pionix.de:8888/release/yocto/belaybox-bundle-raspberrypi4-20240627101617.raucb
+
+After installation is complete, run this to boot into the newly installed
+update:
+
+.. code-block:: bash
+
+  tryboot
+
+Use new toolchain for cross-compiling
+-------------------------------------
+
+If you want to cross compile your EVerest version, this is the toolchain to
+use:
+
+.. code-block:: bash
+
+  http://build.pionix.de:8888/release/yocto/poky-glibc-x86_64-belaybox-image-cortexa7t2hf-neon-vfpv4-raspberrypi4-toolchain-4.0.16.sh
+
+First of all you need to install it. It is a shell script, so just do a
+"chmod +x name_of_toolchain.sh" and then run it with
+
+.. code-block:: bash
+
+  ./name_of_toolchain.sh
+
+You will be asked where to install it. You can e.g. install it in your home
+directory - somewhere like /etc/myuser/toolchain-belaybox
+
+Then you need to source the environment variables (it tells you how to do it
+at the end of the installation).
+
+Once they are sourced, this terminal will cross compile.
+
+In everest-core, create a folder called "build-cross". Change into it.
+
+There, run cmake as follows:
+
+.. code-block:: bash
+
+  cmake .. -GNinja -DCMAKE_INSTALL_PREFIX=/var/everest -DEVEREST_ENABLE_PY_SUPPORT=OFF -DEVEREST_ENABLE_JS_SUPPORT=OFF -Deverest-core_USE_PYTHON_VENV=OFF
+
+In this case, the PY/JS support flags are set to OFF. You may need to set them
+to ON if you are using simulation. The last option
+-Deverest-core_USE_PYTHON_VENV is only a temporarily needed directive that
+will probably be obsolete in future release candidates.
+The -GNinja can also be left out, then it will use make.
+
+After that you can build with 
+
+.. code-block:: bash
+
+  make -j10 
+
+or 
+
+.. code-block:: bash
+
+  ninja
+
+depending on what you configured.
+
+Once the build is complete, you can rsync directly to belaybox like this:
+
+.. code-block:: bash
+
+  DESTDIR=dist ninja install/strip && rsync -av dist/var/everest root@the.ip.add.ress:/var
+
+Replace the IP address placeholder with the correct one.
+
+Then log into the BelayBox and stop the systemd service:
+
+.. code-block:: bash
+
+  systemctl stop basecamp
+
+Then you can run your self-compiled version like this:
+
+.. code-block:: bash
+
+  /var/everest/bin/manager --conf /path/to/my/configfile
+
+Further potential necessary steps
+---------------------------------
+
+The new ssh login credentials for the Yocto image are:
+
+.. code-block:: bash
+
+  user: root
+  pw: basecamp
+
+The default config yaml file being used by the basecamp.service is the symlink
+in /etc/everest/basecamp.yaml. It points to the config to be used. This can be
+changed to a config to your liking.
+
+Should you see any "Unknown config entry" errors when starting the manager
+process, delete the corresponding config entries from the yaml file you are
+using for startup.
