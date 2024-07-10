@@ -281,9 +281,10 @@ Admin panel and simulations
 
 .. important::
 
-  Currently, the Admin Panel should be considered as alpha. There is already
-  active development to create a standalone version of it. For more
-  information on this, see the
+  Be aware, that the Admin Panel is currently under development.
+  The former version of the Admin Panel, which was integrated in EVerest,
+  will be removed. See the new standalone version which runs without an
+  EVerest instance here:
   `Admin Panel GitHub repository <https://github.com/EVerest/everest-admin-panel>`_
   .
 
@@ -300,13 +301,14 @@ It gives you an overview of modules and connections between them. In a
 diagram, you can see and understand the simulation with all interfaces,
 configs, data flows and so on.
 
-Back to practice:
+.. note::
 
-Having run through the *Software-in-the-loop* section, you will already have
-prepared access to the admin panel. Just open your browser and direct it to
-port 8849 - the height of Mount EVerest in meters.
-
-`<http://localhost:8849>`_
+  See
+  `Admin Panel GitHub repository <https://github.com/EVerest/everest-admin-panel>`_
+  for information about how to start the Admin Panel. The screenshots and the
+  documentation in this subsection might be different than what you see on
+  your screen. This is due to the currently ongoing changes in the Admin
+  Panel. This will be updated soon.
 
 You should see a rather empty page like that:
 

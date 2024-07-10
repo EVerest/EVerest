@@ -9,11 +9,15 @@ EVerest Module Configurations
 .. important::
 
   This page often refers to the Admin Panel of EVerest.
-  Please be aware, that currently, the Admin Panel should be considered as
-  alpha. There is already active development to create a standalone version of
-  it. For more information on this, see the
+  Be aware, that the Admin Panel is currently under development.
+  The former version of the Admin Panel, which was integrated in EVerest,
+  will be removed. See the new standalone version which runs without an
+  EVerest instance here:
   `Admin Panel GitHub repository <https://github.com/EVerest/everest-admin-panel>`_
   .
+
+  Details in screenshots or explanations can differ from what you see due to
+  currently ongoing development of the Admin Panel.
 
 In the following, we will dive into some exemplatory scenarios to show how
 modules can interact with each other.
