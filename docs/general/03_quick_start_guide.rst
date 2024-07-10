@@ -279,6 +279,15 @@ preparing a module tutorial, in which we will dig deeper into things.
 Admin panel and simulations
 ===========================
 
+.. important::
+
+  Be aware, that the Admin Panel is currently under development.
+  The former version of the Admin Panel, which was integrated in EVerest,
+  will be removed. See the new standalone version which runs without an
+  EVerest instance here:
+  `Admin Panel GitHub repository <https://github.com/EVerest/everest-admin-panel>`_
+  .
+
 You can glue together the modules of EVerest (and also your custom ones) with
 the help of EVerest's framework mechanisms. This way, you define simulation
 flows with which you can test and analyze complicated systems.
@@ -288,17 +297,18 @@ in a nice network of modules. As it would be a little bit exhausting to
 configure everything via code or config files, there is a nice helper: The
 admin panel.
 
-It gives you a nice overview of modules and connections between them. In a nice
+It gives you an overview of modules and connections between them. In a
 diagram, you can see and understand the simulation with all interfaces,
 configs, data flows and so on.
 
-Back to practice:
+.. note::
 
-Having run through the *Software-in-the-loop* section, you will already have
-prepared access to the admin panel. Just open your browser and direct it to
-port 8849 - the height of Mount EVerest in meters.
-
-`<http://localhost:8849>`_
+  See
+  `Admin Panel GitHub repository <https://github.com/EVerest/everest-admin-panel>`_
+  for information about how to start the Admin Panel. The screenshots and the
+  documentation in this subsection might be different than what you see on
+  your screen. This is due to the currently ongoing changes in the Admin
+  Panel. This will be updated soon.
 
 You should see a rather empty page like that:
 
