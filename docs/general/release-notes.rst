@@ -58,7 +58,7 @@ Cloud: Refactored database exception handling
 ---------------------------------------------
 
 Implemented an alternative way to exception handling to prevent from crashes
-in some cases the system could continue working.
+in some cases, so that the system can continue working.
 
 OCPP 1.6: ChargeX - MREC
 ------------------------
