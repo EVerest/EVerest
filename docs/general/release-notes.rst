@@ -28,6 +28,10 @@ Reading the **v2gtp** message could potentially lead to an integer overflow.
 This fix has been backported to the previous stable version of EVerest
 (2024.3.1).
 
+See the corresponding security advisory with CVE ID
+`CVE-2024-37310 <https://github.com/EVerest/everest-core/security/advisories/GHSA-8g9q-7qr9-vc96>`_
+.
+
 New EXI implementation and license improvement
 ----------------------------------------------
 
@@ -188,6 +192,10 @@ Security Fix: Prevent integer overflow in EvseV2G
 -------------------------------------------------
 
 Reading the **v2gtp** message could potentially lead to an integer overflow.
+
+See the corresponding security advisory with CVE ID
+`CVE-2024-37310 <https://github.com/EVerest/everest-core/security/advisories/GHSA-8g9q-7qr9-vc96>`_
+.
 
 2024.3.0
 ========
