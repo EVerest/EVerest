@@ -12,11 +12,94 @@ commits on GitHub:
 
 EVerest releases are scheduled monthly. A release for a dedicated month can be
 expected in the beginning of the following month. Each third release (March,
-June, September and December) will be a stable releases including a two week
+June, September and December) will be a stable release including a two week
 feature freeze phase before the release date.
 
-Here are the some high-level changes for the releases starting from release
-2024.3.0:
+Here are the some high-level changes for the last releases (starting from the
+most recent one backwards):
+
+2024.6.0 - LATEST STABLE
+========================
+
+Security Fix: Prevent integer overflow in EvseV2G
+-------------------------------------------------
+
+Reading the **v2gtp** message could potentially lead to an integer overflow.
+This fix has been backported to the previous stable version of EVerest
+(2024.3.1).
+
+See the corresponding security advisory with CVE ID
+`CVE-2024-37310 <https://github.com/EVerest/everest-core/security/advisories/GHSA-8g9q-7qr9-vc96>`_
+.
+
+New EXI implementation and license improvement
+----------------------------------------------
+
+The EvseV2G module is now using libcbv2g as EXI implementation instead of
+OpenV2G's implementation. This means, that the EVerest project has been freed
+from commercial-unfriendly licenses as the LGPLv3 is not part of EVerest
+anymore with this change.
+
+The libcbv2g has been released in the 0.2.0 version with improved cmake
+integration, refactoring of unit tests and a simple CI in it.
+
+Version information displayed
+-----------------------------
+
+EVerest manager displays version information at startup including also the
+version of everest-core.
+
+A flag can be set at startup that allows also displaying the version numbers
+of other modules used in your EVerest build.
+
+Further mentions of changes
+---------------------------
+
+Further improvements regarding Bazel builds have been done (reading of
+dependencies.yaml on the fly).
+
+Ubuntu 20.04 is not supported anymore.
+
+CableCheck as been adapted to IEC-23 (2023).
+
+2024.5.0
+========
+
+Cloud: Refactored database exception handling
+---------------------------------------------
+
+Implemented an alternative way to exception handling to prevent from crashes
+in some cases, so that the system can continue working.
+
+OCPP 1.6: ChargeX - MREC
+------------------------
+
+The Minimum Required Error Codes (MREC) have been refactored. Further
+development will follow in next releases.
+
+New BSP driver: Phytec phyVERSO
+-------------------------------
+
+Newly integrated driver in EVerest as open-source:
+`Phytec phyVERSO as part of open-source EVerest <https://github.com/EVerest/everest-core/pull/648>`_
+.
+
+Bazel improvement regarding git tags
+------------------------------------
+
+When parsing the dependencies file, it is checked whether there are tags or
+commit hashes.
+
+For implementation details, see:
+`Bazel: choose tags or commit <https://github.com/EVerest/everest-core/pull/654>`_
+
+Minor EvseManager changes
+-------------------------
+
+More logging and some bug-fixing in EvseManager has been done.
+
+In EvseV2G, DIN 70121 is enabled by default. Given reason: Strive for a max of
+compatibility.
 
 2024.4.0
 ========
@@ -102,8 +185,20 @@ counterpart of the EvseManager to be able to simulate charging sessions.
 
 A C++ implementation will be coming soon.
 
-2024.3.0 - LATEST STABLE
-========================
+2024.3.1
+========
+
+Security Fix: Prevent integer overflow in EvseV2G
+-------------------------------------------------
+
+Reading the **v2gtp** message could potentially lead to an integer overflow.
+
+See the corresponding security advisory with CVE ID
+`CVE-2024-37310 <https://github.com/EVerest/everest-core/security/advisories/GHSA-8g9q-7qr9-vc96>`_
+.
+
+2024.3.0
+========
 
 Plug & Charge
 -------------
