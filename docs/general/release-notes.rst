@@ -47,7 +47,7 @@ Further mentions of changes
 Further improvements regarding Bazel builds have been done (reading of
 dependencies.yaml on the fly).
 
-Ubuntu 20.04 not supported anymore.
+Ubuntu 20.04 is not supported anymore.
 
 CableCheck as been adapted to IEC-23 (2023).
 
