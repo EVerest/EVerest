@@ -21,6 +21,13 @@ most recent one backwards):
 2024.6.0 - LATEST STABLE
 ========================
 
+Security Fix: Prevent integer overflow in EvseV2G
+-------------------------------------------------
+
+Reading the **v2gtp** message could potentially lead to an integer overflow.
+This fix has been backported to the previous stable version of EVerest
+(2024.3.1).
+
 New EXI implementation and license improvement
 ----------------------------------------------
 
@@ -173,6 +180,14 @@ simulator, but can be run on "real" hardware. This JsEvManager is the
 counterpart of the EvseManager to be able to simulate charging sessions.
 
 A C++ implementation will be coming soon.
+
+2024.3.1
+========
+
+Security Fix: Prevent integer overflow in EvseV2G
+-------------------------------------------------
+
+Reading the **v2gtp** message could potentially lead to an integer overflow.
 
 2024.3.0
 ========
