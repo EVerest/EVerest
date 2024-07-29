@@ -47,7 +47,7 @@ on:
           - 'large-ubuntu-22.04-xxl'
 env:
   DOCKER_REGISTRY: ghcr.io
-  EVEREST_CI_VERSION: refactor-docker-images # LTODO: Update this
+  EVEREST_CI_VERSION: v1.3.0
 
 jobs:
   setup-env:
@@ -62,7 +62,7 @@ jobs:
           echo "Setting up environment"
   build-and-push-build-env:
     name: Build and Push Build Environment
-    uses: everest/everest-ci/.github/workflows/deploy-single-docker-image.yml@refactor-docker-images # LTODO: Update this
+    uses: everest/everest-ci/.github/workflows/deploy-single-docker-image.yml@v1.3.0
     needs: setup-env
     secrets:
       SA_GITHUB_PAT: ${{ secrets.SA_GITHUB_PAT }}
