@@ -5,22 +5,22 @@ on:
     inputs:
       is_release:
         description: 'Is this snapshot a release?'
-        default: 'false'
+        default: false
         required: true
         type: boolean
       build_pdf:
         description: 'Build PDF documentation?'
-        default: 'false'
+        default: false
         required: true
         type: boolean
       build_html:
         description: 'Build HTML documentation?'
-        default: 'true'
+        default: true
         required: true
         type: boolean
       deploy_html:
         description: 'Deploy HTML documentation?'
-        default: 'true'
+        default: true
         required: true
         type: boolean
       snapshot_file:
@@ -35,21 +35,56 @@ on:
         type: string
       overwrite_existing:
         description: 'Overwrite existing documentation?'
-        default: 'false'
+        default: false
         required: true
         type: boolean
+      runner:
+        description: 'Which runner to use'
+        default: 'ubuntu-22.04'
+        type: choice
+        options:
+          - 'ubuntu-22.04'
+          - 'large-ubuntu-22.04-xxl'
+env:
+  DOCKER_REGISTRY: ghcr.io
+  EVEREST_CI_VERSION: v1.3.1
 
 jobs:
+  setup-env:
+    name: Setup Environment
+    runs-on: ${{ inputs.runner || 'ubuntu-22.04' }}
+    outputs:
+      docker_registry: ${{ env.DOCKER_REGISTRY }}
+      everest_ci_version: ${{ env.EVEREST_CI_VERSION }}
+    steps:
+      - id: check
+        run: |
+          echo "Setting up environment"
+  build-and-push-build-env:
+    name: Build and Push Build Environment
+    uses: everest/everest-ci/.github/workflows/deploy-single-docker-image.yml@v1.3.1
+    needs: setup-env
+    secrets:
+      SA_GITHUB_PAT: ${{ secrets.SA_GITHUB_PAT }}
+      SA_GITHUB_USERNAME: ${{ secrets.SA_GITHUB_USERNAME }}
+    with:
+      image_name: ${{ github.event.repository.name }}/build-env-everest
+      directory: .ci/build-env
+      docker_registry: ${{ needs.setup-env.outputs.docker_registry }}
+      github_ref_before: ${{ github.event.before }}
+      github_ref_after: ${{ github.event.after }}
+      platforms: linux/amd64
+      depends_on_paths: |
+        .ci/build-env
+        .github/workflows/deploy-everest-doc.yml
+      build_args: |
+        BASE_IMAGE_TAG=${{ needs.setup-env.outputs.everest_ci_version }}
   checkout-snapshot-file:
     name: Checkout snapshot file
-    strategy:
-      matrix:
-        os: [ubuntu-20.04]
-      max-parallel: 1
-      fail-fast: false
-    runs-on: ${{ matrix.os }}
+    needs: build-and-push-build-env
+    runs-on: ${{ inputs.runner || 'ubuntu-22.04' }}
     container: 
-      image: ghcr.io/everest/everest-ci-env:main
+      image: ${{ needs.build-and-push-build-env.outputs.one_image_tag_long }}
     env:
       SSH_AUTH_SOCK: /tmp/ssh_agent.sock
     outputs:
@@ -109,15 +144,12 @@ jobs:
         retention-days: 2
   build-doc:
     name: Build EVerest sphinx documentation
-    needs: checkout-snapshot-file
-    strategy:
-      max-parallel: 1
-      fail-fast: false
-      matrix:
-        os: [ubuntu-20.04]
-    runs-on: ${{ matrix.os }}
+    needs:
+      - build-and-push-build-env
+      - checkout-snapshot-file
+    runs-on: ${{ inputs.runner || 'ubuntu-22.04' }}
     container: 
-      image: ghcr.io/everest/everest-ci-env:main
+      image: ${{ needs.build-and-push-build-env.outputs.one_image_tag_long }}
     env:
       SSH_AUTH_SOCK: /tmp/ssh_agent.sock
     steps:
@@ -196,14 +228,14 @@ jobs:
 
   deploy-html-doc:
     if: ${{ inputs.build_html && inputs.deploy_html }}
-    needs: [build-doc, checkout-snapshot-file]
+    needs:
+      - build-and-push-build-env
+      - checkout-snapshot-file
+      - build-doc
     name: Deploy sphinx documentation
-    strategy:
-      matrix:
-        os: [ubuntu-20.04]
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ inputs.runner || 'ubuntu-22.04' }}
     container: 
-      image: ghcr.io/everest/everest-ci-env:main
+      image: ${{ needs.build-and-push-build-env.outputs.one_image_tag_long }}
     env:
       SSH_AUTH_SOCK: /tmp/ssh_agent.sock
       GITHUB_PAGES_REPO: ${{ inputs.github_pages_repo }}
