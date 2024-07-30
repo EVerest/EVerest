@@ -18,6 +18,42 @@ feature freeze phase before the release date.
 Here are the some high-level changes for the last releases (starting from the
 most recent one backwards):
 
+2024.7.0
+========
+
+OCPP
+----
+
+* The device model initialization is now implemented in C++ instead of Python.
+  This means, that it is possible to add more EVSEs and Connectors now.
+  Also, the device model is initialized at runtime now and it is using the
+  database migration support. This solves
+  `issue 656 <https://github.com/EVerest/libocpp/issues/656>`_.
+  Details can be found in
+  `PR 681 <https://github.com/EVerest/libocpp/pull/681>`_.
+* The websocket connection state gets published. (OCPP 2.0.1)
+* Security events have been implemented over the generic OCPP interface.
+  (OCPP 2.0.1)
+
+OpenSSL server
+--------------
+
+To support TLS certificate status requests, an OpenSSL server has been added.
+For more info, see
+`PR 677 <https://github.com/EVerest/everest-core/pull/677>`_.
+
+Further changes
+---------------
+
+* A new C++ based EvManager has been added (was Javascript up to now).
+  This is the C++ based car simulator in EVerest. For details, see
+  `PR 643 <https://github.com/EVerest/everest-core/pull/643>`_.
+* Bugfix: Stop & unplug did not work after ISO pause & resume in SIL.
+* OpenSSL support has been added to the libiso15118 library.
+* ev-cli needs not be installed manually anymore as this is done during the
+  cmake process now.
+* The output of compile warnings has been enabled by default.
+
 2024.6.0 - LATEST STABLE
 ========================
 
