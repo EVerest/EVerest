@@ -482,9 +482,11 @@ be due to the Yeti interface not being connected properly.
 In this case, check the connections and the cable harness.
 
 Should everything look fine, check if the Yeti firmware is running properly
-by looking at the Yeti LED. It should flash in a fast frequency. If it is on
-or off without flashing, the firmware could not be started or is not
-installed.
+by looking at the Yeti LED. If you are running firmware version 1, it should
+flash one time. If you are running version 2, it should flash two times.
+
+If it is on or off without flashing, the firmware could not be started or is
+not installed.
 
 .. _belaybox_new_yocto_based:
 Temporary quick-and-dirty docs: New Yocto-based build
