@@ -446,6 +446,29 @@ configuration:
 
   sudo reboot
 
+Further information
+===================
+
+RS-485 Modbus config for Yak board
+----------------------------------
+
+If you want to use the RS-485 Modbus device on the Yak board and the current
+(July 2024 or later) basecamp image, here is how you configure it in the
+config.yaml for the SerialCommunicationHub:
+
+.. code-block:: bash
+
+  comm_hub:
+    config_implementation:
+      main:
+    serial_port: /dev/ttyAMA3
+        baudrate: 19200
+        parity: 2
+        rxtx_gpio_chip: gpiochip0
+        rxtx_gpio_line: 16
+        rxtx_gpio_tx_high: true
+    module: SerialCommHub
+
 Troubleshooting
 ***************
 
