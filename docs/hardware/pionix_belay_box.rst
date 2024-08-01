@@ -3,16 +3,12 @@
 Pionix BelayBox
 ###############
 
-.. important::
+.. warning::
   This page about the BelayBox is outdated as we are currently moving things
   from the Debian-based to a newer Yocto-based image. The documentation will
   be updated soon. Until that, we have created temporary
   :ref:`quick-and-dirty instructions at the end of this docs <belaybox_new_yocto_based>`
   .
-
-  So, if you are seeing references to Raspbian, you might rather have a look
-  to the temporary quick-and-dirty section how things work with the current
-  development status. 
 
 Introduction
 ************
@@ -66,8 +62,16 @@ Getting support
 
 See also the `BelayBox manual <https://pionix.com/user-manual-belaybox>`_.
 
-If you already have purchased a BelayBox, you can get support by creating
-an issue via our `support page <http://support.pionix.com>`_.
+If you already have purchased a BelayBox and you have hardware related
+questions, you can get support by creating an issue via our
+`support page <http://support.pionix.com>`_.
+
+.. important::
+
+  This is only for hardware-related support. For all software-related
+  questions, you can find help in the wonderful EVerest community via
+  `Zulip <https://lfenergy.zulipchat.com/>`_ or the
+  `EVerest mailinglist <https://lists.lfenergy.org/g/everest>`_.
 
 If you need additional parts for your BelayBox, see the
 `Pionix Online Shop <https://shop.pionix.com>`_.
@@ -136,51 +140,11 @@ Flashing the Yak Board
 Plug in a micro usb cable to the "J1" USB socket and plug the other end in the
 linux host system.
 
-Download the image to be flashed to the host system from here:
-`<https://pionix-update.de/belayboxr1/stable/current.img.gz>`_ e.g. with the
-command:
-
-``wget https://pionix-update.de/belayboxr1/stable/current.img.gz``
-
-In order to flash the emmC, please install "rpiboot" as described in here:
-
-`<https://github.com/raspberrypi/usbboot/blob/master/Readme.md#building>`_
-
-After successful install, execute
-
-``sudo ./rpiboot``
-
-Power on the Yak board using the 12V power source on the "12V IN" pins.
-The red LED should light up.
-
-Once *rpiboot* has detected the board, a green LED should light up on the
-board.
-
-.. image:: img/yak-assembly-7.png
-
-Start the tool *balenaEtcher*. You should see that *balenaEtcher* has
-automatically detected the Compute Module. If not, select the correct drive.
-Click "Flash from file" and select the extracted file "current.img.gz".
-*balenaEtcher* will automatically unzip the file.
-
-.. image:: img/yak-assembly-8.png
-
-Click "Flash" and wait for the flashing and validation to finish. This can
-take up to 1.5h. Take a walk and/or treat yourself to a coffee.
-
-The emmC is unfortunately a slow device to flash.
-
-After *balenaEtcher* reports a successful flash, power down the Yak board and
-remove the jumper from the "BOOT" pins and the USB cable from the board.
-
-.. caution::
-  Make sure to connect the WiFi antenna to the CM4 after flashing. The image
-  activates the external antenna support. Running a flashed Yak without the
-  WiFi antenna mounted will result in damage of the WiFi chip.
-
-.. image:: img/yak-assembly-9.jpg
-
-The Yak board is now ready to boot.
+.. warning::
+  As we are currently moving things from the Debian-based to a newer
+  Yocto-based image, please refer to our temporary
+  :ref:`quick-and-dirty instructions at the end of this docs <belaybox_new_yocto_based>`
+  .
 
 Assembling the Yeti Board
 =========================
@@ -288,127 +252,6 @@ When using the assembly in a "desk" environment, it is recommended to apply
 power through the 12V DC barrel connector shown in the upper right corner of
 the Yeti board in the image above. Make sure the WiFi antenna does not touch
 any other open PCB parts to prevent damage to the boards.
-
-Raspbian (soon to be outdated)
-=======================
-
-.. important::
-  See troubleshooting section for a temporary quick-and-dirty for the new
-  Yocto-based approach.
-
-BelayBox uses Raspian (a debian flavour for the Raspberry Pi) as a main
-operating system for development purposes.
-For deployment on real products you should consider using Yocto or similar
-instead.
-
-For further information like the partitioning scheme and updating Raspbian,
-section :ref:`BelayBox Further Information <belaybox_furtherinfo>`.
-
-EVerest
-=======
-
-EVerest is the charging software on the BelayBox that controls charging,
-cloud access, authorization, energy management, the display app etc.
-
-Integration into Raspbian
--------------------------
-
-EVerest is installed under ``/opt/everest``. Since this folder is in the
-root partition it is also updated with the regular online update.
-
-The systemd service ``everest.service`` starts EVerest at boot if no custom
-everest installation is found under ``/mnt/user_data/opt/everest``.
-
-The systemd service ``everest-dev.service`` starts EVerest at boot from
- ``/mnt/user_data/opt/everest`` if that exists.
-
-The systemd service ``display-app.service`` starts the flutter based
-display application.
-
-Update Yeti's microcontroller firmware
---------------------------------------
-
-The Yeti Power Board is controlled by an STM32 microcontroller that is
-responsible for the lowest level state machine and all electrical safety.
-In the future updates will be installed automatically. For now they can be
-installed manually.
-
-The firmware has been open sourced, see `Yeti Firmware <https://github.com/PionixPublic/yeti-firmware>`_
-
-In your normal workflow, updating this firmware is not needed.
-
-The microcontroller is not protected (remember this is a dev kit and not
-a real product). You can use the update tool that comes with the Yeti
-EVerest driver module:
-
-``/opt/everest/bin/yeti_fwupdate /dev/serial0 new-firmware.bin``
-
-This will reboot the microcontroller in firmware update ROM bootloader and
-uses stm32flash tool to upload the new firmware.
-
-Developing with EVerest and BelayBox
-************************************
-
-You can use make or ninja with cmake. The examples here are given with make.
-
-Setup cross compile environment
-===============================
-
-First, make sure you have successfully built EVerest natively on your laptop
-as described here: https://github.com/EVerest/everest-core#everest-core
-
-Download and untar the bullseye-toolchain:
-
-.. code-block:: bash
-
-  wget http://build.pionix.de:8888/release/toolchains/bullseye-toolchain.tgz
-  tar xfz bullseye-toolchain.tgz
-
-Change directory to everest-core in your workspace e.g.:
-
-.. code-block:: bash
-
-  cd ~/checkout/everest-workspace/everest-core
-
-Cross-compile by changing the given paths accordingly:
-
-.. code-block:: bash
-
-  cmake \
-   -DCMAKE_TOOLCHAIN_FILE=/full-path-to/bullseye-toolchain/toolchain.cmake \
-   -DCMAKE_INSTALL_PREFIX=/mnt/user_data/opt/everest \
-   -S . -B build-cross
-
-
-Now build EVerest with the following commands:
-
-.. code-block:: bash
-
-  make -j$(nproc) -C build-cross
-  make -j$(nproc) DESTDIR=./dist -C build-cross install
-
-Deploy a custom EVerest on BelayBox
------------------------------------
-
-The binaries are now installed under ``build-cross/dist``.
-You can use ``rsync`` within the ``build-cross`` folder to copy the files to
-BelayBox:
-
-.. code-block:: bash
-
-  rsync -a build-cross/dist/mnt/user_data/opt/everest/* everest@the.ip.add.res:/mnt/user_data/opt/everest
-
-The first time you need to create the folder ``/mnt/user_data/opt/everest``
-on the BelayBox before syncing
-(``ssh everest@the.ip.add.res mkdir -p /mnt/user_data/opt/everest``)
-
-You can also copy to another folder on the BelayBox, but using
-``/mnt/user_data/opt/everest`` will make your new custom everest installation
-auto start at boot (see ``everest-dev.service``). This way you can have a
-custom installation and still use the online updates for the base system.
-
-If you do it for the first time, reboot BelayBox so that
-``everest-dev.service`` is used from now-on instead of ``everest.service``.
 
 .. _belaybox_furtherinfo:
 
@@ -526,58 +369,15 @@ or for using the custom user config:
 
 Make sure the systemd service is not running.
 
-Raspbian partitioning scheme
-============================
-
-BelayBox uses a different partitioning scheme then vanilla raspian. The reason
-for this is it supports A/B root partitions for updates. This way an update
-can be downloaded and installed while the Box is in operation, even while
-charging.
-
-When rootfs A is booted, new updates will be installed to partition B and vice
-versa. After succesfull installation an atomic flag is set in the Raspberry
-Pi bootloader to try one boot of the newly installed system.
-
-If it boots succesfully, the changes are made permanent. If not, it
-automatically falls back to the previous version on the next boot.
-
-The SD card has the following partitions:
-
-.. code-block::
-
-    Device         Boot    Start      End  Sectors  Size Id Type
-    /dev/mmcblk0p1          8192  1056767  1048576  512M  c W95 FAT32 (LBA)
-    /dev/mmcblk0p2       1056768 14688255 13631488  6.5G 83 Linux
-    /dev/mmcblk0p3      14688256 28319743 13631488  6.5G 83 Linux
-    /dev/mmcblk0p4      28319744 30564351  2244608  1.1G  f W95 Ext'd (LBA)
-    /dev/mmcblk0p5      28327936 28459007   131072   64M 83 Linux
-    /dev/mmcblk0p6      28467200 30564351  2097152    1G 83 Linux
-
-``/dev/mmcblk0p1``: Boot partition.
-This is used for both root partitions due to limitations
-in the Raspberry Pi bootloader. It contains two subdirectories
-(system0 and system1) with the boot files of the two installed root partitions.
-
-``/dev/mmcblk0p2``: Root partition A. Read only.
-
-``/dev/mmcblk0p3``: Root partition B. Read only.
-
-``/dev/mmcblk0p4``: Extented (container for 5-6)
-
-``/dev/mmcblk0p5``: Factory data.
-
-The contents will be written once during production and should not be changed.
-Mounted under ``/mnt/factory_data``
-
-``/dev/mmcblk0p6``: User data.
-Only writable partition. All data generated during the use of the box will be
-stored here. Also various configuration overrides can be set here, see Cheat
-sheet.
-Mounted under ``/mnt/user_data``.
-
-
 Using online updates
 ====================
+
+.. warning::
+  This section about BelayBox updating is outdated as we are currently moving
+  things from the Debian-based to a newer Yocto-based image. Find setup
+  instructions in the temporary
+  :ref:`quick-and-dirty instructions at the end of this docs <belaybox_new_yocto_based>`
+  . Information about doing updates will follow.
 
 BelayBox comes with a very simple online update tool that is controlled by
 two systemd services:
