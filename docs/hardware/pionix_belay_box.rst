@@ -253,15 +253,6 @@ power through the 12V DC barrel connector shown in the upper right corner of
 the Yeti board in the image above. Make sure the WiFi antenna does not touch
 any other open PCB parts to prevent damage to the boards.
 
-Obsolete: Raspbian
-==================
-
-.. warning::
-  This section will be removed. For a Yocto-based setup instead of Raspbian,
-  see the temporary
-  :ref:`quick-and-dirty instructions at the end of this docs <belaybox_new_yocto_based>`
-  .
-
 .. _belaybox_furtherinfo:
 
 BelayBox Further Information
@@ -378,58 +369,15 @@ or for using the custom user config:
 
 Make sure the systemd service is not running.
 
-Raspbian partitioning scheme
-============================
-
-BelayBox uses a different partitioning scheme then vanilla raspian. The reason
-for this is it supports A/B root partitions for updates. This way an update
-can be downloaded and installed while the Box is in operation, even while
-charging.
-
-When rootfs A is booted, new updates will be installed to partition B and vice
-versa. After succesfull installation an atomic flag is set in the Raspberry
-Pi bootloader to try one boot of the newly installed system.
-
-If it boots succesfully, the changes are made permanent. If not, it
-automatically falls back to the previous version on the next boot.
-
-The SD card has the following partitions:
-
-.. code-block::
-
-    Device         Boot    Start      End  Sectors  Size Id Type
-    /dev/mmcblk0p1          8192  1056767  1048576  512M  c W95 FAT32 (LBA)
-    /dev/mmcblk0p2       1056768 14688255 13631488  6.5G 83 Linux
-    /dev/mmcblk0p3      14688256 28319743 13631488  6.5G 83 Linux
-    /dev/mmcblk0p4      28319744 30564351  2244608  1.1G  f W95 Ext'd (LBA)
-    /dev/mmcblk0p5      28327936 28459007   131072   64M 83 Linux
-    /dev/mmcblk0p6      28467200 30564351  2097152    1G 83 Linux
-
-``/dev/mmcblk0p1``: Boot partition.
-This is used for both root partitions due to limitations
-in the Raspberry Pi bootloader. It contains two subdirectories
-(system0 and system1) with the boot files of the two installed root partitions.
-
-``/dev/mmcblk0p2``: Root partition A. Read only.
-
-``/dev/mmcblk0p3``: Root partition B. Read only.
-
-``/dev/mmcblk0p4``: Extented (container for 5-6)
-
-``/dev/mmcblk0p5``: Factory data.
-
-The contents will be written once during production and should not be changed.
-Mounted under ``/mnt/factory_data``
-
-``/dev/mmcblk0p6``: User data.
-Only writable partition. All data generated during the use of the box will be
-stored here. Also various configuration overrides can be set here, see Cheat
-sheet.
-Mounted under ``/mnt/user_data``.
-
-
 Using online updates
 ====================
+
+.. warning::
+  This section about BelayBox updating is outdated as we are currently moving
+  things from the Debian-based to a newer Yocto-based image. Find setup
+  instructions in the temporary
+  :ref:`quick-and-dirty instructions at the end of this docs <belaybox_new_yocto_based>`
+  . Information about doing updates will follow.
 
 BelayBox comes with a very simple online update tool that is controlled by
 two systemd services:
