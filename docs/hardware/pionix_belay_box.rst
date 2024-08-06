@@ -16,8 +16,9 @@ Introduction
 The BelayBox is a reference platform specifically designed for development and
 testing of the open source software EVerest.
 
-Inside the box, a Raspberry Pi is built in and we are officially part of the
-"Powered by Raspberry Pi" scheme:
+It is delivered as a development kit, which has to be assembled following the
+instructions in this documentation. Part of the kit is a Raspberry Pi and we
+are officially part of the "Powered by Raspberry Pi" scheme:
 
 .. image:: img/powered-by-pi.png
   :width: 300
@@ -38,7 +39,7 @@ The BelayBox is not meant to be used for private usage or outdoor charging.
 
 The BelayBox hardware
 =====================
-Inside, the BelayBox consists mainly of the Yeti board - an AC charger for
+The BelayBox consists mainly of the Yeti board - an AC charger for
 electric vehicles (EV) supporting IEC-61851-1 and SAE J1772 - and the Yak
 board, which is a high-level control board for EV charging stations supporting
 ISO 15118-2 (with ISO 15118-20 on its way) and DIN SPEC70121.
@@ -62,7 +63,7 @@ Getting support
 
 See also the `BelayBox manual <https://pionix.com/user-manual-belaybox>`_.
 
-If you already have purchased a BelayBox and you have hardware related
+If you already have purchased a BelayBox kit and you have hardware related
 questions, you can get support by creating an issue via our
 `support page <http://support.pionix.com>`_.
 
