@@ -640,7 +640,14 @@ in
   /etc/everest/basecamp.yaml
   
 It points to the config to be used. This can be
-changed to a config to your liking.
+changed to a config to your liking:
+
+.. code-block:: bash
+
+  rm /etc/everest/basecamp.yaml
+  ln -s /etc/everest/<your-custom-config> /etc/everest/basecamp.yaml
+
+After this, restart the basecamp service or reboot.
 
 Should you see any "Unknown config entry" errors when starting the manager
 process, delete the corresponding config entries from the yaml file you are
