@@ -632,8 +632,14 @@ The new ssh login credentials for the Yocto image are:
   user: root
   pw: basecamp
 
-The default config yaml file being used by the basecamp.service is the symlink
-in /etc/everest/basecamp.yaml. It points to the config to be used. This can be
+The default config file being used by the basecamp.service is the symlink
+in
+
+.. code-block:: bash
+
+  /etc/everest/basecamp.yaml
+  
+It points to the config to be used. This can be
 changed to a config to your liking.
 
 Should you see any "Unknown config entry" errors when starting the manager
