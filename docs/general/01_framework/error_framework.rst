@@ -681,7 +681,7 @@ Creating Error objects
 Error objects may always be created using the `ErrorFactory` of the
 implementation.
 
-Error objects can be edited after creatiion, before raising them.
+Error objects can be edited after creation, before raising them.
 
 The following attributes may not be changed after creation:
 - `timestamp`
@@ -697,22 +697,17 @@ actions, but no "handling" actions. This means that the module does not change
 its behavior based on the error, but only reports the error for example to a
 log file.
 
-Treating of specific Error Types
-================================
+Side effects of raising errors
+==============================
 
-This section describes the handling of specific error types.
-Currently it is still under construction, so please check regularly for
-updates.
+The error framework allow module implementations to get notified about an error 
+from one of their requirements by subscribing to the error. This can be used for 
+reporting purposes (e.g. via OCPP) or it can be used to adjust the control flow
+of the module based on the raised error.
 
-* The *evse_board_support/VendorError* is a generic error type which is used
-  with vendor specific sub_types, which can be for example vendor specific
-  error codes. The *evse_board_support/VendorError* is raised to prevent charging
-  in `EVSEManager` module. The `EVSEManager` needs to require the
-  `evse_board_support` module.
-* The *evse_board_support/VendorWarning* is a generic error type which is used
-  with vendor specific sub_types, which can be for example vendor specific
-  error codes. The *evse_board_support/VendorWarning* is raised to report an
-  error that does not prevent charging in `EVSEManager` module.
+It is important to note that raising errors can therefore lead to side effects
+within other modules. The side effects shall be documented as part of the module
+documentation (see e.g. EvseManager or OCPP).
 
 ****************************
 Architecture
