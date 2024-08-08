@@ -16,8 +16,9 @@ Introduction
 The BelayBox is a reference platform specifically designed for development and
 testing of the open source software EVerest.
 
-Inside the box, a Raspberry Pi is built in and we are officially part of the
-"Powered by Raspberry Pi" scheme:
+It is delivered as a development kit, which has to be assembled following the
+instructions in this documentation. Part of the kit is a Raspberry Pi and we
+are officially part of the "Powered by Raspberry Pi" scheme:
 
 .. image:: img/powered-by-pi.png
   :width: 300
@@ -38,7 +39,7 @@ The BelayBox is not meant to be used for private usage or outdoor charging.
 
 The BelayBox hardware
 =====================
-Inside, the BelayBox consists mainly of the Yeti board - an AC charger for
+The BelayBox consists mainly of the Yeti board - an AC charger for
 electric vehicles (EV) supporting IEC-61851-1 and SAE J1772 - and the Yak
 board, which is a high-level control board for EV charging stations supporting
 ISO 15118-2 (with ISO 15118-20 on its way) and DIN SPEC70121.
@@ -62,7 +63,7 @@ Getting support
 
 See also the `BelayBox manual <https://pionix.com/user-manual-belaybox>`_.
 
-If you already have purchased a BelayBox and you have hardware related
+If you already have purchased a BelayBox kit and you have hardware related
 questions, you can get support by creating an issue via our
 `support page <http://support.pionix.com>`_.
 
@@ -446,6 +447,29 @@ configuration:
 
   sudo reboot
 
+Further information
+===================
+
+RS-485 Modbus config for Yak board
+----------------------------------
+
+If you want to use the RS-485 Modbus device on the Yak board and the current
+(July 2024 or later) basecamp image, here is how you configure it in the
+config.yaml for the SerialCommunicationHub:
+
+.. code-block:: bash
+
+  comm_hub:
+    config_implementation:
+      main:
+    serial_port: /dev/ttyAMA3
+        baudrate: 19200
+        parity: 2
+        rxtx_gpio_chip: gpiochip0
+        rxtx_gpio_line: 16
+        rxtx_gpio_tx_high: true
+    module: SerialCommHub
+
 Troubleshooting
 ***************
 
@@ -459,9 +483,11 @@ be due to the Yeti interface not being connected properly.
 In this case, check the connections and the cable harness.
 
 Should everything look fine, check if the Yeti firmware is running properly
-by looking at the Yeti LED. It should flash in a fast frequency. If it is on
-or off without flashing, the firmware could not be started or is not
-installed.
+by looking at the Yeti LED. If you are running firmware version 1, it should
+flash one time. If you are running version 2, it should flash two times.
+
+If it is on or off without flashing, the firmware could not be started or is
+not installed.
 
 .. _belaybox_new_yocto_based:
 Temporary quick-and-dirty docs: New Yocto-based build
@@ -606,9 +632,22 @@ The new ssh login credentials for the Yocto image are:
   user: root
   pw: basecamp
 
-The default config yaml file being used by the basecamp.service is the symlink
-in /etc/everest/basecamp.yaml. It points to the config to be used. This can be
-changed to a config to your liking.
+The default config file being used by the basecamp.service is the symlink
+in
+
+.. code-block:: bash
+
+  /etc/everest/basecamp.yaml
+  
+It points to the config to be used. This can be
+changed to a config to your liking:
+
+.. code-block:: bash
+
+  rm /etc/everest/basecamp.yaml
+  ln -s /etc/everest/<your-custom-config> /etc/everest/basecamp.yaml
+
+After this, restart the basecamp service or reboot.
 
 Should you see any "Unknown config entry" errors when starting the manager
 process, delete the corresponding config entries from the yaml file you are
