@@ -150,6 +150,10 @@ linux host system.
   EVerest. For more information about BaseCamp, see
   `this BaseCamp page <https://pionix.com/basecamp-os-for-ev-chargers>`_.
 
+.. note::
+  If you want to use a custom software image on your boards, you can follow
+  the cross-compile howto.
+
 .. warning::
   As we are currently moving things from the Debian-based to a newer
   Yocto-based image, please refer to our temporary
