@@ -141,6 +141,15 @@ Flashing the Yak Board
 Plug in a micro usb cable to the "J1" USB socket and plug the other end in the
 linux host system.
 
+.. information::
+  The hardware boards will be shipped to you without any software on it.
+  In this section, we will walk you through the process of deploying a
+  Yocto-based software image including board firmware and a BaseCamp demo
+  system.
+  BaseCamp is a commercial wrapper around the open-source charger system
+  EVerest. For more information about BaseCamp, see
+  `this BaseCamp page <https://pionix.com/basecamp-os-for-ev-chargers>`_.
+
 .. warning::
   As we are currently moving things from the Debian-based to a newer
   Yocto-based image, please refer to our temporary
