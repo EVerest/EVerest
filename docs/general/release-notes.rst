@@ -18,6 +18,14 @@ feature freeze phase before the release date.
 Here are the some high-level changes for the last releases (starting from the
 most recent one backwards):
 
+2024.7.1
+========
+
+* Bugfix regarding initialization of signed meter and TransactionFinished
+  event. See `PR 820 <https://github.com/EVerest/everest-core/pull/820>`_.
+* Bugfix regarding charging phase changing in powersupply_set_DC method.
+  See `PR 821 <https://github.com/EVerest/everest-core/pull/821>`_.
+
 2024.7.0
 ========
 
@@ -41,6 +49,26 @@ OpenSSL server
 To support TLS certificate status requests, an OpenSSL server has been added.
 For more info, see
 `PR 677 <https://github.com/EVerest/everest-core/pull/677>`_.
+
+Hardware support
+----------------
+
+Improvements for the phyVERSO MCU:
+
+* Keep alive message are sent from EVerest to the hardware,
+* configuration handling has been harmonized with standard config handling in
+  EVerest
+* different motor lock styles for different charging ports are possible now
+  and
+* implementation of error handling has been added.
+
+For more information, see
+`PR 771 <https://github.com/EVerest/everest-core/pull/771>`_.
+
+Additionally, some changes regarding the evse_board_support like removing a
+command for getting hardware capabilities (which should be done via async
+publishing instead). More information:
+`PR 769 <https://github.com/EVerest/everest-core/pull/769>`_
 
 Further changes
 ---------------
