@@ -60,8 +60,6 @@ the `EVerest mailing list <https://lists.lfenergy.org/g/everest>`_.
 Getting support
 ===============
 
-See also the `BelayBox manual <https://pionix.com/user-manual-belaybox>`_.
-
 If you already have purchased a BelayBox and you have hardware related
 questions, you can get support by creating an issue via our
 `support page <http://support.pionix.com>`_.
