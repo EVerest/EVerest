@@ -100,8 +100,6 @@ And you will need the following tools:
 Needed software:
 
 * `Raspberry PI USB Boot <https://github.com/raspberrypi/usbboot/blob/master/Readme.md#building>`_
-* `balenaEtcher <https://www.balena.io/etcher>`_
-  (“dd” also works but is dangerous to use and much slower)
 * Internet access from host system
 
 .. warning::
@@ -519,9 +517,6 @@ For a new board (or previous Debian-based board), download the complete SD
 image:
 
 `<http://build.pionix.de:8888/release/yocto/belaybox-image-raspberrypi4-20240613154507.rootfs.wic.bz2>`_
-
-Use balena etcher as described in the manual above, but use the downloaded
-image instead.
 
 The Yeti MCU also needs the corresponding firmware for the new Yocto image.
 The firmware is included in the new image.
