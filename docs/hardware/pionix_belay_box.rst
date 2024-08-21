@@ -3,22 +3,18 @@
 Pionix BelayBox
 ###############
 
-.. warning::
-  This page about the BelayBox is outdated as we are currently moving things
-  from the Debian-based to a newer Yocto-based image. The documentation will
-  be updated soon. Until that, we have created temporary
-  :ref:`quick-and-dirty instructions at the end of this docs <belaybox_new_yocto_based>`
-  .
-
 Introduction
 ************
 
 The BelayBox is a reference platform specifically designed for development and
-testing of the open source software EVerest.
+testing of the open source software EVerest. More details about how EVerest is
+embedded on the hardware can be found in the dedicated sections about EVerest
+cross-compilation.
 
-It is delivered as a development kit, which has to be assembled following the
-instructions in this documentation. Part of the kit is a Raspberry Pi and we
-are officially part of the "Powered by Raspberry Pi" scheme:
+The BelayBox is delivered as a development kit, which has to be assembled
+following the instructions in this documentation. Part of the kit is a
+Raspberry Pi. PIONIX is officially part of the "Powered by Raspberry Pi"
+scheme:
 
 .. image:: img/powered-by-pi.png
   :width: 300
@@ -44,9 +40,9 @@ electric vehicles (EV) supporting IEC-61851-1 and SAE J1772 - and the Yak
 board, which is a high-level control board for EV charging stations supporting
 ISO 15118-2 (with ISO 15118-20 on its way) and DIN SPEC70121.
 
-As both Yeti and Yak Board are also released as Open Hardware under CERN Open
-Hardware Licence Version 2 (Permissive), we are very happy to point you to the
-schematics and design files and also the firmware:
+As both - Yeti and Yak board - are also released as Open Hardware under CERN
+Open Hardware Licence Version 2 (Permissive), we are very happy to point you
+to the schematics and design files and also the firmware:
 
 * `Yeti and Yak Hardware Reference Design <https://github.com/PionixPublic/reference-hardware>`_
 * `Yeti Firmware <https://github.com/PionixPublic/yeti-firmware>`_
@@ -80,6 +76,24 @@ If you need additional parts for your BelayBox, see the
 Setting up Hardware and Software
 ********************************
 
+The Yeti board is delivered with a firmware on it. The Yak board does not have
+any software flashed on it.
+
+In the following sections, we will show how to assemble the hardware parts and
+also how to do the flashing of the Yak board. The software image for the Yak
+board will consist of a board firmware and a Yocto based image including
+a basic BaseCamp release.
+
+BaseCamp is a commercial wrapper around the open-source charger system EVerest
+to provide long-term support. For more information about the product of
+BaseCamp, see
+`this BaseCamp page <https://pionix.com/basecamp-os-for-ev-chargers>`_.
+
+.. note::
+
+  You are able to flash a new firmware to the Yeti board. See the public
+  `Yeti firmware GitHub repository here <https://github.com/PionixPublic/yeti-firmware>`_.
+
 Assembling the Yak Board
 ========================
 
@@ -100,6 +114,7 @@ And you will need the following tools:
 Needed software:
 
 * `Raspberry PI USB Boot <https://github.com/raspberrypi/usbboot/blob/master/Readme.md#building>`_
+* bmaptool - `see here <https://docs.yoctoproject.org/dev-manual/bmaptool.html>`_
 * Internet access from host system
 
 .. warning::
@@ -134,29 +149,76 @@ is needed to be able to mount the emmC flash to the host system.
 Flashing the Yak Board
 ======================
 
-.. image:: img/yak-assembly-6-w500.png
-
-Plug in a micro usb cable to the "J1" USB socket and plug the other end in the
-linux host system.
-
-.. information::
-  The hardware boards will be shipped to you without any software on it.
-  In this section, we will walk you through the process of deploying a
-  Yocto-based software image including board firmware and a BaseCamp demo
-  system.
-  BaseCamp is a commercial wrapper around the open-source charger system
-  EVerest. For more information about BaseCamp, see
-  `this BaseCamp page <https://pionix.com/basecamp-os-for-ev-chargers>`_.
+In this section, we will walk you through the process of deploying a
+Yocto-based software image including board firmware and a basic BaseCamp
+system.
 
 .. note::
-  If you want to use a custom software image on your boards, you can follow
-  the cross-compile howto.
 
-.. warning::
-  As we are currently moving things from the Debian-based to a newer
-  Yocto-based image, please refer to our temporary
-  :ref:`quick-and-dirty instructions at the end of this docs <belaybox_new_yocto_based>`
-  .
+  You will only have to do this flashing procedure once. After that, you can
+  use the RAUC update mechanism, which will update the system based on the
+  cross-compilings processed by the PIONIX build-servers. The only scenario
+  you should really do the flashing again is when PIONIX staff tells you, e.g.
+  during a support case.
+
+  If you want to use a custom software image on your boards (e.g. with a custom
+  configuration of EVerest), you can follow the cross-compile howto's.
+
+Now, download latest stable image and the matching .bmap file:
+
+.. code-block:: bash
+
+  TBD *.wic.bz2
+  TBD *.bmap
+
+Power up the BelayBox or - if the Yak is used alone - apply 12 V to the
+"12 IN" pins.
+
+The red LED on the Yak should light up constantly now.
+
+Connect the Yak board via Micro-USB to the host system.
+
+Mount the eMMC as storage device to the host system:
+
+.. code-block:: bash
+
+  sudo rpiboot
+
+The green LED on the Yak board should light up constantly now.
+
+To find the mounted eMMC device, do:
+
+.. code-block:: bash
+
+  lsblk
+
+Check the output and look for a approximately 16 GB device called /dev/sdX -
+where X can be any letter.
+
+Make sure the .wic.bz2 file and the .bmap file are in the same directory and
+flash the eMMC. In the command below, replace <image file>.bz2 with your
+downloaded image file and replace "X" according to your mounted eMMC device.
+
+.. code-block:: bash
+
+  sudo bmaptool copy <image file>.bz2 /dev/sdX
+
+After roughly nine minutes the flashing should have finished.
+
+Unmount the eMMC device, power off and unplug the "boot" jumper from the Yak
+board.
+
+.. caution::
+  Make sure to connect the WiFi antenna to the CM4 after flashing. The image
+  activates the external antenna support. Running a flashed Yak without the
+  WiFi antenna mounted will result in damage of the WiFi chip.
+
+.. image:: img/yak-assembly-9.jpg
+
+With the raspberry CM4, it can be that the overlay filesystem sometimes does
+not get mounted in the right order; so you might have to reboot twice if some
+files are missing after flashing.
+
 
 Assembling the Yeti Board
 =========================
@@ -267,196 +329,49 @@ any other open PCB parts to prevent damage to the boards.
 
 .. _belaybox_furtherinfo:
 
-BelayBox Further Information
-****************************
-
-Reference Cheat Sheet
-=====================
-
-Make root partition read/writable
----------------------------------
-
-Use the following command:
-
-.. code-block:: bash
-
-  rw
-
-Make it read only again
------------------------
-
-Use the following command:
-
-.. code-block:: bash
-
-  ro
-
-File containing wifi settings
------------------------------
-.. code-block:: bash
-
-  /mnt/user_data/etc/wpa_supplicant/wpa_supplicant.conf
-
-Use of custom everest build or config
--------------------------------------
-Force the use of custom everest build or config by automated start of
-``everest-dev.service`` instead of ``everest.service``
-
-.. code-block:: bash
-
-  /mnt/user_data/opt/everest/<crosscompiled everest binaries>
-
-Define release channels
------------------------
-Contains either stable or unstable to define release channels:
-
-.. code-block:: bash
-
-  /mnt/user_data/etc/update_channel
-
-Wireguard VPN configuration
----------------------------
-.. code-block:: bash
-
-  /mnt/user_data/etc/wireguard/wg0.config
-
-Persistent user config
-----------------------
-Via a complete config:
-
-.. code-block:: bash
-
-  /mnt/user_data/etc/everest/custom.yaml
-
-Via a config file containing only the diffs to the default config:
-
-.. code-block:: bash
-
-  /mnt/user_data/user-config/config-deploy-devboard.yaml
-
-Stop automatic updates
-----------------------
-.. code-block:: bash
-
-  rw; sudo systemctl disable ota-update.service
-
-Additional config files for the mqtt broker
--------------------------------------------
-.. code-block:: bash
-
-  /mnt/user_data/etc/mosquitto/conf.d
-
-This is the place where you can add for example a “public_mqtt.conf” file with the following contents:
-
-.. code-block:: bash
-
-  listener 1883
-  allow_anonymous true
-
-With this, you allow anonymous external connections to the mqtt broker for
-debugging purposes.
-
-Watch the output of everest.service
------------------------------------
-
-.. code-block:: bash
-
-  sudo journalctl -fu everest.service
-
-For watching the output of everest-dev.service, set service name to
-*everest-dev.service*.
-
-Run EVerest in terminal
------------------------
-
-.. code-block:: bash
-
-  sudo /opt/everest/bin/manager --conf /opt/everest/conf/config-deploy-devboard.yaml
-
-or for using the custom user config:
-
-.. code-block:: bash
-
-  sudo /opt/everest/bin/manager --conf /mnt/user_data/etc/everest/custom.yaml
-
-Make sure the systemd service is not running.
+BelayBox Use Cases
+******************
 
 Using online updates
 ====================
 
-.. warning::
-  This section about BelayBox updating is outdated as we are currently moving
-  things from the Debian-based to a newer Yocto-based image. Find setup
-  instructions in the temporary
-  :ref:`quick-and-dirty instructions at the end of this docs <belaybox_new_yocto_based>`
-  . Information about doing updates will follow.
+Connect via SSH into your Yak board. The credentials are:
 
-BelayBox comes with a very simple online update tool that is controlled by
-two systemd services:
+* User: root
+* Password: basecamp
 
-``ota-update.service``: This service starts a shell script that checks for
-online updates on Pionix update servers. It is triggered by the second systemd
-service:
+Check the currently booted slot:
 
-``ota-update.timer``: This is the systemd timer unit that starts
-``ota-update.service`` on regular intervals.
+.. code-block:: bash
 
-To disable online updates use ``sudo systemctl disable ota-update.service``.
-The online update updates always the full root partition. All data that needs
-to survive the update needs to be stored in ``/mnt/user_data``.
+  rauc status
 
-The root partition should normally never be modified, it is read only. All
-changes will also be lost on the next online update.
+Remember the slot for comparison afterwards.
 
-If you still want to modify something, use the ``rw`` and ``ro`` commands
-to re-mount root read-write/read-only.
+Execute the following:
 
-In rw mode you can e.g. use ``sudo apt install ...`` to install new software.
+.. code-block:: bash
 
-Disable online update if you need the changes to stay.
+  rauc install TBD *.bundle
+
+If the Linux system does not reboot after some seconds, execute:
+
+.. code-block:: bash
+
+  tryboot
+
+After the next boot, connect via SSH again and check the currently booted slot
+again. It should have switched to the other slot.
+
+If it did not switch to the other slot and the slot is marked as "bad", please
+find support in
+`the mailing list or Zulip channels <https://everest.github.io/nightly/#everest-compass>`_.
 
 Factory reset
 =============
 
-For a factory reset of the BelayBox, the following partition has to be
-formatted:
-
-.. code-block:: bash
-
-  /mnt/user_data/
-
-Before that, all services accessing that partition have to be stopped:
-
-.. code-block:: bash
-
-  sudo systemctl stop everest
-  sudo systemctl stop nodered
-
-.. hint::
-  Depending of your setup, the EVerest service could also be called
-  *everest-dev* or *everest-rpi* instead of just *everest*.
-
-After this, unmount the partition:
-
-.. code-block:: bash
-
-  sudo umount /dev/mmcblk0p6
-
-Finally, formatting can start:
-
-.. code-block:: bash
-
-  sudo mkfs -t ext4 /dev/mmcblk0p6
-
-Confirm with "y" as soon as you are happy with losing all previous
-configuation settings (e.g. WiFi credentials).
-
-After formatting, reboot the BelayBox to let it setup the factory default
-configuration:
-
-.. code-block:: bash
-
-  sudo reboot
+.. note::
+  We are preparing a new factory reset howto for the updated Yocto-image.
 
 Further information
 ===================
@@ -500,138 +415,8 @@ flash one time. If you are running version 2, it should flash two times.
 If it is on or off without flashing, the firmware could not be started or is
 not installed.
 
-.. _belaybox_new_yocto_based:
-Temporary quick-and-dirty docs: New Yocto-based build
-=====================================================
-
-Install latest Yocto version
-----------------------------
-
-.. note::
-
-  From June 2024 on, we will start changing the Debian-based to a Yocto-based
-  image. As we will need some time to update our documentation accordingly,
-  see a quick overview of how you can setup your hardware in the meantime.
-
-For a new board (or previous Debian-based board), download the complete SD
-image:
-
-`<http://build.pionix.de:8888/release/yocto/belaybox-image-raspberrypi4-20240613154507.rootfs.wic.bz2>`_
-
-The Yeti MCU also needs the corresponding firmware for the new Yocto image.
-The firmware is included in the new image.
-
-.. note::
-
-  If you have purchased the YETI board after June 2024 the new firmware 2.1 is
-  already on the YETI board.
-
-Run these two commands once booted into the new image (the first one is very
-important - do not update while EVerest/BaseCamp is running!):
-
-.. code-block:: bash
-
-  systemctl stop basecamp
-  yeti_fwupdate /dev/serial0 /usr/share/everest/modules/YetiDriver/firmware/yetiR1_2.1_firmware.bin
-
-After that, reset both Yeti and Yak!
-
-The new ssh login credentials for the Yocto image are:
-
-.. code-block:: bash
-
-  user: root
-  pw: basecamp
-
-If you have the new Yocto installed already, you can update to this version
-using this command:
-
-.. code-block:: bash
-
-  rauc install http://build.pionix.de:8888/release/yocto/belaybox-bundle-raspberrypi4-20240627101617.raucb
-
-After installation is complete, run this to boot into the newly installed
-update:
-
-.. code-block:: bash
-
-  tryboot
-
-Use new toolchain for cross-compiling
--------------------------------------
-
-If you want to cross compile your EVerest version, this is the toolchain to
-use:
-
-.. code-block:: bash
-
-  http://build.pionix.de:8888/release/yocto/poky-glibc-x86_64-belaybox-image-cortexa7t2hf-neon-vfpv4-raspberrypi4-toolchain-4.0.16.sh
-
-First of all you need to install it. It is a shell script, so just do a
-"chmod +x name_of_toolchain.sh" and then run it with
-
-.. code-block:: bash
-
-  ./name_of_toolchain.sh
-
-You will be asked where to install it. You can e.g. install it in your home
-directory - somewhere like /etc/myuser/toolchain-belaybox
-
-Then you need to source the environment variables (it tells you how to do it
-at the end of the installation).
-
-Once they are sourced, this terminal will cross compile.
-
-In everest-core, create a folder called "build-cross". Change into it.
-
-There, run cmake as follows:
-
-.. code-block:: bash
-
-  cmake .. -GNinja -DCMAKE_INSTALL_PREFIX=/var/everest -DEVEREST_ENABLE_PY_SUPPORT=OFF -DEVEREST_ENABLE_JS_SUPPORT=OFF -Deverest-core_USE_PYTHON_VENV=OFF
-
-In this case, the PY/JS support flags are set to OFF. You may need to set them
-to ON if you are using simulation. The last option
--Deverest-core_USE_PYTHON_VENV is only a temporarily needed directive that
-will probably be obsolete in future release candidates.
-The -GNinja can also be left out, then it will use make.
-
-After that you can build with 
-
-.. code-block:: bash
-
-  make -j10 
-
-or 
-
-.. code-block:: bash
-
-  ninja
-
-depending on what you configured.
-
-Once the build is complete, you can rsync directly to belaybox like this:
-
-.. code-block:: bash
-
-  DESTDIR=dist ninja install/strip && rsync -av dist/var/everest root@the.ip.add.ress:/var
-
-Replace the IP address placeholder with the correct one.
-
-Then log into the BelayBox and stop the systemd service:
-
-.. code-block:: bash
-
-  systemctl stop basecamp
-
-Then you can run your self-compiled version like this:
-
-.. code-block:: bash
-
-  /var/everest/bin/manager --conf /path/to/my/configfile
-
-Further potential necessary steps
----------------------------------
+Short cheat sheet
+=================
 
 The new ssh login credentials for the Yocto image are:
 
