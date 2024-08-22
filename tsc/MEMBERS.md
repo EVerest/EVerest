@@ -31,7 +31,7 @@ technical leads are:
   * Tech Lead: Kai-Uwe Hermann ([@hikinggrass](https://github.com/hikinggrass))
 
 * Testing & CI WG
-  * Chair: Benjamin Mosler
+  * Chair: Tim Valbert
   * Tech Leads: Andreas Heinrich and Kai-Uwe Hermann
    ([@andistorm](https://github.com/andistorm) and
    [@hikinggrass](https://github.com/hikinggrass))
