@@ -373,6 +373,26 @@ If it did not switch to the other slot and the slot is marked as "bad", please
 find support in
 `the mailing list or Zulip channels <https://everest.github.io/nightly/#everest-compass>`_.
 
+How to flash the Yeti board
+===========================
+
+Connect via SSH into the Yak board and run these two commands (the first one
+is very important - do not update while EVerest/BaseCamp is running!):
+
+.. code-block:: bash
+
+  systemctl stop basecamp
+  yeti_fwupdate /dev/serial0 /usr/share/everest/modules/YetiDriver/firmware/yetiR1_2.1_firmware.bin
+
+.. important::
+
+  In case you use a fullsize Raspberry Pi 4B, use the following command
+  instead of the above one:
+  
+  systemctl stop basecamp-rpi
+
+After that, reset both Yeti and Yak.
+
 Factory reset
 =============
 
