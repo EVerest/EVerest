@@ -76,13 +76,13 @@ If you need additional parts for your BelayBox, see the
 Setting up Hardware and Software
 ********************************
 
-The Yeti board is delivered with a firmware on it. The Yak board does not have
-any software flashed on it.
+The Yeti board is delivered with a firmware already flashed on it.
+The Yak board does not have any software flashed on it.
 
 In the following sections, we will show how to assemble the hardware parts and
-also how to do the flashing of the Yak board. The software image for the Yak
-board will consist of a board firmware and a Yocto based image including
-a basic BaseCamp release.
+also how to do the flashing of the Yak board. The Yocto image for the Yak
+board includes binaries and services to run Basecamp - the commercial grade
+version of EVerest - as a demo.
 
 BaseCamp is a professional and stable wrapper around the open-source charging
 software EVerest. For more information about the product of BaseCamp, see
