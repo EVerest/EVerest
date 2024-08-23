@@ -174,11 +174,12 @@ Now, the steps to flash the board:
 (2) Power up the BelayBox or - if the Yak is used alone - apply 12 V to the
 "12 IN" pins.
 
-The red LED on the Yak should light up constantly now.
+The red power LED on the Yak should light up constantly now.
 
 (3) Connect the Yak board via Micro-USB to the host system.
 
-(4) Mount the eMMC as storage device to the host system:
+(4) Enable the CM4 storage mode so that the eMMC becomes available to the host
+system:
 
 .. code-block:: bash
 
