@@ -90,7 +90,7 @@ software EVerest. For more information about the product of BaseCamp, see
 
 .. note::
 
-  You are able to flash a new firmware to the Yeti board. See the public
+  In case you need to build a custom Yeti firmware, have a look at this repo:
   `Yeti firmware GitHub repository here <https://github.com/PionixPublic/yeti-firmware>`_.
 
 Assembling the Yak Board
@@ -148,17 +148,15 @@ is needed to be able to mount the emmC flash to the host system.
 Flashing the Yak Board
 ======================
 
-In this section, we will walk you through the process of deploying a
-Yocto-based software image including board firmware and a basic BaseCamp
-system.
+In this section, we will walk you through the process of deploying the
+Yocto-based image including EVerest in form of BaseCamp.
 
 .. note::
 
   You will only have to do this flashing procedure once. After that, you can
-  use the RAUC update mechanism, which will update the system based on the
-  cross-compilings processed by the PIONIX build-servers. The only scenario
-  you should really do the flashing again is when PIONIX staff tells you, e.g.
-  during a support case.
+  use the RAUC updates, which are hosted on PIONIX update servers.
+  In case you need to reflash the whole image, we will inform you in the
+  public support channels.
 
   If you want to to create your own custom yocto image with EVerest, you can
   have a look at
