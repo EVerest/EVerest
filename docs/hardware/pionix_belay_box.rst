@@ -40,7 +40,7 @@ electric vehicles (EV) supporting IEC-61851-1 and SAE J1772 - and the Yak
 board, which is a high-level control board for EV charging stations supporting
 ISO 15118-2 (with ISO 15118-20 on its way) and DIN SPEC70121.
 
-As both - Yeti and Yak board - are also released as Open Hardware under CERN
+As both - Yeti and Yak board - are released as Open Hardware under CERN
 Open Hardware Licence Version 2 (Permissive), we are very happy to point you
 to the schematics and design files and also the firmware:
 
