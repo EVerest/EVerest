@@ -196,6 +196,11 @@ The green LED on the Yak board should light up constantly now.
 Check the output and look for a approximately 16 GB device called /dev/sdX -
 where X can be any letter.
 
+.. warning::
+
+  Make sure to select the correct device as data loss can occure if the wrong
+  device is selected!
+
 (6) Make sure the .wic.bz2 file and the .bmap file are in the same directory
 and flash the eMMC. In the command below, replace <image file>.bz2 with your
 downloaded image file and replace "X" according to your mounted eMMC device.
