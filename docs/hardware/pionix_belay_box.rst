@@ -13,8 +13,8 @@ cross-compilation.
 
 The BelayBox is delivered as a development kit, which has to be assembled
 following the instructions in this documentation. Part of the kit is a
-Raspberry Pi. PIONIX is officially part of the "Powered by Raspberry Pi"
-scheme:
+Raspberry Pi CM4 compute module. PIONIX is officially part of the "Powered by
+Raspberry Pi" scheme:
 
 .. image:: img/powered-by-pi.png
   :width: 300
