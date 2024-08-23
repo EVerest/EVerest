@@ -162,21 +162,23 @@ Yocto-based image including EVerest in form of BaseCamp.
   have a look at
   `Yeti-Yak-SDK repository <https://github.com/PionixPublic/yeti-yak-sdk>`_.
 
-Now, download latest stable image and the matching .bmap file:
+Now, the steps to flash the board:
+
+(1) Download the latest stable image and the matching .bmap file:
 
 .. code-block:: bash
 
   TBD *.wic.bz2
   TBD *.bmap
 
-Power up the BelayBox or - if the Yak is used alone - apply 12 V to the
+(2) Power up the BelayBox or - if the Yak is used alone - apply 12 V to the
 "12 IN" pins.
 
 The red LED on the Yak should light up constantly now.
 
-Connect the Yak board via Micro-USB to the host system.
+(3) Connect the Yak board via Micro-USB to the host system.
 
-Mount the eMMC as storage device to the host system:
+(4) Mount the eMMC as storage device to the host system:
 
 .. code-block:: bash
 
@@ -184,7 +186,7 @@ Mount the eMMC as storage device to the host system:
 
 The green LED on the Yak board should light up constantly now.
 
-To find the mounted eMMC device, do:
+(5) To find the mounted eMMC device, do:
 
 .. code-block:: bash
 
@@ -193,8 +195,8 @@ To find the mounted eMMC device, do:
 Check the output and look for a approximately 16 GB device called /dev/sdX -
 where X can be any letter.
 
-Make sure the .wic.bz2 file and the .bmap file are in the same directory and
-flash the eMMC. In the command below, replace <image file>.bz2 with your
+(6) Make sure the .wic.bz2 file and the .bmap file are in the same directory
+and flash the eMMC. In the command below, replace <image file>.bz2 with your
 downloaded image file and replace "X" according to your mounted eMMC device.
 
 .. code-block:: bash
@@ -203,13 +205,13 @@ downloaded image file and replace "X" according to your mounted eMMC device.
 
 After roughly nine minutes the flashing should have finished.
 
-Unmount the eMMC device, power off and unplug the "boot" jumper from the Yak
-board.
-
 .. caution::
   Make sure to connect the WiFi antenna to the CM4 after flashing. The image
   activates the external antenna support. Running a flashed Yak without the
   WiFi antenna mounted will result in damage of the WiFi chip.
+
+(7) Unmount the eMMC device, power off and unplug the "boot" jumper from the
+Yak board.
 
 .. image:: img/yak-assembly-9.jpg
 
