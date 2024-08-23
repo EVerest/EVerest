@@ -214,7 +214,7 @@ After roughly nine minutes the flashing should have finished.
 .. caution::
   Make sure to connect the WiFi antenna to the CM4 after flashing. The image
   activates the external antenna support. Running a flashed Yak without the
-  WiFi antenna mounted will result in damage of the WiFi chip.
+  WiFi antenna mounted can result in damage of the WiFi chip.
 
 (7) Disconnect the eMMC device, power off and unplug the "boot" jumper from the
 Yak board.
@@ -338,8 +338,8 @@ any other open PCB parts to prevent damage to the boards.
 BelayBox Use Cases
 ******************
 
-Using online updates
-====================
+How to install updates via RAUC bundles
+=======================================
 
 Connect via SSH into your Yak board. The credentials are:
 
