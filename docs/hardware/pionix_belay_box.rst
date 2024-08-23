@@ -143,7 +143,7 @@ This is how it looks from the top side:
 .. image:: img/yak-assembly-5-w500.png
 
 Now place the small black jumper onto the "BOOT" pins as shown above. This
-is needed to be able to mount the emmC flash to the host system.
+is needed to be able to make the emmC flash accessible to the host system.
 
 Flashing the Yak Board
 ======================
@@ -187,7 +187,7 @@ system:
 
 The green LED on the Yak board should light up constantly now.
 
-(5) To find the mounted eMMC device, do:
+(5) To find the eMMC device, do:
 
 .. code-block:: bash
 
@@ -203,7 +203,7 @@ where X can be any letter.
 
 (6) Make sure the .wic.bz2 file and the .bmap file are in the same directory
 and flash the eMMC. In the command below, replace <image file>.bz2 with your
-downloaded image file and replace "X" according to your mounted eMMC device.
+downloaded image file and replace "X" according to your eMMC device.
 
 .. code-block:: bash
 
@@ -216,7 +216,7 @@ After roughly nine minutes the flashing should have finished.
   activates the external antenna support. Running a flashed Yak without the
   WiFi antenna mounted will result in damage of the WiFi chip.
 
-(7) Unmount the eMMC device, power off and unplug the "boot" jumper from the
+(7) Disconnect the eMMC device, power off and unplug the "boot" jumper from the
 Yak board.
 
 .. image:: img/yak-assembly-9.jpg
