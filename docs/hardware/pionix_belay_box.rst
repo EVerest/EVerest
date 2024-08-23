@@ -84,9 +84,8 @@ also how to do the flashing of the Yak board. The software image for the Yak
 board will consist of a board firmware and a Yocto based image including
 a basic BaseCamp release.
 
-BaseCamp is a commercial wrapper around the open-source charger system EVerest
-to provide long-term support. For more information about the product of
-BaseCamp, see
+BaseCamp is a professional and stable wrapper around the open-source charging
+software EVerest. For more information about the product of BaseCamp, see
 `this BaseCamp page <https://pionix.com/basecamp-os-for-ev-chargers>`_.
 
 .. note::
