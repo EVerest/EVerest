@@ -391,7 +391,18 @@ is very important - do not update while EVerest/BaseCamp is running!):
   
   systemctl stop basecamp-rpi
 
-After that, reset both Yeti and Yak.
+After that, restart the basecamp or basecamp-rpi service:
+
+.. code-block:: bash
+
+  systemctl restart basecamp
+  
+or (respectively)
+
+.. code-block:: bash
+
+  systemctl restart basecamp-rpi
+
 
 Factory reset
 =============
