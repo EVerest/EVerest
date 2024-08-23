@@ -160,8 +160,9 @@ system.
   you should really do the flashing again is when PIONIX staff tells you, e.g.
   during a support case.
 
-  If you want to use a custom software image on your boards (e.g. with a custom
-  configuration of EVerest), you can follow the cross-compile howto's.
+  If you want to to create your own custom yocto image with EVerest, you can
+  have a look at
+  `Yeti-Yak-SDK repository <https://github.com/PionixPublic/yeti-yak-sdk>`_.
 
 Now, download latest stable image and the matching .bmap file:
 
