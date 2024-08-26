@@ -369,9 +369,12 @@ If the Linux system does not reboot after some seconds, execute:
 After the next boot, connect via SSH again and check the currently booted slot
 again. It should have switched to the other slot.
 
-If it did not switch to the other slot and the slot is marked as "bad", please
-find support in
-`the mailing list or Zulip channels <https://everest.github.io/nightly/#everest-compass>`_.
+If it did not switch to the other slot and the slot is marked as "bad", you
+could try to re-flash the Yeti board with an up-to-date firmware version.
+
+If this does not help, please find support in
+`the mailing list or Zulip channels <https://everest.github.io/nightly/#everest-compass>`_
+.
 
 How to flash the Yeti board
 ===========================
