@@ -9,6 +9,7 @@ EVerest is a Linux Foundation backed open-source modular framework for settong u
 - [Main Features](#Main-Features)
 - [Build & Install](#Build-&-Install)
 - [Dependencies](#Dependencies)
+- [Demonstrations](#Demonstrations)
 - [License](#License)
 - [Documentation](#Documentation)
 - [Background](#Background)
@@ -39,6 +40,9 @@ everest-core relies on EVerest Dependency Manager (EDM) to help orchestrate the 
 
 ### Full Stack Hardware Requirements:
 It is recommended to have at least 4GB of RAM available to build EVerest. More CPU cores will optionally boost the build process, while requiring more RAM accordingly.
+
+# Demonstrations
+The current demos showcase the foundational layers of a charging solution that could address interoperability and reliability issues in the industry. Check-out the available demonstrations in the [US-JOET Repo](https://github.com/US-JOET/everest-demo).
 
 # License
 EVerest and its subprojects are licensed under the Apache License, Version 2.0. See [LICENSE](https://github.com/EVerest/EVerest#:~:text=Version%202.0.%20See-,LICENSE,-for%20the%20full) for the full license text.
