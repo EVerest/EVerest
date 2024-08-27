@@ -128,18 +128,19 @@ See the "Zulip chat" section above to see how to get there!
 1:1 meetup
 ----------
 
-If you do not want to start talking about your requirements and projects in
-a big round, we can also give you the possibility to talk in a 1-on-1 meetup
-with a community guide.
+If you do not find your way into the EVerest community, let's try to help you.
+Just book a meeting via the link below. Of course, this is optionally. You
+are allowed to join the Zulip sessions and also take part in the working group
+meetings without registration.
+
+.. hint::
+    In this 1:1 meetup, we will not talk about technical topics. We will rather
+    see where you should start in the community if you have problems entering
+    the meetups or the discussions.
 
 Just book a 30-minute meetup here:
 https://calendly.com/manuel-ziegler-pionix/30min
 
-.. hint::
-    In this meetup, we will try to understand your dedicated requirements and
-    see where in the EVerest ecosystem you can contribute or get support. If
-    there is a need for technically deeper exchange, we can plan to set your
-    topic on the agenda of the weekly tech meetup.
 
 Tech resources about EVerest
 ============================
