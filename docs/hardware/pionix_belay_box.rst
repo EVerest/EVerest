@@ -93,7 +93,7 @@ software EVerest. For more information about the product of BaseCamp, see
   In case you need to build a custom Yeti firmware, have a look at this repo:
   `Yeti firmware GitHub repository here <https://github.com/PionixPublic/yeti-firmware>`_
   . Also see the
-  :ref:`section about how to flash the Yeti board _belaybox_yeti_flash>`.
+  :ref:`section about how to flash the Yeti board <belaybox_yeti_flash>`.
 
 Assembling the Yak Board
 ========================
@@ -410,6 +410,87 @@ or (respectively)
 
   systemctl restart basecamp-rpi
 
+
+How to activate OCPP 2.0.1
+==========================
+
+This how-to is based on the software status from 2024-08-27.
+
+As development is currently ongoing, there will be changes. So, it is a good
+idea to revisit this page in future.
+
+Some information before setting up OCPP 2.0.1
+---------------------------------------------
+
+Consider doing a RAUC update to get the most up-to-date software version
+running - see :ref:`section about RAUC updates <belaybox_rauc>`.
+
+If you want to test OCPP with a local backend,
+
+1. please build EVerest on your local machine first in order to create the
+  necessary certificates and
+2. install https://github.com/EVerest/ocpp-csms on your local machine.
+
+Configuration on the BelayBox
+-----------------------------
+
+1. Connect via SSH to the BelayBox (credentials are "root/basecamp").
+
+2. Open the file /etc/everest/ocpp201-pnc-config.json in a text or code editor
+  and check the CentralSystemURI. Set your own local IP address of the machine
+  which is running ocpp-csms. Default port is 9000 and charger ID is
+  MYCHARGER001. SecurityProfile should be set to value 1.
+
+3. There are some further example configuration files, which you can have a
+  look at to learn about further setting options and see how things are
+  connected. Those files are the yaml files in directory /etc/everest/.
+
+4. Also have a look at /config/v201/profile_schemas. All parameters which are
+  not listed as required, can be set optionally.
+
+5. See the component configuration files at
+  /usr/share/everest/modules/OCPP201/component_config
+  Edit those files for setting your specific charge point scenario.
+
+6. The directory /user-config/v201/component_schemas/custom/ contains the
+  EVSE and connector definitions. Remove the ones that are not required ones
+  for your dedicated scenario.
+
+Running the scripts and manager processes
+-----------------------------------------
+
+Have a look at /usr/bin/ocpp201_init.sh to see if all paramaters are set as
+required for your dedicated scenario and run the shell script.
+
+After that, restart the BaseCamp process (make sure to use the correct config
+file as parameter):
+
+.. code-block:: bash
+
+  systemctl stop basecamp
+  manager –config config-belaybox-pwm-ocpp.yaml
+
+.. note::
+
+  Running the manager process for the first time, you can get a warning that
+  no key pair could be found for v2g ocsp request. As after the first startup,
+  a key pair is generated, this message should not return next time.
+
+.. important::
+
+  The process of updating the values of the database via the script will be
+  obsolete in the next major release of the Yak image. Until then, every
+  update will reset the config entries in /usr/share/everest/modules/.
+  So please create a back-up of your config entries before any RAUC update.
+
+Additional information
+----------------------
+
+If you want to take a look at the database migration scripts, see here:
+/usr/share/everest/modules/OCPP201/core_migrations/
+
+Those are the changes in the database that are performed when upgrading or
+downgrading to another database version.
 
 Factory reset
 =============
