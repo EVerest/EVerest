@@ -91,7 +91,9 @@ software EVerest. For more information about the product of BaseCamp, see
 .. note::
 
   In case you need to build a custom Yeti firmware, have a look at this repo:
-  `Yeti firmware GitHub repository here <https://github.com/PionixPublic/yeti-firmware>`_.
+  `Yeti firmware GitHub repository here <https://github.com/PionixPublic/yeti-firmware>`_
+  . Also see the
+  :ref:`section about how to flash the Yeti board _belaybox_yeti_flash>`.
 
 Assembling the Yak Board
 ========================
@@ -107,7 +109,7 @@ And you will need the following tools:
 * ESD underlay mat
 * Linux host system, Ubuntu >18 recommended
 * 1x Micro USB cable
-* 12V DC power supply with minimum 30W to connect to “12V IN” pins on
+* 12 V DC power supply with minimum 30 W to connect to “12 V IN” pins on
   Yak board. A lab power supply is sufficient.
 
 Needed software:
@@ -158,11 +160,11 @@ Yocto-based image including EVerest in form of BaseCamp.
   In case you need to reflash the whole image, we will inform you in the
   public support channels.
 
-  If you want to to create your own custom yocto image with EVerest, you can
+  If you want to create your own custom yocto image with EVerest, you can
   have a look at
   `Yeti-Yak-SDK repository <https://github.com/PionixPublic/yeti-yak-sdk>`_.
 
-Now, the steps to flash the board:
+Now to the steps to flash the board:
 
 (1) Download the latest stable image and the matching .bmap file:
 
@@ -271,20 +273,18 @@ Yeti and to power the Yak board from the Yeti power supply.
 
 Plug in one of the crimped cables with one end into the 10-position plug. Make
 sure to plug in the crimp in the exact same orientation as shown in the
-picture above. Be aware that the crimps cannot be unplugged again from the
-10-position plug. Make sure you plug in the crimps in the correct positions
-before actually plugging them in.
+picture above.
+
+.. warning::
+  Be aware that the crimps cannot be unplugged again from the 10 position
+  plug. Make sure you plug in the crimps in the correct positions before
+  actually plugging them in.
 
 Plug in the other crimped end of the cable into the second plug. It is very
 important to plug in the crimps in the shown “1:1” fashion. Doing otherwise
 will permanently damage the Yak and/or Yeti board.
 
 .. image:: img/cable-set-3-w500.png
-
-.. warning::
-  Be aware that the crimps cannot be unplugged again from the 10 position
-  plug. Make sure you plug in the crimps in the correct positions before
-  actually plugging them in.
 
 Continue with plugging in all ten cables one after the other as there is less
 chance of getting it wrong this way.
@@ -329,7 +329,7 @@ Plug in the 4-pin RFID/NFC reader cable.
 The assembly of Yak, Yet kit and cable set is completed.
 
 When using the assembly in a "desk" environment, it is recommended to apply
-power through the 12V DC barrel connector shown in the upper right corner of
+power through the 12 V DC barrel connector shown in the upper right corner of
 the Yeti board in the image above. Make sure the WiFi antenna does not touch
 any other open PCB parts to prevent damage to the boards.
 
@@ -377,6 +377,8 @@ could try to re-flash the Yeti board with an up-to-date firmware version.
 If this does not help, please find support in
 `the mailing list or Zulip channels <https://everest.github.io/nightly/#everest-compass>`_
 .
+
+.. _belaybox_yeti_flash:
 
 How to flash the Yeti board
 ===========================
