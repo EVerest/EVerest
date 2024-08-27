@@ -338,6 +338,8 @@ any other open PCB parts to prevent damage to the boards.
 BelayBox Use Cases
 ******************
 
+.. _belaybox_rauc:
+
 How to install updates via RAUC bundles
 =======================================
 
