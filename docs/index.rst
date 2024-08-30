@@ -125,6 +125,27 @@ https://zoom-lfx.platform.linuxfoundation.org/meetings/everest
 Additionally, you might want to join the working group chat channels in Zulip.
 See the "Zulip chat" section above to see how to get there!
 
+Special Interest Group "EV Charging"
+------------------------------------
+
+Linux Foundation Energy (LFE) is growing. As the EVerest project (and all
+other LFE projects) have several connecting points to other projects in the
+same field, a Special Interest Group (SIG) has been created for
+
+* exchanging thoughts and experiences,
+* share best practices,
+* discuss industry trends and
+* tackle challenges together.
+
+If you work in the field of EV charging and you are interested in open source
+software / projects, join the SIG calls. They are free to access and open to
+all interested parties.
+
+Join the mailing list: https://lists.lfenergy.org/g/ev-charging-sig
+
+Directly access via Zoom:
+https://zoom-lfx.platform.linuxfoundation.org/meeting/92797425199
+
 1:1 meetup
 ----------
 
