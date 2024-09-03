@@ -1,11 +1,14 @@
 
 ![Alt text](https://raw.githubusercontent.com/EVerest/EVerest/main/docs/img/everest_horizontal-color.svg)
 
+[![OpenSSF Best Practices](https://bestpractices.coreinfrastructure.org/projects/6739/badge)](https://bestpractices.coreinfrastructure.org/projects/6739)
+
 # What is it?
 
-EVerest is a Linux Foundation backed open-source modular framework for settong up a full stack environment for EV charging. The modular software architecture fosters customizablility and lets you configure your dedicated charging scenarios based on interchangeable modules. All communication is performed by the lightweight and flexible MQTT message queueing service. EVerest will help to speed the adoption to e-mobility by utilizing all the open-source advantages for the EV charging world. It will also enable new features for local energy management, PV-integration and many more!
+EVerest is a Linux Foundation backed open-source modular framework for setting up a full stack environment for EV charging. The modular software architecture fosters customizablility and lets you configure your dedicated charging scenarios based on interchangeable modules. All communication is performed by the lightweight and flexible MQTT message queueing service. EVerest will help to speed the adoption to e-mobility by utilizing all the open-source advantages for the EV charging world. It will also enable new features for local energy management, PV-integration and many more!
 
 # Table of Contents
+
 - [Main Features](#Main-Features)
 - [Build & Install](#Build-&-Install)
 - [Dependencies](#Dependencies)
@@ -18,6 +21,7 @@ EVerest is a Linux Foundation backed open-source modular framework for settong u
 - [Contributing to EVerest](#Contributing-to-EVerest)
 
 # Main Features
+
 - IEC 6185
 - DIN SPEC 70121
 - ISO 15118: -2 and -20
@@ -38,7 +42,7 @@ The source code and installation instructions are currently hosted within [evere
 # Dependencies
 everest-core relies on EVerest Dependency Manager (EDM) to help orchestrate the dependencies between the different repositories. Detailed EDM installation instructions are found [here.](https://everest.github.io/nightly/dev_tools/edm.html#dependency-manager-for-everest)
 
-### Full Stack Hardware Requirements:
+## Full Stack Hardware Requirements
 It is recommended to have at least 4GB of RAM available to build EVerest. More CPU cores will optionally boost the build process, while requiring more RAM accordingly.
 
 # Demonstrations
@@ -64,7 +68,7 @@ Regular discussions take place on [Zulip Chat.](https://lfenergy.zulipchat.com/)
 
 Everest working group meetings occur on a weekly basis. A full calendar with invitations to all meetings can be found [here.](https://zoom-lfx.platform.linuxfoundation.org/meetings/everest?view=month)
 
-Additionally, if you or your organization would like to set up a 30 minute 1:1 meeting with EVerest leadership. Please follow the link [here.](https://calendly.com/manuel-ziegler-pionix/30min?month=2024-08)
+Additionally, if you and/or your organization would like to set up a 30 minute 1:1 meeting please follow the link [here.](https://calendly.com/manuel-ziegler-pionix/30min?month=2024-08)
 
 Check out our [YouTube Page](https://www.youtube.com/@lfe_everest) for instructional videos and meeting archives.
 
