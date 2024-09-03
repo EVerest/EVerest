@@ -86,7 +86,7 @@ version of EVerest - as a demo.
 
 BaseCamp is a professional and stable wrapper around the open-source charging
 software EVerest. For more information about the product of BaseCamp, see
-`this BaseCamp page <https://pionix.com/basecamp-os-for-ev-chargers>`_.
+`this BaseCamp page <https://www.pionix.com/products/basecamp>`_.
 
 .. note::
 
