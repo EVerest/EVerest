@@ -6,6 +6,32 @@
 Prepare Your Development Environment
 ####################################
 
+Minimum Requirements for EVerest
+================================
+
+Hardware that shall run a typical EVerest configuration should meet the
+following requirements:
+
+* Linux
+* CPU recommendation:
+  * Single core ARM 1 GHz for ISO 15118
+  * resp. dual/quad core for display
+* RAM: 1 GB (2 GB recommended)
+* Flash: 4-8 GB eMMC or similar
+* Ethernet port for cable network connection
+* WiFi and Bluetooth module
+* Public station: 4G/5G module?
+* CAN or RS485 for power board connection
+* PLC GreenPhy
+* RFID
+
+.. note::
+
+  EVerest can also run on much lower hardware specifications, if needed.
+  The reason for this is that the module configuration is very much defining
+  the RAM requirements. About 128 MB flash / RAM should be seen as a minimum
+  requirement.
+
 A Word on System Environments
 =============================
 
