@@ -1,4 +1,4 @@
-**Description**
+# Description
 
 Please describe, what the documentation change is about and eventually
 reference the related issue.
@@ -8,7 +8,7 @@ documented), please also reference them here.
 
 Fixes # (issue)
 
-**Type of change**
+## Type of change
 
 Please delete options that are not relevant.
 
@@ -16,7 +16,7 @@ Please delete options that are not relevant.
 - [ ] Documentation for a non-published feature (currently work-in-progress).
 - [ ] Change / optimization of documentation
 
-**Checklist**
+## Checklist
 
 - [ ] My documentation follows the docs style guidelines of this project
 - [ ] I have performed a self-review of my changes
