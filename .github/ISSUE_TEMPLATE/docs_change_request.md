@@ -14,7 +14,8 @@ A short description of what is missing or what you might want to add.
 Optionally name a section where you would see the change or the additional docs.
 
 **Can you reference a related GitHub repository or source code?**
-Where is the code implementation located for which documentation should be changed or added?
+Where is the code implementation located for which documentation should be
+changed or added?
 
 **Additional context**
 Add any other context or screenshots about your documentation request here.
