@@ -170,8 +170,8 @@ Now to the steps to flash the board:
 
 .. code-block:: bash
 
-  TBD *.wic.bz2
-  TBD *.bmap
+  https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-20240912100805.rootfs.wic.bz2
+  https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-20240912100805.rootfs.wic.bmap
 
 (2) Power up the BelayBox or - if the Yak is used alone - apply 12 V to the
 "12 IN" pins.
@@ -360,23 +360,7 @@ Execute the following:
 
 .. code-block:: bash
 
-  rauc install TBD *.bundle
-
-If the Linux system does not reboot after some seconds, execute:
-
-.. code-block:: bash
-
-  tryboot
-
-After the next boot, connect via SSH again and check the currently booted slot
-again. It should have switched to the other slot.
-
-If it did not switch to the other slot and the slot is marked as "bad", you
-could try to re-flash the Yeti board with an up-to-date firmware version.
-
-If this does not help, please find support in
-`the mailing list or Zulip channels <https://everest.github.io/nightly/#everest-compass>`_
-.
+  rauc install https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-bundle-raspberrypi4-20240912103122.raucb
 
 .. _belaybox_yeti_flash:
 
@@ -539,6 +523,26 @@ flash one time. If you are running version 2, it should flash two times.
 
 If it is on or off without flashing, the firmware could not be started or is
 not installed.
+
+No reboot after RAUC update
+===========================
+
+If you have done a RAUC udpate and the Linux system does not reboot after some
+seconds, execute:
+
+.. code-block:: bash
+
+  tryboot
+
+After the next boot, connect via SSH again and check the currently booted slot
+again. It should have switched to the other slot.
+
+If it did not switch to the other slot and the slot is marked as "bad", you
+could try to re-flash the Yeti board with an up-to-date firmware version.
+
+If this does not help, please find support in
+`the mailing list or Zulip channels <https://everest.github.io/nightly/#everest-compass>`_
+.
 
 Short cheat sheet
 =================
