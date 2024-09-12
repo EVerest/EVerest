@@ -3,21 +3,18 @@
 Pionix BelayBox
 ###############
 
-.. warning::
-  This page about the BelayBox is outdated as we are currently moving things
-  from the Debian-based to a newer Yocto-based image. The documentation will
-  be updated soon. Until that, we have created temporary
-  :ref:`quick-and-dirty instructions at the end of this docs <belaybox_new_yocto_based>`
-  .
-
 Introduction
 ************
 
 The BelayBox is a reference platform specifically designed for development and
-testing of the open source software EVerest.
+testing of the open source software EVerest. More details about how EVerest is
+embedded on the hardware can be found in the dedicated sections about EVerest
+cross-compilation in the section "BelayBox use cases".
 
-Inside the box, a Raspberry Pi is built in and we are officially part of the
-"Powered by Raspberry Pi" scheme:
+The BelayBox is delivered as a development kit, which has to be assembled
+following the instructions in this documentation. Part of the kit is a
+Raspberry Pi CM4 compute module. PIONIX is officially part of the "Powered by
+Raspberry Pi" scheme:
 
 .. image:: img/powered-by-pi.png
   :width: 300
@@ -38,14 +35,14 @@ The BelayBox is not meant to be used for private usage or outdoor charging.
 
 The BelayBox hardware
 =====================
-Inside, the BelayBox consists mainly of the Yeti board - an AC charger for
+The BelayBox consists mainly of the Yeti board - an AC charger for
 electric vehicles (EV) supporting IEC-61851-1 and SAE J1772 - and the Yak
 board, which is a high-level control board for EV charging stations supporting
 ISO 15118-2 (with ISO 15118-20 on its way) and DIN SPEC70121.
 
-As both Yeti and Yak Board are also released as Open Hardware under CERN Open
-Hardware Licence Version 2 (Permissive), we are very happy to point you to the
-schematics and design files and also the firmware:
+As both - Yeti and Yak board - are released as Open Hardware under CERN
+Open Hardware Licence Version 2 (Permissive), we are very happy to point you
+to the schematics and design files and also the firmware:
 
 * `Yeti and Yak Hardware Reference Design <https://github.com/PionixPublic/reference-hardware>`_
 * `Yeti Firmware <https://github.com/PionixPublic/yeti-firmware>`_
@@ -60,7 +57,9 @@ the `EVerest mailing list <https://lists.lfenergy.org/g/everest>`_.
 Getting support
 ===============
 
-If you already have purchased a BelayBox and you have hardware related
+See also the `BelayBox manual <https://pionix.com/user-manual-belaybox>`_.
+
+If you already have purchased a BelayBox kit and you have hardware related
 questions, you can get support by creating an issue via our
 `support page <http://support.pionix.com>`_.
 
@@ -77,13 +76,32 @@ If you need additional parts for your BelayBox, see the
 Setting up Hardware and Software
 ********************************
 
+The Yeti board is delivered with a firmware already flashed on it.
+The Yak board does not have any software flashed on it.
+
+In the following sections, we will show how to assemble the hardware parts and
+also how to do the flashing of the Yak board. The Yocto image for the Yak
+board includes binaries and services to run Basecamp - the commercial grade
+version of EVerest - as a demo.
+
+BaseCamp is a professional and stable wrapper around the open-source charging
+software EVerest. For more information about the product of BaseCamp, see
+`this BaseCamp page <https://www.pionix.com/products/basecamp>`_.
+
+.. note::
+
+  In case you need to build a custom Yeti firmware, have a look at this repo:
+  `Yeti firmware GitHub repository here <https://github.com/PionixPublic/yeti-firmware>`_
+  . Also see the
+  :ref:`section about how to flash the Yeti board <belaybox_yeti_flash>`.
+
 Assembling the Yak Board
 ========================
 
 Starting assembling the Yak Board, you should have the following parts
 available:
 
-.. image:: img/yak-assembly-1-overview.jpg
+.. image:: img/yak-assembly-1-overview-w600.png
 
 And you will need the following tools:
 
@@ -91,14 +109,13 @@ And you will need the following tools:
 * ESD underlay mat
 * Linux host system, Ubuntu >18 recommended
 * 1x Micro USB cable
-* 12V DC power supply with minimum 30W to connect to “12V IN” pins on
+* 12 V DC power supply with minimum 30 W to connect to “12 V IN” pins on
   Yak board. A lab power supply is sufficient.
 
 Needed software:
 
 * `Raspberry PI USB Boot <https://github.com/raspberrypi/usbboot/blob/master/Readme.md#building>`_
-* `balenaEtcher <https://www.balena.io/etcher>`_
-  (“dd” also works but is dangerous to use and much slower)
+* bmaptool - `see here <https://docs.yoctoproject.org/dev-manual/bmaptool.html>`_
 * Internet access from host system
 
 .. warning::
@@ -109,11 +126,11 @@ Glue on the heatsinks as shown in the following image using the double
 sided tape that comes with the heatsinks. Plug in the small clips into
 the mounting holes of the CM4 board as shown.
 
-.. image:: img/yak-assembly-2.jpg
+.. image:: img/yak-assembly-2-w500.png
 
 Turn around the CM4 and put on the gray spacers as shown here:
 
-.. image:: img/yak-assembly-3.jpg
+.. image:: img/yak-assembly-3-w500.png
 
 Plug the CM4 board in both connectors and make sure the clips go all the way
 through the Yak board and hold the CM4 securely without any gaps between the
@@ -121,35 +138,102 @@ spacers and both boards. Make sure to remove the metal part (if there is one)
 out of the board-to-board connector as shown in the upper left corner in the
 following image:
 
-.. image:: img/yak-assembly-4.jpg
+.. image:: img/yak-assembly-4-w600.png
 
 This is how it looks from the top side:
 
-.. image:: img/yak-assembly-5.jpg
+.. image:: img/yak-assembly-5-w500.png
 
 Now place the small black jumper onto the "BOOT" pins as shown above. This
-is needed to be able to mount the emmC flash to the host system.
+is needed to be able to make the emmC flash accessible to the host system.
 
 Flashing the Yak Board
 ======================
 
-.. image:: img/yak-assembly-6.jpg
+In this section, we will walk you through the process of deploying the
+Yocto-based image including EVerest in form of BaseCamp.
 
-Plug in a micro usb cable to the "J1" USB socket and plug the other end in the
-linux host system.
+.. note::
+
+  You will only have to do this flashing procedure once. After that, you can
+  use the RAUC updates, which are hosted on PIONIX update servers.
+  In case you need to reflash the whole image, we will inform you in the
+  public support channels.
+
+  If you want to create your own custom yocto image with EVerest, you can
+  have a look at
+  `Yeti-Yak-SDK repository <https://github.com/PionixPublic/yeti-yak-sdk>`_.
+
+Now to the steps to flash the board:
+
+(1) Download the latest stable image and the matching .bmap file:
+
+.. code-block:: bash
+
+  https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-20240912100805.rootfs.wic.bz2
+  https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-20240912100805.rootfs.wic.bmap
+
+(2) Power up the BelayBox or - if the Yak is used alone - apply 12 V to the
+"12 IN" pins.
+
+The red power LED on the Yak should light up constantly now.
+
+(3) Connect the Yak board via Micro-USB to the host system.
+
+(4) Enable the CM4 storage mode so that the eMMC becomes available to the host
+system:
+
+.. code-block:: bash
+
+  sudo rpiboot
+
+The green LED on the Yak board should light up constantly now.
+
+(5) To find the eMMC device, do:
+
+.. code-block:: bash
+
+  lsblk
+
+Check the output and look for a approximately 16 GB device called /dev/sdX -
+where X can be any letter.
 
 .. warning::
-  As we are currently moving things from the Debian-based to a newer
-  Yocto-based image, please refer to our temporary
-  :ref:`quick-and-dirty instructions at the end of this docs <belaybox_new_yocto_based>`
-  .
+
+  Make sure to select the correct device as data loss can occure if the wrong
+  device is selected!
+
+(6) Make sure the .wic.bz2 file and the .bmap file are in the same directory
+and flash the eMMC. In the command below, replace <image file>.bz2 with your
+downloaded image file and replace "X" according to your eMMC device.
+
+.. code-block:: bash
+
+  sudo bmaptool copy <image file>.bz2 /dev/sdX
+
+After roughly nine minutes the flashing should have finished.
+
+.. caution::
+  Make sure to connect the WiFi antenna to the CM4 after flashing. The image
+  activates the external antenna support. Running a flashed Yak without the
+  WiFi antenna mounted can result in damage of the WiFi chip.
+
+(7) Disconnect the eMMC device, power off and unplug the "boot" jumper from the
+Yak board.
+
+.. image:: img/yak-assembly-9.jpg
+
+With the raspberry CM4, it can be that the overlay filesystem sometimes does
+not get mounted in the right order; so you might have to reboot twice if some
+files are missing after flashing.
+
 
 Assembling the Yeti Board
 =========================
 
 Here's what you should have:
 
-.. image:: img/yeti-assembly-1-overview.jpg
+.. image:: img/yeti-assembly-1-overview-w550.png
 
 Tools needed:
 
@@ -159,61 +243,59 @@ Tools needed:
 Clip on the touch protection cage and make sure all clips are correctly seated
 as shown here:
 
-.. image:: img/yeti-assembly-2.jpg
+.. image:: img/yeti-assembly-2-w500.png
 
 Clip in the smaller part of the touch protection and make sure all clips are
 correctly seated as shown here:
 
-.. image:: img/yeti-assembly-3.jpg
+.. image:: img/yeti-assembly-3-w500.png
 
 Clip in the bigger part of the touch protection and make sure all clips are
 correctly seated as shown in the following image:
 
-.. image:: img/yeti-assembly-4.jpg
+.. image:: img/yeti-assembly-4-w425.png
 
 Your mission can be seen as accomplished if your Yeti looks like that:
 
-.. image:: img/yeti-assembly-5.jpg
+.. image:: img/yeti-assembly-5-w500.png
 
 Preparing the cable set
 =======================
 
 That's how we start:
 
-.. image:: img/cable-set-1-overview.jpg
+.. image:: img/cable-set-1-overview-w500.png
 
 The **10-position cable between Yeti and Yak** is mandatory to connect Yak to
 Yeti and to power the Yak board from the Yeti power supply.
 
-.. image:: img/cable-set-2.jpg
+.. image:: img/cable-set-2-w400.png
 
 Plug in one of the crimped cables with one end into the 10-position plug. Make
 sure to plug in the crimp in the exact same orientation as shown in the
-picture above. Be aware that the crimps cannot be unplugged again from the
-10-position plug. Make sure you plug in the crimps in the correct positions
-before actually plugging them in.
-
-Plug in the other crimped end of the cable into the second plug. It is very
-important to plug in the crimps in the shown “1:1” fashion. Doing otherwise
-will permanently damage the Yak and/or Yeti board.
-
-.. image:: img/cable-set-3.jpg
+picture above.
 
 .. warning::
   Be aware that the crimps cannot be unplugged again from the 10 position
   plug. Make sure you plug in the crimps in the correct positions before
   actually plugging them in.
 
+Plug in the other crimped end of the cable into the second plug. It is very
+important to plug in the crimps in the shown “1:1” fashion. Doing otherwise
+will permanently damage the Yak and/or Yeti board.
+
+.. image:: img/cable-set-3-w500.png
+
 Continue with plugging in all ten cables one after the other as there is less
 chance of getting it wrong this way.
 
 This is how the cable looks when assembly is done:
 
-.. image:: img/cable-set-4.jpg
+.. image:: img/cable-set-4-w500.png
 
 Let's continue with the **6-position CAN + RS485 cable**.
 
-.. image:: img/cable-set-5.jpg
+.. image:: img/cable-set-5-w550.png
 
 Plug in a crimped cable with one end into the 6-position plug.
 Make sure to plug in the crimp in the exact same orientation as shown in the
@@ -225,11 +307,11 @@ cables are isolated to prevent damage to the Yak board.
 
 This is how the assembled cable looks like:
 
-.. image:: img/cable-set-6.jpg
+.. image:: img/cable-set-6-w500.png
 
 This is the pin description of the Yak board's 4-, 6- and 10-position sockets:
 
-.. image:: img/cable-set-7.png
+.. image:: img/cable-set-7-w550.png
 
 Final Yak-Yeti-Cable-Setup
 ==========================
@@ -240,296 +322,57 @@ Tools needed:
 * ESD underlay mat
 * Preassembled Yak, Yeti kits and cable-set as shown in sections above
 
-.. image:: img/final-assembly.jpg
+.. image:: img/final-assembly-w425.png
 
 Plug in the 10-pin cable into the corresponding sockets on both ends.
 Plug in the 4-pin RFID/NFC reader cable.
 The assembly of Yak, Yet kit and cable set is completed.
 
 When using the assembly in a "desk" environment, it is recommended to apply
-power through the 12V DC barrel connector shown in the upper right corner of
+power through the 12 V DC barrel connector shown in the upper right corner of
 the Yeti board in the image above. Make sure the WiFi antenna does not touch
 any other open PCB parts to prevent damage to the boards.
 
 .. _belaybox_furtherinfo:
 
-BelayBox Further Information
-****************************
+BelayBox Use Cases
+******************
 
-Reference Cheat Sheet
-=====================
+.. _belaybox_rauc:
 
-Make root partition read/writable
----------------------------------
+How to install updates via RAUC bundles
+=======================================
 
-Use the following command:
+Connect via SSH into your Yak board. The credentials are:
 
-.. code-block:: bash
+* User: root
+* Password: basecamp
 
-  rw
-
-Make it read only again
------------------------
-
-Use the following command:
+Check the currently booted slot:
 
 .. code-block:: bash
 
-  ro
+  rauc status
 
-File containing wifi settings
------------------------------
-.. code-block:: bash
+Remember the slot for comparison afterwards.
 
-  /mnt/user_data/etc/wpa_supplicant/wpa_supplicant.conf
-
-Use of custom everest build or config
--------------------------------------
-Force the use of custom everest build or config by automated start of
-``everest-dev.service`` instead of ``everest.service``
+Execute the following:
 
 .. code-block:: bash
 
-  /mnt/user_data/opt/everest/<crosscompiled everest binaries>
+  rauc install https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-bundle-raspberrypi4-20240912103122.raucb
 
-Define release channels
------------------------
-Contains either stable or unstable to define release channels:
+.. _belaybox_yeti_flash:
 
-.. code-block:: bash
+Cross-compile toolchain
+=======================
 
-  /mnt/user_data/etc/update_channel
-
-Wireguard VPN configuration
----------------------------
-.. code-block:: bash
-
-  /mnt/user_data/etc/wireguard/wg0.config
-
-Persistent user config
-----------------------
-Via a complete config:
-
-.. code-block:: bash
-
-  /mnt/user_data/etc/everest/custom.yaml
-
-Via a config file containing only the diffs to the default config:
-
-.. code-block:: bash
-
-  /mnt/user_data/user-config/config-deploy-devboard.yaml
-
-Stop automatic updates
-----------------------
-.. code-block:: bash
-
-  rw; sudo systemctl disable ota-update.service
-
-Additional config files for the mqtt broker
--------------------------------------------
-.. code-block:: bash
-
-  /mnt/user_data/etc/mosquitto/conf.d
-
-This is the place where you can add for example a “public_mqtt.conf” file with the following contents:
-
-.. code-block:: bash
-
-  listener 1883
-  allow_anonymous true
-
-With this, you allow anonymous external connections to the mqtt broker for
-debugging purposes.
-
-Watch the output of everest.service
------------------------------------
-
-.. code-block:: bash
-
-  sudo journalctl -fu everest.service
-
-For watching the output of everest-dev.service, set service name to
-*everest-dev.service*.
-
-Run EVerest in terminal
------------------------
-
-.. code-block:: bash
-
-  sudo /opt/everest/bin/manager --conf /opt/everest/conf/config-deploy-devboard.yaml
-
-or for using the custom user config:
-
-.. code-block:: bash
-
-  sudo /opt/everest/bin/manager --conf /mnt/user_data/etc/everest/custom.yaml
-
-Make sure the systemd service is not running.
-
-Using online updates
-====================
-
-.. warning::
-  This section about BelayBox updating is outdated as we are currently moving
-  things from the Debian-based to a newer Yocto-based image. Find setup
-  instructions in the temporary
-  :ref:`quick-and-dirty instructions at the end of this docs <belaybox_new_yocto_based>`
-  . Information about doing updates will follow.
-
-BelayBox comes with a very simple online update tool that is controlled by
-two systemd services:
-
-``ota-update.service``: This service starts a shell script that checks for
-online updates on Pionix update servers. It is triggered by the second systemd
-service:
-
-``ota-update.timer``: This is the systemd timer unit that starts
-``ota-update.service`` on regular intervals.
-
-To disable online updates use ``sudo systemctl disable ota-update.service``.
-The online update updates always the full root partition. All data that needs
-to survive the update needs to be stored in ``/mnt/user_data``.
-
-The root partition should normally never be modified, it is read only. All
-changes will also be lost on the next online update.
-
-If you still want to modify something, use the ``rw`` and ``ro`` commands
-to re-mount root read-write/read-only.
-
-In rw mode you can e.g. use ``sudo apt install ...`` to install new software.
-
-Disable online update if you need the changes to stay.
-
-Factory reset
-=============
-
-For a factory reset of the BelayBox, the following partition has to be
-formatted:
-
-.. code-block:: bash
-
-  /mnt/user_data/
-
-Before that, all services accessing that partition have to be stopped:
-
-.. code-block:: bash
-
-  sudo systemctl stop everest
-  sudo systemctl stop nodered
-
-.. hint::
-  Depending of your setup, the EVerest service could also be called
-  *everest-dev* or *everest-rpi* instead of just *everest*.
-
-After this, unmount the partition:
-
-.. code-block:: bash
-
-  sudo umount /dev/mmcblk0p6
-
-Finally, formatting can start:
-
-.. code-block:: bash
-
-  sudo mkfs -t ext4 /dev/mmcblk0p6
-
-Confirm with "y" as soon as you are happy with losing all previous
-configuation settings (e.g. WiFi credentials).
-
-After formatting, reboot the BelayBox to let it setup the factory default
-configuration:
-
-.. code-block:: bash
-
-  sudo reboot
-
-Troubleshooting
-***************
-
-Yeti errors or EVerest not starting
-===================================
-
-Should your log output tell you something about "Yeti reset not successful"
-or the EVerest modules get terminated right after EVerest started, it could
-be due to the Yeti interface not being connected properly.
-
-In this case, check the connections and the cable harness.
-
-Should everything look fine, check if the Yeti firmware is running properly
-by looking at the Yeti LED. It should flash in a fast frequency. If it is on
-or off without flashing, the firmware could not be started or is not
-installed.
-
-.. _belaybox_new_yocto_based:
-Temporary quick-and-dirty docs: New Yocto-based build
-=====================================================
-
-Install latest Yocto version
-----------------------------
-
-.. note::
-
-  From June 2024 on, we will start changing the Debian-based to a Yocto-based
-  image. As we will need some time to update our documentation accordingly,
-  see a quick overview of how you can setup your hardware in the meantime.
-
-For a new board (or previous Debian-based board), download the complete SD
-image:
-
-`<http://build.pionix.de:8888/release/yocto/belaybox-image-raspberrypi4-20240613154507.rootfs.wic.bz2>`_
-
-Use balena etcher as described in the manual above, but use the downloaded
-image instead.
-
-The Yeti MCU also needs the corresponding firmware for the new Yocto image.
-The firmware is included in the new image.
-
-.. note::
-
-  If you have purchased the YETI board after June 2024 the new firmware 2.1 is
-  already on the YETI board.
-
-Run these two commands once booted into the new image (the first one is very
-important - do not update while EVerest/BaseCamp is running!):
-
-.. code-block:: bash
-
-  systemctl stop basecamp
-  yeti_fwupdate /dev/serial0 /usr/share/everest/modules/YetiDriver/firmware/yetiR1_2.1_firmware.bin
-
-After that, reset both Yeti and Yak!
-
-The new ssh login credentials for the Yocto image are:
-
-.. code-block:: bash
-
-  user: root
-  pw: basecamp
-
-If you have the new Yocto installed already, you can update to this version
-using this command:
-
-.. code-block:: bash
-
-  rauc install http://build.pionix.de:8888/release/yocto/belaybox-bundle-raspberrypi4-20240627101617.raucb
-
-After installation is complete, run this to boot into the newly installed
-update:
-
-.. code-block:: bash
-
-  tryboot
-
-Use new toolchain for cross-compiling
--------------------------------------
-
-If you want to cross compile your EVerest version, this is the toolchain to
+If you want to cross-compile your EVerest version, this is the toolchain to
 use:
 
 .. code-block:: bash
 
-  http://build.pionix.de:8888/release/yocto/poky-glibc-x86_64-belaybox-image-cortexa7t2hf-neon-vfpv4-raspberrypi4-toolchain-4.0.16.sh
+  https://pionix-update.de/belaybox-basecamp-demo/stable/poky-glibc-x86_64-belaybox-image-cortexa7t2hf-neon-vfpv4-raspberrypi4-toolchain-4.0.16.sh
 
 First of all you need to install it. It is a shell script, so just do a
 "chmod +x name_of_toolchain.sh" and then run it with
@@ -539,7 +382,7 @@ First of all you need to install it. It is a shell script, so just do a
   ./name_of_toolchain.sh
 
 You will be asked where to install it. You can e.g. install it in your home
-directory - somewhere like /etc/myuser/toolchain-belaybox
+directory - somewhere like /home/myuser/toolchain-belaybox
 
 Then you need to source the environment variables (it tells you how to do it
 at the end of the installation).
@@ -556,9 +399,9 @@ There, run cmake as follows:
 
 In this case, the PY/JS support flags are set to OFF. You may need to set them
 to ON if you are using simulation. The last option
--Deverest-core_USE_PYTHON_VENV is only a temporarily needed directive that
+``-Deverest-core_USE_PYTHON_VENV`` is only a temporarily needed directive that
 will probably be obsolete in future release candidates.
-The -GNinja can also be left out, then it will use make.
+The ``-GNinja`` can also be left out, then it will use make.
 
 After that you can build with 
 
@@ -594,8 +437,188 @@ Then you can run your self-compiled version like this:
 
   /var/everest/bin/manager --conf /path/to/my/configfile
 
-Further potential necessary steps
----------------------------------
+How to flash the Yeti board
+===========================
+
+Connect via SSH into the Yak board and run these two commands (the first one
+is very important - do not update while EVerest/BaseCamp is running!):
+
+.. code-block:: bash
+
+  systemctl stop basecamp
+  yeti_fwupdate /dev/serial0 /usr/share/everest/modules/YetiDriver/firmware/yetiR1_2.1_firmware.bin
+
+.. important::
+
+  In case you use a fullsize Raspberry Pi 4B, use the following command
+  instead of the above one:
+  
+  systemctl stop basecamp-rpi
+
+After that, restart the basecamp or basecamp-rpi service:
+
+.. code-block:: bash
+
+  systemctl restart basecamp
+  
+or (respectively)
+
+.. code-block:: bash
+
+  systemctl restart basecamp-rpi
+
+
+How to activate OCPP 2.0.1
+==========================
+
+This how-to is based on the software status from 2024-08-27.
+
+As development is currently ongoing, there will be changes. So, it is a good
+idea to revisit this page in future.
+
+Some information before setting up OCPP 2.0.1
+---------------------------------------------
+
+Consider doing a RAUC update to get the most up-to-date software version
+running - see :ref:`section about RAUC updates <belaybox_rauc>`.
+
+If you want to test OCPP with a local backend,
+
+1. please build EVerest on your local machine first in order to create the
+  necessary certificates and
+2. install https://github.com/EVerest/ocpp-csms on your local machine.
+
+Configuration on the BelayBox
+-----------------------------
+
+1. Connect via SSH to the BelayBox (credentials are "root/basecamp").
+
+2. Open the file /etc/everest/ocpp201-pnc-config.json in a text or code editor
+  and check the CentralSystemURI. Set your own local IP address of the machine
+  which is running ocpp-csms. Default port is 9000 and charger ID is
+  MYCHARGER001. SecurityProfile should be set to value 1.
+
+3. There are some further example configuration files, which you can have a
+  look at to learn about further setting options and see how things are
+  connected. Those files are the yaml files in directory /etc/everest/.
+
+4. Also have a look at /config/v201/profile_schemas. All parameters which are
+  not listed as required, can be set optionally.
+
+5. See the component configuration files at
+  /usr/share/everest/modules/OCPP201/component_config
+  Edit those files for setting your specific charge point scenario.
+
+6. The directory /user-config/v201/component_schemas/custom/ contains the
+  EVSE and connector definitions. Remove the ones that are not required ones
+  for your dedicated scenario.
+
+Running the scripts and manager processes
+-----------------------------------------
+
+Have a look at /usr/bin/ocpp201_init.sh to see if all paramaters are set as
+required for your dedicated scenario and run the shell script.
+
+After that, restart the BaseCamp process (make sure to use the correct config
+file as parameter):
+
+.. code-block:: bash
+
+  systemctl stop basecamp
+  manager –config config-belaybox-pwm-ocpp.yaml
+
+.. note::
+
+  Running the manager process for the first time, you can get a warning that
+  no key pair could be found for v2g ocsp request. As after the first startup,
+  a key pair is generated, this message should not return next time.
+
+.. important::
+
+  The process of updating the values of the database via the script will be
+  obsolete in the next major release of the Yak image. Until then, every
+  update will reset the config entries in /usr/share/everest/modules/.
+  So please create a back-up of your config entries before any RAUC update.
+
+Additional information
+----------------------
+
+If you want to take a look at the database migration scripts, see here:
+/usr/share/everest/modules/OCPP201/core_migrations/
+
+Those are the changes in the database that are performed when upgrading or
+downgrading to another database version.
+
+Factory reset
+=============
+
+.. note::
+  We are preparing a new factory reset howto for the updated Yocto-image.
+
+Further information
+===================
+
+RS-485 Modbus config for Yak board
+----------------------------------
+
+If you want to use the RS-485 Modbus device on the Yak board and the current
+(July 2024 or later) basecamp image, here is how you configure it in the
+config.yaml for the SerialCommunicationHub:
+
+.. code-block:: bash
+
+  comm_hub:
+    config_implementation:
+      main:
+    serial_port: /dev/ttyAMA3
+        baudrate: 19200
+        parity: 2
+        rxtx_gpio_chip: gpiochip0
+        rxtx_gpio_line: 16
+        rxtx_gpio_tx_high: true
+    module: SerialCommHub
+
+Troubleshooting
+***************
+
+Yeti errors or EVerest not starting
+===================================
+
+Should your log output tell you something about "Yeti reset not successful"
+or the EVerest modules get terminated right after EVerest started, it could
+be due to the Yeti interface not being connected properly.
+
+In this case, check the connections and the cable harness.
+
+Should everything look fine, check if the Yeti firmware is running properly
+by looking at the Yeti LED. If you are running firmware version 1, it should
+flash one time. If you are running version 2, it should flash two times.
+
+If it is on or off without flashing, the firmware could not be started or is
+not installed.
+
+No reboot after RAUC update
+===========================
+
+If you have done a RAUC udpate and the Linux system does not reboot after some
+seconds, execute:
+
+.. code-block:: bash
+
+  tryboot
+
+After the next boot, connect via SSH again and check the currently booted slot
+again. It should have switched to the other slot.
+
+If it did not switch to the other slot and the slot is marked as "bad", you
+could try to re-flash the Yeti board with an up-to-date firmware version.
+
+If this does not help, please find support in
+`the mailing list or Zulip channels <https://everest.github.io/nightly/#everest-compass>`_
+.
+
+Short cheat sheet
+=================
 
 The new ssh login credentials for the Yocto image are:
 
@@ -604,9 +627,22 @@ The new ssh login credentials for the Yocto image are:
   user: root
   pw: basecamp
 
-The default config yaml file being used by the basecamp.service is the symlink
-in /etc/everest/basecamp.yaml. It points to the config to be used. This can be
-changed to a config to your liking.
+The default config file being used by the basecamp.service is the symlink
+in
+
+.. code-block:: bash
+
+  /etc/everest/basecamp.yaml
+  
+It points to the config to be used. This can be
+changed to a config to your liking:
+
+.. code-block:: bash
+
+  rm /etc/everest/basecamp.yaml
+  ln -s /etc/everest/<your-custom-config> /etc/everest/basecamp.yaml
+
+After this, restart the basecamp service or reboot.
 
 Should you see any "Unknown config entry" errors when starting the manager
 process, delete the corresponding config entries from the yaml file you are
