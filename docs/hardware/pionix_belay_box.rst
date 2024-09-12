@@ -382,7 +382,7 @@ First of all you need to install it. It is a shell script, so just do a
   ./name_of_toolchain.sh
 
 You will be asked where to install it. You can e.g. install it in your home
-directory - somewhere like /etc/myuser/toolchain-belaybox
+directory - somewhere like /home/myuser/toolchain-belaybox
 
 Then you need to source the environment variables (it tells you how to do it
 at the end of the installation).
