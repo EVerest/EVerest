@@ -9,7 +9,7 @@ Introduction
 The BelayBox is a reference platform specifically designed for development and
 testing of the open source software EVerest. More details about how EVerest is
 embedded on the hardware can be found in the dedicated sections about EVerest
-cross-compilation.
+cross-compilation in the section "BelayBox use cases".
 
 The BelayBox is delivered as a development kit, which has to be assembled
 following the instructions in this documentation. Part of the kit is a
@@ -363,6 +363,79 @@ Execute the following:
   rauc install https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-bundle-raspberrypi4-20240912103122.raucb
 
 .. _belaybox_yeti_flash:
+
+Cross-compile toolchain
+=======================
+
+If you want to cross-compile your EVerest version, this is the toolchain to
+use:
+
+.. code-block:: bash
+
+  https://pionix-update.de/belaybox-basecamp-demo/stable/poky-glibc-x86_64-belaybox-image-cortexa7t2hf-neon-vfpv4-raspberrypi4-toolchain-4.0.16.sh
+
+First of all you need to install it. It is a shell script, so just do a
+"chmod +x name_of_toolchain.sh" and then run it with
+
+.. code-block:: bash
+
+  ./name_of_toolchain.sh
+
+You will be asked where to install it. You can e.g. install it in your home
+directory - somewhere like /etc/myuser/toolchain-belaybox
+
+Then you need to source the environment variables (it tells you how to do it
+at the end of the installation).
+
+Once they are sourced, this terminal will cross compile.
+
+In everest-core, create a folder called "build-cross". Change into it.
+
+There, run cmake as follows:
+
+.. code-block:: bash
+
+  cmake .. -GNinja -DCMAKE_INSTALL_PREFIX=/var/everest -DEVEREST_ENABLE_PY_SUPPORT=OFF -DEVEREST_ENABLE_JS_SUPPORT=OFF -Deverest-core_USE_PYTHON_VENV=OFF
+
+In this case, the PY/JS support flags are set to OFF. You may need to set them
+to ON if you are using simulation. The last option
+``-Deverest-core_USE_PYTHON_VENV`` is only a temporarily needed directive that
+will probably be obsolete in future release candidates.
+The ``-GNinja`` can also be left out, then it will use make.
+
+After that you can build with 
+
+.. code-block:: bash
+
+  make -j10 
+
+or 
+
+.. code-block:: bash
+
+  ninja
+
+depending on what you configured.
+
+Once the build is complete, you can rsync directly to belaybox like this:
+
+.. code-block:: bash
+
+  DESTDIR=dist ninja install/strip && rsync -av dist/var/everest root@the.ip.add.ress:/var
+
+Replace the IP address placeholder with the correct one.
+
+Then log into the BelayBox and stop the systemd service:
+
+.. code-block:: bash
+
+  systemctl stop basecamp
+
+Then you can run your self-compiled version like this:
+
+.. code-block:: bash
+
+  /var/everest/bin/manager --conf /path/to/my/configfile
 
 How to flash the Yeti board
 ===========================
