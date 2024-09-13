@@ -40,6 +40,9 @@ To get more detailed information about EVerest documentation, see
   reStructuredText:
   https://www.sphinx-doc.org/en/master/usage/restructuredtext/index.html
 
+  Also have a look at our
+  :ref:`best practices page for using Sphinx in EVerest <tutorial_sphinx_style_code>`.
+
 #. Create pull request (PR).
 
   After having finished your work, create a PR and set a reference to the

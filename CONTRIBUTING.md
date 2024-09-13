@@ -4,7 +4,8 @@ Thank you for your interest in contributing to EVerest.
 
 This document explains our contribution process and how to contribute a bug fix
 or change in source code. In case you want to contribute to the EVerest
-documentation, see here ...
+documentation, see here:
+https://everest.github.io/nightly/tutorials/how_to_docs/documenting.html
 
 For a description of the roles and responsibilities of the various members of
 the EVerest community, see the [Governance Policy], and for further details,
