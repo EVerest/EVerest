@@ -166,27 +166,37 @@ Yocto-based image including EVerest in form of BaseCamp.
 
 Now to the steps to flash the board:
 
-(1) Download the latest stable image and the matching .bmap file:
-  (a) https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-20240912100805.rootfs.wic.bz2
-  (b) https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-20240912100805.rootfs.wic.bmap
+**STEP 1: Downloading**
 
-(2) Power up the BelayBox or - if the Yak is used alone - apply 12 V to the
-"12 IN" pins.
+Download the latest stable image and the matching .bmap file:
+
+* https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-20240912100805.rootfs.wic.bz2
+* https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-20240912100805.rootfs.wic.bmap
+
+**STEP 2: Powering up**
+
+Power up the BelayBox or - if the Yak is used alone - apply 12 V to
+the "12 IN" pins.
 
 The red power LED on the Yak should light up constantly now.
 
-(3) Connect the Yak board via Micro-USB to the host system.
+**STEP 3: Connect Yak to host system**
 
-(4) Enable the CM4 storage mode so that the eMMC becomes available to the host
-system:
+Connect the Yak board via Micro-USB to the host system.
+
+**STEP 4: Enabling CM4 storage mode**
+
+Enable the CM4 storage mode so that the eMMC becomes available to
+the host system:
 
 .. code-block:: bash
-
   sudo rpiboot
 
 The green LED on the Yak board should light up constantly now.
 
-(5) To find the eMMC device, do:
+**STEP 5: Finding the eMMC device**
+
+To find the eMMC device, do:
 
 .. code-block:: bash
 
@@ -200,7 +210,9 @@ where X can be any letter.
   Make sure to select the correct device as data loss can occure if the wrong
   device is selected!
 
-(6) Make sure the .wic.bz2 file and the .bmap file are in the same directory
+**STEP 6: Flash the eMMC**
+
+Make sure the .wic.bz2 file and the .bmap file are in the same directory
 and flash the eMMC. In the command below, replace <image file>.bz2 with your
 downloaded image file and replace "X" according to your eMMC device.
 
@@ -215,7 +227,9 @@ After roughly nine minutes the flashing should have finished.
   activates the external antenna support. Running a flashed Yak without the
   WiFi antenna mounted can result in damage of the WiFi chip.
 
-(7) Disconnect the eMMC device, power off and unplug the "boot" jumper from the
+**STEP 7: Finishing**
+
+Disconnect the eMMC device, power off and unplug the "boot" jumper from the
 Yak board.
 
 .. image:: img/yak-assembly-9.jpg
