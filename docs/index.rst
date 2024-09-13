@@ -26,18 +26,45 @@ for local energy management, PV-integration and many more.
 The EVerest project was initiated by `PIONIX GmbH <https://pionix.com>`_
 (`Pionix at LinkedIn <https://www.linkedin.com/company/pionix-gmbh>`_) to help with the electrification of the mobility sector and is an official project of the Linux Foundation Energy.
 
-***************
-EVerest Compass
-***************
+**************************************
+Where to Go From Here: EVerest Compass
+**************************************
+
+Testing and setting up EVerest
+==============================
 
 You are currently on the main documentation page of EVerest.
+This is the right place to learn about understanding how things work together
+and how to test EVerest.
+
+Just read on through all the sections and you will find a
+:ref:`Quick Start Guide <quickstartguide_main>`, more detailed explanations
+about the EVerest modules concept and tutorials.
+
+Contributing to EVerest
+=======================
+
+EVerest is an open source software and has also a very open community around
+it.
+
+"Open community" means that you can join discussions, thought exchanges and
+prioritization meetings without dedicated registration or allowance.
+See below for all the communication channels that can be joined by you right
+now.
+
+To learn about **contributing to the source code** of EVerest, read our
+`contribution file in the main EVerest repository <https://github.com/EVerest/EVerest/blob/main/CONTRIBUTING.md>`_
+.
+
+If you rather want to contribute to the documentation, you should have a look
+at the `Documenting EVerest page <documenting_everest>`.
 
 There are quite a few other resources that you might want to check out:
 
 .. _index_contact:
 
-Direct contact
-==============
+Communication channels
+======================
 
 .. _index_zulip:
 

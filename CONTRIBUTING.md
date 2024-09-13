@@ -3,7 +3,9 @@
 Thank you for your interest in contributing to EVerest.
 
 This document explains our contribution process and how to contribute a bug fix
-or change.
+or change in source code. In case you want to contribute to the EVerest
+documentation, see here:
+[Documenting EVerest](https://everest.github.io/nightly/tutorials/how_to_docs/documenting.html)
 
 For a description of the roles and responsibilities of the various members of
 the EVerest community, see the [Governance Policy], and for further details,
@@ -22,8 +24,8 @@ page to understand the roles involved.
 ## Discussing and Communication
 
 We encourage contributors to engage in discussions, whether it's about
-proposing new features, reporting bugs, or seeking clarification on
-project-related matters.
+proposing new features, reporting bugs, contributing to the documentation or
+seeking clarification on project-related matters.
 While GitHub issues are a valuable tool for tracking tasks and issues, we find
 that real-time communication often leads to faster resolution and clearer
 understanding.
@@ -55,7 +57,7 @@ eventually which impact the change will have. Issue and pull request templates
 of the repositories of the EVerest organization support a proper format
 of code contributions.
 
-Every pull request for a feature request must link an issue. Pull request for
+Every pull request for a feature request must link an issue. Pull requests for
 bugfixes do not necessarily need to link an issue, but they should contain a
 proper description of the bug that is fixed.
 
