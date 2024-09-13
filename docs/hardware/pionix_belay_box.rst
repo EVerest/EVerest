@@ -142,7 +142,7 @@ following image:
 
 This is how it looks from the top side:
 
-.. image:: img/yak-assembly-5-w500.png
+.. image:: img/yak-assembly-5-w600.png
 
 Now place the small black jumper onto the "BOOT" pins as shown above. This
 is needed to be able to make the emmC flash accessible to the host system.
@@ -167,11 +167,8 @@ Yocto-based image including EVerest in form of BaseCamp.
 Now to the steps to flash the board:
 
 (1) Download the latest stable image and the matching .bmap file:
-
-.. code-block:: bash
-
-  https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-20240912100805.rootfs.wic.bz2
-  https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-20240912100805.rootfs.wic.bmap
+  (a) https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-20240912100805.rootfs.wic.bz2
+  (b) https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-20240912100805.rootfs.wic.bmap
 
 (2) Power up the BelayBox or - if the Yak is used alone - apply 12 V to the
 "12 IN" pins.
@@ -531,14 +528,14 @@ file as parameter):
 
   Running the manager process for the first time, you can get a warning that
   no key pair could be found for v2g ocsp request. As after the first startup,
-  a key pair is generated, this message should not return next time.
+  a key pair is generated, this message should not be shown next time.
 
 .. important::
 
   The process of updating the values of the database via the script will be
   obsolete in the next major release of the Yak image. Until then, every
   update will reset the config entries in /usr/share/everest/modules/.
-  So please create a back-up of your config entries before any RAUC update.
+  So please create a backup of your config entries before any RAUC update.
 
 Additional information
 ----------------------
