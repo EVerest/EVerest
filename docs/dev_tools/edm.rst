@@ -134,10 +134,14 @@ has the same effect:
 
   edm init
 
-Advanced users would eventually want to use their customized lib versions or
-branches of repos. This can be achieved by editing the workspace-config.yaml
-file in the root of the workspace. An **edm init** will setup your current
-workspace accordingly.
+For using a dedicated release version, you can do this:
+
+.. code-block:: bash
+
+  edm init 2023.7.0
+
+In this example, version 2023.7.0 is pulled from the server. This will only work
+if your previous code is not in a "dirty" state.
 
 Using the edm CMake module and dependencies.yaml
 ################################################
@@ -163,6 +167,40 @@ repository. It should look like this:
 	  git: https://github.com/EVerest/libtimer
 	  git_tag: main
 	  options: ["BUILD_EXAMPLES OFF"]
+
+If you want to conditionally include some dependencies, eg. for testing, you can
+do this in the following way:
+
+.. code-block:: bash
+
+	catch2:
+	  git: https://github.com/catchorg/Catch2.git
+	  git_tag: v3.4.0
+	  cmake_condition: "BUILD_TESTING"
+
+Here *cmake_condition* can be any string that CMake can use in an if() block.
+Please be aware that any variables you use here must be defined before a call to
+*evc_setup_edm()* is made in your CMakeLists.txt
+
+Additionally you can set the *EVEREST_MODIFY_DEPENDENCIES* environment variable
+to a file containing modifications to the projects dependencies.yaml files when
+running cmake:
+
+.. code-block:: bash
+
+  EVEREST_MODIFY_DEPENDENCIES=../dependencies_modified.yaml cmake -S . -B build
+
+The *dependencies_modified.yaml* file can contain something along these lines:
+
+.. code-block:: bash
+
+	nlohmann_json:
+	  git: null # this makes edm look for nlohmann_json via find_package
+	libfmt:
+	  rename: fmt # if find_package needs a different dependency name you can rename it
+	  git: null
+	catch2:
+	  git_tag: v1.2.3 # if you want to select a different git tag for a build this is also possible
 
 Create a workspace config from an existing directory tree
 #########################################################
