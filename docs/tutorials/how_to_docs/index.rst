@@ -11,9 +11,9 @@ a look at our :ref:`How to write EVerest documentation <howto_document>`.
 .. note::
   For doing quick changes in existing documentation pages, the "How to" might
   be a good choice. You also can use the "How to" for creating completely new
-  pages. But doing this, prepare for getting more change requests during the
-  review process done by other community members. To avoid this, read through
-  this page in front of you to get more theory.
+  pages. But doing this, prepare for getting more change requests by other
+  community members during the review process. To avoid this, read through
+  the page you are currently reading to get more theory.
 
 **********************************
 Current structure of documentation
@@ -21,7 +21,8 @@ Current structure of documentation
 
 .. note::
   Our documentation is currently undergoing some changes - mostly regarding
-  the structure of where pages are stored and the categorization of content.
+  the structure of where documentation pages shall be stored and the
+  categorization of content.
   This section here describes the former structure, which is still present.
 
 EVerest documentation uses Sphinx as documentation generator. As input format,
@@ -161,9 +162,9 @@ This is what to do:
 2. Create a GitHub issue
   a. In the repository https://github.com/EVerest/EVerest, click on ``Issues``
     and then ``New issue``.
-  b. Choose ``Open a blank issue`` (or another type if you think that is more
-    suitable) and fill out the page with information about
-    the required documentation.
+  b. Choose ``Documentation change request`` and fill out the title and
+    the description fields. Answer the templated questions, which have already
+    been added to the description text area.
   c. Also add a reference to any related documentation pages and describe how
     the new documentation parts shall relate to that (new section, change of
     docs, new page with reference to existing ones etc.).

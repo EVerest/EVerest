@@ -9,7 +9,7 @@ This is a short how-to for writing documentation in EVerest.
 To get more detailed information about EVerest documentation, see
 :ref:`Documenting EVerest <documenting_everest>`.
 
-#. Decide where to place the documentation
+1. Decide where to place the documentation
   a. Module documentation goes into the module directory. You can choose
     between putting it in a docs.rst file or into a ``docs`` directory.
   b. If you want to document some partial aspects of your code (like a
@@ -21,19 +21,19 @@ To get more detailed information about EVerest documentation, see
     `EVerest main repository <https://github.com/EVerest/EVerest>`_.
   d. When in doubt, use the EVerest main repository.
 
-#. Create an issue (in case of bigger documentation changes).
+2. Create an issue (in case of bigger documentation changes).
 
   Consider to create a documentation issue inside of the
   GitHub repository you just have chosen.
   Describe the most important aspects of the topic to be documented.
 
-#. Create a Git branch like ``doc/name-of-topic`` in the EVerest main
+3. Create a Git branch like ``doc/name-of-topic`` in the EVerest main
   repository.
 
   Put a note in the issue to inform the community that you start working on
   new documentation to solve that issue.
 
-#. Create the documentation.
+4. Create the documentation.
 
   You can use existing ``.rst`` files as template for creating new
   documentation pages. See this page for getting an idea how to use
@@ -43,7 +43,7 @@ To get more detailed information about EVerest documentation, see
   Also have a look at our
   :ref:`best practices page for using Sphinx in EVerest <tutorial_sphinx_style_code>`.
 
-#. Create pull request (PR).
+5. Create pull request (PR).
 
   After having finished your work, create a PR and set a reference to the
   originating issue (if existing).
