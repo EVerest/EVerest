@@ -386,6 +386,40 @@ and therefore a implementations as well. For the "evse" implementation
 this mapping is now overwritten to indicate that it belongs to
 a specific "evse = 1" and "connector = 1".
 
+Modules can access the mapping information in the following ways depending
+on which specific information is required.
+
+If the mapping of a requirement is of interest it can be accessed via a get_mapping() function:
+..  code-block:: cpp
+    r_name_of_the_requirement->get_mapping()
+
+This returns an optional Mapping struct.
+
+If the mapping of an interface implementation is of interest it can
+also be accessed via a get_mapping() function:
+..  code-block:: cpp
+    p_name_of_an_implementation->get_mapping()
+
+This returns an optional Mapping struct.
+
+If the mapping of the curretn module is of interest it can be accessed via the module info:
+..  code-block:: cpp
+    this->info.mapping
+
+This returns an optional Mapping struct.
+
+Mapping information is also available in error reporting, via "error.origin.mapping":
+..  code-block:: cpp
+    const auto error_handler = [this](const Everest::error::Error& error) {
+        const auto evse_id = error.origin.mapping.has_value() ? error.origin.mapping.value().evse : 0;
+    };
+
+    const auto error_cleared_handler = [this](const Everest::error::Error& error) {
+        const auto evse_id = error.origin.mapping.has_value() ? error.origin.mapping.value().evse : 0;
+    };
+
+    subscribe_global_all_errors(error_handler, error_cleared_handler);
+
 ******************************
 Module functionality in detail
 ******************************
