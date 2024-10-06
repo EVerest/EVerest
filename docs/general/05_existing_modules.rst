@@ -346,6 +346,46 @@ A short hint for realizing DC charging:
 
 A more detailed use case will follow.
 
+**********************
+3-tier module mappings
+**********************
+
+EVerest modules and even individual interface implementations can have mappings
+assigned to them. These mappings are inspired by the OCPP 3-tier model and are
+available for error handling since `everest-framework v0.16.0 <https://github.com/EVerest/everest-framework/releases/tag/v0.16.0>`_
+which is included in everest-core since `release 2024.7.0. <https://github.com/EVerest/everest-core/releases/tag/2024.7.0>`_
+These mappings are exposed for usage in module code since `everest-framework v0.18.0 <https://github.com/EVerest/everest-framework/releases/tag/v0.18.0>`_
+which is included in everest-core since `release 2024.10.0. <https://github.com/EVerest/everest-core/releases/tag/2024.10.0>`_
+
+Following an example how a mappping for the EvseManager could look like
+..  code-block:: yaml
+    connector_1:
+      module: EvseManager
+      evse: 1
+      connector: 1
+
+This would result in a mapping of the whole module,
+including its implementations for eg. evse and token_provider to "evse = 1" and "connector = 1".
+
+By default a module is mapped to the whole charging station.
+So to ensure that only the parts of the module that should belong
+to a specific evse/connector are actually mapped to it
+you could replace this simple mapping with a more detailed one
+as shown in the following example:
+
+..  code-block:: yaml
+    connector_1:
+      module: EvseManager
+      mapping:
+        evse:
+          evse: 1
+          connector: 1
+
+Here the module stays mapped to the whole charging stations
+and therefore a implementations as well. For the "evse" implementation
+this mapping is now overwritten to indicate that it belongs to
+a specific "evse = 1" and "connector = 1".
+
 ******************************
 Module functionality in detail
 ******************************
