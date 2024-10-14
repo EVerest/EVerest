@@ -59,25 +59,6 @@ the EVerest simulation to start charging sessions.
 
 You can find the OCPP message log in different formats in the `/tmp/everest_ocpp_logs` directory.
 
-.. _configure_ocpp_everest:
-
-Configuring OCPP1.6 within EVerest
-==================================
-
-To be able to follow the further explanations, you should be familiar with the configuration of EVerest modules.
-Take a look into :ref:`EVerest Module Concept <moduleconcept_main>` for that.
-
-To configure the OCPP module of everest-core, find the available configuration parameters `in the manifest
-of the module <https://github.com/EVerest/everest-core/blob/main/modules/OCPP/manifest.yaml>`_ and read the
-`module documentation <https://everest.github.io/nightly/_generated/modules/OCPP.html>` carefully
-in order to configure it according to your needs.
-
-In order to enable OCPP1.6 in EVerest, you need to load the module in the EVerest configuration file and set up the module connections. The interfaces
-provided and required by the OCPP module and its purposes are described in the `module documentation <https://everest.github.io/nightly/_generated/modules/OCPP.html>`.
-
-The EVerest configuration file `config-sil-ocpp.yaml <https://github.com/EVerest/everest-core/blob/main/config/config-sil-ocpp.yaml>` which was used previously serves as a good example
-for how the connections of the module could be set up.
-
 .. _configure_ocpp:
 
 OCPP Configuration file
@@ -239,21 +220,60 @@ and their descriptions in `here <https://github.com/EVerest/libocpp/tree/main/co
   documentation of the `EvseSecurity module <https://everest.github.io/nightly/_included/modules_doc/EvseSecurity.html#everest-modules-handwritten-evsesecurity>`
   for more information on how to set up the TLS connection for OCPP.
 
-.. _logging:
+.. _configure_ocpp_everest:
 
-Logging
-=======
+Configuring OCPP1.6 within EVerest
+==================================
 
-The implementation allows to log all OCPP messages in different formats
+To be able to follow the further explanations, you should be familiar with the configuration of EVerest modules.
+Take a look into :ref:`EVerest Module Concept <moduleconcept_main>` for that.
 
-The default logging path is /tmp/everest_ocpp_logs but can be set using the
-configuration parameter *MessageLogPath* of the OCPP module of everest-core.
-Within the ocpp configuration file, you can configure *LogMessages*, to enable
-or disable logging and  *LogMessagesFormat* to specify to one or more log
-formats. For the latter, you can specify the following values:
+To configure the OCPP module of everest-core, find the available configuration parameters `in the manifest
+of the module <https://github.com/EVerest/everest-core/blob/main/modules/OCPP/manifest.yaml>`_ and read the
+`module documentation <https://everest.github.io/nightly/_generated/modules/OCPP.html>` carefully
+in order to configure it according to your needs.
 
-- console: Logs all OCPP messages
-- log: Logs all OCPP messages in a text file
-- html: Logs all OCPP messages using a html format (recommended)
-- session_logging: Logs all OCPP messages in html format into a path that is
-  optionally provided by the EvseManager at the start of a session
+In order to enable OCPP1.6 in EVerest, you need to load the module in the EVerest configuration file and set up the module connections. The interfaces
+provided and required by the OCPP module and its purposes are described in the `module documentation <https://everest.github.io/nightly/_generated/modules/OCPP.html>`.
+
+The EVerest configuration file `config-sil-ocpp.yaml <https://github.com/EVerest/everest-core/blob/main/config/config-sil-ocpp.yaml>` which was used previously serves as a good example
+for how the connections of the module could be set up.
+
+Here is a quick list of things you should remember when adding OCPP to your EVerest configuration file:
+
+1. Load the OCPP module by including it in the the configuration file.
+
+2. Make sure to add and connect the module requirements:
+  - evse_manager (interface: energy_manager, 1 to 128 connections): OCPP requires this connection in order to integrate with the charge control
+    logic of EVerest. One connection represents one EVSE. In order to manage multiple EVSEs via one OCPP connection, multiple connections need
+    to be configured in the EVerest config file.
+    Module implementation typically used to fullfill this requirement: EvseManager, implementation_id: evse
+  - evse_energy_sink (interface: external_energy_limits, 0 to 128): OCPP optionally requires this connection to communicate smart charging limits
+    received from the CSMS within EVerest. Typically EnergyNode modules are used to fullfill this requirement. Configure one EnergyNode module
+    per EVSE and one extra for evse id zero. The EnergyNode for evse id zero represents the energy sink for the complete charging station.
+    Module typically used to fullfill this requirement: EnergyNode, implementation_id: external_limits
+  - auth (interface: auth, 1): This connection is used to set the standardized  **ConnectionTimeout** configuration key if configured and/or changed by the CSMS.
+    Module typically used to fullfill this requirement: Auth, implementation_id: main
+  - reservation (interface: reservation, 1): This connection is used to apply reservation requests from the CSMS.
+    Module typically used to fullfill this requirement: Auth, implementation_id: reservation
+  - system (interface: system, 1): This connection is used to execute and control system-wide operations that can be triggered by the CSMS, like log uploads, 
+    firmware updates, and resets.
+    The System module (implementation_id: main) can be used to fullfill this requirement. Note that this module is not meant to be used in production systems!
+    Since the implementations of the system interface highly depend on the target platform usually a custom implementation for the target is implemented.
+  - security (interface: evse_security, 1): This connection is used to execute security-related operations and to manage certificates and
+    private keys.
+    Module typically used to fullfill this requirement: EvseSecurity, implementation_id: main
+  - data_transfer (interface: ocpp_data_transfer, 0 to 1): This connection is used to handle **DataTransfer.req** messages from the CSMS. A module implementing
+    this interface can contain custom logic to handle the requests from the CSMS.
+    A custom implementation for this interface is required to add custom handling.
+  - display_message (interface: display_message, 0 to 1): This connection is used to allow the CSMS to display pricing or other information on the display of the 
+    charging station. In order to fulfill the requirements of the California Pricing whitepaper, it is required to connect a module implementing this interface.
+    EVerest currently does not provide a display module that implements this interface.
+
+3. Make sure to configure the OCPP module as part of the token_provider (implementation_id: auth_provider) and token_validator (implementation_id: auth_validator)
+  connections of the Auth module (if you use it). Please see the documentation of the auth module for more information.
+
+4. In case you want to use the Plug&Charge feature, you must also add the EvseManager (implementation_id: token_provider) module to the connections of the 
+  Auth module.
+
+You can also use the existing config examples as a guide.
