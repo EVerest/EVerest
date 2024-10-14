@@ -184,9 +184,11 @@ in the configuration file if it is not supported. This means that the
 configuration of the `libocpp` provides maximum flexibility and can be
 tailored to your specific charging station.
 
-Make sure to thoroughly read through the OCPP1.6 specification and the
-`profile schemas <https://github.com/EVerest/libocpp/tree/main/config/v16/profile_schemas>`_ 
-and configure OCPP according to your needs.
+.. note::
+
+  There is a lot to configure with OCPP. Make sure to thoroughly read through the OCPP1.6 specification and the
+  `profile schemas <https://github.com/EVerest/libocpp/tree/main/config/v16/profile_schemas>`_ 
+  and configure OCPP according to your needs.
 
 .. _different_csms:
 
@@ -230,6 +232,12 @@ and it might also include to change the parameters *AuthorizationKey* and
 
 Modify these parameters according to the connection requirements of the CSMS. Find all available configuration keys
 and their descriptions in `here <https://github.com/EVerest/libocpp/tree/main/config/v16/profile_schemas>`_
+
+.. note::
+
+  For TLS it might be required to prepare the required certificates and private keys. Please see the 
+  documentation of the `EvseSecurity module <https://everest.github.io/nightly/_included/modules_doc/EvseSecurity.html#everest-modules-handwritten-evsesecurity>`
+  for more information on how to set up the TLS connection for OCPP.
 
 .. _logging:
 
