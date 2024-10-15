@@ -221,7 +221,7 @@ It is used for the communication between the EVerest modules:
 
 .. code-block:: bash
 
-  docker run -d --name mqtt-server --network infranet_network -p 1883:1883 -p 9001:9001 ghcr.io/everest/everest-dev-environment/mosquitto:v0.7.0
+  docker run -d --name mqtt-server --network infranet_network -p 1883:1883 -p 9001:9001 ghcr.io/everest/everest-dev-environment/mosquitto:docker-images-v0.1.0
 
 ``-d`` starts the container in detached mode.
 
@@ -232,7 +232,7 @@ It is used for the communication between the EVerest modules:
 ``--expose 1883 --expose 9001`` makes the ports 1883 and 9001 available to the
 other containers in the network.
 
-``ghcr.io/everest/everest-dev-environment/mosquitto:v0.7.0`` is the complete image name
+``ghcr.io/everest/everest-dev-environment/mosquitto:docker-images-v0.1.0`` is the complete image name
 
 That makes us ready for entering the simulation phase described in the next
 chapter.

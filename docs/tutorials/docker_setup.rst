@@ -37,13 +37,13 @@ without the devcontainer setup.
 Mosquitto MQTT broker
 =====================
 
-Use the deployed docker image `ghcr.io/everest/everest-dev-environment/mosquitto:v0.7.0`
+Use the deployed docker image `ghcr.io/everest/everest-dev-environment/mosquitto:docker-images-v0.1.0`
 to start the mosquitto MQTT broker.  The following command will start
 the mosquitto MQTT broker connected to the `infranet_network` network.
 
 .. code-block:: bash
 
-    docker run -d --name mqtt-server --network infranet_network -p 1883:1883 -p 9001:9001 ghcr.io/everest/everest-dev-environment/mosquitto:v0.7.0
+    docker run -d --name mqtt-server --network infranet_network -p 1883:1883 -p 9001:9001 ghcr.io/everest/everest-dev-environment/mosquitto:docker-images-v0.1.0
 
 ``-d``: run the container in the background
 
@@ -55,7 +55,7 @@ the mosquitto MQTT broker connected to the `infranet_network` network.
 
 ``-p 9001:9001``: map the port, used for mqtt websocket connection, of the container to the host
 
-``ghcr.io/everest/everest-dev-environment/mosquitto:v0.7.0``: the docker image to use
+``ghcr.io/everest/everest-dev-environment/mosquitto:docker-images-v0.1.0``: the docker image to use
 
 MariaDB
 =======
@@ -97,7 +97,7 @@ The following command will start the MariaDB database connected to the `infranet
 SteVe
 =====
 
-Use the image `ghcr.io/everest/everest-dev-environment/steve:v0.7.0` to start the SteVe service.
+Use the image `ghcr.io/everest/everest-dev-environment/steve:docker-images-v0.1.0` to start the SteVe service.
 The following command will start the SteVe service connected to the `infranet_network` network.
 
 .. code-block:: bash
@@ -108,7 +108,7 @@ The following command will start the SteVe service connected to the `infranet_ne
       --network infranet_network \
       -p 8180:8180 \
       -p 8443:8443 \
-      ghcr.io/everest/everest-dev-environment/steve:v0.7.0
+      ghcr.io/everest/everest-dev-environment/steve:docker-images-v0.1.0
 
 ``-d``: run the container in the background
 
@@ -118,7 +118,7 @@ The following command will start the SteVe service connected to the `infranet_ne
 
 ``-p 8180:8180``: map the port, used for the web interface, of the container to the host
 
-``ghcr.io/everest/everest-dev-environment/steve:v0.7.0``: the docker image to use
+``ghcr.io/everest/everest-dev-environment/steve:docker-images-v0.1.0``: the docker image to use
 
 How to use SteVe
 ----------------
