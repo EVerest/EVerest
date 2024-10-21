@@ -234,6 +234,17 @@ other containers in the network.
 
 ``ghcr.io/everest/everest-dev-environment/mosquitto:docker-images-v0.1.0`` is the complete image name
 
+.. note::
+
+  The docker container can be controlled with docker compose as well:
+
+  .. code-block:: bash
+
+    cd {EVerest Workspace Directory}
+    git clone https://github.com/EVerest/everest-dev-environment.git
+    cd everest-dev-environment/docker
+    docker compose up -d mosquitto
+
 That makes us ready for entering the simulation phase described in the next
 chapter.
 

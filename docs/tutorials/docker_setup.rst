@@ -34,6 +34,35 @@ without the devcontainer setup.
   Have a look at the section :ref:`How to Devcontainer <how_to_devcontainer>` if you want to use
   the more convenient devcontainer setup.
 
+Control the services with docker-compose
+========================================
+
+The services can be controlled with docker-compose.  The following
+section describes how to start the services with docker-compose.
+
+Checkout the everest-dev-environment repository and make use of the
+docker-compose file in the ``docker/`` directory.
+
+The following command will start all services defined in the docker-compose.yml
+file connected to the `infranet_network` network.
+
+.. code-block:: bash
+
+  cd {EVerest Workspace Directory}
+  git clone https://github.com/EVerest/everest-dev-environment.git
+  cd everest-dev-environment/docker
+  docker compose up -d
+
+You can also start a single service by specifying the service name:
+
+.. code-block:: bash
+
+  docker compose up -d <service_name>
+
+The following sections describe how to start the services individually without
+the need of the docker-compose file.
+
+
 Mosquitto MQTT broker
 =====================
 
