@@ -360,7 +360,8 @@ which is included in everest-core since `release 2024.10.0. <https://github.com/
 
 Following an example how a mappping for the EvseManager could look like:
 
-..  code-block:: yaml
+.. code-block:: yaml
+
     connector_1:
       module: EvseManager
       evse: 1
@@ -376,7 +377,8 @@ to a specific evse/connector are actually mapped to it,
 you could replace this simple mapping with a more detailed one
 as shown in the following example:
 
-..  code-block:: yaml
+.. code-block:: yaml
+
     connector_1:
       module: EvseManager
       mapping:
@@ -395,7 +397,8 @@ on which specific information is required.
 If the mapping of a requirement is of interest it can be accessed via a
 get_mapping() function:
 
-..  code-block:: cpp
+.. code-block:: cpp
+
     r_name_of_the_requirement->get_mapping()
 
 This returns an optional Mapping struct.
@@ -403,7 +406,8 @@ This returns an optional Mapping struct.
 If the mapping of an interface implementation is of interest it can
 also be accessed via a get_mapping() function:
 
-..  code-block:: cpp
+.. code-block:: cpp
+
     p_name_of_an_implementation->get_mapping()
 
 This returns an optional Mapping struct.
@@ -411,7 +415,8 @@ This returns an optional Mapping struct.
 If the mapping of the current module is of interest it can be accessed via the
 module info:
 
-..  code-block:: cpp
+.. code-block:: cpp
+
     this->info.mapping
 
 This returns an optional Mapping struct.
@@ -419,7 +424,8 @@ This returns an optional Mapping struct.
 Mapping information is also available in error reporting via
 "error.origin.mapping":
 
-..  code-block:: cpp
+.. code-block:: cpp
+
     const auto error_handler = [this](const Everest::error::Error& error) {
         const auto evse_id = error.origin.mapping.has_value() ? error.origin.mapping.value().evse : 0;
     };
