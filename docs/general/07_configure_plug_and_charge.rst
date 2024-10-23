@@ -186,9 +186,9 @@ for information on the ISO15118 configuration.
 
 .. _ocpp-configuration:
 
-******************
-OCPP configuration
-******************
+***********************************
+OCPP1.6 and OCPP2.0.1 configuration
+***********************************
 
 Since Plug&Charge has been backported from OCPP2.0.1 to OCPP1.6, the configuration options to control
 the process are mostly identical. These options are described in the following section, where differences
