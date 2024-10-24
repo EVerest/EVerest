@@ -280,8 +280,7 @@ Modify these parameters according to the connection requirements of the CSMS.
 Enable Plug&Charge
 ------------------
 
-In order to enable Plug&Charge, adjust your component files according to the `Plug&Charge documentation <https://everest.github.io/nightly/tutorials/how_to_plug_and_charge/index.html#how-to-pnc>`_.
-TODO: Link to correct section!
+In order to enable Plug&Charge, adjust your component files according to the `Plug&Charge documentation <https://everest.github.io/nightly/general/07_configure_plug_and_charge.html>`_.
 
 .. _configure_ocpp_everest:
 

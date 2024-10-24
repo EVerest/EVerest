@@ -80,7 +80,7 @@ For a successful Plug&Charge authorization process, the following certificates n
 * SECC leaf certificate (including sub cas)
 * V2G Root Certificate(s)
 * MO Root Certificates(s) (only if the EV contract shall be verified locally). This can be controlled by the OCPP configuration
-keys described in the section `OCPP configuration`_ for more information.
+keys described in the section :ref:`ocpp-configuration` for more information.
 
 As mentioned above, these certificates can be installed manually or by the CSMS. In case Plug&Charge is enabled 
 and no (valid) SECC leaf certificate is installed or it expires within the next 30 days, the charging station
@@ -149,7 +149,7 @@ The following two configuration files are relevant and require a correct setup a
 * EVerest configuration file (yaml)
 * OCPP configuration file (.json) for OCPP1.6 or OCPP2.0.1
 
-Let's start with the EVerest configuration file. If you haven't read "Explaining the YAML files", now its the 
+Let's start with the EVerest configuration file. If you haven't read `Explaining the YAML files <https://everest.github.io/nightly/general/04_detail_module_concept.html#explaining-the-yaml-files>`_, now its the 
 right time to do it before you go on!
 
 It's a good idea to start with a base of a configuration file and talk about the changes required to enable
@@ -165,7 +165,7 @@ EvseManager
 * Make sure `payment_enable_contract` is set to `true`
 
 EvseV2G
-===========
+=======
 
 * Make sure `tls_security` is set to `allow` or `force`.
 * If `verify_contract_cert_chain` is `true` the EvseV2G module attempts to verify the contract certificate chain
