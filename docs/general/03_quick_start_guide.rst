@@ -202,7 +202,7 @@ the necessary steps to start the simulation and get the user interface running.
 
 Further tools are not required to run EVerest (e.g. SteVe for OCPP). Further
 information about EVerest Docker containers can be found on the
-`EVerest Docker Setup page <../tutorials/docker_setup.html>`_.
+:ref:`EVerest Docker Setup page <docker_setup>`.
 
 .. hint::
   To get all this working, make sure you have docker and docker-compose installed during the previous install phase. (If not, see install instructions for `docker <https://docs.docker.com/engine/install/#server>`_ and `docker-compose <https://docs.docker.com/compose/install/#install-compose)>`_!)
@@ -216,14 +216,34 @@ following command (IPv6 is enabled for containers which might need it):
 
   docker network create --driver bridge --ipv6  --subnet fd00::/80 infranet_network --attachable
 
-Now, change into your workspace directory and enter the directory with the
-prepared docker containers. Start the the mosquitto broker which will be
-used by EVerest for the communication between the EVerest modules:
+Now, start the mosquitto broker, which is deployed as built docker image.
+It is used for the communication between the EVerest modules:
 
 .. code-block:: bash
 
-  cd {EVerest Workspace Directory}/everest-utils/docker
-  sudo docker-compose up -d mqtt-server
+  docker run -d --name mqtt-server --network infranet_network -p 1883:1883 -p 9001:9001 ghcr.io/everest/everest-dev-environment/mosquitto:docker-images-v0.1.0
+
+``-d`` starts the container in detached mode.
+
+``--name mqtt-server`` gives the container a name.
+
+``--network infranet_network`` connects the container to the network we created.
+
+``--expose 1883 --expose 9001`` makes the ports 1883 and 9001 available to the
+other containers in the network.
+
+``ghcr.io/everest/everest-dev-environment/mosquitto:docker-images-v0.1.0`` is the complete image name
+
+.. note::
+
+  The docker container can be controlled with docker compose as well:
+
+  .. code-block:: bash
+
+    cd {EVerest Workspace Directory}
+    git clone https://github.com/EVerest/everest-dev-environment.git
+    cd everest-dev-environment/docker
+    docker compose up -d mosquitto
 
 That makes us ready for entering the simulation phase described in the next
 chapter.

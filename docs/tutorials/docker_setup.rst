@@ -1,8 +1,14 @@
-************
-Docker setup
-************
+.. _docker_setup:
 
-You need to install docker_ and docker-compose_.  Furthermore, `visual
+############
+Docker setup
+############
+
+****************
+Prerequisites
+****************
+
+You need to install docker_ and docker-compose_. Furthermore, `visual
 studio code`_ might be handy as a common integrated development
 environment.
 
@@ -14,81 +20,143 @@ which might it)::
 
   docker network create --driver bridge --ipv6  --subnet fd00::/80 infranet_network --attachable
 
-Start *vscode*, open the workspace *docker-mqtt.code-workspace* and
-install suggested extensions.  Open a shell in sub-directory ``docker``
-and run (might take while for the first run)::
+*****************************************
+Start services without devcontainer setup
+*****************************************
 
-  docker-compose up -d
+The following section describes how to start the services without using
+the devcontainer setup. This is useful if you want to use one of the
+services in a different environment or if you want to use the services
+without the devcontainer setup.
 
-Now, the following services should be running:
+.. note::
 
-- **Mosquitto MQTT broker** (service name: mqtt-server) with ports
+  Have a look at the section :ref:`How to Devcontainer <how_to_devcontainer>` if you want to use
+  the more convenient devcontainer setup.
 
-  - ``1883``: mqtt tcp connection
-  - ``9001``: mqtt websocket connection
+Control the services with docker-compose
+========================================
 
-- **mariadb** (service name: ocpp-db), sql database needed by **SteVe**
+The services can be controlled with docker-compose. The following
+section describes how to start the services with docker-compose.
 
-  - ``3306``: sql tcp connection
+Checkout the everest-dev-environment repository and make use of the
+docker-compose file in the ``docker/`` directory.
 
-- **SteVe** (service name: steve) on port 8180 with endpoints
+The following command will start all services defined in the docker-compose.yml
+file connected to the `infranet_network` network.
+
+.. code-block:: bash
+
+  cd {EVerest Workspace Directory}
+  git clone https://github.com/EVerest/everest-dev-environment.git
+  cd everest-dev-environment/docker
+  docker compose up -d
+
+You can also start a single service by specifying the service name:
+
+.. code-block:: bash
+
+  docker compose up -d <service_name>
+
+The following sections describe how to start the services individually without
+the need of the docker-compose file.
+
+
+Mosquitto MQTT broker
+=====================
+
+Use the deployed docker image `ghcr.io/everest/everest-dev-environment/mosquitto:docker-images-v0.1.0`
+to start the mosquitto MQTT broker. The following command will start
+the mosquitto MQTT broker connected to the `infranet_network` network.
+
+.. code-block:: bash
+
+    docker run -d --name mqtt-server --network infranet_network -p 1883:1883 -p 9001:9001 ghcr.io/everest/everest-dev-environment/mosquitto:docker-images-v0.1.0
+
+``-d``: run the container in the background
+
+``--name mqtt-server``: name the container `mqtt-server`
+
+``--network infranet_network``: connect the container to the `infranet_network` network
+
+``-p 1883:1883``: map the port, used for mqtt tcp connection, of the container to the host
+
+``-p 9001:9001``: map the port, used for mqtt websocket connection, of the container to the host
+
+``ghcr.io/everest/everest-dev-environment/mosquitto:docker-images-v0.1.0``: the docker image to use
+
+MariaDB
+=======
+
+Use the image `mariadb:10.4.30` to start the MariaDB database. It is needed by the SteVe service.
+The following command will start the MariaDB database connected to the `infranet_network` network.
+
+.. code-block:: bash
+
+    docker run \
+      -d \
+      --name ocpp-db \
+      --network infranet_network \
+      -p 13306:3306 \
+      -e MYSQL_RANDOM_ROOT_PASSWORD="yes" \
+      -e MYSQL_DATABASE=ocpp-db \
+      -e MYSQL_USER=ocpp \
+      -e MYSQL_PASSWORD=ocpp \
+      mariadb:10.4.30
+
+``-d``: run the container in the background
+
+``--name ocpp-db``: name the container `ocpp-db`
+
+``--network infranet_network``: connect the container to the `infranet_network` network
+
+``-p 13306:3306``: map the port, used for sql tcp connection, of the container to the host
+
+``-e MYSQL_RANDOM_ROOT_PASSWORD="yes"``: set a random root password
+
+``-e MYSQL_DATABASE=ocpp-db``: create a database called `ocpp-db`
+
+``-e MYSQL_USER=ocpp``: create a user called `ocpp`
+
+``-e MYSQL_PASSWORD=ocpp``: set the password for the user `ocpp`
+
+``mariadb:10.4.30``: the docker image to use
+
+SteVe
+=====
+
+Use the image `ghcr.io/everest/everest-dev-environment/steve:docker-images-v0.1.0` to start the SteVe service.
+The following command will start the SteVe service connected to the `infranet_network` network.
+
+.. code-block:: bash
+
+    docker run \
+      -d \
+      --name steve \
+      --network infranet_network \
+      -p 8180:8180 \
+      -p 8443:8443 \
+      ghcr.io/everest/everest-dev-environment/steve:docker-images-v0.1.0
+
+``-d``: run the container in the background
+
+``--name steve``: name the container `steve`
+
+``--network infranet_network``: connect the container to the `infranet_network` network
+
+``-p 8180:8180``: map the port, used for the web interface, of the container to the host
+
+``ghcr.io/everest/everest-dev-environment/steve:docker-images-v0.1.0``: the docker image to use
+
+How to use SteVe
+----------------
 
   - ``:8180/steve/manager/home``: web interface (login = admin:1234)
   - ``:8180/steve/services/CentralSystemService``: SOAP endpoint for
     OCPP
   - ``:8180/steve/websocket/CentralSystemService/(chargeBoxId)``:
     WebSocket/JSON endpoint for OCPP
-
-These three services are defined in ``docker/docker-compose.yml`` and
-they live inside the docker network ``docker_default`` with their
-respective ports.  By default these ports are not directly accessible by
-using ``localhost:8080`` for example.  The current configuration exposes
-all these ports to the local host with some port mapping, so the often
-used ports will not clash with other services running already on your
-host system.  The mapping is as follows:
-
-- ``1883`` -> ``1883``, ``9001`` -> ``9001`` for
-  **mosquitto**
-- ``13306`` -> ``3306`` for **mariadb**
-- ``8180`` -> ``8180`` for **SteVe**
-
-So, if you want to access the **mosquitto** default mqtt port via your
-local host, you need to access ``localhost:1883``.  But if you want to
-access it from a service or container inside the *docker_default*
-network, you'll need to access ``mqtt-server:1883``. Using the docker
-extension in *vscode*, you can show the logs of these services or attach
-a shell to them by navigating to the docker tab and then right-clicking
-on the specific container.
-
-
-
-everest playground
-==================
-
-depricated.
-
-If you would like to get a pre-configured development setup using
-*vscode* for the *everest-cpp* framework, you need to start up the mqtt
-server with::
-
-    docker-compose up -d mqtt-server
-
-Then, using *vscode*, open up a new window with *Ctrl+Shift+N* (or use
-the current), press *F1*, enter ``remopen``, select `Remote-Containers:
-Open Folder in Container...`, head to the directory
-``docker/everest-playground`` and open. This will build a docker image
-with a standard development environment and start `vscode`
-inside it.  This image will also link to the ``infranet_network`` network,
-so it can access the mqtt service and possible other services.
-
-In order to build the *everest-cpp* framework, create a directory called
-``build`` and run::
-
-  cmake PATH_TO_EVEREST_CPP
-  make -j8
-
-inside it.
-
 
 Local CI environment
 ====================
