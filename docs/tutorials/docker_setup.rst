@@ -161,7 +161,9 @@ How to use SteVe
 Local CI environment
 ====================
 
-depricated.
+.. note::
+
+  This section is deprecated.
 
 If you want to generate the sphinx documenation locally,  you can use
 the `ci-env` docker image.  In order to build the image locally::
