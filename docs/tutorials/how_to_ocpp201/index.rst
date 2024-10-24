@@ -207,7 +207,7 @@ This is how a definition and configuration for `LocalAuthListCtrlr`` component c
     ]
   }
 
-You can change the components according to your needs, but note that the definitions for the `variable_name`,
+You can change the components according to your needs, but note that the definitions for the `variable_name` and
 `characteristics` are usually defined by the OCPP2.0.1 specification. To configure a variable attribute value, 
 specify the `value` for the attribute type that you would like to configure. In the example above, the actual value of
 the VariableAttribute of the Variable `Enabled` is set to `true`. Note that not all variables have specified variable 
