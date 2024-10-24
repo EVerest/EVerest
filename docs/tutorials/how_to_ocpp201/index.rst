@@ -216,7 +216,7 @@ rather a telemetry than configuration, so libocpp will set the value for this at
 required to configure a value for it. It's an example for a variable that is only defined, but not configured.
 
 .. note::
-  Currently the definition and configuration as well as the difference between configuration and telemetry is not easy not graps
+  Currently the definition and configuration as well as the difference between configuration and telemetry is not easy to grasp
   and not perfectly represented in the component JSON files. Therefore the structure of these files will be changed mid term.
 
 Device Model initialization
