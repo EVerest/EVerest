@@ -91,6 +91,10 @@ directory. In the above example, it is located at
 More details about edm, see the dedicated
 :ref:`edm page in this documentation <edm_main>`.
 
+
+However if you want everest to pull its own dependencies (which is recommended), remove all folders in `{EVerest Workspace Directory}` except for everest-core, everest-dev-environment, everest-utils and Josev (as you will need these later on).
+Doing this ensures that during the compilation of everest-core all dependencies are downloaded automatically
+
 EVerest Command Line Interface: ``ev-cli``
 ----------------------------------------
 
