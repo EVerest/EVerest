@@ -20,8 +20,8 @@ studio code`_.
 Create devcontainer based EVerest workspace
 *******************************************
 
-1. Enter the workspace directory
-================================
+Enter the workspace directory
+=============================
 
 Create a new directory and navigate into it.
 This directory will be your new workspace.
@@ -32,8 +32,8 @@ This directory will be your new workspace.
     mkdir my_workspace
     cd my_workspace
 
-2. Run the setup script
-========================
+Run the setup script
+====================
 
 Run the following command to setup the devcontainer.
 
@@ -46,8 +46,8 @@ The script will ask you for the following information:
 #. Workspace directory: Default is the current directory. You can keep the default by pressing enter.
 #. everest-dev-environment version: Default is 'main'. You can keep the default by pressing enter.
 
-3. Open the workspace in Visual Studio Code
-===========================================
+Open the workspace in Visual Studio Code
+========================================
 
 After the script has finished, open the workspace in Visual Studio Code.
 
@@ -57,8 +57,8 @@ After the script has finished, open the workspace in Visual Studio Code.
 
 VS Code will ask you to reopen the workspace in a container. Click on the button "Reopen in Container).
 
-4. Getting started
-==================
+Getting started
+===============
 
 As your set up dev environment suggests when you open a terminal, you can setup your EVerest workspace by running the following command:
 
