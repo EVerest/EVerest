@@ -4,9 +4,9 @@
 How to Devcontainer
 ###########################
 
-The devcontainer setup is a convenient way to develop the Everest project. It uses
+The devcontainer setup is a convenient way to develop the EVerest project. It uses
 Docker to create a development environment that is consistent across different
-machines. This section describes how to set up the devcontainer for the Everest
+machines. This section describes how to set up the devcontainer for the EVerest
 project and how to use it.
 
 ****************
@@ -24,7 +24,8 @@ Create devcontainer based EVerest workspace
 ================================
 
 Create a new directory and navigate into it.
-This directory will be your new workspace or use an existing one.
+This directory will be your new workspace.
+(You could also use an existing one.)
 
 .. code-block:: bash
 
@@ -54,7 +55,7 @@ After the script has finished, open the workspace in Visual Studio Code.
 
     code .
 
-VS Code will ask you to reopen the workspace in a container. Click on the button Reopen in Container.
+VS Code will ask you to reopen the workspace in a container. Click on the button "Reopen in Container).
 
 4. Getting started
 ==================
@@ -73,7 +74,7 @@ The Everest's Development Tool
 
     A more detailed documentation of the tool is coming soon.
 
-The Everest's development tool is a command-line tool that helps you to manage your Everest workspace.
+The Everest's development tool is a command-line tool that helps you to manage your EVerest workspace.
 You can use it to clone repositories and start/stop services.
 
 .. _docker: https://docs.docker.com/engine/install/#server

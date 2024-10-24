@@ -8,7 +8,7 @@ Docker setup
 Prerequisites
 ****************
 
-You need to install docker_ and docker-compose_.  Furthermore, `visual
+You need to install docker_ and docker-compose_. Furthermore, `visual
 studio code`_ might be handy as a common integrated development
 environment.
 
@@ -37,7 +37,7 @@ without the devcontainer setup.
 Control the services with docker-compose
 ========================================
 
-The services can be controlled with docker-compose.  The following
+The services can be controlled with docker-compose. The following
 section describes how to start the services with docker-compose.
 
 Checkout the everest-dev-environment repository and make use of the
@@ -67,7 +67,7 @@ Mosquitto MQTT broker
 =====================
 
 Use the deployed docker image `ghcr.io/everest/everest-dev-environment/mosquitto:docker-images-v0.1.0`
-to start the mosquitto MQTT broker.  The following command will start
+to start the mosquitto MQTT broker. The following command will start
 the mosquitto MQTT broker connected to the `infranet_network` network.
 
 .. code-block:: bash
