@@ -190,6 +190,7 @@ Enable the CM4 storage mode so that the eMMC becomes available to
 the host system:
 
 .. code-block:: bash
+
   sudo rpiboot
 
 The green LED on the Yak board should light up constantly now.
