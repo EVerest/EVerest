@@ -1,11 +1,13 @@
 .. _how_to_renesas_mpu:
 
 #################################
-How to Run EVerest on Renesas MPU
+How to Run EVerest on Renesas MPU (RZ family)
 #################################
 
-The MPU by Renesas is compatible with EVerest. Here is how to set it up and
-run a first simulation:
+To get more information on EVerest and Renesas hardware, see here:
+https://www.renesas.com/en/products/microcontrollers-microprocessors/rz-mpus/rz-partner-solutions/pionix-basecamp
+
+Here is how to set it up and run an EVerest simulation:
 
 #. Clone the rz-community-bsp repo: https://github.com/renesas-rz/rz-community-bsp.git
 
