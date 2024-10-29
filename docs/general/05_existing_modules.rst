@@ -364,8 +364,10 @@ Following an example how a mappping for the EvseManager could look like:
 
     connector_1:
       module: EvseManager
-      evse: 1
-      connector: 1
+      mapping:
+        module:
+          evse: 1
+          connector: 1
 
 This would result in a mapping of the whole module,
 including its implementations for e.g. evse and token_provider to "evse = 1"
@@ -382,9 +384,10 @@ as shown in the following example:
     connector_1:
       module: EvseManager
       mapping:
-        evse:
-          evse: 1
-          connector: 1
+        implementations:
+          evse:
+            evse: 1
+            connector: 1
 
 Here, the module stays mapped to the whole charging station
 and therefore an implementation as well. For the "evse" implementation,
