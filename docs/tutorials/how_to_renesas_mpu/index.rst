@@ -38,7 +38,10 @@ Here is how to set it up and run an EVerest simulation:
   *built/tmp/deploy/images/smarc-rzg2l*
 
 #. Start EVerest with the following command:
-  */usr/bin/manager --conf /etc/everest/config-sil.yaml*
+
+  .. code-block:: bash
+
+    /usr/bin/manager --conf /etc/everest/config-sil.yaml
 
 If everything has been set up correctly, you will be able to run simulation
 steps with EVerest now. Have a look at the
