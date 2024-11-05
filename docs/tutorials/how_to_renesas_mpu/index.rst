@@ -1,8 +1,8 @@
 .. _how_to_renesas_mpu:
 
-#################################
-How to Run EVerest on Renesas MPU (RZ family)
-#################################
+##################################
+How to for Renesas MPU (RZ/G2L family)
+##################################
 
 To get more information on EVerest and Renesas hardware, see here:
 https://www.renesas.com/en/products/microcontrollers-microprocessors/rz-mpus/rz-partner-solutions/pionix-basecamp
