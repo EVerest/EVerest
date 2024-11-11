@@ -136,7 +136,7 @@ jobs:
       working-directory: everest-workspace
 
     - name: Upload snapshot file
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: snapshot-file
         path: |
@@ -164,7 +164,7 @@ jobs:
 
     # Setup workspace
     - name: Download snaphot file
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: snapshot-file
         path: |
@@ -207,7 +207,7 @@ jobs:
       working-directory: everest-workspace/everest/docs
     - name: Upload generated html files
       if: ${{ inputs.build_html }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: docs-html
         path: everest-workspace/everest/docs/_build/html/
@@ -221,7 +221,7 @@ jobs:
       working-directory: everest-workspace/everest/docs
     - name: Upload generated pdf files
       if: ${{ inputs.build_pdf }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: docs-pdf
         path: everest-workspace/everest/docs/_build/latex/
@@ -254,7 +254,7 @@ jobs:
         git config --global user.name "Github Service Account"
 
     - name: Download generated html files
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: docs-html
         path: docs-html
@@ -267,7 +267,7 @@ jobs:
         ref: main
         fetch-depth: 0
     - name: Download snapshot file
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: snapshot-file
         path: |
