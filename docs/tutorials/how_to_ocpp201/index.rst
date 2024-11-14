@@ -1,6 +1,6 @@
-****************************
-How To: OCPP2.0.1 in EVerest
-****************************
+*****************************
+How To: OCPP 2.0.1 in EVerest
+*****************************
 
 .. note::
 
@@ -8,39 +8,43 @@ How To: OCPP2.0.1 in EVerest
   the 2.0.1 implementation. To get documentation about all implemented versions,
   see `the GitHub repository of libocpp <https://github.com/EVerest/libocpp>`_.
 
-The OCPP2.0.1 development in EVerest is currently under development.
+The OCPP 2.0.1 implementation in EVerest is currently under development.
 You can check `this document <https://github.com/EVerest/libocpp/blob/main/doc/ocpp_201_status.md>`_
 for the current status.
 
-This is a tutorial about how to set up and configure OCPP2.0.1 in EVerest.
+This is a tutorial about how to set up and configure OCPP 2.0.1 in EVerest.
 
 This tutorial includes:
 
 - How to run EVerest SIL with a `simple CSMS <https://github.com/EVerest/ocpp-csms>`_
-- How to configure the OCPP2.0.1 device model
+- How to configure the OCPP 2.0.1 device model
 - How to connect to different CSMS
-- How to load the OCPP2.0.1 module as part of the EVerest configuration 
+- How to load the OCPP 2.0.1 module as part of the EVerest configuration
 
 .. _prerequisites:
 
 Prerequisites
 =============
 
-If you're new to EVerest start with our
+If you're new to EVerest, start with our
 :ref:`Quick Start Guide <quickstartguide_main>`
 to get a simulation in EVerest running for the first time.
 If you have done that successfully, you can move on with this tutorial.
 
 .. _run_with_steve:
 
-Run EVerest SIL with OCPP2.0.1 and a simple CSMS
-================================================
+Run EVerest SIL with OCPP 2.0.1 and a simple CSMS
+=================================================
 
-EVerest provides a `simple CSMS <https://github.com/EVerest/ocpp-csms>`_ that can be used for testing. It responds "friendly"
-to all OCPP messages initiated by the charging station. Follow the instruction of its README to start up the CSMS locally.
+EVerest provides a `simple CSMS <https://github.com/EVerest/ocpp-csms>`_ that
+can be used for testing.
+It responds "friendly" to all OCPP messages initiated by the charging station.
+Follow the instruction of its README to start up the CSMS locally.
 
-EVerest's `everest-core` repository provides a configuration that you can use to run EVerest with OCPP2.0.1.
-By default this configuration is connecting to `localhost:9000` which is also the default address and port of our simple CSMS.
+EVerest's `everest-core` repository provides a configuration that you can use
+to run EVerest with OCPP 2.0.1.
+By default, this configuration is connecting to `localhost:9000` which is also
+the default address and port of our simple CSMS.
 
 Simply run
 
@@ -48,37 +52,50 @@ Simply run
 
     ${EVEREST_WORKSPACE:?}/everest-core/build/run-scripts/run-sil-ocpp201.sh
 
-to start EVerest with OCPP2.0.1. You can start playing around with the EVerest simulation to start charging sessions.
+to start EVerest with OCPP 2.0.1. You can start playing around with the EVerest
+simulation to start charging sessions.
 
-You can find the OCPP message log in different formats in the `/tmp/everest_ocpp_logs` directory.
+You can find the OCPP message log in different formats in the
+`/tmp/everest_ocpp_logs` directory.
 
 .. _configure_ocpp:
 
 Device Model Configuration
 ==========================
 
-OCPP2.0.1 defines a device model structure and a lot of standardized variables that are used within the functional requirements of the protocol.
-Please see Part 1 - Architecture & Topology of the OCPP2.0.1 specification for further information about the device model and how it is composed.
-You should be familiar with the terms OCPP2.0.1 terms **Component**, **Variable**, **VariabeCharacteristics** and **VariableAttributes**,
-**VariableMonitoring** to be able to follow the further explainations.
+OCPP 2.0.1 defines a device model structure and a lot of standardized variables
+that are used within the functional requirements of the protocol.
+Please see "Part 1 - Architecture & Topology" of the OCPP 2.0.1 specification
+for further information about the device model and how it is composed.
+You should be familiar with the terms OCPP 2.0.1 terms **Component**,
+**Variable**, **VariabeCharacteristics** and **VariableAttributes**,
+**VariableMonitoring** to be able to follow the further explanations.
 
-OCPP2.0.1 does not differentiate between configuration and telemetry variables. This provides a lot of flexibility, but it also adds some overhead
-to the definition of configuration variables (e.g. for configuration variables only the `actual` attribute is actually relevant, but `target`, `minSet`,
-and `maxSet` attribute types are never used and not needed for simple configuration variables).
+OCPP 2.0.1 does not differentiate between configuration and telemetry
+variables. This provides a lot of flexibility, but it also adds some overhead
+to the definition of configuration variables (e.g. for configuration variables
+only the `actual` attribute is actually relevant, but `target`, `minSet`,
+and `maxSet` attribute types are never used and not needed for simple
+configuration variables).
 
 Device Model definition and configuration structure
 ---------------------------------------------------
 
-In libocpp, the device model is defined and configured using JSON files. These files serve two main purposes:
+In libocpp, the device model is defined and configured using JSON files.
+These files serve two main purposes:
 
-* **Definition** the device model (including its components and variables)
-* **Configuration** the value of variable attributes
+* **Definition**: the device model (including its components and variables)
+* **Configuration**: the value of variable attributes
 
-There is one JSON file for each Component. Each Component contains the definition of its Variables. Each Variable contains
-the definition of its VariableCharacteristics, VariableAttributes and VariableMonitoring. The actual value of a Variable can 
-be configured as part of the VariableAttribute(s). 
+There is one JSON file for each Component.
+Each Component contains the definition of its Variables.
+Each Variable contains the definition of its VariableCharacteristics,
+VariableAttributes and VariableMonitoring.
+The actual value of a Variable can be configured as part of the
+VariableAttribute(s). 
 
-This is how a definition and configuration for `LocalAuthListCtrlr`` component could look like:
+This is how a definition and configuration for the `LocalAuthListCtrlr`
+component could look like:
 
 .. code-block:: json
 
@@ -207,51 +224,76 @@ This is how a definition and configuration for `LocalAuthListCtrlr`` component c
     ]
   }
 
-You can change the components according to your needs, but note that the definitions for the `variable_name` and
-`characteristics` are usually defined by the OCPP2.0.1 specification. To configure a variable attribute value, 
-specify the `value` for the attribute type that you would like to configure. In the example above, the actual value of
-the VariableAttribute of the Variable `Enabled` is set to `true`. Note that not all variables have specified variable 
-attributes with a `value`, e.g. `LocalAuthListCtrlrEntries` does not specify a value. `LocalAuthListCtrlrEntries` is
-rather a telemetry than configuration, so libocpp will set the value for this at runtime and therefore it is not 
-required to configure a value for it. It's an example for a variable that is only defined, but not configured.
+You can change the components according to your needs, but note that the
+definitions for the `variable_name` and `characteristics` are usually defined
+by the OCPP 2.0.1 specification.
+To configure a variable attribute value, specify the `value` for the attribute
+type that you would like to configure.
+In the example above, the actual value of the VariableAttribute of the Variable
+`Enabled` is set to `true`. Note that not all variables have specified variable 
+attributes with a `value`, e.g. `LocalAuthListCtrlrEntries` does not specify a
+value. `LocalAuthListCtrlrEntries` is rather a telemetry than configuration,
+so libocpp will set the value for this at runtime and therefore it is not 
+required to configure a value for it.
+It's an example for a variable that is only defined, but not configured.
 
 .. note::
-  Currently the definition and configuration as well as the difference between configuration and telemetry is not easy to grasp
-  and not perfectly represented in the component JSON files. Therefore the structure of these files will be changed mid term.
+
+  Currently, the definition and configuration as well as the difference between
+  configuration and telemetry is not easy to grasp and not perfectly
+  represented in the component JSON files.
+  Therefore the structure of these files will be changed mid term.
 
 Device Model initialization
 ---------------------------
 
-The config files are parsed at startup and used to initialize an SQLite database. Please see `the documentation about the 
-device model initialization <https://github.com/EVerest/libocpp/blob/main/doc/ocpp_201_device_model_initialization.md>`_ for detailed information
-about this process.
+The config files are parsed at startup and used to initialize an SQLite
+database. Please see
+`the documentation about the device model initialization <https://github.com/EVerest/libocpp/blob/main/doc/ocpp_201_device_model_initialization.md>`_
+for detailed information about this process.
 
-You should specify the path to the directory of your device model definitions using the configuration parameter `DeviceModelConfigPath`
-of the OCPP201 module within everest-core. It shall point to the directory where the component files are located in 
-these two subdirectories:
+You should specify the path to the directory of your device model definitions
+using the configuration parameter `DeviceModelConfigPath`
+of the OCPP201 module within everest-core.
+It shall point to the directory where the component files are located in these
+two subdirectories:
 
 * standardized
 * custom
 
-By default the default value for `DeviceModelConfigPath` is pointing to the installation directory of the component files.
-You can modify the component according to your specific needs and the design of your charging station.
+By default, the default value for `DeviceModelConfigPath` is pointing to the
+installation directory of the component files.
+You can modify the component according to your specific needs and the design of
+your charging station.
 
 Libocpp provides a device model configuration as a starting point
 -----------------------------------------------------------------
 
-You can define custom components and variables according to the requirements and setup of your charging station. There are a lot of
-standardized components and variables in OCPP2.0.1 that are required and used in functional requirements of the specification. Please have 
-a look at the OCPP2.0.1 specification for more information about each of the standardized components and variables.
-For this reason, it is recommended to use the  `device device model definitions of libocpp <https://github.com/EVerest/libocpp/tree/main/config/v201/component_config>`_
-as a starting point. This is an examplary device model configuration for two EVSEs.
+You can define custom components and variables according to the requirements
+and setup of your charging station. There are a lot of
+standardized components and variables in OCPP 2.0.1 that are required and used
+in functional requirements of the specification. Please have 
+a look at the OCPP 2.0.1 specification for more information about each of the
+standardized components and variables.
+For this reason, it is recommended to use the
+`device device model definitions of libocpp <https://github.com/EVerest/libocpp/tree/main/config/v201/component_config>`_
+as a starting point. This is an examplary device model configuration for two
+EVSEs.
 
-The `device model setup from libocpp <https://github.com/EVerest/libocpp/tree/main/config/v201/component_config>`_ serves as a good example. 
-The split between the two directories only has semantic reasons. The **standardized** directory usually does not need to be modified since it contains
-standardized components and variables that the specification refers to in its functional requirements. The **custom** directory is meant to be used
-for components that are custom for your specific charging station. Especially the number of EVSE and Connector components, as well as their
-variables and values, need to be in line with the physical setup of the charging station.
+The `device model setup from libocpp <https://github.com/EVerest/libocpp/tree/main/config/v201/component_config>`_
+serves as a good example. 
+The split between the two directories only has semantic reasons.
+The **standardized** directory usually does not need to be modified since it
+contains standardized components and variables that the specification refers
+to in its functional requirements.
+The **custom** directory is meant to be used for components that are custom
+for your specific charging station.
+Especially the number of EVSE and Connector components, as well as their
+variables and values, need to be in line with the physical setup of the
+charging station.
 
-The following sections explain important component and variables in order to connect to a different CSMS or to enable certain features.
+The following sections explain important component and variables in order to
+connect to a different CSMS or to enable certain features.
 
 .. _different_csms:
 
@@ -271,8 +313,9 @@ Modify these parameters according to the connection requirements of the CSMS.
 
 .. note::
 
-  For TLS it might be required to prepare the required certificates and private keys. Please see the 
-  documentation of the `EvseSecurity module <https://everest.github.io/nightly/_included/modules_doc/EvseSecurity.html#everest-modules-handwritten-evsesecurity>`
+  For TLS, it might be required to prepare the required certificates and private keys.
+  Please see the documentation of the
+  `EvseSecurity module <https://everest.github.io/nightly/_included/modules_doc/EvseSecurity.html#everest-modules-handwritten-evsesecurity>`_
   for more information on how to set up the TLS connection for OCPP.
 
 .. _enable_pnc:
@@ -280,7 +323,8 @@ Modify these parameters according to the connection requirements of the CSMS.
 Enable Plug&Charge
 ------------------
 
-In order to enable Plug&Charge, adjust your component files according to the `Plug&Charge documentation <https://everest.github.io/nightly/general/07_configure_plug_and_charge.html>`_.
+In order to enable Plug&Charge, adjust your component files according to the
+`Plug&Charge documentation <https://everest.github.io/nightly/general/07_configure_plug_and_charge.html>`_.
 
 .. _configure_ocpp_everest:
 
@@ -290,15 +334,17 @@ Configuring the OCPP201 module within EVerest
 To be able to follow the further explanations, you should be familiar with the configuration of EVerest modules.
 Take a look into :ref:`EVerest Module Concept <moduleconcept_main>` for that.
 
-To configure the OCPP201 module of everest-core, find the available configuration parameters `in the manifest
-of the module <https://github.com/EVerest/everest-core/blob/main/modules/OCPP201/manifest.yaml>`_ and read the
-`module documentation <https://everest.github.io/nightly/_generated/modules/OCPP201.html>` carefully
-in order to configure it according to your needs.
+To configure the OCPP201 module of everest-core, find the available configuration parameters
+`in the manifest of the module <https://github.com/EVerest/everest-core/blob/main/modules/OCPP201/manifest.yaml>`_
+and read the
+`module documentation <https://everest.github.io/nightly/_generated/modules/OCPP201.html>`
+carefully in order to configure it according to your needs.
 
 In order to enable OCPP201 in EVerest, you need to load the module in the EVerest configuration file and set up the module connections. The interfaces
-provided and required by the OCPP module and its purposes are described in the `module documentation <https://everest.github.io/nightly/_generated/modules/OCPP201.html>`.
+provided and required by the OCPP module and its purposes are described in the `module documentation <https://everest.github.io/nightly/_generated/modules/OCPP201.html>`_.
 
-The EVerest configuration file `config-sil-ocpp201.yaml <https://github.com/EVerest/everest-core/blob/main/config/config-sil-ocpp201.yaml>` which was used previously serves as a good example
+The EVerest configuration file `config-sil-ocpp201.yaml <https://github.com/EVerest/everest-core/blob/main/config/config-sil-ocpp201.yaml>`_
+which was used previously serves as a good example
 for how the connections of the module could be set up.
 
 Here is a quick list of things you should remember when adding OCPP201 to your EVerest configuration file:
