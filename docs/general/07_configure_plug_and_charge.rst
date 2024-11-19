@@ -62,10 +62,11 @@ installed using OCPP1.6 or OCPP2.0.1. The paths to store these files can be conf
 EvseSecurity module. Please see `Documentation of the EvseSecurity <https://github.com/EVerest/everest-core/blob/main/modules/EvseSecurity/doc.rst>`_
 for further information on how to do the configuration for this module.
 
-In the visualization step 0. shows the process represents the previously described process of 
-provisioning the charger with the correct certificates. Step 0. before there is a physical 
-connection to the EV. The OCPP/OCPP201 and EvseV2G module require a module that implements 
-the evse_security.yaml (link) interface, in order to execute the following commands:
+In the visualization, step (0) shows the process that represents the previously described process of
+provisioning the charger with the correct certificates, before there is a physical
+connection to the EV. The OCPP/OCPP201 and EvseV2G module require a module that implements
+the `evse_security interface <https://everest.github.io/nightly/_generated/interfaces/evse_security.html>`_,
+in order to execute the following commands:
 
 * install_ca_certificate (Used by OCPP to install root certificates. This process is initiated by the OCPP CSMS)
 * update_leaf_certificate (Used to install or update SECC leaf certificates)
@@ -73,8 +74,21 @@ the evse_security.yaml (link) interface, in order to execute the following comma
 * verify_certificate (Used by EvseV2G to verify the contract certificate and by OCPP to verify new leaf certificates)
 * get_mo_ocsp_request_data (Used by EvseV2G and OCPP to get the OCSP request data of the contract certificate (chain))
 
-There are more commands provided by the evse_security.yaml (link) interface, which are not included in the Plug&Charge
-process.
+There are more commands provided by the `evse_security interface <https://everest.github.io/nightly/_generated/interfaces/evse_security.html>`_,
+which are not included in the Plug&Charge process.
+
+For a successful Plug&Charge authorization process, the following certificates need to be installed on the charger:
+
+* SECC leaf certificate (including sub cas)
+* V2G Root Certificate(s)
+* MO Root Certificates(s) (only if the EV contract shall be verified locally).
+  This can be controlled by the OCPP configuration keys described in the section
+  :ref:`ocpp-configuration` for more information.
+
+As mentioned above, these certificates can be installed manually or by the CSMS. In case Plug&Charge is enabled 
+and no (valid) SECC leaf certificate is installed or it expires within the next 30 days, the charging station
+will attempt to retrieve a SECC leaf certificate from the CSMS automatically. This process can also be triggered
+manually by the CSMS by using a *TriggerMessage(SignCertificate).req* message.
 
 Step 1
 ======
@@ -89,22 +103,26 @@ Step 2
 
 When charger and EV have agreed on Contract being the selected payment option, we have something going on
 that we can call a Plug&Charge process. The EV sends its contract certificate chain and requests authorization
-from the charger. The EvseV2G module generates a ProvidedIdToken (link), which is the EVerest type that 
-contains data the authorization request, including the contract certificate and OCSP request data. 
+from the charger. The EvseV2G module generates a
+`ProvidedIdToken <https://everest.github.io/nightly/_generated/types/authorization.html#authorization-providedidtoken>`_,
+which is the EVerest type that contains data about the authorization request, including the contract
+certificate and OCSP request data. 
 
-The ProvidedIdToken is transmitted via the evse_manager.yaml interface to the EvseManager module.
+The *ProvidedIdToken* is transmitted via the *evse_manager* interface to the EvseManager module.
 
 Step 3
 ======
 
-The EvseManager module implements the token_provider.yaml interface and can therefore publish the 
-ProvidedIdToken (link) containing the contract certificate and OCSP data within EVerest to the central
-authorization module in EVerest: Auth.
+The EvseManager module implements the *token_provider* interface and can therefore publish the 
+`ProvidedIdToken <https://everest.github.io/nightly/_generated/types/authorization.html#authorization-providedidtoken>`_
+containing the contract certificate and OCSP data within EVerest to the central authorization module
+in EVerest: Auth.
 
 Step 4
 ======
 
-The Auth module sends commands containing the ProvidedIdToken to its registered token_validator(s) (link),
+The Auth module sends commands containing the *ProvidedIdToken* to its registered
+`token_validator(s) <https://everest.github.io/nightly/_generated/interfaces/auth_token_validator.html>`_,
 which are OCPP/OCPP201 in the case of Plug&Charge. The OCPP module(s) validate the token based on the requirements
 specified in the OCPP protocol (either validating locally or by the CSMS).
 
@@ -136,10 +154,11 @@ actually configured.
 The following two configuration files are relevant and require a correct setup and activation for Plug&Charge:
 
 * EVerest configuration file (yaml)
-* OCPP configuration file (.json)
+* OCPP configuration file (json) for OCPP 1.6 or OCPP 2.0.1
 
-Let's start with the EVerest configuration file. If you haven't read "Explaining the YAML files", now its the 
-right time to do it before you go on!
+Let's start with the EVerest configuration file. If you haven't read
+`Explaining the YAML files <https://everest.github.io/nightly/general/04_detail_module_concept.html#explaining-the-yaml-files>`_,
+now it's the right time to do it before you go on!
 
 It's a good idea to start with a base of a configuration file and talk about the changes required to enable
 Plug&Charge. The base config we use is the "config-sil-ocpp201.yaml", which already contains the configuration
@@ -154,7 +173,7 @@ EvseManager
 * Make sure `payment_enable_contract` is set to `true`
 
 EvseV2G
-===========
+=======
 
 * Make sure `tls_security` is set to `allow` or `force`.
 * If `verify_contract_cert_chain` is `true` the EvseV2G module attempts to verify the contract certificate chain
@@ -172,3 +191,43 @@ EvseSecurity
 
 Please refer to `Documentation of the EvseSecurity module <https://github.com/EVerest/everest-core/blob/main/modules/EvseSecurity/doc.rst>`_ 
 for information on the ISO15118 configuration. 
+
+.. _ocpp-configuration:
+
+*************************************
+OCPP 1.6 and OCPP 2.0.1 configuration
+*************************************
+
+Since Plug&Charge has been backported from OCPP 2.0.1 to OCPP 1.6, the
+configuration options to control the process are mostly identical.
+These options are described in the following section, where differences
+between OCPP 1.6 and OCPP 2.0.1 are marked.
+
+These OCPP configuration options are relevant for the Plug&Charge process:
+
+* ISO15118PnCEnabled (bool): Global feature flag to enable Plug&Charge.
+* CentralContractValidationAllowed (bool): If enabled and charging station can
+  not validate the contract locally (e.g. because no MO root certificate is
+  installed), the charging station provides the contract certificate as part
+  of the Authorize.req so that the CSMS can verfiy the contract instead.
+* ContractValidationOffline (bool): If enabled, the charging station will try
+  to validate a contract certificate when it is offline using the authorization
+  cache or the local authorization list. If this is set to `false`, Plug&Charge
+  will fail if the charging station is offline.
+* ISO15118Ctrlr::V2GCertificateInstallationEnabled (bool, only OCPP 2.0.1):
+  Allows the CSMS to install an SECC leaf certificate on the charging station.
+  This must be enabled in case the charging station shall receive the SECC leaf
+  certificate from the CSMS. 
+
+The following configuration options control parameters of the certificate
+signing request that is initiated by the charging station automatically in case
+Plug&Charge is enabled and no (valid) SECC Leaf Certificate is currently installed.
+
+* SeccLeafSubjectCommonName (string, ISO15118Ctrlr::SeccId in OCPP 2.0.1)
+* SeccLeafSubjectCountry (string, ISO15118Ctrlr::CountryName in OCPP 2.0.1)
+* SeccLeafSubjectOrganization (string, ISO15118Ctrlr::OrganizationName in OCPP 2.0.1)
+
+These configuration keys can be configured manually or controlled by the CSMS according to its needs. If the CSMS rejects the CSR
+from the charging station or does not return a certificate after the specified timeouts and retries, it is likely that the values
+of these configuration keys do not match the expectations of the CSMS. Contact your CSMS partner in this case.
+
