@@ -50,9 +50,9 @@ Simply run
 
 .. code-block:: bash
 
-    ${EVEREST_WORKSPACE:?}/everest-core/build/run-scripts/run-sil-ocpp201.sh
+    ${EVEREST_WORKSPACE:?}/everest-core/build/run-scripts/run-sil-ocpp201-pnc.sh
 
-to start EVerest with OCPP 2.0.1. You can start playing around with the EVerest
+to start EVerest with OCPP 2.0.1 and Plug&Charge enabled. You can start playing around with the EVerest
 simulation to start charging sessions.
 
 You can find the OCPP message log in different formats in the

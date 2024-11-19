@@ -227,5 +227,7 @@ Plug&Charge is enabled and no (valid) SECC Leaf Certificate is currently install
 * SeccLeafSubjectCountry (string, ISO15118Ctrlr::CountryName in OCPP 2.0.1)
 * SeccLeafSubjectOrganization (string, ISO15118Ctrlr::OrganizationName in OCPP 2.0.1)
 
-These configuration keys can be configured manually or controlled by the CSMS
-according to its needs.
+These configuration keys can be configured manually or controlled by the CSMS according to its needs. If the CSMS rejects the CSR
+from the charging station or does not return a certificate after the specified timeouts and retries, it is likely that the values
+of these configuration keys do not match the expectations of the CSMS. Contact your CSMS partner in this case.
+
