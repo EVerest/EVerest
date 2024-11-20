@@ -69,20 +69,26 @@ It has the following subcommands
 - helpers:
   utility commands
 
+- types:
+  auto generation of C++ header files for types
+
 To see a list of all subcommands and options, simply call:
 
     ev-cli --help
 
-Both the `module` and `interface` command have the following options in
+The `module`, `interface` and `types` commands have the following options in
 common:
+
+- `--work-dir`:
+  work directory which also contains the manifest definitions (default: ``.``)
 
 - `--everest-dir`:
   root directory of EVerest core or any directory containing interface
   and module definitions (default: ``.``)
 
-- `--framework-dir`:
-  root directory of the EVerest framework, containing the schema
-  definitions (default: ``../everest-framework``)
+- `--schemas-dir`:
+  schemas directory of the EVerest framework, containing the schema
+  definitions (default: ``../everest-framework/schemas``)
 
 - `--clang-format-file`:
   if C++ output should be formatted, set this to the path of the
