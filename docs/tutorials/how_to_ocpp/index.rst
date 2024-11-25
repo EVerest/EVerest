@@ -33,7 +33,8 @@ If you're new to EVerest start with our
 :ref:`Quick Start Guide <quickstartguide_main>`
 to get a simulation in EVerest running for the first time.
 It is important that you have set up the required docker containers for
-Mosquitto and SteVe, which we will use as an example CSMS.
+Mosquitto and SteVe, which we will use as an example CSMS. For more information
+about these containers, see the :ref:`EVerest Docker Setup page <docker_setup>`.
 If you have done that successfully, you can move on with this tutorial.
 
 .. _run_with_steve:
