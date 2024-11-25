@@ -631,7 +631,7 @@ and
 
 **Re-booting procedure**
 
-As a last step, power down the board, unplug the boot jumper and the the
+As a last step, power down the board, unplug the boot jumper and the
 Micro-USB cable and power up again.
 
 **Connect to the Yak board**
