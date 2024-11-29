@@ -9,7 +9,7 @@ How To: OCPP 2.0.1 in EVerest
   see `the GitHub repository of libocpp <https://github.com/EVerest/libocpp>`_.
 
 The OCPP 2.0.1 implementation in EVerest is currently under development.
-You can check `this document <https://github.com/EVerest/libocpp/blob/main/doc/ocpp_201_status.md>`_
+You can check `this document <https://github.com/EVerest/libocpp/blob/main/doc/v201/ocpp_201_status.md>`_
 for the current status.
 
 This is a tutorial about how to set up and configure OCPP 2.0.1 in EVerest.
