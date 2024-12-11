@@ -148,8 +148,8 @@ We have setup EVerest successfully on Raspberry Pi 4.
 
 Operating System
 ================
-EVerest has been tested with Ubuntu, OpenSUSE and Fedora 36. In general, it can
-be expected to run on most Linux-based systems.
+EVerest has been tested with Debian 12 and Fedora 38, 39 and 40.
+In general, it can be expected to run on most Linux-based systems.
 
 Libraries And Tools
 ===================
