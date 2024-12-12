@@ -87,9 +87,19 @@ Here is a list of tested environments:
 
 Debian
 ------
-Tested with Debian 12. Here is how to get your needed libraries with `apt`:
+This is the Linux distribution that is recommended for productive setups.
 
-TODO Add apt commands.
+Tested with Debian 12.
+
+Here is a list of required packages to get EVerest running on Debian:
+
+.. note::
+
+  We are currently working on containers to provide a robust setup to test and
+  develop EVerest.
+  Until then, you can have a look at the packages listed for the other Linux
+  distributions below and manually install the required packages on your
+  Debian system.
 
 OpenSUSE
 --------
