@@ -100,7 +100,12 @@ Everest working group meetings occur on a weekly basis. A full calendar with
 invitations to all meetings can be found [here.](https://zoom-lfx.platform.linuxfoundation.org/meetings/everest?view=month)
 
 Additionally, if you and/or your organization would like to set up a 30 minute
-1:1 meeting please follow the link [here.](https://calendly.com/manuel-ziegler-pionix/30min?month=2024-08)
+1:1 meeting about how to contribute to source code or discussions in the EVerest
+project, please follow the link
+[here.](https://calendar.app.google/cWtKd6ysfWMKHJtY9)
+
+Please, be aware that this will not be a tech talk.
+If you need tech support, Zulip should be your first choice.
 
 Check out our [YouTube Page](https://www.youtube.com/@lfe_everest) for
 instructional videos and meeting archives.
