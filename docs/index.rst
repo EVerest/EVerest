@@ -176,7 +176,10 @@ https://zoom-lfx.platform.linuxfoundation.org/meeting/92797425199
 1:1 meetup
 ----------
 
-If you do not find your way into the EVerest community, let's try to help you.
+The first step into the EVerest community should be
+:ref:`checking out our Zulip chat <index_zulip>`.
+
+Should you have problems entering the community, we are happy to help you.
 Just book a meeting via the link below. Of course, this is optionally. You
 are allowed to join the Zulip sessions and also take part in the working group
 meetings without registration.
@@ -187,8 +190,9 @@ meetings without registration.
     the meetups or the discussions.
 
 Just book a 30-minute meetup here:
-https://calendly.com/manuel-ziegler-pionix/30min
+`EVerest Community Onboarding via Google calendar <https://calendar.app.google/cWtKd6ysfWMKHJtY9>`_
 
+You will be talking with a community manager of the EVerest project.
 
 Tech resources about EVerest
 ============================
