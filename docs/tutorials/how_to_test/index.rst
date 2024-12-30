@@ -7,26 +7,29 @@ How To: Test in EVerest
 This is a tutorial on how to setup your test environment for EVerest.
 
 Requirements
-==========================================
+============
 
-A successful build of everest-core is required. Refer to `everest-core
-<https://github.com/EVerest/everest-core/>`__ for this.
+A successful build of *everest-core* is required. Refer to
+`everest-core <https://github.com/EVerest/everest-core/>`_ for this.
 
-Some test cases require the installation of everestpy, you can do this after a successful build of everest-core:
+Some test cases require the installation of *everestpy*.
+You can do this after a successful build of *everest-core*:
 
 .. code-block:: bash
 
     cd everest-core
     cmake --build build --target everestpy_pip_install_dist
 
-Sometimes the ``everstpy`` module might require manual installation. That can be done by running:
+Sometimes the ``everstpy`` module might require manual installation.
+That can be done by running:
 
 .. code-block:: bash
+
     cd everest-framework/everestpy
     python3 -m pip install .
 
-Install the python package containing the everest test utilities from `everest-testing
-<https://github.com/EVerest/everest-utils/tree/main/everest-testing/>`__. 
+Install the python package containing the EVerest test utilities from
+`everest-testing <https://github.com/EVerest/everest-utils/tree/main/everest-testing/>`_. 
 
 Install the requirements of this repository:
 
@@ -34,7 +37,8 @@ Install the requirements of this repository:
 
     python3 -m pip install -r requirements.txt
 
-Some test cases require the installation of Josev. This should be located in your everest workspace:
+Some test cases require the installation of *Josev*.
+This should be located in your EVerest workspace:
 
 .. code-block:: bash
 
@@ -42,7 +46,8 @@ Some test cases require the installation of Josev. This should be located in you
     python3 -m pip install -r requirements.txt
     python3 -m pip install .
 
-For most test cases you need a correct setup of certificates and configs within EVerest. You can use:
+For most test cases you need a correct setup of certificates and configs within
+EVerest. You can use
 
 .. code-block:: bash
 
@@ -50,13 +55,17 @@ For most test cases you need a correct setup of certificates and configs within 
     ./install_certs.sh <path/to/everest-core>
     ./install_configs.sh <path/to/everest-core>
 
-to install the certificates within everest-aux into the correct location of everest-core.
+to install the certificates within *everest-aux* into the correct location of
+*everest-core*.
 
-An MQTT server is needed for testing. Docker can be used for this. Refer to `docker-setup
-<https://everest.github.io/nightly/tutorials/docker_setup.html>`__  for this.
+An MQTT server is needed for testing.
+Docker can be used for this.
+Refer to
+`docker-setup <https://everest.github.io/nightly/tutorials/docker_setup.html>`_
+for this.
 
 Test sets
-==========================================
+=========
 
 Run any test set (e.g. ocpp_compliance_tests.py) with:
 
@@ -76,34 +85,42 @@ or run all tests in parallel with:
 
     ./run-testing.sh
 
-If running from the ``everest-core/tests/ocpp_tests`` directory, the path to everest-core or libocpp can be relative, for example: 
+If running from the ``everest-core/tests/ocpp_tests`` directory, the path to
+*everest-core* or *libocpp* can be relative, for example:
 
 .. code-block:: bash
 
     --everest-prefix ../../../everest-core/build/dist --libocpp ../../../libocpp/
 
-TODO: Update docs here in known failing tests
-For a list of failing tests, see [test_state](test_state).
+.. note::
+
+    Here is a TODO: We have to update the documentation for known failing
+    tests.
 
 View OCPP test logs
-==========================================
+===================
 
-While running the tests, EVerests logs OCPP message to its log directory. These logs are stored in HTML files.
-When you open the following directory in your webbrowser you can view to logs:
+While running the tests, EVerest logs OCPP message to its log directory.
+These logs are stored in HTML files.
+
+When you open the following directory in your web browser you can view to logs:
 
 .. code-block:: bash
 
     /tmp/everest_ocpp_test_logs/
 
 VS Code Debugging
-==========================================
+=================
 
-Debugging can have various layers depending on the feature tested. This part will focus on debugging inside VS Code.
+Debugging can have various layers depending on the feature tested.
+This part will focus on debugging inside VS Code.
 
 Python debugging
-------------------------------------------
+----------------
 
-Tests can be manually launched by adding the proper entries to the 'launch.json' file. Example for debugging a test from ``ocpp_compliance_tests.py``:
+Tests can be manually launched by adding the proper entries to the
+'launch.json' file.
+Example for debugging a test from ``ocpp_compliance_tests.py``:
 
 .. code-block:: json
 
@@ -130,9 +147,11 @@ The paths can differ based on the workspace setup.
 .. tutorial_tests_cpp_debug_attach:
 
 C++ debugging
-------------------------------------------
+-------------
 
-When a certain test case executes, there is a chance that C++ code can be faulty, requiring a GDB attach in order to detect an issue. In that case the the following steps can be followed:
+When a certain test case executes, there is a chance that C++ code can be
+faulty, requiring a GDB attach in order to detect an issue.
+In that case, the following steps can be followed:
 
 - setup for python debugging
 - setup for c++ debugging with the following config entry:
@@ -161,7 +180,7 @@ When a certain test case executes, there is a chance that C++ code can be faulty
         }
     ]
 
-- build everest-core with debugging enabled: ``cmake .. -DCMAKE_BUILD_TYPE=Debug```
+- build *everest-core* with debugging enabled: ``cmake .. -DCMAKE_BUILD_TYPE=Debug``
 - run the desired test from python debugging (```Python: OCPP Compliance Test```) and place a breakpoint near the test's entry point
 - copy the PID from the variable 'test_controller: TestController' from the test's function: ``test_controller->_everest_core->process->pid``
 - run ```pstree -pT ${pid}``` with the retrieved pid for example 102590:
@@ -188,24 +207,34 @@ When a certain test case executes, there is a chance that C++ code can be faulty
 - unpause the python `Python: OCPP Compliance Test` debug session
 
 External integration
-==========================================
+====================
 
-The main motive for external integration is the flexibility of running everest outside of the SIL environment. Therefore the ocpp-tests can be run with any out-of-tree versions of everest. 
+The main motive for external integration is the flexibility of running
+EVerest outside of the SIL environment.
+Therefore, the *ocpp-tests* can be run with any out-of-tree versions of
+EVerest.
 
-Currently there are different version of everest that should be able to run ocpp-tests:
+Currently, there are different versions of EVerest that should be able to run
+*ocpp-tests*:
 
 - SIL
-- Basecamp
+- BaseCamp
 
-The ``test_sets`` folder can be embedded in any external repository that uses Everest. The external Everest does not have to include all the components required by the SIL version.
+The ``test_sets`` folder can be embedded in any external repository that uses
+EVerest.
+The external EVerest does not have to include all the components required by
+the SIL version.
 
-The due to the limitations of pytest, the `conftest.py
-<https://docs.pytest.org/en/latest/reference/fixtures.html#conftest-py-sharing-fixtures-across-multiple-files>`__ file must not be included, in order to preserve the needs of the external project.
+Due to the limitations of *pytest*, the
+`conftest.py <https://docs.pytest.org/en/latest/reference/fixtures.html#conftest-py-sharing-fixtures-across-multiple-files>`_
+file must not be included, in order to preserve the needs of the external project.
 
-In order to use the proper fixtures for the [test_sets](test_sets) inside an external repository, a custom `conftest.py` specific for that project has to provide all the necessary fixtures for running the tests.
+In order to use the proper fixtures for the ``[test_sets](test_sets)`` inside an
+external repository, a custom `conftest.py` specific for that project has to
+provide all the necessary fixtures for running the tests.
 
 Example fixture
-------------------------------------------
+---------------
 
 The `test_F01_F02_F03`` requires the following fixtures:
 
@@ -213,7 +242,8 @@ The `test_F01_F02_F03`` requires the following fixtures:
 
     async def test_F01_F02_F03(charge_point_v201: ChargePoint201, test_controller: TestController, test_utility: TestUtility):
 
-The project specific `conftest.py` must provide the proper fixtures that are custom for the project, in our case the `test_controller` fixture:
+The project-specific `conftest.py` must provide the proper fixtures that are
+custom for the project - in our case the `test_controller` fixture:
 
 .. code-block:: python
 
@@ -257,20 +287,26 @@ The project specific `conftest.py` must provide the proper fixtures that are cus
         controller.stop()
 
 Example marker injection
-------------------------------------------
+------------------------
 
-Sometimes the tests do not have all the required `pytest markers
-<https://docs.pytest.org/en/latest/example/markers.html#marking-test-functions-and-selecting-them-for-a-run>`__. The test ``test_F01_F02_F03`` might require additional markers in the context of an external repo.
+Sometimes the tests do not have all the required
+`pytest markers <https://docs.pytest.org/en/latest/example/markers.html#marking-test-functions-and-selecting-them-for-a-run>`_.
+The test ``test_F01_F02_F03`` might require additional markers in the context
+of an external repo.
 
-That can be achieved at runtime using `pytest hooks
-<https://docs.pytest.org/en/latest/how-to/writing_hook_functions.html>`__. For example if the test might require the 
+That can be achieved at runtime using
+`pytest hooks <https://docs.pytest.org/en/latest/how-to/writing_hook_functions.html>`_.
+
+For example if the test might require the 
 
 .. code-block:: python
 
     pytest.mark.use_temporary_persistent_store
     pytest.mark.ocpp_config(Path("path-to-config"))
 
-markers that are not present in the test header. They can be injected by adding the following code to the `conftest.py` of the specific external project:
+markers that are not present in the test header.
+They can be injected by adding the following code to the `conftest.py` of the
+specific external project:
 
 .. code-block:: python
 
@@ -287,12 +323,16 @@ markers that are not present in the test header. They can be injected by adding 
 
         pass
 
-The result is that before running each selected test under ``test_sets`` the markers will be applied, modifying the default behavior of the tests.
+The result is that before running each selected test under ``test_sets``, the
+markers will be applied, modifying the default behavior of the tests.
 
 Required mocks
 ==============
 
-In order to properly run the tests certain mocks have to be implemented. Different versions of Everest might require different mock implementations that might include but not be limited to:
+In order to properly run the tests, certain mocks have to be implemented.
+Different versions of EVerest might require different mock implementations,
+that might include but not be limited to:
+
 - charge_point_v16
 - charge_point_v201
 - test_controller
