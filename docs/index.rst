@@ -24,7 +24,12 @@ source advantages for the EV charging world. It will also enable new features
 for local energy management, PV-integration and many more.
 
 The EVerest project was initiated by `PIONIX GmbH <https://pionix.com>`_
-(`Pionix at LinkedIn <https://www.linkedin.com/company/pionix-gmbh>`_) to help with the electrification of the mobility sector and is an official project of the Linux Foundation Energy.
+(`Pionix at LinkedIn <https://www.linkedin.com/company/pionix-gmbh>`_) to help
+with the electrification of the mobility sector and is an official project of
+the Linux Foundation Energy.
+
+If you are into LinkedIn, make sure to follow the EVerest project there:
+`EVerest project on LinkedIn <https://www.linkedin.com/showcase/everest-project/>`_
 
 **************************************
 Where to Go From Here: EVerest Compass
