@@ -3,4 +3,4 @@ everest-core:
   git_tag: main
 everest:
   git: git@github.com:EVerest/EVerest.git
-  git_tag: main
+  git_tag: bugfix/deploy-docs
