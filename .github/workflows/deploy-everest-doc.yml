@@ -265,7 +265,7 @@ jobs:
         path: ${{ env.GITHUB_PAGES_REPO }}
         token: ${{secrets.SA_GITHUB_PAT}}
         ref: main
-        fetch-depth: 0
+        fetch-depth: 1
     - name: Download snapshot file
       uses: actions/download-artifact@v4
       with:
