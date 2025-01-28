@@ -1,71 +1,147 @@
 # EVerest Features and Roadmap
-as of 2023-08-04
+as of 2025-01-27
 
 ## Done:
-EVerest grows constantly and besides the BelayBox development kit from Pionix,
+EVerest grows constantly and besides the BelayBox development kit from PIONIX,
 it has been used as a charging device firmware by several charging device
 manufacturers.
 
 We are currently incorporating the following standards and technologies:
 
-* EVerest core interconnecting all charging protocols and interfaces.
-* MQTT framework to easily configure loosely coupled modules
-* Hardware abstraction layer
-* Software in the loop simulation
-* ISO 15118 (AC wired charging)
-  + SLAC / ISO 15118-3 in C++
+### Communication protocols & standards
+
+* ISO 15118 - current status, see https://github.com/everest/libiso15118
+  Some examplary implemented features:
+  + -20: DC, DC BPT, Scheduled Mode and Dynamic Mode
   + ISO 15118-2 AC charging
     (preliminary external java dependencies, will be replaced) and DC charging
+  + Multiplexing of DIN, ISO 15118-2 and ISO 15118-20
+  + SLAC / ISO 15118-3 in C++
   + Plug&Charge handling
-* EN 61851
+* C++ based EXI parser & parser generator (ISO 15118-20 capable)
+* OCPP
+  + OCPP 1.6+ (JSON) - All profiles and security extensions
+  + OCPP 2.0.1 field-relevant implementation done, e.g.:
+    + Device Model implementation
+    + Remote Start / Stop
+    + Authorization Cache
+    + FirmwareUpdate
+    + California Pricing requirements
+    + Smart Charging (not supported: Use cases K11-K17)
+    + and many more, see https://github.com/everest/libocpp for details.
 * DC DIN SPEC 70121
-* OCPP 1.6+ (JSON) - All profiles and security extensions
-* OCPP 2.0.1 partly, already done:
-  + Device Model implementation
-  + Remote Start / Stop
-  + Authorization Cache
-  + FirmwareUpdate
-  + and many more
-* Smart charging: based on energy prices and limiting based on grid constraints 
-  + Price API form: aWATTar, Tibber
-  + Solar forecast API: https://forecast.solar/
+* EN 61851
+* SAE J2847/2 DC BPT, V2H & V2G, Negative PhysicalValueTypes in
+  ChargeParameterDiscovery and CurrentDemand messages.
 * Modbus
 * Sunspec
+
+### Hardware & software interfaces
+
+* Hardware abstraction layer
+* EVerest core interconnecting all charging protocols and interfaces.
 * NFC authentication
-* NodeRed integration
+
+### Software architecture & development
+
+* MQTT framework to easily configure loosely coupled modules
+* Software in the loop simulation
 * Testing framework
+* Error handling and reporting features
+* NodeRed integration
+
 
 ## Work in Progress:
-* Further OCPP 2.0.1 / 2.1 implementation
-* Ongoing ISO 15118-20 implementation (already done: Fully tested and
-  operational ISO 15118-2 / DIN SPEC 70121 implementation, bidirectional PoC
-  based on C/C++ implementation by Chargebyte/Pionix)
-* Smart charging: based on solar generation and dynamic load balancing
-* Remote System Architecture
-* Error Handling and Reporting
-* CarSimulator with ISO 15118-20 AC
-* ISO 15118-X - all other features (DC, Wireless, Bidirectional, Plug&Charge)
-* C++ based EXI parser & parser generator (ISO 15118-20 capable)
-* Ongoing
-  + Car compatibility tests with various OEMs
-  + New drivers for components
 
-## Planned:
-Our vision is that EVerest enables every way of (at least a bit) smart charging, in all situations, from home to Work and even Public AC and DC unidirectional and bidirectional grid friendly charging. Moving forward, we have quite a list of things we want to add, and this is probably far from complete:
-* Further backend integrations: https://www.openchargealliance.org/
+### Milestone Q1/2025
+* ISO 15118-20
+  + Pause / Resume
+  + V2X DC Setpoint
+  + "Qualification" status of 15118-20 branch
+* OCPP 2.1
+  + Core
+  + ISO 15118-20 updates
+* EEBus-GO integration
+  + Basic
+  + Add support for Setpoint / Frequency Control
+  + Add external EMS API module
+* Drivers
+  + BSP Chargebyte hardware (eventually)
+  + InfyPower power module
+
+### Milestone Q2/2025
+* EvseManager refactoring
+* GB/T integration
+* OCPP/ISO 15118-20 data sharing
+* OCPP 2.1
+  + V2X Setpoint
+  + Resume Transactions
+  + EMS Support
+* EEBus-GO: Further use cases
+* OpenADR 3.0: OpenLEADR-rs integration
+* Driver: UUGreen power module
+
+### Milestone Q4/2025
+* ISO 15118
+  + -2: Certificate update
+  + -2: Smart Charging
+  + -10: SLAC refactoring
+  + -20Amd - AC V2X
+  + -20: V2X DC Frequency Control
+* MCS
+  + Low Level Communication
+  + High Level Communication
+* OCPP: Minimum Required Error Codes (MREC)
+* OCPP 2.1
+  + V2X Frequency Control
+  + Priority Charging
+  + V2X DER
+* Matter: EV charging profiles
+
+### Milestone 2026
+* ISO 15118
+  + -20: Plug&Charge
+  + -20: DER
+  + -202: ESDP
+  + libISO15118: EV-side simulator
+* OCPP 2.0.1: ISO 15118 Smart Charging
+* OCPP 2.1
+  + Ad-hoc Payments
+  + Cost Calculation
+  + Pre-paid Card
+  + Event Streams
+
+## Non-prioritized list of further ideas / features
+
+Our vision is that EVerest enables every way of (at least a bit) smart
+charging, in all situations, from home to Work and even Public AC and DC
+unidirectional and bidirectional grid friendly charging.
+Moving forward, we have quite a list of things we want to add, and this is
+probably far from complete:
+
+* Further OCPP 2.0.1 / 2.1 implementation
+  + Event Battery Swapping
+  + Server-client (local energy management in the middle)
+* Further ISO 15118-20 implementation
+  + Also ISO 15118-8: WiFi communication
+* Smart charging: based on solar generation and dynamic load balancing
+* IEEE 2030.5
 * Car Communication
   + CHAdeMO
-  + GB/T
   + ChaoJi
 * Advanced Energy Management with load balancing, solar integration and
   dynamic pricing
-* Grid integration
-  + ADR https://www.openadr.org/ 
-  + USEF https://www.usef.energy/
 * Smart Home Integration:
-  + EEBus https://www.eebus.org/ 
+  + Further EEBus implementation (https://www.eebus.org/)
   + SG Ready
   + Smart Meter Integration
-* IEEE 2030.5
-* More HW drivers for e.g. Meters, other AC and DC charging controllers
+* Remote System Architecture
 * Payment APIs
+* Further backend integrations: https://www.openchargealliance.org/
+* Grid integration
+  + ADR https://www.openadr.org/
+  + USEF https://www.usef.energy/
+* More HW drivers for e.g. Meters, other AC and DC charging controllers
+* Ongoing
+  + Car compatibility tests with various OEMs
+  + New drivers for components
