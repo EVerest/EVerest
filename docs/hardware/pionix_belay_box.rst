@@ -169,8 +169,8 @@ Now to the steps to flash the board:
 
 Download the latest stable image and the matching .bmap file:
 
-* https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-20240912100805.rootfs.wic.bz2
-* https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-20240912100805.rootfs.wic.bmap
+* https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-kisrkstone-v1.0-186.wic.bz2
+* https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-kisrkstone-v1.0-186.wic.bmap
 
 **STEP 2: Set boot jumper and connect Micro-USB**
 
@@ -374,7 +374,7 @@ Execute the following:
 
 .. code-block:: bash
 
-  rauc install https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-bundle-raspberrypi4-20240912103122.raucb
+  rauc install https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-bundle-raspberrypi4-kisrkstone-v1.0-186.raucb
 
 .. _belaybox_yeti_flash:
 
