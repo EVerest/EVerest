@@ -39,6 +39,12 @@ Hardware
 
 * Added NXP PN7160 NFC chip support as token provider module.
 
+Further changes
+---------------
+
+* Some bug-fixes, e.g. compilation issues on ARM, configuration parsing error
+  for Python modules, solve Rust binding issues etc.
+
 2024.12.0
 =========
 
