@@ -31,8 +31,18 @@ most recent one backwards):
 General changes
 ---------------
 
-* Accept bank cards only for specific connectors.
+* Accept bank cards for dedicated connectors.
 * New documentation and tests, e.g. for EnergyManager and EvseV2G.
+
+Authorization and security
+--------------------------
+
+* Added security implementation to Evse15118D20 module, see
+  `PR 1030 <https://github.com/EVerest/everest-core/pull/1030>`_.
+* Fix error handling for authorization timeouts, see
+  `PR 1032 <https://github.com/EVerest/everest-core/pull/1032>`_.
+* Plug-in timeout handling: Replug necessary including authorization request,
+  see `PR 976 <https://github.com/EVerest/everest-core/pull/976>`_.
 
 Hardware
 --------
@@ -42,8 +52,13 @@ Hardware
 Further changes
 ---------------
 
-* Some bug-fixes, e.g. compilation issues on ARM, configuration parsing error
+* Fix for reservation of connectors, see
+  `PR 972 <https://github.com/EVerest/everest-core/pull/972>`_.
+* Further bug-fixes, e.g. compilation issues on ARM, configuration parsing error
   for Python modules, solve Rust binding issues etc.
+
+Further fixes and enhancements, see
+`Release 2025.1.0 overview on GitHub <https://github.com/EVerest/everest-core/releases/tag/2024.11.0>`_.
 
 2024.12.0
 =========
@@ -71,7 +86,7 @@ OCPP
   `PR 986 <https://github.com/EVerest/everest-core/pull/986>`_.
 
 Further fixes and enhancements, see
-`Release 2024.11.0 notes on GitHub <https://github.com/EVerest/everest-core/releases/tag/2024.11.0>`_.
+`Release 2024.11.0 overview on GitHub <https://github.com/EVerest/everest-core/releases/tag/2024.11.0>`_.
 
 2024.10.0
 =========
@@ -95,7 +110,7 @@ Hardware
   `PR 886 <https://github.com/EVerest/everest-core/pull/886>`_.
 
 Also many further fixes and enhancements - see
-`release 2024.10.0 notes on GitHub <https://github.com/EVerest/everest-core/releases/tag/2024.10.0>`_.
+`release 2024.10.0 overview on GitHub <https://github.com/EVerest/everest-core/releases/tag/2024.10.0>`_.
 
 2024.9.1 - LATEST STABLE
 ========================
@@ -164,7 +179,7 @@ Other topics
   `PR 823 <https://github.com/EVerest/everest-core/pull/823>`_.
 * Added error handling documentation to EvseManager and OCPP modules.
 * Further bugfixes and minor enhancements, see
-  `release 2024.8.0 notes on GitHub <https://github.com/EVerest/everest-core/releases/tag/2024.8.0>`_.
+  `release 2024.8.0 overview on GitHub <https://github.com/EVerest/everest-core/releases/tag/2024.8.0>`_.
 
 2024.7.1
 ========
