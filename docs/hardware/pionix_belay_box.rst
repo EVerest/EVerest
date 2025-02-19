@@ -169,8 +169,8 @@ Now to the steps to flash the board:
 
 Download the latest stable image and the matching .bmap file:
 
-* https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-kirkstone-v1.0-186.wic.bz2
-* https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-kirkstone-v1.0-186.wic.bmap
+* https://pionix-update.de/releases/stable/belaybox-image-raspberrypi4-kirkstone-release-330-1.wic.bz2
+* https://pionix-update.de/releases/stable/belaybox-image-raspberrypi4-kirkstone-release-330-1.wic.bmap
 
 **STEP 2: Set boot jumper and connect Micro-USB**
 
