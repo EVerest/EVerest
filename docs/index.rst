@@ -136,7 +136,7 @@ Those are all EVerest working groups:
 
 - General (for general topics and to get a common ground for updates from the
   other working groups)
-- EVerest Framework, Infrastruccture and Tools - the FIT working group (which
+- EVerest Framework, Infrastructure and Tools - the FIT working group (which
   is a merge if the former "Framework & Tools" and the "Testing & CI/CD"
   working groups): All about tooling, testing, the CI/CD pipeline and the
   framework of EVerest.
