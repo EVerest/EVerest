@@ -83,11 +83,14 @@ This is for thought exchange, for questions and talks about dedicated work on
 EVerest topics. Feel free to to drop your own questions and dive into
 communication with other EVerest enthusiasts.
 
-We have created working groups (see below) to focus on
-special topics in EVerest and get the development communication structured.
-You will see those working groups as streams in Zulip.
+There are different channels in Zulip for different topics of EVerest.
+Please use them to structure the communication.
 
-So, the best place to be near development thought exchange is Zulip.
+Read the README channel in Zulip for more information about the different
+channels.
+
+The Zulip instance of LFE is the best place to be near EVerest development and
+EVerest thought exchange.
 
 You can find us here: https://lfenergy.zulipchat.com/
 
@@ -133,13 +136,17 @@ Those are all EVerest working groups:
 
 - General (for general topics and to get a common ground for updates from the
   other working groups)
+- EVerest Framework, Infrastructure and Tools - the FIT working group (which
+  is a merge of the former "Framework & Tools" and the "Testing & CI/CD"
+  working groups): All about tooling, testing, the CI/CD pipeline and the
+  framework of EVerest.
 - Car Communication (car/charger communication with topics ISO 15118, EXI,
   SLAC, CHAdeMO etc)
 - Cloud Communication (communication between charger and backends in cloud
   with topics OCPP 1.6, 2.0.1, 2.1 etc)
-- EVerest Framework and Tools (framework topics and tools like edm, ev-cli
-  etc)
-- Testing and CI
+- Energy Management
+- MCS (Megawatt Charging System)
+
 
 You might wanna join us in the general working group to meet the community
 without having focused on a special area of EVerest (yet).
