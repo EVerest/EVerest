@@ -32,6 +32,9 @@ General changes
 ---------------
 
 * Accept bank cards for dedicated connectors.
+* Optimized reservation handling in EvseManager, e.g. allowing a direct state
+  change from "Reserved" to "Unavailable" and fixed a bug. See
+  `PR 1067 <https://github.com/EVerest/everest-core/pull/1067>`_.
 * New documentation and tests, e.g. for EnergyManager and EvseV2G.
 
 Authorization and security
@@ -56,6 +59,7 @@ Further changes
   `PR 972 <https://github.com/EVerest/everest-core/pull/972>`_.
 * Further bug-fixes, e.g. compilation issues on ARM, configuration parsing error
   for Python modules, solve Rust binding issues etc.
+* Remove everest-modbus as dependency.
 
 Further fixes and enhancements, see
 `Release 2025.1.0 overview on GitHub <https://github.com/EVerest/everest-core/releases/tag/2024.11.0>`_.
