@@ -45,6 +45,7 @@ dependencies = [
  "cron",
  "everestrs",
  "everestrs-build",
+ "log",
  "openleadr-client",
  "openleadr-wire",
  "serde",
@@ -1574,9 +1575,9 @@ checksum = "1261fe7e33c73b354eab43b1273a57c8f967d0391e80353e51f764ac02cf6775"
 
 [[package]]
 name = "openleadr-client"
-version = "0.0.3"
+version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19ab3c26ecd1beed64efbf218f2bc14a6a2ae725201cb27a8a5a0de40087934f"
+checksum = "0438c2f5623282986703c88d8bf2c9f2a977083c4eed65222531908c5de93c53"
 dependencies = [
  "axum",
  "chrono",
@@ -1595,9 +1596,9 @@ dependencies = [
 
 [[package]]
 name = "openleadr-wire"
-version = "0.0.3"
+version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e91b6a9a396d989077ce994f443589440d155854897310d27d1b0637f694b2c"
+checksum = "18791c8d2e2e6265f405502201404abd5fc5694d01e83da7a020f010f42bb73b"
 dependencies = [
  "chrono",
  "http",
