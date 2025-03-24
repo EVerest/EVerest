@@ -9,7 +9,7 @@ How To: OCPP 2.0.1 in EVerest
   see `the GitHub repository of libocpp <https://github.com/EVerest/libocpp>`_.
 
 The OCPP 2.0.1 implementation in EVerest is currently under development.
-You can check `this document <https://github.com/EVerest/libocpp/blob/main/doc/v201/ocpp_201_status.md>`_
+You can check `this document <https://github.com/EVerest/libocpp/blob/main/doc/v2/ocpp_2x_status.md>`_
 for the current status.
 
 This is a tutorial about how to set up and configure OCPP 2.0.1 in EVerest.
@@ -92,7 +92,7 @@ Each Component contains the definition of its Variables.
 Each Variable contains the definition of its VariableCharacteristics,
 VariableAttributes and VariableMonitoring.
 The actual value of a Variable can be configured as part of the
-VariableAttribute(s). 
+VariableAttribute(s).
 
 This is how a definition and configuration for the `LocalAuthListCtrlr`
 component could look like:
@@ -230,10 +230,10 @@ by the OCPP 2.0.1 specification.
 To configure a variable attribute value, specify the `value` for the attribute
 type that you would like to configure.
 In the example above, the actual value of the VariableAttribute of the Variable
-`Enabled` is set to `true`. Note that not all variables have specified variable 
+`Enabled` is set to `true`. Note that not all variables have specified variable
 attributes with a `value`, e.g. `LocalAuthListCtrlrEntries` does not specify a
 value. `LocalAuthListCtrlrEntries` is rather a telemetry than configuration,
-so libocpp will set the value for this at runtime and therefore it is not 
+so libocpp will set the value for this at runtime and therefore it is not
 required to configure a value for it.
 It's an example for a variable that is only defined, but not configured.
 
@@ -249,7 +249,7 @@ Device Model initialization
 
 The config files are parsed at startup and used to initialize an SQLite
 database. Please see
-`the documentation about the device model initialization <https://github.com/EVerest/libocpp/blob/main/doc/ocpp_201_device_model_initialization.md>`_
+`the documentation about the device model initialization <https://github.com/EVerest/libocpp/blob/main/doc/v2/ocpp_201_device_model_initialization.md>`_
 for detailed information about this process.
 
 You should specify the path to the directory of your device model definitions
@@ -272,16 +272,16 @@ Libocpp provides a device model configuration as a starting point
 You can define custom components and variables according to the requirements
 and setup of your charging station. There are a lot of
 standardized components and variables in OCPP 2.0.1 that are required and used
-in functional requirements of the specification. Please have 
+in functional requirements of the specification. Please have
 a look at the OCPP 2.0.1 specification for more information about each of the
 standardized components and variables.
 For this reason, it is recommended to use the
-`device device model definitions of libocpp <https://github.com/EVerest/libocpp/tree/main/config/v201/component_config>`_
+`device device model definitions of libocpp <https://github.com/EVerest/libocpp/tree/main/config/v2/component_config>`_
 as a starting point. This is an examplary device model configuration for two
 EVSEs.
 
-The `device model setup from libocpp <https://github.com/EVerest/libocpp/tree/main/config/v201/component_config>`_
-serves as a good example. 
+The `device model setup from libocpp <https://github.com/EVerest/libocpp/tree/main/config/v2/component_config>`_
+serves as a good example.
 The split between the two directories only has semantic reasons.
 The **standardized** directory usually does not need to be modified since it
 contains standardized components and variables that the specification refers
@@ -364,7 +364,7 @@ Here is a quick list of things you should remember when adding OCPP201 to your E
     Module typically used to fullfill this requirement: Auth, implementation_id: main
   - reservation (interface: reservation, 1): This connection is used to apply reservation requests from the CSMS.
     Module typically used to fullfill this requirement: Auth, implementation_id: reservation
-  - system (interface: system, 1): This connection is used to execute and control system-wide operations that can be triggered by the CSMS, like log uploads, 
+  - system (interface: system, 1): This connection is used to execute and control system-wide operations that can be triggered by the CSMS, like log uploads,
     firmware updates, and resets.
     The System module (implementation_id: main) can be used to fullfill this requirement. Note that this module is not meant to be used in production systems!
     Since the implementations of the system interface highly depend on the target platform usually a custom implementation for the target is implemented.
@@ -374,14 +374,14 @@ Here is a quick list of things you should remember when adding OCPP201 to your E
   - data_transfer (interface: ocpp_data_transfer, 0 to 1): This connection is used to handle **DataTransfer.req** messages from the CSMS. A module implementing
     this interface can contain custom logic to handle the requests from the CSMS.
     A custom implementation for this interface is required to add custom handling.
-  - display_message (interface: display_message, 0 to 1): This connection is used to allow the CSMS to display pricing or other information on the display of the 
+  - display_message (interface: display_message, 0 to 1): This connection is used to allow the CSMS to display pricing or other information on the display of the
     charging station. In order to fulfill the requirements of the California Pricing whitepaper, it is required to connect a module implementing this interface.
     EVerest currently does not provide a display module that implements this interface.
 
 3. Make sure to configure the OCPP module as part of the token_provider (implementation_id: auth_provider) and token_validator (implementation_id: auth_validator)
   connections of the Auth module (if you use it). Please see the documentation of the auth module for more information.
 
-4. In case you want to use the Plug&Charge feature, you must also add the EvseManager (implementation_id: token_provider) module to the connections of the 
+4. In case you want to use the Plug&Charge feature, you must also add the EvseManager (implementation_id: token_provider) module to the connections of the
   Auth module.
 
 You can also use the existing config examples as a guide.
