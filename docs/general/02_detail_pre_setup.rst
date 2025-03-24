@@ -107,7 +107,7 @@ Use `zypper` to get your needed libraries installed:
 
   zypper update && zypper install -y sudo shadow
   zypper install -y --type pattern devel_basis
-  zypper install -y git rsync wget cmake doxygen graphviz clang-tools cppcheck boost-devel libboost_filesystem-devel libboost_log-devel libboost_program_options-devel libboost_system-devel libboost_thread-devel java-17-openjdk java-17-openjdk-devel nodejs nodejs-devel npm python3-pip gcc-c++ libopenssl-devel sqlite3-devel libpcap-dev libevent-devel libcap-devel
+  zypper install -y git rsync wget cmake doxygen graphviz clang-tools cppcheck boost-devel libboost_filesystem-devel libboost_log-devel libboost_program_options-devel libboost_system-devel libboost_thread-devel java-17-openjdk java-17-openjdk-devel nodejs nodejs-devel npm python3-devel python3-pip gcc-c++ libopenssl-devel sqlite3-devel libpcap-devel libevent-devel libcap-devel
 
 Fedora
 ------
