@@ -25,6 +25,54 @@ date.
 Here are the some high-level changes for the last releases (starting from the
 most recent one backwards):
 
+2025.2.0
+========
+
+Important development change
+----------------------------
+
+* Changed naming of OCPP v201 to v2; see
+  `PR 1058 <https://github.com/EVerest/everest-core/pull/1058>`_.
+
+General Changes
+---------------
+
+* Direct communication between ISO 15118 and OCPP modules is now possible. No
+  need to use EvseManager for communication anymore; see
+  `PR 1022 <https://github.com/EVerest/everest-core/pull/1022>`_.
+* New over-voltage monitor interface. This is for IEC61851-23:2023 6.3.1.106.2
+  compatible hardware to do an emergency switch-off when an over-voltage occurs
+  on the DC output; see
+  `PR 1055 <https://github.com/EVerest/everest-core/pull/1055>`_.
+* EVerest types iso15118_charger and iso15118_ev have been merged into the
+  iso15118 type; see
+  `PR 1050 <https://github.com/EVerest/everest-core/pull/1050>`_.
+* Added TPM2 support for EvseV2G TLS server private key; see
+  `PR 1021 <https://github.com/EVerest/everest-core/pull/1021>`_.
+* New command to set current and phase limit for EVSE; see
+  `PR 1016 <https://github.com/EVerest/everest-core/pull/1016>`_.
+* Refactoring Eichrecht implementation of LEM; see
+  `PR 1035 <https://github.com/EVerest/everest-core/pull/1035>`_.
+* Removed Javascript modules from OCPP integration test configs; see
+  `PR 1082 <https://github.com/EVerest/everest-core/pull/1082>`_.
+
+
+Bug fixes
+---------
+
+* DcPowerSupplySimulator caused a crash due to variables were set to NULL
+  instead of a double value; see
+  `PR 1054 <https://github.com/EVerest/everest-core/pull/1054>`_.
+* Fixing and improving the handling of SLAC messages, link status detection,
+  and state transitions within the EVSE, SLAC and FSM; see
+  `PR 928 <https://github.com/EVerest/everest-core/pull/928>`_.
+* Fixed the unlock handling in EvseManager; see
+  `PR 1078 <https://github.com/EVerest/everest-core/pull/1078>`_.
+
+Further fixes and enhancements, see
+`Release 2025.2.0 overview on GitHub <https://github.com/EVerest/everest-core/releases/tag/2025.2.0>`_.
+
+
 2025.1.0
 ========
 
