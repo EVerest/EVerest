@@ -25,7 +25,7 @@ Zulip is the first choice to post questions such has "How do I ...?".
 
 ## How to report a bug or request an enhancement
 
-EVerest manages bug and enhancement using its issue tracker.
+EVerest manages bugs and enhancements using its issue tracker.
 The issue template will guide you on making an effective report.
 
 ## How to report a security vulnerability
