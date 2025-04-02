@@ -167,10 +167,12 @@ Now to the steps to flash the board:
 
 **STEP 1: Downloading**
 
-Download the latest stable image and the matching .bmap file:
+Download the latest stable image and the matching .bmap file.
+You will find the required files (.bz2 and .bmap) here:
 
-* https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-kirkstone-v1.0-186.wic.bz2
-* https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-image-raspberrypi4-kirkstone-v1.0-186.wic.bmap
+`PIONIX update files <https://pionix-update.de/releases/index.php>`_
+
+Make sure to download the correct files from the BelayBox section.
 
 **STEP 2: Set boot jumper and connect Micro-USB**
 
@@ -370,25 +372,33 @@ Check the currently booted slot:
 
 Remember the slot for comparison afterwards.
 
+Download the RAUC bundle from the PIONIX update server. You can find the
+latest file here:
+
+`PIONIX update files <https://pionix-update.de/releases/index.php>`_
+
+Make sure to download the correct .raucb file from the BelayBox section.
+
 Execute the following:
 
 .. code-block:: bash
 
-  rauc install https://pionix-update.de/belaybox-basecamp-demo/stable/belaybox-bundle-raspberrypi4-kirkstone-v1.0-186.raucb
+  rauc install <path_to_rauc_bundle.raucb>
 
 .. _belaybox_yeti_flash:
 
 Cross-compile toolchain
 =======================
 
-If you want to cross-compile your EVerest version, this is the toolchain to
-use:
+If you want to cross-compile your EVerest version, get the toolchain from the
+PIONIX update page here (file extension is .sh):
 
-.. code-block:: bash
+`PIONIX update files <https://pionix-update.de/releases/index.php>`_
 
-  https://pionix-update.de/belaybox-basecamp-demo/stable/poky-glibc-x86_64-belaybox-image-cortexa7t2hf-neon-vfpv4-raspberrypi4-toolchain-4.0.16.sh
+Make sure to download the correct file from the BelayBox section. The file with
+extension .sh is the required one.
 
-First of all you need to install it. It is a shell script, so just do a
+First of all, you need to install it. It is a shell script, so just do a
 "chmod +x name_of_toolchain.sh" and then run it with
 
 .. code-block:: bash
