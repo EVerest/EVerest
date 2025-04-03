@@ -12,15 +12,15 @@ commits on GitHub:
 
 EVerest releases are scheduled monthly. A release for a dedicated month can be
 expected in the beginning of the following month. Each third release will be a
-stable release including a two week feature freeze phase before the release
+consolidated release that includes a feature freeze phase before the release
 date.
 
 .. hint::
 
-    Currently, the stable releases will be the ones in January, April, July
-    and October.
-    Although we want to keep the stable release cadence this way, this could
-    also change in the future.
+    Currently, the consolidated releases will be the ones in January, April,
+    July and October.
+    Although we want to keep the consolidated release cadence this way, this
+    could also change in the future.
 
 Here are the some high-level changes for the last releases (starting from the
 most recent one backwards):
@@ -73,8 +73,8 @@ Further fixes and enhancements, see
 `Release 2025.2.0 overview on GitHub <https://github.com/EVerest/everest-core/releases/tag/2025.2.0>`_.
 
 
-2025.1.0
-========
+2025.1.0 - LATEST CONSOLIDATED RELEASE
+======================================
 
 General changes
 ---------------
@@ -115,7 +115,7 @@ Further fixes and enhancements, see
 2024.12.0
 =========
 
-Decision to have the quarterly stable version cadence moved one month further.
+Decision to have the quarterly consolidated release cadence moved one month further.
 Reason for this is the December holidays. So, see January 2025 release.
 
 2024.11.0
@@ -164,8 +164,8 @@ Hardware
 Also many further fixes and enhancements - see
 `release 2024.10.0 overview on GitHub <https://github.com/EVerest/everest-core/releases/tag/2024.10.0>`_.
 
-2024.9.1 - LATEST STABLE
-========================
+2024.9.1
+========
 
 Using libocpp version 0.18.1 (instead of 0.18.0). See
 `release libocpp 0.18.1 <https://github.com/EVerest/libocpp/releases/tag/v0.18.1>`_.
