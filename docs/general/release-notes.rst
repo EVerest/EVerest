@@ -25,6 +25,55 @@ date.
 Here are the some high-level changes for the last releases (starting from the
 most recent one backwards):
 
+2025.3.0
+========
+
+General changes
+---------------
+
+* Enhancements regarding EV charging communication: Querying and publishing of
+  EV information by EvseV2G and Evse15118D20 modules and also let the OCPP201
+  module subscribe to that information; see
+  `PR 1062 <https://github.com/EVerest/everest-core/pull/1062>`_.
+* Allowing withdrawing of authorization; see
+  `PR 992 <https://github.com/EVerest/everest-core/pull/992>`_.
+* Adding a new C++ implementation of a Yeti simulator; see
+  `PR 862 <https://github.com/EVerest/everest-core/pull/862>`_.
+
+ISO 15118-20-related
+--------------------
+
+* * TLS 1.3 support optimized in Evse15118D20 and PyEvJosev; see
+  `PR 1077 <https://github.com/EVerest/everest-core/pull/1077>`_.
+* Forward pre-charge events to make power supply interface aware of entering
+  that charging phase; see
+  `PR 1091 <https://github.com/EVerest/everest-core/pull/1091>`_.
+
+OCPP
+----
+
+* OCPP 2.1 BiDi Smart Charging use cases: Setting setpoints and tracking the
+  charging limits. Added support for the energy types and includes changes
+  in EnergyManager, EnergyNode and EvseManager; see
+  `PR 1033 <https://github.com/EVerest/everest-core/pull/1033>`_.
+* Enhanced OCPP 2.1 support by adjusting data types and enums in EVerest; see
+  `PR 1083 <https://github.com/EVerest/everest-core/pull/1083>`_.
+
+Bug fixes and minor changes
+---------------------------
+
+* Fixed selection handling of connectors in Auth module; see
+  `PR 1099 <https://github.com/EVerest/everest-core/pull/1099>`_.
+* State transitions optimized for cancelled reservations; see
+  `PR 1108 <https://github.com/EVerest/everest-core/pull/1108>`_.
+* Differentiation between EV vs EVSE finishing state; see
+  `PR 954 <https://github.com/EVerest/everest-core/pull/954>`_.
+* State change behavious fixed for EvseManager's enable_disable() request; see
+  `PR 1092 <https://github.com/EVerest/everest-core/pull/1092>`_.
+
+For further fixes and enhancements, see
+`Release 2025.3.0 overview on GitHub <https://github.com/EVerest/everest-core/releases/tag/2025.3.0>`_.
+
 2025.2.0
 ========
 
