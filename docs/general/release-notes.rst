@@ -25,6 +25,21 @@ date.
 Here are the some high-level changes for the last releases (starting from the
 most recent one backwards):
 
+2025.4.0
+========
+
+Bug fixes and minor changes
+---------------------------
+
+* Enabling and disabling the payment terminal is now possible during runtime;
+  see `PR 1056 <https://github.com/EVerest/everest-core/pull/1056>`_.
+* mbed TLS removed from EvseV2G; OpenSSL is now used exclusively; see
+  `PR 1008 <https://github.com/EVerest/everest-core/pull/1008>`_.
+* The get_installed_certificates method did not return all installed leaf
+  certificates for V2GCertificateChain; see
+  `PR 104 <https://github.com/EVerest/libevse-security/pull/104>`_.
+
+
 2025.3.0
 ========
 
