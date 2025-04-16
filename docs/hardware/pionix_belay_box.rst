@@ -359,7 +359,27 @@ BelayBox Use Cases
 How to install updates via RAUC bundles
 =======================================
 
-Connect via SSH into your Yak board. The credentials are:
+To enable automatic RAUC updates, ensure your configuration file includes the
+LinuxRaucSystem module.
+
+Add the following snippet to your config file (if it does not exist):
+
+.. code-block:: bash
+
+  system:
+    module: Linux_Systemd_Rauc
+    config_module:
+      RebootCommand: "reboot '0 tryboot'"
+    connections:
+      store:
+      - module_id: persistent_store
+        implementation_id: main
+
+Verify that the module ID of your store module is named correctly.
+
+After modifying the configuration, restart the everest/basecamp service.
+
+Next, connect via SSH into your Yak board. The credentials are:
 
 * User: root
 * Password: basecamp
