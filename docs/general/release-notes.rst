@@ -44,21 +44,25 @@ OCPP
 * Added support for Power.Offered meter value; see
   `PR 1132 <https://github.com/EVerest/everest-core/pull/1132>`_.
 
+Security and Authorization
+--------------------------
+
+* Check TLS server state before sending information about TLS support to
+  prevent false TLS support messages; see
+  `PR 1135 <https://github.com/EVerest/everest-core/pull/1135>`_.
+* mbed TLS removed from EvseV2G; OpenSSL is now used exclusively; see
+  `PR 1008 <https://github.com/EVerest/everest-core/pull/1008>`_.v
+* The get_installed_certificates method did not return all installed leaf
+  certificates for V2GCertificateChain; see
+  `PR 104 <https://github.com/EVerest/libevse-security/pull/104>`_.
+
 Bug fixes and minor changes
 ---------------------------
 
 * Enabling and disabling the payment terminal is now possible during runtime;
   see `PR 1056 <https://github.com/EVerest/everest-core/pull/1056>`_.
-* Check TLS server state before sending information about TLS support to
-  prevent false TLS support messages; see
-  `PR 1135 <https://github.com/EVerest/everest-core/pull/1135>`_.
-* mbed TLS removed from EvseV2G; OpenSSL is now used exclusively; see
-  `PR 1008 <https://github.com/EVerest/everest-core/pull/1008>`_.
 * Cost information moved from display message interface to a dedicated message
   type; see `PR 1079 <https://github.com/EVerest/everest-core/pull/1079>`_.
-* The get_installed_certificates method did not return all installed leaf
-  certificates for V2GCertificateChain; see
-  `PR 104 <https://github.com/EVerest/libevse-security/pull/104>`_.
 * Fix for preventing a potential deadlock in Auth module; see
   `PR 1131 <https://github.com/EVerest/everest-core/pull/1131>`_.
 * Optimized PWM and SLAC communication in HLC mode by adding sleep time; see
