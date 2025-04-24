@@ -40,10 +40,10 @@ on:
         type: boolean
       runner:
         description: 'Which runner to use'
-        default: 'ubuntu-22.04'
+        default: 'ubuntu-24.04'
         type: choice
         options:
-          - 'ubuntu-22.04'
+          - 'ubuntu-24.04'
           - 'large-ubuntu-22.04-xxl'
 env:
   DOCKER_REGISTRY: ghcr.io
@@ -52,7 +52,7 @@ env:
 jobs:
   setup-env:
     name: Setup Environment
-    runs-on: ${{ inputs.runner || 'ubuntu-22.04' }}
+    runs-on: ${{ inputs.runner || 'ubuntu-24.04' }}
     outputs:
       docker_registry: ${{ env.DOCKER_REGISTRY }}
       everest_ci_version: ${{ env.EVEREST_CI_VERSION }}
@@ -82,7 +82,7 @@ jobs:
   checkout-snapshot-file:
     name: Checkout snapshot file
     needs: build-and-push-build-env
-    runs-on: ${{ inputs.runner || 'ubuntu-22.04' }}
+    runs-on: ${{ inputs.runner || 'ubuntu-24.04' }}
     container: 
       image: ${{ needs.build-and-push-build-env.outputs.one_image_tag_long }}
     env:
@@ -147,7 +147,7 @@ jobs:
     needs:
       - build-and-push-build-env
       - checkout-snapshot-file
-    runs-on: ${{ inputs.runner || 'ubuntu-22.04' }}
+    runs-on: ${{ inputs.runner || 'ubuntu-24.04' }}
     container: 
       image: ${{ needs.build-and-push-build-env.outputs.one_image_tag_long }}
     env:
@@ -233,7 +233,7 @@ jobs:
       - checkout-snapshot-file
       - build-doc
     name: Deploy sphinx documentation
-    runs-on: ${{ inputs.runner || 'ubuntu-22.04' }}
+    runs-on: ${{ inputs.runner || 'ubuntu-24.04' }}
     container: 
       image: ${{ needs.build-and-push-build-env.outputs.one_image_tag_long }}
     env:
