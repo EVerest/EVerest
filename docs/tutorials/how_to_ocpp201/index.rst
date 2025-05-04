@@ -9,7 +9,7 @@ How To: OCPP 2.0.1 in EVerest
   see `the GitHub repository of libocpp <https://github.com/EVerest/libocpp>`_.
 
 The OCPP 2.0.1 implementation in EVerest is currently under development.
-You can check `this document <https://github.com/EVerest/libocpp/blob/main/doc/v201/ocpp_201_status.md>`_
+You can check `this document <https://github.com/EVerest/libocpp/blob/main/doc/v2/ocpp_201_status.md>`_
 for the current status.
 
 This is a tutorial about how to set up and configure OCPP 2.0.1 in EVerest.
@@ -276,11 +276,11 @@ in functional requirements of the specification. Please have
 a look at the OCPP 2.0.1 specification for more information about each of the
 standardized components and variables.
 For this reason, it is recommended to use the
-`device device model definitions of libocpp <https://github.com/EVerest/libocpp/tree/main/config/v201/component_config>`_
+`device device model definitions of libocpp <https://github.com/EVerest/libocpp/tree/main/config/v2/component_config>`_
 as a starting point. This is an examplary device model configuration for two
 EVSEs.
 
-The `device model setup from libocpp <https://github.com/EVerest/libocpp/tree/main/config/v201/component_config>`_
+The `device model setup from libocpp <https://github.com/EVerest/libocpp/tree/main/config/v2/component_config>`_
 serves as a good example. 
 The split between the two directories only has semantic reasons.
 The **standardized** directory usually does not need to be modified since it
