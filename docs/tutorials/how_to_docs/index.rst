@@ -125,7 +125,8 @@ Two examples:
 Planned restructuring of docs
 *****************************
 
-We will start to migrate the documentation to a new page structure end of 2024.
+There is a plan to start migrating the documentation to a new page structure.
+It is still not clear, when this will be done, though.
 
 More information about the new structure will follow soon.
 

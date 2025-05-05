@@ -133,8 +133,8 @@ to go with your specific scenario.
 
 The General EVerest Welcome Call is each Tuesday at 11am CE(S)T.
 
-Find us here:
-https://zoom-lfx.platform.linuxfoundation.org/meeting/94033706607?password=20dfbaaa-37d5-4b77-8c59-9935c9037c7a
+For joining us in the Zoom meetings, find the links in the
+`official EVerest event calendar <https://zoom-lfx.platform.linuxfoundation.org/meetings/everest?view=week>`_.
 
 Further live meetings we regularly have are the working group meetings.
 In the working groups, developers meetup for exchanging the status quo of
@@ -150,8 +150,8 @@ the community. Currently, we have the following working groups:
 - Energy Management
 - MCS (Megawatt Charging System)
 
-A calendar with all EVerest events can be found here:
-https://zoom-lfx.platform.linuxfoundation.org/meetings/everest
+The links to the Zoom meetings of the working groups can also be found in the
+`official EVerest event calendar <https://zoom-lfx.platform.linuxfoundation.org/meetings/everest?view=week>`_.
 
 If you work on a topic that does not fit in the current list of working groups,
 you can ask in Zulip or in the General Call for finding like-minded people and
