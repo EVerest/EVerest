@@ -74,6 +74,7 @@ If you want to restrict yourself only to the required dependencies, you may also
 
     git clone https:///github.com/EVerest/everest-cmake ${EVEREST_WORKSPACE}/everest-cmake
     git clone https:///github.com/EVerest/everest-framework ${EVEREST_WORKSPACE}/everest-framework
+    git clone https:///github.com/EVerest/everest-utils ${EVEREST_WORKSPACE}/everest-utils
 
 
 Create Module Skeleton
@@ -183,7 +184,7 @@ following content:
         interface: interface_tutorial_module
         description: An actual implementation in your module of "interface_tutorial_module" interface.
     metadata:
-      license: https://spdx.org/licenses/Apache-2.0.html
+      license: https://opensource.org/licenses/Apache-2.0
       authors:
         - <Your Name>, <Your Organization>
 
@@ -199,7 +200,7 @@ In particular, this manifest declares the following:
 Again, we use the EVerest cli tool to auto-generate code from this
 configuration::
 
-    cd $EVEREST_TUTORIAL_DIR && ev-cli module create --schemas-dir $EVEREST_WORKSPACE/everest-framework/schemas TutorialModule
+    cd $EVEREST_TUTORIAL_DIR && ev-cli module create --schemas-dir $EVEREST_WORKSPACE/everest-framework/schemas TutorialModule --licenses $EVEREST_WORKSPACE/everest-utils/ev-dev-tools/src/ev_cli/licenses
 
 
 After that, you should have the following file structure::
@@ -365,9 +366,9 @@ Here, we added two instructions to cmake:
 
  - Setting `CMAKE_PREFIX_PATH=$EVEREST_WORKSPACE` allows cmake to find the
    ``everest-cmake`` repository in the workspace.
- - Specifying the `--install-prefix` allows you to specify where the finished 
-   binaries will be placed, e.g. into the ``dist/`` folder in the modules repository. 
-   EVerest can be installed system wide (e.g. into ``users/local/bin``), but this 
+ - Specifying the `--install-prefix` allows you to specify where the finished
+   binaries will be placed, e.g. into the ``dist/`` folder in the modules repository.
+   EVerest can be installed system wide (e.g. into ``users/local/bin``), but this
    usually requires `sudo` permissions.
 
 
@@ -492,7 +493,7 @@ notice an `everest` topic popping up.
 
 We can now publish a command to our self-written module. For this, choose the topic::
 
-    everest/tutorial_module_instance/interface_impl_tutorial_module/cmd
+    everest/modules/tutorial_module_instance/impl/interface_impl_tutorial_module/cmd
 
 and publish the JSON::
 
@@ -543,7 +544,7 @@ line::
 
     manager          :: Not starting standalone module: tutorial_module_instance
 
-Also, so far the output should be missing the ``All modules are initialized. EVerest up and running`` 
+Also, so far the output should be missing the ``All modules are initialized. EVerest up and running``
 notification, since it keeps waiting for your module
 to spin up.
 
@@ -585,4 +586,4 @@ of our implementation:
 
 .. hint::
     This section is yet to come. Want to help us with that? Feel free and create
-    a suggestion for this. 
+    a suggestion for this.
