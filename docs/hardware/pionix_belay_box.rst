@@ -172,7 +172,10 @@ You will find the required files (.bz2 and .bmap) here:
 
 `PIONIX update files <https://pionix-update.de/releases/index.php>`_
 
-Make sure to download the correct files from the BelayBox section.
+.. warning::
+
+  Make sure to download the correct files (.bz2 and .bmap) from the BelayBox
+  section.
 
 **STEP 2: Set boot jumper and connect Micro-USB**
 
@@ -338,7 +341,7 @@ Tools needed:
 * ESD underlay mat
 * Preassembled Yak, Yeti kits and cable-set as shown in sections above
 
-.. image:: img/final-assembly-w425.png
+.. image:: img/final-assembly-425.png
 
 Plug in the 10-pin cable into the corresponding sockets on both ends.
 Plug in the 4-pin RFID/NFC reader cable.
@@ -359,8 +362,8 @@ BelayBox Use Cases
 How to install updates via RAUC bundles
 =======================================
 
-To enable automatic RAUC updates, ensure your configuration file includes the
-LinuxRaucSystem module.
+To enable the seamless updating via RAUC, ensure your configuration file
+includes the LinuxRaucSystem module.
 
 Add the following snippet to your config file (if it does not exist):
 
@@ -397,7 +400,10 @@ latest file here:
 
 `PIONIX update files <https://pionix-update.de/releases/index.php>`_
 
-Make sure to download the correct .raucb file from the BelayBox section.
+.. warning::
+
+  Make sure to download the correct file (.raucb) from the BelayBox
+  section.
 
 Execute the following:
 
@@ -415,8 +421,10 @@ PIONIX update page here (file extension is .sh):
 
 `PIONIX update files <https://pionix-update.de/releases/index.php>`_
 
-Make sure to download the correct file from the BelayBox section. The file with
-extension .sh is the required one.
+.. warning::
+
+  Make sure to download the correct file (.sh) from the BelayBox
+  section.
 
 First of all, you need to install it. It is a shell script, so just do a
 "chmod +x name_of_toolchain.sh" and then run it with
@@ -692,6 +700,14 @@ not installed.
 No reboot after RAUC update
 ===========================
 
+.. note::
+
+  Before doing further troubleshooting, please make sure to have the necessary
+  configuration in place.
+  See :ref:`the section about RAUC updates <belaybox_rauc>` for the snippet you
+  will need.
+  After that, restart the basecamp service and try to do the RAUC update again.
+
 If you have done a RAUC udpate and the Linux system does not reboot after some
 seconds, execute:
 
@@ -731,8 +747,7 @@ changed to a config to your liking:
 
 .. code-block:: bash
 
-  rm /etc/everest/basecamp.yaml
-  ln -s /etc/everest/<your-custom-config> /etc/everest/basecamp.yaml
+  ln -sf /etc/everest/<your-custom-config> /etc/everest/basecamp.yaml
 
 After this, restart the basecamp service or reboot.
 
