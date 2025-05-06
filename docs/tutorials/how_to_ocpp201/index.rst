@@ -281,7 +281,8 @@ as a starting point. This is an examplary device model configuration for two
 EVSEs.
 
 The `device model setup from libocpp <https://github.com/EVerest/libocpp/tree/main/config/v2/component_config>`_
-serves as a good example.
+serves as a good example. 
+
 The split between the two directories only has semantic reasons.
 The **standardized** directory usually does not need to be modified since it
 contains standardized components and variables that the specification refers

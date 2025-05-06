@@ -58,7 +58,7 @@ the charger:
 * MO Root certificate (optional)
 
 These certificates and keys can be installed during provisioning of the charger, or they can be 
-installed using OCPP1.6 or OCPP2.0.1. The paths to store these files can be configured in the 
+installed using OCPP1.6 or OCPP2.x. The paths to store these files can be configured in the 
 EvseSecurity module. Please see `Documentation of the EvseSecurity <https://github.com/EVerest/everest-core/blob/main/modules/EvseSecurity/doc.rst>`_
 for further information on how to do the configuration for this module.
 
@@ -154,7 +154,7 @@ actually configured.
 The following two configuration files are relevant and require a correct setup and activation for Plug&Charge:
 
 * EVerest configuration file (yaml)
-* OCPP configuration file (json) for OCPP 1.6 or OCPP 2.0.1
+* OCPP configuration file (json) for OCPP 1.6 or OCPP 2.x
 
 Let's start with the EVerest configuration file. If you haven't read
 `Explaining the YAML files <https://everest.github.io/nightly/general/04_detail_module_concept.html#explaining-the-yaml-files>`_,
@@ -162,7 +162,7 @@ now it's the right time to do it before you go on!
 
 It's a good idea to start with a base of a configuration file and talk about the changes required to enable
 Plug&Charge. The base config we use is the "config-sil-ocpp201.yaml", which already contains the configuration
-for OCPP2.0.1.
+for OCPP2.x.
 
 We need to take a closer look at the configuration of the EvseManager, EvseV2G, Auth and EvseSecurity.
 
@@ -195,13 +195,13 @@ for information on the ISO15118 configuration.
 .. _ocpp-configuration:
 
 *************************************
-OCPP 1.6 and OCPP 2.0.1 configuration
+OCPP 1.6 and OCPP 2.x configuration
 *************************************
 
-Since Plug&Charge has been backported from OCPP 2.0.1 to OCPP 1.6, the
+Since Plug&Charge has been backported from OCPP 2.x to OCPP 1.6, the
 configuration options to control the process are mostly identical.
 These options are described in the following section, where differences
-between OCPP 1.6 and OCPP 2.0.1 are marked.
+between OCPP 1.6 and OCPP 2.x are marked.
 
 These OCPP configuration options are relevant for the Plug&Charge process:
 
@@ -214,18 +214,21 @@ These OCPP configuration options are relevant for the Plug&Charge process:
   to validate a contract certificate when it is offline using the authorization
   cache or the local authorization list. If this is set to `false`, Plug&Charge
   will fail if the charging station is offline.
-* ISO15118Ctrlr::V2GCertificateInstallationEnabled (bool, only OCPP 2.0.1):
+* ISO15118Ctrlr::V2GCertificateInstallationEnabled (bool, only OCPP2.x):
   Allows the CSMS to install an SECC leaf certificate on the charging station.
   This must be enabled in case the charging station shall receive the SECC leaf
   certificate from the CSMS. 
+* ISO15118Ctrlr::ContractCertificateInstallationEnabled (bool, only OCPP2.x):
+  Allows contract certificate installation installtion/update in the EV
+  via ISO15118.
 
 The following configuration options control parameters of the certificate
 signing request that is initiated by the charging station automatically in case
 Plug&Charge is enabled and no (valid) SECC Leaf Certificate is currently installed.
 
-* SeccLeafSubjectCommonName (string, ISO15118Ctrlr::SeccId in OCPP 2.0.1)
-* SeccLeafSubjectCountry (string, ISO15118Ctrlr::CountryName in OCPP 2.0.1)
-* SeccLeafSubjectOrganization (string, ISO15118Ctrlr::OrganizationName in OCPP 2.0.1)
+* SeccLeafSubjectCommonName (string, ISO15118Ctrlr::SeccId in OCPP 2.x)
+* SeccLeafSubjectCountry (string, ISO15118Ctrlr::CountryName in OCPP 2.x)
+* SeccLeafSubjectOrganization (string, ISO15118Ctrlr::OrganizationName in OCPP 2.x)
 
 These configuration keys can be configured manually or controlled by the CSMS according to its needs. If the CSMS rejects the CSR
 from the charging station or does not return a certificate after the specified timeouts and retries, it is likely that the values
