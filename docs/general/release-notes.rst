@@ -25,6 +25,59 @@ date.
 Here are the some high-level changes for the last releases (starting from the
 most recent one backwards):
 
+2025.4.0
+========
+
+General changes
+---------------
+
+* Plug&Charge configuration options added and made runtime-configurable via
+  OCPP; see `PR 1128 <https://github.com/EVerest/everest-core/pull/1128>`_.
+* New module: Isabellenhuette IEM-DCR powermeter; see
+  `PR 1059 <https://github.com/EVerest/everest-core/pull/1059>`_.
+* Power limit handling adapted in case of charger reduces the power.
+  Sometimes, EVs ignore the new maximum limits. Checking that and set the
+  limits now; see
+  `PR 1167 <https://github.com/EVerest/everest-core/pull/1167>`_.
+* Removed all remaining JS modules; see
+  `PR 1102 <https://github.com/EVerest/everest-core/pull/1102>`_.
+
+OCPP
+----
+
+* Added support for Power.Offered meter value; see
+  `PR 1132 <https://github.com/EVerest/everest-core/pull/1132>`_.
+* Updated information via TransactionEvent or StartTransaction can be received
+  for specific connectors; see
+  `PR 1151 <https://github.com/EVerest/everest-core/pull/1151>`_.
+
+Security and Authorization
+--------------------------
+
+* Check TLS server state before sending information about TLS support to
+  prevent false TLS support messages; see
+  `PR 1135 <https://github.com/EVerest/everest-core/pull/1135>`_.
+* mbed TLS removed from EvseV2G; OpenSSL is now used exclusively; see
+  `PR 1008 <https://github.com/EVerest/everest-core/pull/1008>`_.v
+* The get_installed_certificates method did not return all installed leaf
+  certificates for V2GCertificateChain; see
+  `PR 104 <https://github.com/EVerest/libevse-security/pull/104>`_.
+
+Bug fixes and minor changes
+---------------------------
+
+* Enabling and disabling the payment terminal is now possible during runtime;
+  see `PR 1056 <https://github.com/EVerest/everest-core/pull/1056>`_.
+* Cost information moved from display message interface to a dedicated message
+  type; see `PR 1079 <https://github.com/EVerest/everest-core/pull/1079>`_.
+* Fix for preventing a potential deadlock in Auth module; see
+  `PR 1131 <https://github.com/EVerest/everest-core/pull/1131>`_.
+* Set HLC early in DC charging mode; see
+  `PR 1154 <https://github.com/EVerest/everest-core/pull/1154>`_.
+* Optimized PWM and SLAC communication in HLC mode by adding sleep time; see
+  `PR 1125 <https://github.com/EVerest/everest-core/pull/1125>`_.
+
+
 2025.3.0
 ========
 
