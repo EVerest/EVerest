@@ -35,7 +35,7 @@ General changes
   OCPP; see `PR 1128 <https://github.com/EVerest/everest-core/pull/1128>`_.
 * New module: Isabellenhuette IEM-DCR powermeter; see
   `PR 1059 <https://github.com/EVerest/everest-core/pull/1059>`_.
-* Power limit handling adapted in case of charger reduces the the power.
+* Power limit handling adapted in case of charger reduces the power.
   Sometimes, EVs ignore the new maximum limits. Checking that and set the
   limits now; see
   `PR 1167 <https://github.com/EVerest/everest-core/pull/1167>`_.
