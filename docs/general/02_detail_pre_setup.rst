@@ -134,10 +134,9 @@ of your choice.
 
 Java dependency
 ---------------
-Java is not required for running the core of EVerest. However, it is required
-if you want to install certificates for ISO 15118 communication as currently
-the Java Keytool is used. Also the EXI (Efficient XML Interchange) part of
-Josev requires Java.
+Java is not required for running the core of EVerest. However, it is
+required if you want to run the PyEvJosev EV simulation, as the EXI
+(Efficient XML Interchange) part of Josev requires Java.
 
 Python versions with pyenv
 --------------------------
