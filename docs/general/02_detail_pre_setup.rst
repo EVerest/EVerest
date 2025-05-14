@@ -91,8 +91,6 @@ This is the Linux distribution that is recommended for productive setups.
 
 Tested with Debian 12.
 
-Here is a list of required packages to get EVerest running on Debian:
-
 .. note::
 
   We are currently working on containers to provide a robust setup to test and
