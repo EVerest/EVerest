@@ -130,10 +130,6 @@ Modules can publish variables (VARs) which other modules can subscribe to.
 Modules can also call commands (CMDs) of other modules.
 This is also triggered via MQTT messages.
 
-********************
-Module Communication
-********************
-
 *************************************
 System Requirements and Prerequisites
 *************************************
