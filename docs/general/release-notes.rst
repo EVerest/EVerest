@@ -57,6 +57,16 @@ Minor changes and bug fixes
   `PR 1165 <https://github.com/EVerest/everest-core/pull/1165>`_ and
   `PR 1179 <https://github.com/EVerest/everest-core/pull/1179>`_.
 
+For further fixes and enhancements, see
+`Release 2025.5.0 overview on GitHub <https://github.com/EVerest/everest-core/releases/tag/2025.5.0>`_.
+
+2025.4.1 - LATEST CONSOLIDATED RELEASE
+======================================
+
+* Updated OCPP module documentation for California Pricing; see
+  `PR 1169 <https://github.com/EVerest/everest-core/pull/1169>`_.
+* Fix Cargo.lock version accidentally set to 4 when 3 is correct
+
 2025.4.0
 ========
 
@@ -109,6 +119,8 @@ Bug fixes and minor changes
 * Optimized PWM and SLAC communication in HLC mode by adding sleep time; see
   `PR 1125 <https://github.com/EVerest/everest-core/pull/1125>`_.
 
+For further fixes and enhancements, see
+`Release 2025.4.0 overview on GitHub <https://github.com/EVerest/everest-core/releases/tag/2025.4.0>`_.
 
 2025.3.0
 ========
@@ -207,8 +219,8 @@ Further fixes and enhancements, see
 `Release 2025.2.0 overview on GitHub <https://github.com/EVerest/everest-core/releases/tag/2025.2.0>`_.
 
 
-2025.1.0 - LATEST CONSOLIDATED RELEASE
-======================================
+2025.1.0
+========
 
 General changes
 ---------------
