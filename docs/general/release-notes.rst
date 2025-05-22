@@ -25,6 +25,48 @@ date.
 Here are the some high-level changes for the last releases (starting from the
 most recent one backwards):
 
+2025.5.0
+========
+
+General changes
+---------------
+
+* Added rejection reasons for payment process; see
+  `PR 1129 <https://github.com/EVerest/everest-core/pull/1129>`_.
+* Beautified process for SLAC failures. Some car models will restart the
+  SLAC communication during the process. Introducing a config flag to allow
+  non-standard compliant behaviour and get the SLAC process restarted
+  without re-plugging the car; see
+  `PR 1181 <https://github.com/EVerest/everest-core/pull/1181>`_.
+
+OCPP
+----
+
+* Related to OCPP certification: Updating id_token_info after transaction
+  event by OCPP; see
+  `PR 1151 <https://github.com/EVerest/everest-core/pull/1151>`_.
+* Optimized firmware update process; see
+  `PR 1171 <https://github.com/EVerest/everest-core/pull/1171>`_.
+
+Minor changes and bug fixes
+---------------------------
+
+* Make sure that charger state machine can only be started once; see
+  `PR 1157 <https://github.com/EVerest/everest-core/pull/1157>`_.
+* Optmized reset handling by adding a delay; see
+  `PR 1165 <https://github.com/EVerest/everest-core/pull/1165>`_ and
+  `PR 1179 <https://github.com/EVerest/everest-core/pull/1179>`_.
+
+For further fixes and enhancements, see
+`Release 2025.5.0 overview on GitHub <https://github.com/EVerest/everest-core/releases/tag/2025.5.0>`_.
+
+2025.4.1 - LATEST CONSOLIDATED RELEASE
+======================================
+
+* Updated OCPP module documentation for California Pricing; see
+  `PR 1169 <https://github.com/EVerest/everest-core/pull/1169>`_.
+* Fix Cargo.lock version accidentally set to 4 when 3 is correct
+
 2025.4.0
 ========
 
@@ -77,6 +119,8 @@ Bug fixes and minor changes
 * Optimized PWM and SLAC communication in HLC mode by adding sleep time; see
   `PR 1125 <https://github.com/EVerest/everest-core/pull/1125>`_.
 
+For further fixes and enhancements, see
+`Release 2025.4.0 overview on GitHub <https://github.com/EVerest/everest-core/releases/tag/2025.4.0>`_.
 
 2025.3.0
 ========
@@ -175,8 +219,8 @@ Further fixes and enhancements, see
 `Release 2025.2.0 overview on GitHub <https://github.com/EVerest/everest-core/releases/tag/2025.2.0>`_.
 
 
-2025.1.0 - LATEST CONSOLIDATED RELEASE
-======================================
+2025.1.0
+========
 
 General changes
 ---------------
