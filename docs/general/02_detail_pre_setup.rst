@@ -109,13 +109,13 @@ Use `zypper` to get your needed libraries installed:
 
 Fedora
 ------
-Tested with Fedora 38, 39 and 40. Here is how to get your needed libraries with
+Tested with Fedora 40, 41 and 42. Here is how to get your needed libraries with
 `dnf`.
 
 .. code-block:: bash
 
   sudo dnf update
-  sudo dnf install make automake gcc gcc-c++ kernel-devel python3-pip python3-devel git rsync wget cmake doxygen graphviz clang-tools-extra cppcheck java-17-openjdk java-17-openjdk-devel boost-devel nodejs nodejs-devel npm openssl openssl-devel libsqlite3x-devel curl rfkill libpcap-devel libevent-devel libcap-devel
+  sudo dnf install make automake gcc gcc-c++ kernel-devel python3-pip python3-devel git rsync wget cmake doxygen graphviz clang-tools-extra cppcheck java-21-openjdk java-21-openjdk-devel boost-devel nodejs nodejs-devel npm openssl openssl-devel libsqlite3x-devel curl rfkill libpcap-devel libevent-devel libcap-devel
 
 Now, it's time to continue with the
 :ref:`Quick Start Guide to install EVerest <quickstartguide_main>`.
