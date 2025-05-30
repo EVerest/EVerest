@@ -5,7 +5,7 @@ Thank you for your interest in contributing to EVerest.
 This document explains our contribution process and how to contribute a bug fix
 or change in source code. In case you want to contribute to the EVerest
 documentation, see here:
-[Documenting EVerest](https://everest.github.io/nightly/tutorials/how_to_docs/documenting.html)
+[Documenting EVerest](https://everest.github.io/nightly/tutorials/how_to_docs/index.html#documenting-everest)
 
 For a description of the roles and responsibilities of the various members of
 the EVerest community, see the [Governance Policy], and for further details,
@@ -81,7 +81,7 @@ Each contribution must meet the [Java Script](.eslintrc.json) or
 
 ## License
 
-EVerest is licensed under the [Apache License 2.0](LICENSE.md) license.
+EVerest is licensed under the [Apache License 2.0](LICENSE) license.
 Contributions should abide by that standard license.
 
 ## References
