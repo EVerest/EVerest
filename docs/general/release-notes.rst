@@ -31,6 +31,9 @@ most recent one backwards):
 General changes
 ---------------
 
+* ISO 15118-20: Added pause/resume support. Dynamic Mode is now fully
+  supported, Scheduled Mode is partly supported. For more information,
+  see `PR 1095 <https://github.com/EVerest/everest-core/pull/1095>`_.
 * Added rejection reasons for payment process; see
   `PR 1129 <https://github.com/EVerest/everest-core/pull/1129>`_.
 * Beautified process for SLAC failures. Some car models will restart the
@@ -47,6 +50,13 @@ OCPP
   `PR 1151 <https://github.com/EVerest/everest-core/pull/1151>`_.
 * Optimized firmware update process; see
   `PR 1171 <https://github.com/EVerest/everest-core/pull/1171>`_.
+* Optimizations regarding Device Model in OCPP 2.0.1; see
+  `PR 1188 <https://github.com/EVerest/everest-core/pull/1188>`_ and
+  `PR 1192 <https://github.com/EVerest/everest-core/pull/1192>`_.
+* Added support for OCMF Tariff Texts; see
+  `PR 1186 <https://github.com/EVerest/everest-core/pull/1186>`_.
+* Updated EvseManager's inoperative error to include details of original cause;
+  see `PR 1175 <https://github.com/EVerest/everest-core/pull/1175>`_.
 
 Minor changes and bug fixes
 ---------------------------
