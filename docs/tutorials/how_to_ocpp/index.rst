@@ -145,7 +145,7 @@ This is the one we used to connect to SteVe:
     "Custom": {
         "ExampleConfigurationKey": "example"
     }
-}
+  }
 
 The configuration keys are split up into the feature profiles that are
 specified in OCPP 1.6 plus the extra profiles *Internal*, *Security*, *PnC* and
