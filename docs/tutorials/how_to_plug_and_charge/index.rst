@@ -1,8 +1,8 @@
 .. _how_to_pnc:
 
-**************************
+*****************************************************
 How To: Plug&Charge with EVerest Software in the loop
-**************************
+*****************************************************
 
 EVerest provides support for Plug&Charge within ISO15118-2 and OCPP1.6 and
 OCPP2.0.1. This tutorial explains how you can set up and configure EVerest
@@ -18,10 +18,40 @@ If you're new to EVerest, start with our
 EVerest running for the first time.
 If you have done that successfully, you can move on with this tutorial.
 
+
+Packages for ISO 15118 communication
+====================================
+
+To be able to build EVerest with ISO 15118 capability, you will have to
+install the requirements for Josev:
+
+.. code-block:: bash
+  cd {EVerest Workspace Directory}/Josev
+  python3 -m pip install -r requirements.txt
+For ISO 15118 communication including Plug&Charge, install Josev and some CA
+certificates:
+
+.. code-block:: bash
+  cd {EVerest Workspace Directory}/Josev/iso15118/shared/pki
+  ./create_certs.sh -v iso-2 -i {EVerest Workspace Directory}/everest-core
+This will enable ISO 15118 communication including Plug&Charge and install the
+required CA certificates inside `config/certs/ca` and the client certificates,
+private keys and password files inside `config/certs/client`.
+
+.. attention::
+
+  This will generate an example PKI setup that can only be used for testing
+  and simulation. It will not work and is not recommended for production.
+
+  As the shell script uses the Java `keytool`, it is required for this
+  procedure to have Java installed.
+
+The script for setting up PKI can also be used with the EvseV2G module.
+
 .. _plug_and_charge_process:
 
 The Plug&Charge process
-=============
+=======================
 
 The process we are going to simulate covers a complete AC Plug&Charge process
 including a CertificateInstallation request to install a virtual contract in
