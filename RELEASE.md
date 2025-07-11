@@ -6,10 +6,10 @@ EVerest releasing happens in the following way:
 
 - source code releases once a month (around the TSC meeting every 4th Thursday
   in a month) and
-- stability releases every three months (March, June, September and December)
+- consolidated releases every three months (January, April, July, October)
   at the same point in time.
 
-A feature freeze phase of two weeks will precede the stability releases.
+A feature freeze phase of two weeks will precede the consolidated releases.
 In that timeframe, testing with focus on stability will be conducted.
 No new features will be merged into the release candidate branch during that
 time.
@@ -22,7 +22,7 @@ For libraries, semantic versioning is used.
 
 Find details about the releases on the corresponding release pages of the repos. E.g. for everest-core: [Release page of everest-core repository](https://github.com/EVerest/everest-core/releases)
 
-First of all, there will be source code releases for EVerest. Binary releases for different hardware platforms will follow soon.
+First of all, there will be source code releases for EVerest.
 
 ## Checkout a Dedicated Version
 If you follow the
@@ -68,16 +68,14 @@ go on. Make sure that stable versions of repositories have been tagged and
 configured in the everest-core repository in file dependencies.yaml. This way,
 those versions will be part of the new EVerest release.
 
-If unsure about all that, discussion about such topics takes place in the weekly
-tech meeting (announced via the
-[EVerest Mailinglist](https://lists.lfenergy.org/g/everest) (especially see
-the calendar there).
+If unsure about all that, ask the core developers
+[via Zulip](https://lfenergy.zulipchat.com/).
 
 ### Create a new release on GitHub
 
 General information about release management with GitHub can be found directly
 at GitHub on the page about
-[Managing Releases in a repository](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository).
+[Managing releases in a repository](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository).
 
 The EVerest-specific process is as follows:
 
@@ -87,7 +85,7 @@ page, click on __Releases__ in the right side-column. The button __Draft a new r
 
 You can create a new Git tag right on that page. That is the tag on which the
 release will be based. Remember the correct versioning name pattern:
-_YEAR.MONTH.INDEX_, e.g. 2022.12.1
+_YEAR.MONTH.INDEX_, e.g. 2025.12.1
 
 When using edm to get a new release version, edm knows from the
 dependencies.yaml which tags of all repositories to checkout for serving
