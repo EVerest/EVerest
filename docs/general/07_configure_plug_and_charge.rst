@@ -205,7 +205,12 @@ between OCPP 1.6 and OCPP 2.x are marked.
 
 These OCPP configuration options are relevant for the Plug&Charge process:
 
-* ISO15118PnCEnabled (bool): Global feature flag to enable Plug&Charge.
+* ISO15118CertificateManagementEnabled (bool): Global feature flag to enable
+  certificate management using ISO15118. This enables the ISO15118 message handling
+  via the DataTransfer mechanism according the the OCPP1.6 Plug&Charge Whitepaper.
+  (only required for OCPP1.6, OCPP2.x does not require this option).
+* ISO15118PnCEnabled (bool): Global feature flag to enable authorization using 
+  contract certificates.
 * CentralContractValidationAllowed (bool): If enabled and charging station can
   not validate the contract locally (e.g. because no MO root certificate is
   installed), the charging station provides the contract certificate as part

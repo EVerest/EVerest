@@ -136,6 +136,7 @@ This is the one we used to connect to SteVe:
         "MaxChargingProfilesInstalled": 42
     },
     "PnC": {
+        "ISO15118CertificateManagementEnabled": true,
         "ISO15118PnCEnabled": true,
         "ContractValidationOffline": true
     },
