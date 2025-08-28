@@ -80,11 +80,11 @@ def process_file_list(
 
 def generate_module_list(args, templates):
     file_list: YAMLItemList = []
-    for module_dir in [
+    for manifest_path in [
         *args.generate_module_list,
-        *(args.core_dir / "modules").iterdir(),
+        *(args.core_dir / "modules").rglob("manifest.yaml"),
     ]:
-        manifest_path = module_dir / "manifest.yaml"
+        module_dir = manifest_path.parent
         if not manifest_path.is_file():
             log.error(f"Module: '{ module_dir }' doesn't have a manifest file")
             continue
