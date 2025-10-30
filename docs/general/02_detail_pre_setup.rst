@@ -86,9 +86,9 @@ Ubuntu
 
 .. warning::
 
-  Ubuntu 20.04 is not supported anymore. Please use Ubuntu 22.04 or newer.
+  Ubuntu 22.04 is not supported anymore. Please use Ubuntu 24.04.
 
-Tested with Ubuntu 22.04.
+Tested with Ubuntu 24.04.
 
 Use `apt` to get your needed libraries installed:
 
