@@ -29,7 +29,7 @@ management, PV-integration and many more!
 
 # Main Features
 
-- IEC 6185
+- IEC 61851
 - DIN SPEC 70121
 - ISO 15118: -2 and -20
 - SAE J1772
