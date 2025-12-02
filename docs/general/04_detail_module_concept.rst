@@ -377,6 +377,8 @@ Focusing on the source and header files, generally, the tool generates:
 * One source-header pair describing a class for each interface implementation
   in the module: ``${IMPLEMENTATION_ID}/${INTERFACE_NAME}Impl.{cpp, hpp}``
 
+.. _moduleconcept_modclass:
+
 The module class
 ----------------
 
@@ -399,7 +401,10 @@ a few notable members:
   - reference to the interface implementation;
 * For each interface requirement:
   ``std::unique_ptr<${INTERFACE_ID}Intf> r_${REQUIREMENT_ID}`` - use this to
-  trigger commands or subscribe to variables on the provider.
+  trigger commands or subscribe to variables on the provider. If 1 is used
+  for ``min_connections`` and ``max_connections`` in ``required`` in the module's
+  manifest a pointer is given as an argument as shown, otherwise it's an
+  array (std::vector) of pointers.
 
 The header file contains designated areas where further members or other
 definitions can be added.
