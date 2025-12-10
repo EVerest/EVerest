@@ -2,7 +2,7 @@ ev_setup_cmake_variables_python_wheel()
 
 ev_add_pip_package(
     NAME edm
-    SOURCE_DIRECTORY dependency_manager
+    SOURCE_DIRECTORY .
 )
 
 ev_is_python_venv_active(
