@@ -213,6 +213,24 @@ other containers in the network.
 
 .. note::
 
+  If the Mosquitto Docker container fails to start with an error similar to:
+
+  .. code-block:: bash
+
+    docker run --name mqtt-server --network infranet_network -p 1883:1883 -p 9001:9001 ghcr.io/everest/everest-dev-environment/mosquitto:docker-images-v0.1.0
+    mosquitto version 2.0.10 starting
+    Config loaded from /mosquitto/config/mosquitto.conf.
+    Opening ipv4 listen socket on port 1883.
+    Opening ipv6 listen socket on port 1883.
+    Opening websockets listen socket on port 9001.
+    Error: Unable to create websockets listener on port 9001.
+
+  The root cause might be the lack of file descriptor limit in your Docker configuration.
+  To resolve this, you may need to set the ``nofile`` limit for Docker.
+  For instructions, see `this guide <https://ichbinblau.github.io/2019/09/06/Setup-nofile-for-Docker/>`_.
+
+.. note::
+
   The docker container can be controlled with docker compose as well:
 
   .. code-block:: bash
