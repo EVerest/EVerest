@@ -380,6 +380,10 @@ void connection_teardown(struct v2g_connection* conn) {
 
     /* print dlink status */
     switch (conn->d_link_action) {
+    case dLinkAction::D_LINK_ACTION_ERROR:
+        conn->ctx->p_charger->publish_dlink_error(nullptr);
+        dlog(DLOG_LEVEL_TRACE, "d_link/error");
+        break;
     case dLinkAction::D_LINK_ACTION_TERMINATE:
         conn->ctx->p_charger->publish_dlink_terminate(nullptr);
         dlog(DLOG_LEVEL_TRACE, "d_link/terminate");

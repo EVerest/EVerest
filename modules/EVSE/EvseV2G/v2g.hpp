@@ -366,6 +366,7 @@ struct v2g_context {
 };
 
 enum class dLinkAction {
+    D_LINK_ACTION_ERROR,
     D_LINK_ACTION_TERMINATE,
     D_LINK_ACTION_PAUSE
 };
