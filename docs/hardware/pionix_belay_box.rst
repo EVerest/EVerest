@@ -63,8 +63,7 @@ If you already have purchased a BelayBox kit and you have hardware related
 questions, you can get support by creating an issue via our
 `support page <http://support.pionix.com>`_.
 
-.. important::
-
+**Important**
   This is only for hardware-related support. For all software-related
   questions, you can find help in the wonderful EVerest community via
   `Zulip <https://lfenergy.zulipchat.com/>`_ or the
@@ -81,19 +80,13 @@ The Yak board does not have any software flashed on it.
 
 In the following sections, we will show how to assemble the hardware parts and
 also how to do the flashing of the Yak board. The Yocto image for the Yak
-board includes binaries and services to run Basecamp - the commercial grade
-version of EVerest - as a demo.
+board includes binaries and services to run EVerest.
 
-BaseCamp is a professional and stable wrapper around the open-source charging
-software EVerest. For more information about the product of BaseCamp, see
-`this BaseCamp page <https://www.pionix.com/products/basecamp>`_.
-
-.. note::
-
+**Note**
   In case you need to build a custom Yeti firmware, have a look at this repo:
   `Yeti firmware GitHub repository here <https://github.com/PionixPublic/yeti-firmware>`_
-  . Also see the
-  :ref:`section about how to flash the Yeti board <belaybox_yeti_flash>`.
+  . 
+  Also see the `section about how to flash the Yeti board <belaybox_yeti_flash>`_.
 
 Assembling the Yak Board
 ========================
@@ -118,7 +111,7 @@ Needed software:
 * bmaptool - `see here <https://docs.yoctoproject.org/dev-manual/bmaptool.html>`_
 * Internet access from host system
 
-.. warning::
+**Warning**
   Before working with any open PCB make sure to work in an ESD safe
   environment using ESD safe equipment only.
 
@@ -150,10 +143,9 @@ Flashing the Yak Board
 ======================
 
 In this section, we will walk you through the process of deploying the
-Yocto-based image including EVerest in form of BaseCamp.
+Yocto-based image including EVerest.
 
-.. note::
-
+**Note**
   You will only have to do this flashing procedure once. After that, you can
   use the RAUC updates, which are hosted on PIONIX update servers.
   In case you need to reflash the whole image, we will inform you in the
@@ -163,8 +155,6 @@ Yocto-based image including EVerest in form of BaseCamp.
   have a look at
   `Yeti-Yak-SDK repository <https://github.com/PionixPublic/yeti-yak-sdk>`_.
 
-Now to the steps to flash the board:
-
 **STEP 1: Downloading**
 
 Download the latest stable image and the matching .bmap file.
@@ -172,14 +162,13 @@ You will find the required files (.bz2 and .bmap) here:
 
 `PIONIX update files <https://pionix-update.de/releases/index.php>`_
 
-.. warning::
-
+**Warning**
   Make sure to download the correct files (.bz2 and .bmap) from the BelayBox
   section.
 
 **STEP 2: Set boot jumper and connect Micro-USB**
 
-Place the small black jumper onto the "BOOT" pins.
+Place the small jumper onto the "BOOT" pins.
 This is needed to be able to make the emmC flash accessible to the host system.
 
 After that, connect the Yak board via Micro-USB to the host system.
@@ -213,8 +202,7 @@ To find the eMMC device, do:
 Check the output and look for a approximately 16 GB device called /dev/sdX -
 where X can be any letter.
 
-.. warning::
-
+**Warning**
   Make sure to select the correct device as data loss can occure if the wrong
   device is selected!
 
@@ -230,7 +218,7 @@ downloaded image file and replace "X" according to your eMMC device.
 
 After roughly nine minutes the flashing should have finished.
 
-.. caution::
+**caution**
   Make sure to connect the WiFi antenna to the CM4 after flashing. The image
   activates the external antenna support. Running a flashed Yak without the
   WiFi antenna mounted can result in damage of the WiFi chip.
@@ -294,7 +282,7 @@ Plug in one of the crimped cables with one end into the 10-position plug. Make
 sure to plug in the crimp in the exact same orientation as shown in the
 picture above.
 
-.. warning::
+**Warning**
   Be aware that the crimps cannot be unplugged again from the 10 position
   plug. Make sure you plug in the crimps in the correct positions before
   actually plugging them in.
@@ -380,12 +368,12 @@ Add the following snippet to your config file (if it does not exist):
 
 Verify that the module ID of your store module is named correctly.
 
-After modifying the configuration, restart the everest/basecamp service.
+After modifying the configuration, restart the everest service.
 
 Next, connect via SSH into your Yak board. The credentials are:
 
 * User: root
-* Password: basecamp
+* Password: everest
 
 Check the currently booted slot:
 
@@ -400,8 +388,7 @@ latest file here:
 
 `PIONIX update files <https://pionix-update.de/releases/index.php>`_
 
-.. warning::
-
+**Warning**
   Make sure to download the correct file (.raucb) from the BelayBox
   section.
 
@@ -421,8 +408,7 @@ PIONIX update page here (file extension is .sh):
 
 `PIONIX update files <https://pionix-update.de/releases/index.php>`_
 
-.. warning::
-
+**Warning**
   Make sure to download the correct file (.sh) from the BelayBox
   section.
 
@@ -481,7 +467,7 @@ Then log into the BelayBox and stop the systemd service:
 
 .. code-block:: bash
 
-  systemctl stop basecamp
+  systemctl stop EVerest
 
 Then you can run your self-compiled version like this:
 
@@ -493,31 +479,30 @@ How to flash the Yeti board
 ===========================
 
 Connect via SSH into the Yak board and run these two commands (the first one
-is very important - do not update while EVerest/BaseCamp is running!):
+is very important - do not update while EVerest/EVerest is running!):
 
 .. code-block:: bash
 
-  systemctl stop basecamp
+  systemctl stop EVerest
   yeti_fwupdate /dev/serial0 /usr/share/everest/modules/YetiDriver/firmware/yetiR1_2.1_firmware.bin
 
-.. important::
-
+**Important**
   In case you use a fullsize Raspberry Pi 4B, use the following command
   instead of the above one:
   
-  systemctl stop basecamp-rpi
+  systemctl stop everest-rpi
 
-After that, restart the basecamp or basecamp-rpi service:
+After that, restart the everest or everest-rpi service:
 
 .. code-block:: bash
 
-  systemctl restart basecamp
+  systemctl restart everest
   
 or (respectively)
 
 .. code-block:: bash
 
-  systemctl restart basecamp-rpi
+  systemctl restart everest-rpi
 
 
 How to activate OCPP 2.0.1
@@ -525,8 +510,7 @@ How to activate OCPP 2.0.1
 
 This how-to is based on the software status from 2024-08-27.
 
-As development is currently ongoing, there will be changes. So, it is a good
-idea to revisit this page in future.
+As development is currently ongoing, there will be changes. So, it is recommended to regularily revisit this page.
 
 Some information before setting up OCPP 2.0.1
 ---------------------------------------------
@@ -543,7 +527,7 @@ If you want to test OCPP with a local backend,
 Configuration on the BelayBox
 -----------------------------
 
-1. Connect via SSH to the BelayBox (credentials are "root/basecamp").
+1. Connect via SSH to the BelayBox (credentials are "root/everest").
 
 2. Open the file /etc/everest/ocpp201-pnc-config.json in a text or code editor
   and check the CentralSystemURI. Set your own local IP address of the machine
@@ -571,22 +555,20 @@ Running the scripts and manager processes
 Have a look at /usr/bin/ocpp201_init.sh to see if all paramaters are set as
 required for your dedicated scenario and run the shell script.
 
-After that, restart the BaseCamp process (make sure to use the correct config
+After that, restart the EVerest process (make sure to use the correct config
 file as parameter):
 
 .. code-block:: bash
 
-  systemctl stop basecamp
+  systemctl stop everest
   manager –config config-belaybox-pwm-ocpp.yaml
 
-.. note::
-
+**Note**
   Running the manager process for the first time, you can get a warning that
   no key pair could be found for v2g ocsp request. As after the first startup,
   a key pair is generated, this message should not be shown next time.
 
-.. important::
-
+**Important**
   The process of updating the values of the database via the script will be
   obsolete in the next major release of the Yak image. Until then, every
   update will reset the config entries in /usr/share/everest/modules/.
@@ -604,7 +586,7 @@ downgrading to another database version.
 Factory reset
 =============
 
-.. note::
+**Note**
   We are preparing a new factory reset howto for the updated Yocto-image.
 
 Further information
@@ -613,8 +595,7 @@ Further information
 RS-485 Modbus config for Yak board
 ----------------------------------
 
-If you want to use the RS-485 Modbus device on the Yak board and the current
-(July 2024 or later) basecamp image, here is how you configure it in the
+If you want to use the RS-485 Modbus device on the Yak board, here is how you configure it in the
 config.yaml for the SerialCommunicationHub:
 
 .. code-block:: bash
@@ -700,13 +681,12 @@ not installed.
 No reboot after RAUC update
 ===========================
 
-.. note::
-
+**Note**
   Before doing further troubleshooting, please make sure to have the necessary
   configuration in place.
   See :ref:`the section about RAUC updates <belaybox_rauc>` for the snippet you
   will need.
-  After that, restart the basecamp service and try to do the RAUC update again.
+  After that, restart the EVerest service and try to do the RAUC update again.
 
 If you have done a RAUC udpate and the Linux system does not reboot after some
 seconds, execute:
@@ -733,23 +713,23 @@ The new ssh login credentials for the Yocto image are:
 .. code-block:: bash
 
   user: root
-  pw: basecamp
+  pw: everest
 
-The default config file being used by the basecamp.service is the symlink
+The default config file being used by the everest.service is the symlink
 in
 
 .. code-block:: bash
 
-  /etc/everest/basecamp.yaml
+  /etc/everest/everest.yaml
   
 It points to the config to be used. This can be
 changed to a config to your liking:
 
 .. code-block:: bash
 
-  ln -sf /etc/everest/<your-custom-config> /etc/everest/basecamp.yaml
+  ln -sf /etc/everest/<your-custom-config> /etc/everest/everest.yaml
 
-After this, restart the basecamp service or reboot.
+After this, restart the EVerest service or reboot.
 
 Should you see any "Unknown config entry" errors when starting the manager
 process, delete the corresponding config entries from the yaml file you are
