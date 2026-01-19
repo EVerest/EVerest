@@ -23,4 +23,5 @@ create_exi_test_target(power_delivery)
 create_exi_test_target(session_setup)
 create_exi_test_target(authorization)
 create_exi_test_target(session_stop)
+create_exi_test_target(metering_receipt)
 
