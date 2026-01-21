@@ -233,7 +233,11 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
         message_20::DC_ChargeParameterDiscoveryResponse res;
         if (!compatible) {
             res = handle_request(*req, m_ctx.session, checked_limits);
-            res.response_code = dt::ResponseCode::FAILED_WrongChargeParameter;
+            // Preserve higher-priority protocol errors like FAILED_UnknownSession instead of
+            // always downgrading the result to a compatibility failure.
+            if (res.response_code == dt::ResponseCode::OK) {
+                res.response_code = dt::ResponseCode::FAILED_WrongChargeParameter;
+            }
             m_ctx.respond(res);
             m_ctx.feedback.dc_max_limits(dc_max_limits);
             m_ctx.session_stopped = true;
@@ -247,6 +251,7 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
         m_ctx.respond(res);
 
         m_ctx.feedback.dc_max_limits(dc_max_limits);
+        m_ctx.feedback.response_code(res.response_code);
 
         if (res.response_code >= dt::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
@@ -259,6 +264,7 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
 
         m_ctx.respond(res);
         m_ctx.session_stopped = true;
+        m_ctx.feedback.response_code(res.response_code);
 
         return {};
     } else {
@@ -268,6 +274,8 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
         // Sequence Error
         const message_20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
+
+        m_ctx.feedback.response_code(dt::ResponseCode::FAILED_SequenceError);
 
         return {};
     }
