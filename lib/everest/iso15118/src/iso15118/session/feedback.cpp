@@ -92,6 +92,10 @@ void Feedback::session_stop_res_sent(feedback::SessionStopAction action) const {
     call_if_available(callbacks.session_stop_res_sent, action);
 }
 
+void Feedback::response_code(const iso15118::message_20::datatypes::ResponseCode& code) const {
+    call_if_available(callbacks.response_code, code);
+}
+
 std::optional<dt::ServiceParameterList> Feedback::get_vas_parameters(uint16_t vas_id) const {
 
     logf_warning("Caution: This feedback call can block the entire state machine");
