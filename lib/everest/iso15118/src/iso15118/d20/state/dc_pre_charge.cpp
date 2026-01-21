@@ -62,6 +62,7 @@ Result DC_PreCharge::feed(Event ev) {
         m_ctx.feedback.dc_pre_charge_target_voltage(message_20::datatypes::from_RationalNumber(req->target_voltage));
 
         m_ctx.respond(res);
+        m_ctx.feedback.response_code(res.response_code);
 
         if (res.response_code >= dt::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
@@ -79,6 +80,7 @@ Result DC_PreCharge::feed(Event ev) {
 
         m_ctx.respond(res);
         m_ctx.session_stopped = true;
+        m_ctx.feedback.response_code(res.response_code);
 
         return {};
     } else {
@@ -88,6 +90,7 @@ Result DC_PreCharge::feed(Event ev) {
         const message_20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
+        m_ctx.feedback.response_code(dt::ResponseCode::FAILED_SequenceError);
         m_ctx.session_stopped = true;
         return {};
     }
