@@ -129,6 +129,7 @@ Result Authorization::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session, authorization_status, timeout_ongoing_reached);
 
         m_ctx.respond(res);
+        m_ctx.feedback.response_code(res.response_code);
 
         if (res.response_code >= dt::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
@@ -147,6 +148,8 @@ Result Authorization::feed(Event ev) {
         m_ctx.respond(res);
 
         m_ctx.session_stopped = true;
+        m_ctx.feedback.response_code(res.response_code);
+
         return {};
     } else {
         logf_warning("Expected AuthorizationReq! But code type id: %d", variant->get_type());
@@ -155,6 +158,7 @@ Result Authorization::feed(Event ev) {
         const message_20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
+        m_ctx.feedback.response_code(dt::ResponseCode::FAILED_SequenceError);
         m_ctx.session_stopped = true;
         return {};
     }
