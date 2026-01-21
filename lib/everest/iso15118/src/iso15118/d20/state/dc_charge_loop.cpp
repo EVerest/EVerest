@@ -233,6 +233,7 @@ Result DC_ChargeLoop::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session, false, shutdown_requested);
 
         m_ctx.respond(res);
+        m_ctx.feedback.response_code(res.response_code);
 
         if (res.response_code >= dt::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
@@ -261,6 +262,7 @@ Result DC_ChargeLoop::feed(Event ev) {
                                         m_ctx.session_config.dc_limits, dynamic_parameters);
 
         m_ctx.respond(res);
+        m_ctx.feedback.response_code(res.response_code);
 
         if (res.response_code >= dt::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
@@ -282,6 +284,7 @@ Result DC_ChargeLoop::feed(Event ev) {
         const message_20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
+        m_ctx.feedback.response_code(dt::ResponseCode::FAILED_SequenceError);
         m_ctx.session_stopped = true;
         return {};
     }
