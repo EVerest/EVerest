@@ -5,8 +5,9 @@ The Technical Steering Committee (TSC) is the governing body of the EVerest Proj
 This directory contains all materials related to this project.
 
 * [List of current TSC members](MEMBERS.md)
-* [EVerest Project Roadmap](ROADMAP.md)
+* [EVerest Project Calendar incl. dial-in links for next TSC meetings](https://zoom-lfx.platform.linuxfoundation.org/meetings/everest?view=month)
 * [Technical Steering Committee Meeting Minutes](meetings).
 * EVerest [YouTube Channel](https://www.youtube.com/channel/UCF0Mt88gmn7Hbx2fvaQPE4A) with meeting recordings, webinars, talks, ....
 * [Project Charter](CHARTER.md)
 * [Linux Foundation's Project Checklist](CHECKLIST.md)
+* [EVerest Project Roadmap](ROADMAP.md)
