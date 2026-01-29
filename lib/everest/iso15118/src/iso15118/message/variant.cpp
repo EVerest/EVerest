@@ -9,6 +9,7 @@
 #include <iso15118/detail/variant_access.hpp>
 
 #include <cbv2g/app_handshake/appHand_Decoder.h>
+#include <cbv2g/iso_20/iso20_AC_DER_IEC_Decoder.h>
 #include <cbv2g/iso_20/iso20_AC_Decoder.h>
 #include <cbv2g/iso_20/iso20_CommonMessages_Decoder.h>
 #include <cbv2g/iso_20/iso20_DC_Decoder.h>
@@ -143,6 +144,29 @@ static void handle_ac(VariantAccess& va) {
     }
 }
 
+static void handle_ac_der(VariantAccess& va) {
+    iso20_ac_der_iec_exiDocument doc{};
+
+    const auto decode_status = decode_iso20_ac_der_iec_exiDocument(&va.input_stream, &doc);
+
+    if (decode_status != 0) {
+        va.error = "decode_iso20_dc_exiDocument failed with " + std::to_string(decode_status);
+        return;
+    }
+
+    if (doc.AC_ChargeParameterDiscoveryReq_isUsed) {
+        insert_type(va, doc.AC_ChargeParameterDiscoveryReq);
+    } else if (doc.AC_ChargeParameterDiscoveryRes_isUsed) {
+        insert_type(va, doc.AC_ChargeParameterDiscoveryRes);
+    } else if (doc.AC_ChargeLoopReq_isUsed) {
+        insert_type(va, doc.AC_ChargeLoopReq);
+    } else if (doc.AC_ChargeLoopRes_isUsed) {
+        insert_type(va, doc.AC_ChargeLoopRes);
+    } else {
+        va.error = "chosen message type unhandled";
+    }
+}
+
 Variant::Variant(io::v2gtp::PayloadType payload_type, const io::StreamInputView& buffer_view) {
 
     VariantAccess va{
@@ -157,6 +181,8 @@ Variant::Variant(io::v2gtp::PayloadType payload_type, const io::StreamInputView&
         handle_dc(va);
     } else if (payload_type == PayloadType::Part20AC) {
         handle_ac(va);
+    } else if (payload_type == io::v2gtp::PayloadType::Part20DerIec) {
+        handle_ac_der(va);
     } else {
         logf_warning("Unknown type");
     }
