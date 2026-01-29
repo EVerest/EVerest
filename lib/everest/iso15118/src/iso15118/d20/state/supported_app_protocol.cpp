@@ -18,10 +18,10 @@ namespace iso15118::d20::state {
 
 constexpr auto ISO20_DC_NAMESPACE = "urn:iso:std:iso:15118:-20:DC";
 constexpr auto ISO20_AC_NAMESPACE = "urn:iso:std:iso:15118:-20:AC";
-// constexpr auto ISO20_DER_IEC_NAMESPACE = "urn:iso:std:iso:15118:-20:AC-DER-IEC";
+constexpr auto ISO20_DER_IEC_NAMESPACE = "urn:iso:std:iso:15118:-20:AC-DER-IEC";
 // constexpr auto ISO20_DER_SAE_NAMESPACE = "urn:iso:std:iso:15118:-20:AC-DER-SAE";
 
-constexpr std::array AcNamespaces = {ISO20_AC_NAMESPACE};
+constexpr std::array AcNamespaces = {ISO20_AC_NAMESPACE, ISO20_DER_IEC_NAMESPACE};
 
 using ResponseCode = message_20::SupportedAppProtocolResponse::ResponseCode;
 
