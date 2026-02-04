@@ -16,7 +16,7 @@
 namespace iso15118 {
 
 static constexpr auto SESSION_IDLE_TIMEOUT_MS = 5000;
-static constexpr auto MIN_RESPONSE_INTERVAL_MS = 100; // minimum time between two response messages
+static constexpr auto MIN_RESPONSE_INTERVAL_MS = 200; // minimum time between two response messages
 
 static void log_sdp_packet(const iso15118::io::SdpPacket& sdp) {
     static constexpr auto ESCAPED_BYTE_CHAR_COUNT = 4;
