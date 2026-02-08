@@ -72,7 +72,7 @@ inline ConfigField get_config_field(const std::string& _name, int _value) {
 } // namespace
 
 std::unique_ptr<Module> create_module(rust::Str module_id, rust::Str prefix, rust::Str mqtt_broker_socket_path,
-                                      rust::Str mqtt_broker_host, const unsigned int& mqtt_broker_port,
+                                      rust::Str mqtt_broker_host, const std::uint16_t& mqtt_broker_port,
                                       rust::Str mqtt_everest_prefix, rust::Str mqtt_external_prefix) {
     auto socket_path = std::string(mqtt_broker_socket_path);
     Everest::MQTTSettings mqtt_settings;
