@@ -21,14 +21,6 @@ if(NOT BUILDING_IN_EVEREST)
     cmake_policy(SET CMP0135 NEW)
   endif()
 
-  include(FetchContent)
-  FetchContent_Declare(
-    MQTT-C
-    GIT_REPOSITORY https://github.com/LiamBindle/MQTT-C
-    GIT_TAG        v1.1.6
-  )
-  FetchContent_MakeAvailable(MQTT-C)
-
   if(FUSION_CHARGER_LIB_BUILD_TESTS)
     FetchContent_Declare(
         googletest

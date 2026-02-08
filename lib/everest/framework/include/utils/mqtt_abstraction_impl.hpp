@@ -12,17 +12,18 @@
 #include <thread>
 #include <vector>
 
-#include <mqtt.h>
 #include <nlohmann/json.hpp>
 
+#include <everest/io/event/fd_event_handler.hpp>
+#include <everest/io/event/timer_fd.hpp>
+#include <everest/io/mqtt/mqtt_client.hpp>
+
+#include <utils/config/mqtt_settings.hpp>
 #include <utils/message_handler.hpp>
 #include <utils/message_queue.hpp>
 #include <utils/mqtt_abstraction.hpp>
-#include <utils/types.hpp>
-
 #include <utils/thread.hpp>
-
-constexpr auto MQTT_BUF_SIZE = 500 * std::size_t{1024};
+#include <utils/types.hpp>
 
 namespace Everest {
 /// \brief Contains a payload and the topic it was received on with additional QOS
@@ -38,10 +39,7 @@ struct MessageWithQOS : Message {
 ///
 class MQTTAbstractionImpl : public MQTTAbstraction {
 public:
-    MQTTAbstractionImpl(const std::string& mqtt_server_address, const std::string& mqtt_server_port,
-                        const std::string& mqtt_everest_prefix, const std::string& mqtt_external_prefix);
-    MQTTAbstractionImpl(const std::string& mqtt_server_socket_path, const std::string& mqtt_everest_prefix,
-                        const std::string& mqtt_external_prefix);
+    MQTTAbstractionImpl(const MQTTSettings& mqtt_settings);
 
     ~MQTTAbstractionImpl() override;
 
@@ -74,13 +72,9 @@ public:
     /// \returns true if the topic matches, false otherwise
     static bool check_topic_matches(const std::string& full_topic, const std::string& wildcard_topic);
 
-    ///
-    /// \brief callback that is called from the mqtt implementation whenever a message is received
-    static void publish_callback(void** unused, struct mqtt_response_publish* published);
-
 private:
-    static constexpr int mqtt_poll_timeout_ms{300000};
     bool mqtt_is_connected;
+    std::atomic_bool running;
     MessageHandler message_handler;
     MessageQueue message_queue;
     std::vector<std::shared_ptr<MessageWithQOS>> messages_before_connected;
@@ -95,25 +89,17 @@ private:
 
     std::string mqtt_server_socket_path;
     std::string mqtt_server_address;
-    std::string mqtt_server_port;
+    std::uint16_t mqtt_server_port = 0;
     std::string mqtt_everest_prefix;
     std::string mqtt_external_prefix;
-    struct mqtt_client mqtt_client;
-    std::array<uint8_t, MQTT_BUF_SIZE> sendbuf;
-    std::array<uint8_t, MQTT_BUF_SIZE> recvbuf;
 
-    static int open_nb_socket(const char* addr, const char* port);
-    bool connectBroker(std::string& socket_path);
-    bool connectBroker(const char* host, const char* port);
+    std::unique_ptr<everest::lib::io::mqtt::mqtt_client> mqtt_client;
+    everest::lib::io::event::event_fd disconnect_event;
+    everest::lib::io::event::fd_event_handler ev_handler;
+
     void on_mqtt_message(const Message& message);
     void on_mqtt_connect();
     static void on_mqtt_disconnect();
-
-    void notify_write_data();
-
-    int mqtt_socket_fd{-1};
-    int event_fd{-1};
-    int disconnect_event_fd{-1};
     nlohmann::json get_internal(const MQTTRequest& request);
 };
 } // namespace Everest
