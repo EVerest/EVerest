@@ -2,6 +2,7 @@
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
 
 #include "isolation_monitorImpl.hpp"
+#include "everest/logging.hpp"
 #include <chrono>
 #include <fmt/core.h>
 #include <thread>
@@ -16,6 +17,13 @@ void isolation_monitorImpl::init() {
 void isolation_monitorImpl::configure_device() {
     // Query device name and version
     bool successful = true;
+    int selftest_enable_at_start_value = config.selftest_enable_at_start ? 1 : 0;
+    if (config.disable_device_on_stop and config.selftest_enable_at_start) {
+        EVLOG_warning << "disable_device_on_stop configuration option and "
+                         "selftest_enable_at_start are incompatible. Self test at "
+                         "start will be disabled.";
+        selftest_enable_at_start_value = 0;
+    }
     do {
         successful = true;
         successful &= send_to_imd(3000, (config.voltage_to_earth_monitoring_alarm_enable ? 1 : 0));
@@ -48,14 +56,16 @@ void isolation_monitorImpl::configure_device() {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         successful &= send_to_imd(3024, (config.selftest_enable_gridconnection ? 1 : 0));
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        successful &= send_to_imd(3025, (config.selftest_enable_at_start ? 1 : 0));
+        successful &= send_to_imd(3025, selftest_enable_at_start_value);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         successful &= send_to_imd(3027, config.relay_k1_alarm_assignment);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         successful &= send_to_imd(3028, config.relay_k2_alarm_assignment);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        // start up
-        successful &= send_to_imd(3026, 1);
+        // start up enable the device if the configuration option is not set
+        if (!config.disable_device_on_stop) {
+            successful &= send_to_imd(3026, 1);
+        }
         // Give device time to process startup command
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
@@ -68,9 +78,10 @@ void isolation_monitorImpl::configure_device() {
                 enable_faster_cable_check_mode();
                 std::this_thread::sleep_for(std::chrono::milliseconds(20));
             } else {
-                EVLOG_info
-                    << "Does not support faster cable check method, falling back to long self test. This may create "
-                       "timeouts with certain cars in CableCheck. Consider upgrading to at least firmware 5.00";
+                EVLOG_info << "Does not support faster cable check method, falling "
+                              "back to long self test. This may create "
+                              "timeouts with certain cars in CableCheck. Consider "
+                              "upgrading to at least firmware 5.00";
                 disable_faster_cable_check_mode();
                 std::this_thread::sleep_for(std::chrono::milliseconds(20));
             }
@@ -83,8 +94,8 @@ void isolation_monitorImpl::configure_device() {
 
 void isolation_monitorImpl::start_self_test() {
     if (last_test != TestType::ExternalTest) {
-        // Wait a bit to ensure device is ready (not processing previous read operations)
-        // This prevents conflicts with the regular reading loop
+        // Wait a bit to ensure device is ready (not processing previous read
+        // operations) This prevents conflicts with the regular reading loop
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
         if (mod->r_serial_comm_hub->call_modbus_write_multiple_registers(
@@ -139,6 +150,8 @@ bool isolation_monitorImpl::send_to_imd(const uint16_t& command, const uint16_t&
 void isolation_monitorImpl::ready() {
     this->configure_device();
     bool self_test_running = false;
+    bool need_to_disable_device = false;
+    int device_disabled_timeout_s = 10;
 
     while (true) {
         read_imd_values();
@@ -148,6 +161,7 @@ void isolation_monitorImpl::ready() {
             if (self_test_timeout <= 0) {
                 // a time out happend
                 self_test_started = false;
+                need_to_disable_device = true;
                 // publish failed result
                 EVLOG_warning << "Self test timed out";
                 publish_self_test_result(false);
@@ -157,6 +171,7 @@ void isolation_monitorImpl::ready() {
                     // Self test is done
                     self_test_running = false;
                     self_test_started = false;
+                    need_to_disable_device = true;
                     // was it successfull? If there is no error, it was...
                     bool result = true;
                     if (last_alarm == AlarmType::DeviceError) {
@@ -173,6 +188,23 @@ void isolation_monitorImpl::ready() {
         }
         if (not error_state_monitor->is_error_active("isolation_monitor/DeviceFault", "")) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
+            if (need_to_disable_device) {
+                device_disabled_timeout_s--;
+                if (device_disabled_timeout_s <= 0) {
+                    need_to_disable_device = false;
+                    device_disabled_timeout_s = 10;
+                    // disable the device if the configuration option is set and we are not publishing
+                    // aka we are in a measuring cycle (start called)
+                    if (not enable_publishing && config.disable_device_on_stop) {
+                        if (not send_to_imd(3026, 0)) {
+                            EVLOG_error << "Can't disable the device: " << read_device_name();
+                        } else {
+                            EVLOG_info << "Device disabled after self test since we didn't start measuring cycle "
+                                          "(timeout 10s)";
+                        }
+                    }
+                }
+            }
         } else {
             std::this_thread::sleep_for(std::chrono::seconds(10));
         }
@@ -181,14 +213,36 @@ void isolation_monitorImpl::ready() {
 
 void isolation_monitorImpl::handle_start() {
     enable_publishing = true;
+    if (config.disable_device_on_stop) {
+        if (not send_to_imd(3026, 1)) {
+            EVLOG_error << "Can't enable the device: " << read_device_name();
+        } else {
+            EVLOG_info << "Device enabled for measurements";
+        }
+    }
 }
 
 void isolation_monitorImpl::handle_stop() {
     enable_publishing = false;
+    if (config.disable_device_on_stop) {
+        if (not send_to_imd(3026, 0)) {
+            EVLOG_error << "Can't disable the device: " << read_device_name();
+        } else {
+            EVLOG_info << "Device disabled after measurements";
+        }
+    }
 }
 
 void isolation_monitorImpl::handle_start_self_test(double& test_voltage_V) {
     EVLOG_info << "IMD Starting self-test...";
+    // make sure that the device is on
+    if (config.disable_device_on_stop) {
+        if (not send_to_imd(3026, 1)) {
+            EVLOG_error << "Can't enable the device: " << read_device_name();
+        } else {
+            EVLOG_info << "Device enabled for self test";
+        }
+    }
     start_self_test();
 }
 
@@ -209,11 +263,13 @@ void isolation_monitorImpl::read_imd_values() {
 
     isolation_monitorImpl::MeasurementValue voltage_to_earth_l1e;
     isolation_monitorImpl::MeasurementValue voltage_to_earth_l2e;
-    // Read Voltage to Earth L1E and L2E only if the device is not in self test mode and only it
-    // we are in a measuring cycle. We have seen that Bender sometimes is overwhelmed
+    // Read Voltage to Earth L1E and L2E only if the device is not in self test
+    // mode and only it we are in a measuring cycle. We have seen that Bender
+    // sometimes is overwhelmed
     if ((last_test == TestType::NoTest) and (enable_publishing or config.always_publish_measurements)) {
-        // VOLTAGE_U_L1E_V (1016) and VOLTAGE_U_L2E_V (1020) are consecutive (4 registers apart)
-        // Read 8 registers starting from 1016 to get both measurements in a single operation
+        // VOLTAGE_U_L1E_V (1016) and VOLTAGE_U_L2E_V (1020) are consecutive (4
+        // registers apart) Read 8 registers starting from 1016 to get both
+        // measurements in a single operation
         types::serial_comm_hub_requests::Result register_response =
             mod->r_serial_comm_hub->call_modbus_read_holding_registers(
                 config.imd_device_id, static_cast<int>(ImdRegisters::VOLTAGE_U_L1E_V), 8);
@@ -271,7 +327,8 @@ void isolation_monitorImpl::read_imd_values() {
             valid_readings = false;
         }
 
-        // do not publish values if in error state or the device is in self test mode
+        // do not publish values if in error state or the device is in self test
+        // mode
         if (last_test == TestType::NoTest) {
             if (not error_state_monitor->is_error_active("isolation_monitor/DeviceFault", "")) {
                 publish_isolation_measurement(m);

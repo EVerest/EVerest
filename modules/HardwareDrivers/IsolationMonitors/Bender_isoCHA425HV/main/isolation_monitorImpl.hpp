@@ -42,6 +42,7 @@ struct Conf {
     bool voltage_to_earth_monitoring_alarm_enable;
     int relay_k1_alarm_assignment;
     int relay_k2_alarm_assignment;
+    bool disable_device_on_stop;
 };
 
 class isolation_monitorImpl : public isolation_monitorImplBase {
