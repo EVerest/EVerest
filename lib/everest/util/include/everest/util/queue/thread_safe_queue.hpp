@@ -29,22 +29,28 @@ public:
     /**
      * @brief Push new data into the queue
      * @param[in] value data
+     * @return The size of the queue after push
      */
-    void push(const value_type& value) {
+    typename simple_queue<T>::size_type push(const value_type& value) {
         std::unique_lock lock(m_mtx);
         m_queue.push(value);
+        auto result = m_queue.size();
         lock.unlock();
         m_cv.notify_one();
+        return result;
     }
     /**
      * @brief Push new data into the queue
      * @param[in] value data
+     * @return The size of the queue after push
      */
-    void push(value_type&& value) {
+    typename simple_queue<T>::size_type push(value_type&& value) {
         std::unique_lock lock(m_mtx);
         m_queue.push(std::forward<value_type>(value));
+        auto result = m_queue.size();
         lock.unlock();
         m_cv.notify_one();
+        return result;
     }
 
     /**
@@ -107,7 +113,9 @@ private:
             (void)m_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms), wait_predicate);
         }
 
-        if (m_queue.empty() && m_stop) {
+        // if the queue is still empty, we return a nullopt. Note that this would be implicitly
+        // handled by simple_queue::pop, but it is added here to be more explcit
+        if (m_queue.empty()) {
             return std::nullopt;
         }
 

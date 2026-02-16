@@ -42,7 +42,7 @@ public:
                 }
             }
         };
-        for (size_t i = 0; i < thread_count; ++i) {
+        for (std::size_t i = 0; i < thread_count; ++i) {
             m_threads.emplace_back(worker_loop);
         }
     }
