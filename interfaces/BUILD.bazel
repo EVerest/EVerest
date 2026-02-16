@@ -1,3 +1,5 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
 interface_srcs = glob(["*.yaml"])
 interface_names = [name[:-5] for name in interface_srcs]
 cpp_headers = [

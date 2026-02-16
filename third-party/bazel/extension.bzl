@@ -106,6 +106,8 @@ def _deps_impl(module_ctx):
         strip_prefix = "pybind11_json-%s" % version,
         urls = ["https://github.com/pybind/pybind11_json/archive/refs/tags/%s.tar.gz" % version],
         build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
 cc_library(
     name = "pybind11_json",
     hdrs = glob(["include/**/*.hpp"]),

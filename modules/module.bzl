@@ -1,3 +1,5 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
 # Rules for building Everest modules
 
 def cc_everest_module(
@@ -67,7 +69,7 @@ def cc_everest_module(
     """.format(module_name = name, prefix = prefix)
     )
 
-    native.cc_binary(
+    cc_binary(
         name = binary,
         srcs = depset(srcs + impl_srcs + module_srcs + [
             ":ld-ev",

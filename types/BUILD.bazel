@@ -1,3 +1,5 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
 yaml_srcs = glob(["*.yaml"])
 some_yaml = yaml_srcs[0]
 
