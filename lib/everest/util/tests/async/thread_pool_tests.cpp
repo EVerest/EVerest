@@ -82,20 +82,52 @@ TEST_F(ThreadPoolTest, Test_Future_Return_Value_And_Arguments) {
     ASSERT_DOUBLE_EQ(f2.get(), 50.0);
 }
 
-TEST_F(ThreadPoolTest, Test_Run_No_Future) {
-    // run() shouldn't block, so we use a flag to check execution
-    std::atomic<bool> executed{false};
+TEST_F(ThreadPoolTest, Test_Run_Is_NonBlocking) {
+    auto start = std::chrono::steady_clock::now();
 
-    // This should submit and return immediately
-    pool->run([&executed]() {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        executed.store(true);
+    // Submit a task that takes 500ms
+    pool->run([]() { std::this_thread::sleep_for(std::chrono::milliseconds(500)); });
+
+    auto end = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+    // It should return in basically 0ms (well under 50ms)
+    EXPECT_LT(elapsed.count(), 50) << "run() blocked the caller!";
+}
+
+TEST_F(ThreadPoolTest, Test_Recursive_Submission) {
+    std::atomic<int> result{0};
+
+    std::future<void> f = (*pool)([this, &result]() {
+        // Task A submits Task B
+        std::future<int> f2 = (*pool)([]() { return 42; });
+        result = f2.get();
     });
 
-    // We must wait for the task to finish to assert correctness
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    f.get();
+    ASSERT_EQ(result.load(), 42);
+}
 
-    ASSERT_TRUE(executed.load());
+TEST_F(ThreadPoolTest, Test_Multi_Producer_Contention) {
+    std::atomic<int> counter{0};
+    const int num_producers = 4;
+    const int tasks_per_producer = 250;
+    std::vector<std::thread> producers;
+
+    for (int i = 0; i < num_producers; ++i) {
+        producers.emplace_back([this, &counter, tasks_per_producer]() {
+            for (int j = 0; j < tasks_per_producer; ++j) {
+                pool->run([&counter]() { counter++; });
+            }
+        });
+    }
+
+    for (auto& t : producers)
+        t.join();
+
+    // Give workers a moment to finish the queue
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    ASSERT_EQ(counter.load(), num_producers * tasks_per_producer);
 }
 
 // 2. Exception and Error Handling Tests
@@ -219,4 +251,15 @@ TEST_F(ThreadPoolTest, Test_Parallel_Execution_Proved) {
     EXPECT_LT(actual_duration.count(), expected_parallel_limit.count())
         << "The total time taken (" << actual_duration.count() << "ms) suggests tasks ran sequentially."
         << "Expected time less than " << expected_parallel_limit.count() << "ms for parallel execution.";
+}
+
+TEST(ThreadPoolStress, Test_Rapid_Lifecycle) {
+    for (int i = 0; i < 50; ++i) {
+        thread_pool temporary_pool(2);
+        for (int j = 0; j < 10; ++j) {
+            temporary_pool.run([]() { std::this_thread::yield(); });
+        }
+        // Destruction happens immediately
+    }
+    SUCCEED();
 }
