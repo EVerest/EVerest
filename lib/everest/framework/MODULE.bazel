@@ -7,7 +7,7 @@ module(
 # B A Z E L  C E N T R A L  R E G I S T R Y # https://registry.bazel.build/
 ###############################################################################
 
-bazel_dep(name = "bazel_skylib", version = "1.8.2")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
 
 bazel_dep(name = "bazel_features", version = "1.41.0")
 
@@ -15,11 +15,11 @@ bazel_dep(name = "platforms", version = "1.0.0")
 
 bazel_dep(name = "rules_cc", version = "0.2.16")
 
-bazel_dep(name = "rules_python", version = "1.7.0")
+bazel_dep(name = "rules_python", version = "1.8.4")
 
 bazel_dep(name = "pybind11_bazel", version = "3.0.0")
 
-bazel_dep(name = "rules_rust", version = "0.67.0")
+bazel_dep(name = "rules_rust", version = "0.68.1")
 
 BOOST_VERSION = "1.90.0.bcr.1"
 
@@ -37,15 +37,15 @@ bazel_dep(name = "fast_float", version = "8.0.2")
 
 bazel_dep(name = "nlohmann_json", version = "3.12.0.bcr.1", repo_name = "com_github_nlohmann_json")
 
-bazel_dep(name = "cxx.rs", version = "1.0.153")
+bazel_dep(name = "cxx.rs", version = "1.0.188")
 
-bazel_dep(name = "rules_foreign_cc", version = "0.14.0")
+bazel_dep(name = "rules_foreign_cc", version = "0.15.1")
 
 bazel_dep(name = "fmt", version = "12.1.0", repo_name = "com_github_fmtlib_fmt")
 
 bazel_dep(name = "sqlite3", version = "3.51.2")
 
-bazel_dep(name = "openssl", version = "3.5.4.bcr.1")
+bazel_dep(name = "openssl", version = "3.5.5.bcr.0")
 
 bazel_dep(name = "rapidyaml", version = "0.10.0")
 
