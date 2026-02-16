@@ -49,6 +49,7 @@
 #include "VarContainer.hpp"
 #include "over_voltage/OverVoltageMonitor.hpp"
 #include "scoped_lock_timeout.hpp"
+#include "voltage_plausibility/VoltagePlausibilityMonitor.hpp"
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -72,13 +73,14 @@ struct Conf {
     bool ac_hlc_use_5percent;
     bool ac_enforce_hlc;
     bool ac_with_soc;
-    int dc_isolation_voltage_V;
     int internal_over_voltage_duration_ms;
     bool dbg_hlc_auth_after_tstep;
-    int hack_sleep_in_cable_check;
-    int hack_sleep_in_cable_check_volkswagen;
+    int dc_isolation_voltage_V;
     int cable_check_wait_number_of_imd_measurements;
     bool cable_check_enable_imd_self_test;
+    bool cable_check_enable_imd_self_test_relays_open;
+    int cable_check_relays_open_voltage_V;
+    int cable_check_relays_closed_timeout_s;
     bool cable_check_wait_below_60V_before_finish;
     bool hack_skoda_enyaq;
     int hack_present_current_offset;
@@ -117,6 +119,8 @@ struct Conf {
     std::string bpt_channel;
     std::string bpt_generator_mode;
     std::string bpt_grid_code_island_method;
+    double voltage_plausibility_max_spread_threshold_V;
+    int voltage_plausibility_fault_duration_ms;
 };
 
 class EvseManager : public Everest::ModuleBase {
@@ -346,6 +350,9 @@ private:
     int32_t reservation_id;
     Everest::timed_mutex_traceable reservation_mutex;
 
+    // Voltage plausibility monitor
+    std::unique_ptr<VoltagePlausibilityMonitor> voltage_plausibility_monitor;
+
     void setup_AC_mode();
     void setup_fake_DC_mode();
 
@@ -385,7 +392,6 @@ private:
     bool check_isolation_resistance_in_range(double resistance);
     bool check_voltage_to_protective_earth_in_range(types::isolation_monitor::IsolationMeasurement m);
 
-    static constexpr auto CABLECHECK_CONTACTORS_CLOSE_TIMEOUT{std::chrono::seconds(5)};
     static constexpr double CABLECHECK_CURRENT_LIMIT{2};
     static constexpr double CABLECHECK_INSULATION_FAULT_RESISTANCE_OHM{100000.};
     static constexpr double CABLECHECK_SAFE_VOLTAGE{60.};

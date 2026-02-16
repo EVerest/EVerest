@@ -500,6 +500,16 @@ void EvseManager::ready() {
             });
 
         } else if (config.charge_mode == "DC") {
+            // Create voltage plausibility monitor for DC charging
+            voltage_plausibility_monitor = std::make_unique<VoltagePlausibilityMonitor>(
+                [this](const std::string& description) {
+                    if (this->error_handling) {
+                        this->error_handling->raise_voltage_plausibility_fault(description);
+                    }
+                },
+                config.voltage_plausibility_max_spread_threshold_V,
+                std::chrono::milliseconds(config.voltage_plausibility_fault_duration_ms));
+
             if (connector_type.has_value() and connector_type.value() == types::evse_manager::ConnectorTypeEnum::cMCS) {
                 transfer_modes.push_back(types::iso15118::EnergyTransferMode::MCS);
                 update_supported_energy_transfers(types::iso15118::EnergyTransferMode::MCS);
@@ -551,6 +561,10 @@ void EvseManager::ready() {
                     internal_over_voltage_monitor->reset();
                     internal_over_voltage_monitor->start_monitor();
                 }
+                if (voltage_plausibility_monitor) {
+                    voltage_plausibility_monitor->reset();
+                    voltage_plausibility_monitor->start_monitor();
+                }
             });
 
             r_hlc[0]->subscribe_current_demand_finished([this] {
@@ -558,6 +572,9 @@ void EvseManager::ready() {
                 sae_bidi_active = false;
                 if (not r_over_voltage_monitor.empty()) {
                     r_over_voltage_monitor[0]->call_stop();
+                }
+                if (voltage_plausibility_monitor) {
+                    voltage_plausibility_monitor->stop_monitor();
                 }
                 if (internal_over_voltage_monitor) {
                     internal_over_voltage_monitor->stop_monitor();
@@ -581,6 +598,9 @@ void EvseManager::ready() {
 
                 r_imd[0]->subscribe_isolation_measurement([this](types::isolation_monitor::IsolationMeasurement m) {
                     // new DC isolation monitoring measurement received
+                    if (voltage_plausibility_monitor && m.voltage_V.has_value()) {
+                        voltage_plausibility_monitor->update_isolation_monitor_voltage(m.voltage_V.value());
+                    }
 
                     // Check for isolation errors
                     if (charger->get_current_state() == Charger::EvseState::Charging and
@@ -648,6 +668,9 @@ void EvseManager::ready() {
             if (not r_powersupply_DC.empty()) {
                 r_powersupply_DC[0]->subscribe_voltage_current([this](types::power_supply_DC::VoltageCurrent m) {
                     powersupply_measurement = m;
+                    if (voltage_plausibility_monitor) {
+                        voltage_plausibility_monitor->update_power_supply_voltage(m.voltage_V);
+                    }
                     types::iso15118::DcEvsePresentVoltageCurrent present_values;
                     present_values.evse_present_voltage = (m.voltage_V > 0 ? m.voltage_V : 0.0);
                     present_values.evse_present_current = m.current_A;
@@ -874,6 +897,12 @@ void EvseManager::ready() {
                 if (not r_over_voltage_monitor.empty()) {
                     r_over_voltage_monitor[0]->call_set_limits(get_emergency_over_voltage_threshold(),
                                                                get_error_over_voltage_threshold());
+                    // Subscribe to voltage measurements from over_voltage_monitor for plausibility check
+                    r_over_voltage_monitor[0]->subscribe_voltage_measurement_V([this](float voltage_V) {
+                        if (voltage_plausibility_monitor) {
+                            voltage_plausibility_monitor->update_over_voltage_monitor_voltage(voltage_V);
+                        }
+                    });
                 }
                 if (internal_over_voltage_monitor) {
                     internal_over_voltage_monitor->set_limits(get_emergency_over_voltage_threshold(),
@@ -1116,6 +1145,9 @@ void EvseManager::ready() {
             internal_over_voltage_monitor->stop_monitor();
             internal_over_voltage_monitor->reset();
         }
+        if (voltage_plausibility_monitor and event == CPEvent::CarUnplugged) {
+            voltage_plausibility_monitor->stop_monitor();
+        }
 
         charger->bsp_event_queue.push(event);
 
@@ -1152,6 +1184,10 @@ void EvseManager::ready() {
 
     if (r_powermeter_billing().size() > 0) {
         r_powermeter_billing()[0]->subscribe_powermeter([this](types::powermeter::Powermeter p) {
+            // Update voltage plausibility monitor with powermeter voltage
+            if (voltage_plausibility_monitor && p.voltage_V.has_value() && p.voltage_V.value().DC.has_value()) {
+                voltage_plausibility_monitor->update_powermeter_voltage(p.voltage_V.value().DC.value());
+            }
             // Inform charger about current charging current. This is used for slow OC detection.
             if (p.current_A and p.current_A.value().L1 and p.current_A.value().L2 and p.current_A.value().L3) {
                 charger->set_current_drawn_by_vehicle(p.current_A.value().L1.value(), p.current_A.value().L2.value(),
@@ -2001,15 +2037,75 @@ void EvseManager::cable_check() {
         }
         charger->get_stopwatch().mark("<60V");
 
-        // normally contactors should be closed before entering cable check routine.
-        // On some hardware implementation it may take some time until the confirmation arrives though,
-        // so we wait with a timeout here until the contactors are confirmed to be closed.
         // Allow closing from HLC perspective, it will wait for CP state C in Charger IEC state machine as well.
         session_log.car(true, "DC HLC Close contactor (in CableCheck)");
         charger->set_hlc_allow_close_contactor(true);
 
+        // Some HW platforms require the self test to be performed at the beginning of cablecheck phase.
+        // They will close the relays only after the self test was successful.
+        // This is done at a configurable voltage. As only the self test is done and no isolation resistance
+        // measurement, this voltage may be different from the voltage used later to measure the resistance
+        // (which is derived from the ev_max_voltage instead)
+        if (config.cable_check_enable_imd_self_test_relays_open) {
+            session_log.evse(true, "IMD Early self test in cablecheck");
+            // Set power supply to configured voltage for the self test
+            if (not powersupply_DC_set(config.cable_check_relays_open_voltage_V, CABLECHECK_CURRENT_LIMIT)) {
+                fail_cable_check(
+                    "CableCheck: Could not set DC power supply voltage and current for early IMD self test.");
+                return;
+            }
+            EVLOG_info << "CableCheck early IMD self test: Using " << config.cable_check_relays_open_voltage_V << " V";
+
+            powersupply_DC_on();
+
+            if (not wait_powersupply_DC_voltage_reached(config.cable_check_relays_open_voltage_V)) {
+                std::ostringstream oss;
+                oss << "CableCheck: Voltage did not rise to " << config.cable_check_relays_open_voltage_V
+                    << " V within timeout";
+                fail_cable_check(oss.str());
+                return;
+            }
+
+            selftest_result.clear();
+            r_imd[0]->call_start_self_test(config.cable_check_relays_open_voltage_V);
+            EVLOG_info << "CableCheck: Early IMD self test started.";
+
+            // Wait for the result of the self test
+            bool result{false};
+            bool result_received{false};
+
+            for (int wait_seconds = 0; wait_seconds < CABLECHECK_SELFTEST_TIMEOUT; wait_seconds++) {
+                if (cable_check_should_exit()) {
+                    fail_cable_check("Cancel cable check");
+                    return;
+                }
+                if (selftest_result.wait_for(result, 1s)) {
+                    result_received = true;
+                    break;
+                }
+            }
+
+            if (not result_received) {
+                fail_cable_check("CableCheck: Did not get a early self test result from IMD within timeout");
+                return;
+            }
+
+            if (not result) {
+                EVLOG_error << "CableCheck: Early IMD Self test failed";
+                fail_cable_check("Early IMD self test failed during cable check");
+                return;
+            }
+
+            powersupply_DC_off();
+            charger->get_stopwatch().mark("Early IMD self test");
+        }
+
+        // normally contactors should be closed before entering cable check routine.
+        // On some hardware implementation it may take some time until the confirmation arrives though,
+        // so we wait with a timeout here until the contactors are confirmed to be closed.
+
         Timeout timeout;
-        timeout.start(CABLECHECK_CONTACTORS_CLOSE_TIMEOUT);
+        timeout.start(std::chrono::seconds(config.cable_check_relays_closed_timeout_s));
 
         while (not timeout.reached() and not cable_check_should_exit()) {
             if (not contactor_open) {
@@ -2160,16 +2256,6 @@ void EvseManager::cable_check() {
 
         if (config.hack_pause_imd_during_precharge) {
             imd_stop();
-        }
-
-        // Sleep before submitting result to spend more time in cable check. This is needed for some solar inverters
-        // used as DC chargers for them to warm up. Don't use it.
-        std::this_thread::sleep_for(std::chrono::seconds(config.hack_sleep_in_cable_check));
-        if (car_manufacturer == types::evse_manager::CarManufacturer::VolkswagenGroup) {
-            std::this_thread::sleep_for(std::chrono::seconds(config.hack_sleep_in_cable_check_volkswagen));
-        }
-        if (config.hack_sleep_in_cable_check > 0 or config.hack_sleep_in_cable_check_volkswagen > 0) {
-            charger->get_stopwatch().mark("Sleep");
         }
 
         if (config.cable_check_wait_below_60V_before_finish) {

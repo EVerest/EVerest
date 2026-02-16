@@ -1,6 +1,7 @@
 *build
 *build-*
 *dist
+*build*
 .cache/
 workspace.yaml
 .vscode/

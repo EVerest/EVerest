@@ -8,13 +8,12 @@ config:
     type: string
     default: eth1
   session_logging_path:
-    description: Output directory for session capture dump files
+    description: >-
+      Output directory for session capture dump files. Will be used only if not empty.
+      If empty, the logging path provided in the SessionStarted event will be used.
+      If no logging path is provided there either, no capture will be performed.
     type: string
     default: /tmp
-provides:
-  main:
-    description: EVerest API
-    interface: empty
 requires:
   evse_manager:
     interface: evse_manager
