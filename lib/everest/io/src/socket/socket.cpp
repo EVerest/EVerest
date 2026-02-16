@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include <algorithm>
 #include <arpa/inet.h>
@@ -527,8 +527,9 @@ std::string get_interface_address(std::string const& name) {
     handle_disposer<ifaddrs, freeifaddrs> ifaddr_disposer(ifaddr);
 
     for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
-        if (ifa->ifa_addr == nullptr || ifa->ifa_addr->sa_family != AF_INET)
+        if (ifa->ifa_addr == nullptr || ifa->ifa_addr->sa_family != AF_INET) {
             continue;
+        }
         if (name == ifa->ifa_name) {
             char host[NI_MAXHOST];
             getnameinfo(ifa->ifa_addr, sizeof(struct sockaddr_in), host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
@@ -552,8 +553,9 @@ std::vector<if_info> get_all_interaces() {
     std::vector<if_info> interfaces;
 
     for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
-        if (ifa->ifa_addr == nullptr || ifa->ifa_addr->sa_family != AF_INET)
+        if (ifa->ifa_addr == nullptr || ifa->ifa_addr->sa_family != AF_INET) {
             continue;
+        }
         interfaces.push_back({ifa->ifa_name, get_interface_address(ifa->ifa_name)});
     }
     return interfaces;

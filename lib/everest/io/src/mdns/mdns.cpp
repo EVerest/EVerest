@@ -1,20 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+
 #include "everest/io/mdns/mdns.hpp"
 #include <iostream>
 namespace everest::lib::io::mdns {
 
 namespace {
-
-// std::ostream& operator<<(std::ostream& s, mDNS_discovery const& obj) {
-//     s << obj.service_instance << "\n"
-//       << " Hostname: " << obj.hostname << "\n"
-//       << " IP:       " << obj.ip << "\n"
-//       << " Port:     " << obj.port << "\n"
-//       << " TXT: \n";
-//     for (auto const& [key, val] : obj.txt) {
-//         s << "   " << key << " = " << val << "\n";
-//     }
-//     return s;
-// }
 
 std::string parse_name(const std::uint8_t* buffer, int size, int* offset) {
     std::string name = "";
@@ -25,16 +16,21 @@ std::string parse_name(const std::uint8_t* buffer, int size, int* offset) {
     while (curr < size && buffer[curr] != 0) {
         if ((buffer[curr] & 0xC0) == 0xC0) {
             int pointer_offset = ((buffer[curr] & 0x3F) << 8) | buffer[curr + 1];
-            if (!moved)
+            if (!moved) {
                 next_offset = curr + 2;
+            }
             curr = pointer_offset;
             moved = true;
         } else {
-            int len = buffer[curr++];
-            for (int i = 0; i < len && curr < size; ++i)
-                name += (char)buffer[curr++];
-            if (curr < size && buffer[curr] != 0)
+            int len = buffer[curr];
+            curr++;
+            for (int i = 0; i < len && curr < size; ++i) {
+                name += static_cast<char>(buffer[curr]);
+                curr++;
+            }
+            if (curr < size && buffer[curr] != 0) {
                 name += ".";
+            }
         }
     }
     *offset = moved ? next_offset : curr + 1;
@@ -42,9 +38,9 @@ std::string parse_name(const std::uint8_t* buffer, int size, int* offset) {
 }
 
 void parse_mdns_A(const std::uint8_t* buffer, mDNS_discovery& mdns) {
-    char tmp[16];
-    std::snprintf(tmp, sizeof(tmp), "%d.%d.%d.%d", buffer[0], buffer[1], buffer[2], buffer[3]);
-    mdns.ip = tmp;
+    auto size_of_ip_string = 16;
+    mdns.ip.resize(size_of_ip_string);
+    std::snprintf(mdns.ip.data(), mdns.ip.size(), "%d.%d.%d.%d", buffer[0], buffer[1], buffer[2], buffer[3]);
 }
 
 void parse_mdns_SRV(const std::uint8_t* base, int record_data_offset, mDNS_discovery& mdns, int size) {
@@ -58,11 +54,13 @@ void parse_mdns_TXT(const std::uint8_t* buffer, mDNS_discovery& mdns, int rdlen)
     int end_of_record = rdlen;
 
     while (txt_ptr < end_of_record) {
-        uint8_t txt_len = buffer[txt_ptr++];
+        std::uint8_t txt_len = buffer[txt_ptr];
+        txt_ptr++;
         if (txt_ptr + txt_len <= end_of_record) {
-            std::string entry((char*)&buffer[txt_ptr], txt_len);
+            const char* entry_cstr = reinterpret_cast<const char*>(&buffer[txt_ptr]);
+            std::string entry(entry_cstr, txt_len);
 
-            size_t sep = entry.find('=');
+            std::size_t sep = entry.find('=');
             if (sep != std::string::npos) {
                 std::string key = entry.substr(0, sep);
                 std::string val = entry.substr(sep + 1);
@@ -85,34 +83,38 @@ void parse_mdns_PTR(const std::uint8_t* base, int record_data_offset, mDNS_disco
 
 [[maybe_unused]] std::optional<mDNS_discovery> parse_mdns_packet(std::vector<std::uint8_t> const& packet) {
     int size = packet.size();
-    auto buf = packet.data();
-    if (size < 12)
+    const auto* buf = packet.data();
+    auto const mdns_packet_min_size = 12;
+    if (size < mdns_packet_min_size) {
         return std::nullopt;
+    }
 
     if ((buf[2] & 0x80) == 0) {
         return std::nullopt;
     }
 
     mDNS_discovery result;
-    size_t questions = (buf[4] << 8) | buf[5];
-    size_t answers = (buf[6] << 8) | buf[7];
-    size_t authority = (buf[8] << 8) | buf[9];
-    size_t additional = (buf[10] << 8) | buf[11];
-    int curr = 12;
+    std::size_t questions = (buf[4] << 8) | buf[5];
+    std::size_t answers = (buf[6] << 8) | buf[7];
+    std::size_t authority = (buf[8] << 8) | buf[9];
+    std::size_t additional = (buf[10] << 8) | buf[11];
+    int curr = mdns_packet_min_size;
 
     for (size_t i = 0; i < questions && curr < size; ++i) {
         parse_name(buf, size, &curr);
         curr += 4;
     }
 
-    int total_records = answers + authority + additional;
+    auto const mdns_record_header_size = 10;
+    int total_records = static_cast<int>(answers + authority + additional);
     for (int i = 0; i < total_records && curr < size; ++i) {
         std::string name = parse_name(buf, size, &curr);
-        if (curr + 10 > size)
+        if (curr + mdns_record_header_size > size) {
             break;
-        uint16_t type = (buf[curr] << 8) | buf[curr + 1];
-        uint16_t rdlen = (buf[curr + 8] << 8) | buf[curr + 9];
-        curr += 10;
+        }
+        std::uint16_t type = (buf[curr] << 8) | buf[curr + 1];
+        std::uint16_t rdlen = (buf[curr + 8] << 8) | buf[curr + 9];
+        curr += mdns_record_header_size;
 
         if (type == 0x01 && rdlen == 4) {
             parse_mdns_A(buf + curr, result);
@@ -130,19 +132,21 @@ void parse_mdns_PTR(const std::uint8_t* base, int record_data_offset, mDNS_disco
 
 [[maybe_unused]] std::vector<std::uint8_t> create_mdns_query(std::string const& name) {
     std::vector<uint8_t> encoded;
-    size_t start = 0, end;
+    std::size_t start = 0, end;
     while ((end = name.find('.', start)) != std::string::npos) {
         encoded.push_back(static_cast<uint8_t>(end - start));
-        for (size_t i = start; i < end; ++i)
+        for (std::size_t i = start; i < end; ++i) {
             encoded.push_back(name[i]);
+        }
         start = end + 1;
     }
     encoded.push_back(static_cast<uint8_t>(name.length() - start));
-    for (size_t i = start; i < name.length(); ++i)
+    for (std::size_t i = start; i < name.length(); ++i) {
         encoded.push_back(name[i]);
+    }
     encoded.push_back(0);
 
-    std::vector<uint8_t> packet = {0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    std::vector<std::uint8_t> packet = {0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     packet.insert(packet.end(), encoded.begin(), encoded.end());
     packet.push_back(0x00);
     packet.push_back(0x0c);

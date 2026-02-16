@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include "charge_bridge/utilities/string.hpp"
 #include <charge_bridge/discovery.hpp>
 #include <charge_bridge/utilities/logging.hpp>
@@ -53,7 +53,7 @@ discovery::discovery(discovery_device_type type, std::set<std::string> const& in
                 continue;
             }
         }
-        std::cout << "Adding: " << item.name << std::endl;
+        std::cout << " using interface: " << item.name << std::endl;
         add_client(item.name);
     }
 }

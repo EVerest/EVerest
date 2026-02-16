@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+
 #include "everest/io/udp/udp_payload.hpp"
 #include "everest/io/udp/udp_socket.hpp"
 #include <arpa/inet.h>
@@ -22,11 +25,14 @@ namespace everest::lib::io::mdns {
 /////////////////////////////////////////////////
 
 bool mdns_socket::open(std::string const& interface) {
+    auto const mdns_port = 5353;
+    auto const* const mdns_ip = "224.0.0.251";
+
     auto socket = socket::open_mdns_socket(interface);
     m_owned_udp_fd = std::move(socket);
 
-    target.addr = inet_addr("224.0.0.251");
-    target.port = htons(5353);
+    target.addr = inet_addr(mdns_ip);
+    target.port = htons(mdns_port);
     target.family = AF_INET;
 
     return socket::get_pending_error(m_owned_udp_fd) == 0;

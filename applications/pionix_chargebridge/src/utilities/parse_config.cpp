@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include "c4/yml/node.hpp"
 #include <charge_bridge/utilities/parse_config.hpp>
 #include <charge_bridge/utilities/string.hpp>
@@ -346,6 +346,8 @@ charge_bridge_config set_config_placeholders(charge_bridge_config const& src, ch
         result.bsp->cb_remote = ip;
         result.bsp->cb = result.cb_name;
         replace(result.bsp->api.evse.module_id);
+        replace(result.bsp->api.ev.module_id);
+        replace(result.bsp->api.ovm.module_id);
     }
     if (result.heartbeat.has_value()) {
         result.heartbeat->cb = result.cb_name;

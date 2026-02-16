@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "protocol/cb_common.h"
 #include "protocol/evse_bsp_cb_to_host.h"
@@ -301,7 +301,7 @@ static CpState evcpstate_to_cpstate(API_EV_BSP::EvCpState s) {
 }
 
 void ev_bsp_api::receive_set_cp_state(std::string const& payload) {
-    API_EV_BSP::EvCpState cp; // Is this a string or an enum?
+    API_EV_BSP::EvCpState cp;
 
     if (everest::lib::API::deserialize(payload, cp)) {
         host_status.ev_set_cp_state = evcpstate_to_cpstate(cp);
