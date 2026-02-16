@@ -1,0 +1,5 @@
+# Re-enable autoloading for language-specific rules that were removed from
+# Bazel 9 core. This is needed because many BCR modules haven't yet added
+# explicit load() statements for rules_cc, rules_python, and rules_shell.
+# This flag can be removed once all dependencies are updated for Bazel 9.
+build --incompatible_autoload_externally=+cc_library,+cc_binary,+cc_test,+cc_shared_library,+cc_import,+cc_toolchain,+py_binary,+py_library,+py_test,+sh_binary,+sh_library,+sh_test

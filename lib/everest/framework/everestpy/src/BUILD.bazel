@@ -1,4 +1,5 @@
 load("@pybind11_bazel//:build_defs.bzl", "pybind_extension")
+load("@rules_python//python:py_library.bzl", "py_library")
 
 pybind_extension(
 	name = "everestpy",
