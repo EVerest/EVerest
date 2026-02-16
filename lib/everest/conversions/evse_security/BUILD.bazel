@@ -11,7 +11,7 @@ cc_library(
     copts = [
         "-std=c++17",
         "-Wimplicit-fallthrough",
-        "-Werror=switch-enum",
+        "-Wno-error=switch-enum",  # boost.date_time 1.87.0 has incomplete switch statements
     ],
     includes = ["include"],
     visibility = ["//visibility:public"],
