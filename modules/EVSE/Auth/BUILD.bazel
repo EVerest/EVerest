@@ -9,7 +9,7 @@ cc_library(
     deps = [
         "@libtimer//:libtimer",
         "@boost.asio",
-        "@everest-framework//:framework",
+        "//lib/everest/framework:framework",
         "@com_github_HowardHinnant_date//:date",
         "//types:types_lib",
         "//interfaces:interfaces_lib",

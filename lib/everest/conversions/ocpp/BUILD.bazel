@@ -16,7 +16,7 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-        "@everest-framework//:framework",
+        "//lib/everest/framework:framework",
         "@libocpp//:libocpp",
         "//interfaces:interfaces_lib",
     ],
@@ -38,7 +38,7 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-        "@everest-framework//:framework",
+        "//lib/everest/framework:framework",
         "@libocpp//:libocpp",
         "//types:types_lib",
     ],

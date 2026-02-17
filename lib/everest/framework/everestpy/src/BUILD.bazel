@@ -4,7 +4,7 @@ load("@rules_python//python:py_library.bzl", "py_library")
 pybind_extension(
 	name = "everestpy",
 	srcs = glob(["everest/**/*.cpp", "everest/**/*.hpp"]),
-	deps = ["@everest-framework//:framework", "@pybind11_json//:pybind11_json"],
+	deps = ["//lib/everest/framework:framework", "@pybind11_json//:pybind11_json"],
 	includes = ["everest"],
 	visibility = [
         "//visibility:public",

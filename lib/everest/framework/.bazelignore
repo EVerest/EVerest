@@ -1,5 +1,0 @@
-build
-bazel-bin
-bazel-framework
-bazel-out
-bazel-testlogs

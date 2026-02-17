@@ -4,7 +4,7 @@ cc_library(
     name = "phyverso_config",
     deps = [
         "//lib/3rd_party/nanopb",
-        "@everest-framework//:framework",
+        "//lib/everest/framework:framework",
     ],
     srcs = glob([
         "protobuf/*.h",
@@ -26,7 +26,7 @@ cc_library(
         ":phyverso_config",
         "//lib/3rd_party/nanopb",
         "@com_github_HowardHinnant_date//:date",
-        "@everest-framework//:framework",
+        "//lib/everest/framework:framework",
         "@sigslot//:sigslot",
     ],
     srcs = glob([

@@ -29,13 +29,13 @@ http_archive(
 )
 
 # This load some definitions need to load dependencies on the next step
-load("@everest-framework//third-party/bazel:repos.bzl", "everest_framework_repos")
+load("//lib/everest/framework/third-party/bazel:repos.bzl", "everest_framework_repos")
 everest_framework_repos()
 
 # Load all dependencies
-load("@everest-framework//third-party/bazel:deps.bzl", "everest_framework_deps")
+load("//lib/everest/framework/third-party/bazel:deps.bzl", "everest_framework_deps")
 everest_framework_deps()
 
 ```
 
-After that, framework library will be available as `@everest-framework//:framework` and the manager binary as `@everest-framework//:manager`
+After that, framework library will be available as `//lib/everest/framework:framework` and the manager binary as `//lib/everest/framework:manager`

@@ -1,7 +1,7 @@
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
-load("@everest-framework//bazel:everest_env.bzl", "everest_test")
-load("@everest-framework//bazel:modules_def.bzl", "rs_everest_module")
+load("//lib/everest/framework/bazel:everest_env.bzl", "everest_test")
+load("//lib/everest/framework/bazel:modules_def.bzl", "rs_everest_module")
 
 cargo_build_script(
     name = "build_script",
@@ -11,12 +11,12 @@ cargo_build_script(
         "EVEREST_CORE_ROOT": "../..",
     },
     deps = [
-        "@everest-framework//everestrs/everestrs-build",
+        "//lib/everest/framework/everestrs/everestrs-build",
     ],
     data= [
-        "//everestrs/tests/types",
-        "//everestrs/tests/interfaces",
-        "//everestrs/tests/errors",
+        "//lib/everest/framework/everestrs/tests/types",
+        "//lib/everest/framework/everestrs/tests/interfaces",
+        "//lib/everest/framework/everestrs/tests/errors",
         "manifest.yaml",
     ],
 )
@@ -28,9 +28,9 @@ rust_binary(
     edition = "2021",
     deps = [
         "@everest_framework_crate_index//:log",
-        "@everest-framework//everestrs/everestrs",
-        "@everest-framework//everestrs/everestrs:everestrs_sys",
-        "@everest-framework//everestrs/everestrs:everestrs_bridge",
+        "//lib/everest/framework/everestrs/everestrs",
+        "//lib/everest/framework/everestrs/everestrs:everestrs_sys",
+        "//lib/everest/framework/everestrs/everestrs:everestrs_bridge",
         ":build_script",
     ],
 )

@@ -12,7 +12,7 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-        "@everest-framework//:framework",
+        "//lib/everest/framework:framework",
         "//interfaces:interfaces_lib",
     ],
 )

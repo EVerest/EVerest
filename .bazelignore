@@ -1,3 +1,6 @@
 build
-lib/everest/framework
 modules/framework
+lib/everest/framework/bazel-bin
+lib/everest/framework/bazel-framework
+lib/everest/framework/bazel-out
+lib/everest/framework/bazel-testlogs

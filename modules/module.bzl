@@ -49,8 +49,8 @@ def cc_everest_module(
         ],
         srcs = [
             manifest,
-            "@everest-framework//schemas:schemas",
-            "@everest-framework//:dependencies.yaml",
+            "//lib/everest/framework/schemas:schemas",
+            "//lib/everest/framework:dependencies.yaml",
             "@everest-core//types:types",
             "@everest-core//:MODULE.bazel",
             "@everest-core//interfaces:interfaces",
@@ -62,7 +62,7 @@ def cc_everest_module(
     $(location @everest-utils//ev-dev-tools:ev-cli) module generate-loader \
         --work-dir `dirname $(location @everest-core//:MODULE.bazel)` \
         --everest-dir ~/foo \
-        --schemas-dir `dirname $(location @everest-framework//:dependencies.yaml)`/schemas \
+        --schemas-dir `dirname $(location //lib/everest/framework:dependencies.yaml)`/schemas \
         --disable-clang-format \
         --output-dir `dirname $(location generated/modules/{module_name}/ld-ev.hpp)`/.. \
         {prefix}{module_name}
@@ -76,7 +76,7 @@ def cc_everest_module(
         ]).to_list(),
         deps = deps + [
             "@everest-core//interfaces:interfaces_lib",
-            "@everest-framework//:framework",
+            "//lib/everest/framework:framework",
         ],
         data = data,  # Pass through data files to the binary
         copts = ["-std=c++17"],

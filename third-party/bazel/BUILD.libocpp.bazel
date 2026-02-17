@@ -36,7 +36,7 @@ cc_library(
         "@openssl//:ssl",
         "@com_github_nlohmann_json//:json",
         "@com_github_HowardHinnant_date//:date",
-        "@everest-framework//:framework",
+        "@everest-core//lib/everest/framework:framework",
         "@libtimer//:libtimer",
         "@libevse-security//:libevse-security",
         "@com_github_pboettch_json-schema-validator//:json-schema-validator",

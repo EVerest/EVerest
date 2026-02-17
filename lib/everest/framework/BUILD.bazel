@@ -12,14 +12,14 @@ py_binary(
 
 genrule(
     name = "compile_time_settings",
-    srcs = ["//schemas/migrations"],
+    srcs = ["//lib/everest/framework/schemas/migrations"],
     outs = ["include/everest/compile_time_settings.hpp"],
     tools = [":collect_migration_files"],
     cmd = """
     echo "#define EVEREST_INSTALL_PREFIX \\"/usr\\"" > $@
     echo "#define EVEREST_INSTALL_LIBDIR \\"/lib\\"" >> $@
     echo "#define EVEREST_NAMESPACE (\\"everest\\")" >> $@
-    $(location :collect_migration_files) --migration-files $(locations //schemas/migrations) --output $@
+    $(location :collect_migration_files) --migration-files $(locations //lib/everest/framework/schemas/migrations) --output $@
   """,
 )
 
@@ -93,8 +93,8 @@ cc_binary(
         "@com_github_everest_liblog//:liblog",
         "@com_github_fmtlib_fmt//:fmt",
         "@com_github_warmcatt_libwebsockets//:libwebsockets",
-        "@everest-framework//:controller-ipc",
-        "@everest-framework//:framework",
+        ":controller-ipc",
+        ":framework",
 	"@libcap//:libcap",
     ],
 )
@@ -114,8 +114,8 @@ cc_binary(
         "@com_github_everest_liblog//:liblog",
         "@com_github_fmtlib_fmt//:fmt",
         "@com_github_pboettch_json-schema-validator//:json-schema-validator",
-        "@everest-framework//:controller-ipc",
-        "@everest-framework//:framework",
+        ":controller-ipc",
+        ":framework",
 	"@libcap//:libcap",
     ],
 )

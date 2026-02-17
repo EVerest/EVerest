@@ -17,7 +17,7 @@ rust_library(
         "@everest_framework_crate_index//:serde_json",
         "@everest_framework_crate_index//:serde_yaml",
     ],
-    compile_data = ["@everest-framework//everestrs/everestrs-build:templates"],
+    compile_data = [":templates"],
     visibility = ["//visibility:public"],
     edition = "2021",
 )
@@ -33,7 +33,7 @@ rust_binary(
         "@everest_framework_crate_index//:serde",
         "@everest_framework_crate_index//:serde_json",
         "@everest_framework_crate_index//:serde_yaml",
-        "@everest-framework//everestrs/everestrs-build:everestrs-build",
+        ":everestrs-build",
     ],
     visibility = ["//visibility:public"],
     edition = "2021",

@@ -200,8 +200,8 @@ Generic `rust_binary` and `rust_test` are used at the moment.
         # Typically this is enough.
         deps = all_crate_deps(normal = True) + [
             ":build_script",
-            "@everest-framework//everestrs/everestrs:everestrs_sys",
-            "@everest-framework//everestrs/everestrs:everestrs_bridge",
+            "//lib/everest/framework/everestrs/everestrs:everestrs_sys",
+            "//lib/everest/framework/everestrs/everestrs:everestrs_bridge",
         ],
     )
 

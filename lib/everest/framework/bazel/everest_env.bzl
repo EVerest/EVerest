@@ -171,36 +171,36 @@ The EVerest configuration file. It will be linked to
         ),
     "manager": attr.label(
         doc = "The EVerest manager.",
-        default = Label("@everest-framework//:manager"),
+        default = Label("//lib/everest/framework:manager"),
         allow_single_file = True,
         executable = True,
         cfg = "target",
     ),
     "schemas": attr.label(
         doc = "The target with the EVerest schemas.",
-        default = Label("@everest-framework//schemas"),
+        default = Label("//lib/everest/framework/schemas"),
     ),
     "interfaces": attr.label_list(
         doc = "A list of targets with EVerest interfaces.",
         default = [
-            Label("@everest-framework//everestrs/tests/interfaces"),
+            Label("//lib/everest/framework/everestrs/tests/interfaces"),
         ],
     ),
     "types": attr.label_list(
         doc = "A list of targets with EVerest types.",
         default = [
-            Label("@everest-framework//everestrs/tests/types"),
+            Label("//lib/everest/framework/everestrs/tests/types"),
         ],
     ),
     "errors": attr.label_list(
         doc = "A list of targets with EVerest errors.",
         default = [
-            Label("@everest-framework//everestrs/tests/errors"),
+            Label("//lib/everest/framework/everestrs/tests/errors"),
         ],
     ),
     "default_logging_file": attr.label(
         doc = "The target with the EVerest logging.ini file.",
-        default = Label("@everest-framework//everestrs/tests:logging.ini"),
+        default = Label("//lib/everest/framework/everestrs/tests:logging.ini"),
         allow_single_file = True,
     ),
     "modules": attr.label_list(
@@ -226,7 +226,7 @@ The rule will not enforce that these modules are defined in the given
         doc = "A test script which will run after the manager starts.",
     ),
     "_validation_tool": attr.label(
-        default = Label("@everest-framework//bazel/validate"),
+        default = Label("//lib/everest/framework/bazel/validate"),
         executable = True,
         cfg = "exec",
     ),
