@@ -48,9 +48,6 @@ bazel_dep(name = "sqlite3", version = "3.51.2")
 deps = use_extension("//third-party/bazel:extension.bzl", "deps")
 use_repo(
     deps,
-    "libtimer",
-    "libevse-security",
-    "libocpp",
     "sigslot",
     "com_github_HowardHinnant_date",
     "com_github_pboettch_json-schema-validator",

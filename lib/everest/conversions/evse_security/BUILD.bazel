@@ -17,7 +17,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//lib/everest/framework:framework",
-        "@libevse-security//:libevse-security",
+        "//lib/everest/evse_security:libevse-security",
         "//interfaces:interfaces_lib",
     ],
 )

@@ -7,7 +7,7 @@ cc_library(
     hdrs = glob(["include/*.hpp"]),
     strip_include_prefix = "include",
     deps = [
-        "@libtimer//:libtimer",
+        "//lib/everest/timer:libtimer",
         "@boost.asio",
         "//lib/everest/framework:framework",
         "@com_github_HowardHinnant_date//:date",
@@ -34,7 +34,7 @@ IMPLS = [
 cc_everest_module(
     name = "Auth",
     deps = [
-        "@libtimer//:libtimer",
+        "//lib/everest/timer:libtimer",
         ":auth_handler",
     ],
     impls = IMPLS,

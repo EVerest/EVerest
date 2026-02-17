@@ -7,7 +7,7 @@ IMPLS = [
 cc_everest_module(
     name = "EvseSecurity",
     deps = [
-        "@libevse-security//:libevse-security",
+        "//lib/everest/evse_security:libevse-security",
         "//lib:evse_security_conversions",
     ],
     impls = IMPLS,

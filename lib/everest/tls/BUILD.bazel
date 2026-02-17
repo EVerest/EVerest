@@ -25,7 +25,7 @@ cc_library(
     deps = [
         "//lib/everest/util",
         "//lib/everest/framework:framework",
-        "@libevse-security//:libevse-security",
+        "//lib/everest/evse_security:libevse-security",
         "@openssl//:crypto",
         "@openssl//:ssl",
     ],

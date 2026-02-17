@@ -56,8 +56,8 @@ genrule(
         "share/everest/modules/OCPP201/logging.ini",
     ],
     cmd = """
-        echo $(location @libocpp//:config)
-        LIBOCPP_CONFIG_PATH="$(location @libocpp//:config)"
+        echo $(location //lib/everest/ocpp:config)
+        LIBOCPP_CONFIG_PATH="$(location //lib/everest/ocpp:config)"
         # Create output directories
         mkdir -p $(RULEDIR)/share/everest/modules/OCPP201/component_config/standardized
         mkdir -p $(RULEDIR)/share/everest/modules/OCPP201/component_config/custom
@@ -88,7 +88,7 @@ genrule(
         echo "OCPP201 config files prepared"
     """,
     srcs = [
-        "@libocpp//:config",
+        "//lib/everest/ocpp:config",
     ],
     visibility = ["//visibility:public"],
 )

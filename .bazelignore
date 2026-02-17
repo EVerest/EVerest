@@ -4,3 +4,7 @@ lib/everest/framework/bazel-bin
 lib/everest/framework/bazel-framework
 lib/everest/framework/bazel-out
 lib/everest/framework/bazel-testlogs
+modules/framework/bazel-bin
+modules/framework/bazel-framework
+modules/framework/bazel-out
+modules/framework/bazel-testlogs

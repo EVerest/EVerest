@@ -14,24 +14,6 @@ def _deps_impl(module_ctx):
         build_file = "@everest-core//third-party/bazel:BUILD.sigslot.bazel",
     )
 
-    new_local_repository(
-        name = "libtimer",
-        path = "lib/everest/timer",
-        build_file = "@everest-core//third-party/bazel:BUILD.libtimer.bazel",
-    )
-
-    new_local_repository(
-        name = "libevse-security",
-        path = "lib/everest/evse_security",
-        build_file = "@everest-core//third-party/bazel:BUILD.libevse-security.bazel",
-    )
-
-    new_local_repository(
-        name = "libocpp",
-        path = "lib/everest/ocpp",
-        build_file = "@everest-core//third-party/bazel:BUILD.libocpp.bazel",
-    )
-
     maybe(
         http_archive,
         name = "com_github_HowardHinnant_date",

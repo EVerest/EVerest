@@ -3,7 +3,7 @@
 # Alias libraries to provide the expected target names
 alias(
     name = "ocpp",
-    actual = "@libocpp//:libocpp",
+    actual = "//lib/everest/ocpp:libocpp",
     visibility = ["//visibility:public"],
 )
 

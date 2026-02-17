@@ -8,7 +8,7 @@ cc_everest_module(
     name = "System",
     deps = [
         "@com_github_HowardHinnant_date//:date",
-        "@libtimer//:libtimer",
+        "//lib/everest/timer:libtimer",
         "//lib:run_application",
     ],
     impls = IMPLS,
