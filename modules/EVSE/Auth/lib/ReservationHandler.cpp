@@ -26,7 +26,9 @@ ReservationHandler::ReservationHandler(std::map<int, std::unique_ptr<module::EVS
 }
 
 ReservationHandler::~ReservationHandler() {
+    this->reservation_id_to_reservation_timeout_timer_map.clear();
     work->get_executor().context().stop();
+    (*work).reset(); // explicitly call underlying reset method, not the smart pointer reset
     io_context.stop();
     io_context_thread.join();
 }
