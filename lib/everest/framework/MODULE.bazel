@@ -21,6 +21,8 @@ bazel_dep(name = "rules_cc", version = "0.2.14")
 
 bazel_dep(name = "rules_rust", version = "0.67.0")
 
+bazel_dep(name = "libcap", version = "2.27.bcr.1")
+
 BOOST_VERSION = "1.87.0"
 
 bazel_dep(name = "boost.uuid", version = BOOST_VERSION)
@@ -58,7 +60,6 @@ use_repo(
     "com_github_HowardHinnant_date",
     "com_github_warmcatt_libwebsockets",
     "com_github_LiamBindle_mqtt-c",
-    "libcap",
     "pybind11_json",
 )
 

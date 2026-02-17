@@ -1,6 +1,5 @@
 load("@bazel_features//:features.bzl", "bazel_features")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
 
 def _deps_impl(module_ctx):
@@ -56,37 +55,6 @@ def _deps_impl(module_ctx):
         sha256 = "0b3ab84e5bca3c0c29be6b84af6f9840d92a0ae4fc00ca74fdcacc30b2b0a1e9",
         strip_prefix = "MQTT-C-f69ce1e7fd54f3b1834c9c9137ce0ec5d703cb4d",
         build_file = "@everest-framework//third-party/bazel:BUILD.mqtt-c.bazel",
-    )
-
-    maybe(
-        git_repository,
-        name = "libcap",
-        commit = "011eb766ce43f943a4138837bdf742ac31590d26",
-        remote = "https://git.kernel.org/pub/scm/libs/libcap/libcap.git",
-        build_file_content = """
-load("@rules_foreign_cc//foreign_cc:defs.bzl", "make")
-
-filegroup(
-    name = "all_srcs",
-    srcs = glob(["**"]),
-    visibility = ["//visibility:public"],
-)
-
-make(
-    name = "libcap",
-    lib_source = ":all_srcs",
-    args = [
-        "prefix=$$INSTALLDIR$$",
-        "GO=false"
-    ],
-    out_static_libs = [
-        "../lib64/libcap.a",
-    ],
-    visibility = [
-        "//visibility:public",
-    ],
-)
-""",    
     )
 
     version = "0.2.15"
