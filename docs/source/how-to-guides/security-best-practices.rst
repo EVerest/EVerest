@@ -110,8 +110,8 @@ set the capabilities as needed.
    -A OUTPUT -o seth0 -p tcp -m tcp --sport 64109 -j ACCEPT
 
 According to the standard, port 15118 is used for SDP messages.
-:doc:`EvseV2G </reference/modules/EvseV2G>`  uses the following ports: TCP (61341), TLS (64109).
-:doc:`Evse15118D20 </reference/modules/Evse15118D20>` integrates libiso15118 which uses port 50000 for TCP and TLS1.2/1.3.
+:ref:`EvseV2G <everest_modules_EvseV2G>`  uses the following ports: TCP (61341), TLS (64109).
+:ref:`Evse15118D20 <everest_modules_Evse15118D20>` integrates libiso15118 which uses port 50000 for TCP and TLS1.2/1.3.
 
 General (non-EVerest-related) security aspects
 ====================================================================
