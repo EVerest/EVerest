@@ -126,13 +126,13 @@ public:
                     return;
                 }
 
-                this->timer->expires_after(this->interval_nanoseconds);
+                this->timer->expires_after(std::chrono::duration_cast<typename TimerClock::duration>(this->interval_nanoseconds));
                 this->timer->async_wait(this->callback_wrapper);
 
                 this->callback();
             };
 
-            this->timer->expires_after(this->interval_nanoseconds);
+            this->timer->expires_after(std::chrono::duration_cast<typename TimerClock::duration>(this->interval_nanoseconds));
             this->timer->async_wait(this->callback_wrapper);
         }
     }
