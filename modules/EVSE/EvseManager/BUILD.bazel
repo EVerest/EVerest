@@ -13,7 +13,7 @@ IMPLS = [
 cc_everest_module(
     name = "EvseManager",
     deps = [
-        "@pugixml//:libpugixml",
+        "@pugixml//:pugixml",
         "@sigslot//:sigslot",
         "//lib/everest/helpers",
     ],

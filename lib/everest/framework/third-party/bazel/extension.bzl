@@ -5,15 +5,6 @@ load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
 def _deps_impl(module_ctx):
     maybe(
         http_archive,
-        name = "com_github_everest_everest-sqlite",
-        url = "https://github.com/EVerest/everest-sqlite/archive/85b31859f20255e1b96992ab35d40ebdb15d9c55.tar.gz",
-        sha256 = "e1beb67c314d52036a8e65f3d00516c2f2f610264390866dedf87cf18a26bb02",
-        strip_prefix = "everest-sqlite-85b31859f20255e1b96992ab35d40ebdb15d9c55",
-        build_file = "//lib/everest/framework/third-party/bazel:BUILD.everest-sqlite.bazel",
-    )
-
-    maybe(
-        http_archive,
         name = "com_github_pboettch_json-schema-validator",
         url = "https://github.com/pboettch/json-schema-validator/archive/c780404a84dd9ba978ba26bc58d17cb43fa7bc80.tar.gz",
         sha256 = "5b6ef2fd33c7fbc38fefc851f07281699fc45add5a558c2ac3f24be3e36eb0b6",

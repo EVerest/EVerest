@@ -41,7 +41,7 @@ cc_library(
         "@libevse-security//:libevse-security",
         "@com_github_pboettch_json-schema-validator//:json-schema-validator",
         "@com_github_warmcatt_libwebsockets//:libwebsockets",
-        "@everest_sqlite//:everest-sqlite",
+        "@everest-core//lib/everest/sqlite:everest-sqlite",
     ],
     copts = [
         "-std=c++17",

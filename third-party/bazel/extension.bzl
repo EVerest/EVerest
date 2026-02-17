@@ -14,15 +14,6 @@ def _deps_impl(module_ctx):
         build_file = "@everest-core//third-party/bazel:BUILD.sigslot.bazel",
     )
 
-    maybe(
-        http_archive,
-        name = "pugixml",
-        url = "https://github.com/zeux/pugixml/archive/ee86beb30e4973f5feffe3ce63bfa4fbadf72f38.tar.gz",
-        sha256 = "51c102d4187fac99daa38af281b0772c5e6c586f65004cdc63f8f2e011a21492",
-        strip_prefix = "pugixml-ee86beb30e4973f5feffe3ce63bfa4fbadf72f38",
-        build_file = "@everest-core//third-party/bazel:BUILD.pugixml.bazel",
-    )
-
     new_local_repository(
         name = "libtimer",
         path = "lib/everest/timer",
@@ -41,12 +32,6 @@ def _deps_impl(module_ctx):
         build_file = "@everest-core//third-party/bazel:BUILD.libocpp.bazel",
     )
 
-    new_local_repository(
-        name = "everest_sqlite",
-        path = "lib/everest/sqlite",
-        build_file = "@everest-core//third-party/bazel:BUILD.everest-sqlite.bazel",
-    )
-
     maybe(
         http_archive,
         name = "com_github_HowardHinnant_date",
@@ -54,15 +39,6 @@ def _deps_impl(module_ctx):
         sha256 = "8be4c3a52d99b22a4478ce3e2a23fa4b38587ea3d3bc3d1a4d68de22c2e65fb2",
         strip_prefix = "date-f94b8f36c6180be0021876c4a397a054fe50c6f2",
         build_file = "@everest-core//third-party/bazel:BUILD.date.bazel",
-    )
-
-    maybe(
-        http_archive,
-        name = "com_github_everest_everest-sqlite",
-        url = "https://github.com/EVerest/everest-sqlite/archive/85b31859f20255e1b96992ab35d40ebdb15d9c55.tar.gz",
-        sha256 = "e1beb67c314d52036a8e65f3d00516c2f2f610264390866dedf87cf18a26bb02",
-        strip_prefix = "everest-sqlite-85b31859f20255e1b96992ab35d40ebdb15d9c55",
-        build_file = "@everest-core//third-party/bazel:BUILD.everest-sqlite.bazel",
     )
 
     maybe(
