@@ -7,7 +7,7 @@ cc_library(
     deps = [
         "@sqlite3",
         "@com_github_nlohmann_json//:json",
-        "@com_github_everest_liblog//:liblog",
+        "@everest-core//lib/everest/log:liblog",
     ],
     visibility = [
         "//visibility:public",

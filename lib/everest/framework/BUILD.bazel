@@ -48,7 +48,7 @@ cc_library(
         "@com_github_HowardHinnant_date//:date",
         "@com_github_LiamBindle_mqtt-c//:libmqtt",
         "@rapidyaml//:rapidyaml",
-        "@com_github_everest_liblog//:liblog",
+        "//lib/everest/log:liblog",
         "@com_github_everest_everest-sqlite//:everest-sqlite",
         "@com_github_fmtlib_fmt//:fmt",
         "@com_github_nlohmann_json//:json",
@@ -90,7 +90,7 @@ cc_binary(
     cxxopts = ["-std=c++17"],
     deps = [
         "@rapidyaml//:rapidyaml",
-        "@com_github_everest_liblog//:liblog",
+        "//lib/everest/log:liblog",
         "@com_github_fmtlib_fmt//:fmt",
         "@com_github_warmcatt_libwebsockets//:libwebsockets",
         ":controller-ipc",
@@ -111,7 +111,7 @@ cc_binary(
     visibility = ["//visibility:public"],
     deps = [
         "@boost.program_options",
-        "@com_github_everest_liblog//:liblog",
+        "//lib/everest/log:liblog",
         "@com_github_fmtlib_fmt//:fmt",
         "@com_github_pboettch_json-schema-validator//:json-schema-validator",
         ":controller-ipc",

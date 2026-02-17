@@ -5,15 +5,6 @@ load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
 def _deps_impl(module_ctx):
     maybe(
         http_archive,
-        name = "com_github_everest_liblog",
-        url = "https://github.com/EVerest/liblog/archive/08ff519b647beaa51f8f25ab04b88c079ca253a7.tar.gz",
-        sha256 = "32c5e419e63bffd094dcdf13adf9da7db1942029d575e7ace7559a434da967f5",
-        strip_prefix = "liblog-08ff519b647beaa51f8f25ab04b88c079ca253a7",
-        build_file = "//lib/everest/framework/third-party/bazel:BUILD.liblog.bazel",
-    )
-
-    maybe(
-        http_archive,
         name = "com_github_everest_everest-sqlite",
         url = "https://github.com/EVerest/everest-sqlite/archive/85b31859f20255e1b96992ab35d40ebdb15d9c55.tar.gz",
         sha256 = "e1beb67c314d52036a8e65f3d00516c2f2f610264390866dedf87cf18a26bb02",

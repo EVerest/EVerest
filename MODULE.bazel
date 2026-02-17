@@ -53,7 +53,6 @@ use_repo(
     "pugixml",
     "sigslot",
     "com_github_HowardHinnant_date",
-    "com_github_everest_liblog",
     "com_github_everest_everest-sqlite",
     "com_github_pboettch_json-schema-validator",
     "com_github_warmcatt_libwebsockets",

@@ -56,12 +56,6 @@ def _deps_impl(module_ctx):
         build_file = "@everest-core//third-party/bazel:BUILD.date.bazel",
     )
 
-    new_local_repository(
-        name = "com_github_everest_liblog",
-        path = "lib/everest/log",
-        build_file = "@everest-core//third-party/bazel:BUILD.liblog.bazel",
-    )
-
     maybe(
         http_archive,
         name = "com_github_everest_everest-sqlite",
