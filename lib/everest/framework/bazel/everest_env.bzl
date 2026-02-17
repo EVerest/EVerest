@@ -1,3 +1,5 @@
+load("@rules_python//python:defs.bzl", "PyInfo")
+
 def _everest_env(ctx):
     """Everest Root rule
 

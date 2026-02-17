@@ -85,7 +85,7 @@ use_repo(pip_deps, "everest-testing_pip_deps")
 
 RUST_EDITION = "2021"
 
-RUST_VERSION = "1.85.1"
+RUST_VERSION = "1.86.0"
 
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
 rust.toolchain(
