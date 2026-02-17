@@ -56,10 +56,10 @@ def cc_everest_module(
             "@everest-core//interfaces:interfaces",
         ],
         tools = [
-            "@everest-utils//ev-dev-tools:ev-cli",
+            "//applications/utils/ev-dev-tools:ev-cli",
         ],
         cmd = """
-    $(location @everest-utils//ev-dev-tools:ev-cli) module generate-loader \
+    $(location //applications/utils/ev-dev-tools:ev-cli) module generate-loader \
         --work-dir `dirname $(location @everest-core//:MODULE.bazel)` \
         --everest-dir ~/foo \
         --schemas-dir `dirname $(location //lib/everest/framework:dependencies.yaml)`/schemas \

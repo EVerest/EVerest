@@ -1,4 +1,4 @@
-load("@everest-utils//:requirements.bzl", "requirement")
+load("//applications/utils:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library")
 
 exports_files(

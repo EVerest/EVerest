@@ -8,7 +8,7 @@ write_file(
     content = [
         "#!/usr/bin/env bash",
         "cd $BUILD_WORKSPACE_DIRECTORY",
-        "cp -fv bazel-everest-utils/external/rules_python++pip+everest-testing_pip_deps/requirements.bzl requirements.bzl",
+        "cp -fv bazel-everest-core/external/rules_python++pip+everest-testing_pip_deps/requirements.bzl applications/utils/requirements.bzl",
     ],
 )
 
