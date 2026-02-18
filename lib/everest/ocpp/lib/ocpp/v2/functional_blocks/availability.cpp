@@ -174,7 +174,8 @@ void Availability::handle_heartbeat_response(CallResult<HeartbeatResponse> call)
         // the received currentTime was the time the CSMS received the heartbeat request
         // to get a system time as accurate as possible keep the time-of-flight into account
         auto timeOfFlight = (std::chrono::steady_clock::now() - this->heartbeat_request_time) / 2;
-        const ocpp::DateTime currentTimeCompensated(call.msg.currentTime.to_time_point() + timeOfFlight);
+        const ocpp::DateTime currentTimeCompensated(std::chrono::time_point_cast<std::chrono::microseconds>(
+            call.msg.currentTime.to_time_point() + timeOfFlight));
         this->time_sync_callback.value()(currentTimeCompensated);
     }
 }
