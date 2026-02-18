@@ -71,7 +71,7 @@ catch2:
   cmake_condition: "EVEREST_FRAMEWORK_BUILD_TESTING OR EVEREST_CORE_BUILD_TESTING"
 pybind11:
   git: https://github.com/pybind/pybind11.git
-  git_tag: v3.0.1
+  git_tag: v3.0.2
   cmake_condition: "EVEREST_ENABLE_PY_SUPPORT"
   options: ["PYBIND11_TEST OFF", "PYBIND11_USE_CROSSCOMPILING ON"]
 pybind11_json:
