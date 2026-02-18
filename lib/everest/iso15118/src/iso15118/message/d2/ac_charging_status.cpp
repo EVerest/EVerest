@@ -11,9 +11,9 @@
 
 namespace iso15118::d2::msg {
 
-template <> void convert(const struct iso2_ChargingStatusReqType& in, AC_ChargingStatusRequest& out) {
-    (void)in;
-    (void)out;
+template <>
+void convert([[maybe_unused]] const struct iso2_ChargingStatusReqType& in,
+             [[maybe_unused]] AC_ChargingStatusRequest& out) {
 }
 
 template <>
