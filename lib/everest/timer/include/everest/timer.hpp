@@ -126,13 +126,14 @@ public:
         this->timeout_internal(interval);
     }
 
-    /// Stops timer from excuting its callback
+    /// Stops timer from executing its callback
     void stop() {
         std::lock_guard<std::mutex> lock(this->mutex);
 
         stop_internal();
     }
 
+    /// Indicates if the timer is running
     bool is_running() {
         std::lock_guard<std::mutex> lock(this->mutex);
 
