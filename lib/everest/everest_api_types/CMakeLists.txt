@@ -43,6 +43,9 @@ target_sources(everest_api_types
   src/everest_api_types/energy/json_codec.cpp
   src/everest_api_types/energy/wrapper.cpp
 
+  src/everest_api_types/entrypoint/codec.cpp
+  src/everest_api_types/entrypoint/json_codec.cpp
+
   src/everest_api_types/error_history/codec.cpp
   src/everest_api_types/error_history/json_codec.cpp
   src/everest_api_types/error_history/wrapper.cpp
