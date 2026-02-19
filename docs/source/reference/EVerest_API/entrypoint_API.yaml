@@ -1,0 +1,181 @@
+---
+asyncapi: 3.0.0
+id: 'pionix:de:everest:entrypoint_API'
+info:
+  title: 'EVerest API definition for the API entrypoint interface'
+  version: 1.0.0
+  description: >-
+    API for EVerest API clients discovering the EVerest API capabilities.
+
+  license:
+    name: Apache-2.0
+    url: https://opensource.org/licenses/Apache-2.0
+  tags:
+    - name: EVerest
+    - name: Auth
+servers:
+  default:
+    pathname: 'everest_api/1/entrypoint_api'
+    host: 'localhost:1883'
+    description: default local MQTT
+    protocol: mqtt
+defaultContentType: application/json
+
+
+channels:
+  send_request_discover:
+    address: 'm2e/discover'
+    messages:
+      send_request_discover:
+        $ref: '#/components/messages/send_request_discover'
+  receive_reply_discover:
+    address: null
+    messages:
+      receive_reply_discover:
+        $ref: '#/components/messages/receive_reply_discover'
+
+
+  receive_heartbeat:
+    address: 'e2m/heartbeat'
+    messages:
+      receive_heartbeat:
+        $ref: '#/components/messages/receive_heartbeat'
+
+
+operations:
+  send_request_discover:
+    title: 'Request API capability discovery.'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_discover'
+    description: >-
+      Allow API clients to discover the available capabilities of the API.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_discover'
+  receive_reply_discover:
+    title: 'Reply to discover request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_discover'
+
+
+  receive_heartbeat:
+    title: 'Receive heartbeat'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_heartbeat'
+
+
+components:
+  messages:
+    send_request_discover:
+      name: send_request_discover
+      title: 'Discover API'
+      summary: 'The provided token'
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: "requesting available APIs"
+          payload:
+            headers:
+              replyTo: your/arbitrary/reply/topic
+    receive_reply_discover:
+      name: receive_reply_discover
+      title: 'Reply to request to discover the API'
+      summary: 'Reply to request to discover the API.'
+      contentType: application/json
+      payload:
+         $ref: '#/components/schemas/ApiDiscoverResponse'
+      examples:
+        - summary: "Reply is an array of (id, type, <version>) tuples"
+          payload:
+            - module_id: "dm_1"
+              type: "display_message"
+              version: "1"
+            - module_id: "ps_dc_1"
+              type: "power_supply_DC"
+            - module_id: "ps_dc_2"
+              type: "power_supply_DC"
+
+
+    receive_heartbeat:
+      name: receive_heartbeat
+      title: 'Receive heartbeat'
+      summary: Heartbeat produced by EVerest as configured via cfg_heartbeat_interval_ms in the EVerest configuration
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/HeartBeatId'
+      examples:
+        - summary: "Heartbeat"
+          payload: 42
+
+
+  schemas:
+    ApiDiscoverResponse:
+      description: Type for API discovery results
+      type: object
+      additionalProperties: true
+      required:
+        - apis
+      properties:
+        apis:
+          description: Array of API parameters
+          type: array
+          items:
+            type: object
+            $ref: '#/components/schemas/ApiParameter'
+    ApiParameter:
+      description: Parameters for a single API
+      type: object
+      additionalProperties: true
+      required:
+        - type
+        - module_id
+      properties:
+        type:
+          type: object
+          $ref: '#/components/schemas/ApiTypeEnum'
+        module_id:
+          type: string
+        version:
+          type: integer
+    ApiTypeEnum:
+      description: All known API types
+      type: string
+      enum:
+        - auth_consumer
+        - auth_token_provider
+        - auth_token_validator
+        - dc_external_derate_consumer
+        - display_message
+        - error_history_consumer
+        - evse_board_support
+        - evse_manager_consumer
+        - external_energy_limits_consumer
+        - generic_error_raiser
+        - isolation_monitor
+        - ocpp_consumer
+        - over_voltage_monitor
+        - powermeter
+        - power_supply_DC
+        - session_cost
+        - session_cost_consumer
+        - slac
+        - system
+
+    HeartBeatId:
+      type: integer
+      description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"
+
+# TODO: Missing examples
