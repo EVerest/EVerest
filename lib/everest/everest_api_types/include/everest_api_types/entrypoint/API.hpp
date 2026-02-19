@@ -33,12 +33,11 @@ enum class ApiTypeEnum {
 struct ApiParameter {
     ApiTypeEnum type;
     std::string module_id;
-    std::optional<int> version;
+    std::optional<int32_t> version;
 };
 
 struct ApiDiscoverResponse {
     std::vector<ApiParameter> apis;
 };
-
 
 } // namespace everest::lib::API::V1_0::types::entrypoint

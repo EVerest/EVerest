@@ -170,7 +170,7 @@ void to_json(json& j, ApiParameter const& k) noexcept {
 }
 
 void from_json(const json& j, ApiParameter& k) {
-    k.type = j.at("message");
+    k.type = j.at("type");
     k.module_id = j.at("module_id");
     if (j.contains("version")) {
         k.version.emplace(j.at("version"));

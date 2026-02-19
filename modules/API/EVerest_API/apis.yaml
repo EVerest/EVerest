@@ -1,0 +1,129 @@
+auth_consumer_API:
+  provides:
+    generic_error_01:
+      interface: generic_error
+  requires:
+    auth_01:
+      interface: auth
+auth_token_provider_API:
+  provides:
+    auth_token_provider_01:
+      interface: auth_token_provider
+auth_token_validator_API:
+  provides:
+    auth_token_validator_01:
+      interface: auth_token_validator
+dc_external_derate_consumer_API:
+  provides:
+    generic_error_01:
+      interface: generic_error
+  requires:
+    dc_external_derate_01:
+      interface: dc_external_derate
+display_message_API:
+  provides:
+    display_message_01:
+      interface: display_message
+    generic_error_01:
+      interface: generic_error
+error_history_consumer_API:
+  provides:
+    generic_error_01:
+      interface: generic_error
+  requires:
+    error_history_01:
+      interface: error_history
+evse_board_support_API:
+  provides:
+    evse_board_support_01:
+      interface: evse_board_support
+    ac_rcd_01:
+      interface: ac_rcd
+    connector_lock_01:
+      interface: connector_lock
+evse_manager_consumer_API:
+  provides:
+    generic_error_01:
+      interface: generic_error
+  requires:
+    evse_manager_01:
+      interface: evse_manager
+    evse_board_support_01:
+      interface: evse_board_support
+      min_connections: 0
+      max_connections: 1
+    slac_01:
+      interface: slac
+      min_connections: 0
+      max_connections: 1
+    isolation_monitor_01:
+      interface: isolation_monitor
+      min_connections: 0
+      max_connections: 1
+    power_supply_DC_01:
+      interface: power_supply_DC
+      min_connections: 0
+      max_connections: 1
+    uk_random_delay_01:
+      interface: uk_random_delay
+      min_connections: 0
+      max_connections: 1
+external_energy_limits_consumer_API:
+  provides:
+    generic_error_01:
+      interface: generic_error
+  requires:
+    external_energy_limits_01:
+      interface: external_energy_limits
+generic_error_raiser_API:
+  provides:
+    generic_error_01:
+      interface: generic_error
+isolation_monitor_API:
+  provides:
+    isolation_monitor_01:
+      interface: isolation_monitor
+ocpp_consumer_API:
+  provides:
+    ocpp_data_transfer_01:
+      interface: ocpp_data_transfer
+    generic_error_01:
+      interface: generic_error
+  requires:
+    ocpp_01:
+      interface: ocpp
+    ocpp_data_transfer_01:
+      interface: ocpp_data_transfer
+over_voltage_monitor_API:
+  provides:
+    over_voltage_monitor_01:
+      interface: over_voltage_monitor
+power_supply_DC_API:
+  provides:
+    power_supply_DC_01:
+      interface: power_supply_DC
+powermeter_API:
+  provides:
+    powermeter_01:
+      interface: powermeter
+session_cost_API:
+  provides:
+    session_cost_01:
+      interface: session_cost
+    generic_error_01:
+      interface: generic_error
+session_cost_consumer_API:
+  provides:
+    generic_error_01:
+      interface: generic_error
+  requires:
+    session_cost_01:
+      interface: session_cost
+slac_API:
+  provides:
+    slac_01:
+      interface: slac
+system_API:
+  provides:
+    system_01:
+      interface: system

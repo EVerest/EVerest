@@ -1,0 +1,52 @@
+settings:
+  telemetry_enabled: true
+active_modules:
+  api_entrypoint:
+    module: EVerest_API
+    mapping:
+      module:
+        evse: 1
+        connector: 2
+    access:
+      config:
+        allow_global_read: true
+        allow_global_write: false
+        allow_set_read_only: false
+        modules:
+          auth:
+            allow_read: true
+            allow_write: true
+            allow_set_read_only: true
+  dm_1:
+    module: display_message_API
+    config_module:
+      cfg_communication_check_to_s: 5
+    mapping:
+      module:
+        evse: 1
+        connector: 1
+      implementations:
+        main:
+          evse: 1
+          connector: 1
+  ps_dc_1:
+    module: power_supply_DC_API
+    config_module:
+      cfg_communication_check_to_s: 0
+      cfg_heartbeat_interval_ms: 10000
+    mapping:
+      module:
+        evse: 1
+        connector: 1
+  ps_dc_2:
+    module: power_supply_DC_API
+    config_module:
+      cfg_communication_check_to_s: 0
+      cfg_heartbeat_interval_ms: 10000
+    mapping:
+      module:
+        evse: 2
+        connector: 1
+
+# send "{"headers": { "replyTo": "my/reply/topic" } }" to "everest_api/1/entrypoint/api_entrypoint/m2e/discover"
+# and receive an array of (module_id, type, version[optional]) tuples on the reply topic
