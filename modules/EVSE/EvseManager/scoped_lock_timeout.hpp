@@ -55,6 +55,7 @@ enum class MutexDescription {
     Charger_errors_prevent_charging,
     Charger_set_max_current,
     Charger_switch_three_phases_while_charging,
+    Charger_get_last_stop_transaction,
     IEC_process_bsp_event,
     IEC_state_machine,
     IEC_set_pwm,
@@ -157,7 +158,7 @@ static std::string to_string(MutexDescription d) {
     case MutexDescription::Charger_dlink_pause:
         return "Charger.cpp: dlink_pause";
     case MutexDescription::Charger_dlink_terminate:
-        return "Charger.cpp: dlink_error";
+        return "Charger.cpp: dlink_dlink_terminate";
     case MutexDescription::Charger_dlink_error:
         return "Charger.cpp: dlink_error";
     case MutexDescription::Charger_set_hlc_charging_active:
@@ -170,6 +171,8 @@ static std::string to_string(MutexDescription d) {
         return "Charger.cpp: set max current";
     case MutexDescription::Charger_switch_three_phases_while_charging:
         return "Charger.cpp switch_three_phases_while_charging";
+    case MutexDescription::Charger_get_last_stop_transaction:
+        return "Charger.cpp get_last_stop_transaction";
     case MutexDescription::IEC_process_bsp_event:
         return "IECStateMachine::process_bsp_event";
     case MutexDescription::IEC_state_machine:

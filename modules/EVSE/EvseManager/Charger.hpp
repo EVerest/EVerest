@@ -224,6 +224,8 @@ public:
         connector_type = t;
     }
 
+    std::optional<types::evse_manager::StopTransactionReason> get_last_stop_transaction_reason();
+
     void cleanup_transactions_on_startup();
     EventQueue<CPEvent> bsp_event_queue;
 

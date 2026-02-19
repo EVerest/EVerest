@@ -2039,6 +2039,12 @@ void Charger::set_hlc_allow_close_contactor(bool on) {
     shared_context.hlc_allow_close_contactor = on;
 }
 
+std::optional<types::evse_manager::StopTransactionReason> Charger::get_last_stop_transaction_reason() {
+    Everest::scoped_lock_timeout lock(state_machine_mutex,
+                                      Everest::MutexDescription::Charger_get_last_stop_transaction);
+    return shared_context.last_stop_transaction_reason;
+}
+
 // this resets the BCB sequence (which may contain 1-3 toggle pulses)
 void Charger::bcb_toggle_reset() {
     internal_context.hlc_ev_pause_bcb_count = 0;

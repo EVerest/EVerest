@@ -2517,8 +2517,16 @@ void EvseManager::fail_cable_check(const std::string& reason) {
         }
         r_hlc[0]->call_cable_check_finished(false);
     }
-    // Raising the cable check error also causes the HLC stack to get notified
-    this->error_handling->raise_cable_check_fault(reason);
+
+    // Raising a cable check fault should not happen if a cancel_transaction (DeAuthorized) is triggered
+    // during cable check
+    const auto last_stop_transaction_reason = charger->get_last_stop_transaction_reason();
+    if (not last_stop_transaction_reason.has_value() or
+        (last_stop_transaction_reason.has_value() and
+         last_stop_transaction_reason.value() != types::evse_manager::StopTransactionReason::DeAuthorized)) {
+        // Raising the cable check error also causes the HLC stack to get notified
+        this->error_handling->raise_cable_check_fault(reason);
+    }
 }
 
 types::evse_manager::EVInfo EvseManager::get_ev_info() {
