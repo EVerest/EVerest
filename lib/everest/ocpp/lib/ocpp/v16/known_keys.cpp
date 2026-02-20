@@ -76,19 +76,9 @@ using ocpp::v16::keys::valid_keys;
 
 // Hidden keys are ones that are not made available over OCPP
 //  AuthorizationKey because it contains the connection secret
-//  <others> because they are not in ChargePointConfiguration::get()
-//  (which could be a bug)
 
 #define FOR_ALL_HIDDEN(key) \
-    key(AuthorizationKey) \
-    key(EnableTLSKeylog) \
-    key(LogRotation) \
-    key(LogRotationDateSuffix) \
-    key(LogRotationMaximumFileCount) \
-    key(LogRotationMaximumFileSize) \
-    key(TLSKeylogFile) \
-    key(UseTPM) \
-    key(UseTPMSeccLeafCertificate)
+    key(AuthorizationKey)
 
 // clang-format on
 
