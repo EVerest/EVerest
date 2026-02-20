@@ -6,6 +6,7 @@
 
 #include <optional>
 #include <string>
+#include <variant>
 
 namespace iso15118::d2::msg {
 
@@ -20,8 +21,7 @@ struct MeteringReceiptRequest {
 struct MeteringReceiptResponse {
     Header header;
     data_types::ResponseCode response_code;
-    std::optional<data_types::AcEvseStatus> ac_evse_status;
-    std::optional<data_types::DcEvseStatus> dc_evse_status;
+    std::variant<data_types::AcEvseStatus, data_types::DcEvseStatus> evse_status;
 };
 
 } // namespace iso15118::d2::msg

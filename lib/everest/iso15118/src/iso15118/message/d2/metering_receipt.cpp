@@ -8,6 +8,7 @@
 #include <cbv2g/iso_2/iso2_msgDefEncoder.h>
 
 #include <iso15118/detail/helper.hpp>
+#include <variant>
 
 namespace iso15118::d2::msg {
 
@@ -28,8 +29,15 @@ template <> void convert(const MeteringReceiptResponse& in, struct iso2_Metering
     init_iso2_MeteringReceiptResType(&out);
 
     cb_convert_enum(in.response_code, out.ResponseCode);
-    CPP2CB_CONVERT_IF_USED(in.ac_evse_status, out.AC_EVSEStatus);
-    CPP2CB_CONVERT_IF_USED(in.dc_evse_status, out.DC_EVSEStatus);
+    if (std::holds_alternative<data_types::AcEvseStatus>(in.evse_status)) {
+        const auto& status = std::get<data_types::AcEvseStatus>(in.evse_status);
+        convert(status, out.AC_EVSEStatus);
+        CB_SET_USED(out.AC_EVSEStatus);
+    } else if (std::holds_alternative<data_types::DcEvseStatus>(in.evse_status)) {
+        const auto& status = std::get<data_types::DcEvseStatus>(in.evse_status);
+        convert(status, out.DC_EVSEStatus);
+        CB_SET_USED(out.DC_EVSEStatus);
+    }
 }
 
 template <> int serialize_to_exi(const MeteringReceiptResponse& in, exi_bitstream_t& out) {

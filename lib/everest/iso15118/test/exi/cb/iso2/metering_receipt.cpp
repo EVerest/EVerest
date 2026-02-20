@@ -95,7 +95,7 @@ SCENARIO("Ser/Deserialize d2 metering receipt messages") {
         status.evse_notification = dt::EvseNotification::None;
         status.notification_max_delay = 100;
         status.rcd = true;
-        res.ac_evse_status = status;
+        res.evse_status = status;
 
         std::vector<uint8_t> expected = {0x80, 0x98, 0x02, 0x00, 0xB6, 0xC8, 0x81, 0xCE, 0xC2,
                                          0x13, 0x4B, 0x51, 0x00, 0x00, 0x64, 0x00, 0x80};
@@ -115,7 +115,7 @@ SCENARIO("Ser/Deserialize d2 metering receipt messages") {
         status.evse_notification = dt::EvseNotification::None;
         status.notification_max_delay = 100;
         status.evse_status_code = dt::DcEvseStatusCode::EVSE_Ready;
-        res.dc_evse_status = status;
+        res.evse_status = status;
 
         std::vector<uint8_t> expected = {0x80, 0x98, 0x02, 0x00, 0xB6, 0xC8, 0x81, 0xCE, 0xC2,
                                          0x13, 0x4B, 0x51, 0x00, 0x04, 0x64, 0x01, 0x08, 0x00};
