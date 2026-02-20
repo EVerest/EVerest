@@ -81,6 +81,14 @@ const std::map<std::string, std::string> expected_key_value = {
     {"ContractValidationOffline", "true"},
     {"ISO15118CertificateManagementEnabled", "true"},
     {"ISO15118PnCEnabled", "true"},
+    {"EnableTLSKeylog", "false"},
+    {"TLSKeylogFile", "/tmp/ocpp_tls_keylog.txt"},
+    {"UseTPM", "false"},
+    {"UseTPMSeccLeafCertificate", "false"},
+    {"LogRotation", "false"},
+    {"LogRotationDateSuffix", "false"},
+    {"LogRotationMaximumFileCount", "0"},
+    {"LogRotationMaximumFileSize", "0"},
 };
 
 TEST_P(Configuration, CustomKey) {
@@ -120,14 +128,17 @@ TEST_P(Configuration, Get) {
     EXPECT_EQ(kv.value().value, "900");
     EXPECT_FALSE(kv.value().readonly);
 
-    // hidden key
+    // previously hidden key — now exposed as read-only via GetConfiguration
 
     // check key exists and has a value
     EXPECT_EQ(get()->getTLSKeylogFile(), "/tmp/ocpp_tls_keylog.txt");
 
-    // check it is not available via this call
+    // check it is now available via get()
     kv = get()->get("TLSKeylogFile");
-    ASSERT_FALSE(kv);
+    ASSERT_TRUE(kv);
+    EXPECT_EQ(kv.value().key, "TLSKeylogFile");
+    EXPECT_EQ(kv.value().value, "/tmp/ocpp_tls_keylog.txt");
+    EXPECT_TRUE(kv.value().readonly);
 
     // custom key (none defined)
 }
@@ -177,7 +188,7 @@ TEST_P(Configuration, Set) {
     EXPECT_EQ(kv.value().value, "1201");
     EXPECT_FALSE(kv.value().readonly);
 
-    // hidden key - these are read-only
+    // exposed internal key — read-only, cannot be changed via set()
 
     // check key exists and has a value
     EXPECT_EQ(get()->getTLSKeylogFile(), "/tmp/ocpp_tls_keylog.txt");
@@ -297,7 +308,7 @@ TEST_F(Configuration, SetV2) {
     EXPECT_EQ(kv.value().value, "1201");
     EXPECT_FALSE(kv.value().readonly);
 
-    // hidden key - these are read-only
+    // exposed internal key — read-only, cannot be changed via set()
 
     // check key exists and has a value
     EXPECT_EQ(v2_config->getTLSKeylogFile(), "/tmp/ocpp_tls_keylog.txt");
