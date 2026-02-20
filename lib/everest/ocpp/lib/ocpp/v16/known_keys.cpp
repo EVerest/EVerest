@@ -178,6 +178,13 @@ void V2ConfigMap::configure() {
 #undef VALUE
 
 void V2ConfigMap::warn_no_mapping(const std::string_view& v16) {
+    // Keys in MAPPING_MAX_LIMIT map to VariableCharacteristics.maxLimit, not to a VariableAttribute,
+    // so they intentionally have no entry in the attribute map.
+#define VALUE(a, b)                                                                                                    \
+    if (v16 == #a)                                                                                                     \
+        return;
+    MAPPING_MAX_LIMIT(VALUE)
+#undef VALUE
     const auto it = map.find(v16);
     if (it == map.end()) {
         EVLOG_error << "No V2 mapping for " << v16;
@@ -313,6 +320,15 @@ DeviceModel_CV convert_v2(valid_keys key) {
 std::optional<std::string> convert_v2(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
                                       ocpp::v2::AttributeEnum attribute) {
     return v2_map.convert_v2(component, variable, attribute);
+}
+
+DeviceModel_MaxLimitCV convert_v2_max_limit(valid_keys key) {
+    for (const auto& [k, cv] : max_limit_entries) {
+        if (k == key && cv->variable) {
+            return std::make_pair(cv->component, cv->variable.value());
+        }
+    }
+    return std::nullopt;
 }
 
 } // namespace ocpp::v16::keys

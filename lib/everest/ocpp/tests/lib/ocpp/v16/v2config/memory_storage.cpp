@@ -385,9 +385,20 @@ void MemoryStorage::add_supported_measureands_values_list(ocpp::v2::ReportData& 
 void MemoryStorage::add_to_report(std::vector<ocpp::v2::ReportData>& report, const std::string_view& name,
                                   const std::string_view& value) {
     using namespace ocpp::v2::ControllerComponentVariables;
-    const auto cv = ocpp::v16::keys::convert_v2(name);
     const std::string name_str{name};
     std::string value_str{value};
+
+    // Keys that map to VariableCharacteristics.maxLimit are handled separately via get_variable_meta_data;
+    // they don't need a VariableAttribute entry in the report.
+    const auto key = keys::convert(name);
+    if (key) {
+        const auto max_limit_cv = keys::convert_v2_max_limit(*key);
+        if (max_limit_cv) {
+            return;
+        }
+    }
+
+    const auto cv = ocpp::v16::keys::convert_v2(name);
     if (cv) {
         auto component = std::get<ocpp::v2::Component>(*cv);
         auto variable = std::get<ocpp::v2::Variable>(*cv);
@@ -402,7 +413,6 @@ void MemoryStorage::add_to_report(std::vector<ocpp::v2::ReportData>& report, con
             va.value = std::move(value_str);
         }
 
-        const auto key = keys::convert(name);
         if (key == keys::valid_keys::MeterValuesAlignedData) {
             add_supported_measureands_values_list(data);
         } else if (key == keys::valid_keys::StopTxnAlignedData) {
@@ -632,17 +642,46 @@ std::optional<MemoryStorage::MutabilityEnum> MemoryStorage::get_mutability(const
 std::optional<MemoryStorage::VariableMetaData> MemoryStorage::get_variable_meta_data(const Component& component_id,
                                                                                      const Variable& variable_id) {
     std::optional<MemoryStorage::VariableMetaData> result;
-    const auto key_str = keys::convert_v2(component_id, variable_id, ocpp::v2::AttributeEnum::Actual);
-    const auto retrieved = get_v16(key_str.value_or(""));
-    if (retrieved) {
-        MemoryStorage::VariableMetaData md;
-        md.characteristics.dataType = v2::DataEnum::string;
-        md.characteristics.supportsMonitoring = false;
-        result = std::move(md);
-    } else {
-        std::cerr << "get_variable_meta_data not implemented for: " << component_id.name << ':' << variable_id.name
-                  << " (" << key_str.value_or("") << ")\n";
+
+    // Check if this is a maxLimit key by iterating the known mappings
+    auto fn = [&](keys::valid_keys key) {
+        if (result) {
+            return; // already found
+        }
+        const auto cv = keys::convert_v2_max_limit(key);
+        if (cv && cv->first.name == component_id.name && cv->second.name == variable_id.name &&
+            cv->second.instance == variable_id.instance) {
+            const auto retrieved = get_v16(std::string{keys::convert(key)});
+            if (retrieved) {
+                MemoryStorage::VariableMetaData md;
+                md.characteristics.dataType = v2::DataEnum::integer;
+                md.characteristics.supportsMonitoring = false;
+                try {
+                    md.characteristics.maxLimit = std::stof(*retrieved);
+                } catch (...) {
+                }
+                result = std::move(md);
+            }
+        }
+    };
+    for (const auto& [key, cv] : keys::max_limit_entries) {
+        fn(key);
     }
+
+    if (!result) {
+        const auto key_str = keys::convert_v2(component_id, variable_id, ocpp::v2::AttributeEnum::Actual);
+        const auto retrieved = get_v16(key_str.value_or(""));
+        if (retrieved) {
+            MemoryStorage::VariableMetaData md;
+            md.characteristics.dataType = v2::DataEnum::string;
+            md.characteristics.supportsMonitoring = false;
+            result = std::move(md);
+        } else {
+            std::cerr << "get_variable_meta_data not implemented for: " << component_id.name << ':' << variable_id.name
+                      << " (" << key_str.value_or("") << ")\n";
+        }
+    }
+
     return result;
 }
 

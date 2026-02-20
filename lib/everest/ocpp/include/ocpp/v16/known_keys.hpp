@@ -5,6 +5,7 @@
 #define OCPP_V16_KNOWN_KEYS_HPP
 
 #include "ocpp/v16/types.hpp"
+#include "ocpp/v2/ctrlr_component_variables.hpp"
 #include "ocpp/v2/ocpp_enums.hpp"
 #include "ocpp/v2/ocpp_types.hpp"
 
@@ -38,16 +39,12 @@ namespace ocpp::v16::keys {
     mapping(LocalPreAuthorize, LocalPreAuthorize, Actual) \
     mapping(MaxEnergyOnInvalidId, MaxEnergyOnInvalidId, Actual) \
     mapping(MeterValuesAlignedData, AlignedDataMeasurands, Actual) \
-    mapping(MeterValuesAlignedDataMaxLength, AlignedDataMeasurands, MaxSet) \
     mapping(MeterValuesSampledData, SampledDataTxUpdatedMeasurands, Actual) \
-    mapping(MeterValuesSampledDataMaxLength, SampledDataTxUpdatedMeasurands, MaxSet) \
     mapping(MeterValueSampleInterval, SampledDataTxUpdatedInterval, Actual) \
     mapping(ResetRetries, ResetRetries, Actual) \
     mapping(StopTransactionOnInvalidId, StopTxOnInvalidId, Actual) \
     mapping(StopTxnAlignedData, AlignedDataTxEndedMeasurands, Actual) \
-    mapping(StopTxnAlignedDataMaxLength, AlignedDataTxEndedMeasurands, MaxSet) \
     mapping(StopTxnSampledData, SampledDataTxEndedMeasurands, Actual) \
-    mapping(StopTxnSampledDataMaxLength, SampledDataTxEndedMeasurands, MaxSet) \
     mapping(TransactionMessageAttempts, MessageAttempts, Actual) \
     mapping(TransactionMessageRetryInterval, MessageAttemptInterval, Actual) \
     mapping(WebSocketPingInterval, WebSocketPingInterval, Actual) \
@@ -114,19 +111,19 @@ namespace ocpp::v16::keys {
     mapping(RetryBackoffWaitMinimum, RetryBackOffWaitMinimum, Actual)
 
 // ============================================================================
-// LocalAuthList Section
+// VariableCharacteristics.maxLimit mappings
+// These OCPP 1.6 read-only length/limit keys map to VariableCharacteristics.maxLimit
+// in OCPP 2.x
 // ============================================================================
 
-#define MAPPING_LOCAL_AUTH_LIST(mapping) \
-    mapping(LocalAuthListMaxLength, LocalAuthListCtrlrEntries, Actual) \
-    mapping(SendLocalListMaxLength, ItemsPerMessageSendLocalList, Actual)
-
-// ============================================================================
-// Smart Charging Section
-// ============================================================================
-
-#define MAPPING_SMART_CHARGING(mapping) \
-    mapping(MaxChargingProfilesInstalled, EntriesChargingProfiles, Actual)
+#define MAPPING_MAX_LIMIT(mapping) \
+    mapping(MeterValuesAlignedDataMaxLength, AlignedDataMeasurands) \
+    mapping(MeterValuesSampledDataMaxLength, SampledDataTxUpdatedMeasurands) \
+    mapping(StopTxnAlignedDataMaxLength, AlignedDataTxEndedMeasurands) \
+    mapping(StopTxnSampledDataMaxLength, SampledDataTxEndedMeasurands) \
+    mapping(LocalAuthListMaxLength, LocalAuthListCtrlrEntries) \
+    mapping(SendLocalListMaxLength, ItemsPerMessageSendLocalList) \
+    mapping(MaxChargingProfilesInstalled, EntriesChargingProfiles)
 
 // ============================================================================
 // Security Section
@@ -205,8 +202,6 @@ namespace ocpp::v16::keys {
     MAPPING_MISC(mapping) \
     MAPPING_STANDARD(mapping) \
     MAPPING_INTERNAL(mapping) \
-    MAPPING_LOCAL_AUTH_LIST(mapping) \
-    MAPPING_SMART_CHARGING(mapping) \
     MAPPING_SECURITY(mapping) \
     MAPPING_PNC(mapping) \
     MAPPING_COST(mapping)
@@ -367,6 +362,11 @@ enum class sections : std::uint8_t {
 
 #undef VALUE
 
+#define MAX_LIMIT_ENTRY(a, b) {valid_keys::a, &ocpp::v2::ControllerComponentVariables::b},
+using MaxLimitEntry = std::pair<valid_keys, const ocpp::v2::ComponentVariable*>;
+inline const MaxLimitEntry max_limit_entries[] = {MAPPING_MAX_LIMIT(MAX_LIMIT_ENTRY)};
+#undef MAX_LIMIT_ENTRY
+
 std::optional<valid_keys> convert(const std::string_view& str);
 std::string_view convert(valid_keys key);
 sections to_section(valid_keys key);
@@ -383,6 +383,11 @@ DeviceModel_CV convert_v2(const std::string_view& str);
 DeviceModel_CV convert_v2(valid_keys key);
 std::optional<std::string> convert_v2(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
                                       ocpp::v2::AttributeEnum attribute);
+
+/// Returns the (Component, Variable) pair for keys that map to VariableCharacteristics.maxLimit,
+/// or std::nullopt if the key uses a regular VariableAttribute mapping.
+using DeviceModel_MaxLimitCV = std::optional<std::pair<ocpp::v2::Component, ocpp::v2::Variable>>;
+DeviceModel_MaxLimitCV convert_v2_max_limit(valid_keys key);
 
 } // namespace ocpp::v16::keys
 
