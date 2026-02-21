@@ -737,6 +737,10 @@ def types_get_templates(args):
 
 def main():
     global validators, everest_dirs, work_dir
+    everest_core_dir = Path(__file__).parent.parent.parent.parent.parent.parent
+    everest_framework_dir = everest_core_dir / 'lib' / 'everest' / 'framework'
+    schemas_dir = everest_framework_dir / 'schemas'
+    everest_dir_default = [str(everest_core_dir), str(Path.cwd().parent / 'everest-core')]
 
     parser = argparse.ArgumentParser(description='Everest command line tool')
     parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
@@ -746,14 +750,14 @@ def main():
     common_parser.add_argument('--work-dir', '-wd', type=str,
                                help='work directory containing the manifest definitions (default: .)', default=str(Path.cwd()))
     common_parser.add_argument('--everest-dir', '-ed', nargs='*',
-                               help='everest directory containing the interface definitions (default: .)',
-                               default=[str(Path.cwd()), str(Path.cwd() / '../everest-core')])
+                               help=f'everest directory containing the interface definitions (default: {everest_dir_default})',
+                               default=everest_dir_default)
     common_parser.add_argument('--everest-projects', '-ep', nargs='*',
                                help='everest project names. used in auto detection of their directories to get eg. interface defintions (default: everest-core)',
                                default=['everest-core'])
     common_parser.add_argument('--schemas-dir', '-sd', type=str,
-                               help='everest framework directory containing the schema definitions (default: ../everest-framework/schemas)',
-                               default=str(Path.cwd() / '../everest-framework/schemas'))
+                               help=f'everest framework directory containing the schema definitions (default: {schemas_dir})',
+                               default=str(schemas_dir))
     common_parser.add_argument('--licenses', '-lc', type=str,
                                help='license directory from which ev-cli will attempt to parse custom license texts (default ../licenses)',
                                default=str(Path.cwd() / '../licenses'))
@@ -870,7 +874,7 @@ def main():
 
         schemas_dir = Path(args.schemas_dir).resolve()
         if not schemas_dir.exists():
-            print('The default ("../everest-framework/schemas") xor supplied (via --schemas-dir) schemas directory'
+            print(f'The default ("{schemas_dir}") xor supplied (via --schemas-dir) schemas directory'
                   ' doesn\'t exist.\n'
                   f'dir: {schemas_dir}')
             cmake_cache_path = Path(args.build_dir) / 'CMakeCache.txt'
