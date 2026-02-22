@@ -1,0 +1,15 @@
+*build*
+.cache/
+workspace.yaml
+.vscode/
+/bazel-*
+/modules/target
+CMakeLists.txt.user
+.idea/
+MODULE.bazel.lock
+__pycache__/
+*.patch
+*.diff
+*.orig
+*.rej
+docs/source/conf.py

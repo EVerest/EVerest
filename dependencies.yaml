@@ -1,0 +1,78 @@
+# `git_tag` can be either a tag or a commit hash.
+# For the sake of unambiguity the `git_tag` field is treated as a hash
+# only if it is 40 characters long hexadecimal string.
+---
+sigslot:
+  git: https://github.com/palacaze/sigslot
+  git_tag: v1.2.3
+  cmake_condition: "EVEREST_DEPENDENCY_ENABLED_SIGSLOT"
+  options:
+    - "SIGSLOT_COMPILE_EXAMPLES OFF"
+    - "SIGSLOT_COMPILE_TESTS OFF"
+pugixml:
+  git: https://github.com/zeux/pugixml
+  git_tag: v1.15
+  cmake_condition: "EVEREST_DEPENDENCY_ENABLED_PUGIXML"
+
+# LEM DCBM 400/600, IsabellenhuetteIemDcr modules
+libcurl:
+  git: https://github.com/curl/curl.git
+  git_tag: curl-8_17_0
+  cmake_condition: "EVEREST_DEPENDENCY_ENABLED_LIBCURL"
+  options: [
+    "BUILD_EXAMPLES OFF",
+    "BUILD_LIBCURL_DOCS OFF",
+    "BUILD_MISC_DOCS OFF",
+    "BUILD_TESTING OFF",
+    "CURL_BROTLI OFF",
+    "CURL_DISABLE_LDAP ON",
+    "CURL_USE_LIBPSL OFF",
+    "CURL_USE_LIBSSH2 OFF",
+    "ENABLE_CURL_MANUAL OFF",
+    "USE_NGHTTP2 OFF",
+  ]
+
+# Josev
+Josev:
+  git: https://github.com/EVerest/ext-switchev-iso15118.git
+  git_tag: 7b89fa83079c2ffd7efc494dfe65567840564e13
+  cmake_condition: "EVEREST_ENABLE_PY_SUPPORT AND EVEREST_DEPENDENCY_ENABLED_JOSEV"
+# linux_libnfc-nci for RFID
+libnfc-nci:
+  git: https://github.com/EVerest/linux_libnfc-nci.git
+  git_tag: 2024.11.0
+  cmake_condition: "EVEREST_DEPENDENCY_ENABLED_LIBNFC_NCI"
+# UI library for BringUp modules
+ftxui:
+  git: https://github.com/ArthurSonzogni/ftxui
+  git_tag: v6.1.9
+  cmake_condition: "EVEREST_DEPENDENCY_ENABLED_FTXUI"
+# everest/io library
+mqttc:
+  git: https://github.com/LiamBindle/MQTT-C.git
+  git_tag: v1.1.6
+  options: ["MQTT_C_EXAMPLES OFF", "CMAKE_POSITION_INDEPENDENT_CODE ON"]
+# Linux_Systemd_Rauc module
+sdbus-cpp:
+  git:  https://github.com/Kistler-Group/sdbus-cpp.git
+  git_tag: v2.2.1
+  cmake_condition: "EVEREST_DEPENDENCY_ENABLED_SDBUS_CPP"
+  options: ["CMAKE_POSITION_INDEPENDENT_CODE ON"]
+# unit testing
+gtest:
+  # GoogleTest now follows the Abseil Live at Head philosophy. We recommend updating to the latest commit in the main branch as often as possible.
+  git: https://github.com/google/googletest.git
+  git_tag: release-1.12.1
+  cmake_condition: "EVEREST_CORE_BUILD_TESTING"
+catch2:
+  git: https://github.com/catchorg/Catch2.git
+  git_tag: v3.9.0
+  cmake_condition: "EVEREST_CORE_BUILD_TESTING"
+mosquitto:
+  git: https://github.com/eclipse-mosquitto/mosquitto
+  git_tag: v2.0.22
+  options:
+  - DOCUMENTATION OFF
+  - WITH_BROKER OFF
+  - WITH_APPS OFF
+  - WITH_PLUGINS OFF

@@ -1,0 +1,19 @@
+description: Dummy token provider that manually publishes one token
+provides:
+  main:
+    description: Main implementation of dummy token provider always returning one configured token
+    interface: auth_token_provider
+    config:
+      token_topic:
+        description: >-
+          MQTT topic to subscribe to for providing tokens.
+          If empty, the topic is automatically derived from the module instance name
+          (everest_api/<module_id>/cmd/provide).
+        type: string
+        default: ""
+enable_external_mqtt: true
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Kai-Uwe Hermann
+    - Cornelius Claussen
