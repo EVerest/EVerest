@@ -70,7 +70,7 @@ GetPasswdEntryResult get_passwd_entry(const std::string& user_name) {
 
 bool keep_caps() {
     // cap_set_secbits was added in libcap 2.30.
-    // LIBCAP_MAJOR/LIBCAP_MINOR are defined in libcap >= 2.33.
+    // LIBCAP_MAJOR/LIBCAP_MINOR are defined in libcap >= 2.64.
     // For older versions without these macros, fall back to prctl.
 #if defined(LIBCAP_MAJOR) && (LIBCAP_MAJOR > 2 || (LIBCAP_MAJOR == 2 && LIBCAP_MINOR >= 30))
     return (0 == cap_set_secbits(SECBIT_KEEP_CAPS));
