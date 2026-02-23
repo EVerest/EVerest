@@ -55,8 +55,8 @@ channels:
   receive_set_three_phases:
     address: 'e2m/set_three_phases'
     messages:
-       receive_set_three_phases:
-         $ref: '#/components/messages/receive_set_three_phases'
+      receive_set_three_phases:
+        $ref: '#/components/messages/receive_set_three_phases'
   receive_set_rcd_error:
     address: 'e2m/set_rcd_error'
     messages:

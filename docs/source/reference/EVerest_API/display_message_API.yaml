@@ -144,13 +144,15 @@ components:
       contentType: application/json
       payload:
         type: object
+        required:
+          - payload
         properties:
           headers:
             type: object
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
-                description: Address to send the response to.
+                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
           payload:
             $ref: '#/components/schemas/SetDisplayMessageRequest'
     send_reply_set_display_message:
@@ -173,13 +175,15 @@ components:
       contentType: application/json
       payload:
         type: object
+        required:
+          - payload
         properties:
           headers:
             type: object
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
-                description: Address to send the response to.
+                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
           payload:
             $ref: '#/components/schemas/GetDisplayMessageRequest'
     send_reply_get_display_message:
@@ -213,13 +217,15 @@ components:
       contentType: application/json
       payload:
         type: object
+        required:
+          - payload
         properties:
           headers:
             type: object
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
-                description: Address to send the response to.
+                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
           payload:
             $ref: '#/components/schemas/ClearDisplayMessageRequest'
     send_reply_clear_display_message:

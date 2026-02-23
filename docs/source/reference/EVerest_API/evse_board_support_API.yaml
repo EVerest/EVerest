@@ -62,8 +62,8 @@ channels:
   receive_ac_switch_three_phases_while_charging:
     address: 'e2m/ac_switch_three_phases_while_charging'
     messages:
-       receive_ac_switch_three_phases_while_charging:
-         $ref: '#/components/messages/receive_ac_switch_three_phases_while_charging'
+      receive_ac_switch_three_phases_while_charging:
+        $ref: '#/components/messages/receive_ac_switch_three_phases_while_charging'
   receive_evse_replug:
     address: 'e2m/evse_replug'
     messages:

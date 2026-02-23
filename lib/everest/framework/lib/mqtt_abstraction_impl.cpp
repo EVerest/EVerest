@@ -137,6 +137,10 @@ void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& d
 void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& data, QOS qos, bool retain) {
     BOOST_LOG_FUNCTION();
 
+    if (topic.empty()) {
+        return;
+    }
+
     auto publish_flags = 0;
     switch (qos) {
     case QOS::QOS0:

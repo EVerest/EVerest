@@ -139,6 +139,8 @@ components:
       summary: 'Request the list of filtered errors.'
       payload:
         type: object
+        required:
+          - payload
         properties:
           headers:
             type: object
@@ -154,7 +156,7 @@ components:
       summary: 'Reply to the request to send the list of filtered errors'
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/ErrorList'
+        $ref: '#/components/schemas/ErrorList'
     send_request_active_errors:
       name: send_request_active_errors
       title: 'Request the list of active errors'
@@ -179,21 +181,21 @@ components:
       summary: 'Reply to the request to send the list of active errors'
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/ErrorList'
+        $ref: '#/components/schemas/ErrorList'
     receive_error_raised:
       name: receive_error_raised
       title: 'Receive newly raised error'
       summary: 'Notifies on every raised error'
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/ErrorObject'
+        $ref: '#/components/schemas/ErrorObject'
     receive_error_cleared:
       name: receive_error_cleared
       title: 'Receive cleared error'
       summary: 'Notifies when an error is cleared'
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/ErrorObject'
+        $ref: '#/components/schemas/ErrorObject'
 
 
     receive_heartbeat:

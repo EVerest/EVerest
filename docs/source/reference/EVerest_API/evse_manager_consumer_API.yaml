@@ -472,14 +472,14 @@ components:
       summary: 'Request to get EVSE.'
       contentType: application/json
       payload:
-          type: object
-          properties:
-            headers:
-              type: object
-              properties:
-                replyTo:  # Address for the request to reply to
-                  type: string
-                  description: Address to send the response to.
+        type: object
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to.
       examples:
         - summary: ""
           payload:
@@ -491,23 +491,25 @@ components:
       summary: 'Reply to the request to get the EVSE.'
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/Evse'
+        $ref: '#/components/schemas/Evse'
     send_request_enable_disable:
       name: send_request_enable_disable
       title: 'Request to enable or disable the EVSE'
       summary: 'Enables or disables the evse. Turns off PWM with error F. Charging is only possible if an EVSE is enabled.'
       contentType: application/json
       payload:
-          type: object
-          properties:
-            headers:
-              type: object
-              properties:
-                replyTo:  # Address for the request to reply to
-                  type: string
-                  description: Address to send the response to.
-            payload:
-              $ref: '#/components/schemas/EnableDisableRequest'
+        type: object
+        required:
+          - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
+          payload:
+            $ref: '#/components/schemas/EnableDisableRequest'
       examples:
         - summary: ""
           payload:
@@ -532,14 +534,14 @@ components:
       summary: 'Request to pause charging.'
       contentType: application/json
       payload:
-          type: object
-          properties:
-            headers:
-              type: object
-              properties:
-                replyTo:  # Address for the request to reply to
-                  type: string
-                  description: Address to send the response to.
+        type: object
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
       examples:
         - summary: ""
           payload:
@@ -551,21 +553,21 @@ components:
       summary: 'Reply to the request to pause charging.'
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/PauseChargingReply'
+        $ref: '#/components/schemas/PauseChargingReply'
     send_request_resume_charging:
       name: send_request_resume_charging
       title: 'Request resume charging'
       summary: 'Request to resume charging.'
       contentType: application/json
       payload:
-          type: object
-          properties:
-            headers:
-              type: object
-              properties:
-                replyTo:  # Address for the request to reply to
-                  type: string
-                  description: Address to send the response to.
+        type: object
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
       examples:
         - summary: ""
           payload:
@@ -577,23 +579,25 @@ components:
       summary: 'Reply to the request to resume charging.'
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/ResumeChargingReply'
+        $ref: '#/components/schemas/ResumeChargingReply'
     send_request_stop_transaction:
       name: send_request_stop_transaction
       title: 'Request stop transaction'
       summary: 'Request to stop the current transaction.'
       contentType: application/json
       payload:
-          type: object
-          properties:
-            headers:
-              type: object
-              properties:
-                replyTo:  # Address for the request to reply to
-                  type: string
-                  description: Address to send the response to.
-            payload:
-              $ref: '#/components/schemas/StopTransactionRequest'
+        type: object
+        required:
+          - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
+          payload:
+            $ref: '#/components/schemas/StopTransactionRequest'
       examples:
         - summary: ""
           payload:
@@ -607,23 +611,25 @@ components:
       summary: 'Reply to the request to stop the current transaction.'
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/StopTransactionReply'
+        $ref: '#/components/schemas/StopTransactionReply'
     send_request_force_unlock:
       name: send_request_force_unlock
       title: 'Request force unlock'
       summary: 'Request to force unlock.'
       contentType: application/json
       payload:
-          type: object
-          properties:
-            headers:
-              type: object
-              properties:
-                replyTo:  # Address for the request to reply to
-                  type: string
-                  description: Address to send the response to.
-            payload:
-              $ref: '#/components/schemas/ForceUnlockRequest'
+        type: object
+        required:
+          - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
+          payload:
+            $ref: '#/components/schemas/ForceUnlockRequest'
       examples:
         - summary: ""
           payload:
@@ -640,7 +646,7 @@ components:
         if explicitly requested by e.g. management cloud.
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/ForceUnlockReply'
+        $ref: '#/components/schemas/ForceUnlockReply'
     # update_allowed_energy_transfer_modes not implemented
 
     receive_session_event:
@@ -649,14 +655,14 @@ components:
       summary: 'Emits all events related to sessions'
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/SessionEvent'
+        $ref: '#/components/schemas/SessionEvent'
     receive_ev_info:
       name: receive_ev_info
       title: 'Receive details about EV'
       summary: 'More details about the EV if available.'
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/EVInfo'
+        $ref: '#/components/schemas/EVInfo'
     receive_session_info:
       name: receive_session_info
       title: 'Receive session and transaction information'
@@ -675,7 +681,7 @@ components:
         the user is not authorized anymore.
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/SessionInfo'
+        $ref: '#/components/schemas/SessionInfo'
     # telemetry not implemented
     receive_powermeter:
       name: receive_powermeter
@@ -697,7 +703,7 @@ components:
       summary: 'EVSE ID'
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/EvseId'
+        $ref: '#/components/schemas/EvseId'
     receive_hw_capabilities:
       name: receive_hw_capabilities
       title: 'Receive hardware capabilities and limits'
@@ -718,14 +724,14 @@ components:
       summary: 'EVSE ID'
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/SelectedProtocol'
+        $ref: '#/components/schemas/SelectedProtocol'
     receive_supported_energy_transfer_modes:
       name: receive_supported_energy_transfer_modes
       title: 'Receive supported energy transfer modes'
       summary: 'The list of supported energy transfers e.g. AC mono/tri, DC, DC_BPT, etc.'
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/SupportedEnergyTransferModeList'
+        $ref: '#/components/schemas/SupportedEnergyTransferModeList'
 
     ########## evse_board_support
     receive_ac_nr_of_phases_available:
@@ -818,7 +824,7 @@ components:
       summary: 'Random delay countdown'
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/CountDown'
+        $ref: '#/components/schemas/CountDown'
 
 
     receive_heartbeat:

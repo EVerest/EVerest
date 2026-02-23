@@ -230,11 +230,11 @@ components:
       payload:
         $ref: '#/components/schemas/Error'
       examples:
-          - summary: "Raise error example"
-            payload:
-                "type": "CommunicationFault"
-                "sub_type": "string"
-                "message": "string"
+        - summary: "Raise error example"
+          payload:
+              "type": "CommunicationFault"
+              "sub_type": "string"
+              "message": "string"
     send_clear_error:
       name: send_clear_error
       title: 'Send clear error'
@@ -243,11 +243,11 @@ components:
       payload:
         $ref: '#/components/schemas/Error'
       examples:
-          - summary: "Raise error example"
-            payload:
-                "type": "CommunicationFault"
-                "sub_type": "string"
-                "message": "string"
+        - summary: "Raise error example"
+          payload:
+              "type": "CommunicationFault"
+              "sub_type": "string"
+              "message": "string"
 
 
     receive_heartbeat:

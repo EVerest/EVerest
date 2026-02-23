@@ -177,12 +177,12 @@ components:
       payload:
         $ref: '#/components/schemas/OverVoltageLimits'
       examples:
-          - summary: ""
-            payload:
-              {
-              "emergency_limit_V": 600,
-              "error_limit_V": 500
-              }
+        - summary: ""
+          payload:
+            {
+            "emergency_limit_V": 600,
+            "error_limit_V": 500
+            }
     receive_start:
       name: receive_start
       title: Receive start over voltage monitoring command
@@ -212,8 +212,8 @@ components:
       payload:
         $ref: '#/components/schemas/VoltageMeasurementV'
       examples:
-          - summary: ""
-            payload: 500
+        - summary: ""
+          payload: 500
 
 
     send_raise_error:
@@ -224,12 +224,12 @@ components:
       payload:
         $ref: '#/components/schemas/Error'
       examples:
-          - summary: "Raise error example"
-            payload:
-                "type": "MREC5OverVoltage"
-                "sub_type": "subtype"
-                "message": "message"
-                "severity": "High"
+        - summary: "Raise error example"
+          payload:
+              "type": "MREC5OverVoltage"
+              "sub_type": "subtype"
+              "message": "message"
+              "severity": "High"
     send_clear_error:
       name: send_clear_error
       title: 'Send clear error'
@@ -238,11 +238,11 @@ components:
       payload:
         $ref: '#/components/schemas/Error'
       examples:
-          - summary: "Clear error example"
-            payload:
-                "type": "CommunicationFault"
-                "sub_type": "subtype"
-                "message": "message"
+        - summary: "Clear error example"
+          payload:
+              "type": "CommunicationFault"
+              "sub_type": "subtype"
+              "message": "message"
     receive_heartbeat:
       name: receive_heartbeat
       title: 'Receive heartbeat'

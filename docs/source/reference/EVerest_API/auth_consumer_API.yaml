@@ -109,16 +109,18 @@ components:
       summary: 'Withdraw granted authorization.'
       contentType: application/json
       payload:
-          type: object
-          properties:
-            headers:
-              type: object
-              properties:
-                replyTo:
-                  type: string
-                  description: Address to send the response to.
-            payload:
-              $ref: '#/components/schemas/WithdrawAuthorizationRequest'
+        type: object
+        required:
+          - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
+          payload:
+            $ref: '#/components/schemas/WithdrawAuthorizationRequest'
       examples:
         - summary: ""
           payload:
@@ -137,7 +139,7 @@ components:
       summary: 'Reply to request to withdraw authorization.'
       contentType: application/json
       payload:
-         $ref: '#/components/schemas/WithdrawAuthorizationResult'
+        $ref: '#/components/schemas/WithdrawAuthorizationResult'
       examples:
         - summary: ""
           payload: "Accepted"

@@ -21,7 +21,12 @@ void to_json(json& j, RequestReply const& k) {
 }
 
 void from_json(json const& j, RequestReply& k) {
-    k.replyTo = j.at("headers").at("replyTo");
+    if (j.contains("headers") and j["headers"].contains("replyTo")) {
+        k.replyTo = j["headers"]["replyTo"];
+    } else {
+        k.replyTo = "";
+    }
+
     if (j.contains("payload")) {
         k.payload = j["payload"].dump();
     } else {

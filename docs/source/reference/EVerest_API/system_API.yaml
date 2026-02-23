@@ -245,16 +245,18 @@ components:
       summary: 'Request to update the firmware.'
       contentType: application/json
       payload:
-          type: object
-          properties:
-            headers:
-              type: object
-              properties:
-                replyTo:  # Address for the request to reply to
-                  type: string
-                  description: Address to send the response to.
-            payload:
-              $ref: '#/components/schemas/FirmwareUpdateRequest'
+        type: object
+        required:
+          - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
+          payload:
+            $ref: '#/components/schemas/FirmwareUpdateRequest'
     send_reply_update_firmware:
       name: send_reply_update_firmware
       title: 'Reply update firmware'
@@ -272,16 +274,18 @@ components:
       summary: 'Request to upload logs.'
       contentType: application/json
       payload:
-          type: object
-          properties:
-            headers:
-              type: object
-              properties:
-                replyTo:  # Address for the request to reply to
-                  type: string
-                  description: Address to send the response to.
-            payload:
-              $ref: '#/components/schemas/UploadLogsRequest'
+        type: object
+        required:
+          - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
+          payload:
+            $ref: '#/components/schemas/UploadLogsRequest'
     send_reply_upload_logs:
       name: send_reply_upload_logs
       title: 'Reply upload logs'
@@ -292,8 +296,8 @@ components:
       examples:
         - summary: "Upload logs"
           payload:
-              file_name: "string"
-              upload_logs_status: "Accepted"
+            file_name: "string"
+            upload_logs_status: "Accepted"
     receive_request_is_reset_allowed:
       name: receive_request_is_reset_allowed
       title: 'Request if reset is allowed'
@@ -303,6 +307,8 @@ components:
       contentType: application/json
       payload:
         type: object
+        required:
+          - payload
         properties:
           headers:
             type: object
@@ -329,16 +335,18 @@ components:
       summary:  Call to set the system time
       contentType: application/json
       payload:
-          type: object
-          properties:
-            headers:
-              type: object
-              properties:
-                replyTo:  # Address for the request to reply to
-                  type: string
-                  description: Address to send the response to.
-            payload:
-              $ref: '#/components/schemas/SystemTime'
+        type: object
+        required:
+          - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
+          payload:
+            $ref: '#/components/schemas/SystemTime'
     send_reply_set_system_time:
       name: send_reply_set_system_time
       title: 'Reply to is reset allowed'
@@ -355,14 +363,14 @@ components:
       title: 'Receive get boot reason request'
       summary:  Call to get the boot reason
       payload:
-          type: object
-          properties:
-            headers:
-              type: object
-              properties:
-                replyTo:  # Address for the request to reply to
-                  type: string
-                  description: Address to send the response to.
+        type: object
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to.
     send_reply_get_boot_reason:
       name: send_reply_get_boot_reason
       title: 'Reply to get boot reason'

@@ -152,17 +152,14 @@ components:
         type: object
         additionalProperties: true
         required:
-          - headers
           - payload
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:
                 type: string
-                description: 'The topic to which to send the reply'
+                description: 'The topic to which to send the reply. If this information is missing, the command will still be accepted, but no response will be sent.'
           payload:
             $ref: '#/components/schemas/StartTransactionRequest'
     send_reply_start_transaction:
@@ -188,17 +185,14 @@ components:
         type: object
         additionalProperties: true
         required:
-          - headers
           - payload
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:
                 type: string
-                description: 'The topic to which to send the reply'
+                description: 'The topic to which to send the reply. If this information is missing, the command will still be accepted, but no response will be sent.'
           payload:
             type: object
             additionalProperties: true
