@@ -91,6 +91,12 @@ Have a look at this categorized list of all guides:
 
       How to choose the right EVerest version and plan upgrades.
 
+   .. grid-item-card:: Pionix Belay Box
+      :link: pionix-belay-box
+      :link-type: doc
+
+      How to get started with the Pionix Belay Box, an AC charging station dev kit based on EVerest.
+
 .. toctree::
     :maxdepth: 1
     :hidden:
@@ -108,3 +114,4 @@ Have a look at this categorized list of all guides:
     security-best-practices
     bringup/index
     choosing-version-and-upgrading
+    pionix-belay-box

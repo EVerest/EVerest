@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2021 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include <chrono>
-#include <date/date.h>
-#include <date/tz.h>
 #include <iostream>
+#include <memory>
 #include <thread>
 
 #include <boost/exception/diagnostic_information.hpp>
 #include <boost/program_options.hpp>
 #include <date/date.h>
+#include <date/tz.h>
 
 #include <everest/timer.hpp>
 
@@ -30,25 +30,27 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    boost::asio::io_service io_service;
+    boost::asio::io_context io_context;
 
     std::cout << "start time: " << date::utc_clock::now() << std::endl;
 
-    int count_t1 = 0;
-    int count_t2 = 0;
-    Everest::SteadyTimer* t0 = new Everest::SteadyTimer(&io_service);
-    t0->timeout([]() { std::cout << "Goodbye after 25s" << std::endl; }, 25s);
-    Everest::SteadyTimer* t1 = new Everest::SteadyTimer(&io_service);
-    t1->at(
+    int count_timer1 = 0;
+    int count_timer2 = 0;
+    auto timer0 = std::make_unique<Everest::SteadyTimer>(&io_context);
+    timer0->timeout([]() { std::cout << "Goodbye after 25s" << std::endl; }, 25s);
+    auto timer1 = std::make_unique<Everest::SteadyTimer>(&io_context);
+    timer1->at(
         [&]() {
-            std::cout << "t1 (asio) after 5s: " << date::utc_clock::now() << std::endl;
-            t1->interval(
+            std::cout << "timer1 (asio) after 5s: " << date::utc_clock::now() << std::endl;
+            timer1->interval(
                 [&]() {
-                    std::cout << "t1 (asio) interval (1s): " << date::utc_clock::now() << std::endl;
-                    count_t1++;
-                    if (count_t1 > 3) {
-                        t1->timeout(
-                            []() { std::cout << "t1 (asio) timeout (3s): " << date::utc_clock::now() << std::endl; },
+                    std::cout << "timer1 (asio) interval (1s): " << date::utc_clock::now() << std::endl;
+                    count_timer1++;
+                    if (count_timer1 > 3) {
+                        timer1->timeout(
+                            []() {
+                                std::cout << "timer1 (asio) timeout (3s): " << date::utc_clock::now() << std::endl;
+                            },
                             3s);
                     }
                 },
@@ -56,17 +58,19 @@ int main(int argc, char* argv[]) {
         },
         date::utc_clock::now() + 5s);
 
-    Everest::SteadyTimer* t2 = new Everest::SteadyTimer();
-    t2->at(
+    auto timer2 = std::make_unique<Everest::SteadyTimer>();
+    timer2->at(
         [&]() {
-            std::cout << "t2 (thread) after 12s: " << date::utc_clock::now() << std::endl;
-            t2->interval(
+            std::cout << "timer2 (thread) after 12s: " << date::utc_clock::now() << std::endl;
+            timer2->interval(
                 [&]() {
-                    std::cout << "t2 (thread) interval (1s): " << date::utc_clock::now() << std::endl;
-                    count_t2++;
-                    if (count_t2 > 3) {
-                        t2->timeout(
-                            []() { std::cout << "t2 (thread) timeout (3s): " << date::utc_clock::now() << std::endl; },
+                    std::cout << "timer2 (thread) interval (1s): " << date::utc_clock::now() << std::endl;
+                    count_timer2++;
+                    if (count_timer2 > 3) {
+                        timer2->timeout(
+                            []() {
+                                std::cout << "timer2 (thread) timeout (3s): " << date::utc_clock::now() << std::endl;
+                            },
                             3s);
                     }
                 },
@@ -74,7 +78,7 @@ int main(int argc, char* argv[]) {
         },
         date::utc_clock::now() + 12s);
 
-    io_service.run();
+    io_context.run();
 
     return 0;
 }

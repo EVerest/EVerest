@@ -58,6 +58,20 @@ EXTRA_OECMAKE += " \
     -DOCPP_INSTALL=ON \
 "
 
+# there are issues with pybind11 and the sstate cache
+#
+#   CMake Error in lib/everest/framework/everestpy/src/everest/CMakeLists.txt:
+#     Imported target "pybind11_json" includes non-existent path
+#
+# INTERFACE_INCLUDE_DIRECTORIES can point outside of the build area
+# when built by a different Yocto project and a shared state cache is used
+
+# Option 1 - disable PY support
+# EXTRA_OECMAKE:append = " -DEVEREST_ENABLE_PY_SUPPORT=OFF"
+
+# Option 2 provide the location to cmake
+EXTRA_OECMAKE:append = " -DPYBIND11_INTERFACE_INCLUDE_DIRECTORIES=${STAGING_INCDIR}/${PYTHON_DIR}"
+
 SYSTEMD_SERVICE:${PN} = "everest.service"
 
 PACKAGECONFIG ??= "admin-panel applications python ${@bb.utils.filter('DISTRO_FEATURES', 'tpm2', d)}"

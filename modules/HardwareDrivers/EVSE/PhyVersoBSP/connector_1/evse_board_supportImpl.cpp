@@ -15,6 +15,7 @@ void evse_board_supportImpl::init() {
         caps.min_phase_count_import = mod->config.conn1_min_phase_count_import;
         caps.max_phase_count_import = mod->config.conn1_max_phase_count_import;
         caps.supports_changing_phases_during_charging = false;
+        caps.supports_cp_state_E = false;
 
         caps.min_current_A_export = mod->config.conn1_min_current_A_export;
         caps.max_current_A_export = mod->config.conn1_max_current_A_export;
@@ -137,18 +138,22 @@ void evse_board_supportImpl::handle_pwm_on(double& value) {
     }
 }
 
-void evse_board_supportImpl::handle_pwm_off() {
+void evse_board_supportImpl::handle_cp_state_X1() {
     last_pwm_raw = 10000;
     if (enabled) {
         mod->serial.set_pwm(1, last_pwm_raw);
     }
 }
 
-void evse_board_supportImpl::handle_pwm_F() {
+void evse_board_supportImpl::handle_cp_state_F() {
     last_pwm_raw = 0;
     if (enabled) {
         mod->serial.set_pwm(1, last_pwm_raw);
     }
+}
+
+void evse_board_supportImpl::handle_cp_state_E() {
+    EVLOG_warning << "Command cp_state_E is not supported. Ignoring command.";
 }
 
 void evse_board_supportImpl::handle_allow_power_on(types::evse_board_support::PowerOnOff& value) {

@@ -17,7 +17,7 @@ pugixml:
 # LEM DCBM 400/600, IsabellenhuetteIemDcr modules
 libcurl:
   git: https://github.com/curl/curl.git
-  git_tag: curl-8_17_0
+  git_tag: curl-8_18_0
   cmake_condition: "EVEREST_DEPENDENCY_ENABLED_LIBCURL"
   options: [
     "BUILD_EXAMPLES OFF",
