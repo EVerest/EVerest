@@ -84,7 +84,7 @@ Have a look at this categorized list of all guides:
       :link-type: doc
 
       How to bring up all hard and software components of a charger in isolated test cases.
-   
+
    .. grid-item-card:: Use the EVerest Development Container
       :link: devcontainer-usage/index
       :link-type: doc
@@ -108,6 +108,12 @@ Have a look at this categorized list of all guides:
       :link-type: doc
 
       How to subscribe to tariff and session cost updates from the consumer APIs, including OCPP-specific configuration.
+
+   .. grid-item-card:: C++ Coding Guidelines
+      :link: c++-coding-guidelines
+      :link-type: doc
+
+      How to contribute code to EVerest.
 
 .. toctree::
     :maxdepth: 1
