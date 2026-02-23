@@ -176,8 +176,33 @@ static void publish_din_charge_parameter_discovery_req(
     struct v2g_context* ctx,
     struct din_ChargeParameterDiscoveryReqType const* const v2g_charge_parameter_discovery_req) {
     // V2G values that can be published: DC_EVChargeParameter, MaxEntriesSAScheduleTuple
-    ctx->p_charger->publish_requested_energy_transfer_mode(static_cast<types::iso15118::EnergyTransferMode>(
-        v2g_charge_parameter_discovery_req->EVRequestedEnergyTransferType));
+    types::iso15118::EnergyTransferMode transfer_mode{};
+
+    switch (v2g_charge_parameter_discovery_req->EVRequestedEnergyTransferType) {
+    case din_EVRequestedEnergyTransferType_AC_single_phase_core:
+        transfer_mode = types::iso15118::EnergyTransferMode::AC_single_phase_core;
+        break;
+    case din_EVRequestedEnergyTransferType_AC_three_phase_core:
+        transfer_mode = types::iso15118::EnergyTransferMode::AC_three_phase_core;
+        break;
+    case din_EVRequestedEnergyTransferType_DC_core:
+        transfer_mode = types::iso15118::EnergyTransferMode::DC_core;
+        break;
+    case din_EVRequestedEnergyTransferType_DC_extended:
+        transfer_mode = types::iso15118::EnergyTransferMode::DC_extended;
+        break;
+    case din_EVRequestedEnergyTransferType_DC_combo_core:
+        transfer_mode = types::iso15118::EnergyTransferMode::DC_combo_core;
+        break;
+    case din_EVRequestedEnergyTransferType_DC_unique:
+        transfer_mode = types::iso15118::EnergyTransferMode::DC_unique;
+        break;
+    default:
+        dlog(DLOG_LEVEL_WARNING, "Unable to convert RequestedEnergyTransferType to EnergyTransferMode: %d",
+             v2g_charge_parameter_discovery_req->EVRequestedEnergyTransferType);
+    }
+
+    ctx->p_charger->publish_requested_energy_transfer_mode(transfer_mode);
     if (v2g_charge_parameter_discovery_req->DC_EVChargeParameter_isUsed == (unsigned int)1) {
 
         if (v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyCapacity_isUsed == (unsigned int)1) {

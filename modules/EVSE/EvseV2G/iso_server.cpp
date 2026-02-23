@@ -277,8 +277,31 @@ static void publish_iso_charge_parameter_discovery_req(
     types::iso15118::ChargingNeeds charging_needs;
 
     // V2G values that can be published: DC_EVChargeParameter, MaxEntriesSAScheduleTuple
-    const auto transfer_mode = static_cast<types::iso15118::EnergyTransferMode>(
-        v2g_charge_parameter_discovery_req->RequestedEnergyTransferMode);
+    types::iso15118::EnergyTransferMode transfer_mode{};
+
+    switch (v2g_charge_parameter_discovery_req->RequestedEnergyTransferMode) {
+    case iso2_EnergyTransferModeType_AC_single_phase_core:
+        transfer_mode = types::iso15118::EnergyTransferMode::AC_single_phase_core;
+        break;
+    case iso2_EnergyTransferModeType_AC_three_phase_core:
+        transfer_mode = types::iso15118::EnergyTransferMode::AC_three_phase_core;
+        break;
+    case iso2_EnergyTransferModeType_DC_core:
+        transfer_mode = types::iso15118::EnergyTransferMode::DC_core;
+        break;
+    case iso2_EnergyTransferModeType_DC_extended:
+        transfer_mode = types::iso15118::EnergyTransferMode::DC_extended;
+        break;
+    case iso2_EnergyTransferModeType_DC_combo_core:
+        transfer_mode = types::iso15118::EnergyTransferMode::DC_combo_core;
+        break;
+    case iso2_EnergyTransferModeType_DC_unique:
+        transfer_mode = types::iso15118::EnergyTransferMode::DC_unique;
+        break;
+    default:
+        dlog(DLOG_LEVEL_WARNING, "Unable to convert RequestedEnergyTransferMode to EnergyTransferMode: %d",
+             v2g_charge_parameter_discovery_req->RequestedEnergyTransferMode);
+    }
 
     charging_needs.requested_energy_transfer = transfer_mode;
 
