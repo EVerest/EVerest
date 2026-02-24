@@ -118,7 +118,10 @@ void ISO15118_chargerImpl::ready() {
 
 void ISO15118_chargerImpl::handle_setup(types::iso15118::EVSEID& evse_id,
                                         types::iso15118::SaeJ2847BidiMode& sae_j2847_mode, bool& debug_mode) {
-
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     uint8_t len = evse_id.evse_id.length();
     if (len < iso2_EVSEID_CHARACTER_SIZE) {
         memcpy(v2g_ctx->evse_v2g_data.evse_id.bytes, reinterpret_cast<uint8_t*>(evse_id.evse_id.data()), len);
@@ -155,6 +158,11 @@ void ISO15118_chargerImpl::handle_setup(types::iso15118::EVSEID& evse_id,
 }
 
 void ISO15118_chargerImpl::handle_set_charging_parameters(types::iso15118::SetupPhysicalValues& physical_values) {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
+
     if (physical_values.ac_nominal_voltage.has_value()) {
         populate_physical_value_float(&v2g_ctx->evse_v2g_data.evse_nominal_voltage,
                                       physical_values.ac_nominal_voltage.value(), 1, iso2_unitSymbolType_V);
@@ -182,6 +190,11 @@ void ISO15118_chargerImpl::handle_set_charging_parameters(types::iso15118::Setup
 void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::PaymentOption>& payment_options,
                                                 bool& supported_certificate_service,
                                                 bool& central_contract_validation_allowed) {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
+
     if (not v2g_ctx->hlc_pause_active) {
         v2g_ctx->evse_v2g_data.payment_option_list.clear();
         if (not payment_options.empty()) {
@@ -252,6 +265,11 @@ void ISO15118_chargerImpl::handle_bpt_setup(types::iso15118::BptSetup& bpt_confi
 }
 
 void ISO15118_chargerImpl::handle_set_powersupply_capabilities(types::power_supply_DC::Capabilities& capabilities) {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
+
     populate_physical_value_float(&v2g_ctx->evse_v2g_data.power_capabilities.max_current,
                                   capabilities.max_export_current_A, 1, iso2_unitSymbolType_A);
     populate_physical_value_float(&v2g_ctx->evse_v2g_data.power_capabilities.min_current,
@@ -267,7 +285,10 @@ void ISO15118_chargerImpl::handle_set_powersupply_capabilities(types::power_supp
 void ISO15118_chargerImpl::handle_authorization_response(
     types::authorization::AuthorizationStatus& authorization_status,
     types::authorization::CertificateStatus& certificate_status) {
-
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     v2g_ctx->evse_v2g_data.evse_processing[PHASE_AUTH] = static_cast<uint8_t>(iso2_EVSEProcessingType_Finished);
 
     if (authorization_status != types::authorization::AuthorizationStatus::Accepted) {
@@ -280,6 +301,11 @@ void ISO15118_chargerImpl::handle_authorization_response(
 }
 
 void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
+
     /* signal changes to possible waiters, according to man page, it never returns an error code */
     pthread_mutex_lock(&v2g_ctx->mqtt_lock);
     v2g_ctx->contactor_is_closed = status;
@@ -289,6 +315,10 @@ void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
 }
 
 void ISO15118_chargerImpl::handle_dlink_ready(bool& value) {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     // FIXME: dlink_ready(true) is ignored for now
     // If dlink becomes not ready (false), stop TCP connection in the read thread
     if (!value) {
@@ -297,6 +327,10 @@ void ISO15118_chargerImpl::handle_dlink_ready(bool& value) {
 }
 
 void ISO15118_chargerImpl::handle_cable_check_finished(bool& status) {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     if (status == true) {
         v2g_ctx->evse_v2g_data.evse_processing[PHASE_ISOLATION] = (uint8_t)iso2_EVSEProcessingType_Finished;
     } else {
@@ -305,10 +339,18 @@ void ISO15118_chargerImpl::handle_cable_check_finished(bool& status) {
 }
 
 void ISO15118_chargerImpl::handle_receipt_is_required(bool& receipt_required) {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     v2g_ctx->evse_v2g_data.receipt_required = (int)receipt_required;
 }
 
 void ISO15118_chargerImpl::handle_stop_charging(bool& stop) {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     // FIXME we need to use locks on v2g-ctx in all commands as they are running in different threads
 
     if (stop) {
@@ -345,7 +387,10 @@ void ISO15118_chargerImpl::handle_pause_charging(bool& pause) {
 }
 
 void ISO15118_chargerImpl::handle_no_energy_pause_charging(types::iso15118::NoEnergyPauseMode& mode) {
-
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     switch (mode) {
     case types::iso15118::NoEnergyPauseMode::PauseAfterPrecharge:
         v2g_ctx->evse_v2g_data.no_energy_pause = NoEnergyPauseStatus::AfterCableCheckPreCharge;
@@ -363,6 +408,10 @@ void ISO15118_chargerImpl::handle_no_energy_pause_charging(types::iso15118::NoEn
 
 void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
     std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes) {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     if (v2g_ctx->hlc_pause_active) {
         return;
     }
@@ -423,6 +472,10 @@ void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
 }
 
 void ISO15118_chargerImpl::handle_update_ac_max_current(double& max_current) {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     v2g_ctx->basic_config.evse_ac_current_limit = max_current;
 }
 
@@ -467,6 +520,10 @@ void ISO15118_chargerImpl::handle_update_ac_present_power(types::units::Power& p
 }
 
 void ISO15118_chargerImpl::handle_update_dc_maximum_limits(types::iso15118::DcEvseMaximumLimits& maximum_limits) {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     if (maximum_limits.evse_maximum_current_limit > 300.) {
         populate_physical_value_float(&v2g_ctx->evse_v2g_data.evse_maximum_current_limit,
                                       maximum_limits.evse_maximum_current_limit, 1, iso2_unitSymbolType_A);
@@ -486,7 +543,10 @@ void ISO15118_chargerImpl::handle_update_dc_maximum_limits(types::iso15118::DcEv
 }
 
 void ISO15118_chargerImpl::handle_update_dc_minimum_limits(types::iso15118::DcEvseMinimumLimits& minimum_limits) {
-
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     populate_physical_value_float(&v2g_ctx->evse_v2g_data.evse_minimum_current_limit,
                                   static_cast<long long int>(minimum_limits.evse_minimum_current_limit), 1,
                                   iso2_unitSymbolType_A);
@@ -496,12 +556,20 @@ void ISO15118_chargerImpl::handle_update_dc_minimum_limits(types::iso15118::DcEv
 }
 
 void ISO15118_chargerImpl::handle_update_isolation_status(types::iso15118::IsolationStatus& isolation_status) {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     v2g_ctx->evse_v2g_data.evse_isolation_status = (uint8_t)isolation_status;
     v2g_ctx->evse_v2g_data.evse_isolation_status_is_used = 1;
 }
 
 void ISO15118_chargerImpl::handle_update_dc_present_values(
     types::iso15118::DcEvsePresentVoltageCurrent& present_voltage_current) {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     populate_physical_value_float(&v2g_ctx->evse_v2g_data.evse_present_voltage,
                                   present_voltage_current.evse_present_voltage, 1, iso2_unitSymbolType_V);
 
@@ -513,6 +581,10 @@ void ISO15118_chargerImpl::handle_update_dc_present_values(
 }
 
 void ISO15118_chargerImpl::handle_update_meter_info(types::powermeter::Powermeter& powermeter) {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     // Signal for ChargingStatus and CurrentDemand that MeterInfo is used
     v2g_ctx->meter_info.meter_info_is_used = 1;
     v2g_ctx->meter_info.meter_reading = powermeter.energy_Wh_import.total;
@@ -530,6 +602,10 @@ void ISO15118_chargerImpl::handle_update_meter_info(types::powermeter::Powermete
 }
 
 void ISO15118_chargerImpl::handle_send_error(types::iso15118::EvseError& error) {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     switch (error) {
     case types::iso15118::EvseError::Error_Contactor:
         break;
@@ -558,6 +634,10 @@ void ISO15118_chargerImpl::handle_send_error(types::iso15118::EvseError& error) 
 }
 
 void ISO15118_chargerImpl::handle_reset_error() {
+    if (v2g_ctx == nullptr) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx is empty");
+        return;
+    }
     v2g_ctx->evse_v2g_data.rcd = 0;
 
     v2g_ctx->evse_v2g_data.evse_status_code[PHASE_INIT] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;

@@ -116,7 +116,8 @@ void EvseV2G::ready() {
     return;
 
 err_out:
-    v2g_ctx_free(v2g_ctx);
+    p_charger->raise_error(p_charger->error_factory->create_error("generic/CommunicationFault", "",
+                                                                  "Could not initialise EvseV2G module"));
 }
 
 EvseV2G::~EvseV2G() {
