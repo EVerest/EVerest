@@ -363,57 +363,62 @@ void ISO15118_chargerImpl::handle_no_energy_pause_charging(types::iso15118::NoEn
 
 void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
     std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes) {
-    if (v2g_ctx->hlc_pause_active != true) {
-        uint16_t& energyArrayLen =
-            (v2g_ctx->evse_v2g_data.charge_service.SupportedEnergyTransferMode.EnergyTransferMode.arrayLen);
-        iso2_EnergyTransferModeType* energyArray =
-            v2g_ctx->evse_v2g_data.charge_service.SupportedEnergyTransferMode.EnergyTransferMode.array;
-        energyArrayLen = 0;
+    if (v2g_ctx->hlc_pause_active) {
+        return;
+    }
 
-        v2g_ctx->is_dc_charger = true;
+    uint16_t& energyArrayLen =
+        (v2g_ctx->evse_v2g_data.charge_service.SupportedEnergyTransferMode.EnergyTransferMode.arrayLen);
+    iso2_EnergyTransferModeType* energyArray =
+        v2g_ctx->evse_v2g_data.charge_service.SupportedEnergyTransferMode.EnergyTransferMode.array;
+    energyArrayLen = 0;
 
-        for (const auto& mode : supported_energy_transfer_modes) {
+    v2g_ctx->is_dc_charger = true;
 
-            switch (mode) {
-            case types::iso15118::EnergyTransferMode::AC_single_phase_core:
-                energyArray[(energyArrayLen)++] = iso2_EnergyTransferModeType_AC_single_phase_core;
-                v2g_ctx->is_dc_charger = false;
-                break;
-            case types::iso15118::EnergyTransferMode::AC_three_phase_core:
-                energyArray[(energyArrayLen)++] = iso2_EnergyTransferModeType_AC_three_phase_core;
-                v2g_ctx->is_dc_charger = false;
-                break;
-            case types::iso15118::EnergyTransferMode::DC_core:
-                energyArray[(energyArrayLen)++] = iso2_EnergyTransferModeType_DC_core;
-                break;
-            case types::iso15118::EnergyTransferMode::DC_extended:
-                energyArray[(energyArrayLen)++] = iso2_EnergyTransferModeType_DC_extended;
-                break;
-            case types::iso15118::EnergyTransferMode::DC_combo_core:
-                energyArray[(energyArrayLen)++] = iso2_EnergyTransferModeType_DC_combo_core;
-                break;
-            case types::iso15118::EnergyTransferMode::DC_unique:
-                energyArray[(energyArrayLen)++] = iso2_EnergyTransferModeType_DC_unique;
-                break;
-            case types::iso15118::EnergyTransferMode::DC_ACDP_BPT:
-            case types::iso15118::EnergyTransferMode::AC_BPT:
-            case types::iso15118::EnergyTransferMode::AC_BPT_DER:
-            case types::iso15118::EnergyTransferMode::DC_BPT:
-                dlog(DLOG_LEVEL_INFO, "Ignoring bidirectional SupportedEnergyTransferMode");
-            default:
-                if (energyArrayLen == 0) {
+    const auto max_supported_energy_modes =
+        std::min(static_cast<size_t>(iso2_EnergyTransferModeType_6_ARRAY_SIZE), supported_energy_transfer_modes.size());
 
-                    dlog(DLOG_LEVEL_WARNING, "Unable to configure SupportedEnergyTransferMode %s",
-                         types::iso15118::energy_transfer_mode_to_string(mode).c_str());
-                }
-                break;
+    for (size_t i = 0; i < max_supported_energy_modes; i++) {
+        const auto& mode = supported_energy_transfer_modes.at(i);
+        switch (mode) {
+        case types::iso15118::EnergyTransferMode::AC_single_phase_core:
+            energyArray[(energyArrayLen)++] = iso2_EnergyTransferModeType_AC_single_phase_core;
+            v2g_ctx->is_dc_charger = false;
+            break;
+        case types::iso15118::EnergyTransferMode::AC_three_phase_core:
+            energyArray[(energyArrayLen)++] = iso2_EnergyTransferModeType_AC_three_phase_core;
+            v2g_ctx->is_dc_charger = false;
+            break;
+        case types::iso15118::EnergyTransferMode::DC_core:
+            energyArray[(energyArrayLen)++] = iso2_EnergyTransferModeType_DC_core;
+            break;
+        case types::iso15118::EnergyTransferMode::DC_extended:
+            energyArray[(energyArrayLen)++] = iso2_EnergyTransferModeType_DC_extended;
+            break;
+        case types::iso15118::EnergyTransferMode::DC_combo_core:
+            energyArray[(energyArrayLen)++] = iso2_EnergyTransferModeType_DC_combo_core;
+            break;
+        case types::iso15118::EnergyTransferMode::DC_unique:
+            energyArray[(energyArrayLen)++] = iso2_EnergyTransferModeType_DC_unique;
+            break;
+        case types::iso15118::EnergyTransferMode::DC_ACDP_BPT:
+        case types::iso15118::EnergyTransferMode::AC_BPT:
+        case types::iso15118::EnergyTransferMode::AC_BPT_DER:
+        case types::iso15118::EnergyTransferMode::DC_BPT:
+            dlog(DLOG_LEVEL_INFO, "Ignoring bidirectional SupportedEnergyTransferMode");
+        default:
+            if (energyArrayLen == 0) {
+
+                dlog(DLOG_LEVEL_WARNING, "Unable to configure SupportedEnergyTransferMode %s",
+                     types::iso15118::energy_transfer_mode_to_string(mode).c_str());
             }
+            break;
         }
+    }
 
-        if (mod->config.supported_DIN70121 == true and v2g_ctx->is_dc_charger == false) {
-            v2g_ctx->supported_protocols &= ~(1 << V2G_PROTO_DIN70121);
-            dlog(DLOG_LEVEL_WARNING, "Removed DIN70121 from the list of supported protocols as AC is enabled");
-        }
+    if (mod->config.supported_DIN70121 and not v2g_ctx->is_dc_charger) {
+        v2g_ctx->supported_protocols &= ~(1 << V2G_PROTO_DIN70121);
+        dlog(DLOG_LEVEL_WARNING, "Removed DIN70121 from the list of supported protocols as AC is enabled");
     }
 }
 
