@@ -68,6 +68,13 @@ target_sources(iso15118
         message/dc_welding_detection.cpp
         message/session_stop.cpp
 
+        d2/context.cpp
+        d2/context_helper.cpp
+        d2/session.cpp
+
+        d2/state/session_setup.cpp
+        d2/state/service_discovery.cpp
+
         message/d2/ac_charging_status.cpp
         message/d2/authorization.cpp
         message/d2/charge_parameter_discovery.cpp
