@@ -50,6 +50,7 @@
 #include "over_voltage/OverVoltageMonitor.hpp"
 #include "scoped_lock_timeout.hpp"
 #include "voltage_plausibility/VoltagePlausibilityMonitor.hpp"
+#include <everest/util/async/monitor.hpp>
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -186,8 +187,8 @@ public:
     std::unique_ptr<Charger> charger;
     sigslot::signal<int> signalNrOfPhasesAvailable;
     types::powermeter::Powermeter get_latest_powermeter_data_billing();
-    std::mutex hw_caps_mutex;
     types::evse_board_support::HardwareCapabilities get_hw_capabilities();
+    std::atomic<bool> ready_for_capabilities{false};
 
     std::mutex external_local_limits_mutex;
     bool update_max_current_limit(types::energy::ExternalLimits& limits, float max_current_import,
@@ -308,7 +309,7 @@ private:
     types::powermeter::Powermeter latest_powermeter_data_billing;
 
     Everest::Thread energyThreadHandle;
-    types::evse_board_support::HardwareCapabilities hw_capabilities;
+    everest::lib::util::monitor<types::evse_board_support::HardwareCapabilities> hw_capabilities;
 
     types::energy::ExternalLimits external_local_energy_limits;
     const float EVSE_ABSOLUTE_MAX_CURRENT = 80.0;
@@ -410,8 +411,9 @@ private:
 
     types::power_supply_DC::ChargingPhase last_power_supply_DC_charging_phase{
         types::power_supply_DC::ChargingPhase::Other};
-    std::mutex supported_energy_transfers_mutex;
-    std::vector<types::iso15118::EnergyTransferMode> supported_energy_transfers;
+    everest::lib::util::monitor<std::vector<types::iso15118::EnergyTransferMode>> supported_energy_transfers;
+    void publish_and_update_supported_energy_transfers();
+    bool update_supported_energy_transfers(const std::vector<types::iso15118::EnergyTransferMode>& energy_transfers);
     bool update_supported_energy_transfers(const types::iso15118::EnergyTransferMode& energy_transfer);
     std::mutex hlc_ac_parameters_mutex;
     void update_hlc_ac_parameters();

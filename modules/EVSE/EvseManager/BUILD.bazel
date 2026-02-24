@@ -16,6 +16,7 @@ cc_everest_module(
         "@pugixml//:pugixml",
         "@sigslot//:sigslot",
         "//lib/everest/helpers",
+        "//lib/everest/util",
     ],
     impls = IMPLS,
     srcs = glob(
