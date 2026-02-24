@@ -29,6 +29,7 @@
 
 # modules
 /modules/API/ @hikinggrass @pietfried @corneliusclaussen @djchhp @SebaLukas @james-ctc @cburandt @florinmihut
+/modules/API/RpcApi/ @FaHaGit @barsnick
 /modules/EnergyManagement/Energymanager/ @corneliusclaussen @hikinggrass @pietfried
 /modules/EnergyManagement/EnergyNode/ @corneliusclaussen @hikinggrass @pietfried
 /modules/EV/EvManager/ @SebaLukas @pietfried @james-ctc @mlitre
