@@ -147,7 +147,14 @@ void parse_mdns_PTR(const std::uint8_t* base, int record_data_offset, mDNS_disco
     encoded.push_back(0);
 
     std::vector<std::uint8_t> packet = {0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+#if defined(__GNUC__) && (__GNUC__ < 12)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overread"
+#endif
     packet.insert(packet.end(), encoded.begin(), encoded.end());
+#if defined(__GNUC__) && (__GNUC__ < 12)
+#pragma GCC diagnostic pop
+#endif
     packet.push_back(0x00);
     packet.push_back(0x0c);
     packet.push_back(0x00);
