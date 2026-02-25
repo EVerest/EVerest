@@ -1,0 +1,13 @@
+#!/bin/sh
+
+cd tests
+
+# Run all tests, don't stop on first failure
+# Don't use valgrind if it is found
+# Use automake-style output
+# Run four tests in parallel
+# Print log output on failure
+
+# Don't run the flaky or timing dependent tests
+# Until https://github.com/curl/curl/issues/13350 is resolved, don't run FTP tests
+./runtests.pl -a -n -am -j4 -p !flaky !timing-dependent !FTP
