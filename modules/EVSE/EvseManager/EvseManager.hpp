@@ -107,6 +107,7 @@ struct Conf {
     std::string switch_3ph1ph_cp_state;
     int soft_over_current_timeout_ms;
     bool lock_connector_in_state_b;
+    bool unlock_when_deauthorized;
     int state_F_after_fault_ms;
     bool fail_on_powermeter_errors;
     bool raise_mrec9;
