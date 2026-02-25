@@ -71,6 +71,7 @@ html_title = f"EVerest Manual {release}"
 html_static_path = ['_static']
 
 html_logo = '_static/everest_icon-color.png'
+html_favicon = '_static/favicon.png'
 
 html_theme_options = {
     "sidebar_hide_name": False,

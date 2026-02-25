@@ -76,7 +76,7 @@ In addition to the EVerest configuration yaml file, OCPP 1.6 is configured
 using a JSON configuration file.
 This configuration file can contain all configuration keys from the OCPP 1.6
 specification.
-Examples for that can be found `here <https://github.com/EVerest/everest-core/tree/main/lib/everest/ocpp/config/v16>`_.
+Examples for that can be found `here <https://github.com/EVerest/everest-core/tree/main/lib/everest/ocpp/config/v16>`__.
 
 This is the one we used to connect to SteVe:
 

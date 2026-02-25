@@ -37,8 +37,8 @@ all prerequisites into your environment.
 
 After that, you should in particular have:
 
-- The EVerest dependency manager (check via `edm --version`)
-- The EVerest cli utility (check via `ev-cli --version`)
+- The EVerest dependency manager (check via ``edm --version``)
+- The EVerest cli utility (check via ``ev-cli --version``)
 - A running MQTT broker (e.g. started as container as described in the setup
   guide; per default expected on localhost on port 1883)
 
@@ -49,7 +49,7 @@ This section describes how to setup an EVerest workspace (or at least the
 necessary parts of it) to develop EVerest modules.
 
 First, create a directory for your workspace. In the following, we will assume
-the environment variable `EVEREST_WORKSPACE` to hold this directory::
+the environment variable ``EVEREST_WORKSPACE`` to hold this directory::
 
     export EVEREST_WORKSPACE=~/ev-workspace
     mkdir -p $EVEREST_WORKSPACE
@@ -69,16 +69,22 @@ benefit of allowing your to select a specific snapshot (see the corresponding
 
 As of 2026 the EVerest dependency manager layouts the workspace to be compatible with
 older non-mono-repository versions of everest-core. Assuming you want to build a recent
-version of everest, you can delete the dependencies which are part of the mono-repo today::
+version of everest, you can delete the dependencies which are part of the mono-repo today.
 
-    rm -rf everest-dev-environment/ everest-utils/
+**Remove everything except** ``everest-core/`` **and** ``everest-cmake/`` **.**
+
+The result should look like::
+
+    $ ls
+    everest-core    everest-cmake
 
 Alternative 2: Clone required repositories
 ------------------------------------------
 
 If you want to restrict yourself only to the required dependencies, you may also just clone this::
 
-    git clone https:///github.com/EVerest/everest-cmake ${EVEREST_WORKSPACE}/everest-cmake
+    git clone https://github.com/EVerest/everest-cmake ${EVEREST_WORKSPACE}/everest-cmake
+    git clone https://github.com/EVerest/everest-core ${EVEREST_WORKSPACE}/everest-core
 
 
 Create Module Skeleton
@@ -88,13 +94,13 @@ The following describes how to define the fundamental skeleton of a module.
 This includes configuration files and the auto-generation of source files.
 
 First, create an empty folder that is to contain your module. In the
-following, we assume the environment variable `EVEREST_TUTORIAL_DIR` to hold
+following, we assume the environment variable ``EVEREST_TUTORIAL_DIR`` to hold
 this directory, for example::
 
     export EVEREST_TUTORIAL_DIR=~/everest-tutorial-module
     git clone https://github.com/EVerest/everest-template $EVEREST_TUTORIAL_DIR
 
-This provides you in particular with the `.clang-format` and `.eslintrc.json`
+This provides you in particular with the ``.clang-format`` and ``.eslintrc.json``
 files.
 
 .. note::
@@ -131,24 +137,24 @@ We store the following interface configuration in form of a .yaml file in
           description: The answer of the module (which per default will just be "everest").
           type: string
 
-Second, we use the  `ev-cli` tool to auto-generate header files for this
+Second, we use the  ``ev-cli`` tool to auto-generate header files for this
 interface::
 
-     cd $EVEREST_TUTORIAL_DIR && ev-cli interface generate-headers --schemas-dir $EVEREST_WORKSPACE/everest-core/lib/everest/framework/schemas interface_tutorial_module
+     cd $EVEREST_TUTORIAL_DIR && ev-cli interface generate-headers --everest-dir . --schemas-dir $EVEREST_WORKSPACE/everest-core/lib/everest/framework/schemas interface_tutorial_module
 
 
 After this, you should find the following file tree structure in your module::
 
     .
     ├── build
-    │        └── generated
-    │            └── include
-    │                └── generated
-    │                    └── interfaces
-    │                        └── interface_tutorial_module
-    │                            ├── Implementation.hpp
-    │                            ├── Interface.hpp
-    │                            └── Types.hpp
+    │   └── generated
+    │       └── include
+    │           └── generated
+    │               └── interfaces
+    │                   └── interface_tutorial_module
+    │                       ├── Implementation.hpp
+    │                       ├── Interface.hpp
+    │                       └── Types.hpp
     └── interfaces
         └── interface_tutorial_module.yaml
 
@@ -203,7 +209,7 @@ In particular, this manifest declares the following:
 Again, we use the EVerest cli tool to auto-generate code from this
 configuration::
 
-    cd $EVEREST_TUTORIAL_DIR && ev-cli module create --schemas-dir $EVEREST_WORKSPACE/everest-core/lib/everest/framework/schemas TutorialModule --licenses $EVEREST_WORKSPACE/everest-core/applications/utils/ev-dev-tools/src/ev_cli/licenses
+    cd $EVEREST_TUTORIAL_DIR && ev-cli module create --everest-dir . --schemas-dir $EVEREST_WORKSPACE/everest-core/lib/everest/framework/schemas TutorialModule --licenses $EVEREST_WORKSPACE/everest-core/applications/utils/ev-dev-tools/src/ev_cli/licenses
 
 
 After that, you should have the following file structure::
@@ -332,7 +338,7 @@ It contains a single line per module. To proceed, create the file and then add t
 
 
 Note that you could also develop several modules at once in your repository.
-In that case you would add a respective `ev_add_module(<MODULE_NAME>)` line
+In that case you would add a respective ``ev_add_module(<MODULE_NAME>)`` line
 for each of those.
 
 
@@ -597,3 +603,4 @@ of our implementation:
 --------------------------------
 
 **Authors**: Valentin Dimov, Manuel Ziegler, Andreas Heinrich, Lukas Mertens, Martin Litre, Piet Gömpel, Christoph Burandt
+
