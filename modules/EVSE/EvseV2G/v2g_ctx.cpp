@@ -294,6 +294,8 @@ struct v2g_context* v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase,
 
     /* This evse parameter will be initialized once */
     ctx->basic_config.evse_ac_current_limit = 0.0f;
+    ctx->basic_config.evse_ac_nominal_current = 0.0f;
+    ctx->basic_config.evse_ac_nominal_voltage = 230.0f;
 
     ctx->local_tcp_addr = NULL;
     ctx->local_tls_addr = NULL;

@@ -1244,7 +1244,7 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
     if (conn->ctx->is_dc_charger == false) {
         /* Determin max current and nominal voltage */
         /* Setup default params (before the departure time overrides) */
-        float max_current = conn->ctx->basic_config.evse_ac_current_limit;
+        float max_current = conn->ctx->basic_config.evse_ac_nominal_current;
         int64_t voltage = conn->ctx->evse_v2g_data.evse_nominal_voltage.Value *
                           pow(10, conn->ctx->evse_v2g_data.evse_nominal_voltage.Multiplier); /* nominal voltage */
         pmax = max_current * voltage *
@@ -1330,7 +1330,7 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
         populate_ac_evse_status(conn->ctx, &res->AC_EVSEChargeParameter.AC_EVSEStatus);
 
         /* Max current */
-        float max_current = conn->ctx->basic_config.evse_ac_current_limit;
+        float max_current = conn->ctx->basic_config.evse_ac_nominal_current;
         populate_physical_value_float(&res->AC_EVSEChargeParameter.EVSEMaxCurrent, max_current, 1,
                                       iso2_unitSymbolType_A);
 
