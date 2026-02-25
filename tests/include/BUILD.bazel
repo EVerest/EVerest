@@ -1,0 +1,12 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "module_adapter_stub",
+    hdrs = ["ModuleAdapterStub.hpp"],
+    copts = ["-std=c++17"],
+    strip_include_prefix = ".",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/everest/framework:framework",
+    ],
+)

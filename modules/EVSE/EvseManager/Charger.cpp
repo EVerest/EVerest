@@ -1330,6 +1330,7 @@ void Charger::start_session(bool authfirst) {
 void Charger::stop_session() {
     shared_context.session_active = false;
     shared_context.authorized = false;
+    bsp->set_authorized(false);
     signal_simple_event(types::evse_manager::SessionEventEnum::SessionFinished);
     shared_context.session_uuid.clear();
 }
@@ -1573,6 +1574,7 @@ void Charger::authorize(bool a, const types::authorization::ProvidedIdToken& tok
         }
         signal_simple_event(types::evse_manager::SessionEventEnum::Authorized);
         shared_context.authorized = true;
+        bsp->set_authorized(true);
         shared_context.authorized_pnc =
             token.authorization_type == types::authorization::AuthorizationType::PlugAndCharge;
     } else {
