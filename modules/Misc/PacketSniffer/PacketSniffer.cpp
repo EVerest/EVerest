@@ -4,6 +4,8 @@
 
 #include <fmt/core.h>
 
+#include <fmt/chrono.h>
+
 namespace module {
 
 const bool PROMISC_MODE = true;
@@ -68,7 +70,18 @@ void PacketSniffer::ready() {
 
 void PacketSniffer::capture(const std::string& logpath, const std::string& session_id) {
     already_started = true;
-    const std::string fn = fmt::format("{}/ethernet-traffic.pcap", logpath);
+
+    std::string fn;
+    if (config.session_logging_path.empty()) {
+        fn = fmt::format("{}/ethernet-traffic.pcap", logpath);
+    } else {
+        const auto now = std::chrono::system_clock::now();
+        const auto time_t_now = std::chrono::system_clock::to_time_t(now);
+        std::tm local_tm{};
+        localtime_r(&time_t_now, &local_tm);
+        const auto timestamp = fmt::format("{:%Y-%m-%d_%H-%M-%S%z}", local_tm);
+        fn = fmt::format("{}/{}_{}.pcap", logpath, timestamp, session_id);
+    }
 
     EVLOG_info << fmt::format("Starting capturing to {}", fn);
 
