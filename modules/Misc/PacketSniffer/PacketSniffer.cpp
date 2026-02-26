@@ -71,10 +71,8 @@ void PacketSniffer::ready() {
 void PacketSniffer::capture(const std::string& logpath, const std::string& session_id) {
     already_started = true;
 
-    std::string fn;
-    if (config.session_logging_path.empty()) {
-        fn = fmt::format("{}/ethernet-traffic.pcap", logpath);
-    } else {
+    std::string fn = fmt::format("{}/ethernet-traffic.pcap", logpath);
+    if (not config.session_logging_path.empty()) {
         const auto now = std::chrono::system_clock::now();
         const auto time_t_now = std::chrono::system_clock::to_time_t(now);
         std::tm local_tm{};
