@@ -1,0 +1,41 @@
+settings:
+  telemetry_enabled: true
+active_modules:
+  dm_1:
+    module: display_message_API
+    config_module:
+      cfg_communication_check_to_s: 5
+    access:
+      config:
+        allow_global_read: true
+        allow_global_write: false
+        allow_set_read_only: false
+  ps_dc_1:
+    module: power_supply_DC_API
+    config_module:
+      cfg_communication_check_to_s: 0
+      cfg_heartbeat_interval_ms: 10000
+    access:
+      config:
+        allow_global_read: true
+        allow_global_write: false
+        allow_set_read_only: false
+  ps_dc_2:
+    module: power_supply_DC_API
+    config_module:
+      cfg_communication_check_to_s: 0
+      cfg_heartbeat_interval_ms: 10000
+    access:
+      config:
+        allow_global_read: true
+        allow_global_write: false
+        allow_set_read_only: false
+
+# send "{"headers": { "replyTo": "my/reply/topic" } }" to "everest_api/discover"
+# and receive an bunch of messages: array of (module_id, type, version) tuples on the reply topic
+
+# send "{"headers": { "replyTo": "my/reply/topic" } }" to "everest_api/query-modules/power_supply_DC"
+# and receive the same reply as above, but limited to the ones with type==power_supply_DC
+
+# send "{"headers": { "replyTo": "my/reply/topic" } }" to "everest_api/query-everest-configuration/ps_dc_1" (or ps_dc_2, or dm_1)
+# and receive an array of (module_type, module_id) tuples for all (API + non-API) modules in the configuration + EVerest version information

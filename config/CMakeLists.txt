@@ -1,3 +1,4 @@
+generate_config_run_script(CONFIG EVerestAPI-entrypoint)
 generate_config_run_script(CONFIG sil)
 generate_config_run_script(CONFIG sil-rpcapi)
 generate_config_run_script(CONFIG sil-two-evse)

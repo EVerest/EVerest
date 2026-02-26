@@ -22,10 +22,13 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
-#include <everest_api_types/utilities/CommCheckHandler.hpp>
-#include <everest_api_types/utilities/Topics.hpp>
+#include <everest_api_types/entrypoint/API.hpp>
+
+#include "../common/ApiModuleBase.hpp"
 
 namespace ev_API = everest::lib::API;
+namespace API_types = ev_API::V1_0::types;
+namespace API_types_entry = API_types::entrypoint;
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
@@ -37,29 +40,25 @@ struct Conf {
     int cfg_request_reply_to_s;
 };
 
-class display_message_API : public Everest::ModuleBase {
+class display_message_API : public ApiModuleBase {
 public:
     display_message_API() = delete;
     display_message_API(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
                         std::unique_ptr<display_messageImplBase> p_main,
                         std::unique_ptr<generic_errorImplBase> p_generic_error, Conf& config) :
-        ModuleBase(info),
-        mqtt(mqtt_provider),
+        ApiModuleBase(info, mqtt_provider, {{"display_message", 1}}),
         p_main(std::move(p_main)),
         p_generic_error(std::move(p_generic_error)),
         config(config),
-        comm_check("generic/CommunicationFault", "Bridge to implementation connection lost", this->p_generic_error){};
+        comm_check("generic/CommunicationFault", "Bridge to implementation connection lost", this->p_generic_error) {
+    }
 
-    Everest::MqttProvider& mqtt;
     const std::unique_ptr<display_messageImplBase> p_main;
     const std::shared_ptr<generic_errorImplBase> p_generic_error;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
-    const ev_API::Topics& get_topics() const;
-    ev_API::CommCheckHandler<generic_errorImplBase> comm_check;
-
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
@@ -74,14 +73,7 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
-    using ParseAndPublishFtor = std::function<bool(std::string const&)>;
-    void subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish);
-
-    void generate_api_var_communication_check();
-
-    void setup_heartbeat_generator();
-    ev_API::Topics topics;
-    size_t hb_id{0};
+    ev_API::CommCheckHandler<generic_errorImplBase> comm_check;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 
