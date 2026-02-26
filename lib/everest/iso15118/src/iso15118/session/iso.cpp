@@ -5,6 +5,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstring>
+#include <endian.h>
 #include <thread>
 
 #include <arpa/inet.h>
