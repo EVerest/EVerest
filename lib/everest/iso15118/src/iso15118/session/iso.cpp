@@ -5,9 +5,8 @@
 #include <cassert>
 #include <chrono>
 #include <cstring>
-#include <thread>
-
 #include <endian.h>
+#include <thread>
 
 #include <iso15118/d20/state/supported_app_protocol.hpp>
 

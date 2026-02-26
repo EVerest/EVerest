@@ -62,7 +62,8 @@ std::optional<float> convert_from_optional(const std::optional<uint32_t>& in) {
     return (in.has_value()) ? std::make_optional(static_cast<float>(*in)) : std::nullopt;
 }
 
-types::iso15118::AppProtocol convert_app_protocol(const iso15118::message_20::SupportedAppProtocol& app_protocol) {
+types::iso15118::AppProtocol
+convert_app_protocol(const iso15118::message_20::datatypes::SupportedAppProtocol& app_protocol) {
     types::iso15118::AppProtocol result;
     result.protocol_namespace = app_protocol.protocol_namespace;
     result.priority = app_protocol.priority;
