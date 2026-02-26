@@ -162,6 +162,7 @@ public:
     sigslot::signal<> signal_ac_with_soc_timeout;
 
     sigslot::signal<> signal_dc_supply_off;
+    sigslot::signal<types::iso15118::DcEvseMaximumLimits> signal_dc_enforce_target_limits;
     sigslot::signal<> signal_slac_reset;
     sigslot::signal<> signal_slac_start;
 
@@ -179,6 +180,7 @@ public:
     void set_matching_started(bool m);
 
     void notify_currentdemand_started();
+    void reset_dc_enforce_target_limits_timer();
 
     std::string evse_state_to_string(EvseState s);
 
@@ -398,11 +400,14 @@ private:
 
         std::chrono::time_point<std::chrono::steady_clock> fatal_error_became_active;
         bool fatal_error_timer_running{false};
+
     } internal_context;
 
     // main Charger thread
     Everest::Thread main_thread_handle;
     Everest::Thread error_thread_handle;
+
+    std::atomic<std::chrono::steady_clock::time_point> last_dc_enforce_target_limits{};
 
     const std::unique_ptr<IECStateMachine>& bsp;
     const std::unique_ptr<ErrorHandling>& error_handling;
@@ -440,6 +445,12 @@ private:
     static constexpr int STAY_IN_X1_AFTER_TSTEP_EF_MS = 750;
     static constexpr int WAIT_FOR_ENERGY_IN_AUTHLOOP_TIMEOUT_MS = 5000;
     static constexpr int AC_X1_FALLBACK_TO_NOMINAL_TIMEOUT_MS = 3000;
+    // Ensures apply_new_target_voltage_current() is called at least every DC_ENFORCE_TARGET_LIMITS_INTERVAL_MS
+    // during DC charging. This re-applies EVSE limits to the power supply even when the EV does not send
+    // new target values or ignores updated limits from energy management.
+    // The timer is reset whenever apply_new_target_voltage_current() is called from any source
+    // (subscribe callback, energy manager, or this periodic signal).
+    static constexpr int DC_ENFORCE_TARGET_LIMITS_INTERVAL_MS = 5000;
 
     types::evse_manager::EnableDisableSource active_enable_disable_source{
         types::evse_manager::Enable_source::Unspecified, types::evse_manager::Enable_state::Unassigned, 10000};

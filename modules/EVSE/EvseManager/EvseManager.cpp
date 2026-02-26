@@ -719,69 +719,16 @@ void EvseManager::ready() {
                 });
             }
 
-            // Car requests a target voltage and current limit
-            r_hlc[0]->subscribe_dc_ev_target_voltage_current(
-                [this](types::iso15118::DcEvTargetValues v) {
-                    bool target_changed = false;
-
-                    // Hack for Skoda Enyaq that should be fixed in a different way
-                    if (config.hack_skoda_enyaq and (v.dc_ev_target_voltage < 300 or v.dc_ev_target_current < 0))
-                        return;
-
-                    // Limit voltage/current for broken EV implementations
-                    const auto ev = get_ev_info();
-                    if (ev.maximum_current_limit.has_value() and
-                        v.dc_ev_target_current > ev.maximum_current_limit.value()) {
-                        v.dc_ev_target_current = ev.maximum_current_limit.value();
-                    }
-
-                    if (ev.maximum_voltage_limit.has_value() and
-                        v.dc_ev_target_voltage > ev.maximum_voltage_limit.value()) {
-                        v.dc_ev_target_voltage = ev.maximum_voltage_limit.value();
-                    }
-
-                    bool car_breaks_limit{false};
-                    const auto hlc_limits = charger->get_evse_max_hlc_limits();
-                    if (v.dc_ev_target_current > hlc_limits.evse_maximum_current_limit) {
-                        v.dc_ev_target_current = hlc_limits.evse_maximum_current_limit;
-                        car_breaks_limit = true;
-                    }
-
-                    const auto actual_voltage =
-                        ev_info.present_voltage.has_value() ? ev_info.present_voltage.value() : v.dc_ev_target_voltage;
-
-                    const auto target_power = v.dc_ev_target_current * actual_voltage;
-                    if (target_power > hlc_limits.evse_maximum_power_limit) {
-                        v.dc_ev_target_current = hlc_limits.evse_maximum_power_limit / actual_voltage;
-                        car_breaks_limit = true;
-                    }
-
-                    if (v.dc_ev_target_voltage not_eq latest_target_voltage or
-                        v.dc_ev_target_current not_eq latest_target_current) {
-                        latest_target_voltage = v.dc_ev_target_voltage;
-                        latest_target_current = v.dc_ev_target_current;
-                        target_changed = true;
-                    }
-
-                    if (target_changed) {
-                        apply_new_target_voltage_current();
-                        if (not contactor_open) {
-                            powersupply_DC_on();
-                        }
-                        if (car_breaks_limit) {
-                            EVLOG_warning
-                                << "EV ignores new EVSE max limits. Setting target current to new EVSE max limits";
-                        }
-
-                        {
-                            Everest::scoped_lock_timeout lock(ev_info_mutex,
-                                                              Everest::MutexDescription::EVSE_publish_ev_info);
-                            ev_info.target_voltage = latest_target_voltage;
-                            ev_info.target_current = latest_target_current;
-                            p_evse->publish_ev_info(ev_info);
-                        }
-                    }
-                });
+            // Car requests a target voltage and current limit.
+            // Store raw EV values and immediately clamp against EVSE limits.
+            // Clamping is also re-applied by the Charger state machine
+            // (signal_dc_enforce_target_limits) in case the EV doesnt respect the
+            // limits or does not change the target values for some time.
+            r_hlc[0]->subscribe_dc_ev_target_voltage_current([this](types::iso15118::DcEvTargetValues v) {
+                raw_ev_target_voltage = v.dc_ev_target_voltage;
+                raw_ev_target_current = v.dc_ev_target_current;
+                process_dc_ev_target_voltage_current(charger->get_evse_max_hlc_limits());
+            });
 
             r_hlc[0]->subscribe_d20_dc_dynamic_charge_mode([this](types::iso15118::DcChargeDynamicModeValues values) {
                 static bool last_is_actually_exporting_to_grid{false};
@@ -898,6 +845,11 @@ void EvseManager::ready() {
                 powersupply_DC_off();
                 imd_stop();
             });
+
+            // Re-evaluate DC target limits so that updated EVSE
+            // limits are enforced even when the EV does not send new target values
+            charger->signal_dc_enforce_target_limits.connect(
+                [this](types::iso15118::DcEvseMaximumLimits limits) { process_dc_ev_target_voltage_current(limits); });
 
             // Current demand has finished - switch off DC supply
             r_hlc[0]->subscribe_current_demand_finished([this] { powersupply_DC_off(); });
@@ -2577,10 +2529,75 @@ types::evse_manager::EVInfo EvseManager::get_ev_info() {
     return ev_info;
 }
 
+void EvseManager::process_dc_ev_target_voltage_current(const types::iso15118::DcEvseMaximumLimits& hlc_limits) {
+    double clamped_voltage = raw_ev_target_voltage.load();
+    double clamped_current = raw_ev_target_current.load();
+
+    // Hack for Skoda Enyaq that should be fixed in a different way
+    if (config.hack_skoda_enyaq and (clamped_voltage < 300 or clamped_current < 0)) {
+        return;
+    }
+
+    // Limit voltage/current for broken EV implementations
+    const auto ev_info_snapshot = get_ev_info();
+    if (ev_info_snapshot.maximum_current_limit.has_value() and
+        clamped_current > ev_info_snapshot.maximum_current_limit.value()) {
+        clamped_current = ev_info_snapshot.maximum_current_limit.value();
+    }
+    if (ev_info_snapshot.maximum_voltage_limit.has_value() and
+        clamped_voltage > ev_info_snapshot.maximum_voltage_limit.value()) {
+        clamped_voltage = ev_info_snapshot.maximum_voltage_limit.value();
+    }
+
+    bool car_breaks_limit{false};
+    if (clamped_current > hlc_limits.evse_maximum_current_limit) {
+        clamped_current = hlc_limits.evse_maximum_current_limit;
+        car_breaks_limit = true;
+    }
+
+    const auto actual_voltage =
+        ev_info_snapshot.present_voltage.has_value() ? ev_info_snapshot.present_voltage.value() : clamped_voltage;
+
+    const auto target_power = clamped_current * actual_voltage;
+    if (target_power > hlc_limits.evse_maximum_power_limit) {
+        clamped_current = hlc_limits.evse_maximum_power_limit / actual_voltage;
+        car_breaks_limit = true;
+    }
+
+    bool target_changed = false;
+    if (clamped_voltage not_eq latest_target_voltage or clamped_current not_eq latest_target_current) {
+        latest_target_voltage = clamped_voltage;
+        latest_target_current = clamped_current;
+        target_changed = true;
+    }
+
+    apply_new_target_voltage_current();
+
+    if (target_changed) {
+        if (not contactor_open) {
+            powersupply_DC_on();
+        }
+        if (car_breaks_limit) {
+            EVLOG_warning << "EV ignores new EVSE max limits. Setting target current to new EVSE max limits";
+        }
+
+        {
+            Everest::scoped_lock_timeout lock(ev_info_mutex, Everest::MutexDescription::EVSE_publish_ev_info);
+            ev_info.target_voltage = latest_target_voltage;
+            ev_info.target_current = latest_target_current;
+            p_evse->publish_ev_info(ev_info);
+        }
+    }
+}
+
 void EvseManager::apply_new_target_voltage_current() {
     if (latest_target_voltage > 0) {
         powersupply_DC_set(latest_target_voltage, latest_target_current);
     }
+
+    // We allow the EV to adjust the voltage/current for a few seconds
+    // so we reset the timer on every new target value received.
+    charger->reset_dc_enforce_target_limits_timer();
 }
 
 bool EvseManager::session_is_iso_d20_ac_bpt() {

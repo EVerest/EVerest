@@ -734,6 +734,14 @@ void Charger::run_state_machine() {
                 if (initialize_state) {
                     bsp->allow_power_on(true, types::evse_board_support::Reason::FullPowerCharging);
                 }
+                // Enforce EVSE target limits so that energy management
+                // changes are applied even when the EV does not send new targets
+                const auto now = std::chrono::steady_clock::now();
+                if (now - last_dc_enforce_target_limits.load() >=
+                    std::chrono::milliseconds(DC_ENFORCE_TARGET_LIMITS_INTERVAL_MS)) {
+                    last_dc_enforce_target_limits = now;
+                    signal_dc_enforce_target_limits(shared_context.current_evse_max_limits);
+                }
             } else {
                 check_soft_over_current();
 
@@ -1931,6 +1939,10 @@ void Charger::request_error_sequence() {
 void Charger::set_matching_started(bool m) {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_set_matching_started);
     shared_context.matching_started = m;
+}
+
+void Charger::reset_dc_enforce_target_limits_timer() {
+    last_dc_enforce_target_limits = std::chrono::steady_clock::now();
 }
 
 void Charger::notify_currentdemand_started() {
