@@ -2290,6 +2290,10 @@ void EvseManager::powersupply_DC_on() {
 // input voltage/current is what the evse/car would like to set.
 // if it is more then what the energymanager gave us, we can limit it here.
 bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
+    if (last_power_supply_voltage == _voltage and last_power_supply_current == _current) {
+        return true;
+    }
+
     double voltage = _voltage;
     double current = _current;
     static bool last_is_actually_exporting_to_grid{false};
@@ -2344,6 +2348,8 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
 
             // set the new limits for the DC output
             r_powersupply_DC[0]->call_setImportVoltageCurrent(voltage, current);
+            last_power_supply_voltage = voltage;
+            last_power_supply_current = current;
             return true;
         }
         EVLOG_critical << fmt::format("DC voltage/current out of limits requested: Voltage {:.2f} Current {:.2f}.",
@@ -2378,6 +2384,8 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
 
         // set the new limits for the DC output
         r_powersupply_DC[0]->call_setExportVoltageCurrent(voltage, current);
+        last_power_supply_voltage = voltage;
+        last_power_supply_current = current;
         return true;
     }
     EVLOG_critical << fmt::format("DC voltage/current out of limits requested: Voltage {:.2f} Current {:.2f}.", voltage,

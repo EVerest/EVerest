@@ -342,6 +342,8 @@ private:
 
     std::atomic<double> latest_target_voltage{0.};
     std::atomic<double> latest_target_current{0.};
+    std::atomic<double> last_power_supply_voltage{0.};
+    std::atomic<double> last_power_supply_current{0.};
 
     // Raw EV target values as received from ISO15118 stack
     std::atomic<double> raw_ev_target_voltage{0.};
