@@ -2182,6 +2182,7 @@ void Charger::clear_errors_on_unplug() {
     error_handling->clear_isolation_resistance_fault("Resistance");
     error_handling->clear_isolation_resistance_fault("VoltageToEarth");
     error_handling->clear_cable_check_fault();
+    error_handling->clear_over_voltage_error();
     error_handling->clear_voltage_plausibility_fault();
 }
 

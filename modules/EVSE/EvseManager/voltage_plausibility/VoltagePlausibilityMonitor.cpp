@@ -33,14 +33,18 @@ VoltagePlausibilityMonitor::~VoltagePlausibilityMonitor() {
 }
 
 void VoltagePlausibilityMonitor::start_monitor() {
-    EVLOG_info << "VoltagePlausibilityMonitor, start monitoring";
+    if (!running_.load()) {
+        EVLOG_info << "VoltagePlausibilityMonitor, start monitoring";
+    }
     fault_latched_.store(false);
     cancel_fault_timer();
     running_.store(true);
 }
 
 void VoltagePlausibilityMonitor::stop_monitor() {
-    EVLOG_info << "VoltagePlausibilityMonitor, stop monitoring";
+    if (running_.load()) {
+        EVLOG_info << "VoltagePlausibilityMonitor, stop monitoring";
+    }
     running_.store(false);
     cancel_fault_timer();
 }

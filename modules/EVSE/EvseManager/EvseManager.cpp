@@ -1161,11 +1161,14 @@ void EvseManager::ready() {
         if (not r_over_voltage_monitor.empty() and event == CPEvent::CarUnplugged) {
             r_over_voltage_monitor[0]->call_reset_over_voltage_error();
         }
-        if (internal_over_voltage_monitor and event == CPEvent::CarUnplugged) {
+        if (not r_over_voltage_monitor.empty() and (event == CPEvent::CarUnplugged or event == CPEvent::PowerOff)) {
+            r_over_voltage_monitor[0]->call_stop();
+        }
+        if (internal_over_voltage_monitor and (event == CPEvent::CarUnplugged or event == CPEvent::PowerOff)) {
             internal_over_voltage_monitor->stop_monitor();
             internal_over_voltage_monitor->reset();
         }
-        if (voltage_plausibility_monitor and event == CPEvent::CarUnplugged) {
+        if (voltage_plausibility_monitor and (event == CPEvent::CarUnplugged or event == CPEvent::PowerOff)) {
             voltage_plausibility_monitor->stop_monitor();
         }
 

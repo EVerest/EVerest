@@ -133,6 +133,13 @@ void ErrorHandling::raise_over_voltage_error(Everest::error::Severity severity, 
     process_error();
 }
 
+void ErrorHandling::clear_over_voltage_error() {
+    if (p_evse->error_state_monitor->is_error_active("evse_manager/MREC5OverVoltage", "")) {
+        p_evse->clear_error("evse_manager/MREC5OverVoltage", "");
+    }
+    process_error();
+}
+
 // Find out if the current error set is fatal to charging or not
 void ErrorHandling::process_error() {
     const auto fatal = errors_prevent_charging();
