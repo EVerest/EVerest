@@ -78,6 +78,14 @@ public:
     void init_evse(const int evse_id, const int evse_index, const std::vector<Connector>& connectors);
 
     /**
+     * @brief Returns the evse_id for the given \p evse_index .
+     *
+     * @param evse_index
+     * @return int32_t evse_id
+     */
+    int32_t get_evse_id_by_index(const int evse_index);
+
+    /**
      * @brief Call when everything is initialized. This will call 'init' of the reservation handler.
      */
     void initialize();
