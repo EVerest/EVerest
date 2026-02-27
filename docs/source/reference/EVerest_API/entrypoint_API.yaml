@@ -1,0 +1,350 @@
+---
+asyncapi: 3.0.0
+id: 'pionix:de:everest:entrypoint_API'
+info:
+  title: 'EVerest API definition for the API entrypoint interface'
+  version: 1.0.0
+  description: >-
+    API for EVerest API clients discovering the EVerest API capabilities.
+
+  license:
+    name: Apache-2.0
+    url: https://opensource.org/licenses/Apache-2.0
+  tags:
+    - name: EVerest
+    - name: Auth
+servers:
+  default:
+    pathname: 'everest_api/'
+    host: 'localhost:1883'
+    description: default local MQTT
+    protocol: mqtt
+defaultContentType: application/json
+
+
+channels:
+  send_request_discover:
+    address: 'discover'
+    messages:
+      send_request_discover:
+        $ref: '#/components/messages/send_request_discover'
+  receive_reply_discover:
+    address: null
+    messages:
+      receive_reply_discover:
+        $ref: '#/components/messages/receive_reply_discover'
+  send_request_query_module:
+    address: 'query-modules/{api_type}'
+    messages:
+      send_request_query_module:
+        $ref: '#/components/messages/send_request_query_module'
+  receive_reply_query_module:
+    address: null
+    messages:
+      receive_reply_query_module:
+        $ref: '#/components/messages/receive_reply_query_module'
+  send_request_query_everest_configuration:
+    address: 'query-everest-configuration/{module_id}'
+    messages:
+      send_request_query_everest_configuration:
+        $ref: '#/components/messages/send_request_query_everest_configuration'
+  receive_reply_query_everest_configuration:
+    address: null
+    messages:
+      receive_reply_query_everest_configuration:
+        $ref: '#/components/messages/receive_reply_query_everest_configuration'
+
+
+  receive_heartbeat:
+    address: 'e2m/heartbeat'
+    messages:
+      receive_heartbeat:
+        $ref: '#/components/messages/receive_heartbeat'
+
+
+operations:
+  send_request_discover:
+    title: 'Request API capability discovery.'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_discover'
+    description: >-
+      Allow API clients to discover the available capabilities of the API.
+      Reply will not be monolithic but come in as many messages as there are modules.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_discover'
+  receive_reply_discover:
+    title: 'Reply to discover request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_discover'
+  send_request_query_module:
+    title: 'Request all modules that implement {api_type} to reveal their API parameters.'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_query_module'
+    description: >-
+      Allow API clients to discover specific types of APIs.
+      Reply will not be monolithic but come in as many messages as there a matching modules.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_query_module'
+  receive_reply_query_module:
+    title: 'Reply to query modules request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_query_module'
+  send_request_query_everest_configuration:
+    title: 'Request global everest configuration from {module_id}.'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_query_everest_configuration'
+    description: >-
+      Allow API clients to query the global everest configuraiton.
+      The {module_id} can be the one of any module implementing this API.
+      Results will be independent of which module has been queried.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_query_everest_configuration'
+  receive_reply_query_everest_configuration:
+    title: 'Reply to query everest configuration request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_query_everest_configuration'
+
+
+  receive_heartbeat:
+    title: 'Receive heartbeat'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_heartbeat'
+
+
+components:
+  messages:
+    send_request_discover:
+      name: send_request_discover
+      title: 'Discover API'
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: "requesting available APIs"
+          payload:
+            headers:
+              replyTo: your/arbitrary/reply/topic
+    receive_reply_discover:
+      name: receive_reply_discover
+      title: 'Reply to request to discover the API'
+      summary: 'Reply to request to discover the API.'
+      contentType: application/json
+      payload:
+         $ref: '#/components/schemas/ApiDiscoverResponse'
+      examples:
+        - summary: "Reply from each module is an array of (id, type, <version>) tuples"
+          payload:
+            - module_id: "module_1"
+              type: "display_message"
+              version: "1"
+            - module_id: "module_1"
+              type: "session_cost_consumer"
+              version: "1"
+    send_request_query_module:
+      name: send_request_query_module
+      title: 'Query API modules'
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: "requesting available APIs of type {api_type}"
+          payload:
+            headers:
+              replyTo: your/arbitrary/reply/topic
+    receive_reply_query_module:
+      name: receive_reply_query_module
+      title: 'Reply to request to query module'
+      summary: 'Reply to request to query module.'
+      contentType: application/json
+      payload:
+         $ref: '#/components/schemas/ApiDiscoverResponse'
+      examples:
+        - summary: "Reply from each module is an array of (id, type, <version>) tuples"
+          payload:
+            - module_id: "dm_1"
+              type: "display_message"
+              version: "1"
+    send_request_query_everest_configuration:
+      name: send_request_query_everest_configuration
+      title: 'Query EVerest configuration'
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: "requesting list of all running EVerest modules via {module_id}"
+          payload:
+            headers:
+              replyTo: your/arbitrary/reply/topic
+    receive_reply_query_everest_configuration:
+      name: receive_reply_query_everest_configuration
+      title: 'Reply to request to query everest configuration'
+      summary: 'Reply to request to query EVerest configuration.'
+      contentType: application/json
+      payload:
+         $ref: '#/components/schemas/QueryEVerestConfigurationResponse'
+      examples:
+        - summary: "Reply is a version record plus an array of modules tuples"
+          payload:
+            version:
+              name: "everest-core"
+              version: "2026.02.0"
+              git_version: "a1b2c3d4e5f6g7h8i9j0"
+            modules:
+              - module_id: "evse_manager_1"
+                type: "EvseManager"
+              - module_id: "auth_1"
+                type: "Auth"
+              - module_id: "powermeter_1"
+                type: "Powermeter"
+
+
+    receive_heartbeat:
+      name: receive_heartbeat
+      title: 'Receive heartbeat'
+      summary: Heartbeat produced by EVerest as configured via cfg_heartbeat_interval_ms in the EVerest configuration
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/HeartBeatId'
+      examples:
+        - summary: "Heartbeat"
+          payload: 42
+
+
+  schemas:
+    ApiDiscoverResponse:
+      description: Type for API discovery results
+      type: object
+      additionalProperties: true
+      required:
+        - apis
+      properties:
+        apis:
+          description: Array of API parameters
+          type: array
+          items:
+            type: object
+            $ref: '#/components/schemas/ApiParameter'
+    ApiParameter:
+      description: Parameters for a single API
+      type: object
+      additionalProperties: true
+      required:
+        - type
+        - module_id
+        - version
+      properties:
+        type:
+          type: string
+        module_id:
+          type: string
+        version:
+          type: integer
+        associated_module:
+          type: object
+          $ref: '#/components/schemas/ModuleAssociations'
+    ModuleAssociations:
+      description: Description of connected modules
+      type: object
+      additionalProperties: true
+      required:
+        - required_modules
+      properties:
+        required_modules:
+          description: Array of modules required by the module in question
+          type: array
+          items:
+            description: Id of module
+            type: string
+    QueryEVerestConfigurationResponse:
+      description: Type for query everest configuration results
+      type: object
+      additionalProperties: true
+      required:
+        - modules
+      properties:
+        version:
+          type: object
+          $ref: '#/components/schemas/EVerestVersion'
+        modules:
+          description: Array of modules part of this EVerest configuration
+          type: array
+          items:
+            type: object
+            $ref: '#/components/schemas/ModuleParameter'
+    ModuleParameter:
+      description: Parameters for a single module
+      type: object
+      additionalProperties: true
+      required:
+        - type
+        - module_id
+      properties:
+        name:
+          description: "Name of the module (i.e. type)"
+          type: string
+        module_id:
+          description: "Id of the module instance"
+          type: string
+    EVerestVersion:
+      description: Version designators of the running EVerest instance
+      type: object
+      additionalProperties: true
+      required:
+        - name
+        - version
+        - git_version
+      properties:
+        name:
+          description: Arbitrary name (like "everest-core")
+          type: string
+        version:
+          description: Underlying version (like 2026.02.0)
+          type: string
+        git_version:
+          description: Exact git revision
+          type: string
+
+
+    HeartBeatId:
+      type: integer
+      description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"
+
+# TOOD(CB): Many examples missing
+# TODO(CB): Add examples to config file

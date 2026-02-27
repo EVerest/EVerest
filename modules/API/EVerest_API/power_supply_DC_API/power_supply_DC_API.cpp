@@ -3,6 +3,7 @@
 
 #include "power_supply_DC_API.hpp"
 
+#include <string>
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/generic/string.hpp>
 #include <everest_api_types/power_supply_DC/API.hpp>
@@ -12,7 +13,6 @@
 #include <everest_api_types/utilities/codec.hpp>
 
 #include "utils/error.hpp"
-#include <everest/logging.hpp>
 
 namespace module {
 
@@ -22,7 +22,8 @@ using ev_API::deserialize;
 void power_supply_DC_API::init() {
     invoke_init(*p_main);
 
-    topics.setup(info.id, "power_supply_DC", 1);
+    init_entrypoint_api();
+    init_topics();
 }
 
 void power_supply_DC_API::ready() {
@@ -35,10 +36,14 @@ void power_supply_DC_API::ready() {
     generate_api_var_raise_error();
     generate_api_var_clear_error();
 
-    generate_api_var_communication_check();
+    generate_api_entrypoint_cmd_query_module();
+    generate_api_entrypoint_cmd_discover();
+    generate_api_entrypoint_cmd_query_everest_configuration();
+
+    generate_api_var_communication_check(comm_check);
 
     comm_check.start(config.cfg_communication_check_to_s);
-    setup_heartbeat_generator();
+    setup_heartbeat_generator(comm_check, config.cfg_heartbeat_interval_ms);
 }
 
 void power_supply_DC_API::generate_api_var_mode() {
@@ -110,45 +115,6 @@ std::string power_supply_DC_API::make_error_string(API_types_ext::Error const& e
     auto error_str = API_generic::trimmed(serialize(error.type));
     auto result = "power_supply_DC/" + error_str;
     return result;
-}
-
-void power_supply_DC_API::generate_api_var_communication_check() {
-    subscribe_api_topic("communication_check", [this](std::string const& data) {
-        bool val = false;
-        if (deserialize(data, val)) {
-            comm_check.set_value(val);
-            return true;
-        }
-        return false;
-    });
-}
-
-void power_supply_DC_API::setup_heartbeat_generator() {
-    auto topic = topics.everest_to_extern("heartbeat");
-    auto action = [this, topic]() {
-        mqtt.publish(topic, API_generic::serialize(hb_id++));
-        return true;
-    };
-    comm_check.heartbeat(config.cfg_heartbeat_interval_ms, action);
-}
-
-void power_supply_DC_API::subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish) {
-    auto topic = topics.extern_to_everest(var);
-    mqtt.subscribe(topic, [=](std::string const& data) {
-        try {
-            if (not parse_and_publish(data)) {
-                EVLOG_warning << "Invalid data: Deserialization failed.\n" << topic << "\n" << data;
-            }
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Topic: '" << topic << "' failed with -> " << e.what() << "\n => " << data;
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Failed to parse JSON or to get data from it.\n" << topic;
-        }
-    });
-}
-
-const ev_API::Topics& power_supply_DC_API::get_topics() const {
-    return topics;
 }
 
 } // namespace module

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #ifndef POWER_SUPPLY_DC_API_HPP
 #define POWER_SUPPLY_DC_API_HPP
@@ -20,14 +20,14 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
-
 #include <everest_api_types/power_supply_DC/API.hpp>
-#include <everest_api_types/utilities/CommCheckHandler.hpp>
-#include <everest_api_types/utilities/Topics.hpp>
+
+#include "../common/ApiModuleBase.hpp"
 
 namespace ev_API = everest::lib::API;
 namespace API_types = ev_API::V1_0::types;
 namespace API_types_ext = API_types::power_supply_DC;
+namespace API_types_entry = API_types::entrypoint;
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
@@ -38,24 +38,22 @@ struct Conf {
     int cfg_heartbeat_interval_ms;
 };
 
-class power_supply_DC_API : public Everest::ModuleBase {
+class power_supply_DC_API : public ApiModuleBase {
 public:
     power_supply_DC_API() = delete;
     power_supply_DC_API(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
                         std::unique_ptr<power_supply_DCImplBase> p_main, Conf& config) :
-        ModuleBase(info),
-        mqtt(mqtt_provider),
+        ApiModuleBase(info, mqtt_provider, {{"power_supply_DC", 1}}),
         p_main(std::move(p_main)),
         config(config),
-        comm_check("power_supply_DC/CommunicationFault", "Bridge to implementation connection lost", this->p_main){};
+        comm_check("power_supply_DC/CommunicationFault", "Bridge to implementation connection lost", this->p_main) {
+    }
 
-    Everest::MqttProvider& mqtt;
     const std::shared_ptr<power_supply_DCImplBase> p_main;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
-    const ev_API::Topics& get_topics() const;
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
@@ -70,22 +68,15 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
-    using ParseAndPublishFtor = std::function<bool(std::string const&)>;
-    void subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish);
     void generate_api_var_mode();
     void generate_api_var_voltage_current();
     void generate_api_var_capabilities();
     void generate_api_var_raise_error();
     void generate_api_var_clear_error();
-    void generate_api_var_communication_check();
 
     std::string make_error_string(API_types_ext::Error const& error);
 
-    void setup_heartbeat_generator();
-
-    ev_API::Topics topics;
     ev_API::CommCheckHandler<power_supply_DCImplBase> comm_check;
-    size_t hb_id{0};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 
