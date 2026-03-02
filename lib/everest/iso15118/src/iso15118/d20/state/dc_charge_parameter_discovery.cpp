@@ -242,6 +242,7 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
         // Save adapted limits for later states (e.g. charge loop)
         m_ctx.session_config.dc_limits = checked_limits;
         m_ctx.dc_limits_locked_after_charge_param = true;
+        m_ctx.dc_limits_after_charge_param_bounds = checked_limits;
         res = handle_request(*req, m_ctx.session, checked_limits);
         m_ctx.respond(res);
 
