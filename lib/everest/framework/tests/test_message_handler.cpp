@@ -476,13 +476,15 @@ TEST_CASE("MessageHandler processes result messages separately", "[message_handl
 TEST_CASE("MessageHandler shuts down gracefully with pending messages", "[message_handler][shutdown]") {
     ExecutionTracker tracker;
     std::atomic<int> processing_count{0};
+    std::atomic<bool> handler_started{false};
 
     {
         MessageHandlerFixture handler;
 
         auto handler_func = std::make_shared<Handler>([&](const std::string& topic, const json& data) {
-            // Simulate some processing time but don't block indefinitely
             processing_count++;
+            handler_started.store(true);
+            // Simulate some processing time but don't block indefinitely
             std::this_thread::sleep_for(20ms);
             tracker.record(topic, data.value("sequence", 0));
         });
@@ -501,12 +503,16 @@ TEST_CASE("MessageHandler shuts down gracefully with pending messages", "[messag
         std::this_thread::sleep_for(10ms);
 
         // At this point, message 1 should be processing and 2-5 should be queued
-        // Shutdown should handle this gracefully
+        REQUIRE(handler_started.load()); // Verify first message started
     }
+    // Destructor calls stop(), which sets running=false
 
-    // If we get here without hanging, the test passed
-    INFO("Processed " << processing_count.load() << " messages before shutdown");
-    SUCCEED("Shutdown completed without crash or hang");
+    // Verify that pending messages (2-5) were NOT processed after shutdown was initiated.
+    // Only message 1 (in-flight) and any that completed before running=false should be in the tracker.
+    // Since we sleep 10ms and give the handler ~20ms, at most message 1 completes.
+    // Messages 2-5 should be abandoned when shutdown is requested.
+    CHECK(tracker.count() <= 1);
+    INFO("Processed " << processing_count.load() << " messages total");
 }
 
 // ============================================================================
@@ -887,4 +893,119 @@ TEST_CASE("MessageHandler handles mixed message types concurrently", "[message_h
     CHECK(cmd_tracker.get_events().size() == 1);
     CHECK(var_tracker.get_events().size() == 1);
     CHECK(ext_tracker.get_events().size() == 1);
+}
+
+TEST_CASE("MessageHandler: GlobalReady arrives before register_handler") {
+    auto handler = std::make_unique<MessageHandler>();
+
+    ExecutionTracker tracker;
+    bool handler_called = false;
+
+    // Send GlobalReady BEFORE registering the handler (critical race condition)
+    ParsedMessage ready_msg;
+    ready_msg.topic = "global";
+    ready_msg.data = {{"msg_type", "GlobalReady"}, {"data", {{"ready_data", true}}}};
+    handler->add(ready_msg);
+
+    // Give the ready_thread a moment to execute (it should find no handler registered)
+    std::this_thread::sleep_for(100ms);
+
+    // Now register the handler - too late, the ready_thread has already exited
+    auto ready_handler_func = std::make_shared<Handler>([&](const std::string& topic, const json& data) {
+        handler_called = true;
+        tracker.record(topic, 1);
+    });
+    auto ready_handler = std::make_shared<TypedHandler>(HandlerType::GlobalReady, ready_handler_func);
+    handler->register_handler("global", ready_handler);
+
+    // Wait briefly to ensure no deferred execution
+    std::this_thread::sleep_for(100ms);
+
+    // Handler should NOT have been called since it was registered after the message arrived
+    CHECK(handler_called == false);
+    CHECK(tracker.count() == 0);
+
+    handler->stop();
+}
+
+TEST_CASE("MessageHandler: Per-topic mutual exclusion (at most one in-flight per topic)") {
+    auto handler = std::make_unique<MessageHandler>();
+
+    // Track concurrent execution for each topic
+    std::map<std::string, std::atomic<int>> in_flight_count;
+    std::map<std::string, int> max_concurrent;
+    std::mutex concurrent_mutex;
+
+    ExecutionTracker tracker;
+
+    auto create_blocking_handler = [&](const std::string& topic) {
+        auto handler_func = std::make_shared<Handler>([&, topic](const std::string& msg_topic, const json& data) {
+            // Increment in-flight count for this topic
+            in_flight_count[topic]++;
+            int current = in_flight_count[topic];
+
+            // Record the start of execution
+            tracker.record(msg_topic, data.value("sequence", 0));
+
+            {
+                std::lock_guard<std::mutex> lock(concurrent_mutex);
+                max_concurrent[topic] = std::max(max_concurrent[topic], current);
+            }
+
+            // Simulate work with a delay
+            std::this_thread::sleep_for(50ms);
+
+            // Decrement in-flight count
+            in_flight_count[topic]--;
+        });
+        return std::make_shared<TypedHandler>(HandlerType::SubscribeVar, handler_func);
+    };
+
+    // Register handlers for multiple topics
+    handler->register_handler("topic/A", create_blocking_handler("topic/A"));
+    handler->register_handler("topic/B", create_blocking_handler("topic/B"));
+
+    // Send 3 messages for topic A (should be queued, not concurrent)
+    for (int i = 1; i <= 3; ++i) {
+        ParsedMessage msg = create_var_message("topic/A", i);
+        handler->add(msg);
+    }
+
+    // Send 3 messages for topic B (should also not be concurrent with each other)
+    for (int i = 1; i <= 3; ++i) {
+        ParsedMessage msg = create_var_message("topic/B", i);
+        handler->add(msg);
+    }
+
+    // Wait for all messages to be processed
+    tracker.wait_for_count(6, 10000ms);
+
+    // Verify both topics processed all 3 messages
+    auto events = tracker.get_events();
+    std::map<std::string, int> processed_count;
+    for (const auto& event : events) {
+        processed_count[event.topic]++;
+    }
+
+    CHECK(processed_count["topic/A"] == 3);
+    CHECK(processed_count["topic/B"] == 3);
+
+    // Verify at most 1 message in-flight per topic at any time
+    CHECK(max_concurrent["topic/A"] <= 1);
+    CHECK(max_concurrent["topic/B"] <= 1);
+
+    // Verify ordering is preserved within each topic
+    int last_seq_A = 0;
+    int last_seq_B = 0;
+    for (const auto& event : events) {
+        if (event.topic == "topic/A") {
+            CHECK(event.sequence > last_seq_A);
+            last_seq_A = event.sequence;
+        } else if (event.topic == "topic/B") {
+            CHECK(event.sequence > last_seq_B);
+            last_seq_B = event.sequence;
+        }
+    }
+
+    handler->stop();
 }

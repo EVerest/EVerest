@@ -4,18 +4,18 @@
 #pragma once
 
 #include <atomic>
-#include <condition_variable>
+#include <chrono>
 #include <map>
-#include <memory>
-#include <mutex>
-#include <queue>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
+#include <everest/util/async/monitor.hpp>
 #include <everest/util/async/thread_pool_scaling.hpp>
+#include <everest/util/queue/thread_safe_queue.hpp>
+
 #include <utils/message_queue.hpp>
 #include <utils/types.hpp>
 
@@ -24,13 +24,19 @@ using CmdId = std::string;
 
 namespace Everest {
 
-constexpr int THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS = 50;
-constexpr int THREAD_POOL_SCALING_LATENCY_THREAD_IDLE_TIMEOUT_S = 2;
-constexpr int THREAD_POOL_SCALING_MIN_THREAD_COUNT = 1;
+constexpr std::size_t THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS = 50;
+constexpr std::chrono::seconds THREAD_POOL_SCALING_IDLE_TIMEOUT{2};
+constexpr std::size_t THREAD_POOL_SCALING_MIN_THREAD_COUNT = 1;
+constexpr std::size_t MAX_PENDING_MESSAGES_PER_TOPIC = 100;
 
-/// \brief Handles message dispatching and thread-safe queuing of different message types. This class uses two separate
-/// threads and message queues: one for operation messages (vars, cmds, errors, GetConfig, ModuleReady) and one for
-/// result messages (cmd results, GetConfig responses).
+/// \brief Handles message dispatching and thread-safe queuing of different message types.
+///
+/// Messages are routed to one of four channels based on their type:
+///   - operation_message_queue → operation_dispatcher_thread → operation_thread_pool
+///     (vars, cmds, errors, GetConfig, ModuleReady — parallel across topics, serial per topic)
+///   - result_message_queue    → result_worker_thread (cmd results, GetConfig responses — serial)
+///   - external_mqtt_message_queue → external_mqtt_worker_thread (external MQTT — serial)
+///   - GlobalReady             → ready_thread (one-shot, spawned per message)
 class MessageHandler {
 public:
     MessageHandler();
@@ -45,7 +51,31 @@ public:
     /// \brief Registers a \p handler for a specific \p topic
     void register_handler(const std::string& topic, std::shared_ptr<TypedHandler> handler);
 
+    using SharedTypedHandler = std::shared_ptr<TypedHandler>;
+    using SingleHandlerMap = std::map<MqttTopic, SharedTypedHandler>;
+    using MultiHandlerMap = std::map<MqttTopic, std::vector<SharedTypedHandler>>;
+
 private:
+    struct OperationTopics {
+        std::unordered_set<std::string> in_flight;
+        std::unordered_map<std::string, everest::lib::util::simple_queue<ParsedMessage>> pending_messages;
+    };
+
+    struct ResponseHandlers {
+        std::map<CmdId, std::shared_ptr<TypedHandler>> cmd; // cmd result handlers of module
+        std::shared_ptr<TypedHandler> config;               // get module config response handler of module
+    };
+
+    struct GenericHandlers {
+        MultiHandlerMap var;                // var handlers of module
+        SingleHandlerMap cmd;               // cmd handlers of module
+        MultiHandlerMap error;              // error handlers with wildcard support
+        SingleHandlerMap get_module_config; // get module config handler of manager
+        SharedTypedHandler global_ready;    // global ready handler of module
+        SingleHandlerMap module_ready;      // module ready handlers of manager
+        MultiHandlerMap external_var;       // external MQTT handlers of module
+    };
+
     void run_operation_dispatcher();
     void run_result_message_worker();
     void run_external_mqtt_worker();
@@ -67,66 +97,31 @@ private:
     void handle_cmd_result(const std::string& topic, const json& payload);
     void handle_get_config_response(const std::string& topic, const json& payload);
 
-    // Helper methods for handler execution
-    template <typename HandlerMap, typename ExecuteFn>
-    void execute_handlers_from_vector(HandlerMap& handlers, const std::string& topic, ExecuteFn execute_fn);
-
-    template <typename HandlerMap, typename ExecuteFn>
-    void execute_handlers_from_vector_with_wildcards(HandlerMap& handlers, const std::string& topic,
-                                                     ExecuteFn execute_fn);
-
-    template <typename HandlerMap, typename ExecuteFn>
-    void execute_single_handler(HandlerMap& handlers, const std::string& topic, ExecuteFn execute_fn);
-
     // Threads
     std::thread operation_dispatcher_thread; // processes vars, commands, external MQTT, errors, GetConfig and
                                              // ModuleReady messages
     std::thread result_worker_thread;        // processes cmd results and GetConfig responses
     std::thread external_mqtt_worker_thread; // processes external MQTT messages
-    std::thread ready_thread;                // runs the modules ready function
 
-    // Queues and sync primitives
-    std::unique_ptr<everest::lib::util::thread_pool_scaling<
-        everest::lib::util::LatencyScaling<THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS>>>
-        operation_thread_pool{std::make_unique<everest::lib::util::thread_pool_scaling<
-            everest::lib::util::LatencyScaling<THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS>>>(
-            THREAD_POOL_SCALING_MIN_THREAD_COUNT, std::thread::hardware_concurrency(),
-            std::chrono::seconds(THREAD_POOL_SCALING_LATENCY_THREAD_IDLE_TIMEOUT_S))};
-    std::queue<ParsedMessage> operation_message_queue;
-    std::queue<ParsedMessage> result_message_queue;
-    std::queue<ParsedMessage> external_mqtt_message_queue;
+    // Wrapped in a monitor so that concurrent GlobalReady arrivals in add() are safe:
+    // the steal-then-join pattern moves the previous thread out under the lock and joins
+    // outside the lock, preventing concurrent join/assignment races on the raw std::thread.
+    everest::lib::util::monitor<std::thread> ready;
 
-    std::mutex operation_queue_mutex;
-    std::condition_variable operation_cv;
+    using LatencyScaling = everest::lib::util::LatencyScaling<THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS>;
+    using ThreadPool = everest::lib::util::thread_pool_scaling<LatencyScaling>;
+    std::unique_ptr<ThreadPool> operation_thread_pool;
 
-    std::mutex operation_topic_state_mutex;
-    std::unordered_set<std::string> operation_topics_in_flight;
-    std::unordered_map<std::string, std::queue<ParsedMessage>> pending_operation_messages_by_topic;
+    using MessageQueue = everest::lib::util::thread_safe_queue<ParsedMessage>;
+    MessageQueue operation_message_queue;
+    MessageQueue result_message_queue;
+    MessageQueue external_mqtt_message_queue;
 
-    std::mutex result_queue_mutex;
-    std::condition_variable result_cv;
-
-    std::mutex external_mqtt_queue_mutex;
-    std::condition_variable external_mqtt_cv;
-
-    std::mutex cmd_result_handler_mutex;
-    std::mutex handler_mutex;
+    everest::lib::util::monitor<OperationTopics> operations;
+    everest::lib::util::monitor<ResponseHandlers> responses;
+    everest::lib::util::monitor<GenericHandlers> handlers;
 
     std::atomic<bool> running = true;
-
-    // Handler data structures
-    std::map<MqttTopic, std::vector<std::shared_ptr<TypedHandler>>> var_handlers; // var handlers of module
-    std::map<MqttTopic, std::shared_ptr<TypedHandler>> cmd_handlers;              // cmd handlers of module
-    std::map<CmdId, std::shared_ptr<TypedHandler>> cmd_result_handlers;           // cmd result handlers of module
-    std::map<MqttTopic, std::vector<std::shared_ptr<TypedHandler>>>
-        error_handlers; // error handlers with wildcard support
-    std::map<MqttTopic, std::shared_ptr<TypedHandler>>
-        get_module_config_handlers;                        // get module config handler of manager
-    std::shared_ptr<TypedHandler> config_response_handler; // get module config response handler of module
-    std::shared_ptr<TypedHandler> global_ready_handler;    // global ready handler of module
-    std::map<MqttTopic, std::shared_ptr<TypedHandler>> module_ready_handlers; // module ready handlers of manager
-    std::map<MqttTopic, std::vector<std::shared_ptr<TypedHandler>>>
-        external_var_handlers; // external MQTT handlers of module
 };
 
 } // namespace Everest
