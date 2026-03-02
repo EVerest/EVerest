@@ -39,7 +39,8 @@ OCMFUserIdentificationStatus_Internal to_internal_api(OCMFUserIdentificationStat
     case OCMFUserIdentificationStatus_External::NOT_ASSIGNED:
         return OCMFUserIdentificationStatus_Internal::NOT_ASSIGNED;
     }
-    throw std::out_of_range("No know conversion between internal and external OCMFUserIdentificationStatus API");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::powermeter::OCMFUserIdentificationStatus_External");
 }
 
 OCMFUserIdentificationStatus_External to_external_api(OCMFUserIdentificationStatus_Internal const& val) {
@@ -49,7 +50,8 @@ OCMFUserIdentificationStatus_External to_external_api(OCMFUserIdentificationStat
     case OCMFUserIdentificationStatus_Internal::NOT_ASSIGNED:
         return OCMFUserIdentificationStatus_External::NOT_ASSIGNED;
     }
-    throw std::out_of_range("No know conversion between internal and external OCMFUserIdentificationStatus API");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::powermeter::OCMFUserIdentificationStatus_Internal");
 }
 
 OCMFIdentificationFlags_Internal to_internal_api(OCMFIdentificationFlags_External const& val) {
@@ -89,7 +91,8 @@ OCMFIdentificationFlags_Internal to_internal_api(OCMFIdentificationFlags_Externa
     case OCMFIdentificationFlags_External::PLMN_SMS:
         return OCMFIdentificationFlags_Internal::PLMN_SMS;
     }
-    throw std::out_of_range("No know conversion between internal and external OCMFIdentificationFlags API");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::powermeter::OCMFIdentificationFlags_External");
 }
 
 OCMFIdentificationFlags_External to_external_api(OCMFIdentificationFlags_Internal const& val) {
@@ -129,7 +132,8 @@ OCMFIdentificationFlags_External to_external_api(OCMFIdentificationFlags_Interna
     case OCMFIdentificationFlags_Internal::PLMN_SMS:
         return OCMFIdentificationFlags_External::PLMN_SMS;
     }
-    throw std::out_of_range("No know conversion between internal and external OCMFIdentificationFlags API");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::powermeter::OCMFIdentificationFlags_Internal");
 }
 
 OCMFIdentificationType_Internal to_internal_api(OCMFIdentificationType_External const& val) {
@@ -171,7 +175,8 @@ OCMFIdentificationType_Internal to_internal_api(OCMFIdentificationType_External 
     case OCMFIdentificationType_External::KEY_CODE:
         return OCMFIdentificationType_Internal::KEY_CODE;
     }
-    throw std::out_of_range("No know conversion between internal and external OCMFIdentificationType API");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::powermeter::OCMFIdentificationType_External");
 }
 
 OCMFIdentificationType_External to_external_api(OCMFIdentificationType_Internal const& val) {
@@ -213,7 +218,8 @@ OCMFIdentificationType_External to_external_api(OCMFIdentificationType_Internal 
     case OCMFIdentificationType_Internal::KEY_CODE:
         return OCMFIdentificationType_External::KEY_CODE;
     }
-    throw std::out_of_range("No know conversion between internal and external OCMFIdentificationType API");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::powermeter::OCMFIdentificationType_Internal");
 }
 
 OCMFIdentificationLevel_Internal to_internal_api(OCMFIdentificationLevel_External const& val) {
@@ -240,7 +246,8 @@ OCMFIdentificationLevel_Internal to_internal_api(OCMFIdentificationLevel_Externa
         return OCMFIdentificationLevel_Internal::UNKNOWN;
     }
 
-    throw std::out_of_range("No know conversion between internal and external OCMFIdentificationLevel API");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::powermeter::OCMFIdentificationLevel_External");
 }
 
 OCMFIdentificationLevel_External to_external_api(OCMFIdentificationLevel_Internal const& val) {
@@ -267,7 +274,8 @@ OCMFIdentificationLevel_External to_external_api(OCMFIdentificationLevel_Interna
         return OCMFIdentificationLevel_External::UNKNOWN;
     }
 
-    throw std::out_of_range("No know conversion between internal and external OCMFIdentificationLevel API");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::powermeter::OCMFIdentificationLevel_Internal");
 }
 
 Temperature_Internal to_internal_api(Temperature_External const& val) {
@@ -592,7 +600,8 @@ TransactionStatus_Internal to_internal_api(TransactionStatus_External const& val
         return TransactionStatus_Internal::UNEXPECTED_ERROR;
     }
 
-    throw std::out_of_range("No known conversion from external to internal TransactionStatus API");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::powermeter::TransactionStatus_External");
 }
 
 TransactionStatus_External to_external_api(TransactionStatus_Internal const& val) {
@@ -605,7 +614,8 @@ TransactionStatus_External to_external_api(TransactionStatus_Internal const& val
         return TransactionStatus_External::UNEXPECTED_ERROR;
     }
 
-    throw std::out_of_range("No known conversion from internal to external TransactionStatus API");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::powermeter::TransactionStatus_Internal");
 }
 
 ReplyStartTransaction_Internal to_internal_api(ReplyStartTransaction_External const& val) {

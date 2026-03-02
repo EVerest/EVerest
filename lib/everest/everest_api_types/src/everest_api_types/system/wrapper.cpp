@@ -23,7 +23,8 @@ UpdateFirmwareResponse_Internal to_internal_api(UpdateFirmwareResponse_External 
     case SrcT::RevokedCertificate:
         return TarT::RevokedCertificate;
     }
-    throw std::out_of_range("Unexpected value for UpdateFirmwareResponse_Internal" + serialize(val));
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::system::UpdateFirmwareResponse_External");
 }
 UpdateFirmwareResponse_External to_external_api(UpdateFirmwareResponse_Internal const& val) {
     using SrcT = UpdateFirmwareResponse_Internal;
@@ -40,7 +41,8 @@ UpdateFirmwareResponse_External to_external_api(UpdateFirmwareResponse_Internal 
     case SrcT::RevokedCertificate:
         return TarT::RevokedCertificate;
     }
-    throw std::out_of_range("Unexpected value for UpdateFirmwareResponse_External");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::system::UpdateFirmwareResponse_Internal");
 }
 
 UploadLogsStatus_Internal to_internal_api(UploadLogsStatus_External const& val) {
@@ -54,7 +56,7 @@ UploadLogsStatus_Internal to_internal_api(UploadLogsStatus_External const& val) 
     case SrcT::AcceptedCanceled:
         return TarT::AcceptedCanceled;
     }
-    throw std::out_of_range("Unexpected value for UploadLogsStatus_Internal" + serialize(val));
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::system::UploadLogsStatus_External");
 }
 UploadLogsStatus_External to_external_api(UploadLogsStatus_Internal const& val) {
     using SrcT = UploadLogsStatus_Internal;
@@ -67,7 +69,7 @@ UploadLogsStatus_External to_external_api(UploadLogsStatus_Internal const& val) 
     case SrcT::AcceptedCanceled:
         return TarT::AcceptedCanceled;
     }
-    throw std::out_of_range("Unexpected value for UploadLogsStatus_External");
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::system::UploadLogsStatus_Internal");
 }
 
 LogStatusEnum_Internal to_internal_api(LogStatusEnum_External const& val) {
@@ -91,7 +93,7 @@ LogStatusEnum_Internal to_internal_api(LogStatusEnum_External const& val) {
     case SrcT::AcceptedCanceled:
         return TarT::AcceptedCanceled;
     }
-    throw std::out_of_range("Unexpected value for LogStatusEnum_Internal" + serialize(val));
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::system::LogStatusEnum_External");
 }
 LogStatusEnum_External to_external_api(LogStatusEnum_Internal const& val) {
     using SrcT = LogStatusEnum_Internal;
@@ -114,7 +116,7 @@ LogStatusEnum_External to_external_api(LogStatusEnum_Internal const& val) {
     case SrcT::AcceptedCanceled:
         return TarT::AcceptedCanceled;
     }
-    throw std::out_of_range("Unexpected value for LogStatusEnum_External");
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::system::LogStatusEnum_Internal");
 }
 
 FirmwareUpdateStatusEnum_Internal to_internal_api(FirmwareUpdateStatusEnum_External const& val) {
@@ -150,7 +152,8 @@ FirmwareUpdateStatusEnum_Internal to_internal_api(FirmwareUpdateStatusEnum_Exter
     case SrcT::SignatureVerified:
         return TarT::SignatureVerified;
     }
-    throw std::out_of_range("Unexpected value for FirmwareUpdateStatusEnum_Internal" + serialize(val));
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::system::FirmwareUpdateStatusEnum_External");
 }
 FirmwareUpdateStatusEnum_External to_external_api(FirmwareUpdateStatusEnum_Internal const& val) {
     using SrcT = FirmwareUpdateStatusEnum_Internal;
@@ -185,7 +188,8 @@ FirmwareUpdateStatusEnum_External to_external_api(FirmwareUpdateStatusEnum_Inter
     case SrcT::SignatureVerified:
         return TarT::SignatureVerified;
     }
-    throw std::out_of_range("Unexpected value for FirmwareUpdateStatusEnum_External");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::system::FirmwareUpdateStatusEnum_Internal");
 }
 
 ResetType_Internal to_internal_api(ResetType_External const& val) {
@@ -199,7 +203,7 @@ ResetType_Internal to_internal_api(ResetType_External const& val) {
     case SrcT::NotSpecified:
         return TarT::NotSpecified;
     }
-    throw std::out_of_range("Unexpected value for ResetType_Internal" + serialize(val));
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::system::ResetType_External");
 }
 ResetType_External to_external_api(ResetType_Internal const& val) {
     using SrcT = ResetType_Internal;
@@ -212,7 +216,7 @@ ResetType_External to_external_api(ResetType_Internal const& val) {
     case SrcT::NotSpecified:
         return TarT::NotSpecified;
     }
-    throw std::out_of_range("Unexpected value for ResetType_External");
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::system::ResetType_Internal");
 }
 
 BootReason_Internal to_internal_api(BootReason_External const& val) {
@@ -238,7 +242,7 @@ BootReason_Internal to_internal_api(BootReason_External const& val) {
     case SrcT::Watchdog:
         return TarT::Watchdog;
     }
-    throw std::out_of_range("Unexpected value for BootReason_Internal" + serialize(val));
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::system::BootReason_External");
 }
 BootReason_External to_external_api(BootReason_Internal const& val) {
     using SrcT = BootReason_Internal;
@@ -263,7 +267,7 @@ BootReason_External to_external_api(BootReason_Internal const& val) {
     case SrcT::Watchdog:
         return TarT::Watchdog;
     }
-    throw std::out_of_range("Unexpected value for BootReason_External");
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::system::BootReason_Internal");
 }
 
 FirmwareUpdateRequest_Internal to_internal_api(FirmwareUpdateRequest_External const& val) {

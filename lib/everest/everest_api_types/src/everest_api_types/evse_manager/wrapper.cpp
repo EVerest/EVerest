@@ -85,7 +85,8 @@ StopTransactionReason_Internal to_internal_api(StopTransactionReason_External co
     case SrcT::ReqEnergyTransferRejected:
         return TarT::ReqEnergyTransferRejected;
     }
-    throw std::out_of_range("Unexpected value for StopTransactionReason_External");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_manager::StopTransactionReason_External");
 }
 
 StopTransactionReason_External to_external_api(StopTransactionReason_Internal const& val) {
@@ -138,7 +139,8 @@ StopTransactionReason_External to_external_api(StopTransactionReason_Internal co
     case SrcT::ReqEnergyTransferRejected:
         return TarT::ReqEnergyTransferRejected;
     }
-    throw std::out_of_range("Unexpected value for StopTransactionReason_Internal");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_manager::StopTransactionReason_Internal");
 }
 
 StopTransactionRequest_Internal to_internal_api(StopTransactionRequest_External const& val) {
@@ -165,7 +167,8 @@ StartSessionReason_Internal to_internal_api(StartSessionReason_External const& v
         return TarT::Authorized;
     }
 
-    throw std::out_of_range("Unexpected value for StartSessionReason_External");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_manager::StartSessionReason_External");
 }
 
 StartSessionReason_External to_external_api(StartSessionReason_Internal const& val) {
@@ -179,7 +182,8 @@ StartSessionReason_External to_external_api(StartSessionReason_Internal const& v
         return TarT::Authorized;
     }
 
-    throw std::out_of_range("Unexpected value for StartSessionReason_Internal");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_manager::StartSessionReason_Internal");
 }
 
 SessionEventEnum_Internal to_internal_api(SessionEventEnum_External const& val) {
@@ -237,7 +241,8 @@ SessionEventEnum_Internal to_internal_api(SessionEventEnum_External const& val) 
         return TarT::SessionResumed;
     }
 
-    throw std::out_of_range("Unexpected value for SessionEventEnum_Internal");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_manager::SessionEventEnum_External");
 }
 
 SessionEventEnum_External to_external_api(SessionEventEnum_Internal const& val) {
@@ -295,7 +300,8 @@ SessionEventEnum_External to_external_api(SessionEventEnum_Internal const& val) 
         return TarT::SessionResumed;
     }
 
-    throw std::out_of_range("Unexpected value for SessionEventEnum_Internal");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_manager::SessionEventEnum_Internal");
 }
 
 SessionEvent_Internal to_internal_api(SessionEvent_External const& val) {
@@ -402,7 +408,8 @@ CarManufacturer_External to_external_api(CarManufacturer_Internal const& val) {
         return TarT::Unknown;
     }
 
-    throw std::out_of_range("Unexpected value for CarManufacturer_Internal");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_manager::CarManufacturer_Internal");
 }
 
 CarManufacturer_Internal to_external_api(CarManufacturer_External const& val) {
@@ -418,7 +425,8 @@ CarManufacturer_Internal to_external_api(CarManufacturer_External const& val) {
         return TarT::Unknown;
     }
 
-    throw std::out_of_range("Unexpected value for CarManufacturer_Internal");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_manager::CarManufacturer_External");
 }
 
 SessionStarted_Internal to_internal_api(SessionStarted_External const& val) {
@@ -571,7 +579,8 @@ ConnectorTypeEnum_Internal to_internal_api(ConnectorTypeEnum_External const& val
     case SrcT::Unknown:
         return TarT::Unknown;
     }
-    throw std::out_of_range("Unexpected value for ConnectorTypeEnum_External");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_manager::ConnectorTypeEnum_External");
 }
 
 ConnectorTypeEnum_External to_external_api(ConnectorTypeEnum_Internal const& val) {
@@ -626,7 +635,8 @@ ConnectorTypeEnum_External to_external_api(ConnectorTypeEnum_Internal const& val
     case SrcT::Unknown:
         return TarT::Unknown;
     }
-    throw std::out_of_range("Unexpected value for ConnectorTypeEnum_External");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_manager::ConnectorTypeEnum_Internal");
 }
 
 Connector_Internal to_internal_api(Connector_External const& val) {
@@ -684,7 +694,8 @@ EnableSourceEnum_Internal to_internal_api(EnableSourceEnum_External const& val) 
     case SrcT::CSMS:
         return TarT::CSMS;
     }
-    throw std::out_of_range("Unexpected value for EnableSourceEnum_External");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_manager::EnableSourceEnum_External");
 }
 
 EnableSourceEnum_External to_external_api(EnableSourceEnum_Internal const& val) {
@@ -709,7 +720,8 @@ EnableSourceEnum_External to_external_api(EnableSourceEnum_Internal const& val) 
     case SrcT::CSMS:
         return TarT::CSMS;
     }
-    throw std::out_of_range("Unexpected value for EnableSourceEnum_Internal");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_manager::EnableSourceEnum_Internal");
 }
 
 EnableStateEnum_Internal to_internal_api(EnableStateEnum_External const& val) {
@@ -724,7 +736,8 @@ EnableStateEnum_Internal to_internal_api(EnableStateEnum_External const& val) {
     case SrcT::Enable:
         return TarT::Enable;
     }
-    throw std::out_of_range("Unexpected value for EnableStateEnum_External");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_manager::EnableStateEnum_External");
 }
 
 EnableStateEnum_External to_external_api(EnableStateEnum_Internal const& val) {
@@ -739,7 +752,8 @@ EnableStateEnum_External to_external_api(EnableStateEnum_Internal const& val) {
     case SrcT::Enable:
         return TarT::Enable;
     }
-    throw std::out_of_range("Unexpected value for EnableStateEnum_Internal");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::evse_manager::EnableStateEnum_Internal");
 }
 
 EnableDisableSource_Internal to_internal_api(EnableDisableSource_External const& val) {
