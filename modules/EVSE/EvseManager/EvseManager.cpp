@@ -281,7 +281,22 @@ void EvseManager::init() {
 
         signalNrOfPhasesAvailable(ac_nr_phases_active);
 
-        bsp->set_three_phases(c.max_phase_count_import);
+        const auto get_max_phases = [](int max_phase_count) -> AcPhases {
+            switch (max_phase_count) {
+            case 1:
+                return AcPhases::SinglePhase;
+            case 2:
+                return AcPhases::TwoPhases;
+            case 3:
+                return AcPhases::ThreePhases;
+
+            default:
+                EVLOG_warning << "Invalid max_phase_count of " << max_phase_count << ". Falling back to single phase";
+            }
+            return AcPhases::SinglePhase;
+        };
+
+        bsp->set_max_phases(get_max_phases(c.max_phase_count_import));
         charger->set_connector_type(c.connector_type);
         p_evse->publish_hw_capabilities(c);
         if (config.charge_mode == "AC" and hlc_enabled) {

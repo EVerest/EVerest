@@ -441,10 +441,10 @@ void IECStateMachine::set_pp_ampacity(types::board_support_common::ProximityPilo
         pp_ampacity = 32.;
         break;
     case types::board_support_common::Ampacity::A_63_3ph_70_1ph:
-        if (three_phases) {
-            pp_ampacity = 63.;
-        } else {
+        if (max_phases == AcPhases::SinglePhase) {
             pp_ampacity = 70.;
+        } else {
+            pp_ampacity = 63.;
         }
         break;
     default:

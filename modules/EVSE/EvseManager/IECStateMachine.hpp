@@ -66,6 +66,13 @@ enum class RawCPState {
     F
 };
 
+// Number of active phases for AC charging
+enum class AcPhases {
+    SinglePhase,
+    TwoPhases,
+    ThreePhases
+};
+
 class IECStateMachine {
 public:
     // We need the r_bsp reference to be able to talk to the bsp driver module
@@ -87,8 +94,8 @@ public:
     void set_cp_state_X1();
     void set_cp_state_F();
 
-    void set_three_phases(bool t) {
-        three_phases = t;
+    void set_max_phases(AcPhases phases) {
+        max_phases = phases;
     }
 
     void enable(bool en);
@@ -123,7 +130,7 @@ private:
     bool last_power_on_allowed{false};
     std::atomic<double> pp_ampacity{0.0};
     std::atomic<double> last_amps{-1};
-    std::atomic_bool three_phases{true};
+    std::atomic<AcPhases> max_phases{AcPhases::ThreePhases};
 
     bool car_plugged_in{false};
 
