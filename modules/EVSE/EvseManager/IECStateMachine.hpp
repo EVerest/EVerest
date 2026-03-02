@@ -24,6 +24,7 @@
 
 #include <chrono>
 #include <mutex>
+#include <optional>
 #include <queue>
 
 #include <generated/interfaces/evse_board_support/Interface.hpp>
@@ -131,8 +132,8 @@ private:
     AsyncTimeout timeout_unlock_state_F;
 
     Everest::timed_mutex_traceable state_machine_mutex;
-    void feed_state_machine(RawCPState cp_state);
-    std::queue<CPEvent> state_machine(RawCPState cp_state);
+    void feed_state_machine(std::optional<RawCPState> cp_state_opt);
+    std::queue<CPEvent> state_machine(std::optional<RawCPState> cp_state_opt);
 
     types::evse_board_support::Reason power_on_reason{types::evse_board_support::Reason::PowerOff};
     void call_allow_power_on_bsp(bool value);

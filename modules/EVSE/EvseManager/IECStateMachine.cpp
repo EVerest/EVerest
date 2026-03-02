@@ -83,8 +83,8 @@ IECStateMachine::IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& 
                                  bool lock_connector_in_state_b_) :
     r_bsp(r_bsp_), lock_connector_in_state_b(lock_connector_in_state_b_) {
     // feed the state machine whenever the timer expires
-    timeout_state_c1.signal_reached.connect([this]() { feed_state_machine(last_cp_state); });
-    timeout_unlock_state_F.signal_reached.connect([this]() { feed_state_machine(last_cp_state); });
+    timeout_state_c1.signal_reached.connect([this]() { feed_state_machine(std::nullopt); });
+    timeout_unlock_state_F.signal_reached.connect([this]() { feed_state_machine(std::nullopt); });
 
     // Subscribe to bsp driver to receive BspEvents from the hardware
     r_bsp->subscribe_event([this](const types::board_support_common::BspEvent event) {
@@ -118,11 +118,12 @@ void IECStateMachine::process_bsp_event(const types::board_support_common::BspEv
                event);
 }
 
-void IECStateMachine::feed_state_machine(RawCPState cp_state) {
-    auto events = state_machine(cp_state);
+void IECStateMachine::feed_state_machine(std::optional<RawCPState> cp_state_opt) {
+    auto events = state_machine(cp_state_opt);
 
     // Process all events
     while (not events.empty()) {
+        EVLOG_debug << "CPEvent " << static_cast<int>(events.front());
         signal_event(events.front());
         events.pop();
     }
@@ -132,8 +133,13 @@ void IECStateMachine::feed_state_machine(RawCPState cp_state) {
 // - CP state changes (both events from hardware as well as duty cycle changes)
 // - Allow power on changes
 // - The C1 6s timer expires
-std::queue<CPEvent> IECStateMachine::state_machine(RawCPState cp_state) {
+std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> cp_state_opt) {
 
+    if (cp_state_opt) {
+        EVLOG_debug << "RawCPState " << static_cast<int>(cp_state_opt.value());
+    } else {
+        EVLOG_debug << "RawCPState not set";
+    }
     std::queue<CPEvent> events;
     auto timer_state_C1 = TimerControl::do_nothing;
     auto timer_unlock_state_F = TimerControl::do_nothing;
@@ -141,6 +147,8 @@ std::queue<CPEvent> IECStateMachine::state_machine(RawCPState cp_state) {
     {
         // mutex protected section
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_state_machine);
+
+        const auto cp_state = cp_state_opt.value_or(last_cp_state);
 
         if (cp_state not_eq RawCPState::F and last_cp_state == RawCPState::F) {
             timer_unlock_state_F = TimerControl::stop;
@@ -369,7 +377,7 @@ void IECStateMachine::set_pwm(double value) {
 
     r_bsp->call_pwm_on(value * 100);
 
-    feed_state_machine(last_cp_state);
+    feed_state_machine(std::nullopt);
 }
 
 // High level state machine sets state X1
@@ -380,7 +388,7 @@ void IECStateMachine::set_cp_state_X1() {
     }
     r_bsp->call_cp_state_X1();
     // Don't run the state machine in the callers context
-    feed_state_machine(last_cp_state);
+    feed_state_machine(std::nullopt);
 }
 
 // High level state machine sets state F
@@ -391,7 +399,7 @@ void IECStateMachine::set_cp_state_F() {
     }
     r_bsp->call_cp_state_F();
     // Don't run the state machine in the callers context
-    feed_state_machine(last_cp_state);
+    feed_state_machine(std::nullopt);
 }
 
 // The higher level state machine in Charger.cpp calls this to indicate it allows contactors to be switched on
@@ -408,7 +416,7 @@ void IECStateMachine::allow_power_on(bool value, types::evse_board_support::Reas
     }
     // The actual power on will be handled in the state machine to verify it is in the correct CP state etc.
     // Don't run the state machine in the callers context
-    feed_state_machine(last_cp_state);
+    feed_state_machine(std::nullopt);
 }
 
 // Private member function used to actually call the BSP driver's allow_power_on
