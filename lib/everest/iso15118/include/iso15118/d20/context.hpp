@@ -189,6 +189,8 @@ public:
     std::optional<UpdateDynamicModeParameters> cache_dynamic_mode_parameters;
     std::optional<AcTargetPower> cache_ac_target_power;
     std::optional<AcPresentPower> cache_ac_present_power;
+    bool dc_limits_locked_after_charge_param{false};
+    std::optional<DcTransferLimits> dc_limits_after_charge_param_bounds;
     // Survives the state change from DC_ChargeLoop into DC_WeldingDetection, whose first response would
     // otherwise report 0 V until the next update.
     std::optional<PresentVoltageCurrent> cache_present_values;
