@@ -1,6 +1,7 @@
-#######################
+.. _tutorial_contribute_to_everest:
+
 Contributing to EVerest
-#######################
+***********************
 
 Assuming you want to contribute to the source code of EVerest, this tutorial
 will help finding your way through the standard process.
