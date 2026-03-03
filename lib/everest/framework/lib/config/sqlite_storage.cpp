@@ -498,8 +498,8 @@ GetSetResponseStatus SqliteStorage::update_configuration_parameter(const Configu
         stmt->bind_text("@value", value);
         stmt->bind_text("@module_id", identifier.module_id);
         stmt->bind_text("@parameter_name", identifier.configuration_parameter_name);
-        stmt->bind_text("@module_implementation_id",
-                        identifier.module_implementation_id.value_or(default_module_implementation_id()));
+        const std::string impl_id = identifier.module_implementation_id.value_or(default_module_implementation_id());
+        stmt->bind_text("@module_implementation_id", impl_id);
 
         if (stmt->step() != SQLITE_DONE) {
             return GetSetResponseStatus::Failed;
