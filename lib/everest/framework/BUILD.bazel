@@ -50,6 +50,7 @@ cc_library(
         "@rapidyaml//:rapidyaml",
         "//lib/everest/log:liblog",
         "//lib/everest/sqlite:everest-sqlite",
+        "//lib/everest/util:util",
         "@com_github_fmtlib_fmt//:fmt",
         "@com_github_nlohmann_json//:json",
         "@com_github_pboettch_json-schema-validator//:json-schema-validator",

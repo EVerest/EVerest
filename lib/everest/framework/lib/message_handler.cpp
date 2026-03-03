@@ -6,6 +6,8 @@
 #include <everest/logging.hpp>
 #include <fmt/format.h>
 
+#include <optional>
+
 namespace Everest {
 
 namespace {
@@ -62,7 +64,7 @@ bool check_topic_matches(const std::string& full_topic, const std::string& wildc
 } // namespace
 
 MessageHandler::MessageHandler() {
-    operation_worker_thread = std::thread([this] { run_operation_message_worker(); });
+    operation_dispatcher_thread = std::thread([this] { run_operation_dispatcher(); });
     result_worker_thread = std::thread([this] { run_result_message_worker(); });
     external_mqtt_worker_thread = std::thread([this] { run_external_mqtt_worker(); });
 }
@@ -120,9 +122,13 @@ void MessageHandler::stop() {
     result_cv.notify_all();
     external_mqtt_cv.notify_all();
 
-    if (operation_worker_thread.joinable()) {
-        operation_worker_thread.join();
+    // Join the dispatcher first: it must not be able to call schedule_operation_message()
+    // (which dereferences operation_thread_pool) after the pool is destroyed.
+    if (operation_dispatcher_thread.joinable()) {
+        operation_dispatcher_thread.join();
     }
+    // The thread_pool destructor handles stopping and joining its workers.
+    operation_thread_pool.reset();
     if (result_worker_thread.joinable()) {
         result_worker_thread.join();
     }
@@ -134,7 +140,7 @@ void MessageHandler::stop() {
     }
 }
 
-void MessageHandler::run_operation_message_worker() {
+void MessageHandler::run_operation_dispatcher() {
     while (true) {
         std::unique_lock<std::mutex> lock(operation_queue_mutex);
         operation_cv.wait(lock, [this] { return !operation_message_queue.empty() || !running; });
@@ -145,9 +151,73 @@ void MessageHandler::run_operation_message_worker() {
         operation_message_queue.pop();
         lock.unlock();
 
-        handle_operation_message(message.topic, message.data);
+        dispatch_operation_message(std::move(message));
     }
-    EVLOG_info << "Main worker thread stopped";
+    EVLOG_info << "Operation dispatcher thread stopped";
+}
+
+void MessageHandler::dispatch_operation_message(ParsedMessage&& message) {
+    {
+        std::lock_guard<std::mutex> lock(operation_topic_state_mutex);
+        if (operation_topics_in_flight.find(message.topic) != operation_topics_in_flight.end()) {
+            pending_operation_messages_by_topic[message.topic].push(std::move(message));
+            return;
+        }
+
+        operation_topics_in_flight.insert(message.topic);
+    }
+
+    schedule_operation_message(std::move(message));
+}
+
+// NOLINTNEXTLINE(misc-no-recursion)
+void MessageHandler::schedule_operation_message(ParsedMessage&& message) {
+    // NOLINTNEXTLINE(misc-no-recursion)
+    auto operation = [this, message = std::move(message)]() {
+        // Wrap in try-catch so that on_operation_message_done is always called: an exception in
+        // the handler must not leave the topic permanently stuck in operation_topics_in_flight,
+        // which would block all subsequent messages for that topic.
+        try {
+            handle_operation_message(message.topic, message.data);
+        } catch (const std::exception& e) {
+            EVLOG_error << "Exception while handling operation message on topic '" << message.topic
+                        << "': " << e.what();
+        } catch (...) {
+            EVLOG_error << "Unknown exception while handling operation message on topic '" << message.topic << "'";
+        }
+        on_operation_message_done(message.topic);
+    };
+
+    if (operation_thread_pool) {
+        operation_thread_pool->run(std::move(operation));
+    }
+}
+
+// NOLINTNEXTLINE(misc-no-recursion)
+void MessageHandler::on_operation_message_done(const std::string& topic) {
+    std::optional<ParsedMessage> next_message;
+    {
+        std::lock_guard<std::mutex> lock(operation_topic_state_mutex);
+        if (!running) {
+            // Shutting down: stop scheduling and release the in-flight slot.
+            operation_topics_in_flight.erase(topic);
+            return;
+        }
+        auto pending_it = pending_operation_messages_by_topic.find(topic);
+        if (pending_it != pending_operation_messages_by_topic.end() && !pending_it->second.empty()) {
+            next_message = std::move(pending_it->second.front());
+            pending_it->second.pop();
+
+            if (pending_it->second.empty()) {
+                pending_operation_messages_by_topic.erase(pending_it);
+            }
+        } else {
+            operation_topics_in_flight.erase(topic);
+            return;
+        }
+    }
+
+    schedule_operation_message(std::move(*next_message));
 }
 
 void MessageHandler::run_result_message_worker() {

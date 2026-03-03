@@ -5,15 +5,17 @@
 
 #include <atomic>
 #include <condition_variable>
-#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <queue>
 #include <string>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
+#include <everest/util/async/thread_pool_scaling.hpp>
 #include <utils/message_queue.hpp>
 #include <utils/types.hpp>
 
@@ -21,6 +23,10 @@ using MqttTopic = std::string;
 using CmdId = std::string;
 
 namespace Everest {
+
+constexpr int THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS = 50;
+constexpr int THREAD_POOL_SCALING_LATENCY_THREAD_IDLE_TIMEOUT_S = 2;
+constexpr int THREAD_POOL_SCALING_MIN_THREAD_COUNT = 1;
 
 /// \brief Handles message dispatching and thread-safe queuing of different message types. This class uses two separate
 /// threads and message queues: one for operation messages (vars, cmds, errors, GetConfig, ModuleReady) and one for
@@ -40,9 +46,13 @@ public:
     void register_handler(const std::string& topic, std::shared_ptr<TypedHandler> handler);
 
 private:
-    void run_operation_message_worker();
+    void run_operation_dispatcher();
     void run_result_message_worker();
     void run_external_mqtt_worker();
+
+    void dispatch_operation_message(ParsedMessage&& message);
+    void schedule_operation_message(ParsedMessage&& message);
+    void on_operation_message_done(const std::string& topic);
 
     void handle_operation_message(const std::string& topic, const json& payload);
     void handle_result_message(const std::string& topic, const json& payload);
@@ -69,19 +79,29 @@ private:
     void execute_single_handler(HandlerMap& handlers, const std::string& topic, ExecuteFn execute_fn);
 
     // Threads
-    std::thread
-        operation_worker_thread; // processes vars, commands, external MQTT, errors, GetConfig and ModuleReady messages
+    std::thread operation_dispatcher_thread; // processes vars, commands, external MQTT, errors, GetConfig and
+                                             // ModuleReady messages
     std::thread result_worker_thread;        // processes cmd results and GetConfig responses
     std::thread external_mqtt_worker_thread; // processes external MQTT messages
     std::thread ready_thread;                // runs the modules ready function
 
     // Queues and sync primitives
+    std::unique_ptr<everest::lib::util::thread_pool_scaling<
+        everest::lib::util::LatencyScaling<THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS>>>
+        operation_thread_pool{std::make_unique<everest::lib::util::thread_pool_scaling<
+            everest::lib::util::LatencyScaling<THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS>>>(
+            THREAD_POOL_SCALING_MIN_THREAD_COUNT, std::thread::hardware_concurrency(),
+            std::chrono::seconds(THREAD_POOL_SCALING_LATENCY_THREAD_IDLE_TIMEOUT_S))};
     std::queue<ParsedMessage> operation_message_queue;
     std::queue<ParsedMessage> result_message_queue;
     std::queue<ParsedMessage> external_mqtt_message_queue;
 
     std::mutex operation_queue_mutex;
     std::condition_variable operation_cv;
+
+    std::mutex operation_topic_state_mutex;
+    std::unordered_set<std::string> operation_topics_in_flight;
+    std::unordered_map<std::string, std::queue<ParsedMessage>> pending_operation_messages_by_topic;
 
     std::mutex result_queue_mutex;
     std::condition_variable result_cv;
