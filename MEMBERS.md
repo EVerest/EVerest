@@ -10,34 +10,25 @@ Commitee Members:
 - Holger Rapp [qwello] ([@SirVer](https://github.com/SirVer))
 - K. Shankari [Joint office of Energy and Transportation] ([@shankari](https://github.com/shankari))
 
-
 Regular exchange about the ongoing open source development is done in the
 format of working groups. The working groups with their chair persons and the
 technical leads are:
 
-* General Working Group
-  * Chair: Robert de Leeuw 
+* EVerest Triage Meeting
+  * Chair & Tech Lead: Piet Gömpel ([@Pietfried](https://github.com/pietfried))
 
 * Car Communication WG
-  * Chair: Tim Valbert
-  * Tech Lead: Sebastian Lukas ([@SebaLukas](https://github.com/SebaLukas))
+  * Chair & Tech Lead: Sebastian Lukas ([@SebaLukas](https://github.com/SebaLukas))
 
 * Cloud Communication WG
-  * Chair: Robert de Leeuw
-  * Tech Lead: Piet Gömpel ([@Pietfried](https://github.com/pietfried))
+  * Chair & Tech Lead: Piet Gömpel ([@Pietfried](https://github.com/pietfried))
 
-* FIT - Framework Infrastructure Tools
-  * Chair: Manuel Ziegler ([@Krealyt](https://github.com/krealyt))
-  * Tech Leads: Andreas Heinrich and Kai-Uwe Hermann
-   ([@andistorm](https://github.com/andistorm) and
-   [@hikinggrass](https://github.com/hikinggrass))
 
 * Energy Management WG
-  * Chair: Tim Valbert ([@pampelmusent](https://github.com/pampelmusent))
-  * Cornelius Claussen ([@corneliusclaussen](https://github.com/corneliusclaussen))
+  * Chair & Tech Lead: Piet Gömpel ([@Pietfried](https://github.com/pietfried))
  
  * MCS WG
-  * Chair: Tim Valbert ([@pampelmusent](https://github.com/pampelmusent))
+  * Chair & Tech Lead: Sebastian Lukas ([@SebaLukas](https://github.com/SebaLukas))
   
 
 More details about the working groups and how to get there, see:

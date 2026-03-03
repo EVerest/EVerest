@@ -1,18 +1,18 @@
 ## Project Intake checklist
 
-This is a checklist for TSC's to review as part of the intake process. The TSC should review this entire list during the kickoff meeting. For anything outstanding, create an [issue](../issues) to track and link to it in the list
+This is a checklist for TSC's to review as part of the intake process. The TSC should review this entire list during the kickoff meeting. For anything outstanding, create an [issue](https://github.com/EVerest/everest-tsc/issues) to track and link to it in the list
 
 - [x] Copy this checklist to a project specific location for tracking
 - Acceptance Criteria
 	- Have an open and documented technical governance, including:
-		- [x] A [LICENSE](../LICENSE) file in every code repository, with the license chosen an [OSI-approved license](https://opensource.org/licenses).
-		- [x] A [README](../README.md) file welcoming new community members to the project and explaining why the project is useful and how to get started.
-		- [x] A [CONTRIBUTING](../CONTRIBUTING.md) file explaining to other developers and your community of users how to contribute to the project. The file should explain what types of contributions are needed and how the process works.
-		- [x] A CODEOWNERS or [COMMITTERS](../COMMITTERS.csv) file to define individuals or teams that are responsible for code in a repository; document current project owners and current and emeritus committers. 
-		- [x] A [CODE_OF_CONDUCT](../CODE_OF_CONDUCT.md) file that sets the ground rules for participants’ behavior associated and helps to facilitate a friendly, welcoming environment. By default projects should leverage the Linux Foundation Code of Conduct unless an alternate Code of Conduct is approved prior.
-		- [x] A [RELEASE](../RELEASE.md) file that provides documentation on the release methodology, cadence, criteria, etc.
-		- [x] A [GOVERNANCE](../GOVERNANCE.md) file that documents the project’s technical governance.
-		- [x] A [SUPPORT](../SUPPORT.md) file to let users and developers know about ways to get help with your project.
+		- [x] A [LICENSE](LICENSE) file in every code repository, with the license chosen an [OSI-approved license](https://opensource.org/licenses).
+		- [x] A [README](README.md) file welcoming new community members to the project and explaining why the project is useful and how to get started.
+		- [x] A [CONTRIBUTING](CONTRIBUTING.md) file explaining to other developers and your community of users how to contribute to the project. The file should explain what types of contributions are needed and how the process works.
+		- [x] A CODEOWNERS or [COMMITTERS](COMMITTERS.csv) file to define individuals or teams that are responsible for code in a repository; document current project owners and current and emeritus committers. 
+		- [x] A [CODE_OF_CONDUCT](CODE_OF_CONDUCT.md) file that sets the ground rules for participants’ behavior associated and helps to facilitate a friendly, welcoming environment. By default projects should leverage the Linux Foundation Code of Conduct unless an alternate Code of Conduct is approved prior.
+		- [x] A [RELEASE](RELEASE.md) file that provides documentation on the release methodology, cadence, criteria, etc.
+		- [x] A [GOVERNANCE](GOVERNANCE.md) file that documents the project’s technical governance.
+		- [x] A [SUPPORT](SUPPORT.md) file to let users and developers know about ways to get help with your project.
 	- [x] Complete and approve the [Technical Charter](CHARTER.md) and agree to transfer any relevant trademarks to The Linux Foundation or its affiliate, LF Projects, LLC, and to assist in filing for any relevant unregistered ones.
 	- [x] Submit a completed [Project Contribution Proposal](https://wiki.lfenergy.org/display/HOME/New+Project+Proposals+Process) to the TAC for consideration
 	- [x] Schedule to present at an upcoming TAC meeting ( provide date ).
@@ -22,7 +22,7 @@ This is a checklist for TSC's to review as part of the intake process. The TSC s
 - New Project Intake
 	- Establish TSC
 		- [x] Location for TSC documents and meeting notes ( recommendation is ```tsc``` directory in main repo, and then ```meetings``` under the ```tsc``` directory )
-		- [x] TSC members identified, added to [GOVERNANCE.md](../GOVERNANCE.md).
+		- [x] TSC members identified, added to [GOVERNANCE.md](GOVERNANCE.md).
 		- [x] First TSC meeting held ( [agenda](meetings/initial-meeting-agenda.md) )
 		- [x] Elect TSC Chairperson
 		- [x] TSC meeting cadence set and added to project calendar (https://lists.lfenergy.org/calendar)
