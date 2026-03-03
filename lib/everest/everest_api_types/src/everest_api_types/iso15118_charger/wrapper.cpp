@@ -59,7 +59,8 @@ CertificateActionEnum_Internal to_internal_api(CertificateActionEnum_External co
         return TarT::Update;
     }
 
-    throw std::out_of_range("Unexpected value for CertificateActionEnum_External");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::iso15118_charger::CertificateActionEnum_External");
 }
 
 CertificateActionEnum_External to_external_api(CertificateActionEnum_Internal const& val) {
@@ -73,7 +74,8 @@ CertificateActionEnum_External to_external_api(CertificateActionEnum_Internal co
         return TarT::Update;
     }
 
-    throw std::out_of_range("Unexpected value for CertificateActionEnum_Internal");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::iso15118_charger::CertificateActionEnum_Internal");
 }
 
 EnergyTransferMode_Internal to_internal_api(EnergyTransferMode_External const& val) {
@@ -117,7 +119,8 @@ EnergyTransferMode_Internal to_internal_api(EnergyTransferMode_External const& v
         return TarT::MCS_BPT;
     }
 
-    throw std::out_of_range("Unexpected value for EnergyTransferMode_External");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::iso15118_charger::EnergyTransferMode_External");
 }
 
 EnergyTransferMode_External to_external_api(EnergyTransferMode_Internal const& val) {
@@ -161,7 +164,8 @@ EnergyTransferMode_External to_external_api(EnergyTransferMode_Internal const& v
         return TarT::MCS_BPT;
     }
 
-    throw std::out_of_range("Unexpected value for EnergyTransferMode_Internal");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::iso15118_charger::EnergyTransferMode_Internal");
 }
 
 Status_Internal to_internal_api(Status_External const& val) {
@@ -175,7 +179,7 @@ Status_Internal to_internal_api(Status_External const& val) {
         return TarT::Failed;
     }
 
-    throw std::out_of_range("Unexpected value for Status_External");
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::iso15118_charger::Status_External");
 }
 
 Status_External to_external_api(Status_Internal const& val) {
@@ -189,7 +193,7 @@ Status_External to_external_api(Status_Internal const& val) {
         return TarT::Failed;
     }
 
-    throw std::out_of_range("Unexpected value for Status_Internal");
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::iso15118_charger::Status_Internal");
 }
 
 RequestExiStreamSchema_Internal to_internal_api(RequestExiStreamSchema_External const& val) {
