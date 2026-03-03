@@ -8,10 +8,12 @@
 #include <everest_api_types/entrypoint/API.hpp>
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/utilities/CommCheckHandler.hpp>
+#include <everest_api_types/utilities/IMqttProvider.hpp>
 #include <everest_api_types/utilities/Topics.hpp>
 #include <everest_api_types/utilities/codec.hpp>
 #include <functional>
 #include <string>
+#include <utility>
 
 namespace module {
 
@@ -21,15 +23,50 @@ namespace API_types_entry = API_types::entrypoint;
 using ev_API::deserialize;
 
 class ApiModuleBase : public Everest::ModuleBase {
+    class ValidatingMqttProxy : public ev_API::Mqtt::IMqttProvider {
+    public:
+        explicit ValidatingMqttProxy(Everest::MqttProvider& provider_) : provider(provider_) {
+        }
+
+        void publish(const std::string& topic, const std::string& data) override {
+            if (!is_topic_valid(topic)) {
+                return;
+            }
+            provider.publish(topic, data);
+        }
+
+        Everest::UnsubscribeToken subscribe(const std::string& topic, std::function<void(std::string)> handler) const override {
+            return provider.subscribe(topic, std::move(handler));
+        }
+
+    private:
+        Everest::MqttProvider& provider;
+
+        // Centralized validation logic
+        bool is_topic_valid(std::string_view topic) const {
+            // Length Constraints
+            if (topic.empty() || topic.length() > 65535) {
+                return false;
+            }
+
+            // Characters constraints (no wildcard topics allowed)
+            if (topic.find('\0') != std::string_view::npos or topic.find_first_of("+#") != std::string_view::npos) {
+                return false;
+            }
+
+            return true;
+        }
+    };
+
 public:
     using ParseAndPublishFtor = std::function<bool(std::string const&)>;
 
     ApiModuleBase(const ModuleInfo& info_, Everest::MqttProvider& mqtt_,
                   std::map<std::string, size_t> const& implemented_apis_) :
-        ModuleBase(info_), mqtt(mqtt_), implemented_apis(implemented_apis_) {
+        ModuleBase(info_), mqtt(ValidatingMqttProxy(mqtt_)), implemented_apis(implemented_apis_) {
     }
 
-    Everest::MqttProvider& mqtt;
+    ValidatingMqttProxy mqtt;
     const ev_API::Topics& get_topics() const;
 
 protected:
