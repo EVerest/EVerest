@@ -8,13 +8,13 @@ will help finding your way through the standard process.
 The following steps are involved, which we will walk through in this tutorial
 to get the details:
 
-* Have an idea for EVerest and creating an according issue,
-* promote a first high-level explanation of your idea and describing a
-  possible way to implement a solution,
-* discuss with responsible core developers and the community,
-* prepare your development environment and start developing,
-* give intermediate information in the EVerest live calls and
-* present the final work and update all relevant EVerest documents.
+* Have a new idea for EVerest? Creating an according issue.
+* Promoting a first high-level explanation of your idea and describing a
+  possible way to implement a solution.
+* Discussing with responsible core developers and the community.
+* Preparing your development environment and start developing.
+* Giving intermediate information in the EVerest live calls.
+* Presenting the final work and update all relevant EVerest documents.
 
 Let's get started!
 
@@ -22,7 +22,7 @@ Let's get started!
 Step 0: Before you start
 ========================
 
-This tutorial assumes that you already had some experience with EVerest.
+This tutorial assumes that you already got some experience with EVerest.
 For example, you did some simulation tests based on our beginner guides
 or you even used EVerest for a real-world hardware project already.
 
@@ -31,19 +31,22 @@ main EVerest community platform, Zulip.
 
 Also consider to attend some of the live talks like the working groups.
 
+See our :ref:`community channels page <exp_communicity_channels>` to get
+all channels where to meet the core developers and the community.
 
 Step 1: A new idea means a new issue
 ====================================
 
-Let's assume that you have worked with EVerest's OCPP features but you noticed
-that the local cost calculation for OCPP 2.1 is still missing.
+For this tutorial, let's assume that you have worked with EVerest's OCPP
+features but you noticed that the local cost calculation for OCPP 2.1 is
+still missing.
 
-What a great idea to implement that.
+What a great idea to implement.
 
 One important rule though:
 For every idea / feature, we will have to create a GitHub issue first as the
-core developers and the EVerest community could have some additional opinions
-or even suggestions for the implementation of your idea.
+core developers and the EVerest community could have some additional thoughts
+or suggestions for the implementation of your idea.
 Let them get the chance to express their views on a dedicated GitHub issue
 page.
 
@@ -103,14 +106,14 @@ your topic.
 
 .. note:: Best Practice Tip
     Before starting to implement your idea, there should at least have been
-    some thought from the community about your idea.
+    some thought exchange inside the community about your idea.
     If there has not been a reaction in the GitHub issue and also not via
     Zulip, you might at least tell in one of the live calls that you will start
     to implement now.
 
 
 Step 2: Let there be code!
---------------------------
+==========================
 
 With the community knowing about your upcoming development activity, it is now
 time to shine and spread some code.
@@ -123,7 +126,8 @@ Step 2.1: Prepare development environment
 
 For development and testing, a Linux environment is required.
 For more requirements and the minimum setup for EVerest development, have a
-look at the system requirements page.
+look at the
+:ref:`system requirements section on the getting started page <exp_getting_started_sw>`.
 
 Also setup the software development packages described on that page.
 
@@ -131,12 +135,18 @@ Also setup the software development packages described on that page.
 Step 2.2: Get the sources
 -------------------------
 
-For our OCPP implementation, we will require the libocpp repository to add our
-new code there.
+For the new OCPP implementation, we will require the libocpp repository to add
+our still to be written code there.
+Create a fork of the libocpp repository and download the source code to your
+development environment.
+
+Should you already have received dedicated access rights from the core team to
+push directly to the original upstream repository, you can of course directly
+git-clone the directory.
 
 .. note:: About testing EVerest
     For the mere implementation of our new function, it will be sufficient to
-    only checkout the libocpp repository.
+    only get the libocpp repository.
     To test the new OCPP functionality within an EVerest instance, you will
     have to setup EVerest.
     That requires more respositories and configuration, which will not be part
@@ -151,3 +161,61 @@ Step 2.3: Implement and test
 
 TODO: How is the testing implemented in EVerest? Any best practices to add in
 this tutorial?
+
+
+Step 2.4: Optional: Create a Draft PR
+-------------------------------------
+
+Should you see a reason for showing an intermediate version of your
+implementation - e.g. for discussing some things before continuing with
+coding -, you can create a Draft Pull Request (PR).
+This lets others give you feedback on your non-finished implementation.
+
+Sometimes, this is a good way to show your current path of solution and
+get some answers on open questions or check whether other see you on the fight
+path.
+
+.. note:: Draft PR to real PR
+    A Draft PR can be switched to a real PR as soon as you finished your
+    implementation. For further information, see the GitHub docs.
+
+Step 2.5: Documentation
+-----------------------
+
+Yes, please do document your implementation. Have a dedicated page in the
+EVerest Docs or make changes on existing pages - depending on your
+implementation.
+
+See our :ref:`documentation how-to <documenting_everest>` for more
+information on that.
+
+If unsure where to do the changes, you can always ask the community.
+
+
+Step 3: Ready to publish your implementation?
+=============================================
+
+As soon as you have finished implementing and tested your creation, it it time
+to create a Pull Request (PR) on GitHub.
+
+See GitHub for
+`a how-to about creating a PR from a fork <https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request-from-a-fork>`_.
+
+Please add a summarization about your implementation.
+The community could have some feedback before adding your implementation
+to the main branch.
+
+Should you have to do some additional changes - e.g. based on community
+feedback -, you can still commit and push your changes to your fork.
+The changes will automatically be reflected in the PR.
+
+
+Step 4: Your mission is done.
+=============================
+
+Congratulations!
+Yet another optimization of EVerest has been merged.
+
+The code owners of the changed repository (in your case the libocpp code
+owners) will merge the PR as soon as they have reviewed your implementation
+and think that it is good to shine.
