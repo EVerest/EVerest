@@ -21,33 +21,33 @@ from ocpp.v16 import call_result
 async def test_meter_public_key(
     charge_point_v16: ChargePoint16, test_utility: TestUtility
 ):
-    await charge_point_v16.get_configuration_req(key=["MeterPublicKey[1]"])
+    await charge_point_v16.get_configuration_req(key=["MeterPublicKey1"])
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
         "GetConfiguration",
         call_result.GetConfiguration(
-            [{"key": "MeterPublicKey[1]", "readonly": True, "value": "TESTPUBLICKEY1"}]
+            [{"key": "MeterPublicKey1", "readonly": True, "value": "TESTPUBLICKEY1"}]
         ),
     )
 
-    await charge_point_v16.get_configuration_req(key=["MeterPublicKey[2]"])
+    await charge_point_v16.get_configuration_req(key=["MeterPublicKey2"])
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
         "GetConfiguration",
         call_result.GetConfiguration(
-            [{"key": "MeterPublicKey[2]", "readonly": True, "value": "TESTPUBLICKEY2"}]
+            [{"key": "MeterPublicKey2", "readonly": True, "value": "TESTPUBLICKEY2"}]
         ),
     )
 
-    await charge_point_v16.get_configuration_req(key=["MeterPublicKey[3]"])
+    await charge_point_v16.get_configuration_req(key=["MeterPublicKey3"])
 
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
         "GetConfiguration",
-        {"unknownKey": ["MeterPublicKey[3]"]}
+        {"unknownKey": ["MeterPublicKey3"]}
     )
 
     test_utility.messages.clear()
@@ -55,69 +55,69 @@ async def test_meter_public_key(
     response : call_result.GetConfiguration = await charge_point_v16.get_configuration_req()
 
     assert any(
-        entry['key'] == "MeterPublicKey[1]" and entry['value'] == "TESTPUBLICKEY1"
+        entry['key'] == "MeterPublicKey1" and entry['value'] == "TESTPUBLICKEY1"
         for entry in response.configuration_key)
 
     assert any(
-        entry['key'] == "MeterPublicKey[2]" and entry['value'] == "TESTPUBLICKEY2"
+        entry['key'] == "MeterPublicKey2" and entry['value'] == "TESTPUBLICKEY2"
         for entry in response.configuration_key)
     
-    await charge_point_v16.get_configuration_req(key=["MeterPublicKey[]"])
+    await charge_point_v16.get_configuration_req(key=["MeterPublicKey"])
 
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
         "GetConfiguration",
-        {"unknownKey": ["MeterPublicKey[]"]}
+        {"unknownKey": ["MeterPublicKey"]}
     )
 
-    await charge_point_v16.get_configuration_req(key=["MeterPublicKey[MeterPublicKey[1]]"])
+    await charge_point_v16.get_configuration_req(key=["MeterPublicKeyMeterPublicKey1"])
 
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
         "GetConfiguration",
-        {"unknownKey": ["MeterPublicKey[MeterPublicKey[1]]"]}
+        {"unknownKey": ["MeterPublicKeyMeterPublicKey1"]}
     )
     
-    await charge_point_v16.get_configuration_req(key=["MeterPublicKey[1X"])
+    await charge_point_v16.get_configuration_req(key=["MeterPublicKey1X"])
 
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
         "GetConfiguration",
-        {"unknownKey": ["MeterPublicKey[1X"]}
+        {"unknownKey": ["MeterPublicKey1X"]}
     )
 
-    await charge_point_v16.get_configuration_req(key=["MeterPublicKey[1X]"])
+    await charge_point_v16.get_configuration_req(key=["MeterPublicKey1X"])
 
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
         "GetConfiguration",
-        {"unknownKey": ["MeterPublicKey[1X]"]}
+        {"unknownKey": ["MeterPublicKey1X"]}
     )
 
-    await charge_point_v16.get_configuration_req(key=["MeterPublicKey[banana]"])
+    await charge_point_v16.get_configuration_req(key=["MeterPublicKeybanana"])
 
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
         "GetConfiguration",
-        {"unknownKey": ["MeterPublicKey[banana]"]}
+        {"unknownKey": ["MeterPublicKeybanana"]}
     )
 
-    await charge_point_v16.get_configuration_req(key=["MeterPublicKey[0]"])
+    await charge_point_v16.get_configuration_req(key=["MeterPublicKey0"])
 
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
         "GetConfiguration",
-        {"unknownKey": ["MeterPublicKey[0]"]}
+        {"unknownKey": ["MeterPublicKey0"]}
     )
 
     await charge_point_v16.change_configuration_req(
-        key="MeterPublicKey[1]", value="TEST"
+        key="MeterPublicKey1", value="TEST"
     )
     assert await wait_for_and_validate(
         test_utility,

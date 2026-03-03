@@ -808,7 +808,7 @@ TEST_P(Configuration, PublicKey) {
 
     for (std::uint8_t i = 1; i <= max; i++) {
         SCOPED_TRACE(std::to_string(i));
-        auto key = std::string{"MeterPublicKey["} + std::to_string(i) + ']';
+        auto key = std::string{"MeterPublicKey"} + std::to_string(i);
         auto value = std::string{"Public Key: "} + std::to_string(i);
         EXPECT_TRUE(get()->setMeterPublicKey(i, value));
         auto kv = get()->getPublicKeyKeyValue(i);
@@ -822,7 +822,7 @@ TEST_P(Configuration, PublicKey) {
     ASSERT_TRUE(kvl);
     ASSERT_EQ(kvl.value().size(), 1);
     auto kv = kvl.value()[0];
-    EXPECT_EQ(kv.key, "MeterPublicKey[1]");
+    EXPECT_EQ(kv.key, "MeterPublicKey1");
     EXPECT_EQ(kv.value, "Public Key: 1");
     EXPECT_TRUE(kv.readonly);
 }

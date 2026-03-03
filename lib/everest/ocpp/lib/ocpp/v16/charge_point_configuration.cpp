@@ -2899,7 +2899,7 @@ std::optional<KeyValue> ChargePointConfiguration::getPublicKeyKeyValue(const std
     }
 
     KeyValue kv;
-    kv.key = "MeterPublicKey[" + std::to_string(connector_id) + "]";
+    kv.key = "MeterPublicKey" + std::to_string(connector_id);
     kv.readonly = true;
     kv.value = keys_array.at(connector_id - 1).get<std::string>();
     return kv;
@@ -2920,7 +2920,7 @@ std::optional<std::vector<KeyValue>> ChargePointConfiguration::getAllMeterPublic
     const auto& keys_array = meter_public_keys;
     for (size_t i = 0; i < keys_array.size(); i++) {
         KeyValue kv;
-        kv.key = "MeterPublicKey[" + std::to_string(i + 1) + "]";
+        kv.key = "MeterPublicKey" + std::to_string(i + 1);
         kv.readonly = true;
         kv.value = keys_array.at(i).get<std::string>();
         key_values.push_back(kv);
@@ -3033,10 +3033,9 @@ ConfigurationStatus ChargePointConfiguration::setCustomKey(const CiString<50>& k
 }
 
 std::optional<uint32_t> parse_meter_public_key_index(const std::string& input) {
-    const std::string prefix = "MeterPublicKey[";
-    const std::string suffix = "]";
+    const std::string prefix = "MeterPublicKey";
 
-    if (input.size() <= prefix.size() + suffix.size()) {
+    if (input.size() <= prefix.size()) {
         return std::nullopt;
     }
 
@@ -3044,11 +3043,7 @@ std::optional<uint32_t> parse_meter_public_key_index(const std::string& input) {
         return std::nullopt;
     }
 
-    if (input.substr(input.size() - suffix.size()) != suffix) {
-        return std::nullopt;
-    }
-
-    std::string number_str = input.substr(prefix.size(), input.size() - prefix.size() - suffix.size());
+    std::string number_str = input.substr(prefix.size());
 
     if (number_str.empty()) {
         return std::nullopt;
@@ -3350,7 +3345,7 @@ std::optional<KeyValue> ChargePointConfiguration::get(const CiString<50>& key) {
     if (key == "WebSocketPingInterval") {
         return this->getWebsocketPingIntervalKeyValue();
     }
-    if (key.get().rfind("MeterPublicKey[", 0) == 0) {
+    if (key.get().rfind("MeterPublicKey", 0) == 0) {
         const std::string& s = key.get();
         const auto connector_id_opt = parse_meter_public_key_index(s);
 

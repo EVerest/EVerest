@@ -2603,7 +2603,7 @@ std::optional<KeyValue> ChargePointConfigurationDeviceModel::get(const CiString<
         if (supported_feature_profiles.find(SupportedFeatureProfiles::CostAndPrice) !=
             supported_feature_profiles.end()) {
             // check keys starting DefaultPriceText
-            if (key_str.find("DefaultPriceText") == 0) {
+            if (key_str.rfind("DefaultPriceText", 0) == 0) {
                 if (getCustomMultiLanguageMessagesEnabled().value_or(false)) {
                     const auto lang = utils::split_string(',', key_str);
                     if (lang.size() == 2) {
@@ -2613,9 +2613,9 @@ std::optional<KeyValue> ChargePointConfigurationDeviceModel::get(const CiString<
                 get_value = false;
             }
         }
-        // check keys starting MeterPublicKey[
-        if (key_str.find("MeterPublicKey[") == 0) {
-            auto id = extractConnectorId(key_str);
+        // check keys starting MeterPublicKey
+        if (key_str.rfind("MeterPublicKey", 0) == 0) {
+            auto id = extractConnectorIdFromMeterPublicKey(key_str);
             if (id) {
                 result = getPublicKeyKeyValue(id.value());
             }
@@ -2839,7 +2839,7 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
             result = ConfigurationStatus::NotSupported;
             break;
         case keys::valid_keys::MeterPublicKeys:
-            // should never match - connector ID expected: MeterPublicKey[1]
+            // should never match - connector ID expected: MeterPublicKey1
             EVLOG_error << R"(ChargePointConfiguration::set("MeterPublicKey", )" << value << R"(") not supported)";
             result = ConfigurationStatus::NotSupported;
             break;
@@ -2933,7 +2933,7 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
             break;
         }
     } else {
-        if (key_str.find("DefaultPriceText") == 0) {
+        if (key_str.rfind("DefaultPriceText", 0) == 0) {
             if (supported_feature_profiles.find(SupportedFeatureProfiles::CostAndPrice) !=
                 supported_feature_profiles.end()) {
                 // check keys starting DefaultPriceText
@@ -2941,7 +2941,7 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
             } else {
                 result = ConfigurationStatus::NotSupported;
             }
-        } else if (key_str.find("MeterPublicKey[") == 0) {
+        } else if (key_str.rfind("MeterPublicKey", 0) == 0) {
             // not setable
         } else {
             // custom key

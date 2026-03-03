@@ -64,7 +64,7 @@ public:
     bool isValidSupportedMeasurands(const std::string& csl) const;
     std::optional<MeasurandWithPhaseList> csvToMeasurandWithPhaseVector(const std::string& csl) const;
 
-    static std::optional<std::uint32_t> extractConnectorId(const std::string& str);
+    static std::optional<std::uint32_t> extractConnectorIdFromMeterPublicKey(const std::string& str);
     static std::string meterPublicKeyString(std::uint32_t connector_id);
 
     static bool toBool(const std::string& value);
