@@ -154,11 +154,14 @@ public:
         }
         m_action_queue.stop();
 
-        // 2. Steal the active workers list
+        // 2. Steal the active workers list. Explicitly clear the source so that any
+        // worker that acquires the lock afterwards sees size()==0 and cannot
+        // voluntarily retire into the zombies deque after step 4's final reap.
         std::list<std::thread> workers_to_join;
         {
             auto reg_h = m_reg.handle();
             workers_to_join = std::move(reg_h->workers);
+            reg_h->workers.clear();
         }
 
         // 3. Join everything in our stolen list
@@ -168,9 +171,18 @@ public:
             }
         }
 
-        // 4. Join and clear any zombies that retired before the move
-        auto reg_h = m_reg.handle();
-        reap_zombies_internal(reg_h);
+        // 4. Join any zombies that retired before the steal. Steal the deque first
+        // so the join happens outside the lock (same pattern as the worker loop).
+        std::deque<std::thread> zombies_to_join;
+        {
+            auto reg_h = m_reg.handle();
+            zombies_to_join = std::move(reg_h->zombies);
+        }
+        for (auto& t : zombies_to_join) {
+            if (t.joinable()) {
+                t.join();
+            }
+        }
     }
 
     /**
@@ -250,10 +262,29 @@ private:
                 auto task_opt = m_action_queue.try_pop(m_idle_timeout);
 
                 if (task_opt) {
-                    task_opt->func();
-                    auto reg_h = m_reg.handle();
-                    if (!reg_h->zombies.empty()) {
-                        reap_zombies_internal(reg_h);
+                    try {
+                        task_opt->func();
+                    } catch (...) {
+                        // Suppress exception to prevent thread termination.
+                        // Fire-and-forget tasks are responsible for their own error handling.
+                    }
+                    // Steal the zombie deque under the lock, then join outside it.
+                    // Joining while holding the lock is safe in practice (the zombie has already
+                    // released the lock before it can appear in the deque), but it blocks the
+                    // registry mutex for the duration of the join — delaying scaling decisions
+                    // and the destructor. Stealing first bounds the critical section to a cheap
+                    // list move.
+                    std::deque<std::thread> zombies_to_join;
+                    {
+                        auto reg_h = m_reg.handle();
+                        if (!reg_h->zombies.empty()) {
+                            zombies_to_join = std::move(reg_h->zombies);
+                        }
+                    }
+                    for (auto& t : zombies_to_join) {
+                        if (t.joinable()) {
+                            t.join();
+                        }
                     }
                 } else {
                     auto reg_h = m_reg.handle();
@@ -277,19 +308,6 @@ private:
                 }
             }
         });
-    }
-
-    /**
-     * @brief Joins and clears retired threads.
-     * @param[in] reg_h Handle to the monitor-protected registry data.
-     */
-    void reap_zombies_internal(handle& reg_h) {
-        while (!reg_h->zombies.empty()) {
-            if (reg_h->zombies.front().joinable()) {
-                reg_h->zombies.front().join();
-            }
-            reg_h->zombies.pop_front();
-        }
     }
 
     const std::size_t m_min_threads;                ///< Minimum persistent thread count.
