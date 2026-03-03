@@ -40,6 +40,11 @@ std::string serialize(EVerestVersion val) noexcept {
     return result.dump(json_indent);
 }
 
+std::string serialize(CommunicationParameters val) noexcept {
+    json result = val;
+    return result.dump(json_indent);
+}
+
 std::ostream& operator<<(std::ostream& os, ApiParameter const& val) {
     os << serialize(val);
     return os;
@@ -66,6 +71,11 @@ std::ostream& operator<<(std::ostream& os, QueryEVerestConfigurationResponse con
 }
 
 std::ostream& operator<<(std::ostream& os, EVerestVersion const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, CommunicationParameters const& val) {
     os << serialize(val);
     return os;
 }
@@ -103,6 +113,12 @@ template <> QueryEVerestConfigurationResponse deserialize(std::string const& val
 template <> EVerestVersion deserialize(std::string const& val) {
     auto data = json::parse(val);
     EVerestVersion obj = data;
+    return obj;
+}
+
+template <> CommunicationParameters deserialize(std::string const& val) {
+    auto data = json::parse(val);
+    CommunicationParameters obj = data;
     return obj;
 }
 

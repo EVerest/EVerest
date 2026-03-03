@@ -30,6 +30,9 @@ void to_json(json& j, ApiParameter const& k) noexcept {
     if (k.associated_module) {
         j["associated_module"] = k.associated_module.value();
     }
+    if (k.communication_monitoring) {
+        j["communication_monitoring"] = k.communication_monitoring.value();
+    }
 }
 
 void from_json(const json& j, ApiParameter& k) {
@@ -37,7 +40,10 @@ void from_json(const json& j, ApiParameter& k) {
     k.module_id = j.at("module_id");
     k.version = j.at("version");
     if (j.contains("associated_module")) {
-        k.associated_module.emplace(j.at("associated_module").get<ModuleAssociations>());
+        k.associated_module.emplace(j["associated_module"].get<ModuleAssociations>());
+    }
+    if (j.contains("communication_monitoring")) {
+        k.communication_monitoring.emplace(j["communication_monitoring"].get<CommunicationParameters>());
     }
 }
 
@@ -94,6 +100,30 @@ void from_json(const json& j, EVerestVersion& k) {
     k.name = j.at("name");
     k.version = j.at("version");
     k.git_version = j.at("git_version");
+}
+
+void to_json(json& j, CommunicationParameters const& k) noexcept {
+    if (k.heartbeat_period_ms) {
+        j["heartbeat_period_ms"] = k.heartbeat_period_ms.value();
+    }
+    if (k.communication_check_period_s) {
+        j["communication_check_period_s"] = k.communication_check_period_s.value();
+    }
+    if (k.request_reply_timeout_s) {
+        j["request_reply_timeout_s"] = k.request_reply_timeout_s.value();
+    }
+}
+
+void from_json(const json& j, CommunicationParameters& k) {
+    if (j.contains("heartbeat_period_ms")) {
+        k.heartbeat_period_ms.emplace(j["heartbeat_period_ms"].get<int32_t>());
+    }
+    if (j.contains("communication_check_period_s")) {
+        k.communication_check_period_s.emplace(j["communication_check_period_s"].get<int32_t>());
+    }
+    if (j.contains("request_reply_timeout_s")) {
+        k.request_reply_timeout_s.emplace(j["request_reply_timeout_s"].get<int32_t>());
+    }
 }
 
 } // namespace everest::lib::API::V1_0::types::entrypoint

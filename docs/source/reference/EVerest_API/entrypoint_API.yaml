@@ -279,6 +279,9 @@ components:
         associated_module:
           type: object
           $ref: '#/components/schemas/ModuleAssociations'
+        communication_monitoring:
+          type: object
+          $ref: '#/components/schemas/CommunicationParameters'
     ModuleAssociations:
       description: Description of connected modules
       type: object
@@ -292,6 +295,9 @@ components:
           items:
             description: Id of module
             type: string
+        communication_monitoring:
+          type: object
+          $ref: '#/components/schemas/CommunicationParameters'
     QueryEVerestConfigurationResponse:
       description: Type for query everest configuration results
       type: object
@@ -340,7 +346,20 @@ components:
         git_version:
           description: Exact git revision
           type: string
-
+    CommunicationParameters:
+      description: Parameters of the communication communication monitoring between EVerest and client
+      type: object
+      additionalProperties: true
+      properties:
+        heartbeat_period_ms:
+          description: Period of heartbeat messages from EVerest to the client
+          type: number
+        communication_check_period_s:
+          description: Maximum expected interval for alive messages from client to EVerest
+          type: number
+        request_reply_timeout_s:
+          description: Timeout within a client must reply to request from EVerest
+          type: number
 
     HeartBeatId:
       type: integer

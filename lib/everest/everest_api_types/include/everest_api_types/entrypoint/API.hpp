@@ -12,11 +12,18 @@ struct ModuleAssociations {
     std::vector<std::string> required_modules;
 };
 
+struct CommunicationParameters {
+    std::optional<int32_t> heartbeat_period_ms;
+    std::optional<int32_t> communication_check_period_s;
+    std::optional<int32_t> request_reply_timeout_s;
+};
+
 struct ApiParameter {
     std::string type;
     std::string module_id;
     int32_t version;
     std::optional<ModuleAssociations> associated_module;
+    std::optional<CommunicationParameters> communication_monitoring;
 };
 
 struct ApiDiscoverResponse {

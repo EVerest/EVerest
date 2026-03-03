@@ -13,6 +13,7 @@ std::string serialize(ModuleAssociations val) noexcept;
 std::string serialize(ModuleParameter val) noexcept;
 std::string serialize(QueryEVerestConfigurationResponse val) noexcept;
 std::string serialize(EVerestVersion val) noexcept;
+std::string serialize(CommunicationParameters val) noexcept;
 
 std::ostream& operator<<(std::ostream& os, ApiParameter const& val);
 std::ostream& operator<<(std::ostream& os, ApiDiscoverResponse const& val);
@@ -20,6 +21,7 @@ std::ostream& operator<<(std::ostream& os, ModuleAssociations const& val);
 std::ostream& operator<<(std::ostream& os, ModuleParameter const& val);
 std::ostream& operator<<(std::ostream& os, QueryEVerestConfigurationResponse const& val);
 std::ostream& operator<<(std::ostream& os, EVerestVersion const& val);
+std::ostream& operator<<(std::ostream& os, CommunicationParameters const& val);
 
 template <class T> T deserialize(std::string const& val);
 template <class T> std::optional<T> try_deserialize(std::string const& val) {

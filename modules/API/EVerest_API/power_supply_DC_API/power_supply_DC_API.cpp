@@ -22,7 +22,10 @@ using ev_API::deserialize;
 void power_supply_DC_API::init() {
     invoke_init(*p_main);
 
-    init_entrypoint_api();
+    API_types_entry::CommunicationParameters comm_params{};
+    comm_params.heartbeat_period_ms = config.cfg_heartbeat_interval_ms;
+    comm_params.communication_check_period_s = config.cfg_communication_check_to_s;
+    init_entrypoint_api(comm_params);
     init_topics();
 }
 

@@ -30,7 +30,7 @@ void ApiModuleBase::init_topics() {
     }
 }
 
-void ApiModuleBase::init_entrypoint_api() {
+void ApiModuleBase::init_entrypoint_api(API_types_entry::CommunicationParameters const& comm_parameters) {
     auto config_service_client = get_config_service_client();
 
     const auto& module_configs = config_service_client->get_module_configs();
@@ -52,6 +52,7 @@ void ApiModuleBase::init_entrypoint_api() {
         api_params.type = api_type;
         api_params.module_id = info.id;
         api_params.version = version;
+        api_params.communication_monitoring = comm_parameters;
         discover_response.apis.push_back(api_params);
 
         if (module_query_response.count(api_type) == 0) {

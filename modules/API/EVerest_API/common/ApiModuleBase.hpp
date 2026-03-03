@@ -48,7 +48,7 @@ protected:
     void subscribe_entrypoint_var(std::string const& var, ParseAndPublishFtor parse_and_publish);
 
     // Common initialization
-    void init_entrypoint_api();
+    void init_entrypoint_api(API_types_entry::CommunicationParameters const& comm_parameters);
     void init_topics();
     void generate_api_entrypoint_cmd_discover();
     void generate_api_entrypoint_cmd_query_module();

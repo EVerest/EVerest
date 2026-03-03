@@ -21,7 +21,11 @@ void display_message_API::init() {
     invoke_init(*p_main);
     invoke_init(*p_generic_error);
 
-    init_entrypoint_api();
+    API_types_entry::CommunicationParameters comm_params{};
+    comm_params.heartbeat_period_ms = config.cfg_heartbeat_interval_ms;
+    comm_params.communication_check_period_s = config.cfg_communication_check_to_s;
+    comm_params.request_reply_timeout_s = config.cfg_request_reply_to_s;
+    init_entrypoint_api(comm_params);
     init_topics();
 }
 

@@ -28,4 +28,7 @@ void from_json(const json& j, QueryEVerestConfigurationResponse& k);
 void to_json(json& j, EVerestVersion const& k) noexcept;
 void from_json(const json& j, EVerestVersion& k);
 
+void to_json(json& j, CommunicationParameters const& k) noexcept;
+void from_json(const json& j, CommunicationParameters& k);
+
 } // namespace everest::lib::API::V1_0::types::entrypoint
