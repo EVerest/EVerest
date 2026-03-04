@@ -10,8 +10,10 @@ target_sources(everest_sqlite
 )
 
 target_link_libraries(everest_sqlite
-    PRIVATE
-        SQLite::SQLite3
+PRIVATE
+    SQLite::SQLite3
+PUBLIC
+    date::date-tz
 )
 
 if (EVEREST_SQLITE_USE_BOOST_FILESYSTEM)
