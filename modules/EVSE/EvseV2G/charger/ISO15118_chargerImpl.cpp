@@ -158,6 +158,7 @@ void ISO15118_chargerImpl::handle_set_charging_parameters(types::iso15118::Setup
     if (physical_values.ac_nominal_voltage.has_value()) {
         populate_physical_value_float(&v2g_ctx->evse_v2g_data.evse_nominal_voltage,
                                       physical_values.ac_nominal_voltage.value(), 1, iso2_unitSymbolType_V);
+        v2g_ctx->basic_config.evse_ac_nominal_voltage = physical_values.ac_nominal_voltage.value();
     }
 
     if (physical_values.dc_current_regulation_tolerance.has_value()) {
@@ -435,10 +436,11 @@ void ISO15118_chargerImpl::handle_update_ac_parameters(types::iso15118::AcParame
 }
 
 void ISO15118_chargerImpl::handle_update_ac_maximum_limits(types::iso15118::AcEvseMaximumPower& maximum_limits) {
-    static bool warning_shown = false;
-    if (not warning_shown) {
-        EVLOG_warning << "Ignoring handle_update_ac_maximum_limits call";
-        warning_shown = true;
+    if (v2g_ctx->basic_config.evse_ac_nominal_voltage > 0.0f) {
+        v2g_ctx->basic_config.evse_ac_nominal_current =
+            maximum_limits.charge_power.total / v2g_ctx->basic_config.evse_ac_nominal_voltage;
+    } else {
+        EVLOG_error << "Cannot compute nominal current: nominal voltage is 0";
     }
 }
 
