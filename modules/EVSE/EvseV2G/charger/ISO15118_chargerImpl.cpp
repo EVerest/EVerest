@@ -393,6 +393,7 @@ void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
         case types::iso15118::EnergyTransferMode::DC_core:
             energyArray[(energyArrayLen)++] = iso2_EnergyTransferModeType_DC_core;
             break;
+        case types::iso15118::EnergyTransferMode::DC:
         case types::iso15118::EnergyTransferMode::DC_extended:
             energyArray[(energyArrayLen)++] = iso2_EnergyTransferModeType_DC_extended;
             break;
