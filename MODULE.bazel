@@ -134,6 +134,12 @@ everest_framework_crate_index.from_cargo(
     ],
 )
 
+everest_core_crate_index.annotation(
+    crate = "log",
+    repositories = ["everest_core_crate_index"],
+    override_target_lib = "@everest_framework_crate_index//:log",
+)
+
 use_repo(
     everest_framework_crate_index,
     "everest_framework_crate_index",
