@@ -102,6 +102,8 @@ public:
 
     void connector_force_unlock();
 
+    void set_authorized(bool a);
+
     void set_ev_simplified_mode_evse_limit(bool l) {
         ev_simplified_mode_evse_limit = l;
     }
@@ -144,6 +146,8 @@ private:
 
     types::evse_board_support::Reason power_on_reason{types::evse_board_support::Reason::PowerOff};
     void call_allow_power_on_bsp(bool value);
+
+    std::atomic_bool authorized{false};
 
     std::atomic_bool is_locked{false};
     std::atomic_bool should_be_locked{false};

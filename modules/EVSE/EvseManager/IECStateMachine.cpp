@@ -189,7 +189,7 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> cp_
             // Table A.6: Sequence 7 EV stops charging
             // Table A.6: Sequence 8.2 EV supply equipment
             // responds to EV opens S2 (w/o PWM)
-            if (lock_connector_in_state_b) {
+            if (lock_connector_in_state_b or authorized) {
                 connector_lock();
             } else {
                 connector_unlock();
@@ -530,6 +530,23 @@ void IECStateMachine::check_connector_lock() {
     } else if (is_locked and not should_be_locked_considering_relais_and_force) {
         signal_unlock();
         is_locked = false;
+    }
+}
+
+void IECStateMachine::set_authorized(bool a) {
+    authorized = a;
+    RawCPState cp;
+    {
+        Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_set_authorized);
+        cp = last_cp_state;
+    }
+    if (cp == RawCPState::B) {
+        if (authorized or lock_connector_in_state_b) {
+            connector_lock();
+        } else {
+            connector_unlock();
+        }
+        check_connector_lock();
     }
 }
 
