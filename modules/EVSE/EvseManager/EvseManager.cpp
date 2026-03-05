@@ -238,7 +238,7 @@ void EvseManager::init() {
             r_powersupply_DC[0]->subscribe_capabilities([this](const auto& caps) {
                 update_powersupply_capabilities(caps);
 
-                auto mode = types::iso15118::EnergyTransferMode::DC;
+                auto mode = types::iso15118::EnergyTransferMode::DC_extended;
                 auto bpt_mode = types::iso15118::EnergyTransferMode::DC_BPT;
 
                 if (connector_type.has_value() and
