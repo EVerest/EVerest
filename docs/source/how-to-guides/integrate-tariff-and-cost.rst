@@ -13,7 +13,7 @@ Prerequisites
 *************
 
 - An EVerest deployment with an OCPP module (``OCPP`` for 1.6 or ``OCPP201``
-  for 2.x) and the ``Auth`` module.
+  for 2.x) and the ``Auth`` module and the relevant API modules (see next section).
 - An API client that connects via MQTT and subscribes to the relevant
   consumer API topics.
 
@@ -31,8 +31,9 @@ Two consumer APIs carry tariff and cost information:
 At least the session cost consumer API must be subscribed to receive tariff and cost
 updates.
 
-See the :doc:`AsyncAPI reference </reference/EVerest_API/session_cost_consumer_API>`
-and :doc:`</reference/EVerest_API/auth_consumer_API>` for message schemas.
+See the AsyncAPI reference for the `auth_consumer_API <../reference/api/auth_consumer_API/index.html>`_
+and the `session_cost_consumer_API <../reference/api/session_cost_consumer_API/index.html>`_ for message schemas.
+
 
 .. note::
     
