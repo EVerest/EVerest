@@ -837,6 +837,11 @@ void OCPP201::ready() {
                 ocpp_conversions::create_session_cost(running_cost, number_of_decimals, currency);
             this->p_session_cost->publish_session_cost(cost);
         };
+
+        callbacks.tariff_message_callback = [this](const ocpp::TariffMessage& message) {
+            const types::session_cost::TariffMessage m = ocpp_conversions::to_everest_tariff_message(message);
+            this->p_session_cost->publish_tariff_message(m);
+        };
     }
 
     if (!this->r_data_transfer.empty()) {

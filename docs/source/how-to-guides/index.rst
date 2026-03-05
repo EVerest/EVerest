@@ -97,6 +97,12 @@ Have a look at this categorized list of all guides:
 
       How to get started with the Pionix Belay Box, an AC charging station dev kit based on EVerest.
 
+   .. grid-item-card:: Integrate Tariff and Cost
+      :link: integrate-tariff-and-cost
+      :link-type: doc
+
+      How to subscribe to tariff and session cost updates from the consumer APIs, including OCPP-specific configuration.
+
 .. toctree::
     :maxdepth: 1
     :hidden:
@@ -115,3 +121,4 @@ Have a look at this categorized list of all guides:
     bringup/index
     choosing-version-and-upgrading
     pionix-belay-box
+    integrate-tariff-and-cost
