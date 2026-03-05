@@ -107,6 +107,9 @@ public:
                                               const AttributeEnum& attribute_enum, const std::string& value,
                                               const std::string& source) override;
 
+    SetVariableStatusEnum clear_value(const Component& component_id, const Variable& variable_id,
+                                      const AttributeEnum& attribute_enum, const std::string& source) override;
+
     std::optional<MutabilityEnum> get_mutability(const Component& component_id, const Variable& variable_id,
                                                  const AttributeEnum& attribute_enum) override;
 
