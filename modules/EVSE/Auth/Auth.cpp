@@ -116,8 +116,9 @@ void Auth::ready() {
     }
 
     this->auth_handler->register_publish_token_validation_status_callback(
-        [this](const ProvidedIdToken& token, TokenValidationStatus status) {
-            this->p_main->publish_token_validation_status({token, status});
+        [this](const ProvidedIdToken& token, TokenValidationStatus status,
+               const std::vector<MessageContent>& tariff_messages) {
+            this->p_main->publish_token_validation_status({token, status, tariff_messages});
         });
 
     this->auth_handler->register_notify_evse_callback(
