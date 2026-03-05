@@ -3607,6 +3607,9 @@ EnhancedIdTagInfo ChargePointImpl::authorize_id_token(CiString<20> id_token, con
                 } else {
                     EVLOG_warning << "Tariff message was not received within timeout for idToken " << id_token.get();
                     enhanced_id_tag_info.tariff_message = this->configuration.getDefaultTariffMessage(false);
+                    if (enhanced_id_tag_info.tariff_message.has_value()) {
+                        (void)this->tariff_message_callback(enhanced_id_tag_info.tariff_message.value());
+                    }
                 }
                 this->user_price_cvs.erase(id_token.get());
             }
