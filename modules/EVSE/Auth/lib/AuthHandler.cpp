@@ -70,6 +70,16 @@ void AuthHandler::init_evse(const int evse_id, const int evse_index, const std::
     this->evses[evse_id] = std::make_unique<EVSEContext>(evse_id, evse_index, connectors);
 }
 
+int32_t AuthHandler::get_evse_id_by_index(const int evse_index) {
+    std::lock_guard<std::mutex> lock(this->event_mutex);
+    for (const auto& [evse_id, evse_context] : this->evses) {
+        if (evse_context->evse_index == evse_index) {
+            return evse_id;
+        }
+    }
+    throw std::out_of_range("No EVSE found for evse_index: " + std::to_string(evse_index));
+}
+
 void AuthHandler::initialize() {
     std::lock_guard<std::mutex> lock(this->event_mutex);
     this->reservation_handler.load_reservations();
