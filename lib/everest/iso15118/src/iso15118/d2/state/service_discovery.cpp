@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
+#include <iso15118/d2/state/post_service_discovery.hpp>
 #include <iso15118/d2/state/service_discovery.hpp>
 #include <iso15118/message/d2/service_discovery.hpp>
 
@@ -38,12 +39,12 @@ d2::msg::ServiceDiscoveryResponse handle_request(const d2::msg::ServiceDiscovery
     res.payment_option_list = payment_options;
 
     if (!offered_services.empty()) {
-        dt::ServiceList services_to_offer;
-
         if (req.service_category.has_value() || req.service_scope.has_value()) {
-            res.service_list = filter_services(offered_services, req.service_scope, req.service_category);
-        } else {
+            dt::ServiceList services_to_offer =
+                filter_services(offered_services, req.service_scope, req.service_category);
             res.service_list = services_to_offer;
+        } else {
+            res.service_list = offered_services;
         }
     }
 
@@ -78,7 +79,7 @@ Result ServiceDiscovery::feed(Event ev) {
         // TODO(kd): I wonder how to call the next state
         // It waits either for ServiceDetailReq or ServicePaymentSelectionReq
         // Perhaps PostServiceDiscovery?
-        return {};
+        return m_ctx.create_state<PostServiceDiscovery>();
     }
     // m_ctx.log("expected ServiceDiscoveryReq! But code type id: %d", variant->get_type());
 
