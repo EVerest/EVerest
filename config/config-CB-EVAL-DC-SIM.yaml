@@ -125,7 +125,7 @@ active_modules:
     connections: {}
     module: PersistentStore
   slac:
-    module: EvseSlac
+    module: EvseSlacNeo
     config_implementation:
       main:
         device: cb_plc
