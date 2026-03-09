@@ -358,8 +358,8 @@ void LemDCBM400600Controller::set_identification_type(int identification_type) {
                                              "OCMF Identification Type setting was rejected by the device.");
         }
     } catch (nlohmann::json::exception& json_error) {
-        throw UnexpectedDCBMResponseBody("/v1/settings",
-                                         fmt::format("Json error '{}' for body '{}'", json_error.what(), response.body));
+        throw UnexpectedDCBMResponseBody(
+            "/v1/settings", fmt::format("Json error '{}' for body '{}'", json_error.what(), response.body));
     }
     EVLOG_info << "LEM DCBM 400/600: OCMF Identification Type (IT) set to: " << identification_type;
 }
