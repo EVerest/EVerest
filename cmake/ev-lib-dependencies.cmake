@@ -46,6 +46,7 @@ set(EVEREST_LIB_SUBDIRS
     tls
     util
     yaml
+    slac_neo
 )
 
 # --- Internal dependency map ---
