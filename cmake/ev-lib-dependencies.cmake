@@ -43,6 +43,7 @@ set(EVEREST_LIB_SUBDIRS
     timer
     tls
     util
+    slac_neo
 )
 
 # --- Internal dependency map ---

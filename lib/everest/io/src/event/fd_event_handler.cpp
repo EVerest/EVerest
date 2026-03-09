@@ -204,7 +204,7 @@ bool fd_event_handler::register_event_handler(event_fd* fd, event_handler_type c
         poll_events::read);
 }
 
-bool fd_event_handler::register_event_handler(event_fd* fd, event_handler_simple_type const& handler) {
+bool fd_event_handler::register_event_handler(event_fd* fd, event_handler_empty_type const& handler) {
     return register_event_handler(fd, [handler](event_list const&) { handler(); });
 }
 
@@ -222,7 +222,7 @@ bool fd_event_handler::register_event_handler(timer_fd* fd, event_handler_type c
         poll_events::read);
 }
 
-bool fd_event_handler::register_event_handler(timer_fd* fd, event_handler_simple_type const& handler) {
+bool fd_event_handler::register_event_handler(timer_fd* fd, event_handler_empty_type const& handler) {
     return register_event_handler(fd, [handler](event_list const&) { handler(); });
 }
 
