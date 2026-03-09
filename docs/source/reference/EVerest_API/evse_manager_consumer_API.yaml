@@ -897,7 +897,7 @@ components:
       description: >-
         Context for Session information
       type: object
-      additionalProperties: false
+      additionalProperties: true
       required:
         - state
         - charged_energy_wh
@@ -1159,6 +1159,7 @@ components:
     Evse:
       description: Type that defines properties of an EVSE including its connectors
       type: object
+      additionalProperties: true
       required:
         - id
         - connectors
