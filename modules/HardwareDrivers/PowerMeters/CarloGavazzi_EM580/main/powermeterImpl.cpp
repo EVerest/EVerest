@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 
@@ -227,7 +228,7 @@ void powermeterImpl::read_signature_config() {
         this->m_public_key_hex = read_public_key_der_in_hex(der_word_count);
         EVLOG_info << "Public key (DER, hex): " << this->m_public_key_hex;
     } else {
-        throw std::runtime_error("invalid public key format: " + config.public_key_format);
+        throw std::invalid_argument("invalid public key format: " + config.public_key_format);
     }
     this->publish_public_key_ocmf(this->m_public_key_hex);
 }
@@ -342,6 +343,9 @@ void powermeterImpl::ready() {
                     read_device_state();
                     last_device_state_read = now;
                 }
+            } catch (const std::invalid_argument& e) {
+                EVLOG_error << "Configuration error (will not retry): " << e.what();
+                break;
             } catch (const std::exception& e) {
                 EVLOG_error << "Failed to communicate with the device, try again in "
                             << config.communication_error_pause_delay_s << " seconds: " << e.what();
