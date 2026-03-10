@@ -68,7 +68,7 @@ mod backoff {
     }
 
     impl Backoff {
-        pub fn new(max_backoff_secs: u64) -> Self {
+        pub fn from_secs(max_backoff_secs: u64) -> Self {
             Self {
                 next_retry: Instant::now(),
                 backoff_secs: 1,
@@ -82,16 +82,17 @@ mod backoff {
 
         pub fn record_failure(&mut self) {
             self.backoff_secs = min(self.backoff_secs * 2, self.max_backoff_secs);
+            log::info!(
+                "Recorded failure: next retry will be in {}",
+                self.backoff_secs
+            );
             self.next_retry = Instant::now() + Duration::from_secs(self.backoff_secs);
         }
 
         pub fn record_success(&mut self) {
             self.backoff_secs = 1;
-            self.next_retry = Instant::now();
-        }
-
-        pub fn current_backoff_secs(&self) -> u64 {
-            self.backoff_secs
+            log::debug!("Next retry will be in {}", self.backoff_secs);
+            self.next_retry = Instant::now() + Duration::from_secs(self.backoff_secs);
         }
     }
 
@@ -101,46 +102,45 @@ mod backoff {
 
         #[test]
         fn ready_immediately_after_creation() {
-            let b = Backoff::new(60);
+            let b = Backoff::from_secs(60);
             assert!(b.is_ready());
         }
 
         #[test]
         fn not_ready_after_failure() {
-            let mut b = Backoff::new(60);
+            let mut b = Backoff::from_secs(60);
             b.record_failure();
             assert!(!b.is_ready());
-            assert_eq!(b.current_backoff_secs(), 2);
+            assert_eq!(b.backoff_secs, 2);
         }
 
         #[test]
         fn exponential_increase() {
-            let mut b = Backoff::new(60);
+            let mut b = Backoff::from_secs(60);
             b.record_failure();
-            assert_eq!(b.current_backoff_secs(), 2);
+            assert_eq!(b.backoff_secs, 2);
             b.record_failure();
-            assert_eq!(b.current_backoff_secs(), 4);
+            assert_eq!(b.backoff_secs, 4);
             b.record_failure();
-            assert_eq!(b.current_backoff_secs(), 8);
+            assert_eq!(b.backoff_secs, 8);
         }
 
         #[test]
         fn caps_at_max() {
-            let mut b = Backoff::new(8);
+            let mut b = Backoff::from_secs(8);
             for _ in 0..10 {
                 b.record_failure();
             }
-            assert_eq!(b.current_backoff_secs(), 8);
+            assert_eq!(b.backoff_secs, 8);
         }
 
         #[test]
         fn success_resets() {
-            let mut b = Backoff::new(60);
+            let mut b = Backoff::from_secs(60);
             b.record_failure();
             b.record_failure();
             b.record_success();
-            assert!(b.is_ready());
-            assert_eq!(b.current_backoff_secs(), 1);
+            assert_eq!(b.backoff_secs, 1);
         }
     }
 }
@@ -358,8 +358,9 @@ impl PaymentTerminalModule {
 
         // Wait for the card.
         let mut read_card_loop = || -> CardInfo {
-            let mut configure_backoff = backoff::Backoff::new(3600);
-            let mut bank_token_backoff = backoff::Backoff::new(60);
+            // Long backoff to the payment provider backend to not overload it.
+            let mut configure_backoff = backoff::Backoff::from_secs(3600);
+            let mut bank_token_backoff = backoff::Backoff::from_secs(60);
             loop {
                 if configure_backoff.is_ready() {
                     if let Err(inner) = self.feig.configure() {
@@ -367,10 +368,6 @@ impl PaymentTerminalModule {
                         let inner: PTError = inner.into();
                         publishers.payment_terminal.raise_error(inner.into());
                         configure_backoff.record_failure();
-                        log::info!(
-                            "Retrying configure in {} seconds",
-                            configure_backoff.current_backoff_secs()
-                        );
                     } else {
                         configure_backoff.record_success();
                         publishers.payment_terminal.clear_all_errors();
@@ -394,10 +391,6 @@ impl PaymentTerminalModule {
 
                             if token.is_none() {
                                 bank_token_backoff.record_failure();
-                                log::info!(
-                                    "Failed to receive invoice token, retrying in {} seconds",
-                                    bank_token_backoff.current_backoff_secs()
-                                );
                             } else {
                                 log::info!("Received the invoice token {token:?}");
                             }
