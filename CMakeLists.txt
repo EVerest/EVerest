@@ -42,6 +42,7 @@ endif()
 
 # test whether we are building on a musl based system.
 # On these we need to increase the stack size as it is very low by default
+option(USING_MUSL "Using musl" OFF)
 find_program(LDD_EXECUTABLE ldd)
 find_program(LS_EXECUTABLE ls)
 if(LDD_EXECUTABLE AND LS_EXECUTABLE)
@@ -51,6 +52,7 @@ if(LDD_EXECUTABLE AND LS_EXECUTABLE)
     if(LDD_LS_OUTPUT MATCHES "musl")
         message(STATUS "MUSL detected, increasing stack size to 8MiB")
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=8388608")
+        set(USING_MUSL ON)
     endif()
 else()
     if(NOT LDD_EXECUTABLE)
