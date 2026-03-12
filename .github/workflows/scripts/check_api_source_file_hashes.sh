@@ -71,17 +71,18 @@ check_hashes() {
         fi
     done < "${ROOT_DIR}/${csv_path}"
 
-    while IFS= read -r absolute_file; do
-        local relative_file
-        relative_file="${absolute_file#${ROOT_DIR}/}"
-        if [[ -z "${expected_hashes[${relative_file}]+x}" ]]; then
-            local actual_hash
-            actual_hash="$(sha256sum "${absolute_file}" | awk '{print $1}')"
-            echo "WARNING: ${label} file is not tracked in ${csv_path}: ${relative_file}"
-            echo "  expected: <missing CSV entry>"
-            echo "  actual:   ${actual_hash}"
-        fi
-    done < <(find "${ROOT_DIR}/${source_dir}" -maxdepth 1 -type f -name '*.yaml' | sort)
+# Check for untracked files - practical, but noisy
+#    while IFS= read -r absolute_file; do
+#        local relative_file
+#        relative_file="${absolute_file#${ROOT_DIR}/}"
+#        if [[ -z "${expected_hashes[${relative_file}]+x}" ]]; then
+#            local actual_hash
+#            actual_hash="$(sha256sum "${absolute_file}" | awk '{print $1}')"
+#            echo "WARNING: ${label} file is not tracked in ${csv_path}: ${relative_file}"
+#            echo "  expected: <missing CSV entry>"
+#            echo "  actual:   ${actual_hash}"
+#        fi
+#    done < <(find "${ROOT_DIR}/${source_dir}" -maxdepth 1 -type f -name '*.yaml' | sort)
 }
 
 check_hashes "type" "${TYPES_CSV}" "types"
