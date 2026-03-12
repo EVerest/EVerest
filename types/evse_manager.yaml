@@ -97,6 +97,7 @@ types:
         type: array
         items:
           description: A single reason to be paused
+          type: string
           $ref: /evse_manager#/PauseChargingEVSEReasonEnum
         minItems: 1
         maxItems: 3
