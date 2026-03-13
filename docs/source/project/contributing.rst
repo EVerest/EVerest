@@ -102,7 +102,8 @@ AI-generated Contributions
 EVerest aligns with the Linux Foundation's position on the use of generative AI
 tools in open source development. See the `Linux Foundation guidance on
 generative AI <https://www.linuxfoundation.org/legal/generative-ai>`_ for
-details.
+details. Every contribution must be reviewed and verified by a human
+contributor prior to submission.
 
 Labels
 ------
