@@ -4136,6 +4136,11 @@ void ChargePointImpl::handle_data_transfer_pnc_get_installed_certificates(Call<D
             std::vector<ocpp::CertificateType> certificate_types;
             if (req.certificateType.has_value()) {
                 certificate_types = ocpp::evse_security_conversions::from_ocpp_v2(req.certificateType.value());
+            } else {
+                // When omitted, all certificate types are requested
+                certificate_types.push_back(CertificateType::V2GRootCertificate);
+                certificate_types.push_back(CertificateType::MORootCertificate);
+                certificate_types.push_back(CertificateType::V2GCertificateChain);
             }
 
             ocpp::v2::GetInstalledCertificateIdsResponse get_certificate_ids_response;
