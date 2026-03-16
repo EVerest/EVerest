@@ -14,8 +14,8 @@ void LemDCBM400600Controller::init() {
     this->http_client->set_command_timeout(this->config.command_timeout_ms);
 
     if (this->config.IT >= 0) {
-        call_with_retry([this]() { this->set_identification_type(this->config.IT); }, this->config.init_number_of_http_retries,
-                        this->config.init_retry_wait_in_milliseconds);
+        call_with_retry([this]() { this->set_identification_type(this->config.IT); },
+                        this->config.init_number_of_http_retries, this->config.init_retry_wait_in_milliseconds);
     }
 }
 
