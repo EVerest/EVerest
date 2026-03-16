@@ -603,6 +603,7 @@ fn main() -> Result<()> {
             read_card_timeout: config.read_card_timeout as u8,
             password: config.password as usize,
             end_of_day_max_interval: config.end_of_day_max_interval as u64,
+            max_retry_attempts: 10,
         },
         transactions_max_num: config.transactions_max_num as usize,
     };
