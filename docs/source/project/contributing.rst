@@ -66,9 +66,10 @@ Each code contribution must include:
 - A `Developer Certificate of Origin signoff <https://github.com/lf-energy/tac/blob/main/process/contribution_guidelines.md#contribution-sign-off>`_.
 - Submitted to the project as a pull request.
 
-The contributor is responsible for the quality and correctness of their submission.
-All submitted code must be fully understood by the contributor, who should be able
-to justify the technical approach and explain any change during review.
+The contributions must be made by a human who is responsible for the quality and
+correctness of their submission. All submitted code must be fully understood by
+the contributor, who should be able to justify the technical approach and explain
+any change during review.
 
 Pull requests should be well-scoped and limited to a single logical
 change. This keeps reviews focused and the commit history clean.
