@@ -230,8 +230,10 @@ struct v2g_context {
     pthread_condattr_t mqtt_attr;
 
     struct {
-        float evse_ac_current_limit; // default is 0
-    } basic_config;                  // This config will not reseted after beginning of a new charging session
+        float evse_ac_current_limit;   // default is 0
+        float evse_ac_nominal_current; // default is 0
+        float evse_ac_nominal_voltage; // default is 230
+    } basic_config;                    // This config will not reseted after beginning of a new charging session
 
     /* actual charging state */
     enum V2gMsgTypeId last_v2g_msg;    /* holds the current v2g msg type */

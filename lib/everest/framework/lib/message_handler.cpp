@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-
+#include "everest/util/misc/bind.hpp"
+#include "everest/util/misc/container.hpp"
 #include <utils/message_handler.hpp>
 
 #include <everest/logging.hpp>
@@ -61,9 +62,68 @@ bool check_topic_matches(const std::string& full_topic, const std::string& wildc
 
     return full_split.size() == wildcard_split.size();
 }
+
+// Pure function: collects all handlers whose registered topic (with MQTT wildcard support)
+// matches the incoming topic. Kept outside MessageHandler to signal it has no dependency
+// on class state; callers must hold the handler map lock before passing data.
+std::vector<MessageHandler::SharedTypedHandler>
+copy_shared_handler_wildcard(std::map<std::string, std::vector<MessageHandler::SharedTypedHandler>> const& data,
+                             std::string const& topic) {
+    std::vector<MessageHandler::SharedTypedHandler> handler_copy;
+    for (const auto& [wildcard_topic, handlers_vec] : data) {
+        if (check_topic_matches(topic, wildcard_topic)) {
+            handler_copy.insert(handler_copy.end(), handlers_vec.begin(), handlers_vec.end());
+        }
+    }
+    return handler_copy;
+}
+
+std::vector<MessageHandler::SharedTypedHandler> copy_shared_handler(MessageHandler::MultiHandlerMap const& data,
+                                                                    std::string const& topic) {
+    std::vector<MessageHandler::SharedTypedHandler> handler_copy;
+    auto const* ptr = everest::lib::util::find_ptr(data, topic);
+    if (ptr != nullptr) {
+        handler_copy = ptr->second;
+    }
+    return handler_copy;
+}
+
+MessageHandler::SharedTypedHandler copy_shared_handler(MessageHandler::SingleHandlerMap const& data,
+                                                       std::string const& topic) {
+    MessageHandler::SharedTypedHandler handler_copy;
+    auto const* ptr = everest::lib::util::find_ptr(data, topic);
+    if (ptr != nullptr) {
+        handler_copy = ptr->second;
+    }
+    return handler_copy;
+}
+
+template <class FtorT, class... Args>
+void try_action_and_log(FtorT const& action, std::string const& error_source, std::string const& topic,
+                        Args&&... args) {
+    try {
+        action(topic, std::forward<Args>(args)...);
+    } catch (const std::exception& e) {
+        EVLOG_error << "Exception in " << error_source << " for topic '" << topic << "': " << e.what();
+    } catch (...) {
+        EVLOG_error << "Unknown exception in " << error_source << " for topic '" << topic << "'";
+    }
+}
+
+void warn_on_high_queue_size(everest::lib::util::simple_queue<ParsedMessage> const& queue, std::string const& topic) {
+    if (queue.size() >= MAX_PENDING_MESSAGES_PER_TOPIC) {
+        EVLOG_warning << "Pending message queue for topic '" << topic << "' has reached the limit ("
+                      << MAX_PENDING_MESSAGES_PER_TOPIC << "). Handler may be stuck or too slow.";
+    }
+}
+
 } // namespace
 
+using everest::lib::util::bind_obj;
+
 MessageHandler::MessageHandler() {
+    operation_thread_pool = std::make_unique<ThreadPool>(
+        THREAD_POOL_SCALING_MIN_THREAD_COUNT, std::thread::hardware_concurrency(), THREAD_POOL_SCALING_IDLE_TIMEOUT);
     operation_dispatcher_thread = std::thread([this] { run_operation_dispatcher(); });
     result_worker_thread = std::thread([this] { run_result_message_worker(); });
     external_mqtt_worker_thread = std::thread([this] { run_external_mqtt_worker(); });
@@ -84,43 +144,47 @@ void MessageHandler::add(const ParsedMessage& message) {
 
     if (msg_type == MqttMessageType::CmdResult || msg_type == MqttMessageType::GetConfigResponse) {
         EVLOG_verbose << "Pushing cmd_result message to queue: " << message.data;
-        {
-            std::lock_guard<std::mutex> lock(result_queue_mutex);
-            result_message_queue.push(message);
-        }
-        result_cv.notify_all();
+        result_message_queue.push(message);
     } else if (msg_type == MqttMessageType::GlobalReady) {
         const auto topic_copy = message.topic;
         const auto data_copy = message.data.at("data");
 
-        ready_thread =
-            std::thread([this, topic_copy, data_copy] { (*global_ready_handler->handler)(topic_copy, data_copy); });
+        // Steal the previous ready thread under the monitor lock, then join it outside.
+        // Using steal-then-join avoids holding the lock during join(), which could block
+        // other add() calls for an arbitrary duration while the handler runs.
+        std::thread old_ready;
+        {
+            auto handle = ready.handle();
+            old_ready = std::move(*handle);
+            *handle = std::thread([this, topic_copy, data_copy] {
+                SharedTypedHandler action;
+                {
+                    auto handle = handlers.handle();
+                    action = handle->global_ready;
+                }
+                if (action) {
+                    try_action_and_log(*(action->handler), "global_ready", topic_copy, data_copy);
+                }
+            });
+        } // release ready monitor lock before joining
+        if (old_ready.joinable()) {
+            old_ready.join();
+        }
     } else if (msg_type == MqttMessageType::ExternalMQTT) {
-        {
-            std::lock_guard<std::mutex> lock(external_mqtt_queue_mutex);
-            external_mqtt_message_queue.push(message);
-        }
-        external_mqtt_cv.notify_all();
+        external_mqtt_message_queue.push(message);
     } else {
-        {
-            std::lock_guard<std::mutex> lock(operation_queue_mutex);
-            operation_message_queue.push(message);
-        }
-        operation_cv.notify_all();
+        operation_message_queue.push(message);
     }
 }
 
 void MessageHandler::stop() {
-    {
-        std::lock_guard<std::mutex> lock1(operation_queue_mutex);
-        std::lock_guard<std::mutex> lock2(result_queue_mutex);
-        std::lock_guard<std::mutex> lock3(external_mqtt_queue_mutex);
-        running = false;
+    if (!running.exchange(false)) {
+        return; // Already stopped
     }
 
-    operation_cv.notify_all();
-    result_cv.notify_all();
-    external_mqtt_cv.notify_all();
+    operation_message_queue.stop();
+    result_message_queue.stop();
+    external_mqtt_message_queue.stop();
 
     // Join the dispatcher first: it must not be able to call schedule_operation_message()
     // (which dereferences operation_thread_pool) after the pool is destroyed.
@@ -135,57 +199,49 @@ void MessageHandler::stop() {
     if (external_mqtt_worker_thread.joinable()) {
         external_mqtt_worker_thread.join();
     }
-    if (ready_thread.joinable()) {
-        ready_thread.join();
+    std::thread ready_to_join;
+    {
+        auto handle = ready.handle();
+        ready_to_join = std::move(*handle);
+    }
+    if (ready_to_join.joinable()) {
+        ready_to_join.join();
     }
 }
 
 void MessageHandler::run_operation_dispatcher() {
-    while (true) {
-        std::unique_lock<std::mutex> lock(operation_queue_mutex);
-        operation_cv.wait(lock, [this] { return !operation_message_queue.empty() || !running; });
-        if (!running)
-            return;
-
-        ParsedMessage message = std::move(operation_message_queue.front());
-        operation_message_queue.pop();
-        lock.unlock();
-
-        dispatch_operation_message(std::move(message));
+    while (auto message = operation_message_queue.wait_and_pop()) {
+        dispatch_operation_message(std::move(message.value()));
     }
+
     EVLOG_info << "Operation dispatcher thread stopped";
 }
 
 void MessageHandler::dispatch_operation_message(ParsedMessage&& message) {
     {
-        std::lock_guard<std::mutex> lock(operation_topic_state_mutex);
-        if (operation_topics_in_flight.find(message.topic) != operation_topics_in_flight.end()) {
-            pending_operation_messages_by_topic[message.topic].push(std::move(message));
+        auto handle = operations.handle();
+        if (everest::lib::util::exists(handle->in_flight, message.topic)) {
+            auto& pending_queue = handle->pending_messages[message.topic];
+            warn_on_high_queue_size(pending_queue, message.topic);
+            pending_queue.push(std::move(message));
             return;
         }
-
-        operation_topics_in_flight.insert(message.topic);
+        handle->in_flight.insert(message.topic);
     }
 
     schedule_operation_message(std::move(message));
 }
 
-// NOLINTNEXTLINE(misc-no-recursion)
 void MessageHandler::schedule_operation_message(ParsedMessage&& message) {
-    // NOLINTNEXTLINE(misc-no-recursion)
-    auto operation = [this, message = std::move(message)]() {
+    auto handle_operation_message_ftor = bind_obj(&MessageHandler::handle_operation_message, this);
+    auto on_operation_message_done_ftor = bind_obj(&MessageHandler::on_operation_message_done, this);
+    auto operation = [handle = std::move(handle_operation_message_ftor),
+                      done = std::move(on_operation_message_done_ftor), message = std::move(message)]() {
         // Wrap in try-catch so that on_operation_message_done is always called: an exception in
         // the handler must not leave the topic permanently stuck in operation_topics_in_flight,
         // which would block all subsequent messages for that topic.
-        try {
-            handle_operation_message(message.topic, message.data);
-        } catch (const std::exception& e) {
-            EVLOG_error << "Exception while handling operation message on topic '" << message.topic
-                        << "': " << e.what();
-        } catch (...) {
-            EVLOG_error << "Unknown exception while handling operation message on topic '" << message.topic << "'";
-        }
-        on_operation_message_done(message.topic);
+        try_action_and_log(handle, "handling operation message", message.topic, message.data);
+        try_action_and_log(done, "on_operation_message_done", message.topic);
     };
 
     if (operation_thread_pool) {
@@ -193,63 +249,51 @@ void MessageHandler::schedule_operation_message(ParsedMessage&& message) {
     }
 }
 
-// NOLINTNEXTLINE(misc-no-recursion)
 void MessageHandler::on_operation_message_done(const std::string& topic) {
     std::optional<ParsedMessage> next_message;
     {
-        std::lock_guard<std::mutex> lock(operation_topic_state_mutex);
+        auto handle = operations.handle();
         if (!running) {
             // Shutting down: stop scheduling and release the in-flight slot.
-            operation_topics_in_flight.erase(topic);
+            handle->in_flight.erase(topic);
             return;
         }
-        auto pending_it = pending_operation_messages_by_topic.find(topic);
-        if (pending_it != pending_operation_messages_by_topic.end() && !pending_it->second.empty()) {
-            next_message = std::move(pending_it->second.front());
-            pending_it->second.pop();
 
-            if (pending_it->second.empty()) {
-                pending_operation_messages_by_topic.erase(pending_it);
-            }
-        } else {
-            operation_topics_in_flight.erase(topic);
+        auto opt_pending_it = everest::lib::util::find_optional(handle->pending_messages, topic);
+        if (not opt_pending_it.has_value()) {
+            handle->in_flight.erase(topic);
             return;
+        }
+        auto& pending_it = opt_pending_it.value();
+        auto& pending_messages = pending_it->second;
+        next_message = pending_messages.pop();
+        if (pending_messages.empty()) {
+            handle->pending_messages.erase(pending_it);
         }
     }
 
+    if (!next_message.has_value()) {
+        EVLOG_error << "Internal error: pending_messages queue for topic '" << topic
+                    << "' was empty when expected to contain a message";
+        auto handle = operations.handle();
+        handle->in_flight.erase(topic);
+        return;
+    }
     schedule_operation_message(std::move(*next_message));
 }
 
 void MessageHandler::run_result_message_worker() {
-    while (true) {
-        std::unique_lock<std::mutex> lock(result_queue_mutex);
-        result_cv.wait(lock, [this] { return !result_message_queue.empty() || !running; });
-        if (!running) {
-            return;
-        }
-
-        ParsedMessage message = std::move(result_message_queue.front());
-        result_message_queue.pop();
-        lock.unlock();
-
-        handle_result_message(message.topic, message.data);
+    while (auto message = result_message_queue.wait_and_pop()) {
+        try_action_and_log(bind_obj(&MessageHandler::handle_result_message, this), "result worker", message->topic,
+                           message->data);
     }
     EVLOG_info << "Cmd result worker thread stopped";
 }
 
 void MessageHandler::run_external_mqtt_worker() {
-    while (true) {
-        std::unique_lock<std::mutex> lock(external_mqtt_queue_mutex);
-        external_mqtt_cv.wait(lock, [this] { return !external_mqtt_message_queue.empty() || !running; });
-        if (!running) {
-            return;
-        }
-
-        ParsedMessage message = std::move(external_mqtt_message_queue.front());
-        external_mqtt_message_queue.pop();
-        lock.unlock();
-
-        handle_external_mqtt_message(message.topic, message.data);
+    auto callback = bind_obj(&MessageHandler::handle_external_mqtt_message, this);
+    while (auto message = external_mqtt_message_queue.wait_and_pop()) {
+        try_action_and_log(callback, "External MQTT worker", message->topic, message->data);
     }
     EVLOG_info << "External MQTT worker thread stopped";
 }
@@ -314,48 +358,48 @@ void MessageHandler::handle_result_message(const std::string& topic, const json&
 void MessageHandler::register_handler(const std::string& topic, std::shared_ptr<TypedHandler> handler) {
     switch (handler->type) {
     case HandlerType::Call: {
-        std::lock_guard<std::mutex> lg(handler_mutex);
-        cmd_handlers[topic] = handler;
+        auto lock = handlers.handle();
+        lock->cmd[topic] = handler;
         break;
     }
     case HandlerType::Result: {
-        std::lock_guard<std::mutex> lock(cmd_result_handler_mutex);
-        cmd_result_handlers[handler->id] = handler;
+        auto lock = responses.handle();
+        lock->cmd[handler->id] = handler;
         break;
     }
     case HandlerType::SubscribeVar: {
-        std::lock_guard<std::mutex> lg(handler_mutex);
-        var_handlers[topic].push_back(handler);
+        auto lock = handlers.handle();
+        lock->var[topic].push_back(handler);
         break;
     }
     case HandlerType::SubscribeError: {
-        std::lock_guard<std::mutex> lg(handler_mutex);
-        error_handlers[topic].push_back(handler);
+        auto lock = handlers.handle();
+        lock->error[topic].push_back(handler);
         break;
     }
     case HandlerType::ExternalMQTT: {
-        std::lock_guard<std::mutex> lg(handler_mutex);
-        external_var_handlers[topic].push_back(handler);
+        auto lock = handlers.handle();
+        lock->external_var[topic].push_back(handler);
         break;
     }
     case HandlerType::GetConfig: {
-        std::lock_guard<std::mutex> lg(handler_mutex);
-        get_module_config_handlers[topic] = handler;
+        auto lock = handlers.handle();
+        lock->get_module_config[topic] = handler;
         break;
     }
     case HandlerType::GetConfigResponse: {
-        std::lock_guard<std::mutex> lg(cmd_result_handler_mutex);
-        config_response_handler = handler;
+        auto lock = responses.handle();
+        lock->config = handler;
         break;
     }
     case HandlerType::ModuleReady: {
-        std::lock_guard<std::mutex> lg(handler_mutex);
-        module_ready_handlers[topic] = handler;
+        auto lock = handlers.handle();
+        lock->module_ready[topic] = handler;
         break;
     }
     case HandlerType::GlobalReady: {
-        std::lock_guard<std::mutex> lg(handler_mutex);
-        global_ready_handler = handler;
+        auto lock = handlers.handle();
+        lock->global_ready = handler;
         break;
     }
     default:
@@ -366,32 +410,75 @@ void MessageHandler::register_handler(const std::string& topic, std::shared_ptr<
 
 // Private message handler methods
 void MessageHandler::handle_var_message(const std::string& topic, const json& data) {
-    execute_handlers_from_vector(var_handlers, topic,
-                                 [&](const auto& handler) { (*handler->handler)(topic, data.at("data")); });
+    std::vector<SharedTypedHandler> handler_copy;
+    {
+        auto handle = handlers.handle();
+        handler_copy = copy_shared_handler(handle->var, topic);
+    }
+
+    for (const auto& handler : handler_copy) {
+        (*handler->handler)(topic, data.at("data"));
+    }
 }
 
 void MessageHandler::handle_cmd_message(const std::string& topic, const json& data) {
-    execute_single_handler(cmd_handlers, topic, [&](const auto& handler) { (*handler->handler)(topic, data); });
+    SharedTypedHandler handler_copy;
+    {
+        auto handle = handlers.handle();
+        handler_copy = copy_shared_handler(handle->cmd, topic);
+    }
+
+    if (handler_copy) {
+        (*handler_copy->handler)(topic, data);
+    }
 }
 
 void MessageHandler::handle_external_mqtt_message(const std::string& topic, const json& data) {
-    execute_handlers_from_vector_with_wildcards(external_var_handlers, topic,
-                                                [&](const auto& handler) { (*handler->handler)(topic, data); });
+    std::vector<SharedTypedHandler> handler_copy;
+    {
+        auto handle = handlers.handle();
+        handler_copy = copy_shared_handler_wildcard(handle->external_var, topic);
+    }
+
+    for (const auto& handler : handler_copy) {
+        (*handler->handler)(topic, data);
+    }
 }
 
 void MessageHandler::handle_error_message(const std::string& topic, const json& data) {
-    execute_handlers_from_vector_with_wildcards(error_handlers, topic,
-                                                [&](const auto& handler) { (*handler->handler)(topic, data); });
+    std::vector<SharedTypedHandler> handler_copy;
+    {
+        auto handle = handlers.handle();
+        handler_copy = copy_shared_handler_wildcard(handle->error, topic);
+    }
+
+    for (const auto& handler : handler_copy) {
+        (*handler->handler)(topic, data);
+    }
 }
 
 void MessageHandler::handle_get_config_message(const std::string& topic, const json& data) {
-    execute_single_handler(get_module_config_handlers, topic,
-                           [&](const auto& handler) { (*handler->handler)(topic, data); });
+    SharedTypedHandler handler_copy;
+    {
+        auto handle = handlers.handle();
+        handler_copy = copy_shared_handler(handle->get_module_config, topic);
+    }
+
+    if (handler_copy) {
+        (*handler_copy->handler)(topic, data);
+    }
 }
 
 void MessageHandler::handle_module_ready_message(const std::string& topic, const json& data) {
-    execute_single_handler(module_ready_handlers, topic,
-                           [&](const auto& handler) { (*handler->handler)(topic, data); });
+    SharedTypedHandler handler_copy;
+    {
+        auto handle = handlers.handle();
+        handler_copy = copy_shared_handler(handle->module_ready, topic);
+    }
+
+    if (handler_copy) {
+        (*handler_copy->handler)(topic, data);
+    }
 }
 
 void MessageHandler::handle_cmd_result(const std::string& topic, const json& payload) {
@@ -400,11 +487,11 @@ void MessageHandler::handle_cmd_result(const std::string& topic, const json& pay
 
     std::shared_ptr<TypedHandler> handler_copy;
     {
-        std::lock_guard<std::mutex> lock(cmd_result_handler_mutex);
-        auto it = cmd_result_handlers.find(id);
-        if (it != cmd_result_handlers.end()) {
+        auto handle = responses.handle();
+        auto it = handle->cmd.find(id);
+        if (it != handle->cmd.end()) {
             handler_copy = it->second;
-            cmd_result_handlers.erase(it);
+            handle->cmd.erase(it);
         }
     }
 
@@ -416,62 +503,13 @@ void MessageHandler::handle_cmd_result(const std::string& topic, const json& pay
 void MessageHandler::handle_get_config_response(const std::string& topic, const json& payload) {
     std::shared_ptr<TypedHandler> handler_copy;
     {
-        std::lock_guard<std::mutex> lock(cmd_result_handler_mutex);
-        if (config_response_handler) {
-            handler_copy = config_response_handler;
+        auto handle = responses.handle();
+        if (handle->config) {
+            handler_copy = handle->config;
         }
     }
     if (handler_copy) {
         (*handler_copy->handler)(topic, payload.at("data"));
-    }
-}
-
-// Helper methods for handler execution
-template <typename HandlerMap, typename ExecuteFn>
-void MessageHandler::execute_handlers_from_vector(HandlerMap& handlers, const std::string& topic,
-                                                  ExecuteFn execute_fn) {
-    std::vector<std::shared_ptr<TypedHandler>> handlers_copy;
-    {
-        std::lock_guard<std::mutex> lock(handler_mutex);
-        const auto it = handlers.find(topic);
-        if (it != handlers.end()) {
-            handlers_copy = it->second;
-        }
-    }
-    for (const auto& handler : handlers_copy) {
-        execute_fn(handler);
-    }
-}
-
-template <typename HandlerMap, typename ExecuteFn>
-void MessageHandler::execute_handlers_from_vector_with_wildcards(HandlerMap& handlers, const std::string& topic,
-                                                                 ExecuteFn execute_fn) {
-    std::vector<std::shared_ptr<TypedHandler>> handlers_copy;
-    {
-        std::lock_guard<std::mutex> lock(handler_mutex);
-        for (const auto& [wildcard_topic, handlers_vec] : handlers) {
-            if (check_topic_matches(topic, wildcard_topic)) {
-                handlers_copy.insert(handlers_copy.end(), handlers_vec.begin(), handlers_vec.end());
-            }
-        }
-    }
-    for (const auto& handler : handlers_copy) {
-        execute_fn(handler);
-    }
-}
-
-template <typename HandlerMap, typename ExecuteFn>
-void MessageHandler::execute_single_handler(HandlerMap& handlers, const std::string& topic, ExecuteFn execute_fn) {
-    std::shared_ptr<TypedHandler> handler_copy;
-    {
-        std::lock_guard<std::mutex> lock(handler_mutex);
-        const auto it = handlers.find(topic);
-        if (it != handlers.end()) {
-            handler_copy = it->second;
-        }
-    }
-    if (handler_copy) {
-        execute_fn(handler_copy);
     }
 }
 
