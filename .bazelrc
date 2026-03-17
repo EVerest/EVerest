@@ -8,3 +8,4 @@ build --incompatible_autoload_externally=+cc_library,+cc_binary,+cc_test,+cc_sha
 # Without --start-group, library ordering issues (e.g. stdc++ before date-tz)
 # can cause unresolved symbols on some machines.
 build --linkopt=-Wl,--start-group
+build --linkopt=-fuse-ld=lld

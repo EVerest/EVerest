@@ -22,10 +22,10 @@ jobs:
           key: ${{ runner.os }}-bazel-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}
           restore-keys: |
             ${{ runner.os }}-bazel-
-      - name: Install and start mosquitto
+      - name: Install mosquitto and lld
         run: |
           sudo apt-get update
-          sudo apt-get install -y mosquitto
+          sudo apt-get install -y mosquitto lld
           sudo systemctl start mosquitto
       - name: Build all
         run: >
