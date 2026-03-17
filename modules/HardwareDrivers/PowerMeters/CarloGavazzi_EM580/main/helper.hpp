@@ -35,10 +35,14 @@ constexpr std::uint16_t MODBUS_PUBLIC_KEY_DER_WORD_COUNT_256 = 46; // 2600h..262
 constexpr std::uint16_t MODBUS_PUBLIC_KEY_DER_WORD_COUNT_384 = 62; // 2600h..263Dh (124 bytes, DER length 0x7A + 2)
 
 constexpr std::int32_t MODBUS_SIGNED_MAP_ADDRESS = 302049;
-constexpr std::int32_t MODBUS_SIGNED_MAP_SIGNATURE_ADDRESS = 302126;
+constexpr std::uint16_t MODBUS_SIGNED_MAP_WORD_COUNT_256 = 93;  // 61 words signed Data + 32 words signature
+constexpr std::uint16_t MODBUS_SIGNED_MAP_WORD_COUNT_384 = 109; // 61 words signed Data + 48 words signature
 
 constexpr std::int32_t MODBUS_REAL_TIME_VALUES_ADDRESS = 300001;
 constexpr std::uint16_t MODBUS_REAL_TIME_VALUES_COUNT = 80; // Registers 300001-300080 (0x50 = 80 words)
+
+constexpr std::int32_t MODBUS_REAL_TIME_ENERGY_ADDRESS = 301281;
+constexpr std::uint16_t MODBUS_REAL_TIME_ENERGY_COUNT = 32; // Registers 301281-301312 (32 words)
 
 constexpr std::int32_t MODBUS_TEMPERATURE_ADDRESS = 300776; // Internal Temperature
 
@@ -154,6 +158,23 @@ inline std::int32_t to_int32(const transport::DataVector& data, ByteOffset offse
     const auto off = static_cast<transport::DataVector::size_type>(offset);
     check_bounds_or_throw(data, off, 4, "to_int32");
     return static_cast<std::int32_t>(data[off + 2] << 24 | data[off + 3] << 16 | data[off] << 8 | data[off + 1]);
+}
+
+inline std::int64_t to_int64(const transport::DataVector& data, ByteOffset offset) {
+    const auto off = static_cast<transport::DataVector::size_type>(offset);
+    check_bounds_or_throw(data, off, 8, "to_int64");
+    // EM580 Modbus spec:
+    // - Byte order inside a word is MSB -> LSB.
+    // - Word order for INT64/UINT64 is LSW -> MSW.
+    const std::uint64_t w0 = (static_cast<std::uint64_t>(data[off]) << 8) | static_cast<std::uint64_t>(data[off + 1]);
+    const std::uint64_t w1 =
+        (static_cast<std::uint64_t>(data[off + 2]) << 8) | static_cast<std::uint64_t>(data[off + 3]);
+    const std::uint64_t w2 =
+        (static_cast<std::uint64_t>(data[off + 4]) << 8) | static_cast<std::uint64_t>(data[off + 5]);
+    const std::uint64_t w3 =
+        (static_cast<std::uint64_t>(data[off + 6]) << 8) | static_cast<std::uint64_t>(data[off + 7]);
+    const std::uint64_t u = (w0) | (w1 << 16) | (w2 << 32) | (w3 << 48);
+    return static_cast<std::int64_t>(u);
 }
 
 inline std::uint16_t to_uint16(const transport::DataVector& data, ByteOffset offset) {

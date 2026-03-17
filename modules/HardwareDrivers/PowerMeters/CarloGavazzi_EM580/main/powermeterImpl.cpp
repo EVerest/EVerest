@@ -56,6 +56,8 @@ using em580::registers::MODBUS_PUBLIC_KEY_ADDRESS;
 using em580::registers::MODBUS_PUBLIC_KEY_DER_ADDRESS;
 using em580::registers::MODBUS_PUBLIC_KEY_DER_WORD_COUNT_256;
 using em580::registers::MODBUS_PUBLIC_KEY_DER_WORD_COUNT_384;
+using em580::registers::MODBUS_REAL_TIME_ENERGY_ADDRESS;
+using em580::registers::MODBUS_REAL_TIME_ENERGY_COUNT;
 using em580::registers::MODBUS_REAL_TIME_VALUES_ADDRESS;
 using em580::registers::MODBUS_REAL_TIME_VALUES_COUNT;
 using em580::registers::MODBUS_SERIAL_NUMBER_REGISTER_COUNT;
@@ -64,6 +66,10 @@ using em580::registers::MODBUS_SIGNATURE_TYPE_ADDRESS;
 using em580::registers::MODBUS_TEMPERATURE_ADDRESS;
 using em580::registers::MODBUS_TIMEZONE_OFFSET_ADDRESS;
 using em580::registers::MODBUS_UTC_TIMESTAMP_ADDRESS;
+
+using em580::registers::MODBUS_SIGNED_MAP_ADDRESS;
+using em580::registers::MODBUS_SIGNED_MAP_WORD_COUNT_256;
+using em580::registers::MODBUS_SIGNED_MAP_WORD_COUNT_384;
 } // namespace
 
 // Byte offsets for Modbus register 300001-300055 (physical addresses
@@ -99,19 +105,18 @@ constexpr std::size_t FREQUENCY = 102; // 300052 (0033h)
 
 // Energy registers (INT32, 4 bytes each) - within extended read range
 // (300001-300080)
-constexpr std::size_t ENERGY_IMPORT = 104; // 300053 (0034h) - kWh (+) TOT, byte offset 104 (52*2)
-constexpr std::size_t ENERGY_EXPORT = 156; // 300079 (004Eh) - kWh (-) TOT, byte offset 156 (78*2)
+constexpr std::size_t ENERGY_IMPORT = 0;  // 301281 (0500h) - kWh (+) TOT, byte offset 0 (52*2)
+constexpr std::size_t ENERGY_EXPORT = 56; // 301309 (051Ch) - kWh (-) TOT, byte offset 28 (28*2)
 } // namespace Offsets
 
 // Scaling factors from Modbus document
 namespace Factors {
-constexpr float VOLTAGE = 0.1F;            // Value weight: Volt*10
-constexpr float CURRENT = 0.001F;          // Value weight: Ampere*1000
-constexpr float POWER = 0.1F;              // Value weight: Watt*10
-constexpr float REACTIVE_POWER = 0.1F;     // Value weight: var*10
-constexpr float FREQUENCY = 0.1F;          // Value weight: Hz*10
-constexpr float ENERGY_KWH_TO_WH = 100.0F; // Value weight: kWh*10, convert to Wh (kWh*10 * 100 = Wh)
-constexpr float TEMPERATURE = 0.1F;        // Value weight: Temperature*10
+constexpr float VOLTAGE = 0.1F;        // Value weight: Volt*10
+constexpr float CURRENT = 0.001F;      // Value weight: Ampere*1000
+constexpr float POWER = 0.1F;          // Value weight: Watt*10
+constexpr float REACTIVE_POWER = 0.1F; // Value weight: var*10
+constexpr float FREQUENCY = 0.1F;      // Value weight: Hz*10
+constexpr float TEMPERATURE = 0.1F;    // Value weight: Temperature*10
 } // namespace Factors
 
 namespace module::main {
@@ -206,14 +211,20 @@ void powermeterImpl::read_signature_config() {
 
     switch (signature_type) {
     case SIGNATURE_256_BIT:
-        this->m_public_key_length_in_bits = 256;
+        m_public_key_length_in_bits = 256;
         signature_type_string = "256-bit";
+        m_signature_method_string = "ECDSA-brainpoolP256r1-SHA256";
         der_word_count = MODBUS_PUBLIC_KEY_DER_WORD_COUNT_256;
+        // Spec Table 4.5: 256-bit signature is 32 words (= CHAR[64] = 64 bytes)
+        m_signed_map_word_count = MODBUS_SIGNED_MAP_WORD_COUNT_256;
         break;
     case SIGNATURE_384_BIT:
-        this->m_public_key_length_in_bits = 384;
+        m_public_key_length_in_bits = 384;
         signature_type_string = "384-bit";
+        m_signature_method_string = "ECDSA-brainpoolP384r1-SHA256";
         der_word_count = MODBUS_PUBLIC_KEY_DER_WORD_COUNT_384;
+        // Spec Table 4.6: 384-bit signature is 48 words (= CHAR[96] = 96 bytes)
+        m_signed_map_word_count = MODBUS_SIGNED_MAP_WORD_COUNT_384;
         break;
     default:
         signature_type_string = "none";
@@ -222,15 +233,15 @@ void powermeterImpl::read_signature_config() {
     EVLOG_info << "Signature type detected: " << signature_type_string;
 
     if (config.public_key_format == "binary") {
-        this->m_public_key_hex = read_public_key_in_hex(this->m_public_key_length_in_bits);
-        EVLOG_info << "Public key (raw, hex): " << this->m_public_key_hex;
+        m_public_key_hex = read_public_key_in_hex(m_public_key_length_in_bits);
+        EVLOG_info << "Public key (raw, hex): " << m_public_key_hex;
     } else if (config.public_key_format == "der") {
-        this->m_public_key_hex = read_public_key_der_in_hex(der_word_count);
-        EVLOG_info << "Public key (DER, hex): " << this->m_public_key_hex;
+        m_public_key_hex = read_public_key_der_in_hex(der_word_count);
+        EVLOG_info << "Public key (DER, hex): " << m_public_key_hex;
     } else {
         throw std::invalid_argument("invalid public key format: " + config.public_key_format);
     }
-    this->publish_public_key_ocmf(this->m_public_key_hex);
+    publish_public_key_ocmf(m_public_key_hex);
 }
 
 void powermeterImpl::read_firmware_versions() {
@@ -613,7 +624,7 @@ void powermeterImpl::read_powermeter_values() {
 
     types::powermeter::Powermeter powermeter{};
     powermeter.timestamp = Everest::Date::to_rfc3339(date::utc_clock::now());
-    powermeter.meter_id = std::move(std::string(this->mod->info.id));
+    powermeter.meter_id = std::move(std::string(m_serial_number));
 
     // Voltage values (INT32, weight: Volt*10)
     // 300001 (0000h): V L1-N
@@ -694,19 +705,20 @@ void powermeterImpl::read_powermeter_values() {
         powermeter.phase_seq_error = false; // L1-L2-L3 is correct (clockwise)
     }
 
-    // Energy import: register 300053 (kWh (+) TOT) - INT32, 2 words
-    // Byte offset in data: 104 (52*2, since 300053 is at offset 52 from 300001)
+    transport::DataVector dataEnergy =
+        p_modbus_transport->fetch(MODBUS_REAL_TIME_ENERGY_ADDRESS, MODBUS_REAL_TIME_ENERGY_COUNT);
+
+    // Energy import: register 301281 (kWh (+) TOT) - INT64, 4 words
+    // Spec (Table 4.3): value weight is Wh.
     // Note: energy_Wh_import is a required field, not optional
     powermeter.energy_Wh_import.total =
-        Factors::ENERGY_KWH_TO_WH *
-        static_cast<float>(modbus_utils::to_int32(data, modbus_utils::ByteOffset{Offsets::ENERGY_IMPORT}));
+        static_cast<float>(modbus_utils::to_int64(dataEnergy, modbus_utils::ByteOffset{Offsets::ENERGY_IMPORT}));
 
-    // Energy export: register 300079 (kWh (-) TOT) - INT32, 2 words
-    // Byte offset in data: 156 (78*2, since 300079 is at offset 78 from 300001)
+    // Energy export: register 301309 (kWh (-) TOT) - INT64, 4 words
+    // Spec (Table 4.3): value weight is Wh.
     types::units::Energy energy_Wh_export;
     energy_Wh_export.total =
-        Factors::ENERGY_KWH_TO_WH *
-        static_cast<float>(modbus_utils::to_int32(data, modbus_utils::ByteOffset{Offsets::ENERGY_EXPORT}));
+        static_cast<float>(modbus_utils::to_int64(dataEnergy, modbus_utils::ByteOffset{Offsets::ENERGY_EXPORT}));
     powermeter.energy_Wh_export = energy_Wh_export;
 
     // Disable for now the temperature reading, since I can't read it in the above
@@ -721,6 +733,29 @@ void powermeterImpl::read_powermeter_values() {
     // std::vector<types::temperature::Temperature> temperatures;
     // temperatures.push_back(temperature);
     // powermeter.temperatures = temperatures;
+
+    transport::DataVector signed_data = p_modbus_transport->fetch(MODBUS_SIGNED_MAP_ADDRESS, m_signed_map_word_count);
+    // Spec (Table 4.4): signed data spans 61 words (302049..302109) and signature starts at 302110.
+    static constexpr std::size_t SIGNED_MAP_SIGNED_DATA_WORDS = 61;
+    static constexpr std::size_t SIGNED_MAP_SIGNED_DATA_BYTES = SIGNED_MAP_SIGNED_DATA_WORDS * 2;
+    const std::size_t signature_bytes =
+        (m_signed_map_word_count > SIGNED_MAP_SIGNED_DATA_WORDS)
+            ? (static_cast<std::size_t>(m_signed_map_word_count) - SIGNED_MAP_SIGNED_DATA_WORDS) * 2
+            : 0;
+    std::string signed_data_string = modbus_utils::to_hex_string(
+        signed_data, modbus_utils::ByteOffset{0}, modbus_utils::ByteLength{SIGNED_MAP_SIGNED_DATA_BYTES});
+    std::string signed_data_signature_string = modbus_utils::to_hex_string(
+        signed_data, modbus_utils::ByteOffset{SIGNED_MAP_SIGNED_DATA_BYTES}, modbus_utils::ByteLength{signature_bytes});
+
+    types::units_signed::SignedMeterValue smv;
+    smv.signed_meter_data =
+        R"({"signedData":")" + signed_data_string + R"(","signature":")" + signed_data_signature_string + R"("})";
+    smv.signing_method = m_signature_method_string;
+    smv.encoding_method = "plain";
+    smv.public_key = m_public_key_hex;
+    smv.timestamp = Everest::Date::to_rfc3339(date::utc_clock::now());
+
+    powermeter.signed_meter_value = smv;
 
     this->publish_powermeter(powermeter);
 }

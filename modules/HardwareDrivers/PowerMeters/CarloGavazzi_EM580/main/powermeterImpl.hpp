@@ -101,12 +101,14 @@ private:
 
     std::optional<types::units_signed::SignedMeterValue> m_start_signed_meter_value;
 
-    int m_public_key_length_in_bits;
+    std::uint16_t m_public_key_length_in_bits;
     std::string m_public_key_hex;
     std::string m_transaction_id;
     std::string m_measure_module_firmware_version;
     std::string m_communication_module_firmware_version;
     std::string m_serial_number;
+    std::string m_signature_method_string;
+    std::uint16_t m_signed_map_word_count{0};
 
     std::atomic_bool m_transaction_active{false};
     std::atomic_bool m_pending_time_sync{false};
