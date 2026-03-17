@@ -3,3 +3,8 @@
 # explicit load() statements for rules_cc, rules_python, and rules_shell.
 # This flag can be removed once all dependencies are updated for Bazel 9.
 build --incompatible_autoload_externally=+cc_library,+cc_binary,+cc_test,+cc_shared_library,+cc_import,+cc_toolchain,+py_binary,+py_library,+py_test,+sh_binary,+sh_library,+sh_test
+
+# Ensure consistent linker symbol resolution across different host linkers.
+# Without --start-group, library ordering issues (e.g. stdc++ before date-tz)
+# can cause unresolved symbols on some machines.
+build --linkopt=-Wl,--start-group
