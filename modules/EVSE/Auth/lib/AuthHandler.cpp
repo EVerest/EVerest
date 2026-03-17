@@ -21,12 +21,6 @@ std::vector<int> intersect(std::vector<int> a, std::vector<int> b) {
     return result;
 }
 
-void printVector(const std::vector<int>& v) {
-    for (int x : v) {
-        EVLOG_info << x;
-    }
-}
-
 namespace conversions {
 std::string token_handling_result_to_string(const TokenHandlingResult& result) {
     switch (result) {
@@ -346,23 +340,21 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
                     provided_token.parent_id_token = validation_result.parent_id_token.value();
                 }
 
-                //make sure only authorized evse ids are further processed. Reduce referenced_evse to valid
-                if (validation_result.evse_ids.has_value()){
+                // make sure only authorized evse ids are further processed. Reduce referenced_evse to valid
+                if (validation_result.evse_ids.has_value()) {
                     referenced_evses = intersect(referenced_evses, validation_result.evse_ids.value());
                     if (referenced_evses.size() <= 0) {
                         EVLOG_debug << "Empty intersection between referenced evses and evses that are authorized";
                         this->publish_token_validation_status(provided_token,
-                                                      types::authorization::TokenValidationStatus::Rejected);
+                                                              types::authorization::TokenValidationStatus::Rejected);
                         validation_result.authorization_status = AuthorizationStatus::NotAtThisLocation;
                         return TokenHandlingResult::REJECTED;
-                    }
-                    else {
+                    } else {
                         this->publish_token_validation_status(provided_token,
-                                                      types::authorization::TokenValidationStatus::Accepted,
-                                                      validation_result.tariff_messages);
+                                                              types::authorization::TokenValidationStatus::Accepted,
+                                                              validation_result.tariff_messages);
                     }
                 }
-                            
 
                 /* although validator accepts the authorization request, the Auth module still needs to
                     - select the evse for the authorization request
@@ -370,7 +362,7 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
                     - compare referenced_evses against the evses listed in the validation_result
                     - check if request has been withdrawn while selecting an evse
                 */
-                
+
                 const auto select_evse_result =
                     this->select_evse(referenced_evses, provided_token.id_token, lk); // might block
                 if (not select_evse_result.evse_id.has_value()) {

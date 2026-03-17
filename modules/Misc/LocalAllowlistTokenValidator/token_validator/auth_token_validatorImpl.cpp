@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
 
-#include <fstream>
-#include <sstream>
-#include <vector>
 #include <algorithm>
 #include <cctype>
+#include <fstream>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include "auth_token_validatorImpl.hpp"
 
@@ -26,63 +26,62 @@ auth_token_validatorImpl::handle_validate_token(types::authorization::ProvidedId
 
     // load file each time we validate so that EVerest requires no restart when the file is changed
 
-std::ifstream file;
+    std::ifstream file;
 
-try {
-    file.open(mod->config.allowlist_file);
+    try {
+        file.open(mod->config.allowlist_file);
 
-    std::string line;
-    while (std::getline(file, line)) {
+        std::string line;
+        while (std::getline(file, line)) {
 
-        if (line.empty())
-            continue;
+            if (line.empty())
+                continue;
 
-        std::istringstream iss(line);
+            std::istringstream iss(line);
 
-        std::string token;
-        iss >> token;
+            std::string token;
+            iss >> token;
 
-        //probably humans are entering the tokens in the allow list, so make sure to compare lower case letters only 
-        std::transform(token.begin(), token.end(), token.begin(), [](unsigned char c){ return std::tolower(c); });
+            // probably humans are entering the tokens in the allow list, so make sure to compare lower case letters
+            // only
+            std::transform(token.begin(), token.end(), token.begin(), [](unsigned char c) { return std::tolower(c); });
 
-        if (token != provided_token.id_token.value)
-            continue;
+            if (token != provided_token.id_token.value)
+                continue;
 
-        result.authorization_status = types::authorization::AuthorizationStatus::Accepted;
+            result.authorization_status = types::authorization::AuthorizationStatus::Accepted;
 
-        std::string rest;
-        std::getline(iss, rest);
+            std::string rest;
+            std::getline(iss, rest);
 
-        if (!rest.empty()) {
+            if (!rest.empty()) {
 
-            std::stringstream ss(rest);
-            std::string id;
-            result.evse_ids = std::vector<int>{};
-                    
-            while (std::getline(ss, id, ',')) {
+                std::stringstream ss(rest);
+                std::string id;
+                result.evse_ids = std::vector<int>{};
 
-                std::stringstream trim(id);
-                int value;
+                while (std::getline(ss, id, ',')) {
 
-                if (trim >> value) {
-                    result.evse_ids->push_back(value);
+                    std::stringstream trim(id);
+                    int value;
+
+                    if (trim >> value) {
+                        result.evse_ids->push_back(value);
+                    }
+                }
+                if (!result.evse_ids.has_value()) {
+                    result.evse_ids.reset();
                 }
             }
-            if (!result.evse_ids.has_value()){
-                result.evse_ids.reset();
-            }
+
+            break;
         }
-    
 
-
-break;
+    } catch (const std::ifstream::failure& e) {
+        EVLOG_error << "Error opening/reading file " + mod->config.allowlist_file;
     }
 
-} catch (const std::ifstream::failure& e) {
-    EVLOG_error << "Error opening/reading file " + mod->config.allowlist_file;
-}
-
-file.close();
+    file.close();
 
     return result;
 }
