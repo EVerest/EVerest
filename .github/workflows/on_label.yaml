@@ -27,6 +27,13 @@ jobs:
         with:
           permission: write
 
+      - name: Generate App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.BACKPORT_APP_ID }}
+          private-key: ${{ secrets.BACKPORT_APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -34,7 +41,7 @@ jobs:
         id: backport
         uses: korthout/backport-action@v4.2.0
         with:
-          github_token: ${{ secrets.EVEREST_CI_BACKPORT_PR_APP_TOKEN }}
+          github_token: ${{ steps.app-token.outputs.token }}
           merge_commits: "skip"
           add_author_as_assignee: true
           copy_requested_reviewers: true
