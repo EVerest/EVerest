@@ -57,20 +57,23 @@ try {
 
             std::stringstream ss(rest);
             std::string id;
-
+            result.evse_ids = std::vector<int>{};
+                    
             while (std::getline(ss, id, ',')) {
 
                 std::stringstream trim(id);
                 int value;
 
                 if (trim >> value) {
-                    
-                    //only initialize evse_ids if a valid id is read from the list
-                    result.evse_ids = std::vector<int>{};
                     result.evse_ids->push_back(value);
+                }
+            }
+            if (!result.evse_ids.has_value()){
+                result.evse_ids.reset();
+            }
         }
-    }
-}
+    
+
 
 break;
     }
