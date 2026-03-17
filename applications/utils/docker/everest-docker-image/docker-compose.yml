@@ -1,5 +1,3 @@
-version: "3.6"
-
 services:
   mqtt-server:
     image: eclipse-mosquitto:2.0.18
@@ -18,7 +16,7 @@ services:
     depends_on:
       - mqtt-server
   everest:
-    image: everest-core:latest
+    image: everest:latest
     ports:
       - 8849:8849
     depends_on:

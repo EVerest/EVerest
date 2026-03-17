@@ -62,7 +62,7 @@ If you are **just getting started**, we recommend beginning with these essential
       :link-type: url
 
       In case you want to dig directly into the sources of EVerest, go for it!
-      The *everest-core* repository is the center of activity.
+      The *EVerest* repository is the center of activity.
 
    .. grid-item-card:: Discuss and Collaborate
       :link: project/community
@@ -167,4 +167,3 @@ Important links
 
       * `Discussion Forum (Zulip) <https://lfenergy.zulipchat.com/>`_
       * `Live Events & Calendar <https://zoom-lfx.platform.linuxfoundation.org/meetings/everest?view=week>`_
- 
