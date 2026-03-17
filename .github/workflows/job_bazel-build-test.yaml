@@ -28,7 +28,6 @@ jobs:
           sudo apt-get install -y mosquitto lld
           sudo systemctl start mosquitto
       - name: Build all
-        run: >
-          bazelisk build //...
+        run: bazelisk build //... --linkopt=-fuse-ld=lld
       - name: Test all
-        run: bazelisk test //... --test_output=errors
+        run: bazelisk test //... --test_output=errors --linkopt=-fuse-ld=lld
