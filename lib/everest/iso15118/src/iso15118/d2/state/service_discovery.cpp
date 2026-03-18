@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
-#include <iso15118/d2/state/post_service_discovery.hpp>
+#include <iso15118/d2/state/payment_service_selection.hpp>
 #include <iso15118/d2/state/service_discovery.hpp>
 #include <iso15118/message/d2/service_discovery.hpp>
 
@@ -76,10 +76,7 @@ Result ServiceDiscovery::feed(Event ev) {
             return {};
         }
 
-        // TODO(kd): I wonder how to call the next state
-        // It waits either for ServiceDetailReq or ServicePaymentSelectionReq
-        // Perhaps PostServiceDiscovery?
-        return m_ctx.create_state<PostServiceDiscovery>();
+        return m_ctx.create_state<PaymentServiceSelection>();
     }
     // m_ctx.log("expected ServiceDiscoveryReq! But code type id: %d", variant->get_type());
 

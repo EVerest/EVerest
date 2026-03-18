@@ -7,8 +7,8 @@
 
 namespace iso15118::d2::state {
 
-struct PostServiceDiscovery : public StateBase {
-    PostServiceDiscovery(Context& ctx) : StateBase(ctx, StateID::PostServiceDiscovery) {
+struct PaymentServiceSelection : public StateBase {
+    PaymentServiceSelection(Context& ctx) : StateBase(ctx, StateID::PaymentServiceSelection) {
     }
 
     void enter() final{

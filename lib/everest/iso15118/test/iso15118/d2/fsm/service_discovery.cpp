@@ -56,7 +56,7 @@ SCENARIO("ISO15118-2 service discovery state transitions") {
 
         THEN("Check state transition and response values") {
             REQUIRE(result.transitioned() == true);
-            REQUIRE(fsm.get_current_state_id() == d2::StateID::PostServiceDiscovery);
+            REQUIRE(fsm.get_current_state_id() == d2::StateID::PaymentServiceSelection);
             REQUIRE(ctx.session.get_id() != std::array<uint8_t, 8>{0});
 
             const auto response_message = ctx.get_response<d2::msg::ServiceDiscoveryResponse>();
@@ -93,7 +93,7 @@ SCENARIO("ISO15118-2 service discovery state transitions") {
 
         THEN("Check state transition and response values") {
             REQUIRE(result.transitioned() == true);
-            REQUIRE(fsm.get_current_state_id() == d2::StateID::PostServiceDiscovery);
+            REQUIRE(fsm.get_current_state_id() == d2::StateID::PaymentServiceSelection);
             REQUIRE(ctx.session.get_id() != std::array<uint8_t, 8>{0});
 
             const auto response_message = ctx.get_response<d2::msg::ServiceDiscoveryResponse>();
@@ -148,7 +148,7 @@ SCENARIO("ISO15118-2 service discovery state transitions") {
 
         THEN("Check state transition and response values") {
             REQUIRE(result.transitioned() == true);
-            REQUIRE(fsm.get_current_state_id() == d2::StateID::PostServiceDiscovery);
+            REQUIRE(fsm.get_current_state_id() == d2::StateID::PaymentServiceSelection);
             REQUIRE(ctx.session.get_id() != std::array<uint8_t, 8>{0});
 
             const auto response_message = ctx.get_response<d2::msg::ServiceDiscoveryResponse>();
@@ -195,7 +195,7 @@ SCENARIO("ISO15118-2 service discovery state transitions") {
 
         THEN("Check state transition and response values") {
             REQUIRE(result.transitioned() == true);
-            REQUIRE(fsm.get_current_state_id() == d2::StateID::PostServiceDiscovery);
+            REQUIRE(fsm.get_current_state_id() == d2::StateID::PaymentServiceSelection);
             REQUIRE(ctx.session.get_id() != std::array<uint8_t, 8>{0});
 
             const auto response_message = ctx.get_response<d2::msg::ServiceDiscoveryResponse>();

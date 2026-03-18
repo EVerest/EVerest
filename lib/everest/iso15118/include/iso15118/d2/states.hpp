@@ -24,7 +24,7 @@ enum class StateID {
     Authorization,
     ServiceDetail,
     ServiceDiscovery,
-    PostServiceDiscovery,
+    PaymentServiceSelection,
     WeldingDetection,
     CableCheck,
     PowerDelivery,
