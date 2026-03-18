@@ -8,6 +8,7 @@
 
 #include <iso15118/message/d2/service_discovery.hpp>
 #include <optional>
+#include <vector>
 
 using namespace iso15118;
 
@@ -31,19 +32,25 @@ SCENARIO("ISO15118-2 service discovery state transitions") {
     const auto service_vas_internet_access = dt::Service{
         2, "VAS_Internet_access", dt::ServiceCategory::Internet, std::nullopt, true,
     };
-    const auto service_foo = dt::Service{
-        3, "Foo", dt::ServiceCategory::OtherCustom, "https://example.com", true,
-    };
-    dt::ServiceList services = {service_vas_internet_access, service_foo};
+    // dt::ServiceList services = {service_vas_internet_access, service_foo};
 
     d2::EvseSetupConfig evse_setup{};
     evse_setup.evse_id = evse_id;
     evse_setup.offered_services = {};
-    evse_setup.charge_service = charge_service;
+    evse_setup.supported_energy_transfer_modes = {dt::EnergyTransferMode::DC_extended};
     evse_setup.supported_payment_options = payment_options;
 
+    session::feedback::Callbacks feedback_callbacks;
+    feedback_callbacks.get_service_from_id = [](dt::ServiceID id) -> std::optional<dt::Service> {
+        if (id == 10) {
+            return dt::Service{10, "Custom", dt::ServiceCategory::OtherCustom, "https://example.com", true};
+        } else {
+            return std::nullopt;
+        }
+    };
+
     GIVEN("Good case - respond properly") {
-        auto state_helper = FsmStateHelper(d2::SessionConfig(evse_setup));
+        auto state_helper = FsmStateHelper(d2::SessionConfig(evse_setup), feedback_callbacks);
         auto ctx = state_helper.get_context();
 
         fsm::v2::FSM<d2::StateBase> fsm{ctx.create_state<d2::state::ServiceDiscovery>()};
@@ -78,9 +85,9 @@ SCENARIO("ISO15118-2 service discovery state transitions") {
     }
 
     GIVEN("Good case - respond with offered services") {
-        evse_setup.offered_services = services;
+        evse_setup.offered_services = {2, 3, 10}; // Certificate, InternetAccess and Custom
 
-        auto state_helper = FsmStateHelper(d2::SessionConfig(evse_setup));
+        auto state_helper = FsmStateHelper(d2::SessionConfig(evse_setup), feedback_callbacks);
         auto ctx = state_helper.get_context();
 
         fsm::v2::FSM<d2::StateBase> fsm{ctx.create_state<d2::state::ServiceDiscovery>()};
@@ -112,29 +119,36 @@ SCENARIO("ISO15118-2 service discovery state transitions") {
             REQUIRE(session_setup_res.payment_option_list == payment_options);
 
             REQUIRE(session_setup_res.service_list.has_value() == true);
-            REQUIRE(session_setup_res.service_list->size() == 2);
+            REQUIRE(session_setup_res.service_list->size() == 3);
             const auto& service1 = session_setup_res.service_list->at(0);
             const auto& service2 = session_setup_res.service_list->at(1);
+            const auto& service3 = session_setup_res.service_list->at(2);
             REQUIRE(service1.service_id == 2);
             REQUIRE(service1.service_name.has_value());
-            REQUIRE(service1.service_name == "VAS_Internet_access");
-            REQUIRE(service1.service_category == dt::ServiceCategory::Internet);
+            REQUIRE(service1.service_name == "Certificate");
+            REQUIRE(service1.service_category == dt::ServiceCategory::ContractCertificate);
             REQUIRE(!service1.service_scope.has_value());
-            REQUIRE(service1.FreeService == true);
+            REQUIRE(service1.FreeService);
             REQUIRE(service2.service_id == 3);
             REQUIRE(service2.service_name.has_value());
-            REQUIRE(service2.service_name == "Foo");
-            REQUIRE(service2.service_category == dt::ServiceCategory::OtherCustom);
-            REQUIRE(service2.service_scope.has_value());
-            REQUIRE(service2.service_scope.value() == "https://example.com");
-            REQUIRE(service2.FreeService == true);
+            REQUIRE(service2.service_name == "InternetAccess");
+            REQUIRE(service2.service_category == dt::ServiceCategory::Internet);
+            REQUIRE(!service2.service_scope.has_value());
+            REQUIRE(service2.FreeService);
+            REQUIRE(service3.service_id == 10);
+            REQUIRE(service3.service_name.has_value());
+            REQUIRE(service3.service_name == "Custom");
+            REQUIRE(service3.service_category == dt::ServiceCategory::OtherCustom);
+            REQUIRE(service3.service_scope.has_value());
+            REQUIRE(service3.service_scope == "https://example.com");
+            REQUIRE(service3.FreeService);
         }
     }
 
     GIVEN("Good case - respond with filtered services by category") {
-        evse_setup.offered_services = services;
+        evse_setup.offered_services = {2, 3, 10}; // Certificate, InternetAccess and Custom
 
-        auto state_helper = FsmStateHelper(d2::SessionConfig(evse_setup));
+        auto state_helper = FsmStateHelper(d2::SessionConfig(evse_setup), feedback_callbacks);
         auto ctx = state_helper.get_context();
 
         fsm::v2::FSM<d2::StateBase> fsm{ctx.create_state<d2::state::ServiceDiscovery>()};
@@ -169,19 +183,19 @@ SCENARIO("ISO15118-2 service discovery state transitions") {
             REQUIRE(session_setup_res.service_list.has_value() == true);
             REQUIRE(session_setup_res.service_list->size() == 1);
             const auto& service1 = session_setup_res.service_list->at(0);
-            REQUIRE(service1.service_id == 2);
+            REQUIRE(service1.service_id == 3);
             REQUIRE(service1.service_name.has_value());
-            REQUIRE(service1.service_name.value() == "VAS_Internet_access");
+            REQUIRE(service1.service_name.value() == "InternetAccess");
             REQUIRE(service1.service_category == dt::ServiceCategory::Internet);
             REQUIRE(!service1.service_scope.has_value());
-            REQUIRE(service1.FreeService == true);
+            REQUIRE(service1.FreeService);
         }
     }
 
     GIVEN("Good case - respond with filtered services by scope") {
-        evse_setup.offered_services = services;
+        evse_setup.offered_services = {2, 3, 10}; // Certificate, InternetAccess and Custom
 
-        auto state_helper = FsmStateHelper(d2::SessionConfig(evse_setup));
+        auto state_helper = FsmStateHelper(d2::SessionConfig(evse_setup), feedback_callbacks);
         auto ctx = state_helper.get_context();
 
         fsm::v2::FSM<d2::StateBase> fsm{ctx.create_state<d2::state::ServiceDiscovery>()};
@@ -216,13 +230,13 @@ SCENARIO("ISO15118-2 service discovery state transitions") {
             REQUIRE(session_setup_res.service_list.has_value() == true);
             REQUIRE(session_setup_res.service_list->size() == 1);
             const auto& service1 = session_setup_res.service_list->at(0);
-            REQUIRE(service1.service_id == 3);
+            REQUIRE(service1.service_id == 10);
             REQUIRE(service1.service_name.has_value());
-            REQUIRE(service1.service_name.value() == "Foo");
+            REQUIRE(service1.service_name.value() == "Custom");
             REQUIRE(service1.service_category == dt::ServiceCategory::OtherCustom);
             REQUIRE(service1.service_scope.has_value());
             REQUIRE(service1.service_scope.value() == "https://example.com");
-            REQUIRE(service1.FreeService == true);
+            REQUIRE(service1.FreeService);
         }
     }
 }

@@ -20,7 +20,9 @@ SCENARIO("ISO15118-2 session setup state transitions") {
     d2::EvseSetupConfig evse_setup{};
     evse_setup.evse_id = evse_id;
 
-    auto state_helper = FsmStateHelper(d2::SessionConfig(evse_setup));
+    session::feedback::Callbacks feedback_callbacks;
+
+    auto state_helper = FsmStateHelper(d2::SessionConfig(evse_setup), feedback_callbacks);
     auto ctx = state_helper.get_context();
 
     GIVEN("Good case - New session") {
