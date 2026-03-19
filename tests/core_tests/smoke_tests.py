@@ -501,10 +501,24 @@ async def test_iso15118_ac_session_stop_by_evse(
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
-@pytest.mark.everest_core_config("config-sil-dc.yaml")
-@pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy())
+@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
+@pytest.mark.parametrize(
+    "iso15118_version",
+    [
+        pytest.param(
+            "iso15118_dc_d2",
+            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy()),
+            id="iso15118_dc_d2",
+        ),
+        pytest.param(
+            "iso15118_dc_d20",
+            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(ev_d20_only=True)),
+            id="iso15118_dc_d20",
+        ),
+    ],
+)
 async def test_iso15118_dc_session(
-    test_controller: TestController, everest_core: EverestCore
+    iso15118_version,test_controller: TestController, everest_core: EverestCore
 ):
     """Test session events of an ISO 15118 DC charging session."""
     _, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
@@ -517,16 +531,30 @@ async def test_iso15118_dc_session(
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
-@pytest.mark.everest_core_config("config-sil-dc.yaml")
-@pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy())
+@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
+@pytest.mark.parametrize(
+    "iso15118_version",
+    [
+        pytest.param(
+            "iso15118_dc_d2",
+            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy()),
+            id="iso15118_dc_d2",
+        ),
+        pytest.param(
+            "iso15118_dc_d20",
+            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(ev_d20_only=True)),
+            id="iso15118_dc_d20",
+        ),
+    ],
+)
 async def test_iso15118_dc_session_stop_by_evse(
-    test_controller: TestController, everest_core: EverestCore
+    iso15118_version, test_controller: TestController, everest_core: EverestCore
 ):
     """Test session events of an ISO 15118 DC charging session and stop by EVSE."""
     probe_module, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
         test_controller, everest_core
     )
-    
+
     await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso", finish_with_plug_out=False)
 
     await probe_module.call_command(
@@ -547,10 +575,24 @@ async def test_iso15118_dc_session_stop_by_evse(
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
-@pytest.mark.everest_core_config("config-sil-dc.yaml")
-@pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy())
+@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
+@pytest.mark.parametrize(
+    "iso15118_version",
+    [
+        pytest.param(
+            "iso15118_dc_d2",
+            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy()),
+            id="iso15118_dc_d2",
+        ),
+        pytest.param(
+            "iso15118_dc_d20",
+            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(ev_d20_only=True)),
+            id="iso15118_dc_d20",
+        ),
+    ],
+)
 async def test_iso15118_dc_session_error_before_session(
-    test_controller: TestController, everest_core: EverestCore
+    iso15118_version, test_controller: TestController, everest_core: EverestCore
 ):
     """
     Test session events of an ISO 15118 DC charging session with an error before the session.
@@ -572,7 +614,7 @@ async def test_iso15118_dc_session_error_before_session(
 
     test_controller.plug_in_dc_iso()
 
-    assert_no_events(session_event_mock, ["SessionStarted"], wait_time=10)
+    await assert_no_events(session_event_mock, ["SessionStarted"], wait_time=10)
     assert (
         session_event_mock.call_count == 0
     ), "No session events should occur while error is active"
@@ -685,10 +727,24 @@ async def test_iso15118_dc_session_no_energy_before_session(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
-@pytest.mark.everest_core_config("config-sil-dc.yaml")
-@pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(zero_power_ignore_pause=True, hlc_charge_loop_without_energy_timeout_s=30))
+@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
+@pytest.mark.parametrize(
+    "iso15118_version",
+    [
+        pytest.param(
+            "iso15118_dc_d2",
+            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(zero_power_ignore_pause=True, hlc_charge_loop_without_energy_timeout_s=30)),
+            id="iso15118_dc_d2",
+        ),
+        pytest.param(
+            "iso15118_dc_d20",
+            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(zero_power_ignore_pause=True, hlc_charge_loop_without_energy_timeout_s=30, ev_d20_only=True)),
+            id="iso15118_dc_d20",
+        ),
+    ],
+)
 async def test_iso15118_dc_session_no_energy_before_session_no_pause(
-    test_controller: TestController, everest_core: EverestCore
+    iso15118_version,test_controller: TestController, everest_core: EverestCore
 ):
     """
     Test ISO 15118 DC charging session with no energy at the start. zero_power_ignore_pause=True
@@ -794,10 +850,24 @@ async def test_iso15118_ac_session_no_energy_during_session_timeout_triggers(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
-@pytest.mark.everest_core_config("config-sil-dc.yaml")
-@pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(hlc_charge_loop_without_energy_timeout_s=30))
+@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
+@pytest.mark.parametrize(
+    "iso15118_version",
+    [
+        pytest.param(
+            "iso15118_dc_d2",
+            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(hlc_charge_loop_without_energy_timeout_s=30)),
+            id="iso15118_dc_d2",
+        ),
+        pytest.param(
+            "iso15118_dc_d20",
+            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(hlc_charge_loop_without_energy_timeout_s=30, ev_d20_only=True)),
+            id="iso15118_dc_d20",
+        ),
+    ],
+)
 async def test_iso15118_dc_session_no_energy_during_session(
-    test_controller: TestController, everest_core: EverestCore
+    iso15118_version,test_controller: TestController, everest_core: EverestCore
 ):
     """Test ISO 15118 DC charging session where energy is removed and restored during charging."""
     probe_module, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
@@ -809,7 +879,7 @@ async def test_iso15118_dc_session_no_energy_during_session(
     await set_external_limits(probe_module, "gcp", 0, 0)
     await assert_energy_below(powermeter_mock, energy_threshold_wh=30, timeout=5)
     await set_external_limits(probe_module, "gcp", 10000, 10000)
-    await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=30, timeout=15)
+    await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=40, timeout=15)
     
     await end_session(test_controller, session_event_mock)
 
@@ -820,10 +890,24 @@ async def test_iso15118_dc_session_no_energy_during_session(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
-@pytest.mark.everest_core_config("config-sil-dc.yaml")
-@pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(hlc_charge_loop_without_energy_timeout_s=5))
+@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
+@pytest.mark.parametrize(
+    "iso15118_version",
+    [
+        pytest.param(
+            "iso15118_dc_d2",
+            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(hlc_charge_loop_without_energy_timeout_s=5)),
+            id="iso15118_dc_d2",
+        ),
+        pytest.param(
+            "iso15118_dc_d20",
+            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(hlc_charge_loop_without_energy_timeout_s=5, ev_d20_only=True)),
+            id="iso15118_dc_d20",
+        ),
+    ],
+)
 async def test_iso15118_dc_session_no_energy_during_session_timeout_triggers(
-    test_controller: TestController, everest_core: EverestCore
+    iso15118_version, test_controller: TestController, everest_core: EverestCore
 ):
     """Test ISO 15118 DC charging session where energy is removed and iso charge loop timeout triggers."""
     probe_module, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
