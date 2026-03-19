@@ -833,27 +833,10 @@ void EvseManager::ready() {
                 target_current = (actual_voltage <= 0.0)
                                      ? max_charge_current
                                      : std::min((max_charge_power / actual_voltage), max_charge_current);
-                if (not(almost_eq(target_voltage, latest_target_voltage) and
-                        almost_eq(target_current, latest_target_current))) {
-                    latest_target_current = target_current;
-                    latest_target_voltage = target_voltage;
-                    target_changed = true;
-                }
 
-                if (target_changed or energy_flow_changed) {
-                    apply_new_target_voltage_current();
-                    if (not contactor_open) {
-                        powersupply_DC_on();
-                    }
-
-                    {
-                        Everest::scoped_lock_timeout lock(ev_info_mutex,
-                                                          Everest::MutexDescription::EVSE_publish_ev_info);
-                        ev_info.target_voltage = latest_target_voltage;
-                        ev_info.target_current = latest_target_current;
-                        p_evse->publish_ev_info(ev_info);
-                    }
-                }
+                raw_ev_target_voltage = target_voltage;
+                raw_ev_target_current = target_current;
+                process_dc_ev_target_voltage_current(charger->get_evse_max_hlc_limits());
             });
 
             // Car requests DC contactor open. We don't actually open but switch off DC supply.
