@@ -598,6 +598,13 @@ static enum v2g_event handle_iso_session_setup(struct v2g_connection* conn) {
     /* Check the current response code and check if no external error has occurred */
     next_event = (v2g_event)iso_validate_response_code(&res->ResponseCode, conn);
 
+    // TODO: Move this part in a local function
+    if (res->ResponseCode >= iso2_responseCodeType_FAILED) {
+        init_iso2_SessionSetupResType(res);
+        memset(&res->EVSEID.characters, 0x00, iso2_EVSEID_CHARACTER_SIZE);
+        res->EVSEID.charactersLen = 7; // min length is 7, using the old evse_id with only 7 should be enough
+    }
+
     /* Set next expected req msg */
     conn->ctx->state = (int)iso_dc_state_id::WAIT_FOR_SERVICEDISCOVERY; // [V2G-543]
 
@@ -676,6 +683,17 @@ static enum v2g_event handle_iso_service_discovery(struct v2g_connection* conn) 
 
     /* Check the current response code and check if no external error has occurred */
     nextEvent = (v2g_event)iso_validate_response_code(&res->ResponseCode, conn);
+
+    // TODO: Refactor that in a local function
+    if (res->ResponseCode >= iso2_responseCodeType_FAILED) {
+        init_iso2_ServiceDiscoveryResType(res); // resetting service_list
+        res->PaymentOptionList.PaymentOption.arrayLen = 1;
+        init_iso2_ChargeServiceType(&res->ChargeService);
+        res->ChargeService.FreeService = 0;
+        res->ChargeService.ServiceCategory = iso2_serviceCategoryType_EVCharging;
+        res->ChargeService.ServiceID = 0;
+        res->ChargeService.SupportedEnergyTransferMode.EnergyTransferMode.arrayLen = 1;
+    }
 
     /* Set next expected req msg */
     conn->ctx->state = (int)iso_dc_state_id::WAIT_FOR_SVCDETAIL_PAYMENTSVCSEL; // [V2G-545]
