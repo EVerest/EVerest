@@ -226,13 +226,13 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
             fs::remove(db_path);
         }
         auto ms = Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", db_path);
-        CHECK(ms.storage->contains_valid_config() == false);
+        CHECK(ms.storage->is_config_valid() == false);
         THEN("In the first intstantiation the database is not initialized") {
             CHECK_NOTHROW(Everest::ManagerConfig(ms));
 
             THEN("In the second instantiation the database is initialized and valid") {
                 ms = Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", db_path);
-                CHECK(ms.storage->contains_valid_config() == true);
+                CHECK(ms.storage->is_config_valid() == true);
                 CHECK_NOTHROW(Everest::ManagerConfig(ms));
             }
             THEN("It should be possible to construct the ManagerSettings with a database path") {
