@@ -58,7 +58,7 @@ ManagerSettings::ManagerSettings(const std::string& prefix_, const std::string& 
     const auto migrations_dir = this->runtime_settings.data_dir / "migrations";
     this->storage = std::make_unique<everest::config::SqliteStorage>(db_dir, migrations_dir);
 
-    if (!this->storage->contains_valid_config()) {
+    if (!this->storage->select_config()) {
         throw BootException("Database not initialized or valid");
     }
 
@@ -83,7 +83,7 @@ ManagerSettings::ManagerSettings(const std::string& prefix_, const std::string& 
     this->storage = std::make_unique<everest::config::SqliteStorage>(fs::path(db_), migrations_dir);
 
     everest::config::Settings settings;
-    if (this->storage->contains_valid_config()) {
+    if (this->storage->select_config()) {
         EVLOG_info << "Booting and parsing configuration from database: " << db_;
         const auto settings_response = this->storage->get_settings();
         if (settings_response.status != everest::config::GenericResponseStatus::OK or

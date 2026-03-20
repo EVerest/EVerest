@@ -12,6 +12,10 @@ namespace everest::config {
 class SqliteStorage : public StorageInterface {
 
 public:
+    /// \brief The config ID used when no explicit ID is given.
+    /// Migrated databases carry their original config at this ID; fresh databases write their first config here.
+    static constexpr int DEFAULT_CONFIG_ID = 0;
+
     /// \brief Constructor
     /// \param db_path Path to SQLite database file
     /// \param migration_files_path Path to SQL migration files
@@ -33,8 +37,12 @@ public:
                                                        const ConfigurationParameterCharacteristics characteristics,
                                                        const std::string& value) override;
 
-    /// \brief Checks if the database contains a valid configuration
-    bool contains_valid_config();
+    /// \brief Returns true if \p config_id exists in CONFIG_META and is marked valid.
+    bool is_config_valid(int config_id = DEFAULT_CONFIG_ID);
+
+    /// \brief Validates \p config_id and, if valid, activates it for all subsequent operations.
+    /// \return true and sets the active config ID if the config exists and is valid; false otherwise.
+    bool select_config(int config_id = DEFAULT_CONFIG_ID);
 
     /// \brief Marks the current configuration as valid
     /// \param is_valid True if the configuration is valid, false otherwise
@@ -43,8 +51,28 @@ public:
     void mark_valid(const bool is_valid, const std::string& config_dump,
                     const std::optional<fs::path>& config_file_path);
 
+    /// \brief Summary of a stored configuration entry
+    struct StoredConfigInfo {
+        int id;
+        std::string last_updated;
+        bool is_valid;
+        std::optional<std::string> config_file_path;
+    };
+
+    /// \brief Lists all configurations stored in the database
+    /// \return A vector of StoredConfigInfo, one entry per row in the SETTING table
+    std::vector<StoredConfigInfo> list_configs();
+
+    /// \brief Deletes the configuration with the given \p config_id from the database
+    /// \param config_id ID of the configuration to delete (matches SETTING.ID)
+    /// \return OK on success, Failed otherwise
+    GenericResponseStatus delete_config(int config_id);
+
 private:
     std::unique_ptr<everest::db::sqlite::ConnectionInterface> db;
+    /// \brief ID of the SETTING row this instance is scoped to.
+    /// -1 means not yet set; activated explicitly via select_config() or internally by write_settings() on INSERT.
+    int config_id_ = -1;
     GenericResponseStatus write_module_data(const ModuleData& module_info);
     GenericResponseStatus write_module_fulfillment(const std::string& module_id, const Fulfillment& fulfillment);
     GenericResponseStatus write_module_tier_mapping(const std::string& module_id, const std::string& implementation_id,

@@ -1138,7 +1138,7 @@ ManagerConfig::ManagerConfig(const ManagerSettings& ms) : ConfigBase(ms.mqtt_set
             if (this->ms.storage == nullptr) {
                 EVLOG_AND_THROW(EverestConfigError("No storage configured, cannot load module configs from database!"));
             }
-            if (!this->ms.storage->contains_valid_config()) {
+            if (!this->ms.storage->select_config()) {
                 EVLOG_AND_THROW(EverestConfigError("No valid config found in database"));
             }
             const auto module_configs_response = this->ms.storage->get_module_configs();
@@ -1151,7 +1151,7 @@ ManagerConfig::ManagerConfig(const ManagerSettings& ms) : ConfigBase(ms.mqtt_set
             if (this->ms.storage == nullptr) {
                 EVLOG_AND_THROW(EverestConfigError("No storage configured, cannot load module configs from database!"));
             }
-            if (this->ms.storage->contains_valid_config()) {
+            if (this->ms.storage->select_config()) {
                 EVLOG_info << "Storage contains valid config, loading module configs from database";
                 const auto module_configs_response = this->ms.storage->get_module_configs();
                 if (module_configs_response.status == GenericResponseStatus::Failed) {
@@ -1162,7 +1162,8 @@ ManagerConfig::ManagerConfig(const ManagerSettings& ms) : ConfigBase(ms.mqtt_set
             } else {
                 EVLOG_info << "Storage does not contain valid config, "
                               "loading module configs from YAML file as fallback";
-                this->ms.storage->wipe();       // make sure we write a fresh config
+                this->ms.storage->wipe();                   // make sure we write a fresh config
+                this->ms.storage->write_settings(this->ms); // re-initialize config_id_ after wipe
                 write_config_to_storage = true; // we can only write the config to the storage after the parse()
                                                 // function, since this adds meta data like characteristics to the
                                                 // module_configs that is required for writing to the storage
