@@ -3,6 +3,7 @@
 
 #include "power_supply_DCImpl.hpp"
 #include <cmath>
+#include <iomanip>
 
 namespace module {
 namespace main {
@@ -135,7 +136,8 @@ void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double
 
     if (should_log_setpoint(this->last_logged_export_voltage, this->last_logged_export_current, exportVoltage,
                             exportCurrentLimit)) {
-        EVLOG_info << "Updating voltage/current via CAN: " << exportVoltage << "V / " << exportCurrentLimit << "A";
+        EVLOG_info << std::fixed << std::setprecision(2) << "Updating voltage/current via CAN: " << exportVoltage
+                   << "V / " << exportCurrentLimit << "A";
     }
     mod->acdc.set_voltage_current(exportVoltage, exportCurrentLimit);
 };
@@ -160,8 +162,8 @@ void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double
 
         if (should_log_setpoint(this->last_logged_import_voltage, this->last_logged_import_current, minImportVoltage,
                                 importCurrentLimit)) {
-            EVLOG_info << "Updating voltage/current via CAN: " << minImportVoltage << "V / " << importCurrentLimit
-                       << "A";
+            EVLOG_info << std::fixed << std::setprecision(2) << "Updating voltage/current via CAN: " << minImportVoltage
+                       << "V / " << importCurrentLimit << "A";
         }
         mod->acdc.set_voltage_current(minImportVoltage, importCurrentLimit);
     }
