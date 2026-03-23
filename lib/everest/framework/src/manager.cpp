@@ -614,17 +614,27 @@ int boot(const po::variables_map& vm) {
     ConfigBootMode boot_mode = parse_config_boot_mode(config_opt, db_opt, db_init);
 
     ManagerSettings ms;
+    std::unique_ptr<everest::config::SqliteStorage> db_storage;
+    bool db_storage_has_module_configs = false;
 
     switch (boot_mode) {
     case ConfigBootMode::YamlFile:
         ms = ManagerSettings(prefix_opt, config_opt);
         break;
-    case ConfigBootMode::Database:
-        ms = ManagerSettings(prefix_opt, db_opt, DatabaseTag{});
+    case ConfigBootMode::Database: {
+        auto bs = bootstrap_from_database(prefix_opt, db_opt);
+        ms = std::move(bs.ms);
+        db_storage = std::move(bs.storage);
+        db_storage_has_module_configs = bs.module_configs_initialized;
         break;
-    case ConfigBootMode::DatabaseInit:
-        ms = ManagerSettings(prefix_opt, config_opt, db_opt);
+    }
+    case ConfigBootMode::DatabaseInit: {
+        auto bs = bootstrap_from_database_init(prefix_opt, config_opt, db_opt);
+        ms = std::move(bs.ms);
+        db_storage = std::move(bs.storage);
+        db_storage_has_module_configs = bs.module_configs_initialized;
         break;
+    }
     default:
         throw BootException(fmt::format("Invalid boot source: {}", static_cast<int>(boot_mode)));
     }
@@ -716,7 +726,7 @@ int boot(const po::variables_map& vm) {
     const auto start_time = std::chrono::system_clock::now();
     std::shared_ptr<ManagerConfig> config; // TODO: maybe this can stay unique when we re-work start_modules()
     try {
-        config = std::make_shared<ManagerConfig>(ms);
+        config = std::make_shared<ManagerConfig>(ms, db_storage.get(), db_storage_has_module_configs);
     } catch (EverestInternalError& e) {
         EVLOG_error << fmt::format("Failed to load and validate config!\n{}", boost::diagnostic_information(e, true));
         return EXIT_FAILURE;
@@ -886,7 +896,7 @@ int boot(const po::variables_map& vm) {
             const auto& payload = msg.json;
             if (payload.at("method") == "restart_modules") {
                 shutdown_modules(module_handles, *config, *mqtt_abstraction);
-                config = std::make_unique<ManagerConfig>(ms);
+                config = std::make_unique<ManagerConfig>(ms, db_storage.get(), db_storage_has_module_configs);
                 modules_started = false;
                 restart_modules = true;
             } else if (payload.at("method") == "check_config") {

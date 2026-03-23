@@ -3,16 +3,14 @@
 
 #pragma once
 
+#include <filesystem>
 #include <map>
+#include <optional>
 #include <string>
 
 #include <nlohmann/json.hpp>
 
 #include <utils/config/storage_types.hpp>
-
-namespace Everest {
-struct ManagerSettings;
-}
 
 namespace everest::config {
 
@@ -25,14 +23,6 @@ public:
     /// \param config EVerest config
     /// \return
     virtual GenericResponseStatus write_module_configs(const std::map<ModuleId, ModuleConfig>& module_configs) = 0;
-
-    /// \brief Writes EVerest config \p settings to persistent storage
-    /// \param settings EVerest settings configuration
-    /// \return
-    virtual GenericResponseStatus write_settings(const Everest::ManagerSettings& manager_settings) = 0;
-
-    /// \brief Wipes all configuration entries from persistent storage
-    virtual GenericResponseStatus wipe() = 0;
 
     /// \brief Gets EVerest config from persistent storage
     /// \return Response with status of operation and config. config is only set if status is OK. Config contains all
@@ -71,6 +61,13 @@ public:
     write_configuration_parameter(const ConfigurationParameterIdentifier& identifier,
                                   const ConfigurationParameterCharacteristics characteristics,
                                   const std::string& value) = 0;
+
+    /// \brief Marks the current configuration as valid
+    /// \param is_valid True if the configuration is valid, false otherwise
+    /// \param config_dump JSON dump of the config file that was used to create the configuration
+    /// \param config_file_path Path to the config file that was used to create the configuration
+    virtual void mark_valid(bool is_valid, const std::string& config_dump,
+                            const std::optional<std::filesystem::path>& config_file_path) = 0;
 };
 
 } // namespace everest::config
