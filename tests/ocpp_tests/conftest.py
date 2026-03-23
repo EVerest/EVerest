@@ -42,7 +42,7 @@ def pytest_addoption(parser):
             help="everest prefix path; default = '../../build/dist'",
         )
     except ValueError:
-        pass
+        logging.error("Option --everest-prefix already registered, skipping duplicate registration.")
 
 
 def pytest_sessionfinish(session, exitstatus):

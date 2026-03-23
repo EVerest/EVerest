@@ -168,7 +168,6 @@ class NetworkIsolationPlugin:
         if not self._active:
             return
 
-        stripped_count = 0
         processed_parents = set()
 
         for item in items:
@@ -191,6 +190,4 @@ class NetworkIsolationPlugin:
                     processed_parents.add(parent_id)
                     self._strip_marker_from_node(parent)
                 parent = parent.parent
-
-            stripped_count += 1
 

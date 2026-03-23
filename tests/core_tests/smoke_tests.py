@@ -638,7 +638,6 @@ async def test_iso15118_dc_session_error_before_session(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
-@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_core_config("config-sil.yaml")
 async def test_pwm_ac_session_no_energy_before_session(
     test_controller: TestController, everest_core: EverestCore
@@ -671,7 +670,6 @@ async def test_pwm_ac_session_no_energy_before_session(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
-@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_config_adaptions(AcConfigAdjustmentStrategy())
 @pytest.mark.everest_core_config("config-sil.yaml")
 async def test_iso15118_ac_session_no_energy_before_session(
