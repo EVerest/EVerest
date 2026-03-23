@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <framework/runtime.hpp>
+#include <utils/config/slot_manager.hpp>
 #include <utils/config/storage_sqlite.hpp>
 #include <utils/error.hpp>
 #include <utils/error/error_factory.hpp>
@@ -35,9 +36,8 @@ void populate_module_info_path_from_runtime_settings(ModuleInfo& mi, const Runti
     mi.paths.share = rs.data_dir / defaults::MODULES_DIR / mi.name;
 }
 
-ManagerSettings::ManagerSettings(const std::string& prefix_, const std::string& config_) :
-    boot_mode(ConfigBootMode::YamlFile) { // NOLINT(cppcoreguidelines-use-default-member-init): already default
-                                          // initialized, but repeated for clarity
+ManagerSettings::ManagerSettings(const std::string& prefix_, const std::string& config_) {
+    boot_mode = ConfigBootMode::YamlFile;
     init_prefix_and_data_dir(prefix_);
     init_config_file(config_);
     const auto settings = everest::config::parse_settings(config.value("settings", json::object()));
@@ -48,57 +48,78 @@ ManagerSettings::ManagerSettings(const std::string& prefix_, const std::string& 
     init_settings(settings);
 }
 
-ManagerSettings::ManagerSettings(const std::string& prefix_, const std::string& db_, DatabaseTag) :
-    boot_mode(ConfigBootMode::Database) {
+DatabaseBootstrap bootstrap_from_database(const std::string& prefix, const std::string& db_path) {
+    DatabaseBootstrap bs;
+    bs.ms.boot_mode = ConfigBootMode::Database;
+    bs.ms.init_prefix_and_data_dir(prefix);
 
-    init_prefix_and_data_dir(prefix_);
+    bs.ms.db_dir = assert_file(db_path, "User provided database");
 
-    db_dir = assert_file(db_, "User provided database");
+    const auto migrations_dir = bs.ms.runtime_settings.data_dir / "migrations";
 
-    const auto migrations_dir = this->runtime_settings.data_dir / "migrations";
-    this->storage = std::make_unique<everest::config::SqliteStorage>(db_dir, migrations_dir);
-
-    if (!this->storage->select_config()) {
+    everest::config::SqliteConfigSlotManager slot_mgr(bs.ms.db_dir, migrations_dir);
+    if (!slot_mgr.is_valid(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID)) {
         throw BootException("Database not initialized or valid");
     }
 
-    EVLOG_info << "Booting and parsing configuration from database: " << db_dir;
-    const auto settings_response = this->storage->get_settings();
+    bs.storage = std::make_unique<everest::config::SqliteStorage>(
+        bs.ms.db_dir, migrations_dir, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
+
+    EVLOG_info << "Booting and parsing configuration from database: " << bs.ms.db_dir;
+    const auto settings_response = bs.storage->get_settings();
     if (settings_response.status != everest::config::GenericResponseStatus::OK or
         !settings_response.settings.has_value()) {
         throw BootException("Failed to load settings from database");
     }
     const auto settings = settings_response.settings.value();
-    init_settings(settings);
-    this->storage->write_settings(*this);
+    bs.ms.init_settings(settings);
+    slot_mgr.write_settings(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID, bs.ms);
+
+    bs.module_configs_initialized = true;
+    return bs;
 }
 
-ManagerSettings::ManagerSettings(const std::string& prefix_, const std::string& config_, const std::string& db_) :
-    boot_mode(ConfigBootMode::DatabaseInit) {
+DatabaseBootstrap bootstrap_from_database_init(const std::string& prefix, const std::string& config,
+                                               const std::string& db_path) {
+    DatabaseBootstrap bs;
+    bs.ms.boot_mode = ConfigBootMode::DatabaseInit;
+    bs.ms.init_prefix_and_data_dir(prefix);
+    bs.ms.init_config_file(config);
 
-    init_prefix_and_data_dir(prefix_);
-    init_config_file(config_);
+    const auto migrations_dir = bs.ms.runtime_settings.data_dir / "migrations";
+    const auto db_fs_path = fs::path(db_path);
 
-    const auto migrations_dir = this->runtime_settings.data_dir / "migrations";
-    this->storage = std::make_unique<everest::config::SqliteStorage>(fs::path(db_), migrations_dir);
+    everest::config::SqliteConfigSlotManager slot_mgr(db_fs_path, migrations_dir);
 
-    everest::config::Settings settings;
-    if (this->storage->select_config()) {
-        EVLOG_info << "Booting and parsing configuration from database: " << db_;
-        const auto settings_response = this->storage->get_settings();
+    if (slot_mgr.is_valid(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID)) {
+        EVLOG_info << "Booting and parsing configuration from database: " << db_path;
+
+        bs.storage = std::make_unique<everest::config::SqliteStorage>(
+            db_fs_path, migrations_dir, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
+
+        const auto settings_response = bs.storage->get_settings();
         if (settings_response.status != everest::config::GenericResponseStatus::OK or
             !settings_response.settings.has_value()) {
             throw BootException("Failed to load settings from database");
         }
-        settings = settings_response.settings.value();
+        bs.ms.init_settings(settings_response.settings.value());
+        slot_mgr.write_settings(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID, bs.ms);
+        bs.module_configs_initialized = true;
     } else {
-        EVLOG_info << "Database not initialized or valid, falling back to YAML config file: " << config_;
-        this->storage->wipe();
-        settings = everest::config::parse_settings(config.value("settings", json::object()));
+        EVLOG_info << "Database not initialized or valid, falling back to YAML config file: " << config;
+        slot_mgr.wipe(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
+
+        const auto settings = everest::config::parse_settings(bs.ms.config.value("settings", json::object()));
+        bs.ms.init_settings(settings);
+        slot_mgr.write_settings(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID, bs.ms);
+
+        bs.storage = std::make_unique<everest::config::SqliteStorage>(
+            db_fs_path, migrations_dir, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
+
+        bs.module_configs_initialized = false;
     }
 
-    init_settings(settings);
-    this->storage->write_settings(*this);
+    return bs;
 }
 
 void ManagerSettings::init_settings(const everest::config::Settings& settings) {
@@ -345,6 +366,8 @@ void ManagerSettings::init_settings(const everest::config::Settings& settings) {
 
     populate_runtime_settings(this->runtime_settings, prefix, etc_dir, data_dir, modules_dir, logging_config_file,
                               telemetry_prefix, telemetry_enabled, validate_schema, forward_exceptions);
+    this->modules_dir = modules_dir;
+    this->validate_schema = validate_schema;
 }
 
 void ManagerSettings::init_prefix_and_data_dir(const std::string& prefix_) {
