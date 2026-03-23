@@ -579,7 +579,7 @@ void ManagerConfig::load_and_validate_manifest(ModuleConfig& module_config) {
     EVLOG_debug << fmt::format("Found module {}, loading and verifying manifest...", printable_identifier(module_id));
 
     // load and validate module manifest.json
-    const fs::path manifest_path = this->ms.runtime_settings.modules_dir / module_name / "manifest.yaml";
+    const fs::path manifest_path = this->ps.modules_dir / module_name / "manifest.yaml";
     try {
 
         if (module_name != "ProbeModule") {
@@ -749,7 +749,7 @@ json ManagerConfig::resolve_interface(const std::string& intf_name) {
 
 json ManagerConfig::load_interface_file(const std::string& intf_name) {
     BOOST_LOG_FUNCTION();
-    const fs::path intf_path = this->ms.interfaces_dir / (intf_name + ".yaml");
+    const fs::path intf_path = this->ps.interfaces_dir / (intf_name + ".yaml");
     try {
         EVLOG_debug << fmt::format("Loading interface file at: {}", fs::canonical(intf_path).string());
 
@@ -839,7 +839,7 @@ std::list<json> ManagerConfig::resolve_error_ref(const std::string& reference) {
         err_name = err_ref.substr(result + 2);
         is_error_list = false;
     }
-    const fs::path path = this->ms.errors_dir / (err_namespace + ".yaml");
+    const fs::path path = this->ps.errors_dir / (err_namespace + ".yaml");
     json error_json = load_yaml(path);
     std::list<json> errors;
     if (is_error_list) {
@@ -988,14 +988,14 @@ void ManagerConfig::resolve_all_requirements() {
 
 void ManagerConfig::parse(ModuleConfigurations& module_configs) {
     // load type files
-    if (this->ms.runtime_settings.validate_schema) {
+    if (this->ps.validate_schema) {
         int64_t total_time_validation_ms = 0, total_time_parsing_ms = 0;
-        for (auto const& types_entry : fs::recursive_directory_iterator(this->ms.types_dir)) {
+        for (auto const& types_entry : fs::recursive_directory_iterator(this->ps.types_dir)) {
             const auto start_time = std::chrono::system_clock::now();
             const auto& type_file_path = types_entry.path();
             if (fs::is_regular_file(type_file_path) && type_file_path.extension() == ".yaml") {
                 const auto type_path =
-                    std::string("/") + fs::relative(type_file_path, this->ms.types_dir).stem().string();
+                    std::string("/") + fs::relative(type_file_path, this->ps.types_dir).stem().string();
 
                 try {
                     // load and validate type file, store validated result in this->types
@@ -1022,9 +1022,9 @@ void ManagerConfig::parse(ModuleConfigurations& module_configs) {
     }
 
     // load error files
-    if (this->ms.runtime_settings.validate_schema) {
+    if (this->ps.validate_schema) {
         int64_t total_time_validation_ms = 0, total_time_parsing_ms = 0;
-        for (auto const& errors_entry : fs::recursive_directory_iterator(this->ms.errors_dir)) {
+        for (auto const& errors_entry : fs::recursive_directory_iterator(this->ps.errors_dir)) {
             const auto start_time = std::chrono::system_clock::now();
             const auto& error_file_path = errors_entry.path();
             if (fs::is_regular_file(error_file_path) && error_file_path.extension() == ".yaml") {
@@ -1105,55 +1105,63 @@ void ManagerConfig::parse_3_tier_model_mapping() {
     }
 }
 
-ManagerConfig::ManagerConfig(const ManagerSettings& ms) : ConfigBase(ms.mqtt_settings), ms(ms) {
+ManagerConfig::ManagerConfig(const ManagerSettings& ms, everest::config::StorageInterface* storage,
+                             bool storage_has_module_configs) :
+    ConfigBase(ms.mqtt_settings), ps(ms), storage_(storage), storage_has_module_configs_(storage_has_module_configs) {
     BOOST_LOG_FUNCTION();
+    this->settings = ms.runtime_settings;
+    init();
+}
 
+ManagerConfig::ManagerConfig(const ConfigParseSettings& ps) :
+    ConfigBase(MQTTSettings{}), ps(ps), storage_(nullptr), storage_has_module_configs_(false) {
+    BOOST_LOG_FUNCTION();
+    init();
+}
+
+void ManagerConfig::init() {
     this->manifests = json({});
     this->interfaces = json({});
     this->interface_definitions = json({});
     this->types = json({});
-    auto schema_validation = load_schemas(this->ms.schemas_dir);
+    auto schema_validation = load_schemas(this->ps.schemas_dir);
     this->schemas = schema_validation.schemas;
     this->validators = std::move(schema_validation.validators);
-    this->error_map = error::ErrorTypeMap(this->ms.errors_dir);
+    this->error_map = error::ErrorTypeMap(this->ps.errors_dir);
     this->draft7_validator = std::make_unique<json_validator>(loader, format_checker);
     const static json draft07 = R"(
         {
             "$ref": "http://json-schema.org/draft-07/schema#"
         }
-        
+
         )"_json;
     this->draft7_validator->set_root_schema(draft07);
 
     ModuleConfigurations module_configs;
-    this->settings = this->ms.runtime_settings;
     bool write_config_to_storage = false;
     try {
-        if (this->ms.boot_mode == ConfigBootMode::YamlFile) {
+        if (this->ps.boot_mode == ConfigBootMode::YamlFile) {
             EVLOG_info << "Boot mode is set to YamlFile, loading module configs from YAML file";
             const auto complete_config = this->apply_user_config_and_defaults();
             module_configs = parse_module_configs(complete_config.value("active_modules", json::object()));
-        } else if (this->ms.boot_mode == ConfigBootMode::Database) {
+        } else if (this->ps.boot_mode == ConfigBootMode::Database) {
             EVLOG_info << "Boot mode is set to Database, loading module configs from database";
-            if (this->ms.storage == nullptr) {
+            if (this->storage_ == nullptr) {
                 EVLOG_AND_THROW(EverestConfigError("No storage configured, cannot load module configs from database!"));
             }
-            if (!this->ms.storage->select_config()) {
-                EVLOG_AND_THROW(EverestConfigError("No valid config found in database"));
-            }
-            const auto module_configs_response = this->ms.storage->get_module_configs();
+            const auto module_configs_response = this->storage_->get_module_configs();
             if (module_configs_response.status == GenericResponseStatus::Failed) {
                 EVLOG_AND_THROW(EverestConfigError("Failed to load module configs from database"));
             }
             module_configs = module_configs_response.module_configs;
-        } else if (this->ms.boot_mode == ConfigBootMode::DatabaseInit) {
+        } else if (this->ps.boot_mode == ConfigBootMode::DatabaseInit) {
             EVLOG_info << "Boot mode is set to DatabaseInit";
-            if (this->ms.storage == nullptr) {
+            if (this->storage_ == nullptr) {
                 EVLOG_AND_THROW(EverestConfigError("No storage configured, cannot load module configs from database!"));
             }
-            if (this->ms.storage->select_config()) {
+            if (this->storage_has_module_configs_) {
                 EVLOG_info << "Storage contains valid config, loading module configs from database";
-                const auto module_configs_response = this->ms.storage->get_module_configs();
+                const auto module_configs_response = this->storage_->get_module_configs();
                 if (module_configs_response.status == GenericResponseStatus::Failed) {
                     EVLOG_AND_THROW(EverestConfigError("Failed to load module configs from database"));
                 } else {
@@ -1162,8 +1170,6 @@ ManagerConfig::ManagerConfig(const ManagerSettings& ms) : ConfigBase(ms.mqtt_set
             } else {
                 EVLOG_info << "Storage does not contain valid config, "
                               "loading module configs from YAML file as fallback";
-                this->ms.storage->wipe();                   // make sure we write a fresh config
-                this->ms.storage->write_settings(this->ms); // re-initialize config_id_ after wipe
                 write_config_to_storage = true; // we can only write the config to the storage after the parse()
                                                 // function, since this adds meta data like characteristics to the
                                                 // module_configs that is required for writing to the storage
@@ -1180,12 +1186,12 @@ ManagerConfig::ManagerConfig(const ManagerSettings& ms) : ConfigBase(ms.mqtt_set
             return;
         }
 
-        if (this->ms.storage->write_module_configs(module_configs) != GenericResponseStatus::Failed) {
+        if (this->storage_->write_module_configs(module_configs) != GenericResponseStatus::Failed) {
             EVLOG_info << "Module configs written to database successfully, marking config as valid";
-            this->ms.storage->mark_valid(true, json(module_configs).dump(), this->ms.config_file);
+            this->storage_->mark_valid(true, json(module_configs).dump(), this->ps.config_file);
         } else {
             EVLOG_warning << "Failed to write module configs to database, marking config as invalid";
-            this->ms.storage->mark_valid(false, json(module_configs).dump(), this->ms.config_file);
+            this->storage_->mark_valid(false, json(module_configs).dump(), this->ps.config_file);
         }
     } catch (const std::exception& e) {
         EVLOG_AND_THROW(EverestConfigError(fmt::format("Failed to load and parse configuration: {}", e.what())));
@@ -1194,10 +1200,10 @@ ManagerConfig::ManagerConfig(const ManagerSettings& ms) : ConfigBase(ms.mqtt_set
 
 json ManagerConfig::apply_user_config_and_defaults() {
     // load and process config file
-    const fs::path config_path = this->ms.config_file;
+    const fs::path config_path = this->ps.config_file;
     EVLOG_info << fmt::format("Loading config file at: {}", fs::canonical(config_path).string());
     // this config is parsed from the file, it doesnt contain any defaults or patches!
-    auto complete_config = this->ms.config;
+    auto complete_config = this->ps.config;
     // try to load user config from a directory "user-config" that might be in the same parent directory as the
     // config_file. The config is supposed to have the same name as the parent config.
     // TODO(kai): introduce a parameter that can overwrite the location of the user config?
@@ -1277,7 +1283,7 @@ ManagerConfig::set_config_value(const everest::config::ConfigurationParameterIde
         const auto& characteristics =
             get_characteristics(identifier.configuration_parameter_name, configuration_parameters);
 
-        switch (this->ms.boot_mode) {
+        switch (this->ps.boot_mode) {
         case ConfigBootMode::YamlFile: {
             const auto write_response = this->user_config_storage->write_configuration_parameter(
                 identifier, characteristics, everest::config::config_entry_to_string(value));
@@ -1289,8 +1295,8 @@ ManagerConfig::set_config_value(const everest::config::ConfigurationParameterIde
         case ConfigBootMode::Database:
         case ConfigBootMode::DatabaseInit:
             const auto& cached_value_it = this->database_get_config_parameter_response_cache.find(identifier);
-            const auto cached_value = this->ms.storage->get_configuration_parameter(identifier);
-            const auto write_response = this->ms.storage->write_configuration_parameter(
+            const auto cached_value = this->storage_->get_configuration_parameter(identifier);
+            const auto write_response = this->storage_->write_configuration_parameter(
                 identifier, characteristics, everest::config::config_entry_to_string(value));
             if (write_response == GetSetResponseStatus::OK) {
                 if (cached_value_it == this->database_get_config_parameter_response_cache.end()) {
@@ -1314,7 +1320,7 @@ ManagerConfig::get_config_value(const everest::config::ConfigurationParameterIde
     response.status = GetSetResponseStatus::Failed;
 
     try {
-        switch (this->ms.boot_mode) {
+        switch (this->ps.boot_mode) {
         case ConfigBootMode::YamlFile: {
             const auto& module_config = this->module_configs.at(identifier.module_id);
             const auto& configuration_parameters =
@@ -1338,7 +1344,7 @@ ManagerConfig::get_config_value(const everest::config::ConfigurationParameterIde
             if (cached_value_it != this->database_get_config_parameter_response_cache.end()) {
                 return cached_value_it->second;
             }
-            response = this->ms.storage->get_configuration_parameter(identifier);
+            response = this->storage_->get_configuration_parameter(identifier);
             break;
         }
         }

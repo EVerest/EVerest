@@ -216,12 +216,18 @@ public:
 ///
 class ManagerConfig : public ConfigBase {
 private:
-    const ManagerSettings& ms;
+    const ConfigParseSettings& ps;
+    everest::config::StorageInterface* storage_;
+    bool storage_has_module_configs_ = false;
     Validators validators;
     std::unique_ptr<nlohmann::json_schema::json_validator> draft7_validator;
     std::unique_ptr<everest::config::UserConfigStorage> user_config_storage;
     std::map<everest::config::ConfigurationParameterIdentifier, everest::config::GetConfigurationParameterResponse>
         database_get_config_parameter_response_cache;
+
+    ///
+    /// \brief common initialization logic called by all constructors
+    void init();
 
     nlohmann::json apply_user_config_and_defaults();
 
@@ -291,8 +297,16 @@ private:
 
 public:
     ///
-    /// \brief Create a ManagerConfig from the provided ManagerSettings \p ms
-    explicit ManagerConfig(const ManagerSettings& ms);
+    /// \brief Create a ManagerConfig from the provided ManagerSettings \p ms (daemon mode)
+    /// \param ms Manager settings (must outlive this object)
+    /// \param storage Optional storage backend (must outlive this object); nullptr means no DB
+    /// \param storage_has_module_configs If true, module configs will be loaded from storage rather than YAML
+    explicit ManagerConfig(const ManagerSettings& ms, everest::config::StorageInterface* storage = nullptr,
+                           bool storage_has_module_configs = false);
+
+    ///
+    /// \brief Create a ManagerConfig from ConfigParseSettings only (validate-only / check mode)
+    explicit ManagerConfig(const ConfigParseSettings& ps);
 
     /// \brief Sets the config \p value associated with the \p identifier
     /// \returns if the setting of the value was successful or not

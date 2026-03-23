@@ -5,6 +5,7 @@
 #include <framework/runtime.hpp>
 #include <tests/helpers.hpp>
 #include <utils/config.hpp>
+#include <utils/config/slot_manager.hpp>
 
 namespace fs = std::filesystem;
 
@@ -65,8 +66,9 @@ SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
     }
     GIVEN("A non-exsiting database file with ConfigurationBootMode::DatabaseInit") {
         THEN("It should not throw and create the file") {
-            CHECK_NOTHROW(Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml",
-                                                   "valid_config/non_existing.db"));
+            CHECK_NOTHROW(Everest::bootstrap_from_database_init(bin_dir + "valid_config/",
+                                                                bin_dir + "valid_config/config.yaml",
+                                                                "valid_config/non_existing.db"));
         }
     }
 }
@@ -217,26 +219,27 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
             CHECK_NOTHROW(Everest::ManagerConfig(ms));
         }
     }
-    GIVEN("ManagerSettings are instantiated two times - first with fallback to init from config file, second with "
-          "database") {
+    GIVEN("Bootstrap is called two times - first with fallback to init from config file, second with database") {
         auto db_path = bin_dir + "valid_config/everest.db";
 
         // Clean up before test
         if (fs::exists(db_path)) {
             fs::remove(db_path);
         }
-        auto ms = Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", db_path);
-        CHECK(ms.storage->is_config_valid() == false);
-        THEN("In the first intstantiation the database is not initialized") {
-            CHECK_NOTHROW(Everest::ManagerConfig(ms));
+        auto bs = Everest::bootstrap_from_database_init(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml",
+                                                        db_path);
+        CHECK(bs.module_configs_initialized == false);
+        THEN("In the first instantiation the database is not initialized") {
+            CHECK_NOTHROW(Everest::ManagerConfig(bs.ms, bs.storage.get(), bs.module_configs_initialized));
 
             THEN("In the second instantiation the database is initialized and valid") {
-                ms = Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", db_path);
-                CHECK(ms.storage->is_config_valid() == true);
-                CHECK_NOTHROW(Everest::ManagerConfig(ms));
+                auto bs2 = Everest::bootstrap_from_database_init(
+                    bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", db_path);
+                CHECK(bs2.module_configs_initialized == true);
+                CHECK_NOTHROW(Everest::ManagerConfig(bs2.ms, bs2.storage.get(), bs2.module_configs_initialized));
             }
-            THEN("It should be possible to construct the ManagerSettings with a database path") {
-                CHECK_NOTHROW(Everest::ManagerSettings(bin_dir + "valid_config/", db_path, Everest::DatabaseTag{}));
+            THEN("It should be possible to bootstrap from an existing database") {
+                CHECK_NOTHROW(Everest::bootstrap_from_database(bin_dir + "valid_config/", db_path));
             }
         }
     }
