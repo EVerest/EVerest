@@ -19,13 +19,13 @@ public:
     /// \brief Constructor
     /// \param db_path Path to SQLite database file
     /// \param migration_files_path Path to SQL migration files
+    /// \param config_id The config slot ID this instance is scoped to (default: DEFAULT_CONFIG_ID)
     /// \throws MigrationException if migration fails
     /// \throws std::runtime_error if database cannot be opened
-    SqliteStorage(const fs::path& db_path, const std::filesystem::path& migration_files_path);
+    SqliteStorage(const fs::path& db_path, const std::filesystem::path& migration_files_path,
+                  int config_id = DEFAULT_CONFIG_ID);
 
     GenericResponseStatus write_module_configs(const ModuleConfigurations& module_configs) override;
-    GenericResponseStatus write_settings(const Everest::ManagerSettings& manager_settings) override;
-    GenericResponseStatus wipe() override;
     GetModuleConfigsResponse get_module_configs() override;
     GetSettingsResponse get_settings() override;
     GetModuleConfigurationResponse get_module_config(const std::string& module_id) override;
@@ -36,44 +36,14 @@ public:
     GetSetResponseStatus write_configuration_parameter(const ConfigurationParameterIdentifier& identifier,
                                                        const ConfigurationParameterCharacteristics characteristics,
                                                        const std::string& value) override;
-
-    /// \brief Returns true if \p config_id exists in CONFIG_META and is marked valid.
-    bool is_config_valid(int config_id = DEFAULT_CONFIG_ID);
-
-    /// \brief Validates \p config_id and, if valid, activates it for all subsequent operations.
-    /// \return true and sets the active config ID if the config exists and is valid; false otherwise.
-    bool select_config(int config_id = DEFAULT_CONFIG_ID);
-
-    /// \brief Marks the current configuration as valid
-    /// \param is_valid True if the configuration is valid, false otherwise
-    /// \param config_dump JSON dump of the config file that was used to create the configuration
-    /// \param yaml_file_path Path to the config file that was used to create the configuration
-    void mark_valid(const bool is_valid, const std::string& config_dump,
-                    const std::optional<fs::path>& config_file_path);
-
-    /// \brief Summary of a stored configuration entry
-    struct StoredConfigInfo {
-        int id;
-        std::string last_updated;
-        bool is_valid;
-        std::optional<std::string> config_file_path;
-    };
-
-    /// \brief Lists all configurations stored in the database
-    /// \return A vector of StoredConfigInfo, one entry per row in the SETTING table
-    std::vector<StoredConfigInfo> list_configs();
-
-    /// \brief Deletes the configuration with the given \p config_id from the database
-    /// \param config_id ID of the configuration to delete (matches SETTING.ID)
-    /// \return OK on success, Failed otherwise
-    GenericResponseStatus delete_config(int config_id);
+    void mark_valid(bool is_valid, const std::string& config_dump,
+                    const std::optional<fs::path>& config_file_path) override;
 
 private:
     std::unique_ptr<everest::db::sqlite::ConnectionInterface> db;
     /// \brief ID of the SETTING row this instance is scoped to.
-    /// -1 means not yet set; activated explicitly via select_config() or internally by write_settings() on INSERT.
-    int config_id_ = -1;
-    GenericResponseStatus write_module_data(const ModuleData& module_info);
+    const int config_id_;
+    GenericResponseStatus write_module_data(const ModuleData& module_data);
     GenericResponseStatus write_module_fulfillment(const std::string& module_id, const Fulfillment& fulfillment);
     GenericResponseStatus write_module_tier_mapping(const std::string& module_id, const std::string& implementation_id,
                                                     const int32_t evse_id, const std::optional<int32_t> connector_id);
