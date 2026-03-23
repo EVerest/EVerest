@@ -630,17 +630,27 @@ int Manager::run() {
     ConfigBootMode boot_mode = parse_config_boot_mode(config_opt, db_opt, db_init);
 
     ManagerSettings ms;
+    std::unique_ptr<everest::config::SqliteStorage> db_storage;
+    bool db_storage_has_module_configs = false;
 
     switch (boot_mode) {
     case ConfigBootMode::YamlFile:
         ms = ManagerSettings(prefix_opt, config_opt);
         break;
-    case ConfigBootMode::Database:
-        ms = ManagerSettings(prefix_opt, db_opt, DatabaseTag{});
+    case ConfigBootMode::Database: {
+        auto bs = bootstrap_from_database(prefix_opt, db_opt);
+        ms = std::move(bs.ms);
+        db_storage = std::move(bs.storage);
+        db_storage_has_module_configs = bs.module_configs_initialized;
         break;
-    case ConfigBootMode::DatabaseInit:
-        ms = ManagerSettings(prefix_opt, config_opt, db_opt);
+    }
+    case ConfigBootMode::DatabaseInit: {
+        auto bs = bootstrap_from_database_init(prefix_opt, config_opt, db_opt);
+        ms = std::move(bs.ms);
+        db_storage = std::move(bs.storage);
+        db_storage_has_module_configs = bs.module_configs_initialized;
         break;
+    }
     default:
         throw BootException(fmt::format("Invalid boot source: {}", static_cast<int>(boot_mode)));
     }
@@ -701,7 +711,7 @@ int Manager::run() {
 
     std::shared_ptr<ManagerConfig> config; // TODO: maybe this can stay unique when we re-work start_modules()
     try {
-        config = load_and_validate_config(ms);
+        config = load_and_validate_config(ms, db_storage, db_storage_has_module_configs);
     } catch (...) {
         return EXIT_FAILURE;
     }
@@ -818,11 +828,14 @@ std::string_view Manager::state_to_string(ManagerState state) const {
     }
 }
 
-std::shared_ptr<ManagerConfig> Manager::load_and_validate_config(const ManagerSettings& ms) const {
+std::shared_ptr<ManagerConfig>
+Manager::load_and_validate_config(const ManagerSettings& ms,
+                                  const std::unique_ptr<everest::config::SqliteStorage>& db_storage,
+                                  bool db_storage_has_module_configs) const {
     const auto start_time = std::chrono::steady_clock::now();
     std::shared_ptr<ManagerConfig> config;
     try {
-        config = std::make_shared<ManagerConfig>(ms);
+        config = std::make_shared<ManagerConfig>(ms, db_storage.get(), db_storage_has_module_configs);
     } catch (EverestInternalError& e) {
         EVLOG_error << fmt::format("Failed to load and validate config!\n{}", boost::diagnostic_information(e, true));
         throw;

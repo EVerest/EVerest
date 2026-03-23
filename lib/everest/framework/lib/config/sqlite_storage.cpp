@@ -86,7 +86,9 @@ int to_int(ConfigurationColumnModuleIdIndex configuration_column_module_id_index
 }
 } // namespace
 
-SqliteStorage::SqliteStorage(const fs::path& db_path, const std::filesystem::path& migration_files_path) {
+SqliteStorage::SqliteStorage(const fs::path& db_path, const std::filesystem::path& migration_files_path,
+                             int config_id) :
+    config_id_(config_id) {
     db = std::make_unique<Connection>(db_path);
 
     SchemaUpdater updater{db.get()};
@@ -192,10 +194,6 @@ GenericResponseStatus SqliteStorage::write_module_configs(const ModuleConfigurat
         EVLOG_error << "Failed writing config to database: " << e.what();
         return GenericResponseStatus::Failed;
     }
-}
-
-GenericResponseStatus SqliteStorage::wipe() {
-    return delete_config(config_id_ >= 0 ? config_id_ : DEFAULT_CONFIG_ID);
 }
 
 GetModuleConfigsResponse SqliteStorage::get_module_configs() {
@@ -448,21 +446,6 @@ SqliteStorage::write_configuration_parameter(const ConfigurationParameterIdentif
     }
 }
 
-bool SqliteStorage::is_config_valid(int config_id) {
-    const std::string sql = "SELECT 1 FROM CONFIG_META WHERE ID = @config_id AND VALID = 1";
-    auto stmt = this->db->new_statement(sql);
-    stmt->bind_int("@config_id", config_id);
-    return stmt->step() == SQLITE_ROW;
-}
-
-bool SqliteStorage::select_config(int config_id) {
-    if (!is_config_valid(config_id)) {
-        return false;
-    }
-    config_id_ = config_id;
-    return true;
-}
-
 void SqliteStorage::mark_valid(const bool is_valid, const std::string& config_dump,
                                const std::optional<fs::path>& config_file_path) {
     const std::string sql =
@@ -649,129 +632,6 @@ GenericResponseStatus SqliteStorage::write_module_config_access(const std::strin
     return GenericResponseStatus::OK;
 }
 
-GenericResponseStatus SqliteStorage::write_settings(const Everest::ManagerSettings& manager_settings) {
-    auto transaction = this->db->begin_transaction();
-
-    std::vector<std::string> keys = {"ID",
-                                     "PREFIX",
-                                     "CONFIG_FILE",
-                                     "CONFIGS_DIR",
-                                     "SCHEMAS_DIR",
-                                     "MODULES_DIR",
-                                     "INTERFACES_DIR",
-                                     "TYPES_DIR",
-                                     "ERRORS_DIR",
-                                     "WWW_DIR",
-                                     "LOGGING_CONFIG_FILE",
-                                     "CONTROLLER_PORT",
-                                     "CONTROLLER_RPC_TIMEOUT_MS",
-                                     "MQTT_BROKER_SOCKET_PATH",
-                                     "MQTT_BROKER_HOST",
-                                     "MQTT_BROKER_PORT",
-                                     "MQTT_EVEREST_PREFIX",
-                                     "MQTT_EXTERNAL_PREFIX",
-                                     "TELEMETRY_PREFIX",
-                                     "TELEMETRY_ENABLED",
-                                     "VALIDATE_SCHEMA",
-                                     "RUN_AS_USER",
-                                     "FORWARD_EXCEPTIONS"};
-
-    std::string sql = "INSERT INTO SETTING (";
-    for (size_t i = 0; i < keys.size(); ++i) {
-        sql += keys.at(i);
-        if (i < keys.size() - 1) {
-            sql += ", ";
-        }
-    }
-    sql += ") VALUES (";
-    for (size_t i = 0; i < keys.size(); ++i) {
-        sql += (i == 0 ? "?" : ", ?");
-    }
-    sql += ") ON CONFLICT(ID) DO UPDATE SET ";
-    for (size_t i = 1; i < keys.size(); ++i) {
-        sql += keys.at(i) + " = excluded." + keys.at(i);
-        if (i < keys.size() - 1) {
-            sql += ", ";
-        }
-    }
-    sql += ";";
-
-    auto stmt = this->db->new_statement(sql);
-
-    // If no config is active yet, use DEFAULT_CONFIG_ID
-    if (config_id_ < 0) {
-        config_id_ = DEFAULT_CONFIG_ID;
-    }
-    stmt->bind_int(to_int(SettingColumnIndex::COL_ID) + 1, config_id_);
-
-    auto bind_text_opt = [&](SettingColumnIndex index, int offset, const std::optional<std::string>& opt) {
-        if (opt.has_value()) {
-            stmt->bind_text(to_int(index) + offset, opt.value(), SQLiteString::Transient);
-        } else {
-            stmt->bind_null(to_int(index) + offset);
-        }
-    };
-
-    auto bind_path_opt = [&](SettingColumnIndex index, int offset, const std::optional<fs::path>& opt) {
-        if (opt.has_value()) {
-            stmt->bind_text(to_int(index) + offset, opt.value().string(), SQLiteString::Transient);
-        } else {
-            stmt->bind_null(to_int(index) + offset);
-        }
-    };
-
-    auto bind_int_opt = [&](SettingColumnIndex index, int offset, const std::optional<int>& opt) {
-        if (opt.has_value()) {
-            stmt->bind_int(to_int(index) + offset, opt.value());
-        } else {
-            stmt->bind_null(to_int(index) + offset);
-        }
-    };
-
-    auto bind_bool_opt = [&](SettingColumnIndex index, int offset, const std::optional<bool>& opt) {
-        if (opt) {
-            stmt->bind_int(to_int(index) + offset, opt.value() ? 1 : 0);
-        } else {
-            stmt->bind_null(to_int(index) + offset);
-        }
-    };
-
-    bind_path_opt(SettingColumnIndex::COL_PREFIX, 1, manager_settings.runtime_settings.prefix);
-    bind_path_opt(SettingColumnIndex::COL_CONFIG_FILE, 1, manager_settings.config_file);
-    bind_path_opt(SettingColumnIndex::COL_CONFIGS_DIR, 1, manager_settings.configs_dir);
-    bind_path_opt(SettingColumnIndex::COL_SCHEMAS_DIR, 1, manager_settings.schemas_dir);
-    bind_path_opt(SettingColumnIndex::COL_MODULES_DIR, 1, manager_settings.runtime_settings.modules_dir);
-    bind_path_opt(SettingColumnIndex::COL_INTERFACES_DIR, 1, manager_settings.interfaces_dir);
-    bind_path_opt(SettingColumnIndex::COL_TYPES_DIR, 1, manager_settings.types_dir);
-    bind_path_opt(SettingColumnIndex::COL_ERRORS_DIR, 1, manager_settings.errors_dir);
-    bind_path_opt(SettingColumnIndex::COL_WWW_DIR, 1, manager_settings.www_dir);
-    bind_path_opt(SettingColumnIndex::COL_LOGGING_CONFIG_FILE, 1,
-                  manager_settings.runtime_settings.logging_config_file);
-
-    bind_int_opt(SettingColumnIndex::COL_CONTROLLER_PORT, 1, manager_settings.controller_port);
-    bind_int_opt(SettingColumnIndex::COL_CONTROLLER_RPC_TIMEOUT_MS, 1, manager_settings.controller_rpc_timeout_ms);
-
-    bind_text_opt(SettingColumnIndex::COL_MQTT_BROKER_SOCKET_PATH, 1,
-                  manager_settings.mqtt_settings.broker_socket_path);
-    bind_text_opt(SettingColumnIndex::COL_MQTT_BROKER_HOST, 1, manager_settings.mqtt_settings.broker_host);
-    bind_int_opt(SettingColumnIndex::COL_MQTT_BROKER_PORT, 1, manager_settings.mqtt_settings.broker_port);
-    bind_text_opt(SettingColumnIndex::COL_MQTT_EVEREST_PREFIX, 1, manager_settings.mqtt_settings.everest_prefix);
-    bind_text_opt(SettingColumnIndex::COL_MQTT_EXTERNAL_PREFIX, 1, manager_settings.mqtt_settings.external_prefix);
-    bind_text_opt(SettingColumnIndex::COL_TELEMETRY_PREFIX, 1, manager_settings.runtime_settings.telemetry_prefix);
-
-    bind_bool_opt(SettingColumnIndex::COL_TELEMETRY_ENABLED, 1, manager_settings.runtime_settings.telemetry_enabled);
-    bind_bool_opt(SettingColumnIndex::COL_VALIDATE_SCHEMA, 1, manager_settings.runtime_settings.validate_schema);
-    bind_text_opt(SettingColumnIndex::COL_RUN_AS_USER, 1, manager_settings.run_as_user);
-    bind_bool_opt(SettingColumnIndex::COL_FORWARD_EXCEPTIONS, 1, manager_settings.runtime_settings.forward_exceptions);
-
-    if (stmt->step() != SQLITE_DONE) {
-        return GenericResponseStatus::Failed;
-    }
-
-    transaction->commit();
-    return GenericResponseStatus::OK;
-}
-
 GetModuleDataResponse SqliteStorage::get_module_data(const std::string& module_id) {
 
     GetModuleDataResponse response;
@@ -911,43 +771,6 @@ GetConfigAccessResponse SqliteStorage::get_config_access(const std::string& modu
     }
 
     return response;
-}
-
-std::vector<SqliteStorage::StoredConfigInfo> SqliteStorage::list_configs() {
-    // Join SETTING with CONFIG_META.
-    const std::string sql = "SELECT s.ID, COALESCE(cm.LAST_UPDATED, ''), COALESCE(cm.VALID, 0), cm.CONFIG_FILE_PATH "
-                            "FROM SETTING s LEFT JOIN CONFIG_META cm ON cm.ID = s.ID "
-                            "ORDER BY s.ID";
-    auto stmt = this->db->new_statement(sql);
-
-    std::vector<StoredConfigInfo> result;
-    while (stmt->step() == SQLITE_ROW) {
-        StoredConfigInfo info;
-        info.id = stmt->column_int(0);
-        info.last_updated = stmt->column_text(1);
-        info.is_valid = stmt->column_int(2) != 0;
-        info.config_file_path = stmt->column_text_nullable(3);
-        result.push_back(std::move(info));
-    }
-    return result;
-}
-
-GenericResponseStatus SqliteStorage::delete_config(int config_id) {
-    try {
-        // Enable foreign keys so ON DELETE CASCADE propagates from SETTING to all dependent tables.
-        this->db->execute_statement("PRAGMA foreign_keys = ON;");
-        auto stmt = this->db->new_statement("DELETE FROM SETTING WHERE ID = @config_id;");
-        stmt->bind_int("@config_id", config_id);
-        stmt->step();
-        this->db->execute_statement("PRAGMA foreign_keys = OFF;");
-        if (config_id_ == config_id) {
-            config_id_ = -1;
-        }
-        return GenericResponseStatus::OK;
-    } catch (const std::exception& e) {
-        EVLOG_error << "Failed to delete config with id " << config_id << ": " << e.what();
-        return GenericResponseStatus::Failed;
-    }
 }
 
 } // namespace everest::config

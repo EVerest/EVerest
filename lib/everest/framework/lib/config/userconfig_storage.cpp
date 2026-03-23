@@ -24,18 +24,9 @@ UserConfigStorage::UserConfigStorage(const fs::path& user_config_path) : user_co
 GenericResponseStatus UserConfigStorage::write_module_configs(const ModuleConfigurations& /*module_configs*/) {
     return GenericResponseStatus::Failed;
 }
-GenericResponseStatus UserConfigStorage::write_settings(const Everest::ManagerSettings& /*manager_settings*/) {
-    return GenericResponseStatus::Failed;
-}
-GenericResponseStatus UserConfigStorage::wipe() {
-    try {
-        this->user_config = nlohmann::json::object();
-        Everest::save_yaml(this->user_config, this->user_config_path);
-    } catch (const std::exception& e) {
-        EVLOG_error << "Could not save user-config to " << this->user_config_path.string() << ": " << e.what();
-        return GenericResponseStatus::Failed;
-    }
-    return GenericResponseStatus::OK;
+void UserConfigStorage::mark_valid(bool /*is_valid*/, const std::string& /*config_dump*/,
+                                   const std::optional<std::filesystem::path>& /*config_file_path*/) {
+    // UserConfigStorage does not support marking configs as valid
 }
 GetModuleConfigsResponse UserConfigStorage::get_module_configs() {
     GetModuleConfigsResponse response;

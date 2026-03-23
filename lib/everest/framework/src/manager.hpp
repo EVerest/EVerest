@@ -119,7 +119,10 @@ private:
     /// \brief Load and validate manager configuration from current boot source.
     /// \param ms Fully resolved manager settings for this run.
     /// \return Shared validated configuration object.
-    std::shared_ptr<Everest::ManagerConfig> load_and_validate_config(const Everest::ManagerSettings& ms) const;
+    std::shared_ptr<Everest::ManagerConfig>
+    load_and_validate_config(const Everest::ManagerSettings& ms,
+                             const std::unique_ptr<everest::config::SqliteStorage>& db_storage,
+                             bool db_storage_has_module_configs) const;
 
     /// \brief Create MQTT abstraction, connect, and spawn its main loop thread.
     /// \param ms Fully resolved manager settings for this run.
