@@ -22,6 +22,8 @@ servers:
       module_id:
         description: The ID of the module as defined in the EVerest config file.
 defaultContentType: application/json
+
+
 channels:
   ########## ocpp_debug
   receive_ocpp_message:
@@ -41,6 +43,9 @@ channels:
     messages:
       send_communication_check:
         $ref: '#/components/messages/send_communication_check'
+
+
+
 operations:
   ########## ocpp_debug
   receive_ocpp_message:
@@ -61,6 +66,9 @@ operations:
     action: send
     channel:
       $ref: '#/channels/send_communication_check'
+
+
+
 components:
   messages:
     receive_ocpp_message:
@@ -70,6 +78,7 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/Message'
+
     receive_heartbeat:
       name: receive_heartbeat
       title: Receive heartbeat
@@ -91,6 +100,8 @@ components:
       examples:
       - summary: CommunicationCheck
         payload: true
+
+
   schemas:
     MessageDirection:
       description: OCPP message direction
@@ -116,6 +127,7 @@ components:
           description: OCPP version of the serialized message
           type: string
       additionalProperties: true
+
     HeartBeatId:
       type: integer
       description: >-
