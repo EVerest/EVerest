@@ -1013,6 +1013,13 @@ void OCPP::ready() {
             return response;
         });
 
+    if (this->p_session_cost != nullptr) {
+        this->charge_point->register_default_price_callback([this](const ocpp::TariffMessage& message) {
+            const types::session_cost::DefaultPrice p = ocpp_conversions::to_everest_default_price(message.message);
+            this->p_session_cost->publish_default_price(p);
+        });
+    }
+
     this->charge_point->register_set_display_message_callback(
         [this](const std::vector<ocpp::DisplayMessage>& messages) -> ocpp::v16::DataTransferResponse {
             ocpp::v16::DataTransferResponse response;

@@ -3,6 +3,15 @@ description: >-
   provides cost of one session. If we have more than one EVESEID, we need to 
   instantiate this interface for each EVSE.
 vars:
+  default_price:
+    description: >-
+      The currently applicable default pricing text for this charger,
+      independent of any active session. Published once on startup and again
+      whenever the applicable price changes (e.g. after a connectivity state
+      change or a configuration update). Absent if no default price is
+      configured.
+    type: object
+    $ref: /session_cost#/DefaultPrice
   tariff_message:
     description: Message to show to the user with information about the tariff.
     type: object

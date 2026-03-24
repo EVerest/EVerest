@@ -12,6 +12,12 @@
 
 namespace everest::lib::API::V1_0::types::session_cost {
 
+using DefaultPrice_Internal = ::types::session_cost::DefaultPrice;
+using DefaultPrice_External = DefaultPrice;
+
+DefaultPrice_Internal to_internal_api(DefaultPrice_External const& val);
+DefaultPrice_External to_external_api(DefaultPrice_Internal const& val);
+
 using TariffMessage_Internal = ::types::session_cost::TariffMessage;
 using TariffMessage_External = TariffMessage;
 

@@ -29,6 +29,7 @@ void session_cost_consumer_API::ready() {
 
     generate_api_var_tariff_message();
     generate_api_var_session_cost();
+    generate_api_var_default_price();
 
     generate_api_var_communication_check();
 
@@ -59,6 +60,10 @@ void session_cost_consumer_API::generate_api_var_tariff_message() {
 
 void session_cost_consumer_API::generate_api_var_session_cost() {
     r_session_cost->subscribe_session_cost(forward_api_var("session_cost"));
+}
+
+void session_cost_consumer_API::generate_api_var_default_price() {
+    r_session_cost->subscribe_default_price(forward_api_var("default_price"));
 }
 
 void session_cost_consumer_API::generate_api_var_communication_check() {

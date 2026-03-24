@@ -785,3 +785,127 @@ class TestOcpp201CostAndPrice:
         chargepoint_with_pm = await central_system.wait_for_chargepoint(wait_for_bootnotification=False)
         assert await wait_for_and_validate(test_utility, chargepoint_with_pm, "TransactionEvent",
                                            {"eventType": "Ended"})
+
+    @pytest.mark.asyncio
+    @pytest.mark.probe_module
+    @pytest.mark.everest_config_adaptions(ProbeModuleCostAndPriceSessionCostConfigurationAdjustment())
+    async def test_default_price_published_on_disconnect(self, central_system: CentralSystem,
+                                                         test_controller: TestController,
+                                                         test_utility: TestUtility,
+                                                         test_config: OcppTestConfiguration,
+                                                         probe_module):
+        """
+        When TariffFallbackMessage and OfflineTariffFallbackMessage are configured and the CS goes
+        offline, default_price shall be published via session_cost.default_price with the configured
+        offline price text.
+        """
+        default_price_mock = Mock()
+        probe_module.subscribe_variable("session_cost", "default_price", default_price_mock)
+
+        probe_module.start()
+        await probe_module.wait_to_be_ready()
+
+        chargepoint_with_pm = await central_system.wait_for_chargepoint()
+
+        r = await chargepoint_with_pm.set_config_variables_req(
+            "TariffCostCtrlr", "TariffFallbackMessage", "0.30 EUR/kWh"
+        )
+        assert SetVariableResultType(**r.set_variable_result[0]).attribute_status == SetVariableStatusEnumType.accepted
+
+        r = await chargepoint_with_pm.set_config_variables_req(
+            "TariffCostCtrlr", "OfflineTariffFallbackMessage", "Station is offline"
+        )
+        assert SetVariableResultType(**r.set_variable_result[0]).attribute_status == SetVariableStatusEnumType.accepted
+
+        # Reset any publications from the startup phase before triggering a controlled disconnect.
+        default_price_mock.reset_mock()
+
+        test_controller.disconnect_websocket()
+
+        await self.await_mock_called(default_price_mock)
+
+        call_data = default_price_mock.call_args[0][0]
+        assert len(call_data["messages"]) == 1
+        assert call_data["messages"][0]["content"] == "Station is offline"
+
+        # Reconnect for clean teardown.
+        test_controller.connect_websocket()
+        await central_system.wait_for_chargepoint(wait_for_bootnotification=False)
+
+    @pytest.mark.asyncio
+    @pytest.mark.probe_module
+    @pytest.mark.everest_config_adaptions(ProbeModuleCostAndPriceSessionCostConfigurationAdjustment())
+    async def test_default_price_published_on_reconnect(self, central_system: CentralSystem,
+                                                        test_controller: TestController,
+                                                        test_utility: TestUtility,
+                                                        test_config: OcppTestConfiguration,
+                                                        probe_module):
+        """
+        When TariffFallbackMessage is configured and the CS reconnects to the CSMS after being
+        offline, default_price shall be re-published with the configured online price text.
+        """
+        default_price_mock = Mock()
+        probe_module.subscribe_variable("session_cost", "default_price", default_price_mock)
+
+        probe_module.start()
+        await probe_module.wait_to_be_ready()
+
+        chargepoint_with_pm = await central_system.wait_for_chargepoint()
+
+        r = await chargepoint_with_pm.set_config_variables_req(
+            "TariffCostCtrlr", "TariffFallbackMessage", "0.30 EUR/kWh"
+        )
+        assert SetVariableResultType(**r.set_variable_result[0]).attribute_status == SetVariableStatusEnumType.accepted
+
+        r = await chargepoint_with_pm.set_config_variables_req(
+            "TariffCostCtrlr", "OfflineTariffFallbackMessage", "Station is offline"
+        )
+        assert SetVariableResultType(**r.set_variable_result[0]).attribute_status == SetVariableStatusEnumType.accepted
+
+        # Go offline and wait for the offline publication, then clear the mock.
+        default_price_mock.reset_mock()
+        test_controller.disconnect_websocket()
+        await self.await_mock_called(default_price_mock)
+        default_price_mock.reset_mock()
+
+        # Reconnect and wait for the online publication.
+        test_controller.connect_websocket()
+        chargepoint_with_pm = await central_system.wait_for_chargepoint(wait_for_bootnotification=False)
+
+        await self.await_mock_called(default_price_mock)
+
+        call_data = default_price_mock.call_args[0][0]
+        assert len(call_data["messages"]) == 1
+        assert call_data["messages"][0]["content"] == "0.30 EUR/kWh"
+
+    @pytest.mark.asyncio
+    @pytest.mark.probe_module
+    @pytest.mark.everest_config_adaptions(ProbeModuleCostAndPriceSessionCostConfigurationAdjustment())
+    async def test_default_price_published_on_change(self, central_system: CentralSystem,
+                                                     test_controller: TestController,
+                                                     test_utility: TestUtility,
+                                                     test_config: OcppTestConfiguration,
+                                                     probe_module):
+        """
+        When TariffFallbackMessage is changed via SetVariables while connected, default_price
+        shall be immediately re-published with the new price text.
+        """
+        default_price_mock = Mock()
+        probe_module.subscribe_variable("session_cost", "default_price", default_price_mock)
+
+        probe_module.start()
+        await probe_module.wait_to_be_ready()
+
+        chargepoint_with_pm = await central_system.wait_for_chargepoint()
+        default_price_mock.reset_mock()
+
+        r = await chargepoint_with_pm.set_config_variables_req(
+            "TariffCostCtrlr", "TariffFallbackMessage", "0.30 EUR/kWh"
+        )
+        assert SetVariableResultType(**r.set_variable_result[0]).attribute_status == SetVariableStatusEnumType.accepted
+
+        await self.await_mock_called(default_price_mock)
+
+        call_data = default_price_mock.call_args[0][0]
+        assert len(call_data["messages"]) == 1
+        assert call_data["messages"][0]["content"] == "0.30 EUR/kWh"
