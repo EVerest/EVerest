@@ -149,10 +149,10 @@ void LpcUseCaseHandler::run_state_machine() {
         handle_unlimited_controlled_state(heartbeat_has_timeout, limit_is_active);
         break;
     case State::UnlimitedAutonomous:
-        handle_unlimited_autonomous_state(limit_is_active, limit_is_deactivated, limit_expired);
+        handle_unlimited_autonomous_state(heartbeat_has_timeout, limit_is_active, limit_is_deactivated, limit_expired);
         break;
     case State::Failsafe:
-        handle_failsafe_state(now, heartbeat_has_timeout, limit_is_active, limit_is_deactivated);
+        handle_failsafe_state(now, heartbeat_has_timeout, limit_is_active);
         break;
     }
 
@@ -192,9 +192,14 @@ void LpcUseCaseHandler::handle_unlimited_controlled_state(bool heartbeat_has_tim
     }
 }
 
-void LpcUseCaseHandler::handle_unlimited_autonomous_state(bool limit_is_active, bool limit_is_deactivated,
-                                                          bool limit_expired) {
-    // Two outgoing edges per spec: [LPC-918/919/920]. No heartbeat-timeout edge.
+void LpcUseCaseHandler::handle_unlimited_autonomous_state(bool heartbeat_has_timeout, bool limit_is_active,
+                                                          bool limit_is_deactivated, bool limit_expired) {
+    // Per [LPC-918/919/920] and the general rule (spec lines 376-379): the CS SHALL only
+    // leave this state upon receival of a Heartbeat AND a following write on the Active
+    // Power Consumption Limit. If no valid heartbeat has been received, ignore any limit.
+    if (heartbeat_has_timeout) {
+        return;
+    }
     if (limit_is_deactivated || limit_expired) {
         set_state(State::UnlimitedControlled);
     } else if (limit_is_active) {
@@ -202,8 +207,7 @@ void LpcUseCaseHandler::handle_unlimited_autonomous_state(bool limit_is_active, 
     }
 }
 
-void LpcUseCaseHandler::handle_failsafe_state(TP now, bool heartbeat_has_timeout, bool limit_is_active,
-                                              bool limit_is_deactivated) {
+void LpcUseCaseHandler::handle_failsafe_state(TP now, bool heartbeat_has_timeout, bool limit_is_active) {
     // [LPC-922]: duration minimum expired — exit regardless of heartbeat.
     if (now >= (this->failsafe_ctx.entry + this->failsafe_duration_timeout)) {
         set_state(State::UnlimitedAutonomous);

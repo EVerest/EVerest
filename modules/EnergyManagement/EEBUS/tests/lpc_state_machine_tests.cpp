@@ -202,6 +202,67 @@ TEST_F(LpcStateMachineTest, unlimited_autonomous_stays_unlimited_when_heartbeat_
 }
 
 // ===========================================================================
+// Unlimited/autonomous requires heartbeat before accepting limits [LPC-918/919/920]
+// ===========================================================================
+
+TEST_F(LpcStateMachineTest, unlimited_autonomous_ignores_active_limit_without_heartbeat) {
+    auto h = make_handler();
+    h->start();
+
+    // Init timeout → Unlimited/autonomous.
+    advance(std::chrono::seconds(121));
+    h->run_state_machine();
+    ASSERT_EQ(h->get_state(), LpcUseCaseHandler::State::UnlimitedAutonomous);
+
+    // Send an active limit without a preceding heartbeat — must be ignored.
+    send_active_limit(*h, ACTIVE_LIMIT);
+    EXPECT_EQ(h->get_state(), LpcUseCaseHandler::State::UnlimitedAutonomous);
+}
+
+TEST_F(LpcStateMachineTest, unlimited_autonomous_ignores_deactivated_limit_without_heartbeat) {
+    auto h = make_handler();
+    h->start();
+
+    advance(std::chrono::seconds(121));
+    h->run_state_machine();
+    ASSERT_EQ(h->get_state(), LpcUseCaseHandler::State::UnlimitedAutonomous);
+
+    // Send a deactivated limit without a preceding heartbeat — must be ignored.
+    send_deactivated_limit(*h);
+    EXPECT_EQ(h->get_state(), LpcUseCaseHandler::State::UnlimitedAutonomous);
+}
+
+TEST_F(LpcStateMachineTest, unlimited_autonomous_transitions_to_limited_with_heartbeat_and_active_limit) {
+    auto h = make_handler();
+    h->start();
+
+    advance(std::chrono::seconds(121));
+    h->run_state_machine();
+    ASSERT_EQ(h->get_state(), LpcUseCaseHandler::State::UnlimitedAutonomous);
+
+    // Heartbeat then active limit — must transition to Limited [LPC-919].
+    send_heartbeat(*h);
+    send_active_limit(*h, ACTIVE_LIMIT);
+    EXPECT_EQ(h->get_state(), LpcUseCaseHandler::State::Limited);
+    EXPECT_DOUBLE_EQ(last_limit_watts(), ACTIVE_LIMIT);
+}
+
+TEST_F(LpcStateMachineTest,
+       unlimited_autonomous_transitions_to_unlimited_controlled_with_heartbeat_and_deactivated_limit) {
+    auto h = make_handler();
+    h->start();
+
+    advance(std::chrono::seconds(121));
+    h->run_state_machine();
+    ASSERT_EQ(h->get_state(), LpcUseCaseHandler::State::UnlimitedAutonomous);
+
+    // Heartbeat then deactivated limit — must transition to Unlimited/controlled [LPC-920].
+    send_heartbeat(*h);
+    send_deactivated_limit(*h);
+    EXPECT_EQ(h->get_state(), LpcUseCaseHandler::State::UnlimitedControlled);
+}
+
+// ===========================================================================
 // Bug 5 — Failsafe exit conditions must be independent [LPC-921 / LPC-922]
 // ===========================================================================
 

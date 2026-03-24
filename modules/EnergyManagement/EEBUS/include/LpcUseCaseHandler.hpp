@@ -79,8 +79,9 @@ private:
     void handle_init_state(TP now, bool limit_is_active, bool limit_is_deactivated);
     void handle_limited_state(bool heartbeat_has_timeout, bool limit_is_deactivated, bool limit_expired);
     void handle_unlimited_controlled_state(bool heartbeat_has_timeout, bool limit_is_active);
-    void handle_unlimited_autonomous_state(bool limit_is_active, bool limit_is_deactivated, bool limit_expired);
-    void handle_failsafe_state(TP now, bool heartbeat_has_timeout, bool limit_is_active, bool limit_is_deactivated);
+    void handle_unlimited_autonomous_state(bool heartbeat_has_timeout, bool limit_is_active, bool limit_is_deactivated,
+                                           bool limit_expired);
+    void handle_failsafe_state(TP now, bool heartbeat_has_timeout, bool limit_is_active);
 
     eebus::EEBusCallbacks callbacks;
     std::shared_ptr<cs_lpc::ControllableSystemLPCControl::Stub> stub;
