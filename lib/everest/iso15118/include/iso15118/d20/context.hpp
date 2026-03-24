@@ -5,7 +5,6 @@
 #include <any>
 #include <memory>
 #include <optional>
-#include <string>
 #include <tuple>
 
 #include <iso15118/d20/timeout.hpp>
@@ -31,7 +30,7 @@ public:
 
     void set_request(std::unique_ptr<message_20::Variant> new_request);
     std::unique_ptr<message_20::Variant> pull_request();
-    message_20::Type peek_request_type() const;
+    [[nodiscard]] message_20::Type peek_request_type() const;
 
     template <typename MessageType> void set_response(const MessageType& msg) {
         response_size = message_20::serialize(msg, response);
@@ -84,7 +83,7 @@ public:
     }
 
     std::unique_ptr<message_20::Variant> pull_request();
-    message_20::Type peek_request_type() const;
+    [[nodiscard]] message_20::Type peek_request_type() const;
 
     template <typename MessageType> void respond(const MessageType& msg) {
         message_exchange.set_response(msg);
@@ -110,11 +109,9 @@ public:
         return &std::get<T>(*current_control_event);
     }
 
-    void set_new_vehicle_cert_hash(std::optional<io::sha512_hash_t> hash) {
-        vehicle_cert_hash = hash;
-    }
+    void set_new_vehicle_cert_hash(std::optional<io::sha512_hash_t> hash);
 
-    auto get_new_vehicle_cert_hash() const {
+    [[nodiscard]] auto get_new_vehicle_cert_hash() const {
         return vehicle_cert_hash;
     }
 

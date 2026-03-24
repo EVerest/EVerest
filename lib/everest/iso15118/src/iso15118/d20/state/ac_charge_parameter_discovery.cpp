@@ -70,7 +70,7 @@ handle_request(const message_20::AC_ChargeParameterDiscoveryRequest& req, const 
 
     message_20::AC_ChargeParameterDiscoveryResponse res;
 
-    if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
+    if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_UnknownSession);
     }
 
@@ -119,7 +119,7 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::AC_ChargeParameterDiscoveryRequest>()) {
+    if (const auto* const req = variant->get_if<message_20::AC_ChargeParameterDiscoveryRequest>()) {
 
         if (const auto* mode = std::get_if<AC_ModeReq>(&req->transfer_mode)) {
             // Set EV transfer limits
@@ -141,24 +141,23 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
         m_ctx.feedback.ac_limits(req->transfer_mode);
 
         return m_ctx.create_state<ScheduleExchange>();
-
-    } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+    }
+    if (const auto* const req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
         m_ctx.session_stopped = true;
 
         return {};
-    } else {
-        m_ctx.log("expected AC_ChargeParameterDiscovery! But code type id: %d", variant->get_type());
-        m_ctx.session_stopped = true;
-
-        // Sequence Error
-        const message_20::Type req_type = variant->get_type();
-        send_sequence_error(req_type, m_ctx);
-
-        return {};
     }
+    m_ctx.log("expected AC_ChargeParameterDiscovery! But code type id: %d", variant->get_type());
+    m_ctx.session_stopped = true;
+
+    // Sequence Error
+    const message_20::Type req_type = variant->get_type();
+    send_sequence_error(req_type, m_ctx);
+
+    return {};
 }
 
 } // namespace iso15118::d20::state

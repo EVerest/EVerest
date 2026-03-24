@@ -64,7 +64,7 @@ message_20::ServiceSelectionResponse handle_request(const message_20::ServiceSel
 
     message_20::ServiceSelectionResponse res;
 
-    if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
+    if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
     }
 
@@ -83,9 +83,9 @@ message_20::ServiceSelectionResponse handle_request(const message_20::ServiceSel
     }
 
     if (req.selected_vas_list.has_value()) {
-        auto& selected_vas_list = req.selected_vas_list.value();
+        const auto& selected_vas_list = req.selected_vas_list.value();
 
-        for (auto& vas_service : selected_vas_list) {
+        for (const auto& vas_service : selected_vas_list) {
             if (std::find(session.offered_services.vas_services.begin(), session.offered_services.vas_services.end(),
                           vas_service.service_id) == session.offered_services.vas_services.end()) {
                 vas_services_found = false;
@@ -108,9 +108,9 @@ message_20::ServiceSelectionResponse handle_request(const message_20::ServiceSel
                                         req.selected_energy_transfer_service.parameter_set_id);
 
     if (req.selected_vas_list.has_value()) {
-        auto& selected_vas_list = req.selected_vas_list.value();
+        const auto& selected_vas_list = req.selected_vas_list.value();
 
-        for (auto& vas_service : selected_vas_list) {
+        for (const auto& vas_service : selected_vas_list) {
             if (not session.find_vas_parameter_set_id(vas_service.service_id, vas_service.parameter_set_id)) {
                 return response_with_code(res, dt::ResponseCode::FAILED_ServiceSelectionInvalid);
             }
@@ -133,7 +133,7 @@ Result ServiceSelection::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::ServiceDetailRequest>()) {
+    if (const auto* const req = variant->get_if<message_20::ServiceDetailRequest>()) {
         logf_info("Requested info about ServiceID: %d", req->service);
 
         using Service = dt::ServiceCategory;
@@ -177,7 +177,8 @@ Result ServiceSelection::feed(Event ev) {
         }
 
         return {};
-    } else if (const auto req = variant->get_if<message_20::ServiceSelectionRequest>()) {
+    }
+    if (const auto* const req = variant->get_if<message_20::ServiceSelectionRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         if (res.response_code == message_20::datatypes::ResponseCode::OK) {
@@ -209,24 +210,23 @@ Result ServiceSelection::feed(Event ev) {
 
         m_ctx.session_stopped = true;
         return {};
-
-    } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+    }
+    if (const auto* const req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
         m_ctx.session_stopped = true;
 
         return {};
-    } else {
-        m_ctx.log("expected ServiceDetailReq! But code type id: %d", variant->get_type());
-
-        // Sequence Error
-        const message_20::Type req_type = variant->get_type();
-        send_sequence_error(req_type, m_ctx);
-
-        m_ctx.session_stopped = true;
-        return {};
     }
+    m_ctx.log("expected ServiceDetailReq! But code type id: %d", variant->get_type());
+
+    // Sequence Error
+    const message_20::Type req_type = variant->get_type();
+    send_sequence_error(req_type, m_ctx);
+
+    m_ctx.session_stopped = true;
+    return {};
 }
 
 } // namespace iso15118::d20::state

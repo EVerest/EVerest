@@ -24,7 +24,7 @@ std::string session_id_to_string(const message_20::datatypes::SessionId& session
     ss << "0x" << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(session_id[0]);
     for (unsigned int i = 1; i < session_id.size(); ++i) {
         ss << ", 0x" << std::uppercase << std::hex << std::setw(2) << std::setfill('0')
-           << (int)static_cast<int>(session_id[i]);
+           << static_cast<int>(session_id[i]);
     }
     return ss.str();
 }
@@ -48,7 +48,7 @@ io::sha512_hash_t calculate_new_cert_session_id_hash(const io::sha512_hash_t& ve
                                    session_id_vehicle_hash.data(), &digestlen, EVP_sha512(), nullptr);
     if (not result) {
         logf_error("X509_digest failed");
-        return std::array<std::uint8_t, 64>{};
+        return io::sha512_hash_t{};
     }
 
     return session_id_vehicle_hash;
@@ -68,9 +68,8 @@ message_20::SessionSetupResponse handle_request([[maybe_unused]] const message_2
 
     if (new_session) {
         return response_with_code(res, dt::ResponseCode::OK_NewSessionEstablished);
-    } else {
-        return response_with_code(res, dt::ResponseCode::OK_OldSessionJoined);
     }
+    return response_with_code(res, dt::ResponseCode::OK_OldSessionJoined);
 }
 
 void SessionSetup::enter() {
@@ -85,7 +84,7 @@ Result SessionSetup::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::SessionSetupRequest>()) {
+    if (const auto* const req = variant->get_if<message_20::SessionSetupRequest>()) {
 
         logf_info("Received session setup with evccid: %s", req->evccid.c_str());
         m_ctx.feedback.evcc_id(req->evccid);
@@ -146,17 +145,15 @@ Result SessionSetup::feed(Event ev) {
             return {};
         }
         return m_ctx.create_state<AuthorizationSetup>();
-
-    } else {
-        m_ctx.log("expected SessionSetupReq! But code type id: %d", variant->get_type());
-
-        // Sequence Error
-        const message_20::Type req_type = variant->get_type();
-        send_sequence_error(req_type, m_ctx);
-
-        m_ctx.session_stopped = true;
-        return {};
     }
+    m_ctx.log("expected SessionSetupReq! But code type id: %d", variant->get_type());
+
+    // Sequence Error
+    const message_20::Type req_type = variant->get_type();
+    send_sequence_error(req_type, m_ctx);
+
+    m_ctx.session_stopped = true;
+    return {};
 }
 
 } // namespace iso15118::d20::state

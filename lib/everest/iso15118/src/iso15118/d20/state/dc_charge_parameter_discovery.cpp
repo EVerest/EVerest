@@ -34,7 +34,7 @@ template <> void convert(BPT_DC_ModeRes& out, const d20::DcTransferLimits& in) {
     convert(static_cast<DC_ModeRes&>(out), in);
 
     if (in.discharge_limits.has_value()) {
-        auto& discharge_limits = in.discharge_limits.value();
+        const auto& discharge_limits = in.discharge_limits.value();
         out.max_discharge_power = discharge_limits.power.max;
         out.min_discharge_power = discharge_limits.power.min;
         out.max_discharge_current = discharge_limits.current.max;
@@ -48,15 +48,15 @@ handle_request(const message_20::DC_ChargeParameterDiscoveryRequest& req, const 
 
     message_20::DC_ChargeParameterDiscoveryResponse res;
 
-    if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
+    if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
     }
 
     const auto selected_energy_service = session.get_selected_services().selected_energy_service;
 
     if (std::holds_alternative<DC_ModeReq>(req.transfer_mode)) {
-        if (not(selected_energy_service == dt::ServiceCategory::DC or
-                selected_energy_service == dt::ServiceCategory::MCS)) {
+        if (selected_energy_service != dt::ServiceCategory::DC and
+            selected_energy_service != dt::ServiceCategory::MCS) {
             return response_with_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
         }
 
@@ -64,8 +64,8 @@ handle_request(const message_20::DC_ChargeParameterDiscoveryRequest& req, const 
         convert(mode, dc_limits);
 
     } else if (std::holds_alternative<BPT_DC_ModeReq>(req.transfer_mode)) {
-        if (not(selected_energy_service == dt::ServiceCategory::DC_BPT or
-                selected_energy_service == dt::ServiceCategory::MCS_BPT)) {
+        if (selected_energy_service != dt::ServiceCategory::DC_BPT and
+            selected_energy_service != dt::ServiceCategory::MCS_BPT) {
             return response_with_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
         }
 
@@ -97,7 +97,7 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::DC_ChargeParameterDiscoveryRequest>()) {
+    if (const auto* const req = variant->get_if<message_20::DC_ChargeParameterDiscoveryRequest>()) {
 
         auto dc_max_limits = session::feedback::DcMaximumLimits{};
 
@@ -134,23 +134,23 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
         }
 
         return m_ctx.create_state<ScheduleExchange>();
-    } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+    }
+    if (const auto* const req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
         m_ctx.session_stopped = true;
 
         return {};
-    } else {
-        m_ctx.log("expected DC_ChargeParameterDiscovery! But code type id: %d", variant->get_type());
-        m_ctx.session_stopped = true;
-
-        // Sequence Error
-        const message_20::Type req_type = variant->get_type();
-        send_sequence_error(req_type, m_ctx);
-
-        return {};
     }
+    m_ctx.log("expected DC_ChargeParameterDiscovery! But code type id: %d", variant->get_type());
+    m_ctx.session_stopped = true;
+
+    // Sequence Error
+    const message_20::Type req_type = variant->get_type();
+    send_sequence_error(req_type, m_ctx);
+
+    return {};
 }
 
 } // namespace iso15118::d20::state

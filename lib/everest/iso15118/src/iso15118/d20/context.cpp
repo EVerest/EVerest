@@ -72,4 +72,7 @@ message_20::Type Context::peek_request_type() const {
     return message_exchange.peek_request_type();
 }
 
+void Context::set_new_vehicle_cert_hash(std::optional<io::sha512_hash_t> hash) {
+    vehicle_cert_hash = hash;
+}
 } // namespace iso15118::d20
