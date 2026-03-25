@@ -33,7 +33,6 @@ public:
 
     bool is_valid(int slot_id = DEFAULT_SLOT_ID);
     GenericResponseStatus write_settings(int slot_id, const Everest::ManagerSettings& ms);
-    GenericResponseStatus wipe(int slot_id = DEFAULT_SLOT_ID);
     std::vector<StoredSlotInfo> list_slots();
     GenericResponseStatus delete_slot(int slot_id);
 
