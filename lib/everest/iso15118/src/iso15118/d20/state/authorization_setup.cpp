@@ -21,7 +21,7 @@ message_20::AuthorizationSetupResponse handle_request(const message_20::Authoriz
 
     auto res = message_20::AuthorizationSetupResponse(); // default mandatory values [V2G20-736]
 
-    if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
+    if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
     }
 
