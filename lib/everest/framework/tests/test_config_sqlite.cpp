@@ -230,8 +230,8 @@ TEST_CASE("Database operations", "[db_operation]") {
         REQUIRE(slot_mgr.is_valid(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == true);
         REQUIRE(slot_mgr.is_valid(99) == false);
     }
-    SECTION("Slot can be wiped from the database") {
-        REQUIRE(slot_mgr.wipe() == GenericResponseStatus::OK);
+    SECTION("Slot can be deleted from the database") {
+        REQUIRE(slot_mgr.delete_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == GenericResponseStatus::OK);
     }
     SECTION("list_slots returns one entry after write_settings") {
         auto slots = slot_mgr.list_slots();
@@ -277,8 +277,8 @@ TEST_CASE("write_settings assigns DEFAULT_SLOT_ID", "[db_operation]") {
                                SqliteStorage::DEFAULT_CONFIG_ID);
         REQUIRE(storage2.get_settings().status == GenericResponseStatus::OK);
     }
-    SECTION("wipe resets state so next write_settings uses DEFAULT_SLOT_ID again") {
-        slot_mgr.wipe();
+    SECTION("delete_slot allows re-initializing the slot via write_settings") {
+        slot_mgr.delete_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID);
         REQUIRE(slot_mgr.write_settings(SqliteConfigSlotManager::DEFAULT_SLOT_ID, settings) ==
                 GenericResponseStatus::OK);
         auto response = storage.get_settings();

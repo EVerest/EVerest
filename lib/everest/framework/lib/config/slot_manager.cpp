@@ -199,10 +199,6 @@ GenericResponseStatus SqliteConfigSlotManager::write_settings(int slot_id,
     return GenericResponseStatus::OK;
 }
 
-GenericResponseStatus SqliteConfigSlotManager::wipe(int slot_id) {
-    return delete_slot(slot_id);
-}
-
 std::vector<StoredSlotInfo> SqliteConfigSlotManager::list_slots() {
     // Join SETTING with CONFIG_META.
     const std::string sql = "SELECT s.ID, COALESCE(cm.LAST_UPDATED, ''), COALESCE(cm.VALID, 0), cm.CONFIG_FILE_PATH "
