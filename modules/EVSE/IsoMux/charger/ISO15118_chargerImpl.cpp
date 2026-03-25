@@ -22,6 +22,7 @@ void ISO15118_chargerImpl::init() {
     /* Configure if_name and auth_mode */
     v2g_ctx->if_name = mod->config.device.data();
     dlog(DLOG_LEVEL_DEBUG, "if_name %s", v2g_ctx->if_name);
+    v2g_ctx->proxy_if_name = mod->config.proxy_device.empty() ? nullptr : mod->config.proxy_device.data();
 
     /* Configure tls_security */
     if (mod->config.tls_security == "force") {

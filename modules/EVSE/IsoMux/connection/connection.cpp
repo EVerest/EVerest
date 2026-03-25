@@ -442,7 +442,7 @@ void* connection_handle(void* data) {
         port = conn->ctx->proxy_port_iso20;
     }
 
-    int proxy_fd = proxy_connect(port);
+    int proxy_fd = proxy_connect(port, conn->ctx->proxy_if_name);
 
     if (proxy_fd > 0) {
         EVLOG_info << "Connected to proxy module for " << (conn->ctx->selected_iso20 ? "ISO-20" : "ISO-2/DIN");
