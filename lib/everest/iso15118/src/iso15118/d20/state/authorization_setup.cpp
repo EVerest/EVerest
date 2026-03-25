@@ -65,7 +65,7 @@ Result AuthorizationSetup::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::AuthorizationSetupRequest>()) {
+    if (const auto* const req = variant->get_if<message_20::AuthorizationSetupRequest>()) {
         const auto res = handle_request(*req, m_ctx.session, m_ctx.session_config.cert_install_service,
                                         m_ctx.session_config.authorization_services);
 
@@ -82,23 +82,23 @@ Result AuthorizationSetup::feed(Event ev) {
         m_ctx.feedback.signal(session::feedback::Signal::REQUIRE_AUTH_EIM);
 
         return m_ctx.create_state<Authorization>();
-    } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+    }
+    if (const auto* const req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
         m_ctx.session_stopped = true;
 
         return {};
-    } else {
-        m_ctx.log("expected AuthorizationSetupReq! But code type id: %d", variant->get_type());
-
-        // Sequence Error
-        const message_20::Type req_type = variant->get_type();
-        send_sequence_error(req_type, m_ctx);
-
-        m_ctx.session_stopped = true;
-        return {};
     }
+    m_ctx.log("expected AuthorizationSetupReq! But code type id: %d", variant->get_type());
+
+    // Sequence Error
+    const message_20::Type req_type = variant->get_type();
+    send_sequence_error(req_type, m_ctx);
+
+    m_ctx.session_stopped = true;
+    return {};
 }
 
 } // namespace iso15118::d20::state

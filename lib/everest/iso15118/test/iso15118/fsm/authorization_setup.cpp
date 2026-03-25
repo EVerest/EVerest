@@ -204,32 +204,32 @@ SCENARIO("ISO15118-20 authorization setup state transitions") {
             const auto& session_stop_res = response_message.value();
             REQUIRE(session_stop_res.response_code == dt::ResponseCode::OK);
         }
-        GIVEN("Sequence Error") {
-            fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AuthorizationSetup>()};
+    }
+    GIVEN("Sequence Error") {
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AuthorizationSetup>()};
 
-            // Setting up session_config based on test
-            ctx.session_config.cert_install_service = false;
-            ctx.session_config.authorization_services = {dt::Authorization::PnC};
+        // Setting up session_config based on test
+        ctx.session_config.cert_install_service = false;
+        ctx.session_config.authorization_services = {dt::Authorization::PnC};
 
-            message_20::SessionSetupRequest req;
-            req.header.session_id = ctx.session.get_id();
-            req.header.timestamp = 1691411798;
-            req.evccid = "WMIV1234567890ABCDEX";
+        message_20::SessionSetupRequest req;
+        req.header.session_id = ctx.session.get_id();
+        req.header.timestamp = 1691411798;
+        req.evccid = "WMIV1234567890ABCDEX";
 
-            state_helper.handle_request(req);
+        state_helper.handle_request(req);
 
-            const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
+        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
 
-            THEN("Check state transition") {
-                REQUIRE(result.transitioned() == false);
-                REQUIRE(fsm.get_current_state_id() == d20::StateID::AuthorizationSetup);
+        THEN("Check state transition") {
+            REQUIRE(result.transitioned() == false);
+            REQUIRE(fsm.get_current_state_id() == d20::StateID::AuthorizationSetup);
 
-                const auto response_message = ctx.get_response<message_20::SessionSetupResponse>();
-                REQUIRE(response_message.has_value());
+            const auto response_message = ctx.get_response<message_20::SessionSetupResponse>();
+            REQUIRE(response_message.has_value());
 
-                const auto& session_setup_res = response_message.value();
-                REQUIRE(session_setup_res.response_code == dt::ResponseCode::FAILED_SequenceError);
-            }
+            const auto& session_setup_res = response_message.value();
+            REQUIRE(session_setup_res.response_code == dt::ResponseCode::FAILED_SequenceError);
         }
     }
 }

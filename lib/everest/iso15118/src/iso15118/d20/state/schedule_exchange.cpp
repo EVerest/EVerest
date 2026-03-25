@@ -41,7 +41,6 @@ auto create_default_scheduled_control_mode(const dt::RationalNumber& max_power) 
     return scheduled_mode;
 }
 
-namespace {
 void set_dynamic_parameters_in_res(DynamicResControlMode& res_mode, const UpdateDynamicModeParameters& parameters,
                                    uint64_t header_timestamp) {
     if (parameters.departure_time) {
@@ -53,7 +52,7 @@ void set_dynamic_parameters_in_res(DynamicResControlMode& res_mode, const Update
     res_mode.target_soc = parameters.target_soc;
     res_mode.minimum_soc = parameters.min_soc;
 }
-} // namespace
+
 } // namespace
 
 namespace dt = message_20::datatypes;
@@ -65,7 +64,7 @@ message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleEx
 
     message_20::ScheduleExchangeResponse res;
 
-    if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
+    if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
     }
 
@@ -125,8 +124,8 @@ Result ScheduleExchange::feed(Event ev) {
     }
 
     if (ev == Event::TIMEOUT) {
-        const auto timeout = m_ctx.get_active_timeout();
-        if (timeout and *timeout == d20::TimeoutType::ONGOING) {
+        const auto* const timeout = m_ctx.get_active_timeout();
+        if (timeout != nullptr and *timeout == d20::TimeoutType::ONGOING) {
             timeout_ongoing_reached = true;
         }
         return {};
@@ -138,7 +137,7 @@ Result ScheduleExchange::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::ScheduleExchangeRequest>()) {
+    if (const auto* const req = variant->get_if<message_20::ScheduleExchangeRequest>()) {
 
         if (first_req_msg) {
             m_ctx.start_timeout(d20::TimeoutType::ONGOING, TIMEOUT_ONGOING);
@@ -204,24 +203,23 @@ Result ScheduleExchange::feed(Event ev) {
 
         m_ctx.session_stopped = true;
         return {};
-
-    } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+    }
+    if (const auto* const req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
         m_ctx.session_stopped = true;
 
         return {};
-    } else {
-        m_ctx.log("expected ScheduleExchangeReq! But code type id: %d", variant->get_type());
-
-        // Sequence Error
-        const message_20::Type req_type = variant->get_type();
-        send_sequence_error(req_type, m_ctx);
-
-        m_ctx.session_stopped = true;
-        return {};
     }
+    m_ctx.log("expected ScheduleExchangeReq! But code type id: %d", variant->get_type());
+
+    // Sequence Error
+    const message_20::Type req_type = variant->get_type();
+    send_sequence_error(req_type, m_ctx);
+
+    m_ctx.session_stopped = true;
+    return {};
 }
 
 } // namespace iso15118::d20::state

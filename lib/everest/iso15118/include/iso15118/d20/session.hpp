@@ -112,8 +112,8 @@ public:
         return id;
     }
 
-    bool find_energy_parameter_set_id(const dt::ServiceCategory service, int16_t id);
-    bool find_vas_parameter_set_id(const uint16_t vas_service, int16_t id);
+    bool find_energy_parameter_set_id(const dt::ServiceCategory service, uint16_t id);
+    bool find_vas_parameter_set_id(const uint16_t vas_service, uint16_t id);
 
     void selected_service_parameters(const dt::ServiceCategory service, const uint16_t id);
     void selected_service_parameters(const uint16_t vas_service, const uint16_t id);

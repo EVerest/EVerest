@@ -40,15 +40,15 @@ convert_service_id_to_service_category(const std::uint16_t service_id) {
         return iso15118::message_20::datatypes::ServiceCategory::ParkingStatus;
     }
 }
+
+bool find_service_id(const std::vector<uint16_t>& req_service_ids, const uint16_t service) {
+    return std::find(req_service_ids.begin(), req_service_ids.end(), service) != req_service_ids.end();
+}
 } // namespace
 
 namespace iso15118::d20::state {
 
 namespace dt = message_20::datatypes;
-
-static bool find_service_id(const std::vector<uint16_t>& req_service_ids, const uint16_t service) {
-    return std::find(req_service_ids.begin(), req_service_ids.end(), service) != req_service_ids.end();
-}
 
 message_20::ServiceDiscoveryResponse
 handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& session,
@@ -57,7 +57,7 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
 
     message_20::ServiceDiscoveryResponse res;
 
-    if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
+    if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
     }
 
@@ -72,13 +72,13 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     std::vector<dt::VasService> vas_services_list;
 
     // EV supported service ID's
-    if (req.supported_service_ids.has_value() == true) {
-        for (auto& energy_service : energy_services) {
+    if (req.supported_service_ids.has_value()) {
+        for (const auto& energy_service : energy_services) {
             if (find_service_id(req.supported_service_ids.value(), message_20::to_underlying_value(energy_service))) {
                 energy_services_list.push_back({energy_service, false});
             }
         }
-        for (auto& vas_service : vas_services) {
+        for (const auto& vas_service : vas_services) {
             if (find_service_id(req.supported_service_ids.value(), vas_service)) {
                 vas_services_list.push_back({vas_service, false});
             }
@@ -92,10 +92,10 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
             }
         }
     } else {
-        for (auto& energy_service : energy_services) {
+        for (const auto& energy_service : energy_services) {
             energy_services_list.push_back({energy_service, false});
         }
-        for (auto& vas_service : vas_services) {
+        for (const auto& vas_service : vas_services) {
             vas_services_list.push_back({vas_service, false});
         }
     }
@@ -130,7 +130,7 @@ Result ServiceDiscovery::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::ServiceDiscoveryRequest>()) {
+    if (const auto* const req = variant->get_if<message_20::ServiceDiscoveryRequest>()) {
         if (req->supported_service_ids) {
             logf_info("Possible ids");
             for (auto id : req->supported_service_ids.value()) {
@@ -150,23 +150,23 @@ Result ServiceDiscovery::feed(Event ev) {
         }
 
         return m_ctx.create_state<ServiceDetail>();
-    } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+    }
+    if (const auto* const req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
         m_ctx.session_stopped = true;
 
         return {};
-    } else {
-        m_ctx.log("expected ServiceDiscoveryReq! But code type id: %d", variant->get_type());
-
-        // Sequence Error
-        const message_20::Type req_type = variant->get_type();
-        send_sequence_error(req_type, m_ctx);
-
-        m_ctx.session_stopped = true;
-        return {};
     }
+    m_ctx.log("expected ServiceDiscoveryReq! But code type id: %d", variant->get_type());
+
+    // Sequence Error
+    const message_20::Type req_type = variant->get_type();
+    send_sequence_error(req_type, m_ctx);
+
+    m_ctx.session_stopped = true;
+    return {};
 }
 
 } // namespace iso15118::d20::state

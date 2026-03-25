@@ -117,7 +117,7 @@ Session::Session(OfferedServices services_) : offered_services(services_) {
 
 Session::~Session() = default;
 
-bool Session::find_energy_parameter_set_id(const dt::ServiceCategory service, int16_t id) {
+bool Session::find_energy_parameter_set_id(const dt::ServiceCategory service, uint16_t id) {
 
     switch (service) {
     case dt::ServiceCategory::AC:
@@ -175,7 +175,7 @@ bool Session::find_energy_parameter_set_id(const dt::ServiceCategory service, in
     return false;
 }
 
-bool Session::find_vas_parameter_set_id(const uint16_t vas_service, int16_t id) {
+bool Session::find_vas_parameter_set_id(const uint16_t vas_service, uint16_t id) {
     if (vas_service == message_20::to_underlying_value(dt::ServiceCategory::Internet)) {
         if (this->offered_services.internet_parameter_list.find(id) !=
             this->offered_services.internet_parameter_list.end()) {

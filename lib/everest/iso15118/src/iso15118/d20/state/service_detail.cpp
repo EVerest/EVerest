@@ -65,7 +65,7 @@ message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetail
 
     message_20::ServiceDetailResponse res;
 
-    if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
+    if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
     }
 
@@ -97,7 +97,8 @@ message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetail
         const auto& vas_services = custom_vas_parameters.value();
 
         std::vector<uint16_t> parameter_set_ids{};
-        for (auto& vas : vas_services) {
+        parameter_set_ids.reserve(vas_services.size());
+        for (const auto& vas : vas_services) {
             parameter_set_ids.push_back(vas.id);
         }
         session.offered_services.custom_vas_list[req.service] = parameter_set_ids;
@@ -111,44 +112,44 @@ message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetail
 
     if (req.service == message_20::to_underlying_value(dt::ServiceCategory::AC)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::AC);
-        for (auto& parameter_set : config.ac_parameter_list) {
+        for (const auto& parameter_set : config.ac_parameter_list) {
             session.offered_services.ac_parameter_list[id] = parameter_set;
             res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
         }
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::AC_BPT)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::AC_BPT);
-        for (auto& parameter_set : config.ac_bpt_parameter_list) {
+        for (const auto& parameter_set : config.ac_bpt_parameter_list) {
             session.offered_services.ac_bpt_parameter_list[id] = parameter_set;
             res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
         }
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::DC)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::DC);
-        for (auto& parameter_set : config.dc_parameter_list) {
+        for (const auto& parameter_set : config.dc_parameter_list) {
             session.offered_services.dc_parameter_list[id] = parameter_set;
             res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
         }
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::DC_BPT)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::DC_BPT);
-        for (auto& parameter_set : config.dc_bpt_parameter_list) {
+        for (const auto& parameter_set : config.dc_bpt_parameter_list) {
             session.offered_services.dc_bpt_parameter_list[id] = parameter_set;
             res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
         }
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::MCS)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::MCS);
-        for (auto& parameter_set : config.mcs_parameter_list) {
+        for (const auto& parameter_set : config.mcs_parameter_list) {
             session.offered_services.mcs_parameter_list[id] = parameter_set;
             res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
         }
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::MCS_BPT)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::MCS_BPT);
-        for (auto& parameter_set : config.mcs_bpt_parameter_list) {
+        for (const auto& parameter_set : config.mcs_bpt_parameter_list) {
             session.offered_services.mcs_bpt_parameter_list[id] = parameter_set;
             res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
         }
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::Internet)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::Internet);
 
-        for (auto& parameter_set : config.internet_parameter_list) {
+        for (const auto& parameter_set : config.internet_parameter_list) {
             // TODO(sl): Possibly refactor, define const
             if (parameter_set.port == dt::Port::Port20) {
                 id = 1;
@@ -165,7 +166,7 @@ message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetail
     } else if (req.service == message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)) {
         res.service = message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus);
 
-        for (auto& parameter_set : config.parking_parameter_list) {
+        for (const auto& parameter_set : config.parking_parameter_list) {
             session.offered_services.parking_parameter_list[id] = parameter_set;
             res.service_parameter_list.push_back(dt::ParameterSet(id++, parameter_set));
         }
@@ -190,7 +191,7 @@ Result ServiceDetail::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::ServiceDetailRequest>()) {
+    if (const auto* const req = variant->get_if<message_20::ServiceDetailRequest>()) {
         logf_info("Requested info about ServiceID: %d", req->service);
 
         using Service = dt::ServiceCategory;
@@ -234,23 +235,23 @@ Result ServiceDetail::feed(Event ev) {
         }
 
         return m_ctx.create_state<ServiceSelection>();
-    } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+    }
+    if (const auto* const req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
         m_ctx.session_stopped = true;
 
         return {};
-    } else {
-        m_ctx.log("expected ServiceDetailReq! But code type id: %d", variant->get_type());
-
-        // Sequence Error
-        const message_20::Type req_type = variant->get_type();
-        send_sequence_error(req_type, m_ctx);
-
-        m_ctx.session_stopped = true;
-        return {};
     }
+    m_ctx.log("expected ServiceDetailReq! But code type id: %d", variant->get_type());
+
+    // Sequence Error
+    const message_20::Type req_type = variant->get_type();
+    send_sequence_error(req_type, m_ctx);
+
+    m_ctx.session_stopped = true;
+    return {};
 }
 
 } // namespace iso15118::d20::state
