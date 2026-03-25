@@ -39,6 +39,13 @@ config:
       TCP port of the local ISO20 instance
     type: integer
     default: 50000
+  proxy_device:
+    description: >-
+      Network interface used to reach the local ISO2/ISO20 module instances.
+      When set, the proxy connects to the IPv6 link-local address of this
+      interface. Leave empty to use the default loopback (::1).
+    type: string
+    default: ""
 provides:
   charger:
     interface: ISO15118_charger
