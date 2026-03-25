@@ -144,12 +144,12 @@ enum class ServiceCategory {
 };
 
 enum class EnergyTransferMode {
-    AC_single_phase_core,
-    AC_three_phase_core,
-    DC_core,
-    DC_extended,
-    DC_combo_core,
-    DC_unique
+    AcSinglePhaseCore,
+    AcThreePhaseCore,
+    DcCore,
+    DcExtended,
+    DcComboCore,
+    DcUnique
 };
 using SupportedEnergyTransferMode = std::vector<EnergyTransferMode>; // MaxLength: 6
 constexpr auto SupportedEnergyTransferModeMaxLength = 6;
@@ -161,12 +161,6 @@ struct Service {
     std::optional<ServiceScope> service_scope{std::nullopt};
     bool FreeService;
 };
-struct ChargeService : Service {
-    SupportedEnergyTransferMode supported_energy_transfer_mode;
-};
-
-using ServiceList = std::vector<Service>; // [1 - 8]
-constexpr auto ServiceListMaxLength = 8;
 
 struct MeterInfo {
     MeterID meter_id;

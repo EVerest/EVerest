@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2024 Pionix GmbH and Contributors to EVerest
-#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
 #include <iso15118/session/feedback.hpp>
+#include <optional>
 
 using namespace iso15118::session;
 
 namespace dt = iso15118::message_20::datatypes;
+namespace dt2 = iso15118::d2::msg::data_types;
 
 struct FeedbackResults {
     feedback::Signal signal;
@@ -19,6 +21,7 @@ struct FeedbackResults {
     std::string selected_protocol;
     iso15118::d20::EVInformation ev_information;
     uint16_t id;
+    uint16_t service_id;
     dt::VasSelectedServiceList selected_vas;
 };
 
@@ -60,6 +63,16 @@ SCENARIO("Feedback Tests") {
     };
     callbacks.selected_vas_services = [&feedback_results](dt::VasSelectedServiceList selected_vas_) {
         feedback_results.selected_vas = selected_vas_;
+    };
+    callbacks.get_service_from_id = [&feedback_results](uint16_t service_id) {
+        feedback_results.service_id = service_id;
+        dt2::Service service;
+        service.service_id = service_id;
+        service.service_name = "Custom service";
+        service.service_category = dt2::ServiceCategory::OtherCustom;
+        service.FreeService = true;
+
+        return std::make_optional(service);
     };
 
     const auto feedback = Feedback(callbacks);
@@ -317,6 +330,22 @@ SCENARIO("Feedback Tests") {
             REQUIRE(feedback_results.selected_vas.at(0).parameter_set_id == expected.at(0).parameter_set_id);
             REQUIRE(feedback_results.selected_vas.at(1).service_id == expected.at(1).service_id);
             REQUIRE(feedback_results.selected_vas.at(1).parameter_set_id == expected.at(1).parameter_set_id);
+        }
+    }
+
+    GIVEN("Test get_service_from_id") {
+        uint16_t id = 3;
+        const auto result = feedback.get_service_from_id(id);
+
+        THEN("get_service_from_id should return a proper service") {
+            REQUIRE(result.has_value());
+
+            const auto& service = result.value();
+
+            REQUIRE(service.service_id == id);
+            REQUIRE(service.service_name == "Custom service");
+            REQUIRE(service.service_category == dt2::ServiceCategory::OtherCustom);
+            REQUIRE(service.FreeService == true);
         }
     }
 }

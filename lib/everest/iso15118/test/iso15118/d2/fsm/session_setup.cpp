@@ -17,8 +17,12 @@ SCENARIO("ISO15118-2 session setup state transitions") {
 
     // Move to helper function?
     const auto evse_id = std::string("everest se");
-    d2::EvseSetupConfig evse_setup{};
-    evse_setup.evse_id = evse_id;
+
+    const std::vector<dt::EnergyTransferMode> supported_energy_transfer_modes = {dt::EnergyTransferMode::DcExtended};
+    const std::vector<dt::PaymentOption> supported_payment_options = {dt::PaymentOption::ExternalPayment};
+    const std::vector<dt::ServiceID> offered_services{};
+    const d2::EvseSetupConfig evse_setup{evse_id, supported_energy_transfer_modes, supported_payment_options,
+                                         offered_services};
 
     session::feedback::Callbacks feedback_callbacks;
 
@@ -29,7 +33,7 @@ SCENARIO("ISO15118-2 session setup state transitions") {
 
         fsm::v2::FSM<d2::StateBase> fsm{ctx.create_state<d2::state::SessionSetup>()};
 
-        const auto header_req = d2::msg::Header{{0, 0, 0, 0, 0, 0, 0, 0}, std::nullopt};
+        const auto header_req = d2::msg::Header{{0x02, 0xDB, 0x22, 0x07, 0x3B, 0x08, 0x4D, 0x2D}, std::nullopt};
         const auto req = d2::msg::SessionSetupRequest{header_req, {0x12, 0xE2, 0x3E, 0x10, 0xD3, 0x48}};
 
         state_helper.handle_request(req);

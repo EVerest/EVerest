@@ -12,6 +12,15 @@
 
 namespace iso15118::d2::msg {
 
+namespace data_types {
+struct ChargeService : Service {
+    SupportedEnergyTransferMode supported_energy_transfer_mode;
+};
+
+using ServiceList = std::vector<Service>; // [1 - 8]
+constexpr auto ServiceListMaxLength = 8;
+} // namespace data_types
+
 struct ServiceDiscoveryRequest {
     Header header;
     std::optional<data_types::ServiceScope> service_scope{std::nullopt};
