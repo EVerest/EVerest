@@ -107,7 +107,7 @@ DatabaseBootstrap bootstrap_from_database_init(const std::string& prefix, const 
         bs.module_configs_initialized = true;
     } else {
         EVLOG_info << "Database not initialized or valid, falling back to YAML config file: " << config;
-        slot_mgr.wipe(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
+        slot_mgr.delete_slot(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
 
         const auto settings = everest::config::parse_settings(bs.ms.config.value("settings", json::object()));
         bs.ms.init_settings(settings);
