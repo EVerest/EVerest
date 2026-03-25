@@ -13,23 +13,8 @@ using namespace iso15118;
 
 SCENARIO("ISO15118-20 session setup state transitions") {
 
-    namespace dt = message_20::datatypes;
-
-    // Move to helper function?
-    const auto evse_id = std::string("everest se");
-    const std::vector<dt::ServiceCategory> supported_energy_services = {dt::ServiceCategory::DC};
-    const auto cert_install{false};
-    const std::vector<uint16_t> vas_services{};
-    const std::vector<dt::Authorization> auth_services = {dt::Authorization::EIM};
-    const d20::DcTransferLimits dc_limits;
-    const d20::AcTransferLimits ac_limits;
-    const d20::DcTransferLimits powersupply_limits;
-    const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
-        {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
-
-    const d20::EvseSetupConfig evse_setup{
-        evse_id,   supported_energy_services, auth_services, vas_services, cert_install, dc_limits,
-        ac_limits, control_mobility_modes,    std::nullopt,  std::nullopt, std::nullopt, powersupply_limits};
+    const d20::EvseSetupConfig evse_setup = create_default_evse_setup();
+    const auto expected_evse_id = std::string("everest se");
 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
 
@@ -71,7 +56,7 @@ SCENARIO("ISO15118-20 session setup state transitions") {
 
             const auto& session_setup_res = response_message.value();
             REQUIRE(session_setup_res.response_code == dt::ResponseCode::OK_NewSessionEstablished);
-            REQUIRE(session_setup_res.evseid == evse_id);
+            REQUIRE(session_setup_res.evseid == expected_evse_id);
         }
     }
 
@@ -100,7 +85,7 @@ SCENARIO("ISO15118-20 session setup state transitions") {
 
             const auto& session_setup_res = response_message.value();
             REQUIRE(session_setup_res.response_code == dt::ResponseCode::OK_OldSessionJoined);
-            REQUIRE(session_setup_res.evseid == evse_id);
+            REQUIRE(session_setup_res.evseid == expected_evse_id);
         }
 
         pause_ctx.reset();
@@ -132,7 +117,7 @@ SCENARIO("ISO15118-20 session setup state transitions") {
 
             const auto& session_setup_res = response_message.value();
             REQUIRE(session_setup_res.response_code == dt::ResponseCode::OK_NewSessionEstablished);
-            REQUIRE(session_setup_res.evseid == evse_id);
+            REQUIRE(session_setup_res.evseid == expected_evse_id);
         }
 
         pause_ctx.reset();
@@ -158,7 +143,7 @@ SCENARIO("ISO15118-20 session setup state transitions") {
 
             const auto& session_setup_res = response_message.value();
             REQUIRE(session_setup_res.response_code == dt::ResponseCode::OK_NewSessionEstablished);
-            REQUIRE(session_setup_res.evseid == evse_id);
+            REQUIRE(session_setup_res.evseid == expected_evse_id);
         }
 
         pause_ctx.reset();
@@ -190,7 +175,7 @@ SCENARIO("ISO15118-20 session setup state transitions") {
 
             const auto& session_setup_res = response_message.value();
             REQUIRE(session_setup_res.response_code == dt::ResponseCode::OK_NewSessionEstablished);
-            REQUIRE(session_setup_res.evseid == evse_id);
+            REQUIRE(session_setup_res.evseid == expected_evse_id);
         }
 
         pause_ctx.reset();
