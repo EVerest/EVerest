@@ -65,6 +65,10 @@ public:
         msg_exch.set_request(std::make_unique<message_20::Variant>(request));
     }
 
+    void set_active_control_event(const std::optional<d20::ControlEvent>& event) {
+        active_control_event = event;
+    }
+
 private:
     std::array<uint8_t, 1024> output_buffer{};
     io::StreamOutputView output_stream_view{output_buffer.data(), output_buffer.size()};

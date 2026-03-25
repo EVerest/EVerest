@@ -10,18 +10,24 @@
 #include <iso15118/detail/d20/state/authorization.hpp>
 #include <iso15118/detail/d20/state/session_stop.hpp>
 
+#include <iso15118/detail/helper.hpp>
+
 namespace iso15118::d20::state {
 
 namespace dt = message_20::datatypes;
 
 using AuthStatus = dt::AuthStatus;
 
-static bool find_auth_service_in_offered_services(const dt::Authorization& req_selected_auth_service,
-                                                  const d20::Session& session) {
-    auto& offered_auth_services = session.offered_services.auth_services;
+namespace {
+
+bool find_auth_service_in_offered_services(const dt::Authorization& req_selected_auth_service,
+                                           const d20::Session& session) {
+    const auto& offered_auth_services = session.offered_services.auth_services;
     return std::find(offered_auth_services.begin(), offered_auth_services.end(), req_selected_auth_service) !=
            offered_auth_services.end();
 }
+
+} // namespace
 
 message_20::AuthorizationResponse handle_request(const message_20::AuthorizationRequest& req,
                                                  const d20::Session& session,
@@ -29,7 +35,7 @@ message_20::AuthorizationResponse handle_request(const message_20::Authorization
 
     message_20::AuthorizationResponse res = message_20::AuthorizationResponse();
 
-    if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
+    if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
     }
 
@@ -66,11 +72,10 @@ message_20::AuthorizationResponse handle_request(const message_20::Authorization
 
     case dt::Authorization::PnC:
         // TODO(SL): Handle PnC
-        break;
-
     default:
-        // TODO(SL): Fill
-        break;
+        logf_error("Pnc or default is not handled");
+        res.evse_processing = dt::Processing::Finished;
+        response_code = dt::ResponseCode::FAILED;
     }
 
     return response_with_code(res, response_code);
@@ -82,9 +87,9 @@ void Authorization::enter() {
 
 Result Authorization::feed(Event ev) {
     if (ev == Event::CONTROL_MESSAGE) {
-        const auto control_data = m_ctx.get_control_event<AuthorizationResponse>();
+        const auto* const control_data = m_ctx.get_control_event<AuthorizationResponse>();
 
-        if (not control_data) {
+        if (control_data == nullptr) {
             // Ignore control message
             return {};
         }
@@ -99,8 +104,8 @@ Result Authorization::feed(Event ev) {
     }
 
     if (ev == Event::TIMEOUT) {
-        const auto timeout = m_ctx.get_active_timeout();
-        if (timeout and *timeout == d20::TimeoutType::ONGOING) {
+        const auto* const timeout = m_ctx.get_active_timeout();
+        if (timeout != nullptr and *timeout == d20::TimeoutType::ONGOING) {
             timeout_ongoing_reached = true;
         }
         return {};
@@ -112,7 +117,7 @@ Result Authorization::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::AuthorizationRequest>()) {
+    if (const auto* const req = variant->get_if<message_20::AuthorizationRequest>()) {
 
         if (first_req_msg) {
             // TODO(SL): Check if ExternalPayment or Contract is active
@@ -133,25 +138,25 @@ Result Authorization::feed(Event ev) {
             authorization_status = AuthStatus::Pending; // reset
             m_ctx.stop_timeout(d20::TimeoutType::ONGOING);
             return m_ctx.create_state<ServiceDiscovery>();
-        } else {
-            return {};
         }
-    } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+        return {};
+    }
+    if (const auto* const req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
         m_ctx.respond(res);
 
         m_ctx.session_stopped = true;
         return {};
-    } else {
-        m_ctx.log("expected AuthorizationReq! But code type id: %d", variant->get_type());
-
-        // Sequence Error
-        const message_20::Type req_type = variant->get_type();
-        send_sequence_error(req_type, m_ctx);
-
-        m_ctx.session_stopped = true;
-        return {};
     }
+
+    m_ctx.log("expected AuthorizationReq! But code type id: %d", variant->get_type());
+
+    // Sequence Error
+    const message_20::Type req_type = variant->get_type();
+    send_sequence_error(req_type, m_ctx);
+
+    m_ctx.session_stopped = true;
+    return {};
 }
 
 } // namespace iso15118::d20::state
