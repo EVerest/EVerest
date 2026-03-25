@@ -429,7 +429,7 @@ config:
     description: >-
       Maximum ampere per second limit for up/down ramping of current in charging loop.
     type: integer
-    default: 5
+    default: 25
 provides:
   evse:
     interface: evse_manager
