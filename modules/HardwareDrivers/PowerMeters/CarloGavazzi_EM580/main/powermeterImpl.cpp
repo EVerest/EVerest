@@ -615,10 +615,8 @@ types::powermeter::TransactionStopResponse powermeterImpl::handle_stop_transacti
 
             // check if the OCMF state is ready (Table 4.36, register 328742)
             if (!ocmf::wait_for_ready(*p_modbus_transport)) {
-                return {types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR,
-                        {},
-                        {},
-                        "can't stop transaction"};
+                return {
+                    types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {}, "can't stop transaction"};
             }
 
             // For Eichrecht, return the OCMF file as the signed meter value report.
