@@ -27,8 +27,9 @@ from typing import Optional
 # Naming convention for veth pairs: ev_test0/ev_test0_peer, ev_test1/ev_test1_peer, ...
 VETH_PREFIX = "ev_test"
 
-# Environment variable used to pass the assigned interface from controller to workers
+# Environment variables used to pass the assigned interfaces from controller to workers
 WORKER_INTERFACE_ENV = "EVEREST_TEST_NETWORK_INTERFACE"
+WORKER_PROXY_INTERFACE_ENV = "EVEREST_TEST_PROXY_NETWORK_INTERFACE"
 
 # The xdist_group name used by ISO 15118 tests
 ISO15118_XDIST_GROUP = "ISO15118"
@@ -98,6 +99,7 @@ class NetworkIsolationPlugin:
         if idx is not None and idx < self._num_workers:
             interface = f"{VETH_PREFIX}{idx}"
             node.workerinput["network_interface"] = interface
+            node.workerinput["proxy_interface"] = f"{interface}_peer"
 
     @staticmethod
     def pytest_configure(config):
@@ -108,8 +110,9 @@ class NetworkIsolationPlugin:
         """
         workerinput = getattr(config, "workerinput", None)
         if workerinput and "network_interface" in workerinput:
-            interface = workerinput["network_interface"]
-            os.environ[WORKER_INTERFACE_ENV] = interface
+            os.environ[WORKER_INTERFACE_ENV] = workerinput["network_interface"]
+        if workerinput and "proxy_interface" in workerinput:
+            os.environ[WORKER_PROXY_INTERFACE_ENV] = workerinput["proxy_interface"]
 
     def pytest_sessionstart(self, session):
         """Detect and adopt pre-existing veth pairs at session start."""
