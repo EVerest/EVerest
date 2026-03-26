@@ -26,6 +26,8 @@ option(EVEREST_ENABLE_PY_SUPPORT "Enable everestpy for Python modules" ON)
 option(EVEREST_ENABLE_RS_SUPPORT "Enable everestrs for Rust modules" OFF)
 option(EVEREST_ENABLE_ADMIN_PANEL_BACKEND "Enable everest admin panel backend" OFF)
 option(EVEREST_INSTALL_ADMIN_PANEL "Download and install everest admin panel" OFF)
+option(EVEREST_ENABLE_CONFIG_TOOL "Enable everest config tool" ON)
+
 set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY "latency" CACHE STRING
     "Thread pool scaling policy for framework message handling: latency, greedy, conservative, fixed_size, custom")
 set_property(CACHE EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY PROPERTY STRINGS
@@ -93,6 +95,7 @@ else()
         "${EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY}. "
         "Allowed values: latency, greedy, conservative, fixed_size, custom")
 endif()
+
 ev_setup_cmake_variables_python_wheel()
 option(${PROJECT_NAME}_USE_PYTHON_VENV "Use python venv for pip install targets" OFF)
 set(${PROJECT_NAME}_PYTHON_VENV_PATH "${CMAKE_BINARY_DIR}/venv" CACHE PATH "Path to python venv")
