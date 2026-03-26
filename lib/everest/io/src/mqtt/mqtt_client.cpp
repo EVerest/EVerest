@@ -13,10 +13,15 @@
 
 namespace everest::lib::io::mqtt {
 
-mqtt_client::mqtt_client(std::uint32_t reconnect_to_ms, [[maybe_unused]] std::string client_id) : mosquitto_cpp() {
+mqtt_client::mqtt_client(std::uint32_t reconnect_to_ms, std::string client_id) :
+    mosquitto_cpp(client_id.empty() ? nullptr : client_id.c_str()), m_client_id(std::move(client_id)) {
     set_option_threaded(false);
     set_option_tcpnodelay(true);
     m_reconnect_timer.set_timeout_ms(reconnect_to_ms);
+}
+
+std::string mqtt_client::get_client_id() const {
+    return m_client_id;
 }
 
 mqtt_client::~mqtt_client() {
