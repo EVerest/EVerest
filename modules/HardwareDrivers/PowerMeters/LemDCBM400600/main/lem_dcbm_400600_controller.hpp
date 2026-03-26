@@ -106,6 +106,7 @@ private:
     Conf config;
 
     void fetch_meter_id_from_device();
+    int get_identification_type();
     void set_identification_type(int identification_type);
     std::string get_current_transaction();
     void request_device_to_start_transaction(const types::powermeter::TransactionReq& value);

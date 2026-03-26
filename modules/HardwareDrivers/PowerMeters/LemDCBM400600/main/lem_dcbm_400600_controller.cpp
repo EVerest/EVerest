@@ -14,8 +14,18 @@ void LemDCBM400600Controller::init() {
     this->http_client->set_command_timeout(this->config.command_timeout_ms);
 
     if (this->config.IT >= 0) {
-        call_with_retry([this]() { this->set_identification_type(this->config.IT); },
-                        this->config.init_number_of_http_retries, this->config.init_retry_wait_in_milliseconds);
+        call_with_retry(
+            [this]() {
+                const int current_it = this->get_identification_type();
+                if (current_it != this->config.IT) {
+                    EVLOG_info << "LEM DCBM 400/600: Setting OCMF Identification Type (IT) to: " << this->config.IT;
+                    this->set_identification_type(this->config.IT);
+                } else {
+                    EVLOG_info << "LEM DCBM 400/600: OCMF Identification Type (IT) already set to " << current_it
+                               << ", skipping write";
+                }
+            },
+            this->config.init_number_of_http_retries, this->config.init_retry_wait_in_milliseconds);
     }
 }
 
@@ -363,6 +373,19 @@ void LemDCBM400600Controller::set_identification_type(int identification_type) {
             "/v1/settings", fmt::format("Json error '{}' for body '{}'", json_error.what(), response.body));
     }
     EVLOG_info << "LEM DCBM 400/600: OCMF Identification Type (IT) set to: " << identification_type;
+}
+
+int LemDCBM400600Controller::get_identification_type() {
+    auto response = this->http_client->get("/v1/settings");
+    if (response.status_code != 200) {
+        throw UnexpectedDCBMResponseCode("/v1/settings", 200, response);
+    }
+    try {
+        return nlohmann::json::parse(response.body).at("ocmfId").at("IT").get<int>();
+    } catch (nlohmann::json::exception& json_error) {
+        throw UnexpectedDCBMResponseBody(
+            "/v1/settings", fmt::format("Json error '{}' for body '{}'", json_error.what(), response.body));
+    }
 }
 
 std::pair<std::string, std::string> LemDCBM400600Controller::get_transaction_stop_time_bounds() {

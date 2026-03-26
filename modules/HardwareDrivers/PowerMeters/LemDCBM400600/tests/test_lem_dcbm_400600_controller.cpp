@@ -521,6 +521,11 @@ TEST_F(LemDCBM400600ControllerTest, test_init_sets_it_when_valid) {
     testing::Sequence seq;
     SETUP_SUCCESSFUL_INIT(seq);
 
+    EXPECT_CALL(*this->http_client, get("/v1/settings"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, R"({"ocmfId":{"IT":3}})"}));
+
     EXPECT_CALL(*this->http_client, put("/v1/settings", R"({"ocmfId":{"IT":5}})"))
         .Times(1)
         .InSequence(seq)
@@ -538,6 +543,11 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_bad_status_code) {
     // Setup
     testing::Sequence seq;
     SETUP_SUCCESSFUL_INIT(seq);
+
+    EXPECT_CALL(*this->http_client, get("/v1/settings"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, R"({"ocmfId":{"IT":0}})"}));
 
     EXPECT_CALL(*this->http_client, put("/v1/settings", R"({"ocmfId":{"IT":3}})"))
         .Times(1)
@@ -557,6 +567,11 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_rejected) {
     testing::Sequence seq;
     SETUP_SUCCESSFUL_INIT(seq);
 
+    EXPECT_CALL(*this->http_client, get("/v1/settings"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, R"({"ocmfId":{"IT":0}})"}));
+
     EXPECT_CALL(*this->http_client, put("/v1/settings", R"({"ocmfId":{"IT":3}})"))
         .Times(1)
         .InSequence(seq)
@@ -574,6 +589,11 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_malformed_json) {
     // Setup
     testing::Sequence seq;
     SETUP_SUCCESSFUL_INIT(seq);
+
+    EXPECT_CALL(*this->http_client, get("/v1/settings"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, R"({"ocmfId":{"IT":0}})"}));
 
     EXPECT_CALL(*this->http_client, put("/v1/settings", R"({"ocmfId":{"IT":3}})"))
         .Times(1)
@@ -593,6 +613,11 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_missing_result_key
     testing::Sequence seq;
     SETUP_SUCCESSFUL_INIT(seq);
 
+    EXPECT_CALL(*this->http_client, get("/v1/settings"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, R"({"ocmfId":{"IT":0}})"}));
+
     EXPECT_CALL(*this->http_client, put("/v1/settings", R"({"ocmfId":{"IT":3}})"))
         .Times(1)
         .InSequence(seq)
@@ -603,6 +628,26 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_missing_result_key
 
     // Act & Verify
     EXPECT_THROW(controller.init(), LemDCBM400600Controller::DCBMUnexpectedResponseException);
+}
+
+/// \brief Test init() with IT >= 0 skips set_identification_type when device already has the configured value
+TEST_F(LemDCBM400600ControllerTest, test_init_skips_set_it_when_already_configured) {
+    // Setup
+    testing::Sequence seq;
+    SETUP_SUCCESSFUL_INIT(seq);
+
+    EXPECT_CALL(*this->http_client, get("/v1/settings"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, R"({"ocmfId":{"IT":5}})"}));
+
+    EXPECT_CALL(*this->http_client, put("/v1/settings", testing::_)).Times(0);
+
+    const LemDCBM400600Controller::Conf config_with_it{0, 0, 1, 0, 0, 0, {}, {}, 0, {}, {}, 5};
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper), config_with_it);
+
+    // Act - should not throw
+    controller.init();
 }
 
 } // namespace module::main
