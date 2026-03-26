@@ -231,6 +231,12 @@ void BUPowermeter::ready() {
         optional_add(table_content, "Transaction stop response: error", tr_stop.error);
         optional_add(table_content, "Transaction stop response: signed_meter_value",
                      tr_stop.signed_meter_value.value_or(svd).signed_meter_data);
+        if (powermeter.signed_meter_value.has_value()) {
+            optional_add(table_content, "Powermeter: signed meter value", powermeter.signed_meter_value.value().signed_meter_data);
+            optional_add(table_content, "Powermeter: signing method", powermeter.signed_meter_value.value().signing_method);
+            optional_add(table_content, "Powermeter: encoding method", powermeter.signed_meter_value.value().encoding_method);
+            optional_add(table_content, "Powermeter: public key", powermeter.signed_meter_value.value().public_key);
+        }
         optional_add(table_content, "Powermeter: time stamp", powermeter.timestamp);
         if (powermeter.temperatures.has_value()) {
             int i = 1;
@@ -272,7 +278,9 @@ void BUPowermeter::ready() {
         optional_add(table_content, "Powermeter: frequency in Hz: L1", powermeter.frequency_Hz.value_or(fd).L1);
         optional_add(table_content, "Powermeter: frequency in Hz: L2", powermeter.frequency_Hz.value_or(fd).L2);
         optional_add(table_content, "Powermeter: frequency in Hz: L3", powermeter.frequency_Hz.value_or(fd).L3);
-        optional_add(table_content, "Public key", public_key);
+        if (!powermeter.signed_meter_value.has_value()) {
+            optional_add(table_content, "Public key", public_key);
+        }
 
         size_t max_width = 120;
         auto formatted_content = FormatTableContent(table_content, max_width);

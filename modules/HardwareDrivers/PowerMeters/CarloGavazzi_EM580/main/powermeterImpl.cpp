@@ -549,7 +549,7 @@ powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& treq
         return {types::powermeter::TransactionRequestStatus::OK};
     } catch (const std::exception& e) {
         EVLOG_error << __PRETTY_FUNCTION__ << " Error: " << e.what() << std::endl;
-        return {types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {}, "get_signed_meter_value_error"};
+        return {types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {}, "can't start transaction"};
     }
 }
 
@@ -618,7 +618,7 @@ types::powermeter::TransactionStopResponse powermeterImpl::handle_stop_transacti
                 return {types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR,
                         {},
                         {},
-                        "get_signed_meter_value_error"};
+                        "can't stop transaction"};
             }
 
             // For Eichrecht, return the OCMF file as the signed meter value report.
@@ -640,7 +640,7 @@ types::powermeter::TransactionStopResponse powermeterImpl::handle_stop_transacti
         }
     } catch (const std::exception& e) {
         EVLOG_error << __PRETTY_FUNCTION__ << " Error: " << e.what() << std::endl;
-        return {types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {}, "get_signed_meter_value_error"};
+        return {types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {}, "can't stop transaction"};
     }
 }
 
@@ -762,9 +762,7 @@ void powermeterImpl::read_powermeter_values() {
     // temperatures.push_back(temperature);
     // powermeter.temperatures = temperatures;
 
-    if (m_transaction_active.load()) {
-        powermeter.signed_meter_value = read_signed_meter_value();
-    }
+    powermeter.signed_meter_value = read_signed_meter_value();
     publish_powermeter(powermeter);
 }
 
