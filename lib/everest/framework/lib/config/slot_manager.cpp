@@ -79,9 +79,17 @@ bool SqliteConfigSlotManager::is_valid(int slot_id) {
     return stmt->step() == SQLITE_ROW;
 }
 
-GenericResponseStatus SqliteConfigSlotManager::write_settings(int slot_id,
-                                                               const Everest::ManagerSettings& manager_settings) {
+GenericResponseStatus SqliteConfigSlotManager::write_config_slot(int slot_id,
+                                                                   const Everest::ManagerSettings& manager_settings) {
     auto transaction = this->db->begin_transaction();
+
+    // Ensure the CONFIG identity row exists before writing framework settings.
+    auto config_stmt = this->db->new_statement(
+        "INSERT INTO CONFIG (ID) VALUES (?) ON CONFLICT(ID) DO NOTHING;");
+    config_stmt->bind_int(1, slot_id);
+    if (config_stmt->step() != SQLITE_DONE) {
+        return GenericResponseStatus::Failed;
+    }
 
     std::vector<std::string> keys = {"ID",
                                      "PREFIX",
@@ -107,7 +115,7 @@ GenericResponseStatus SqliteConfigSlotManager::write_settings(int slot_id,
                                      "RUN_AS_USER",
                                      "FORWARD_EXCEPTIONS"};
 
-    std::string sql = "INSERT INTO SETTING (";
+    std::string sql = "INSERT INTO FRAMEWORK_SETTINGS (";
     for (size_t i = 0; i < keys.size(); ++i) {
         sql += keys.at(i);
         if (i < keys.size() - 1) {
@@ -201,9 +209,9 @@ GenericResponseStatus SqliteConfigSlotManager::write_settings(int slot_id,
 
 std::vector<StoredSlotInfo> SqliteConfigSlotManager::list_slots() {
     // Join SETTING with CONFIG_META.
-    const std::string sql = "SELECT s.ID, COALESCE(cm.LAST_UPDATED, ''), COALESCE(cm.VALID, 0), cm.CONFIG_FILE_PATH "
-                            "FROM SETTING s LEFT JOIN CONFIG_META cm ON cm.ID = s.ID "
-                            "ORDER BY s.ID";
+    const std::string sql = "SELECT c.ID, COALESCE(cm.LAST_UPDATED, ''), COALESCE(cm.VALID, 0), cm.CONFIG_FILE_PATH "
+                            "FROM CONFIG c LEFT JOIN CONFIG_META cm ON cm.ID = c.ID "
+                            "ORDER BY c.ID";
     auto stmt = this->db->new_statement(sql);
 
     std::vector<StoredSlotInfo> result;
@@ -222,7 +230,7 @@ GenericResponseStatus SqliteConfigSlotManager::delete_slot(int slot_id) {
     try {
         // Enable foreign keys so ON DELETE CASCADE propagates from SETTING to all dependent tables.
         this->db->execute_statement("PRAGMA foreign_keys = ON;");
-        auto stmt = this->db->new_statement("DELETE FROM SETTING WHERE ID = @config_id;");
+        auto stmt = this->db->new_statement("DELETE FROM CONFIG WHERE ID = @config_id;");
         stmt->bind_int("@config_id", slot_id);
         stmt->step();
         this->db->execute_statement("PRAGMA foreign_keys = OFF;");
