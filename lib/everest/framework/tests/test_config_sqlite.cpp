@@ -134,8 +134,8 @@ TEST_CASE("Database operations", "[db_operation]") {
     const auto module_configs = get_example_module_configs();
     const auto settings = get_example_settings();
 
-    // settings must be written via slot manager first so the SETTING row exists before module data is written
-    REQUIRE(slot_mgr.write_settings(SqliteConfigSlotManager::DEFAULT_SLOT_ID, settings) ==
+    // config slot must be written via slot manager first so the CONFIG row exists before module data is written
+    REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID, settings) ==
             GenericResponseStatus::OK);
     REQUIRE(storage.write_module_configs(module_configs) == GenericResponseStatus::OK);
 
@@ -233,7 +233,7 @@ TEST_CASE("Database operations", "[db_operation]") {
     SECTION("Slot can be deleted from the database") {
         REQUIRE(slot_mgr.delete_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == GenericResponseStatus::OK);
     }
-    SECTION("list_slots returns one entry after write_settings") {
+    SECTION("list_slots returns one entry after write_config_slot") {
         auto slots = slot_mgr.list_slots();
         REQUIRE(slots.size() == 1);
         REQUIRE(slots.at(0).id == SqliteConfigSlotManager::DEFAULT_SLOT_ID);
@@ -245,7 +245,7 @@ TEST_CASE("Database operations", "[db_operation]") {
     }
 }
 
-TEST_CASE("write_settings assigns DEFAULT_SLOT_ID", "[db_operation]") {
+TEST_CASE("write_config_slot assigns DEFAULT_SLOT_ID", "[db_operation]") {
     auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
     const auto migrations_dir = bin_dir + "migrations";
     everest::db::sqlite::Connection c("file::memory:?cache=shared");
@@ -255,7 +255,7 @@ TEST_CASE("write_settings assigns DEFAULT_SLOT_ID", "[db_operation]") {
                           SqliteStorage::DEFAULT_CONFIG_ID);
     const auto settings = get_example_settings();
 
-    REQUIRE(slot_mgr.write_settings(SqliteConfigSlotManager::DEFAULT_SLOT_ID, settings) ==
+    REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID, settings) ==
             GenericResponseStatus::OK);
 
     SECTION("settings are readable at DEFAULT_CONFIG_ID after write") {
@@ -277,9 +277,9 @@ TEST_CASE("write_settings assigns DEFAULT_SLOT_ID", "[db_operation]") {
                                SqliteStorage::DEFAULT_CONFIG_ID);
         REQUIRE(storage2.get_settings().status == GenericResponseStatus::OK);
     }
-    SECTION("delete_slot allows re-initializing the slot via write_settings") {
+    SECTION("delete_slot allows re-initializing the slot via write_config_slot") {
         slot_mgr.delete_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID);
-        REQUIRE(slot_mgr.write_settings(SqliteConfigSlotManager::DEFAULT_SLOT_ID, settings) ==
+        REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID, settings) ==
                 GenericResponseStatus::OK);
         auto response = storage.get_settings();
         REQUIRE(response.status == GenericResponseStatus::OK);

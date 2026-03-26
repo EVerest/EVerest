@@ -32,7 +32,7 @@ public:
     SqliteConfigSlotManager(const std::filesystem::path& db_path, const std::filesystem::path& migrations_path);
 
     bool is_valid(int slot_id = DEFAULT_SLOT_ID);
-    GenericResponseStatus write_settings(int slot_id, const Everest::ManagerSettings& ms);
+    GenericResponseStatus write_config_slot(int slot_id, const Everest::ManagerSettings& ms);
     std::vector<StoredSlotInfo> list_slots();
     GenericResponseStatus delete_slot(int slot_id);
 
