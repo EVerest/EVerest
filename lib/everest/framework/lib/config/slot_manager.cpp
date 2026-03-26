@@ -72,6 +72,15 @@ SqliteConfigSlotManager::SqliteConfigSlotManager(const std::filesystem::path& db
     }
 }
 
+int SqliteConfigSlotManager::next_slot_id() {
+    const std::string sql = "SELECT COALESCE(MAX(ID) + 1, 0) FROM CONFIG";
+    auto stmt = this->db->new_statement(sql);
+    if (stmt->step() == SQLITE_ROW) {
+        return stmt->column_int(0);
+    }
+    return 0;
+}
+
 bool SqliteConfigSlotManager::is_valid(int slot_id) {
     const std::string sql = "SELECT 1 FROM CONFIG_META WHERE ID = @config_id AND VALID = 1";
     auto stmt = this->db->new_statement(sql);
