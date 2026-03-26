@@ -38,6 +38,27 @@ install(
     RUNTIME
 )
 
+if (EVEREST_ENABLE_CONFIG_TOOL)
+
+add_executable(everest-config-tool)
+target_sources(everest-config-tool
+    PRIVATE
+        everest-config.cpp
+)
+target_link_libraries(everest-config-tool
+    PRIVATE
+        everest::framework
+        Boost::program_options
+)
+target_compile_options(everest-config-tool PRIVATE ${COMPILER_WARNING_OPTIONS})
+target_compile_features(everest-config-tool PRIVATE cxx_std_17)
+install(
+    TARGETS everest-config-tool
+    RUNTIME
+)
+
+endif ()
+
 # FIXME (aw): the www folder currently always needs to exist, so that the manager does not complain
 install(
     DIRECTORY # intentionally left blank
