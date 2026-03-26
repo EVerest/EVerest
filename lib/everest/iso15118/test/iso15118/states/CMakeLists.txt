@@ -12,7 +12,6 @@ endfunction()
 
 create_states_test_target(ac_charge_loop)
 create_states_test_target(ac_charge_parameter_discovery)
-create_states_test_target(service_discovery)
 create_states_test_target(service_detail)
 create_states_test_target(service_selection)
 create_states_test_target(dc_charge_parameter_discovery)
