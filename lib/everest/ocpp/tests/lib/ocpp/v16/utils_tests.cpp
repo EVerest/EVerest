@@ -45,19 +45,21 @@ TEST_F(UtilsTest, test_drop_transaction_data) {
 
 TEST_F(UtilsTest, test_drop_transaction_data_six_elements) {
     auto call = ocpp::Call<StopTransactionRequest>();
+    // Use padded values so the serialized message clearly exceeds the threshold
+    std::string v(500, 'x');
 
     std::vector<TransactionData> transaction_data = {
-        {DateTime(), {{"1"}}},
-        {DateTime(), {{"1"}, {"2"}}},
-        {DateTime(), {{"1"}, {"2"}, {"3"}}},
-        {DateTime(), {{"1"}, {"2"}, {"3"}, {"4"}}},
-        {DateTime(), {{"1"}, {"2"}, {"3"}, {"4"}, {"5"}}},
-        {DateTime(), {{"1"}, {"2"}, {"3"}, {"4"}, {"5"}, {"6"}}},
+        {DateTime(), {{v}}},
+        {DateTime(), {{v}, {v}}},
+        {DateTime(), {{v}, {v}, {v}}},
+        {DateTime(), {{v}, {v}, {v}, {v}}},
+        {DateTime(), {{v}, {v}, {v}, {v}, {v}}},
+        {DateTime(), {{v}, {v}, {v}, {v}, {v}, {v}}},
     };
 
     call.msg.transactionData = transaction_data;
     ASSERT_EQ(call.msg.transactionData.value().size(), 6);
-    utils::drop_transaction_data(500, call);
+    utils::drop_transaction_data(9500, call);
     // Drop indices 1, 3 -> keep [0, 2, 4, 5]
     ASSERT_EQ(call.msg.transactionData.value().size(), 4);
     ASSERT_EQ(call.msg.transactionData.value().at(0).sampledValue.size(), 1);
@@ -68,20 +70,22 @@ TEST_F(UtilsTest, test_drop_transaction_data_six_elements) {
 
 TEST_F(UtilsTest, test_drop_transaction_data_seven_elements) {
     auto call = ocpp::Call<StopTransactionRequest>();
+    // Use padded values so the serialized message clearly exceeds the threshold
+    std::string v(500, 'x');
 
     std::vector<TransactionData> transaction_data = {
-        {DateTime(), {{"a"}}},
-        {DateTime(), {{"a"}, {"b"}}},
-        {DateTime(), {{"a"}, {"b"}, {"c"}}},
-        {DateTime(), {{"a"}, {"b"}, {"c"}, {"d"}}},
-        {DateTime(), {{"a"}, {"b"}, {"c"}, {"d"}, {"e"}}},
-        {DateTime(), {{"a"}, {"b"}, {"c"}, {"d"}, {"e"}, {"f"}}},
-        {DateTime(), {{"a"}, {"b"}, {"c"}, {"d"}, {"e"}, {"f"}, {"g"}}},
+        {DateTime(), {{v}}},
+        {DateTime(), {{v}, {v}}},
+        {DateTime(), {{v}, {v}, {v}}},
+        {DateTime(), {{v}, {v}, {v}, {v}}},
+        {DateTime(), {{v}, {v}, {v}, {v}, {v}}},
+        {DateTime(), {{v}, {v}, {v}, {v}, {v}, {v}}},
+        {DateTime(), {{v}, {v}, {v}, {v}, {v}, {v}, {v}}},
     };
 
     call.msg.transactionData = transaction_data;
     ASSERT_EQ(call.msg.transactionData.value().size(), 7);
-    utils::drop_transaction_data(500, call);
+    utils::drop_transaction_data(9500, call);
     // Drop indices 1, 3, 5 -> keep [0, 2, 4, 6]
     ASSERT_EQ(call.msg.transactionData.value().size(), 4);
     ASSERT_EQ(call.msg.transactionData.value().at(0).sampledValue.size(), 1);
