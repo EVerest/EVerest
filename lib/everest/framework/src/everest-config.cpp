@@ -170,8 +170,11 @@ int main(int argc, char* argv[]) {
 
     try {
         po::variables_map vm;
-        auto parsed =
-            po::command_line_parser(argc, argv).options(global_opts).positional(pos).allow_unregistered().run();
+        auto parsed = po::command_line_parser(argc, argv)
+                          .options(global_opts)
+                          .positional(pos)
+                          .allow_unregistered()
+                          .run();
         po::store(parsed, vm);
         po::notify(vm);
 
