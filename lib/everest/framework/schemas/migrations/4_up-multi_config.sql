@@ -1,13 +1,23 @@
 -- Migration 4: Multi-config support
--- Removes the CHECK (id = 0) constraint from SETTING so multiple configs can coexist.
+-- Splits SETTING into CONFIG (identity anchor) and FRAMEWORK_SETTINGS (framework-level settings).
+-- Separating identity from settings keeps each table focused on a single responsibility
+-- and makes it straightforward to compare framework settings across configs.
+-- Removes the single-row restriction so multiple configs can coexist.
 -- Adds CONFIG_ID scoping to MODULE and all its child tables, with cascading deletes
--- rooted at SETTING so that deleting a SETTING row removes everything belonging to it.
+-- rooted at CONFIG so that deleting a CONFIG row removes everything belonging to it.
 
 PRAGMA foreign_keys = OFF;
 
--- 1. SETTING: drop id=0 constraint, keep all columns and NOT NULL constraints.
-CREATE TABLE SETTING_NEW (
-    ID                        INTEGER PRIMARY KEY,
+-- 1a. CONFIG: lightweight identity table - replaces SETTING as the cascade root.
+CREATE TABLE CONFIG (
+    ID INTEGER PRIMARY KEY
+);
+INSERT INTO CONFIG (ID) SELECT ID FROM SETTING;
+
+-- 1b. FRAMEWORK_SETTINGS: framework-level settings (paths, MQTT, controller, etc.).
+--     FK to CONFIG ensures settings are removed when their config is deleted.
+CREATE TABLE FRAMEWORK_SETTINGS (
+    ID                        INTEGER PRIMARY KEY REFERENCES CONFIG (ID) ON DELETE CASCADE,
     PREFIX                    TEXT    NOT NULL,
     CONFIG_FILE               TEXT    NOT NULL,
     CONFIGS_DIR               TEXT    NOT NULL,
@@ -31,13 +41,13 @@ CREATE TABLE SETTING_NEW (
     RUN_AS_USER               TEXT    NOT NULL,
     FORWARD_EXCEPTIONS        INTEGER NOT NULL
 );
-INSERT INTO SETTING_NEW SELECT * FROM SETTING;
-DROP TABLE SETTING;
-ALTER TABLE SETTING_NEW RENAME TO SETTING;
+INSERT INTO FRAMEWORK_SETTINGS SELECT * FROM SETTING;
 
--- 2. CONFIG_META: add FK to SETTING so deletion cascades.
+DROP TABLE SETTING;
+
+-- 2. CONFIG_META: update FK from SETTING to CONFIG.
 CREATE TABLE CONFIG_META_NEW (
-    ID               INTEGER PRIMARY KEY REFERENCES SETTING (ID) ON DELETE CASCADE,
+    ID               INTEGER PRIMARY KEY REFERENCES CONFIG (ID) ON DELETE CASCADE,
     LAST_UPDATED     TEXT    NOT NULL,
     VALID            INTEGER NOT NULL,
     CONFIG_DUMP      TEXT    NOT NULL,
@@ -47,9 +57,9 @@ INSERT INTO CONFIG_META_NEW SELECT * FROM CONFIG_META;
 DROP TABLE CONFIG_META;
 ALTER TABLE CONFIG_META_NEW RENAME TO CONFIG_META;
 
--- 3. MODULE: add CONFIG_ID, composite PK (CONFIG_ID, ID).
+-- 3. MODULE: add CONFIG_ID, composite PK (CONFIG_ID, ID). FK references CONFIG.
 CREATE TABLE MODULE_NEW (
-    CONFIG_ID    INTEGER NOT NULL REFERENCES SETTING (ID) ON DELETE CASCADE,
+    CONFIG_ID    INTEGER NOT NULL REFERENCES CONFIG (ID) ON DELETE CASCADE,
     ID           TEXT    NOT NULL,
     NAME         TEXT    NOT NULL,
     STANDALONE   INTEGER,

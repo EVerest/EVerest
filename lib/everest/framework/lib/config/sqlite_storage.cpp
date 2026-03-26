@@ -227,7 +227,7 @@ GetModuleConfigsResponse SqliteStorage::get_module_configs() {
 }
 
 GetSettingsResponse SqliteStorage::get_settings() {
-    const std::string sql = "SELECT * FROM SETTING WHERE ID = @config_id";
+    const std::string sql = "SELECT * FROM FRAMEWORK_SETTINGS WHERE ID = @config_id";
     auto stmt = this->db->new_statement(sql);
     stmt->bind_int("@config_id", config_id_);
 
