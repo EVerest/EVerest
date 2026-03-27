@@ -146,6 +146,12 @@ The manager handles them and routes responses back to the requesting module's pr
 
 # Response (published by manager, subscribed by requesting module)
 {everest_prefix}modules/{module_id}/response
+
+# Runtime set: manager forwards SetRequest to target module
+{everest_prefix}modules/{module_id}/config/set_request
+
+# Runtime set: target module replies to manager
+{everest_prefix}modules/{module_id}/config/set_response
 ```
 
 ### Message Payload Structure
@@ -225,7 +231,8 @@ Retrieves requirement mappings of all modules the requesting module has read acc
 #### Set a Configuration Value
 
 Updates a configuration parameter at runtime. `value` is always the string representation of the new value,
-independent of the underlying data type.
+independent of the underlying data type. For ReadWrite parameters the manager additionally forwards the request
+to the target module before persisting; see below.
 
 ```json
 {
@@ -245,7 +252,32 @@ independent of the underlying data type.
 }
 ```
 
-#### Response
+#### Forwarded Set Request (Manager → Target Module)
+
+For ReadWrite parameters the manager forwards the validated SetRequest to the target module on a dedicated topic.
+The payload is identical to the original set request.
+
+Topic: `{everest_prefix}modules/{target_module_id}/config/set_request`
+
+#### Module Set Response (Target Module → Manager)
+
+The target module replies with a standard set response.
+
+Topic: `{everest_prefix}modules/{target_module_id}/config/set_response`
+
+```json
+{
+  "msg_type": "ConfigurationResponse",
+  "data": {
+    "status": "Ok",
+    "status_info": "",
+    "type": "Set",
+    "response": { "status": "Accepted" }
+  }
+}
+```
+
+#### Response (Manager → Requesting Module)
 
 The manager always responds on `{everest_prefix}modules/{origin}/response`. The `type` and `response` fields
 mirror the request type. `type` is omitted when `status` is not `Ok`.
@@ -289,6 +321,6 @@ Top-level `status` values:
 
 Set-specific `response.status` values:
 
-- `Accepted`: Value was set successfully
-- `Rejected`: Value could not be set
-- `RebootRequired`: Value was set but a reboot is required for it to take effect
+- `Accepted`: Value was set and persisted successfully
+- `Rejected`: Value could not be set; details in `status_info`
+- `RebootRequired`: ReadOnly parameter — value was persisted and takes effect after the next restart
