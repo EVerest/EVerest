@@ -395,7 +395,7 @@ ConfigService::ConfigService(MQTTAbstraction& mqtt_abstraction, std::shared_ptr<
                 response = handle_set_request(std::get<SetRequest>(request.request), request.origin, *config);
             }
 
-            MqttMessagePayload payload{MqttMessageType::GetConfigResponse, response};
+            MqttMessagePayload payload{MqttMessageType::ConfigurationResponse, response};
             mqtt_abstraction.publish(response_topic, payload, QOS::QOS2);
 
         } catch (const std::exception& e) {
@@ -407,7 +407,7 @@ ConfigService::ConfigService(MQTTAbstraction& mqtt_abstraction, std::shared_ptr<
 
     const std::string global_config_request_topic =
         fmt::format("{}config/request", mqtt_abstraction.get_everest_prefix());
-    this->get_config_token = std::make_shared<TypedHandler>(HandlerType::GetConfig,
+    this->get_config_token = std::make_shared<TypedHandler>(HandlerType::ConfigurationRequest,
                                                             std::make_shared<Handler>(global_config_request_handler));
     mqtt_abstraction.register_handler(global_config_request_topic, this->get_config_token, QOS::QOS2);
 }
