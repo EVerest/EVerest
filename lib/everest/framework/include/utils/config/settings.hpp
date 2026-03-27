@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -12,16 +13,11 @@
 #include <utils/config/storage_sqlite.hpp>
 #include <utils/config/types.hpp>
 
+#include <optional>
+
 namespace Everest {
 
 namespace fs = std::filesystem;
-
-enum class ConfigBootMode {
-    YamlFile = 1,    // configuration is loaded from a YAML file
-    Database = 2,    // configuration is loaded from a database
-    DatabaseInit = 3 // configuration is preferably loaded from a database, but if no valid config is found, it falls
-                     // back to a YAML file and initializes the database
-};
 
 /// \brief EVerest framework runtime settings needed to successfully run modules
 struct RuntimeSettings {
@@ -45,17 +41,22 @@ void populate_runtime_settings(RuntimeSettings& runtime_settings, const fs::path
                                const fs::path& logging_config_file, const std::string& telemetry_prefix,
                                bool telemetry_enabled, bool validate_schema, bool forward_exceptions);
 
-struct DatabaseTag {};
+/// \brief Settings needed to parse and validate a config (no runtime/DB concerns)
+struct ConfigParseSettings {
+    fs::path schemas_dir;         ///< Directory that contains schemas for config, manifest, interfaces, etc.
+    fs::path interfaces_dir;      ///< Directory that contains interface definitions
+    fs::path types_dir;           ///< Directory that contains type definitions
+    fs::path errors_dir;          ///< Directory that contains error definitions
+    fs::path modules_dir;         ///< Directory that contains EVerest modules
+    fs::path configs_dir;         ///< Directory that contains EVerest configs
+    fs::path config_file;         ///< Path to the loaded config file
+    nlohmann::json config;        ///< Parsed json of the config_file
+    bool validate_schema = false; ///< If schema validation is enabled
+};
 
 /// \brief Settings needed by the manager to load and validate a config
-struct ManagerSettings {
-    fs::path configs_dir;              ///< Directory that contains EVerest configs
+struct ManagerSettings : public ConfigParseSettings {
     fs::path db_dir;                   ///< Directory that contains the database
-    fs::path schemas_dir;              ///< Directory that contains schemas for config, manifest, interfaces, etc.
-    fs::path interfaces_dir;           ///< Directory that contains interface definitions
-    fs::path types_dir;                ///< Directory that contains type definitions
-    fs::path errors_dir;               ///< Directory that contains error definitions
-    fs::path config_file;              ///< Path to the loaded config file
     fs::path www_dir;                  ///< Directory that contains the everest-admin-panel
     int controller_port = 0;           ///< Websocket port of the controller
     int controller_rpc_timeout_ms = 0; ///< RPC timeout for controller commands
@@ -64,27 +65,16 @@ struct ManagerSettings {
 
     std::string version_information; ///< Version information string reported on startup of the manager
 
-    nlohmann::json config; ///< Parsed json of the config_file
-
     MQTTSettings mqtt_settings;       ///< MQTT connection settings
     RuntimeSettings runtime_settings; ///< Runtime settings needed to successfully run modules
-    ConfigBootMode boot_mode =
-        ConfigBootMode::YamlFile; ///< Source of the config, can be YamlFile, Database or DatabaseInit
-    std::unique_ptr<everest::config::SqliteStorage> storage; ///< Sqlite Storage for settings and module configs
 
     ManagerSettings() = default;
 
-    /// \brief Constructor that initializes the ManagerSettings with the given prefix and config file. Boot source is
-    /// set to YamlFile.
+    /// \brief Constructor that initializes the ManagerSettings with the given prefix and config file.
     ManagerSettings(const std::string& prefix, const std::string& config);
 
-    /// \brief Constructor that initializes the ManagerSettings with the given database path. Boot source is set to
-    /// Database.
-    ManagerSettings(const std::string& prefix, const std::string& db, DatabaseTag);
-
     /// \brief Constructor that initializes the ManagerSettings with the given prefix, config file and database path.
-    /// Boot Source is set to DatabaseInit.
-    ManagerSettings(const std::string& prefix, const std::string& config, const std::string& db);
+    ManagerSettings(const std::string& prefix, const std::string& config, const std::string& db_path);
 
     /// \brief Initializes the ManagerSettings with the given settings and prefix.
     void init_settings(const everest::config::Settings& settings);
@@ -96,6 +86,19 @@ struct ManagerSettings {
     /// prefix.
     void init_prefix_and_data_dir(const std::string& prefix);
 };
+
+/// \brief Result of a database bootstrap operation
+struct DatabaseBootstrap {
+    bool module_configs_initialized = false;
+    /// \brief Shared connection to the config database (already migrated).
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection;
+};
+
+/// \brief Initialize a DatabaseBootstrap from an already-initialized ManagerSettings.
+/// Loads module configs from the database if it is already valid, or seeds the database from YAML if it is
+/// not yet valid or \p reset_from_yaml is true.
+DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_from_yaml = false);
+
 } // namespace Everest
 
 NLOHMANN_JSON_NAMESPACE_BEGIN

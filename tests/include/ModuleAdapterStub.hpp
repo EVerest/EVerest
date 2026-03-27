@@ -48,6 +48,7 @@ struct ModuleAdapterStub : public Everest::ModuleAdapter {
         ext_mqtt_subscribe_pair = [this](const std::string& topic, const StringPairHandler& handler) {
             return this->ext_mqtt_subscribe_pair_fn(topic, handler);
         };
+        // registered_commands
         telemetry_publish = [this](const std::string& s1, const std::string& s2, const std::string& s3,
                                    const Everest::TelemetryMap& tm) { this->telemetry_publish_fn(s1, s2, s3, tm); };
         get_mapping = [this]() { return this->get_mapping_fn(); };

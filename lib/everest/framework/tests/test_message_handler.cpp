@@ -783,22 +783,22 @@ TEST_CASE("MessageHandler processes ClearError messages", "[message_handler][err
 }
 
 // ============================================================================
-// Test: GetConfig Message Processing
+// Test: ConfigurationRequest Message Processing
 // ============================================================================
 
-TEST_CASE("MessageHandler processes GetConfig messages", "[message_handler][config]") {
+TEST_CASE("MessageHandler processes ConfigurationRequest messages", "[message_handler][config]") {
     MessageHandlerFixture handler;
     ExecutionTracker tracker;
 
     auto handler_func =
         std::make_shared<Handler>([&](const std::string& topic, const json& data) { tracker.record(topic, 1); });
-    auto test_handler = std::make_shared<TypedHandler>(HandlerType::GetConfig, handler_func);
+    auto test_handler = std::make_shared<TypedHandler>(HandlerType::ConfigurationRequest, handler_func);
 
     handler->register_handler("config/request", test_handler);
 
     ParsedMessage msg;
     msg.topic = "config/request";
-    msg.data = {{"msg_type", "GetConfig"}, {"data", json{}}};
+    msg.data = {{"msg_type", "ConfigurationRequest"}, {"data", json{}}};
 
     handler->add(msg);
 

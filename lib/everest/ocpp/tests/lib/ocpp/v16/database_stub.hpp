@@ -103,6 +103,12 @@ struct DatabaseConnectionTest : public ConnectionInterface {
     virtual std::unique_ptr<TransactionInterface> begin_transaction() {
         return std::unique_ptr<TransactionInterface>{};
     }
+    virtual std::unique_ptr<TransactionInterface> begin_transaction_with_enforced_fkeys() {
+        return std::unique_ptr<TransactionInterface>{};
+    }
+    virtual std::unique_ptr<TransactionInterface> begin_transaction_with_deferred_fkeys() {
+        return std::unique_ptr<TransactionInterface>{};
+    }
     virtual bool commit_transaction() {
         return true;
     }

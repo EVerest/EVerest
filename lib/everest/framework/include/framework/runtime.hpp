@@ -84,6 +84,7 @@ inline constexpr auto INTERFACES_DIR = "interfaces";
 inline constexpr auto SCHEMAS_DIR = "schemas";
 inline constexpr auto CONFIG_NAME = "default.yaml";
 inline constexpr auto LOGGING_CONFIG_NAME = "default_logging.cfg";
+inline constexpr auto DB_FILE_NAME = "everest.db";
 
 inline constexpr auto WWW_DIR = "www";
 

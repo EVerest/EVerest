@@ -193,6 +193,7 @@ class EverestCore:
                 temp_everest_config_file.name).parent / 'user-config'
             self.everest_core_user_config_path.mkdir(parents=True, exist_ok=True)
             self._status_fifo_path = temp_dir / "status.fifo"
+            self._db_path = temp_dir / "everest.db"
         else:
             config_dir = tmp_path / "everest_config"
             config_dir.mkdir()
@@ -200,6 +201,7 @@ class EverestCore:
             self.everest_core_user_config_path.mkdir()
             self.everest_config_path = config_dir / "everest_config.yaml"
             self._status_fifo_path = tmp_path / "status.fifo"
+            self._db_path = tmp_path / "everest.db"
 
         self.prefix_path = prefix_path
         self.etc_path = Path('/etc/everest') if prefix_path == '/usr' else prefix_path / 'etc/everest'
@@ -275,7 +277,7 @@ class EverestCore:
 
         logging.info(self._status_fifo_path)
 
-        args = [str(manager_path.resolve()), '--config', str(self.everest_config_path),
+        args = [str(manager_path.resolve()), '--config', str(self.everest_config_path), '--db', str(self._db_path),
                 '--status-fifo', str(self._status_fifo_path), '--prefix', str(self.prefix_path.resolve())]
 
         if standalone_module:
