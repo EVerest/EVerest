@@ -17,6 +17,10 @@
 #include <unordered_map>
 #include <vector>
 
+namespace everest::db::sqlite {
+class ConnectionInterface;
+} // namespace everest::db::sqlite
+
 namespace Everest {
 class ManagerConfig;
 class MQTTAbstraction;
@@ -24,6 +28,9 @@ class StatusFifo;
 struct ManagerSettings;
 namespace system {
 class SignalPolling;
+}
+namespace config {
+class ConfigServiceCore;
 }
 } // namespace Everest
 struct TypedHandler;
@@ -90,10 +97,10 @@ private:
     // while keeping runtime data explicit (instead of hidden mutable members).
     /// \brief Aggregates runtime dependencies used across handlers for one run.
     struct RuntimeContext {
-        std::shared_ptr<Everest::ManagerConfig>& config;
+        std::shared_ptr<const Everest::ManagerConfig>& config;
         Everest::MQTTAbstraction& mqtt_abstraction;
-        const std::vector<std::string>& ignored_modules;
-        const std::vector<std::string>& standalone_modules;
+        std::vector<std::string>& ignored_modules;
+        std::vector<std::string>& standalone_modules;
         const Everest::ManagerSettings& ms;
         Everest::StatusFifo& status_fifo;
         bool retain_topics;
@@ -116,8 +123,11 @@ private:
 
     /// \brief Load and validate manager configuration from current boot source.
     /// \param ms Fully resolved manager settings for this run.
+    /// \param preloaded_module_configs Full module configuration, but maybe not validated yet
     /// \return Shared validated configuration object.
-    std::shared_ptr<Everest::ManagerConfig> load_and_validate_config(const Everest::ManagerSettings& ms) const;
+    std::shared_ptr<const Everest::ManagerConfig>
+    load_and_validate_config(const Everest::ManagerSettings& ms,
+                             everest::config::ModuleConfigurations& preloaded_module_configs) const;
 
     /// \brief Create MQTT abstraction, connect, and spawn its main loop thread.
     /// \param ms Fully resolved manager settings for this run.
@@ -138,15 +148,16 @@ private:
     void publish_startup_metadata(const RuntimeContext& ctx) const;
 
     /// \brief Unregister all module ready handlers and clear ready-tracking state.
-    void unregister_module_ready_handlers(Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
+    void unregister_module_ready_handlers(const Everest::ManagerConfig& config,
+                                          Everest::MQTTAbstraction& mqtt_abstraction);
 
     /// \brief Unregister module ready handlers and clear retained MQTT topics.
     /// \note Must be called with the config that was used to register handlers (before any reload).
     /// \note MQTT must still be connected; call before any disconnect.
-    void cleanup_modules_state(Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
+    void cleanup_modules_state(const Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
 
     /// \brief Terminate remaining module processes (SIGTERM, then SIGKILL fallback).
-    void shutdown_modules(const std::map<pid_t, std::string>& modules, Everest::ManagerConfig& config,
+    void shutdown_modules(const std::map<pid_t, std::string>& modules, const Everest::ManagerConfig& config,
                           Everest::MQTTAbstraction& mqtt_abstraction);
 
     /// \brief Convert ManagerState enum to a readable string for logs.
@@ -172,6 +183,9 @@ private:
 
     /// \brief Load current state; caller must hold state_transition_mutex_.
     ManagerState current_state_unlocked() const;
+    /// \brief Reload the configuration from the config_service_core class and update relevant fields in the context
+    /// \return Updated context to a valid configuration
+    bool reload_and_update_context(RuntimeContext& ctx);
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // State predicates
@@ -302,6 +316,9 @@ private:
     ///        needs polling, long otherwise (SIGINT/SIGTERM/SIGCHLD wake the poll immediately).
     int signal_poll_timeout_ms() const;
 
+    /// \brief Register a callback invoked on every state transition with (old_state, new_state).
+    void register_state_transition_handler(std::function<void(ManagerState, ManagerState)> handler);
+
     const boost::program_options::variables_map& vm_;
     Everest::StatusFifo* status_fifo_{nullptr};
     bool recover_module_crashes_{false};
@@ -326,4 +343,7 @@ private:
     ModulesReadyType modules_ready_; // guarded by modules_ready_mutex_
     std::mutex modules_ready_mutex_;
     mutable std::mutex state_transition_mutex_;
+    std::vector<std::function<void(ManagerState, ManagerState)>> state_transition_handlers_;
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection_;
+    std::unique_ptr<Everest::config::ConfigServiceCore> config_service_core_{};
 };

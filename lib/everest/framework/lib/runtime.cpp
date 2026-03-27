@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <framework/runtime.hpp>
+#include <utils/config.hpp>
+#include <utils/config/slot_manager.hpp>
 #include <utils/config/storage_sqlite.hpp>
 #include <utils/date.hpp>
 #include <utils/error.hpp>
@@ -36,70 +38,91 @@ void populate_module_info_path_from_runtime_settings(ModuleInfo& mi, const Runti
     mi.paths.share = rs.data_dir / defaults::MODULES_DIR / mi.name;
 }
 
-ManagerSettings::ManagerSettings(const std::string& prefix_, const std::string& config_) :
-    boot_mode(ConfigBootMode::YamlFile) { // NOLINT(cppcoreguidelines-use-default-member-init): already default
-                                          // initialized, but repeated for clarity
-    init_prefix_and_data_dir(prefix_);
-    init_config_file(config_);
-    const auto settings = everest::config::parse_settings(config.value("settings", json::object()));
-    if (settings.prefix.has_value()) {
-        EVLOG_warning << "Setting the prefix in the config file is deprecated. Please use the --prefix command line "
-                         "option instead.";
-    }
-    init_settings(settings);
-}
+DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_from_yaml) {
+    DatabaseBootstrap bs;
 
-ManagerSettings::ManagerSettings(const std::string& prefix_, const std::string& db_, DatabaseTag) :
-    boot_mode(ConfigBootMode::Database) {
+    const auto migrations_dir = ms.runtime_settings.data_dir / "migrations";
 
-    init_prefix_and_data_dir(prefix_);
+    auto db_conn = everest::config::open_config_database(ms.db_dir, migrations_dir);
+    bs.db_connection = db_conn;
 
-    db_dir = assert_file(db_, "User provided database");
+    everest::config::SqliteConfigSlotManager slot_mgr(db_conn);
 
-    const auto migrations_dir = this->runtime_settings.data_dir / "migrations";
-    this->storage = std::make_unique<everest::config::SqliteStorage>(db_dir, migrations_dir);
+    auto boot_slot_id = slot_mgr.get_next_boot_slot_id();
+    auto db_storage = std::make_unique<everest::config::SqliteStorage>(db_conn, boot_slot_id);
 
-    if (!this->storage->contains_valid_config()) {
-        throw BootException("Database not initialized or valid");
-    }
-
-    EVLOG_info << "Booting and parsing configuration from database: " << db_dir;
-    const auto settings_response = this->storage->get_settings();
-    if (settings_response.status != everest::config::GenericResponseStatus::OK or
-        !settings_response.settings.has_value()) {
-        throw BootException("Failed to load settings from database");
-    }
-    const auto settings = settings_response.settings.value();
-    init_settings(settings);
-    this->storage->write_settings(*this);
-}
-
-ManagerSettings::ManagerSettings(const std::string& prefix_, const std::string& config_, const std::string& db_) :
-    boot_mode(ConfigBootMode::DatabaseInit) {
-
-    init_prefix_and_data_dir(prefix_);
-    init_config_file(config_);
-
-    const auto migrations_dir = this->runtime_settings.data_dir / "migrations";
-    this->storage = std::make_unique<everest::config::SqliteStorage>(fs::path(db_), migrations_dir);
-
-    everest::config::Settings settings;
-    if (this->storage->contains_valid_config()) {
-        EVLOG_info << "Booting and parsing configuration from database: " << db_;
-        const auto settings_response = this->storage->get_settings();
-        if (settings_response.status != everest::config::GenericResponseStatus::OK or
-            !settings_response.settings.has_value()) {
-            throw BootException("Failed to load settings from database");
+    const bool slot_exists = slot_mgr.exists(boot_slot_id);
+    if (slot_exists && !reset_from_yaml) {
+        EVLOG_info << "Booting and parsing configuration from database: " << ms.db_dir;
+        const auto resp = db_storage->get_module_configs();
+        if (resp.status == everest::config::GenericResponseStatus::Failed) {
+            EVLOG_AND_THROW(EverestConfigError("Failed to pre-load module configs from database"));
         }
-        settings = settings_response.settings.value();
+        bs.module_configs_initialized = true;
     } else {
-        EVLOG_info << "Database not initialized or valid, falling back to YAML config file: " << config_;
-        this->storage->wipe();
-        settings = everest::config::parse_settings(config.value("settings", json::object()));
+        if (reset_from_yaml && slot_exists) {
+            EVLOG_info << "--reset-from-yaml requested, discarding existing database slot and re-seeding from YAML: "
+                       << ms.config_file;
+        } else {
+            EVLOG_info << "Database not initialized or not valid, seeding from YAML config file: " << ms.config_file;
+        }
+
+        std::shared_ptr<const ManagerConfig> mgr_config;
+        bool valid_config = false;
+        try {
+            mgr_config = std::make_shared<const ManagerConfig>(ms);
+            valid_config = true;
+        } catch (EverestInternalError& e) {
+            EVLOG_error << fmt::format("Failed to load and validate config!\n{}",
+                                       boost::diagnostic_information(e, true));
+        } catch (boost::exception& e) {
+            EVLOG_error << "Failed to load and validate config!";
+            EVLOG_critical << fmt::format("Caught top level boost::exception:\n{}",
+                                          boost::diagnostic_information(e, true));
+        } catch (std::exception& e) {
+            EVLOG_error << "Failed to load and validate config!";
+            EVLOG_critical << fmt::format("Caught top level std::exception:\n{}",
+                                          boost::diagnostic_information(e, true));
+        }
+
+        if (valid_config) {
+            // Delete the slot (no-op if it doesn't exist)
+            slot_mgr.delete_slot(boot_slot_id);
+            // Seed the database: parse() enriched module_configs with manifest metadata needed for storage writes.
+            const auto& module_config = mgr_config->get_module_configurations();
+            if (slot_mgr.write_config_slot(boot_slot_id, nlohmann::json(module_config).dump(), ms.config_file,
+                                           std::nullopt) == everest::config::GenericResponseStatus::OK) {
+                if (db_storage->write_module_configs(module_config) != everest::config::GenericResponseStatus::Failed) {
+                    EVLOG_info << "Module configs written to database successfully";
+                    bs.module_configs_initialized = true;
+                } else {
+                    EVLOG_warning << "Failed to write module configs to database";
+                    slot_mgr.delete_slot(boot_slot_id);
+                }
+            } else {
+                EVLOG_error << "Could not write config slot " << boot_slot_id;
+            }
+        }
     }
 
+    return bs;
+}
+
+ManagerSettings::ManagerSettings(const std::string& prefix, const std::string& config) {
+    init_prefix_and_data_dir(prefix);
+    init_config_file(config);
+    const auto settings = everest::config::parse_settings(this->config.value("settings", json::object()));
     init_settings(settings);
-    this->storage->write_settings(*this);
+}
+
+ManagerSettings::ManagerSettings(const std::string& prefix, const std::string& config, const std::string& db_path) :
+    ManagerSettings(prefix, config) {
+
+    if (db_path.length() != 0) {
+        db_dir = fs::path(db_path);
+    } else {
+        db_dir = this->runtime_settings.prefix / defaults::DB_FILE_NAME;
+    }
 }
 
 void ManagerSettings::init_settings(const everest::config::Settings& settings) {
@@ -346,6 +369,8 @@ void ManagerSettings::init_settings(const everest::config::Settings& settings) {
 
     populate_runtime_settings(this->runtime_settings, prefix, etc_dir, data_dir, modules_dir, logging_config_file,
                               telemetry_prefix, telemetry_enabled, validate_schema, forward_exceptions);
+    this->modules_dir = modules_dir;
+    this->validate_schema = validate_schema;
 }
 
 void ManagerSettings::init_prefix_and_data_dir(const std::string& prefix_) {

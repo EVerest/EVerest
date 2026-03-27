@@ -73,9 +73,12 @@ using EvseConnectorMap = std::map<int32_t, std::map<int32_t, int32_t>>;
 
 namespace module {
 
+
 // Shared OCPP module support code lives in lib/everest/ocpp_module_common;
 // pull the names into the module namespace to keep call sites unchanged.
 namespace conversions = ocpp_module_common::v16::conversions;
+
+struct RwConf {};
 
 struct Conf {
     std::string ChargePointConfigPath;
@@ -96,6 +99,9 @@ struct Conf {
     int DelayOcppStart;
     int ResetStopDelay;
     int Ocpp16NetworkConfigSlot;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class OCPP : public Everest::ModuleBase {
