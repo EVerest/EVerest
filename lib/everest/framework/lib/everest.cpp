@@ -267,7 +267,7 @@ void Everest::publish_metadata() {
 
     const auto metadata_topic = fmt::format("{}/metadata", this->config.mqtt_module_prefix(this->module_id));
 
-    MqttMessagePayload payload{MqttMessageType::GetConfigResponse, metadata};
+    MqttMessagePayload payload{MqttMessageType::ConfigurationResponse, metadata};
 
     this->mqtt_abstraction->publish(metadata_topic, payload, QOS::QOS2);
 }
