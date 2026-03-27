@@ -132,3 +132,201 @@ The following structure applies for error topics. Errors are raised by modules a
   "uuid": "<unique_error_id>"
 }
 ```
+
+## 5. Configuration
+
+The following structure applies for configuration messages. Modules publish requests to a shared request topic.
+The manager handles them and routes responses back to the requesting module's private response topic.
+
+### Topic Structure
+
+```bash
+# Request (published by module, subscribed by manager)
+{everest_prefix}config/request
+
+# Response (published by manager, subscribed by requesting module)
+{everest_prefix}modules/{module_id}/response
+
+# Runtime set: manager forwards SetRequest to target module
+{everest_prefix}modules/{module_id}/config/set_request
+
+# Runtime set: target module replies to manager
+{everest_prefix}modules/{module_id}/config/set_response
+```
+
+### Message Payload Structure
+
+All configuration messages use `ConfigurationRequest` / `ConfigurationResponse` as the `msg_type`. The `data`
+field holds the request or response object.
+
+#### Get Own Module Configuration
+
+Used during module startup to retrieve the module's own configuration.
+
+```json
+{
+  "msg_type": "ConfigurationRequest",
+  "data": {
+    "type": "Get",
+    "origin": "<module_id>",
+    "request": { "type": "Module" }
+  }
+}
+```
+
+#### Get All Accessible Module Configurations
+
+Retrieves configurations of all modules the requesting module has read access to.
+
+```json
+{
+  "msg_type": "ConfigurationRequest",
+  "data": {
+    "type": "Get",
+    "origin": "<module_id>",
+    "request": { "type": "All" }
+  }
+}
+```
+
+#### Get a Specific Configuration Value
+
+Retrieves a single parameter identified by module, parameter name, and optional implementation ID.
+
+```json
+{
+  "msg_type": "ConfigurationRequest",
+  "data": {
+    "type": "Get",
+    "origin": "<module_id>",
+    "request": {
+      "type": "Value",
+      "identifier": {
+        "module_id": "<target_module_id>",
+        "configuration_parameter_name": "<param_name>",
+        "module_implementation_id": "<impl_id>"
+      }
+    }
+  }
+}
+```
+
+`module_implementation_id` is optional and defaults to the module-level scope (`"!module"`) when omitted.
+
+#### Get All Accessible Module Mappings
+
+Retrieves requirement mappings of all modules the requesting module has read access to.
+
+```json
+{
+  "msg_type": "ConfigurationRequest",
+  "data": {
+    "type": "Get",
+    "origin": "<module_id>",
+    "request": { "type": "AllMappings" }
+  }
+}
+```
+
+#### Set a Configuration Value
+
+Updates a configuration parameter at runtime. `value` is always the string representation of the new value,
+independent of the underlying data type. The manager persists the change first; for ReadWrite parameters it
+additionally forwards the request to the target module afterwards so the module can apply it at runtime; see below.
+
+```json
+{
+  "msg_type": "ConfigurationRequest",
+  "data": {
+    "type": "Set",
+    "origin": "<module_id>",
+    "request": {
+      "identifier": {
+        "module_id": "<target_module_id>",
+        "configuration_parameter_name": "<param_name>",
+        "module_implementation_id": "<impl_id>"
+      },
+      "value": "<string_value>"
+    }
+  }
+}
+```
+
+#### Forwarded Set Request (Manager → Target Module)
+
+For ReadWrite parameters the manager forwards the validated SetRequest to the target module on a dedicated topic.
+The payload is identical to the original set request.
+
+Topic: `{everest_prefix}modules/{target_module_id}/config/set_request`
+
+#### Module Set Response (Target Module → Manager)
+
+The target module replies with a standard set response.
+
+Topic: `{everest_prefix}modules/{target_module_id}/config/set_response`
+
+```json
+{
+  "msg_type": "ConfigurationResponse",
+  "data": {
+    "status": "Ok",
+    "status_info": "",
+    "type": "Set",
+    "response": { "status": "Accepted" }
+  }
+}
+```
+
+#### Response (Manager → Requesting Module)
+
+The manager always responds on `{everest_prefix}modules/{origin}/response`. The `type` and `response` fields
+mirror the request type. `type` is omitted when `status` is not `Ok`.
+
+```json
+{
+  "msg_type": "ConfigurationResponse",
+  "data": {
+    "status": "Ok",
+    "status_info": "",
+    "type": "Get",
+    "response": {
+      "type": "Module",
+      "data": { }
+    }
+  }
+}
+```
+
+For set responses the inner `response` object contains a `status` field instead of `data`:
+
+```json
+{
+  "msg_type": "ConfigurationResponse",
+  "data": {
+    "status": "Ok",
+    "status_info": "",
+    "type": "Set",
+    "response": { "status": "Accepted" }
+  }
+}
+```
+
+### Response Status Values
+
+Top-level `status` values:
+
+- `Ok`: Request handled successfully
+- `Error`: An error occurred; details in `status_info`. Error responses carry no `type` and no
+  `response` payload.
+- `AccessDenied`: The requesting module lacks permission to access the target configuration
+
+Set-specific `response.status` values:
+
+- `Accepted`: Value was persisted and the running target module applied it at runtime immediately
+- `Rejected`: Value was NOT persisted (e.g. it failed datatype validation or writing to storage failed);
+  details in `status_info`
+- `RebootRequired`: Value was persisted and takes effect after the next restart. Returned whenever the
+  change could not be applied at runtime: the parameter is not runtime-changeable (e.g. ReadOnly), the
+  modules are not running, no runtime forwarding to the target module is available, or the running
+  module did not apply the change at runtime (it requires a restart, or it rejected the runtime change —
+  the persisted value still applies on the next boot)

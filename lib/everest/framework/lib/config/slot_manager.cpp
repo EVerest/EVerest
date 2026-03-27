@@ -1,0 +1,363 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+#include <utils/config/slot_manager.hpp>
+
+#include <everest/compile_time_settings.hpp>
+#include <everest/database/exceptions.hpp>
+#include <everest/database/sqlite/connection.hpp>
+#include <everest/database/sqlite/schema_updater.hpp>
+#include <everest/logging.hpp>
+
+#include <utils/date.hpp>
+
+using namespace everest::db;
+using namespace everest::db::sqlite;
+
+namespace everest::config {
+
+namespace fs = std::filesystem;
+
+SqliteConfigSlotManager::SqliteConfigSlotManager(const std::filesystem::path& db_path,
+                                                 const std::filesystem::path& migrations_path) {
+    db = std::make_shared<Connection>(db_path);
+
+    SchemaUpdater updater{db.get()};
+    if (!updater.apply_migration_files(migrations_path, TARGET_MIGRATION_FILE_VERSION)) {
+        if (db_path.parent_path().empty()) {
+            EVLOG_error << "Could not apply migrations for database at provided path: \"" << db_path.string()
+                        << "\" likely because the database path is just a filename. You MUST provide a full path to "
+                           "the database.";
+        }
+        throw MigrationException("SQL migration failed");
+    }
+
+    if (!db->open_connection()) {
+        throw std::runtime_error("Could not open database at provided path: " + db_path.string());
+    } else {
+        EVLOG_debug << "Established connection to database successfully: " << db_path;
+    }
+}
+
+SqliteConfigSlotManager::SqliteConfigSlotManager(std::shared_ptr<everest::db::sqlite::ConnectionInterface> connection) :
+    db(std::move(connection)) {
+    if (!db->open_connection()) {
+        throw std::runtime_error("Could not open shared database connection");
+    }
+}
+
+SqliteConfigSlotManager::~SqliteConfigSlotManager() {
+    db->close_connection();
+}
+
+int SqliteConfigSlotManager::next_slot_id() {
+    const std::string sql = "SELECT MIN(?, COALESCE(MAX(ID) + 1, 0)) FROM CONFIG";
+    auto stmt = this->db->new_statement(sql);
+    stmt->bind_int(1, max_slot_id);
+    if (stmt->step() == SQLITE_ROW) {
+        return stmt->column_int(0);
+    }
+    return 0;
+}
+
+bool SqliteConfigSlotManager::exists(int slot_id) {
+    const std::string sql = "SELECT 1 FROM CONFIG_META WHERE ID = @config_id";
+    auto stmt = this->db->new_statement(sql);
+    stmt->bind_int("@config_id", slot_id);
+    return stmt->step() == SQLITE_ROW;
+}
+
+GenericResponseStatus
+SqliteConfigSlotManager::write_config_slot(int slot_id, const std::string& config_dump,
+                                           const std::optional<std::filesystem::path>& config_file_path,
+                                           const std::optional<std::string>& description) {
+    if (slot_id > max_slot_id) {
+        return GenericResponseStatus::Failed;
+    }
+    auto transaction = this->db->begin_transaction();
+
+    auto id_stmt = this->db->new_statement("INSERT INTO CONFIG (ID) VALUES (?) ON CONFLICT(ID) DO NOTHING;");
+    id_stmt->bind_int(1, slot_id);
+    if (id_stmt->step() != SQLITE_DONE) {
+        return GenericResponseStatus::Failed;
+    }
+
+    const std::string sql =
+        "INSERT INTO CONFIG_META (ID, LAST_UPDATED, CONFIG_DUMP, CONFIG_FILE_PATH, DESCRIPTION) VALUES "
+        "(@config_id, @last_updated, @config_dump, @config_file_path, @description) "
+        "ON CONFLICT(ID) DO UPDATE SET "
+        "LAST_UPDATED=excluded.LAST_UPDATED, CONFIG_DUMP=excluded.CONFIG_DUMP, "
+        "CONFIG_FILE_PATH=excluded.CONFIG_FILE_PATH, DESCRIPTION=excluded.DESCRIPTION;";
+    auto meta_stmt = this->db->new_statement(sql);
+
+    meta_stmt->bind_int("@config_id", slot_id);
+    const auto last_updated = Everest::Date::to_rfc3339(date::utc_clock::now());
+    meta_stmt->bind_text("@last_updated", last_updated);
+    meta_stmt->bind_text("@config_dump", config_dump, SQLiteString::Transient);
+    if (config_file_path.has_value()) {
+        meta_stmt->bind_text("@config_file_path", config_file_path.value().string(), SQLiteString::Transient);
+    } else {
+        meta_stmt->bind_null("@config_file_path");
+    }
+    if (description.has_value()) {
+        meta_stmt->bind_text("@description", description.value(), SQLiteString::Transient);
+    } else {
+        meta_stmt->bind_null("@description");
+    }
+    if (meta_stmt->step() != SQLITE_DONE) {
+        return GenericResponseStatus::Failed;
+    }
+
+    transaction->commit();
+    return GenericResponseStatus::OK;
+}
+
+GenericResponseStatus
+SqliteConfigSlotManager::update_config_slot(int slot_id, const std::string& config_dump,
+                                            const std::optional<std::filesystem::path>& config_file_path,
+                                            const std::optional<std::string>& description) {
+    GenericResponseStatus ret = GenericResponseStatus::Failed;
+    if (exists(slot_id)) {
+        auto meta_stmt =
+            this->db->new_statement("UPDATE CONFIG_META SET CONFIG_DUMP = @config_dump, CONFIG_FILE_PATH "
+                                    "= @config_file_path, DESCRIPTION = @description WHERE ID = @config_id");
+
+        meta_stmt->bind_int("@config_id", slot_id);
+        meta_stmt->bind_text("@config_dump", config_dump, SQLiteString::Transient);
+        if (config_file_path.has_value()) {
+            meta_stmt->bind_text("@config_file_path", config_file_path.value().string(), SQLiteString::Transient);
+        } else {
+            meta_stmt->bind_null("@config_file_path");
+        }
+        if (description.has_value()) {
+            meta_stmt->bind_text("@description", description.value(), SQLiteString::Transient);
+        } else {
+            meta_stmt->bind_null("@description");
+        }
+
+        if (meta_stmt->step() == SQLITE_DONE) {
+            ret = GenericResponseStatus::OK;
+        }
+    }
+    return ret;
+}
+
+GenericResponseStatus SqliteConfigSlotManager::update_description(int slot_id,
+                                                                  const std::optional<std::string>& description) {
+    GenericResponseStatus ret = GenericResponseStatus::Failed;
+    if (exists(slot_id)) {
+        auto meta_stmt =
+            this->db->new_statement("UPDATE CONFIG_META SET DESCRIPTION = @description WHERE ID = @config_id");
+
+        meta_stmt->bind_int("@config_id", slot_id);
+        if (description.has_value()) {
+            meta_stmt->bind_text("@description", description.value(), SQLiteString::Transient);
+        } else {
+            meta_stmt->bind_null("@description");
+        }
+
+        if (meta_stmt->step() == SQLITE_DONE) {
+            ret = GenericResponseStatus::OK;
+        }
+    }
+    return ret;
+}
+
+std::vector<SlotInfo> SqliteConfigSlotManager::list_slots() {
+    const std::string sql = "SELECT c.ID, COALESCE(cm.LAST_UPDATED, ''), cm.CONFIG_FILE_PATH, cm.DESCRIPTION "
+                            "FROM CONFIG c LEFT JOIN CONFIG_META cm ON cm.ID = c.ID "
+                            "ORDER BY c.ID";
+    auto stmt = this->db->new_statement(sql);
+
+    std::vector<SlotInfo> result;
+    while (stmt->step() == SQLITE_ROW) {
+        SlotInfo info;
+        info.id = stmt->column_int(0);
+        info.last_updated = stmt->column_text(1);
+        info.config_file_path = stmt->column_text_nullable(2);
+        info.description = stmt->column_text_nullable(3);
+        result.push_back(std::move(info));
+    }
+    return result;
+}
+
+DuplicateSlotResult SqliteConfigSlotManager::duplicate_slot(int source_slot_id,
+                                                            std::optional<std::string> description) {
+    try {
+        auto transaction = db->begin_transaction_with_deferred_fkeys();
+
+        if (not exists(source_slot_id)) {
+            return {false, std::nullopt};
+        }
+
+        const int new_id = next_slot_id();
+
+        // Insert new CONFIG row
+        {
+            auto s = this->db->new_statement("INSERT INTO CONFIG (ID) VALUES (?);");
+            s->bind_int(1, new_id);
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
+        }
+
+        // Copy CONFIG_META (override DESCRIPTION if provided)
+        {
+            auto s = this->db->new_statement(
+                "INSERT INTO CONFIG_META (ID, LAST_UPDATED, CONFIG_DUMP, CONFIG_FILE_PATH, DESCRIPTION) "
+                "SELECT ?, ?, CONFIG_DUMP, CONFIG_FILE_PATH, ? FROM CONFIG_META WHERE ID = ?;");
+            s->bind_int(1, new_id);
+            const auto last_updated = Everest::Date::to_rfc3339(date::utc_clock::now());
+            s->bind_text(2, last_updated);
+            if (description.has_value()) {
+                s->bind_text(3, description.value());
+            } else {
+                s->bind_null(3);
+            }
+            s->bind_int(4, source_slot_id);
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
+        }
+
+        // Copy MODULE
+        {
+            auto s = this->db->new_statement(
+                "INSERT INTO MODULE (CONFIG_ID, ID, NAME, STANDALONE, CAPABILITIES) "
+                "SELECT ?, ID, NAME, STANDALONE, CAPABILITIES FROM MODULE WHERE CONFIG_ID = ?;");
+            s->bind_int(1, new_id);
+            s->bind_int(2, source_slot_id);
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
+        }
+
+        // Copy MODULE_FULFILLMENT
+        {
+            auto s = this->db->new_statement(
+                "INSERT INTO MODULE_FULFILLMENT "
+                "(CONFIG_ID, MODULE_ID, REQUIREMENT_NAME, IMPLEMENTATION_ID, IMPLEMENTATION_MODULE_ID) "
+                "SELECT ?, MODULE_ID, REQUIREMENT_NAME, IMPLEMENTATION_ID, IMPLEMENTATION_MODULE_ID "
+                "FROM MODULE_FULFILLMENT WHERE CONFIG_ID = ?;");
+            s->bind_int(1, new_id);
+            s->bind_int(2, source_slot_id);
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
+        }
+
+        // Copy MODULE_TIER_MAPPING
+        {
+            auto s = this->db->new_statement(
+                "INSERT INTO MODULE_TIER_MAPPING (CONFIG_ID, MODULE_ID, IMPLEMENTATION_ID, EVSE_ID, CONNECTOR_ID) "
+                "SELECT ?, MODULE_ID, IMPLEMENTATION_ID, EVSE_ID, CONNECTOR_ID "
+                "FROM MODULE_TIER_MAPPING WHERE CONFIG_ID = ?;");
+            s->bind_int(1, new_id);
+            s->bind_int(2, source_slot_id);
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
+        }
+
+        // Copy CONFIGURATION
+        {
+            auto s = this->db->new_statement(
+                "INSERT INTO CONFIGURATION "
+                "(CONFIG_ID, PARAMETER_NAME, MODULE_ID, MODULE_IMPLEMENTATION_ID, VALUE, "
+                "MUTABILITY_ID, DATATYPE_ID, UNIT, SOURCE) "
+                "SELECT ?, PARAMETER_NAME, MODULE_ID, MODULE_IMPLEMENTATION_ID, VALUE, "
+                "MUTABILITY_ID, DATATYPE_ID, UNIT, SOURCE FROM CONFIGURATION WHERE CONFIG_ID = ?;");
+            s->bind_int(1, new_id);
+            s->bind_int(2, source_slot_id);
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
+        }
+
+        // Copy CONFIG_ACCESS
+        {
+            auto s = this->db->new_statement(
+                "INSERT INTO CONFIG_ACCESS "
+                "(CONFIG_ID, MODULE_ID, ALLOW_GLOBAL_READ, ALLOW_GLOBAL_WRITE, ALLOW_SET_READ_ONLY) "
+                "SELECT ?, MODULE_ID, ALLOW_GLOBAL_READ, ALLOW_GLOBAL_WRITE, ALLOW_SET_READ_ONLY "
+                "FROM CONFIG_ACCESS WHERE CONFIG_ID = ?;");
+            s->bind_int(1, new_id);
+            s->bind_int(2, source_slot_id);
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
+        }
+
+        // Copy MODULE_CONFIG_ACCESS
+        {
+            auto s = this->db->new_statement(
+                "INSERT INTO MODULE_CONFIG_ACCESS "
+                "(CONFIG_ID, MODULE_ID, OTHER_MODULE_ID, ALLOW_READ, ALLOW_WRITE, ALLOW_SET_READ_ONLY) "
+                "SELECT ?, MODULE_ID, OTHER_MODULE_ID, ALLOW_READ, ALLOW_WRITE, ALLOW_SET_READ_ONLY "
+                "FROM MODULE_CONFIG_ACCESS WHERE CONFIG_ID = ?;");
+            s->bind_int(1, new_id);
+            s->bind_int(2, source_slot_id);
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
+        }
+
+        transaction->commit();
+        return {true, new_id};
+    } catch (const std::exception& e) {
+        EVLOG_error << "Failed to duplicate slot " << source_slot_id << ": " << e.what();
+        return {false, std::nullopt};
+    }
+}
+
+int SqliteConfigSlotManager::get_next_boot_slot_id() {
+    auto stmt = this->db->new_statement("SELECT NEXT_BOOT_SLOT_ID FROM BOOT_CONFIG;");
+    if (stmt->step() == SQLITE_ROW) {
+        return stmt->column_int(0);
+    }
+    return DEFAULT_SLOT_ID;
+}
+
+GenericResponseStatus SqliteConfigSlotManager::set_next_boot_slot_id(int slot_id) {
+    if (not exists(slot_id)) {
+        return GenericResponseStatus::Failed;
+    }
+    try {
+        auto stmt = this->db->new_statement("UPDATE BOOT_CONFIG SET NEXT_BOOT_SLOT_ID = ?;");
+        stmt->bind_int(1, slot_id);
+        if (stmt->step() != SQLITE_DONE) {
+            return GenericResponseStatus::Failed;
+        }
+        return GenericResponseStatus::OK;
+    } catch (const std::exception& e) {
+        EVLOG_error << "Failed to set next boot slot id to " << slot_id << ": " << e.what();
+        return GenericResponseStatus::Failed;
+    }
+}
+
+GenericResponseStatus SqliteConfigSlotManager::delete_slot(int slot_id) {
+    if (not exists(slot_id)) {
+        // deleting a non-existing slot is a no-op
+        return GenericResponseStatus::OK;
+    }
+    try {
+        auto transaction = db->begin_transaction_with_enforced_fkeys();
+
+        {
+            const std::string sql = "DELETE FROM CONFIG WHERE ID = ?;";
+            auto stmt = this->db->new_statement(sql);
+            stmt->bind_int(1, slot_id);
+            if (stmt->step() != SQLITE_DONE) {
+                return GenericResponseStatus::Failed;
+            }
+        }
+
+        transaction->commit();
+
+        return GenericResponseStatus::OK;
+    } catch (const std::exception& e) {
+        EVLOG_error << "Failed to delete slot with id " << slot_id << ": " << e.what();
+        return GenericResponseStatus::Failed;
+    }
+}
+
+} // namespace everest::config

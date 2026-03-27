@@ -5,6 +5,7 @@
 #include <framework/runtime.hpp>
 #include <tests/helpers.hpp>
 #include <utils/config.hpp>
+#include <utils/config/slot_manager.hpp>
 
 namespace fs = std::filesystem;
 
@@ -63,10 +64,11 @@ SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
                             Everest::BootException);
         }
     }
-    GIVEN("A non-exsiting database file with ConfigurationBootMode::DatabaseInit") {
+    GIVEN("A non-exsiting database file") {
         THEN("It should not throw and create the file") {
-            CHECK_NOTHROW(Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml",
-                                                   "valid_config/non_existing.db"));
+            Everest::ManagerSettings ms(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml",
+                                        bin_dir + "valid_config/non_existing.db");
+            CHECK_NOTHROW(Everest::init_database_bootstrap(ms));
         }
     }
 }
@@ -217,27 +219,47 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
             CHECK_NOTHROW(Everest::ManagerConfig(ms));
         }
     }
-    GIVEN("ManagerSettings are instantiated two times - first with fallback to init from config file, second with "
-          "database") {
+    GIVEN("Bootstrap is called two times - first with fallback to init from config file, second with database") {
         auto db_path = bin_dir + "valid_config/everest.db";
 
         // Clean up before test
         if (fs::exists(db_path)) {
             fs::remove(db_path);
         }
-        auto ms = Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", db_path);
-        CHECK(ms.storage->contains_valid_config() == false);
-        THEN("In the first intstantiation the database is not initialized") {
-            CHECK_NOTHROW(Everest::ManagerConfig(ms));
+        Everest::ManagerSettings ms(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", db_path);
+        auto bs = Everest::init_database_bootstrap(ms);
+        CHECK(bs.module_configs_initialized == true);
+        THEN("In the first instantiation the database is not initialized — ManagerConfig parses YAML") {
+            auto config = Everest::ManagerConfig(ms);
 
             THEN("In the second instantiation the database is initialized and valid") {
-                ms = Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", db_path);
-                CHECK(ms.storage->contains_valid_config() == true);
-                CHECK_NOTHROW(Everest::ManagerConfig(ms));
+                auto bs2 = Everest::init_database_bootstrap(ms);
+                auto storage = std::make_unique<everest::config::SqliteStorage>(bs2.db_connection);
+                auto get_mod_cfg_response = storage->get_module_configs();
+                CHECK(get_mod_cfg_response.status == everest::config::GenericResponseStatus::OK);
+                CHECK(bs2.module_configs_initialized == true);
+                CHECK_NOTHROW(Everest::ManagerConfig(ms, std::move(get_mod_cfg_response.module_configs)));
             }
-            THEN("It should be possible to construct the ManagerSettings with a database path") {
-                CHECK_NOTHROW(Everest::ManagerSettings(bin_dir + "valid_config/", db_path, Everest::DatabaseTag{}));
+            THEN("It should be possible to bootstrap again from the initialized database") {
+                auto bs3 = Everest::init_database_bootstrap(ms);
+                auto storage = std::make_unique<everest::config::SqliteStorage>(bs3.db_connection);
+                auto get_mod_cfg_response = storage->get_module_configs();
+                CHECK(get_mod_cfg_response.status == everest::config::GenericResponseStatus::OK);
+                CHECK(bs3.module_configs_initialized == true);
+                CHECK_NOTHROW(Everest::ManagerConfig(ms, std::move(get_mod_cfg_response.module_configs)));
             }
+        }
+    }
+    GIVEN("A YAML config without active_modules and an uninitialized database") {
+        auto db_path = bin_dir + "empty_yaml_object/everest.db";
+        if (fs::exists(db_path)) {
+            fs::remove(db_path);
+        }
+        Everest::ManagerSettings ms(bin_dir + "empty_yaml_object/", bin_dir + "empty_yaml_object/config.yaml", db_path);
+        auto bs = Everest::init_database_bootstrap(ms);
+        CHECK(bs.module_configs_initialized == false);
+        THEN("ManagerConfig should throw because there are no active_modules to initialize the database from") {
+            CHECK_THROWS_AS(Everest::ManagerConfig(ms), Everest::EverestConfigError);
         }
     }
 }
@@ -383,6 +405,118 @@ SCENARIO("Config returns parsed module configs", "[Config]") {
             CHECK(configs.find("!module") != configs.end());
             CHECK(std::get<std::string>(configs["!module"]["valid_module_config_entry"]) == "test");
             CHECK(std::get<int>(configs["main"]["valid_impl_config_entry"]) == 42);
+        }
+    }
+}
+
+SCENARIO("ConfigurationParameterCharacteristics serialization of min_value and max_value", "[types]") {
+    using everest::config::ConfigurationParameterCharacteristics;
+    using everest::config::Datatype;
+    using everest::config::Mutability;
+
+    GIVEN("A characteristics struct with min_value and max_value set") {
+        ConfigurationParameterCharacteristics c;
+        c.datatype = Datatype::Integer;
+        c.mutability = Mutability::ReadWrite;
+        c.min_value = -10;
+        c.max_value = 100;
+
+        WHEN("Serialized to JSON") {
+            nlohmann::json j = c;
+
+            THEN("min_value and max_value appear in the JSON") {
+                REQUIRE(j.contains("min_value"));
+                REQUIRE(j.contains("max_value"));
+                CHECK(j["min_value"].get<int32_t>() == -10);
+                CHECK(j["max_value"].get<int32_t>() == 100);
+            }
+        }
+
+        WHEN("Round-tripped through JSON") {
+            nlohmann::json j = c;
+            auto c2 = j.get<ConfigurationParameterCharacteristics>();
+
+            THEN("min_value and max_value are preserved") {
+                REQUIRE(c2.min_value.has_value());
+                REQUIRE(c2.max_value.has_value());
+                CHECK(c2.min_value.value() == -10);
+                CHECK(c2.max_value.value() == 100);
+            }
+        }
+    }
+
+    GIVEN("A characteristics struct without min_value or max_value") {
+        ConfigurationParameterCharacteristics c;
+        c.datatype = Datatype::String;
+        c.mutability = Mutability::ReadOnly;
+
+        WHEN("Serialized to JSON") {
+            nlohmann::json j = c;
+
+            THEN("min_value and max_value are absent from the JSON") {
+                CHECK_FALSE(j.contains("min_value"));
+                CHECK_FALSE(j.contains("max_value"));
+            }
+        }
+
+        WHEN("Round-tripped through JSON") {
+            nlohmann::json j = c;
+            auto c2 = j.get<ConfigurationParameterCharacteristics>();
+
+            THEN("min_value and max_value remain nullopt") {
+                CHECK_FALSE(c2.min_value.has_value());
+                CHECK_FALSE(c2.max_value.has_value());
+            }
+        }
+    }
+
+    GIVEN("A JSON object with only min_value set") {
+        nlohmann::json j = {{"datatype", "integer"}, {"mutability", "ReadWrite"}, {"min_value", 5}};
+
+        WHEN("Deserialized") {
+            auto c = j.get<ConfigurationParameterCharacteristics>();
+
+            THEN("min_value is populated and max_value is absent") {
+                REQUIRE(c.min_value.has_value());
+                CHECK(c.min_value.value() == 5);
+                CHECK_FALSE(c.max_value.has_value());
+            }
+        }
+    }
+
+    GIVEN("A JSON object with only max_value set") {
+        nlohmann::json j = {{"datatype", "integer"}, {"mutability", "ReadWrite"}, {"max_value", 50}};
+
+        WHEN("Deserialized") {
+            auto c = j.get<ConfigurationParameterCharacteristics>();
+
+            THEN("max_value is populated and min_value is absent") {
+                CHECK_FALSE(c.min_value.has_value());
+                REQUIRE(c.max_value.has_value());
+                CHECK(c.max_value.value() == 50);
+            }
+        }
+    }
+
+    GIVEN("A characteristics struct with unit, min_value and max_value") {
+        ConfigurationParameterCharacteristics c;
+        c.datatype = Datatype::Integer;
+        c.mutability = Mutability::ReadWrite;
+        c.unit = "ms";
+        c.min_value = 0;
+        c.max_value = 60000;
+
+        WHEN("Serialized to JSON") {
+            nlohmann::json j = c;
+
+            THEN("All optional fields appear") {
+                CHECK(j.contains("unit"));
+                CHECK(j.contains("min_value"));
+                CHECK(j.contains("max_value"));
+                CHECK(j["unit"].get<std::string>() == "ms");
+                CHECK(j["min_value"].get<int32_t>() == 0);
+                CHECK(j["max_value"].get<int32_t>() == 60000);
+            }
         }
     }
 }
