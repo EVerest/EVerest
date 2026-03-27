@@ -20,6 +20,7 @@ create_fsm_test_target(authorization)
 create_fsm_test_target(service_discovery)
 create_fsm_test_target(service_detail)
 create_fsm_test_target(service_selection)
+create_fsm_test_target(dc_charge_parameter_discovery)
 
 add_executable(test_d20_transitions d20_transitions.cpp)
 
