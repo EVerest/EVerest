@@ -11,6 +11,17 @@ from everest.testing.core_utils.fixtures import *
 from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.probe_module import ProbeModule
 
+PROBE_CONFIG_SERVICE_ACCESS = {
+    "config": {
+        "modules": {
+            "test_config_target": {
+                "allow_read": True,
+                "allow_write": True,
+            }
+        }
+    }
+}
+
 from dataclasses import dataclass
 @dataclass
 class ErrorHandlingTesterState:
@@ -737,3 +748,90 @@ class TestErrorHandling:
         raised_error = error_handling_tester.test_error_handling['errors_global_all'][0]
         cleared_error = error_handling_tester.test_error_handling['errors_cleared_global_all'][0]
         assert raised_error['type'] == cleared_error['type'], 'Raised error does not match cleared error'
+
+
+@pytest.mark.probe_module(
+    connections={},
+    access=PROBE_CONFIG_SERVICE_ACCESS,
+)
+@pytest.mark.everest_core_config('config-test-cpp-config-service.yaml')
+class TestConfigService:
+    """
+    Tests for the runtime config service (set/get config values via the framework manager).
+    """
+
+    @pytest.fixture
+    def probe_module(self, started_test_controller, everest_core):
+        return ProbeModule(everest_core.get_runtime_session())
+
+    @pytest.mark.asyncio
+    async def test_config_service_operations(self, probe_module: ProbeModule):
+        # The config service only accepts runtime SET operations once EVerest has reached the
+        # Running state. As a standalone module, the probe must report ready for the manager to
+        # leave "waiting for standalone modules" and transition to Running, so start it and wait
+        # until EVerest is up before exercising the service.
+        probe_module.start()
+        await probe_module.wait_to_be_ready()
+
+        # get initial value
+        result = await probe_module.get_config_value(
+            module_id="test_config_target",
+            param_name="rw_param",
+        )
+        assert result["status"] == "Ok", f"Expected Ok status, got: {result}"
+        assert result["value"] == "initial_value", f"Expected initial_value, got: {result}"
+
+        # set ReadWrite param - accepted immediately
+        result = await probe_module.set_config_value(
+            module_id="test_config_target",
+            param_name="rw_param",
+            value="updated_value",
+        )
+        assert result["status"] == "Ok", f"Expected Ok status, got: {result}"
+        assert result["set_status"] == "Accepted", f"Expected Accepted set_status, got: {result}"
+
+        # get after set - value should reflect the change
+        result = await probe_module.get_config_value(
+            module_id="test_config_target",
+            param_name="rw_param",
+        )
+        assert result["status"] == "Ok", f"Expected Ok status, got: {result}"
+        assert result["value"] == "updated_value", f"Expected updated_value, got: {result}"
+
+        # set ReadWrite param whose handler returns RebootRequired
+        result = await probe_module.set_config_value(
+            module_id="test_config_target",
+            param_name="rw_reboot_param",
+            value="new_reboot_value",
+        )
+        assert result["status"] == "Ok", f"Expected Ok status, got: {result}"
+        assert result["set_status"] == "RebootRequired", f"Expected RebootRequired set_status, got: {result}"
+
+        # set ReadWrite param whose handler vetoes the change at runtime. Under the persist-first
+        # contract the value is still persisted for the next boot, so the veto surfaces as
+        # RebootRequired rather than a hard rejection.
+        result = await probe_module.set_config_value(
+            module_id="test_config_target",
+            param_name="rw_reject_param",
+            value="some_value",
+        )
+        assert result["set_status"] == "RebootRequired", f"Expected RebootRequired set_status, got: {result}"
+        assert result["status_info"] == "Runtime change rejected by module", \
+            f"Expected module-veto status_info, got: {result}"
+
+        # set ReadOnly param: never forwarded to the running module, but still persisted for the next
+        # boot, so it is reported as RebootRequired under the persist-first contract.
+        result = await probe_module.set_config_value(
+            module_id="test_config_target",
+            param_name="ro_param",
+            value="new_ro_value",
+        )
+        assert result["set_status"] == "RebootRequired", f"Expected RebootRequired set_status, got: {result}"
+
+        # set non-existent param - error status
+        result = await probe_module.set_config_value(
+            module_id="test_config_target",
+            param_name="nonexistent_param",
+            value="some_value",
+        )
+        assert result["status"] != "Ok", f"Expected error status for unknown param, got: {result}"

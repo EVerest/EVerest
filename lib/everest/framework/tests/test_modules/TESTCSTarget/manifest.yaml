@@ -1,0 +1,34 @@
+description: "Target module for ConfigService tests - provides ReadWrite, ReadOnly and WriteOnly config params"
+metadata:
+  license: "https://opensource.org/licenses/Apache-2.0"
+  authors: ["EVerest"]
+config:
+  int_param:
+    description: "An Integer config parameter"
+    type: integer
+    mutability: ReadWrite
+    default: 0
+  rw_param:
+    description: "A ReadWrite config parameter"
+    type: string
+    mutability: ReadWrite
+    default: "default_value"
+  ro_param:
+    description: "A ReadOnly config parameter"
+    type: string
+    mutability: ReadOnly
+    default: "default_value"
+  wo_param:
+    description: "A WriteOnly config parameter"
+    type: string
+    mutability: WriteOnly
+    default: "default_value"
+  rw_fail_param:
+    description: "A ReadWrite config parameter whose runtime update is failed by the test module"
+    type: string
+    mutability: ReadWrite
+    default: "default_value"
+provides:
+  main:
+    description: "main implementation"
+    interface: "test_interface"

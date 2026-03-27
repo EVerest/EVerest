@@ -17,12 +17,13 @@ target_sources(framework
         config.cpp
         config/mqtt_settings.cpp
         config/settings.cpp
+        config/config_service_core.cpp
+        config/slot_manager.cpp
         config/sqlite_storage.cpp
-        config/storage_types.cpp
         config/userconfig_storage.cpp
         config/types.cpp
         config_cache.cpp
-        config_service.cpp
+        mqtt_config_service.cpp
         conversions.cpp
         error/error.cpp
         error/error_database_map.cpp
@@ -102,7 +103,7 @@ collect_migration_files(
 )
 
 target_compile_definitions(framework
-    PRIVATE
+    PUBLIC
         TARGET_MIGRATION_FILE_VERSION=${TARGET_MIGRATION_FILE_VERSION}
 )
 

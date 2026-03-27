@@ -1,5 +1,6 @@
 %% EVerest manager — ManagerState lifecycle state machine
 %% Narrative: lib/everest/framework/docs/ManagerLifecycle.md
+%% ManagerState enum: lib/everest/framework/src/manager_module_status.hpp
 %% Transitions / timeouts: lib/everest/framework/src/manager.cpp
 
 stateDiagram-v2
@@ -8,7 +9,7 @@ stateDiagram-v2
     state "Startup" as G_BOOT {
         [*] --> Idle : construct
         Idle --> Initializing : run()
-        Initializing --> StartingModules : handle_start_modules(), spawn,\nMQTT ready handlers
+        Initializing --> StartingModules : handle_start_modules(): metadata publish,\nMQTT ready handlers, spawn
         StartingModules --> Running : all non-ignored modules ready\n(skip if shutdown already started)
     }
 
@@ -17,6 +18,8 @@ stateDiagram-v2
         CrashShutdownInProgress --> ForceTerminating : drain deadline exceeded\n(SHUTDOWN_TIMEOUT_MS with --graceful-shutdown,\nimmediate otherwise)
         RestartRequested --> ForceTerminating : drain deadline exceeded\n(SHUTDOWN_TIMEOUT_MS with --graceful-shutdown,\nimmediate otherwise)
         ShutdownRequested --> CrashShutdownInProgress : crash path\n(immediate after MQTT shutdown)
+        CrashShutdownInProgress --> ShutdownRequested : first SIGINT/SIGTERM during drain\n(ShutdownCause Crash is kept)
+        RestartRequested --> ShutdownRequested : first SIGINT/SIGTERM during drain\n(ShutdownCause Restart downgraded to Normal)
     }
 
     state "Finalize" as G_END {
@@ -33,8 +36,10 @@ stateDiagram-v2
 
     Running --> RestartRequested : IPC restart_modules,\nShutdownCause Restart
     StartingModules --> RestartRequested : IPC restart_modules,\nShutdownCause Restart
+    Idle --> RestartRequested : IPC restart_modules while idle,\nShutdownCause Restart, nothing to drain
 
-    Running --> Exiting : second SIGINT/SIGTERM\n(sigint_received_ already true)
+    Idle --> Exiting : first SIGINT/SIGTERM, no module PIDs\n(cleanup, EXIT_SUCCESS, no drain)
+    ShutdownRequested --> Exiting : second SIGINT/SIGTERM\n(sigint_received_ already true, EXIT_FAILURE)\nsame from any other drain state
 
     %% Drain complete → finalize (when module_handles_ is empty)
     ShutdownRequested --> ShutdownFinalizing : all module PIDs gone
@@ -43,14 +48,19 @@ stateDiagram-v2
     ForceTerminating --> ShutdownFinalizing : all module PIDs gone
 
     %% Finalize outcomes
-    ShutdownFinalizing --> StartingModules : reload config\n(--recover-module-crashes, under max restarts)
-    ShutdownFinalizing --> Idle : crash cap exceeded\n(--recover-module-crashes)
-    ShutdownFinalizing --> Exiting : unexpected module exit\n(default, no flag)
+    ShutdownFinalizing --> StartingModules : reload config and start again\n(admin restart, or --recover-module-crashes\nunder max restarts and no SIGINT)
+    ShutdownFinalizing --> Idle : Normal cause without SIGINT (unconditional),\nor crash cap exceeded / failed or empty reload\n(--idle-on-failure)
+    ShutdownFinalizing --> Exiting : unexpected module exit, crash cap exceeded\nor failed/empty reload (default, EXIT_FAILURE)
 
-    %% First SIGINT with no module children: Idle/Initializing shortcut to Exiting (see manager.cpp)
+    %% Boot-time outcome (before StartingModules)
+    Initializing --> Idle : --into-idle (whatever the config is),\nor no modules (--idle-on-failure)
+    Initializing --> Exiting : invalid config or no modules\n(EXIT_FAILURE, unless --into-idle)\nno-modules also idles with --idle-on-failure
+
     note right of Running
-        Last MQTT ready while shutdown in progress: skip Running.
-        First SIGINT with no module PIDs: cleanup → Exiting (no drain).
+        Last MQTT ready while shutdown in progress: skip Running
+        (and skip ALL_MODULES_STARTED / the global ready publish).
+        Database bootstrap and MQTT connect failures return EXIT_FAILURE
+        directly from run(), without entering Exiting.
     end note
 
     note right of ForceTerminating
