@@ -130,7 +130,7 @@ void MessageHandler::add(const ParsedMessage& message) {
         msg_type = string_to_mqtt_message_type(message.data.at("msg_type").get<std::string>());
     }
 
-    if (msg_type == MqttMessageType::CmdResult || msg_type == MqttMessageType::GetConfigResponse) {
+    if (msg_type == MqttMessageType::CmdResult || msg_type == MqttMessageType::ConfigurationResponse) {
         EVLOG_verbose << "Pushing cmd_result message to queue: " << message.data;
         result_message_queue.push(message);
     } else if (msg_type == MqttMessageType::GlobalReady) {
@@ -315,7 +315,7 @@ void MessageHandler::handle_operation_message(const std::string& topic, const js
     case MqttMessageType::ClearError:
         handle_error_message(topic, data);
         break;
-    case MqttMessageType::GetConfig:
+    case MqttMessageType::ConfigurationRequest:
         handle_get_config_message(topic, data);
         break;
     case MqttMessageType::ModuleReady:
@@ -336,7 +336,7 @@ void MessageHandler::handle_result_message(const std::string& topic, const json&
 
     if (msg_type == MqttMessageType::CmdResult) {
         handle_cmd_result(topic, payload);
-    } else if (msg_type == MqttMessageType::GetConfigResponse) {
+    } else if (msg_type == MqttMessageType::ConfigurationResponse) {
         handle_get_config_response(topic, payload);
     } else {
         EVLOG_warning << "Received invalid cmd_result message: " << payload;
@@ -370,12 +370,12 @@ void MessageHandler::register_handler(const std::string& topic, std::shared_ptr<
         lock->external_var[topic].push_back(handler);
         break;
     }
-    case HandlerType::GetConfig: {
+    case HandlerType::ConfigurationRequest: {
         auto lock = handlers.handle();
-        lock->get_module_config[topic] = handler;
+        lock->configuration_request[topic] = handler;
         break;
     }
-    case HandlerType::GetConfigResponse: {
+    case HandlerType::ConfigurationResponse: {
         auto lock = responses.handle();
         lock->config = handler;
         break;
@@ -449,7 +449,7 @@ void MessageHandler::handle_get_config_message(const std::string& topic, const j
     SharedTypedHandler handler_copy;
     {
         auto handle = handlers.handle();
-        handler_copy = copy_shared_handler(handle->get_module_config, topic);
+        handler_copy = copy_shared_handler(handle->configuration_request, topic);
     }
 
     if (handler_copy) {

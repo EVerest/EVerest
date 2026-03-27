@@ -33,8 +33,8 @@ constexpr std::size_t MAX_PENDING_MESSAGES_PER_TOPIC = 100;
 ///
 /// Messages are routed to one of four channels based on their type:
 ///   - operation_message_queue → operation_dispatcher_thread → operation_thread_pool
-///     (vars, cmds, errors, GetConfig, ModuleReady — parallel across topics, serial per topic)
-///   - result_message_queue    → result_worker_thread (cmd results, GetConfig responses — serial)
+///     (vars, cmds, errors, ConfigurationRequest, ModuleReady — parallel across topics, serial per topic)
+///   - result_message_queue    → result_worker_thread (cmd results, ConfigurationResponse — serial)
 ///   - external_mqtt_message_queue → external_mqtt_worker_thread (external MQTT — serial)
 ///   - GlobalReady             → ready_thread (one-shot, spawned per message)
 class MessageHandler {
@@ -67,13 +67,13 @@ private:
     };
 
     struct GenericHandlers {
-        MultiHandlerMap var;                // var handlers of module
-        SingleHandlerMap cmd;               // cmd handlers of module
-        MultiHandlerMap error;              // error handlers with wildcard support
-        SingleHandlerMap get_module_config; // get module config handler of manager
-        SharedTypedHandler global_ready;    // global ready handler of module
-        SingleHandlerMap module_ready;      // module ready handlers of manager
-        MultiHandlerMap external_var;       // external MQTT handlers of module
+        MultiHandlerMap var;                    // var handlers of module
+        SingleHandlerMap cmd;                   // cmd handlers of module
+        MultiHandlerMap error;                  // error handlers with wildcard support
+        SingleHandlerMap configuration_request; // configuration request handler of manager
+        SharedTypedHandler global_ready;        // global ready handler of module
+        SingleHandlerMap module_ready;          // module ready handlers of manager
+        MultiHandlerMap external_var;           // external MQTT handlers of module
     };
 
     void run_operation_dispatcher();
@@ -98,9 +98,9 @@ private:
     void handle_get_config_response(const std::string& topic, const json& payload);
 
     // Threads
-    std::thread operation_dispatcher_thread; // processes vars, commands, external MQTT, errors, GetConfig and
-                                             // ModuleReady messages
-    std::thread result_worker_thread;        // processes cmd results and GetConfig responses
+    std::thread operation_dispatcher_thread; // processes vars, commands, external MQTT, errors, ConfigurationRequest
+                                             // and ModuleReady messages
+    std::thread result_worker_thread;        // processes cmd results and ConfigurationResponse messages
     std::thread external_mqtt_worker_thread; // processes external MQTT messages
 
     // Wrapped in a monitor so that concurrent GlobalReady arrivals in add() are safe:
