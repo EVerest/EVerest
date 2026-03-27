@@ -157,6 +157,16 @@ config:
           This may save a few seconds as it avoids unnecessary voltage down and up ramping.
     type: boolean
     default: true
+  allow_dc_charging_during_renegotiation:
+    description: >-
+      Allow ISO 15118 DC service renegotiation without interrupting active DC charging.
+      If enabled and the EV requests a new CableCheck while CurrentDemand is already active,
+      EvseManager treats this as a renegotiation with the cable still plugged in, reports CableCheck
+      success immediately and keeps the power supply in the charging phase instead of re-running the
+      normal CableCheck and PreCharge sequence.
+      Enable this only if the EVSE and power supply safely support this simplified renegotiation flow.
+    type: boolean
+    default: false
   hack_skoda_enyaq:
     description: >-
       Skoda Enyaq requests DC charging voltages below its battery level or even below 0 initially.
