@@ -288,14 +288,14 @@ nlohmann::json MQTTAbstractionImpl::get_internal(const MQTTRequest& request) {
 
     // FIXME: use configurable HandlerType?
     const auto res_token =
-        std::make_shared<TypedHandler>(HandlerType::GetConfigResponse, std::make_shared<Handler>(res_handler));
+        std::make_shared<TypedHandler>(HandlerType::ConfigurationResponse, std::make_shared<Handler>(res_handler));
     this->register_handler(request.response_topic, res_token, request.qos);
     if (request.request_topic.has_value()) {
         if (request.request_data.has_value()) {
-            MqttMessagePayload payload{MqttMessageType::GetConfig, json::parse(request.request_data.value())};
+            MqttMessagePayload payload{MqttMessageType::ConfigurationRequest, json::parse(request.request_data.value())};
             this->publish(request.request_topic.value(), payload, request.qos);
         } else {
-            MqttMessagePayload payload{MqttMessageType::GetConfig, json{}};
+            MqttMessagePayload payload{MqttMessageType::ConfigurationRequest, json{}};
             this->publish(request.request_topic.value(), payload, request.qos);
         }
     }
