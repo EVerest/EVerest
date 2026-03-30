@@ -159,8 +159,7 @@ void PowerStackMock::goose_receiver_thread_run() {
             std::unique_ptr<goose::frame::GooseFrameIntf> frame;
             try {
                 if (config.verify_hmac) {
-                    frame =
-                        parse_goose_frame(packet, std::vector<std::uint8_t>(config.hmac_key, config.hmac_key + 48));
+                    frame = parse_goose_frame(packet, std::vector<std::uint8_t>(config.hmac_key, config.hmac_key + 48));
                 } else {
                     frame = parse_goose_frame(packet);
                 }

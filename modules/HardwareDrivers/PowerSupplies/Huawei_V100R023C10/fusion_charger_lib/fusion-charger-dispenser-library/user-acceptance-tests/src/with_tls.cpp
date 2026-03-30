@@ -6,8 +6,8 @@
 #include "dispenser.hpp"
 #include "fusion_charger/goose/power_request.hpp"
 #include "fusion_charger/modbus/registers/error.hpp"
-#include "goose/frame.hpp"
 #include "goose-ethernet/driver.hpp"
+#include "goose/frame.hpp"
 #include "power_stack_mock/power_stack_mock.hpp"
 #include "user_acceptance_tests/dispenser_test_fixture.hpp"
 #include "gmock/gmock.h"
@@ -79,8 +79,7 @@ TEST_F(DispenserWithTlsTest, MalformedButAuthenticatedGooseDoesNotKillReceiverTh
     secure_frame->appid[1] = 0x01;
     secure_frame->pdu = pdu;
 
-    std::vector<std::uint8_t> hmac_key(power_stack_mock_config.hmac_key,
-                                       power_stack_mock_config.hmac_key + 48);
+    std::vector<std::uint8_t> hmac_key(power_stack_mock_config.hmac_key, power_stack_mock_config.hmac_key + 48);
     const auto eth_frame = static_cast<goose::frame::SecureGooseFrame*>(secure_frame.get())->serialize(hmac_key);
     attacker_eth.send_packet(eth_frame);
 
