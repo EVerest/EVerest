@@ -11,6 +11,10 @@ set_target_properties(everest_targets
 
 function(_ev_register_target TYPE NAME)
     if (NOT TARGET ${NAME})
+        if(EVEREST_LIBS_ONLY OR EVEREST_INCLUDE_LIBS OR EVEREST_EXCLUDE_LIBS)
+            message(STATUS "Skipping registration of target ${NAME} (not built in selective mode)")
+            return()
+        endif()
         message(FATAL_ERROR "The supplied name ${NAME} of type ${TYPE} is not a valid target")
     endif()
 
