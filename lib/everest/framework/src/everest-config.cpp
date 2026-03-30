@@ -98,11 +98,8 @@ static int cmd_list(const std::string& prefix, const std::string& db_path) {
     fmt::print("{:<6} {:<32} {:<7} {}\n", "SLOT", "LAST UPDATED", "VALID", "CONFIG FILE");
     fmt::print("{}\n", std::string(80, '-'));
     for (const auto& slot : slots) {
-        fmt::print("{:<6} {:<32} {:<7} {}\n",
-                   slot.id,
-                   slot.last_updated.empty() ? "-" : slot.last_updated,
-                   slot.is_valid ? "yes" : "no",
-                   slot.config_file_path.value_or("-"));
+        fmt::print("{:<6} {:<32} {:<7} {}\n", slot.id, slot.last_updated.empty() ? "-" : slot.last_updated,
+                   slot.is_valid ? "yes" : "no", slot.config_file_path.value_or("-"));
     }
     return 0;
 }
@@ -115,8 +112,8 @@ static int cmd_delete(const std::string& prefix, const std::string& db_path, int
     SqliteConfigSlotManager slot_mgr(db_path, migrations_dir);
 
     const auto existing = slot_mgr.list_slots();
-    const bool found = std::any_of(existing.begin(), existing.end(),
-                                   [slot_id](const StoredSlotInfo& s) { return s.id == slot_id; });
+    const bool found =
+        std::any_of(existing.begin(), existing.end(), [slot_id](const StoredSlotInfo& s) { return s.id == slot_id; });
     if (!found) {
         fmt::print(stderr, "Error: Slot {} does not exist.\n", slot_id);
         return 1;
@@ -168,11 +165,8 @@ int main(int argc, char* argv[]) {
 
     try {
         po::variables_map vm;
-        auto parsed = po::command_line_parser(argc, argv)
-                          .options(global_opts)
-                          .positional(pos)
-                          .allow_unregistered()
-                          .run();
+        auto parsed =
+            po::command_line_parser(argc, argv).options(global_opts).positional(pos).allow_unregistered().run();
         po::store(parsed, vm);
         po::notify(vm);
 

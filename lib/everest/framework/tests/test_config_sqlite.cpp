@@ -117,8 +117,7 @@ TEST_CASE("Database operations", "[db_operation]") {
     // Slot manager is used to write settings (slot lifecycle management)
     SqliteConfigSlotManager slot_mgr("file::memory:?cache=shared", migrations_dir);
     // Storage is scoped to DEFAULT_CONFIG_ID for runtime data access
-    SqliteStorage storage("file::memory:?cache=shared", migrations_dir,
-                          SqliteStorage::DEFAULT_CONFIG_ID);
+    SqliteStorage storage("file::memory:?cache=shared", migrations_dir, SqliteStorage::DEFAULT_CONFIG_ID);
 
     SECTION("Empty settings can not be retrieved") {
         auto response = storage.get_settings();
@@ -251,8 +250,7 @@ TEST_CASE("write_config_slot assigns DEFAULT_SLOT_ID", "[db_operation]") {
     everest::db::sqlite::Connection c("file::memory:?cache=shared");
     c.open_connection();
     SqliteConfigSlotManager slot_mgr("file::memory:?cache=shared", migrations_dir);
-    SqliteStorage storage("file::memory:?cache=shared", migrations_dir,
-                          SqliteStorage::DEFAULT_CONFIG_ID);
+    SqliteStorage storage("file::memory:?cache=shared", migrations_dir, SqliteStorage::DEFAULT_CONFIG_ID);
     const auto settings = get_example_settings();
 
     REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID, settings) ==
@@ -273,8 +271,7 @@ TEST_CASE("write_config_slot assigns DEFAULT_SLOT_ID", "[db_operation]") {
         // Verify validity via slot manager
         REQUIRE(slot_mgr.is_valid(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == true);
         // A storage instance for the same slot can read settings directly (no select_config needed)
-        SqliteStorage storage2("file::memory:?cache=shared", migrations_dir,
-                               SqliteStorage::DEFAULT_CONFIG_ID);
+        SqliteStorage storage2("file::memory:?cache=shared", migrations_dir, SqliteStorage::DEFAULT_CONFIG_ID);
         REQUIRE(storage2.get_settings().status == GenericResponseStatus::OK);
     }
     SECTION("delete_slot allows re-initializing the slot via write_config_slot") {
