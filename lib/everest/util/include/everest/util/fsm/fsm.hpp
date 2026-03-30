@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-// Copied from https://github.com/EVerest/libfsm/blob/draft/v2/include/fsm/v2/fsm.hpp
+// Originally from https://github.com/EVerest/libfsm/blob/draft/v2/include/fsm/v2/fsm.hpp
 
 #pragma once
 

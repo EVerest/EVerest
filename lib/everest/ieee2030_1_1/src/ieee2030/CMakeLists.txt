@@ -34,6 +34,8 @@ target_include_directories(ieee2030
 )
 
 target_link_libraries(ieee2030
+    PUBLIC
+        everest::util
     PRIVATE
         Threads::Threads
 )
