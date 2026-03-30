@@ -48,14 +48,14 @@ void populate_runtime_settings(RuntimeSettings& runtime_settings, const fs::path
 
 /// \brief Settings needed to parse and validate a config (no runtime/DB concerns)
 struct ConfigParseSettings {
-    fs::path schemas_dir;    ///< Directory that contains schemas for config, manifest, interfaces, etc.
-    fs::path interfaces_dir; ///< Directory that contains interface definitions
-    fs::path types_dir;      ///< Directory that contains type definitions
-    fs::path errors_dir;     ///< Directory that contains error definitions
-    fs::path modules_dir;    ///< Directory that contains EVerest modules
-    fs::path configs_dir;    ///< Directory that contains EVerest configs
-    fs::path config_file;    ///< Path to the loaded config file
-    nlohmann::json config;   ///< Parsed json of the config_file
+    fs::path schemas_dir;         ///< Directory that contains schemas for config, manifest, interfaces, etc.
+    fs::path interfaces_dir;      ///< Directory that contains interface definitions
+    fs::path types_dir;           ///< Directory that contains type definitions
+    fs::path errors_dir;          ///< Directory that contains error definitions
+    fs::path modules_dir;         ///< Directory that contains EVerest modules
+    fs::path configs_dir;         ///< Directory that contains EVerest configs
+    fs::path config_file;         ///< Path to the loaded config file
+    nlohmann::json config;        ///< Parsed json of the config_file
     bool validate_schema = false; ///< If schema validation is enabled
     ConfigBootMode boot_mode = ConfigBootMode::YamlFile; ///< Boot mode
 };
