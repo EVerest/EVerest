@@ -237,8 +237,8 @@ Response handle_set_request(const SetRequest& set_request, const std::string& or
 
     const bool allow_set_read_only = is_set_read_only_allowed(access, id.module_id);
     const auto impl_id = id.module_implementation_id.value_or(MODULE_IMPLEMENTATION_ID);
-    const auto characteristics = find_param_characteristics(
-        target_it->second.configuration_parameters, impl_id, id.configuration_parameter_name);
+    const auto characteristics = find_param_characteristics(target_it->second.configuration_parameters, impl_id,
+                                                            id.configuration_parameter_name);
 
     if (not characteristics.has_value()) {
         response.status = ResponseStatus::Error;
