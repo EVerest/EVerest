@@ -1,0 +1,35 @@
+active_modules:
+  target_module:
+    module: TESTCSTarget
+    config_module:
+      rw_param: "initial"
+      ro_param: "fixed"
+  manager_module:
+    module: TESTValidManifest
+    config_module:
+      valid_config_entry: "hello"
+    config_implementation:
+      main:
+        valid_config_entry: "hello"
+    access:
+      config:
+        modules:
+          target_module:
+            allow_read: true
+            allow_write: true
+            allow_set_read_only: true
+  restricted_module:
+    module: TESTValidManifest
+    config_module:
+      valid_config_entry: "hello"
+    config_implementation:
+      main:
+        valid_config_entry: "hello"
+settings:
+  interfaces_dir: "interfaces"
+  modules_dir: "modules"
+  types_dir: "types"
+  errors_dir: "errors"
+  schemas_dir: "schemas"
+  www_dir: "www"
+  logging_config_file: "logging.ini"

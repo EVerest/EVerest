@@ -1,0 +1,17 @@
+description: "Target module for ConfigService tests - provides ReadWrite and ReadOnly config params"
+metadata:
+  license: "https://opensource.org/licenses/Apache-2.0"
+  authors: ["EVerest"]
+config:
+  rw_param:
+    description: "A ReadWrite config parameter"
+    type: string
+    mutability: ReadWrite
+  ro_param:
+    description: "A ReadOnly config parameter"
+    type: string
+    mutability: ReadOnly
+provides:
+  main:
+    description: "main implementation"
+    interface: "test_interface"
