@@ -779,9 +779,9 @@ int boot(const po::variables_map& vm) {
     // create StatusFifo object
     auto status_fifo = StatusFifo::create_from_path(vm["status-fifo"].as<std::string>());
 
-    auto mqtt_abstraction = MQTTAbstraction(ms.mqtt_settings);
+    auto mqtt_abstraction = make_mqtt_abstraction(ms.mqtt_settings);
 
-    if (!mqtt_abstraction.connect()) {
+    if (!mqtt_abstraction->connect()) {
         if (not ms.mqtt_settings.uses_socket()) {
             EVLOG_error << fmt::format("Cannot connect to MQTT broker at {}:{}", ms.mqtt_settings.broker_host,
                                        ms.mqtt_settings.broker_port);
@@ -792,12 +792,12 @@ int boot(const po::variables_map& vm) {
         return EXIT_FAILURE;
     }
 
-    mqtt_abstraction.spawn_main_loop_thread();
+    mqtt_abstraction->spawn_main_loop_thread();
 
-    auto config_service = std::make_unique<config::ConfigService>(mqtt_abstraction, config);
+    auto config_service = std::make_unique<config::ConfigService>(*mqtt_abstraction, config);
 
     auto module_handles =
-        start_modules(*config, mqtt_abstraction, ignored_modules, standalone_modules, ms, status_fifo, retain_topics);
+        start_modules(*config, *mqtt_abstraction, ignored_modules, standalone_modules, ms, status_fifo, retain_topics);
     bool modules_started = true;
     bool restart_modules = false;
 
@@ -849,9 +849,9 @@ int boot(const po::variables_map& vm) {
             if (modules_started) {
                 EVLOG_critical << fmt::format("Module {} (pid: {}) exited with status: {}. Terminating all modules.",
                                               module_name, pid, wstatus);
-                shutdown_modules(module_handles, *config, mqtt_abstraction);
+                shutdown_modules(module_handles, *config, *mqtt_abstraction);
 
-                mqtt_abstraction.clear_retained_topics();
+                mqtt_abstraction->clear_retained_topics();
 
                 // Exit if a module died, this gives systemd a change to restart manager
                 EVLOG_critical << "Exiting manager.";
@@ -863,7 +863,7 @@ int boot(const po::variables_map& vm) {
 
 #ifdef ENABLE_ADMIN_PANEL
         if (module_handles.size() == 0 && restart_modules) {
-            module_handles = start_modules(*config, mqtt_abstraction, ignored_modules, standalone_modules, ms,
+            module_handles = start_modules(*config, *mqtt_abstraction, ignored_modules, standalone_modules, ms,
                                            status_fifo, retain_topics);
             restart_modules = false;
             modules_started = true;
@@ -875,7 +875,7 @@ int boot(const po::variables_map& vm) {
             // FIXME (aw): implement all possible messages here, for now just log them
             const auto& payload = msg.json;
             if (payload.at("method") == "restart_modules") {
-                shutdown_modules(module_handles, *config, mqtt_abstraction);
+                shutdown_modules(module_handles, *config, *mqtt_abstraction);
                 config = std::make_unique<ManagerConfig>(ms);
                 modules_started = false;
                 restart_modules = true;

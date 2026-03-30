@@ -17,6 +17,7 @@
 
 #include <utils/message_handler.hpp>
 #include <utils/message_queue.hpp>
+#include <utils/mqtt_abstraction.hpp>
 #include <utils/types.hpp>
 
 #include <utils/thread.hpp>
@@ -35,88 +36,36 @@ struct MessageWithQOS : Message {
 ///
 /// \brief Contains a C++ abstraction of MQTT-C and some convenience functionality for using MQTT in EVerest modules
 ///
-class MQTTAbstractionImpl {
+class MQTTAbstractionImpl : public MQTTAbstraction {
 public:
     MQTTAbstractionImpl(const std::string& mqtt_server_address, const std::string& mqtt_server_port,
                         const std::string& mqtt_everest_prefix, const std::string& mqtt_external_prefix);
     MQTTAbstractionImpl(const std::string& mqtt_server_socket_path, const std::string& mqtt_everest_prefix,
                         const std::string& mqtt_external_prefix);
 
-    ~MQTTAbstractionImpl();
+    ~MQTTAbstractionImpl() override;
 
     MQTTAbstractionImpl(MQTTAbstractionImpl const&) = delete;
     void operator=(MQTTAbstractionImpl const&) = delete;
-    ///
-    /// \brief connects to the mqtt broker using the MQTT_SERVER_ADDRESS AND MQTT_SERVER_PORT environment variables
-    bool connect();
 
-    ///
-    /// \brief disconnects from the mqtt broker
-    void disconnect();
-
-    ///
-    /// \brief publishes the given \p json on the given \p topic with QOS level 0
-    void publish(const std::string& topic, const nlohmann::json& json);
-
-    ///
-    /// \brief publishes the given \p json on the given \p topic with the given \p qos
-    void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false);
-
-    ///
-    /// \brief publishes the given \p data on the given \p topic with QOS level 0
-    void publish(const std::string& topic, const std::string& data);
-
-    ///
-    /// \brief publishes the given \p data on the given \p topic with the given \p qos
-    void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false);
-
-    ///
-    /// \brief subscribes to the given \p topic with QOS level 0
-    void subscribe(const std::string& topic);
-
-    ///
-    /// \brief subscribes to the given \p topic with the given \p qos
-    void subscribe(const std::string& topic, QOS qos);
-
-    ///
-    /// \brief unsubscribes from the given \p topic
-    void unsubscribe(const std::string& topic);
-
-    ///
-    /// \brief clears any previously published topics that had the retain flag set
-    void clear_retained_topics();
-
-    /// \brief Sends an MQTT request and waits for a JSON response.
-    ///
-    /// This function registers a temporary handler for the response topic specified
-    /// in the request, publishes a request message, and waits for the
-    /// corresponding JSON response. If no response is received within the timeout,
-    /// it throws an EverestTimeoutError.
-    ///
-    /// \param request The MQTT request containing the response topic, request topic,
-    ///                payload, QoS, and timeout.
-    /// \param retries How often the get should be retried if it failed, defaults to 0.
-    /// \return The JSON response received from the MQTT broker.
-    /// \throws EverestTimeoutError If no response is received within the specified timeout.
-    nlohmann::json get(const MQTTRequest& request, std::size_t retries = 0);
-
-    ///
-    /// \brief Spawn a thread running the mqtt main loop
-    /// \returns a future, which will be fulfilled on thread termination
-    std::shared_future<void> spawn_main_loop_thread();
-
-    ///
-    /// \returns the main loop future, which will be fulfilled on thread termination
-    std::shared_future<void> get_main_loop_future();
-
-    ///
-    /// \brief subscribes to the given \p topic and registers a callback \p handler that is called when a message
-    /// arrives on the topic. With \p qos a MQTT Quality of Service level can be set.
-    void register_handler(const std::string& topic, std::shared_ptr<TypedHandler> handler, QOS qos);
-
-    ///
-    /// \brief unsubscribes a handler identified by its \p token from the given \p topic
-    void unregister_handler(const std::string& topic, const Token& token);
+    bool connect() override;
+    void disconnect() override;
+    void publish(const std::string& topic, const nlohmann::json& json) override;
+    void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false) override;
+    void publish(const std::string& topic, const std::string& data) override;
+    void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false) override;
+    void subscribe(const std::string& topic) override;
+    void subscribe(const std::string& topic, QOS qos) override;
+    void unsubscribe(const std::string& topic) override;
+    void clear_retained_topics() override;
+    nlohmann::json get(const MQTTRequest& request, std::size_t retries = 0) override;
+    nlohmann::json get(const std::string& topic, QOS qos, std::size_t retries = 0) override;
+    const std::string& get_everest_prefix() const override;
+    const std::string& get_external_prefix() const override;
+    std::shared_future<void> spawn_main_loop_thread() override;
+    std::shared_future<void> get_main_loop_future() override;
+    void register_handler(const std::string& topic, std::shared_ptr<TypedHandler> handler, QOS qos) override;
+    void unregister_handler(const std::string& topic, const Token& token) override;
 
     ///
     /// \brief checks if the given \p full_topic matches the given \p wildcard_topic that can contain "+" and "#"
