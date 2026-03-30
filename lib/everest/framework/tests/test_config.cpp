@@ -66,9 +66,8 @@ SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
     }
     GIVEN("A non-exsiting database file with ConfigurationBootMode::DatabaseInit") {
         THEN("It should not throw and create the file") {
-            CHECK_NOTHROW(Everest::bootstrap_from_database_init(bin_dir + "valid_config/",
-                                                                bin_dir + "valid_config/config.yaml",
-                                                                "valid_config/non_existing.db"));
+            CHECK_NOTHROW(Everest::bootstrap_from_database_init(
+                bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", "valid_config/non_existing.db"));
         }
     }
 }
@@ -233,8 +232,8 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
             CHECK_NOTHROW(Everest::ManagerConfig(bs.ms, bs.storage.get(), bs.module_configs_initialized));
 
             THEN("In the second instantiation the database is initialized and valid") {
-                auto bs2 = Everest::bootstrap_from_database_init(
-                    bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", db_path);
+                auto bs2 = Everest::bootstrap_from_database_init(bin_dir + "valid_config/",
+                                                                 bin_dir + "valid_config/config.yaml", db_path);
                 CHECK(bs2.module_configs_initialized == true);
                 CHECK_NOTHROW(Everest::ManagerConfig(bs2.ms, bs2.storage.get(), bs2.module_configs_initialized));
             }

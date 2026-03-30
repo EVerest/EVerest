@@ -5,8 +5,8 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <vector>
 #include <utils/config/storage_types.hpp>
+#include <vector>
 
 namespace everest::db::sqlite {
 class ConnectionInterface;

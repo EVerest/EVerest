@@ -89,12 +89,11 @@ bool SqliteConfigSlotManager::is_valid(int slot_id) {
 }
 
 GenericResponseStatus SqliteConfigSlotManager::write_config_slot(int slot_id,
-                                                                   const Everest::ManagerSettings& manager_settings) {
+                                                                 const Everest::ManagerSettings& manager_settings) {
     auto transaction = this->db->begin_transaction();
 
     // Ensure the CONFIG identity row exists before writing framework settings.
-    auto config_stmt = this->db->new_statement(
-        "INSERT INTO CONFIG (ID) VALUES (?) ON CONFLICT(ID) DO NOTHING;");
+    auto config_stmt = this->db->new_statement("INSERT INTO CONFIG (ID) VALUES (?) ON CONFLICT(ID) DO NOTHING;");
     config_stmt->bind_int(1, slot_id);
     if (config_stmt->step() != SQLITE_DONE) {
         return GenericResponseStatus::Failed;
