@@ -1,0 +1,64 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
+
+cc_library(
+    name = "test_utilities",
+    srcs = ["test_utils/codec.cpp"],
+    hdrs = ["test_utils/include/test_utils/codec.hpp"],
+    includes = ["test_utils/include"],
+    deps = [
+        "//lib/everest/cbv2g:din",
+        "//lib/everest/cbv2g:iso2",
+        "//lib/everest/cbv2g:iso20",
+    ],
+)
+
+cc_test(
+    name = "test_app_handshake",
+    srcs = ["app_handshake/app_handshake.cpp"],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":test_utilities",
+        "@catch2//:catch2_main",
+    ],
+)
+
+cc_test(
+    name = "test_session_setup",
+    srcs = ["din/session_setup.cpp"],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":test_utilities",
+        "@catch2//:catch2_main",
+    ],
+)
+
+cc_test(
+    name = "test_service_discovery",
+    srcs = ["din/service_discovery.cpp"],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":test_utilities",
+        "@catch2//:catch2_main",
+    ],
+)
+
+cc_test(
+    name = "test_ac_charge_loop",
+    srcs = ["iso20/ac_charge_loop.cpp"],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":test_utilities",
+        "@catch2//:catch2_main",
+    ],
+)
+
+cc_test(
+    name = "test_dc_charge_loop",
+    srcs = ["iso20/dc_charge_loop.cpp"],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":test_utilities",
+        "@catch2//:catch2_main",
+    ],
+)

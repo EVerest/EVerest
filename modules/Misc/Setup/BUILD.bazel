@@ -1,0 +1,32 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//modules:module.bzl", "cc_everest_module")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
+
+cc_everest_module(
+    name = "Setup",
+    srcs = glob([
+        "*.cpp",
+        "*.hpp",
+    ]),
+    deps = [
+        "//lib/everest/run_application",
+    ],
+)
+
+cc_test(
+    name = "Setup_test",
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    srcs = glob(
+        [
+            "tests/*.cpp",
+            "tests/*.hpp",
+            "WiFiSetup.*",
+        ],
+    ),
+    includes = ["."],
+    deps = [
+        "//lib/everest/run_application",
+        "@com_github_nlohmann_json//:json",
+        "@googletest//:gtest_main",
+    ],
+)

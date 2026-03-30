@@ -1,0 +1,13 @@
+load("//modules:module.bzl", "cc_everest_module")
+
+cc_everest_module(
+    name = "YetiSimulator",
+    impls = [
+        "board_support",
+        "connector_lock",
+        "ev_board_support",
+        "powermeter",
+        "rcd",
+        "util",
+    ],
+)

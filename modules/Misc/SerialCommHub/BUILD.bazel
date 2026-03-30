@@ -6,9 +6,12 @@ IMPLS = [
 
 cc_everest_module(
     name = "SerialCommHub",
+    srcs = glob([
+        "*.cpp",
+        "*.hpp",
+    ]),
+    impls = IMPLS,
     deps = [
         "//lib/everest/gpio",
     ],
-    impls = IMPLS,
-    srcs = glob(["*.cpp", "*.hpp"]),
 )
