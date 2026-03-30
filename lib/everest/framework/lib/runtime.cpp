@@ -62,8 +62,8 @@ DatabaseBootstrap bootstrap_from_database(const std::string& prefix, const std::
         throw BootException("Database not initialized or valid");
     }
 
-    bs.storage = std::make_unique<everest::config::SqliteStorage>(
-        bs.ms.db_dir, migrations_dir, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
+    bs.storage = std::make_unique<everest::config::SqliteStorage>(bs.ms.db_dir, migrations_dir,
+                                                                  everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
 
     EVLOG_info << "Booting and parsing configuration from database: " << bs.ms.db_dir;
     const auto settings_response = bs.storage->get_settings();
