@@ -19,15 +19,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Mount bazel cache
+      - name: Mount bazel repo cache
         uses: actions/cache@v5
         with:
-          path: "~/.cache/bazel"
-          key: ${{ runner.os }}-bazel-cross-${{ inputs.platform }}-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}
+          path: "~/.cache/bazel-repo-cache"
+          key: ${{ runner.os }}-bazel-repo-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}
           restore-keys: |
-            ${{ runner.os }}-bazel-cross-${{ inputs.platform }}-
+            ${{ runner.os }}-bazel-repo-
+      - name: Mount bazel disk cache
+        uses: actions/cache@v5
+        with:
+          path: "~/.cache/bazel-disk-cache"
+          key: ${{ runner.os }}-bazel-disk-${{ inputs.platform }}-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}
+          restore-keys: |
+            ${{ runner.os }}-bazel-disk-${{ inputs.platform }}-
       - name: Build all
         run: >
-          bazelisk build //...
+          bazelisk build --config=ci //...
           --platforms=//third-party/bazel/toolchains:${{ inputs.platform }}
           --@bazel_tools//tools/test:incompatible_use_default_test_toolchain=false
