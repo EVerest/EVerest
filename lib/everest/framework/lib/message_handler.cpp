@@ -134,7 +134,7 @@ MessageHandler::~MessageHandler() {
 }
 
 void MessageHandler::add(const ParsedMessage& message) {
-    EVLOG_debug << "Adding message to queue: " << message.topic << " with data: " << message.data;
+    EVLOG_verbose << "Adding message to queue: " << message.topic << " with data: " << message.data;
 
     MqttMessageType msg_type = MqttMessageType::ExternalMQTT; // Default to ExternalMQTT if msg_type is not present
 
