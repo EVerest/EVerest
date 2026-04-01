@@ -604,7 +604,7 @@ static Napi::Value boot_module(const Napi::CallbackInfo& info) {
                                             mqtt_external_prefix);
         }
 
-        mqtt = std::make_shared<Everest::MQTTAbstraction>(mqtt_settings);
+        mqtt = std::shared_ptr<Everest::MQTTAbstraction>(Everest::make_mqtt_abstraction(mqtt_settings));
         mqtt->connect();
         mqtt->spawn_main_loop_thread();
 

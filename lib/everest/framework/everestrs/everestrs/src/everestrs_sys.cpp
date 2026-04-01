@@ -98,7 +98,8 @@ const Module& create_module(rust::Str module_id, rust::Str prefix, rust::Str mqt
 Module::Module(const std::string& module_id, const std::string& prefix, const Everest::MQTTSettings& mqtt_settings) :
     module_id_(module_id) {
 
-    const auto mqtt_abstraction = std::make_shared<Everest::MQTTAbstraction>(mqtt_settings);
+    const auto mqtt_abstraction =
+        std::shared_ptr<Everest::MQTTAbstraction>(Everest::make_mqtt_abstraction(mqtt_settings));
     // TODO(ddo) what happens when this returns false?
     mqtt_abstraction->connect();
     mqtt_abstraction->spawn_main_loop_thread();

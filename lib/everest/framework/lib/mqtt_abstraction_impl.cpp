@@ -262,6 +262,33 @@ json MQTTAbstractionImpl::get(const MQTTRequest& request, std::size_t retries) {
         EverestInternalError(fmt::format("Unknown error while waiting for result of get({})", request.response_topic)));
 }
 
+std::unique_ptr<MQTTAbstraction> make_mqtt_abstraction(const MQTTSettings& mqtt_settings) {
+    if (mqtt_settings.uses_socket()) {
+        return std::make_unique<MQTTAbstractionImpl>(mqtt_settings.broker_socket_path, mqtt_settings.everest_prefix,
+                                                     mqtt_settings.external_prefix);
+    } else {
+        return std::make_unique<MQTTAbstractionImpl>(mqtt_settings.broker_host,
+                                                     std::to_string(mqtt_settings.broker_port),
+                                                     mqtt_settings.everest_prefix, mqtt_settings.external_prefix);
+    }
+}
+
+json MQTTAbstractionImpl::get(const std::string& topic, QOS qos, std::size_t retries) {
+    BOOST_LOG_FUNCTION();
+    const MQTTRequest request = {topic, qos};
+    return this->get(request, retries);
+}
+
+const std::string& MQTTAbstractionImpl::get_everest_prefix() const {
+    BOOST_LOG_FUNCTION();
+    return mqtt_everest_prefix;
+}
+
+const std::string& MQTTAbstractionImpl::get_external_prefix() const {
+    BOOST_LOG_FUNCTION();
+    return mqtt_external_prefix;
+}
+
 nlohmann::json MQTTAbstractionImpl::get_internal(const MQTTRequest& request) {
     BOOST_LOG_FUNCTION();
     std::lock_guard<std::mutex> lock(topic_request_mutex);
