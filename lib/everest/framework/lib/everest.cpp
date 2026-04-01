@@ -503,7 +503,7 @@ void Everest::publish_var(const std::string& impl_id, const std::string& var_nam
 void Everest::subscribe_var(const Requirement& req, const std::string& var_name, const JsonCallback& callback) {
     BOOST_LOG_FUNCTION();
 
-    EVLOG_debug << fmt::format("subscribing to var: {}:{}", req.id, var_name);
+    EVLOG_verbose << fmt::format("subscribing to var: {}:{}", req.id, var_name);
 
     // resolve requirement
     const auto& connections = this->config.resolve_requirement(this->module_id, req.id);
@@ -559,7 +559,7 @@ void Everest::subscribe_error(const Requirement& req, const error::ErrorType& er
                               const error::ErrorCallback& raise_callback, const error::ErrorCallback& clear_callback) {
     BOOST_LOG_FUNCTION();
 
-    EVLOG_debug << fmt::format("subscribing to error: {}:{}", req.id, error_type);
+    EVLOG_verbose << fmt::format("subscribing to error: {}:{}", req.id, error_type);
 
     // resolve requirement
     const auto& connections = this->config.resolve_requirement(this->module_id, req.id);
