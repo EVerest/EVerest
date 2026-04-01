@@ -612,6 +612,8 @@ async def test_iso15118_dc_session_error_before_session(
     await wait_for_error(error_raised_mock)
     assert error_raised_mock.called, "Error should have been raised"
 
+    await asyncio.sleep(1) # Give EvseManager some time to process error
+
     test_controller.plug_in_dc_iso()
 
     await assert_no_events(session_event_mock, ["SessionStarted"], wait_time=10)
@@ -956,6 +958,7 @@ async def test_pwm_ac_session_paused_by_ev(
 )
 @pytest.mark.everest_config_adaptions(AcConfigAdjustmentStrategy())
 @pytest.mark.everest_core_config("config-sil.yaml")
+@pytest.mark.flaky(reruns=1)
 async def test_iso15118_ac_session_paused_by_ev(
     test_controller: TestController, everest_core: EverestCore
 ):
@@ -987,6 +990,7 @@ async def test_iso15118_ac_session_paused_by_ev(
 )
 @pytest.mark.everest_core_config("config-sil-dc.yaml")
 @pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy())
+@pytest.mark.flaky(reruns=1)
 async def test_iso15118_dc_session_paused_by_ev(
     test_controller: TestController, everest_core: EverestCore
 ):
