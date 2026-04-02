@@ -77,8 +77,8 @@ config:
       Please check the device documentation for more details.
 
       WARNING: The device documentation states: "For correct usage the IT fields shall 
-        be set once to the corresponding protocol used (or kept to NONE as per default value), 
-        and not be changed during the lifetime of the DCBM due to current software limitation."
+      be set once to the corresponding protocol used (or kept to NONE as per default value), 
+      and not be changed during the lifetime of the DCBM due to current software limitation."
     type: integer
     minimum: -1
     maximum: 17
