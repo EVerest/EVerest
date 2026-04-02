@@ -15,17 +15,11 @@ use thiserror::Error;
 /// Prevent calling the init of loggers more than once.
 static INIT_LOGGER_ONCE: Once = Once::new();
 
-/// Prevent from calling [Runtime] more than once and keep it alive.
-///
-/// The c++ [Module] has a static lifetime. We will pass the reference of
-/// the `Runtime` to the `Module` and thus the `Module` must not outlife the
-/// `Runtime`. To achive this we make the lifetime of the `Runtime` also static.
-static INIT_RUNTIME_ONCE: OnceLock<Pin<Arc<Runtime>>> = OnceLock::new();
-
 // Reexport everything so the clients can use it.
+pub use everestrs_macro::main;
+pub use log;
 pub use serde;
 pub use serde_json;
-pub use log;
 // TODO(ddo) Drop this again - its only there as a MVP for the enum support
 // of errors.
 pub use serde_yaml;
@@ -186,7 +180,7 @@ mod ffi {
             mqtt_broker_port: &u32,
             mqtt_everest_prefix: &str,
             mqtt_external_prefix: &str,
-        ) -> &'static Module;
+        ) -> UniquePtr<Module>;
 
         /// Returns the manifest.
         fn get_manifest(self: &Module) -> JsonBlob;
@@ -351,7 +345,7 @@ pub use ffi::{ErrorSeverity, ErrorType as FfiErrorType};
 pub struct ErrorType<T> {
     /// Serialised type from the FfiErrorType
     pub error_type: T,
-    
+
     /// Carried over directly from the FfiErrorType
     pub description: String,
 
@@ -446,15 +440,15 @@ pub trait Subscriber: Sync + Send {
     fn on_ready(&self) {}
 }
 
-/// The [Runtime] is the central piece of the bridge between c++ and Rust. The
-/// [ffi::Module] is owned by the c++ side and will outlife the [Runtime].
-///
-/// The `Subscriber` and the `Runtime` have a cyclic dependency. Since the
-/// `Runtime` has a static lifetime we must uphold that the `Subscriber` also
-/// has a static lifetime.
+/// The [Runtime] is the central piece of the bridge between c++ and Rust. Rust
+/// owns the [ffi::Module], and the ffi::Module owns the entire mqtt stack. So
+/// when dropping, we first drop the ffi::Module and then the
+/// Subscribers/Runtime which own the callbacks.
 pub struct Runtime {
-    cpp_module: &'static ffi::Module,
+    cpp_module: cxx::UniquePtr<ffi::Module>,
     sub_impl: OnceLock<Arc<dyn Subscriber>>,
+    /// The config for the client module.
+    config: HashMap<String, HashMap<String, Config>>,
 }
 
 impl Runtime {
@@ -574,35 +568,66 @@ impl Runtime {
             .clear_error(impl_id, &error_string, clear_all);
     }
 
-    // TODO(hrapp): This function could use some error handling.
+    /// Create a runtime by parsing CLI arguments.
     pub fn new() -> Pin<Arc<Self>> {
-        INIT_RUNTIME_ONCE
-            .get_or_init(|| {
-                let args: Args = Args::parse();
-                logger::Logger::init_logger(
-                    &args.module,
-                    &args.prefix.to_string_lossy(),
-                    &args.log_config.to_string_lossy(),
-                );
+        let args: Args = Args::parse();
+        Self::create(args)
+    }
 
-                let cpp_module = ffi::create_module(
-                    &args.module,
-                    &args.prefix.to_string_lossy(),
-                    &args
-                        .mqtt_broker_socket_path
-                        .unwrap_or_default()
-                        .to_string_lossy(),
-                    &args.mqtt_broker_host,
-                    &args.mqtt_broker_port,
-                    &args.mqtt_everest_prefix,
-                    &args.mqtt_external_prefix,
-                );
-                Arc::pin(Self {
-                    cpp_module,
-                    sub_impl: OnceLock::new(),
+    fn create(args: Args) -> Pin<Arc<Self>> {
+        logger::Logger::init_logger(
+            &args.module,
+            &args.prefix.to_string_lossy(),
+            &args.log_config.to_string_lossy(),
+        );
+
+        let cpp_module = ffi::create_module(
+            &args.module,
+            &args.prefix.to_string_lossy(),
+            &args
+                .mqtt_broker_socket_path
+                .unwrap_or_default()
+                .to_string_lossy(),
+            &args.mqtt_broker_host,
+            &args.mqtt_broker_port,
+            &args.mqtt_everest_prefix,
+            &args.mqtt_external_prefix,
+        );
+
+        let raw_config = cpp_module.get_module_configs(&args.module);
+
+        // Convert the nested Vec's into nested HashMaps.
+        let mut config: HashMap<String, HashMap<String, Config>> = HashMap::new();
+        for mm_config in raw_config {
+            let cc_config = mm_config
+                .data
+                .into_iter()
+                .map(|field| {
+                    let value = match field.config_type {
+                        ffi::ConfigType::Boolean => Config::Boolean(field.bool_value),
+                        ffi::ConfigType::String => Config::String(field.string_value),
+                        ffi::ConfigType::Number => Config::Number(field.number_value),
+                        ffi::ConfigType::Integer => Config::Integer(field.integer_value),
+                        _ => panic!("Unexpected value {:?}", field.config_type),
+                    };
+
+                    (field.name, value)
                 })
-            })
-            .clone()
+                .collect::<HashMap<_, _>>();
+
+            // If we have already an entry with the `module_name`, we try to extend
+            // it.
+            config
+                .entry(mm_config.module_name)
+                .or_default()
+                .extend(cc_config);
+        }
+
+        Arc::pin(Self {
+            cpp_module,
+            sub_impl: OnceLock::new(),
+            config,
+        })
     }
 
     pub fn set_subscriber(self: Pin<&Self>, sub_impl: Arc<dyn Subscriber>) {
@@ -672,6 +697,11 @@ impl Runtime {
             .map(|connection| (connection.implementation_id, connection.slots))
             .collect()
     }
+
+    /// Interface for fetching the configurations through the C++ runtime.
+    pub fn get_module_configs(&self) -> &HashMap<String, HashMap<String, Config>> {
+        &self.config
+    }
 }
 
 /// A store for our config values. The type is closely related to
@@ -722,58 +752,4 @@ impl TryFrom<&Config> for i64 {
             _ => Err(Error::MessageParsingError(format!("{:?}", value))),
         }
     }
-}
-
-/// Interface for fetching the configurations through the C++ runtime.
-///
-/// This is separetated from the module since the user might need the config
-/// to create the [Runtime].
-pub fn get_module_configs() -> HashMap<String, HashMap<String, Config>> {
-    let args: Args = Args::parse();
-    logger::Logger::init_logger(
-        &args.module,
-        &args.prefix.to_string_lossy(),
-        &args.log_config.to_string_lossy(),
-    );
-    let cpp_module = ffi::create_module(
-        &args.module,
-        &args.prefix.to_string_lossy(),
-        &args
-            .mqtt_broker_socket_path
-            .unwrap_or_default()
-            .to_string_lossy(),
-        &args.mqtt_broker_host,
-        &args.mqtt_broker_port,
-        &args.mqtt_everest_prefix,
-        &args.mqtt_external_prefix,
-    );
-    let raw_config = cpp_module.get_module_configs(&args.module);
-
-    // Convert the nested Vec's into nested HashMaps.
-    let mut out: HashMap<String, HashMap<String, Config>> = HashMap::new();
-    for mm_config in raw_config {
-        let cc_config = mm_config
-            .data
-            .into_iter()
-            .map(|field| {
-                let value = match field.config_type {
-                    ffi::ConfigType::Boolean => Config::Boolean(field.bool_value),
-                    ffi::ConfigType::String => Config::String(field.string_value),
-                    ffi::ConfigType::Number => Config::Number(field.number_value),
-                    ffi::ConfigType::Integer => Config::Integer(field.integer_value),
-                    _ => panic!("Unexpected value {:?}", field.config_type),
-                };
-
-                (field.name, value)
-            })
-            .collect::<HashMap<_, _>>();
-
-        // If we have already an entry with the `module_name`, we try to extend
-        // it.
-        out.entry(mm_config.module_name)
-            .or_default()
-            .extend(cc_config);
-    }
-
-    out
 }

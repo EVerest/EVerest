@@ -505,6 +505,7 @@ dependencies = [
  "clap",
  "cxx",
  "everestrs-build",
+ "everestrs-macro",
  "log",
  "mockall 0.13.1",
  "mockall_double",
@@ -525,6 +526,15 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+]
+
+[[package]]
+name = "everestrs-macro"
+version = "0.25.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.98",
 ]
 
 [[package]]

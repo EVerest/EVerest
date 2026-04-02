@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.5.27", features = ["derive"] }
 everestrs-build = { workspace = true }
+everestrs-macro = { workspace = true }
 log = { version = "0.4.20", features = ["std"] }
 serde = { version = "1.0.175", features = ["derive"] }
 serde_json = "1"

@@ -19,6 +19,9 @@ rust_library(
         "@everest_framework_crate_index//:serde_yaml",
         "@everest_framework_crate_index//:thiserror",
     ],
+    proc_macro_deps = [
+        "//lib/everest/framework/everestrs/everestrs-macro",
+    ],    
 )
 
 run_binary(
