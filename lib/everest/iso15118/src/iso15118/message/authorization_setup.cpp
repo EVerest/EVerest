@@ -8,6 +8,8 @@
 
 #include <cbv2g/iso_20/iso20_CommonMessages_Encoder.h>
 
+#include <iso15118/detail/helper.hpp>
+
 namespace iso15118::message_20 {
 
 template <> void convert(const struct iso20_AuthorizationSetupReqType& in, AuthorizationSetupRequest& out) {
@@ -18,10 +20,9 @@ template <> void convert(const struct iso20_AuthorizationSetupResType& in, Autho
 
     cb_convert_enum(in.ResponseCode, out.response_code);
 
-    out.authorization_services.resize(in.AuthorizationServices.arrayLen);
-
+    out.authorization_services.clear();
     for (uint8_t element = 0; element < in.AuthorizationServices.arrayLen; element++) {
-        cb_convert_enum(in.AuthorizationServices.array[element], out.authorization_services.at(element));
+        cb_convert_enum(in.AuthorizationServices.array[element], out.authorization_services.emplace_back());
     }
 
     out.certificate_installation_service = in.CertificateInstallationService;

@@ -8,6 +8,23 @@ if (EVC_CBV2G_DIR AND NOT DISABLE_ISO15118_LOCAL_DEPENDENCIES)
     add_subdirectory("${EVC_CBV2G_DIR}" libcbv2g)
 endif()
 
+function(ev_register_library_target NAME)
+endfunction()
+
+set(EVC_UTIL_DIR "${EVC_EVEREST_LIB_DIR}/util")
+if (EVC_UTIL_DIR AND NOT DISABLE_ISO15118_LOCAL_DEPENDENCIES)
+    message(STATUS "Detected util in ${EVC_UTIL_DIR}, if you do not want this set -DDISABLE_ISO15118_LOCAL_DEPENDENCIES=ON")
+    if (BUILD_TESTING)
+        message(STATUS "Setting BUILD_TESTING temporary to false")
+        set(CACHE_BUILD_TESTING ON)
+        set(BUILD_TESTING OFF)
+    endif()
+    add_subdirectory("${EVC_UTIL_DIR}" util)
+    if (CACHE_BUILD_TESTING)
+        set(BUILD_TESTING ON)
+    endif()
+endif()
+
 # set venv location
 set(${PROJECT_NAME}_PYTHON_VENV_PATH "${CMAKE_BINARY_DIR}/venv" CACHE PATH "Path to python venv")
 

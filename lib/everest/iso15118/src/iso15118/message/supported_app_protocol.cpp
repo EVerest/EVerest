@@ -13,7 +13,7 @@ namespace iso15118::message_20 {
 
 template <> void convert(const struct appHand_supportedAppProtocolReq& in, SupportedAppProtocolRequest& out) {
     const auto& ap_in = in.AppProtocol;
-    out.app_protocol.reserve(ap_in.arrayLen);
+    out.app_protocol.clear();
 
     for (size_t i = 0; i < ap_in.arrayLen; ++i) {
         const auto& item_in = ap_in.array[i];

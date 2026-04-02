@@ -4,9 +4,11 @@
 
 #include <iso15118/message/supported_app_protocol.hpp>
 
+#include <everest/util/vector/fixed_vector.hpp>
+
 namespace iso15118::d20 {
 
-using EVSupportedAppProtocols = std::vector<message_20::SupportedAppProtocol>;
+using EVSupportedAppProtocols = everest::lib::util::fixed_vector<message_20::SupportedAppProtocol, 20>;
 
 // Holds information about the EV
 struct EVInformation {
