@@ -77,6 +77,7 @@ event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port);
  */
 event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint16_t port, unsigned int timeout_ms);
 
+#ifndef EVEREST_NO_PACKET_IGNORE_OUTGOING
 /**
  * @brief Open a raw socket in promiscuous mode
  * @param[in] if_name The name of the interface
@@ -84,6 +85,7 @@ event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint
  * @throws std::runtime_error if the operation fails.
  */
 event::unique_fd open_raw_promiscuous_socket(std::string const& if_name);
+#endif
 
 /**
  * @brief Enable <a href="https://man7.org/linux/man-pages/man7/tcp.7.html">TCP_NODELAY</a> on a socket
