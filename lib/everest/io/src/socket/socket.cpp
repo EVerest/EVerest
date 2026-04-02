@@ -11,7 +11,6 @@
 #include <iostream>
 #include <linux/if_packet.h>
 #include <linux/if_tun.h>
-#include <net/ethernet.h>
 #include <net/if.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -205,6 +204,7 @@ event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port) {
     throw std::runtime_error(std::string("Could not open a socket for ") + host + ":" + std::to_string(port));
 }
 
+#ifndef EVEREST_NO_PACKET_IGNORE_OUTGOING
 event::unique_fd open_raw_promiscuous_socket(std::string const& if_name) {
     auto const socket_fd = ::socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
     if (socket_fd == -1) {
@@ -220,7 +220,7 @@ event::unique_fd open_raw_promiscuous_socket(std::string const& if_name) {
 
     int ignore_out = 1;
     if (setsockopt(socket_fd, SOL_PACKET, PACKET_IGNORE_OUTGOING, &ignore_out, sizeof(ignore_out)) == -1) {
-        auto msg = build_errno_string("Could not set PACKET_IGNORE_OUTGOIG for " + if_name);
+        auto msg = build_errno_string("Could not set PACKET_IGNORE_OUTGOING for " + if_name);
         close(socket_fd);
         throw std::runtime_error(msg);
     }
@@ -249,6 +249,7 @@ event::unique_fd open_raw_promiscuous_socket(std::string const& if_name) {
     }
     return event::unique_fd(socket_fd);
 }
+#endif
 
 void enable_tcp_no_delay(int fd) {
     socklen_t enable = 1;

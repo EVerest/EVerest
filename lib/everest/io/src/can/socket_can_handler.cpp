@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include <algorithm>
 #include <everest/io/can/socket_can_handler.hpp>
@@ -8,13 +8,16 @@
 #include <everest/io/socket/socket.hpp>
 #include <linux/can.h>
 #include <linux/can/raw.h>
-#include <net/if.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <unistd.h>
+
+// has to be after sys/types.h for musl
+#include <net/if.h>
 
 namespace everest::lib::io::can {
 
