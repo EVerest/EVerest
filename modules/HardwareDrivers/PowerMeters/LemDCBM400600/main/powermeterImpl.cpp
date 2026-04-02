@@ -109,7 +109,7 @@ void powermeterImpl::handle_temperature_events(const TemperatureMonitor::Events&
             "LEM DCBM 400/600: Temperature warning raised — max temperature {:.1f} °C exceeds warning level {:.1f} °C",
             max_temperature, mod->config.temperature_warning_level_C);
         auto error =
-            this->error_factory->create_error("powermeter/VendorWarning", "TemperatureWarning",
+            this->error_factory->create_error("generic/VendorWarning", "TemperatureWarning",
                                               fmt::format("Max temperature {:.1f} °C exceeds warning level {:.1f} °C",
                                                           max_temperature, mod->config.temperature_warning_level_C));
         raise_error(error);
@@ -118,14 +118,14 @@ void powermeterImpl::handle_temperature_events(const TemperatureMonitor::Events&
         EVLOG_info << fmt::format(
             "LEM DCBM 400/600: Temperature warning cleared — max temperature {:.1f} °C dropped below {:.1f} °C",
             max_temperature, mod->config.temperature_warning_level_C - mod->config.temperature_hysteresis_K);
-        clear_error("powermeter/VendorWarning", "TemperatureWarning");
+        clear_error("generic/VendorWarning", "TemperatureWarning");
     }
     if (events.error_raised) {
         EVLOG_error << fmt::format(
             "LEM DCBM 400/600: Temperature error raised — max temperature {:.1f} °C exceeds error level {:.1f} °C",
             max_temperature, mod->config.temperature_error_level_C);
         auto error =
-            this->error_factory->create_error("powermeter/VendorError", "TemperatureError",
+            this->error_factory->create_error("generic/VendorError", "TemperatureError",
                                               fmt::format("Max temperature {:.1f} °C exceeds error level {:.1f} °C",
                                                           max_temperature, mod->config.temperature_error_level_C));
         raise_error(error);
@@ -134,7 +134,7 @@ void powermeterImpl::handle_temperature_events(const TemperatureMonitor::Events&
         EVLOG_info << fmt::format(
             "LEM DCBM 400/600: Temperature error cleared — max temperature {:.1f} °C dropped below {:.1f} °C",
             max_temperature, mod->config.temperature_error_level_C - mod->config.temperature_hysteresis_K);
-        clear_error("powermeter/VendorError", "TemperatureError");
+        clear_error("generic/VendorError", "TemperatureError");
     }
 }
 
