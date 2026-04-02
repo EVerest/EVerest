@@ -1,12 +1,8 @@
 load("//modules:module.bzl", "cc_everest_module")
 
-IMPLS = [
-    "main",
-]
-
 cc_everest_module(
-    name = "DummyTokenValidator",
-    impls = IMPLS,
+    name = "DummyTokenProvider",
+    impls = ["main"],
     deps = [
         "//lib/everest/helpers",
     ],
