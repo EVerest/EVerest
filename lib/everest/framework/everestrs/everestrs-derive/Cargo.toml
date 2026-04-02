@@ -1,5 +1,5 @@
 [package]
-name = "everestrs-macro"
+name = "everestrs-derive"
 version = "0.25.0"
 edition = "2021"
 

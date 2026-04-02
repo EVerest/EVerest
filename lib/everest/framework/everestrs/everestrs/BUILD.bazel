@@ -6,6 +6,9 @@ rust_library(
     name = "everestrs",
     srcs = glob(["src/**/*.rs"]),
     edition = "2021",
+    proc_macro_deps = [
+        "//lib/everest/framework/everestrs/everestrs-derive",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":everestrs_bridge",
@@ -19,9 +22,6 @@ rust_library(
         "@everest_framework_crate_index//:serde_yaml",
         "@everest_framework_crate_index//:thiserror",
     ],
-    proc_macro_deps = [
-        "//lib/everest/framework/everestrs/everestrs-macro",
-    ],    
 )
 
 run_binary(

@@ -1,13 +1,13 @@
 load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
 
 rust_proc_macro(
-    name = "everestrs-macro",
+    name = "everestrs-derive",
     srcs = ["src/lib.rs"],
     edition = "2021",
-    deps = [
-        "@everest_framework_crate_index//:syn",
-        "@everest_framework_crate_index//:quote",
-        "@everest_framework_crate_index//:proc-macro2",
-    ],
     visibility = ["//visibility:public"],
+    deps = [
+        "@everest_framework_crate_index//:proc-macro2",
+        "@everest_framework_crate_index//:quote",
+        "@everest_framework_crate_index//:syn",
+    ],
 )

@@ -16,7 +16,7 @@ use thiserror::Error;
 static INIT_LOGGER_ONCE: Once = Once::new();
 
 // Reexport everything so the clients can use it.
-pub use everestrs_macro::main;
+pub use everestrs_derive::main;
 pub use log;
 pub use serde;
 pub use serde_json;

@@ -57,7 +57,6 @@ pub fn main(attr: TokenStream, item: TokenStream) -> TokenStream {
                     #body
                 __everest_main(&#param_name)
             };
-            drop(#param_name);
             __everest_result
         }
     };
