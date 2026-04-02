@@ -69,8 +69,17 @@ build/generated/lib/everest/everest_api_types/tests/actual_interfaces_file_hashe
 
 ### Extension of the API library
 
-Whenever previously unused EVerest's internal types or interfaces are used in the API library, make sure the corresponding types yaml file is listed in the correct `expected_*_file_hashes.csv` along with its hash.
-The simplest way to do so is to copy the `actual_*_file_hashes.csv` after first adding the new yaml filename to `expected_*_file_hashes.csv` (with some dummy string as hash-replacement) and running a build.
+Whenever previously unused EVerest's internal types or interfaces are used in the API library, make sure the corresponding yaml file is tracked for changes:
+
+- actual hash (1st column)
+- yaml file listed in the correct `expected_*_file_hashes.csv` (3rd column)
+- set to "TRACKING" (2nd column)
+
+A simple way to do so is to copy the auto-generated `actual_*_file_hashes.csv`:
+
+- make sure the yaml file in question is listed in `expected_*_file_hashes.csv` (with a dummy hash)
+- run a build (with activated tests)
+- copy `build/generated/lib/everest/everest_api_types/tests/actual_*_file_hashes.csv` onto their `expected` counterparts
 
 ## Adaption of Type Changes
 
