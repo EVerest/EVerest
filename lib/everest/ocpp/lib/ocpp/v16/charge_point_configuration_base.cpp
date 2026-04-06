@@ -416,30 +416,24 @@ std::string ChargePointConfigurationBase::hexToString(const std::string& s) {
 }
 
 bool ChargePointConfigurationBase::isHexNotation(const std::string& s) {
-    // TODO(james-ctc): this check is problematic
-    // need to identify what is considered valid
-    // e.g. what can the first two characters be?
-    // why are they not ignored in hexToString()?
-    // the size should be a multiple of 2 …
+    // Per OCPP 1.6 spec errata E05, AuthorizationKey values SHALL be represented
+    // as hexadecimal notation. A valid hex string must have even length (each byte
+    // is two hex digits) and contain only hex characters.
     //
-    // consider combining isHexNotation and hexToString to avoid reparsing
-    // the string
+    // The previous implementation had two problems:
+    // 1. It skipped the first 2 characters in the hex-validity check (offset 2 in
+    //    find_first_not_of), allowing non-hex chars at positions 0-1.
+    // 2. It checked whether every decoded byte was a printable ASCII character.
+    //    This caused identical hex-format strings to be treated differently based
+    //    on whether their decoded bytes happened to be printable, leading to
+    //    authentication failures with spec-compliant CSMSes.
+    //    See: https://github.com/EVerest/everest-core/issues/2034
 
-    bool result = s.size() > 2 and s.find_first_not_of("0123456789abcdefABCDEF", 2) == std::string::npos;
-    if (result) {
-        // check if every char is printable
-        for (size_t i = 0; i < s.length(); i += 2) {
-            std::string byte = s.substr(i, 2);
-            char chr = (char)(int)strtol(byte.c_str(), NULL, 16);
-            // ignoring check for \n (0x0a) because find_first_not_of() has not
-            // found one
-            if (!std::isprint(chr)) {
-                result = false;
-                break;
-            }
-        }
+    if (s.size() < 2 || s.size() % 2 != 0) {
+        return false;
     }
-    return result;
+
+    return s.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
 }
 
 } // namespace ocpp::v16
