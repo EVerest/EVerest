@@ -72,6 +72,35 @@ TEST_P(Configuration, AuthorizationKey) {
     EXPECT_FALSE(kv.value().readonly);
 }
 
+TEST_P(Configuration, AuthorizationKeyHexDecoded) {
+    // Per OCPP 1.6 spec errata E05, AuthorizationKey SHALL be hex-encoded.
+    // Hex strings (even length, all hex chars) must be decoded consistently
+    // regardless of whether the decoded bytes are printable.
+    // See: https://github.com/EVerest/everest-core/issues/2034
+
+    ASSERT_NE(get(), nullptr);
+
+    // "746869735f69735f615f70617373776f72645f21" decodes to "this_is_a_password_!"
+    // All decoded bytes are printable ASCII.
+    get()->setAuthorizationKey("746869735f69735f615f70617373776f72645f21");
+    EXPECT_EQ(get()->getAuthorizationKey(), "this_is_a_password_!");
+
+    // "746869735f69735f615f70617373776f72645f01" decodes to "this_is_a_password_\x01"
+    // The last byte (0x01) is non-printable. The old isHexNotation() rejected this
+    // due to the printability check, storing the raw hex string instead of decoding.
+    // Both keys use the same hex format and must be handled identically.
+    std::string expected = std::string("this_is_a_password_") + '\x01';
+    get()->setAuthorizationKey("746869735f69735f615f70617373776f72645f01");
+    EXPECT_EQ(get()->getAuthorizationKey(), expected);
+}
+
+TEST_P(Configuration, AuthorizationKeyOddLengthNotHex) {
+    // A string with odd length cannot be valid hex notation (each byte needs 2 chars)
+    ASSERT_NE(get(), nullptr);
+    get()->setAuthorizationKey("abcdef123");
+    EXPECT_EQ(get()->getAuthorizationKey(), "abcdef123");
+}
+
 TEST_P(Configuration, CpoName) {
     ASSERT_NE(get(), nullptr);
     // initial values are from the JSON unit test config files
