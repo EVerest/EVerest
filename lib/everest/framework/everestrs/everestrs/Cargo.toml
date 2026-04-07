@@ -12,7 +12,7 @@ serde = { version = "1.0.175", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9.34"
 thiserror = "1.0.48"
-
+nix = { version = "0.31.2", features = ["fs"] }
 # Note: the version must be kept in sync with the `cxxbridge-cmd` version installed in `everestrs/CMakeLists.txt`.
 # The `=` before the version number ensures that Cargo uses exactly this version when generating new lockfiles.
 cxx = { version = "=1.0.194", features = ["c++17"] }

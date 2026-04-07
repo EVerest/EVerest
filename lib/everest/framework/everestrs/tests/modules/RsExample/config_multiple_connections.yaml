@@ -1,0 +1,21 @@
+active_modules:
+  example_0:
+    module: RsExample
+    connections:
+      a_friend:
+        - module_id: probe
+          implementation_id: foobar
+  example_1:
+    module: RsExample
+    connections:
+      a_friend:
+        - module_id: probe
+          implementation_id: foobar         
+  probe:
+    module: ProbeModule
+    connections:
+      a_friend:
+        - module_id: example_0
+          implementation_id: foobar
+        - module_id: example_1
+          implementation_id: foobar          

@@ -17,6 +17,7 @@ rust_library(
         "@cxx.rs//:cxx",
         "@everest_framework_crate_index//:clap",
         "@everest_framework_crate_index//:log",
+        "@everest_framework_crate_index//:nix",
         "@everest_framework_crate_index//:serde",
         "@everest_framework_crate_index//:serde_json",
         "@everest_framework_crate_index//:serde_yaml",
