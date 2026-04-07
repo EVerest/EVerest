@@ -44,7 +44,7 @@ tests/expected_interfaces_file_hashes.csv
 store the hashes of type and interface yaml files.
 When building EVerest, the actual hashes of all files listed in these files are calculated.
 A unit test compares them with the stored hashes and fails if any of them differs.
-CMake will also issue a warning if there is a mismatch, but not fail the build or the CI pipeline.
+CMake will also issue a warning if there is a mismatch, but not fail the build.
 
 The list of monitored files must be updated manually.
 In order to compute the checksum simply run sha256sum tool on the file that has been changed and copy the hash in the respective CSV file.
@@ -69,8 +69,35 @@ build/generated/lib/everest/everest_api_types/tests/actual_interfaces_file_hashe
 
 ### Extension of the API library
 
-Whenever previously unused EVerest's internal types or interfaces are used in the API library, make sure the corresponding types yaml file is listed in the correct `expected_*_file_hashes.csv` along with its hash.
-The simplest way to do so is to copy the `actual_*_file_hashes.csv` after first adding the new yaml filename to `expected_*_file_hashes.csv` (with some dummy string as hash-replacement) and running a build.
+Every yaml file present in `types/` and `interfaces/` must be listed in the corresponding `expected_*_file_hashes.csv`.
+The build will warn and the unit tests will fail for any yaml file that is missing from the CSV.
+Files the API does not depend on must still be listed, with the tracking column set to `___no___` and a zero hash (`0000...0000`).
+
+Whenever previously unused EVerest's internal types or interfaces are used in the API library, make sure the corresponding yaml file is tracked for changes:
+
+- actual hash (1st column)
+- yaml file listed in the correct `expected_*_file_hashes.csv` (3rd column)
+- set to "TRACKING" (2nd column)
+
+Example:
+
+```
+...
+0000000000000000000000000000000000000000000000000000000000000000,___no___,types/iso15118_vas.yaml
+74258b4fbf09357159fe4a5afc8364bbb9bbf9a9ed9a36e2f28c6cf7ce011fe3,TRACKING,types/iso15118.yaml
+45d98b5072fa5d02a476860fe7d45a7b02f8a05eb6be94327f32dbe159d4ec40  types/isolation_monitor.yaml
+...
+```
+
+A simple way to do so is to copy the auto-generated `actual_*_file_hashes.csv`:
+
+- make sure the yaml file in question is listed in `expected_*_file_hashes.csv` (with a dummy hash)
+- run a build (with activated tests)
+- copy `build/generated/lib/everest/everest_api_types/tests/actual_*_file_hashes.csv` onto their `expected` counterparts
+
+### Manual Execution of File Hash Test
+
+Use `ctest -R source_file_hash_check --output-on-failure` to manually run the hash comparison test and see the output.
 
 ## Adaption of Type Changes
 
