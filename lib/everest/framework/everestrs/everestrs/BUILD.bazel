@@ -6,6 +6,9 @@ rust_library(
     name = "everestrs",
     srcs = glob(["src/**/*.rs"]),
     edition = "2021",
+    proc_macro_deps = [
+        "//lib/everest/framework/everestrs/everestrs-derive",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":everestrs_bridge",

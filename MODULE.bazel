@@ -202,6 +202,7 @@ everest_framework_crate_index.from_cargo(
         "//lib/everest/framework/everestrs:Cargo.toml",
         "//lib/everest/framework/everestrs/everestrs:Cargo.toml",
         "//lib/everest/framework/everestrs/everestrs-build:Cargo.toml",
+        "//lib/everest/framework/everestrs/everestrs-derive:Cargo.toml",
     ],
     supported_platform_triples = [
         "x86_64-unknown-linux-gnu",
