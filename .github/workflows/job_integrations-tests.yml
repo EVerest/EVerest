@@ -100,17 +100,30 @@ jobs:
           --name integration-container \
           build-kit run-script create_integration_image
           docker commit integration-container ${{ env.INTEGRATION_IMAGE_NAME }}
+      # TMPDIR on a host-mounted dir: pytest/tempfile default to /tmp inside the container, which is
+      # often tmpfs and not persisted for post-mortem. A workspace path keeps worker temp state
+      # visible for the follow-up "pytest-tmp" artifact upload. -j 4 speeds the suite; pytest flags
+      # fail fast with full trace on first error and disable xdist worker auto-restart so flaky
+      # worker crashes surface clearly.
       - name: Run integration tests
         id: run_integration_tests
         run: |
+          mkdir -p "${{ github.workspace }}/pytest-tmp"
           docker compose \
           -f source/${{ inputs.docker_compose_file_path }} \
           run \
+          -e TMPDIR=/ext/pytest-tmp \
           ${{ inputs.test_service_name }} \
           tests/run-tests.sh integration \
+          -j 4 \
           --everest-prefix /ext/dist \
           --junitxml /ext/${{ inputs.result_xml_path }} \
-          --html /ext/${{ inputs.report_html_path }}
+          --html /ext/${{ inputs.report_html_path }} \
+          -- \
+          --max-worker-restart=0 \
+          -x \
+          -vv \
+          --full-trace
       - name: Upload result and report as artifact
         if: ${{ always() && (steps.run_integration_tests.outcome == 'success' || steps.run_integration_tests.outcome == 'failure') }}
         uses: actions/upload-artifact@v4.6.2
@@ -120,6 +133,19 @@ jobs:
           path: |
             ${{ inputs.result_xml_path }}
             ${{ inputs.report_html_path }}
+      - name: Normalize pytest-tmp permissions for upload
+        if: ${{ always() && (steps.run_integration_tests.outcome == 'success' || steps.run_integration_tests.outcome == 'failure') }}
+        run: |
+          if [ -d "${{ github.workspace }}/pytest-tmp" ]; then
+            sudo chmod -R a+rX "${{ github.workspace }}/pytest-tmp" || true
+          fi
+      - name: Upload pytest temp dir (diagnostics)
+        if: ${{ always() && (steps.run_integration_tests.outcome == 'success' || steps.run_integration_tests.outcome == 'failure') }}
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          if-no-files-found: ignore
+          name: ${{ env.INTEGRATION_TESTS_ARTIFACT_NAME }}-pytest-tmp
+          path: pytest-tmp/
       - name: Render result
         if: ${{ always() && (steps.run_integration_tests.outcome == 'success' || steps.run_integration_tests.outcome == 'failure') }}
         uses: pmeier/pytest-results-action@v0.7.2

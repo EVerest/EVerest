@@ -3,6 +3,8 @@
 
 #include <everest/helpers/coverage.hpp>
 
+#ifdef EVEREST_COVERAGE_ENABLED
+
 #include <atomic>
 
 #include <signal.h>
@@ -26,16 +28,19 @@ void terminate_handler(int signal) {
 };
 
 } // namespace
+#endif // EVEREST_COVERAGE_ENABLED
 
 namespace everest::helpers {
 
 void install_signal_handlers_for_gcov() {
+#ifdef EVEREST_COVERAGE_ENABLED
     struct sigaction action {};
     action.sa_handler = &terminate_handler;
     // action.sa_mask should be zero, so no blocked signals within the signal handler
     // action.sa_flags should be fine with being zero
     sigaction(SIGINT, &action, nullptr);
     sigaction(SIGTERM, &action, nullptr);
+#endif
 }
 
 } // namespace everest::helpers

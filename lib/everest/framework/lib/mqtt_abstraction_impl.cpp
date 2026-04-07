@@ -122,7 +122,11 @@ bool MQTTAbstractionImpl::connect() {
 void MQTTAbstractionImpl::disconnect() {
     BOOST_LOG_FUNCTION();
 
+    this->running = false;
     this->disconnect_event.notify();
+    if (this->mqtt_client) {
+        this->mqtt_client->disconnect();
+    }
 
     // FIXME(kai): always set connected to false for the moment
     this->mqtt_is_connected = false;

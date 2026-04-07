@@ -31,8 +31,10 @@ endif()
 
 if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
     set(LIBOCPP_BUILD_TESTING ON)
-    evc_include(CodeCoverage)
+endif()
 
+if(LIBOCPP_BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)
+    evc_include(CodeCoverage)
     append_coverage_compiler_flags()
 endif()
 
