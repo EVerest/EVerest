@@ -197,7 +197,7 @@ def test_manager_restarts_modules_after_unexpected_exit_max_3_times(
     everest_core.assert_no_manager_status(ManagerStatusFifo.ALL_MODULES_STARTED, timeout_s=10.0)
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 def test_manager_does_not_transition_back_to_running_when_stopped_during_startup(
     everest_core: EverestCore
 ):
