@@ -519,7 +519,6 @@ TEST_F(LemDCBM400600ControllerTest, test_init_skips_set_it_when_minus_one) {
 TEST_F(LemDCBM400600ControllerTest, test_init_sets_it_when_valid) {
     // Setup
     testing::Sequence seq;
-    SETUP_SUCCESSFUL_INIT(seq);
 
     EXPECT_CALL(*this->http_client, get("/v1/settings"))
         .Times(1)
@@ -531,6 +530,8 @@ TEST_F(LemDCBM400600ControllerTest, test_init_sets_it_when_valid) {
         .InSequence(seq)
         .WillOnce(testing::Return(HttpResponse{200, R"({"result": 1})"}));
 
+    SETUP_SUCCESSFUL_INIT(seq);
+
     const LemDCBM400600Controller::Conf config_with_it{0, 0, 1, 0, 0, 0, {}, {}, 0, {}, {}, 5};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper), config_with_it);
 
@@ -540,9 +541,8 @@ TEST_F(LemDCBM400600ControllerTest, test_init_sets_it_when_valid) {
 
 /// \brief Test set_identification_type throws on non-200 response code
 TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_bad_status_code) {
-    // Setup
+    // Setup - IT is attempted first; fetch_meter_id is never reached when IT fails
     testing::Sequence seq;
-    SETUP_SUCCESSFUL_INIT(seq);
 
     EXPECT_CALL(*this->http_client, get("/v1/settings"))
         .Times(1)
@@ -563,9 +563,8 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_bad_status_code) {
 
 /// \brief Test set_identification_type throws when device rejects the setting (result != 1)
 TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_rejected) {
-    // Setup
+    // Setup - IT is attempted first; fetch_meter_id is never reached when IT fails
     testing::Sequence seq;
-    SETUP_SUCCESSFUL_INIT(seq);
 
     EXPECT_CALL(*this->http_client, get("/v1/settings"))
         .Times(1)
@@ -586,9 +585,8 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_rejected) {
 
 /// \brief Test set_identification_type throws on malformed JSON response body
 TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_malformed_json) {
-    // Setup
+    // Setup - IT is attempted first; fetch_meter_id is never reached when IT fails
     testing::Sequence seq;
-    SETUP_SUCCESSFUL_INIT(seq);
 
     EXPECT_CALL(*this->http_client, get("/v1/settings"))
         .Times(1)
@@ -609,9 +607,8 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_malformed_json) {
 
 /// \brief Test set_identification_type throws when JSON body is missing "result" key
 TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_missing_result_key) {
-    // Setup
+    // Setup - IT is attempted first; fetch_meter_id is never reached when IT fails
     testing::Sequence seq;
-    SETUP_SUCCESSFUL_INIT(seq);
 
     EXPECT_CALL(*this->http_client, get("/v1/settings"))
         .Times(1)
@@ -634,7 +631,6 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_missing_result_key
 TEST_F(LemDCBM400600ControllerTest, test_init_skips_set_it_when_already_configured) {
     // Setup
     testing::Sequence seq;
-    SETUP_SUCCESSFUL_INIT(seq);
 
     EXPECT_CALL(*this->http_client, get("/v1/settings"))
         .Times(1)
@@ -642,6 +638,8 @@ TEST_F(LemDCBM400600ControllerTest, test_init_skips_set_it_when_already_configur
         .WillOnce(testing::Return(HttpResponse{200, R"({"ocmfId":{"IT":5}})"}));
 
     EXPECT_CALL(*this->http_client, put("/v1/settings", testing::_)).Times(0);
+
+    SETUP_SUCCESSFUL_INIT(seq);
 
     const LemDCBM400600Controller::Conf config_with_it{0, 0, 1, 0, 0, 0, {}, {}, 0, {}, {}, 5};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper), config_with_it);
