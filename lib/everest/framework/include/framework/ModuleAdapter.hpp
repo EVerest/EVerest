@@ -73,7 +73,8 @@ protected:
     }
 
     void shutdown() {
-        EVLOG_warning << "No shutdown handler installed! Please implement shutdown() in your module! (" << info.name << ")";
+        EVLOG_warning << "No shutdown handler installed! Please implement shutdown() in your module! (" << info.name
+                      << ")";
         exit(EXIT_SUCCESS);
     }
 };
