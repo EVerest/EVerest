@@ -40,7 +40,7 @@ def clear_status_fifo_pending(everest_core: EverestCore) -> None:
         listener._read_buffer = b""
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 def test_manager_stop_during_startup(everest_core: EverestCore):
     start_exception = []
     shutdown_errors = []
@@ -71,7 +71,7 @@ def test_manager_stop_during_startup(everest_core: EverestCore):
     assert not starter_thread.is_alive(), "Startup thread did not exit after stop()."
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 @pytest.mark.everest_manager_args("--graceful-shutdown")
 def test_manager_graceful_shutdown_from_running(everest_core: EverestCore):
     shutdown_errors = []
@@ -93,7 +93,7 @@ def test_manager_graceful_shutdown_from_running(everest_core: EverestCore):
     assert not shutdown_errors, shutdown_errors
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 @pytest.mark.everest_manager_args("--into-idle")
 def test_manager_into_idle_skips_module_startup(everest_core: EverestCore):
     start_exception = []
@@ -119,7 +119,7 @@ def test_manager_into_idle_skips_module_startup(everest_core: EverestCore):
     )
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 @pytest.mark.everest_manager_args("--recover-module-crashes", "--graceful-shutdown")
 def test_manager_restarts_modules_after_unexpected_exit(
     everest_core: EverestCore, connected_mqtt_client
@@ -156,7 +156,7 @@ def test_manager_restarts_modules_after_unexpected_exit(
     )
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 @pytest.mark.everest_manager_args("--recover-module-crashes", "--graceful-shutdown")
 def test_manager_restarts_modules_after_unexpected_exit_max_3_times(
     everest_core: EverestCore, connected_mqtt_client
@@ -197,7 +197,7 @@ def test_manager_restarts_modules_after_unexpected_exit_max_3_times(
     everest_core.assert_no_manager_status(ManagerStatusFifo.ALL_MODULES_STARTED, timeout_s=10.0)
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 def test_manager_does_not_transition_back_to_running_when_stopped_during_startup(
     everest_core: EverestCore
 ):
@@ -231,7 +231,7 @@ def test_manager_does_not_transition_back_to_running_when_stopped_during_startup
     everest_core.assert_no_manager_status(ManagerStatusFifo.MANAGER_RUNNING, timeout_s=5.0)
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 @pytest.mark.everest_manager_args("--recover-module-crashes", "--graceful-shutdown")
 def test_manager_recovers_after_crash_with_blocked_module_timeout(
     everest_core: EverestCore, connected_mqtt_client
@@ -274,7 +274,7 @@ def test_manager_recovers_after_crash_with_blocked_module_timeout(
     )
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 def test_manager_default_stop_terminates_modules_immediately(everest_core: EverestCore):
     """Without --graceful-shutdown, stop() must force-terminate modules right away:
     no MQTT shutdown drain, no FORCE_SHUTDOWN_TIMEOUT event, no clean-stop event."""
@@ -291,7 +291,7 @@ def test_manager_default_stop_terminates_modules_immediately(everest_core: Evere
     assert everest_core.process.returncode == 0
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 def test_manager_default_crash_terminates_remaining_modules_and_exits(
     everest_core: EverestCore, connected_mqtt_client
 ):
