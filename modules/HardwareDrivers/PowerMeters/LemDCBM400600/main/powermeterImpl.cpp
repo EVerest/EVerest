@@ -76,9 +76,9 @@ void powermeterImpl::ready() {
                         handle_temperature_events(events, this->temperature_monitor->last_max_temperature());
                     }
                 }
-            } catch (LemDCBM400600Controller::DCBMUnexpectedResponseException& dcbm_exception) {
-                EVLOG_error << "Failed to publish powermeter value due to an invalid device response: "
-                            << dcbm_exception.what();
+            } catch (LemDCBM400600Controller::DCBMUnexpectedResponseException& error) {
+                EVLOG_error << "LEM DCBM 400/600: Failed to execute the powermeter ready loop due to an invalid device response: "
+                            << error.what();
             } catch (HttpClientError& client_error) {
                 if (!this->error_state_monitor->is_error_active("powermeter/CommunicationFault",
                                                                 "Communication timed out")) {
@@ -96,10 +96,20 @@ void powermeterImpl::ready() {
 
 types::powermeter::TransactionStartResponse
 powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& value) {
+    if (!this->controller->is_initialized()) {
+        return types::powermeter::TransactionStartResponse{
+            types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {},
+            "Powermeter is not initialized"};
+    }
     return this->controller->start_transaction(value);
 }
 
 types::powermeter::TransactionStopResponse powermeterImpl::handle_stop_transaction(std::string& transaction_id) {
+    if (!this->controller->is_initialized()) {
+        return types::powermeter::TransactionStopResponse{
+            types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {},
+            "Powermeter is not initialized"};
+    }
     return this->controller->stop_transaction(transaction_id);
 }
 

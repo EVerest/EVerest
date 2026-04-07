@@ -6,11 +6,8 @@
 namespace module::main {
 
 void LemDCBM400600Controller::init() {
-    EVLOG_info << "LEM DCBM 400/600: Try to communicate with the device";
+    EVLOG_info << "LEM DCBM 400/600: Try to communicate with the device to initialize it.";
     this->time_sync_helper->set_time_config_params(config.meter_timezone, config.meter_dst);
-    call_with_retry([this]() { this->fetch_meter_id_from_device(); }, this->config.init_number_of_http_retries,
-                    this->config.init_retry_wait_in_milliseconds);
-    this->time_sync_helper->restart_unsafe_period();
     this->http_client->set_command_timeout(this->config.command_timeout_ms);
 
     if (this->config.IT >= 0) {
@@ -27,6 +24,12 @@ void LemDCBM400600Controller::init() {
             },
             this->config.init_number_of_http_retries, this->config.init_retry_wait_in_milliseconds);
     }
+
+    call_with_retry([this]() { this->fetch_meter_id_from_device(); }, this->config.init_number_of_http_retries,
+                    this->config.init_retry_wait_in_milliseconds);
+
+    this->time_sync_helper->restart_unsafe_period();
+    EVLOG_info << "LEM DCBM 400/600: Device initialized successfully.";
 }
 
 std::vector<std::string> split(const std::string& str, char delimiter) {
