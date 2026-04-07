@@ -1008,7 +1008,7 @@ int boot(const po::variables_map& vm) {
                     shutdown_start_time = std::chrono::system_clock::now();
                     EVLOG_info << "Shutting down modules...";
                     mqtt_abstraction->publish(fmt::format("{}shutdown", ms.mqtt_settings.everest_prefix),
-                                             std::string("true"), QOS::QOS2, false);
+                                              std::string("true"), QOS::QOS2, false);
                 } else {
                     EVLOG_info << "Terminating manager";
                     exit(EXIT_FAILURE);
