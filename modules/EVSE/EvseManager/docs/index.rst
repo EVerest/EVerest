@@ -100,6 +100,134 @@ AC). If no powermeter is connected EvseManager will never publish this
 variable.
 
 
+Charging State Machine
+======================
+
+.. mermaid::
+
+   stateDiagram-v2
+       direction TB
+
+       [*] --> Idle
+
+       %% Enable / Disable
+       Idle --> Disabled : disable
+       Disabled --> Idle : enable
+
+       %% Happy path
+       Idle --> WaitingForAuthentication : EV plugged in
+       WaitingForAuthentication --> PrepareCharging : Authorized
+       PrepareCharging --> Charging : Contactor close allowed
+       Charging --> StoppingCharging : Stop condition
+       StoppingCharging --> Finished : Transaction end
+       Finished --> Idle : EV unplugged
+
+       %% Early exit / Errors
+       WaitingForAuthentication --> Finished : Fatal error or EV unplugged
+       PrepareCharging --> StoppingCharging : Fatal error, deauth, or EV unplugged
+
+       %% Pauses
+       Charging --> ChargingPausedEV : EV moves to state B
+       ChargingPausedEV --> PrepareCharging : Power requested (BCB/Car)
+       ChargingPausedEV --> ChargingPausedEVSE : No power (AC BASIC)
+       ChargingPausedEV --> StoppingCharging : Deauth or unplugged
+       
+       ChargingPausedEVSE --> PrepareCharging : Power available / Errors cleared
+       ChargingPausedEVSE --> StoppingCharging : Deauth or unplugged
+
+       %% Post-Stop logic
+       StoppingCharging --> ChargingPausedEV : EV-initiated pause
+
+State Transitions
+-----------------
+
+**Basic Flow**
+
+* ``Idle`` -> ``WaitingForAuthentication``: EV plugged in.
+* ``WaitingForAuthentication`` -> ``PrepareCharging``: Authorized by EIM or PnC.
+* ``PrepareCharging`` -> ``Charging``: Contactor close allowed.
+* ``Charging`` -> ``StoppingCharging``: Triggered by any **Stop Condition** (see below).
+* ``StoppingCharging`` -> ``Finished``: No transaction, EV unplugged, or not authorized.
+* ``Finished`` -> ``Idle``: EV unplugged.
+
+**Pause & Resume**
+
+* ``ChargingPausedEV`` -> ``PrepareCharging``: BCB toggle or ``CarRequestedPower``.
+* ``ChargingPausedEV`` -> ``ChargingPausedEVSE``: No power available (AC BASIC only).
+* ``ChargingPausedEVSE`` -> ``PrepareCharging``: Power available, no EVSE pause and errors cleared.
+* ``StoppingCharging`` -> ``ChargingPausedEV``: EV-initiated pause after stop sequence.
+
+**Stop Conditions**
+
+The transition ``Charging`` -> ``StoppingCharging`` occurs if:
+    * Fatal error
+    * Deauthorization
+    * EVSE pause requested
+    * EV unplugged
+    * IEC contactor opened
+    * No power available (Immediate for AC BASIC; timeout for HLC).
+
+.. note::
+
+   Transient helper states (``T_step_EF``, ``T_step_X1``, and ``SwitchPhases``) are omitted 
+   for readability. Transitions passing through these are shown as direct arrows.
+
+Session Events
+--------------
+
+These are the ``SessionEvent`` values published by the EvseManager with respect to the state machine
+states and transitions.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 30 35
+
+   * - State / Transition
+     - Event
+     - Trigger
+   * - ``Disabled``
+     - ``Disabled``
+     - On entry
+   * - ``Idle``
+     - ``Enabled``
+     - When EVSE is enabled via ``enable_disable()``
+   * - ``WaitingForAuthentication``
+     - ``SessionStarted``
+     - On entry (new session)
+   * - ``WaitingForAuthentication``
+     - ``AuthRequired``
+     - On entry
+   * - ``WaitingForAuthentication``
+     - ``Authorized``
+     - When ``authorize()`` is called externally
+   * - ``WaitingForAuthentication``
+     - ``TransactionStarted``
+     - After auth is accepted, just before leaving state
+   * - ``PrepareCharging``
+     - ``PrepareCharging``
+     - On entry
+   * - ``Charging``
+     - ``ChargingStarted``
+     - On entry
+   * - ``ChargingPausedEV``
+     - ``ChargingPausedEV``
+     - On entry
+   * - ``ChargingPausedEVSE``
+     - ``ChargingPausedEVSE``
+     - When the set of pause reasons changes
+   * - ``StoppingCharging``
+     - ``StoppingCharging``
+     - On entry
+   * - ``Finished``
+     - ``ChargingFinished``
+     - On entry (if transaction was active)
+   * - ``Finished``
+     - ``TransactionFinished``
+     - On entry (if transaction was active)
+   * - ``Finished`` -> ``Idle``
+     - ``SessionFinished``
+     - When EV unplugs and ``stop_session()`` is called
+
 Authentication
 ==============
 
