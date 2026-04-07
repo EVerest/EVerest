@@ -4,6 +4,7 @@
 #define EVERESTPY_MODULE_HPP
 
 #include <chrono>
+#include <cstdlib>
 #include <deque>
 #include <functional>
 #include <map>
@@ -39,6 +40,15 @@ public:
 
     void init_done() {
         init_done(nullptr);
+    }
+
+    void shutdown_handler(const std::function<void()>& on_shutdown_handler) {
+        if (on_shutdown_handler) {
+            handle->register_on_shutdown_handler([on_shutdown_handler]() {
+                on_shutdown_handler();
+                _exit(EXIT_SUCCESS);
+            });
+        }
     }
 
     Everest::Config& get_config() {
