@@ -77,7 +77,8 @@ void powermeterImpl::ready() {
                     }
                 }
             } catch (LemDCBM400600Controller::DCBMUnexpectedResponseException& error) {
-                EVLOG_error << "LEM DCBM 400/600: Failed to execute the powermeter ready loop due to an invalid device response: "
+                EVLOG_error << "LEM DCBM 400/600: Failed to execute the powermeter ready loop due to an invalid device "
+                               "response: "
                             << error.what();
             } catch (HttpClientError& client_error) {
                 if (!this->error_state_monitor->is_error_active("powermeter/CommunicationFault",
@@ -98,8 +99,7 @@ types::powermeter::TransactionStartResponse
 powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& value) {
     if (!this->controller->is_initialized()) {
         return types::powermeter::TransactionStartResponse{
-            types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {},
-            "Powermeter is not initialized"};
+            types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {}, "Powermeter is not initialized"};
     }
     return this->controller->start_transaction(value);
 }
@@ -107,8 +107,7 @@ powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& valu
 types::powermeter::TransactionStopResponse powermeterImpl::handle_stop_transaction(std::string& transaction_id) {
     if (!this->controller->is_initialized()) {
         return types::powermeter::TransactionStopResponse{
-            types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {},
-            "Powermeter is not initialized"};
+            types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {}, "Powermeter is not initialized"};
     }
     return this->controller->stop_transaction(transaction_id);
 }
