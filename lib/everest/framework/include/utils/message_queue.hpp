@@ -34,28 +34,6 @@ struct ParsedMessage {
 
 using MessageCallback = std::function<void(const Message&)>;
 
-/// \brief Simple message queue that takes std::string messages, parsed them and dispatches them to handlers
-class MessageQueue {
-
-private:
-    std::thread worker_thread;
-    std::queue<std::unique_ptr<Message>> message_queue;
-    std::mutex queue_ctrl_mutex;
-    MessageCallback message_callback;
-    std::condition_variable cv;
-    bool running = true;
-
-public:
-    /// \brief Creates a message queue with the provided \p message_callback
-    explicit MessageQueue(MessageCallback);
-    ~MessageQueue();
-
-    /// \brief Adds a \p message to the message queue which will then be delivered to the message callback
-    void add(std::unique_ptr<Message>);
-
-    /// \brief Stops the message queue
-    void stop();
-};
 
 } // namespace Everest
 
