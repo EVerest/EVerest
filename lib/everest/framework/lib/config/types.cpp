@@ -398,6 +398,12 @@ void adl_serializer<everest::config::ConfigurationParameterCharacteristics>::to_
     if (c.unit.has_value()) {
         j["unit"] = c.unit.value();
     }
+    if (c.min_value.has_value()) {
+        j["min_value"] = c.min_value.value();
+    }
+    if (c.max_value.has_value()) {
+        j["max_value"] = c.max_value.value();
+    }
 }
 
 void adl_serializer<everest::config::ConfigurationParameterCharacteristics>::from_json(
@@ -406,6 +412,12 @@ void adl_serializer<everest::config::ConfigurationParameterCharacteristics>::fro
     c.mutability = everest::config::string_to_mutability(j.at("mutability").get<std::string>());
     if (j.contains("unit")) {
         c.unit = j.at("unit").get<std::string>();
+    }
+    if (j.contains("min_value")) {
+        c.min_value = j.at("min_value").get<int32_t>();
+    }
+    if (j.contains("max_value")) {
+        c.max_value = j.at("max_value").get<int32_t>();
     }
 }
 
