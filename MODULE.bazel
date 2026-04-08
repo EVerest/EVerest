@@ -92,9 +92,9 @@ use_repo(rust, "rust_toolchains")
 
 register_toolchains("@rust_toolchains//:all")
 
-everest_core_crate_index = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
-everest_core_crate_index.from_cargo(
-    name = "everest_core_crate_index",
+everest_crate_index = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+everest_crate_index.from_cargo(
+    name = "everest_crate_index",
     cargo_lockfile = "@everest-core//modules:Cargo.lock",
     manifests = [
         "@everest-core//modules:Cargo.toml",
@@ -104,9 +104,9 @@ everest_core_crate_index.from_cargo(
         "@everest-core//modules/Examples/RustExamples/RsExampleUser:Cargo.toml",
     ],
 )
-everest_core_crate_index.annotation(
+everest_crate_index.annotation(
     crate = "everestrs",
-    repositories = ["everest_core_crate_index"],
+    repositories = ["everest_crate_index"],
     crate_features = ["build_bazel"],
     deps = [
         "//lib/everest/framework/everestrs/everestrs-build",
@@ -115,8 +115,8 @@ everest_core_crate_index.annotation(
 )
 
 use_repo(
-    everest_core_crate_index,
-    "everest_core_crate_index",
+    everest_crate_index,
+    "everest_crate_index",
 )
 
 ###############################################################################
@@ -134,9 +134,9 @@ everest_framework_crate_index.from_cargo(
     ],
 )
 
-everest_core_crate_index.annotation(
+everest_crate_index.annotation(
     crate = "log",
-    repositories = ["everest_core_crate_index"],
+    repositories = ["everest_crate_index"],
     override_target_lib = "@everest_framework_crate_index//:log",
 )
 

@@ -6,7 +6,6 @@ ARG BRANCH
 ARG EVEREST_CONFIG
 ARG OCPP_CONFIG
 ARG ADDITIONAL_CMAKE_PARAMETERS
-ARG EV_CLI_VERSION
 ARG INSTALL_EV_CLI
 
 RUN apt-get update \
@@ -32,6 +31,7 @@ RUN apt-get update \
     libcurl4-openssl-dev \
     libpcap-dev \
     libcap-dev \
+    libsystemd-dev \
     python3-venv \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -51,13 +51,9 @@ ENV EVEREST_VENV=/workspace/everest/venv
 RUN python3 -m venv ${EVEREST_VENV}
 ENV PATH="${EVEREST_VENV}/bin:${PATH}"
 RUN git clone https://github.com/EVerest/everest-cmake.git
-RUN git clone https://github.com/EVerest/everest-utils.git -b ${EV_CLI_VERSION}
-WORKDIR /workspace/everest/everest-utils/ev-dev-tools
+RUN git clone https://github.com/EVerest/EVerest.git -b "${BRANCH}"
+WORKDIR /workspace/everest/EVerest/applications/utils/ev-dev-tools
 RUN if [ "${INSTALL_EV_CLI}" = "install_ev_cli" ] ; then python3 -m pip install . ; fi
-WORKDIR /workspace/everest
-RUN git clone https://github.com/EVerest/everest-dev-environment.git
-WORKDIR /workspace/everest/everest-dev-environment/dependency_manager
-RUN python3 -m pip install .
 WORKDIR /workspace/everest
 RUN git clone https://github.com/EVerest/ext-switchev-iso15118.git
 WORKDIR /workspace/everest/ext-switchev-iso15118/
@@ -66,7 +62,7 @@ RUN pip install -r requirements.txt
 WORKDIR /workspace/everest
 
 RUN rm -rf "/workspace/everest/$(basename "${REPO}" .git)"
-RUN --mount=type=ssh git clone ${REPO}
+RUN --mount=type=ssh git clone ${REPO} -b "${BRANCH}"
 
 RUN --mount=type=ssh rm -rf "/workspace/everest/$(basename "${REPO}" .git)/build" && \
     cd "/workspace/everest/$(basename "${REPO}" .git)" && \
