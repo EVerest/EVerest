@@ -407,13 +407,15 @@ void InitState::handle_slac_message(slac::messages::HomeplugMessage& message) {
         ctx.log_info(device_info);
         // This message is only supported on Qualcomm, so we can use it to detect the Vendor
         ctx.modem_vendor = ModemVendor::Qualcomm;
+        memcpy(ctx.slac_config.plc_peer_mac, message.get_src_mac(), ETH_ALEN);
 
     } else if (mmtype == (slac::defs::lumissil::MMTYPE_NSCM_GET_VERSION | slac::defs::MMTYPE_MODE_CNF)) {
         const auto msg = message.get_payload<slac::messages::lumissil::nscm_get_version_cnf>();
         const auto device_info = get_lumissil_device_info(msg);
         ctx.log_info(device_info);
-        // This message is only supported on Qualcomm, so we can use it to detect the Vendor
+        // This message is only supported on Lumissil, so we can use it to detect the Vendor
         ctx.modem_vendor = ModemVendor::Lumissil;
+        memcpy(ctx.slac_config.plc_peer_mac, message.get_src_mac(), ETH_ALEN);
     }
 }
 } // namespace slac::fsm::evse
