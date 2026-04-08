@@ -168,6 +168,8 @@ struct ConfigurationParameterCharacteristics {
     Datatype datatype = Datatype::Unknown;
     Mutability mutability = Mutability::ReadOnly;
     std::optional<std::string> unit;
+    std::optional<int32_t> min_value;
+    std::optional<int32_t> max_value;
 };
 
 /// \brief Struct that contains the name, value and characteristics of a configuration parameter
