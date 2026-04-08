@@ -388,3 +388,115 @@ SCENARIO("Config returns parsed module configs", "[Config]") {
         }
     }
 }
+
+SCENARIO("ConfigurationParameterCharacteristics serialization of min_value and max_value", "[types]") {
+    using everest::config::ConfigurationParameterCharacteristics;
+    using everest::config::Datatype;
+    using everest::config::Mutability;
+
+    GIVEN("A characteristics struct with min_value and max_value set") {
+        ConfigurationParameterCharacteristics c;
+        c.datatype = Datatype::Integer;
+        c.mutability = Mutability::ReadWrite;
+        c.min_value = -10;
+        c.max_value = 100;
+
+        WHEN("Serialized to JSON") {
+            nlohmann::json j = c;
+
+            THEN("min_value and max_value appear in the JSON") {
+                REQUIRE(j.contains("min_value"));
+                REQUIRE(j.contains("max_value"));
+                CHECK(j["min_value"].get<int32_t>() == -10);
+                CHECK(j["max_value"].get<int32_t>() == 100);
+            }
+        }
+
+        WHEN("Round-tripped through JSON") {
+            nlohmann::json j = c;
+            auto c2 = j.get<ConfigurationParameterCharacteristics>();
+
+            THEN("min_value and max_value are preserved") {
+                REQUIRE(c2.min_value.has_value());
+                REQUIRE(c2.max_value.has_value());
+                CHECK(c2.min_value.value() == -10);
+                CHECK(c2.max_value.value() == 100);
+            }
+        }
+    }
+
+    GIVEN("A characteristics struct without min_value or max_value") {
+        ConfigurationParameterCharacteristics c;
+        c.datatype = Datatype::String;
+        c.mutability = Mutability::ReadOnly;
+
+        WHEN("Serialized to JSON") {
+            nlohmann::json j = c;
+
+            THEN("min_value and max_value are absent from the JSON") {
+                CHECK_FALSE(j.contains("min_value"));
+                CHECK_FALSE(j.contains("max_value"));
+            }
+        }
+
+        WHEN("Round-tripped through JSON") {
+            nlohmann::json j = c;
+            auto c2 = j.get<ConfigurationParameterCharacteristics>();
+
+            THEN("min_value and max_value remain nullopt") {
+                CHECK_FALSE(c2.min_value.has_value());
+                CHECK_FALSE(c2.max_value.has_value());
+            }
+        }
+    }
+
+    GIVEN("A JSON object with only min_value set") {
+        nlohmann::json j = {{"datatype", "integer"}, {"mutability", "ReadWrite"}, {"min_value", 5}};
+
+        WHEN("Deserialized") {
+            auto c = j.get<ConfigurationParameterCharacteristics>();
+
+            THEN("min_value is populated and max_value is absent") {
+                REQUIRE(c.min_value.has_value());
+                CHECK(c.min_value.value() == 5);
+                CHECK_FALSE(c.max_value.has_value());
+            }
+        }
+    }
+
+    GIVEN("A JSON object with only max_value set") {
+        nlohmann::json j = {{"datatype", "integer"}, {"mutability", "ReadWrite"}, {"max_value", 50}};
+
+        WHEN("Deserialized") {
+            auto c = j.get<ConfigurationParameterCharacteristics>();
+
+            THEN("max_value is populated and min_value is absent") {
+                CHECK_FALSE(c.min_value.has_value());
+                REQUIRE(c.max_value.has_value());
+                CHECK(c.max_value.value() == 50);
+            }
+        }
+    }
+
+    GIVEN("A characteristics struct with unit, min_value and max_value") {
+        ConfigurationParameterCharacteristics c;
+        c.datatype = Datatype::Integer;
+        c.mutability = Mutability::ReadWrite;
+        c.unit = "ms";
+        c.min_value = 0;
+        c.max_value = 60000;
+
+        WHEN("Serialized to JSON") {
+            nlohmann::json j = c;
+
+            THEN("All optional fields appear") {
+                CHECK(j.contains("unit"));
+                CHECK(j.contains("min_value"));
+                CHECK(j.contains("max_value"));
+                CHECK(j["unit"].get<std::string>() == "ms");
+                CHECK(j["min_value"].get<int32_t>() == 0);
+                CHECK(j["max_value"].get<int32_t>() == 60000);
+            }
+        }
+    }
+}
