@@ -48,31 +48,6 @@ ManagerSettings::ManagerSettings(const std::string& prefix_, const std::string& 
     init_settings(settings);
 }
 
-DatabaseBootstrap bootstrap_from_database(const std::string& prefix, const std::string& db_path) {
-    DatabaseBootstrap bs;
-    bs.ms.boot_mode = ConfigBootMode::Database;
-    bs.ms.init_prefix_and_data_dir(prefix);
-
-    bs.ms.db_dir = assert_file(db_path, "User provided database");
-
-    const auto migrations_dir = bs.ms.runtime_settings.data_dir / "migrations";
-
-    everest::config::SqliteConfigSlotManager slot_mgr(bs.ms.db_dir, migrations_dir);
-    if (!slot_mgr.is_valid(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID)) {
-        throw BootException("Database not initialized or valid");
-    }
-
-    bs.storage = std::make_unique<everest::config::SqliteStorage>(bs.ms.db_dir, migrations_dir,
-                                                                  everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
-
-    EVLOG_info << "Booting and parsing configuration from database: " << bs.ms.db_dir;
-    // ManagerSettings are not stored in the database; use defaults derived from prefix.
-    bs.ms.init_settings(everest::config::Settings{});
-
-    bs.module_configs_initialized = true;
-    return bs;
-}
-
 DatabaseBootstrap bootstrap_from_database_init(const std::string& prefix, const std::string& config,
                                                const std::string& db_path) {
     DatabaseBootstrap bs;

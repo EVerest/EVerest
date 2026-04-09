@@ -1144,16 +1144,6 @@ void ManagerConfig::init() {
             EVLOG_info << "Boot mode is set to YamlFile, loading module configs from YAML file";
             const auto complete_config = this->apply_user_config_and_defaults();
             module_configs = parse_module_configs(complete_config.value("active_modules", json::object()));
-        } else if (this->ps.boot_mode == ConfigBootMode::Database) {
-            EVLOG_info << "Boot mode is set to Database, loading module configs from database";
-            if (this->storage_ == nullptr) {
-                EVLOG_AND_THROW(EverestConfigError("No storage configured, cannot load module configs from database!"));
-            }
-            const auto module_configs_response = this->storage_->get_module_configs();
-            if (module_configs_response.status == GenericResponseStatus::Failed) {
-                EVLOG_AND_THROW(EverestConfigError("Failed to load module configs from database"));
-            }
-            module_configs = module_configs_response.module_configs;
         } else if (this->ps.boot_mode == ConfigBootMode::DatabaseInit) {
             EVLOG_info << "Boot mode is set to DatabaseInit";
             if (this->storage_ == nullptr) {
@@ -1168,13 +1158,17 @@ void ManagerConfig::init() {
                     module_configs = module_configs_response.module_configs;
                 }
             } else {
-                EVLOG_info << "Storage does not contain valid config, "
-                              "loading module configs from YAML file as fallback";
+                EVLOG_info << "Database not yet initialized, looking for active_modules in YAML config";
+                const auto complete_config = this->apply_user_config_and_defaults();
+                if (!complete_config.contains("active_modules")) {
+                    EVLOG_AND_THROW(EverestConfigError(
+                        "Database is not initialized and YAML config contains no active_modules section. "
+                        "Provide active_modules in the config file to initialize the database, "
+                        "or point --db to a pre-initialized database."));
+                }
                 write_config_to_storage = true; // we can only write the config to the storage after the parse()
                                                 // function, since this adds meta data like characteristics to the
                                                 // module_configs that is required for writing to the storage
-                // fallback to loading from YAML file
-                const auto complete_config = this->apply_user_config_and_defaults();
                 module_configs = parse_module_configs(complete_config.value("active_modules", json::object()));
             }
         }
@@ -1292,7 +1286,6 @@ ManagerConfig::set_config_value(const everest::config::ConfigurationParameterIde
             }
             break;
         }
-        case ConfigBootMode::Database:
         case ConfigBootMode::DatabaseInit:
             const auto& cached_value_it = this->database_get_config_parameter_response_cache.find(identifier);
             const auto cached_value = this->storage_->get_configuration_parameter(identifier);
@@ -1337,7 +1330,6 @@ ManagerConfig::get_config_value(const everest::config::ConfigurationParameterIde
             }
             break;
         }
-        case ConfigBootMode::Database:
         case ConfigBootMode::DatabaseInit: {
             // ensure that we do not return database values that are only valid after a reboot
             const auto& cached_value_it = this->database_get_config_parameter_response_cache.find(identifier);

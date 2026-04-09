@@ -19,9 +19,8 @@ namespace fs = std::filesystem;
 
 enum class ConfigBootMode {
     YamlFile = 1,    // configuration is loaded from a YAML file
-    Database = 2,    // configuration is loaded from a database
-    DatabaseInit = 3 // configuration is preferably loaded from a database, but if no valid config is found, it falls
-                     // back to a YAML file and initializes the database
+    DatabaseInit = 3 // configuration is loaded from a database; if the database is not yet initialized,
+                     // active_modules from the YAML config file are used to seed it
 };
 
 /// \brief EVerest framework runtime settings needed to successfully run modules
@@ -60,8 +59,6 @@ struct ConfigParseSettings {
     ConfigBootMode boot_mode = ConfigBootMode::YamlFile; ///< Boot mode
 };
 
-struct DatabaseTag {};
-
 /// \brief Settings needed by the manager to load and validate a config
 struct ManagerSettings : public ConfigParseSettings {
     fs::path db_dir;                   ///< Directory that contains the database
@@ -81,10 +78,6 @@ struct ManagerSettings : public ConfigParseSettings {
     /// \brief Constructor that initializes the ManagerSettings with the given prefix and config file. Boot source is
     /// set to YamlFile.
     ManagerSettings(const std::string& prefix, const std::string& config);
-
-    /// \brief Constructor that initializes the ManagerSettings with the given database path. Boot source is set to
-    /// Database.
-    ManagerSettings(const std::string& prefix, const std::string& db, DatabaseTag);
 
     /// \brief Constructor that initializes the ManagerSettings with the given prefix, config file and database path.
     /// Boot Source is set to DatabaseInit.
@@ -108,11 +101,8 @@ struct DatabaseBootstrap {
     bool module_configs_initialized = false;
 };
 
-/// \brief Bootstrap from an existing valid database (Database mode).
-/// \throws BootException if the database is not initialized or valid.
-DatabaseBootstrap bootstrap_from_database(const std::string& prefix, const std::string& db_path);
-
-/// \brief Bootstrap from database, initializing it from YAML if no valid config is found (DatabaseInit mode).
+/// \brief Bootstrap from database, initializing it from YAML active_modules if the database is not yet valid
+/// (DatabaseInit mode).
 DatabaseBootstrap bootstrap_from_database_init(const std::string& prefix, const std::string& config,
                                                const std::string& db_path);
 
