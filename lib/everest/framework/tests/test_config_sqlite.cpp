@@ -6,17 +6,10 @@
 #include <everest/database/exceptions.hpp>
 #include <everest/database/sqlite/connection.hpp>
 #include <tests/helpers.hpp>
-#include <utils/config/settings.hpp>
 #include <utils/config/slot_manager.hpp>
 #include <utils/config/storage_sqlite.hpp>
-#include <utils/yaml_loader.hpp>
 
 using namespace everest::config;
-
-Everest::ManagerSettings get_example_settings() {
-    auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
-    return Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml");
-}
 
 std::map<ModuleId, ModuleConfig> get_example_module_configs() {
     std::map<ModuleId, ModuleConfig> module_configs;
@@ -114,15 +107,10 @@ TEST_CASE("Database operations", "[db_operation]") {
     everest::db::sqlite::Connection c("file::memory:?cache=shared");
     c.open_connection(); // keep at least one connection to keep the in-memory database alive
 
-    // Slot manager is used to write settings (slot lifecycle management)
+    // Slot manager is used for slot lifecycle management
     SqliteConfigSlotManager slot_mgr("file::memory:?cache=shared", migrations_dir);
     // Storage is scoped to DEFAULT_CONFIG_ID for runtime data access
     SqliteStorage storage("file::memory:?cache=shared", migrations_dir, SqliteStorage::DEFAULT_CONFIG_ID);
-
-    SECTION("Empty settings can not be retrieved") {
-        auto response = storage.get_settings();
-        REQUIRE(response.status == GenericResponseStatus::Failed);
-    }
 
     SECTION("Empty module config can be retrieved") {
         auto response = storage.get_module_configs();
@@ -131,11 +119,9 @@ TEST_CASE("Database operations", "[db_operation]") {
     }
 
     const auto module_configs = get_example_module_configs();
-    const auto settings = get_example_settings();
 
     // config slot must be written via slot manager first so the CONFIG row exists before module data is written
-    REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID, settings) ==
-            GenericResponseStatus::OK);
+    REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == GenericResponseStatus::OK);
     REQUIRE(storage.write_module_configs(module_configs) == GenericResponseStatus::OK);
 
     SECTION("Module configurations can be written and correctly retrieved") {
@@ -177,11 +163,6 @@ TEST_CASE("Database operations", "[db_operation]") {
         auto response =
             storage.update_configuration_parameter({"module_that_does_not_exist", "param_that_does_not_exist"}, "20");
         REQUIRE(response == GetSetResponseStatus::NotFound);
-    }
-    SECTION("Settings can be retrieved") {
-        auto response = storage.get_settings();
-        REQUIRE(response.status == GenericResponseStatus::OK);
-        REQUIRE(response.settings.has_value());
     }
     SECTION("Unknown module config can not be retrieved") {
         auto response = storage.get_module_config("unknown_module_id");
@@ -244,41 +225,30 @@ TEST_CASE("Database operations", "[db_operation]") {
     }
 }
 
-TEST_CASE("write_config_slot assigns DEFAULT_SLOT_ID", "[db_operation]") {
+TEST_CASE("write_config_slot manages CONFIG identity row", "[db_operation]") {
     auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
     const auto migrations_dir = bin_dir + "migrations";
     everest::db::sqlite::Connection c("file::memory:?cache=shared");
     c.open_connection();
     SqliteConfigSlotManager slot_mgr("file::memory:?cache=shared", migrations_dir);
     SqliteStorage storage("file::memory:?cache=shared", migrations_dir, SqliteStorage::DEFAULT_CONFIG_ID);
-    const auto settings = get_example_settings();
 
-    REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID, settings) ==
-            GenericResponseStatus::OK);
+    REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == GenericResponseStatus::OK);
 
-    SECTION("settings are readable at DEFAULT_CONFIG_ID after write") {
-        auto response = storage.get_settings();
-        REQUIRE(response.status == GenericResponseStatus::OK);
-    }
     SECTION("is_valid is false before mark_valid, true after") {
         REQUIRE(slot_mgr.is_valid(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == false);
         storage.mark_valid(true, "dump", std::nullopt);
         REQUIRE(slot_mgr.is_valid(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == true);
     }
-    SECTION("A second storage instance scoped to the same slot can read settings after mark_valid") {
-        // Simulate a second storage instance loading an existing valid config
+    SECTION("A second storage instance scoped to the same slot is usable after mark_valid") {
         storage.mark_valid(true, "dump", std::nullopt);
-        // Verify validity via slot manager
         REQUIRE(slot_mgr.is_valid(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == true);
-        // A storage instance for the same slot can read settings directly (no select_config needed)
         SqliteStorage storage2("file::memory:?cache=shared", migrations_dir, SqliteStorage::DEFAULT_CONFIG_ID);
-        REQUIRE(storage2.get_settings().status == GenericResponseStatus::OK);
+        REQUIRE(storage2.get_module_configs().status == GenericResponseStatus::OK);
     }
     SECTION("delete_slot allows re-initializing the slot via write_config_slot") {
         slot_mgr.delete_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID);
-        REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID, settings) ==
-                GenericResponseStatus::OK);
-        auto response = storage.get_settings();
-        REQUIRE(response.status == GenericResponseStatus::OK);
+        REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == GenericResponseStatus::OK);
+        REQUIRE(slot_mgr.list_slots().size() == 1);
     }
 }

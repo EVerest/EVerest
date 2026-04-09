@@ -1,47 +1,18 @@
 -- Migration 4: Multi-config support
--- Splits SETTING into CONFIG (identity anchor) and FRAMEWORK_SETTINGS (framework-level settings).
--- Separating identity from settings keeps each table focused on a single responsibility
--- and makes it straightforward to compare framework settings across configs.
+-- Replaces SETTING with CONFIG (lightweight identity anchor).
+-- ManagerSettings (paths, MQTT, controller settings) are no longer stored in the
+-- database
 -- Removes the single-row restriction so multiple configs can coexist.
 -- Adds CONFIG_ID scoping to MODULE and all its child tables, with cascading deletes
 -- rooted at CONFIG so that deleting a CONFIG row removes everything belonging to it.
 
 PRAGMA foreign_keys = OFF;
 
--- 1a. CONFIG: lightweight identity table - replaces SETTING as the cascade root.
+-- 1. CONFIG: lightweight identity table - replaces SETTING as the cascade root.
 CREATE TABLE CONFIG (
     ID INTEGER PRIMARY KEY
 );
 INSERT INTO CONFIG (ID) SELECT ID FROM SETTING;
-
--- 1b. FRAMEWORK_SETTINGS: framework-level settings (paths, MQTT, controller, etc.).
---     FK to CONFIG ensures settings are removed when their config is deleted.
-CREATE TABLE FRAMEWORK_SETTINGS (
-    ID                        INTEGER PRIMARY KEY REFERENCES CONFIG (ID) ON DELETE CASCADE,
-    PREFIX                    TEXT    NOT NULL,
-    CONFIG_FILE               TEXT    NOT NULL,
-    CONFIGS_DIR               TEXT    NOT NULL,
-    SCHEMAS_DIR               TEXT    NOT NULL,
-    MODULES_DIR               TEXT    NOT NULL,
-    INTERFACES_DIR            TEXT    NOT NULL,
-    TYPES_DIR                 TEXT    NOT NULL,
-    ERRORS_DIR                TEXT    NOT NULL,
-    WWW_DIR                   TEXT    NOT NULL,
-    LOGGING_CONFIG_FILE       TEXT    NOT NULL,
-    CONTROLLER_PORT           INTEGER NOT NULL,
-    CONTROLLER_RPC_TIMEOUT_MS INTEGER NOT NULL,
-    MQTT_BROKER_SOCKET_PATH   TEXT    NOT NULL,
-    MQTT_BROKER_HOST          TEXT    NOT NULL,
-    MQTT_BROKER_PORT          INTEGER NOT NULL,
-    MQTT_EVEREST_PREFIX       TEXT    NOT NULL,
-    MQTT_EXTERNAL_PREFIX      TEXT    NOT NULL,
-    TELEMETRY_PREFIX          TEXT    NOT NULL,
-    TELEMETRY_ENABLED         INTEGER NOT NULL,
-    VALIDATE_SCHEMA           INTEGER NOT NULL,
-    RUN_AS_USER               TEXT    NOT NULL,
-    FORWARD_EXCEPTIONS        INTEGER NOT NULL
-);
-INSERT INTO FRAMEWORK_SETTINGS SELECT * FROM SETTING;
 
 DROP TABLE SETTING;
 

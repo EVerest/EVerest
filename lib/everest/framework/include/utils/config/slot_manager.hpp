@@ -12,10 +12,6 @@ namespace everest::db::sqlite {
 class ConnectionInterface;
 } // namespace everest::db::sqlite
 
-namespace Everest {
-struct ManagerSettings;
-} // namespace Everest
-
 namespace everest::config {
 
 struct StoredSlotInfo {
@@ -34,7 +30,7 @@ public:
     bool is_valid(int slot_id = DEFAULT_SLOT_ID);
     /// \brief Returns the next available slot ID (MAX(ID) + 1, or 0 if no slots exist).
     int next_slot_id();
-    GenericResponseStatus write_config_slot(int slot_id, const Everest::ManagerSettings& ms);
+    GenericResponseStatus write_config_slot(int slot_id);
     std::vector<StoredSlotInfo> list_slots();
     GenericResponseStatus delete_slot(int slot_id);
 

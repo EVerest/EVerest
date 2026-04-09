@@ -23,33 +23,6 @@ const std::string& default_module_implementation_id() {
 }
 } // namespace
 
-/// \brief Helper for accessing the column indices of the SETTING table
-enum class SettingColumnIndex : int {
-    COL_ID = 0,
-    COL_PREFIX,
-    COL_CONFIG_FILE,
-    COL_CONFIGS_DIR,
-    COL_SCHEMAS_DIR,
-    COL_MODULES_DIR,
-    COL_INTERFACES_DIR,
-    COL_TYPES_DIR,
-    COL_ERRORS_DIR,
-    COL_WWW_DIR,
-    COL_LOGGING_CONFIG_FILE,
-    COL_CONTROLLER_PORT,
-    COL_CONTROLLER_RPC_TIMEOUT_MS,
-    COL_MQTT_BROKER_SOCKET_PATH,
-    COL_MQTT_BROKER_HOST,
-    COL_MQTT_BROKER_PORT,
-    COL_MQTT_EVEREST_PREFIX,
-    COL_MQTT_EXTERNAL_PREFIX,
-    COL_TELEMETRY_PREFIX,
-    COL_TELEMETRY_ENABLED,
-    COL_VALIDATE_SCHEMA,
-    COL_RUN_AS_USER,
-    COL_FORWARD_EXCEPTIONS,
-};
-
 /// \brief Helper for accessing the column indices of the CONFIGURATION table
 enum class ConfigurationColumnIndex {
     COL_CONFIG_ID = 1,
@@ -73,10 +46,6 @@ enum class ConfigurationColumnModuleIdIndex {
 };
 
 namespace {
-int to_int(SettingColumnIndex setting_column_index) {
-    return static_cast<int>(setting_column_index);
-}
-
 int to_int(ConfigurationColumnIndex configuration_column_index) {
     return static_cast<int>(configuration_column_index);
 }
@@ -224,50 +193,6 @@ GetModuleConfigsResponse SqliteStorage::get_module_configs() {
         response.status = GenericResponseStatus::Failed;
         return response;
     }
-}
-
-GetSettingsResponse SqliteStorage::get_settings() {
-    const std::string sql = "SELECT * FROM FRAMEWORK_SETTINGS WHERE ID = @config_id";
-    auto stmt = this->db->new_statement(sql);
-    stmt->bind_int("@config_id", config_id_);
-
-    if (stmt->step() != SQLITE_ROW) {
-        return GetSettingsResponse{GenericResponseStatus::Failed, std::nullopt};
-    }
-
-    Settings settings;
-    [[maybe_unused]] const auto id =
-        stmt->column_int(to_int(SettingColumnIndex::COL_ID)); // ID is required and always present
-
-    // text
-    settings.prefix = stmt->column_text(to_int(SettingColumnIndex::COL_PREFIX));
-    settings.config_file = stmt->column_text(to_int(SettingColumnIndex::COL_CONFIG_FILE));
-    settings.configs_dir = stmt->column_text(to_int(SettingColumnIndex::COL_CONFIGS_DIR));
-    settings.schemas_dir = stmt->column_text(to_int(SettingColumnIndex::COL_SCHEMAS_DIR));
-    settings.modules_dir = stmt->column_text(to_int(SettingColumnIndex::COL_MODULES_DIR));
-    settings.interfaces_dir = stmt->column_text(to_int(SettingColumnIndex::COL_INTERFACES_DIR));
-    settings.types_dir = stmt->column_text(to_int(SettingColumnIndex::COL_TYPES_DIR));
-    settings.errors_dir = stmt->column_text(to_int(SettingColumnIndex::COL_ERRORS_DIR));
-    settings.www_dir = stmt->column_text(to_int(SettingColumnIndex::COL_WWW_DIR));
-    settings.logging_config_file = stmt->column_text(to_int(SettingColumnIndex::COL_LOGGING_CONFIG_FILE));
-    settings.mqtt_broker_socket_path = stmt->column_text(to_int(SettingColumnIndex::COL_MQTT_BROKER_SOCKET_PATH));
-    settings.mqtt_broker_host = stmt->column_text(to_int(SettingColumnIndex::COL_MQTT_BROKER_HOST));
-    settings.mqtt_everest_prefix = stmt->column_text(to_int(SettingColumnIndex::COL_MQTT_EVEREST_PREFIX));
-    settings.mqtt_external_prefix = stmt->column_text(to_int(SettingColumnIndex::COL_MQTT_EXTERNAL_PREFIX));
-    settings.telemetry_prefix = stmt->column_text(to_int(SettingColumnIndex::COL_TELEMETRY_PREFIX));
-    settings.run_as_user = stmt->column_text(to_int(SettingColumnIndex::COL_RUN_AS_USER));
-
-    // integer
-    settings.controller_port = stmt->column_int(to_int(SettingColumnIndex::COL_CONTROLLER_PORT));
-    settings.controller_rpc_timeout_ms = stmt->column_int(to_int(SettingColumnIndex::COL_CONTROLLER_RPC_TIMEOUT_MS));
-    settings.mqtt_broker_port = stmt->column_int(to_int(SettingColumnIndex::COL_MQTT_BROKER_PORT));
-
-    // boolean
-    settings.telemetry_enabled = stmt->column_int(to_int(SettingColumnIndex::COL_TELEMETRY_ENABLED)) != 0;
-    settings.validate_schema = stmt->column_int(to_int(SettingColumnIndex::COL_VALIDATE_SCHEMA)) != 0;
-    settings.forward_exceptions = stmt->column_int(to_int(SettingColumnIndex::COL_FORWARD_EXCEPTIONS)) != 0;
-
-    return GetSettingsResponse{GenericResponseStatus::OK, settings};
 }
 
 GetModuleConfigurationResponse SqliteStorage::get_module_config(const std::string& module_id) {

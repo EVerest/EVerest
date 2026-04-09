@@ -50,7 +50,7 @@ static int cmd_add(const std::string& prefix, const std::string& config_file, co
     SqliteConfigSlotManager slot_mgr(ms.db_dir, migrations_dir);
     const int slot_id = slot_mgr.next_slot_id();
 
-    if (slot_mgr.write_config_slot(slot_id, ms) != GenericResponseStatus::OK) {
+    if (slot_mgr.write_config_slot(slot_id) != GenericResponseStatus::OK) {
         fmt::print(stderr, "Error: Failed to write config slot {}.\n", slot_id);
         return 1;
     }
