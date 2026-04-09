@@ -253,6 +253,7 @@ SubProcess SubProcess::create(const std::string& run_as_user, const std::vector<
     }
 }
 
+namespace {
 int setup_signal_fd() {
     sigset_t mask;
 
@@ -266,6 +267,7 @@ int setup_signal_fd() {
 
     return signalfd(-1, &mask, 0);
 }
+} // namespace
 
 SignalPolling::SignalPolling() {
     signal_fd = setup_signal_fd();
