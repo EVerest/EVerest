@@ -436,6 +436,7 @@ async def wait_for_hlc_session_failed_with_reason(mock, expected_reason, timeout
 ###################################################
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("connector_1", "evse")]}
 )
@@ -452,6 +453,7 @@ async def test_pwm_ac_session(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("connector_1", "evse")]}
 )
@@ -471,6 +473,7 @@ async def test_iso15118_ac_session(
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("connector_1", "evse")]}
 )
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_config_adaptions(AcConfigAdjustmentStrategy())
 @pytest.mark.everest_core_config("config-sil.yaml")
 async def test_iso15118_ac_session_stop_by_evse(
@@ -498,6 +501,7 @@ async def test_iso15118_ac_session_stop_by_evse(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
@@ -547,6 +551,7 @@ async def test_iso15118_dc_session(
         ),
     ],
 )
+@pytest.mark.xdist_group(name="ISO15118")
 async def test_iso15118_dc_session_stop_by_evse(
     iso15118_version, test_controller: TestController, everest_core: EverestCore
 ):
@@ -572,6 +577,7 @@ async def test_iso15118_dc_session_stop_by_evse(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
@@ -695,6 +701,7 @@ async def test_iso15118_ac_session_no_energy_before_session(
         # FIXME: "iso15118": [Requirement("iso15118_charger", "evse")]
     }
 )
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_core_config("config-sil-dc.yaml")
 @pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy())
 @pytest.mark.skip(reason="Fails because EV simulation does not yet support the pause in the beginning of the session")
@@ -745,6 +752,7 @@ async def test_iso15118_dc_session_no_energy_before_session(
         ),
     ],
 )
+@pytest.mark.xdist_group(name="ISO15118")
 async def test_iso15118_dc_session_no_energy_before_session_no_pause(
     iso15118_version,test_controller: TestController, everest_core: EverestCore
 ):
@@ -773,6 +781,7 @@ async def test_iso15118_dc_session_no_energy_before_session_no_pause(
     }
 )
 @pytest.mark.everest_core_config("config-sil.yaml")
+@pytest.mark.xdist_group(name="ISO15118")
 async def test_pwm_ac_session_no_energy_during_session(
     test_controller: TestController, everest_core: EverestCore
 ):
@@ -802,6 +811,7 @@ async def test_pwm_ac_session_no_energy_during_session(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_config_adaptions(AcConfigAdjustmentStrategy())
 @pytest.mark.everest_core_config("config-sil.yaml")
 async def test_iso15118_ac_session_no_energy_during_session(
@@ -829,6 +839,7 @@ async def test_iso15118_ac_session_no_energy_during_session(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_config_adaptions(AcConfigAdjustmentStrategy(hlc_charge_loop_without_energy_timeout_s=5))
 @pytest.mark.everest_core_config("config-sil.yaml")
 async def test_iso15118_ac_session_no_energy_during_session_timeout_triggers(
@@ -868,6 +879,7 @@ async def test_iso15118_ac_session_no_energy_during_session_timeout_triggers(
         ),
     ],
 )
+@pytest.mark.xdist_group(name="ISO15118")
 async def test_iso15118_dc_session_no_energy_during_session(
     iso15118_version,test_controller: TestController, everest_core: EverestCore
 ):
@@ -908,6 +920,7 @@ async def test_iso15118_dc_session_no_energy_during_session(
         ),
     ],
 )
+@pytest.mark.xdist_group(name="ISO15118")
 async def test_iso15118_dc_session_no_energy_during_session_timeout_triggers(
     iso15118_version, test_controller: TestController, everest_core: EverestCore
 ):
@@ -929,6 +942,7 @@ async def test_iso15118_dc_session_no_energy_during_session_timeout_triggers(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_core_config("config-sil.yaml")
 async def test_pwm_ac_session_paused_by_ev(
     test_controller: TestController, everest_core: EverestCore
@@ -956,6 +970,7 @@ async def test_pwm_ac_session_paused_by_ev(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_config_adaptions(AcConfigAdjustmentStrategy())
 @pytest.mark.everest_core_config("config-sil.yaml")
 @pytest.mark.flaky(reruns=1)
@@ -988,6 +1003,7 @@ async def test_iso15118_ac_session_paused_by_ev(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_core_config("config-sil-dc.yaml")
 @pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy())
 @pytest.mark.flaky(reruns=1)
@@ -1020,6 +1036,7 @@ async def test_iso15118_dc_session_paused_by_ev(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_core_config("config-sil.yaml")
 async def test_pwm_ac_session_paused_by_evse(
     test_controller: TestController, everest_core: EverestCore
@@ -1065,6 +1082,7 @@ async def test_pwm_ac_session_paused_by_evse(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_config_adaptions(AcConfigAdjustmentStrategy())
 @pytest.mark.everest_core_config("config-sil.yaml")
 @pytest.mark.skip(reason="Currently fails because EV Simulator does not start a new session once it is a user pause")
@@ -1103,6 +1121,7 @@ async def test_iso15118_ac_session_paused_by_evse(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_core_config("config-sil-dc.yaml")
 @pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy())
 @pytest.mark.skip(reason="Currently fails because EV Simulator does not start a new session once it is a user pause")

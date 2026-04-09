@@ -16,6 +16,11 @@ from ._configuration.everest_environment_setup import \
     EverestEnvironmentEvseSecurityConfiguration, EverestEnvironmentPersistentStoreConfiguration
 from everest.testing.core_utils.controller.everest_test_controller import EverestTestController
 from everest.testing.core_utils.everest_core import EverestCore
+from everest.testing.core_utils.network_isolation import (
+    NetworkIsolationStrategy,
+    WORKER_INTERFACE_ENV,
+    WORKER_PROXY_INTERFACE_ENV,
+)
 
 
 @pytest.fixture
@@ -73,6 +78,14 @@ def everest_config_strategies(request) -> list[EverestConfigAdjustmentStrategy]:
         for v in additional_configuration_strategies_marker.args:
             assert isinstance(v, EverestConfigAdjustmentStrategy), "Arguments to 'everest_config_adaptions' must all be instances of EverestConfigAdjustmentStrategy"
             additional_configuration_strategies.append(v)
+
+    # Auto-inject NetworkIsolationStrategy when a worker interface is assigned.
+    # The env vars are set by the NetworkIsolationPlugin on xdist worker nodes.
+    interface = os.environ.get(WORKER_INTERFACE_ENV)
+    if interface:
+        proxy_interface = os.environ.get(WORKER_PROXY_INTERFACE_ENV)
+        additional_configuration_strategies.append(NetworkIsolationStrategy(interface, proxy_interface))
+
     return additional_configuration_strategies
 
 
