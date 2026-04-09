@@ -66,14 +66,8 @@ DatabaseBootstrap bootstrap_from_database(const std::string& prefix, const std::
                                                                   everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
 
     EVLOG_info << "Booting and parsing configuration from database: " << bs.ms.db_dir;
-    const auto settings_response = bs.storage->get_settings();
-    if (settings_response.status != everest::config::GenericResponseStatus::OK or
-        !settings_response.settings.has_value()) {
-        throw BootException("Failed to load settings from database");
-    }
-    const auto settings = settings_response.settings.value();
-    bs.ms.init_settings(settings);
-    slot_mgr.write_config_slot(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID, bs.ms);
+    // ManagerSettings are not stored in the database; use defaults derived from prefix.
+    bs.ms.init_settings(everest::config::Settings{});
 
     bs.module_configs_initialized = true;
     return bs;
@@ -86,6 +80,10 @@ DatabaseBootstrap bootstrap_from_database_init(const std::string& prefix, const 
     bs.ms.init_prefix_and_data_dir(prefix);
     bs.ms.init_config_file(config);
 
+    // ManagerSettings always come from YAML, not from the database.
+    const auto settings = everest::config::parse_settings(bs.ms.config.value("settings", json::object()));
+    bs.ms.init_settings(settings);
+
     const auto migrations_dir = bs.ms.runtime_settings.data_dir / "migrations";
     const auto db_fs_path = fs::path(db_path);
 
@@ -97,21 +95,11 @@ DatabaseBootstrap bootstrap_from_database_init(const std::string& prefix, const 
         bs.storage = std::make_unique<everest::config::SqliteStorage>(
             db_fs_path, migrations_dir, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
 
-        const auto settings_response = bs.storage->get_settings();
-        if (settings_response.status != everest::config::GenericResponseStatus::OK or
-            !settings_response.settings.has_value()) {
-            throw BootException("Failed to load settings from database");
-        }
-        bs.ms.init_settings(settings_response.settings.value());
-        slot_mgr.write_config_slot(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID, bs.ms);
         bs.module_configs_initialized = true;
     } else {
         EVLOG_info << "Database not initialized or valid, falling back to YAML config file: " << config;
         slot_mgr.delete_slot(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
-
-        const auto settings = everest::config::parse_settings(bs.ms.config.value("settings", json::object()));
-        bs.ms.init_settings(settings);
-        slot_mgr.write_config_slot(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID, bs.ms);
+        slot_mgr.write_config_slot(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
 
         bs.storage = std::make_unique<everest::config::SqliteStorage>(
             db_fs_path, migrations_dir, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);

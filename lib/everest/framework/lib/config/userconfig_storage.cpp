@@ -33,11 +33,6 @@ GetModuleConfigsResponse UserConfigStorage::get_module_configs() {
     response.status = GenericResponseStatus::Failed;
     return response;
 }
-GetSettingsResponse UserConfigStorage::get_settings() {
-    GetSettingsResponse response;
-    response.status = GenericResponseStatus::Failed;
-    return response;
-}
 GetModuleConfigurationResponse UserConfigStorage::get_module_config(const std::string& /*module_id*/) {
     GetModuleConfigurationResponse response;
     response.status = GenericResponseStatus::Failed;
