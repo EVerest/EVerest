@@ -41,8 +41,6 @@ std::string set_real_user(const std::string& user_name);
 
 std::string set_user_and_capabilities(const std::string& run_as_user, const std::vector<std::string>& capabilities);
 
-int setup_signal_fd();
-
 class SignalPolling {
 public:
     SignalPolling();
