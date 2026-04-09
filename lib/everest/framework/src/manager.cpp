@@ -406,27 +406,15 @@ void Manager::shutdown_modules(const std::map<pid_t, std::string>& modules, Mana
 namespace {
 
 /// \brief Select configuration boot mode from CLI options.
-ConfigBootMode parse_config_boot_mode(const std::string& config_opt, const std::string& db_opt, const bool db_init) {
-    if (config_opt.empty() and db_opt.empty()) {
-        // no config or db option given, use default
-        return ConfigBootMode::YamlFile;
-    }
-    if (!config_opt.empty() && !db_opt.empty()) {
-        if (db_init == false) {
-            throw BootException("Both --config and --db options are set, but no --db-init option is given. "
-                                "This is not allowed.");
-        }
-        return ConfigBootMode::DatabaseInit;
-    }
-    if (!config_opt.empty()) {
-        // only config option given, use yaml file
-        return ConfigBootMode::YamlFile;
+ConfigBootMode parse_config_boot_mode(const std::string& config_opt, const std::string& db_opt) {
+    if (!db_opt.empty() && config_opt.empty()) {
+        throw BootException("--db requires --config to be set as well. "
+                            "A YAML config is always needed to provide ManagerSettings.");
     }
     if (!db_opt.empty()) {
-        // only db option given, use database
-        return ConfigBootMode::Database;
+        return ConfigBootMode::DatabaseInit;
     }
-    throw std::logic_error("Could not parse config boot source, this should never happen.");
+    return ConfigBootMode::YamlFile;
 }
 
 /// \brief Disconnect from MQTT; last cleanup step before the manager exits.
@@ -626,7 +614,6 @@ int Manager::run() {
     const auto prefix_opt = parse_string_option(vm_, "prefix");
     const auto config_opt = parse_string_option(vm_, "config");
     const auto db_opt = parse_string_option(vm_, "db");
-    const auto db_init = vm_.count("db-init") != 0;
     ConfigBootMode boot_mode = parse_config_boot_mode(config_opt, db_opt, db_init);
 
     ManagerSettings ms;
@@ -637,13 +624,6 @@ int Manager::run() {
     case ConfigBootMode::YamlFile:
         ms = ManagerSettings(prefix_opt, config_opt);
         break;
-    case ConfigBootMode::Database: {
-        auto bs = bootstrap_from_database(prefix_opt, db_opt);
-        ms = std::move(bs.ms);
-        db_storage = std::move(bs.storage);
-        db_storage_has_module_configs = bs.module_configs_initialized;
-        break;
-    }
     case ConfigBootMode::DatabaseInit: {
         auto bs = bootstrap_from_database_init(prefix_opt, config_opt, db_opt);
         ms = std::move(bs.ms);
@@ -651,8 +631,6 @@ int Manager::run() {
         db_storage_has_module_configs = bs.module_configs_initialized;
         break;
     }
-    default:
-        throw BootException(fmt::format("Invalid boot source: {}", static_cast<int>(boot_mode)));
     }
 
     // CLI override for mqtt_everest_prefix (e.g. for parallel test execution).
@@ -1375,9 +1353,10 @@ int main(int argc, char* argv[]) {
     desc.add_options()("config", po::value<std::string>(),
                        "Full path to a config file.  If the file does not exist and has no extension, it will be "
                        "looked up in the default config directory");
-    desc.add_options()("db", po::value<std::string>(), "Full path to the configuration database file");
-    desc.add_options()("db-init", "Indicator to initialize the database if it does not contain a valid configuration. "
-                                  "Requires --config and --db to be set.");
+    desc.add_options()(
+        "db", po::value<std::string>(),
+        "Full path to the configuration database file. Requires --config. "
+        "The database is initialized automatically from active_modules in the YAML config on first run.");
     desc.add_options()("into-idle", "Boot into idle state (no modules are started)");
     desc.add_options()("recover-module-crashes",
                        "After unexpected module exit, reload config and restart modules (bounded by an internal retry "
