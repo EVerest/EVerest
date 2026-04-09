@@ -39,8 +39,6 @@ Module::Module(const std::string& module_id_, const RuntimeSession& session_) :
 
     this->handle = create_everest_instance(module_id, config, *this->rs, this->mqtt_abstraction);
 
-    handle->register_on_shutdown_handler([]() { _exit(EXIT_SUCCESS); });
-
     // determine the fulfillments for our requirements
     const auto& module_name = config.get_module_name(this->module_id);
     const auto module_manifest = config.get_manifests().at(module_name);
