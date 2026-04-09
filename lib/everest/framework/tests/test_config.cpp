@@ -237,15 +237,25 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
                 CHECK(bs2.module_configs_initialized == true);
                 CHECK_NOTHROW(Everest::ManagerConfig(bs2.ms, bs2.storage.get(), bs2.module_configs_initialized));
             }
-            THEN("It should be possible to bootstrap again from the initialized database using config+db mode") {
-                // bootstrap_from_database (--db only) requires a proper installation prefix with
-                // standard directory layout. In test environments use bootstrap_from_database_init
-                // (--config + --db) which obtains ManagerSettings from the YAML config file.
+            THEN("It should be possible to bootstrap again from the initialized database") {
                 auto bs3 = Everest::bootstrap_from_database_init(bin_dir + "valid_config/",
                                                                  bin_dir + "valid_config/config.yaml", db_path);
                 CHECK(bs3.module_configs_initialized == true);
                 CHECK_NOTHROW(Everest::ManagerConfig(bs3.ms, bs3.storage.get(), bs3.module_configs_initialized));
             }
+        }
+    }
+    GIVEN("A YAML config without active_modules and an uninitialized database") {
+        auto db_path = bin_dir + "empty_yaml_object/everest.db";
+        if (fs::exists(db_path)) {
+            fs::remove(db_path);
+        }
+        auto bs = Everest::bootstrap_from_database_init(bin_dir + "empty_yaml_object/",
+                                                        bin_dir + "empty_yaml_object/config.yaml", db_path);
+        CHECK(bs.module_configs_initialized == false);
+        THEN("ManagerConfig should throw because there are no active_modules to initialize the database from") {
+            CHECK_THROWS_AS(Everest::ManagerConfig(bs.ms, bs.storage.get(), bs.module_configs_initialized),
+                            Everest::EverestConfigError);
         }
     }
 }
