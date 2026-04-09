@@ -41,11 +41,6 @@ struct GetModuleConfigsResponse {
     ModuleConfigurations module_configs;
 };
 
-struct GetSettingsResponse {
-    GenericResponseStatus status = GenericResponseStatus::Failed;
-    std::optional<Settings> settings;
-};
-
 struct GetModuleFulfillmentsResponse {
     GenericResponseStatus status = GenericResponseStatus::Failed;
     std::vector<Fulfillment> module_fulfillments;

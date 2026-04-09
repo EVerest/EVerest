@@ -1,6 +1,7 @@
 -- Migration 4 rollback: remove multi-config support.
 -- If multiple configs exist only the one with the lowest ID (the original migrated config) is kept.
 -- All data belonging to other configs is discarded.
+-- Note: ManagerSettings are not restored since they were never stored from migration 4 onward.
 
 PRAGMA foreign_keys = OFF;
 
@@ -126,43 +127,35 @@ INSERT INTO CONFIG_META_NEW
 DROP TABLE CONFIG_META;
 ALTER TABLE CONFIG_META_NEW RENAME TO CONFIG_META;
 
--- 1. SETTING: reconstruct from FRAMEWORK_SETTINGS, restore id=0 constraint,
---    keep only the lowest-ID row mapped to ID=0.
+-- 1. SETTING: restore with id=0 constraint and a default empty row.
+--    ManagerSettings were not stored in the database from migration 4 onward,
+--    so we recreate the table structure with defaults only.
 CREATE TABLE SETTING_NEW (
     ID                        INTEGER PRIMARY KEY CHECK (id = 0),
-    PREFIX                    TEXT    NOT NULL,
-    CONFIG_FILE               TEXT    NOT NULL,
-    CONFIGS_DIR               TEXT    NOT NULL,
-    SCHEMAS_DIR               TEXT    NOT NULL,
-    MODULES_DIR               TEXT    NOT NULL,
-    INTERFACES_DIR            TEXT    NOT NULL,
-    TYPES_DIR                 TEXT    NOT NULL,
-    ERRORS_DIR                TEXT    NOT NULL,
-    WWW_DIR                   TEXT    NOT NULL,
-    LOGGING_CONFIG_FILE       TEXT    NOT NULL,
-    CONTROLLER_PORT           INTEGER NOT NULL,
-    CONTROLLER_RPC_TIMEOUT_MS INTEGER NOT NULL,
-    MQTT_BROKER_SOCKET_PATH   TEXT    NOT NULL,
-    MQTT_BROKER_HOST          TEXT    NOT NULL,
-    MQTT_BROKER_PORT          INTEGER NOT NULL,
-    MQTT_EVEREST_PREFIX       TEXT    NOT NULL,
-    MQTT_EXTERNAL_PREFIX      TEXT    NOT NULL,
-    TELEMETRY_PREFIX          TEXT    NOT NULL,
-    TELEMETRY_ENABLED         INTEGER NOT NULL,
-    VALIDATE_SCHEMA           INTEGER NOT NULL,
-    RUN_AS_USER               TEXT    NOT NULL,
-    FORWARD_EXCEPTIONS        INTEGER NOT NULL
+    PREFIX                    TEXT    NOT NULL DEFAULT '',
+    CONFIG_FILE               TEXT    NOT NULL DEFAULT '',
+    CONFIGS_DIR               TEXT    NOT NULL DEFAULT '',
+    SCHEMAS_DIR               TEXT    NOT NULL DEFAULT '',
+    MODULES_DIR               TEXT    NOT NULL DEFAULT '',
+    INTERFACES_DIR            TEXT    NOT NULL DEFAULT '',
+    TYPES_DIR                 TEXT    NOT NULL DEFAULT '',
+    ERRORS_DIR                TEXT    NOT NULL DEFAULT '',
+    WWW_DIR                   TEXT    NOT NULL DEFAULT '',
+    LOGGING_CONFIG_FILE       TEXT    NOT NULL DEFAULT '',
+    CONTROLLER_PORT           INTEGER NOT NULL DEFAULT 0,
+    CONTROLLER_RPC_TIMEOUT_MS INTEGER NOT NULL DEFAULT 0,
+    MQTT_BROKER_SOCKET_PATH   TEXT    NOT NULL DEFAULT '',
+    MQTT_BROKER_HOST          TEXT    NOT NULL DEFAULT '',
+    MQTT_BROKER_PORT          INTEGER NOT NULL DEFAULT 0,
+    MQTT_EVEREST_PREFIX       TEXT    NOT NULL DEFAULT '',
+    MQTT_EXTERNAL_PREFIX      TEXT    NOT NULL DEFAULT '',
+    TELEMETRY_PREFIX          TEXT    NOT NULL DEFAULT '',
+    TELEMETRY_ENABLED         INTEGER NOT NULL DEFAULT 0,
+    VALIDATE_SCHEMA           INTEGER NOT NULL DEFAULT 0,
+    RUN_AS_USER               TEXT    NOT NULL DEFAULT '',
+    FORWARD_EXCEPTIONS        INTEGER NOT NULL DEFAULT 0
 );
-INSERT INTO SETTING_NEW
-    SELECT 0, PREFIX, CONFIG_FILE, CONFIGS_DIR, SCHEMAS_DIR, MODULES_DIR,
-           INTERFACES_DIR, TYPES_DIR, ERRORS_DIR, WWW_DIR, LOGGING_CONFIG_FILE,
-           CONTROLLER_PORT, CONTROLLER_RPC_TIMEOUT_MS,
-           MQTT_BROKER_SOCKET_PATH, MQTT_BROKER_HOST, MQTT_BROKER_PORT,
-           MQTT_EVEREST_PREFIX, MQTT_EXTERNAL_PREFIX, TELEMETRY_PREFIX,
-           TELEMETRY_ENABLED, VALIDATE_SCHEMA, RUN_AS_USER, FORWARD_EXCEPTIONS
-    FROM FRAMEWORK_SETTINGS
-    WHERE ID = (SELECT MIN(ID) FROM CONFIG);
-DROP TABLE FRAMEWORK_SETTINGS;
+INSERT OR IGNORE INTO SETTING_NEW (ID) VALUES (0);
 DROP TABLE CONFIG;
 ALTER TABLE SETTING_NEW RENAME TO SETTING;
 
