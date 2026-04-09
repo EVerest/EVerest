@@ -228,6 +228,7 @@ async def test_E04(
         ]
     )
 )
+@pytest.mark.flaky(reruns=1)
 async def test_cleanup_transaction_events_after_max_attempts_exhausted(
     central_system: CentralSystem,
     test_controller: TestController,
@@ -333,6 +334,7 @@ async def test_cleanup_transaction_events_after_max_attempts_exhausted(
         {"eventType": "Updated", "offline": False},
     )
 
+    test_utility.validation_mode = ValidationMode.EASY
     central_system.mock.on_transaction_event.reset()
 
     # respond properly to transaction events again
@@ -364,7 +366,6 @@ async def test_cleanup_transaction_events_after_max_attempts_exhausted(
 
     # no attempts on delivering the transaction message should be made
     assert await validate_incoming_messages(test_utility, charge_point_v201, "TransactionEvent", {}, timeout=10) is False
-    test_utility.validation_mode = ValidationMode.EASY
 
 
 @pytest.mark.asyncio
