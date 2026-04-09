@@ -15,6 +15,7 @@
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 #include <bitset>
 #include <mutex>
+#include <optional>
 
 #include "utils.hpp"
 
@@ -95,9 +96,15 @@ private:
 
     std::vector<iso15118::d20::SupportedVASs> supported_vas_services_per_provider;
     std::mutex vas_mutex;
+    std::mutex published_dc_values_mutex;
+    std::optional<types::iso15118::DcEvTargetValues> last_published_dc_ev_target_values;
+    std::optional<types::iso15118::DcEvMaximumLimits> last_published_dc_ev_maximum_limits;
 
     void update_supported_vas_services();
     std::optional<size_t> get_vas_provider_index(uint16_t service_id);
+    void reset_published_value_cache();
+    void publish_dc_ev_target_voltage_current_if_changed(const types::iso15118::DcEvTargetValues& values);
+    void publish_dc_ev_maximum_limits_if_changed(const types::iso15118::DcEvMaximumLimits& limits);
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
