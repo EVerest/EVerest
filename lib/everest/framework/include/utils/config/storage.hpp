@@ -29,10 +29,6 @@ public:
     /// module configurations and manager settings
     virtual GetModuleConfigsResponse get_module_configs() = 0;
 
-    /// \brief Gets EVerest manager settings from persistent storage
-    /// \return
-    virtual GetSettingsResponse get_settings() = 0;
-
     /// \brief Gets EVerest config from persistent storage for a single module
     /// \param module_id
     /// \return Response with status of operation and module config. config is only set if status is OK

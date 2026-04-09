@@ -237,8 +237,14 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
                 CHECK(bs2.module_configs_initialized == true);
                 CHECK_NOTHROW(Everest::ManagerConfig(bs2.ms, bs2.storage.get(), bs2.module_configs_initialized));
             }
-            THEN("It should be possible to bootstrap from an existing database") {
-                CHECK_NOTHROW(Everest::bootstrap_from_database(bin_dir + "valid_config/", db_path));
+            THEN("It should be possible to bootstrap again from the initialized database using config+db mode") {
+                // bootstrap_from_database (--db only) requires a proper installation prefix with
+                // standard directory layout. In test environments use bootstrap_from_database_init
+                // (--config + --db) which obtains ManagerSettings from the YAML config file.
+                auto bs3 = Everest::bootstrap_from_database_init(bin_dir + "valid_config/",
+                                                                 bin_dir + "valid_config/config.yaml", db_path);
+                CHECK(bs3.module_configs_initialized == true);
+                CHECK_NOTHROW(Everest::ManagerConfig(bs3.ms, bs3.storage.get(), bs3.module_configs_initialized));
             }
         }
     }
