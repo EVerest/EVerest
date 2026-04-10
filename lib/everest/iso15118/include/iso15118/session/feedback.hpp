@@ -84,6 +84,7 @@ struct Callbacks {
     std::function<void(const d20::SelectedServiceParameters&)> selected_service_parameters;
     std::function<void(const d20::EVInformation&)> ev_information;
     std::function<std::optional<d2::msg::data_types::Service>(uint16_t)> get_service_from_id;
+    std::function<std::optional<d2::msg::data_types::ServiceParameterList>(uint16_t)> get_service_parameters_list;
     std::function<std::optional<dt::ServiceParameterList>(uint16_t)> get_vas_parameters;
     std::function<void(const dt::VasSelectedServiceList&)> selected_vas_services;
     std::function<void(const AcLimits&)> ac_limits;
@@ -113,6 +114,7 @@ public:
     void selected_service_parameters(const d20::SelectedServiceParameters&) const;
     void ev_information(const d20::EVInformation&) const;
     std::optional<d2::msg::data_types::Service> get_service_from_id(uint16_t) const;
+    std::optional<d2::msg::data_types::ServiceParameterList> get_service_parameters_list(uint16_t) const;
     std::optional<dt::ServiceParameterList> get_vas_parameters(uint16_t) const;
     void selected_vas_services(const dt::VasSelectedServiceList&) const;
     void ac_limits(const feedback::AcLimits&) const;

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <cbv2g/iso_2/iso2_msgDefDatatypes.h>
@@ -200,6 +201,27 @@ struct DcEvStatus {
     DcEvErrorCode ev_error_code;
     PercentValue ev_ress_soc;
 };
+
+struct Parameter {
+    std::string name;
+    std::variant<bool, int8_t, int16_t, int32_t, PhysicalValue, std::string> value;
+};
+
+struct ParameterSet {
+    ParameterSetID parameter_set_id;
+    std::vector<Parameter> parameter; // [1 - 16]
+};
+constexpr auto ParameterSetListMaxLength = 16;
+
+using ServiceParameterList = std::vector<ParameterSet>; // [1 - 255]
+constexpr auto ServiceParameterListMaxLength = 255;
+
+struct SelectedService {
+    ServiceID service_id;
+    std::optional<ParameterSetID> parameter_set_id{std::nullopt};
+};
+using SelectedServiceList = std::vector<SelectedService>; // [1 - 16]
+constexpr auto SelectedServiceListMaxLength = 16;
 
 float from_PhysicalValue(const PhysicalValue& in);
 PhysicalValue from_float(const float in, const data_types::UnitSymbol unit);
