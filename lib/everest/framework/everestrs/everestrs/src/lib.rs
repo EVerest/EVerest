@@ -1,3 +1,5 @@
+pub mod manager;
+
 use everestrs_build::schema;
 
 use clap::Parser;
@@ -16,7 +18,7 @@ use thiserror::Error;
 static INIT_LOGGER_ONCE: Once = Once::new();
 
 // Reexport everything so the clients can use it.
-pub use everestrs_derive::main;
+pub use everestrs_derive::{harness, main, test};
 pub use log;
 pub use serde;
 pub use serde_json;
@@ -177,7 +179,7 @@ mod ffi {
             prefix: &str,
             mqtt_broker_socket_path: &str,
             mqtt_broker_host: &str,
-            mqtt_broker_port: &u32,
+            mqtt_broker_port: &u16,
             mqtt_everest_prefix: &str,
             mqtt_external_prefix: &str,
         ) -> UniquePtr<Module>;
@@ -370,7 +372,7 @@ impl<T> From<T> for ErrorType<T> {
 
 /// Arguments for an EVerest node.
 #[derive(Parser, Debug)]
-struct Args {
+pub struct Args {
     /// prefix of installation.
     #[arg(long)]
     pub prefix: PathBuf,
@@ -393,7 +395,7 @@ struct Args {
 
     /// MQTT broker port
     #[arg(long = "mqtt_broker_port")]
-    pub mqtt_broker_port: u32,
+    pub mqtt_broker_port: u16,
 
     /// MQTT EVerest prefix
     #[arg(long = "mqtt_everest_prefix")]
@@ -440,6 +442,16 @@ pub trait Subscriber: Sync + Send {
     fn on_ready(&self) {}
 }
 
+enum PanicStrategy {
+    /// Log the panic and abort the process. Appropriate for production modules
+    /// where a panic in a callback means the module is in a broken state.
+    Abort,
+    /// Capture the panic and re-raise it on the main/test thread when the
+    /// module is dropped. Appropriate for tests where panics (e.g. from
+    /// mockall assertions) should be forwarded to the test harness.
+    Capture(std::sync::Mutex<Option<Box<dyn std::any::Any + Send>>>),
+}
+
 /// The [Runtime] is the central piece of the bridge between c++ and Rust. Rust
 /// owns the [ffi::Module], and the ffi::Module owns the entire mqtt stack. So
 /// when dropping, we first drop the ffi::Module and then the
@@ -449,25 +461,77 @@ pub struct Runtime {
     sub_impl: OnceLock<Arc<dyn Subscriber>>,
     /// The config for the client module.
     config: HashMap<String, HashMap<String, Config>>,
+    panic_strategy: PanicStrategy,
 }
 
 impl Runtime {
+    /// Handle a panic payload according to the configured strategy.
+    fn handle_panic(&self, payload: Box<dyn std::any::Any + Send>) {
+        match &self.panic_strategy {
+            PanicStrategy::Abort => {
+                // Extract a message for the log, then abort.
+                let msg = if let Some(s) = payload.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = payload.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "unknown panic".to_string()
+                };
+                log::error!("Panic on MQTT callback thread: {msg}");
+                std::process::abort();
+            }
+            PanicStrategy::Capture(captured) => {
+                let mut slot = captured.lock().unwrap();
+                if slot.is_none() {
+                    *slot = Some(payload);
+                }
+            }
+        }
+    }
+
+    /// If a panic was captured on an MQTT callback thread, re-raise it on the
+    /// current thread. This is intended to be called from `Drop`.
+    pub fn check_panic(&self) {
+        if let PanicStrategy::Capture(captured) = &self.panic_strategy {
+            if let Some(payload) = captured.lock().unwrap().take() {
+                std::panic::resume_unwind(payload);
+            }
+        }
+    }
+
     fn on_ready(&self) {
-        self.sub_impl.get().unwrap().on_ready();
+        if let Err(payload) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.sub_impl.get().unwrap().on_ready();
+        })) {
+            self.handle_panic(payload);
+        }
     }
 
     fn handle_command(&self, impl_id: &str, name: &str, json: ffi::JsonBlob) -> ffi::JsonBlob {
         debug!("handle_command: {impl_id}, {name}, '{:?}'", json.as_bytes());
-        let parameters: Option<HashMap<String, serde_json::Value>> = json.deserialize();
-        let retval = self
-            .sub_impl
-            .get()
-            .unwrap()
-            .handle_command(impl_id, name, parameters.unwrap_or_default());
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let parameters: Option<HashMap<String, serde_json::Value>> = json.deserialize();
+            let retval = self.sub_impl.get().unwrap().handle_command(
+                impl_id,
+                name,
+                parameters.unwrap_or_default(),
+            );
 
-        match retval {
-            Ok(blob) => ffi::JsonBlob::from_vec(serde_json::to_vec(&blob).unwrap()),
-            Err(err) => ffi::JsonBlob::from_vec(serde_json::to_vec(&err).unwrap())
+            match retval {
+                Ok(blob) => ffi::JsonBlob::from_vec(serde_json::to_vec(&blob).unwrap()),
+                Err(err) => ffi::JsonBlob::from_vec(serde_json::to_vec(&err).unwrap()),
+            }
+        }));
+
+        match result {
+            Ok(blob) => blob,
+            Err(payload) => {
+                self.handle_panic(payload);
+                // Return an error response so the C++ side doesn't hang.
+                // Only reached with PanicStrategy::Capture (Abort never returns).
+                let err = Error::HandlerException("panic in command handler".into());
+                ffi::JsonBlob::from_vec(serde_json::to_vec(&err).unwrap())
+            }
         }
     }
 
@@ -476,24 +540,35 @@ impl Runtime {
             "handle_variable: {impl_id}, {name}, '{:?}'",
             json.as_bytes()
         );
-        if let Err(err) =
-            self.sub_impl
-                .get()
-                .unwrap()
-                .handle_variable(impl_id, index, name, json.deserialize())
-        {
-            log::error!("`handle_variable` failed: {err:?}");
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            if let Err(err) = self.sub_impl.get().unwrap().handle_variable(
+                impl_id,
+                index,
+                name,
+                json.deserialize(),
+            ) {
+                log::error!("`handle_variable` failed: {err:?}");
+            }
+        }));
+
+        if let Err(payload) = result {
+            self.handle_panic(payload);
         }
     }
 
     fn handle_on_error(&self, impl_id: &str, index: usize, error: ffi::ErrorType, raised: bool) {
         debug!("handle_on_error: {impl_id}, index {index}, raised {raised}");
 
-        // We want to split the error type into the group and the remainder.
-        self.sub_impl
-            .get()
-            .unwrap()
-            .handle_on_error(impl_id, index, error, raised);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.sub_impl
+                .get()
+                .unwrap()
+                .handle_on_error(impl_id, index, error, raised);
+        }));
+
+        if let Err(payload) = result {
+            self.handle_panic(payload);
+        }
     }
 
     pub fn publish_variable<T: serde::Serialize>(
@@ -523,14 +598,18 @@ impl Runtime {
             Ok(ok) => Ok(ok),
             Err(_) => match serde_json::from_slice::<Error>(&return_value.data) {
                 Ok(err) => Err(err),
-                Err(err) => Err(Error::MessageParsingError(format!("{err:?}")))
-            }
+                Err(err) => Err(Error::MessageParsingError(format!("{err:?}"))),
+            },
         }
     }
 
     /// Called from the generated code.
     /// The type T should be an error.
-    pub fn raise_error<T: serde::Serialize + core::fmt::Debug>(&self, impl_id: &str, error: ErrorType<T>) {
+    pub fn raise_error<T: serde::Serialize + core::fmt::Debug>(
+        &self,
+        impl_id: &str,
+        error: ErrorType<T>,
+    ) {
         let error_string = serde_yaml::to_string(&error.error_type).unwrap_or_default();
         // Remove the new line -> this should be gone once we stop using yaml
         // since we don't really want yaml.
@@ -568,13 +647,20 @@ impl Runtime {
             .clear_error(impl_id, &error_string, clear_all);
     }
 
-    /// Create a runtime by parsing CLI arguments.
+    /// Create a runtime by parsing CLI arguments. Uses [`PanicStrategy::Abort`]
+    /// since this is the production entry point.
     pub fn new() -> Pin<Arc<Self>> {
         let args: Args = Args::parse();
-        Self::create(args)
+        Self::create(args, PanicStrategy::Abort)
     }
 
-    fn create(args: Args) -> Pin<Arc<Self>> {
+    /// Create a runtime with explicit args instead of parsing CLI arguments.
+    /// Uses [`PanicStrategy::Capture`] since this is used by test harnesses.
+    pub fn new_with_args(args: Args) -> Pin<Arc<Self>> {
+        Self::create(args, PanicStrategy::Capture(std::sync::Mutex::new(None)))
+    }
+
+    fn create(args: Args, panic_strategy: PanicStrategy) -> Pin<Arc<Self>> {
         logger::Logger::init_logger(
             &args.module,
             &args.prefix.to_string_lossy(),
@@ -622,11 +708,11 @@ impl Runtime {
                 .or_default()
                 .extend(cc_config);
         }
-
         Arc::pin(Self {
             cpp_module,
             sub_impl: OnceLock::new(),
             config,
+            panic_strategy,
         })
     }
 
@@ -701,6 +787,16 @@ impl Runtime {
     /// Interface for fetching the configurations through the C++ runtime.
     pub fn get_module_configs(&self) -> &HashMap<String, HashMap<String, Config>> {
         &self.config
+    }
+}
+
+impl Drop for Runtime {
+    fn drop(&mut self) {
+        // Re-raise any panic that was captured on an MQTT callback thread,
+        // but only if we're not already unwinding from another panic.
+        if !std::thread::panicking() {
+            self.check_panic();
+        }
     }
 }
 

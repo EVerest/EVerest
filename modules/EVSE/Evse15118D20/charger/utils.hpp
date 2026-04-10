@@ -16,6 +16,8 @@
 #include <iso15118/message/service_detail.hpp>
 #include <iso15118/message/type.hpp>
 
+#include <everest/util/vector/fixed_vector.hpp>
+
 static constexpr auto NUMBER_OF_SETUP_STEPS = 5;
 
 namespace module::charger {
@@ -134,7 +136,7 @@ void fill_v2x_charging_parameters(types::iso15118::V2XChargingParameters& out_pa
 template <typename In>
 void fill_v2x_charging_parameters(types::iso15118::V2XChargingParameters& out_params, const In& data);
 
-std::vector<dt::ParameterSet>
+everest::lib::util::fixed_vector<dt::ParameterSet, 32>
 convert_parameter_set_list(const std::vector<types::iso15118_vas::ParameterSet>& parameter_set_list);
 
 types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::AC_CPDReqEnergyTransferMode& mode);

@@ -31,6 +31,14 @@ pub(crate) trait OnReadySubscriber: Sync + Send {
     fn on_ready(&self, pub_impl: &ModulePublisher);
 }
 
+#[cfg(all(feature = "mockall", feature = "trait"))]
+mockall::mock! {
+    pub(crate) OnReadySubscriber {}
+    impl OnReadySubscriber for OnReadySubscriber {
+        fn on_ready(&self, pub_impl: &ModulePublisher);
+    }
+}
+
 {% for trait in provided_interfaces %}
 {% include "service" %}
 {% endfor %}
@@ -40,7 +48,7 @@ pub(crate) trait OnReadySubscriber: Sync + Send {
 {% endfor %}
 
 #[derive(Clone)]
-#[cfg_attr(all(test, feature="mockall"), derive(Default))]
+#[cfg_attr(all(test, feature="mockall", not(feature="trait")), derive(Default))]
 pub(crate) struct ModulePublisher {
 {% for provide in provides %}
    pub(crate) {{ provide.implementation_id | identifier }}: {{provide.interface | title}}ServicePublisher,
@@ -95,6 +103,15 @@ impl Module {
     #[must_use]
     pub(crate) fn new() -> Self {
         let runtime = ::everestrs::Runtime::new();
+        Self {
+            runtime,
+            inner: ::std::sync::OnceLock::new(),
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn new_with_args(args: ::everestrs::Args) -> Self {
+        let runtime = ::everestrs::Runtime::new_with_args(args);
         Self {
             runtime,
             inner: ::std::sync::OnceLock::new(),

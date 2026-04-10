@@ -13,6 +13,9 @@
 // headers for provided interface implementations
 #include <generated/interfaces/over_voltage_monitor/Implementation.hpp>
 
+// headers for required interface implementations
+#include <generated/interfaces/power_supply_DC/Interface.hpp>
+
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
@@ -25,11 +28,17 @@ class OVMSimulator : public Everest::ModuleBase {
 public:
     OVMSimulator() = delete;
     OVMSimulator(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
-                 std::unique_ptr<over_voltage_monitorImplBase> p_main, Conf& config) :
-        ModuleBase(info), mqtt(mqtt_provider), p_main(std::move(p_main)), config(config){};
+                 std::unique_ptr<over_voltage_monitorImplBase> p_main,
+                 std::vector<std::unique_ptr<power_supply_DCIntf>> r_power_supply, Conf& config) :
+        ModuleBase(info),
+        mqtt(mqtt_provider),
+        p_main(std::move(p_main)),
+        r_power_supply(std::move(r_power_supply)),
+        config(config){};
 
     Everest::MqttProvider& mqtt;
     const std::unique_ptr<over_voltage_monitorImplBase> p_main;
+    const std::vector<std::unique_ptr<power_supply_DCIntf>> r_power_supply;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1

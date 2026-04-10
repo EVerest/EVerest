@@ -367,7 +367,7 @@ ErrorCode mosquitto_cpp::connect(const std::string_view& bind_address, const std
 }
 
 ErrorCode mosquitto_cpp::connect(const std::string_view& unix_domain_socket, std::uint16_t keepalive_seconds) {
-    return connect_impl(unix_domain_socket, "", 0, keepalive_seconds);
+    return connect_impl("", unix_domain_socket, 0, keepalive_seconds);
 }
 
 ErrorCode mosquitto_cpp::connect_impl(const std::string_view& bind_address, const std::string_view& host,

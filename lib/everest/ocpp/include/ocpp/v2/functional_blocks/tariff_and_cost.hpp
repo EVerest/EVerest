@@ -17,6 +17,7 @@ struct CostUpdatedRequest;
 using SetRunningCostCallback = std::function<void(
     const RunningCost& running_cost, const std::uint32_t number_of_decimals, std::optional<std::string> currency_code)>;
 using TariffMessageCallback = std::function<void(const TariffMessage& message)>;
+using DefaultPriceCallback = std::function<void(const std::vector<DisplayMessageContent>& messages)>;
 
 class TariffAndCostInterface : public MessageHandlerInterface {
 public:
@@ -51,6 +52,15 @@ public:
     /// \param offline        When true, reads OfflineTariffFallbackMessage; otherwise TariffFallbackMessage.
     ///
     virtual void ensure_personal_message(IdTokenInfo& id_token_info, bool offline) = 0;
+
+    ///
+    /// \brief Publish the currently applicable default price via default_price_callback.
+    ///        When is_connected is true, reads TariffFallbackMessage; when false, reads
+    ///        OfflineTariffFallbackMessage (falling back to TariffFallbackMessage if not configured).
+    ///        Does nothing when tariff is not enabled or no fallback messages are configured.
+    /// \param is_connected  When false, prefer the offline fallback message.
+    ///
+    virtual void publish_default_price(bool is_connected) = 0;
 };
 
 class TariffAndCost : public TariffAndCostInterface {
@@ -58,7 +68,7 @@ public:
     TariffAndCost(const FunctionalBlockContext& functional_block_context, MeterValuesInterface& meter_values,
                   std::optional<TariffMessageCallback>& tariff_message_callback,
                   std::optional<SetRunningCostCallback>& set_running_cost_callback,
-                  boost::asio::io_context& io_context);
+                  std::optional<DefaultPriceCallback>& default_price_callback, boost::asio::io_context& io_context);
     void handle_message(const ocpp::EnhancedMessage<MessageType>& message) override;
 
     void handle_cost_and_tariff(const TransactionEventResponse& response,
@@ -67,6 +77,7 @@ public:
 
     void send_total_cost_fallback_message(const std::string& transaction_id) override;
     void ensure_personal_message(IdTokenInfo& id_token_info, bool offline) override;
+    void publish_default_price(bool is_connected) override;
 
 private:
     // Members
@@ -74,6 +85,7 @@ private:
     MeterValuesInterface& meter_values;
     std::optional<TariffMessageCallback> tariff_message_callback;
     std::optional<SetRunningCostCallback> set_running_cost_callback;
+    std::optional<DefaultPriceCallback> default_price_callback;
     boost::asio::io_context& io_context;
 
     // Functions

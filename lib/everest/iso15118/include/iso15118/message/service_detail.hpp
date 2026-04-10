@@ -2,10 +2,11 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <string>
-#include <vector>
+#include <variant>
 
 #include "common_types.hpp"
+
+#include <everest/util/vector/fixed_vector.hpp>
 
 namespace iso15118::message_20 {
 
@@ -18,9 +19,10 @@ struct Parameter {
 
 struct ParameterSet {
     uint16_t id;
-    std::vector<Parameter> parameter;
+    everest::lib::util::fixed_vector<Parameter, 32> parameter;
 
     ParameterSet() = default;
+    ParameterSet(uint16_t _id);
     ParameterSet(uint16_t _id, const AcParameterList& list);
     ParameterSet(uint16_t _id, const AcBptParameterList& list);
     ParameterSet(uint16_t _id, const DcParameterList& list);
@@ -31,7 +33,7 @@ struct ParameterSet {
     ParameterSet(uint16_t _id, const ParkingParameterList& list);
 };
 
-using ServiceParameterList = std::vector<ParameterSet>; // Max: 32
+using ServiceParameterList = everest::lib::util::fixed_vector<ParameterSet, 32>; // Max: 32
 
 } // namespace datatypes
 
@@ -44,7 +46,7 @@ struct ServiceDetailResponse {
     Header header;
     datatypes::ResponseCode response_code;
     uint16_t service{to_underlying_value(datatypes::ServiceCategory::DC)};
-    datatypes::ServiceParameterList service_parameter_list{};
+    datatypes::ServiceParameterList service_parameter_list{datatypes::ParameterSet(0)};
 };
 
 } // namespace iso15118::message_20

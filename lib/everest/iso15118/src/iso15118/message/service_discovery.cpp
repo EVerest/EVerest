@@ -13,10 +13,12 @@ namespace iso15118::message_20 {
 template <> void convert(const struct iso20_ServiceDiscoveryReqType& in, ServiceDiscoveryRequest& out) {
     convert(in.Header, out.header);
 
-    if (in.SupportedServiceIDs_isUsed == true) {
+    if (in.SupportedServiceIDs_isUsed) {
         auto& temp = out.supported_service_ids.emplace();
-        temp.insert(temp.end(), in.SupportedServiceIDs.ServiceID.array,
-                    in.SupportedServiceIDs.ServiceID.array + in.SupportedServiceIDs.ServiceID.arrayLen);
+
+        for (size_t i = 0; i < in.SupportedServiceIDs.ServiceID.arrayLen; i++) {
+            temp.emplace_back(in.SupportedServiceIDs.ServiceID.array[i]);
+        }
     }
 }
 
@@ -28,8 +30,6 @@ template <> void convert(const struct iso20_ServiceDiscoveryResType& in, Service
 
     // remove the default AC service
     out.energy_transfer_service_list.clear();
-    out.energy_transfer_service_list.reserve(in.EnergyTransferServiceList.Service.arrayLen);
-
     for (auto i = 0; i < in.EnergyTransferServiceList.Service.arrayLen; i++) {
         const auto& service = in.EnergyTransferServiceList.Service.array[i];
         auto& out_service = out.energy_transfer_service_list.emplace_back();
@@ -38,9 +38,8 @@ template <> void convert(const struct iso20_ServiceDiscoveryResType& in, Service
     }
 
     if (in.VASList_isUsed) {
-
         out.vas_list.emplace();
-        out.vas_list->reserve(in.VASList.Service.arrayLen);
+        out.vas_list->clear();
 
         for (auto i = 0; i < in.VASList.Service.arrayLen; i++) {
             const auto& service = in.VASList.Service.array[i];

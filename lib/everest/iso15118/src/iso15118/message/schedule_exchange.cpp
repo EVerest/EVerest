@@ -21,7 +21,7 @@ template <> void convert(const struct iso20_EVPowerScheduleEntryType& in, dataty
 template <> void convert(const struct iso20_EVPowerScheduleType& in, datatypes::EVPowerSchedule& out) {
     out.time_anchor = in.TimeAnchor;
     const auto& entries_in = in.EVPowerScheduleEntries.EVPowerScheduleEntry;
-    out.entries.reserve(entries_in.arrayLen);
+    out.entries.clear();
     for (auto i = 0; i < entries_in.arrayLen; ++i) {
         const auto& entry_in = entries_in.array[i];
         auto& entry_out = out.entries.emplace_back();
@@ -38,7 +38,7 @@ template <> void convert(const struct iso20_EVPriceRuleStackType& in, datatypes:
     out.duration = in.Duration;
 
     const auto& rules_in = in.EVPriceRule;
-    out.price_rules.reserve(rules_in.arrayLen);
+    out.price_rules.clear();
     for (auto i = 0; i < rules_in.arrayLen; ++i) {
         const auto& rule_in = rules_in.array[i];
         auto& rule_out = out.price_rules.emplace_back();
@@ -52,7 +52,7 @@ template <> void convert(const struct iso20_EVAbsolutePriceScheduleType& in, dat
     out.price_algorithm = CB2CPP_STRING(in.PriceAlgorithm);
 
     const auto& stacks_in = in.EVPriceRuleStacks.EVPriceRuleStack;
-    out.price_rule_stacks.reserve(stacks_in.arrayLen);
+    out.price_rule_stacks.clear();
     for (auto i = 0; i < stacks_in.arrayLen; ++i) {
         const auto& stack_in = stacks_in.array[i];
         auto& stack_out = out.price_rule_stacks.emplace_back();
@@ -124,7 +124,7 @@ template <> void convert(const struct iso20_PriceLevelScheduleType& in, datatype
     out.number_of_price_levels = in.NumberOfPriceLevels;
     CB2CPP_STRING_IF_USED(in.Id, out.id);
     CB2CPP_STRING_IF_USED(in.PriceScheduleDescription, out.price_schedule_description);
-    out.price_level_schedule_entries.reserve(in.PriceLevelScheduleEntries.PriceLevelScheduleEntry.arrayLen);
+    out.price_level_schedule_entries.clear();
     for (auto i = 0; i < in.PriceLevelScheduleEntries.PriceLevelScheduleEntry.arrayLen; ++i) {
         const auto& entry_in = in.PriceLevelScheduleEntries.PriceLevelScheduleEntry.array[i];
         auto& entry_out = out.price_level_schedule_entries.emplace_back();
@@ -198,7 +198,7 @@ template <> void convert(const struct iso20_AbsolutePriceScheduleType& in, datat
         CB2CPP_CONVERT_IF_USED(in_overstay_rules.OverstayPowerThreshold, out.overstay_rules->overstay_power_threshold);
 
         const auto& overstay_rules_in = in_overstay_rules.OverstayRule;
-        out.overstay_rules->overstay_rule.reserve(overstay_rules_in.arrayLen);
+        out.overstay_rules->overstay_rule.clear();
         for (auto i = 0; i < overstay_rules_in.arrayLen; ++i) {
             const auto& overstay_rule_in = overstay_rules_in.array[i];
             auto& overstay_rule_out = out.overstay_rules->overstay_rule.emplace_back();
@@ -222,7 +222,7 @@ template <> void convert(const struct iso20_PowerScheduleType& in, datatypes::Po
     out.time_anchor = in.TimeAnchor;
     CB2CPP_CONVERT_IF_USED(in.AvailableEnergy, out.available_energy);
     CB2CPP_CONVERT_IF_USED(in.PowerTolerance, out.power_tolerance);
-    out.entries.reserve(in.PowerScheduleEntries.PowerScheduleEntry.arrayLen);
+    out.entries.clear();
     for (auto i = 0; i < in.PowerScheduleEntries.PowerScheduleEntry.arrayLen; ++i) {
         const auto& entry_in = in.PowerScheduleEntries.PowerScheduleEntry.array[i];
         auto& entry_out = out.entries.emplace_back();
@@ -254,7 +254,7 @@ template <> void convert(const struct iso20_ScheduleTupleType& in, datatypes::Sc
 
 template <>
 void convert(const struct iso20_Scheduled_SEResControlModeType& in, datatypes::Scheduled_SEResControlMode& out) {
-    out.schedule_tuple.reserve(in.ScheduleTuple.arrayLen);
+    out.schedule_tuple.clear();
     for (auto i = 0; i < in.ScheduleTuple.arrayLen; ++i) {
         const auto& tuple_in = in.ScheduleTuple.array[i];
         auto& tuple_out = out.schedule_tuple.emplace_back();

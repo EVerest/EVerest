@@ -841,6 +841,11 @@ void OCPP201::ready() {
             const types::session_cost::TariffMessage m = ocpp_conversions::to_everest_tariff_message(message);
             this->p_session_cost->publish_tariff_message(m);
         };
+
+        callbacks.default_price_callback = [this](const std::vector<ocpp::DisplayMessageContent>& messages) {
+            const types::session_cost::DefaultPrice p = ocpp_conversions::to_everest_default_price(messages);
+            this->p_session_cost->publish_default_price(p);
+        };
     }
 
     if (!this->r_data_transfer.empty()) {

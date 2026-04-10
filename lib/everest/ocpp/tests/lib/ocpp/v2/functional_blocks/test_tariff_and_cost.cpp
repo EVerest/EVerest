@@ -54,6 +54,7 @@ protected:
 
     std::optional<TariffMessageCallback> tariff_message_callback_opt;
     std::optional<SetRunningCostCallback> set_running_cost_callback_opt;
+    std::optional<DefaultPriceCallback> default_price_callback_opt;
 
     MockFunction<void(const TariffMessage&)> tariff_message_mock;
     MockFunction<void(const RunningCost&, std::uint32_t, std::optional<std::string>)> running_cost_mock;
@@ -68,7 +69,7 @@ protected:
 
     std::unique_ptr<TariffAndCost> make_tariff_and_cost() {
         return std::make_unique<TariffAndCost>(functional_block_context, meter_values_mock, tariff_message_callback_opt,
-                                               set_running_cost_callback_opt, io_context);
+                                               set_running_cost_callback_opt, default_price_callback_opt, io_context);
     }
 
     void set_tariff_enabled(bool available = true, bool enabled = true) {

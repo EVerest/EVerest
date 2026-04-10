@@ -17,11 +17,13 @@ namespace ocpp::v2 {
 TariffAndCost::TariffAndCost(const FunctionalBlockContext& functional_block_context, MeterValuesInterface& meter_values,
                              std::optional<TariffMessageCallback>& tariff_message_callback,
                              std::optional<SetRunningCostCallback>& set_running_cost_callback,
+                             std::optional<DefaultPriceCallback>& default_price_callback,
                              boost::asio::io_context& io_context) :
     context(functional_block_context),
     meter_values(meter_values),
     tariff_message_callback(tariff_message_callback),
     set_running_cost_callback(set_running_cost_callback),
+    default_price_callback(default_price_callback),
     io_context(io_context) {
 }
 
@@ -329,6 +331,27 @@ void TariffAndCost::send_total_cost_fallback_message(const std::string& transact
     tariff_message.identifier_id = transaction_id;
     tariff_message.identifier_type = IdentifierType::TransactionId;
     this->tariff_message_callback.value()(tariff_message);
+}
+
+void TariffAndCost::publish_default_price(bool is_connected) {
+    if (!is_tariff_enabled() or !this->default_price_callback.has_value() or this->default_price_callback == nullptr) {
+        return;
+    }
+
+    // Prefer the offline message when disconnected; fall back to the online message when no offline messages are
+    // configured, mirroring the logic in get_fallback_tariff_message / ensure_personal_message.
+    auto messages = is_connected ? get_fallback_messages(ControllerComponentVariables::TariffFallbackMessage)
+                                 : get_fallback_messages(ControllerComponentVariables::OfflineTariffFallbackMessage);
+
+    if (!is_connected and messages.empty()) {
+        messages = get_fallback_messages(ControllerComponentVariables::TariffFallbackMessage);
+    }
+
+    if (messages.empty()) {
+        return;
+    }
+
+    this->default_price_callback.value()(messages);
 }
 
 void TariffAndCost::ensure_personal_message(IdTokenInfo& id_token_info, bool offline) {

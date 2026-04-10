@@ -9,6 +9,8 @@
 
 #include <iso15118/io/stream_view.hpp>
 
+#include <everest/util/vector/fixed_vector.hpp>
+
 namespace iso15118::message_20 {
 
 struct SupportedAppProtocol {
@@ -26,7 +28,7 @@ struct SupportedAppProtocol {
 };
 
 struct SupportedAppProtocolRequest {
-    std::vector<SupportedAppProtocol> app_protocol;
+    everest::lib::util::fixed_vector<SupportedAppProtocol, 20> app_protocol;
 };
 
 struct SupportedAppProtocolResponse {
