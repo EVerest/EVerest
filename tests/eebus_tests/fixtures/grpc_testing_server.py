@@ -17,16 +17,12 @@ def control_service_servicer():
     return control_service_servicer_module.ControlServiceServicer()
 
 @pytest_asyncio.fixture
-async def control_service_server(request, control_service_servicer):
+async def control_service_server(control_service_servicer, eebus_grpc_port):
     """
     Provides an asyncio ControlServiceServer instance for testing that is automatically
-    started and stopped.
+    started and stopped. Uses the dynamically allocated eebus_grpc_port fixture.
     """
-    rpc_port = request.node.get_closest_marker("eebus_rpc_port")
-    if rpc_port is None or len(rpc_port.args) == 0:
-        pytest.fail("No rpc port provided")
-    rpc_port = rpc_port.args[0]
-    server = control_service_server_module.ControlServiceServer(control_service_servicer, rpc_port)
+    server = control_service_server_module.ControlServiceServer(control_service_servicer, eebus_grpc_port)
     await server.start()
     yield server
     await server.stop()

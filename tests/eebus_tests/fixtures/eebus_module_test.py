@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
 
+import pytest
 import pytest_asyncio
 import logging
 import asyncio
@@ -9,6 +10,9 @@ import threading
 from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.probe_module import ProbeModule
 from everest.testing.core_utils.controller.everest_test_controller import EverestTestController
+from everest.testing.core_utils._configuration.everest_configuration_strategies.everest_configuration_strategy import (
+    EverestConfigAdjustmentStrategy,
+)
 
 from grpc_servicer.control_service_servicer import ControlServiceServicer
 from grpc_server.control_service_server import ControlServiceServer
@@ -17,6 +21,20 @@ from grpc_server.cs_lpc_control_server import CsLpcControlServer
 
 from .grpc_testing_server import control_service_server, control_service_servicer, cs_lpc_control_server, cs_lpc_control_servicer
 from helpers.conversions import convert_external_limits
+from conftest import EebusPortStrategy, eebus_grpc_port, eebus_service_port
+
+
+@pytest.fixture
+def everest_config_strategies(request, eebus_grpc_port, eebus_service_port):
+    """Override base fixture to inject EebusPortStrategy with dynamic ports."""
+    strategies = []
+    marker = request.node.get_closest_marker("everest_config_adaptions")
+    if marker:
+        for v in marker.args:
+            assert isinstance(v, EverestConfigAdjustmentStrategy)
+            strategies.append(v)
+    strategies.append(EebusPortStrategy(eebus_grpc_port, eebus_service_port))
+    return strategies
 
 
 class EebusTestProbeModule(ProbeModule):

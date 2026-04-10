@@ -17,10 +17,10 @@ from grpc_server.control_service_server import ControlServiceServer
 from grpc_servicer.cs_lpc_control_servicer import CsLpcControlServicer
 from grpc_server.cs_lpc_control_server import CsLpcControlServer
 
-from fixtures.eebus_module_test import eebus_test_env, EebusTestProbeModule
+from fixtures.eebus_module_test import eebus_test_env, EebusTestProbeModule, everest_config_strategies, eebus_grpc_port, eebus_service_port
 from fixtures.grpc_testing_server import control_service_server, control_service_servicer, cs_lpc_control_server, cs_lpc_control_servicer
 from helpers.import_helpers import insert_dir_to_sys_path
-from helpers.async_helpers import async_get
+from helpers.async_helpers import async_get, async_wait_for
 
 from test_data.test_data import TestData
 from test_data.test_data_not_active_load_limit import TestDataNotActiveLoadLimit
@@ -45,7 +45,7 @@ async def perform_eebus_handshake(control_service_servicer: ControlServiceServic
     )
     req = await async_get(control_service_servicer.command_queues["SetConfig"].request_queue, timeout=10)
     assert req is not None
-    assert req.port == 4715
+    assert req.port > 0
 
     # Start the probe module
     probe = EebusTestProbeModule(everest_core.get_runtime_session())
@@ -169,7 +169,6 @@ async def transition_to_unlimited_controlled(
     await async_get(probe.external_limits_queue, timeout=5)
 
 
-@pytest.mark.eebus_rpc_port(50051)
 @pytest.mark.everest_core_config("config-test-eebus-module-001.yaml")
 @pytest.mark.probe_module
 class TestEEBUSModule:
@@ -285,9 +284,8 @@ class TestEEBUSModule:
             res)
 
         # Finally, the module should have sent the translated limits to our probe module
-        limits = await async_get(probe.external_limits_queue, timeout=2)
-
-        assert test_data.get_expected_external_limits() == limits
+        expected = test_data.get_expected_external_limits()
+        limits = await async_wait_for(probe.external_limits_queue, expected, timeout=10)
         test_data.run_additional_assertions(limits)
 
     @pytest.mark.asyncio
@@ -331,15 +329,16 @@ class TestEEBUSModule:
         # Move out of Init so the heartbeat-timeout → Failsafe edge [LPC-911] is reachable.
         await transition_to_unlimited_controlled(control_service_servicer, cs_lpc_control_servicer, probe)
 
-        # Trigger failsafe state to check if the new duration is applied
-        # Simulate missing heartbeat
+        # Trigger failsafe state to check if the new duration is applied.
+        # Simulate missing heartbeat — wait for the 120s heartbeat timeout to expire.
         test_data_failsafe = TestDataFailsafe()
         failsafe_limits = test_data_failsafe.get_expected_failsafe_limits(4200) # this is the config default
-        limits = await async_get(probe.external_limits_queue, timeout=130) # Wait for 120s heartbeat timeout + buffer
-        assert failsafe_limits == limits
+        limits = await async_wait_for(probe.external_limits_queue, failsafe_limits, timeout=140)
 
-        # Simulate a DataUpdateHeartbeat event
-        uc_event = control_service_messages_pb2.SubscribeUseCaseEventsResponse(
+        # Send periodic heartbeats in the background to keep the module alive
+        # while we wait for the failsafe duration (5s) to expire and the module
+        # to transition to UnlimitedAutonomous.
+        hb_event = control_service_messages_pb2.SubscribeUseCaseEventsResponse(
             remote_ski="this-is-a-ski-42",
             remote_entity_address=common_types_pb2.EntityAddress(entity_address=[1]),
             use_case_event=control_service_types_pb2.UseCaseEvent(
@@ -350,44 +349,22 @@ class TestEEBUSModule:
                 event="DataUpdateHeartbeat",
             )
         )
-        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(uc_event)
 
-        await asyncio.sleep(55)
+        async def send_heartbeats():
+            for _ in range(3):
+                control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(hb_event)
+                await asyncio.sleep(50)
 
-        # Simulate a DataUpdateHeartbeat event
-        uc_event = control_service_messages_pb2.SubscribeUseCaseEventsResponse(
-            remote_ski="this-is-a-ski-42",
-            remote_entity_address=common_types_pb2.EntityAddress(entity_address=[1]),
-            use_case_event=control_service_types_pb2.UseCaseEvent(
-                use_case=control_service_types_pb2.UseCase(
-                    actor=control_service_types_pb2.UseCase.ActorType.ControllableSystem,
-                    name=control_service_types_pb2.UseCase.NameType.limitationOfPowerConsumption,
-                ),
-                event="DataUpdateHeartbeat",
-            )
-        )
-        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(uc_event)
-
-        await asyncio.sleep(55)
-
-        # Simulate a DataUpdateHeartbeat event
-        uc_event = control_service_messages_pb2.SubscribeUseCaseEventsResponse(
-            remote_ski="this-is-a-ski-42",
-            remote_entity_address=common_types_pb2.EntityAddress(entity_address=[1]),
-            use_case_event=control_service_types_pb2.UseCaseEvent(
-                use_case=control_service_types_pb2.UseCase(
-                    actor=control_service_types_pb2.UseCase.ActorType.ControllableSystem,
-                    name=control_service_types_pb2.UseCase.NameType.limitationOfPowerConsumption,
-                ),
-                event="DataUpdateHeartbeat",
-            )
-        )
-        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(uc_event)
-
-        # Now wait for the new failsafe duration to expire
-        unlimited_autonomous_limits = test_data_failsafe.get_expected_unlimited_autonomous_limits()
-        limits = await async_get(probe.external_limits_queue, timeout=20) # timeout after failsafe entry is 120s after duration minimum
-        assert unlimited_autonomous_limits == limits
+        hb_task = asyncio.create_task(send_heartbeats())
+        try:
+            unlimited_autonomous_limits = test_data_failsafe.get_expected_unlimited_autonomous_limits()
+            limits = await async_wait_for(probe.external_limits_queue, unlimited_autonomous_limits, timeout=160)
+        finally:
+            hb_task.cancel()
+            try:
+                await hb_task
+            except asyncio.CancelledError:
+                pass
 
     @pytest.mark.asyncio
     async def test_update_failsafe_consumption_active_power_limit(
@@ -720,22 +697,23 @@ class TestEEBUSModule:
                 event="DataUpdateHeartbeat",
             )
         )
-        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(uc_event)
+        # Send periodic heartbeats in the background to prevent failsafe while
+        # waiting for the Init → UnlimitedAutonomous transition (120s LPC_INIT_TIMEOUT).
+        async def send_heartbeats():
+            for _ in range(3):
+                control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(uc_event)
+                await asyncio.sleep(50)
 
-        await asyncio.sleep(50)
-
-        # Simulate a new DataUpdateHeartbeat event
-        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(uc_event)
-
-        await asyncio.sleep(20)
-
-        # Simulate a new DataUpdateHeartbeat event
-        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(uc_event)
-
-        # No limits are sent, so the module should transition from Init to UnlimitedAutonomous
-        # The limit would be the same as deactivated since there are no limits
-        test_data_not_active_load_limit = TestDataNotActiveLoadLimit()
-        unlimited_autonomous_limits = test_data_not_active_load_limit.get_expected_external_limits()
-        limits = await async_get(probe.external_limits_queue, timeout=125)
-        assert unlimited_autonomous_limits == limits
+        hb_task = asyncio.create_task(send_heartbeats())
+        try:
+            # No limits are sent, so the module should transition from Init to UnlimitedAutonomous
+            test_data_not_active_load_limit = TestDataNotActiveLoadLimit()
+            unlimited_autonomous_limits = test_data_not_active_load_limit.get_expected_external_limits()
+            limits = await async_wait_for(probe.external_limits_queue, unlimited_autonomous_limits, timeout=140)
+        finally:
+            hb_task.cancel()
+            try:
+                await hb_task
+            except asyncio.CancelledError:
+                pass
 

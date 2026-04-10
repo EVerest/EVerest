@@ -11,9 +11,32 @@ import time
 from pathlib import Path
 
 import pytest
+from copy import deepcopy
+from everest.testing.core_utils._configuration.everest_configuration_strategies.everest_configuration_strategy import (
+    EverestConfigAdjustmentStrategy,
+)
 
 CERT_DIR = Path(__file__).parent
 CONTROLBOX_CERT_SKI = "5f4db7163af56b9f24ccf9eac9c1758bcde762de"
+
+
+class EebusPortStrategy(EverestConfigAdjustmentStrategy):
+    """Rewrites grpc_port and eebus_service_port in EEBUS module configs
+    to use dynamically allocated ports, enabling parallel test execution."""
+
+    def __init__(self, grpc_port: int, eebus_service_port: int):
+        self._grpc_port = grpc_port
+        self._eebus_service_port = eebus_service_port
+
+    def adjust_everest_configuration(self, everest_config: dict) -> dict:
+        adjusted = deepcopy(everest_config)
+        for module_def in adjusted.get("active_modules", {}).values():
+            if module_def.get("module") != "EEBUS":
+                continue
+            config = module_def.setdefault("config_module", {})
+            config["grpc_port"] = self._grpc_port
+            config["eebus_service_port"] = self._eebus_service_port
+        return adjusted
 
 
 def get_free_port() -> int:
@@ -21,6 +44,39 @@ def get_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
         return s.getsockname()[1]
+
+
+@pytest.fixture
+def eebus_grpc_port():
+    """Allocate a free port for the EEBUS gRPC control service."""
+    return get_free_port()
+
+
+@pytest.fixture
+def eebus_service_port():
+    """Allocate a free port for the EEBUS SHIP service."""
+    return get_free_port()
+
+
+@pytest.fixture
+def everest_config_strategies(request, eebus_grpc_port, eebus_service_port):
+    """Override base fixture to inject EebusPortStrategy with dynamic ports.
+
+    This replaces the base everest_config_strategies from
+    everest.testing.core_utils.fixtures, adding EEBUS-specific port
+    rewriting. NetworkIsolationStrategy is not needed for EEBUS tests.
+    """
+    strategies = []
+    marker = request.node.get_closest_marker("everest_config_adaptions")
+    if marker:
+        for v in marker.args:
+            assert isinstance(v, EverestConfigAdjustmentStrategy), (
+                "Arguments to 'everest_config_adaptions' must all be "
+                "instances of EverestConfigAdjustmentStrategy"
+            )
+            strategies.append(v)
+    strategies.append(EebusPortStrategy(eebus_grpc_port, eebus_service_port))
+    return strategies
 
 
 def extract_ski_from_cert(cert_path: Path) -> str:
