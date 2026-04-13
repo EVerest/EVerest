@@ -51,6 +51,9 @@ requires:
       interface: session_cost
       min_connections: 0
       max_connections: 1
+      ignore:
+        vars:
+          - default_price
     bank_session_token:
       interface: bank_session_token_provider
       min_connections: 0
