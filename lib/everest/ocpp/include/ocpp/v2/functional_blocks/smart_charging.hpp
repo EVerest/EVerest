@@ -57,6 +57,7 @@ enum class ProfileValidationResultEnum {
     ChargingProfileUnsupportedKind,
     ChargingProfileNotDynamic,
     ChargingScheduleChargingRateUnitUnsupported,
+    ChargingScheduleNonFiniteValue,
     ChargingSchedulePriorityExtranousDuration,
     ChargingScheduleRandomizedDelay,
     ChargingScheduleUnsupportedLocalTime,
@@ -79,7 +80,8 @@ enum class ProfileValidationResultEnum {
     DuplicateTxDefaultProfileFound,
     DuplicateProfileValidityPeriod,
     RequestStartTransactionNonTxProfile,
-    ChargingProfileEmptyChargingSchedules
+    ChargingProfileEmptyChargingSchedules,
+    ChargingSchedulePeriodNonFiniteValue
 };
 
 /// \brief This is used to associate charging profiles with a source.
