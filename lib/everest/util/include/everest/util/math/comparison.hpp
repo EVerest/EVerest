@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 
+#pragma once
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -8,7 +10,7 @@
 #include <type_traits>
 
 /**
- * @file util.hpp
+ * @file comparison.hpp
  * @brief Mathematical and Optional utility functions for the EVerest framework.
  */
 
@@ -20,6 +22,8 @@ namespace everest::lib::util {
  * @brief Calculates a decimal precision threshold (10^-n).
  * * This function is used to generate an epsilon value based on a human-readable
  * number of decimal digits. For example, a precision of 3 returns 0.001.
+ * * @note Zero or negative values for `digits_of_precision` will result in a
+ * threshold of 1.0.
  * * @tparam T The floating point type (float, double, long double).
  * @param digits_of_precision The number of decimal places to consider.
  * @return constexpr T The calculated threshold value.
@@ -38,7 +42,6 @@ constexpr T range_limit(int digits_of_precision) {
  * * Uses a fixed epsilon (absolute difference) approach. This is ideal for
  * physical values (like Amps or Volts) where the scale of the numbers is
  * relatively consistent and known.
- * @detail std::abs is not guarantted to be constexpr in C++17, using the tenery operate instead.
  * * @tparam Prec The number of decimal digits of precision to use for comparison.
  * @tparam T1, T2 Floating point types of the input values.
  * @param lhs Left hand side value.
@@ -51,6 +54,7 @@ constexpr bool almost_eq(T1 lhs, T2 rhs) {
     using Common = std::common_type_t<T1, T2>;
     const auto val_lhs = static_cast<Common>(lhs);
     const auto val_rhs = static_cast<Common>(rhs);
+    // std::abs is not guaranteed to be constexpr in C++17, using the ternary operate instead.
     const auto diff = (val_lhs > val_rhs) ? (val_lhs - val_rhs) : (val_rhs - val_lhs);
     return diff < range_limit<Common>(Prec);
 }
