@@ -11,13 +11,17 @@
 #include <everest/io/mqtt/mqtt_client.hpp>
 #include <memory>
 
+namespace {
+constexpr std::uint32_t sync_interval = 1000;
+} // namespace
+
 namespace everest::lib::io::mqtt {
 
 mqtt_client::mqtt_client(std::uint32_t reconnect_to_ms, std::string client_id) :
     mosquitto_cpp(client_id.empty() ? nullptr : client_id.c_str()), m_client_id(std::move(client_id)) {
-    set_option_threaded(false);
     set_option_tcpnodelay(true);
     m_reconnect_timer.set_timeout_ms(reconnect_to_ms);
+    m_sync_timer.set_timeout_ms(sync_interval);
 }
 
 std::string mqtt_client::get_client_id() const {
@@ -50,6 +54,13 @@ void mqtt_client::handle_socket(event_list const& events) {
     }
 }
 
+void mqtt_client::handle_sync_timer() {
+    loop_misc();
+    if (want_write()) {
+        listen_to_write_events(true);
+    }
+}
+
 void mqtt_client::handle_reconnect_timer() {
     m_handler.add_action([this] {
         if (m_last_socket not_eq -1) {
@@ -78,6 +89,17 @@ void mqtt_client::listen_to_reconnect_timer(bool enable) {
             m_handler.register_event_handler(&m_reconnect_timer, [this](auto const&) { handle_reconnect_timer(); });
         } else {
             m_handler.unregister_event_handler(&m_reconnect_timer);
+        }
+    });
+}
+
+void mqtt_client::listen_to_sync_timer(bool enable) {
+    m_handler.add_action([this, enable]() {
+        if (enable) {
+            m_sync_timer.reset();
+            m_handler.register_event_handler(&m_sync_timer, [this](auto const&) { handle_sync_timer(); });
+        } else {
+            m_handler.unregister_event_handler(&m_sync_timer);
         }
     });
 }
@@ -144,8 +166,10 @@ ErrorCode mqtt_client::connect_impl(std::string_view const& bind_address, std::s
         m_handler.register_event_handler(
             socket(), [this](auto const& events) { handle_socket(events); }, event::poll_events::read);
         listen_to_write_events_if_wanted();
+        listen_to_sync_timer(true);
     } else {
         listen_to_reconnect_timer(true);
+        listen_to_sync_timer(false);
     }
     return handle_error(result);
 }

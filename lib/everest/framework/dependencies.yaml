@@ -45,10 +45,15 @@ nlohmann_json_schema_validator:
       "JSON_VALIDATOR_BUILD_EXAMPLES OFF",
       "JSON_VALIDATOR_BUILD_SHARED_LIBS ON",
     ]
-mqttc:
-  git: https://github.com/LiamBindle/MQTT-C.git
-  git_tag: v1.1.6
-  options: ["MQTT_C_EXAMPLES OFF", "CMAKE_POSITION_INDEPENDENT_CODE ON"]
+mosquitto:
+  git: https://github.com/eclipse-mosquitto/mosquitto
+  git_tag: v2.0.22
+  options:
+  - DOCUMENTATION OFF
+  - WITH_BROKER OFF
+  - WITH_APPS OFF
+  - WITH_PLUGINS OFF
+  - WITH_TESTS OFF
 libfmt:
   git: https://github.com/fmtlib/fmt.git
   git_tag: 12.1.0

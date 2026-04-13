@@ -85,12 +85,6 @@ ftxui:
   git: https://github.com/ArthurSonzogni/ftxui
   git_tag: v6.1.9
   cmake_condition: "EVEREST_DEPENDENCY_ENABLED_FTXUI"
-# everest/io library
-mqttc:
-  git: https://github.com/LiamBindle/MQTT-C.git
-  git_tag: v1.1.6
-  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_framework"
-  options: ["MQTT_C_EXAMPLES OFF", "CMAKE_POSITION_INDEPENDENT_CODE ON"]
 # Linux_Systemd_Rauc module
 sdbus-cpp:
   git:  https://github.com/Kistler-Group/sdbus-cpp.git
@@ -107,6 +101,7 @@ catch2:
   git: https://github.com/catchorg/Catch2.git
   git_tag: v3.9.0
   cmake_condition: "EVEREST_CORE_BUILD_TESTING"
+# everest/io library
 mosquitto:
   git: https://github.com/eclipse-mosquitto/mosquitto
   git_tag: v2.0.22
@@ -116,3 +111,4 @@ mosquitto:
   - WITH_BROKER OFF
   - WITH_APPS OFF
   - WITH_PLUGINS OFF
+  - WITH_TESTS OFF
