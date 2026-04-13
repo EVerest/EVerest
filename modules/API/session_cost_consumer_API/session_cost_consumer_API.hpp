@@ -78,6 +78,7 @@ private:
 
     void generate_api_var_tariff_message();
     void generate_api_var_session_cost();
+    void generate_api_var_default_price();
 
     void generate_api_var_communication_check();
 

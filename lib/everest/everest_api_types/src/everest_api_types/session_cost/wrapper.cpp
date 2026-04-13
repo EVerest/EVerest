@@ -56,6 +56,18 @@ template <class SrcT> auto vecToInternal(std::vector<SrcT> const& src) {
 
 namespace session_cost {
 
+DefaultPrice_Internal to_internal_api(DefaultPrice_External const& val) {
+    DefaultPrice_Internal result;
+    result.messages = vecToInternal(val.messages);
+    return result;
+}
+
+DefaultPrice_External to_external_api(DefaultPrice_Internal const& val) {
+    DefaultPrice_External result;
+    result.messages = vecToExternal(val.messages);
+    return result;
+}
+
 TariffMessage_Internal to_internal_api(TariffMessage_External const& val) {
     TariffMessage_Internal result;
     result.messages = vecToInternal(val.messages);
