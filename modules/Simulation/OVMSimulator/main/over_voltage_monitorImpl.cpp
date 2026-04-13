@@ -26,6 +26,12 @@ void over_voltage_monitorImpl::init() {
 }
 
 void over_voltage_monitorImpl::ready() {
+    if (!this->mod->r_power_supply.empty() && this->mod->r_power_supply[0]) {
+        this->mod->r_power_supply[0]->subscribe_voltage_current(
+            [this](types::power_supply_DC::VoltageCurrent measurement) {
+                this->voltage_measurement_V = static_cast<float>(measurement.voltage_V);
+            });
+    }
 }
 
 void over_voltage_monitorImpl::handle_set_limits(double& emergency_over_voltage_limit_V,
