@@ -491,7 +491,7 @@ bool SmartChargingHandler::clear_all_profiles_with_filter(
     // TxDefaultProfiles installed via SetChargingProfile(connectorId=0) are fanned out into
     // every physical connector's map at install time (see add_tx_default_profile). A
     // ClearChargingProfile(connectorId=0) therefore cannot match them via the per-connector
-    // loop below — connector_id_opt=0 never equals any physical connector id. Use the DB,
+    // loop below. connector_id_opt=0 never equals any physical connector id. Use the DB,
     // which keeps the install-time connector id, to enumerate those profile ids and erase
     // every fan-out copy along with the DB row.
     if (not profile_id_opt.has_value() and connector_id_opt.has_value() and connector_id_opt.value() == 0) {
