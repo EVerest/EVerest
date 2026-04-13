@@ -23,8 +23,9 @@ Relevant Consumer APIs
 
 Two consumer APIs carry tariff and cost information:
 
-- **Session cost consumer API** — provides the ``tariff_message`` and
-  ``session_cost`` variables on the ``session_cost`` interface.
+- **Session cost consumer API** — provides the ``tariff_message``,
+  ``session_cost``, and ``default_price`` variables on the ``session_cost``
+  interface.
 - **Auth consumer API** — provides ``token_validation_status``, which may
   include tariff messages received at authorization time.
 
@@ -246,6 +247,48 @@ Once the OCPP connection is re-established, the queued
 with a ``totalCost``, a ``session_cost`` with status ``Finished`` is
 published for the same transaction ID.
 
+****************************
+Station default price
+****************************
+
+The ``default_price`` variable on the session cost consumer API carries the
+currently applicable station-wide fallback tariff text. Unlike
+``tariff_message``, it is not bound to a specific session or token — it
+represents the price a customer can expect to pay at this station when no
+personalised tariff has been provided by the CSMS.
+
+It is published in the following situations:
+
+- **On startup** — once before the first connection attempt, using the
+  offline fallback text (if configured).
+- **On connect / reconnect** — with the online fallback text.
+- **On disconnect** — with the offline fallback text (if configured);
+  falls back to the online text if no offline text is configured.
+- **On configuration change** — immediately after the relevant fallback
+  variable is updated via ``ChangeConfiguration`` (OCPP 1.6) or
+  ``SetVariables`` (OCPP 2.x)
+
+OCPP 1.6
+=========
+
+The ``default_price`` variable is populated from the ``DefaultPrice``
+configuration key (``CostAndPrice`` section). It contains both a
+``priceText`` (online) and a ``priceTextOffline`` field. The relevant
+configuration key changes that trigger a re-publication are ``DefaultPrice``
+and ``DefaultPriceText,<language>``.
+
+OCPP 2.x
+=========
+
+The ``default_price`` variable is populated from the
+``TariffFallbackMessage`` (online) and ``OfflineTariffFallbackMessage``
+(offline) variables of the ``TariffCostCtrlr`` component. If no offline
+message is configured, ``TariffFallbackMessage`` is used in both states.
+A change to either variable via ``SetVariables`` triggers an immediate
+re-publication.
+
+If neither variable is configured, no ``default_price`` publication occurs.
+
 *****************************
 Relationship between the APIs
 *****************************
@@ -278,6 +321,15 @@ OCPP 2.x
    * - Reconnected, CSMS sends ``totalCost`` for offline transaction
      - —
      - ``session_cost`` with status ``Finished`` published; supersedes the earlier fallback text
+   * - Connected / reconnected
+     - —
+     - ``default_price`` published with online ``TariffFallbackMessage`` (if configured)
+   * - Disconnected
+     - —
+     - ``default_price`` published with ``OfflineTariffFallbackMessage``, or ``TariffFallbackMessage`` if not configured
+   * - ``TariffFallbackMessage`` or ``OfflineTariffFallbackMessage`` changed via ``SetVariables``
+     - —
+     - ``default_price`` re-published with new online text
 
 OCPP 1.6
 =========
@@ -307,3 +359,12 @@ OCPP 1.6
    * - Reconnected, CSMS sends ``FinalCost`` DataTransfer
      - —
      - ``session_cost`` with status ``Finished`` published
+   * - Connected / reconnected
+     - —
+     - ``default_price`` published with online ``DefaultPrice.priceText`` (if configured)
+   * - Disconnected
+     - —
+     - ``default_price`` published with ``DefaultPrice.priceTextOffline`` (if configured)
+   * - ``DefaultPrice`` changed via ``ChangeConfiguration``
+     - —
+     - ``default_price`` re-published with new online text

@@ -124,6 +124,11 @@ ChargePoint::~ChargePoint() = default;
 void ChargePoint::start(BootReasonEnum bootreason, bool start_connecting) {
     this->message_queue->start();
 
+    // Publish the initial default price before connecting (offline state at startup).
+    if (this->tariff_and_cost != nullptr) {
+        this->tariff_and_cost->publish_default_price(false);
+    }
+
     this->bootreason = bootreason;
     // Trigger all initial status notifications and callbacks related to component state
     // Should be done before sending the BootNotification.req so that the correct states can be reported
@@ -607,7 +612,7 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
 
     this->tariff_and_cost = std::make_unique<TariffAndCost>(
         *functional_block_context, *this->meter_values, this->callbacks.tariff_message_callback,
-        this->callbacks.set_running_cost_callback, this->io_context);
+        this->callbacks.set_running_cost_callback, this->callbacks.default_price_callback, this->io_context);
 
     this->firmware_update = std::make_unique<FirmwareUpdate>(
         *this->functional_block_context, *this->availability, *this->security,
@@ -625,7 +630,7 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
         this->callbacks.time_sync_callback, this->callbacks.boot_notification_callback,
         this->callbacks.validate_network_profile_callback, this->callbacks.is_reset_allowed_callback,
         this->callbacks.reset_callback, this->callbacks.stop_transaction_callback,
-        this->callbacks.variable_changed_callback, this->registration_status);
+        this->callbacks.variable_changed_callback, *this->tariff_and_cost, this->registration_status);
 
     this->remote_transaction_control = std::make_unique<RemoteTransactionControl>(
         *this->functional_block_context, *this->transaction, *this->smart_charging, *this->meter_values,
@@ -1132,6 +1137,9 @@ void ChargePoint::websocket_connected_callback(const int configuration_slot,
         this->callbacks.connection_state_changed_callback.value()(true, configuration_slot, network_connection_profile,
                                                                   ocpp_version);
     }
+    if (this->tariff_and_cost != nullptr) {
+        this->tariff_and_cost->publish_default_price(true);
+    }
 }
 
 void ChargePoint::websocket_disconnected_callback(const int configuration_slot,
@@ -1142,6 +1150,9 @@ void ChargePoint::websocket_disconnected_callback(const int configuration_slot,
     if (this->callbacks.connection_state_changed_callback.has_value()) {
         this->callbacks.connection_state_changed_callback.value()(false, configuration_slot, network_connection_profile,
                                                                   this->ocpp_version);
+    }
+    if (this->tariff_and_cost != nullptr) {
+        this->tariff_and_cost->publish_default_price(false);
     }
 }
 
