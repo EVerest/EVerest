@@ -616,5 +616,12 @@ int DatabaseHandler::get_connector_id(const int profile_id) {
     return stmt->column_int(0);
 }
 
+std::vector<int32_t> DatabaseHandler::get_charging_profile_ids_by_connector_id(const int connector_id) {
+    // Intentionally empty for the red test checkpoint — the real query is added
+    // together with the ClearChargingProfile(connectorId=0) fix.
+    (void)connector_id;
+    return {};
+}
+
 } // namespace v16
 } // namespace ocpp
