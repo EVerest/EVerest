@@ -19,21 +19,30 @@ namespace everest::lib::util {
 // --- Floating Point Utilities ---
 
 /**
- * @brief Calculates a decimal precision threshold (10^-n).
- * * This function is used to generate an epsilon value based on a human-readable
- * number of decimal digits. For example, a precision of 3 returns 0.001.
- * * @note Zero or negative values for `digits_of_precision` will result in a
- * threshold of 1.0.
+ * @brief Calculates a threshold based on powers of ten (10^-n).
+ * * * Positive `digits_of_precision` generate fractional limits (e.g., 3 yields 0.001).
+ * * Negative `digits_of_precision` generate magnitude limits (e.g., -2 yields 100.0).
+ * * A value of 0 yields 1.0.
  * * @tparam T The floating point type (float, double, long double).
- * @param digits_of_precision The number of decimal places to consider.
+ * @param digits_of_precision The exponent modifier for the threshold.
  * @return constexpr T The calculated threshold value.
  */
 template <class T, std::enable_if_t<std::is_floating_point_v<T>>* = nullptr>
 constexpr T range_limit(int digits_of_precision) {
     T result = static_cast<T>(1.0);
-    for (int i = 0; i < digits_of_precision; ++i) {
-        result /= static_cast<T>(10.0);
+
+    if (digits_of_precision > 0) {
+        // Handle fractions (10^-n)
+        for (int i = 0; i < digits_of_precision; ++i) {
+            result /= static_cast<T>(10.0);
+        }
+    } else if (digits_of_precision < 0) {
+        // Handle magnitudes (10^+n)
+        for (int i = 0; i > digits_of_precision; --i) {
+            result *= static_cast<T>(10.0);
+        }
     }
+
     return result;
 }
 

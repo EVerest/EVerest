@@ -11,12 +11,25 @@ TEST_F(ComparisonTest, RangeLimit) {
     EXPECT_NEAR(range_limit<double>(1), 0.1, 1e-9);
     EXPECT_NEAR(range_limit<double>(3), 0.001, 1e-9);
     EXPECT_EQ(range_limit<double>(0), 1.0);
+    EXPECT_DOUBLE_EQ(range_limit<double>(-1), 10.0);
+    EXPECT_DOUBLE_EQ(range_limit<double>(-2), 100.0);
+    EXPECT_DOUBLE_EQ(range_limit<double>(-3), 1000.0);
 }
 
 TEST_F(ComparisonTest, AlmostEqBasic) {
     // 3 digits of precision = 0.001 threshold
     EXPECT_TRUE((almost_eq<3>(1.0001, 1.0002)));
     EXPECT_FALSE((almost_eq<3>(1.0, 1.002)));
+}
+
+TEST_F(ComparisonTest, AlmostEqNegativePrecision) {
+    // -2 digits of precision = 100.0 threshold
+    EXPECT_TRUE((almost_eq<-2>(207.0, 250.0)));
+    EXPECT_FALSE((almost_eq<-2>(100.0, 250.0)));
+
+    // -1 digit of precision = 10.0 threshold
+    EXPECT_TRUE((almost_eq<-1>(15.0, 22.0)));  // diff 7 < 10
+    EXPECT_FALSE((almost_eq<-1>(15.0, 28.0))); // diff 13 > 10
 }
 
 TEST_F(ComparisonTest, AlmostEqOptional) {
