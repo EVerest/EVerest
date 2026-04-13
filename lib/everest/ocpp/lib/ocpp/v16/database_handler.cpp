@@ -617,10 +617,22 @@ int DatabaseHandler::get_connector_id(const int profile_id) {
 }
 
 std::vector<int32_t> DatabaseHandler::get_charging_profile_ids_by_connector_id(const int connector_id) {
-    // Intentionally empty for the red test checkpoint — the real query is added
-    // together with the ClearChargingProfile(connectorId=0) fix.
-    (void)connector_id;
-    return {};
+    std::vector<int32_t> ids;
+    const std::string sql = "SELECT ID FROM CHARGING_PROFILES WHERE CONNECTOR_ID = @connector_id";
+    auto stmt = this->database->new_statement(sql);
+
+    stmt->bind_int("@connector_id", connector_id);
+
+    int status = SQLITE_ERROR;
+    while ((status = stmt->step()) == SQLITE_ROW) {
+        ids.push_back(stmt->column_int(0));
+    }
+
+    if (status != SQLITE_DONE) {
+        throw QueryExecutionException(this->database->get_error_message());
+    }
+
+    return ids;
 }
 
 } // namespace v16

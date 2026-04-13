@@ -488,6 +488,71 @@ bool SmartChargingHandler::clear_all_profiles_with_filter(
 
     bool erased_at_least_one_tx_profile = false;
 
+    // TxDefaultProfiles installed via SetChargingProfile(connectorId=0) are fanned out into
+    // every physical connector's map at install time (see add_tx_default_profile). A
+    // ClearChargingProfile(connectorId=0) therefore cannot match them via the per-connector
+    // loop below — connector_id_opt=0 never equals any physical connector id. Use the DB,
+    // which keeps the install-time connector id, to enumerate those profile ids and erase
+    // every fan-out copy along with the DB row.
+    if (not profile_id_opt.has_value() and connector_id_opt.has_value() and connector_id_opt.value() == 0) {
+        std::vector<int32_t> ids_at_charge_point;
+        try {
+            ids_at_charge_point = this->database_handler->get_charging_profile_ids_by_connector_id(0);
+        } catch (const QueryExecutionException& e) {
+            EVLOG_warning << "Could not query charging profiles for connector 0: " << e.what();
+        }
+
+        for (const auto id : ids_at_charge_point) {
+            // Find the profile in any connector's TxDefault map to apply stackLevel/purpose
+            // filters. ChargePointMaxProfile rows are handled by the existing path above, so
+            // ids not found here are intentionally skipped.
+            std::optional<ChargingProfile> sample;
+            for (const auto& [_, connector] : this->connectors) {
+                for (const auto& [_, profile] : connector->stack_level_tx_default_profiles_map) {
+                    if (profile.chargingProfileId == id) {
+                        sample = profile;
+                        break;
+                    }
+                }
+                if (sample.has_value()) {
+                    break;
+                }
+            }
+            if (not sample.has_value()) {
+                continue;
+            }
+            if (stack_level_opt.has_value() and stack_level_opt.value() != sample->stackLevel) {
+                continue;
+            }
+            if (charging_profile_purpose_opt.has_value() and
+                charging_profile_purpose_opt.value() != sample->chargingProfilePurpose) {
+                continue;
+            }
+
+            bool erased_any_copy = false;
+            for (auto& [_, connector] : this->connectors) {
+                auto& map = connector->stack_level_tx_default_profiles_map;
+                for (auto it = map.begin(); it != map.end();) {
+                    if (it->second.chargingProfileId == id) {
+                        it = map.erase(it);
+                        erased_any_copy = true;
+                    } else {
+                        ++it;
+                    }
+                }
+            }
+            if (erased_any_copy) {
+                erased_at_least_one_tx_profile = true;
+                EVLOG_info << "Clearing ChargingProfile with id: " << id;
+                try {
+                    this->database_handler->delete_charging_profile(id);
+                } catch (const QueryExecutionException& e) {
+                    EVLOG_warning << "Could not delete ChargingProfile from the database: " << e.what();
+                }
+            }
+        }
+    }
+
     for (auto& [connector_id, connector] : this->connectors) {
         // for TxDefaultProfiles
         auto tmp_erased_tx_default_profile =
