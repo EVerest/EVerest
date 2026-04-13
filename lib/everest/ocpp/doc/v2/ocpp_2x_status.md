@@ -1,6 +1,6 @@
 # OCPP2.0.1 / OCPP2.1 Functional Requirements Status
 
-This document contains the status of which OCPP 2.0.1 and OCPP2.1 numbered functional requirements (FRs) have been implemented in `libocpp`. This does not cover if the functionality is also implemented in `everest-core`.
+This document contains the status of which OCPP 2.0.1 and OCPP2.1 numbered functional requirements (FRs) have been implemented in `libocpp`. This does not cover if the functionality is also implemented in the `EVerest` module.
 
 ## Legend
 
@@ -2704,6 +2704,18 @@ CSMS setpoint and Dynamic charging profiles from K01. There are no specific requ
 | Q10.FR.03 |        |        |
 | Q10.FR.04 |        |        |
 | Q10.FR.05 |        |        |
+
+## Bidirectional Power Transfer - Going offline during V2X operation
+
+| ID  | Status | Remark |
+| --- | ------ | ------ |
+| Q11 | ✅      |Use Case doesn't contain any functional requirement|
+
+## Bidirectional Power Transfer - Resuming a V2X operation after an offline period
+
+| ID  | Status | Remark |
+| --- | ------ | ------ |
+| Q12 | ✅      | Use Case doesn't contain any functional requirement|
 
 ## DER Control - Starting a V2X session with DER control in EVSE (New in OCPP 2.1)
 

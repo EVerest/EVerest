@@ -31,6 +31,7 @@ struct v2g_context* v2g_ctx_create(evse_securityIntf* r_security) {
 
     /* interface from config file or options */
     ctx->if_name = "eth1";
+    ctx->proxy_if_name = nullptr;
 
     ctx->network_read_timeout = 1000;
     ctx->network_read_timeout_tls = 5000;

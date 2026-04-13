@@ -12,8 +12,8 @@ integrated with your charging station firmware.
 
 ## Integration with EVerest
 
-This library is integrated within the [OCPP](https://github.com/EVerest/everest-core/tree/main/modules/OCPP) and [OCPP201](https://github.com/EVerest/everest-core/tree/main/modules/OCPP201)
-module within [everest-core](https://github.com/EVerest/everest-core) - the complete software stack for your charging station. It is recommended to use EVerest together with this OCPP implementation.
+This library is integrated within the [OCPP](https://github.com/EVerest/EVerest/tree/main/modules/OCPP) and [OCPP201](https://github.com/EVerest/EVerest/tree/main/modules/OCPP201)
+module within [EVerest](https://github.com/EVerest/EVerest) - the complete software stack for your charging station. It is recommended to use EVerest together with this OCPP implementation.
 
 ## Getting Started
 
@@ -21,7 +21,7 @@ Check out the [Getting Started guide](doc/common/getting_started.md). It should 
 
 ## Get Involved
 
-See the [COMMUNITY.md](https://github.com/EVerest/EVerest/blob/main/COMMUNITY.md) and [CONTRIBUTING.md](https://github.com/EVerest/EVerest/blob/main/CONTRIBUTING.md) of the EVerest project to get involved.
+See the [Contribution Guideline](https://everest.github.io/nightly/project/contributing.html) of the EVerest project to get involved.
 
 ## OCPP1.6
 

@@ -50,6 +50,24 @@ def _deps_impl(module_ctx):
         build_file = "@everest-core//third-party/bazel:BUILD.mqtt-c.bazel",
     )
 
+    # mosquitto 2.0.x is needed at the moment because there are some unresolved issues our usage of 2.1
+    maybe(
+        http_archive,
+        name = "mosquitto",
+        url = "https://mosquitto.org/files/source/mosquitto-2.0.22.tar.gz",
+        sha256 = "2f752589ef7db40260b633fbdb536e9a04b446a315138d64a7ff3c14e2de6b68",
+        strip_prefix = "mosquitto-2.0.22",
+        build_file = "@everest-core//third-party/bazel:BUILD.mosquitto.bazel",
+    )
+
+    maybe(
+        http_archive,
+        name = "openssl_source",
+        url = "https://github.com/openssl/openssl/releases/download/openssl-3.3.1/openssl-3.3.1.tar.gz",
+        sha256 = "777cd596284c883375a2a7a11bf5d2786fc5413255efab20c50d6ffe6d020b7e",
+        strip_prefix = "openssl-3.3.1",
+        build_file = "@everest-core//third-party/bazel:BUILD.openssl-foreign-cc.bazel",
+    )
 
     version = "0.2.15"
     maybe(

@@ -642,6 +642,39 @@ TEST_F(ChargerTest, EnableDisableSourceDisableEnable) {
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Idle);
 }
 
+// tests for cancel_transaction() / authorize() interaction
+TEST_F(ChargerTest, DelayedAuthorizeAfterCancelTransactionIsIgnored) {
+    auto& ctx = charger->get_shared_context();
+
+    // Simulate an active charging session
+    ctx.flag_transaction_active = true;
+    ctx.session_active = true;
+    ctx.flag_authorized = true;
+
+    // External cancellation (e.g. OCPP RemoteStop)
+    types::evse_manager::StopTransactionRequest stop_request;
+    stop_request.reason = types::evse_manager::StopTransactionReason::Remote;
+    EXPECT_TRUE(charger->cancel_transaction(stop_request));
+
+    EXPECT_FALSE(ctx.flag_authorized);
+    EXPECT_TRUE(ctx.flag_externally_cancelled);
+
+    // Delayed authorization response arrives after the cancellation
+    types::authorization::ProvidedIdToken token;
+    token.id_token.value = "DELAYED_TOKEN";
+    token.id_token.type = types::authorization::IdTokenType::Central;
+    token.authorization_type = types::authorization::AuthorizationType::OCPP;
+
+    types::authorization::ValidationResult validation_result;
+    validation_result.authorization_status = types::authorization::AuthorizationStatus::Accepted;
+
+    charger->authorize(true, token, validation_result);
+
+    // The delayed response must not restore authorization
+    EXPECT_FALSE(ctx.flag_authorized);
+    EXPECT_TRUE(ctx.flag_externally_cancelled);
+}
+
 } // namespace
 
 // ----------------------------------------------------------------------------
@@ -674,8 +707,6 @@ void IECStateMachine::allow_power_on(bool value, types::evse_board_support::Reas
 
 double IECStateMachine::read_pp_ampacity() {
     return 0.0;
-}
-void IECStateMachine::evse_replug(int ms) {
 }
 void IECStateMachine::switch_three_phases_while_charging(bool n) {
 }
@@ -718,10 +749,6 @@ const std::string cpevent_to_string(CPEvent e) {
         return "BCDtoEF";
     case CPEvent::BCDtoE:
         return "BCDtoE";
-    case CPEvent::EvseReplugStarted:
-        return "EvseReplugStarted";
-    case CPEvent::EvseReplugFinished:
-        return "EvseReplugFinished";
     }
     throw std::out_of_range("No known string conversion for provided enum of type CPEvent");
 }
@@ -756,6 +783,8 @@ void ErrorHandling::clear_overcurrent_error() {
 }
 
 void ErrorHandling::raise_over_voltage_error(Everest::error::Severity severity, const std::string& description) {
+}
+void ErrorHandling::clear_over_voltage_error() {
 }
 
 void ErrorHandling::raise_internal_error(const std::string& description) {

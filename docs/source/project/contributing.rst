@@ -20,7 +20,7 @@ provides general project oversight.
 
 If you just need help or have a question, refer to the :doc:`Community Channels </project/community>`.
 
-To contribute code to the project, first read over the :doc:`Governance Policy </project/governance/governance>` 
+To contribute code to the project, first read over the :doc:`Governance Policy </project/governance/governance>`
 page to understand the roles involved.
 
 Discussing and Communication
@@ -66,6 +66,14 @@ Each code contribution must include:
 - A `Developer Certificate of Origin signoff <https://github.com/lf-energy/tac/blob/main/process/contribution_guidelines.md#contribution-sign-off>`_.
 - Submitted to the project as a pull request.
 
+The contributions must be made by a human who is responsible for the quality and
+correctness of their submission. All submitted code must be fully understood by
+the contributor, who should be able to justify the technical approach and explain
+any change during review.
+
+Pull requests should be well-scoped and limited to a single logical
+change. This keeps reviews focused and the commit history clean.
+
 Each commit message and pull request description should have enough information
 in it so that other contributors can understand what has been changed and
 eventually which impact the change will have. Issue and pull request templates
@@ -89,6 +97,15 @@ addressed.
 Project committers will review the contribution in a timely manner, and advise
 of any changes needed to merge the request.
 
+AI-generated Contributions
+---------------------------
+
+EVerest aligns with the Linux Foundation's position on the use of generative AI
+tools in open source development. See the `Linux Foundation guidance on
+generative AI <https://www.linuxfoundation.org/legal/generative-ai>`_ for
+details. Every contribution must be reviewed and verified by a human
+contributor prior to submission.
+
 Labels
 ------
 
@@ -96,10 +113,13 @@ GitHub labels help organize issues and pull requests. EVerest does not yet have
 a standardized label system. When contributing:
 
 - Browse existing labels in the repository and use them consistently
-- Common labels to look for: ``bug``, ``enhancement``, ``documentation``, 
+- Common labels to look for: ``bug``, ``enhancement``, ``documentation``,
   ``help-wanted``, ``good-first-issue``
 - Backport workflow: Use ``backport-candidate`` to mark PRs that should be
-  considered for backporting to stable releases
+  considered for backporting to stable releases. To trigger the automated
+  backport workflow, maintainers can add a label in the format ``backport <branch>`` (e.g. ``backport stable/2026.02``). This will automatically create
+  a cherry-pick PR targeting the specified branch once the original PR is merged. If the cherry-pick does not apply cleanly, the workflow will comment on the
+  original PR and the backport must be performed manually.
 
 If you need a label that doesn't exist, discuss with maintainers before creating it.
 
@@ -112,5 +132,8 @@ Each contribution must meet the `Javascript <https://github.com/EVerest/EVerest/
 License
 -------
 
-EVerest is licensed under the `Apache License 2.0 <https://github.com/EVerest/everest-core/blob/main/LICENSE>`_ license.
-Contributions should abide by that standard license.
+EVerest is licensed under the `Apache License 2.0 <https://github.com/EVerest/EVerest/blob/main/LICENSE>`_ license.
+Contributions should abide by that standard license. Contributors are
+responsible for ensuring that any third-party content included in their
+submission does not introduce conflicting license obligations or copyright
+infringement.

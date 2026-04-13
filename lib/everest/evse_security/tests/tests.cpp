@@ -354,21 +354,25 @@ TEST_F(EvseSecurityTestsMultiLeaf, verify_multi_leaf_retrieval) {
     ASSERT_EQ(r.status, GetInstalledCertificatesStatus::Accepted);
     ASSERT_EQ(r.certificate_hash_data_chain.size(), 2);
 
-    auto& v2g_chain = r.certificate_hash_data_chain.front();
+    // Order is not guaranteed — both chains have identical validity periods
+    auto& chain0 = r.certificate_hash_data_chain[0];
+    auto& chain1 = r.certificate_hash_data_chain[1];
 
-    // Assert the order with the SECCLeaf first
-    ASSERT_EQ(v2g_chain.certificate_hash_data.debug_common_name, std::string("SECCCert"));
-    ASSERT_EQ(v2g_chain.child_certificate_hash_data.size(), 2);
-    ASSERT_EQ(v2g_chain.child_certificate_hash_data[0].debug_common_name, std::string("CPOSubCA2"));
-    ASSERT_EQ(v2g_chain.child_certificate_hash_data[1].debug_common_name, std::string("CPOSubCA1"));
+    std::string name0 = chain0.certificate_hash_data.debug_common_name;
+    std::string name1 = chain1.certificate_hash_data.debug_common_name;
 
-    auto& v2g_chain_alternate = r.certificate_hash_data_chain.back();
+    ASSERT_TRUE((name0 == "SECCCert" && name1 == "SECCGridSyncCert") ||
+                (name0 == "SECCGridSyncCert" && name1 == "SECCCert"));
 
-    // Assert the order with the SECCLeaf first
-    ASSERT_EQ(v2g_chain_alternate.certificate_hash_data.debug_common_name, std::string("SECCGridSyncCert"));
-    ASSERT_EQ(v2g_chain_alternate.child_certificate_hash_data.size(), 2);
-    ASSERT_EQ(v2g_chain_alternate.child_certificate_hash_data[0].debug_common_name, std::string("CPOSubCA2"));
-    ASSERT_EQ(v2g_chain_alternate.child_certificate_hash_data[1].debug_common_name, std::string("CPOSubCA1"));
+    // Both chains should have 2 child certificates (SubCA2, SubCA1)
+    ASSERT_EQ(chain0.child_certificate_hash_data.size(), 2);
+    ASSERT_EQ(chain1.child_certificate_hash_data.size(), 2);
+
+    // Verify child ordering for both chains
+    ASSERT_EQ(chain0.child_certificate_hash_data[0].debug_common_name, std::string("CPOSubCA2"));
+    ASSERT_EQ(chain0.child_certificate_hash_data[1].debug_common_name, std::string("CPOSubCA1"));
+    ASSERT_EQ(chain1.child_certificate_hash_data[0].debug_common_name, std::string("CPOSubCA2"));
+    ASSERT_EQ(chain1.child_certificate_hash_data[1].debug_common_name, std::string("CPOSubCA1"));
 }
 
 TEST_F(EvseSecurityTests, verify_normal_keygen) {

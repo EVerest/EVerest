@@ -655,7 +655,7 @@ OperationMode_External to_external_api(OperationMode_Internal const& val) {
         enum_case(LocalFrequency);
         enum_case(LocalLoadBalancing);
     }
-    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::ocpp::Operation_mode");
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::ocpp::OperationMode_Internal");
 }
 
 ChargingSchedulePeriod_Internal to_internal_api(ChargingSchedulePeriod_External const& val) {

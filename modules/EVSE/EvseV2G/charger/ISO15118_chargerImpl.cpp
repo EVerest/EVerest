@@ -3,6 +3,7 @@
 // Copyright (C) 2022-2023 Contributors to EVerest
 #include "ISO15118_chargerImpl.hpp"
 #include "log.hpp"
+#include "sdp.hpp"
 #include "tools.hpp"
 #include "v2g_ctx.hpp"
 #include <algorithm>
@@ -158,6 +159,7 @@ void ISO15118_chargerImpl::handle_set_charging_parameters(types::iso15118::Setup
     if (physical_values.ac_nominal_voltage.has_value()) {
         populate_physical_value_float(&v2g_ctx->evse_v2g_data.evse_nominal_voltage,
                                       physical_values.ac_nominal_voltage.value(), 1, iso2_unitSymbolType_V);
+        v2g_ctx->basic_config.evse_ac_nominal_voltage = physical_values.ac_nominal_voltage.value();
     }
 
     if (physical_values.dc_current_regulation_tolerance.has_value()) {
@@ -289,7 +291,8 @@ void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
 }
 
 void ISO15118_chargerImpl::handle_dlink_ready(bool& value) {
-    // FIXME: dlink_ready(true) is ignored for now
+    sdp_set_dlink_ready(v2g_ctx, value);
+
     // If dlink becomes not ready (false), stop TCP connection in the read thread
     if (!value) {
         v2g_ctx->is_connection_terminated = true;
@@ -435,10 +438,11 @@ void ISO15118_chargerImpl::handle_update_ac_parameters(types::iso15118::AcParame
 }
 
 void ISO15118_chargerImpl::handle_update_ac_maximum_limits(types::iso15118::AcEvseMaximumPower& maximum_limits) {
-    static bool warning_shown = false;
-    if (not warning_shown) {
-        EVLOG_warning << "Ignoring handle_update_ac_maximum_limits call";
-        warning_shown = true;
+    if (v2g_ctx->basic_config.evse_ac_nominal_voltage > 0.0f) {
+        v2g_ctx->basic_config.evse_ac_nominal_current =
+            maximum_limits.charge_power.total / v2g_ctx->basic_config.evse_ac_nominal_voltage;
+    } else {
+        EVLOG_error << "Cannot compute nominal current: nominal voltage is 0";
     }
 }
 

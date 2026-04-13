@@ -1,0 +1,9 @@
+load("//modules:module.bzl", "cc_everest_module")
+
+cc_everest_module(
+    name = "DummyTokenProvider",
+    impls = ["main"],
+    deps = [
+        "//lib/everest/helpers",
+    ],
+)

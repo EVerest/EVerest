@@ -260,12 +260,6 @@ void to_json(json& j, SessionEventEnum const& k) noexcept {
     case SessionEventEnum::ChargingPausedEVSE:
         j = "ChargingPausedEVSE";
         return;
-    case SessionEventEnum::WaitingForEnergy:
-        j = "WaitingForEnergy";
-        return;
-    case SessionEventEnum::ChargingResumed:
-        j = "ChargingResumed";
-        return;
     case SessionEventEnum::StoppingCharging:
         j = "StoppingCharging";
         return;
@@ -283,12 +277,6 @@ void to_json(json& j, SessionEventEnum const& k) noexcept {
         return;
     case SessionEventEnum::ReservationEnd:
         j = "ReservationEnd";
-        return;
-    case SessionEventEnum::ReplugStarted:
-        j = "ReplugStarted";
-        return;
-    case SessionEventEnum::ReplugFinished:
-        j = "ReplugFinished";
         return;
     case SessionEventEnum::PluginTimeout:
         j = "PluginTimeout";
@@ -350,14 +338,6 @@ void from_json(json const& j, SessionEventEnum& k) {
         k = SessionEventEnum::ChargingPausedEVSE;
         return;
     }
-    if (s == "WaitingForEnergy") {
-        k = SessionEventEnum::WaitingForEnergy;
-        return;
-    }
-    if (s == "ChargingResumed") {
-        k = SessionEventEnum::ChargingResumed;
-        return;
-    }
     if (s == "StoppingCharging") {
         k = SessionEventEnum::StoppingCharging;
         return;
@@ -382,14 +362,6 @@ void from_json(json const& j, SessionEventEnum& k) {
         k = SessionEventEnum::ReservationEnd;
         return;
     }
-    if (s == "ReplugStarted") {
-        k = SessionEventEnum::ReplugStarted;
-        return;
-    }
-    if (s == "ReplugFinished") {
-        k = SessionEventEnum::ReplugFinished;
-        return;
-    }
     if (s == "PluginTimeout") {
         k = SessionEventEnum::PluginTimeout;
         return;
@@ -405,6 +377,104 @@ void from_json(json const& j, SessionEventEnum& k) {
 
     throw std::out_of_range("Provided string " + s +
                             " could not be converted to enum of type API_V1_0_SessionEventEnum");
+}
+
+void to_json(json& j, PauseChargingEVSEReasonEnum const& k) noexcept {
+    switch (k) {
+    case PauseChargingEVSEReasonEnum::Error:
+        j = "Error";
+        return;
+    case PauseChargingEVSEReasonEnum::NoEnergy:
+        j = "NoEnergy";
+        return;
+    case PauseChargingEVSEReasonEnum::UserPause:
+        j = "UserPause";
+        return;
+    }
+
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::evse_manager::PauseChargingEVSEReasonEnum";
+}
+
+void from_json(json const& j, PauseChargingEVSEReasonEnum& k) {
+    std::string s = j;
+    if (s == "Error") {
+        k = PauseChargingEVSEReasonEnum::Error;
+        return;
+    }
+    if (s == "NoEnergy") {
+        k = PauseChargingEVSEReasonEnum::NoEnergy;
+        return;
+    }
+    if (s == "UserPause") {
+        k = PauseChargingEVSEReasonEnum::UserPause;
+        return;
+    }
+
+    throw std::out_of_range("Provided string " + s +
+                            " could not be converted to enum of type API_V1_0_PauseChargingEVSEReasonEnum");
+}
+
+void to_json(json& j, HlcSessionFailedReasonEnum const& k) noexcept {
+    switch (k) {
+    case HlcSessionFailedReasonEnum::ProtocolNegotiationFailed:
+        j = "ProtocolNegotiationFailed";
+        return;
+    case HlcSessionFailedReasonEnum::AuthorizationFailed:
+        j = "AuthorizationFailed";
+        return;
+    case HlcSessionFailedReasonEnum::ChargingParametersNotAccepted:
+        j = "ChargingParametersNotAccepted";
+        return;
+    case HlcSessionFailedReasonEnum::EnergyTransferSetupFailed:
+        j = "EnergyTransferSetupFailed";
+        return;
+    case HlcSessionFailedReasonEnum::ChargingInterrupted:
+        j = "ChargingInterrupted";
+        return;
+    case HlcSessionFailedReasonEnum::FailedTLSHandshake:
+        j = "FailedTLSHandshake";
+        return;
+    case HlcSessionFailedReasonEnum::UnexpectedSessionEnd:
+        j = "UnexpectedSessionEnd";
+        return;
+    }
+
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::evse_manager::HlcSessionFailedReasonEnum";
+}
+
+void from_json(json const& j, HlcSessionFailedReasonEnum& k) {
+    std::string s = j;
+    if (s == "ProtocolNegotiationFailed") {
+        k = HlcSessionFailedReasonEnum::ProtocolNegotiationFailed;
+        return;
+    }
+    if (s == "AuthorizationFailed") {
+        k = HlcSessionFailedReasonEnum::AuthorizationFailed;
+        return;
+    }
+    if (s == "ChargingParametersNotAccepted") {
+        k = HlcSessionFailedReasonEnum::ChargingParametersNotAccepted;
+        return;
+    }
+    if (s == "EnergyTransferSetupFailed") {
+        k = HlcSessionFailedReasonEnum::EnergyTransferSetupFailed;
+        return;
+    }
+    if (s == "ChargingInterrupted") {
+        k = HlcSessionFailedReasonEnum::ChargingInterrupted;
+        return;
+    }
+    if (s == "FailedTLSHandshake") {
+        k = HlcSessionFailedReasonEnum::FailedTLSHandshake;
+        return;
+    }
+    if (s == "UnexpectedSessionEnd") {
+        k = HlcSessionFailedReasonEnum::UnexpectedSessionEnd;
+        return;
+    }
+
+    throw std::out_of_range("Provided string " + s +
+                            " could not be converted to enum of type API_V1_0_HlcSessionFailedReasonEnum");
 }
 
 void to_json(json& j, SessionEvent const& k) noexcept {
@@ -427,6 +497,9 @@ void to_json(json& j, SessionEvent const& k) noexcept {
     }
     if (k.transaction_finished) {
         j["transaction_finished"] = k.transaction_finished.value();
+    }
+    if (k.charging_paused_evse) {
+        j["charging_paused_evse"] = k.charging_paused_evse.value();
     }
     if (k.charging_state_changed_event) {
         j["charging_state_changed_event"] = k.charging_state_changed_event.value();
@@ -458,6 +531,9 @@ void from_json(json const& j, SessionEvent& k) {
     if (j.contains("transaction_finished")) {
         k.transaction_finished.emplace(j.at("transaction_finished"));
     }
+    if (j.contains("charging_paused_evse")) {
+        k.charging_paused_evse.emplace(j.at("charging_paused_evse"));
+    }
     if (j.contains("charging_state_changed_event")) {
         k.charging_state_changed_event.emplace(j.at("charging_state_changed_event"));
     }
@@ -467,6 +543,18 @@ void from_json(json const& j, SessionEvent& k) {
     if (j.contains("source")) {
         k.source.emplace(j.at("source"));
     }
+}
+
+void to_json(json& j, HlcSessionFailedEvent const& k) noexcept {
+    j = json{
+        {"uuid", k.uuid},
+        {"reason", k.reason},
+    };
+}
+
+void from_json(json const& j, HlcSessionFailedEvent& k) {
+    k.uuid = j.at("uuid");
+    k.reason = j.at("reason");
 }
 
 void to_json(json& j, Limits const& k) noexcept {
@@ -743,6 +831,18 @@ void to_json(json& j, ChargingStateChangedEvent const& k) noexcept {
 
 void from_json(json const& j, ChargingStateChangedEvent& k) {
     k.meter_value = j.at("meter_value");
+}
+
+void to_json(json& j, ChargingPausedEVSEReasons const& k) noexcept {
+    j = json{
+        {"reasons", k.reasons},
+    };
+}
+
+void from_json(json const& j, ChargingPausedEVSEReasons& k) {
+    for (auto& item : j.at("reasons")) {
+        k.reasons.push_back(item);
+    }
 }
 
 void to_json(json& j, AuthorizationEvent const& k) noexcept {
@@ -1237,9 +1337,6 @@ void to_json(json& j, EvseStateEnum const& k) noexcept {
     case EvseStateEnum::AuthRequired:
         j = "AuthRequired";
         return;
-    case EvseStateEnum::WaitingForEnergy:
-        j = "WaitingForEnergy";
-        return;
     case EvseStateEnum::ChargingPausedEV:
         j = "ChargingPausedEV";
         return;
@@ -1285,10 +1382,6 @@ void from_json(json const& j, EvseStateEnum& k) {
     }
     if (s == "AuthRequired") {
         k = EvseStateEnum::AuthRequired;
-        return;
-    }
-    if (s == "WaitingForEnergy") {
-        k = EvseStateEnum::WaitingForEnergy;
         return;
     }
     if (s == "ChargingPausedEV") {

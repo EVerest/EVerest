@@ -62,7 +62,7 @@ Mode_External to_external_api(Mode_Internal mode_internal) {
         return Mode::Fault;
     }
 
-    throw std::out_of_range("No know conversion between internal and external mode API");
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::power_supply_DC::Mode_Internal");
 }
 
 Mode_Internal to_internal_api(Mode_External mode_external) {
@@ -77,7 +77,7 @@ Mode_Internal to_internal_api(Mode_External mode_external) {
         return Mode_Internal::Fault;
     }
 
-    throw std::out_of_range("No know conversion between internal and external mode API");
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::power_supply_DC::Mode_External");
 }
 
 ChargingPhase_External to_external_api(ChargingPhase_Internal val) {
@@ -92,7 +92,8 @@ ChargingPhase_External to_external_api(ChargingPhase_Internal val) {
         return ChargingPhase_External::Charging;
     }
 
-    throw std::out_of_range("No know conversion from internal to external ChargingPhase API");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::power_supply_DC::ChargingPhase_Internal");
 }
 
 ChargingPhase_Internal to_internal_api(ChargingPhase_External val) {
@@ -107,7 +108,8 @@ ChargingPhase_Internal to_internal_api(ChargingPhase_External val) {
         return ChargingPhase_Internal::Charging;
     }
 
-    throw std::out_of_range("No know conversion from external and internal ChargingPhase API");
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::power_supply_DC::ChargingPhase_External");
 }
 
 VoltageCurrent_External to_external_api(VoltageCurrent_Internal const& internal) {

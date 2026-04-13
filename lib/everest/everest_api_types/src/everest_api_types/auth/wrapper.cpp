@@ -135,7 +135,7 @@ CertificateStatus_Internal to_internal_api(CertificateStatus_External const& val
     case SrcT::ContractCancelled:
         return TarT::ContractCancelled;
     }
-    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::auth::CertifgicateStatus_External");
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::auth::CertificateStatus_External");
 }
 CertificateStatus_External to_external_api(CertificateStatus_Internal const& val) {
     using SrcT = CertificateStatus_Internal;
@@ -156,7 +156,7 @@ CertificateStatus_External to_external_api(CertificateStatus_Internal const& val
     case SrcT::ContractCancelled:
         return TarT::ContractCancelled;
     }
-    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::auth::CertifgicateStatus_Internal");
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::auth::CertificateStatus_Internal");
 }
 
 TokenValidationStatus_Internal to_internal_api(TokenValidationStatus_External const& val) {
@@ -215,7 +215,7 @@ SelectionAlgorithm_Internal to_internal_api(SelectionAlgorithm_External const& v
     case SrcT::FindFirst:
         return TarT::FindFirst;
     }
-    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::auth::SelectedAlgorithm_External");
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::auth::SelectionAlgorithm_External");
 }
 SelectionAlgorithm_External to_external_api(SelectionAlgorithm_Internal const& val) {
     using SrcT = SelectionAlgorithm_Internal;
@@ -228,7 +228,7 @@ SelectionAlgorithm_External to_external_api(SelectionAlgorithm_Internal const& v
     case SrcT::FindFirst:
         return TarT::FindFirst;
     }
-    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::auth::SelectedAlgorithm_Internal");
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::auth::SelectionAlgorithm_Internal");
 }
 
 AuthorizationType_Internal to_internal_api(AuthorizationType_External const& val) {
@@ -246,7 +246,7 @@ AuthorizationType_Internal to_internal_api(AuthorizationType_External const& val
     case SrcT::BankCard:
         return TarT::BankCard;
     }
-    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::auth::AuthoriozationType_External");
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::auth::AuthorizationType_External");
 }
 
 AuthorizationType_External to_external_api(AuthorizationType_Internal const& val) {
@@ -264,7 +264,7 @@ AuthorizationType_External to_external_api(AuthorizationType_Internal const& val
     case SrcT::BankCard:
         return TarT::BankCard;
     }
-    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::auth::AuthoriozationType_Internal");
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::auth::AuthorizationType_Internal");
 }
 
 IdTokenType_Internal to_internal_api(IdTokenType_External const& val) {

@@ -11,100 +11,90 @@
 #include <utils/types.hpp>
 
 namespace Everest {
-// forward declaration
-class MQTTAbstractionImpl;
 
 ///
-/// \brief Contains a C++ abstraction for using MQTT in EVerest modules
+/// \brief Pure virtual interface for MQTT communication in EVerest modules.
+///
+/// Use MQTTAbstractionImpl for the real MQTT connection.
 ///
 class MQTTAbstraction {
 public:
-    /// \brief Create a MQTTAbstraction with the provideded \p mqtt_settings
-    explicit MQTTAbstraction(const MQTTSettings& mqtt_settings);
-
     // forbid copy assignment and copy construction
     MQTTAbstraction(MQTTAbstraction const&) = delete;
     void operator=(MQTTAbstraction const&) = delete;
 
-    ~MQTTAbstraction();
+    virtual ~MQTTAbstraction() = default;
 
-    ///
-    /// \copydoc MQTTAbstractionImpl::connect()
-    bool connect();
+    /// \brief connects to the mqtt broker
+    virtual bool connect() = 0;
 
-    ///
-    /// \copydoc MQTTAbstractionImpl::disconnect()
-    void disconnect();
+    /// \brief disconnects from the mqtt broker
+    virtual void disconnect() = 0;
 
-    ///
-    /// \copydoc MQTTAbstractionImpl::publish(const std::string&, const nlohmann::json&)
-    void publish(const std::string& topic, const nlohmann::json& json);
+    /// \brief publishes the given \p json on the given \p topic with QOS level 0
+    virtual void publish(const std::string& topic, const nlohmann::json& json) = 0;
 
-    ///
-    /// \copydoc MQTTAbstractionImpl::publish(const std::string&, const nlohmann::json&, QOS)
-    void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false);
+    /// \brief publishes the given \p json on the given \p topic with the given \p qos
+    virtual void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false) = 0;
 
-    ///
-    /// \copydoc MQTTAbstractionImpl::publish(const std::string&, const std::string&)
-    void publish(const std::string& topic, const std::string& data);
+    /// \brief publishes the given \p data on the given \p topic with QOS level 0
+    virtual void publish(const std::string& topic, const std::string& data) = 0;
 
-    ///
-    /// \copydoc MQTTAbstractionImpl::publish(const std::string&, const std::string&, QOS)
-    void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false);
+    /// \brief publishes the given \p data on the given \p topic with the given \p qos
+    virtual void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false) = 0;
 
-    ///
-    /// \copydoc MQTTAbstractionImpl::subscribe(const std::string&)
-    void subscribe(const std::string& topic);
+    /// \brief subscribes to the given \p topic with QOS level 0
+    virtual void subscribe(const std::string& topic) = 0;
 
-    ///
-    /// \copydoc MQTTAbstractionImpl::subscribe(const std::string&, QOS)
-    void subscribe(const std::string& topic, QOS qos);
+    /// \brief subscribes to the given \p topic with the given \p qos
+    virtual void subscribe(const std::string& topic, QOS qos) = 0;
 
-    ///
-    /// \copydoc MQTTAbstractionImpl::unsubscribe(const std::string&)
-    void unsubscribe(const std::string& topic);
+    /// \brief unsubscribes from the given \p topic
+    virtual void unsubscribe(const std::string& topic) = 0;
 
-    ///
-    /// \copydoc MQTTAbstractionImpl::clear_retained_topics()
-    void clear_retained_topics();
+    /// \brief clears any previously published topics that had the retain flag set
+    virtual void clear_retained_topics() = 0;
 
-    ///
-    /// \copydoc MQTTAbstractionImpl::get(const std::string&, QOS)
-    nlohmann::json get(const std::string& topic, QOS qos);
+    /// \brief Sends a get request on \p topic and waits for a JSON response, with the given \p qos and \p retries
+    virtual nlohmann::json get(const std::string& topic, QOS qos, std::size_t retries = 0) = 0;
 
+    /// \brief Sends an MQTT request and waits for a JSON response.
     ///
-    /// \copydoc MQTTAbstractionImpl::get(const MQTTRequest&)
-    nlohmann::json get(const MQTTRequest& request);
+    /// Registers a temporary handler for the response topic in \p request, publishes the request
+    /// message, and waits for the corresponding response. Throws EverestTimeoutError on timeout.
+    ///
+    /// \param request The MQTT request containing the response topic, request topic, payload, QoS, and timeout.
+    /// \param retries How often the get should be retried on timeout, defaults to 0.
+    /// \return The JSON response received.
+    virtual nlohmann::json get(const MQTTRequest& request, std::size_t retries = 0) = 0;
 
-    ///
     /// \brief Get MQTT topic prefix for the "everest" topic
-    const std::string& get_everest_prefix() const;
+    virtual const std::string& get_everest_prefix() const = 0;
 
-    ///
     /// \brief Get MQTT topic prefix for external topics
-    const std::string& get_external_prefix() const;
+    virtual const std::string& get_external_prefix() const = 0;
 
-    ///
-    /// \copydoc MQTTAbstractionImpl::spawn_main_loop_thread()
-    std::shared_future<void> spawn_main_loop_thread();
+    /// \brief Spawn a thread running the mqtt main loop
+    /// \returns a future, which will be fulfilled on thread termination
+    virtual std::shared_future<void> spawn_main_loop_thread() = 0;
 
-    ///
-    /// \copydoc MQTTAbstractionImpl::get_main_loop_future()
-    std::shared_future<void> get_main_loop_future();
+    /// \returns the main loop future, which will be fulfilled on thread termination
+    virtual std::shared_future<void> get_main_loop_future() = 0;
 
-    ///
-    /// \copydoc MQTTAbstractionImpl::register_handler(const std::string&, std::shared_ptr<TypedHandler>, QOS)
-    void register_handler(const std::string& topic, std::shared_ptr<TypedHandler> handler, QOS qos);
+    /// \brief subscribes to \p topic and registers a \p handler called when a message arrives, with the given \p qos
+    virtual void register_handler(const std::string& topic, std::shared_ptr<TypedHandler> handler, QOS qos) = 0;
 
-    ///
-    /// \copydoc MQTTAbstractionImpl::unregister_handler(const std::string&, const Token&)
-    void unregister_handler(const std::string& topic, const Token& token);
+    /// \brief unsubscribes a handler identified by its \p token from the given \p topic
+    virtual void unregister_handler(const std::string& topic, const Token& token) = 0;
 
-private:
-    std::string everest_prefix;
-    std::string external_prefix;
-    std::unique_ptr<MQTTAbstractionImpl> mqtt_abstraction;
+protected:
+    MQTTAbstraction() = default;
 };
+
+/// \brief Create a real MQTTAbstraction backed by the given \p mqtt_settings.
+///        Use this instead of constructing MQTTAbstractionImpl directly.
+std::unique_ptr<MQTTAbstraction> make_mqtt_abstraction(const MQTTSettings& mqtt_settings);
+
 } // namespace Everest
 
 #endif // UTILS_MQTT_ABSTRACTION_HPP

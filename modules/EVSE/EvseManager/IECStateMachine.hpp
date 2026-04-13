@@ -24,6 +24,7 @@
 
 #include <chrono>
 #include <mutex>
+#include <optional>
 #include <queue>
 
 #include <generated/interfaces/evse_board_support/Interface.hpp>
@@ -46,9 +47,7 @@ enum class CPEvent {
     CarUnplugged,
     EFtoBCD,
     BCDtoEF,
-    BCDtoE,
-    EvseReplugStarted,
-    EvseReplugFinished,
+    BCDtoE
 };
 
 // Just a helper for log printing
@@ -65,6 +64,13 @@ enum class RawCPState {
     F
 };
 
+// Number of active phases for AC charging
+enum class AcPhases {
+    SinglePhase,
+    TwoPhases,
+    ThreePhases
+};
+
 class IECStateMachine {
 public:
     // We need the r_bsp reference to be able to talk to the bsp driver module
@@ -76,7 +82,6 @@ public:
 
     void set_pp_ampacity(types::board_support_common::ProximityPilot pp);
     double read_pp_ampacity();
-    void evse_replug(int ms);
     void switch_three_phases_while_charging(bool n);
     void setup(bool has_ventilation);
 
@@ -86,8 +91,8 @@ public:
     void set_cp_state_X1();
     void set_cp_state_F();
 
-    void set_three_phases(bool t) {
-        three_phases = t;
+    void set_max_phases(AcPhases phases) {
+        max_phases = phases;
     }
 
     void enable(bool en);
@@ -122,7 +127,7 @@ private:
     bool last_power_on_allowed{false};
     std::atomic<double> pp_ampacity{0.0};
     std::atomic<double> last_amps{-1};
-    std::atomic_bool three_phases{true};
+    std::atomic<AcPhases> max_phases{AcPhases::ThreePhases};
 
     bool car_plugged_in{false};
 
@@ -131,8 +136,8 @@ private:
     AsyncTimeout timeout_unlock_state_F;
 
     Everest::timed_mutex_traceable state_machine_mutex;
-    void feed_state_machine(RawCPState cp_state);
-    std::queue<CPEvent> state_machine(RawCPState cp_state);
+    void feed_state_machine(std::optional<RawCPState> cp_state_opt);
+    std::queue<CPEvent> state_machine(std::optional<RawCPState> cp_state_opt);
 
     types::evse_board_support::Reason power_on_reason{types::evse_board_support::Reason::PowerOff};
     void call_allow_power_on_bsp(bool value);

@@ -22,8 +22,17 @@ void from_json(json const& j, StartSessionReason& k);
 void to_json(json& j, SessionEventEnum const& k) noexcept;
 void from_json(json const& j, SessionEventEnum& k);
 
+void to_json(json& j, PauseChargingEVSEReasonEnum const& k) noexcept;
+void from_json(json const& j, PauseChargingEVSEReasonEnum& k);
+
+void to_json(json& j, HlcSessionFailedReasonEnum const& k) noexcept;
+void from_json(json const& j, HlcSessionFailedReasonEnum& k);
+
 void to_json(json& j, SessionEvent const& k) noexcept;
 void from_json(json const& j, SessionEvent& k);
+
+void to_json(json& j, HlcSessionFailedEvent const& k) noexcept;
+void from_json(json const& j, HlcSessionFailedEvent& k);
 
 void to_json(json& j, Limits const& k) noexcept;
 void from_json(json const& j, Limits& k);
@@ -48,6 +57,9 @@ void from_json(json const& j, TransactionFinished& k);
 
 void to_json(json& j, ChargingStateChangedEvent const& k) noexcept;
 void from_json(json const& j, ChargingStateChangedEvent& k);
+
+void to_json(json& j, ChargingPausedEVSEReasons const& k) noexcept;
+void from_json(json const& j, ChargingPausedEVSEReasons& k);
 
 void to_json(json& j, AuthorizationEvent const& k) noexcept;
 void from_json(json const& j, AuthorizationEvent& k);

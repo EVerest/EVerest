@@ -124,6 +124,11 @@ ChargePoint::~ChargePoint() = default;
 void ChargePoint::start(BootReasonEnum bootreason, bool start_connecting) {
     this->message_queue->start();
 
+    // Publish the initial default price before connecting (offline state at startup).
+    if (this->tariff_and_cost != nullptr) {
+        this->tariff_and_cost->publish_default_price(false);
+    }
+
     this->bootreason = bootreason;
     // Trigger all initial status notifications and callbacks related to component state
     // Should be done before sending the BootNotification.req so that the correct states can be reported
@@ -378,7 +383,15 @@ std::optional<std::string> ChargePoint::get_evse_transaction_id(std::int32_t evs
 
 AuthorizeResponse ChargePoint::validate_token(const IdToken id_token, const std::optional<CiString<10000>>& certificate,
                                               const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data) {
-    return this->authorization->validate_token(id_token, certificate, ocsp_request_data);
+    auto response = this->authorization->validate_token(id_token, certificate, ocsp_request_data);
+
+    // I04: if the CSMS provided no specific tariff, inject the TariffFallbackMessage so
+    // the display can show the price to the EV Driver.
+    if (this->tariff_and_cost != nullptr) {
+        this->tariff_and_cost->ensure_personal_message(response.idTokenInfo, this->is_offline());
+    }
+
+    return response;
 }
 
 void ChargePoint::on_event(const std::vector<EventData>& events) {
@@ -599,7 +612,7 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
 
     this->tariff_and_cost = std::make_unique<TariffAndCost>(
         *functional_block_context, *this->meter_values, this->callbacks.tariff_message_callback,
-        this->callbacks.set_running_cost_callback, this->io_context);
+        this->callbacks.set_running_cost_callback, this->callbacks.default_price_callback, this->io_context);
 
     this->firmware_update = std::make_unique<FirmwareUpdate>(
         *this->functional_block_context, *this->availability, *this->security,
@@ -617,7 +630,7 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
         this->callbacks.time_sync_callback, this->callbacks.boot_notification_callback,
         this->callbacks.validate_network_profile_callback, this->callbacks.is_reset_allowed_callback,
         this->callbacks.reset_callback, this->callbacks.stop_transaction_callback,
-        this->callbacks.variable_changed_callback, this->registration_status);
+        this->callbacks.variable_changed_callback, *this->tariff_and_cost, this->registration_status);
 
     this->remote_transaction_control = std::make_unique<RemoteTransactionControl>(
         *this->functional_block_context, *this->transaction, *this->smart_charging, *this->meter_values,
@@ -1092,10 +1105,13 @@ void ChargePoint::websocket_connected_callback(const int configuration_slot,
     if (this->registration_status == RegistrationStatusEnum::Accepted) {
         this->connectivity_manager->confirm_successful_connection();
 
-        if (this->time_disconnected.time_since_epoch() != 0s) {
+        // check if we are disconnected and offline theshold has been defined
+        if (const auto time_disconnected = this->connectivity_manager->get_time_disconnected();
+            time_disconnected.time_since_epoch() != 0s &&
+            this->device_model->get_value<int>(ControllerComponentVariables::OfflineThreshold) != 0) {
             // handle offline threshold
             //  Get the current time point using steady_clock
-            auto offline_duration = std::chrono::steady_clock::now() - this->time_disconnected;
+            const auto offline_duration = std::chrono::steady_clock::now() - time_disconnected;
 
             // B04.FR.01
             // If offline period exceeds offline threshold then send the status notification for all connectors
@@ -1113,7 +1129,6 @@ void ChargePoint::websocket_connected_callback(const int configuration_slot,
             this->security->init_certificate_expiration_check_timers(); // re-init as timers are stopped on disconnect
         }
     }
-    this->time_disconnected = std::chrono::time_point<std::chrono::steady_clock>();
 
     // We have a connection again so next time it fails we should send the notification again
     this->skip_invalid_csms_certificate_notifications = false;
@@ -1122,22 +1137,22 @@ void ChargePoint::websocket_connected_callback(const int configuration_slot,
         this->callbacks.connection_state_changed_callback.value()(true, configuration_slot, network_connection_profile,
                                                                   ocpp_version);
     }
+    if (this->tariff_and_cost != nullptr) {
+        this->tariff_and_cost->publish_default_price(true);
+    }
 }
 
 void ChargePoint::websocket_disconnected_callback(const int configuration_slot,
                                                   const NetworkConnectionProfile& network_connection_profile) {
     this->message_queue->pause();
 
-    // check if offline threshold has been defined
-    if (this->device_model->get_value<int>(ControllerComponentVariables::OfflineThreshold) != 0) {
-        // Get the current time point using steady_clock
-        this->time_disconnected = std::chrono::steady_clock::now();
-    }
-
     this->security->stop_certificate_expiration_check_timers();
     if (this->callbacks.connection_state_changed_callback.has_value()) {
         this->callbacks.connection_state_changed_callback.value()(false, configuration_slot, network_connection_profile,
                                                                   this->ocpp_version);
+    }
+    if (this->tariff_and_cost != nullptr) {
+        this->tariff_and_cost->publish_default_price(false);
     }
 }
 

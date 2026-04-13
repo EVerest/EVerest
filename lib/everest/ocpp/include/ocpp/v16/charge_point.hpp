@@ -617,6 +617,12 @@ public:
     void register_tariff_message_callback(
         const std::function<DataTransferResponse(const TariffMessage& message)>& tariff_message_callback);
 
+    /// \brief Registers a callback function for the default price. The callback is called on startup and whenever the
+    /// applicable default price changes (e.g. after a connectivity state change or a configuration update).
+    /// \param callback  Called with the currently applicable default price text.
+    /// \ingroup ocpp16_callbacks
+    void register_default_price_callback(const std::function<void(const TariffMessage& message)>& callback);
+
     /// \brief Register a callback function for display messages (used in California Pricing Requirements)
     /// \param set_display_message_callback The callback.
     /// \ingroup ocpp16_callbacks

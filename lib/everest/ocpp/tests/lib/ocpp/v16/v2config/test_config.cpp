@@ -4,6 +4,9 @@
 #include <gtest/gtest.h>
 
 #include "configuration_stub.hpp"
+#include "ocpp/v16/known_keys.hpp"
+#include "ocpp/v2/ocpp_enums.hpp"
+#include "ocpp/v2/ocpp_types.hpp"
 #include <ocpp/v16/charge_point_configuration_base.hpp>
 #include <optional>
 
@@ -18,25 +21,26 @@ INSTANTIATE_TEST_SUITE_P(Config, ConfigurationFull, testing::Values("sql", "json
 TEST(ConnectorID, Extract) {
     using CPCB = ocpp::v16::ChargePointConfigurationBase;
 
-    EXPECT_EQ(CPCB::extractConnectorId(""), std::nullopt);
-    EXPECT_EQ(CPCB::extractConnectorId("1234"), std::nullopt);
-    EXPECT_EQ(CPCB::extractConnectorId("[1234"), std::nullopt);
-    EXPECT_EQ(CPCB::extractConnectorId("1234]"), std::nullopt);
-    EXPECT_EQ(CPCB::extractConnectorId("[1]"), std::nullopt);
-    EXPECT_EQ(CPCB::extractConnectorId("A[]"), std::nullopt);
-    EXPECT_EQ(CPCB::extractConnectorId("A[1.3]"), std::nullopt);
-    EXPECT_EQ(CPCB::extractConnectorId("A[1]"), 1);
-    EXPECT_EQ(CPCB::extractConnectorId("A[12]"), 12);
-    EXPECT_EQ(CPCB::extractConnectorId("A[123]"), 123);
+    EXPECT_EQ(CPCB::extractConnectorIdFromMeterPublicKey(""), std::nullopt);
+    EXPECT_EQ(CPCB::extractConnectorIdFromMeterPublicKey("1234"), std::nullopt);
+    EXPECT_EQ(CPCB::extractConnectorIdFromMeterPublicKey("A"), std::nullopt);
+    EXPECT_EQ(CPCB::extractConnectorIdFromMeterPublicKey("ABC"), std::nullopt);
+    EXPECT_EQ(CPCB::extractConnectorIdFromMeterPublicKey("A1"), std::nullopt);
+    EXPECT_EQ(CPCB::extractConnectorIdFromMeterPublicKey("A12"), std::nullopt);
+    EXPECT_EQ(CPCB::extractConnectorIdFromMeterPublicKey("A123"), std::nullopt);
+    EXPECT_EQ(CPCB::extractConnectorIdFromMeterPublicKey("MeterPublicKeyMeterPublicKey123"), std::nullopt);
+    EXPECT_EQ(CPCB::extractConnectorIdFromMeterPublicKey("MeterPublicKey1"), 1);
+    EXPECT_EQ(CPCB::extractConnectorIdFromMeterPublicKey("MeterPublicKey12"), 12);
+    EXPECT_EQ(CPCB::extractConnectorIdFromMeterPublicKey("MeterPublicKey123"), 123);
 }
 
 TEST(ConnectorID, Build) {
     using CPCB = ocpp::v16::ChargePointConfigurationBase;
 
-    EXPECT_EQ(CPCB::meterPublicKeyString(0), "MeterPublicKey[0]");
-    EXPECT_EQ(CPCB::meterPublicKeyString(1), "MeterPublicKey[1]");
-    EXPECT_EQ(CPCB::meterPublicKeyString(12), "MeterPublicKey[12]");
-    EXPECT_EQ(CPCB::meterPublicKeyString(123), "MeterPublicKey[123]");
+    EXPECT_EQ(CPCB::meterPublicKeyString(0), "MeterPublicKey0");
+    EXPECT_EQ(CPCB::meterPublicKeyString(1), "MeterPublicKey1");
+    EXPECT_EQ(CPCB::meterPublicKeyString(12), "MeterPublicKey12");
+    EXPECT_EQ(CPCB::meterPublicKeyString(123), "MeterPublicKey123");
 }
 
 TEST(ConnectorID, PhaseRotation) {
@@ -65,6 +69,45 @@ TEST(ConnectorID, PhaseRotation) {
     EXPECT_FALSE(CPCB::isConnectorPhaseRotationValid(5, "11."));
     EXPECT_FALSE(CPCB::isConnectorPhaseRotationValid(5, "111."));
     EXPECT_FALSE(CPCB::isConnectorPhaseRotationValid(5, "1a.RST"));
+}
+
+using namespace ocpp;
+
+TEST(V2Mapping, V16ToV2) {
+    using namespace ocpp::v16::keys;
+    using namespace ocpp::v2;
+
+    auto res = convert_v2(valid_keys::CpoName);
+    ASSERT_TRUE(res);
+    auto component = std::get<Component>(res.value());
+    auto variable = std::get<Variable>(res.value());
+    EXPECT_EQ(component.name, "SecurityCtrlr");
+    EXPECT_EQ(variable.name, "OrganizationName");
+
+    res = convert_v2("CpoName");
+    ASSERT_TRUE(res);
+    component = std::get<Component>(res.value());
+    variable = std::get<Variable>(res.value());
+    EXPECT_EQ(component.name, "SecurityCtrlr");
+    EXPECT_EQ(variable.name, "OrganizationName");
+}
+
+TEST(V2Mapping, V2ToV16) {
+    using namespace ocpp::v16::keys;
+    using namespace ocpp::v2;
+
+    Component comp;
+    comp.name = "SecurityCtrlr";
+    Variable var;
+    var.name = "OrganizationName";
+    auto res = convert_v2(comp, var, ocpp::v2::AttributeEnum::Actual);
+    EXPECT_EQ(res, "CpoName");
+
+    comp.name = "SmartChargingCtrlr";
+    var.name = "Entries";
+    var.instance = "ChargingProfiles";
+    res = convert_v2(comp, var, ocpp::v2::AttributeEnum::Actual);
+    EXPECT_EQ(res, "MaxChargingProfilesInstalled");
 }
 
 } // namespace

@@ -5,7 +5,10 @@ info:
   title: 'EVerest API definition for session cost consumer'
   version: 1.0.0
   description: >-
-    API for EVerest API clients which allows to access modules that implement session_cost.
+    API for EVerest API clients that consume session cost and tariff
+    information from the `session_cost` interface. See the
+    Integrate Tariff and Cost how-to guide for OCPP-specific
+    configuration and message flow details.
 
   license:
     name: Apache-2.0
@@ -26,6 +29,11 @@ defaultContentType: application/json
 
 
 channels:
+  receive_default_price:
+    address: 'e2m/default_price'
+    messages:
+      default_price:
+        $ref: '#/components/messages/receive_default_price'
   receive_tariff_message:
     address: 'e2m/tariff_message'
     messages:
@@ -52,16 +60,34 @@ channels:
 
 
 operations:
+  receive_default_price:
+    title: 'Receive default price'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_default_price'
+    description: >-
+      Published once on startup and again whenever the applicable default price
+      changes (e.g. after a connectivity state change or a configuration
+      update). Contains human-readable price text in one or more languages.
+      Absent if no default price is configured.
   receive_tariff_message:
     title: 'Receive tariff message'
     action: receive
     channel:
       $ref: '#/channels/receive_tariff_message'
+    description: >-
+      Published at authorization time and whenever the CSMS sends updated
+      pricing during a session. Contains human-readable price text in one
+      or more languages.
   receive_session_cost:
     title: 'Receive session cost'
     action: receive
     channel:
       $ref: '#/channels/receive_session_cost'
+    description: >-
+      Published periodically during a session and once when it ends.
+      Contains session cost broken down into chunks, current and upcoming
+      pricing, and optional display messages.
 
 
   receive_heartbeat:
@@ -79,17 +105,24 @@ operations:
 
 components:
   messages:
+    receive_default_price:
+      name: receive_default_price
+      title: 'Receive default price'
+      summary: 'Currently applicable default pricing text for this charger'
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DefaultPrice'
     receive_tariff_message:
       name: receive_tariff_message
       title: 'Receive tariff message'
-      summary: Message to show tariff information
+      summary: 'Tariff and pricing information for a charging session'
       contentType: application/json
       payload:
         $ref: 'session_cost_API.yaml#/components/schemas/TariffMessage'
     receive_session_cost:
       name: receive_session_cost
       title: 'Receive session cost'
-      summary: Message to show session cost
+      summary: 'Running or final cost of a charging session'
       contentType: application/json
       payload:
         $ref: 'session_cost_API.yaml#/components/schemas/SessionCost'
@@ -120,6 +153,27 @@ components:
 
 
   schemas:
+    DefaultPrice:
+      description: >-
+        The currently applicable default pricing text for this charger,
+        independent of any active session. Contains human-readable text only —
+        no computed cost amounts are included. Published once on startup and
+        again whenever the applicable price changes (e.g. after a connectivity
+        state change or a configuration update).
+      type: object
+      additionalProperties: false
+      required:
+        - messages
+      properties:
+        messages:
+          description: >-
+            Price text in one or more languages. The first entry uses the
+            configured default language.
+          type: array
+          items:
+            description: Price text in a specific language
+            type: object
+            $ref: 'display_message_API.yaml#/components/schemas/MessageContent'
     CommunicationCheck:
       type: boolean
       description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"

@@ -22,6 +22,7 @@ void ISO15118_chargerImpl::init() {
     /* Configure if_name and auth_mode */
     v2g_ctx->if_name = mod->config.device.data();
     dlog(DLOG_LEVEL_DEBUG, "if_name %s", v2g_ctx->if_name);
+    v2g_ctx->proxy_if_name = mod->config.proxy_device.empty() ? nullptr : mod->config.proxy_device.data();
 
     /* Configure tls_security */
     if (mod->config.tls_security == "force") {
@@ -374,6 +375,17 @@ void ISO15118_chargerImpl::init() {
     mod->r_iso20->subscribe_dc_ev_remaining_time([this](const auto o) {
         if (mod->selected_iso20()) {
             publish_dc_ev_remaining_time(o);
+        }
+    });
+
+    mod->r_iso2->subscribe_hlc_session_failed([this](const auto reason) {
+        if (not mod->selected_iso20()) {
+            publish_hlc_session_failed(reason);
+        }
+    });
+    mod->r_iso20->subscribe_hlc_session_failed([this](const auto reason) {
+        if (mod->selected_iso20()) {
+            publish_hlc_session_failed(reason);
         }
     });
 

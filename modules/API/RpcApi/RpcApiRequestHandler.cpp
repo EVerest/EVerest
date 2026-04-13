@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright chargebyte GmbH and Contributors to EVerest
 
+#include <cmath>
 #include <everest/external_energy_limits/external_energy_limits.hpp>
 #include <everest/logging.hpp>
 #include <utils/date.hpp>
@@ -43,13 +44,14 @@ static types::energy::ExternalLimits get_external_limits(float phy_value, bool i
     zero_entry.limits_to_leaves.total_power_W = {0, RPCAPI_MODULE_SOURCE};
 
     if (is_power) {
-        target_entry.limits_to_leaves.total_power_W = {phy_value, RPCAPI_MODULE_SOURCE};
+        target_entry.limits_to_leaves.total_power_W = {std::abs(phy_value), RPCAPI_MODULE_SOURCE};
     } else {
-        target_entry.limits_to_leaves.ac_max_current_A = {phy_value, RPCAPI_MODULE_SOURCE};
+        target_entry.limits_to_leaves.ac_max_current_A = {std::abs(phy_value), RPCAPI_MODULE_SOURCE};
     }
 
     if (phy_value > 0) {
         external_limits.schedule_import = std::vector<types::energy::ScheduleReqEntry>(1, target_entry);
+        external_limits.schedule_export = std::vector<types::energy::ScheduleReqEntry>(1, zero_entry);
     } else {
         external_limits.schedule_export = std::vector<types::energy::ScheduleReqEntry>(1, target_entry);
         external_limits.schedule_import = std::vector<types::energy::ScheduleReqEntry>(1, zero_entry);
@@ -66,19 +68,21 @@ static types::energy::ExternalLimits get_external_limits(float phy_value, bool i
 
     types::energy::ScheduleReqEntry zero_entry;
     zero_entry.timestamp = timestamp;
-    zero_entry.limits_to_leaves.total_power_W = {0, RPCAPI_MODULE_SOURCE};
 
     target_entry.limits_to_leaves.ac_max_phase_count = {phases, RPCAPI_MODULE_SOURCE};
     target_entry.limits_to_leaves.ac_min_phase_count = {phases, RPCAPI_MODULE_SOURCE};
 
     if (is_power) {
-        target_entry.limits_to_leaves.total_power_W = {phy_value, RPCAPI_MODULE_SOURCE};
+        target_entry.limits_to_leaves.total_power_W = {std::abs(phy_value), RPCAPI_MODULE_SOURCE};
+        zero_entry.limits_to_leaves.total_power_W = {0, RPCAPI_MODULE_SOURCE};
     } else {
-        target_entry.limits_to_leaves.ac_max_current_A = {phy_value, RPCAPI_MODULE_SOURCE};
+        target_entry.limits_to_leaves.ac_max_current_A = {std::abs(phy_value), RPCAPI_MODULE_SOURCE};
+        zero_entry.limits_to_leaves.ac_max_current_A = {0, RPCAPI_MODULE_SOURCE};
     }
 
     if (phy_value > 0) {
         external_limits.schedule_import = std::vector<types::energy::ScheduleReqEntry>(1, target_entry);
+        external_limits.schedule_export = std::vector<types::energy::ScheduleReqEntry>(1, zero_entry);
     } else {
         external_limits.schedule_export = std::vector<types::energy::ScheduleReqEntry>(1, target_entry);
         external_limits.schedule_import = std::vector<types::energy::ScheduleReqEntry>(1, zero_entry);
@@ -251,12 +255,10 @@ ErrorResObj RpcApiRequestHandler::set_ac_charging_current(const int32_t evse_ind
     ErrorResObj res{};
 
     const auto evse_store = data_store.get_evse_store(evse_index);
-    const auto evse_state = evse_store->evsestatus.get_state();
 
-    // Skipping applying limits if the EVSE is in WaitingForEnergy state and charging is not allowed.
+    // Skipping applying limits if charging is not allowed.
     // In this case, the zero limit is already applied to prevent charging. This value should not be overridden.
-    if ((evse_state == types::json_rpc_api::EVSEStateEnum::WaitingForEnergy) &&
-        (evse_store->evsestatus.get_data()->charging_allowed == false)) {
+    if (evse_store->evsestatus.get_data()->charging_allowed == false) {
         res.error = ResponseErrorEnum::NoError;
         return res;
     }

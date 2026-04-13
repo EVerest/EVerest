@@ -18,6 +18,7 @@ pugixml:
 libwebsockets:
   git: https://github.com/warmcat/libwebsockets.git
   git_tag: v4.5.2
+  cmake_condition: "NOT EVEREST_LIBS_ONLY"
   options:
     - CMAKE_POLICY_VERSION_MINIMUM 3.5
     - CMAKE_POLICY_DEFAULT_CMP0077 NEW
@@ -88,6 +89,7 @@ ftxui:
 mqttc:
   git: https://github.com/LiamBindle/MQTT-C.git
   git_tag: v1.1.6
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_framework"
   options: ["MQTT_C_EXAMPLES OFF", "CMAKE_POSITION_INDEPENDENT_CODE ON"]
 # Linux_Systemd_Rauc module
 sdbus-cpp:
@@ -108,6 +110,7 @@ catch2:
 mosquitto:
   git: https://github.com/eclipse-mosquitto/mosquitto
   git_tag: v2.0.22
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_io OR EVEREST_BUILD_LIB_framework"
   options:
   - DOCUMENTATION OFF
   - WITH_BROKER OFF

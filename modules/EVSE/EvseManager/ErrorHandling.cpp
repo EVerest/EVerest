@@ -42,7 +42,7 @@ static const struct IgnoreErrors {
     ErrorList ac_rcd{"ac_rcd/VendorWarning"};
     ErrorList imd{"isolation_monitor/VendorWarning"};
     ErrorList powersupply{"power_supply_DC/VendorWarning"};
-    ErrorList powermeter{};
+    ErrorList powermeter{"generic/VendorWarning"};
     ErrorList over_voltage_monitor{"over_voltage_monitor/VendorWarning"};
 } ignore_errors;
 
@@ -130,6 +130,13 @@ void ErrorHandling::raise_over_voltage_error(Everest::error::Severity severity, 
     Everest::error::Error error_object =
         p_evse->error_factory->create_error("evse_manager/MREC5OverVoltage", "", description, severity);
     p_evse->raise_error(error_object);
+    process_error();
+}
+
+void ErrorHandling::clear_over_voltage_error() {
+    if (p_evse->error_state_monitor->is_error_active("evse_manager/MREC5OverVoltage", "")) {
+        p_evse->clear_error("evse_manager/MREC5OverVoltage", "");
+    }
     process_error();
 }
 

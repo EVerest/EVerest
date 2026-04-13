@@ -11,6 +11,10 @@
 
 namespace everest::lib::API::V1_0::types::session_cost {
 
+std::string serialize(DefaultPrice val) noexcept {
+    json result = val;
+    return result.dump(json_indent);
+}
 std::string serialize(TariffMessage val) noexcept {
     json result = val;
     return result.dump(json_indent);
@@ -44,6 +48,10 @@ std::string serialize(SessionCost val) noexcept {
     return result.dump(json_indent);
 }
 
+std::ostream& operator<<(std::ostream& os, DefaultPrice const& val) {
+    os << serialize(val);
+    return os;
+}
 std::ostream& operator<<(std::ostream& os, TariffMessage const& val) {
     os << serialize(val);
     return os;
@@ -75,6 +83,12 @@ std::ostream& operator<<(std::ostream& os, SessionStatus const& val) {
 std::ostream& operator<<(std::ostream& os, SessionCost const& val) {
     os << serialize(val);
     return os;
+}
+
+template <> DefaultPrice deserialize(std::string const& val) {
+    auto data = json::parse(val);
+    DefaultPrice obj = data;
+    return obj;
 }
 
 template <> TariffMessage deserialize(std::string const& val) {

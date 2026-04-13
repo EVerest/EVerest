@@ -16,6 +16,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     test_config_sqlite.cpp
     test_conversions.cpp
     test_filesystem_helpers.cpp
+    test_message_handler.cpp
     helpers.cpp
 )
 
@@ -91,7 +92,9 @@ evc_include(CodeCoverage)
 
 append_coverage_compiler_flags_to_target(framework)
 append_coverage_compiler_flags_to_target(manager)
-append_coverage_compiler_flags_to_target(controller)
+if (EVEREST_ENABLE_ADMIN_PANEL_BACKEND)
+    append_coverage_compiler_flags_to_target(controller)
+endif()
 
 # set(GCOVR_ADDITIONAL_ARGS "--gcov-ignore-errors=all")
 setup_target_for_coverage_gcovr_html(

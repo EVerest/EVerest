@@ -32,7 +32,7 @@ This is what to do:
 
    a. Search https://everest.github.io/nightly/index.html
    b. Is it a module that you want to add documentation to? Then have a look
-      at the ``everest-core`` repository in the ``modules`` directory and check
+      at the ``EVerest`` repository in the ``modules`` directory and check
       if any documentation pages already do exist there.
    c. Use GitHub search with ``org:EVerest`` and your keywords to check if you
       can find existing documentation snippets near the source code of the
@@ -46,7 +46,7 @@ This is what to do:
 
    a. In the repository https://github.com/EVerest/EVerest, click on ``Issues``
       and then ``New issue``.
-   b. Choose ``Documentation change request`` and fill out the title and
+   b. Choose ``Feature Request`` and fill out the title and
       the description fields. Answer the templated questions, which have already
       been added to the description text area.
    c. Also add a reference to any related documentation pages and describe how
@@ -103,7 +103,7 @@ your new page in the same location.
 In general, you can decide where to put your documentation pages:
 
 * The repository for the main documentation:
-  https://github.com/EVerest/everest-core in directory ``docs/sources/``
+  https://github.com/EVerest/EVerest in directory ``docs/sources/``
 * Directly inside of the ``docs`` directory in your modules directory structure.
   The ``index.rst`` in this location will be included into the auto-generated
   ``reference`` documentation page of this module.

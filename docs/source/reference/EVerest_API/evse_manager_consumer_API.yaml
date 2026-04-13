@@ -93,6 +93,11 @@ channels:
     messages:
       receive_session_event:
         $ref: '#/components/messages/receive_session_event'
+  receive_hlc_session_failed:
+    address: 'e2m/hlc_session_failed'
+    messages:
+      receive_hlc_session_failed:
+        $ref: '#/components/messages/receive_hlc_session_failed'
   receive_ev_info:
     address: 'e2m/ev_info'
     messages:
@@ -330,6 +335,11 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_session_event'
+  receive_hlc_session_failed:
+    title: 'Receive HLC session failed event'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_hlc_session_failed'
   receive_ev_info:
     title: 'Receive details of EV'
     action: receive
@@ -656,6 +666,13 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/SessionEvent'
+    receive_hlc_session_failed:
+      name: receive_hlc_session_failed
+      title: 'Receive HLC session failed event'
+      summary: 'Emits if a HLC session failed'
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/HlcSessionFailedEvent'
     receive_ev_info:
       name: receive_ev_info
       title: 'Receive details about EV'
@@ -871,7 +888,6 @@ components:
           - Disabled: EVSE is disabled on not available for energy transfer
           - Preparing: First user interaction occured, e.g. plug in of EV or authorization has been received
           - AuthRequired: EV is plugged in and EVSE is waiting for authorization
-          - WaitingForEnergy: EVSE is waiting for energy. Occurs at the start of the session or when no energy is available
           - ChargingPausedEV: Session is paused by EV
           - ChargingPausedEVSE: Session is paused by EVSE
           - Charging: EV is charging
@@ -887,7 +903,6 @@ components:
           - Preparing
           - Reserved
           - AuthRequired
-          - WaitingForEnergy
           - ChargingPausedEV
           - ChargingPausedEVSE
           - Charging
@@ -899,7 +914,7 @@ components:
       description: >-
         Context for Session information
       type: object
-      additionalProperties: false
+      additionalProperties: true
       required:
         - state
         - charged_energy_wh
@@ -959,6 +974,56 @@ components:
             Timestamp of transaction end. Updated at each transaction end.
           type: string
           format: date-time
+    HlcSessionFailedReasonEnum:
+      description: |
+        Reason for a higher-level-communication (HLC) session failure event.
+        Published via HlcSessionFailed whenever HLC session encounters a failure.
+        - ProtocolNegotiationFailed: No common communication protocol or version could be
+          negotiated. Applies to protocols with a version handshake phase.
+        - AuthorizationFailed: The authorization phase did not succeed and the EV terminated
+          the session. This covers both explicit rejection (e.g. failed PnC contract or
+          certificate verification) and authorization timeout (the EVSE did not respond
+          within the timeout of the EV).
+        - ChargingParametersNotAccepted: The EV terminated during parameter negotiation,
+          indicating it could not accept the offered energy transfer parameters (power
+          levels, voltage range, schedule, etc.).
+        - EnergyTransferSetupFailed: The setup phase immediately before energy transfer
+          began (e.g. power delivery request, pre-charge coordination) failed or was
+          rejected by the EV before any energy was transferred.
+        - ChargingInterrupted: The EV stopped energy transfer unexpectedly during active
+          charging without completing a normal stop sequence.
+        - FailedTLSHandshake: The TLS handshake between EV and EVSE failed before any
+          V2G message exchange could take place, preventing the session from starting.
+        - UnexpectedSessionEnd: The communication session ended unexpectedly at a phase
+          not covered by the above reasons, or without completing a normal termination
+          sequence. Catch-all for unclassified EV-side terminations.
+      type: string
+      enum:
+        - ProtocolNegotiationFailed
+        - AuthorizationFailed
+        - ChargingParametersNotAccepted
+        - EnergyTransferSetupFailed
+        - ChargingInterrupted
+        - FailedTLSHandshake
+        - UnexpectedSessionEnd
+    HlcSessionFailedEvent:
+      description: >-
+        Published on the hlc_session_failed variable whenever an HLC session failure occurs.
+        Can fire multiple times per EVerest session (e.g. on retries). Use uuid to
+        correlate with session_event.
+      type: object
+      additionalProperties: false
+      required:
+        - uuid
+        - reason
+      properties:
+        uuid:
+          description: Session UUID for correlation with session_event
+          type: string
+        reason:
+          description: Protocol-agnostic reason for the HLC session failure
+          type: string
+          $ref: '#/components/schemas/HlcSessionFailedReasonEnum'
     ChargingStateChangedEvent:
       description: Context for ChargingStateChanged event
       type: object
@@ -1161,6 +1226,7 @@ components:
     Evse:
       description: Type that defines properties of an EVSE including its connectors
       type: object
+      additionalProperties: true
       required:
         - id
         - connectors
@@ -1320,7 +1386,7 @@ components:
         charging_state_changed_event:
           description: >-
             Data for ChargingStateChangedEvent. Shall be set for the following SessionEventEnums:
-              ChargingStarted, ChargingResumed, ChargingPausedEV, Charging
+              ChargingStarted, ChargingPausedEV, Charging
           type: object
           $ref: '#/components/schemas/ChargingStateChangedEvent'
         authorization_event:
@@ -1347,17 +1413,13 @@ components:
         - PrepareCharging: EVSE started to prepare for charging. DC: CableCheck, PreCharge, PowerDelivery. AC: wait for the car to proceed to state C/D
         - ChargingStarted: DC: CurrentDemand has started. AC: Auth is ok and car requested power (state C/D)
         - ChargingPausedEV: Signaled when charging is paused by the EV
-        - WaitingForEnergy: Waiting for ernergy manager
         - ChargingPausedEVSE: Signaled when charging is paused by the EVSE
-        - ChargingResumed: Charging has resumed from a pause
         - StoppingCharging: EVSE has started to stop the charging process. DC: CurrentDemand has finished, now doing WeldingCheck etc, AC: Wait for car to return to state B or A
         - ChargingFinished: Charging is finished. Essentially the same as TransactionFinished, but emitted for clarity
         - TransactionFinished: Signaled when the transaction finished. Transaction finishes at the point where one of the preconditions for charging irrevocably becomes false: When a user swipes to stop the transaction and the stop is authorized.
         - SessionFinished: Session finishes at the point that the EVSE is available again (no cable plugged)
         - ReservationStart: Signaled when a reservation starts
         - ReservationEnd: Signaled when a reservation ends
-        - ReplugStarted: Signaled when the EVSE Manager virtually replugs without interrupting the session or transaction
-        - ReplugFinished: Signaled when the virtual replug process has finished
         - PluginTimeout: Signaled when an EV has been Plugged in but no authorization is present within specified ConnectionTimeout
         - SwitchingPhases: Signals that 1ph/3ph switching was started on AC charging
         - SessionResumed: Signaled when a session is resumed at startup (e.g. because of previous powerloss)
@@ -1374,16 +1436,12 @@ components:
         - ChargingStarted
         - ChargingPausedEV
         - ChargingPausedEVSE
-        - WaitingForEnergy
-        - ChargingResumed
         - StoppingCharging
         - ChargingFinished
         - TransactionFinished
         - SessionFinished
         - ReservationStart
         - ReservationEnd
-        - ReplugStarted
-        - ReplugFinished
         - PluginTimeout
         - SwitchingPhases
         - SessionResumed

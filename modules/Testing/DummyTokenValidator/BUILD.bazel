@@ -6,8 +6,8 @@ IMPLS = [
 
 cc_everest_module(
     name = "DummyTokenValidator",
+    impls = IMPLS,
     deps = [
         "//lib/everest/helpers",
     ],
-    impls = IMPLS,
 )

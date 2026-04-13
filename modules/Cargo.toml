@@ -10,3 +10,4 @@ members = [
 [workspace.dependencies]
 everestrs = { path = "framework/everestrs/everestrs" }
 everestrs-build = { path = "framework/everestrs/everestrs-build" }
+everestrs-derive = { path = "framework/everestrs/everestrs-derive" }

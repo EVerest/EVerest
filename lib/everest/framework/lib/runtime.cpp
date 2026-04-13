@@ -450,7 +450,7 @@ int ModuleLoader::initialize() {
 
     const auto start_time = std::chrono::system_clock::now();
 
-    this->mqtt = std::make_shared<MQTTAbstraction>(this->mqtt_settings);
+    this->mqtt = std::shared_ptr<MQTTAbstraction>(make_mqtt_abstraction(this->mqtt_settings));
     this->mqtt->connect();
     this->mqtt->spawn_main_loop_thread();
 

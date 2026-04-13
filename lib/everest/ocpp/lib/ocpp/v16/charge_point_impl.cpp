@@ -291,6 +291,7 @@ void ChargePointImpl::init_websocket() {
         if (this->connection_state_changed_callback != nullptr) {
             this->connection_state_changed_callback(true);
         }
+        this->publish_default_price(false);
         this->message_queue->resume(this->message_queue_resume_delay);
         this->connected_callback();
 
@@ -313,6 +314,7 @@ void ChargePointImpl::init_websocket() {
         if (this->connection_state_changed_callback != nullptr) {
             this->connection_state_changed_callback(false);
         }
+        this->publish_default_price(true);
         this->message_queue->pause();
         if (this->ocsp_request_timer != nullptr) {
             this->ocsp_request_timer->stop();
@@ -1172,6 +1174,8 @@ bool ChargePointImpl::start(const std::map<int, ChargePointStatus>& connector_st
     }
     this->wants_to_be_connected = true;
     this->bootreason = bootreason;
+    // Publish the initial default price before connecting (offline state at startup).
+    this->publish_default_price(true);
     this->init_websocket();
     this->websocket->start_connecting();
     this->boot_notification();
@@ -2005,6 +2009,10 @@ ChargePointImpl::set_configuration_key_internal(CiString<50> key, CiString<500> 
             configuration_key_changed_callbacks[key](key_value);
         } else if (generic_configuration_key_changed_callback != nullptr) {
             generic_configuration_key_changed_callback(key_value);
+        }
+        // ChangeConfiguration can only be received while connected, so publish the online price.
+        if (key == "DefaultPrice" or key.get().find("DefaultPriceText") == 0) {
+            this->publish_default_price(false);
         }
     }
 
@@ -3607,6 +3615,9 @@ EnhancedIdTagInfo ChargePointImpl::authorize_id_token(CiString<20> id_token, con
                 } else {
                     EVLOG_warning << "Tariff message was not received within timeout for idToken " << id_token.get();
                     enhanced_id_tag_info.tariff_message = this->configuration.getDefaultTariffMessage(false);
+                    if (enhanced_id_tag_info.tariff_message.has_value()) {
+                        (void)this->tariff_message_callback(enhanced_id_tag_info.tariff_message.value());
+                    }
                 }
                 this->user_price_cvs.erase(id_token.get());
             }
@@ -4133,6 +4144,11 @@ void ChargePointImpl::handle_data_transfer_pnc_get_installed_certificates(Call<D
             std::vector<ocpp::CertificateType> certificate_types;
             if (req.certificateType.has_value()) {
                 certificate_types = ocpp::evse_security_conversions::from_ocpp_v2(req.certificateType.value());
+            } else {
+                // When omitted, all certificate types are requested
+                certificate_types.push_back(CertificateType::V2GRootCertificate);
+                certificate_types.push_back(CertificateType::MORootCertificate);
+                certificate_types.push_back(CertificateType::V2GCertificateChain);
             }
 
             ocpp::v2::GetInstalledCertificateIdsResponse get_certificate_ids_response;
@@ -4886,6 +4902,22 @@ void ChargePointImpl::register_session_cost_callback(
 void ChargePointImpl::register_tariff_message_callback(
     const std::function<DataTransferResponse(const TariffMessage& message)>& tariff_message_callback) {
     this->tariff_message_callback = tariff_message_callback;
+}
+
+void ChargePointImpl::register_default_price_callback(
+    const std::function<void(const TariffMessage& message)>& callback) {
+    this->default_price_callback = callback;
+}
+
+void ChargePointImpl::publish_default_price(bool is_offline) {
+    if (!this->default_price_callback) {
+        return;
+    }
+    const TariffMessage msg = this->configuration.getDefaultTariffMessage(is_offline);
+    if (msg.message.empty()) {
+        return;
+    }
+    this->default_price_callback(msg);
 }
 
 void ChargePointImpl::register_set_display_message_callback(

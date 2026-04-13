@@ -35,9 +35,9 @@ Where:
 - ``mm`` - Two-digit month of the release (01-12)
 - ``x`` - Incremental patch number within the stable release line, starting at 0
 
-Releases are made available through Github Releases and tags in the everest-core repository:
+Releases are made available through Github Releases and tags in the EVerest repository:
 
-- `everest-core <https://github.com/EVerest/everest-core>`_
+- `EVerest <https://github.com/EVerest/EVerest>`_
 
 Stable Releases
 ---------------
@@ -78,7 +78,7 @@ described in this document.
 The public API consists of:
 
 - :doc:`External AsyncAPIs </explanation/adapt-everest/apis>`
-- Energy Management JSON RPC API (upcoming)
+- :ref:`Energy Management JSON RPC API <everest_modules_RpcApi>` 
 - Configuration and Storage contracts. As of today, this includes:
     - EVerest module configuration files (YAML or SQLite)
     - OCPP configuration (JSON or SQLite)
@@ -87,10 +87,12 @@ The individual public API components may maintain their own version numbers inde
 
 Please refer to :ref:`breaking changes <project-breaking-changes>` for detailed definitions of breaking changes within the public API.
 
-.. note::
+.. attention::
 
     Internal EVerest :doc:`interfaces </reference/interfaces_index>` and :doc:`types </reference/types_index>` are explicitly excluded from the public API
     and may change without notice.
+
+    The configuration and storage contracts of any Dummy and Simulation modules are explicitly excluded from the public API and may change without notice.
 
 Stability Guarantees
 ====================

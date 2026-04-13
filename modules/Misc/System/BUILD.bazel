@@ -6,12 +6,12 @@ IMPLS = [
 
 cc_everest_module(
     name = "System",
-    deps = [
-        "@com_github_HowardHinnant_date//:date",
-        "//lib/everest/timer:libtimer",
-        "//lib:run_application",
-    ],
     impls = IMPLS,
+    deps = [
+        "//lib:run_application",
+        "//lib/everest/timer:libtimer",
+        "@com_github_HowardHinnant_date//:date",
+    ],
 )
 
 # Install script files alongside the binary
@@ -35,4 +35,3 @@ genrule(
           "cp $(SRCS) $(RULEDIR)/System/",
     visibility = ["//visibility:public"],
 )
-

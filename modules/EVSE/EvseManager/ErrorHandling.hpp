@@ -80,6 +80,7 @@ public:
     void clear_overcurrent_error();
 
     void raise_over_voltage_error(Everest::error::Severity severity, const std::string& description);
+    void clear_over_voltage_error();
 
     void raise_internal_error(const std::string& description);
     void clear_internal_error();

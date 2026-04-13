@@ -230,8 +230,10 @@ struct v2g_context {
     pthread_condattr_t mqtt_attr;
 
     struct {
-        float evse_ac_current_limit; // default is 0
-    } basic_config;                  // This config will not reseted after beginning of a new charging session
+        float evse_ac_current_limit;   // default is 0
+        float evse_ac_nominal_current; // default is 0
+        float evse_ac_nominal_voltage; // default is 230
+    } basic_config;                    // This config will not reseted after beginning of a new charging session
 
     /* actual charging state */
     enum V2gMsgTypeId last_v2g_msg;    /* holds the current v2g msg type */
@@ -363,6 +365,9 @@ struct v2g_context {
     std::vector<std::vector<uint16_t>> supported_vas_services_per_provider;
 
     bool connection_initiated;
+
+    bool sdp_dlink_ready{false};
+    std::atomic<long long int> sdp_dlink_ready_time{0};
 };
 
 enum class dLinkAction {
@@ -379,6 +384,8 @@ struct v2g_connection {
     struct v2g_context* ctx;
 
     bool is_tls_connection;
+    bool tls_handshake_failed;               /* true when accept() never returned success */
+    V2gMsgTypeId last_v2g_msg_at_disconnect; /* last V2G message before connection teardown */
 
     // used for non-TLS connections
     struct {
