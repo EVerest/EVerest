@@ -3,5 +3,7 @@ PATH=@PATH_VAR@:$PATH \
 manager \
     --prefix @CMAKE_INSTALL_PREFIX@ \
     --conf @CONFIG_FILE@ \
+    --db @CMAKE_INSTALL_PREFIX@/everest.db \
+    --reset-from-yaml \
     @ADDITIONAL_ARGUMENTS@
     $@

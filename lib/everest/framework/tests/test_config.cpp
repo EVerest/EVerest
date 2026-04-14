@@ -64,10 +64,11 @@ SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
                             Everest::BootException);
         }
     }
-    GIVEN("A non-exsiting database file with ConfigurationBootMode::DatabaseInit") {
+    GIVEN("A non-exsiting database file") {
         THEN("It should not throw and create the file") {
-            CHECK_NOTHROW(Everest::bootstrap_from_database_init(
-                bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", "valid_config/non_existing.db"));
+            CHECK_NOTHROW(Everest::init_database_bootstrap(
+                bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml",
+                bin_dir + "valid_config/non_existing.db"));
         }
     }
 }
@@ -225,23 +226,27 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
         if (fs::exists(db_path)) {
             fs::remove(db_path);
         }
-        auto bs = Everest::bootstrap_from_database_init(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml",
+        auto bs = Everest::init_database_bootstrap(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml",
                                                         db_path);
         CHECK(bs.module_configs_initialized == false);
-        THEN("In the first instantiation the database is not initialized") {
-            CHECK_NOTHROW(Everest::ManagerConfig(bs.ms, bs.storage.get(), bs.module_configs_initialized));
+        THEN("In the first instantiation the database is not initialized — ManagerConfig parses YAML") {
+            auto config = Everest::ManagerConfig(bs.ms);
+            // Seed the database so subsequent bootstraps see it as valid.
+            const auto& mc = config.get_module_configurations();
+            bs.storage->write_module_configs(mc);
+            bs.storage->mark_valid(true, nlohmann::json(mc).dump(), bs.ms.config_file);
 
             THEN("In the second instantiation the database is initialized and valid") {
-                auto bs2 = Everest::bootstrap_from_database_init(bin_dir + "valid_config/",
+                auto bs2 = Everest::init_database_bootstrap(bin_dir + "valid_config/",
                                                                  bin_dir + "valid_config/config.yaml", db_path);
                 CHECK(bs2.module_configs_initialized == true);
-                CHECK_NOTHROW(Everest::ManagerConfig(bs2.ms, bs2.storage.get(), bs2.module_configs_initialized));
+                CHECK_NOTHROW(Everest::ManagerConfig(bs2.ms, std::move(*bs2.module_configs)));
             }
             THEN("It should be possible to bootstrap again from the initialized database") {
-                auto bs3 = Everest::bootstrap_from_database_init(bin_dir + "valid_config/",
+                auto bs3 = Everest::init_database_bootstrap(bin_dir + "valid_config/",
                                                                  bin_dir + "valid_config/config.yaml", db_path);
                 CHECK(bs3.module_configs_initialized == true);
-                CHECK_NOTHROW(Everest::ManagerConfig(bs3.ms, bs3.storage.get(), bs3.module_configs_initialized));
+                CHECK_NOTHROW(Everest::ManagerConfig(bs3.ms, std::move(*bs3.module_configs)));
             }
         }
     }
@@ -250,12 +255,11 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
         if (fs::exists(db_path)) {
             fs::remove(db_path);
         }
-        auto bs = Everest::bootstrap_from_database_init(bin_dir + "empty_yaml_object/",
+        auto bs = Everest::init_database_bootstrap(bin_dir + "empty_yaml_object/",
                                                         bin_dir + "empty_yaml_object/config.yaml", db_path);
         CHECK(bs.module_configs_initialized == false);
         THEN("ManagerConfig should throw because there are no active_modules to initialize the database from") {
-            CHECK_THROWS_AS(Everest::ManagerConfig(bs.ms, bs.storage.get(), bs.module_configs_initialized),
-                            Everest::EverestConfigError);
+            CHECK_THROWS_AS(Everest::ManagerConfig(bs.ms), Everest::EverestConfigError);
         }
     }
 }
