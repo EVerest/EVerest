@@ -8,7 +8,7 @@
 #include <everest/exceptions.hpp>
 #include <everest/logging.hpp>
 
-#include <utils/config_service.hpp>
+#include <utils/mqtt_config_service.hpp>
 #include <utils/module_config.hpp>
 #include <utils/types.hpp>
 
