@@ -7,6 +7,7 @@
 #include <iso15118/d20/state/authorization_setup.hpp>
 #include <iso15118/d20/state/session_setup.hpp>
 
+#include <iso15118/message/service_detail.hpp>
 #include <iso15118/message/session_setup.hpp>
 
 using namespace iso15118;
@@ -194,5 +195,30 @@ SCENARIO("ISO15118-20 session setup state transitions") {
         }
 
         pause_ctx.reset();
+    }
+
+    GIVEN("Sequence Error") {
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::SessionSetup>()};
+
+        const auto header_req = message_20::Header{d20::Session().get_id(), 1691411798};
+        const auto req =
+            message_20::ServiceDetailRequest{header_req, message_20::to_underlying_value(dt::ServiceCategory::DC)};
+
+        state_helper.handle_request(req);
+
+        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+        THEN("Check state transition") {
+            REQUIRE(result.transitioned() == false);
+            REQUIRE(fsm.get_current_state_id() == d20::StateID::SessionSetup);
+
+            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            REQUIRE(response_message.has_value());
+
+            const auto& res = response_message.value();
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED_SequenceError);
+            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::DC));
+            REQUIRE(res.service_parameter_list.size() == 1);
+        }
     }
 }

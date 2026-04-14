@@ -65,7 +65,7 @@ message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetail
 
     message_20::ServiceDetailResponse res;
 
-    if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
+    if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
     }
 
@@ -173,6 +173,7 @@ message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetail
         logf_warning("There is no parameters for this service %u available. Sending an \"empty\" response.",
                      req.service);
         res.service = req.service;
+        res.service_parameter_list = {dt::ParameterSet(0)};
     }
 
     return response_with_code(res, dt::ResponseCode::OK);
