@@ -30,6 +30,16 @@ option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as depe
 option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
 
 option(IEEE2030_INSTALL "Enable install target" ${EVC_MAIN_PROJECT})
+option(DISABLE_IEEE2030_LOCAL_DEPENDENCIES "Disable local dependency lookup for libieee2030_1_1" OFF)
+option(IEEE2030_USE_EXPORTED_BUILD "Use (experimental) exported build of libieee2030_1_1" OFF)
+
+if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
+    if(IEEE2030_USE_EXPORTED_BUILD)
+        include(cmake/exported-build.cmake)
+    else()
+        include(cmake/local-build.cmake)
+    endif()
+endif()
 
 # list of compile options
 set(IEEE2030_COMPILE_OPTIONS_WARNING "-Wall;-Wextra;-Wno-unused-function;-Werror" CACHE STRING "A list of compile options used")
