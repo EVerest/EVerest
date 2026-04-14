@@ -18,6 +18,15 @@ bool operator<(const Requirement& lhs, const Requirement& rhs) {
 }
 
 namespace everest::config {
+
+bool ConfigurationParameterIdentifier::operator<(const ConfigurationParameterIdentifier& rhs) const {
+    return (
+        this->module_id < rhs.module_id ||
+        (this->module_id == rhs.module_id && this->configuration_parameter_name < rhs.configuration_parameter_name) ||
+        (this->module_id == rhs.module_id && this->configuration_parameter_name == rhs.configuration_parameter_name &&
+         this->module_implementation_id < rhs.module_implementation_id));
+}
+
 std::string config_entry_to_string(const everest::config::ConfigEntry& entry) {
     return std::visit(VisitConfigEntry{}, entry);
 }

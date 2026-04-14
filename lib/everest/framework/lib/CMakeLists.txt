@@ -19,7 +19,6 @@ target_sources(framework
         config/settings.cpp
         config/slot_manager.cpp
         config/sqlite_storage.cpp
-        config/storage_types.cpp
         config/userconfig_storage.cpp
         config/types.cpp
         config_cache.cpp
