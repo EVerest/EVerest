@@ -227,6 +227,14 @@ enum class SetConfigStatus {
     RebootRequired
 };
 
+struct ConfigurationParameterIdentifier {
+    std::string module_id;
+    std::string configuration_parameter_name;
+    std::optional<std::string> module_implementation_id;
+
+    bool operator<(const ConfigurationParameterIdentifier& rhs) const;
+};
+
 ConfigEntry parse_config_value(Datatype datatype, const std::string& value_str);
 ModuleConfigurations parse_module_configs(const nlohmann::json& config);
 Settings parse_settings(const nlohmann::json& settings_json);

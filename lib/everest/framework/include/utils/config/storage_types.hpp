@@ -71,12 +71,4 @@ struct GetModuleDataResponse {
     std::optional<ModuleData> module_data;
 };
 
-struct ConfigurationParameterIdentifier {
-    std::string module_id;
-    std::string configuration_parameter_name;
-    std::optional<std::string> module_implementation_id;
-
-    bool operator<(const ConfigurationParameterIdentifier& rhs) const;
-};
-
 } // namespace everest::config
