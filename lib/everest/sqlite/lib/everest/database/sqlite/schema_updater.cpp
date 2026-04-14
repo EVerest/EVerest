@@ -153,14 +153,14 @@ bool SchemaUpdater::apply_migration_files(const fs::path& migration_file_directo
     try {
         this->database->open_connection();
         current_version = this->database->get_user_version();
-        EVLOG_info << "Target version: " << target_schema_version << ", current version: " << current_version;
+        EVLOG_debug << "Target version: " << target_schema_version << ", current version: " << current_version;
     } catch (std::runtime_error& e) {
         EVLOG_error << "Failure during migration file apply: " << e.what();
         return false;
     }
 
     if (current_version == target_schema_version) {
-        EVLOG_info << "No migrations to apply since versions match";
+        EVLOG_debug << "No migrations to apply since versions match";
         this->database->close_connection();
         return true;
     }

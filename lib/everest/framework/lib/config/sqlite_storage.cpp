@@ -75,7 +75,7 @@ SqliteStorage::SqliteStorage(const fs::path& db_path, const std::filesystem::pat
     if (!db->open_connection()) {
         throw std::runtime_error("Could not open database at provided path: " + db_path.string());
     } else {
-        EVLOG_info << "Established connection to database successfully: " << db_path;
+        EVLOG_debug << "Established connection to database successfully: " << db_path;
     }
 }
 
@@ -373,9 +373,11 @@ SqliteStorage::write_configuration_parameter(const ConfigurationParameterIdentif
 
 void SqliteStorage::mark_valid(const bool is_valid, const std::string& config_dump,
                                const std::optional<fs::path>& config_file_path) {
-    const std::string sql =
-        "INSERT OR REPLACE INTO CONFIG_META (ID, LAST_UPDATED, VALID, CONFIG_DUMP, CONFIG_FILE_PATH) VALUES "
-        "(@config_id, @last_updated, @is_valid, @config_dump, @config_file_path);";
+    const std::string sql = "INSERT INTO CONFIG_META (ID, LAST_UPDATED, VALID, CONFIG_DUMP, CONFIG_FILE_PATH) VALUES "
+                            "(@config_id, @last_updated, @is_valid, @config_dump, @config_file_path) "
+                            "ON CONFLICT(ID) DO UPDATE SET "
+                            "LAST_UPDATED=excluded.LAST_UPDATED, VALID=excluded.VALID, "
+                            "CONFIG_DUMP=excluded.CONFIG_DUMP, CONFIG_FILE_PATH=excluded.CONFIG_FILE_PATH;";
     auto stmt = this->db->new_statement(sql);
 
     stmt->bind_int("@config_id", config_id_);
