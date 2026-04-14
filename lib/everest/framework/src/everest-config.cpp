@@ -38,7 +38,6 @@ static int cmd_add(const std::string& prefix, const std::string& config_file, co
     fmt::print("Validating config '{}'...\n", config_file);
 
     ManagerSettings ms;
-    ms.boot_mode = ConfigBootMode::DatabaseInit;
     ms.init_prefix_and_data_dir(prefix);
     ms.init_config_file(config_file);
     const auto settings = everest::config::parse_settings(ms.config.value("settings", nlohmann::json::object()));
@@ -57,10 +56,16 @@ static int cmd_add(const std::string& prefix, const std::string& config_file, co
 
     auto storage = std::make_unique<SqliteStorage>(ms.db_dir, migrations_dir, slot_id);
 
-    // ManagerConfig::init() sees DatabaseInit + storage_has_module_configs=false:
-    //   loads YAML → validates (throws on failure) → write_module_configs → mark_valid
     fmt::print("Storing as slot {} in '{}'...\n", slot_id, db_path);
-    ManagerConfig cfg(ms, storage.get(), false);
+    ManagerConfig cfg(ms);
+
+    const auto& module_configs = cfg.get_module_configurations();
+    if (storage->write_module_configs(module_configs) != GenericResponseStatus::OK) {
+        fmt::print(stderr, "Error: Failed to write module configs to slot {}.\n", slot_id);
+        slot_mgr.delete_slot(slot_id);
+        return 1;
+    }
+    storage->mark_valid(true, nlohmann::json(module_configs).dump(), ms.config_file);
 
     fmt::print("Done. Config stored as slot {}.\n", slot_id);
     return 0;

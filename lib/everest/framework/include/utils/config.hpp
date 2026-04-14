@@ -217,17 +217,18 @@ public:
 class ManagerConfig : public ConfigBase {
 private:
     const ConfigParseSettings& ps;
-    everest::config::StorageInterface* storage_;
-    bool storage_has_module_configs_ = false;
     Validators validators;
     std::unique_ptr<nlohmann::json_schema::json_validator> draft7_validator;
     std::unique_ptr<everest::config::UserConfigStorage> user_config_storage;
-    std::map<everest::config::ConfigurationParameterIdentifier, everest::config::GetConfigurationParameterResponse>
-        database_get_config_parameter_response_cache;
 
-    ///
-    /// \brief common initialization logic called by all constructors
-    void init();
+    /// \brief Sets up schemas, validators and error map (shared by all constructors).
+    void init_schemas();
+
+    /// \brief Init path when module configs are pre-loaded from storage before construction.
+    void init_from_preloaded(everest::config::ModuleConfigurations preloaded_configs);
+
+    /// \brief Init path that parses YAML. Caller is responsible for persisting the result.
+    void init_from_yaml();
 
     nlohmann::json apply_user_config_and_defaults();
 
@@ -297,22 +298,27 @@ private:
 
 public:
     ///
-    /// \brief Create a ManagerConfig from the provided ManagerSettings \p ms (daemon mode)
-    /// \param ms Manager settings (must outlive this object)
-    /// \param storage Optional storage backend (must outlive this object); nullptr means no DB
-    /// \param storage_has_module_configs If true, module configs will be loaded from storage rather than YAML
-    explicit ManagerConfig(const ManagerSettings& ms, everest::config::StorageInterface* storage = nullptr,
-                           bool storage_has_module_configs = false);
+    /// \brief Create a ManagerConfig from pre-loaded ModuleConfigurations.
+    /// \param ms Manager settings
+    /// \param preloaded_configs Module configurations loaded from the database before construction.
+    explicit ManagerConfig(const ManagerSettings& ms,
+                           everest::config::ModuleConfigurations preloaded_configs);
 
     ///
-    /// \brief Create a ManagerConfig from ConfigParseSettings only (validate-only / check mode)
+    /// \brief Create a ManagerConfig by parsing YAML.
+    /// The caller is responsible for writing the resulting module configs to storage.
+    explicit ManagerConfig(const ManagerSettings& ms);
+
+    ///
+    /// \brief Create a ManagerConfig from ConfigParseSettings only
     explicit ManagerConfig(const ConfigParseSettings& ps);
 
-    /// \brief Sets the config \p value associated with the \p identifier
-    /// \returns if the setting of the value was successful or not
+    /// \brief Updates the in-memory module_configs to reflect an immediately-applied config change.
+    /// Only call this when the module confirmed the value took effect without a reboot (Applied).
+    /// \returns Accepted on success, Rejected if the parameter is not found.
     everest::config::SetConfigStatus
-    set_config_value(const everest::config::ConfigurationParameterIdentifier& identifier,
-                     const everest::config::ConfigEntry& value);
+    update_config_value(const everest::config::ConfigurationParameterIdentifier& identifier,
+                        const everest::config::ConfigEntry& value);
 
     /// \brief Gets the configuration parameter associated with the \p identifier
     /// \returns a result containing the configuration item or an error
@@ -407,6 +413,19 @@ public:
     /// \returns a set of object keys
     static std::set<std::string> keys(const nlohmann::json& object);
 };
+/// \brief Validate a parsed configuration JSON against module manifests, interface definitions and requirements.
+///
+/// Constructs a temporary ManagerConfig using \p ps for path resolution and \p json_config as the
+/// in-memory configuration (must contain an "active_modules" key). Returns the validated and default-enriched
+/// ModuleConfigurations on success.
+///
+/// \param ps         Parse settings providing paths to schemas, modules, interfaces, types and errors.
+/// \param json_config Full YAML-parsed JSON (must contain "active_modules").
+/// \returns Default-enriched ModuleConfigurations ready to be written to storage.
+/// \throws EverestConfigError if any module manifest is missing, any interface is unresolvable,
+///         or any requirement cannot be fulfilled.
+ModuleConfigurations validate_module_configs(const ConfigParseSettings& ps, const nlohmann::json& json_config);
+
 } // namespace Everest
 
 NLOHMANN_JSON_NAMESPACE_BEGIN

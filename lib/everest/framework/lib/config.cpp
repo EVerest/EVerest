@@ -1105,21 +1105,36 @@ void ManagerConfig::parse_3_tier_model_mapping() {
     }
 }
 
-ManagerConfig::ManagerConfig(const ManagerSettings& ms, everest::config::StorageInterface* storage,
-                             bool storage_has_module_configs) :
-    ConfigBase(ms.mqtt_settings), ps(ms), storage_(storage), storage_has_module_configs_(storage_has_module_configs) {
+ManagerConfig::ManagerConfig(const ManagerSettings& ms,
+                             everest::config::ModuleConfigurations preloaded_configs) :
+    ConfigBase(ms.mqtt_settings), ps(ms) {
     BOOST_LOG_FUNCTION();
     this->settings = ms.runtime_settings;
-    init();
+    init_from_preloaded(std::move(preloaded_configs));
+}
+
+ManagerConfig::ManagerConfig(const ManagerSettings& ms) :
+    ConfigBase(ms.mqtt_settings), ps(ms) {
+    BOOST_LOG_FUNCTION();
+    this->settings = ms.runtime_settings;
+    init_from_yaml();
 }
 
 ManagerConfig::ManagerConfig(const ConfigParseSettings& ps) :
-    ConfigBase(MQTTSettings{}), ps(ps), storage_(nullptr), storage_has_module_configs_(false) {
+    ConfigBase(MQTTSettings{}), ps(ps) {
     BOOST_LOG_FUNCTION();
-    init();
+    init_from_yaml();
 }
 
-void ManagerConfig::init() {
+ModuleConfigurations validate_module_configs(const ConfigParseSettings& ps, const nlohmann::json& json_config) {
+    ConfigParseSettings val_ps = ps;
+    val_ps.config = json_config;
+    val_ps.config_file.clear(); // no file; skip canonical() and user-config lookup
+    ManagerConfig tmp(val_ps);  // validation-only path; validates manifests and requirements
+    return tmp.get_module_configurations();
+}
+
+void ManagerConfig::init_schemas() {
     this->manifests = json({});
     this->interfaces = json({});
     this->interface_definitions = json({});
@@ -1133,83 +1148,57 @@ void ManagerConfig::init() {
         {
             "$ref": "http://json-schema.org/draft-07/schema#"
         }
-
         )"_json;
     this->draft7_validator->set_root_schema(draft07);
+}
 
-    ModuleConfigurations module_configs;
-    bool write_config_to_storage = false;
+void ManagerConfig::init_from_preloaded(everest::config::ModuleConfigurations preloaded_configs) {
     try {
-        if (this->ps.boot_mode == ConfigBootMode::YamlFile) {
-            EVLOG_info << "Boot mode is set to YamlFile, loading module configs from YAML file";
-            const auto complete_config = this->apply_user_config_and_defaults();
-            module_configs = parse_module_configs(complete_config.value("active_modules", json::object()));
-        } else if (this->ps.boot_mode == ConfigBootMode::DatabaseInit) {
-            EVLOG_info << "Boot mode is set to DatabaseInit";
-            if (this->storage_ == nullptr) {
-                EVLOG_AND_THROW(EverestConfigError("No storage configured, cannot load module configs from database!"));
-            }
-            if (this->storage_has_module_configs_) {
-                EVLOG_info << "Storage contains valid config, loading module configs from database";
-                const auto module_configs_response = this->storage_->get_module_configs();
-                if (module_configs_response.status == GenericResponseStatus::Failed) {
-                    EVLOG_AND_THROW(EverestConfigError("Failed to load module configs from database"));
-                } else {
-                    module_configs = module_configs_response.module_configs;
-                }
-            } else {
-                EVLOG_info << "Database not yet initialized, looking for active_modules in YAML config";
-                const auto complete_config = this->apply_user_config_and_defaults();
-                if (!complete_config.contains("active_modules")) {
-                    EVLOG_AND_THROW(EverestConfigError(
-                        "Database is not initialized and YAML config contains no active_modules section. "
-                        "Provide active_modules in the config file to initialize the database, "
-                        "or point --db to a pre-initialized database."));
-                }
-                write_config_to_storage = true; // we can only write the config to the storage after the parse()
-                                                // function, since this adds meta data like characteristics to the
-                                                // module_configs that is required for writing to the storage
-                module_configs = parse_module_configs(complete_config.value("active_modules", json::object()));
-            }
-        }
+        init_schemas();
+        EVLOG_info << "Loading module configs from pre-loaded database configuration";
+        this->parse(preloaded_configs);
+    } catch (const std::exception& e) {
+        EVLOG_AND_THROW(EverestConfigError(fmt::format("Failed to load and parse configuration: {}", e.what())));
+    }
+}
 
+void ManagerConfig::init_from_yaml() {
+    try {
+        init_schemas();
+        const auto complete_config = this->apply_user_config_and_defaults();
+        if (!complete_config.contains("active_modules") && complete_config.items().begin() != complete_config.items().end()) {
+            EVLOG_AND_THROW(EverestConfigError(
+                "YAML config contains no active_modules section. "
+                "Provide active_modules in the config file."));
+        }
+        auto module_configs = parse_module_configs(complete_config.value("active_modules", json::object()));
         this->parse(module_configs);
         // now the config is parsed, validated and patched!
-
-        if (!write_config_to_storage) {
-            return;
-        }
-
-        if (this->storage_->write_module_configs(module_configs) != GenericResponseStatus::Failed) {
-            EVLOG_info << "Module configs written to database successfully, marking config as valid";
-            this->storage_->mark_valid(true, json(module_configs).dump(), this->ps.config_file);
-        } else {
-            EVLOG_warning << "Failed to write module configs to database, marking config as invalid";
-            this->storage_->mark_valid(false, json(module_configs).dump(), this->ps.config_file);
-        }
     } catch (const std::exception& e) {
         EVLOG_AND_THROW(EverestConfigError(fmt::format("Failed to load and parse configuration: {}", e.what())));
     }
 }
 
 json ManagerConfig::apply_user_config_and_defaults() {
-    // load and process config file
-    const fs::path config_path = this->ps.config_file;
-    EVLOG_info << fmt::format("Loading config file at: {}", fs::canonical(config_path).string());
     // this config is parsed from the file, it doesnt contain any defaults or patches!
     auto complete_config = this->ps.config;
-    // try to load user config from a directory "user-config" that might be in the same parent directory as the
-    // config_file. The config is supposed to have the same name as the parent config.
-    // TODO(kai): introduce a parameter that can overwrite the location of the user config?
-    // TODO(kai): or should we introduce a "meta-config" that references all configs that should be merged here?
-    const auto user_config_path = config_path.parent_path() / "user-config" / config_path.filename();
-    this->user_config_storage = std::make_unique<everest::config::UserConfigStorage>(user_config_path);
-    if (fs::exists(user_config_path)) {
-        EVLOG_info << fmt::format("Loading user-config file at: {}", fs::canonical(user_config_path).string());
-        EVLOG_debug << "Augmenting main config with user-config entries";
-        complete_config.merge_patch(this->user_config_storage->get_user_config());
-    } else {
-        EVLOG_verbose << "No user-config provided.";
+
+    const fs::path config_path = this->ps.config_file;
+    if (!config_path.empty()) {
+        EVLOG_info << fmt::format("Loading config file at: {}", fs::canonical(config_path).string());
+        // try to load user config from a directory "user-config" that might be in the same parent directory as the
+        // config_file. The config is supposed to have the same name as the parent config.
+        // TODO(kai): introduce a parameter that can overwrite the location of the user config?
+        // TODO(kai): or should we introduce a "meta-config" that references all configs that should be merged here?
+        const auto user_config_path = config_path.parent_path() / "user-config" / config_path.filename();
+        this->user_config_storage = std::make_unique<everest::config::UserConfigStorage>(user_config_path);
+        if (fs::exists(user_config_path)) {
+            EVLOG_info << fmt::format("Loading user-config file at: {}", fs::canonical(user_config_path).string());
+            EVLOG_debug << "Augmenting main config with user-config entries";
+            complete_config.merge_patch(this->user_config_storage->get_user_config());
+        } else {
+            EVLOG_verbose << "No user-config provided.";
+        }
     }
 
     const auto patch = this->validators.config.validate(complete_config);
@@ -1268,43 +1257,22 @@ get_characteristics(const std::string& name,
 } // namespace
 
 everest::config::SetConfigStatus
-ManagerConfig::set_config_value(const everest::config::ConfigurationParameterIdentifier& identifier,
-                                const everest::config::ConfigEntry& value) {
+ManagerConfig::update_config_value(const everest::config::ConfigurationParameterIdentifier& identifier,
+                                   const everest::config::ConfigEntry& value) {
     try {
-        const auto& module_config = this->module_configs.at(identifier.module_id);
-        const auto& configuration_parameters =
-            module_config.configuration_parameters.at(identifier.module_implementation_id.value_or("!module"));
-        const auto& characteristics =
-            get_characteristics(identifier.configuration_parameter_name, configuration_parameters);
-
-        switch (this->ps.boot_mode) {
-        case ConfigBootMode::YamlFile: {
-            const auto write_response = this->user_config_storage->write_configuration_parameter(
-                identifier, characteristics, everest::config::config_entry_to_string(value));
-            if (write_response == GetSetResponseStatus::OK) {
-                return everest::config::SetConfigStatus::RebootRequired;
+        auto& configuration_parameters = this->module_configs.at(identifier.module_id)
+                                             .configuration_parameters.at(
+                                                 identifier.module_implementation_id.value_or("!module"));
+        for (auto& param : configuration_parameters) {
+            if (param.name == identifier.configuration_parameter_name) {
+                param.value = value;
+                return everest::config::SetConfigStatus::Accepted;
             }
-            break;
         }
-        case ConfigBootMode::DatabaseInit:
-            const auto& cached_value_it = this->database_get_config_parameter_response_cache.find(identifier);
-            const auto cached_value = this->storage_->get_configuration_parameter(identifier);
-            const auto write_response = this->storage_->write_configuration_parameter(
-                identifier, characteristics, everest::config::config_entry_to_string(value));
-            if (write_response == GetSetResponseStatus::OK) {
-                if (cached_value_it == this->database_get_config_parameter_response_cache.end()) {
-                    // cache initial config value in case it is only valid after a reboot
-                    this->database_get_config_parameter_response_cache[identifier] = cached_value;
-                }
-                return everest::config::SetConfigStatus::RebootRequired;
-            }
-            return everest::config::SetConfigStatus::Rejected;
-        }
-    } catch (const std::exception& e) {
+        return everest::config::SetConfigStatus::Rejected;
+    } catch (const std::exception&) {
         return everest::config::SetConfigStatus::Rejected;
     }
-
-    return everest::config::SetConfigStatus::Rejected;
 }
 
 everest::config::GetConfigurationParameterResponse
@@ -1313,37 +1281,19 @@ ManagerConfig::get_config_value(const everest::config::ConfigurationParameterIde
     response.status = GetSetResponseStatus::Failed;
 
     try {
-        switch (this->ps.boot_mode) {
-        case ConfigBootMode::YamlFile: {
-            const auto& module_config = this->module_configs.at(identifier.module_id);
-            const auto& configuration_parameters =
-                module_config.configuration_parameters.at(identifier.module_implementation_id.value_or("!module"));
-            for (const auto& configuration_parameter : configuration_parameters) {
-                if (configuration_parameter.name == identifier.configuration_parameter_name) {
-                    response.status = GetSetResponseStatus::OK;
-                    response.configuration_parameter = configuration_parameter;
-                    break;
-                }
+        const auto& configuration_parameters =
+            this->module_configs.at(identifier.module_id)
+                .configuration_parameters.at(identifier.module_implementation_id.value_or("!module"));
+        for (const auto& p : configuration_parameters) {
+            if (p.name == identifier.configuration_parameter_name) {
+                response.status = GetSetResponseStatus::OK;
+                response.configuration_parameter = p;
+                return response;
             }
-            if (response.status != GetSetResponseStatus::OK) {
-                response.status = GetSetResponseStatus::NotFound;
-            }
-            break;
         }
-        case ConfigBootMode::DatabaseInit: {
-            // ensure that we do not return database values that are only valid after a reboot
-            const auto& cached_value_it = this->database_get_config_parameter_response_cache.find(identifier);
-            if (cached_value_it != this->database_get_config_parameter_response_cache.end()) {
-                return cached_value_it->second;
-            }
-            response = this->storage_->get_configuration_parameter(identifier);
-            break;
-        }
-        }
-    } catch (const std::exception& e) {
-        everest::config::GetConfigurationParameterResponse failed_response;
-        failed_response.status = GetSetResponseStatus::Failed;
-        return failed_response;
+        response.status = GetSetResponseStatus::NotFound;
+    } catch (const std::exception&) {
+        response.status = GetSetResponseStatus::Failed;
     }
 
     return response;
