@@ -245,6 +245,8 @@ SetResponseStatus persist_config_value(const everest::config::ConfigurationParam
     default:
         return SetResponseStatus::Rejected;
     }
+
+    // TODO: What if update was Accepted by target module but Rejected by ConfigServiceInterface?
 }
 
 Response handle_set_request(const SetRequest& set_request, const std::string& origin,
@@ -501,9 +503,8 @@ MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstrac
 
     // TODO: thread-safe?
 
-    const Handler global_config_request_handler = [&mqtt_abstraction,
-                                                   &config_svc](const std::string& /*topic*/,
-                                                                const nlohmann::json& data) {
+    const Handler global_config_request_handler = [&mqtt_abstraction, &config_svc](const std::string& /*topic*/,
+                                                                                   const nlohmann::json& data) {
         Response response;
         response.status = ResponseStatus::Error;
         try {

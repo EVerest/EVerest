@@ -7,8 +7,8 @@
 #include <tests/helpers.hpp>
 #include <tests/mock_mqtt_abstraction.hpp>
 #include <utils/config.hpp>
-#include <utils/mqtt_config_service.hpp>
 #include <utils/config_service_interface.hpp>
+#include <utils/mqtt_config_service.hpp>
 
 using namespace Everest;
 using namespace Everest::config;
@@ -20,21 +20,41 @@ struct StubConfigService : Everest::config::ConfigServiceInterface {
     std::vector<SetConfigParameterResult> last_set_results{SetConfigParameterResult::Applied};
     everest::config::ModuleConfigurations module_configurations;
 
-    std::vector<SlotInfo> list_all_slots() override { return {}; }
-    int get_active_slot_id() override { return 0; }
-    SetActiveSlotStatus mark_active_slot(int) override { return SetActiveSlotStatus::Success; }
-    DeleteSlotStatus delete_slot(int) override { return DeleteSlotStatus::Success; }
-    DuplicateSlotResult duplicate_slot(int, std::optional<std::string>) override { return {}; }
-    LoadFromYamlResult load_from_yaml(const std::string&) override { return {}; }
+    std::vector<SlotInfo> list_all_slots() override {
+        return {};
+    }
+    int get_active_slot_id() override {
+        return 0;
+    }
+    SetActiveSlotStatus mark_active_slot(int) override {
+        return SetActiveSlotStatus::Success;
+    }
+    DeleteSlotStatus delete_slot(int) override {
+        return DeleteSlotStatus::Success;
+    }
+    DuplicateSlotResult duplicate_slot(int, std::optional<std::string>) override {
+        return {};
+    }
+    LoadFromYamlResult load_from_yaml(const std::string&) override {
+        return {};
+    }
     GetConfigurationResult get_configuration(int) override {
         return {GetConfigurationStatus::Success, module_configurations};
     }
-    std::vector<SetConfigParameterResult>
-    set_config_parameters(int, const std::vector<ConfigParameterUpdate>&) override { return last_set_results; }
-    StopModulesResult stop_modules() override { return StopModulesResult::NoModulesToStop; }
-    RestartModulesResult restart_modules() override { return RestartModulesResult::NoConfigToStart; }
-    void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)>) override {}
-    void register_config_update_handler(std::function<void(const ConfigurationUpdate&)>) override {}
+    std::vector<SetConfigParameterResult> set_config_parameters(int,
+                                                                const std::vector<ConfigParameterUpdate>&) override {
+        return last_set_results;
+    }
+    StopModulesResult stop_modules() override {
+        return StopModulesResult::NoModulesToStop;
+    }
+    RestartModulesResult restart_modules() override {
+        return RestartModulesResult::NoConfigToStart;
+    }
+    void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)>) override {
+    }
+    void register_config_update_handler(std::function<void(const ConfigurationUpdate&)>) override {
+    }
 };
 
 // ─── JSON helpers ─────────────────────────────────────────────────────────────

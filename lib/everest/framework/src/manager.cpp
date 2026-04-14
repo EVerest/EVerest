@@ -613,18 +613,7 @@ int Manager::run() {
         throw BootException("--config is required. A YAML config is always needed to provide ManagerSettings.");
     }
 
-    ManagerSettings ms;
-    std::unique_ptr<everest::config::SqliteStorage> db_storage;
-    bool db_storage_has_module_configs = false;
-    std::optional<everest::config::ModuleConfigurations> preloaded_module_configs;
-
-    {
-        auto bs = init_database_bootstrap(prefix_opt, config_opt, db_opt, reset_from_yaml);
-        ms = std::move(bs.ms);
-        db_storage = std::move(bs.storage);
-        db_storage_has_module_configs = bs.module_configs_initialized;
-        preloaded_module_configs = std::move(bs.module_configs);
-    }
+    ManagerSettings ms(prefix_opt, config_opt, db_opt);
 
     // CLI override for mqtt_everest_prefix (e.g. for parallel test execution).
     if (vm_.count("mqtt_everest_prefix") != 0) {
@@ -652,6 +641,16 @@ int Manager::run() {
     }
     if (ms.runtime_settings.forward_exceptions) {
         EVLOG_info << "Catching and forwarding command exceptions to callers";
+    }
+
+    bool db_storage_has_module_configs = false;
+    std::optional<everest::config::ModuleConfigurations> preloaded_module_configs;
+
+    {
+        auto bs = init_database_bootstrap(ms, reset_from_yaml);
+        db_storage = std::move(bs.storage);
+        db_storage_has_module_configs = bs.module_configs_initialized;
+        preloaded_module_configs = std::move(bs.module_configs);
     }
 
     auto admin_panel = ManagerAdminPanel::create(ms);
@@ -730,8 +729,7 @@ int Manager::run() {
     auto config_service_core = std::make_unique<config::ConfigServiceCore>(
         config, ms, ms.db_dir, migrations_dir, everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
 
-    auto config_service = std::make_unique<config::MqttConfigServiceHandler>(
-        *mqtt_abstraction, *config_service_core);
+    auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core);
 
     RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
                                ms,     status_fifo,       retain_topics};
@@ -1368,9 +1366,8 @@ int main(int argc, char* argv[]) {
         "db", po::value<std::string>(),
         "Full path to the configuration database file. Required. "
         "The database is initialized automatically from active_modules in the YAML config on first run.");
-    desc.add_options()("reset-from-yaml",
-                       "Discard the existing database slot and re-seed from the YAML config file. "
-                       "Intended for development use when you want to reset to a known YAML state.");
+    desc.add_options()("reset-from-yaml", "Discard the existing database slot and re-seed from the YAML config file. "
+                                          "Intended for development use when you want to reset to a known YAML state.");
     desc.add_options()("into-idle", "Boot into idle state (no modules are started)");
     desc.add_options()("recover-module-crashes",
                        "After unexpected module exit, reload config and restart modules (bounded by an internal retry "
