@@ -2,6 +2,8 @@
 #include <fstream>
 #include <gtest/gtest.h>
 
+#include <evse_security/certificate/x509_hierarchy.hpp>
+#include <evse_security/certificate/x509_wrapper.hpp>
 #include <evse_security/crypto/openssl/openssl_crypto_supplier.hpp>
 #include <optional>
 
@@ -129,6 +131,74 @@ TEST_F(OpenSSLSupplierTest, x509_verify_certificate_chain_ignore_unhandled_criti
         res_leaf[0].get(), parents, empty_untrusted, true, std::nullopt, "pki_critical_ski/root_cert.pem", true);
     ASSERT_EQ(res_lenient, CertificateValidationResult::Valid)
         << "Lenient mode must accept a chain where all critical extensions have well-known RFC 5280 NIDs";
+}
+
+TEST_F(OpenSSLSupplierTest, x509_is_child_ignore_unhandled_critical_extensions) {
+    // Parent/child pair where the parent CA has SKI marked critical (non-RFC-5280-compliant).
+    // Without the bypass, X509_verify_cert inside x509_is_child fails with
+    // X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION, leaving the hierarchy unable to attach the child
+    // to the parent at startup. With the bypass enabled (and every critical extension being a
+    // well-known RFC 5280 NID), the relationship is detected.
+    // PKI layout: root_cert -> ca_cert (intermediate) -> server_cert.
+    auto parent_pem = getFile("pki_critical_ski/ca_cert.pem"); // intermediate — direct parent of the leaf
+    auto child_pem = getFile("pki_critical_ski/server_cert.pem");
+
+    auto parent = OpenSSLSupplier::load_certificates(parent_pem, EncodingFormat::PEM);
+    auto child = OpenSSLSupplier::load_certificates(child_pem, EncodingFormat::PEM);
+
+    ASSERT_GE(parent.size(), 1U);
+    ASSERT_GE(child.size(), 1U);
+
+    ASSERT_FALSE(OpenSSLSupplier::x509_is_child(child[0].get(), parent[0].get(), false))
+        << "Strict mode must not accept child/parent links across an unhandled critical extension";
+
+    ASSERT_TRUE(OpenSSLSupplier::x509_is_child(child[0].get(), parent[0].get(), true))
+        << "Lenient mode must accept child/parent links when all critical extensions have well-known RFC 5280 NIDs";
+}
+
+TEST_F(OpenSSLSupplierTest, x509_hierarchy_build_ignore_unhandled_critical_extensions) {
+    // Full end-to-end: a certificate hierarchy built from a bundle containing a non-compliant
+    // root + intermediate + leaf. With the bypass off the intermediate and leaf stay orphaned
+    // (no matching parent found via is_child). With the bypass on, they are correctly chained
+    // underneath the self-signed root.
+    const std::string root_pem = getFile("pki_critical_ski/root_cert.pem");
+    const std::string intermediate_pem = getFile("pki_critical_ski/ca_cert.pem");
+    const std::string leaf_pem = getFile("pki_critical_ski/server_cert.pem");
+
+    auto build_with_flag = [&](bool ignore) {
+        std::vector<X509Wrapper> certs;
+        certs.emplace_back(root_pem, EncodingFormat::PEM);
+        certs.emplace_back(intermediate_pem, EncodingFormat::PEM);
+        certs.emplace_back(leaf_pem, EncodingFormat::PEM);
+        return X509CertificateHierarchy::build_hierarchy(certs, ignore);
+    };
+
+    // Strict: no child chains under the self-signed root — the intermediate and leaf are
+    // classified as orphans because is_child rejects them due to the unhandled critical extension.
+    auto strict = build_with_flag(false);
+    bool root_has_children_strict = false;
+    for (const auto& node : strict.get_hierarchy()) {
+        if (node.state.is_selfsigned && !node.children.empty()) {
+            root_has_children_strict = true;
+        }
+    }
+    ASSERT_FALSE(root_has_children_strict) << "Strict hierarchy must not chain children under the non-compliant root";
+
+    // Lenient: root -> intermediate -> leaf must be assembled.
+    auto lenient = build_with_flag(true);
+    bool chain_assembled = false;
+    for (const auto& node : lenient.get_hierarchy()) {
+        if (!node.state.is_selfsigned) {
+            continue;
+        }
+        for (const auto& intermediate : node.children) {
+            if (!intermediate.children.empty()) {
+                chain_assembled = true;
+            }
+        }
+    }
+    ASSERT_TRUE(chain_assembled)
+        << "Lenient hierarchy must chain root -> intermediate -> leaf when the bypass is enabled";
 }
 
 TEST_F(OpenSSLSupplierTest, x509_generate_csr) {
