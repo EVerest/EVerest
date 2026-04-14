@@ -59,6 +59,10 @@ target_sources(everest_api_types
   src/everest_api_types/evse_manager/json_codec.cpp
   src/everest_api_types/evse_manager/wrapper.cpp
 
+  src/everest_api_types/evse_security/codec.cpp
+  src/everest_api_types/evse_security/json_codec.cpp
+  src/everest_api_types/evse_security/wrapper.cpp
+
   src/everest_api_types/money/codec.cpp
   src/everest_api_types/money/json_codec.cpp
   src/everest_api_types/money/wrapper.cpp
