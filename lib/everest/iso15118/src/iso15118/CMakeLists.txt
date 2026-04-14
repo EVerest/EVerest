@@ -76,6 +76,7 @@ target_link_libraries(iso15118
         # FIXME (aw): would be nice if we could make this private!
         cbv2g::tp
         cbv2g::iso20
+        everest::util
     PRIVATE
         Threads::Threads
 )

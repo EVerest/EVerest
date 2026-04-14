@@ -8,6 +8,8 @@
 
 #include "common_types.hpp"
 
+#include <everest/util/vector/fixed_vector.hpp>
+
 namespace iso15118::message_20 {
 
 namespace datatypes {
@@ -36,7 +38,7 @@ struct Scheduled_EVPPTControlMode {
 struct PowerProfile {
     uint64_t time_anchor;
     std::variant<Dynamic_EVPPTControlMode, Scheduled_EVPPTControlMode> control_mode;
-    std::vector<PowerScheduleEntry> entries; // maximum 2048
+    everest::lib::util::fixed_vector<PowerScheduleEntry, 2048> entries; // maximum 2048
 };
 
 enum class ChannelSelection : uint8_t {

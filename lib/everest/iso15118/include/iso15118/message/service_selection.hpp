@@ -3,9 +3,10 @@
 #pragma once
 
 #include <optional>
-#include <vector>
 
 #include "common_types.hpp"
+
+#include <everest/util/vector/fixed_vector.hpp>
 
 namespace iso15118::message_20 {
 
@@ -21,7 +22,7 @@ struct VasSelectedService {
     uint16_t parameter_set_id;
 };
 
-using VasSelectedServiceList = std::vector<VasSelectedService>; // Max: 16
+using VasSelectedServiceList = everest::lib::util::fixed_vector<VasSelectedService, 16>; // Max: 16
 
 } // namespace datatypes
 
