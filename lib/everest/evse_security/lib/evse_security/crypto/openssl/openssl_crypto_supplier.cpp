@@ -63,6 +63,84 @@ CertificateValidationResult to_certificate_error(const int ec) {
         return CertificateValidationResult::Unknown;
     }
 }
+
+/// Verification callback that bypasses X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION when every
+/// critical extension on the certificate has a well-known RFC 5280 NID.  Truly unknown/custom
+/// OID critical extensions still cause verification to fail.
+int critical_extension_bypass_callback(int ok, X509_STORE_CTX* ctx) {
+    if (!ok) {
+        const int error = X509_STORE_CTX_get_error(ctx);
+        X509* cert = X509_STORE_CTX_get_current_cert(ctx);
+
+        if (error == X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION && cert != nullptr) {
+            // RFC 5280 extension NIDs that OpenSSL handles during certificate path
+            // validation and are therefore safe to have marked critical.
+            static const std::array<int, 12> handled_nids = {
+                NID_basic_constraints,
+                NID_key_usage,
+                NID_ext_key_usage,
+                NID_subject_alt_name,
+                NID_name_constraints,
+                NID_certificate_policies,
+                NID_policy_constraints,
+                NID_inhibit_any_policy,
+                NID_authority_key_identifier,
+                NID_subject_key_identifier,
+                NID_crl_distribution_points,
+                NID_info_access,
+            };
+
+            bool has_unknown_critical = false;
+            std::string nids_log;
+
+            const int num_exts = X509_get_ext_count(cert);
+            for (int i = 0; i < num_exts; i++) {
+                X509_EXTENSION* ext = X509_get_ext(cert, i);
+                if (!X509_EXTENSION_get_critical(ext)) {
+                    continue;
+                }
+                const int nid = OBJ_obj2nid(X509_EXTENSION_get_object(ext));
+                bool is_known = false;
+                for (const int known_nid : handled_nids) {
+                    if (nid == known_nid) {
+                        is_known = true;
+                        const char* nid_name = OBJ_nid2sn(nid);
+                        if (nid_name != nullptr) {
+                            if (!nids_log.empty()) {
+                                nids_log += ", ";
+                            }
+                            nids_log += nid_name;
+                            nids_log += "(";
+                            nids_log += std::to_string(nid);
+                            nids_log += ")";
+                        } else {
+                            if (!nids_log.empty()) {
+                                nids_log += ", ";
+                            }
+                            nids_log += "NID_" + std::to_string(nid);
+                        }
+                        break;
+                    }
+                }
+                if (!is_known) {
+                    has_unknown_critical = true;
+                    break;
+                }
+            }
+
+            if (!has_unknown_critical) {
+                char* subject = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
+
+                EVLOG_info << "Ignoring unhandled critical extension(s) with well-known NIDs [" << nids_log
+                           << "] on certificate: " << (subject != nullptr ? subject : "unknown");
+                OPENSSL_free(subject);
+                X509_STORE_CTX_set_error(ctx, X509_V_OK);
+                return 1;
+            }
+        }
+    }
+    return ok;
+}
 } // namespace
 
 const char* OpenSSLSupplier::get_supplier_name() {
@@ -445,7 +523,7 @@ bool OpenSSLSupplier::x509_get_validity(X509Handle* handle, std::int64_t& out_va
     return true;
 }
 
-bool OpenSSLSupplier::x509_is_child(X509Handle* child, X509Handle* parent) {
+bool OpenSSLSupplier::x509_is_child(X509Handle* child, X509Handle* parent, bool ignore_unhandled_critical_extensions) {
     // A certif can't be it's own parent, use is_selfsigned if that is intended
     if (child == parent) {
         return false;
@@ -470,6 +548,14 @@ bool OpenSSLSupplier::x509_is_child(X509Handle* child, X509Handle* parent) {
         // X509_STORE_CTX_set_flags(ctx.get(), X509_V_FLAG_X509_STRICT);
 
         X509_STORE_CTX_set_flags(ctx.get(), X509_V_FLAG_PARTIAL_CHAIN);
+    }
+
+    // Bypass X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION for known non-compliant certificates so
+    // hierarchy discovery succeeds (e.g. CAs that mark SKI critical). Uses the same callback
+    // as x509_verify_certificate_chain, which only suppresses the error when every critical
+    // extension on the certificate has a well-known RFC 5280 NID.
+    if (ignore_unhandled_critical_extensions) {
+        X509_STORE_CTX_set_verify_cb(ctx.get(), critical_extension_bypass_callback);
     }
 
     if (X509_verify_cert(ctx.get()) != 1) {
@@ -500,86 +586,6 @@ bool OpenSSLSupplier::x509_is_equal(X509Handle* a, X509Handle* b) {
 X509Handle_ptr OpenSSLSupplier::x509_duplicate_unique(X509Handle* handle) {
     return std::make_unique<X509HandleOpenSSL>(X509_dup(get(handle)));
 }
-
-namespace {
-/// Verification callback that bypasses X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION when every
-/// critical extension on the certificate has a well-known RFC 5280 NID.  Truly unknown/custom
-/// OID critical extensions still cause verification to fail.
-int critical_extension_bypass_callback(int ok, X509_STORE_CTX* ctx) {
-    if (!ok) {
-        const int error = X509_STORE_CTX_get_error(ctx);
-        X509* cert = X509_STORE_CTX_get_current_cert(ctx);
-
-        if (error == X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION && cert != nullptr) {
-            // RFC 5280 extension NIDs that OpenSSL handles during certificate path
-            // validation and are therefore safe to have marked critical.
-            static const std::array<int, 12> handled_nids = {
-                NID_basic_constraints,
-                NID_key_usage,
-                NID_ext_key_usage,
-                NID_subject_alt_name,
-                NID_name_constraints,
-                NID_certificate_policies,
-                NID_policy_constraints,
-                NID_inhibit_any_policy,
-                NID_authority_key_identifier,
-                NID_subject_key_identifier,
-                NID_crl_distribution_points,
-                NID_info_access,
-            };
-
-            bool has_unknown_critical = false;
-            std::string nids_log;
-
-            const int num_exts = X509_get_ext_count(cert);
-            for (int i = 0; i < num_exts; i++) {
-                X509_EXTENSION* ext = X509_get_ext(cert, i);
-                if (!X509_EXTENSION_get_critical(ext)) {
-                    continue;
-                }
-                const int nid = OBJ_obj2nid(X509_EXTENSION_get_object(ext));
-                bool is_known = false;
-                for (const int known_nid : handled_nids) {
-                    if (nid == known_nid) {
-                        is_known = true;
-                        const char* nid_name = OBJ_nid2sn(nid);
-                        if (nid_name != nullptr) {
-                            if (!nids_log.empty()) {
-                                nids_log += ", ";
-                            }
-                            nids_log += nid_name;
-                            nids_log += "(";
-                            nids_log += std::to_string(nid);
-                            nids_log += ")";
-                        } else {
-                            if (!nids_log.empty()) {
-                                nids_log += ", ";
-                            }
-                            nids_log += "NID_" + std::to_string(nid);
-                        }
-                        break;
-                    }
-                }
-                if (!is_known) {
-                    has_unknown_critical = true;
-                    break;
-                }
-            }
-
-            if (!has_unknown_critical) {
-                char* subject = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
-
-                EVLOG_info << "Ignoring unhandled critical extension(s) with well-known NIDs [" << nids_log
-                           << "] on certificate: " << (subject != nullptr ? subject : "unknown");
-                OPENSSL_free(subject);
-                X509_STORE_CTX_set_error(ctx, X509_V_OK);
-                return 1;
-            }
-        }
-    }
-    return ok;
-}
-} // namespace
 
 CertificateValidationResult OpenSSLSupplier::x509_verify_certificate_chain(
     X509Handle* target, const std::vector<X509Handle*>& parents, const std::vector<X509Handle*>& untrusted_subcas,

@@ -47,7 +47,11 @@ public:
     static bool x509_get_validity(X509Handle* handle, std::int64_t& out_valid_in, std::int64_t& out_valid_to);
 
     static bool x509_is_selfsigned(X509Handle* handle);
-    static bool x509_is_child(X509Handle* child, X509Handle* parent);
+
+    /// @brief Returns true if the child certificate is issued by the parent
+    /// @param ignore_unhandled_critical_extensions If true, bypasses X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION when
+    /// every critical extension on the certificate has a well-known RFC 5280 NID
+    static bool x509_is_child(X509Handle* child, X509Handle* parent, bool ignore_unhandled_critical_extensions = false);
     static bool x509_is_equal(X509Handle* a, X509Handle* b);
 
     static X509Handle_ptr x509_duplicate_unique(X509Handle* handle);
