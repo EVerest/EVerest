@@ -28,6 +28,8 @@
 #include <framework/everest.hpp>
 #include <framework/runtime.hpp>
 #include <utils/config.hpp>
+#include <utils/config/config_service_core.hpp>
+#include <utils/config/slot_manager.hpp>
 #include <utils/mqtt_abstraction.hpp>
 #include <utils/status_fifo.hpp>
 
@@ -796,7 +798,12 @@ int boot(const po::variables_map& vm) {
 
     mqtt_abstraction->spawn_main_loop_thread();
 
-    auto config_service = std::make_unique<config::ConfigService>(*mqtt_abstraction, config);
+    const auto migrations_dir = ms.runtime_settings.data_dir / "migrations";
+    auto config_service_core = std::make_unique<config::ConfigServiceCore>(
+        config, ms, ms.db_dir, migrations_dir, everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
+
+    auto config_service = std::make_unique<config::MqttConfigServiceHandler>(
+        *mqtt_abstraction, *config_service_core);
 
     auto module_handles =
         start_modules(*config, *mqtt_abstraction, ignored_modules, standalone_modules, ms, status_fifo, retain_topics);

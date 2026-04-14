@@ -112,11 +112,15 @@ INSERT INTO MODULE_NEW
 DROP TABLE MODULE;
 ALTER TABLE MODULE_NEW RENAME TO MODULE;
 
+-- 2.5. Drop BOOT_CONFIG table added in migration 4.
+DROP TABLE IF EXISTS BOOT_CONFIG;
+
 -- 2. CONFIG_META: restore without FK, remap lowest CONFIG_ID back to ID=0.
+--    DESCRIPTION column is dropped (not present in pre-migration schema).
 CREATE TABLE CONFIG_META_NEW (
     ID               INTEGER PRIMARY KEY,
     LAST_UPDATED     TEXT    NOT NULL,
-    VALID            TEXT    INTEGER NOT NULL,
+    VALID            INTEGER NOT NULL,
     CONFIG_DUMP      TEXT    NOT NULL,
     CONFIG_FILE_PATH TEXT
 );
