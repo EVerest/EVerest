@@ -790,8 +790,8 @@ int boot(const po::variables_map& vm) {
         mqtt_abstraction->clear_retained_topics();
 
         config = std::make_shared<ManagerConfig>(ms);
-        module_handles = start_modules(*config, *mqtt_abstraction, ignored_modules, standalone_modules, ms,
-                                       status_fifo, retain_topics);
+        module_handles = start_modules(*config, *mqtt_abstraction, ignored_modules, standalone_modules, ms, status_fifo,
+                                       retain_topics);
         restart_modules = false;
         modules_started = true;
         crash_in_progress = false;
@@ -841,12 +841,11 @@ int boot(const po::variables_map& vm) {
 
     auto finish_crash_recovery = [&]() {
         // Log shutdown summary before clearing state
-        const auto duration_ms =
-            shutdown_start_time.has_value()
-                ? std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() -
-                                                                        shutdown_start_time.value())
-                      .count()
-                : 0;
+        const auto duration_ms = shutdown_start_time.has_value()
+                                     ? std::chrono::duration_cast<std::chrono::milliseconds>(
+                                           std::chrono::system_clock::now() - shutdown_start_time.value())
+                                           .count()
+                                     : 0;
         std::string bad_modules;
         for (const auto& info : shutdown_info) {
             if (info.wstatus != 0) {
@@ -854,8 +853,8 @@ int boot(const po::variables_map& vm) {
             }
         }
         if (bad_modules.empty()) {
-            EVLOG_info << fmt::format("All {} modules shut down gracefully after crash [{}ms].",
-                                      shutdown_info.size(), duration_ms);
+            EVLOG_info << fmt::format("All {} modules shut down gracefully after crash [{}ms].", shutdown_info.size(),
+                                      duration_ms);
         } else {
             EVLOG_warning << fmt::format(
                 "Crash recovery shutdown completed in {} ms. Modules that did not shut down cleanly: {}", duration_ms,
@@ -936,8 +935,7 @@ int boot(const po::variables_map& vm) {
             const std::string wait_status =
                 exited_normally
                     ? fmt::format("exit_code={}", WEXITSTATUS(wstatus))
-                    : (exited_by_signal ? fmt::format("signal={}", WTERMSIG(wstatus))
-                                        : fmt::format("raw={}", wstatus));
+                    : (exited_by_signal ? fmt::format("signal={}", WTERMSIG(wstatus)) : fmt::format("raw={}", wstatus));
 
             const auto module_iter = module_handles.find(pid);
             if (module_iter == module_handles.end()) {
@@ -950,9 +948,8 @@ int boot(const po::variables_map& vm) {
             // one of our modules died -> shut down the rest and restart everything if requested
             if (modules_started) {
                 if (exited_cleanly) {
-                    const auto shutdown_info_log =
-                        "Module " + fmt::format(TERMINAL_STYLE_BLUE, "{}", module_name) +
-                        " exited, signaling remaining modules to shut down gracefully...";
+                    const auto shutdown_info_log = "Module " + fmt::format(TERMINAL_STYLE_BLUE, "{}", module_name) +
+                                                   " exited, signaling remaining modules to shut down gracefully...";
                     initiate_graceful_shutdown(module_exited_time, false, &shutdown_info_log);
                     EVLOG_info << "Module " << fmt::format(TERMINAL_STYLE_BLUE, "{}", module_name) << " (pid " << pid
                                << ") shutdown ["
@@ -1016,8 +1013,8 @@ int boot(const po::variables_map& vm) {
             continue;
         }
 
-        if (const auto exit_from_panel = admin_panel.poll_controller_ipc(
-                restart_modules, modules_started, *mqtt_abstraction, ms, prefix_opt)) {
+        if (const auto exit_from_panel =
+                admin_panel.poll_controller_ipc(restart_modules, modules_started, *mqtt_abstraction, ms, prefix_opt)) {
             return *exit_from_panel;
         }
 
