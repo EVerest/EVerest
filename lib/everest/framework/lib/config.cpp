@@ -1105,23 +1105,20 @@ void ManagerConfig::parse_3_tier_model_mapping() {
     }
 }
 
-ManagerConfig::ManagerConfig(const ManagerSettings& ms,
-                             everest::config::ModuleConfigurations preloaded_configs) :
+ManagerConfig::ManagerConfig(const ManagerSettings& ms, everest::config::ModuleConfigurations preloaded_configs) :
     ConfigBase(ms.mqtt_settings), ps(ms) {
     BOOST_LOG_FUNCTION();
     this->settings = ms.runtime_settings;
     init_from_preloaded(std::move(preloaded_configs));
 }
 
-ManagerConfig::ManagerConfig(const ManagerSettings& ms) :
-    ConfigBase(ms.mqtt_settings), ps(ms) {
+ManagerConfig::ManagerConfig(const ManagerSettings& ms) : ConfigBase(ms.mqtt_settings), ps(ms) {
     BOOST_LOG_FUNCTION();
     this->settings = ms.runtime_settings;
     init_from_yaml();
 }
 
-ManagerConfig::ManagerConfig(const ConfigParseSettings& ps) :
-    ConfigBase(MQTTSettings{}), ps(ps) {
+ManagerConfig::ManagerConfig(const ConfigParseSettings& ps) : ConfigBase(MQTTSettings{}), ps(ps) {
     BOOST_LOG_FUNCTION();
     init_from_yaml();
 }
@@ -1166,10 +1163,10 @@ void ManagerConfig::init_from_yaml() {
     try {
         init_schemas();
         const auto complete_config = this->apply_user_config_and_defaults();
-        if (!complete_config.contains("active_modules") && complete_config.items().begin() != complete_config.items().end()) {
-            EVLOG_AND_THROW(EverestConfigError(
-                "YAML config contains no active_modules section. "
-                "Provide active_modules in the config file."));
+        if (!complete_config.contains("active_modules") &&
+            complete_config.items().begin() != complete_config.items().end()) {
+            EVLOG_AND_THROW(EverestConfigError("YAML config contains no active_modules section. "
+                                               "Provide active_modules in the config file."));
         }
         auto module_configs = parse_module_configs(complete_config.value("active_modules", json::object()));
         this->parse(module_configs);
@@ -1260,9 +1257,9 @@ everest::config::SetConfigStatus
 ManagerConfig::update_config_value(const everest::config::ConfigurationParameterIdentifier& identifier,
                                    const everest::config::ConfigEntry& value) {
     try {
-        auto& configuration_parameters = this->module_configs.at(identifier.module_id)
-                                             .configuration_parameters.at(
-                                                 identifier.module_implementation_id.value_or("!module"));
+        auto& configuration_parameters =
+            this->module_configs.at(identifier.module_id)
+                .configuration_parameters.at(identifier.module_implementation_id.value_or("!module"));
         for (auto& param : configuration_parameters) {
             if (param.name == identifier.configuration_parameter_name) {
                 param.value = value;

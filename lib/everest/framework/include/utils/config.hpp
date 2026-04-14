@@ -301,8 +301,7 @@ public:
     /// \brief Create a ManagerConfig from pre-loaded ModuleConfigurations.
     /// \param ms Manager settings
     /// \param preloaded_configs Module configurations loaded from the database before construction.
-    explicit ManagerConfig(const ManagerSettings& ms,
-                           everest::config::ModuleConfigurations preloaded_configs);
+    explicit ManagerConfig(const ManagerSettings& ms, everest::config::ModuleConfigurations preloaded_configs);
 
     ///
     /// \brief Create a ManagerConfig by parsing YAML.
