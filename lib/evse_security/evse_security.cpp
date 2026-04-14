@@ -1472,12 +1472,6 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
                         if (i == 0) subType = "leaf";
                         else if (i == chain.size() - 1) subType = "root";
                         else subType = "intermediate";
-
-                        if (enforce_certificate_rules(chain.at(i).get())) {
-                            EVLOG_error << "Certificate chain invalid at " << subType;
-                            result.status = GetCertificateInfoStatus::NotFoundValid;
-                            return false; // skip this chain
-                        }
                     }
 
                     // Search for the private key
