@@ -594,7 +594,7 @@ DeleteResult EvseSecurity::delete_certificate(const CertificateHashData& certifi
 
             return true;
         }); // End for each chain
-    } // End for each leaf directory
+    }       // End for each leaf directory
 
     if (!found_certificate) {
         response.result = DeleteCertificateResult::NotFound;
