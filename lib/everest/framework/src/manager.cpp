@@ -581,40 +581,32 @@ ControllerHandle start_controller(const ManagerSettings& ms) {
 }
 #endif
 
-ConfigBootMode parse_config_boot_mode(const std::string& config_opt, const std::string& db_opt) {
-    if (!db_opt.empty() && config_opt.empty()) {
-        throw BootException("--db requires --config to be set as well. "
-                            "A YAML config is always needed to provide ManagerSettings.");
-    }
-    if (!db_opt.empty()) {
-        return ConfigBootMode::DatabaseInit;
-    }
-    return ConfigBootMode::YamlFile;
-}
-
 int boot(const po::variables_map& vm) {
     const bool check = (vm.count("check") != 0);
 
     const auto prefix_opt = parse_string_option(vm, "prefix");
     const auto config_opt = parse_string_option(vm, "config");
     const auto db_opt = parse_string_option(vm, "db");
-    ConfigBootMode boot_mode = parse_config_boot_mode(config_opt, db_opt);
+    const bool reset_from_yaml = (vm.count("reset-from-yaml") != 0);
+
+    if (db_opt.empty()) {
+        throw BootException("--db is required. Provide the path to the configuration database file.");
+    }
+    if (config_opt.empty()) {
+        throw BootException("--config is required. A YAML config is always needed to provide ManagerSettings.");
+    }
 
     ManagerSettings ms;
     std::unique_ptr<everest::config::SqliteStorage> db_storage;
     bool db_storage_has_module_configs = false;
+    std::optional<everest::config::ModuleConfigurations> preloaded_module_configs;
 
-    switch (boot_mode) {
-    case ConfigBootMode::YamlFile:
-        ms = ManagerSettings(prefix_opt, config_opt);
-        break;
-    case ConfigBootMode::DatabaseInit: {
-        auto bs = bootstrap_from_database_init(prefix_opt, config_opt, db_opt);
+    {
+        auto bs = init_database_bootstrap(prefix_opt, config_opt, db_opt, reset_from_yaml);
         ms = std::move(bs.ms);
         db_storage = std::move(bs.storage);
         db_storage_has_module_configs = bs.module_configs_initialized;
-        break;
-    }
+        preloaded_module_configs = std::move(bs.module_configs);
     }
 
     // CLI override for mqtt_everest_prefix (e.g. for parallel test execution).
@@ -704,7 +696,20 @@ int boot(const po::variables_map& vm) {
     const auto start_time = std::chrono::system_clock::now();
     std::shared_ptr<ManagerConfig> config; // TODO: maybe this can stay unique when we re-work start_modules()
     try {
-        config = std::make_shared<ManagerConfig>(ms, db_storage.get(), db_storage_has_module_configs);
+        if (db_storage_has_module_configs) {
+            config = std::make_shared<ManagerConfig>(ms, std::move(*preloaded_module_configs));
+        } else {
+            config = std::make_shared<ManagerConfig>(ms);
+            // Seed the database: parse() enriched module_configs with manifest metadata needed for storage writes.
+            const auto& mc = config->get_module_configurations();
+            if (db_storage->write_module_configs(mc) != everest::config::GenericResponseStatus::Failed) {
+                EVLOG_info << "Module configs written to database successfully, marking config as valid";
+                db_storage->mark_valid(true, nlohmann::json(mc).dump(), ms.config_file);
+            } else {
+                EVLOG_warning << "Failed to write module configs to database, marking config as invalid";
+                db_storage->mark_valid(false, nlohmann::json(mc).dump(), ms.config_file);
+            }
+        }
     } catch (EverestInternalError& e) {
         EVLOG_error << fmt::format("Failed to load and validate config!\n{}", boost::diagnostic_information(e, true));
         return EXIT_FAILURE;
@@ -874,7 +879,15 @@ int boot(const po::variables_map& vm) {
             const auto& payload = msg.json;
             if (payload.at("method") == "restart_modules") {
                 shutdown_modules(module_handles, *config, *mqtt_abstraction);
-                config = std::make_unique<ManagerConfig>(ms, db_storage.get(), db_storage_has_module_configs);
+                {
+                    // Reload module configs from DB for the restarted config.
+                    const auto resp = db_storage->get_module_configs();
+                    if (resp.status == everest::config::GenericResponseStatus::Failed) {
+                        EVLOG_error << "Failed to reload module configs from DB for restart";
+                    } else {
+                        config = std::make_shared<ManagerConfig>(ms, resp.module_configs);
+                    }
+                }
                 modules_started = false;
                 restart_modules = true;
             } else if (payload.at("method") == "check_config") {
@@ -927,8 +940,11 @@ int main(int argc, char* argv[]) {
                        "looked up in the default config directory");
     desc.add_options()(
         "db", po::value<std::string>(),
-        "Full path to the configuration database file. Requires --config. "
+        "Full path to the configuration database file. Required. "
         "The database is initialized automatically from active_modules in the YAML config on first run.");
+    desc.add_options()("reset-from-yaml",
+                       "Discard the existing database slot and re-seed from the YAML config file. "
+                       "Intended for development use when you want to reset to a known YAML state.");
     desc.add_options()("status-fifo", po::value<std::string>()->default_value(""),
                        "Path to a named pipe, that shall be used for status updates from the manager");
     desc.add_options()("retain-topics", "Retain configuration MQTT topics setup by manager for inspection, by default "
