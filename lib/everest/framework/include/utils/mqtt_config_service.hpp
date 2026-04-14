@@ -3,11 +3,16 @@
 #pragma once
 
 #include <cstddef>
+#include <memory>
+#include <unordered_map>
 
-#include <utils/config.hpp>
+#include <utils/config/types.hpp>
 #include <utils/mqtt_abstraction.hpp>
+
 namespace Everest {
 namespace config {
+
+class ConfigServiceInterface; // defined in config_service_interface.hpp
 
 constexpr auto MODULE_IMPLEMENTATION_ID = "!module";
 inline constexpr std::size_t mqtt_get_config_retries = 1;
@@ -143,16 +148,20 @@ private:
     std::unordered_map<std::string, std::string> module_names;
 };
 
-class ConfigService {
+class MqttConfigServiceHandler {
 public:
-    /// \brief ConfigService using the provided \p mqtt_abstraction to distribute relevant parts of the given \p config
-    /// when another module requests them and has appropriate access rights to them
-    ConfigService(MQTTAbstraction& mqtt_abstraction, std::shared_ptr<ManagerConfig> config);
+    /// \brief MQTT adapter that distributes relevant parts of the active configuration to modules that request them
+    /// and have appropriate access rights. Access control is enforced using the Access rules embedded in each
+    /// module's configuration (from the active config slot).
+    /// \param mqtt_abstraction  MQTT transport for pub/sub and module-to-module set forwarding.
+    /// \param config_svc        All domain operations — reads (via get_configuration) and writes (via
+    ///                          set_config_parameters) are routed through this interface.
+    MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstraction, ConfigServiceInterface& config_svc);
 
 private:
     MQTTAbstraction& mqtt_abstraction;
     std::shared_ptr<TypedHandler> get_config_token;
-    std::shared_ptr<ManagerConfig> config;
+    ConfigServiceInterface& config_svc;
 };
 
 namespace conversions {

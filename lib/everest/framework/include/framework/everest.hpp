@@ -15,7 +15,7 @@
 #include <everest/exceptions.hpp>
 
 #include <utils/config.hpp>
-#include <utils/config_service.hpp>
+#include <utils/mqtt_config_service.hpp>
 #include <utils/error.hpp>
 #include <utils/exceptions.hpp>
 #include <utils/mqtt_abstraction.hpp>
