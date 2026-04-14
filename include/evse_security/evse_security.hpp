@@ -29,6 +29,7 @@ struct DirectoryPaths {
     fs::path csms_leaf_key_directory;  /**< csms leaf key shall be located in this directory */
     fs::path secc_leaf_cert_directory; /**< secc leaf certificate for ISO15118 shall be located in this directory */
     fs::path secc_leaf_key_directory;  /**< secc leaf key shall be located in this directory */
+    fs::path ctl_directory;
 };
 struct FilePaths {
     // bundle paths
@@ -50,10 +51,10 @@ struct CertificateQueryParams {
     bool include_root{false};
     /// if true, all valid leafs will be included, sorted in order, with the newest being
     /// first. If false, only the newest one will be returned
-    bool include_all_valid{false};
+    bool include_all_valid{true};
     /// if true the leafs that will be valid in the future will be included, with the newest
     /// being first
-    bool include_future_valid{false};
+    bool include_future_valid{true};
     /// if true, will remove all duplicates found, since we can find a leaf for example
     /// in 2 files, one in 'leaf_single' and one in 'leaf_chain'. For delete routines
     /// we need both files returned, while for queries (v2g_chain) we don't need duplicates

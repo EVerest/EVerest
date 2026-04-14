@@ -23,6 +23,7 @@
 #include <evse_security/crypto/openssl/openssl_types.hpp>
 #include <evse_security/utils/evse_filesystem.hpp>
 
+
 namespace evse_security {
 
 static X509* get(X509Handle* handle) {
@@ -552,7 +553,6 @@ CertificateValidationResult OpenSSLSupplier::x509_verify_certificate_chain(
         int ec = X509_STORE_CTX_get_error(store_ctx_ptr.get());
         return to_certificate_error(ec);
     }
-
     return CertificateValidationResult::Valid;
 }
 

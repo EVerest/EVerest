@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <evse_security/certificate/x509_wrapper.hpp>
-
+#include <evse_security/crypto/openssl/openssl_types.hpp>
 #include <cctype>
 #include <fstream>
 #include <iostream>
@@ -141,6 +141,11 @@ X509CertificateSource X509Wrapper::get_source() const {
     } else {
         return X509CertificateSource::STRING;
     }
+}
+
+X509* X509Wrapper::get_x509_raw() const {
+    auto* ssl_handle = dynamic_cast<X509HandleOpenSSL*>(x509.get());
+    return ssl_handle->get();
 }
 
 std::string X509Wrapper::get_common_name() const {

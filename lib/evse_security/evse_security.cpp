@@ -18,6 +18,9 @@
 #include <evse_security/certificate/x509_hierarchy.hpp>
 #include <evse_security/certificate/x509_wrapper.hpp>
 #include <evse_security/utils/evse_filesystem.hpp>
+#include <evse_security/utils/enforce_certificate_rules.hpp>
+#include <evse_security/utils/load_ctl.hpp>
+
 
 namespace evse_security {
 
@@ -322,6 +325,17 @@ EvseSecurity::EvseSecurity(const FilePaths& file_paths, const std::optional<std:
                 EVLOG_error << "Could not create default bundle for path: " << pair.second;
             }
         }
+    }
+
+    fs::path ctl_dir = file_paths.directories.ctl_directory.empty()
+        ? fs::path(CTL_DIR)
+        : file_paths.directories.ctl_directory;
+
+    if (!ctl_dir.empty() && fs::exists(ctl_dir)) {
+        EVLOG_info << "Loading CTL from: " << ctl_dir;
+        load_ctl(ctl_dir, this->ca_bundle_path_map);
+    } else {
+        EVLOG_info << "No CTL directory configured or found, skipping CTL load";
     }
 
     // Check that the leafs directory is not related to the bundle directory because
@@ -1385,17 +1399,20 @@ GetCertificateInfoResult EvseSecurity::get_leaf_certificate_info_internal(LeafCe
 
 GetCertificateFullInfoResult
 EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryParams& params) {
+    
     auto certificate_type = params.certificate_type;
-
     EVLOG_info << "Requesting leaf certificate info: "
-               << conversions::leaf_certificate_type_to_string(certificate_type);
-
+    << conversions::leaf_certificate_type_to_string(certificate_type);
+    
     GetCertificateFullInfoResult result;
-
+    
+    
     fs::path key_dir;
     fs::path cert_dir;
     CaCertificateType root_type;
-
+    const std::vector<X509Wrapper>* leaf_fullchain = nullptr;
+    const std::vector<X509Wrapper>* leaf_single = nullptr;
+    
     if (certificate_type == LeafCertificateType::CSMS) {
         key_dir = this->directories.csms_leaf_key_directory;
         cert_dir = this->directories.csms_leaf_cert_directory;
@@ -1409,7 +1426,8 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
         result.status = GetCertificateInfoStatus::Rejected;
         return result;
     }
-
+    
+    X509CertificateBundle leaf_directory(cert_dir, EncodingFormat::PEM);
     fs::path root_dir = ca_bundle_path_map[root_type];
 
     // choose appropriate cert (valid_from / valid_to)
@@ -1439,7 +1457,7 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
                 bool is_valid = false;
 
                 if (not chain.empty()) {
-                    is_valid |= chain.at(0).is_valid();
+                        is_valid |= chain.at(0).is_valid();
 
                     if (params.include_future_valid) {
                         is_valid |= chain.at(0).is_valid_in_future();
@@ -1448,6 +1466,19 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
 
                 if (is_valid) {
                     any_valid_certificate = true;
+                    
+                    for (size_t i = 0; i < chain.size(); ++i) {
+                        std::string subType;
+                        if (i == 0) subType = "leaf";
+                        else if (i == chain.size() - 1) subType = "root";
+                        else subType = "intermediate";
+
+                        if (enforce_certificate_rules(chain.at(i).get())) {
+                            EVLOG_error << "Certificate chain invalid at " << subType;
+                            result.status = GetCertificateInfoStatus::NotFoundValid;
+                            return false; // skip this chain
+                        }
+                    }
 
                     // Search for the private key
                     auto priv_key_path =
@@ -1515,6 +1546,9 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
             // Key path doesn't change
             fs::path key_file = valid_leaf.certificate_key;
             auto& certificate = valid_leaf.certificate;
+
+            X509CertificateBundle root_bundle(root_dir, EncodingFormat::PEM);
+            auto hierarchy = X509CertificateHierarchy::build_hierarchy(root_bundle.split(), leaf_directory.split());
 
             // Paths to search
             std::optional<fs::path> certificate_file;
@@ -2033,7 +2067,6 @@ EvseSecurity::verify_certificate_internal(const std::string& certificate_chain,
                 }
             }
         }
-
         // Build the trusted parent certificates from our internal store
         std::vector<X509Wrapper> trusted_wrappers;
         std::vector<X509Handle*> trusted_parent_certificates;
