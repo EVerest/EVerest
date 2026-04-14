@@ -23,7 +23,7 @@ target_sources(framework
         config/userconfig_storage.cpp
         config/types.cpp
         config_cache.cpp
-        config_service.cpp
+        mqtt_config_service.cpp
         conversions.cpp
         error/error.cpp
         error/error_database_map.cpp

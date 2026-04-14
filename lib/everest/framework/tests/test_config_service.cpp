@@ -7,11 +7,35 @@
 #include <tests/helpers.hpp>
 #include <tests/mock_mqtt_abstraction.hpp>
 #include <utils/config.hpp>
-#include <utils/config_service.hpp>
+#include <utils/mqtt_config_service.hpp>
+#include <utils/config_service_interface.hpp>
 
 using namespace Everest;
 using namespace Everest::config;
 using namespace Everest::tests;
+
+// ─── Minimal ConfigServiceInterface stub for handler tests ───────────────────
+
+struct StubConfigService : Everest::config::ConfigServiceInterface {
+    std::vector<SetConfigParameterResult> last_set_results{SetConfigParameterResult::Applied};
+    everest::config::ModuleConfigurations module_configurations;
+
+    std::vector<SlotInfo> list_all_slots() override { return {}; }
+    int get_active_slot_id() override { return 0; }
+    SetActiveSlotStatus mark_active_slot(int) override { return SetActiveSlotStatus::Success; }
+    DeleteSlotStatus delete_slot(int) override { return DeleteSlotStatus::Success; }
+    DuplicateSlotResult duplicate_slot(int, std::optional<std::string>) override { return {}; }
+    LoadFromYamlResult load_from_yaml(const std::string&) override { return {}; }
+    GetConfigurationResult get_configuration(int) override {
+        return {GetConfigurationStatus::Success, module_configurations};
+    }
+    std::vector<SetConfigParameterResult>
+    set_config_parameters(int, const std::vector<ConfigParameterUpdate>&) override { return last_set_results; }
+    StopModulesResult stop_modules() override { return StopModulesResult::NoModulesToStop; }
+    RestartModulesResult restart_modules() override { return RestartModulesResult::NoConfigToStart; }
+    void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)>) override {}
+    void register_config_update_handler(std::function<void(const ConfigurationUpdate&)>) override {}
+};
 
 // ─── JSON helpers ─────────────────────────────────────────────────────────────
 
@@ -196,7 +220,7 @@ TEST_CASE("ConfigServiceClient::get_mappings", "[config_service]") {
     }
 }
 
-// ─── ConfigService ────────────────────────────────────────────────────────────
+// ─── MqttConfigServiceHandler ─────────────────────────────────────────────────
 //
 // Fixture: "config_service_test" directory (created by setup_test_directory in CMakeLists.txt)
 //
@@ -216,15 +240,17 @@ Response parse_published_response(const std::pair<std::string, nlohmann::json>& 
 
 } // namespace
 
-TEST_CASE("ConfigService", "[config_service]") {
+TEST_CASE("MqttConfigServiceHandler", "[config_service]") {
     const std::string prefix = "everest/";
     MockMQTTAbstraction mock(prefix);
 
     const auto bin_dir = get_bin_dir().string() + "/";
     const auto ms = ManagerSettings(bin_dir + "config_service_test/", bin_dir + "config_service_test/config.yaml");
     auto config = std::make_shared<ManagerConfig>(ms);
+    StubConfigService stub_svc;
+    stub_svc.module_configurations = config->get_module_configurations();
 
-    ConfigService service(mock, config);
+    MqttConfigServiceHandler service(mock, stub_svc);
 
     const std::string config_topic = prefix + "config/request";
 

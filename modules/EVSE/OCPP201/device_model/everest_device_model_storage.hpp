@@ -12,7 +12,7 @@
 
 #include <ocpp/v2/device_model_storage_interface.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
-#include <utils/config_service.hpp>
+#include <utils/mqtt_config_service.hpp>
 
 namespace module::device_model {
 class EverestDeviceModelStorage : public ocpp::v2::DeviceModelStorageInterface {
