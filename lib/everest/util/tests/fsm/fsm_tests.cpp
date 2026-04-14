@@ -29,6 +29,8 @@ using TestStatePtr = std::unique_ptr<TestState>;
 
 struct FeedResult {
     FeedResult() = default;
+    FeedResult(bool handled) : unhandled(!handled) {
+    }
     FeedResult(TestStatePtr result_state) : unhandled(false), new_state(std::move(result_state)) {
     }
 
@@ -89,9 +91,7 @@ struct StateB : TestState {
 
     FeedResult feed(Event ev) override {
         if (ev == Event::Stay) {
-            FeedResult r;
-            r.unhandled = false;
-            return r;
+            return FeedResult(true);
         }
         return {};
     }
@@ -102,9 +102,7 @@ FeedResult StateA::feed(Event ev) {
         return FeedResult(std::make_unique<StateB>(m_log));
     }
     if (ev == Event::Stay) {
-        FeedResult r;
-        r.unhandled = false;
-        return r;
+        return FeedResult(true);
     }
     return {}; // unhandled
 }
@@ -181,7 +179,14 @@ using OutputStatePtr = std::unique_ptr<OutputState>;
 
 struct OutputFeedResult {
     OutputFeedResult() = default;
+    OutputFeedResult(bool handled) : unhandled(!handled) {
+    }
+    OutputFeedResult(int output_value, bool handled) : unhandled(!handled), output(output_value) {
+    }
     OutputFeedResult(OutputStatePtr result_state) : unhandled(false), new_state(std::move(result_state)) {
+    }
+    OutputFeedResult(OutputStatePtr result_state, int output_value) :
+        unhandled(false), new_state(std::move(result_state)), output(output_value) {
     }
 
     bool unhandled{true};
@@ -220,15 +225,10 @@ struct OutputStateA : OutputState {
 
     OutputFeedResult feed(Event ev) override {
         if (ev == Event::Stay) {
-            OutputFeedResult r;
-            r.unhandled = false;
-            r.output = 42;
-            return r;
+            return OutputFeedResult(42, true);
         }
         if (ev == Event::GoToB) {
-            OutputFeedResult r(std::make_unique<OutputStateA>());
-            r.output = 99;
-            return r;
+            return OutputFeedResult(std::make_unique<OutputStateA>(), 99);
         }
         return {};
     }
@@ -269,6 +269,8 @@ using NestedStatePtr = std::unique_ptr<NestedState>;
 
 struct NestedFeedResult {
     NestedFeedResult() = default;
+    NestedFeedResult(bool handled) : unhandled(!handled) {
+    }
     NestedFeedResult(NestedStatePtr result_state) : unhandled(false), new_state(std::move(result_state)) {
     }
 
@@ -327,9 +329,7 @@ struct ChildB : NestedState {
 
     NestedFeedResult feed(Event ev) override {
         if (ev == Event::Stay) {
-            NestedFeedResult r;
-            r.unhandled = false;
-            return r;
+            return NestedFeedResult(true);
         }
         return {}; // bubble up to parent
     }
