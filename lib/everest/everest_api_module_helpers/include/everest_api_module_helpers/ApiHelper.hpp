@@ -14,7 +14,7 @@
 #include <vector>
 
 #include <everest/logging.hpp>
-#include <utils/config_service.hpp>
+#include <utils/mqtt_config_service.hpp>
 
 #include <everest_api_module_helpers/ValidatingMqttProxy.hpp>
 #include <everest_api_types/entrypoint/API.hpp>
