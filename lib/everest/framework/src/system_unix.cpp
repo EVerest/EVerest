@@ -259,8 +259,7 @@ int setup_signal_fd() {
 
     sigemptyset(&mask);
     sigaddset(&mask, SIGINT);
-    // sigaddset(&mask, SIGTERM); // TODO: what should SIGTERM lead to, a controlled shutdown of some sorts would be a
-    // good idea but unsure if it should go through a mqtt publish
+    sigaddset(&mask, SIGTERM);
     if (sigprocmask(SIG_BLOCK, &mask, NULL) == -1) {
         return EXIT_FAILURE;
     }

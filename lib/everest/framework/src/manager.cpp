@@ -6,6 +6,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 
 #include <cstdlib>
@@ -31,7 +32,7 @@
 #include <utils/mqtt_abstraction.hpp>
 #include <utils/status_fifo.hpp>
 
-#include "controller/ipc.hpp"
+#include "manager_admin_panel.hpp"
 #include "system_unix.hpp"
 #include <generated/version_information.hpp>
 
@@ -41,36 +42,8 @@ namespace fs = std::filesystem;
 using namespace Everest;
 
 const auto PARENT_DIED_SIGNAL = SIGTERM;
-const int CONTROLLER_IPC_READ_TIMEOUT_MS = 50;
 const auto SHUTDOWN_TIMEOUT_MS = 5000;
 const auto complete_start_time = std::chrono::system_clock::now();
-
-#ifdef ENABLE_ADMIN_PANEL
-class ControllerHandle {
-public:
-    ControllerHandle(pid_t pid, int socket_fd) : pid(pid), socket_fd(socket_fd) {
-        // we do "non-blocking" read
-        controller_ipc::set_read_timeout(socket_fd, CONTROLLER_IPC_READ_TIMEOUT_MS);
-    }
-
-    void send_message(const nlohmann::json& msg) {
-        controller_ipc::send_message(socket_fd, msg);
-    }
-
-    controller_ipc::Message receive_message() {
-        return controller_ipc::receive_message(socket_fd);
-    }
-
-    void shutdown() {
-        // FIXME (aw): tbd
-    }
-
-    const pid_t pid;
-
-private:
-    const int socket_fd;
-};
-#endif
 
 // Helper struct keeping information on how to start module
 struct ModuleStartInfo {
@@ -500,9 +473,7 @@ std::map<pid_t, std::string> start_modules(ManagerConfig& config, MQTTAbstractio
     return spawn_modules(modules_to_spawn, ms);
 }
 
-void shutdown_modules(const std::map<pid_t, std::string>& modules, ManagerConfig& config,
-                      MQTTAbstraction& mqtt_abstraction) {
-
+void unregister_module_ready_handlers(ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
     ModulesReadyType modules_ready_moved;
     {
         const std::lock_guard<std::mutex> lck(modules_ready_mutex);
@@ -517,6 +488,12 @@ void shutdown_modules(const std::map<pid_t, std::string>& modules, ManagerConfig
         const std::string topic = fmt::format("{}/ready", config.mqtt_module_prefix(module_name));
         mqtt_abstraction.unregister_handler(topic, ready_info.ready_token);
     }
+}
+
+void shutdown_modules(const std::map<pid_t, std::string>& modules, ManagerConfig& config,
+                      MQTTAbstraction& mqtt_abstraction) {
+
+    unregister_module_ready_handlers(config, mqtt_abstraction);
 
     for (const auto& child : modules) {
         auto retval = kill(child.first, SIGTERM);
@@ -538,57 +515,6 @@ void shutdown_modules(const std::map<pid_t, std::string>& modules, ManagerConfig
         }
     }
 }
-
-#ifdef ENABLE_ADMIN_PANEL
-ControllerHandle start_controller(const ManagerSettings& ms) {
-    std::array<int, 2> socket_pair; // NOLINT(cppcoreguidelines-pro-type-member-init): this is always initialized in the
-                                    // following socketpair call
-
-    // FIXME (aw): destroy this socketpair somewhere
-    socketpair(AF_UNIX, SOCK_DGRAM, 0, socket_pair.data());
-    const int manager_socket = socket_pair[0];
-    const int controller_socket = socket_pair[1];
-
-    auto proc_handle = system::SubProcess::create(ms.run_as_user);
-
-    if (proc_handle.is_child()) {
-        // FIXME (aw): hack to get the correct directory of the controller
-        const auto bin_dir = fs::canonical("/proc/self/exe").parent_path();
-
-        const auto controller_binary = bin_dir / "controller";
-
-        close(manager_socket);
-        dup2(controller_socket, STDIN_FILENO);
-        close(controller_socket);
-
-        execl(controller_binary.c_str(), MAGIC_CONTROLLER_ARG0, NULL);
-
-        // exec failed
-        proc_handle.send_error_and_exit(
-            fmt::format("Syscall to execl() with \"{} {}\" failed ({})", controller_binary.string(), strerror(errno)));
-    }
-
-    close(controller_socket);
-
-    // send initial config to controller
-    controller_ipc::send_message(manager_socket,
-                                 {
-                                     {"method", "boot"},
-                                     {"params",
-                                      {
-                                          {"module_dir", ms.runtime_settings.modules_dir.string()},
-                                          {"interface_dir", ms.interfaces_dir.string()},
-                                          {"www_dir", ms.www_dir.string()},
-                                          {"configs_dir", ms.configs_dir.string()},
-                                          {"logging_config_file", ms.runtime_settings.logging_config_file.string()},
-                                          {"controller_port", ms.controller_port},
-                                          {"controller_rpc_timeout_ms", ms.controller_rpc_timeout_ms},
-                                      }},
-                                 });
-
-    return {proc_handle.check_child_executed(), manager_socket};
-}
-#endif
 
 ConfigBootMode parse_config_boot_mode(const std::string& config_opt, const std::string& db_opt, const bool db_init) {
     if (config_opt.empty() and db_opt.empty()) {
@@ -613,7 +539,7 @@ ConfigBootMode parse_config_boot_mode(const std::string& config_opt, const std::
     throw std::logic_error("Could not parse config boot source, this should never happen.");
 }
 
-void cleanup(Everest::MQTTAbstraction& mqtt_abstraction) {
+void cleanup(MQTTAbstraction& mqtt_abstraction) {
     mqtt_abstraction.disconnect();
 }
 
@@ -651,7 +577,7 @@ void print_start_message(const std::string& version_information) {
 
 void print_shutdown_message(const std::optional<std::chrono::system_clock::time_point> shutdown_start_time,
                             const std::string& message_prefix = "") {
-    auto shutdown_duration = 0;
+    auto shutdown_duration = 0LL;
     if (shutdown_start_time.has_value()) {
         shutdown_duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() -
                                                                                   shutdown_start_time.value())
@@ -667,7 +593,7 @@ void print_shutdown_message(const std::optional<std::chrono::system_clock::time_
 int boot(const po::variables_map& vm) {
     const bool check = (vm.count("check") != 0);
     bool sigint_received = false;
-    auto signal_polling = Everest::system::SignalPolling();
+    auto signal_polling = system::SignalPolling();
 
     const auto prefix_opt = parse_string_option(vm, "prefix");
     const auto config_opt = parse_string_option(vm, "config");
@@ -719,9 +645,7 @@ int boot(const po::variables_map& vm) {
         EVLOG_info << "Catching and forwarding command exceptions to callers";
     }
 
-#ifdef ENABLE_ADMIN_PANEL
-    auto controller_handle = start_controller(ms);
-#endif
+    auto admin_panel = ManagerAdminPanel::create(ms);
 
     EVLOG_verbose << fmt::format("EVerest prefix was set to {}", ms.runtime_settings.prefix.string());
 
@@ -844,23 +768,145 @@ int boot(const po::variables_map& vm) {
     bool modules_started = true;
     bool restart_modules = false;
 
-#ifndef ENABLE_ADMIN_PANEL
-    // switch to low privilege user if configured
-    if (not ms.run_as_user.empty()) {
-        auto err_set_user = system::set_real_user(ms.run_as_user);
-        if (not err_set_user.empty()) {
-            EVLOG_error << "Error switching manager to user " << ms.run_as_user << ": " << err_set_user;
-            return EXIT_FAILURE;
-        }
+    if (const auto err_set_user = ManagerAdminPanel::switch_manager_user_if_needed(ms)) {
+        EVLOG_error << "Error switching manager to user " << ms.run_as_user << ": " << *err_set_user;
+        return EXIT_FAILURE;
     }
-#endif
 
     int wstatus; // NOLINT(cppcoreguidelines-init-variables): this is always initialized in the following waitpid call
     std::vector<ModuleShutdownInfo> shutdown_info;
     bool shutdown_initiated = false;
     bool shutdown_complete = false;
     bool completing_shutdown = false;
+    bool crash_in_progress = false; // true when a module crashed and graceful shutdown of remaining is in progress
     std::optional<std::chrono::system_clock::time_point> shutdown_start_time;
+
+    // Called when all modules have exited after a crash: logs summary, then either restarts or goes idle
+    auto restart_modules_after_shutdown = [&]() {
+        // Reload config and restart all modules after graceful shutdown requested by the admin panel.
+        // We ignore non-zero exit codes from modules that failed to implement shutdown() cleanly.
+        // Clear old ready handlers/state first so the new boot does not inherit stale ready information.
+        unregister_module_ready_handlers(*config, *mqtt_abstraction);
+        mqtt_abstraction->clear_retained_topics();
+
+        config = std::make_shared<ManagerConfig>(ms);
+        module_handles = start_modules(*config, *mqtt_abstraction, ignored_modules, standalone_modules, ms,
+                                       status_fifo, retain_topics);
+        restart_modules = false;
+        modules_started = true;
+        crash_in_progress = false;
+        shutdown_initiated = false;
+        shutdown_complete = false;
+        completing_shutdown = false;
+        shutdown_start_time = std::nullopt;
+        shutdown_info.clear();
+        EVLOG_info << "Modules restarted with reloaded configuration (from admin panel).";
+    };
+
+    auto finish_normal_shutdown = [&]() -> std::optional<int> {
+        std::string bad_modules;
+        for (const auto& shutdown_info_entry : shutdown_info) {
+            if (shutdown_info_entry.wstatus != 0) {
+                bad_modules += fmt::format(" {} (status: {})", shutdown_info_entry.id, shutdown_info_entry.wstatus);
+            }
+        }
+        if (sigint_received) {
+            if (bad_modules.empty()) {
+                print_shutdown_message(shutdown_start_time,
+                                       fmt::format(TERMINAL_STYLE_OK, "All modules shut down properly. "));
+            } else {
+                EVLOG_warning << "Modules that did not shut down cleanly:" << bad_modules;
+                print_shutdown_message(shutdown_start_time);
+            }
+            admin_panel.shutdown_controller();
+            cleanup(*mqtt_abstraction);
+            return EXIT_SUCCESS;
+        }
+
+        // No termination signal received: keep manager alive in idle state.
+        if (!bad_modules.empty()) {
+            EVLOG_warning << "Modules that did not shut down cleanly:" << bad_modules;
+        }
+        modules_started = false;
+        crash_in_progress = false;
+        shutdown_info.clear();
+        shutdown_start_time = std::nullopt;
+        shutdown_initiated = false;
+        shutdown_complete = false;
+        completing_shutdown = false;
+        mqtt_abstraction->clear_retained_topics();
+        EVLOG_info << "Manager is idle after module shutdown. Send SIGINT/SIGTERM to stop.";
+        return std::nullopt;
+    };
+
+    auto finish_crash_recovery = [&]() {
+        // Log shutdown summary before clearing state
+        const auto duration_ms =
+            shutdown_start_time.has_value()
+                ? std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() -
+                                                                        shutdown_start_time.value())
+                      .count()
+                : 0;
+        std::string bad_modules;
+        for (const auto& info : shutdown_info) {
+            if (info.wstatus != 0) {
+                bad_modules += fmt::format(" {} (status: {})", info.id, info.wstatus);
+            }
+        }
+        if (bad_modules.empty()) {
+            EVLOG_info << fmt::format("All {} modules shut down gracefully after crash [{}ms].",
+                                      shutdown_info.size(), duration_ms);
+        } else {
+            EVLOG_warning << fmt::format(
+                "Crash recovery shutdown completed in {} ms. Modules that did not shut down cleanly: {}", duration_ms,
+                bad_modules);
+        }
+
+        // Reset all shutdown state
+        crash_in_progress = false;
+        mqtt_abstraction->clear_retained_topics();
+        shutdown_info.clear();
+        shutdown_start_time = std::nullopt;
+        shutdown_initiated = false;
+        shutdown_complete = false;
+        completing_shutdown = false;
+
+        // Clear the modules_ready map so start_modules() gets a fresh state.
+        {
+            const std::lock_guard<std::mutex> lock(modules_ready_mutex);
+            modules_ready.clear();
+        }
+
+        EVLOG_info << "Crash recovery completed, manager is idle after module shutdown. Send SIGINT/SIGTERM to stop.";
+    };
+
+    auto finalize_shutdown_transition = [&]() -> std::optional<int> {
+        if (crash_in_progress) {
+            finish_crash_recovery();
+            return std::nullopt;
+        }
+        if (restart_modules) {
+            restart_modules_after_shutdown();
+            return std::nullopt;
+        }
+        return finish_normal_shutdown();
+    };
+
+    auto initiate_graceful_shutdown = [&](const std::chrono::system_clock::time_point& module_exited_time,
+                                          bool publish_when_sigint_received, const std::string* info_log) {
+        if (shutdown_initiated) {
+            return;
+        }
+        shutdown_initiated = true;
+        shutdown_start_time = module_exited_time;
+        if (publish_when_sigint_received || not sigint_received) {
+            if (info_log != nullptr) {
+                EVLOG_info << *info_log;
+            }
+            mqtt_abstraction->publish(fmt::format("{}shutdown", ms.mqtt_settings.everest_prefix), std::string("true"),
+                                      QOS::QOS2, false);
+        }
+    };
 
     while (true) {
         // check if anyone died
@@ -870,16 +916,28 @@ int boot(const po::variables_map& vm) {
         if (pid == 0) {
             // nothing new from our child process
         } else if (pid == -1) {
-            throw std::runtime_error(fmt::format("Syscall to waitpid() failed ({})", strerror(errno)));
+            if (errno != ECHILD) {
+                throw std::runtime_error(fmt::format("Syscall to waitpid() failed ({})", strerror(errno)));
+            }
+            // ECHILD: no more children — normal when idle or when admin panel restart is in progress
         } else {
             auto module_exited_time = std::chrono::system_clock::now();
-#ifdef ENABLE_ADMIN_PANEL
-            // one of our children exited (first check controller, then modules)
-            if (pid == controller_handle.pid) {
-                // FIXME (aw): what to do, if the controller exited? Restart it?
-                throw std::runtime_error("The controller process exited.");
+            if (admin_panel.is_controller_process(pid)) {
+                // During intentional manager shutdown/restart, controller exit is expected.
+                if (shutdown_initiated || sigint_received || restart_modules) {
+                    EVLOG_info << "Controller process exited during manager shutdown/restart.";
+                    continue;
+                }
+                admin_panel.throw_if_controller_exited(pid);
             }
-#endif
+            const bool exited_normally = WIFEXITED(wstatus);
+            const bool exited_cleanly = exited_normally && (WEXITSTATUS(wstatus) == 0);
+            const bool exited_by_signal = WIFSIGNALED(wstatus);
+            const std::string wait_status =
+                exited_normally
+                    ? fmt::format("exit_code={}", WEXITSTATUS(wstatus))
+                    : (exited_by_signal ? fmt::format("signal={}", WTERMSIG(wstatus))
+                                        : fmt::format("raw={}", wstatus));
 
             const auto module_iter = module_handles.find(pid);
             if (module_iter == module_handles.end()) {
@@ -888,129 +946,107 @@ int boot(const po::variables_map& vm) {
 
             const auto module_name = module_iter->second;
             module_handles.erase(module_iter);
-            // one of our modules died -> kill 'em all
+
+            // one of our modules died -> shut down the rest and restart everything if requested
             if (modules_started) {
-                if (wstatus == 0) {
-                    if (not shutdown_initiated) {
-                        shutdown_initiated = true;
-                        if (not shutdown_start_time.has_value()) {
-                            shutdown_start_time = module_exited_time;
-                        }
-                    }
-                    EVLOG_info << "Module " << fmt::format(TERMINAL_STYLE_BLUE, "{}", module_name) << " shutdown ["
+                if (exited_cleanly) {
+                    const auto shutdown_info_log =
+                        "Module " + fmt::format(TERMINAL_STYLE_BLUE, "{}", module_name) +
+                        " exited, signaling remaining modules to shut down gracefully...";
+                    initiate_graceful_shutdown(module_exited_time, false, &shutdown_info_log);
+                    EVLOG_info << "Module " << fmt::format(TERMINAL_STYLE_BLUE, "{}", module_name) << " (pid " << pid
+                               << ") shutdown ["
                                << std::chrono::duration_cast<std::chrono::milliseconds>(
                                       module_exited_time - shutdown_start_time.value_or(module_exited_time))
                                       .count()
-                               << "ms]";
+                               << "ms] with status: " << wait_status;
 
-                    EVLOG_debug << fmt::format("Module {} (pid: {}) exited with status: {}.", module_name, pid,
-                                               wstatus);
                     shutdown_info.push_back({module_name, wstatus});
                     if (module_handles.size() > 0) {
                         continue;
                     } else {
-                        // TODO: check the shutdown_info here for non-zero exit codes
-                        for (const auto& shutdown_info_entry : shutdown_info) {
-                            EVLOG_info << fmt::format("Module {} exited with status: {}.", shutdown_info_entry.id,
-                                                      shutdown_info_entry.wstatus);
-                        }
-                        print_shutdown_message(shutdown_start_time,
-                                               fmt::format(TERMINAL_STYLE_OK, "All modules shut down properly. "));
                         shutdown_complete = true;
-                        cleanup(*mqtt_abstraction);
-                        return EXIT_SUCCESS;
-                    }
-                } else if (shutdown_info.size() > 0) {
-                    EVLOG_error << fmt::format("Module {} (pid: {}) exited with status: {} during a shutdown. This is "
-                                               "probably a bug in your shutdown handler implementation.",
-                                               module_name, pid, wstatus);
-                    shutdown_info.push_back({module_name, wstatus});
-                    if (module_handles.size() > 0) {
-                        continue;
-                    } else {
-                        std::string remaining_modules;
-                        for (auto& info : shutdown_info) {
-                            if (info.wstatus != 0) {
-                                remaining_modules += fmt::format(" {} (status: {})", info.id, info.wstatus);
-                            }
+                        if (const auto exit_code = finalize_shutdown_transition()) {
+                            return *exit_code;
                         }
-
-                        EVLOG_info << "Modules that did not shut down correctly:" << remaining_modules;
-                        print_shutdown_message(shutdown_start_time);
-
-                        cleanup(*mqtt_abstraction);
-                        return EXIT_SUCCESS;
+                        continue;
                     }
+                } else if (shutdown_info.size() > 0 || crash_in_progress) {
+                    EVLOG_warning << fmt::format("Module {} (pid: {}) exited with status: {} during shutdown.",
+                                                 module_name, pid, wait_status);
+                    shutdown_info.push_back({module_name, wstatus});
+                    if (module_handles.size() == 0) {
+                        shutdown_complete = true;
+                        if (const auto exit_code = finalize_shutdown_transition()) {
+                            return *exit_code;
+                        }
+                        continue;
+                    }
+                    // Shutdown is already in progress, so do not treat this as a new crash.
+                    continue;
                 }
-                EVLOG_critical << fmt::format("Module {} (pid: {}) exited with status: {}. Terminating all modules.",
-                                              module_name, pid, wstatus);
-                shutdown_modules(module_handles, *config, *mqtt_abstraction);
+                // A module exited unexpectedly (non-zero status) while not in shutdown or restart mode.
+                // Treat as crash unless this is part of an admin restart.
+                if (restart_modules) {
+                    EVLOG_warning << fmt::format("Module {} (pid: {}) exited with status {} during admin restart. "
+                                                 "Continuing with reload anyway.",
+                                                 module_name, pid, wait_status);
+                    shutdown_info.push_back({module_name, wstatus});
+                    if (module_handles.empty()) {
+                        restart_modules_after_shutdown();
+                    }
+                    continue;
+                }
 
-                mqtt_abstraction->clear_retained_topics();
-
-                // Exit if a module died, this gives systemd a change to restart manager
-                print_shutdown_message(shutdown_start_time,
-                                       fmt::format(fmt::format(TERMINAL_STYLE_ERROR, "Abnormal shutdown caused by {}{}",
-                                                               fmt::format(TERMINAL_STYLE_BLUE, module_name),
-                                                               fmt::format(TERMINAL_STYLE_ERROR, " module. "))));
-                return EXIT_FAILURE;
+                EVLOG_critical << fmt::format("Module {} (pid: {}) exited with status: {}. Initiating graceful "
+                                              "shutdown of remaining modules...",
+                                              module_name, pid, wait_status);
+                crash_in_progress = true;
+                initiate_graceful_shutdown(module_exited_time, true, nullptr);
+                // modules_started stays true — remaining exits are tracked normally by the branches above.
             } else {
-                EVLOG_info << fmt::format("Module {} (pid: {}) exited with status: {}.", module_name, pid, wstatus);
+                EVLOG_info << fmt::format("Module {} (pid: {}) exited with status: {}.", module_name, pid, wait_status);
             }
         }
 
-#ifdef ENABLE_ADMIN_PANEL
-        if (module_handles.size() == 0 && restart_modules) {
-            module_handles = start_modules(*config, *mqtt_abstraction, ignored_modules, standalone_modules, ms,
-                                           status_fifo, retain_topics);
-            restart_modules = false;
-            modules_started = true;
+        // Admin restart can mark restart_modules while modules are still draining.
+        // If all children are gone, restart immediately with reloaded config.
+        if (restart_modules && module_handles.empty()) {
+            restart_modules_after_shutdown();
+            continue;
         }
 
-        // check for news from the controller
-        const auto msg = controller_handle.receive_message();
-        if (msg.status == controller_ipc::MESSAGE_RETURN_STATUS::OK) {
-            // FIXME (aw): implement all possible messages here, for now just log them
-            const auto& payload = msg.json;
-            if (payload.at("method") == "restart_modules") {
-                shutdown_modules(module_handles, *config, *mqtt_abstraction);
-                config = std::make_unique<ManagerConfig>(ms);
-                modules_started = false;
-                restart_modules = true;
-            } else if (payload.at("method") == "check_config") {
-                const std::string check_config_file_path = payload.at("params");
-
-                try {
-                    // check the config
-                    auto cfg = ManagerConfig(ManagerSettings(prefix_opt, check_config_file_path));
-                    controller_handle.send_message({{"id", payload.at("id")}});
-                } catch (const std::exception& e) {
-                    controller_handle.send_message({{"result", e.what()}, {"id", payload.at("id")}});
-                }
-            } else {
-                // unknown payload
-                EVLOG_error << fmt::format("Received unknown command via controller ipc:\n{}\n... ignoring",
-                                           payload.dump(DUMP_INDENT));
-            }
-        } else if (msg.status == controller_ipc::MESSAGE_RETURN_STATUS::ERROR) {
-            fmt::print("Error in IPC communication with controller: {}\nExiting\n", msg.json.at("error").dump(2));
-            return EXIT_FAILURE;
-        } else {
-            // TIMEOUT fall-through
+        if (const auto exit_from_panel = admin_panel.poll_controller_ipc(
+                restart_modules, modules_started, *mqtt_abstraction, ms, prefix_opt)) {
+            return *exit_from_panel;
         }
-#endif
+
+        // Ensure admin-triggered restart enters the same shutdown state machine as signal-based shutdown.
+        // This enables timeout/fallback handling if one or more modules do not exit after MQTT shutdown.
+        if (restart_modules && !shutdown_initiated && !module_handles.empty()) {
+            shutdown_initiated = true;
+            shutdown_start_time = std::chrono::system_clock::now();
+        }
         // check signals
         auto signal_received = signal_polling.poll_signal();
         if (signal_received.has_value()) {
-            if (signal_received.value() == SIGINT) {
+            if (signal_received.value() == SIGINT || signal_received.value() == SIGTERM) {
                 if (not sigint_received) {
                     sigint_received = true;
+                    if (module_handles.empty()) {
+                        // No modules running (idle after crash recovery) — exit cleanly right away
+                        EVLOG_info << "Shutting down manager.";
+                        admin_panel.shutdown_controller();
+                        cleanup(*mqtt_abstraction);
+                        return EXIT_SUCCESS;
+                    }
                     shutdown_start_time = std::chrono::system_clock::now();
                     EVLOG_info << "Shutting down modules...";
                     mqtt_abstraction->publish(fmt::format("{}shutdown", ms.mqtt_settings.everest_prefix),
                                               std::string("true"), QOS::QOS2, false);
                 } else {
                     EVLOG_info << "Terminating manager";
+                    admin_panel.shutdown_controller();
                     exit(EXIT_FAILURE);
                 }
             }
@@ -1021,7 +1057,8 @@ int boot(const po::variables_map& vm) {
                 shutdown_start_time.value() + std::chrono::milliseconds(SHUTDOWN_TIMEOUT_MS)) {
                 completing_shutdown = true;
                 if (not shutdown_complete) {
-                    EVLOG_error << "Could not shut down in time. Terminating all remaining modules.";
+                    EVLOG_warning << "Modules did not shut down within the timeout. Forcefully terminating remaining "
+                                     "modules.";
                     shutdown_complete = true;
                     shutdown_modules(module_handles, *config, *mqtt_abstraction);
                 }
@@ -1062,7 +1099,6 @@ int main(int argc, char* argv[]) {
                                         "these will be cleared after startup");
     desc.add_options()("mqtt_everest_prefix", po::value<std::string>(),
                        "Override the MQTT everest prefix (useful for running multiple instances in parallel)");
-
     po::variables_map vm;
 
     try {
