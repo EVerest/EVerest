@@ -13,15 +13,11 @@
 #include <utils/config/storage_sqlite.hpp>
 #include <utils/config/types.hpp>
 
+#include <optional>
+
 namespace Everest {
 
 namespace fs = std::filesystem;
-
-enum class ConfigBootMode {
-    YamlFile = 1,    // configuration is loaded from a YAML file
-    DatabaseInit = 3 // configuration is loaded from a database; if the database is not yet initialized,
-                     // active_modules from the YAML config file are used to seed it
-};
 
 /// \brief EVerest framework runtime settings needed to successfully run modules
 struct RuntimeSettings {
@@ -56,7 +52,6 @@ struct ConfigParseSettings {
     fs::path config_file;         ///< Path to the loaded config file
     nlohmann::json config;        ///< Parsed json of the config_file
     bool validate_schema = false; ///< If schema validation is enabled
-    ConfigBootMode boot_mode = ConfigBootMode::YamlFile; ///< Boot mode
 };
 
 /// \brief Settings needed by the manager to load and validate a config
@@ -75,13 +70,8 @@ struct ManagerSettings : public ConfigParseSettings {
 
     ManagerSettings() = default;
 
-    /// \brief Constructor that initializes the ManagerSettings with the given prefix and config file. Boot source is
-    /// set to YamlFile.
+    /// \brief Constructor that initializes the ManagerSettings with the given prefix and config file.
     ManagerSettings(const std::string& prefix, const std::string& config);
-
-    /// \brief Constructor that initializes the ManagerSettings with the given prefix, config file and database path.
-    /// Boot Source is set to DatabaseInit.
-    ManagerSettings(const std::string& prefix, const std::string& config, const std::string& db);
 
     /// \brief Initializes the ManagerSettings with the given settings and prefix.
     void init_settings(const everest::config::Settings& settings);
@@ -99,12 +89,13 @@ struct DatabaseBootstrap {
     ManagerSettings ms;
     std::unique_ptr<everest::config::SqliteStorage> storage;
     bool module_configs_initialized = false;
+    std::optional<everest::config::ModuleConfigurations> module_configs;
 };
 
-/// \brief Bootstrap from database, initializing it from YAML active_modules if the database is not yet valid
-/// (DatabaseInit mode).
-DatabaseBootstrap bootstrap_from_database_init(const std::string& prefix, const std::string& config,
-                                               const std::string& db_path);
+/// \brief Initialize a DatabaseBootstrap, loading module configs from the database if it is already valid,
+/// or seeding the database from YAML if it is not yet valid or \p reset_from_yaml is true.
+DatabaseBootstrap init_database_bootstrap(const std::string& prefix, const std::string& config,
+                                          const std::string& db_path, bool reset_from_yaml = false);
 
 } // namespace Everest
 

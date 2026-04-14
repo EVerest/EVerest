@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <framework/runtime.hpp>
+#include <utils/config.hpp>
 #include <utils/config/slot_manager.hpp>
 #include <utils/config/storage_sqlite.hpp>
 #include <utils/error.hpp>
@@ -36,22 +37,9 @@ void populate_module_info_path_from_runtime_settings(ModuleInfo& mi, const Runti
     mi.paths.share = rs.data_dir / defaults::MODULES_DIR / mi.name;
 }
 
-ManagerSettings::ManagerSettings(const std::string& prefix_, const std::string& config_) {
-    boot_mode = ConfigBootMode::YamlFile;
-    init_prefix_and_data_dir(prefix_);
-    init_config_file(config_);
-    const auto settings = everest::config::parse_settings(config.value("settings", json::object()));
-    if (settings.prefix.has_value()) {
-        EVLOG_warning << "Setting the prefix in the config file is deprecated. Please use the --prefix command line "
-                         "option instead.";
-    }
-    init_settings(settings);
-}
-
-DatabaseBootstrap bootstrap_from_database_init(const std::string& prefix, const std::string& config,
-                                               const std::string& db_path) {
+DatabaseBootstrap init_database_bootstrap(const std::string& prefix, const std::string& config,
+                                          const std::string& db_path, bool reset_from_yaml) {
     DatabaseBootstrap bs;
-    bs.ms.boot_mode = ConfigBootMode::DatabaseInit;
     bs.ms.init_prefix_and_data_dir(prefix);
     bs.ms.init_config_file(config);
 
@@ -61,28 +49,43 @@ DatabaseBootstrap bootstrap_from_database_init(const std::string& prefix, const 
 
     const auto migrations_dir = bs.ms.runtime_settings.data_dir / "migrations";
     const auto db_fs_path = fs::path(db_path);
+    bs.ms.db_dir = db_fs_path;
 
     everest::config::SqliteConfigSlotManager slot_mgr(db_fs_path, migrations_dir);
 
-    if (slot_mgr.is_valid(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID)) {
+    const bool db_valid = slot_mgr.is_valid(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
+    if (db_valid && !reset_from_yaml) {
         EVLOG_info << "Booting and parsing configuration from database: " << db_path;
-
         bs.storage = std::make_unique<everest::config::SqliteStorage>(
             db_fs_path, migrations_dir, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
-
         bs.module_configs_initialized = true;
+        const auto resp = bs.storage->get_module_configs();
+        if (resp.status == everest::config::GenericResponseStatus::Failed) {
+            EVLOG_AND_THROW(EverestConfigError("Failed to pre-load module configs from database"));
+        }
+        bs.module_configs = resp.module_configs;
     } else {
-        EVLOG_info << "Database not initialized or valid, falling back to YAML config file: " << config;
+        if (reset_from_yaml && db_valid) {
+            EVLOG_info << "--reset-from-yaml requested, discarding existing database slot and re-seeding from YAML: "
+                       << config;
+        } else {
+            EVLOG_info << "Database not initialized or valid, seeding from YAML config file: " << config;
+        }
         slot_mgr.delete_slot(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
         slot_mgr.write_config_slot(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
-
         bs.storage = std::make_unique<everest::config::SqliteStorage>(
             db_fs_path, migrations_dir, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
-
         bs.module_configs_initialized = false;
     }
 
     return bs;
+}
+
+ManagerSettings::ManagerSettings(const std::string& prefix, const std::string& config) {
+    init_prefix_and_data_dir(prefix);
+    init_config_file(config);
+    const auto settings = everest::config::parse_settings(this->config.value("settings", json::object()));
+    init_settings(settings);
 }
 
 void ManagerSettings::init_settings(const everest::config::Settings& settings) {
