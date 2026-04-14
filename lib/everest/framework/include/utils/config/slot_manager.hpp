@@ -14,11 +14,17 @@ class ConnectionInterface;
 
 namespace everest::config {
 
+struct DuplicateSlotResult {
+    bool success = false;
+    std::optional<int> slot_id;
+};
+
 struct StoredSlotInfo {
     int id;
     std::string last_updated;
     bool is_valid;
     std::optional<std::string> config_file_path;
+    std::optional<std::string> description;
 };
 
 class SqliteConfigSlotManager {
@@ -30,9 +36,20 @@ public:
     bool is_valid(int slot_id = DEFAULT_SLOT_ID);
     /// \brief Returns the next available slot ID (MAX(ID) + 1, or 0 if no slots exist).
     int next_slot_id();
-    GenericResponseStatus write_config_slot(int slot_id);
+    GenericResponseStatus write_config_slot(int slot_id, std::optional<std::string> description = std::nullopt);
     std::vector<StoredSlotInfo> list_slots();
     GenericResponseStatus delete_slot(int slot_id);
+
+    /// \brief Duplicates all data belonging to \p source_slot_id into a new slot.
+    /// \returns DuplicateSlotResult with the new slot_id on success.
+    DuplicateSlotResult duplicate_slot(int source_slot_id, std::optional<std::string> description = std::nullopt);
+
+    /// \brief Returns the slot ID that will be used on the next boot (from the BOOT_CONFIG table).
+    int get_next_boot_slot_id();
+
+    /// \brief Persists \p slot_id as the next boot slot in the BOOT_CONFIG table.
+    /// \returns Failed if \p slot_id does not exist in the CONFIG table.
+    GenericResponseStatus set_next_boot_slot_id(int slot_id);
 
 private:
     std::unique_ptr<everest::db::sqlite::ConnectionInterface> db;
