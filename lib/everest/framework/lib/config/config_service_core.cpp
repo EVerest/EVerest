@@ -138,8 +138,7 @@ LoadFromYamlResult ConfigServiceCore::load_from_yaml(const std::string& raw_yaml
 // --- Slot-scoped configuration ---
 
 GetConfigurationResult ConfigServiceCore::get_configuration(int slot_id) {
-    const int resolved_slot_id =
-        (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
+    const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
     if (resolved_slot_id == active_slot_id_) {
         return {GetConfigurationStatus::Success, active_config_->get_module_configurations()};
     }
@@ -165,8 +164,7 @@ ConfigServiceCore::set_config_parameters(int slot_id, const std::vector<ConfigPa
     std::vector<SetConfigParameterResult> results;
     results.reserve(updates.size());
 
-    const int resolved_slot_id =
-        (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
+    const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
 
     ConfigurationUpdate event;
     event.timestamp = now_rfc3339();
@@ -212,8 +210,7 @@ ConfigServiceCore::set_config_parameters(int slot_id, const std::vector<ConfigPa
             if (update.immediately_applied) {
                 // Module confirmed it immediately applied the value. We mutate live module_configs so
                 // get_config_value() reflects the new runtime state immediately.
-                const auto parsed_value =
-                    everest::config::parse_config_value(characteristics->datatype, update.value);
+                const auto parsed_value = everest::config::parse_config_value(characteristics->datatype, update.value);
                 active_config_->update_config_value(update.identifier, parsed_value);
                 result = SetConfigParameterResult::Applied;
             } else {
