@@ -129,6 +129,12 @@ nlohmann::ordered_json load_yaml(const std::filesystem::path& path) {
     return ryml_to_nlohmann_json(tree.rootref());
 }
 
+nlohmann::ordered_json load_yaml_from_string(const std::string& yaml_content) {
+    const static RymlCallbackInitializer ryml_callback_initializer;
+    const auto tree = ryml::parse_in_arena(ryml::to_csubstr(yaml_content));
+    return ryml_to_nlohmann_json(tree.rootref());
+}
+
 void save_yaml(const nlohmann::ordered_json& data, const std::filesystem::path& path) {
     if (!std::filesystem::exists(path.parent_path())) {
         std::filesystem::create_directory(path.parent_path());
