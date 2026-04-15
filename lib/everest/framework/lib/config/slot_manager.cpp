@@ -67,16 +67,16 @@ GenericResponseStatus SqliteConfigSlotManager::write_config_slot(int slot_id, st
     return GenericResponseStatus::OK;
 }
 
-std::vector<StoredSlotInfo> SqliteConfigSlotManager::list_slots() {
+std::vector<SlotInfo> SqliteConfigSlotManager::list_slots() {
     const std::string sql =
         "SELECT c.ID, COALESCE(cm.LAST_UPDATED, ''), COALESCE(cm.VALID, 0), cm.CONFIG_FILE_PATH, cm.DESCRIPTION "
         "FROM CONFIG c LEFT JOIN CONFIG_META cm ON cm.ID = c.ID "
         "ORDER BY c.ID";
     auto stmt = this->db->new_statement(sql);
 
-    std::vector<StoredSlotInfo> result;
+    std::vector<SlotInfo> result;
     while (stmt->step() == SQLITE_ROW) {
-        StoredSlotInfo info;
+        SlotInfo info;
         info.id = stmt->column_int(0);
         info.last_updated = stmt->column_text(1);
         info.is_valid = stmt->column_int(2) != 0;
