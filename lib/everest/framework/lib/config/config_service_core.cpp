@@ -20,12 +20,12 @@ std::string now_rfc3339() {
 }
 } // namespace
 
-ConfigServiceCore::ConfigServiceCore(std::shared_ptr<ManagerConfig> active_config,
+ConfigServiceCore::ConfigServiceCore(everest::config::ModuleConfigurations initial_module_configs,
                                      const ConfigParseSettings& parse_settings, std::filesystem::path db_path,
                                      std::filesystem::path migrations_dir, int active_slot_id,
                                      std::function<StopModulesResult()> stop_fn,
                                      std::function<RestartModulesResult()> restart_fn) :
-    active_config_(std::move(active_config)),
+    module_configs_(std::move(initial_module_configs)),
     parse_settings_(parse_settings),
     slot_manager_(db_path, migrations_dir),
     db_path_(db_path),
@@ -50,6 +50,20 @@ void ConfigServiceCore::publish_config_update(const ConfigurationUpdate& update)
     for (const auto& handler : config_update_handlers_) {
         handler(update);
     }
+}
+
+// --- Active-slot in-memory access ---
+
+const everest::config::ModuleConfigurations& ConfigServiceCore::get_active_module_configurations() const {
+    return module_configs_;
+}
+
+const everest::config::ModuleConfigurations& ConfigServiceCore::reload_from_storage() {
+    const auto resp = active_storage_->get_module_configs();
+    if (resp.status == everest::config::GenericResponseStatus::OK) {
+        module_configs_ = resp.module_configs;
+    }
+    return module_configs_;
 }
 
 // --- Slot management ---
@@ -140,7 +154,7 @@ LoadFromYamlResult ConfigServiceCore::load_from_yaml(const std::string& raw_yaml
 GetConfigurationResult ConfigServiceCore::get_configuration(int slot_id) {
     const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
     if (resolved_slot_id == active_slot_id_) {
-        return {GetConfigurationStatus::Success, active_config_->get_module_configurations()};
+        return {GetConfigurationStatus::Success, module_configs_};
     }
 
     // Check slot exists
@@ -172,15 +186,14 @@ ConfigServiceCore::set_config_parameters(int slot_id, const std::vector<ConfigPa
 
     if (resolved_slot_id == active_slot_id_) {
         for (const auto& update : updates) {
-            const auto& module_configurations = active_config_->get_module_configurations();
-            const auto mod_it = module_configurations.find(update.identifier.module_id);
-            if (mod_it == module_configurations.end()) {
+            const auto mod_it = module_configs_.find(update.identifier.module_id);
+            if (mod_it == module_configs_.end()) {
                 results.push_back(SetConfigParameterResult::DoesNotExist);
                 continue;
             }
 
             const auto impl_id = update.identifier.module_implementation_id.value_or("!module");
-            const auto params_it = mod_it->second.configuration_parameters.find(impl_id);
+            auto params_it = mod_it->second.configuration_parameters.find(impl_id);
             if (params_it == mod_it->second.configuration_parameters.end()) {
                 results.push_back(SetConfigParameterResult::DoesNotExist);
                 continue;
@@ -208,13 +221,18 @@ ConfigServiceCore::set_config_parameters(int slot_id, const std::vector<ConfigPa
 
             SetConfigParameterResult result;
             if (update.immediately_applied) {
-                // Module confirmed it immediately applied the value. We mutate live module_configs so
-                // get_config_value() reflects the new runtime state immediately.
+                // Module confirmed it immediately applied the value; mutate the in-memory state
+                // so module_configs_ reflect the new runtime value.
                 const auto parsed_value = everest::config::parse_config_value(characteristics->datatype, update.value);
-                active_config_->update_config_value(update.identifier, parsed_value);
+                for (auto& param : params_it->second) {
+                    if (param.name == update.identifier.configuration_parameter_name) {
+                        param.value = parsed_value;
+                        break;
+                    }
+                }
                 result = SetConfigParameterResult::Applied;
             } else {
-                // Value stored for next boot; module_configs intentionally remains at boot-time state.
+                // Value stored for next boot; module_configs_ intentionally maintains current state
                 result = SetConfigParameterResult::WillApplyOnRestart;
             }
             results.push_back(result);
@@ -257,8 +275,9 @@ ConfigServiceCore::set_config_parameters(int slot_id, const std::vector<ConfigPa
             const auto write_status =
                 storage->write_configuration_parameter(update.identifier, *characteristics, update.value);
             if (write_status == everest::config::GetSetResponseStatus::OK) {
-                results.push_back(SetConfigParameterResult::Applied);
-                event.updates.push_back({update.identifier, update.value, SetConfigParameterResult::Applied});
+                // For non-active slots results are not applied immediately, so we return WillApplyOnRestart
+                results.push_back(SetConfigParameterResult::WillApplyOnRestart);
+                event.updates.push_back({update.identifier, update.value, SetConfigParameterResult::WillApplyOnRestart});
             } else {
                 results.push_back(SetConfigParameterResult::Rejected);
             }
