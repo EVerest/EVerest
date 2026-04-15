@@ -67,7 +67,7 @@ function(trailbook_ev_create_snapshot)
         message(
             FATAL_ERROR
             "trailbook_ev_create_snapshot: No target named trailbook_${args_TRAILBOOK_NAME} found."
-            " Did you forget to call add_trailbook() first?"
+            " Did you forget to call add_trailbook_ev() first?"
         )
     endif()
 

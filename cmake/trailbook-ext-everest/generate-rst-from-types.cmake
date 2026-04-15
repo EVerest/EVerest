@@ -62,7 +62,7 @@ function(trailbook_ev_generate_rst_from_types)
         message(
             FATAL_ERROR
             "trailbook_ext_ev_generate_rst_from_types: No target named trailbook_${args_TRAILBOOK_NAME} found."
-            " Did you forget to call add_trailbook() first?"
+            " Did you forget to call add_trailbook_ev() first?"
         )
     endif()
 
