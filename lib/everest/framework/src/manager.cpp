@@ -795,9 +795,9 @@ int boot(const po::variables_map& vm) {
     mqtt_abstraction->spawn_main_loop_thread();
 
     const auto migrations_dir = ms.runtime_settings.data_dir / "migrations";
-    auto config_service_core = std::make_unique<config::ConfigServiceCore>(
-        config->get_module_configurations(), ms, ms.db_dir, migrations_dir,
-        everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
+    auto config_service_core =
+        std::make_unique<config::ConfigServiceCore>(config->get_module_configurations(), ms, ms.db_dir, migrations_dir,
+                                                    everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core);
 
