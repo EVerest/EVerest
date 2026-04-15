@@ -10,6 +10,7 @@ add_executable(everest_util_tests
   queue/thread_safe_queue_tests.cpp
   queue/thread_safe_bounded_queue_tests.cpp
   vector/fixed_vector_tests.cpp
+  fsm/fsm_tests.cpp
 )
 
 target_link_libraries(everest_util_tests
