@@ -780,6 +780,16 @@ int boot(const po::variables_map& vm) {
     bool completing_shutdown = false;
     bool crash_in_progress = false; // true when a module crashed and graceful shutdown of remaining is in progress
     std::optional<std::chrono::system_clock::time_point> shutdown_start_time;
+    auto format_wait_status = [](int status) -> std::string {
+        if (WIFEXITED(status)) {
+            return fmt::format("exit_code={}", WEXITSTATUS(status));
+        }
+        if (WIFSIGNALED(status)) {
+            return fmt::format("signal={}", WTERMSIG(status));
+        }
+        return fmt::format("raw={}", status);
+    };
+    auto is_clean_exit = [](int status) -> bool { return WIFEXITED(status) && (WEXITSTATUS(status) == 0); };
 
     // Called when all modules have exited after a crash: logs summary, then either restarts or goes idle
     auto restart_modules_after_shutdown = [&]() {
@@ -806,8 +816,9 @@ int boot(const po::variables_map& vm) {
     auto finish_normal_shutdown = [&]() -> std::optional<int> {
         std::string bad_modules;
         for (const auto& shutdown_info_entry : shutdown_info) {
-            if (shutdown_info_entry.wstatus != 0) {
-                bad_modules += fmt::format(" {} (status: {})", shutdown_info_entry.id, shutdown_info_entry.wstatus);
+            if (!is_clean_exit(shutdown_info_entry.wstatus)) {
+                bad_modules +=
+                    fmt::format(" {} ({})", shutdown_info_entry.id, format_wait_status(shutdown_info_entry.wstatus));
             }
         }
         if (sigint_received) {
@@ -848,8 +859,8 @@ int boot(const po::variables_map& vm) {
                                      : 0;
         std::string bad_modules;
         for (const auto& info : shutdown_info) {
-            if (info.wstatus != 0) {
-                bad_modules += fmt::format(" {} (status: {})", info.id, info.wstatus);
+            if (!is_clean_exit(info.wstatus)) {
+                bad_modules += fmt::format(" {} ({})", info.id, format_wait_status(info.wstatus));
             }
         }
         if (bad_modules.empty()) {
@@ -900,7 +911,7 @@ int boot(const po::variables_map& vm) {
         shutdown_start_time = module_exited_time;
         if (publish_when_sigint_received || not sigint_received) {
             if (info_log != nullptr) {
-                EVLOG_info << *info_log;
+                EVLOG_critical << *info_log;
             }
             mqtt_abstraction->publish(fmt::format("{}shutdown", ms.mqtt_settings.everest_prefix), std::string("true"),
                                       QOS::QOS2, false);
@@ -931,11 +942,7 @@ int boot(const po::variables_map& vm) {
             }
             const bool exited_normally = WIFEXITED(wstatus);
             const bool exited_cleanly = exited_normally && (WEXITSTATUS(wstatus) == 0);
-            const bool exited_by_signal = WIFSIGNALED(wstatus);
-            const std::string wait_status =
-                exited_normally
-                    ? fmt::format("exit_code={}", WEXITSTATUS(wstatus))
-                    : (exited_by_signal ? fmt::format("signal={}", WTERMSIG(wstatus)) : fmt::format("raw={}", wstatus));
+            const std::string wait_status = format_wait_status(wstatus);
 
             const auto module_iter = module_handles.find(pid);
             if (module_iter == module_handles.end()) {
@@ -947,63 +954,37 @@ int boot(const po::variables_map& vm) {
 
             // one of our modules died -> shut down the rest and restart everything if requested
             if (modules_started) {
-                if (exited_cleanly) {
-                    const auto shutdown_info_log = "Module " + fmt::format(TERMINAL_STYLE_BLUE, "{}", module_name) +
-                                                   " exited, signaling remaining modules to shut down gracefully...";
-                    initiate_graceful_shutdown(module_exited_time, false, &shutdown_info_log);
-                    EVLOG_info << "Module " << fmt::format(TERMINAL_STYLE_BLUE, "{}", module_name) << " (pid " << pid
-                               << ") shutdown ["
-                               << std::chrono::duration_cast<std::chrono::milliseconds>(
-                                      module_exited_time - shutdown_start_time.value_or(module_exited_time))
-                                      .count()
-                               << "ms] with status: " << wait_status;
-
+                const bool unexpected_exit = !shutdown_initiated && !crash_in_progress && !restart_modules;
+                if (unexpected_exit) {
+                    const auto shutdown_info_log =
+                        "Module " + fmt::format(TERMINAL_STYLE_BLUE, "{}", module_name) +
+                        " exited unexpectedly, signaling remaining modules to shut down gracefully...";
+                    initiate_graceful_shutdown(module_exited_time, true, &shutdown_info_log);
+                    crash_in_progress = true;
                     shutdown_info.push_back({module_name, wstatus});
-                    if (module_handles.size() > 0) {
-                        continue;
-                    } else {
-                        shutdown_complete = true;
-                        if (const auto exit_code = finalize_shutdown_transition()) {
-                            return *exit_code;
-                        }
-                        continue;
-                    }
-                } else if (shutdown_info.size() > 0 || crash_in_progress) {
-                    EVLOG_warning << fmt::format("Module {} (pid: {}) exited with status: {} during shutdown.",
-                                                 module_name, pid, wait_status);
-                    shutdown_info.push_back({module_name, wstatus});
-                    if (module_handles.size() == 0) {
-                        shutdown_complete = true;
-                        if (const auto exit_code = finalize_shutdown_transition()) {
-                            return *exit_code;
-                        }
-                        continue;
-                    }
-                    // Shutdown is already in progress, so do not treat this as a new crash.
                     continue;
                 }
-                // A module exited unexpectedly (non-zero status) while not in shutdown or restart mode.
-                // Treat as crash unless this is part of an admin restart.
-                if (restart_modules) {
-                    EVLOG_warning << fmt::format("Module {} (pid: {}) exited with status {} during admin restart. "
-                                                 "Continuing with reload anyway.",
-                                                 module_name, pid, wait_status);
-                    shutdown_info.push_back({module_name, wstatus});
-                    if (module_handles.empty()) {
-                        restart_modules_after_shutdown();
-                    }
-                    continue;
-                }
-
-                EVLOG_critical << fmt::format("Module {} (pid: {}) exited with status: {}. Initiating graceful "
-                                              "shutdown of remaining modules...",
-                                              module_name, pid, wait_status);
-                crash_in_progress = true;
-                initiate_graceful_shutdown(module_exited_time, true, nullptr);
-                // modules_started stays true — remaining exits are tracked normally by the branches above.
+                EVLOG_info << "Module " << fmt::format(TERMINAL_STYLE_BLUE, "{}", module_name) << " (pid " << pid
+                           << ") shutdown ["
+                           << std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  module_exited_time - shutdown_start_time.value_or(module_exited_time))
+                                  .count()
+                           << "ms] with status: " << wait_status;
+                shutdown_info.push_back({module_name, wstatus});
+                continue;
             } else {
                 EVLOG_info << fmt::format("Module {} (pid: {}) exited with status: {}.", module_name, pid, wait_status);
             }
+        }
+
+        // Finalize shutdown as soon as all module processes are gone, even if we got here through ECHILD
+        // after a timeout-triggered force shutdown.
+        if (shutdown_initiated && module_handles.empty() && !shutdown_complete) {
+            shutdown_complete = true;
+            if (const auto exit_code = finalize_shutdown_transition()) {
+                return *exit_code;
+            }
+            continue;
         }
 
         // Admin restart can mark restart_modules while modules are still draining.
@@ -1030,14 +1011,14 @@ int boot(const po::variables_map& vm) {
             if (signal_received.value() == SIGINT || signal_received.value() == SIGTERM) {
                 if (not sigint_received) {
                     sigint_received = true;
+                    shutdown_start_time = std::chrono::system_clock::now();
                     if (module_handles.empty()) {
-                        // No modules running (idle after crash recovery) — exit cleanly right away
-                        EVLOG_info << "Shutting down manager.";
+                        print_shutdown_message(shutdown_start_time);
                         admin_panel.shutdown_controller();
                         cleanup(*mqtt_abstraction);
                         return EXIT_SUCCESS;
                     }
-                    shutdown_start_time = std::chrono::system_clock::now();
+                    shutdown_initiated = true;
                     EVLOG_info << "Shutting down modules...";
                     mqtt_abstraction->publish(fmt::format("{}shutdown", ms.mqtt_settings.everest_prefix),
                                               std::string("true"), QOS::QOS2, false);
@@ -1054,9 +1035,8 @@ int boot(const po::variables_map& vm) {
                 shutdown_start_time.value() + std::chrono::milliseconds(SHUTDOWN_TIMEOUT_MS)) {
                 completing_shutdown = true;
                 if (not shutdown_complete) {
-                    EVLOG_warning << "Modules did not shut down within the timeout. Forcefully terminating remaining "
-                                     "modules.";
-                    shutdown_complete = true;
+                    EVLOG_warning
+                        << "Not all modules shut down within the timeout. Forcefully terminating remaining modules.";
                     shutdown_modules(module_handles, *config, *mqtt_abstraction);
                 }
             }
