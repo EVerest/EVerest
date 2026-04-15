@@ -64,9 +64,11 @@ CertificateValidationResult to_certificate_error(const int ec) {
     }
 }
 
+} // namespace
+
 /// Verification callback that bypasses X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION when every
 /// critical extension on the certificate has a well-known RFC 5280 NID.  Truly unknown/custom
-/// OID critical extensions still cause verification to fail.
+/// OID critical extensions still cause verification to fail (and are logged).
 int critical_extension_bypass_callback(int ok, X509_STORE_CTX* ctx) {
     if (!ok) {
         const int error = X509_STORE_CTX_get_error(ctx);
@@ -124,6 +126,16 @@ int critical_extension_bypass_callback(int ok, X509_STORE_CTX* ctx) {
                 }
                 if (!is_known) {
                     has_unknown_critical = true;
+                    const char* sn = OBJ_nid2sn(nid);
+                    const char* ln = OBJ_nid2ln(nid);
+                    char oid_buf[128] = {};
+                    OBJ_obj2txt(oid_buf, sizeof(oid_buf), X509_EXTENSION_get_object(ext), 1);
+                    char* subject = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
+                    EVLOG_warning << "Unhandled critical X.509 extension with unknown NID: nid=" << nid
+                                  << " sn=" << (sn != nullptr ? sn : "?") << " ln=" << (ln != nullptr ? ln : "?")
+                                  << " oid=" << oid_buf
+                                  << " on certificate: " << (subject != nullptr ? subject : "unknown");
+                    OPENSSL_free(subject);
                     break;
                 }
             }
@@ -141,7 +153,6 @@ int critical_extension_bypass_callback(int ok, X509_STORE_CTX* ctx) {
     }
     return ok;
 }
-} // namespace
 
 const char* OpenSSLSupplier::get_supplier_name() {
     return OPENSSL_VERSION_TEXT;

@@ -6,6 +6,7 @@
 #include <everest/tls/openssl_util.hpp>
 #include <everest/tls/tls.hpp>
 
+#include <evse_security/crypto/openssl/openssl_crypto_supplier.hpp>
 #include <evse_security/crypto/openssl/openssl_provider.hpp>
 
 #include <arpa/inet.h>
@@ -986,7 +987,10 @@ bool Server::init_ssl(const config_t& cfg) {
                     result = false;
                 }
             }
-            SSL_CTX_set_verify(ctx, mode, nullptr);
+            SSL_CTX_set_verify(ctx, mode,
+                               cfg.ignore_unhandled_critical_extensions
+                                   ? &evse_security::critical_extension_bypass_callback
+                                   : nullptr);
 
             result = result && m_status_request_v2.init_ssl(ctx);
             result = result && m_server_trusted_ca_keys.init_ssl(ctx);
@@ -1363,7 +1367,10 @@ bool Client::init(const config_t& cfg, const override_t& override) {
             }
         }
 
-        SSL_CTX_set_verify(ctx, mode, nullptr);
+        SSL_CTX_set_verify(ctx, mode,
+                           cfg.ignore_unhandled_critical_extensions
+                               ? &evse_security::critical_extension_bypass_callback
+                               : nullptr);
         if (cfg.status_request) {
             if (SSL_CTX_set_tlsext_status_type(ctx, TLSEXT_STATUSTYPE_ocsp) != 1) {
                 log_error("SSL_CTX_set_tlsext_status_type");
