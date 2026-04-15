@@ -1,6 +1,4 @@
-#TODO(SL): Adding util
-
-# download everest-core (source of libcbv2g)
+# download everest-core (source of util and libcbv2g)
 include(ExternalProject)
 ExternalProject_Add(
     everest-core-src
@@ -13,6 +11,18 @@ ExternalProject_Add(
     BUILD_COMMAND ""
     INSTALL_COMMAND ""
 )
+
+# util is header-only
+ExternalProject_Get_Property(everest-core-src SOURCE_DIR)
+set(UTIL_INCLUDE_DIR "${SOURCE_DIR}/lib/everest/util/include")
+
+# workaround for https://gitlab.kitware.com/cmake/cmake/-/issues/15052
+file(MAKE_DIRECTORY ${UTIL_INCLUDE_DIR})
+
+add_library(everest_util INTERFACE IMPORTED GLOBAL)
+add_library(everest::util ALIAS everest_util)
+set_property(TARGET everest_util PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${UTIL_INCLUDE_DIR})
+add_dependencies(everest_util everest-core-src)
 
 # build everest-core/lib/everest/cbv2g
 ExternalProject_Add(
