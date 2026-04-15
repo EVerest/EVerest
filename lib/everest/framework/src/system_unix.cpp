@@ -246,6 +246,17 @@ SubProcess SubProcess::create(const std::string& run_as_user, const std::vector<
             kill(getpid(), PARENT_DIED_SIGNAL);
         }
 
+        // The manager blocks signals for signalfd polling.
+        // Child module processes must unblock SIGTERM so manager can terminate them directly.
+        // Keep SIGINT blocked in children so Ctrl+C is coordinated by manager instead of interrupting
+        // module internals (e.g. Python waits), which can produce noisy/asynchronous failures.
+        sigset_t unblocked_signals;
+        sigemptyset(&unblocked_signals);
+        sigaddset(&unblocked_signals, SIGTERM);
+        if (sigprocmask(SIG_UNBLOCK, &unblocked_signals, nullptr) != 0) {
+            handle.send_error_and_exit(fmt::format("Syscall to sigprocmask() failed ({})", strerror(errno)));
+        }
+
         return handle;
     } else {
         close(writing_end_fd);
