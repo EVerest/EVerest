@@ -46,6 +46,13 @@ types:
           description: Message with pricing information in a specific language
           type: object
           $ref: /text_message#/MessageContent
+      pre_authorized_amount:
+        description: >-
+          The pre-authorized amount used by the payment terminal. This amount
+          will be reserved on the customer's bank account when a session is
+          started with a bank card.
+        type: object
+        $ref: /money#/MoneyAmount
   IdlePrice:
     description: >-
       Price components when idle
