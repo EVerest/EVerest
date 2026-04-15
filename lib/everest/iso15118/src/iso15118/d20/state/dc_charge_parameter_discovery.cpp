@@ -241,6 +241,7 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
             m_ctx.respond(res);
             m_ctx.feedback.dc_max_limits(dc_max_limits);
             m_ctx.session_stopped = true;
+            m_ctx.feedback.response_code(res.response_code);
             return {};
         }
         res = handle_request(*req, m_ctx.session, checked_limits);
