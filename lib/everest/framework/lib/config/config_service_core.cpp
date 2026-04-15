@@ -277,7 +277,8 @@ ConfigServiceCore::set_config_parameters(int slot_id, const std::vector<ConfigPa
             if (write_status == everest::config::GetSetResponseStatus::OK) {
                 // For non-active slots results are not applied immediately, so we return WillApplyOnRestart
                 results.push_back(SetConfigParameterResult::WillApplyOnRestart);
-                event.updates.push_back({update.identifier, update.value, SetConfigParameterResult::WillApplyOnRestart});
+                event.updates.push_back(
+                    {update.identifier, update.value, SetConfigParameterResult::WillApplyOnRestart});
             } else {
                 results.push_back(SetConfigParameterResult::Rejected);
             }
