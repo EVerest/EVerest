@@ -1,0 +1,69 @@
+name: On Workflow Dispatch - Build and Deploy Documentation
+on:
+  workflow_dispatch:
+    inputs:
+      display_name:
+        description: >
+          Human-readable label for this docs build, shown in the version switcher.
+          The instance directory name is auto-derived from this (lowercased,
+          non-[a-z0-9_] chars collapsed to underscores).
+          If left empty, defaults to "<ref> @ <short sha>".
+        required: false
+        type: string
+        default: ''
+      overwrite_if_exists:
+        description: >
+          If true, an existing instance with the same sanitized instance name
+          will be overwritten. If false (default), any collision fails the build.
+        required: false
+        type: boolean
+        default: false
+      runner:
+        description: Which runner to use
+        type: choice
+        default: 'ubuntu-24.04'
+        required: true
+        options:
+          - 'ubuntu-24.04'
+          - 'large-ubuntu-24.04-xxl'
+
+jobs:
+
+  setup-env:
+    name: Call Setup Environment workflow
+    uses: ./.github/workflows/job_setup-env.yml
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      ref_everest_ci: v1.5.5
+
+
+  build-build-kit:
+    name: Call Build the build-kit workflow
+    needs:
+      - setup-env
+    uses: ./.github/workflows/job_build-build-kit.yml
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      base_image_tag_everest_ci: ${{ needs.setup-env.outputs.closest_tag_everest_ci }}
+
+
+  build-docs:
+    name: Call Build and Deploy Documentation workflow
+    needs:
+      - setup-env
+      - build-build-kit
+    uses: ./.github/workflows/job_build-docs.yaml
+    secrets:
+      SA_GITHUB_SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      is_fork: ${{ needs.setup-env.outputs.is_fork == 'true' }}
+      build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
+      build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
+      deploy_docs: true
+      # Single user input: display_name. The sanitize step in job_build-docs.yaml
+      # derives a valid instance directory name from it.
+      display_name:  ${{ inputs.display_name || format('{0} @ {1}', github.ref_name, github.sha) }}
+      instance_name: ${{ inputs.display_name || format('{0} @ {1}', github.ref_name, github.sha) }}
+      is_release: false
+      overwrite_existing_instance: ${{ inputs.overwrite_if_exists }}

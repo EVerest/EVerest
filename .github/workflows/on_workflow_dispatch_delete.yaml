@@ -1,0 +1,128 @@
+name: On Workflow Dispatch - Delete Deployed Documentation Instance
+on:
+  workflow_dispatch:
+    inputs:
+      display_name:
+        description: >
+          Same human-readable label you provided when the build was triggered.
+          The on-disk directory name is auto-derived from this (lowercased,
+          non-[a-z0-9_] chars collapsed to underscores) using the same
+          formula as the build workflow.
+        required: true
+        type: string
+      confirm:
+        description: >
+          Must be checked to actually perform the deletion. A safety net
+          against accidental triggers.
+        required: true
+        type: boolean
+        default: false
+      allow_release_delete:
+        description: >
+          If true, also permit deleting instances marked is_release=true
+          (or whose name starts with 'release_' for legacy entries without
+          info.json). Default false; release docs are part of the project's
+          permanent history and should usually not be deleted.
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  delete-instance:
+    name: Delete Deployed Documentation Instance
+    runs-on: ubuntu-24.04
+    env:
+      SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+    steps:
+      - name: Verify confirmation
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$CONFIRM" != "true" ]; then
+            echo "::error::The 'confirm' input must be checked to perform deletion."
+            exit 1
+          fi
+
+      - name: Sanitize display_name into instance name
+        id: sanitize
+        # Keep this formula in sync with the "Sanitize instance name" step
+        # in .github/workflows/job_build-docs.yaml.
+        env:
+          DISPLAY_NAME: ${{ inputs.display_name }}
+        run: |
+          sanitized=$(echo -n "$DISPLAY_NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9_' '_')
+          if ! echo "$sanitized" | grep -qE '^[a-z0-9_]+$'; then
+            echo "::error::display_name '$DISPLAY_NAME' sanitized to '$sanitized', which is not a valid instance name ([a-z0-9_]+)."
+            exit 1
+          fi
+          echo "instance_name=${sanitized}" >> $GITHUB_OUTPUT
+          echo "Sanitized: display_name='$DISPLAY_NAME' -> instance_name='${sanitized}'"
+
+      - name: Setup SSH Agent
+        env:
+          SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
+        run: |
+          if [ -z "$SSH_KEY" ]; then
+            echo "::error::SA_GITHUB_SSH_KEY secret is not configured; cannot push to the docs repo."
+            exit 1
+          fi
+          ssh-agent -a "$SSH_AUTH_SOCK" > /dev/null
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          if ! grep -q "^github.com " ~/.ssh/known_hosts 2>/dev/null; then
+            ssh-keyscan github.com >> ~/.ssh/known_hosts
+          fi
+          ssh-add ~/.ssh/id_ed25519
+
+      - name: Configure Git user
+        run: |
+          git config --global user.name "Pionix Github Service Account"
+          git config --global user.email "compiler@pionix.de"
+
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+        with:
+          path: source
+
+      - name: Clone deployed docs repo
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          DOCS_REPO_URL="git@github.com:${OWNER}/everest.github.io.git"
+          echo "Cloning $DOCS_REPO_URL"
+          git clone --depth 1 "$DOCS_REPO_URL" deployed_docs_repo
+
+      - name: Delete instance and regenerate versions.json
+        env:
+          INSTANCE_NAME: ${{ steps.sanitize.outputs.instance_name }}
+          ALLOW_RELEASE_DELETE: ${{ inputs.allow_release_delete }}
+        run: |
+          flags=""
+          if [ "$ALLOW_RELEASE_DELETE" = "true" ]; then
+            flags="--allow-release"
+          fi
+          python3 source/cmake/trailbook/delete_instance.py \
+            --multiversion-root-directory "$(pwd)/deployed_docs_repo/docs" \
+            --instance-name "$INSTANCE_NAME" \
+            $flags
+
+      - name: Commit and push
+        working-directory: deployed_docs_repo
+        env:
+          INSTANCE_NAME: ${{ steps.sanitize.outputs.instance_name }}
+          DISPLAY_NAME: ${{ inputs.display_name }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "::error::No changes to commit (this shouldn't happen — instance dir was present earlier)."
+            exit 1
+          fi
+          git commit -m "Delete docs instance: $INSTANCE_NAME (from display_name: \"$DISPLAY_NAME\")
+
+          Triggered by @$ACTOR via workflow_dispatch.
+          Source workflow run: $RUN_URL"
+          git push
+          echo "Pushed deletion to the docs repo."
