@@ -17,13 +17,7 @@ namespace Everest::config {
 // Slot metadata
 // ---------------------------------------------------------------------------
 
-struct SlotInfo {
-    int slot_id;
-    std::string last_updated;
-    bool is_valid;
-    std::optional<std::string> description;
-    std::optional<std::string> config_file_path;
-};
+using SlotInfo = everest::config::SlotInfo;
 
 // ---------------------------------------------------------------------------
 // Status / result enums
@@ -93,8 +87,7 @@ struct LoadFromYamlResult {
 struct ConfigParameterUpdate {
     everest::config::ConfigurationParameterIdentifier identifier;
     std::string value;
-    /// \brief When true the module confirmed the value took effect without a reboot (Applied).
-    /// ConfigServiceCore will mutate the live module_configs accordingly.
+    /// \brief When true the module confirmed the value took effect without a reboot
     /// When false (default) the value is only persisted to storage (WillApplyOnRestart).
     bool immediately_applied = false;
 };
