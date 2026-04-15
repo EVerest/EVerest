@@ -1368,9 +1368,8 @@ bool Client::init(const config_t& cfg, const override_t& override) {
         }
 
         SSL_CTX_set_verify(ctx, mode,
-                           cfg.ignore_unhandled_critical_extensions
-                               ? &evse_security::critical_extension_bypass_callback
-                               : nullptr);
+                           cfg.ignore_unhandled_critical_extensions ? &evse_security::critical_extension_bypass_callback
+                                                                    : nullptr);
         if (cfg.status_request) {
             if (SSL_CTX_set_tlsext_status_type(ctx, TLSEXT_STATUSTYPE_ocsp) != 1) {
                 log_error("SSL_CTX_set_tlsext_status_type");
