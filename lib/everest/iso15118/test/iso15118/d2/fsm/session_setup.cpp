@@ -33,7 +33,7 @@ SCENARIO("ISO15118-2 session setup state transitions") {
 
         fsm::v2::FSM<d2::StateBase> fsm{ctx.create_state<d2::state::SessionSetup>()};
 
-        const auto header_req = d2::msg::Header{{0x02, 0xDB, 0x22, 0x07, 0x3B, 0x08, 0x4D, 0x2D}, std::nullopt};
+        const auto header_req = d2::msg::Header{{0, 0, 0, 0, 0, 0, 0, 0}, std::nullopt};
         const auto req = d2::msg::SessionSetupRequest{header_req, {0x12, 0xE2, 0x3E, 0x10, 0xD3, 0x48}};
 
         state_helper.handle_request(req);

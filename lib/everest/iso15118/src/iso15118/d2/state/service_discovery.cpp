@@ -137,6 +137,8 @@ Result ServiceDiscovery::feed(Event ev) {
 
         if (res.response_code >= dt::ResponseCode::FAILED) {
             // m_ctx.log("Error processing ServiceDiscoveryReq");
+            // [V2G2-539] Terminate session after ResponseCode::FAILED
+            m_ctx.session_stopped = true;
             return {};
         }
 
