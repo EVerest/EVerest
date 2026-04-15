@@ -141,6 +141,10 @@ public:
     virtual DuplicateSlotResult duplicate_slot(int slot_id, std::optional<std::string> description) = 0;
     virtual LoadFromYamlResult load_from_yaml(const std::string& raw_yaml) = 0;
 
+    // --- Active-slot in-memory access ---
+    virtual const everest::config::ModuleConfigurations& get_active_module_configurations() const = 0;
+    virtual const everest::config::ModuleConfigurations& reload_from_storage() = 0;
+
     // --- Slot-scoped configuration ---
     virtual GetConfigurationResult get_configuration(int slot_id) = 0;
     virtual std::vector<SetConfigParameterResult>

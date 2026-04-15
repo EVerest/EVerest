@@ -590,10 +590,6 @@ int boot(const po::variables_map& vm) {
     const auto config_opt = parse_string_option(vm, "config");
     const auto db_opt = parse_string_option(vm, "db");
     const bool reset_from_yaml = (vm.count("reset-from-yaml") != 0);
-
-    if (db_opt.empty()) {
-        throw BootException("--db is required. Provide the path to the configuration database file.");
-    }
     if (config_opt.empty()) {
         throw BootException("--config is required. A YAML config is always needed to provide ManagerSettings.");
     }
@@ -800,7 +796,8 @@ int boot(const po::variables_map& vm) {
 
     const auto migrations_dir = ms.runtime_settings.data_dir / "migrations";
     auto config_service_core = std::make_unique<config::ConfigServiceCore>(
-        config, ms, ms.db_dir, migrations_dir, everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
+        config->get_module_configurations(), ms, ms.db_dir, migrations_dir,
+        everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core);
 

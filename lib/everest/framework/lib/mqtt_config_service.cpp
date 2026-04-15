@@ -513,14 +513,7 @@ MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstrac
             const auto response_topic =
                 fmt::format("{}modules/{}/response", mqtt_abstraction.get_everest_prefix(), request.origin);
 
-            const auto cfg = config_svc.get_configuration(ConfigServiceInterface::ACTIVE_SLOT);
-            if (cfg.status != GetConfigurationStatus::Success) {
-                response.status_info = "Active configuration not available";
-                MqttMessagePayload payload{MqttMessageType::ConfigurationResponse, response};
-                mqtt_abstraction.publish(response_topic, payload, QOS::QOS2);
-                return;
-            }
-            const auto& module_configs = cfg.module_configurations;
+            const auto& module_configs = config_svc.get_active_module_configurations();
 
             if (request.type == Type::Get) {
                 const GetRequest get_request = std::get<GetRequest>(request.request);

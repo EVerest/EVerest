@@ -1240,62 +1240,6 @@ Config::Config(const MQTTSettings& mqtt_settings, const json& serialized_config)
     this->populate_error_map();
 }
 
-namespace {
-everest::config::ConfigurationParameterCharacteristics
-get_characteristics(const std::string& name,
-                    const std::vector<everest::config::ConfigurationParameter>& configuration_parameters) {
-    for (const auto& configuration_parameter : configuration_parameters) {
-        if (configuration_parameter.name == name) {
-            return configuration_parameter.characteristics;
-        }
-    }
-    throw std::out_of_range("oops");
-}
-} // namespace
-
-everest::config::SetConfigStatus
-ManagerConfig::update_config_value(const everest::config::ConfigurationParameterIdentifier& identifier,
-                                   const everest::config::ConfigEntry& value) {
-    try {
-        auto& configuration_parameters =
-            this->module_configs.at(identifier.module_id)
-                .configuration_parameters.at(identifier.module_implementation_id.value_or("!module"));
-        for (auto& param : configuration_parameters) {
-            if (param.name == identifier.configuration_parameter_name) {
-                param.value = value;
-                return everest::config::SetConfigStatus::Accepted;
-            }
-        }
-        return everest::config::SetConfigStatus::Rejected;
-    } catch (const std::exception&) {
-        return everest::config::SetConfigStatus::Rejected;
-    }
-}
-
-everest::config::GetConfigurationParameterResponse
-ManagerConfig::get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier) {
-    everest::config::GetConfigurationParameterResponse response;
-    response.status = GetSetResponseStatus::Failed;
-
-    try {
-        const auto& configuration_parameters =
-            this->module_configs.at(identifier.module_id)
-                .configuration_parameters.at(identifier.module_implementation_id.value_or("!module"));
-        for (const auto& p : configuration_parameters) {
-            if (p.name == identifier.configuration_parameter_name) {
-                response.status = GetSetResponseStatus::OK;
-                response.configuration_parameter = p;
-                return response;
-            }
-        }
-        response.status = GetSetResponseStatus::NotFound;
-    } catch (const std::exception&) {
-        response.status = GetSetResponseStatus::Failed;
-    }
-
-    return response;
-}
-
 error::ErrorTypeMap Config::get_error_map() const {
     return this->error_map;
 }

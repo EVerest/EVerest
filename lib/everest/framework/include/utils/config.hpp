@@ -312,17 +312,6 @@ public:
     /// \brief Create a ManagerConfig from ConfigParseSettings only
     explicit ManagerConfig(const ConfigParseSettings& ps);
 
-    /// \brief Updates the in-memory module_configs to reflect an immediately-applied config change.
-    /// Only call this when the module confirmed the value took effect without a reboot (Applied).
-    /// \returns Accepted on success, Rejected if the parameter is not found.
-    everest::config::SetConfigStatus
-    update_config_value(const everest::config::ConfigurationParameterIdentifier& identifier,
-                        const everest::config::ConfigEntry& value);
-
-    /// \brief Gets the configuration parameter associated with the \p identifier
-    /// \returns a result containing the configuration item or an error
-    everest::config::GetConfigurationParameterResponse
-    get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier);
 };
 
 ///
