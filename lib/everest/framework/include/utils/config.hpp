@@ -311,7 +311,6 @@ public:
     ///
     /// \brief Create a ManagerConfig from ConfigParseSettings only
     explicit ManagerConfig(const ConfigParseSettings& ps);
-
 };
 
 ///
