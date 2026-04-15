@@ -629,7 +629,8 @@ std::vector<int32_t> DatabaseHandler::get_charging_profile_ids_by_connector_id(c
     }
 
     if (status != SQLITE_DONE) {
-        throw QueryExecutionException(this->database->get_error_message());
+        EVLOG_warning << "Could not enumerate charging profiles for connector " << connector_id << ": "
+                      << this->database->get_error_message();
     }
 
     return ids;
