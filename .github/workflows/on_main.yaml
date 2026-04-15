@@ -72,3 +72,4 @@ jobs:
       build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
       build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
       deploy_docs: true
+      instance_name: ${{ needs.setup-env.outputs.instance_name }}

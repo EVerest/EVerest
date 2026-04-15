@@ -30,6 +30,10 @@ on:
         description: 'Whether the current repository is a fork'
         required: true
         type: boolean
+      instance_name:
+        description: 'The name of the instance to build the documentation for'
+        required: true
+        type: string
     secrets:
       SA_GITHUB_SSH_KEY:
         description: 'SSH key for the service account used to deploy the documentation'
@@ -122,7 +126,7 @@ jobs:
           --mount type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent \
           --env SSH_AUTH_SOCK=/ssh-agent \
           --env TRAILBOOK_everest_IS_RELEASE=OFF \
-          --env TRAILBOOK_everest_INSTANCE_NAME=nightly \
+          --env TRAILBOOK_everest_INSTANCE_NAME="${{ inputs.instance_name }}" \
           --env TRAILBOOK_everest_OVERWRITE_EXISTING_INSTANCE=ON \
           --env EVEREST_DOCS_REPO_URL=${{ steps.github-pages-input.outputs.url }} \
           --volume "${{ github.workspace }}:/ext" \
