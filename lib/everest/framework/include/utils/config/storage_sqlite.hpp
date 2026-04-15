@@ -40,7 +40,6 @@ public:
 
 private:
     std::unique_ptr<everest::db::sqlite::ConnectionInterface> db;
-    /// \brief ID of the SETTING row this instance is scoped to.
     const int config_id_;
     GenericResponseStatus write_module_data(const ModuleData& module_data);
     GenericResponseStatus write_module_fulfillment(const std::string& module_id, const Fulfillment& fulfillment);
@@ -50,7 +49,6 @@ private:
     GenericResponseStatus write_config_access(const std::string& module_id, const ConfigAccess& config_access);
     GenericResponseStatus write_module_config_access(const std::string& module_id, const std::string& other_module_id,
                                                      const ModuleConfigAccess& module_config_access);
-    GenericResponseStatus write_setting(const std::string& setting_name, const std::string& value);
     GetModuleFulfillmentsResponse get_module_fulfillments(const std::string& module_id);
     GetModuleDataResponse get_module_data(const std::string& module_id);
     GetModuleTierMappingsResponse get_module_tier_mappings(const std::string& module_id);
