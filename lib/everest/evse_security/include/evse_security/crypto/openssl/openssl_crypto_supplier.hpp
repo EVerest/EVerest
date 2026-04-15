@@ -6,7 +6,15 @@
 
 #include <evse_security/crypto/interface/crypto_supplier.hpp>
 
+#include <openssl/types.h>
+
 namespace evse_security {
+
+/// X509 verify callback that suppresses X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION when every
+/// critical extension on the current cert has a well-known RFC 5280 NID. Unknown/custom critical
+/// OIDs still cause verification to fail (and are logged). Signature matches both
+/// X509_STORE_CTX_set_verify_cb and SSL_CTX_set_verify.
+int critical_extension_bypass_callback(int ok, X509_STORE_CTX* ctx);
 
 class OpenSSLSupplier : public AbstractCryptoSupplier {
 public:
