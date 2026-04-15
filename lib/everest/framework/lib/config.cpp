@@ -1284,27 +1284,8 @@ get_characteristics(std::string_view name,
 }
 } // namespace
 
-everest::config::SetConfigStatus
-ManagerConfig::update_config_value(const everest::config::ConfigurationParameterIdentifier& identifier,
-                                   const everest::config::ConfigEntry& value) {
-    try {
-        auto& configuration_parameters =
-            this->module_configs.at(identifier.module_id)
-                .configuration_parameters.at(identifier.module_implementation_id.value_or("!module"));
-        for (auto& param : configuration_parameters) {
-            if (param.name == identifier.configuration_parameter_name) {
-                param.value = value;
-                return everest::config::SetConfigStatus::Accepted;
-            }
-        }
-        return everest::config::SetConfigStatus::Rejected;
-    } catch (const std::exception&) {
-        return everest::config::SetConfigStatus::Rejected;
-    }
-}
-
 everest::config::GetConfigurationParameterResponse
-ManagerConfig::get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier) {
+ManagerConfig::get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier) const {
     everest::config::GetConfigurationParameterResponse response;
     response.status = GetSetResponseStatus::Failed;
 

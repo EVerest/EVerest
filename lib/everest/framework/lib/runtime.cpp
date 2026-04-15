@@ -81,7 +81,12 @@ ManagerSettings::ManagerSettings(const std::string& prefix, const std::string& c
 
 ManagerSettings::ManagerSettings(const std::string& prefix, const std::string& config, const std::string& db_path) :
     ManagerSettings(prefix, config) {
-    db_dir = fs::path(db_path);
+
+    if (db_path.length() != 0) {
+        db_dir = fs::path(db_path);
+    } else {
+        db_dir = this->runtime_settings.prefix / defaults::DB_FILE_NAME;
+    }
 }
 
 void ManagerSettings::init_settings(const everest::config::Settings& settings) {

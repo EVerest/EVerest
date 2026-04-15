@@ -10,32 +10,33 @@
 #include <utils/config/settings.hpp>
 #include <utils/config/slot_manager.hpp>
 #include <utils/config/storage_sqlite.hpp>
+#include <utils/config/types.hpp>
 #include <utils/config_service_interface.hpp>
-
-namespace Everest {
-class ManagerConfig;
-} // namespace Everest
 
 namespace Everest::config {
 
 /// \brief Core framework implementation of ConfigServiceInterface.
 ///
-/// Owns a SqliteConfigSlotManager and uses a SqliteStorage factory for
-/// per-slot storage access. Delegates active-slot configuration operations
-/// to the shared ManagerConfig instance.
+/// Owns a SqliteConfigSlotManager and uses a SqliteStorage factory for per-slot storage access.
+/// Owns the active-slot ModuleConfigurations as the single in-memory runtime authority.
 class ConfigServiceCore : public ConfigServiceInterface {
 public:
-    /// \param active_config  Shared pointer to the active slot's ManagerConfig.
+    /// \param initial_module_configs Initial module configurations for the active slot.
     /// \param parse_settings Parse settings used to validate incoming YAML configs (paths to schemas, modules, etc.).
     /// \param db_path        Full path to the SQLite database file.
     /// \param migrations_dir Directory containing SQL migration files.
     /// \param active_slot_id Slot ID that is currently booted.
     /// \param stop_fn        Callback to stop running modules (optional stub).
     /// \param restart_fn     Callback to restart modules (optional stub).
-    ConfigServiceCore(std::shared_ptr<ManagerConfig> active_config, const ConfigParseSettings& parse_settings,
-                      std::filesystem::path db_path, std::filesystem::path migrations_dir, int active_slot_id,
+    ConfigServiceCore(everest::config::ModuleConfigurations initial_module_configs,
+                      const ConfigParseSettings& parse_settings, std::filesystem::path db_path,
+                      std::filesystem::path migrations_dir, int active_slot_id,
                       std::function<StopModulesResult()> stop_fn = {},
                       std::function<RestartModulesResult()> restart_fn = {});
+
+    // --- Active-slot in-memory access (zero-copy) ---
+    const everest::config::ModuleConfigurations& get_active_module_configurations() const override;
+    const everest::config::ModuleConfigurations& reload_from_storage() override;
 
     // --- Slot management ---
     std::vector<SlotInfo> list_all_slots() override;
@@ -59,7 +60,7 @@ public:
     void register_config_update_handler(std::function<void(const ConfigurationUpdate&)> handler) override;
 
 private:
-    std::shared_ptr<ManagerConfig> active_config_;
+    everest::config::ModuleConfigurations module_configs_;
     ConfigParseSettings parse_settings_;
     everest::config::SqliteConfigSlotManager slot_manager_;
     std::filesystem::path db_path_;
