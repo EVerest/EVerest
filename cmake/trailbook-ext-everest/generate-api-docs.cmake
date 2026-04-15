@@ -26,7 +26,7 @@ function(_trailbook_ev_generate_html_from_api)
       message(
           FATAL_ERROR
           "trailbook_ev_generate_rst_from_api: No target named trailbook_${args_TRAILBOOK_NAME} found."
-          " Did you forget to call add_trailbook() first?"
+          " Did you forget to call add_trailbook_ev() first?"
       )
   endif()
 
@@ -154,7 +154,7 @@ function(trailbook_ev_generate_api_doc)
         message(
             FATAL_ERROR
             "trailbook_ev_generate_api_dock: No target named trailbook_${args_TRAILBOOK_NAME} found."
-            " Did you forget to call add_trailbook() first?"
+            " Did you forget to call add_trailbook_ev() first?"
         )
     endif()
 
