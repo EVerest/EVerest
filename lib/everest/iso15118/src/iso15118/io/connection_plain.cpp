@@ -8,7 +8,7 @@
 #include <cstring>
 #include <thread>
 
-#include <endian.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 
 #include <iso15118/detail/helper.hpp>
@@ -36,7 +36,7 @@ ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, const std::string& 
     }
 
     // before bind, set the port
-    address.sin6_port = htobe16(end_point.port);
+    address.sin6_port = htons(end_point.port);
 
     int optval_tmp{1};
     const auto set_reuseaddr = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval_tmp, sizeof(optval_tmp));
