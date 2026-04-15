@@ -106,10 +106,17 @@ int critical_extension_bypass_callback(int ok, X509_STORE_CTX* ctx) {
 
     // RFC 5280 extension NIDs OpenSSL handles during path validation — safe to ignore if critical.
     static constexpr std::array<int, 12> handled_nids = {
-        NID_basic_constraints,         NID_key_usage,          NID_ext_key_usage,
-        NID_subject_alt_name,          NID_name_constraints,   NID_certificate_policies,
-        NID_policy_constraints,        NID_inhibit_any_policy, NID_authority_key_identifier,
-        NID_subject_key_identifier,    NID_crl_distribution_points,
+        NID_basic_constraints,
+        NID_key_usage,
+        NID_ext_key_usage,
+        NID_subject_alt_name,
+        NID_name_constraints,
+        NID_certificate_policies,
+        NID_policy_constraints,
+        NID_inhibit_any_policy,
+        NID_authority_key_identifier,
+        NID_subject_key_identifier,
+        NID_crl_distribution_points,
         NID_info_access,
     };
 
@@ -358,8 +365,7 @@ SSL_CTX* init_ssl(const config::SSLConfig& ssl_config) {
     // With SSL_VERIFY_NONE the callback is not invoked for client-cert validation; it is still
     // invoked by OpenSSL's internal paths that walk the trust store (OCSP stapling, cert_cb, etc.).
     SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE,
-                       ssl_config.ignore_unhandled_critical_extensions ? &critical_extension_bypass_callback
-                                                                       : nullptr);
+                       ssl_config.ignore_unhandled_critical_extensions ? &critical_extension_bypass_callback : nullptr);
 
     SSL_CTX_set_client_hello_cb(ctx, &client_hello_cb, nullptr);
 

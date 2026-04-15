@@ -402,9 +402,9 @@ public:
         std::vector<certificate_config_t> chains; //!< server certificate chains - must be at least one
         //!< one or more trust anchor PEM certificates for client certificate verification
         ConfigItem verify_locations_file{nullptr};
-        ConfigItem verify_locations_path{nullptr}; //!< for client certificate
-        std::int32_t io_timeout_ms{-1};            //!< socket timeout in milliseconds (recommend > 1 sec)
-        bool verify_client{true};                  //!< client certificate required
+        ConfigItem verify_locations_path{nullptr};        //!< for client certificate
+        std::int32_t io_timeout_ms{-1};                   //!< socket timeout in milliseconds (recommend > 1 sec)
+        bool verify_client{true};                         //!< client certificate required
         bool ignore_unhandled_critical_extensions{false}; //!< when true, install a verify callback that
                                                           //!< suppresses X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION
                                                           //!< for certs whose critical extensions all have
