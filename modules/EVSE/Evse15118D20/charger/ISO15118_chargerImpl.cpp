@@ -220,6 +220,7 @@ void ISO15118_chargerImpl::ready() {
             mod->config.enable_tls_key_logging, ///< enable_tls_key_logging
             mod->config.enforce_tls_1_3,        ///< enforce_tls_1_3
             mod->config.tls_key_logging_path,   ///< tls_key_logging_path
+            mod->config.tls_bypass_unhandled_critical_extensions, ///< ignore_unhandled_critical_extensions
         },
         mod->config.device,
         convert_tls_negotiation_strategy(mod->config.tls_negotiation_strategy),
