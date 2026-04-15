@@ -112,7 +112,6 @@ class EverestCore:
     def __init__(self,
                  prefix_path: Path,
                  config_path: Path = None,
-                 db_path: Path = None,
                  standalone_module: Optional[Union[str, List[str]]] = None,
                  manager_extra_args: Optional[List[str]] = None,
                  everest_configuration_adjustment_strategies: Optional[
@@ -123,7 +122,6 @@ class EverestCore:
         Args:
             everest_prefix (Path): location of installed everest distribution".
             standalone_module (str): Standalone module parameter provided to EVerest manager app (can be overwritten in startup)
-            db_path (Path): Path to the database file (optional)
         """
 
         self.process = None

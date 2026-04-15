@@ -19,13 +19,15 @@ struct DuplicateSlotResult {
     std::optional<int> slot_id;
 };
 
-struct StoredSlotInfo {
+struct SlotInfo {
     int id;
     std::string last_updated;
     bool is_valid;
     std::optional<std::string> config_file_path;
     std::optional<std::string> description;
 };
+
+using StoredSlotInfo = SlotInfo;
 
 class SqliteConfigSlotManager {
 public:
@@ -37,7 +39,7 @@ public:
     /// \brief Returns the next available slot ID (MAX(ID) + 1, or 0 if no slots exist).
     int next_slot_id();
     GenericResponseStatus write_config_slot(int slot_id, std::optional<std::string> description = std::nullopt);
-    std::vector<StoredSlotInfo> list_slots();
+    std::vector<SlotInfo> list_slots();
     GenericResponseStatus delete_slot(int slot_id);
 
     /// \brief Duplicates all data belonging to \p source_slot_id into a new slot.

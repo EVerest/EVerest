@@ -69,19 +69,7 @@ const everest::config::ModuleConfigurations& ConfigServiceCore::reload_from_stor
 // --- Slot management ---
 
 std::vector<SlotInfo> ConfigServiceCore::list_all_slots() {
-    const auto stored = slot_manager_.list_slots();
-    std::vector<SlotInfo> result;
-    result.reserve(stored.size());
-    for (const auto& s : stored) {
-        SlotInfo info;
-        info.slot_id = s.id;
-        info.last_updated = s.last_updated;
-        info.is_valid = s.is_valid;
-        info.description = s.description;
-        info.config_file_path = s.config_file_path;
-        result.push_back(std::move(info));
-    }
-    return result;
+    return slot_manager_.list_slots();
 }
 
 int ConfigServiceCore::get_active_slot_id() {
