@@ -8,6 +8,7 @@
 #include <cbv2g/iso_2/iso2_msgDefEncoder.h>
 #include <everest/tls/openssl_util.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <inttypes.h>
 #include <math.h>
@@ -648,10 +649,8 @@ static enum v2g_event handle_iso_service_discovery(struct v2g_connection* conn) 
              "PnC is not allowed without TLS-communication. Correcting value to '1' (ExternalPayment)");
     }
 
-    const auto payment_option_length =
-        conn->ctx->evse_v2g_data.payment_option_list.size() > iso2_paymentOptionType_2_ARRAY_SIZE
-            ? iso2_paymentOptionType_2_ARRAY_SIZE
-            : conn->ctx->evse_v2g_data.payment_option_list.size();
+    const auto payment_option_length = std::min(conn->ctx->evse_v2g_data.payment_option_list.size(),
+                                                static_cast<size_t>(iso2_paymentOptionType_2_ARRAY_SIZE));
 
     memcpy(res->PaymentOptionList.PaymentOption.array, conn->ctx->evse_v2g_data.payment_option_list.data(),
            payment_option_length * sizeof(iso2_paymentOptionType));
