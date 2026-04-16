@@ -473,9 +473,14 @@ private:
     /**
      * \brief initialise server certificate chains
      * \param[in] chain_files server certificate chains
+     * \param[in] ignore_unhandled_critical_extensions when true, the init-time
+     *            chain self-check (openssl::verify_chain) accepts certs whose
+     *            critical extensions all carry well-known RFC 5280 NIDs. Mirrors
+     *            the handshake-time bypass installed in init_ssl().
      * \return true on success
      */
-    bool init_certificates(const std::vector<certificate_config_t>& chain_files);
+    bool init_certificates(const std::vector<certificate_config_t>& chain_files,
+                           bool ignore_unhandled_critical_extensions = false);
 
     /**
      * \brief unconfigure SSL certificates
