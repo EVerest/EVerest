@@ -49,6 +49,7 @@ active_modules:
     module: OCPP
     config_module:
       ChargePointConfigPath: libocpp-config-costandprice.json
+      EnableExternalWebsocketControl: true
     connections:
       evse_manager:
         - module_id: evse_manager

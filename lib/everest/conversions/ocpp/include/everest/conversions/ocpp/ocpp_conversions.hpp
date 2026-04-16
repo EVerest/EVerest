@@ -28,6 +28,8 @@ ocpp::DisplayMessage to_ocpp_display_message(const types::display_message::Displ
 
 types::session_cost::TariffMessage to_everest_tariff_message(const ocpp::TariffMessage& tariff_message);
 
+types::session_cost::DefaultPrice to_everest_default_price(const std::vector<ocpp::DisplayMessageContent>& messages);
+
 types::session_cost::SessionStatus to_everest_running_cost_state(const ocpp::RunningCostState& state);
 
 types::session_cost::SessionCostChunk create_session_cost_chunk(const double& price, const uint32_t& number_of_decimals,

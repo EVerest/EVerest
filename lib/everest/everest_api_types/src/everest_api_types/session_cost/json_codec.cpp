@@ -16,6 +16,17 @@ namespace everest::lib::API::V1_0::types::session_cost {
 
 using json = nlohmann::json;
 
+void to_json(json& j, DefaultPrice const& k) noexcept {
+    j = json{
+        {"messages", k.messages},
+    };
+}
+void from_json(const json& j, DefaultPrice& k) {
+    for (auto val : j.at("messages")) {
+        k.messages.push_back(val);
+    }
+}
+
 void to_json(json& j, TariffMessage const& k) noexcept {
     j = json{
         {"messages", k.messages},

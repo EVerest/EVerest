@@ -1167,3 +1167,125 @@ class TestOcpp16CostAndPrice:
                 'transaction_id': ANY
             }
         })
+
+    @pytest.mark.everest_core_config(get_everest_config_path_str('everest-config-ocpp16-costandprice.yaml'))
+    @pytest.mark.ocpp_config_adaptions(GenericOCPP16ConfigAdjustment([
+        ("CostAndPrice", "DefaultPrice", {"priceText": "0.30 EUR/kWh", "priceTextOffline": "Station is offline"}),
+        ("CostAndPrice", "DefaultPriceText", {}),
+    ]))
+    @pytest.mark.probe_module
+    @pytest.mark.everest_config_adaptions(ProbeModuleCostAndPriceSessionCostConfigurationAdjustment())
+    @pytest.mark.asyncio
+    async def test_default_price_published_on_disconnect(self, test_config: OcppTestConfiguration,
+                                                         test_utility: TestUtility,
+                                                         test_controller: TestController,
+                                                         probe_module, central_system: CentralSystem):
+        """
+        When DefaultPrice is configured and the CS loses CSMS connectivity, default_price shall be
+        published via session_cost.default_price with the configured offline price text.
+        """
+        logging.info("######### test_default_price_published_on_disconnect #########")
+
+        default_price_mock = Mock()
+        probe_module.subscribe_variable("session_cost", "default_price", default_price_mock)
+
+        probe_module.start()
+        await probe_module.wait_to_be_ready()
+
+        await central_system.wait_for_chargepoint()
+
+        # Reset any publications that may have occurred during startup.
+        default_price_mock.reset_mock()
+
+        test_controller.disconnect_websocket()
+        # Allow time for the disconnect to propagate through the event loop before polling.
+
+        await self.await_mock_called(default_price_mock)
+
+        call_data = default_price_mock.call_args[0][0]
+        assert len(call_data["messages"]) == 1
+        assert call_data["messages"][0]["content"] == "Station is offline"
+        assert call_data["messages"][0]["language"] == "en"
+
+        # Reconnect for clean teardown.
+        test_controller.connect_websocket()
+        await central_system.wait_for_chargepoint(wait_for_bootnotification=False)
+
+    @pytest.mark.everest_core_config(get_everest_config_path_str('everest-config-ocpp16-costandprice.yaml'))
+    @pytest.mark.ocpp_config_adaptions(GenericOCPP16ConfigAdjustment([
+        ("CostAndPrice", "DefaultPrice", {"priceText": "0.30 EUR/kWh", "priceTextOffline": "Station is offline"}),
+        ("CostAndPrice", "DefaultPriceText", {}),
+    ]))
+    @pytest.mark.probe_module
+    @pytest.mark.everest_config_adaptions(ProbeModuleCostAndPriceSessionCostConfigurationAdjustment())
+    @pytest.mark.asyncio
+    async def test_default_price_published_on_reconnect(self, test_config: OcppTestConfiguration,
+                                                        test_utility: TestUtility,
+                                                        test_controller: TestController,
+                                                        probe_module, central_system: CentralSystem):
+        """
+        When the CS reconnects to the CSMS after being offline, default_price shall be
+        re-published via session_cost.default_price with the configured online price text.
+        """
+        logging.info("######### test_default_price_published_on_reconnect #########")
+
+        default_price_mock = Mock()
+        probe_module.subscribe_variable("session_cost", "default_price", default_price_mock)
+
+        probe_module.start()
+        await probe_module.wait_to_be_ready()
+
+        await central_system.wait_for_chargepoint()
+
+        # Disconnect and wait for the offline publication, then clear the mock.
+        default_price_mock.reset_mock()
+        test_controller.disconnect_websocket()
+        await self.await_mock_called(default_price_mock)
+        default_price_mock.reset_mock()
+
+        # Reconnect and wait for the online publication.
+        test_controller.connect_websocket()
+        await central_system.wait_for_chargepoint(wait_for_bootnotification=False)
+
+        await self.await_mock_called(default_price_mock)
+
+        call_data = default_price_mock.call_args[0][0]
+        assert len(call_data["messages"]) == 1
+        assert call_data["messages"][0]["content"] == "0.30 EUR/kWh"
+        assert call_data["messages"][0]["language"] == "en"
+
+    @pytest.mark.everest_core_config(get_everest_config_path_str('everest-config-ocpp16-costandprice.yaml'))
+    @pytest.mark.ocpp_config_adaptions(GenericOCPP16ConfigAdjustment([
+        ("CostAndPrice", "DefaultPrice", {"priceText": "0.30 EUR/kWh", "priceTextOffline": "Station is offline"}),
+        ("CostAndPrice", "DefaultPriceText", {}),
+    ]))
+    @pytest.mark.probe_module
+    @pytest.mark.everest_config_adaptions(ProbeModuleCostAndPriceSessionCostConfigurationAdjustment())
+    @pytest.mark.asyncio
+    async def test_default_price_published_on_change(self, probe_module, central_system: CentralSystem):
+        """
+        When DefaultPrice is changed via ChangeConfiguration while connected, default_price
+        shall be immediately re-published with the new online price text.
+        """
+        logging.info("######### test_default_price_published_on_change #########")
+
+        default_price_mock = Mock()
+        probe_module.subscribe_variable("session_cost", "default_price", default_price_mock)
+
+        probe_module.start()
+        await probe_module.wait_to_be_ready()
+
+        chargepoint_with_pm = await central_system.wait_for_chargepoint()
+        default_price_mock.reset_mock()
+
+        new_price = {"priceText": "0.40 EUR/kWh"}
+        await chargepoint_with_pm.change_configuration_req(
+            key="DefaultPrice", value=json.dumps(new_price)
+        )
+
+        await self.await_mock_called(default_price_mock)
+
+        call_data = default_price_mock.call_args[0][0]
+        assert len(call_data["messages"]) == 1
+        assert call_data["messages"][0]["content"] == "0.40 EUR/kWh"
+        assert call_data["messages"][0]["language"] == "en"

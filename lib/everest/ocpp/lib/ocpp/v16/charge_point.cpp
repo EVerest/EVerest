@@ -367,6 +367,10 @@ void ChargePoint::register_tariff_message_callback(
     this->charge_point->register_tariff_message_callback(tariff_message_callback);
 }
 
+void ChargePoint::register_default_price_callback(const std::function<void(const TariffMessage& message)>& callback) {
+    this->charge_point->register_default_price_callback(callback);
+}
+
 void ChargePoint::register_set_display_message_callback(
     const std::function<DataTransferResponse(const std::vector<DisplayMessage>&)> set_display_message_callback) {
     this->charge_point->register_set_display_message_callback(set_display_message_callback);

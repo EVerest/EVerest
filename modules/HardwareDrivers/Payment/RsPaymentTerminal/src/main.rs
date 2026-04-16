@@ -39,7 +39,7 @@ use generated::types::{
     },
     money::MoneyAmount,
     payment_terminal::{BankSessionToken, BankTransactionSummary},
-    session_cost::{SessionCost, SessionStatus, TariffMessage},
+    session_cost::{SessionCost, SessionStatus, TariffMessage, DefaultPrice},
 };
 use generated::{
     get_config, AuthTokenProviderServiceSubscriber, AuthTokenValidatorServiceSubscriber,
@@ -425,6 +425,12 @@ impl SessionCostClientSubscriber for PaymentTerminalModule {
     fn on_tariff_message(&self, _context: &Context, value: TariffMessage) {
         for message in value.messages {
             log::debug!("Received tariff message {0:}", message.content);
+        }
+    }
+
+    fn on_default_price(&self, context: &Context, value: DefaultPrice) {
+        for message in value.messages {
+            log::debug!("Received default price {0:}", message.content);
         }
     }
 }

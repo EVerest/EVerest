@@ -11,6 +11,10 @@
 
 namespace everest::lib::API::V1_0::types::session_cost {
 
+struct DefaultPrice {
+    std::vector<text_message::MessageContent> messages;
+};
+
 struct TariffMessage {
     std::vector<text_message::MessageContent> messages;
     std::optional<std::string> ocpp_transaction_id;
