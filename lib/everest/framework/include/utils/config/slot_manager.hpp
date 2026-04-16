@@ -33,7 +33,15 @@ class SqliteConfigSlotManager {
 public:
     static constexpr int DEFAULT_SLOT_ID = 0;
 
+    /// \brief Opens its own Connection and applies migrations.
     SqliteConfigSlotManager(const std::filesystem::path& db_path, const std::filesystem::path& migrations_path);
+
+    /// \brief Shares an already-migrated Connection.
+    /// Calls open_connection() on the shared connection; the destructor calls close_connection().
+    /// \param connection Shared database connection (already migrated)
+    explicit SqliteConfigSlotManager(std::shared_ptr<everest::db::sqlite::ConnectionInterface> connection);
+
+    ~SqliteConfigSlotManager();
 
     bool is_valid(int slot_id = DEFAULT_SLOT_ID);
     /// \brief Returns the next available slot ID (MAX(ID) + 1, or 0 if no slots exist).
@@ -54,7 +62,7 @@ public:
     GenericResponseStatus set_next_boot_slot_id(int slot_id);
 
 private:
-    std::unique_ptr<everest::db::sqlite::ConnectionInterface> db;
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> db;
 };
 
 } // namespace everest::config

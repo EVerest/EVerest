@@ -3,10 +3,18 @@
 
 #pragma once
 
+#include <memory>
+
 #include <everest/database/sqlite/connection.hpp>
 #include <utils/config/storage.hpp>
 
 namespace everest::config {
+
+/// \brief Opens the config database at \p db_path, applies SQL migrations from \p migrations_dir
+/// exactly once, and returns a shared Connection.  open_count is 0 on return, each consumer
+/// calls open_connection() in its own constructor and close_connection() in its destructor.
+std::shared_ptr<everest::db::sqlite::ConnectionInterface>
+open_config_database(const std::filesystem::path& db_path, const std::filesystem::path& migrations_dir);
 
 /// \brief Implements StorageInterface with SQLite
 class SqliteStorage : public StorageInterface {
@@ -16,7 +24,7 @@ public:
     /// Migrated databases carry their original config at this ID; fresh databases write their first config here.
     static constexpr int DEFAULT_CONFIG_ID = 0;
 
-    /// \brief Constructor
+    /// \brief Opens its own Connection and applies migrations.
     /// \param db_path Path to SQLite database file
     /// \param migration_files_path Path to SQL migration files
     /// \param config_id The config slot ID this instance is scoped to (default: DEFAULT_CONFIG_ID)
@@ -24,6 +32,15 @@ public:
     /// \throws std::runtime_error if database cannot be opened
     SqliteStorage(const fs::path& db_path, const std::filesystem::path& migration_files_path,
                   int config_id = DEFAULT_CONFIG_ID);
+
+    /// \brief Shares an already-migrated Connection.
+    /// Calls open_connection() on the shared connection; the destructor calls close_connection().
+    /// \param connection Shared database connection (already migrated)
+    /// \param config_id The config slot ID this instance is scoped to (default: DEFAULT_CONFIG_ID)
+    SqliteStorage(std::shared_ptr<everest::db::sqlite::ConnectionInterface> connection,
+                  int config_id = DEFAULT_CONFIG_ID);
+
+    ~SqliteStorage();
 
     GenericResponseStatus write_module_configs(const ModuleConfigurations& module_configs) override;
     GetModuleConfigsResponse get_module_configs() override;
@@ -39,7 +56,7 @@ public:
                     const std::optional<fs::path>& config_file_path) override;
 
 private:
-    std::unique_ptr<everest::db::sqlite::ConnectionInterface> db;
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> db;
     const int config_id_;
     GenericResponseStatus write_module_data(const ModuleData& module_data);
     GenericResponseStatus write_module_fulfillment(const std::string& module_id, const Fulfillment& fulfillment);

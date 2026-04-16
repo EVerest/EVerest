@@ -21,15 +21,14 @@ std::string now_rfc3339() {
 } // namespace
 
 ConfigServiceCore::ConfigServiceCore(everest::config::ModuleConfigurations initial_module_configs,
-                                     const ConfigParseSettings& parse_settings, std::filesystem::path db_path,
-                                     std::filesystem::path migrations_dir, int active_slot_id,
-                                     std::function<StopModulesResult()> stop_fn,
+                                     const ConfigParseSettings& parse_settings,
+                                     std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection,
+                                     int active_slot_id, std::function<StopModulesResult()> stop_fn,
                                      std::function<RestartModulesResult()> restart_fn) :
     module_configs_(std::move(initial_module_configs)),
     parse_settings_(parse_settings),
-    slot_manager_(db_path, migrations_dir),
-    db_path_(db_path),
-    migrations_dir_(migrations_dir),
+    slot_manager_(db_connection),
+    db_(std::move(db_connection)),
     active_slot_id_(active_slot_id),
     stop_fn_(std::move(stop_fn)),
     restart_fn_(std::move(restart_fn)),
@@ -37,7 +36,7 @@ ConfigServiceCore::ConfigServiceCore(everest::config::ModuleConfigurations initi
 }
 
 std::unique_ptr<everest::config::SqliteStorage> ConfigServiceCore::make_storage(int slot_id) {
-    return std::make_unique<everest::config::SqliteStorage>(db_path_, migrations_dir_, slot_id);
+    return std::make_unique<everest::config::SqliteStorage>(db_, slot_id);
 }
 
 void ConfigServiceCore::publish_active_slot_update(const ActiveSlotUpdate& update) {
