@@ -10,3 +10,5 @@ build:ci --strip=always
 build:ci --copt=-g0
 build:ci --repository_cache=~/.cache/bazel-repo-cache
 build:ci --disk_cache=~/.cache/bazel-disk-cache
+
+build:ci --//lib/everest/framework:framework_shared=True

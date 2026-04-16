@@ -1,6 +1,18 @@
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_import", "cc_library", "cc_shared_library")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("//third-party/bazel/toolchains:defs.bzl", "CROSS_PYTHON_INCOMPATIBLE")
+
+bool_flag(
+    name = "framework_shared",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "_framework_shared",
+    flag_values = {":framework_shared": "True"},
+    visibility = ["//visibility:public"],
+)
 
 py_binary(
     name = "collect_migration_files",
@@ -38,7 +50,7 @@ genrule(
 )
 
 cc_library(
-    name = "framework",
+    name = "framework_static",
     srcs = glob(["lib/**/*.cpp"]),
     hdrs = glob(["include/**/*.hpp"]) + [
         ":compile_time_settings",
@@ -56,7 +68,7 @@ cc_library(
     strip_include_prefix = "include",
     visibility = ["//visibility:public"],
     deps = [
-        "//lib/everest/io:io",
+        "//lib/everest/io",
         "//lib/everest/log:liblog",
         "//lib/everest/sqlite:everest-sqlite",
         "//lib/everest/util",
@@ -68,6 +80,29 @@ cc_library(
         "@com_github_pboettch_json-schema-validator//:json-schema-validator",
         "@rapidyaml",
     ],
+)
+
+cc_shared_library(
+    name = "framework_so",
+    exports_filter = [":framework_static"],
+    shared_lib_name = "libframework.so",
+    deps = [":framework_static"],
+)
+
+cc_import(
+    name = "framework_dynamic",
+    linkopts = ["-lframework"],
+    shared_library = ":framework_so",
+    deps = [":framework_static"],
+)
+
+alias(
+    name = "framework",
+    actual = select({
+        ":_framework_shared": ":framework_dynamic",
+        "//conditions:default": ":framework_static",
+    }),
+    visibility = ["//visibility:public"],
 )
 
 cc_library(
