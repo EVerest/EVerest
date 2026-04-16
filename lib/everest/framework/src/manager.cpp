@@ -653,12 +653,14 @@ int boot(const po::variables_map& vm) {
     }
 
     std::unique_ptr<everest::config::SqliteStorage> db_storage;
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> shared_db;
     bool db_storage_has_module_configs = false;
     std::optional<everest::config::ModuleConfigurations> preloaded_module_configs;
 
     {
         auto bs = init_database_bootstrap(ms, reset_from_yaml);
         db_storage = std::move(bs.storage);
+        shared_db = std::move(bs.db_connection);
         db_storage_has_module_configs = bs.module_configs_initialized;
         preloaded_module_configs = std::move(bs.module_configs);
     }
@@ -794,9 +796,8 @@ int boot(const po::variables_map& vm) {
 
     mqtt_abstraction->spawn_main_loop_thread();
 
-    const auto migrations_dir = ms.runtime_settings.data_dir / "migrations";
     auto config_service_core =
-        std::make_unique<config::ConfigServiceCore>(config->get_module_configurations(), ms, ms.db_dir, migrations_dir,
+        std::make_unique<config::ConfigServiceCore>(config->get_module_configurations(), ms, std::move(shared_db),
                                                     everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core);

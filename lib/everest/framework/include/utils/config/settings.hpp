@@ -92,6 +92,8 @@ struct DatabaseBootstrap {
     std::unique_ptr<everest::config::SqliteStorage> storage;
     bool module_configs_initialized = false;
     std::optional<everest::config::ModuleConfigurations> module_configs;
+    /// \brief Shared connection to the config database (already migrated).
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection;
 };
 
 /// \brief Initialize a DatabaseBootstrap from an already-initialized ManagerSettings.
