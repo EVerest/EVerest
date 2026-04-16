@@ -55,10 +55,25 @@ int to_int(ConfigurationColumnModuleIdIndex configuration_column_module_id_index
 }
 } // namespace
 
+std::shared_ptr<ConnectionInterface> open_config_database(const std::filesystem::path& db_path,
+                                                          const std::filesystem::path& migrations_dir) {
+    auto db = std::make_shared<Connection>(db_path);
+    SchemaUpdater updater{db.get()};
+    if (!updater.apply_migration_files(migrations_dir, TARGET_MIGRATION_FILE_VERSION)) {
+        if (db_path.parent_path().empty()) {
+            EVLOG_error << "Could not apply migrations for database at provided path: \"" << db_path.string()
+                        << "\" likely because the database path is just a filename. You MUST provide a full path to "
+                           "the database.";
+        }
+        throw MigrationException("SQL migration failed");
+    }
+    return db;
+}
+
 SqliteStorage::SqliteStorage(const fs::path& db_path, const std::filesystem::path& migration_files_path,
                              int config_id) :
     config_id_(config_id) {
-    db = std::make_unique<Connection>(db_path);
+    db = std::make_shared<Connection>(db_path);
 
     SchemaUpdater updater{db.get()};
 
@@ -77,6 +92,17 @@ SqliteStorage::SqliteStorage(const fs::path& db_path, const std::filesystem::pat
     } else {
         EVLOG_debug << "Established connection to database successfully: " << db_path;
     }
+}
+
+SqliteStorage::SqliteStorage(std::shared_ptr<ConnectionInterface> connection, int config_id) :
+    db(std::move(connection)), config_id_(config_id) {
+    if (!db->open_connection()) {
+        throw std::runtime_error("Could not open shared database connection");
+    }
+}
+
+SqliteStorage::~SqliteStorage() {
+    db->close_connection();
 }
 
 GenericResponseStatus SqliteStorage::write_module_configs(const ModuleConfigurations& module_configs) {

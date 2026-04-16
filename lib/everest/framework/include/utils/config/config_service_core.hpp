@@ -2,7 +2,6 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <filesystem>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -23,14 +22,13 @@ class ConfigServiceCore : public ConfigServiceInterface {
 public:
     /// \param initial_module_configs Initial module configurations for the active slot.
     /// \param parse_settings Parse settings used to validate incoming YAML configs (paths to schemas, modules, etc.).
-    /// \param db_path        Full path to the SQLite database file.
-    /// \param migrations_dir Directory containing SQL migration files.
+    /// \param db_connection  Shared, already-migrated SQLite connection (from open_config_database()).
     /// \param active_slot_id Slot ID that is currently booted.
     /// \param stop_fn        Callback to stop running modules (optional stub).
     /// \param restart_fn     Callback to restart modules (optional stub).
     ConfigServiceCore(everest::config::ModuleConfigurations initial_module_configs,
-                      const ConfigParseSettings& parse_settings, std::filesystem::path db_path,
-                      std::filesystem::path migrations_dir, int active_slot_id,
+                      const ConfigParseSettings& parse_settings,
+                      std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection, int active_slot_id,
                       std::function<StopModulesResult()> stop_fn = {},
                       std::function<RestartModulesResult()> restart_fn = {});
 
@@ -63,8 +61,8 @@ private:
     everest::config::ModuleConfigurations module_configs_;
     ConfigParseSettings parse_settings_;
     everest::config::SqliteConfigSlotManager slot_manager_;
-    std::filesystem::path db_path_;
-    std::filesystem::path migrations_dir_;
+    /// \brief Keepalive for the shared connection
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_;
     int active_slot_id_;
     std::function<StopModulesResult()> stop_fn_;
     std::function<RestartModulesResult()> restart_fn_;
