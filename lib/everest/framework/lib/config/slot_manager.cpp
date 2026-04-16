@@ -19,7 +19,7 @@ namespace fs = std::filesystem;
 
 SqliteConfigSlotManager::SqliteConfigSlotManager(const std::filesystem::path& db_path,
                                                  const std::filesystem::path& migrations_path) {
-    db = std::make_unique<Connection>(db_path);
+    db = std::make_shared<Connection>(db_path);
 
     SchemaUpdater updater{db.get()};
     if (!updater.apply_migration_files(migrations_path, TARGET_MIGRATION_FILE_VERSION)) {
@@ -36,6 +36,17 @@ SqliteConfigSlotManager::SqliteConfigSlotManager(const std::filesystem::path& db
     } else {
         EVLOG_debug << "Established connection to database successfully: " << db_path;
     }
+}
+
+SqliteConfigSlotManager::SqliteConfigSlotManager(std::shared_ptr<everest::db::sqlite::ConnectionInterface> connection) :
+    db(std::move(connection)) {
+    if (!db->open_connection()) {
+        throw std::runtime_error("Could not open shared database connection");
+    }
+}
+
+SqliteConfigSlotManager::~SqliteConfigSlotManager() {
+    db->close_connection();
 }
 
 int SqliteConfigSlotManager::next_slot_id() {
