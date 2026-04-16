@@ -224,7 +224,7 @@ void MQTTAbstractionImpl::unsubscribe(const std::string& topic) {
         return;
     }
 
-    EVLOG_debug << fmt::format("Unsubscribing from topic: {}", topic);
+    EVLOG_verbose << fmt::format("Unsubscribing from topic: {}", topic);
 
     this->subscribed_topics.erase(topic);
 
@@ -475,7 +475,7 @@ void MQTTAbstractionImpl::register_handler(const std::string& topic, std::shared
     this->message_handler.register_handler(topic, handler);
 
     if (subscription_required(topic)) {
-        EVLOG_debug << fmt::format("Subscribing to {}", topic);
+        EVLOG_verbose << fmt::format("Subscribing to {}", topic);
         this->subscribe(topic, qos);
     }
 }
@@ -483,7 +483,7 @@ void MQTTAbstractionImpl::register_handler(const std::string& topic, std::shared
 void MQTTAbstractionImpl::unregister_handler(const std::string& topic, const Token& token) {
     BOOST_LOG_FUNCTION();
 
-    EVLOG_debug << fmt::format("Unregistering handler {} for {}", fmt::ptr(&token), topic);
+    EVLOG_verbose << fmt::format("Unregistering handler {} for {}", fmt::ptr(&token), topic);
 
     if (this->mqtt_is_connected) {
         this->unsubscribe(topic);
