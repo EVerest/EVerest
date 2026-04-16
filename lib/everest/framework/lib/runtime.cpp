@@ -42,13 +42,16 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
 
     const auto migrations_dir = ms.runtime_settings.data_dir / "migrations";
 
-    everest::config::SqliteConfigSlotManager slot_mgr(ms.db_dir, migrations_dir);
+    auto db_conn = everest::config::open_config_database(ms.db_dir, migrations_dir);
+    bs.db_connection = db_conn;
+
+    everest::config::SqliteConfigSlotManager slot_mgr(db_conn);
 
     const bool db_valid = slot_mgr.is_valid(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
     if (db_valid && !reset_from_yaml) {
         EVLOG_info << "Booting and parsing configuration from database: " << ms.db_dir;
         bs.storage = std::make_unique<everest::config::SqliteStorage>(
-            ms.db_dir, migrations_dir, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
+            db_conn, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
         bs.module_configs_initialized = true;
         const auto resp = bs.storage->get_module_configs();
         if (resp.status == everest::config::GenericResponseStatus::Failed) {
@@ -65,7 +68,7 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
         slot_mgr.delete_slot(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
         slot_mgr.write_config_slot(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
         bs.storage = std::make_unique<everest::config::SqliteStorage>(
-            ms.db_dir, migrations_dir, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
+            db_conn, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
         bs.module_configs_initialized = false;
     }
 
