@@ -6,12 +6,30 @@
 namespace module::main {
 
 void LemDCBM400600Controller::init() {
-    EVLOG_info << "LEM DCBM 400/600: Try to communicate with the device";
+    EVLOG_info << "LEM DCBM 400/600: Try to communicate with the device to initialize it.";
     this->time_sync_helper->set_time_config_params(config.meter_timezone, config.meter_dst);
+    this->http_client->set_command_timeout(this->config.command_timeout_ms);
+
+    if (this->config.IT >= 0) {
+        call_with_retry(
+            [this]() {
+                const int current_it = this->get_identification_type();
+                if (current_it != this->config.IT) {
+                    EVLOG_info << "LEM DCBM 400/600: Setting OCMF Identification Type (IT) to: " << this->config.IT;
+                    this->set_identification_type(this->config.IT);
+                } else {
+                    EVLOG_info << "LEM DCBM 400/600: OCMF Identification Type (IT) already set to " << current_it
+                               << ", skipping write";
+                }
+            },
+            this->config.init_number_of_http_retries, this->config.init_retry_wait_in_milliseconds);
+    }
+
     call_with_retry([this]() { this->fetch_meter_id_from_device(); }, this->config.init_number_of_http_retries,
                     this->config.init_retry_wait_in_milliseconds);
+
     this->time_sync_helper->restart_unsafe_period();
-    this->http_client->set_command_timeout(this->config.command_timeout_ms);
+    EVLOG_info << "LEM DCBM 400/600: Device initialized successfully.";
 }
 
 std::vector<std::string> split(const std::string& str, char delimiter) {
@@ -338,6 +356,38 @@ LemDCBM400600Controller::transaction_start_request_to_dcbm_payload(const types::
             {"evseId", request.evse_id},          {"transactionId", request.transaction_id}, {"clientId", client_id},
             {"tariffId", this->config.tariff_id}, {"cableId", this->config.cable_id},        {"userData", ""}}
             .dump();
+    }
+}
+
+void LemDCBM400600Controller::set_identification_type(int identification_type) {
+    const std::string payload = nlohmann::ordered_json{{"ocmfId", {{"IT", identification_type}}}}.dump();
+    auto response = this->http_client->put("/v1/settings", payload);
+    if (response.status_code != 200) {
+        throw UnexpectedDCBMResponseCode("/v1/settings", 200, response);
+    }
+    try {
+        bool success = nlohmann::json::parse(response.body).at("result") == 1;
+        if (!success) {
+            throw UnexpectedDCBMResponseBody("/v1/settings",
+                                             "OCMF Identification Type setting was rejected by the device.");
+        }
+    } catch (nlohmann::json::exception& json_error) {
+        throw UnexpectedDCBMResponseBody(
+            "/v1/settings", fmt::format("Json error '{}' for body '{}'", json_error.what(), response.body));
+    }
+    EVLOG_info << "LEM DCBM 400/600: OCMF Identification Type (IT) set to: " << identification_type;
+}
+
+int LemDCBM400600Controller::get_identification_type() {
+    auto response = this->http_client->get("/v1/settings");
+    if (response.status_code != 200) {
+        throw UnexpectedDCBMResponseCode("/v1/settings", 200, response);
+    }
+    try {
+        return nlohmann::json::parse(response.body).at("ocmfId").at("IT").get<int>();
+    } catch (nlohmann::json::exception& json_error) {
+        throw UnexpectedDCBMResponseBody(
+            "/v1/settings", fmt::format("Json error '{}' for body '{}'", json_error.what(), response.body));
     }
 }
 
