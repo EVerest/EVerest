@@ -6,6 +6,7 @@ namespace fs = std::filesystem;
 
 #include <database_handler_mock.hpp>
 #include <evse_security_mock.hpp>
+#include <limits>
 #include <ocpp/common/call_types.hpp>
 #include <ocpp/v16/charge_point_configuration.hpp>
 #include <ocpp/v16/smart_charging.hpp>
@@ -446,6 +447,34 @@ TEST_F(ChargepointTestFixture, ValidateProfile__ValidProfile_InvalidChargingSche
     auto handler = createSmartChargingHandler();
 
     const std::vector<ChargingRateUnit>& charging_schedule_allowed_charging_rate_units{ChargingRateUnit::W};
+    bool sut = handler->validate_profile(profile, connector_id, ignore_no_transaction, profile_max_stack_level,
+                                         max_charging_profiles_installed, charging_schedule_max_periods,
+                                         charging_schedule_allowed_charging_rate_units);
+
+    ASSERT_FALSE(sut);
+}
+
+TEST_F(ChargepointTestFixture, ValidateProfile__PeriodLimitIsInfinity__ReturnsFalse) {
+    auto profile = createChargingProfile(createChargeSchedule(ChargingRateUnit::A));
+    profile.chargingSchedule.chargingSchedulePeriod = {
+        ChargingSchedulePeriod{0, std::numeric_limits<float>::infinity(), std::nullopt}};
+    auto handler = createSmartChargingHandler();
+
+    const std::vector<ChargingRateUnit>& charging_schedule_allowed_charging_rate_units{ChargingRateUnit::A};
+    bool sut = handler->validate_profile(profile, connector_id, ignore_no_transaction, profile_max_stack_level,
+                                         max_charging_profiles_installed, charging_schedule_max_periods,
+                                         charging_schedule_allowed_charging_rate_units);
+
+    ASSERT_FALSE(sut);
+}
+
+TEST_F(ChargepointTestFixture, ValidateProfile__MinChargingRateIsInfinity__ReturnsFalse) {
+    auto profile = createChargingProfile(createChargeSchedule(ChargingRateUnit::A));
+    profile.chargingSchedule.chargingSchedulePeriod = {ChargingSchedulePeriod{0, 10.0f, std::nullopt}};
+    profile.chargingSchedule.minChargingRate = std::numeric_limits<float>::infinity();
+    auto handler = createSmartChargingHandler();
+
+    const std::vector<ChargingRateUnit>& charging_schedule_allowed_charging_rate_units{ChargingRateUnit::A};
     bool sut = handler->validate_profile(profile, connector_id, ignore_no_transaction, profile_max_stack_level,
                                          max_charging_profiles_installed, charging_schedule_max_periods,
                                          charging_schedule_allowed_charging_rate_units);
