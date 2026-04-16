@@ -10,6 +10,7 @@
 
 #include <everest/slac/EvseSlacConfig.hpp>
 #include <everest/slac/slac.hpp>
+#include <everest/slac/telemetry.hpp>
 
 namespace everest::lib::slac::fsm::evse {
 
@@ -143,6 +144,7 @@ struct ContextCallbacks {
     std::function<void(const std::string&)> log_info{nullptr};
     std::function<void(const std::string&)> log_warn{nullptr};
     std::function<void(const std::string&)> log_error{nullptr};
+    std::function<void(const std::string&, const std::string&, const std::string&)> pub_telemetry{nullptr};
 };
 
 struct Context {
@@ -178,10 +180,13 @@ struct Context {
     void log_info(const std::string& text);
     void log_warn(const std::string& text);
     void log_error(const std::string& text);
+    void telemetry(const std::string& block, const std::string& key, const std::string& value);
 
     defs::ModemVendor modem_vendor{defs::ModemVendor::Unknown};
     uint8_t evse_mac[ETH_ALEN];
     messages::cm_slac_match_cnf match_confirm_message;
+
+    SlacTelemetry status;
 
 private:
     const ContextCallbacks& callbacks;

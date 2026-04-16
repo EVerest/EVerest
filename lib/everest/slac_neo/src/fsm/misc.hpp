@@ -10,6 +10,8 @@ std::string format_nmk(const uint8_t* nmk);
 
 std::string format_mac_addr(const uint8_t* mac);
 
+bool parse_mac_addr(const std::string& mac_str, uint8_t* mac, size_t length);
+
 std::string format_run_id(const uint8_t* run_id);
 
 std::string format_mmtype(const uint16_t mmtype);
