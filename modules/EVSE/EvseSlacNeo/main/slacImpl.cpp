@@ -90,6 +90,14 @@ void slacImpl::run() {
         ;
     };
 
+    callbacks.pub_telemetry = [this](const std::string& block, const std::string& key, const std::string& value) {
+        if (mod->info.telemetry_enabled) {
+            nlohmann::json data = nlohmann::json::parse(value);
+            telemetry_generic[block][key] = data;
+            mod->telemetry.publish("Slac", block, telemetry_generic[block]);
+        }
+    };
+
     if (config.publish_mac_on_first_parm_req) {
         callbacks.signal_ev_mac_address_parm_req = [this](const std::string& mac) { publish_ev_mac_address(mac); };
     }
@@ -116,6 +124,7 @@ void slacImpl::run() {
     fsm_ctx.slac_config.reset_instead_of_fail = config.reset_instead_of_fail;
 
     fsm_ctx.slac_config.print_state_transitions = config.print_state_transitions;
+    fsm_ctx.slac_config.provide_telemetry = mod->info.telemetry_enabled;
 
     fsm_ctx.slac_config.generate_nmk();
 
