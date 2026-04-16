@@ -42,20 +42,6 @@ run_binary(
     tool = "@cxx.rs//:codegen",
 )
 
-# config_setting(                                                                                                                                                                      
-#       name = "_framework_shared",
-#     values = {"dynamic_mode": "fully"},                                                                                                                                              
-#   ) 
-
-# alias(
-#     name = "framework",
-#     actual = select({
-#         ":_framework_shared": "//lib/everest/framework:framework_dynamic",
-#         "//conditions:default": "//lib/everest/framework",
-#     }),
-#     visibility = ["//visibility:public"],
-# )
-
 cc_library(
     name = "everestrs_bridge",
     srcs = ["src/lib.rs" + ".cc"],
@@ -64,7 +50,7 @@ cc_library(
     deps = [
         ":everestrs_bridge/include",
         ":everestrs_sys_include",
-        "//lib/everest/framework:framework_shared",
+        "//lib/everest/framework",
     ],
 )
 
@@ -76,7 +62,7 @@ cc_library(
     deps = [
         ":everestrs_bridge/include",
         ":everestrs_sys_include",
-        "//lib/everest/framework:framework_shared",
+        "//lib/everest/framework",
     ],
 )
 
