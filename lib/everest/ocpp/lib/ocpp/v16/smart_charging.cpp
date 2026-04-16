@@ -3,6 +3,7 @@
 
 #include "ocpp/v16/charge_point_configuration_interface.hpp"
 #include <chrono>
+#include <cmath>
 #include <ocpp/common/constants.hpp>
 #include <ocpp/common/types.hpp>
 #include <ocpp/common/utils.hpp>
@@ -84,7 +85,16 @@ bool validate_schedule(const ChargingSchedule& schedule, const int charging_sche
         return false;
     }
 
+    if (!std::isfinite(schedule.minChargingRate.value_or(0.0))) {
+        EVLOG_warning << "INVALID SCHEDULE - Non-finite minChargingRate: " << schedule.minChargingRate.value_or(0.0);
+        return false;
+    }
+
     for (const auto& period : schedule.chargingSchedulePeriod) {
+        if (!std::isfinite(period.limit)) {
+            EVLOG_warning << "INVALID SCHEDULE - Non-finite limit: " << period.limit;
+            return false;
+        }
         if (period.numberPhases.has_value()) {
             const auto& number_phases = period.numberPhases.value();
             if (number_phases <= 0 or number_phases > DEFAULT_AND_MAX_NUMBER_PHASES) {
