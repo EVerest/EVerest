@@ -825,6 +825,7 @@ async def test_iso15118_ac_session_no_energy_during_session(
     await start_session(test_controller, session_event_mock, test_controller.plug_in_ac_iso)
     await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=10, timeout=15)
     await set_external_limits(probe_module, "gcp", 0, 0)
+    await assert_power_below(powermeter_mock, power_threshold_w=10, timeout=10)
     await assert_no_events(session_event_mock, ["ChargingStarted"], wait_time=5)
     await assert_energy_below(powermeter_mock, energy_threshold_wh=25, timeout=10)
     await set_external_limits(probe_module, "gcp", 10000, 10000)
