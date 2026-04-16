@@ -25,10 +25,6 @@
 #include <iostream>
 #include <sstream>
 
-
-#define LOG_STATE_ENTRY if(fsm.ctx->slac_config.print_state_transitions){std::cout << "[FSM] ENTER State: " << boost::core::demangle(typeid(*this).name()) << std::endl;}
-#define LOG_STATE_EXIT  if(fsm.ctx->slac_config.print_state_transitions){std::cout << "[FSM] EXIT State: " << boost::core::demangle(typeid(*this).name()) << std::endl;}
-
 namespace everest::lib::slac::msm {
 using namespace everest::lib::slac;
 using namespace std::chrono_literals;
@@ -200,7 +196,6 @@ struct Lumissil      : public CheckLink {
         fsm.ctx->send_slac_message(fsm.ctx->slac_config.plc_peer_mac, link_status_req);
     }
     template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-        LOG_STATE_ENTRY;
         CheckLink::on_entry(e, fsm);
     }
 
@@ -220,7 +215,6 @@ struct Qualcomm      : public CheckLink {
         fsm.ctx->send_slac_message(fsm.ctx->slac_config.plc_peer_mac, link_status_req);
     }
     template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-        LOG_STATE_ENTRY;
         CheckLink::on_entry(e, fsm);
     }
 };
@@ -230,17 +224,8 @@ struct Qualcomm      : public CheckLink {
 struct Session_def     : public state_machine_def<Session_def> {
     // States
     static constexpr auto FINALIZE_SOUNDING_DELAY_MS = 45;
-    struct WaitStartAtten   : public timeout_ms_state<defs::TT_MATCH_SEQUENCE_MS> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-            timeout_ms_state<defs::TT_MATCH_SEQUENCE_MS>::on_entry(e, fsm);
-        }
-    };
+    struct WaitStartAtten   : public timeout_ms_state<defs::TT_MATCH_SEQUENCE_MS> { };
     struct Sounding         : public timeout_ms_state<defs::TT_EVSE_MATCH_MNBC_MS> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-            timeout_ms_state<defs::TT_EVSE_MATCH_MNBC_MS>::on_entry(e, fsm);
-        }
         struct update_session {
             template <class Fsm, class SrcT, class TarT>
             void operator()(message const& e, Fsm& fsm, SrcT& src, TarT& ) {
@@ -266,34 +251,13 @@ struct Session_def     : public state_machine_def<Session_def> {
             //        +------------------+--------------------+-----------------------+-
             > {};
     };
-    struct FinalizeSounding : public timeout_ms_state<FINALIZE_SOUNDING_DELAY_MS> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-            timeout_ms_state<FINALIZE_SOUNDING_DELAY_MS>::on_entry(e, fsm);
-        }
-    };
-    struct WaitAttenRsp     : public timeout_ms_state<defs::TT_MATCH_RESPONSE_MS> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-            timeout_ms_state<defs::TT_MATCH_RESPONSE_MS>::on_entry(e, fsm);
-        }
-    };
-    struct WaitSlacMatch    : public timeout_ms_state<defs::TT_EVSE_MATCH_SESSION_MS> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-            timeout_ms_state<defs::TT_EVSE_MATCH_SESSION_MS>::on_entry(e, fsm);
-        }
-    };
+    struct FinalizeSounding : public timeout_ms_state<FINALIZE_SOUNDING_DELAY_MS> { };
+    struct WaitAttenRsp     : public timeout_ms_state<defs::TT_MATCH_RESPONSE_MS> { };
+    struct WaitSlacMatch    : public timeout_ms_state<defs::TT_EVSE_MATCH_SESSION_MS> {  };
     struct MatchComplete    : public state<> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
         typedef boost::mpl::vector<SessionMatched> flag_list;
     };
     struct Failed           : public state<> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
         typedef boost::mpl::vector<SessionFailed> flag_list;
     };
 
@@ -337,6 +301,11 @@ struct Session_def     : public state_machine_def<Session_def> {
             fsm.ctx->send_slac_message(fsm.session_data.ev_mac, atten_char);
             // logging
             // FIXME (jh) Still need to add all logging
+            int aag_overall_sum = 0;
+            for (size_t i = 0; i < slac::defs::AAG_LIST_LEN; ++i) {
+                aag_overall_sum += atten_char.attenuation_profile.aag[i];
+            }
+            fsm.ctx->status.average_attenuation = aag_overall_sum / slac::defs::AAG_LIST_LEN;
         }
     };
     struct retry_snd {
@@ -353,6 +322,7 @@ struct Session_def     : public state_machine_def<Session_def> {
         session_data.create_cm_slac_match_cnf(reply, msg, ctx->slac_config.session_nmk);
         ctx->send_slac_message(session_data.ev_mac, reply);
         ctx->signal_cm_slac_match_cnf(session_data.ev_mac);
+        std::copy(std::begin(session_data.ev_mac), std::end(session_data.ev_mac), std::begin(ctx->status.ev_mac));
     }
 
     // Transitions
@@ -381,7 +351,6 @@ struct Session_def     : public state_machine_def<Session_def> {
     void on_entry(Event const&, Fsm& fsm) {
         //ctx = fsm.ctx; <- does not work here, since there is no parent FSM
         session_data.num_retries = 0;
-        LOG_STATE_ENTRY;
     }
 
     fsm::evse::MatchingSessionData session_data;
@@ -389,33 +358,11 @@ struct Session_def     : public state_machine_def<Session_def> {
 };
 struct Matching_def    : public state_machine_def<Matching_def> {
     // States
-    struct Init    : public state<> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-    };
-    struct Listen  : public state<> {
-            template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-    };
-    struct Pipe    : public state<> {
-            template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-    };
-    struct Matched : public exit_pseudo_state<update> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-            exit_pseudo_state<update>::on_entry(e, fsm);
-        }
-    };
-    struct Failed  : public exit_pseudo_state<update> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-            exit_pseudo_state<update>::on_entry(e, fsm);
-        }
-    };
+    struct Init    : public state<> { };
+    struct Listen  : public state<> { };
+    struct Pipe    : public state<> { };
+    struct Matched : public exit_pseudo_state<update> { };
+    struct Failed  : public exit_pseudo_state<update> { };
 
     // Guards
     bool is_matched(update const&) {
@@ -452,7 +399,6 @@ struct Matching_def    : public state_machine_def<Matching_def> {
     struct add_session {
         template <class Fsm, class SrcT, class TarT>
         void operator()(message const& e, Fsm& fsm, SrcT& src, TarT& ) {
-            std::cout << "@@@@@@@@@ Adding SLAC session: " << fsm.sessions.size() << std::endl;
             // Add session
             auto& ctx = *fsm.ctx;
             auto& msg = e.payload.get_payload<slac::messages::cm_slac_parm_req>();
@@ -465,7 +411,7 @@ struct Matching_def    : public state_machine_def<Matching_def> {
             auto param_confirm = data.create_cm_slac_parm_cnf();
             ctx.send_slac_message(param_confirm.forwarding_sta, param_confirm);
             ctx.signal_cm_slac_parm_req(data.ev_mac);
-            std::cout << " -> size: " << fsm.sessions.size() << std::endl;
+            ctx.status.session_count = fsm.sessions.size();
         }
     };
 
@@ -496,13 +442,14 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         ctx = fsm.ctx;
         to.setDurationMilliSeconds(ctx->slac_config.slac_init_timeout_ms);
         to.reset();
-        LOG_STATE_ENTRY;
+        ctx->status.match_state = SlacState::Matching;
+        ctx->status.d3_state = D3State::Matching;
     }
 
     template <class Event, class Fsm>
     void on_exit(Event const&, Fsm& fsm) {
-        LOG_STATE_EXIT;
         sessions.clear();
+        ctx->status.session_count = 0;
     }
 
     std::vector<Session> sessions;
@@ -515,32 +462,11 @@ struct Matching_def    : public state_machine_def<Matching_def> {
 };
 struct Reset_def       : public state_machine_def<Reset_def> {
     // States
-    struct Init      : public state<>{
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-              LOG_STATE_ENTRY;
-      }
-    };
-    struct MsgSent   : public state<>{
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-              LOG_STATE_ENTRY;
-      }
-    };
-
-    struct MsgValid  : public state<>{
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-              LOG_STATE_ENTRY;
-      }
-    };
-    struct ResetChip : public exit_pseudo_state<update>{
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-              LOG_STATE_ENTRY;
-      }
-    };
-    struct Idle      : public exit_pseudo_state<update>{
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-              LOG_STATE_ENTRY;
-      }
-    };
+    struct Init      : public state<>{ };
+    struct MsgSent   : public state<>{ };
+    struct MsgValid  : public state<>{ };
+    struct ResetChip : public exit_pseudo_state<update>{ };
+    struct Idle      : public exit_pseudo_state<update>{ };
 
     // Guards
     struct msg_expected : public is_message_of_type<defs::MMTYPE_CM_SET_KEY | defs::MMTYPE_MODE_CNF>{ };
@@ -581,7 +507,9 @@ struct Reset_def       : public state_machine_def<Reset_def> {
         fsm.ctx->slac_config.generate_nmk();
         to.setDurationMilliSeconds(fsm.ctx->slac_config.set_key_timeout_ms);
         to.reset();
-        LOG_STATE_ENTRY;
+        ctx->status.match_state = SlacState::Reset;
+        ctx->status.d3_state = D3State::Unmatched;
+        ctx->status.modem_NMK = false;
     }
 
     fsm::evse::Context* ctx;
@@ -604,21 +532,9 @@ struct ResetChip_def   : public state_machine_def<ResetChip_def> {
             return to.timeout();
         }
     };
-    struct Sent      : public state<> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-    };
-    struct Received  : public state<> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-    };
-    struct Done      : public exit_pseudo_state<update> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-    };
+    struct Sent      : public state<> { };
+    struct Received  : public state<> { };
+    struct Done      : public exit_pseudo_state<update> { };
 
     // Guards
     bool is_done(update const&){
@@ -670,33 +586,18 @@ struct ResetChip_def   : public state_machine_def<ResetChip_def> {
     template <class Event, class Fsm>
     void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
-        LOG_STATE_ENTRY;
+        ctx->status.match_state = SlacState::ResetChip;
+        ctx->status.d3_state = D3State::Unmatched;
     }
 
     fsm::evse::Context* ctx;
 };
 struct Matched_def     : public state_machine_def<Matched_def> {
     // States
-    struct Init          : public state<> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-    };
-    struct NoDetect      : public state<> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-    };
-    struct Other         : public state<> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-    };
-    struct Failed        : public exit_pseudo_state<message> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-    };
+    struct Init          : public state<> { };
+    struct NoDetect      : public state<> { };
+    struct Other         : public state<> { };
+    struct Failed        : public exit_pseudo_state<message> { };
 
     // Guards
     struct detect_link {
@@ -734,12 +635,17 @@ struct Matched_def     : public state_machine_def<Matched_def> {
         ctx = fsm.ctx;
         ctx->signal_dlink_ready(true);
         link_check_to_ms = ctx->slac_config.link_status.poll_in_matched_state_ms;
-        LOG_STATE_ENTRY;
+        ctx->status.match_state = SlacState::Matched;
+        ctx->status.d3_state = D3State::Matched;
+        ctx->status.modem_link_ready = true;
     }
 
     template <class Event, class Fsm>
     void on_exit(Event const&, Fsm&) {
         ctx->signal_dlink_ready(false);
+        ctx->status.ev_mac.fill(0);
+        ctx->status.average_attenuation = 0.f;
+        ctx->status.modem_link_ready = false;
     }
 
     fsm::evse::Context* ctx;
@@ -747,29 +653,10 @@ struct Matched_def     : public state_machine_def<Matched_def> {
 };
 struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
     // States
-    struct Init          : public state<> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-        template <class Event, class Fsm> void on_exit(Event const& e, Fsm& fsm) {
-            LOG_STATE_EXIT;
-        }
-    };
-    struct NoDetect      : public state<> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-    };
-    struct Failed        : public exit_pseudo_state<none> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-    };
-    struct Matched       : public exit_pseudo_state<message> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-    };
+    struct Init          : public state<> { };
+    struct NoDetect      : public state<> { };
+    struct Failed        : public exit_pseudo_state<none> { };
+    struct Matched       : public exit_pseudo_state<message> { };
 
     // Guards
     struct is_match_req : public is_message_of_type<defs::MMTYPE_CM_SLAC_MATCH | defs::MMTYPE_MODE_REQ> { };
@@ -814,7 +701,8 @@ struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
         link_check_to_ms = ctx->slac_config.link_status.retry_ms;
         to.setDurationMilliSeconds(ctx->slac_config.link_status.timeout_ms);
         to.reset();
-        LOG_STATE_ENTRY;
+        ctx->status.match_state = SlacState::WairForLink;
+        ctx->status.d3_state = D3State::Unmatched;
     }
 
 
@@ -829,40 +717,25 @@ struct Init_def        : public state_machine_def<Init_def> {
     // States
     struct Init       : timeout_state {
         template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
             timeout_state::state_timeout_ms = fsm.ctx->slac_config.request_info_delay_ms;
             timeout_state::on_entry(e, fsm);
         }
     };
     struct OpAttr     : timeout_state {
         template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
             timeout_state::state_timeout_ms = fsm.ctx->slac_config.request_info_delay_ms;
             timeout_state::on_entry(e, fsm);
         }
     };
     struct GetVersion : timeout_state {
         template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
             timeout_state::state_timeout_ms = fsm.ctx->slac_config.request_info_delay_ms;
             timeout_state::on_entry(e, fsm);
         }
     };
-    struct Done       : exit_pseudo_state<update> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-    };
-    struct Other      : state<> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-            LOG_STATE_ENTRY;
-        }
-    };
+    struct Done       : exit_pseudo_state<update> { };
+    struct Other      : state<> { };
     struct Lumissil   : public state<> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-              LOG_STATE_ENTRY;
-      }
-
         static std::string device_info(message const& e) {
             auto msg = e.payload.get_payload<messages::lumissil::nscm_get_version_cnf>();
             return utils::device_info(msg);
@@ -871,10 +744,6 @@ struct Init_def        : public state_machine_def<Init_def> {
         static auto constexpr msg_type = defs::lumissil::MMTYPE_NSCM_GET_VERSION | defs::MMTYPE_MODE_CNF;
     };
     struct Qualcomm   : public state<> {
-        template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
-              LOG_STATE_ENTRY;
-      }
-
         static std::string device_info(message const& e) {
             auto msg = e.payload.get_payload<messages::qualcomm::op_attr_cnf>();
             return utils::device_info(msg);
@@ -918,9 +787,9 @@ struct Init_def        : public state_machine_def<Init_def> {
     // Members
     template <class Event, class Fsm>
     void on_entry(Event const&, Fsm& fsm) {
-//        fsm.ctx->log_info("Entry Init_def");
-        LOG_STATE_ENTRY;
         ctx = fsm.ctx;
+        ctx->status.match_state = SlacState::Init;
+        ctx->status.d3_state = D3State::Unmatched;
     }
 
     fsm::evse::Context* ctx;
@@ -952,7 +821,15 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
     using WaitForLink_Fail = WaitForLink::exit_pt<WaitForLink_def::Failed>;
     using WaitForLink_Match = WaitForLink::exit_pt<WaitForLink_def::Matched>;
 
-    struct Idle   : public state<> { };
+    struct Idle   : public state<> {
+        template <class Event, class Fsm>
+        void on_entry(Event const&, Fsm& fsm) {
+            fsm.ctx->status.match_state = SlacState::Idle;
+            fsm.ctx->status.d3_state = D3State::Unmatched;
+            fsm.ctx->status.modem_PIB = true;
+            fsm.ctx->status.modem_NMK = true;
+        }
+    };
     struct Failed : public state<> {
         template <class Event, class Fsm>
         void on_entry(Event const&, Fsm& fsm) {
@@ -960,6 +837,8 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
             if (ctx.slac_config.ac_mode_five_percent) {
                 ctx.signal_error_routine_request();
             }
+            ctx.status.match_state = SlacState::Failed;
+            ctx.status.d3_state = D3State::Unmatched;
         }
     };
 

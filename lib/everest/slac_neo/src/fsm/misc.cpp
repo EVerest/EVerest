@@ -3,8 +3,8 @@
 #include "misc.hpp"
 
 #include <net/ethernet.h>
-
 #include <everest/slac/slac.hpp>
+#include <stdexcept>
 
 std::string format_mac_addr(const uint8_t* mac) {
     char string_buffer[ETH_ALEN * 2 + (ETH_ALEN - 1) + 1];
@@ -13,6 +13,25 @@ std::string format_mac_addr(const uint8_t* mac) {
     return string_buffer;
 }
 
+bool parse_mac_addr(const std::string& mac_str, uint8_t* mac, size_t length) {
+    if (length < ETH_ALEN) {
+        return false;
+    }
+
+    if (mac_str.length() != 17) {
+        return false;
+    }
+
+    // %hhx reads a hex value directly into the 1-byte unsigned char elements
+    int parsed = std::sscanf(mac_str.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+                             &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]);
+
+    if (parsed != ETH_ALEN) {
+        return false;
+    }
+
+    return true;
+}
 std::string format_nmk(const uint8_t* nmk) {
     char string_buffer[everest::lib::slac::defs::NMK_LEN * 3];
     for (int i = 0; i < everest::lib::slac::defs::NMK_LEN; i++) {
