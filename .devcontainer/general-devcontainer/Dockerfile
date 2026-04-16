@@ -19,6 +19,7 @@ USER root
 RUN apt-get update && apt-get install -y \
     protobuf-compiler \
     libsystemd-dev \
+    libboost-log-dev \
     tmux \
     chrpath \
     cpio \
@@ -28,6 +29,7 @@ RUN apt-get update && apt-get install -y \
     zstd \
     liblz4-tool \
     file \
+    iproute2 \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y locales \
     && sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen \
     && dpkg-reconfigure --frontend=noninteractive locales  \
@@ -39,7 +41,8 @@ ENV LANG en_US.UTF-8
 
 # EVerest Development Tool - Dependencies
 RUN pip install --break-system-packages \
-    nanopb
+    nanopb \
+    pytest
 
 # EVerest Development Tool
 
