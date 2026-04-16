@@ -8,6 +8,8 @@
 #include <future>
 
 #include <everest/slac/slac_event.hpp>
+#include <everest_api_types/telemetry/codec.hpp>
+#include <everest_api_types/telemetry/json_codec.hpp>
 #include <fmt/core.h>
 #include <thread>
 
@@ -21,6 +23,14 @@ static std::unique_ptr<FSMController> fsm_ctrl{nullptr};
 
 namespace module {
 namespace main {
+
+namespace {
+namespace api_telemetry = everest::lib::API::V1_0::types::telemetry;
+
+template <typename T> nlohmann::json to_telemetry_json(std::string const& value) {
+    return api_telemetry::deserialize<T>(value);
+}
+} // namespace
 
 static std::string mac_to_ascii(const std::string& mac_binary) {
     if (mac_binary.size() < 6)
@@ -90,6 +100,19 @@ void slacImpl::run() {
         ;
     };
 
+    callbacks.pub_telemetry = [this](const std::string& block, const std::string& key, const std::string& value) {
+        if (mod->info.telemetry_enabled) {
+            if (block == "generic" && key == "status") {
+                telemetry_generic[block][key] = to_telemetry_json<api_telemetry::SlacStatus>(value);
+            } else if (block == "FSM" && key == "state") {
+                telemetry_generic[block][key] = to_telemetry_json<api_telemetry::SlacFsmState>(value);
+            } else {
+                telemetry_generic[block][key] = value;
+            }
+            mod->telemetry.publish("Slac", block, telemetry_generic[block]);
+        }
+    };
+
     if (config.publish_mac_on_first_parm_req) {
         callbacks.signal_ev_mac_address_parm_req = [this](const std::string& mac) { publish_ev_mac_address(mac); };
     }
@@ -116,6 +139,7 @@ void slacImpl::run() {
     fsm_ctx.slac_config.reset_instead_of_fail = config.reset_instead_of_fail;
 
     fsm_ctx.slac_config.print_state_transitions = config.print_state_transitions;
+    fsm_ctx.slac_config.provide_telemetry = mod->info.telemetry_enabled;
 
     fsm_ctx.slac_config.generate_nmk();
 

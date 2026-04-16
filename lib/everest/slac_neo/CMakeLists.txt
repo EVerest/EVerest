@@ -18,7 +18,7 @@ target_sources(slac_neo
     src/HomeplugMessage.cpp
     src/EvseSlacConfig.cpp
     src/MatchingSessionData.cpp
-
+    src/telemetry.cpp
     #fsm
     src/fsm/misc.cpp
     src/fsm/context.cpp
@@ -36,4 +36,7 @@ target_link_libraries(slac_neo
         everest::tls
         fsm::fsm
         Boost::boost
+    PRIVATE
+        everest::everest_api_types
+        nlohmann_json::nlohmann_json
 )

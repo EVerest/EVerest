@@ -24,9 +24,11 @@ struct Conf {};
 class EvseSlacNeo : public Everest::ModuleBase {
 public:
     EvseSlacNeo() = delete;
-    EvseSlacNeo(const ModuleInfo& info, std::unique_ptr<slacImplBase> p_main, Conf& config) :
-        ModuleBase(info), p_main(std::move(p_main)), config(config){};
+    EvseSlacNeo(const ModuleInfo& info, Everest::TelemetryProvider& telemetry, std::unique_ptr<slacImplBase> p_main,
+                Conf& config) :
+        ModuleBase(info), telemetry(telemetry), p_main(std::move(p_main)), config(config){};
 
+    Everest::TelemetryProvider& telemetry;
     const std::unique_ptr<slacImplBase> p_main;
     const Conf& config;
 

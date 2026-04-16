@@ -19,7 +19,10 @@ public:
     void restart_fsm();
 
 private:
+    void event_post_processing();
     void* fsm;
+    std::vector<int> last_signature;
+    fsm::evse::Context& ctx;
 };
 
 } // namespace everest::lib::slac
