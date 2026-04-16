@@ -70,6 +70,7 @@ set(EVEREST_LIB_DEPS_external_energy_limits "framework")
 set(EVEREST_LIB_DEPS_everest_api_types "")
 set(EVEREST_LIB_DEPS_conversions "framework;evse_security")
 set(EVEREST_LIB_DEPS_slac "tls")
+set(EVEREST_LIB_DEPS_slac_neo "everest_api_types;fsm;io;tls")
 
 # --- Transitive dependency resolver ---
 # Given a list of library names, computes the full transitive closure

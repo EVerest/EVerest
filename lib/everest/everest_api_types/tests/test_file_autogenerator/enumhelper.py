@@ -9,7 +9,7 @@ from helper import Helper
 
 class EnumHelper(Helper):
     w = Helper.regex_whitespaces
-    regex_enum_field = "(" + w + r"([A-z_0-9]+)(" + w + r")*)"
+    regex_enum_field = "(" + w + r"([A-z_0-9]+)(?:\s*=\s*[^,}]+)?\s*)"
     regex_structure_type = "enum" + w + r"class"
     regex_find_in_file = regex_structure_type + w + \
         r"[A-z_][A-z0-9_]*" + w + r"\{((" + regex_enum_field + r",?" + w + r")*)\};"

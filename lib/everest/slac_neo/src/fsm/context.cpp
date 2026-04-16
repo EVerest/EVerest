@@ -64,4 +64,10 @@ void Context::log_error(const std::string& text) {
     }
 }
 
+void Context::telemetry(const std::string& block, const std::string& key, const std::string& value) {
+    if (callbacks.pub_telemetry) {
+        callbacks.pub_telemetry(block, key, value);
+    }
+}
+
 } // namespace everest::lib::slac::fsm::evse

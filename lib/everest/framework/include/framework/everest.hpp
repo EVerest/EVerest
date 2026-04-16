@@ -33,7 +33,7 @@ struct cmd {
     ReturnType return_type; ///< The return type
 };
 
-using TelemetryEntry = std::variant<std::string, const char*, bool, int32_t, uint32_t, int64_t, uint64_t, double>;
+using TelemetryEntry = std::variant<std::string, const char*, bool, int32_t, uint32_t, int64_t, uint64_t, double, nlohmann::json>;
 using TelemetryMap = std::map<std::string, TelemetryEntry>;
 using UnsubscribeToken = std::function<void()>;
 
