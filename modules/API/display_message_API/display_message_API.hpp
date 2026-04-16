@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
-
 #ifndef DISPLAY_MESSAGE_API_HPP
 #define DISPLAY_MESSAGE_API_HPP
 
@@ -12,13 +11,8 @@
 #include "ld-ev.hpp"
 
 // headers for provided interface implementations
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wignored-qualifiers"
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <generated/interfaces/display_message/Implementation.hpp>
 #include <generated/interfaces/generic_error/Implementation.hpp>
-#pragma GCC diagnostic pop
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
@@ -26,7 +20,6 @@
 #include <everest_api_types/utilities/Topics.hpp>
 
 namespace ev_API = everest::lib::API;
-
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -47,19 +40,18 @@ public:
         mqtt(mqtt_provider),
         p_main(std::move(p_main)),
         p_generic_error(std::move(p_generic_error)),
-        config(config),
-        comm_check("generic/CommunicationFault", "Bridge to implementation connection lost", this->p_generic_error){};
+        config(config){};
 
     Everest::MqttProvider& mqtt;
     const std::unique_ptr<display_messageImplBase> p_main;
-    const std::shared_ptr<generic_errorImplBase> p_generic_error;
+    const std::unique_ptr<generic_errorImplBase> p_generic_error;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
     const ev_API::Topics& get_topics() const;
-    ev_API::CommCheckHandler<generic_errorImplBase> comm_check;
-
+    ev_API::CommCheckHandler<generic_errorImplBase> comm_check{
+        "generic/CommunicationFault", "Bridge to implementation connection lost", p_generic_error};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:

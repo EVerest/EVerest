@@ -9,9 +9,6 @@
 //
 
 #include <generated/interfaces/ISO15118_charger/Implementation.hpp>
-#include <mutex>
-#include <optional>
-#include <unordered_map>
 
 #include "../IsoMux.hpp"
 
@@ -80,6 +77,12 @@ protected:
 private:
     const Everest::PtrContainer<IsoMux>& mod;
     const Conf& config;
+
+    virtual void init() override;
+    virtual void ready() override;
+
+    // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
+    // insert your private definitions here
     types::iso15118::SupportedAppProtocols supported_app_protocols; // aggregated set of protocols from iso2/iso20
     std::mutex supported_app_protocols_mutex;                       // guards shared protocol state
     enum class ProtocolSource {
@@ -91,12 +94,6 @@ private:
 
     std::optional<types::iso15118::SupportedAppProtocols>
     merge_supported_app_protocols(const types::iso15118::SupportedAppProtocols& value, ProtocolSource source);
-
-    virtual void init() override;
-    virtual void ready() override;
-
-    // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
-    // insert your private definitions here
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

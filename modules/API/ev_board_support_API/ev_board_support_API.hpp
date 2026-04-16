@@ -11,11 +11,7 @@
 #include "ld-ev.hpp"
 
 // headers for provided interface implementations
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wignored-qualifiers"
-#pragma GCC diagnostic ignored "-Wunused-function"
 #include <generated/interfaces/ev_board_support/Implementation.hpp>
-#pragma GCC diagnostic pop
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
@@ -27,7 +23,6 @@
 
 namespace ev_API = everest::lib::API;
 namespace ev_API_v = everest::lib::API::V1_0;
-
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -42,20 +37,17 @@ public:
     ev_board_support_API() = delete;
     ev_board_support_API(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
                          std::unique_ptr<ev_board_supportImplBase> p_main, Conf& config) :
-        ModuleBase(info),
-        mqtt(mqtt_provider),
-        p_main(std::move(p_main)),
-        config(config),
-        comm_check("generic/CommunicationFault", "Bridge to implementation connection lost", this->p_main){};
+        ModuleBase(info), mqtt(mqtt_provider), p_main(std::move(p_main)), config(config){};
 
     Everest::MqttProvider& mqtt;
-    const std::shared_ptr<ev_board_supportImplBase> p_main;
+    const std::unique_ptr<ev_board_supportImplBase> p_main;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
     const ev_API::Topics& get_topics() const;
-    ev_API::CommCheckHandler<ev_board_supportImplBase> comm_check;
+    ev_API::CommCheckHandler<ev_board_supportImplBase> comm_check{"generic/CommunicationFault",
+                                                                  "Bridge to implementation connection lost", p_main};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
@@ -93,7 +85,6 @@ private:
 
     ev_API::Topics topics;
     size_t hb_id{0};
-
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#pragma once
+#ifndef YETI_SIMULATOR_HPP
+#define YETI_SIMULATOR_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
@@ -73,7 +74,7 @@ protected:
     // ev@4714b2ab-a24f-4b95-ab81-36439e1478de:v1
 
 private:
-    friend struct LdEverest;
+    friend class LdEverest;
     void init();
     void ready();
 
@@ -98,11 +99,13 @@ private:
     [[nodiscard]] types::board_support_common::ProximityPilot read_pp_ampacity() const;
 
     void publish_event(state::State event);
-
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 
 // ev@087e516b-124c-48df-94fb-109508c7cda9:v1
+// insert other definitions here
 // ev@087e516b-124c-48df-94fb-109508c7cda9:v1
 
 } // namespace module
+
+#endif // YETI_SIMULATOR_HPP

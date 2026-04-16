@@ -41,11 +41,10 @@ public:
         mqtt(mqtt_provider),
         p_generic_error(std::move(p_generic_error)),
         r_derate(std::move(r_derate)),
-        config(config),
-        comm_check("generic/CommunicationFault", "Bridge to implementation connection lost", this->p_generic_error){};
+        config(config){};
 
     Everest::MqttProvider& mqtt;
-    const std::shared_ptr<generic_errorImplBase> p_generic_error;
+    const std::unique_ptr<generic_errorImplBase> p_generic_error;
     const std::unique_ptr<dc_external_derateIntf> r_derate;
     const Conf& config;
 
@@ -76,7 +75,8 @@ private:
     void setup_heartbeat_generator();
 
     ev_API::Topics topics;
-    ev_API::CommCheckHandler<generic_errorImplBase> comm_check;
+    ev_API::CommCheckHandler<generic_errorImplBase> comm_check{
+        "generic/CommunicationFault", "Bridge to implementation connection lost", p_generic_error};
     size_t hb_id{0};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };

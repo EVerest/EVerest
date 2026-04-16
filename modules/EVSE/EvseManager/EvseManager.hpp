@@ -114,14 +114,14 @@ struct Conf {
     bool central_contract_validation_allowed;
     bool contract_certificate_installation_enabled;
     bool inoperative_error_use_vendor_id;
+    double voltage_plausibility_max_spread_threshold_V;
+    int voltage_plausibility_fault_duration_ms;
     std::string session_id_type;
     bool zero_power_ignore_pause;
     bool zero_power_allow_ev_to_ignore_pause;
     std::string bpt_channel;
     std::string bpt_generator_mode;
     std::string bpt_grid_code_island_method;
-    double voltage_plausibility_max_spread_threshold_V;
-    int voltage_plausibility_fault_duration_ms;
     int hlc_charge_loop_without_energy_timeout_s;
     int dc_ramp_ampere_per_second;
 };

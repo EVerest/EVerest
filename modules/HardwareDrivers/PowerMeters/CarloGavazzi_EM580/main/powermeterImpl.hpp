@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
-
 #ifndef MAIN_POWERMETER_IMPL_HPP
 #define MAIN_POWERMETER_IMPL_HPP
 
@@ -9,11 +8,7 @@
 // template version 3
 //
 
-#include <atomic>
-#include <condition_variable>
 #include <generated/interfaces/powermeter/Implementation.hpp>
-#include <mutex>
-#include <thread>
 
 #include "../CarloGavazzi_EM580.hpp"
 
@@ -21,18 +16,19 @@
 #include "transport.hpp"
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
-namespace module::main {
+namespace module {
+namespace main {
 
 struct Conf {
     int powermeter_device_id;
     int communication_retry_count;
     int communication_retry_delay_ms;
+    int communication_error_pause_delay_s;
     int initial_connection_retry_count;
     int initial_connection_retry_delay_ms;
     int timezone_offset_minutes;
     int live_measurement_interval_ms;
     int device_state_read_interval_ms;
-    int communication_error_pause_delay_s;
     std::string public_key_format;
 };
 
@@ -41,14 +37,10 @@ public:
     powermeterImpl() = delete;
     powermeterImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<CarloGavazzi_EM580>& mod, Conf& config) :
         powermeterImplBase(ev, "main"), mod(mod), config(config){};
-    ~powermeterImpl() override;
-    powermeterImpl(const powermeterImpl&) = delete;
-    powermeterImpl& operator=(const powermeterImpl&) = delete;
-    powermeterImpl(powermeterImpl&&) = delete;
-    powermeterImpl& operator=(powermeterImpl&&) = delete;
 
     // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
     // insert your public definitions here
+    ~powermeterImpl() override;
     // Test-only access helpers (used by unit tests to avoid spinning up the full
     // EVerest runtime). These are intentionally narrow: inject transport + tweak
     // minimal internal state + invoke handlers.
@@ -97,6 +89,10 @@ private:
     const Everest::PtrContainer<CarloGavazzi_EM580>& mod;
     const Conf& config;
 
+    virtual void init() override;
+    virtual void ready() override;
+
+    // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     std::unique_ptr<transport::AbstractModbusTransport> p_modbus_transport;
 
     std::optional<types::units_signed::SignedMeterValue> m_start_signed_meter_value;
@@ -119,11 +115,8 @@ private:
     std::thread live_measure_thread_;
     std::thread time_sync_thread_;
 
-    virtual void init() override;
     void configure_device();
-    virtual void ready() override;
 
-    // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     void read_signature_config();
     void read_powermeter_values();
     void dump_device_state(void);
@@ -145,6 +138,7 @@ private:
 // insert other definitions here
 // ev@3d7da0ad-02c2-493d-9920-0bbbd56b9876:v1
 
-} // namespace module::main
+} // namespace main
+} // namespace module
 
 #endif // MAIN_POWERMETER_IMPL_HPP

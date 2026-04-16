@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifndef EVSE_SECURITY_FS_HPP
-#define EVSE_SECURITY_FS_HPP
+#ifndef EVSE_SECURITY_HPP
+#define EVSE_SECURITY_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
@@ -65,4 +65,4 @@ private:
 
 } // namespace module
 
-#endif // EVSE_SECURITY_FS_HPP
+#endif // EVSE_SECURITY_HPP

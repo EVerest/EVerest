@@ -20,9 +20,9 @@ public:
     using ErrorCheckFtor = std::function<bool()>;
     using HeartBeatFtor = std::function<bool()>;
     CommCheckHandler(std::string const& error_type_, std::string const& default_sub_type_,
-                     std::shared_ptr<InterfaceT> const& interface) :
+                     std::unique_ptr<InterfaceT> const& interface) :
         error_type(error_type_), default_sub_type(default_sub_type_) {
-        raise_error = [this, interface](std::string const& sub_type) {
+        raise_error = [this, &interface](std::string const& sub_type) {
             const std::string message{"Send communication_check to clear the error"};
             auto error =
                 interface->error_factory->create_error(error_type, sub_type, message, Everest::error::Severity::High);
@@ -31,7 +31,7 @@ public:
             } catch (...) {
             }
         };
-        clear_error = [this, interface]() {
+        clear_error = [this, &interface]() {
             try {
                 if (interface->error_state_monitor->is_error_active(error_type, default_sub_type)) {
                     interface->clear_error(error_type, default_sub_type);
@@ -43,7 +43,7 @@ public:
                 EVLOG_info << "Failed to clear error: " << error_type;
             }
         };
-        check_error = [this, interface]() {
+        check_error = [this, &interface]() {
             return interface->error_state_monitor->is_error_active(error_type, default_sub_type) ||
                    interface->error_state_monitor->is_error_active(error_type, init_sub_type);
         };

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
-
 #ifndef MAIN_POWERMETER_IMPL_HPP
 #define MAIN_POWERMETER_IMPL_HPP
 
@@ -8,17 +7,13 @@
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
 // template version 3
 //
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wignored-qualifiers"
-#pragma GCC diagnostic ignored "-Wunused-function"
+
 #include <generated/interfaces/powermeter/Implementation.hpp>
-#pragma GCC diagnostic pop
 
 #include "../powermeter_API.hpp"
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
-
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -60,7 +55,6 @@ private:
     auto generic_request_reply(T const& default_value, ReqT const& request, std::string const& topic);
 
     int timeout_s{5};
-
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

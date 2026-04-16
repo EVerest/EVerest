@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
-
 #ifndef POWER_SUPPLY_DC_API_HPP
 #define POWER_SUPPLY_DC_API_HPP
 
@@ -12,11 +11,7 @@
 #include "ld-ev.hpp"
 
 // headers for provided interface implementations
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wignored-qualifiers"
-#pragma GCC diagnostic ignored "-Wunused-function"
 #include <generated/interfaces/power_supply_DC/Implementation.hpp>
-#pragma GCC diagnostic pop
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
@@ -28,7 +23,6 @@
 namespace ev_API = everest::lib::API;
 namespace API_types = ev_API::V1_0::types;
 namespace API_types_ext = API_types::power_supply_DC;
-
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -43,14 +37,10 @@ public:
     power_supply_DC_API() = delete;
     power_supply_DC_API(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
                         std::unique_ptr<power_supply_DCImplBase> p_main, Conf& config) :
-        ModuleBase(info),
-        mqtt(mqtt_provider),
-        p_main(std::move(p_main)),
-        config(config),
-        comm_check("power_supply_DC/CommunicationFault", "Bridge to implementation connection lost", this->p_main){};
+        ModuleBase(info), mqtt(mqtt_provider), p_main(std::move(p_main)), config(config){};
 
     Everest::MqttProvider& mqtt;
-    const std::shared_ptr<power_supply_DCImplBase> p_main;
+    const std::unique_ptr<power_supply_DCImplBase> p_main;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
@@ -84,7 +74,8 @@ private:
     void setup_heartbeat_generator();
 
     ev_API::Topics topics;
-    ev_API::CommCheckHandler<power_supply_DCImplBase> comm_check;
+    ev_API::CommCheckHandler<power_supply_DCImplBase> comm_check{"power_supply_DC/CommunicationFault",
+                                                                 "Bridge to implementation connection lost", p_main};
     size_t hb_id{0};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
-
 #ifndef ISOLATION_MONITOR_API_HPP
 #define ISOLATION_MONITOR_API_HPP
 
@@ -23,13 +22,11 @@
 namespace ev_API = everest::lib::API;
 namespace API_types = ev_API::V1_0::types;
 namespace API_types_ext = API_types::isolation_monitor;
-
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
 
 struct Conf {
-    std::string cfg_target_module_id;
     int cfg_communication_check_to_s;
     int cfg_heartbeat_interval_ms;
 };
@@ -39,21 +36,17 @@ public:
     isolation_monitor_API() = delete;
     isolation_monitor_API(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
                           std::unique_ptr<isolation_monitorImplBase> p_main, Conf& config) :
-        ModuleBase(info),
-        mqtt(mqtt_provider),
-        p_main(std::move(p_main)),
-        config(config),
-        comm_check("isolation_monitor/CommunicationFault", "Bridge to implementation connection lost", this->p_main){};
+        ModuleBase(info), mqtt(mqtt_provider), p_main(std::move(p_main)), config(config){};
 
     Everest::MqttProvider& mqtt;
-    const std::shared_ptr<isolation_monitorImplBase> p_main;
+    const std::unique_ptr<isolation_monitorImplBase> p_main;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
     const ev_API::Topics& get_topics() const;
-    ev_API::CommCheckHandler<isolation_monitorImplBase> comm_check;
-
+    ev_API::CommCheckHandler<isolation_monitorImplBase> comm_check{"isolation_monitor/CommunicationFault",
+                                                                   "Bridge to implementation connection lost", p_main};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:

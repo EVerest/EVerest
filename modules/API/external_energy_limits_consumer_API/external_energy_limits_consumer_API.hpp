@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
-
 #ifndef EXTERNAL_ENERGY_LIMITS_CONSUMER_API_HPP
 #define EXTERNAL_ENERGY_LIMITS_CONSUMER_API_HPP
 
@@ -23,7 +22,6 @@
 #include <everest_api_types/utilities/Topics.hpp>
 
 namespace ev_API = everest::lib::API;
-
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -43,11 +41,10 @@ public:
         mqtt(mqtt_provider),
         p_main(std::move(p_main)),
         r_energy_node(std::move(r_energy_node)),
-        config(config),
-        comm_check("generic/CommunicationFault", "Bridge to implementation connection lost", this->p_main){};
+        config(config){};
 
     Everest::MqttProvider& mqtt;
-    const std::shared_ptr<generic_errorImplBase> p_main;
+    const std::unique_ptr<generic_errorImplBase> p_main;
     const std::unique_ptr<external_energy_limitsIntf> r_energy_node;
     const Conf& config;
 
@@ -78,7 +75,8 @@ private:
     void setup_heartbeat_generator();
 
     ev_API::Topics topics;
-    ev_API::CommCheckHandler<generic_errorImplBase> comm_check;
+    ev_API::CommCheckHandler<generic_errorImplBase> comm_check{"generic/CommunicationFault",
+                                                               "Bridge to implementation connection lost", p_main};
     size_t hb_id{0};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };

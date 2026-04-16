@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
-
 #ifndef POWERMETER_API_HPP
 #define POWERMETER_API_HPP
 
@@ -12,11 +11,7 @@
 #include "ld-ev.hpp"
 
 // headers for provided interface implementations
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wignored-qualifiers"
-#pragma GCC diagnostic ignored "-Wunused-function"
 #include <generated/interfaces/powermeter/Implementation.hpp>
-#pragma GCC diagnostic pop
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
@@ -24,7 +19,6 @@
 #include <everest_api_types/utilities/Topics.hpp>
 
 namespace ev_API = everest::lib::API;
-
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -40,21 +34,18 @@ public:
     powermeter_API() = delete;
     powermeter_API(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
                    std::unique_ptr<powermeterImplBase> p_main, Conf& config) :
-        ModuleBase(info),
-        mqtt(mqtt_provider),
-        p_main(std::move(p_main)),
-        config(config),
-        comm_check("powermeter/CommunicationFault", "Bridge to implementation connection lost", this->p_main){};
+        ModuleBase(info), mqtt(mqtt_provider), p_main(std::move(p_main)), config(config){};
 
     Everest::MqttProvider& mqtt;
-    const std::shared_ptr<powermeterImplBase> p_main;
+    const std::unique_ptr<powermeterImplBase> p_main;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
     const ev_API::Topics& get_topics() const;
 
-    ev_API::CommCheckHandler<powermeterImplBase> comm_check;
+    ev_API::CommCheckHandler<powermeterImplBase> comm_check{"powermeter/CommunicationFault",
+                                                            "Bridge to implementation connection lost", p_main};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:

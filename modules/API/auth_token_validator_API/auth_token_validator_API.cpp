@@ -18,13 +18,13 @@ namespace API_generic = API_types::generic;
 using ev_API::deserialize;
 
 void auth_token_validator_API::init() {
-    invoke_init(*p_auth_token_validator);
+    invoke_init(*p_main);
 
     topics.setup(info.id, "auth_token_validator", 1);
 }
 
 void auth_token_validator_API::ready() {
-    invoke_ready(*p_auth_token_validator);
+    invoke_ready(*p_main);
 
     generate_api_var_validation_result_update();
 
@@ -38,7 +38,7 @@ void auth_token_validator_API::generate_api_var_validation_result_update() {
     subscribe_api_topic("validate_result_update", [=](std::string const& data) {
         API_types_ext::ValidationResultUpdate payload;
         if (deserialize(data, payload)) {
-            p_auth_token_validator->publish_validate_result_update(to_internal_api(payload));
+            p_main->publish_validate_result_update(to_internal_api(payload));
             return true;
         }
         return false;

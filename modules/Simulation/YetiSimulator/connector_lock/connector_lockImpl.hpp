@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#pragma once
+#ifndef CONNECTOR_LOCK_CONNECTOR_LOCK_IMPL_HPP
+#define CONNECTOR_LOCK_CONNECTOR_LOCK_IMPL_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
@@ -15,7 +16,8 @@
 // insert your custom include headers here
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
-namespace module::connector_lock {
+namespace module {
+namespace connector_lock {
 
 struct Conf {};
 
@@ -31,8 +33,8 @@ public:
 
 protected:
     // command handler functions (virtual)
-    void handle_lock() override;
-    void handle_unlock() override;
+    virtual void handle_lock() override;
+    virtual void handle_unlock() override;
 
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
     // insert your protected definitions here
@@ -42,8 +44,8 @@ private:
     const Everest::PtrContainer<YetiSimulator>& mod;
     const Conf& config;
 
-    void init() override;
-    void ready() override;
+    virtual void init() override;
+    virtual void ready() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here
@@ -54,4 +56,7 @@ private:
 // insert other definitions here
 // ev@3d7da0ad-02c2-493d-9920-0bbbd56b9876:v1
 
-} // namespace module::connector_lock
+} // namespace connector_lock
+} // namespace module
+
+#endif // CONNECTOR_LOCK_CONNECTOR_LOCK_IMPL_HPP

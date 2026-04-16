@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
-
 #ifndef MAIN_ISOLATION_MONITOR_IMPL_HPP
 #define MAIN_ISOLATION_MONITOR_IMPL_HPP
 
@@ -34,14 +33,13 @@ struct Conf {
     int delay_startup_device;
     int delay_t_on_k1_k2;
     int delay_t_off_k1_k2;
-    int automatic_selftest_setting;
     bool chademo_mode;
     bool selftest_enable_gridconnection;
     bool selftest_enable_at_start;
-    bool always_publish_measurements;
-    bool voltage_to_earth_monitoring_alarm_enable;
     int relay_k1_alarm_assignment;
     int relay_k2_alarm_assignment;
+    bool always_publish_measurements;
+    bool voltage_to_earth_monitoring_alarm_enable;
     bool disable_device_on_stop;
 };
 

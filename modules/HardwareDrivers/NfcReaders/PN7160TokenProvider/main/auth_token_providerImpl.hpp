@@ -58,7 +58,6 @@ private:
     void new_rfid_token_callback(char*, size_t, NfcHandler::Protocol);
 
     std::chrono::steady_clock::time_point last_rfid_submit{};
-
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

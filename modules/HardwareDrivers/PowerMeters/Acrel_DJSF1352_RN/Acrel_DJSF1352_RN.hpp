@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
-
-#ifndef ACREL_POWERMETER_DC_HPP
-#define ACREL_POWERMETER_DC_HPP
+#ifndef ACREL_DJSF1352_RN_HPP
+#define ACREL_DJSF1352_RN_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
@@ -61,4 +60,4 @@ private:
 
 } // namespace module
 
-#endif // ACREL_POWERMETER_DC_HPP
+#endif // ACREL_DJSF1352_RN_HPP

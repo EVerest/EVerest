@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifndef TIDA010939_DRIVER_HPP
-#define TIDA010939_DRIVER_HPP
+#ifndef TIDA010939_HPP
+#define TIDA010939_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
@@ -26,8 +26,8 @@ struct Conf {
     int baud_rate;
     std::string reset_gpio_chip;
     int reset_gpio;
-    int min_current_A_import;
     int max_current_A_import;
+    int min_current_A_import;
     int min_phase_count_import;
     int max_phase_count_import;
     int min_current_A_export;
@@ -87,4 +87,4 @@ std::string error_type_to_string(ErrorFlags s);
 
 } // namespace module
 
-#endif // TIDA010939_DRIVER_HPP
+#endif // TIDA010939_HPP

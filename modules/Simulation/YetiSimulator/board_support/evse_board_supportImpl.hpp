@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#pragma once
+#ifndef BOARD_SUPPORT_EVSE_BOARD_SUPPORT_IMPL_HPP
+#define BOARD_SUPPORT_EVSE_BOARD_SUPPORT_IMPL_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
 // template version 3
 //
 
-#include <YetiSimulator.hpp>
 #include <generated/interfaces/evse_board_support/Implementation.hpp>
+
+#include "../YetiSimulator.hpp"
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
@@ -62,3 +64,5 @@ private:
 
 } // namespace board_support
 } // namespace module
+
+#endif // BOARD_SUPPORT_EVSE_BOARD_SUPPORT_IMPL_HPP
