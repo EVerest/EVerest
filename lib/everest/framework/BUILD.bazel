@@ -3,17 +3,6 @@ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_import", "cc_library", "cc_share
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("//third-party/bazel/toolchains:defs.bzl", "CROSS_PYTHON_INCOMPATIBLE")
 
-bool_flag(
-    name = "framework_shared",
-    build_setting_default = False,
-)
-
-config_setting(
-    name = "_framework_shared",
-    flag_values = {":framework_shared": "True"},
-    visibility = ["//visibility:public"],
-)
-
 py_binary(
     name = "collect_migration_files",
     srcs = [
@@ -49,8 +38,22 @@ genrule(
   """,
 )
 
+config_setting(                                                                                                                                                                      
+    name = "_framework_shared",
+    values = {"dynamic_mode": "fully"},                                                                                                                                              
+) 
+
+# alias(
+#     name = "framework",
+#     actual = select({
+#         ":_framework_shared": "//lib/everest/framework:framework_dynamic",
+#         "//conditions:default": "//lib/everest/framework",
+#     }),
+#     visibility = ["//visibility:public"],
+# )
+
 cc_library(
-    name = "framework_static",
+    name = "framework",
     srcs = glob(["lib/**/*.cpp"]),
     hdrs = glob(["include/**/*.hpp"]) + [
         ":compile_time_settings",
@@ -83,25 +86,17 @@ cc_library(
 )
 
 cc_shared_library(
-    name = "framework_so",
-    exports_filter = [":framework_static"],
-    shared_lib_name = "libframework.so",
-    deps = [":framework_static"],
+    name = "framework_shared_impl",
+    exports_filter = [":framework"],
+    shared_lib_name = "libframeworkrust.so",
+    deps = [":framework"],
 )
 
 cc_import(
-    name = "framework_dynamic",
-    linkopts = ["-lframework"],
-    shared_library = ":framework_so",
-    deps = [":framework_static"],
-)
-
-alias(
-    name = "framework",
-    actual = select({
-        ":_framework_shared": ":framework_dynamic",
-        "//conditions:default": ":framework_static",
-    }),
+    name = "framework_shared",
+    linkopts = ["-lframeworkrust"],
+    shared_library = ":framework_shared_impl",
+    deps = [":framework"],
     visibility = ["//visibility:public"],
 )
 
