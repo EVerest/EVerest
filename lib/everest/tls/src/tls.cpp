@@ -1010,7 +1010,8 @@ void Server::deinit_ssl() {
     m_context = std::make_unique<server_ctx>();
 }
 
-bool Server::init_certificates(const std::vector<certificate_config_t>& chain_files) {
+bool Server::init_certificates(const std::vector<certificate_config_t>& chain_files,
+                               bool ignore_unhandled_critical_extensions) {
     std::vector<OcspCache::ocsp_entry_t> entries;
     openssl::chain_list chains;
 
@@ -1058,7 +1059,7 @@ bool Server::init_certificates(const std::vector<certificate_config_t>& chain_fi
                 chain.chain.trust_anchors = std::move(tas);
                 chain.private_key = std::move(pkey);
 
-                if (openssl::verify_chain(chain)) {
+                if (openssl::verify_chain(chain, ignore_unhandled_critical_extensions)) {
                     chains.emplace_back(std::move(chain));
                 }
             } else {
@@ -1214,7 +1215,7 @@ bool Server::update(const config_t& cfg) {
 
     m_timeout_ms = cfg.io_timeout_ms;
     // always try init_certificates() and init_ssl()
-    bool result = init_certificates(cfg.chains);
+    bool result = init_certificates(cfg.chains, cfg.ignore_unhandled_critical_extensions);
     if (!init_ssl(cfg)) {
         result = false;
     }
