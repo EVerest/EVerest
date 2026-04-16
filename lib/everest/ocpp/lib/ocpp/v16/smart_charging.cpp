@@ -497,30 +497,30 @@ bool SmartChargingHandler::clear_all_profiles_with_filter(
     if (not profile_id_opt.has_value() and connector_id_opt.value_or(1) == 0) {
         const auto ids_at_charge_point = this->database_handler->get_charging_profile_ids_by_connector_id(0);
 
-        // Return a fan-out copy of `id` that satisfies the ClearChargingProfile filters. An id
-        // with no matching copy in any TxDefault map is either filtered out, or belongs to
-        // another purpose (e.g. ChargePointMaxProfile, handled above) and is skipped.
-        auto find_matching_tx_default = [&](int id) -> std::optional<ChargingProfile> {
+        // An absent optional means "no filter"; a present optional requires an exact match.
+        // ChargePointMaxProfile rows are handled by the earlier per-map clear; ids absent from
+        // every TxDefault map either fail these filters or belong to another purpose and are
+        // skipped here intentionally.
+        const auto stack_matches = [&](const ChargingProfile& profile) {
+            return not stack_level_opt.has_value() or stack_level_opt.value() == profile.stackLevel;
+        };
+        const auto purpose_matches = [&](const ChargingProfile& profile) {
+            return not charging_profile_purpose_opt.has_value() or
+                   charging_profile_purpose_opt.value() == profile.chargingProfilePurpose;
+        };
+        const auto id_has_matching_tx_default = [&](int id) {
             for (const auto& [_, connector] : this->connectors) {
                 for (const auto& [_, profile] : connector->stack_level_tx_default_profiles_map) {
-                    if (profile.chargingProfileId != id) {
-                        continue;
+                    if (profile.chargingProfileId == id and stack_matches(profile) and purpose_matches(profile)) {
+                        return true;
                     }
-                    if (stack_level_opt.has_value() and stack_level_opt.value() != profile.stackLevel) {
-                        continue;
-                    }
-                    if (charging_profile_purpose_opt.has_value() and
-                        charging_profile_purpose_opt.value() != profile.chargingProfilePurpose) {
-                        continue;
-                    }
-                    return profile;
                 }
             }
-            return std::nullopt;
+            return false;
         };
 
         for (const auto id : ids_at_charge_point) {
-            if (not find_matching_tx_default(id).has_value()) {
+            if (not id_has_matching_tx_default(id)) {
                 continue;
             }
 
