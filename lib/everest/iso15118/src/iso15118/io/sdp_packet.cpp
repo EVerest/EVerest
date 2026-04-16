@@ -19,7 +19,7 @@ v2gtp::PayloadType SdpPacket::get_payload_type() const {
 
 size_t SdpPacket::get_remaining_bytes_to_read() const {
     switch (state) {
-    case State::EMPTY:
+    case State::BUFFER_EMPTY:
         return V2GTP_HEADER_SIZE - bytes_read;
     case State::HEADER_READ:
         return length - bytes_read;
@@ -29,14 +29,14 @@ size_t SdpPacket::get_remaining_bytes_to_read() const {
 }
 
 void SdpPacket::update_read_bytes(size_t len) {
-    if ((state == State::COMPLETE) or (state == State::INVALID_HEADER) or (state == State::PAYLOAD_TO_LONG)) {
+    if ((state == State::COMPLETE) or (state == State::INVALID_HEADER) or (state == State::PAYLOAD_TOO_LONG)) {
         // nothing to do here - should also not happen, right?
         return;
     }
 
     bytes_read += len;
 
-    if ((state == State::EMPTY) and (bytes_read == V2GTP_HEADER_SIZE)) {
+    if ((state == State::BUFFER_EMPTY) and (bytes_read == V2GTP_HEADER_SIZE)) {
         parse_header();
     }
 
@@ -64,7 +64,7 @@ void SdpPacket::parse_header() {
     length = len_in_buffer + V2GTP_HEADER_SIZE;
 
     if (length > sizeof(buffer)) {
-        state = State::PAYLOAD_TO_LONG;
+        state = State::PAYLOAD_TOO_LONG;
         return;
     }
 

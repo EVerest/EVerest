@@ -47,7 +47,7 @@ void raise_invalid_packet_state(const io::SdpPacket& sdp_packet) {
     case PacketState::INVALID_HEADER:
         error += "invalid sdp packet header";
         break;
-    case PacketState::PAYLOAD_TO_LONG:
+    case PacketState::PAYLOAD_TOO_LONG:
         error += "packet too large for buffer";
         break;
     default:
@@ -64,7 +64,7 @@ bool read_single_sdp_packet(io::IConnection& connection, io::SdpPacket& sdp_pack
     //            main problem is, that it combines too much logic of the sdp packet and io related stuff
     using PacketState = io::SdpPacket::State;
 
-    assert(sdp_packet.get_state() == PacketState::EMPTY || sdp_packet.get_state() == PacketState::HEADER_READ);
+    assert(sdp_packet.get_state() == PacketState::BUFFER_EMPTY || sdp_packet.get_state() == PacketState::HEADER_READ);
 
     const auto first_try =
         connection.read(sdp_packet.get_current_buffer_pos(), sdp_packet.get_remaining_bytes_to_read());
