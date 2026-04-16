@@ -17,6 +17,7 @@ target_sources(${MODULE_NAME}
 
 target_link_libraries(${MODULE_NAME}
     PRIVATE
+        everest::everest_api_types
         slac::neo
         everest::io
 )

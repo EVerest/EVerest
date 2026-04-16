@@ -95,6 +95,7 @@ provides:
           For debugging. Print all transitions of the internal state machine.
         type: boolean
         default: false
+enable_telemetry: true
 metadata:
   base_license: https://directory.fsf.org/wiki/License:BSD-3-Clause-Clear
   license: https://opensource.org/licenses/Apache-2.0

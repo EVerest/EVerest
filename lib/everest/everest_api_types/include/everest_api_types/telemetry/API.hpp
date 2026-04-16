@@ -5,7 +5,9 @@
 
 #include <cstdint>
 #include <optional>
+#include <map>
 #include <string>
+#include <vector>
 
 namespace everest::lib::API::V1_0::types::telemetry {
 
@@ -123,6 +125,25 @@ enum class V2gEvErrorCode {
     NoData = 11,
 };
 
+enum class SlacState {
+    Init,
+    Reset,
+    ResetChip,
+    Idle,
+    Failed,
+    Unmatched,
+    Matching,
+    WaitForLink,
+    Validate,
+    Matched,
+};
+
+enum class SlacD3State {
+    Unmatched,
+    Matching,
+    Matched,
+};
+
 struct CertChainState {
     bool configured{false};
     bool synced{false};
@@ -219,6 +240,24 @@ struct V2gEvseElectrical {
     float minimum_rated_voltage_V{0.};
     float current_ripple_A{0.};
     float current_tolerance_A{0.};
+};
+
+struct SlacStatus {
+    bool matching_requested{false};
+    bool modem_PIB{false};
+    bool modem_NMK{false};
+    bool modem_link_ready{false};
+    int32_t session_count{0};
+    float average_attenuation{0.};
+    std::string ev_mac;
+    SlacState match_state{SlacState::Init};
+    SlacD3State d3_state{SlacD3State::Unmatched};
+};
+
+struct SlacFsmState {
+    std::vector<std::string> states;
+    std::map<std::string, SlacFsmState> submachines;
+    std::vector<SlacFsmState> sessions;
 };
 
 } // namespace everest::lib::API::V1_0::types::telemetry
