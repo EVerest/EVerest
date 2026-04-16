@@ -122,6 +122,7 @@ struct v2g_context {
     uint16_t proxy_port_iso20;
 
     const char* if_name;
+    const char* proxy_if_name;
     struct sockaddr_in6* local_tcp_addr;
     struct sockaddr_in6* local_tls_addr;
 
