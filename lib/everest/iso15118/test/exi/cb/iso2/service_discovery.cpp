@@ -44,7 +44,7 @@ SCENARIO("Ser/Deserialize d2 service discovery messages") {
         };
         auto service = dt::ChargeService{};
         service.service_id = 1;
-        service.supported_energy_transfer_mode = {dt::EnergyTransferMode::DC_extended};
+        service.supported_energy_transfer_mode = {dt::EnergyTransferMode::DcExtended};
         service.service_category = dt::ServiceCategory::EvCharging;
         service.FreeService = true;
         res.charge_service = service;
@@ -69,7 +69,7 @@ SCENARIO("Ser/Deserialize d2 service discovery messages") {
         auto chargeService = dt::ChargeService{};
         chargeService.service_id = 1;
         chargeService.service_name = "Service Foo";
-        chargeService.supported_energy_transfer_mode = {dt::EnergyTransferMode::DC_extended};
+        chargeService.supported_energy_transfer_mode = {dt::EnergyTransferMode::DcExtended};
         chargeService.service_scope = "Test scope";
         chargeService.service_category = dt::ServiceCategory::EvCharging;
         chargeService.FreeService = true;
