@@ -17,9 +17,16 @@ SCENARIO("ISO15118-2 session setup state transitions") {
 
     // Move to helper function?
     const auto evse_id = std::string("everest se");
-    const d2::EvseSetupConfig evse_setup{evse_id};
 
-    auto state_helper = FsmStateHelper(d2::SessionConfig(evse_setup));
+    const std::vector<dt::EnergyTransferMode> supported_energy_transfer_modes = {dt::EnergyTransferMode::DcExtended};
+    const std::vector<dt::PaymentOption> supported_payment_options = {dt::PaymentOption::ExternalPayment};
+    const std::vector<dt::ServiceID> offered_services{};
+    const d2::EvseSetupConfig evse_setup{evse_id, supported_energy_transfer_modes, supported_payment_options,
+                                         offered_services};
+
+    session::feedback::Callbacks feedback_callbacks;
+
+    auto state_helper = FsmStateHelper(d2::SessionConfig(evse_setup), feedback_callbacks);
     auto ctx = state_helper.get_context();
 
     GIVEN("Good case - New session") {

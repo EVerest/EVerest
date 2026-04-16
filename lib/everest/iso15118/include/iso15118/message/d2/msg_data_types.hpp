@@ -31,7 +31,9 @@ using EVSEID = std::string;                                     // Length: 7-37
 using MeterReading = uint64_t;                                  // Wh
 using SigMeterReading = std::string;                            // base 64 binary, MaxLength: 64
 using MeterStatus = int16_t;
-using TMeter = int64_t; // Unix timestamp format
+using TMeter = int64_t;           // Unix timestamp format
+using ServiceName = std::string;  // MaxLength: 32
+using ServiceScope = std::string; // MaxLength: 64
 
 enum class ResponseCode {
     OK,
@@ -72,6 +74,7 @@ enum class PaymentOption {
     Contract,
     ExternalPayment
 };
+using PaymentOptionList = std::vector<PaymentOption>; // [1 - 2]
 
 enum class EvseProcessing {
     Finished,
@@ -131,6 +134,32 @@ enum class IsolationLevel {
     Warning,
     Fault,
     No_IMD
+};
+
+enum class ServiceCategory {
+    EvCharging,
+    Internet,
+    ContractCertificate,
+    OtherCustom
+};
+
+enum class EnergyTransferMode {
+    AcSinglePhaseCore,
+    AcThreePhaseCore,
+    DcCore,
+    DcExtended,
+    DcComboCore,
+    DcUnique
+};
+using SupportedEnergyTransferMode = std::vector<EnergyTransferMode>; // MaxLength: 6
+constexpr auto SupportedEnergyTransferModeMaxLength = 6;
+
+struct Service {
+    ServiceID service_id;
+    std::optional<ServiceName> service_name{std::nullopt};
+    ServiceCategory service_category;
+    std::optional<ServiceScope> service_scope{std::nullopt};
+    bool FreeService;
 };
 
 struct MeterInfo {
