@@ -63,6 +63,8 @@
 #define FORCE_PUB_MSG           25 // max msg cycles when topics values must be udpated
 #define MAX_PCID_LEN            17
 
+#define GEN_CHALLENGE_SIZE 16
+
 #define DEFAULT_BUFFER_SIZE 8192
 
 #define DEBUG 1
@@ -330,7 +332,7 @@ struct v2g_context {
         long long int auth_start_timeout;
         int auth_timeout_eim;
         int auth_timeout_pnc;                                                   // for PnC
-        uint8_t gen_challenge[16];                                              // for PnC
+        uint8_t gen_challenge[GEN_CHALLENGE_SIZE];                              // for PnC
         bool verify_contract_cert_chain;                                        // for PnC
         types::authorization::CertificateStatus certificate_status;             // for PnC
         bool authorization_rejected;                                            // for PnC
