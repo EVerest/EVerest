@@ -6,7 +6,7 @@
 #include <cstring>
 #include <limits>
 
-#include <endian.h>
+#include <arpa/inet.h>
 
 namespace iso15118::io {
 
@@ -14,7 +14,7 @@ v2gtp::PayloadType SdpPacket::get_payload_type() const {
     uint16_t tmp;
     std::memcpy(&tmp, buffer + 2, sizeof(tmp));
 
-    return static_cast<v2gtp::PayloadType>(be16toh(tmp));
+    return static_cast<v2gtp::PayloadType>(ntohs(tmp));
 }
 
 size_t SdpPacket::get_remaining_bytes_to_read() const {
@@ -55,7 +55,7 @@ void SdpPacket::parse_header() {
     std::memcpy(&tmp, buffer + 4, sizeof(tmp));
 
     // check if length would overflow
-    const auto len_in_buffer = be32toh(tmp);
+    const auto len_in_buffer = ntohl(tmp);
     if (len_in_buffer > std::numeric_limits<uint32_t>::max() - V2GTP_HEADER_SIZE) {
         state = State::INVALID_HEADER;
         return;

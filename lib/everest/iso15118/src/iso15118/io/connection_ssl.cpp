@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <vector>
 
+#include <arpa/inet.h>
 #include <sys/socket.h>
 
 #include <openssl/bio.h>
@@ -341,7 +342,7 @@ ConnectionSSL::ConnectionSSL(PollManager& poll_manager_, const std::string& inte
     }
 
     // before bind, set the port
-    address.sin6_port = htobe16(end_point.port);
+    address.sin6_port = htons(end_point.port);
 
     int optval_tmp{1};
     const auto set_reuseaddr = setsockopt(ssl->fd, SOL_SOCKET, SO_REUSEADDR, &optval_tmp, sizeof(optval_tmp));

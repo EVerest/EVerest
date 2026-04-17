@@ -37,14 +37,14 @@ ISO 15118 Support
 ISO15118 support is distributed accross multiple repositories and modules in EVerest. Please see the following references of other ISO15118 related development:
 
 - Some functionality of part 2 of ISO 15118 is integrated in the
-  [EvseManager module in the EVerest repository](https://github.com/EVerest/EVerest/tree/main/modules/EvseManager).
+  [EvseManager module in the EVerest repository](https://github.com/EVerest/EVerest/tree/main/modules/EVSE/EvseManager).
 - Current development for an EXI code generator (as used in the
   ISO 15118 protocol suite) is ongoing in the
   [cbexigen repository](https://github.com/EVerest/cbexigen).
 - The [repository libSlac](https://github.com/EVerest/libslac) contains
   definitions of SLAC messages that are used for ISO 15118 communication.
 - DIN70121 & ISO15118-2 functionality can be found in
-  [EVerest module EvseV2G](https://github.com/EVerest/EVerest/tree/main/modules/EvseV2G)
+  [EVerest module EvseV2G](https://github.com/EVerest/EVerest/tree/main/modules/EVSE/EvseV2G)
 
 Dependencies
 ------------
