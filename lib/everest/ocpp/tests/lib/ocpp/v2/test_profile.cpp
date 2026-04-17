@@ -781,6 +781,27 @@ TEST(MergeTxProfileTest, ExplicitChargingOnlyTxProfilePeriod_TreatedAsDefault) {
     EXPECT_EQ(merged.front().current_limit.limit, 32.0F);
 }
 
+TEST(MergeTxProfileTest, NumberPhasesOnlyTxProfilePeriod_TxProfileWins) {
+    // tx_profile period sets numberPhases with otherwise default limits/setpoints.
+    // The merge must treat that as a meaningful contribution so numberPhases propagates
+    // instead of silently falling through to tx_default.
+    auto tx_period = make_default_intermediate_period();
+    tx_period.numberPhases = 1;
+
+    auto default_period = make_default_intermediate_period();
+    default_period.current_limit = {32.0F, 32.0F, 32.0F};
+    default_period.numberPhases = 3;
+
+    IntermediateProfile tx_profile{tx_period};
+    IntermediateProfile tx_default_profile{default_period};
+
+    IntermediateProfile merged = merge_tx_profile_with_tx_default_profile(tx_profile, tx_default_profile);
+
+    ASSERT_FALSE(merged.empty());
+    ASSERT_TRUE(merged.front().numberPhases.has_value());
+    EXPECT_EQ(merged.front().numberPhases.value(), 1);
+}
+
 TEST(MergeTxProfileTest, EmptyTxProfilePeriod_TxDefaultWins) {
     // Regression guard: a fully-default tx_profile period still falls through to tx_default.
     auto tx_period = make_default_intermediate_period();

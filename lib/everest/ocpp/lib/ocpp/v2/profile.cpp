@@ -598,6 +598,7 @@ IntermediateProfile merge_tx_profile_with_tx_default_profile(const IntermediateP
                 it->power_discharge_limit != default_period.power_discharge_limit ||
                 it->current_setpoint != default_period.current_setpoint ||
                 it->power_setpoint != default_period.power_setpoint ||
+                it->numberPhases != default_period.numberPhases ||
                 effective_operation_mode(it->operationMode) != effective_operation_mode(default_period.operationMode)) {
                 period.current_limit = it->current_limit;
                 period.power_limit = it->power_limit;
