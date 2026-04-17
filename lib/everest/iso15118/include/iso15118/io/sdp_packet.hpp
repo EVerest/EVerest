@@ -18,13 +18,13 @@ class SdpPacket {
 public:
     static constexpr auto V2GTP_HEADER_SIZE = 8;
     enum class State {
-        EMPTY, // FIXME (aw): misnomer
+        BUFFER_EMPTY,
         HEADER_READ,
         COMPLETE,
 
         // failed states
         INVALID_HEADER,
-        PAYLOAD_TO_LONG,
+        PAYLOAD_TOO_LONG,
     };
 
     auto get_state() const {
@@ -64,7 +64,7 @@ public:
 private:
     void parse_header();
 
-    State state{State::EMPTY};
+    State state{State::BUFFER_EMPTY};
     uint8_t buffer[2048];
     size_t bytes_read{0};
     size_t length; // length includes V2GTP_HEADER_SIZE
