@@ -493,6 +493,11 @@ using period_iterator = IntermediateProfile::const_iterator;
 using period_pair_vector = std::vector<std::pair<period_iterator, period_iterator>>;
 using IntermediateProfileRef = std::reference_wrapper<const IntermediateProfile>;
 
+// Per OCPP 2.1 Q02.FR.01, a missing operationMode is equivalent to ChargingOnly.
+inline OperationModeEnum effective_operation_mode(const std::optional<OperationModeEnum>& mode) {
+    return mode.value_or(OperationModeEnum::ChargingOnly);
+}
+
 inline std::vector<IntermediateProfileRef> convert_to_ref_vector(const std::vector<IntermediateProfile>& profiles) {
     std::vector<IntermediateProfileRef> references{};
     references.reserve(profiles.size());
@@ -533,7 +538,9 @@ IntermediateProfile combine_list_of_profiles(const std::vector<IntermediateProfi
             (period.power_discharge_limit != combined.back().power_discharge_limit) ||
             (period.current_setpoint != combined.back().current_setpoint) ||
             (period.power_setpoint != combined.back().power_setpoint) ||
-            (period.numberPhases != combined.back().numberPhases)) {
+            (period.numberPhases != combined.back().numberPhases) ||
+            (effective_operation_mode(period.operationMode) !=
+             effective_operation_mode(combined.back().operationMode))) {
             combined.push_back(period);
         }
 
@@ -590,7 +597,8 @@ IntermediateProfile merge_tx_profile_with_tx_default_profile(const IntermediateP
                 it->current_discharge_limit != default_period.current_discharge_limit ||
                 it->power_discharge_limit != default_period.power_discharge_limit ||
                 it->current_setpoint != default_period.current_setpoint ||
-                it->power_setpoint != default_period.power_setpoint) {
+                it->power_setpoint != default_period.power_setpoint ||
+                effective_operation_mode(it->operationMode) != effective_operation_mode(default_period.operationMode)) {
                 period.current_limit = it->current_limit;
                 period.power_limit = it->power_limit;
                 period.current_discharge_limit = it->current_discharge_limit;
