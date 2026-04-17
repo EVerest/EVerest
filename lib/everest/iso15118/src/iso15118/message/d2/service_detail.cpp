@@ -15,10 +15,13 @@
 namespace iso15118::d2::msg {
 
 template <> void convert(const data_types::ServiceParameterList& in, struct iso2_ServiceParameterListType& out) {
+    init_iso2_ServiceParameterListType(&out);
+
     const auto parameter_set_length = std::min(static_cast<size_t>(iso2_ParameterSetType_5_ARRAY_SIZE), in.size());
     for (size_t i = 0; i < parameter_set_length; i++) {
         const auto& in_parameter_set = in.at(i);
         auto& out_parameter_set = out.ParameterSet.array[i];
+        init_iso2_ParameterSetType(&out_parameter_set);
         out_parameter_set.ParameterSetID = in_parameter_set.parameter_set_id;
 
         const auto parameter_length =
@@ -26,6 +29,7 @@ template <> void convert(const data_types::ServiceParameterList& in, struct iso2
         for (size_t j = 0; j < parameter_length; j++) {
             const auto& in_param = in_parameter_set.parameter.at(j);
             auto& out_param = out_parameter_set.Parameter.array[j];
+            init_iso2_ParameterType(&out_param);
             CPP2CB_STRING(in_param.name, out_param.Name);
 
             if (std::holds_alternative<bool>(in_param.value)) {

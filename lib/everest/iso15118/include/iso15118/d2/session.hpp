@@ -5,6 +5,10 @@
 #include <array>
 #include <cstdint>
 
+#include <iso15118/message/d2/msg_data_types.hpp>
+
+namespace dt = iso15118::d2::msg::data_types;
+
 namespace iso15118::d2 {
 
 class Session {
@@ -31,13 +35,24 @@ public:
     //            selected_services.selected_energy_service == dt::ServiceCategory::MCS_BPT;
     // }
 
+    void select_service(dt::SelectedService service);
+    void select_service(dt::ServiceID service_id, std::optional<dt::ParameterSetID> parameter_set_id);
+
+    auto get_selected_services() const& {
+        return selected_services;
+    }
+
     ~Session();
+
+    std::optional<dt::PaymentOption> selected_payment_option{std::nullopt};
 
 private:
     // NOTE (aw): could be const
     std::array<uint8_t, ID_LENGTH> id{};
 
     bool service_renegotiation_supported{false};
+
+    dt::SelectedServiceList selected_services{};
 };
 
 } // namespace iso15118::d2
