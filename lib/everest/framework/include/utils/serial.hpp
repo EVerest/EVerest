@@ -13,15 +13,15 @@ class Serial {
 
 public:
     Serial();
-    ~Serial();
+    virtual ~Serial();
 
     bool openDevice(const char* device, int baud);
 
     virtual void run() = 0;
 
 protected:
-    int fd;
-    int baud;
+    int fd{-1};
+    int baud{0};
 
 private:
     // Serial interface

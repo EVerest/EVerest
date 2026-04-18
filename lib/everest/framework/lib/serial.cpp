@@ -11,13 +11,11 @@
 
 namespace Everest {
 Serial::Serial() {
-    fd = 0;
-    baud = 0;
     cobsDecodeReset();
 }
 
 Serial::~Serial() {
-    if (fd) {
+    if (fd != -1) {
         close(fd);
     }
 }
