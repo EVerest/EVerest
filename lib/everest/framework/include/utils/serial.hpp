@@ -6,7 +6,9 @@
 #include <cstddef>
 #include <cstdio>
 #include <stdint.h>
+#include <string>
 #include <termios.h>
+#include <vector>
 
 namespace Everest {
 class Serial {
@@ -18,6 +20,9 @@ public:
     bool openDevice(const char* device, int baud);
 
     virtual void run() = 0;
+
+    virtual std::string hexdump(const std::uint8_t* const msg, int msg_len) const;
+    virtual std::string hexdump(const std::vector<std::uint8_t>& msg) const;
 
 protected:
     int fd{-1};
