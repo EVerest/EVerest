@@ -509,7 +509,7 @@ and publish the JSON::
         "msg_type": "Cmd",
         "data": {
             "args": {
-            "payload": "Hello World!"
+                "payload": "Hello World!"
             },
             "id": "00000000-0000-0000-0000-000000000042",
             "origin": "manual_test"
