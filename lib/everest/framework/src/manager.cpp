@@ -622,21 +622,33 @@ int Manager::run() {
 
     const auto prefix_opt = parse_string_option(vm_, "prefix");
     const auto config_opt = parse_string_option(vm_, "config");
+    const auto conf_opt = parse_string_option(vm_, "conf");
     const auto db_opt = parse_string_option(vm_, "db");
     const auto db_init = vm_.count("db-init") != 0;
     ConfigBootMode boot_mode = parse_config_boot_mode(config_opt, db_opt, db_init);
+
+    // --conf is a deprecated alias for --config; using both at once is ambiguous, so reject it.
+    if (vm_.count("conf") != 0) {
+        EVLOG_warning << "The '--conf' option is deprecated and will be removed in a future version. Please use "
+                         "'--config' instead.";
+    }
+    if (vm_.count("config") != 0 && vm_.count("conf") != 0) {
+        throw BootException("--config and --conf are mutually exclusive; --conf is a deprecated alias for --config.");
+    }
+    // Resolve the deprecated alias: fall back to --conf when --config is not given.
+    const auto config_path = config_opt.empty() ? conf_opt : config_opt;
 
     ManagerSettings ms;
 
     switch (boot_mode) {
     case ConfigBootMode::YamlFile:
-        ms = ManagerSettings(prefix_opt, config_opt);
+        ms = ManagerSettings(prefix_opt, config_path);
         break;
     case ConfigBootMode::Database:
         ms = ManagerSettings(prefix_opt, db_opt, DatabaseTag{});
         break;
     case ConfigBootMode::DatabaseInit:
-        ms = ManagerSettings(prefix_opt, config_opt, db_opt);
+        ms = ManagerSettings(prefix_opt, config_path, db_opt);
         break;
     default:
         throw BootException(fmt::format("Invalid boot source: {}", static_cast<int>(boot_mode)));
@@ -1459,6 +1471,7 @@ int main(int argc, char* argv[]) {
     desc.add_options()("config", po::value<std::string>(),
                        "Full path to a config file.  If the file does not exist and has no extension, it will be "
                        "looked up in the default config directory");
+    desc.add_options()("conf", po::value<std::string>(), "Deprecated: Same as --config. Do not use both.");
     desc.add_options()("db", po::value<std::string>(), "Full path to the configuration database file");
     desc.add_options()("db-init", "Indicator to initialize the database if it does not contain a valid configuration. "
                                   "Requires --config and --db to be set.");
@@ -1484,7 +1497,9 @@ int main(int argc, char* argv[]) {
         if (fs::exists(default_logging_cfg)) {
             Logging::init(default_logging_cfg.string());
         }
-        po::store(po::parse_command_line(argc, argv, desc), vm);
+        int style = po::command_line_style::default_style & ~po::command_line_style::allow_guessing;
+
+        po::store(po::parse_command_line(argc, argv, desc, style), vm);
         po::notify(vm);
 
         if (vm.count("help") != 0) {

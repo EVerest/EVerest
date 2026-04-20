@@ -2,6 +2,6 @@ LD_LIBRARY_PATH=@LD_LIBRARY_VAR@:$LD_LIBRARY_PATH \
 PATH=@PATH_VAR@:$PATH \
 manager \
     --prefix @CMAKE_INSTALL_PREFIX@ \
-    --conf @CONFIG_FILE@ \
+    --config @CONFIG_FILE@ \
     @ADDITIONAL_ARGUMENTS@
     $@
