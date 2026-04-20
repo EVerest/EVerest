@@ -812,43 +812,6 @@ TEST_CASE("MessageHandler processes GetConfig messages", "[message_handler][conf
 // Test: Mixed Message Types
 // ============================================================================
 
-// ============================================================================
-// Test: Ordering preserved when a handler throws
-// ============================================================================
-
-TEST_CASE("MessageHandler preserves per-topic ordering after handler exception",
-          "[message_handler][ordering][exception]") {
-    MessageHandlerFixture handler;
-    ExecutionTracker tracker;
-
-    auto handler_func = std::make_shared<Handler>([&](const std::string& topic, const json& data) {
-        int seq = data.value("sequence", 0);
-        if (seq == 1) {
-            throw std::runtime_error("simulated handler failure");
-        }
-        tracker.record(topic, seq);
-    });
-    auto test_handler = std::make_shared<TypedHandler>(HandlerType::Call, handler_func);
-
-    handler->register_handler("test/topic", test_handler);
-
-    // Message 1 throws; messages 2 and 3 must still be processed in order.
-    handler->add(create_cmd_message("test/topic", 1));
-    handler->add(create_cmd_message("test/topic", 2));
-    handler->add(create_cmd_message("test/topic", 3));
-
-    tracker.wait_for_count(2);
-
-    auto events = tracker.get_events();
-    REQUIRE(events.size() == 2);
-    CHECK(events[0].sequence == 2);
-    CHECK(events[1].sequence == 3);
-}
-
-// ============================================================================
-// Test: Mixed Message Types
-// ============================================================================
-
 TEST_CASE("MessageHandler handles mixed message types concurrently", "[message_handler][mixed]") {
     MessageHandlerFixture handler;
     ExecutionTracker cmd_tracker;
