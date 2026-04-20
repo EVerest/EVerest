@@ -71,6 +71,19 @@ using em580::registers::MODBUS_UTC_TIMESTAMP_ADDRESS;
 using em580::registers::MODBUS_SIGNED_MAP_ADDRESS;
 using em580::registers::MODBUS_SIGNED_MAP_WORD_COUNT_256;
 using em580::registers::MODBUS_SIGNED_MAP_WORD_COUNT_384;
+
+const char* ocmf_state_to_string(std::uint16_t ocmf_state) {
+    switch (ocmf_state) {
+    case MODBUS_OCMF_STATE_READY:
+        return "READY";
+    case MODBUS_OCMF_STATE_RUNNING:
+        return "RUNNING";
+    case MODBUS_OCMF_STATE_NOT_READY:
+        return "NOT_READY";
+    default:
+        return "UNKNOWN";
+    }
+}
 } // namespace
 
 // Byte offsets for Modbus register 300001-300055 (physical addresses
@@ -457,9 +470,13 @@ void powermeterImpl::write_transaction_registers(const types::powermeter::Transa
 
     // 8. Write tariff text (register 326881, 6900h) - CHAR[252] = 126 words
     // The device accepts partial writes as long as the string is 0-terminated.
-    const std::string tariff_text = transaction_req.tariff_text.value_or("") +
-                                    std::string(powermeterImpl::TARIFF_TEXT_TRANSACTION_ID_MARKER) +
-                                    transaction_req.transaction_id;
+    std::string tariff_text;
+    const std::string& base = transaction_req.tariff_text.value_or("");
+    tariff_text.reserve(base.size() + std::char_traits<char>::length(TARIFF_TEXT_TRANSACTION_ID_MARKER) +
+                        transaction_req.transaction_id.size());
+    tariff_text.append(base);
+    tariff_text.append(TARIFF_TEXT_TRANSACTION_ID_MARKER);
+    tariff_text.append(transaction_req.transaction_id);
     modbus_utils::log_truncation_warning_if_needed("OCMF Tariff Text (TT)", tariff_text,
                                                    MODBUS_OCMF_TARIFF_TEXT_WORD_COUNT);
     const std::vector<std::uint16_t> tariff_text_data =
@@ -483,9 +500,7 @@ void powermeterImpl::clear_transaction_states() {
 
     if (ocmf_state == MODBUS_OCMF_STATE_READY) {
         EVLOG_info << "Current OCMF state: "
-                   << ((ocmf_state == MODBUS_OCMF_STATE_READY)     ? "READY"
-                       : (ocmf_state == MODBUS_OCMF_STATE_RUNNING) ? "RUNNING"
-                                                                   : "NOT_READY")
+                   << ocmf_state_to_string(ocmf_state)
                    << "(" << ocmf_state << ")";
         EVLOG_info << "Cleanup necessary ...";
         read_ocmf_file();
@@ -514,9 +529,7 @@ powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& treq
         transport::DataVector state_data = p_modbus_transport->fetch(MODBUS_OCMF_STATE_ADDRESS, 1);
         std::uint16_t ocmf_state = modbus_utils::to_uint16(state_data, modbus_utils::ByteOffset{0});
         EVLOG_info << "Current OCMF state: "
-                   << ((ocmf_state == MODBUS_OCMF_STATE_READY)     ? "READY"
-                       : (ocmf_state == MODBUS_OCMF_STATE_RUNNING) ? "RUNNING"
-                                                                   : "NOT_READY")
+                   << ocmf_state_to_string(ocmf_state)
                    << "(" << ocmf_state << ")";
 
         if (ocmf_state != MODBUS_OCMF_STATE_NOT_READY) {
@@ -650,7 +663,7 @@ void powermeterImpl::read_powermeter_values() {
 
     types::powermeter::Powermeter powermeter{};
     powermeter.timestamp = Everest::Date::to_rfc3339(date::utc_clock::now());
-    powermeter.meter_id = std::move(std::string(m_serial_number));
+    powermeter.meter_id = m_serial_number;
 
     // Voltage values (INT32, weight: Volt*10)
     // 300001 (0000h): V L1-N
