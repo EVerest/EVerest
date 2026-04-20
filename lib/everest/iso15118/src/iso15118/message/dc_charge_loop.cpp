@@ -188,9 +188,9 @@ template <> void convert(const struct iso20_dc_ReceiptType& in, datatypes::Recei
     if (in.TaxCosts.arrayLen > 10) {
         throw std::runtime_error("tax costs array is too large");
     }
-    out.tax_costs.resize(in.TaxCosts.arrayLen);
+    out.tax_costs.clear();
     for (std::size_t i = 0; i < in.TaxCosts.arrayLen; ++i) {
-        convert(in.TaxCosts.array[i], out.tax_costs[i]);
+        convert(in.TaxCosts.array[i], out.tax_costs.emplace_back());
     }
 }
 

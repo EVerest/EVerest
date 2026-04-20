@@ -9,7 +9,13 @@ if(FUSION_CHARGER_LIB_BUILD_TESTS)
   option(BUILD_ACCEPTANCE_TESTS "Build acceptance tests" OFF)
   if (BUILD_ACCEPTANCE_TESTS)
     add_subdirectory(user-acceptance-tests)
+    include(FetchContent)
+    FetchContent_Declare(
+      MQTT-C
+      GIT_REPOSITORY https://github.com/LiamBindle/MQTT-C
+      GIT_TAG        v1.1.6
+    )
+    FetchContent_MakeAvailable(MQTT-C)
+    add_subdirectory(power_stack_mock)
   endif()
 endif()
-
-add_subdirectory(power_stack_mock)

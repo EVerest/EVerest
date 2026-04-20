@@ -6,9 +6,10 @@
 #include <optional>
 #include <string>
 #include <variant>
-#include <vector>
 
 #include "common_types.hpp"
+
+#include <everest/util/vector/fixed_vector.hpp>
 
 namespace iso15118::message_20 {
 
@@ -79,7 +80,7 @@ struct EVPowerScheduleEntry {
 
 struct EVPowerSchedule {
     uint64_t time_anchor;
-    std::vector<EVPowerScheduleEntry> entries; // max 1024
+    everest::lib::util::fixed_vector<EVPowerScheduleEntry, 1024> entries; // max 1024
 };
 
 struct EVPriceRule {
@@ -89,14 +90,14 @@ struct EVPriceRule {
 
 struct EVPriceRuleStack {
     uint32_t duration;
-    std::vector<EVPriceRule> price_rules; // max 8
+    everest::lib::util::fixed_vector<EVPriceRule, 8> price_rules; // max 8
 };
 
 struct EVAbsolutePriceSchedule {
     uint64_t time_anchor;
     Curreny currency;
     Identifier price_algorithm;
-    std::vector<EVPriceRuleStack> price_rule_stacks; // max 1024
+    everest::lib::util::fixed_vector<EVPriceRuleStack, 1024> price_rule_stacks; // max 1024
 };
 
 struct EVEnergyOffer {
@@ -122,7 +123,7 @@ struct OverstayRule {
 struct OverstayRulesList {
     std::optional<uint32_t> overstay_time_threshold;
     std::optional<RationalNumber> overstay_power_threshold;
-    std::vector<OverstayRule> overstay_rule;
+    everest::lib::util::fixed_vector<OverstayRule, 5> overstay_rule; // 5
 };
 
 struct AbsolutePriceSchedule {
@@ -152,7 +153,7 @@ struct PriceLevelSchedule {
     NumericId price_schedule_id;
     std::optional<Description> price_schedule_description;
     uint8_t number_of_price_levels;
-    std::vector<PriceLevelScheduleEntry> price_level_schedule_entries;
+    everest::lib::util::fixed_vector<PriceLevelScheduleEntry, 1024> price_level_schedule_entries; // 1024
 };
 
 struct Dynamic_SEResControlMode {
@@ -166,7 +167,7 @@ struct PowerSchedule {
     uint64_t time_anchor;
     std::optional<RationalNumber> available_energy;
     std::optional<RationalNumber> power_tolerance;
-    std::vector<PowerScheduleEntry> entries;
+    everest::lib::util::fixed_vector<PowerScheduleEntry, 1024> entries; // 1024
 };
 
 struct ChargingSchedule {
@@ -181,7 +182,7 @@ struct ScheduleTuple {
 };
 
 struct Scheduled_SEResControlMode {
-    std::vector<ScheduleTuple> schedule_tuple;
+    everest::lib::util::fixed_vector<ScheduleTuple, 3> schedule_tuple; // 3
 };
 
 }; // namespace datatypes

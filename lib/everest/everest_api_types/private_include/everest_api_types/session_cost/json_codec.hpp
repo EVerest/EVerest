@@ -14,6 +14,9 @@ namespace everest::lib::API::V1_0::types::session_cost {
 
 using json = nlohmann::json;
 
+void to_json(json& j, DefaultPrice const& k) noexcept;
+void from_json(const json& j, DefaultPrice& k);
+
 void to_json(json& j, TariffMessage const& k) noexcept;
 void from_json(const json& j, TariffMessage& k);
 

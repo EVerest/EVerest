@@ -34,6 +34,7 @@ struct Conf {
     int tls_timeout;
     int proxy_port_iso2;
     int proxy_port_iso20;
+    std::string proxy_device;
 };
 
 class IsoMux : public Everest::ModuleBase {

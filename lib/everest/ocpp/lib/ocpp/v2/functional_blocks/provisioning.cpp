@@ -16,6 +16,7 @@
 #include <ocpp/v2/functional_blocks/diagnostics.hpp>
 #include <ocpp/v2/functional_blocks/meter_values.hpp>
 #include <ocpp/v2/functional_blocks/security.hpp>
+#include <ocpp/v2/functional_blocks/tariff_and_cost.hpp>
 #include <ocpp/v2/functional_blocks/transaction.hpp>
 
 #include <ocpp/v2/messages/BootNotification.hpp>
@@ -47,6 +48,7 @@ Provisioning::Provisioning(const FunctionalBlockContext& functional_block_contex
                            IsResetAllowedCallback is_reset_allowed_callback, ResetCallback reset_callback,
                            StopTransactionCallback stop_transaction_callback,
                            std::optional<VariableChangedCallback> variable_changed_callback,
+                           TariffAndCostInterface& tariff_and_cost,
                            std::atomic<RegistrationStatusEnum>& registration_status) :
     context(functional_block_context),
     message_queue(message_queue),
@@ -56,6 +58,7 @@ Provisioning::Provisioning(const FunctionalBlockContext& functional_block_contex
     security(security),
     diagnostics(diagnostics),
     transaction(transaction),
+    tariff_and_cost(tariff_and_cost),
     time_sync_callback(time_sync_callback),
     boot_notification_callback(boot_notification_callback),
     validate_network_profile_callback(validate_network_profile_callback),
@@ -597,6 +600,12 @@ void Provisioning::handle_variable_changed(const SetVariableData& set_variable_d
             this->message_queue.update_transaction_message_attempts(
                 this->context.device_model.get_value<int>(ControllerComponentVariables::MessageAttempts));
         }
+    }
+
+    if (component_variable == ControllerComponentVariables::TariffFallbackMessage ||
+        component_variable == ControllerComponentVariables::OfflineTariffFallbackMessage) {
+        // SetVariables can only be received while connected, so publish the online price.
+        this->tariff_and_cost.publish_default_price(this->context.connectivity_manager.is_websocket_connected());
     }
 
     // TODO(piet): other special handling of changed variables can be added here...

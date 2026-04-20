@@ -38,7 +38,7 @@ The last command registers the [**EDM** CMake module](#setting-up-cmake-integrat
 The workspace will have the following structure containing all current dependencies for EVerest:
 ```bash
 everest-workspace/
-├── everest-core
+├── EVerest
 ├── everest-deploy-devkit
 ├── everest-dev-environment
 ├── everest-framework
@@ -121,6 +121,37 @@ catch2:
 
 ```
 Here *cmake_condition* can be any string that CMake can use in an if() block. Please be aware that any variables you use here must be defined before a call to *evc_setup_edm()* is made in your CMakeLists.txt
+
+## Selective library consumption
+
+If your project only needs specific everest-core libraries (e.g. `liblog`, `everest-util`, `everest-io`, `libocpp`) without building the full module framework, use the `EVEREST_LIBS_ONLY` and `EVEREST_INCLUDE_LIBS` CMake options.
+
+In your project's `dependencies.yaml`:
+```yaml
+everest-core:
+  git: https://github.com/EVerest/everest-core.git
+  git_tag: 2026.02.0
+  options:
+    - "EVEREST_LIBS_ONLY ON"
+    - "EVEREST_INCLUDE_LIBS log;util;io"
+```
+
+Or directly via CMake:
+```bash
+cmake -S . -B build \
+  -DEVEREST_LIBS_ONLY=ON \
+  -DEVEREST_INCLUDE_LIBS="log;util;io"
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `EVEREST_LIBS_ONLY` | OFF | Skip modules, applications, config — only build libraries |
+| `EVEREST_INCLUDE_LIBS` | (empty) | Semicolon-separated allowlist; transitive deps auto-resolved |
+| `EVEREST_EXCLUDE_LIBS` | (empty) | Semicolon-separated blocklist of libraries to skip |
+
+Transitive dependencies are resolved automatically. For example, `EVEREST_INCLUDE_LIBS="ocpp"` will also build `log`, `timer`, `evse_security`, `sqlite`, and `cbv2g`.
+
+See the [EDM documentation](../../docs/source/explanation/dev-tools/edm.rst) for the full list of available libraries and their dependency chains.
 
 ## Modifying dependencies
 

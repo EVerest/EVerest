@@ -19,6 +19,7 @@ USER root
 RUN apt-get update && apt-get install -y \
     protobuf-compiler \
     libsystemd-dev \
+    libboost-log-dev \
     tmux \
     chrpath \
     cpio \
@@ -28,6 +29,7 @@ RUN apt-get update && apt-get install -y \
     zstd \
     liblz4-tool \
     file \
+    iproute2 \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y locales \
     && sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen \
     && dpkg-reconfigure --frontend=noninteractive locales  \
@@ -39,7 +41,8 @@ ENV LANG en_US.UTF-8
 
 # EVerest Development Tool - Dependencies
 RUN pip install --break-system-packages \
-    nanopb
+    nanopb \
+    pytest
 
 # EVerest Development Tool
 
@@ -79,5 +82,5 @@ RUN echo "" >> ${HOME}/.bashrc && \
 
 # Set up welcome message
 RUN echo "echo \"🏔️ 🚘 Welcome to the EVerest development environment!\"" >> ${HOME}/.bashrc && \
-    echo "echo \"Since you are working with the everest-core monorepo, you have all you need to get started here. 🎉🎉🎉\"" >> ${HOME}/.bashrc && \
+    echo "echo \"Since you are working with the EVerest monorepo, you have all you need to get started here. 🎉🎉🎉\"" >> ${HOME}/.bashrc && \
     echo "echo \"You can find the devrd tool in applications/devrd/devrd\"" >> ${HOME}/.bashrc

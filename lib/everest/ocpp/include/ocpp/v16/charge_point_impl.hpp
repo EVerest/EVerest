@@ -214,6 +214,7 @@ private:
     std::function<DataTransferResponse(const std::vector<DisplayMessage>& display_message)>
         set_display_message_callback;
     std::function<DataTransferResponse(const TariffMessage& message)> tariff_message_callback;
+    std::function<void(const TariffMessage& message)> default_price_callback;
 
     /// \brief This function is called after a successful connection to the Websocket
     void connected_callback();
@@ -920,6 +921,8 @@ public:
                                                  const std::uint32_t number_of_decimals)>& session_cost_callback);
     void register_tariff_message_callback(
         const std::function<DataTransferResponse(const TariffMessage& message)>& tariff_message_callback);
+    void register_default_price_callback(const std::function<void(const TariffMessage& message)>& callback);
+    void publish_default_price(bool is_offline);
     void register_set_display_message_callback(
         const std::function<DataTransferResponse(const std::vector<DisplayMessage>&)> set_display_message_callback);
 

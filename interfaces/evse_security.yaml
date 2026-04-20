@@ -107,7 +107,7 @@ cmds:
         description: OCSPResponse class as defined in IETF RFC 6960. DER and then base64 encoded
         type: string
   is_ca_certificate_installed:
-    description: Command that indicates of the given CA certificate type is installed
+    description: Command that indicates if the given CA certificate type is installed
     arguments:
       certificate_type:
         description: Specifies that CA certificate type

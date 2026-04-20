@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "utils.hpp"
 
+#include <everest/logging.hpp>
+
 #include <iso15118/d20/limits.hpp>
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/dc_charge_parameter_discovery.hpp>
@@ -41,9 +43,13 @@ dt::ParameterSet convert_parameter_set(const types::iso15118_vas::ParameterSet& 
     dt::ParameterSet out;
     out.id = parameter_set.set_id;
 
-    out.parameter.reserve(parameter_set.parameters.size());
     for (const auto& parameter : parameter_set.parameters) {
-        out.parameter.push_back(convert_parameter(parameter));
+        const auto* ptr = out.parameter.try_emplace_back(convert_parameter(parameter));
+
+        if (ptr == nullptr) {
+            EVLOG_warning << "VAS parameter set is bigger then 32";
+            break;
+        }
     }
 
     return out;
@@ -245,12 +251,16 @@ void fill_v2x_charging_parameters(types::iso15118::V2XChargingParameters& out_pa
     out_params.ev_max_v2xenergy_request = convert_from_optional(ev_control_mode.max_v2x_energy);
 }
 
-std::vector<dt::ParameterSet>
+everest::lib::util::fixed_vector<dt::ParameterSet, 32>
 convert_parameter_set_list(const std::vector<types::iso15118_vas::ParameterSet>& parameter_set_list) {
-    std::vector<dt::ParameterSet> out;
-    out.reserve(parameter_set_list.size());
+    everest::lib::util::fixed_vector<dt::ParameterSet, 32> out;
     for (const auto& parameter_set : parameter_set_list) {
-        out.push_back(convert_parameter_set(parameter_set));
+        const auto* ptr = out.try_emplace_back(convert_parameter_set(parameter_set));
+
+        if (ptr == nullptr) {
+            EVLOG_warning << "VAS parameter set list is bigger then 32";
+            break;
+        }
     }
     return out;
 }

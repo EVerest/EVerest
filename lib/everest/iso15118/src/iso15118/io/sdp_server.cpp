@@ -4,7 +4,6 @@
 
 #include <cstring>
 
-#include <endian.h>
 #include <netdb.h>
 #include <unistd.h>
 
@@ -49,7 +48,7 @@ SdpServer::SdpServer(const std::string& interface_name) {
     struct sockaddr_in6 socket_address;
     bzero(&socket_address, sizeof(socket_address));
     socket_address.sin6_family = AF_INET6;
-    socket_address.sin6_port = htobe16(v2gtp::SDP_SERVER_PORT);
+    socket_address.sin6_port = htons(v2gtp::SDP_SERVER_PORT);
     memcpy(&socket_address.sin6_addr, &in6addr_any, sizeof(socket_address.sin6_addr));
 
     char addr_res[INET6_ADDRSTRLEN];
@@ -86,6 +85,14 @@ SdpServer::SdpServer(const std::string& interface_name) {
         const auto error_msg = adding_err_msg("Setsockopt(IPV6_JOIN_GROUP) failed");
         log_and_throw(error_msg.c_str());
     }
+}
+
+void SdpServer::set_dlink_ready(bool ready) {
+    dlink_ready_.store(ready);
+}
+
+bool SdpServer::is_dlink_ready() const {
+    return dlink_ready_.load();
 }
 
 SdpServer::~SdpServer() {
@@ -144,7 +151,7 @@ void SdpServer::send_response(const PeerRequestContext& request, const Ipv6EndPo
     uint8_t* sdp_response = v2g_packet + 8;
     memcpy(sdp_response, ipv6_endpoint.address, sizeof(ipv6_endpoint.address));
 
-    uint16_t port = htobe16(ipv6_endpoint.port);
+    uint16_t port = htons(ipv6_endpoint.port);
     memcpy(sdp_response + 16, &port, sizeof(port));
 
     // FIXME (aw): which values to take here?

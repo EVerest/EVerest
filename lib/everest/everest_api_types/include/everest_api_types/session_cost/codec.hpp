@@ -9,6 +9,7 @@
 
 namespace everest::lib::API::V1_0::types::session_cost {
 
+std::string serialize(DefaultPrice val) noexcept;
 std::string serialize(TariffMessage val) noexcept;
 std::string serialize(IdlePrice val) noexcept;
 std::string serialize(CostCategory val) noexcept;
@@ -18,6 +19,7 @@ std::string serialize(SessionCostChunk val) noexcept;
 std::string serialize(SessionStatus val) noexcept;
 std::string serialize(SessionCost val) noexcept;
 
+std::ostream& operator<<(std::ostream& os, DefaultPrice const& val);
 std::ostream& operator<<(std::ostream& os, TariffMessage const& val);
 std::ostream& operator<<(std::ostream& os, IdlePrice const& val);
 std::ostream& operator<<(std::ostream& os, CostCategory const& val);

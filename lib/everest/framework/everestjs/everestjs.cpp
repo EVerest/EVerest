@@ -592,7 +592,7 @@ static Napi::Value boot_module(const Napi::CallbackInfo& info) {
         if (mqtt_broker_socket_path.empty()) {
             auto mqtt_broker_port = Everest::defaults::MQTT_BROKER_PORT;
             try {
-                mqtt_broker_port = std::stoi(mqtt_server_port);
+                mqtt_broker_port = std::stoul(mqtt_server_port);
             } catch (...) {
                 EVLOG_warning << "Could not parse MQTT broker port, using default: " << mqtt_broker_port;
             }
@@ -604,7 +604,7 @@ static Napi::Value boot_module(const Napi::CallbackInfo& info) {
                                             mqtt_external_prefix);
         }
 
-        mqtt = std::make_shared<Everest::MQTTAbstraction>(mqtt_settings);
+        mqtt = std::shared_ptr<Everest::MQTTAbstraction>(Everest::make_mqtt_abstraction(mqtt_settings));
         mqtt->connect();
         mqtt->spawn_main_loop_thread();
 

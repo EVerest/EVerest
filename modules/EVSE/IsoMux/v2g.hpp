@@ -122,6 +122,7 @@ struct v2g_context {
     uint16_t proxy_port_iso20;
 
     const char* if_name;
+    const char* proxy_if_name;
     struct sockaddr_in6* local_tcp_addr;
     struct sockaddr_in6* local_tls_addr;
 
@@ -130,6 +131,7 @@ struct v2g_context {
     uint32_t network_read_timeout;     /* in milli seconds */
     uint32_t network_read_timeout_tls; /* in milli seconds */
     bool selected_iso20{false};
+    std::atomic_bool iso20_proxy_enabled{true};
 
     enum tls_security_level tls_security;
 

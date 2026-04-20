@@ -1,43 +1,68 @@
-# everest-core tests
+# EVerest tests
 
-This folder contains the basic test functions for everest-core's integration testing. You can either extend the '*\*_tests.py*' files in the "everest-core/**tests/core_tests**" folder or write your own!
+This folder contains the basic test functions for EVerest's e2e testing. You can either extend the '*\*_tests.py*' files in the "EVerest/**tests/core_tests**" folder or write your own!
 
 ## Prerequisites
 
-For running the tests you need to install the everest-testing framework from everest-utils:
+In order to run any of the e2e tests, you need to have EVerest compiled
+and installed on your system. Please also make sure to install the python
+requirements.
 
 ```bash
-cd ~/checkout/everest-workspace/everest-utils/everest-testing
-python3 -m pip install .
-```
-
-You can also use the following cmake target to install everest-testing and its dependencies:
-```bash
-cd everest-core
-cmake --build build --target install_everest_testing
+cd EVerest/
+cmake -S . -B build -DBUILD_TESTING=ON
+cmake --build build --target install --parallel -j$(nproc)
+. build/venv/bin/activate
+cmake --build build --target everestpy_pip_install_dist # install everestpy
+cmake --build build --target everest-testing_pip_install_dist # install everest-testing
+cmake --build build --target iso15118_pip_install_dist # install iso15118 for ev side simulation
+python3 -m pip install "aiofile>=3.7.4"
+python3 -m pip install "netifaces>=0.11.0"
 ```
 
 ## Execute locally
 
-To start you should try executing the available basic tests:
-
--   **startup_tests.py** (checks if all test functionality can be started correctly, but does not yet do any value-based integration testing)
--   **basic_charging_tests.py** (tests a basic charging situation: enable charging -> wait 20 seconds -> check if a certain minimum amount of kWhs have been charged)
-
-Go to your "everest-core/**tests**" folder and execute *pytest*:
+All test suites are run via the unified `run-tests.sh` script:
 
 ```bash
-cd ~/checkout/everest-workspace/everest-core/tests
-pytest --everest-prefix ../build/dist core_tests/*.py framework_tests/*.py
+cd ~/checkout/everest-workspace/EVerest/tests
+
+./run-tests.sh all          # all tests (core, framework, async, OCPP)
+./run-tests.sh core         # core tests only
+./run-tests.sh framework    # framework tests only
+./run-tests.sh asyncapi        # async API tests only
+./run-tests.sh integration  # core + framework + async
+./run-tests.sh ocpp         # all OCPP tests (1.6, 2.0.1, 2.1)
+./run-tests.sh --serial all # run serially (no parallelism)
+./run-tests.sh -j4 all      # limit to 4 parallel workers
+./run-tests.sh --help       # show all options
 ```
 
-After execution a "results.xml" file should be available in the "everest-core/**tests**" folder, which details the current test results.
+The script automatically sets up network isolation for parallel ISO 15118 tests
+(requires sudo or CAP_NET_ADMIN) and falls back to sequential execution otherwise.
 
-(*Note: Because the everest-core tests are used in CI testing and because an upstream issue in the way everestpy handles external modules, it is currently not possible to receive a test report on stdout at the end of a pytest run in everest-core tests, as otherwise CI testing would not always work. We are currently working on resolving the issue, please be patient. Thank you!*)
+After execution `result.xml` and `report.html` are written to the `tests/` directory.
+
+### Running individual tests directly
+
+For a single test file or test case, invoke `pytest` directly from the `tests/` directory:
+
+```bash
+cd ~/checkout/everest-workspace/EVerest/tests
+
+# Run a single test file
+python3 -m pytest core_tests/smoke_tests.py
+
+# Run a single test by name
+python3 -m pytest core_tests/smoke_tests.py::test_iso15118_ac_session
+```
+
+Network isolation is not set up automatically in this mode — ISO 15118 tests will
+run sequentially via their `xdist_group` marker.
 
 ## Add own test sets
 
-To create own test sets, you need to write a new python file in the "everest-core/**tests/core_tests/**" folder. A basic file template would look like this:
+To create own test sets, you need to write a new python file in the "EVerest/**tests/core_tests/**" folder. A basic file template would look like this:
 
 ```python
 import logging
@@ -64,15 +89,15 @@ async def test_001_my_first_test(everest_core: EverestCore,
 
 \*Note: All test functions' names NEED to start with "test" (see pytest documentation: https://docs.pytest.org/)
 
-In the above example you then would also have to write a (user-)validation function by the name of "my_validation_function()" in the "everest-core/**tests/core_tests/validations/user_functions.py**" file.
+In the above example you then would also have to write a (user-)validation function by the name of "my_validation_function()" in the "EVerest/**tests/core_tests/validations/user_functions.py**" file.
 
-For this, you can utilize helper functions from the "everest-core/**tests/core_tests/validations/base_functions.py**" file (e.g. "get_key_if_exists()" to traverse and retrieve event data from an event-object).
+For this, you can utilize helper functions from the "EVerest/**tests/core_tests/validations/base_functions.py**" file (e.g. "get_key_if_exists()" to traverse and retrieve event data from an event-object).
 
-**Attention**: When you change something in the test- or validation files, please do not forget to run "*make install*" on everest-core before starting the tests, as otherwise the changes are not reflected in the test run!
+**Attention**: When you change something in the test- or validation files, please do not forget to run "*make install*" on EVerest before starting the tests, as otherwise the changes are not reflected in the test run!
 
 ### Controlling more functionality with PyTestControlModule
 
-If you would like to receive other everest-internal data, send commands to other everest-core modules or would like to change the received events for everest-testing, you can modify the **PyTestControlModule** in the "everest-core/**modules/PyTestControlModule**" folder.
+If you would like to receive other everest-internal data, send commands to other EVerest modules or would like to change the received events for everest-testing, you can modify the **PyTestControlModule** in the "EVerest/**modules/PyTestControlModule**" folder.
 
 **Attention:** Please be aware, though, that the use of this module is preliminary and changes in the *everest-framework* may render this module **obsolete** in the future!
 
@@ -80,14 +105,14 @@ If you would like to receive other everest-internal data, send commands to other
 
 **1. Problem:** Multiple concatenated tests that use the *PyTestControlModule* (in standalone configuration) result in an exception and subsequent crash of everest-testing.
 
-**Cause:** There is currently no way to unload a module in *everest-core*. But because pytest runs out of the same context for all tests in a testset, a once loaded *PyTestControlModule* stays active for the rest of the pytest/everest-testing run. When a new test tries to load a second instance of the *PyTestControlModule* it collides with the already running instance and causes everest-testing to crash.
+**Cause:** There is currently no way to unload a module in *EVerest*. But because pytest runs out of the same context for all tests in a testset, a once loaded *PyTestControlModule* stays active for the rest of the pytest/everest-testing run. When a new test tries to load a second instance of the *PyTestControlModule* it collides with the already running instance and causes everest-testing to crash.
 
 **Solution:** Unfortunately, this requires a change in the everest-framework. This change is currently under development, but not yet merged into main. 
 For the moment, there is a *workaround available:* Use a new test-set (another python file containing a new set of tests) for every test that requires control via the *PyTestControlModule*. As soon as a fix for the underlying issue is merged, this will be updated!
 
 **2. Problem:** On an unmodified run of "basic_charging_tests.py" the test *test_001_charge_defined_ammount* fails and reports an amount of 0.0kWh charged.
 
-**Cause:** Currently there is a bug in the EVSE manager implementation in everest-core, causing a race-condition between resetting the "amount charged" parameter and the event reporting for a "*transaction_finished*" event. Sometimes it reports correctly, other times it reports a value of 0.0kWh charged.
+**Cause:** Currently there is a bug in the EVSE manager implementation in EVerest, causing a race-condition between resetting the "amount charged" parameter and the event reporting for a "*transaction_finished*" event. Sometimes it reports correctly, other times it reports a value of 0.0kWh charged.
 
 **Solution:** This problem is known and a fix is under way. For the moment, just re-run the test. Usually, this should then produce a passing result.
 

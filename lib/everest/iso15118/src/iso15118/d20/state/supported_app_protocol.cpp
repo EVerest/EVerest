@@ -58,6 +58,7 @@ Result SupportedAppProtocol::feed(Event ev) {
 
         const auto res = handle_request(*req, m_ctx.session_config.custom_protocol);
         m_ctx.respond(res);
+
         m_ctx.ev_info.ev_supported_app_protocols = req->app_protocol;
 
         if (res.response_code == ResponseCode::Failed_NoNegotiation) {

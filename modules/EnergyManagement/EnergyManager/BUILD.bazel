@@ -6,8 +6,6 @@ IMPLS = [
 
 cc_everest_module(
     name = "EnergyManager",
-    deps = [
-    ],
     impls = IMPLS,
     srcs = glob(
         [

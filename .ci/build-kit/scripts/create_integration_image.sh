@@ -1,5 +1,6 @@
 #!/bin/sh
 
+
 rsync -a "$EXT_MOUNT/source/tests" ./
 retVal=$?
 
@@ -16,5 +17,13 @@ retVal=$?
 
 if [ $retVal -ne 0 ]; then
     echo "Failed to pip-install"
+    exit $retVal
+fi
+
+$(cd ./tests/ocpp_tests/test_sets/everest-aux/ && ./install_certs.sh "$EXT_MOUNT/dist")
+retVal=$?
+
+if [ $retVal -ne 0 ]; then
+    echo "Failed to install certs"
     exit $retVal
 fi

@@ -281,9 +281,12 @@ void BUPowermeter::ready() {
         optional_add(table_content, "Powermeter: frequency in Hz: L1", powermeter.frequency_Hz.value_or(fd).L1);
         optional_add(table_content, "Powermeter: frequency in Hz: L2", powermeter.frequency_Hz.value_or(fd).L2);
         optional_add(table_content, "Powermeter: frequency in Hz: L3", powermeter.frequency_Hz.value_or(fd).L3);
-        if (!powermeter.signed_meter_value.has_value()) {
-            optional_add(table_content, "Public key", public_key);
+        int i = 1;
+        for (const auto& sensor : *powermeter.temperatures) {
+            std::string label = "Temperature sensor" + std::to_string(i++);
+            optional_add(table_content, label, sensor.temperature);
         }
+        optional_add(table_content, "Public key", public_key);
 
         size_t max_width = 120;
         auto formatted_content = FormatTableContent(table_content, max_width);

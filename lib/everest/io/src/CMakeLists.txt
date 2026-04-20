@@ -38,13 +38,18 @@ target_include_directories(everest_io
 
 target_link_libraries(everest_io
     PUBLIC
-        everest::util
+        $<BUILD_INTERFACE:everest_util>
+        $<INSTALL_INTERFACE:everest::util>
 )
 
 include(CheckIncludeFile)
 check_include_file(net/ethernet.h HAVE_NET_ETHERNET_H)
 if(HAVE_NET_ETHERNET_H AND USING_MUSL)
     target_compile_definitions(everest_io PRIVATE _NETINET_IF_ETHER_H)
+endif()
+
+if(EVEREST_NO_PACKET_IGNORE_OUTGOING)
+    target_compile_definitions(everest_io PRIVATE EVEREST_NO_PACKET_IGNORE_OUTGOING)
 endif()
 
 target_compile_features(everest_io PUBLIC cxx_std_17)
@@ -64,7 +69,9 @@ target_compile_options(everest_io
 include(CMakePackageConfigHelpers)
 
 set_target_properties(everest_io
-    PROPERTIES EXPORT_NAME io
+    PROPERTIES
+        EXPORT_NAME io
+        POSITION_INDEPENDENT_CODE ON
 )
 
 if(DISABLE_EDM)

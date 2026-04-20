@@ -64,13 +64,6 @@ struct TypedHandler {
 
 using Token = std::shared_ptr<TypedHandler>;
 
-/// \brief MQTT Quality of service
-enum class QOS {
-    QOS0, ///< At most once delivery
-    QOS1, ///< At least once delivery
-    QOS2  ///< Exactly once delivery
-};
-
 struct ModuleInfo {
     struct Paths {
         std::filesystem::path etc;
@@ -167,6 +160,7 @@ NLOHMANN_JSON_NAMESPACE_END
 
 namespace Everest {
 inline constexpr int mqtt_get_config_timeout_ms = 5000;
+inline constexpr std::size_t mqtt_get_config_retries = 1;
 
 /// \brief Errors than can happen related to commands
 enum class CmdErrorType {
@@ -187,6 +181,13 @@ struct CmdResultError {
 struct CmdResult {
     std::optional<json> result;
     std::optional<CmdResultError> error;
+};
+
+/// \brief MQTT Quality of service
+enum class QOS {
+    QOS0, ///< At most once delivery
+    QOS1, ///< At least once delivery
+    QOS2  ///< Exactly once delivery
 };
 
 struct MQTTRequest {

@@ -39,7 +39,6 @@ target_sources(framework
         message_queue.cpp
         module_adapter.cpp
         module_config.cpp
-        mqtt_abstraction.cpp
         mqtt_abstraction_impl.cpp
         thread.cpp
         types.cpp
@@ -77,13 +76,14 @@ target_link_libraries(framework
 
         everest::log
         everest::sqlite
-        everest::util
+        $<BUILD_INTERFACE:everest_util>
+        $<INSTALL_INTERFACE:everest::util>
         ${STD_FILESYSTEM_COMPAT_LIB}
     PRIVATE
         ${EVEREST_FRAMEWORK_BOOST_SYSTEM_LINK_LIBRARY}
         Boost::thread
         Boost::program_options
-        mqttc
+        everest::io
         ryml::ryml
 )
 

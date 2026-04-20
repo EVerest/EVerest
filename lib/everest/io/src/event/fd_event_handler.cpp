@@ -204,6 +204,10 @@ bool fd_event_handler::register_event_handler(event_fd* fd, event_handler_type c
         poll_events::read);
 }
 
+bool fd_event_handler::register_event_handler(event_fd* fd, event_handler_simple_type const& handler) {
+    return register_event_handler(fd, [handler](event_list const&) { handler(); });
+}
+
 bool fd_event_handler::register_event_handler(timer_fd* fd, event_handler_type const& handler) {
     if (not fd) {
         return false;
@@ -216,6 +220,10 @@ bool fd_event_handler::register_event_handler(timer_fd* fd, event_handler_type c
             handler(e);
         },
         poll_events::read);
+}
+
+bool fd_event_handler::register_event_handler(timer_fd* fd, event_handler_simple_type const& handler) {
+    return register_event_handler(fd, [handler](event_list const&) { handler(); });
 }
 
 bool fd_event_handler::register_event_handler(fd_event_sync_interface* obj) {

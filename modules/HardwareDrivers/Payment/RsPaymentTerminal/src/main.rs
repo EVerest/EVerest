@@ -42,7 +42,7 @@ use generated::types::{
     session_cost::{SessionCost, SessionStatus, TariffMessage},
 };
 use generated::{
-    get_config, AuthTokenProviderServiceSubscriber, AuthTokenValidatorServiceSubscriber,
+    AuthTokenProviderServiceSubscriber, AuthTokenValidatorServiceSubscriber,
     BankSessionTokenProviderClientSubscriber, Context, Module, ModulePublisher, OnReadySubscriber,
     PaymentTerminalServiceSubscriber, SessionCostClientSubscriber,
 };
@@ -344,7 +344,7 @@ pub struct PaymentTerminalModule {
     card_type_to_connector: Mutex<HashMap<AuthorizationType, Option<Vec<i64>>>>,
 
     /// The configurable pre-auth.
-    pre_authorization_amount: usize,
+    pre_authorization_amount: Mutex<usize>,
 }
 
 impl PaymentTerminalModule {
@@ -506,8 +506,13 @@ impl SessionCostClientSubscriber for PaymentTerminalModule {
     }
 
     fn on_tariff_message(&self, _context: &Context, value: TariffMessage) {
-        for message in value.messages {
-            log::debug!("Received tariff message {0:}", message.content);
+        if let Some(pre_authorization_amount) = value.pre_authorized_amount {
+            log::info!(
+                "Updating pre_authorization_amount to {}",
+                pre_authorization_amount.value
+            );
+            *self.pre_authorization_amount.lock().unwrap() =
+                pre_authorization_amount.value as usize;
         }
     }
 }
@@ -533,7 +538,7 @@ impl AuthTokenValidatorServiceSubscriber for PaymentTerminalModule {
 
         if let Err(err) = self.feig.begin_transaction(
             &provided_token.id_token.value,
-            self.pre_authorization_amount,
+            *self.pre_authorization_amount.lock().unwrap(),
         ) {
             log::warn!("Failed to start a transaction: {err:?}");
             match err.downcast_ref::<ErrorMessages>() {
@@ -590,8 +595,9 @@ impl PaymentTerminalServiceSubscriber for PaymentTerminalModule {
     }
 }
 
-fn main() -> Result<()> {
-    let config = get_config();
+#[everestrs::main]
+fn main(module: &Module) -> Result<()> {
+    let config = module.get_config();
     log::info!("Received the config {config:?}");
 
     let pt_config = Config {
@@ -613,10 +619,10 @@ fn main() -> Result<()> {
         tx,
         feig: SyncFeig::new(pt_config),
         card_type_to_connector: Mutex::new(default_card_type_to_connector()),
-        pre_authorization_amount: config.pre_authorization_amount as usize,
+        pre_authorization_amount: Mutex::new(config.pre_authorization_amount as usize),
     });
 
-    let _module = Module::new(
+    let _publishers = module.start(
         pt_module.clone(),
         pt_module.clone(),
         pt_module.clone(),
@@ -659,7 +665,7 @@ mod tests {
                 tx,
                 feig: feig_mock,
                 card_type_to_connector: Mutex::new(default_card_type_to_connector()),
-                pre_authorization_amount: 11,
+                pre_authorization_amount: Mutex::new(11),
             }
         }
     }
@@ -820,7 +826,7 @@ mod tests {
                 (AuthorizationType::BankCard, Some(vec![])), // Empty = disabled
                 (AuthorizationType::RFID, None),
             ])),
-            pre_authorization_amount: 11,
+            pre_authorization_amount: Mutex::new(11),
         };
 
         assert!(pt_module.read_card(&everest_mock).is_ok());
@@ -1267,7 +1273,7 @@ mod tests {
                 tx,
                 feig: feig_mock,
                 card_type_to_connector: Mutex::new(initial_map),
-                pre_authorization_amount: 50,
+                pre_authorization_amount: Mutex::new(50),
             };
 
             let everest_mock = ModulePublisher::default();

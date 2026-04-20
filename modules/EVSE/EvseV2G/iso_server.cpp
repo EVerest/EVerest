@@ -8,6 +8,7 @@
 #include <cbv2g/iso_2/iso2_msgDefEncoder.h>
 #include <everest/tls/openssl_util.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <inttypes.h>
 #include <math.h>
@@ -27,7 +28,6 @@ using namespace crypto::openssl;
 
 #define MQTT_MAX_PAYLOAD_SIZE         268435455
 #define V2G_SECC_MSG_CERTINSTALL_TIME 4500
-#define GEN_CHALLENGE_SIZE            16
 
 constexpr uint16_t SAE_V2H = 28472;
 constexpr uint16_t SAE_V2G = 28473;
@@ -589,6 +589,7 @@ static enum v2g_event handle_iso_session_setup(struct v2g_connection* conn) {
 
     /* TODO: publish EVCCID to MQTT */
 
+    // An overflow check is already done in ISO15118_chargerImpl.cpp
     res->EVSEID.charactersLen = conn->ctx->evse_v2g_data.evse_id.bytesLen;
     memcpy(res->EVSEID.characters, conn->ctx->evse_v2g_data.evse_id.bytes, conn->ctx->evse_v2g_data.evse_id.bytesLen);
 
@@ -648,9 +649,12 @@ static enum v2g_event handle_iso_service_discovery(struct v2g_connection* conn) 
              "PnC is not allowed without TLS-communication. Correcting value to '1' (ExternalPayment)");
     }
 
+    const auto payment_option_length = std::min(conn->ctx->evse_v2g_data.payment_option_list.size(),
+                                                static_cast<size_t>(iso2_paymentOptionType_2_ARRAY_SIZE));
+
     memcpy(res->PaymentOptionList.PaymentOption.array, conn->ctx->evse_v2g_data.payment_option_list.data(),
-           conn->ctx->evse_v2g_data.payment_option_list.size() * sizeof(iso2_paymentOptionType));
-    res->PaymentOptionList.PaymentOption.arrayLen = conn->ctx->evse_v2g_data.payment_option_list.size();
+           payment_option_length * sizeof(iso2_paymentOptionType));
+    res->PaymentOptionList.PaymentOption.arrayLen = payment_option_length;
 
     // ensure a "clean" service list
     res->ServiceList.Service.arrayLen = 0;
@@ -1292,7 +1296,7 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
             } else {
                 conn->ctx->evse_v2g_data.evse_sa_schedule_list.SAScheduleTuple.array[0]
                     .PMaxSchedule.PMaxScheduleEntry.array[0]
-                    .PMax = conn->ctx->evse_v2g_data.evse_maximum_power_limit;
+                    .PMax = conn->ctx->evse_v2g_data.power_capabilities.max_power;
             }
             if (departure_time_duration == 0) {
                 departure_time_duration = SA_SCHEDULE_DURATION; // one day, per spec
@@ -1853,7 +1857,7 @@ static enum v2g_event handle_iso_certificate_installation(struct v2g_connection*
         (conn->ctx->evse_v2g_data.cert_install_status == true)) {
         const auto data = openssl::base64_decode(conn->ctx->evse_v2g_data.cert_install_res_b64_buffer.data(),
                                                  conn->ctx->evse_v2g_data.cert_install_res_b64_buffer.size());
-        if (data.empty() || (data.size() > DEFAULT_BUFFER_SIZE)) {
+        if (data.empty() || (data.size() > DEFAULT_BUFFER_SIZE - V2GTP_HEADER_LENGTH)) {
             dlog(DLOG_LEVEL_ERROR, "Failed to decode base64 stream");
             goto exit;
         } else {

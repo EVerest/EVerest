@@ -21,6 +21,8 @@ public:
     mqtt_client(std::uint32_t reconnect_to_ms, std::string client_id = "");
     ~mqtt_client();
 
+    std::string get_client_id() const;
+
     everest::lib::io::event::sync_status sync() override;
     int get_poll_fd() override;
 
@@ -47,16 +49,20 @@ protected:
 private:
     void handle_socket(event_list const& events);
     void handle_reconnect_timer();
+    void handle_sync_timer();
     ErrorCode handle_error(ErrorCode error);
 
     void listen_to_reconnect_timer(bool enable);
+    void listen_to_sync_timer(bool enable);
     void listen_to_write_events(bool enable);
     void listen_to_write_events_if_wanted();
 
     event::fd_event_handler m_handler;
     event::timer_fd m_reconnect_timer;
+    event::timer_fd m_sync_timer;
 
     cb_error m_error_handler;
+    std::string m_client_id;
     ErrorCode m_last_error{ErrorCode::Unknown};
     int m_last_socket{-1};
     bool m_connected{false};

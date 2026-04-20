@@ -3,7 +3,9 @@ resolver = "2"
 members = [
    "everestrs",
    "everestrs-build",
+   "everestrs-derive",
 ]
 
 [workspace.dependencies]
 everestrs-build = { path="everestrs-build" }
+everestrs-derive = { path="everestrs-derive" }

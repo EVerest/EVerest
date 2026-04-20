@@ -74,6 +74,14 @@ void ErrorManagerReq::on_error_raised(const Error& error) {
         EVLOG_error << ss.str();
         return;
     }
+    std::list<ErrorPtr> errors =
+        database->get_errors({ErrorFilter(TypeFilter(error.type)), ErrorFilter(SubTypeFilter(error.sub_type)),
+                              ErrorFilter(OriginFilter(error.origin))});
+    if (!errors.empty()) {
+        // Error is already raised, ignoring identical new error
+        // FIXME: can we prevent this from happening in the first place?
+        return;
+    }
     database->add_error(std::make_shared<Error>(error));
     on_error(error, true);
 }

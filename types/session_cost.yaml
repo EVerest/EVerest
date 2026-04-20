@@ -1,5 +1,26 @@
 description: Types to provide the session price
 types:
+  DefaultPrice:
+    description: >-
+      The currently applicable default pricing text for this charger,
+      independent of any active session. Contains human-readable text only —
+      no computed cost amounts are included. Published once on startup and
+      again whenever the applicable price changes (e.g. after a connectivity
+      state change or a configuration update).
+    type: object
+    additionalProperties: false
+    required:
+      - messages
+    properties:
+      messages:
+        description: >-
+          Price text in one or more languages. The first entry uses the
+          configured default language.
+        type: array
+        items:
+          description: Price text in a specific language
+          type: object
+          $ref: /text_message#/MessageContent
   TariffMessage:
     description: >-
       Message containing cost information
@@ -25,6 +46,13 @@ types:
           description: Message with pricing information in a specific language
           type: object
           $ref: /text_message#/MessageContent
+      pre_authorized_amount:
+        description: >-
+          The pre-authorized amount used by the payment terminal. This amount
+          will be reserved on the customer's bank account when a session is
+          started with a bank card.
+        type: object
+        $ref: /money#/MoneyAmount
   IdlePrice:
     description: >-
       Price components when idle

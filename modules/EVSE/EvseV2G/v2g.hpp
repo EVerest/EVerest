@@ -63,6 +63,8 @@
 #define FORCE_PUB_MSG           25 // max msg cycles when topics values must be udpated
 #define MAX_PCID_LEN            17
 
+#define GEN_CHALLENGE_SIZE 16
+
 #define DEFAULT_BUFFER_SIZE 8192
 
 #define DEBUG 1
@@ -239,10 +241,11 @@ struct v2g_context {
     enum V2gMsgTypeId last_v2g_msg;    /* holds the current v2g msg type */
     enum V2gMsgTypeId current_v2g_msg; /* holds the last v2g msg type */
     int state;                         /* holds the current state id */
-    bool is_dc_charger;         /* Is set to true if it is a DC charger. Value is configured after configuration of the
-                                   supported energy type */
-    bool debugMode;             /* To activate/deactivate the debug mode */
-    int8_t supported_protocols; /* Is an bit mask and holds the supported app protocols. See v2g_protocol enum */
+    bool is_dc_charger; /* Is set to true if it is a DC charger. Value is configured after configuration of the
+                           supported energy type */
+    bool debugMode;     /* To activate/deactivate the debug mode */
+    std::atomic<int8_t>
+        supported_protocols; /* Is an bit mask and holds the supported app protocols. See v2g_protocol enum */
     enum v2g_protocol selected_protocol; /* Holds the selected protocole after supported app protocol */
     std::atomic<bool>
         intl_emergency_shutdown; /* Is set to true if an internal emergency_shutdown has occurred (send failed response,
@@ -329,7 +332,7 @@ struct v2g_context {
         long long int auth_start_timeout;
         int auth_timeout_eim;
         int auth_timeout_pnc;                                                   // for PnC
-        uint8_t gen_challenge[16];                                              // for PnC
+        uint8_t gen_challenge[GEN_CHALLENGE_SIZE];                              // for PnC
         bool verify_contract_cert_chain;                                        // for PnC
         types::authorization::CertificateStatus certificate_status;             // for PnC
         bool authorization_rejected;                                            // for PnC
@@ -365,6 +368,9 @@ struct v2g_context {
     std::vector<std::vector<uint16_t>> supported_vas_services_per_provider;
 
     bool connection_initiated;
+
+    bool sdp_dlink_ready{false};
+    std::atomic<long long int> sdp_dlink_ready_time{0};
 };
 
 enum class dLinkAction {
@@ -381,6 +387,8 @@ struct v2g_connection {
     struct v2g_context* ctx;
 
     bool is_tls_connection;
+    bool tls_handshake_failed;               /* true when accept() never returned success */
+    V2gMsgTypeId last_v2g_msg_at_disconnect; /* last V2G message before connection teardown */
 
     // used for non-TLS connections
     struct {

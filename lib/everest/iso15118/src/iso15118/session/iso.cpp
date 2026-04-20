@@ -7,7 +7,7 @@
 #include <cstring>
 #include <thread>
 
-#include <endian.h>
+#include <arpa/inet.h>
 
 #include <iso15118/d20/state/supported_app_protocol.hpp>
 
@@ -47,7 +47,7 @@ void raise_invalid_packet_state(const io::SdpPacket& sdp_packet) {
     case PacketState::INVALID_HEADER:
         error += "invalid sdp packet header";
         break;
-    case PacketState::PAYLOAD_TO_LONG:
+    case PacketState::PAYLOAD_TOO_LONG:
         error += "packet too large for buffer";
         break;
     default:
@@ -64,7 +64,7 @@ bool read_single_sdp_packet(io::IConnection& connection, io::SdpPacket& sdp_pack
     //            main problem is, that it combines too much logic of the sdp packet and io related stuff
     using PacketState = io::SdpPacket::State;
 
-    assert(sdp_packet.get_state() == PacketState::EMPTY || sdp_packet.get_state() == PacketState::HEADER_READ);
+    assert(sdp_packet.get_state() == PacketState::BUFFER_EMPTY || sdp_packet.get_state() == PacketState::HEADER_READ);
 
     const auto first_try =
         connection.read(sdp_packet.get_current_buffer_pos(), sdp_packet.get_remaining_bytes_to_read());
@@ -110,11 +110,11 @@ static size_t setup_response_header(uint8_t* buffer, iso15118::io::v2gtp::Payloa
     buffer[1] = iso15118::io::SDP_INVERSE_PROTOCOL_VERSION;
 
     const uint16_t response_payload_type =
-        htobe16(static_cast<std::underlying_type_t<iso15118::io::v2gtp::PayloadType>>(payload_type));
+        htons(static_cast<std::underlying_type_t<iso15118::io::v2gtp::PayloadType>>(payload_type));
 
     std::memcpy(buffer + 2, &response_payload_type, sizeof(response_payload_type));
 
-    const uint32_t tmp32 = htobe32(size);
+    const uint32_t tmp32 = htonl(size);
 
     std::memcpy(buffer + 4, &tmp32, sizeof(tmp32));
 

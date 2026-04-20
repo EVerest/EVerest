@@ -1,0 +1,40 @@
+name: Bazel Cross-Compilation Build
+run-name: ${{ github.actor }} is cross-compiling with bazel
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Which runner to use'
+        required: false
+        default: 'ubuntu-24.04'
+        type: string
+      platform:
+        description: 'Human-readable platform name for display'
+        required: true
+        type: string
+jobs:
+  bazel-cross-build:
+    name: Cross-compile (${{ inputs.platform }})
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Mount bazel repo cache
+        uses: actions/cache@v5
+        with:
+          path: "~/.cache/bazel-repo-cache"
+          key: ${{ runner.os }}-bazel-repo-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}
+          restore-keys: |
+            ${{ runner.os }}-bazel-repo-
+      - name: Mount bazel disk cache
+        uses: actions/cache@v5
+        with:
+          path: "~/.cache/bazel-disk-cache"
+          key: ${{ runner.os }}-bazel-disk-${{ inputs.platform }}-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}
+          restore-keys: |
+            ${{ runner.os }}-bazel-disk-${{ inputs.platform }}-
+      - name: Build all
+        run: >
+          bazelisk build --config=ci //...
+          --platforms=//third-party/bazel/toolchains:${{ inputs.platform }}
+          --@bazel_tools//tools/test:incompatible_use_default_test_toolchain=false

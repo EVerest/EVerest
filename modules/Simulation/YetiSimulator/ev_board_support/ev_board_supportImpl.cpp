@@ -31,6 +31,11 @@ void ev_board_supportImpl::handle_set_cp_state(types::ev_board_support::EvCpStat
     using types::ev_board_support::EvCpState;
     auto& simdata_setting = mod->module_state->simdata_setting;
 
+    if (mod->module_state->pwm_error_f) {
+        EVLOG_warning << "Cannot change CP state, because PWM F is active";
+        return;
+    }
+
     switch (cp_state) {
     case EvCpState::A:
         simdata_setting.cp_voltage = CP_VOLTAGE_A;

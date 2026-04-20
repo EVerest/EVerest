@@ -230,6 +230,14 @@ types::session_cost::TariffMessage to_everest_tariff_message(const ocpp::TariffM
     return m;
 }
 
+types::session_cost::DefaultPrice to_everest_default_price(const std::vector<ocpp::DisplayMessageContent>& messages) {
+    types::session_cost::DefaultPrice default_price;
+    for (const auto& message : messages) {
+        default_price.messages.push_back(to_everest_display_message_content(message));
+    }
+    return default_price;
+}
+
 types::session_cost::SessionStatus to_everest_running_cost_state(const ocpp::RunningCostState& state) {
     switch (state) {
     case ocpp::RunningCostState::Charging:

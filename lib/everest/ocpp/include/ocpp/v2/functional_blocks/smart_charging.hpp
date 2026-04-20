@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <utility>
+
 #include <ocpp/v2/message_handler.hpp>
 
 #include <ocpp/v2/evse.hpp>
@@ -55,6 +57,7 @@ enum class ProfileValidationResultEnum {
     ChargingProfileUnsupportedKind,
     ChargingProfileNotDynamic,
     ChargingScheduleChargingRateUnitUnsupported,
+    ChargingScheduleNonFiniteValue,
     ChargingSchedulePriorityExtranousDuration,
     ChargingScheduleRandomizedDelay,
     ChargingScheduleUnsupportedLocalTime,
@@ -77,7 +80,8 @@ enum class ProfileValidationResultEnum {
     DuplicateTxDefaultProfileFound,
     DuplicateProfileValidityPeriod,
     RequestStartTransactionNonTxProfile,
-    ChargingProfileEmptyChargingSchedules
+    ChargingProfileEmptyChargingSchedules,
+    ChargingSchedulePeriodNonFiniteValue
 };
 
 /// \brief This is used to associate charging profiles with a source.
@@ -304,6 +308,17 @@ private: // Functions
     ///         ProfileValidationResultEnum::ChargingProfileRateLimitExceeded when rate limit was exceeded.
     ///
     ProfileValidationResultEnum verify_rate_limit(const ChargingProfile& profile);
+
+    ///
+    /// \brief Validate ChargingProfile regarding the offline time, only for OCPP 2.1
+    ///
+    /// When the offline time is higher than maxOfflineDuration, the profile is invalid. When
+    /// invalidAfterOfflineDuration is set to true, the profile should never be used again an can be cleared (Q11).
+    ///
+    /// \param profile  Charging profile
+    /// \return Pair of valid and clear flags.
+    ///
+    std::pair<bool, bool> validate_profile_with_offline_time(const ChargingProfile& profile);
 
     ///
     /// \brief Check if DCInputPhaseControl is enabled for this evse id.

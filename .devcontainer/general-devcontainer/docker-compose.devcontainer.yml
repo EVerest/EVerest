@@ -1,6 +1,10 @@
 networks:
   docker-proxy-network:
     internal: true
+  devcontainer-ipv6:
+    enable_ipv6: true
+    driver_opts:
+      com.docker.network.endpoint.sysctls: "net.ipv6.conf.eth0.disable_ipv6=0"
 
 volumes:
   cpm-source-cache:
@@ -55,6 +59,8 @@ services:
         source: ${SSH_AUTH_SOCK}
         target: /ssh-agent
     command: sleep infinity
+    cap_add:
+      - NET_ADMIN
     environment:
       MQTT_SERVER_ADDRESS: mqtt-server
       MQTT_SERVER_PORT: 1883
@@ -65,8 +71,11 @@ services:
     networks:
       - docker-proxy-network
       - default
+      - devcontainer-ipv6
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv6.conf.default.disable_ipv6=0
+      - net.ipv6.conf.lo.disable_ipv6=0
     profiles:
       - all
       - ocpp
