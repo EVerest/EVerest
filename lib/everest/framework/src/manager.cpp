@@ -1425,7 +1425,9 @@ int main(int argc, char* argv[]) {
         if (fs::exists(default_logging_cfg)) {
             Logging::init(default_logging_cfg.string());
         }
-        po::store(po::parse_command_line(argc, argv, desc), vm);
+        int style = po::command_line_style::default_style & ~po::command_line_style::allow_guessing;
+
+        po::store(po::parse_command_line(argc, argv, desc, style), vm);
         po::notify(vm);
 
         if (vm.count("help") != 0) {
