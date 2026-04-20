@@ -13,6 +13,11 @@
 #include "../CarloGavazzi_EM580.hpp"
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+
 #include "transport.hpp"
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 

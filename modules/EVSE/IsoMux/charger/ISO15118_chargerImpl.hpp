@@ -13,6 +13,10 @@
 #include "../IsoMux.hpp"
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
+#include <mutex>
+#include <optional>
+#include <unordered_map>
+
 #include "v2g.hpp"
 extern struct v2g_context* v2g_ctx;
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
