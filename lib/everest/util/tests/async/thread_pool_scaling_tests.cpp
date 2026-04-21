@@ -30,12 +30,10 @@ TEST(ThreadPoolScalingTest, ScalesOnLatencyThreshold) {
     std::this_thread::sleep_for(5ms);
 
     std::atomic<bool> second_task_started{false};
+    // This should spawn a new thread already.
     pool.run([&]() { second_task_started = true; });
 
     ASSERT_FALSE(second_task_started.load());
-
-    std::this_thread::sleep_for(30ms);
-    pool.run([]() {}); // Trigger scaling check
 
     std::this_thread::sleep_for(50ms);
     EXPECT_TRUE(second_task_started.load());
@@ -305,12 +303,10 @@ TEST(ThreadPoolScalingTest, LatencyThresholdBoundary) {
     pool.run([&]() { task2_started = true; });
 
     std::this_thread::sleep_for(50ms);
-    pool.run([]() {});
 
     EXPECT_FALSE(task2_started.load());
 
     std::this_thread::sleep_for(100ms);
-    pool.run([]() {});
 
     auto start = std::chrono::steady_clock::now();
     while (!task2_started.load() && std::chrono::steady_clock::now() - start < 1s) {

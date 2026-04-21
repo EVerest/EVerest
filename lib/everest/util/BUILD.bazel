@@ -1,8 +1,19 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
 
 cc_library(
     name = "util",
     hdrs = glob(["include/**/*.hpp"]),
     includes = ["include"],
     visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "async_tests",
+    srcs = glob(["tests/async/*.cpp"]),
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":util",
+        "@googletest//:gtest_main",
+    ],
 )
