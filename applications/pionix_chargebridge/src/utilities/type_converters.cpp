@@ -111,10 +111,23 @@ bool decode_CbGpioMode(c4::yml::ConstNodeRef const& node, CbGpioMode& rhs) {
     } else if (value == "MotorLock_1") {
         rhs = CbGpioMode::CBG_MotorLock_1;
         return true;
-    } else if (value == "MotorLock_2") {
-        rhs = CbGpioMode::CBG_MotorLock_2;
+    } else if (value == "MotorLock_Feedback") {
+        rhs = CbGpioMode::CBG_MotorLock_Feedback;
+        return true;
+    } else if (value == "Fan_Tacho_Input") {
+        rhs = CbGpioMode::CBG_Fan_Tacho_Input;
+        return true;
+    } else if (value == "StatusLED_R") {
+        rhs = CbGpioMode::CBG_StatusLED_R;
+        return true;
+    } else if (value == "StatusLED_G") {
+        rhs = CbGpioMode::CBG_StatusLED_G;
+        return true;
+    } else if (value == "StatusLED_B") {
+        rhs = CbGpioMode::CBG_StatusLED_B;
         return true;
     }
+
     throw yml_node_error(node);
 
     return false;

@@ -22,6 +22,11 @@ typedef enum _CbGpioMode : uint8_t {
 	CBG_Rcd_PWM_Input= 0x07,
 	CBG_MotorLock_1 = 0x08,
 	CBG_MotorLock_2 = 0x09,
+	CBG_MotorLock_Feedback = 0x0A,
+	CBG_Fan_Tacho_Input = 0x0B,
+	CBG_StatusLED_R = 0x0C,
+	CBG_StatusLED_G = 0x0D,
+	CBG_StatusLED_B = 0x0E,
 } CbGpioMode;
 
 typedef enum _CbRelayMode : uint8_t {
