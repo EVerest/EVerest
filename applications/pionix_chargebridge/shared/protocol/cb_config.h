@@ -25,7 +25,7 @@ typedef enum _CbGpioMode : uint8_t {
 } CbGpioMode;
 
 typedef enum _CbRelayMode : uint8_t {
-	CBR_PowerRelay = 0x00, CBR_UserRelay = 0x01,
+	CBR_PowerRelay = 0x00, CBR_GPIO = 0x01,
 } CbRelayMode;
 
 typedef enum _CbGpioPulls : uint8_t {

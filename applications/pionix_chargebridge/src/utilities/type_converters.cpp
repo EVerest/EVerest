@@ -305,8 +305,8 @@ bool decode_CbRelayMode(c4::yml::ConstNodeRef const& node, CbRelayMode& rhs) {
         rhs = CBR_PowerRelay;
         return true;
     }
-    if (value == "UserRelay") {
-        rhs = CBR_UserRelay;
+    if (value == "GPIO") {
+        rhs = CBR_GPIO;
         return true;
     }
     throw yml_node_error(node);
