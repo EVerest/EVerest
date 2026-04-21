@@ -6,7 +6,7 @@
 #include "cb_platform.h"
 #include <stdint.h>
 
-#define CB_NUMBER_OF_GPIOS 10
+#define CB_NUMBER_OF_GPIOS 21
 #define CB_NUMBER_OF_UARTS 3
 
 // enums
