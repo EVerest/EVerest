@@ -198,6 +198,18 @@ std::optional<T> get_optional(DeviceModelInterface& storage, const std::string_v
 
 template <typename T>
 std::optional<T> get_optional(DeviceModelInterface& storage, v16::keys::valid_keys key, bool writeOnly = false) {
+    const auto max_limit_cv = v16::keys::convert_v2_max_limit(key);
+    if (max_limit_cv) {
+        const auto meta = storage.get_variable_meta_data(max_limit_cv->first, max_limit_cv->second);
+        if (meta && meta->characteristics.maxLimit) {
+            if constexpr (std::is_same_v<T, std::string>) {
+                return std::to_string(static_cast<std::int32_t>(meta->characteristics.maxLimit.value()));
+            } else {
+                return static_cast<T>(meta->characteristics.maxLimit.value());
+            }
+        }
+        return std::nullopt;
+    }
     std::optional<T> result;
     const auto cv = v16::keys::convert_v2(key);
     if (cv) {
@@ -252,6 +264,10 @@ bool key_exists(DeviceModelInterface& storage, const std::string_view& component
 }
 
 bool key_exists(DeviceModelInterface& storage, v16::keys::valid_keys key) {
+    const auto max_limit_cv = v16::keys::convert_v2_max_limit(key);
+    if (max_limit_cv) {
+        return storage.get_variable_meta_data(max_limit_cv->first, max_limit_cv->second).has_value();
+    }
     bool result{false};
     const auto cv = v16::keys::convert_v2(key);
     if (cv) {
@@ -2939,6 +2955,21 @@ std::vector<KeyValue> ChargePointConfigurationDeviceModel::get_all_key_value() {
             }
         } catch (std::exception& ex) {
             EVLOG_error << "Device model '" << component.name << "' not supported: " << ex.what();
+        }
+    }
+
+    // Add keys that map to VariableCharacteristics.maxLimit
+    for (const auto& [key, cv] : v16::keys::max_limit_entries) {
+        const auto max_limit_cv = v16::keys::convert_v2_max_limit(key);
+        if (max_limit_cv) {
+            const auto meta = storage->get_variable_meta_data(max_limit_cv->first, max_limit_cv->second);
+            if (meta && meta->characteristics.maxLimit) {
+                KeyValue kv;
+                kv.key = std::string{v16::keys::convert(key)};
+                kv.value = std::to_string(static_cast<std::int32_t>(meta->characteristics.maxLimit.value()));
+                kv.readonly = v16::keys::is_readonly(key);
+                all.push_back(std::move(kv));
+            }
         }
     }
 

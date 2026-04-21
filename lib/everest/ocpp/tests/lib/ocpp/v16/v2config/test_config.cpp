@@ -103,11 +103,81 @@ TEST(V2Mapping, V2ToV16) {
     auto res = convert_v2(comp, var, ocpp::v2::AttributeEnum::Actual);
     EXPECT_EQ(res, "CpoName");
 
+    // MaxChargingProfilesInstalled maps to VariableCharacteristics.maxLimit
     comp.name = "SmartChargingCtrlr";
     var.name = "Entries";
     var.instance = "ChargingProfiles";
-    res = convert_v2(comp, var, ocpp::v2::AttributeEnum::Actual);
-    EXPECT_EQ(res, "MaxChargingProfilesInstalled");
+    EXPECT_FALSE(convert_v2(comp, var, ocpp::v2::AttributeEnum::Actual));
+    EXPECT_FALSE(convert_v2(comp, var, ocpp::v2::AttributeEnum::MaxSet));
+
+    // Instead it is reachable via convert_v2_max_limit.
+    const auto max_limit = convert_v2_max_limit(valid_keys::MaxChargingProfilesInstalled);
+    ASSERT_TRUE(max_limit);
+    EXPECT_EQ(max_limit->first.name, "SmartChargingCtrlr");
+    EXPECT_EQ(max_limit->second.name, "Entries");
+    EXPECT_EQ(max_limit->second.instance, "ChargingProfiles");
+}
+
+// Tests for get_all_key_value() with maxLimit keys.
+// These keys map to VariableCharacteristics.maxLimit rather than VariableAttribute,
+// so they are populated via a separate code path in get_all_key_value().
+class MaxLimitGetAll : public ConfigurationBase {};
+
+TEST_F(MaxLimitGetAll, MaxLimitKeysIncludedWhenSet) {
+    ASSERT_TRUE(device_model);
+    device_model->set("Core", "MeterValuesAlignedDataMaxLength", "10");
+    device_model->set("Core", "MeterValuesSampledDataMaxLength", "20");
+    device_model->set("Core", "StopTxnAlignedDataMaxLength", "30");
+    device_model->set("Core", "StopTxnSampledDataMaxLength", "40");
+    device_model->set("LocalAuthListManagement", "LocalAuthListMaxLength", "50");
+    device_model->set("LocalAuthListManagement", "SendLocalListMaxLength", "60");
+    device_model->set("SmartCharging", "MaxChargingProfilesInstalled", "70");
+
+    const auto all = v2_config->get_all_key_value();
+    const auto find = [&](const std::string& key) {
+        return std::find_if(all.begin(), all.end(), [&](const auto& kv) { return kv.key == key.c_str(); });
+    };
+
+    struct Expected {
+        const char* key;
+        const char* value;
+    };
+    const Expected expected[] = {
+        {"MeterValuesAlignedDataMaxLength", "10"}, {"MeterValuesSampledDataMaxLength", "20"},
+        {"StopTxnAlignedDataMaxLength", "30"},     {"StopTxnSampledDataMaxLength", "40"},
+        {"LocalAuthListMaxLength", "50"},          {"SendLocalListMaxLength", "60"},
+        {"MaxChargingProfilesInstalled", "70"},
+    };
+
+    for (const auto& e : expected) {
+        const auto it = find(e.key);
+        ASSERT_NE(it, all.end()) << e.key << " missing from get_all_key_value()";
+        EXPECT_EQ(it->value, e.value) << e.key;
+        EXPECT_TRUE(it->readonly) << e.key << " should be readonly";
+    }
+}
+
+TEST_F(MaxLimitGetAll, MaxLimitKeysAbsentWhenNotSet) {
+    ASSERT_TRUE(device_model);
+    // Do not configure any maxLimit keys — they should not appear in the result.
+    const auto all = v2_config->get_all_key_value();
+    const auto find = [&](const std::string& key) {
+        return std::find_if(all.begin(), all.end(), [&](const auto& kv) { return kv.key == key.c_str(); });
+    };
+
+    // LocalAuthListMaxLength, SendLocalListMaxLength, MaxChargingProfilesInstalled are present because they are part of
+    // the example config
+
+    const char* keys[] = {
+        "MeterValuesAlignedDataMaxLength",
+        "MeterValuesSampledDataMaxLength",
+        "StopTxnAlignedDataMaxLength",
+        "StopTxnSampledDataMaxLength",
+    };
+
+    for (const auto* key : keys) {
+        EXPECT_EQ(find(key), all.end()) << key << " should be absent when maxLimit is not set";
+    }
 }
 
 } // namespace
