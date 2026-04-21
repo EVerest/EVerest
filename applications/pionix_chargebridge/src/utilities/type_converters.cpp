@@ -417,37 +417,6 @@ bool decode_CbCanConfig(c4::yml::ConstNodeRef const& node, CbCanConfig& rhs) {
     return true;
 }
 
-bool decode_CbNetworkConfig(c4::yml::ConstNodeRef const& node, CbNetworkConfig& rhs) {
-    using ryml::ConstNodeRef;
-
-    if (node.invalid()) {
-        return false;
-    }
-
-    ConstNodeRef local_node = node;
-    local_node = node.find_child("mdns_name");
-
-    if (not local_node.invalid()) {
-
-        auto limit = sizeof(rhs.mdns_name);
-        std::string name;
-        decode(local_node, name);
-
-        if (name.size() >= limit) {
-            return false;
-        }
-
-        if (name.size() >= limit) {
-            return false;
-        }
-        std::memset(rhs.mdns_name, 0, limit);
-        std::memcpy(rhs.mdns_name, name.c_str(), std::min(name.size(), limit));
-        return true;
-    }
-    throw yml_node_error(local_node);
-    return false;
-}
-
 namespace EXT_API = everest::lib::API;
 namespace EXT_API_BSP = EXT_API::V1_0::types::evse_board_support;
 
@@ -584,13 +553,6 @@ c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbCan
         return node;
     }
     throw std::runtime_error("CbCanConfig");
-}
-
-c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbNetworkConfig& rhs) {
-    if (decode_CbNetworkConfig(node, rhs)) {
-        return node;
-    }
-    throw std::runtime_error("CbNetworkConfig");
 }
 
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, EXT_API_BSP::Connector_type& rhs) {

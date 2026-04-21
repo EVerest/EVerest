@@ -266,7 +266,6 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         get_node_or_default(cfg.connection_to_s, main, "connection_to_s", 3 * cfg.interval_s);
         cfg.cb_remote = c.cb_remote;
         cfg.cb_port = c.cb_port;
-        get_node(cfg.cb_config.network, "charge_bridge");
         get_node(cfg.cb_config.safety, "safety");
 
         std::memset(cfg.cb_config.gpios, 0, CB_NUMBER_OF_GPIOS * sizeof(CbGpioConfig));
@@ -359,17 +358,6 @@ charge_bridge_config set_config_placeholders(charge_bridge_config const& src, ch
     }
 
     if (result.heartbeat.has_value()) {
-        auto& raw = result.heartbeat->cb_config.network.mdns_name;
-        std::string item = raw;
-        replace(item);
-        auto limit = sizeof(raw);
-        if (item.size() > limit) {
-            item = "cb_" + index_str;
-            std::cout << "WARNING: Replacement for mdns_name is too long. Fallback to '" + item + "'" << std::endl;
-        }
-        std::memset(raw, 0, limit);
-        std::memcpy(raw, item.c_str(), std::min(item.size(), limit));
-
         result.heartbeat->cb_remote = ip;
         result.heartbeat->cb = result.cb_name;
     }

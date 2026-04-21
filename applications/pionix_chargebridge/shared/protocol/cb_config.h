@@ -122,6 +122,5 @@ typedef struct CB_COMPILER_ATTR_PACK _cb_config {
 	CbGpioConfig gpios[CB_NUMBER_OF_GPIOS];
 	CbUartConfig uarts[CB_NUMBER_OF_UARTS];
 	CbCanConfig can;
-	CbNetworkConfig network;
 	uint8_t plc_powersaving_mode;
 } CbConfig;
