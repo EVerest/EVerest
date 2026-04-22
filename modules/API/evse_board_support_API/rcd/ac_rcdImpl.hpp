@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
-
 #ifndef RCD_AC_RCD_IMPL_HPP
 #define RCD_AC_RCD_IMPL_HPP
 
@@ -8,11 +7,8 @@
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
 // template version 3
 //
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wignored-qualifiers"
-#pragma GCC diagnostic ignored "-Wunused-function"
+
 #include <generated/interfaces/ac_rcd/Implementation.hpp>
-#pragma GCC diagnostic pop
 
 #include "../evse_board_support_API.hpp"
 
@@ -56,7 +52,6 @@ private:
     auto generic_request_reply(T const& default_value, ReqT const& request, std::string const& topic);
 
     int timeout_s{5};
-
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

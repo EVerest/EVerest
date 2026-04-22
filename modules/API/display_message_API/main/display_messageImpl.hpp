@@ -59,7 +59,6 @@ private:
     auto generic_request_reply(T const& default_value, ReqT const& request, std::string const& topic);
 
     int timeout_s{5};
-
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

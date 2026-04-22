@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-
 #ifndef SESSION_COST_CONSUMER_API_HPP
 #define SESSION_COST_CONSUMER_API_HPP
 
@@ -12,10 +11,7 @@
 #include "ld-ev.hpp"
 
 // headers for provided interface implementations
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <generated/interfaces/generic_error/Implementation.hpp>
-#pragma GCC diagnostic pop
 
 // headers for required interface implementations
 #include <generated/interfaces/session_cost/Interface.hpp>
@@ -26,7 +22,6 @@
 #include <everest_api_types/utilities/Topics.hpp>
 
 namespace ev_API = everest::lib::API;
-
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -46,11 +41,10 @@ public:
         mqtt(mqtt_provider),
         p_main(std::move(p_main)),
         r_session_cost(std::move(r_session_cost)),
-        config(config),
-        comm_check("generic/CommunicationFault", "Bridge to implementation connection lost", this->p_main){};
+        config(config){};
 
     Everest::MqttProvider& mqtt;
-    const std::shared_ptr<generic_errorImplBase> p_main;
+    const std::unique_ptr<generic_errorImplBase> p_main;
     const std::unique_ptr<session_costIntf> r_session_cost;
     const Conf& config;
 
@@ -59,7 +53,7 @@ public:
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
-    // ev@4714b2ab-a24f-4b95-ab81-36439e1478e:v1
+    // ev@4714b2ab-a24f-4b95-ab81-36439e1478de:v1
     // insert your protected definitions here
     // ev@4714b2ab-a24f-4b95-ab81-36439e1478de:v1
 
@@ -85,7 +79,8 @@ private:
     void setup_heartbeat_generator();
 
     ev_API::Topics topics;
-    ev_API::CommCheckHandler<generic_errorImplBase> comm_check;
+    ev_API::CommCheckHandler<generic_errorImplBase> comm_check{"generic/CommunicationFault",
+                                                               "Bridge to implementation connection lost", p_main};
     size_t hb_id{0};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };

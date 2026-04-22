@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
-
 #ifndef GENERIC_ERROR_RAISER_API_HPP
 #define GENERIC_ERROR_RAISER_API_HPP
 
@@ -12,22 +11,17 @@
 #include "ld-ev.hpp"
 
 // headers for provided interface implementations
-#include <everest_api_types/utilities/Topics.hpp>
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wignored-qualifiers"
-#pragma GCC diagnostic ignored "-Wunused-function"
 #include <generated/interfaces/generic_error/Implementation.hpp>
-#pragma GCC diagnostic pop
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
 #include <everest_api_types/generic/API.hpp>
 #include <everest_api_types/utilities/CommCheckHandler.hpp>
+#include <everest_api_types/utilities/Topics.hpp>
 
 namespace ev_API = everest::lib::API;
 namespace API_types = ev_API::V1_0::types;
 namespace API_generic = API_types::generic;
-
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -42,14 +36,10 @@ public:
     generic_error_raiser_API() = delete;
     generic_error_raiser_API(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
                              std::unique_ptr<generic_errorImplBase> p_main, Conf& config) :
-        ModuleBase(info),
-        mqtt(mqtt_provider),
-        p_main(std::move(p_main)),
-        config(config),
-        comm_check("generic/CommunicationFault", "Bridge to implementation connection lost", this->p_main){};
+        ModuleBase(info), mqtt(mqtt_provider), p_main(std::move(p_main)), config(config){};
 
     Everest::MqttProvider& mqtt;
-    const std::shared_ptr<generic_errorImplBase> p_main;
+    const std::unique_ptr<generic_errorImplBase> p_main;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
@@ -65,7 +55,8 @@ public:
     void setup_heartbeat_generator();
 
     ev_API::Topics topics;
-    ev_API::CommCheckHandler<generic_errorImplBase> comm_check;
+    ev_API::CommCheckHandler<generic_errorImplBase> comm_check{"generic/CommunicationFault",
+                                                               "Bridge to implementation connection lost", p_main};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:

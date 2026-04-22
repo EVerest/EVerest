@@ -19,7 +19,8 @@
 #include <queue>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
-namespace module::main {
+namespace module {
+namespace main {
 
 struct Conf {};
 
@@ -81,7 +82,6 @@ private:
     std::string simulated_already_plugged_in_key;
     std::string simulated_plugged_in_command_key;
     std::string last_commands;
-
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
@@ -89,6 +89,7 @@ private:
 // insert other definitions here
 // ev@3d7da0ad-02c2-493d-9920-0bbbd56b9876:v1
 
-} // namespace module::main
+} // namespace main
+} // namespace module
 
 #endif // MAIN_CAR_SIMULATOR_IMPL_HPP

@@ -35,7 +35,6 @@ else()
 
     target_compile_definitions(${MODULE_NAME} PRIVATE BUILD_WITH_NAMED_PIPE_DATASOURCE)
 endif()
-
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
 
 target_sources(${MODULE_NAME}
@@ -44,4 +43,5 @@ target_sources(${MODULE_NAME}
 )
 
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1
+# insert other things like install cmds etc here
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1

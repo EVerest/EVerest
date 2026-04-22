@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
-
 #ifndef MAIN_ISOLATION_MONITOR_IMPL_HPP
 #define MAIN_ISOLATION_MONITOR_IMPL_HPP
 

@@ -83,9 +83,7 @@ public:
         p_rcd_2(std::move(p_rcd_2)),
         p_connector_lock_1(std::move(p_connector_lock_1)),
         p_connector_lock_2(std::move(p_connector_lock_2)),
-        config(config),
-        serial(verso_config),
-        gpio(verso_config){};
+        config(config){};
 
     Everest::TelemetryProvider& telemetry;
     const std::unique_ptr<evse_board_supportImplBase> p_connector_1;
@@ -98,9 +96,9 @@ public:
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
-    evSerial serial;
+    evSerial serial{verso_config};
     evConfig verso_config;
-    evGpio gpio;
+    evGpio gpio{verso_config};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:

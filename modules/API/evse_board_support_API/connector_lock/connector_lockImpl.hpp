@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
-
 #ifndef CONNECTOR_LOCK_CONNECTOR_LOCK_IMPL_HPP
 #define CONNECTOR_LOCK_CONNECTOR_LOCK_IMPL_HPP
 
@@ -9,11 +8,7 @@
 // template version 3
 //
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wignored-qualifiers"
-#pragma GCC diagnostic ignored "-Wunused-function"
 #include <generated/interfaces/connector_lock/Implementation.hpp>
-#pragma GCC diagnostic pop
 
 #include "../evse_board_support_API.hpp"
 

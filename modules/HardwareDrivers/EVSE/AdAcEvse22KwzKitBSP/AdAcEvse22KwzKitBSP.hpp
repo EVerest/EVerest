@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-// Portions (c) 2025 Analog Devices Inc.
-#ifndef AD_ACEVSE22KWZ_KIT_HPP
-#define AD_ACEVSE22KWZ_KIT_HPP
+#ifndef AD_AC_EVSE22KWZ_KIT_BSP_HPP
+#define AD_AC_EVSE22KWZ_KIT_BSP_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
@@ -86,4 +85,4 @@ std::string error_type_to_string(ErrorFlags s);
 
 } // namespace module
 
-#endif // AD_ACEVSE22KWZ_KIT_HPP
+#endif // AD_AC_EVSE22KWZ_KIT_BSP_HPP

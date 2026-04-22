@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-// Portions (c) 2025 Analog Devices Inc.
-#ifndef AD_ACEVSE22KWZ_KIT_POWERMETER_IMPL_HPP
-#define AD_ACEVSE22KWZ_KIT_POWERMETER_IMPL_HPP
+#ifndef POWERMETER_POWERMETER_IMPL_HPP
+#define POWERMETER_POWERMETER_IMPL_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
@@ -61,4 +60,4 @@ private:
 } // namespace powermeter
 } // namespace module
 
-#endif // AD_ACEVSE22KWZ_KIT_POWERMETER_IMPL_HPP
+#endif // POWERMETER_POWERMETER_IMPL_HPP

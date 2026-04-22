@@ -7,12 +7,8 @@
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
 // template version 3
 //
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wignored-qualifiers"
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 #include <generated/interfaces/session_cost/Implementation.hpp>
-#pragma GCC diagnostic pop
 
 #include "../session_cost_API.hpp"
 

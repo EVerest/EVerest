@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#pragma once
+#ifndef POWERMETER_POWERMETER_IMPL_HPP
+#define POWERMETER_POWERMETER_IMPL_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
@@ -58,3 +59,5 @@ private:
 
 } // namespace powermeter
 } // namespace module
+
+#endif // POWERMETER_POWERMETER_IMPL_HPP

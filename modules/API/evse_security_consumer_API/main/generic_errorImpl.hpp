@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
-
-#ifndef MAIN_EMPTY_IMPL_HPP
-#define MAIN_EMPTY_IMPL_HPP
+#ifndef MAIN_GENERIC_ERROR_IMPL_HPP
+#define MAIN_GENERIC_ERROR_IMPL_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
 // template version 3
 //
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 #include <generated/interfaces/generic_error/Implementation.hpp>
-#pragma GCC diagnostic pop
 
 #include "../evse_security_consumer_API.hpp"
 
@@ -61,4 +58,4 @@ private:
 } // namespace main
 } // namespace module
 
-#endif // MAIN_EMPTY_IMPL_HPP
+#endif // MAIN_GENERIC_ERROR_IMPL_HPP

@@ -12,7 +12,6 @@
 
 // headers for required interface implementations
 #include <generated/interfaces/dc_external_derate/Interface.hpp>
-#include <generated/interfaces/generic_error/Interface.hpp>
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here

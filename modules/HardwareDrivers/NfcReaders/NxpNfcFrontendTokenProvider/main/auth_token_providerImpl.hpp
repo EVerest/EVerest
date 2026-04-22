@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
-
 #ifndef MAIN_AUTH_TOKEN_PROVIDER_IMPL_HPP
 #define MAIN_AUTH_TOKEN_PROVIDER_IMPL_HPP
 
@@ -28,7 +27,6 @@ using NxpNfcFrontendDataSource = NxpNfcFrontendWrapper::NxpNfcFrontend;
 #include <namedPipeDataSource.hpp>
 using NxpNfcFrontendDataSource = NamedPipeDataSource;
 #endif // BUILD_WITH_NAMED_PIPE_DATASOURCE
-
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {

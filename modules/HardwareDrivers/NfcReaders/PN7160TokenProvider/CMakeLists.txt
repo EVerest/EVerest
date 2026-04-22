@@ -37,5 +37,4 @@ install(FILES
             "libnfc-nci_config/libnfc-nci.conf"
         DESTINATION
             "${CMAKE_INSTALL_SYSCONFDIR}/everest/libnfc_config/")
-
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-// Portions (c) 2025 Analog Devices Inc.
-#ifndef AD_ACEVSE22KWZ_KIT_EVSE_BOARD_SUPPORT_IMPL_HPP
-#define AD_ACEVSE22KWZ_KIT_EVSE_BOARD_SUPPORT_IMPL_HPP
+#ifndef BOARD_SUPPORT_EVSE_BOARD_SUPPORT_IMPL_HPP
+#define BOARD_SUPPORT_EVSE_BOARD_SUPPORT_IMPL_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
@@ -75,4 +74,4 @@ private:
 } // namespace board_support
 } // namespace module
 
-#endif // AD_ACEVSE22KWZ_KIT_EVSE_BOARD_SUPPORT_IMPL_HPP
+#endif // BOARD_SUPPORT_EVSE_BOARD_SUPPORT_IMPL_HPP

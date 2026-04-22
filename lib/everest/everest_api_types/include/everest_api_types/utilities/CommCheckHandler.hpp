@@ -4,52 +4,63 @@
 #pragma once
 
 #include "VarContainer.hpp"
-#include "everest/logging.hpp"
+
 #include <atomic>
 #include <chrono>
 #include <functional>
 #include <memory>
 #include <thread>
 
+#include <everest/logging.hpp>
+#include <utils/error/error_factory.hpp>
+#include <utils/error/error_manager_impl.hpp>
+#include <utils/error/error_state_monitor.hpp>
+
 namespace everest::lib::API {
 
-template <class InterfaceT> class CommCheckHandler {
+class CommCheckHandlerBase {
 public:
-    using ErrorClearFtor = std::function<void()>;
-    using ErrorRaiseFtor = std::function<void(std::string const&)>;
-    using ErrorCheckFtor = std::function<bool()>;
     using HeartBeatFtor = std::function<bool()>;
-    CommCheckHandler(std::string const& error_type_, std::string const& default_sub_type_,
-                     std::shared_ptr<InterfaceT> const& interface) :
-        error_type(error_type_), default_sub_type(default_sub_type_) {
-        raise_error = [this, interface](std::string const& sub_type) {
-            const std::string message{"Send communication_check to clear the error"};
-            auto error =
-                interface->error_factory->create_error(error_type, sub_type, message, Everest::error::Severity::High);
-            try {
-                return interface->raise_error(error);
-            } catch (...) {
-            }
-        };
-        clear_error = [this, interface]() {
-            try {
-                if (interface->error_state_monitor->is_error_active(error_type, default_sub_type)) {
-                    interface->clear_error(error_type, default_sub_type);
-                }
-                if (interface->error_state_monitor->is_error_active(error_type, init_sub_type)) {
-                    interface->clear_error(error_type, init_sub_type);
-                }
-            } catch (...) {
-                EVLOG_info << "Failed to clear error: " << error_type;
-            }
-        };
-        check_error = [this, interface]() {
-            return interface->error_state_monitor->is_error_active(error_type, default_sub_type) ||
-                   interface->error_state_monitor->is_error_active(error_type, init_sub_type);
-        };
+
+    CommCheckHandlerBase(std::string const& error_type_, std::string const& default_sub_type_,
+                         std::shared_ptr<Everest::error::ErrorStateMonitor>& error_state_monitor_,
+                         std::shared_ptr<Everest::error::ErrorFactory>& error_factory_,
+                         std::shared_ptr<Everest::error::ErrorManagerImpl>& error_manager_) :
+        error_type(error_type_),
+        default_sub_type(default_sub_type_),
+        error_state_monitor(error_state_monitor_),
+        error_factory(error_factory_),
+        error_manager(error_manager_) {
     }
 
-    ~CommCheckHandler() {
+    void raise_error(std::string const& sub_type) {
+        const std::string message{"Send communication_check to clear the error"};
+        auto error = error_factory->create_error(error_type, sub_type, message, Everest::error::Severity::High);
+        try {
+            return error_manager->raise_error(error);
+        } catch (...) {
+        }
+    }
+
+    void clear_error() {
+        try {
+            if (error_state_monitor->is_error_active(error_type, default_sub_type)) {
+                error_manager->clear_error(error_type, default_sub_type);
+            }
+            if (error_state_monitor->is_error_active(error_type, init_sub_type)) {
+                error_manager->clear_error(error_type, init_sub_type);
+            }
+        } catch (...) {
+            EVLOG_info << "Failed to clear error: " << error_type;
+        }
+    }
+
+    bool check_error() {
+        return error_state_monitor->is_error_active(error_type, default_sub_type) ||
+               error_state_monitor->is_error_active(error_type, init_sub_type);
+    }
+
+    ~CommCheckHandlerBase() {
         check_active.store(false);
     }
 
@@ -115,9 +126,6 @@ private:
     }
 
     std::chrono::seconds timeout;
-    ErrorRaiseFtor raise_error;
-    ErrorClearFtor clear_error;
-    ErrorCheckFtor check_error;
     VarContainer<bool> comm_check_value;
     std::thread handler;
     std::thread heartbeat_handler;
@@ -126,6 +134,18 @@ private:
     const std::string error_type;
     const std::string init_sub_type{"Initial communication check"};
     const std::string default_sub_type;
+    std::shared_ptr<Everest::error::ErrorStateMonitor>& error_state_monitor;
+    std::shared_ptr<Everest::error::ErrorFactory>& error_factory;
+    std::shared_ptr<Everest::error::ErrorManagerImpl>& error_manager;
+};
+
+template <class InterfaceT> class CommCheckHandler : public CommCheckHandlerBase {
+public:
+    CommCheckHandler(std::string const& error_type_, std::string const& default_sub_type_,
+                     const std::unique_ptr<InterfaceT>& interface) :
+        CommCheckHandlerBase(error_type_, default_sub_type_, interface->error_state_monitor, interface->error_factory,
+                             interface->error_manager) {
+    }
 };
 
 } // namespace everest::lib::API

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
-
-#ifndef EVSE_MANAGER_API_HPP
-#define EVSE_MANAGER_API_HPP
+#ifndef EVSE_MANAGER_CONSUMER_API_HPP
+#define EVSE_MANAGER_CONSUMER_API_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
@@ -12,12 +11,7 @@
 #include "ld-ev.hpp"
 
 // headers for provided interface implementations
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wignored-qualifiers"
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <generated/interfaces/generic_error/Implementation.hpp>
-#pragma GCC diagnostic pop
 
 // headers for required interface implementations
 #include <generated/interfaces/evse_board_support/Interface.hpp>
@@ -36,7 +30,6 @@
 #include "session_info.hpp"
 
 namespace ev_API = everest::lib::API;
-
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -50,7 +43,6 @@ struct Conf {
 class evse_manager_consumer_API : public Everest::ModuleBase {
 public:
     evse_manager_consumer_API() = delete;
-
     evse_manager_consumer_API(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
                               std::unique_ptr<generic_errorImplBase> p_main,
                               std::unique_ptr<evse_managerIntf> r_evse_manager,
@@ -68,19 +60,16 @@ public:
         r_imd(std::move(r_imd)),
         r_ps_dc(std::move(r_ps_dc)),
         r_random_delay(std::move(r_random_delay)),
-
-        config(config),
-        comm_check("generic/CommunicationFault", "Bridge to implementation connection lost", this->p_main){};
+        config(config){};
 
     Everest::MqttProvider& mqtt;
-    const std::shared_ptr<generic_errorImplBase> p_main;
+    const std::unique_ptr<generic_errorImplBase> p_main;
     const std::unique_ptr<evse_managerIntf> r_evse_manager;
     const std::vector<std::unique_ptr<evse_board_supportIntf>> r_evse_bsp;
     const std::vector<std::unique_ptr<slacIntf>> r_slac;
     const std::vector<std::unique_ptr<isolation_monitorIntf>> r_imd;
     const std::vector<std::unique_ptr<power_supply_DCIntf>> r_ps_dc;
     const std::vector<std::unique_ptr<uk_random_delayIntf>> r_random_delay;
-
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
@@ -142,10 +131,10 @@ private:
     void setup_heartbeat_generator();
 
     ev_API::Topics topics;
-    ev_API::CommCheckHandler<generic_errorImplBase> comm_check;
+    ev_API::CommCheckHandler<generic_errorImplBase> comm_check{"generic/CommunicationFault",
+                                                               "Bridge to implementation connection lost", p_main};
     size_t hb_id{0};
     everest::lib::util::monitor<SessionInfo> session_info;
-
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 
@@ -155,4 +144,4 @@ private:
 
 } // namespace module
 
-#endif // EVSE_MANAGER_API_HPP
+#endif // EVSE_MANAGER_CONSUMER_API_HPP

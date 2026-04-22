@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
-
 #ifndef NXP_NFC_FRONTEND_TOKEN_PROVIDER_HPP
 #define NXP_NFC_FRONTEND_TOKEN_PROVIDER_HPP
 
