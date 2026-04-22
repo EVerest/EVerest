@@ -206,10 +206,11 @@ int init(const std::string& logconf, std::string process_name) {
     is_initialized = true;
 
     // Probe the installed filter to find the minimum accepted severity level.
-    for (int ii = static_cast<int>(verbose); ii <= static_cast<int>(error); ++ii) {
-        auto rec = global_logger::get().open_record(boost::log::keywords::severity = static_cast<severity_level>(ii));
+    for (int level = static_cast<int>(verbose); level <= static_cast<int>(critical); ++level) {
+        auto rec =
+            global_logger::get().open_record(boost::log::keywords::severity = static_cast<severity_level>(level));
         if (rec) {
-            return ii;
+            return level;
         }
     }
 
