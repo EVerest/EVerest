@@ -54,7 +54,8 @@ enum class ConfigurationParameterMutability {
 };
 
 // TODO(CB): Do we need this? Would be used to mark configurations as "immediate" vs "requires restart" when querying
-// the configuration (not to be confused with the Result of a configuration parameter update, which can be "applied" or "will apply on restart")
+// the configuration (not to be confused with the Result of a configuration parameter update, which can be "applied" or
+// "will apply on restart")
 enum class ConfigurationActivationPolicy {
     Immediate,
     RequiresRestart,
