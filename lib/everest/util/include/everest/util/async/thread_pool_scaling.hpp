@@ -108,14 +108,35 @@ template <std::size_t ThresholdMs = 10> struct LatencyScaling {
 // |              |                          | when a specific depth limit is hit.    |
 // +--------------+--------------------------+----------------------------------------+
 
+// --- Exception Handling Policies ---
+
+/**
+ * @brief Exception policy: silently swallow exceptions (fire-and-forget semantics).
+ */
+struct SuppressExceptions {
+    static void handle_exception([[maybe_unused]] std::exception_ptr) noexcept {
+    }
+};
+
+/**
+ * @brief Exception policy: rethrow from the worker thread, terminating the process if uncaught.
+ */
+struct RethrowExceptions {
+    [[noreturn]] static void handle_exception(std::exception_ptr eptr) {
+        std::rethrow_exception(eptr);
+    }
+};
+
 /**
  * @brief A thread pool that dynamically scales its worker count based on a policy.
  * * @details This pool maintains a minimum number of threads and expands up to a maximum
  * when the ScalingPolicy (e.g., LatencyScaling or GreedyScaling) signals that growth
  * is necessary. Idle surplus threads are automatically retired after a specified timeout.
  * * @tparam ScalingPolicy A policy class implementing should_grow(size_t, size_t, std::optional<time_point>).
+ * * @tparam ExceptionPolicy A policy class implementing a static handle_exception() called inside the catch block.
  */
-template <typename ScalingPolicy = LatencyScaling<10>> class thread_pool_scaling {
+template <typename ScalingPolicy = LatencyScaling<10>, typename ExceptionPolicy = SuppressExceptions>
+class thread_pool_scaling {
 public:
     using action = std::function<void()>;
 
@@ -265,8 +286,7 @@ private:
                     try {
                         task_opt->func();
                     } catch (...) {
-                        // Suppress exception to prevent thread termination.
-                        // Fire-and-forget tasks are responsible for their own error handling.
+                        ExceptionPolicy::handle_exception(std::current_exception());
                     }
                     // Steal the zombie deque under the lock, then join outside it.
                     // Joining while holding the lock is safe in practice (the zombie has already
