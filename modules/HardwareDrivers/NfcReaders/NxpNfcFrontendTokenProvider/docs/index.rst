@@ -6,8 +6,8 @@
 
 The module ``NxpNfcFrontendTokenProvider`` implements the ``auth_token_provider`` interface.
 It reads data from NXP NFC frontend chips like CLRC663.
-It relies on **NxpNfcRdLib_Linux_v07.10.00_PUB.zip** which users need to obtain from NXP: [nxp.com](https://www.nxp.com/design/design-center/development-boards-and-designs/nfc-reader-library-software-support-for-nfc-frontend-solutions:NFC-READER-LIBRARY).
-The variety of hardware supported by ``NxpNfcFrontendTokenProvider`` is limited by the time of writing but could be extended by modification of the ``nxpnfcrdlib_wrapper``.
+It relies on **NxpNfcRdLib_Linux_v07.10.00_PUB.zip** which users need to obtain from NXP: `nxp.com <https://www.nxp.com/design/design-center/development-boards-and-designs/nfc-reader-library-software-support-for-nfc-frontend-solutions:NFC-READER-LIBRARY>`_.
+The variety of hardware supported by ``NxpNfcFrontendTokenProvider`` is limited at the time of writing but could be extended by modification of the ``nxpnfcrdlib_wrapper``.
 
 Building the module
 ===================
