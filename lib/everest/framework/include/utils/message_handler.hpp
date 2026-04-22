@@ -109,7 +109,7 @@ private:
     everest::lib::util::monitor<std::thread> ready;
 
     using LatencyScaling = everest::lib::util::LatencyScaling<THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS>;
-    using ThreadPool = everest::lib::util::thread_pool_scaling<LatencyScaling>;
+    using ThreadPool = everest::lib::util::thread_pool_scaling<LatencyScaling, everest::lib::util::RethrowExceptions>;
     std::unique_ptr<ThreadPool> operation_thread_pool;
 
     using MessageQueue = everest::lib::util::thread_safe_queue<ParsedMessage>;
