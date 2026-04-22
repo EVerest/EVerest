@@ -958,7 +958,7 @@ async def test_pwm_ac_session_paused_by_ev(
 )
 @pytest.mark.everest_config_adaptions(AcConfigAdjustmentStrategy())
 @pytest.mark.everest_core_config("config-sil.yaml")
-@pytest.mark.flaky(reruns=1)
+@pytest.mark.skip("Currently fails because EV simulator session resuming is not stable yet")
 async def test_iso15118_ac_session_paused_by_ev(
     test_controller: TestController, everest_core: EverestCore
 ):
