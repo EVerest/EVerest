@@ -181,6 +181,42 @@ LoadFromYamlResult_External to_external_api(LoadFromYamlResult_Internal const& v
     return result;
 }
 
+ConfigurationParameterUpdateResultEnum_Internal
+to_internal_api(ConfigurationParameterUpdateResultEnum_External const& val) {
+    using SrcT = ConfigurationParameterUpdateResultEnum_External;
+    using TarT = ConfigurationParameterUpdateResultEnum_Internal;
+    switch (val) {
+    case SrcT::Applied:
+        return TarT::Applied;
+    case SrcT::WillApplyOnRestart:
+        return TarT::WillApplyOnRestart;
+    case SrcT::DoesNotExist:
+        return TarT::DoesNotExist;
+    case SrcT::Rejected:
+        return TarT::Rejected;
+    }
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::config_service::ConfigurationParameterUpdateResultEnum_External");
+}
+
+ConfigurationParameterUpdateResultEnum_External
+to_external_api(ConfigurationParameterUpdateResultEnum_Internal const& val) {
+    using SrcT = ConfigurationParameterUpdateResultEnum_Internal;
+    using TarT = ConfigurationParameterUpdateResultEnum_External;
+    switch (val) {
+    case SrcT::Applied:
+        return TarT::Applied;
+    case SrcT::WillApplyOnRestart:
+        return TarT::WillApplyOnRestart;
+    case SrcT::DoesNotExist:
+        return TarT::DoesNotExist;
+    case SrcT::Rejected:
+        return TarT::Rejected;
+    }
+    throw std::out_of_range(
+        "Unexpected value for Everest::config::SetConfigParameterResult");
+}
+
 ActiveSlotStatusEnum_Internal to_internal_api(ActiveSlotStatusEnum_External const& val) {
     using SrcT = ActiveSlotStatusEnum_External;
     using TarT = ActiveSlotStatusEnum_Internal;
@@ -317,6 +353,20 @@ ConfigurationParameterIdentifier_External to_external_api(ConfigurationParameter
     return result;
 }
 
+ConfigurationParameterUpdate_Internal to_internal_api(ConfigurationParameterUpdate_External const& val) {
+    ConfigurationParameterUpdate_Internal result;
+    result.identifier = to_internal_api(val.cfg_param_id);
+    result.value = val.value;
+    return result;
+}
+
+ConfigurationParameterUpdate_External to_external_api(ConfigurationParameterUpdate_Internal const& val) {
+    ConfigurationParameterUpdate_External result;
+    result.cfg_param_id = to_external_api(val.identifier);
+    result.value = val.value;
+    return result;
+}
+
 ActiveSlotUpdateNotice_Internal to_internal_api(ActiveSlotUpdateNotice_External const& val) {
     ActiveSlotUpdateNotice_Internal result;
     result.timestamp = val.tstamp;
@@ -330,6 +380,42 @@ ActiveSlotUpdateNotice_External to_external_api(ActiveSlotUpdateNotice_Internal 
     result.tstamp = val.timestamp;
     result.slot_id = val.slot_id;
     result.status = to_external_api(val.status);
+    return result;
+}
+
+ConfigurationParameterUpdateResultRecord_Internal
+to_internal_api(ConfigurationParameterUpdateResultRecord_External const& val) {
+    ConfigurationParameterUpdateResultRecord_Internal result;
+    result.identifier = to_internal_api(val.update.cfg_param_id);
+    result.value = val.update.value;
+    result.result = to_internal_api(val.result);
+    return result;
+}
+
+ConfigurationParameterUpdateResultRecord_External
+to_external_api(ConfigurationParameterUpdateResultRecord_Internal const& val) {
+    ConfigurationParameterUpdateResultRecord_External result;
+    result.update.cfg_param_id = to_external_api(val.identifier);
+    result.update.value = val.value;
+    result.result = to_external_api(val.result);
+    return result;
+}
+
+ConfigurationParameterUpdateNotice_Internal to_internal_api(ConfigurationParameterUpdateNotice_External const& val) {
+    ConfigurationParameterUpdateNotice_Internal result;
+    result.timestamp = val.tstamp;
+    result.slot_id = val.slot_id;
+    result.updates = vecToInternal(val.update_results);
+    // TODO(CB): Should include an origin field.
+    return result;
+}
+
+ConfigurationParameterUpdateNotice_External to_external_api(ConfigurationParameterUpdateNotice_Internal const& val) {
+    ConfigurationParameterUpdateNotice_External result;
+    result.tstamp = val.timestamp;
+    result.slot_id = val.slot_id;
+    result.update_results = vecToExternal(val.updates);
+    // TODO(CB): Should include an origin field.
     return result;
 }
 
@@ -379,7 +465,7 @@ ReqFulfillment_Internal to_internal_api(ReqFulfillment_External const& val, cons
     ReqFulfillment_Internal result;
     result.module_id = val.module_id;
     result.implementation_id = val.implementation_id;
-    Requirement req{requirement_id, val.index};
+    Requirement req{requirement_id, val.index};  // TODO(CB): This is a narrowing conversion; maybe use an appropriate cast or check for overflow?
     result.requirement = req;
     return result;
 }
@@ -399,6 +485,8 @@ to_internal_api(ConfigurationParameterCharacteristics_External const& val) {
     result.mutability = to_internal_api(val.mutability);
     //    result.activation_policy = to_internal_api(val.activation_policy); // missing in internal type
     result.unit = val.unit;
+    result.min_value = val.min_value;
+    result.max_value = val.max_value;
     return result;
 }
 
@@ -412,6 +500,8 @@ to_external_api(ConfigurationParameterCharacteristics_Internal const& val) {
                          // default to RequiresRestart for now. We might want to add this to the external type in the
                          // future.
     result.unit = val.unit;
+    result.min_value = val.min_value;
+    result.max_value = val.max_value;
     return result;
 }
 
@@ -453,6 +543,68 @@ ConfigurationParameter_External to_external_api(ConfigurationParameter_Internal 
     return result;
 }
 
+TelemetryConfig_Internal to_internal_api(TelemetryConfig_External const& val) {
+    TelemetryConfig_Internal result{val.id};
+    return result;
+}
+
+TelemetryConfig_External to_external_api(TelemetryConfig_Internal const& val) {
+    TelemetryConfig_External result;
+    result.id = val.id;
+    return result;
+}
+
+ModuleConfigAccess_Internal to_internal_api(ModuleConfigAccess_External const& val) {
+    ModuleConfigAccess_Internal result;
+    result.allow_read = val.allow_read;
+    result.allow_write = val.allow_write;
+    result.allow_set_read_only = val.allow_set_read_only;
+    return result;
+}
+
+ModuleConfigAccess_External to_external_api(ModuleConfigAccess_Internal const& val, std::string const& module_id) {
+    ModuleConfigAccess_External result;
+    result.module_id = module_id;
+    result.allow_read = val.allow_read;
+    result.allow_write = val.allow_write;
+    result.allow_set_read_only = val.allow_set_read_only;
+    return result;
+}
+
+ConfigAccess_Internal to_internal_api(ConfigAccess_External const& val) {
+    ConfigAccess_Internal result;
+    result.allow_global_read = val.allow_global_read;
+    result.allow_global_write = val.allow_global_write;
+    result.allow_set_read_only = val.allow_set_read_only;
+    for (auto const& mod_cfg_access : val.module_config_access) {
+        result.modules[mod_cfg_access.module_id] = to_internal_api(mod_cfg_access);
+    }
+    return result;
+}
+
+ConfigAccess_External to_external_api(ConfigAccess_Internal const& val) {
+    ConfigAccess_External result;
+    result.allow_global_read = val.allow_global_read;
+    result.allow_global_write = val.allow_global_write;
+    result.allow_set_read_only = val.allow_set_read_only;
+    for (auto const& [module_id, mod_cfg_access] : val.modules) {
+        result.module_config_access.push_back(to_external_api(mod_cfg_access, module_id));
+    }
+    return result;
+}
+
+ConfigAccessControl_Internal to_internal_api(ConfigAccessControl_External const& val) {
+    ConfigAccessControl_Internal result;
+    result.config = optToInternal(val.config);
+    return result;
+}
+
+ConfigAccessControl_External to_external_api(ConfigAccessControl_Internal const& val) {
+    ConfigAccessControl_External result;
+    result.config = optToExternal(val.config);
+    return result;
+}
+
 std::vector<Fulfillment> fulfillmentVecToInternal(const std::vector<ReqFulfillment_External>& fulfillments_external, const std::string& requirement_id) {
     std::vector<Fulfillment> result;
     for (auto const& fulfillment_external : fulfillments_external) {
@@ -479,6 +631,12 @@ ModuleConfiguration_Internal to_internal_api(ModuleConfiguration_External const&
         result.configuration_parameters[impl_config_param.implementation_id] =
             vecToInternal(impl_config_param.configuration_parameters);
     }
+
+    result.standalone = val.standalone;
+    result.telemetry_enabled = val.telemetry_enabled;
+    result.telemetry_config = optToInternal(val.telemetry_config);
+    result.access = to_internal_api(val.config_access);
+
     return result;
 }
 
@@ -508,6 +666,12 @@ ModuleConfiguration_External to_external_api(ModuleConfiguration_Internal const&
             result.implementation_configuration_parameters.push_back(impl_config_param_external);
         }
     }
+
+    result.standalone = val.standalone;
+    result.telemetry_enabled = val.telemetry_enabled;
+    result.telemetry_config = optToExternal(val.telemetry_config);
+    result.config_access = to_external_api(val.access);
+
     return result;
 }
 

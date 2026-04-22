@@ -31,9 +31,11 @@ private:
     void generate_api_cmd_delete_slot();
     void generate_api_cmd_duplicate_slot();
     void generate_api_cmd_load_from_yaml();
+    void generate_api_cmd_set_config_parameters();
     void generate_api_cmd_get_configuration();
 
     void generate_api_var_active_slot();
+    void generate_api_var_config_updates();
 
     void subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish);
 
