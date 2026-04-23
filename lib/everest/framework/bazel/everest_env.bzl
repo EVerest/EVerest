@@ -134,7 +134,11 @@ exec bin/manager_impl --prefix . --config {0} --check
         """.format(config_path)
     else:
         script_content += """
-exec bin/manager_impl "$@"
+if [ $# -gt 0 ]; then
+    exec bin/manager_impl "$@"
+else
+    exec bin/manager_impl --prefix . --config {0}
+fi
 """.format(config_path)
     ctx.actions.write(script, script_content, is_executable = True)
     symlinks.update({"bin/manager": script})
