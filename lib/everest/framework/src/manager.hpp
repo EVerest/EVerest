@@ -69,7 +69,7 @@ public:
     /// \brief Construct manager with parsed CLI arguments.
     /// \param vm Parsed command line options used by manager startup/runtime.
     explicit Manager(const boost::program_options::variables_map& vm);
-    
+
     /// \brief Start manager lifecycle and main event loop.
     /// \return Process exit code (EXIT_SUCCESS / EXIT_FAILURE).
     int run();
@@ -95,7 +95,7 @@ private:
         Everest::StatusFifo& status_fifo;
         bool retain_topics;
     };
-    
+
     /// \brief Outcome of one lifecycle state-advance evaluation.
     struct LifecycleAdvanceResult {
         enum class Status {
