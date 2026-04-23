@@ -40,14 +40,14 @@ enum class DeleteSlotStatus {
 enum class StopModulesResult {
     Stopping,
     NoModulesToStop,
-    NotAllowed
+    Rejected
 };
 
 enum class RestartModulesResult {
     Starting,
     Restarting,
     NoConfigToStart,
-    NotAllowed
+    Rejected
 };
 
 enum class SetConfigParameterResult {
