@@ -440,6 +440,52 @@ class TestEEBUSModule:
         assert failsafe_limits == limits
 
     @pytest.mark.asyncio
+    async def test_ignores_negative_failsafe_consumption_limit(
+        self,
+        eebus_test_env: dict,
+    ):
+        """[LPC-001] CS must ignore a negative FailsafeConsumptionActivePowerLimit write
+        and keep the previously cached (4200 W default) value."""
+        everest_core = eebus_test_env["everest_core"]
+        control_service_servicer = eebus_test_env["control_service_servicer"]
+        cs_lpc_control_servicer = eebus_test_env["cs_lpc_control_servicer"]
+        cs_lpc_control_server = eebus_test_env["cs_lpc_control_server"]
+
+        probe = await perform_eebus_handshake(
+            control_service_servicer, cs_lpc_control_servicer, cs_lpc_control_server, everest_core
+        )
+
+        # Push DataUpdateFailsafeConsumptionActivePowerLimit event with a negative value.
+        negative_limit = -1000.0
+        uc_event = control_service_messages_pb2.SubscribeUseCaseEventsResponse(
+            remote_ski="this-is-a-ski-42",
+            remote_entity_address=common_types_pb2.EntityAddress(entity_address=[1]),
+            use_case_event=control_service_types_pb2.UseCaseEvent(
+                use_case=control_service_types_pb2.UseCase(
+                    actor=control_service_types_pb2.UseCase.ActorType.ControllableSystem,
+                    name=control_service_types_pb2.UseCase.NameType.limitationOfPowerConsumption,
+                ),
+                event="DataUpdateFailsafeConsumptionActivePowerLimit",
+            ),
+        )
+        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(uc_event)
+
+        req = await async_get(cs_lpc_control_servicer.command_queues["FailsafeConsumptionActivePowerLimit"].request_queue, timeout=5)
+        res = cs_lpc_messages_pb2.FailsafeConsumptionActivePowerLimitResponse(
+            limit=negative_limit,
+            is_changeable=True,
+        )
+        cs_lpc_control_servicer.command_queues["FailsafeConsumptionActivePowerLimit"].response_queue.put_nowait(res)
+
+        # Move out of Init so the heartbeat-timeout → Failsafe edge [LPC-911] is reachable.
+        await transition_to_unlimited_controlled(control_service_servicer, cs_lpc_control_servicer, probe)
+
+        # When Failsafe triggers, the applied limit must still be the 4200 W config default — NOT -1000.
+        test_data_failsafe = TestDataFailsafe()
+        expected_failsafe_limits = test_data_failsafe.get_expected_failsafe_limits(4200)  # config default
+        limits = await async_wait_for(probe.external_limits_queue, expected_failsafe_limits, timeout=140)
+
+    @pytest.mark.asyncio
     async def test_failsafe_to_unlimited_controlled(
         self,
         eebus_test_env: dict,

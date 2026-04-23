@@ -63,6 +63,10 @@ public:
     // the vendor pre-configured value and the CS's maximum accepted write.
     static bool failsafe_duration_is_valid(std::chrono::nanoseconds duration);
 
+    // [LPC-001] Failsafe Consumption Active Power Limit must be >= 0 W.
+    // Public so unit tests can call it without friendships.
+    static bool failsafe_limit_is_valid(double watts);
+
 private:
     using event_handler_t = void (LpcUseCaseHandler::*)();
     using TP = std::chrono::time_point<std::chrono::steady_clock>;

@@ -111,13 +111,21 @@ void LpcUseCaseHandler::handle_data_update_failsafe_consumption_active_power_lim
     cs_lpc::FailsafeConsumptionActivePowerLimitRequest read_limit_req;
     cs_lpc::FailsafeConsumptionActivePowerLimitResponse read_limit_res;
     auto read_status = cs_lpc::CallFailsafeConsumptionActivePowerLimit(this->stub, read_limit_req, &read_limit_res);
-    if (read_status.ok()) {
-        this->failsafe_control_limit = read_limit_res.limit();
-        EVLOG_info << "FailsafeConsumptionActivePowerLimit updated to " << this->failsafe_control_limit;
-    } else {
+    if (!read_status.ok()) {
         EVLOG_warning << "Could not re-read FailsafeConsumptionActivePowerLimit after update event: "
                       << read_status.error_message();
+        return;
     }
+
+    if (!failsafe_limit_is_valid(read_limit_res.limit())) {
+        EVLOG_warning << "Ignoring negative FailsafeConsumptionActivePowerLimit " << read_limit_res.limit()
+                      << " W — spec [LPC-001] requires >= 0. Keeping previous value " << this->failsafe_control_limit
+                      << " W.";
+        return;
+    }
+
+    this->failsafe_control_limit = read_limit_res.limit();
+    EVLOG_info << "FailsafeConsumptionActivePowerLimit updated to " << this->failsafe_control_limit;
 }
 
 void LpcUseCaseHandler::handle_write_approval_required() {
@@ -264,6 +272,10 @@ bool LpcUseCaseHandler::limit_value_is_valid(const common_types::LoadLimit& limi
 
 bool LpcUseCaseHandler::failsafe_duration_is_valid(std::chrono::nanoseconds duration) {
     return duration >= LPC_VENDOR_CONFIG_MIN && duration <= LPC_CS_MAXIMUM; // [LPC-022/1, LPC-022/4]
+}
+
+bool LpcUseCaseHandler::failsafe_limit_is_valid(double watts) {
+    return watts >= 0.0; // [LPC-001]
 }
 
 void LpcUseCaseHandler::configure_use_case() {

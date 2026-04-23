@@ -395,6 +395,22 @@ TEST(LpcFailsafeDurationValidatorTest, RejectsZero) {
     EXPECT_FALSE(LpcUseCaseHandler::failsafe_duration_is_valid(std::chrono::nanoseconds::zero()));
 }
 
+// ===========================================================================
+// Phase 4 — [LPC-001] FailsafeConsumptionActivePowerLimit value validator
+// ===========================================================================
+
+TEST(LpcFailsafeLimitValidatorTest, AcceptsZero) {
+    EXPECT_TRUE(LpcUseCaseHandler::failsafe_limit_is_valid(0.0));
+}
+
+TEST(LpcFailsafeLimitValidatorTest, AcceptsPositive) {
+    EXPECT_TRUE(LpcUseCaseHandler::failsafe_limit_is_valid(4200.0));
+}
+
+TEST(LpcFailsafeLimitValidatorTest, RejectsNegative) {
+    EXPECT_FALSE(LpcUseCaseHandler::failsafe_limit_is_valid(-100.0));
+}
+
 } // namespace module
 
 // ---------------------------------------------------------------------------
