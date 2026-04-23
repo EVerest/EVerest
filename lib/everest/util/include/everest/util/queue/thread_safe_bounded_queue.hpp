@@ -143,12 +143,20 @@ public:
      * @return std::optional containing the time_point of the oldest task,
      * or std::nullopt if the queue is empty.
      */
-    std::optional<std::chrono::steady_clock::time_point> oldest_arrival() {
+    std::optional<std::chrono::steady_clock::time_point> oldest_arrival() const {
         std::lock_guard lock(m_mtx);
         if (m_queue.empty()) {
             return std::nullopt;
         }
         return m_queue.front().arrival;
+    }
+
+    /**
+     * @brief Safely returns the current number of elements in the queue.
+     */
+    size_type size() const {
+        std::lock_guard lock(m_mtx);
+        return m_queue.size();
     }
 
 private:
@@ -181,7 +189,7 @@ private:
 
     simple_queue<T> m_queue;               ///< The underlying non-thread-safe container.
     const size_type m_max_size;            ///< Maximum capacity of the queue.
-    std::mutex m_mtx;                      ///< Mutex guarding access to the queue and state.
+    mutable std::mutex m_mtx;              ///< Mutex guarding access to the queue and state.
     std::condition_variable m_cv_consumer; ///< Condition variable for consumers waiting for data.
     std::condition_variable m_cv_producer; ///< Condition variable for producers waiting for space.
     bool m_stop{false};                    ///< Flag indicating the queue is shutting down.
