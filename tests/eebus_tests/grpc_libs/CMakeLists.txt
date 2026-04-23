@@ -3,7 +3,15 @@
 
 set(GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/generated")
 
-setup_grpc()
+# setup_grpc() is already called from modules/EnergyManagement/EEBUS/grpc_libs/
+# and its imported targets (gRPC::grpc++) are global. Re-invoking the macro with
+# GRPC_EDM=ON would try to create the ALIAS a second time and fail, so guard it.
+# _GRPC_SETUP_DONE is a per-scope variable gating setup_grpc_generator below;
+# set it explicitly here because cross-subdir scopes don't inherit it.
+if (NOT TARGET gRPC::grpc++)
+    setup_grpc()
+endif()
+set(_GRPC_SETUP_DONE TRUE)
 
 if (ENABLE_GRPC_GENERATOR)
     if (NOT CPM_PACKAGE_eebus-grpc_SOURCE_DIR)
