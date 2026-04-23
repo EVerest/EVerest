@@ -289,6 +289,59 @@ class TestEEBUSModule:
         test_data.run_additional_assertions(limits)
 
     @pytest.mark.asyncio
+    async def test_rejects_negative_load_limit(
+        self,
+        eebus_test_env: dict,
+    ):
+        """[LPC-001] CS must NACK a negative Active Power Consumption Limit."""
+        everest_core = eebus_test_env["everest_core"]
+        control_service_servicer = eebus_test_env["control_service_servicer"]
+        cs_lpc_control_servicer = eebus_test_env["cs_lpc_control_servicer"]
+        cs_lpc_control_server = eebus_test_env["cs_lpc_control_server"]
+
+        probe = await perform_eebus_handshake(
+            control_service_servicer, cs_lpc_control_servicer, cs_lpc_control_server, everest_core
+        )
+
+        # Push WriteApprovalRequired so the module will read PendingConsumptionLimit.
+        uc_event = control_service_messages_pb2.SubscribeUseCaseEventsResponse(
+            remote_ski="this-is-a-ski-42",
+            remote_entity_address=common_types_pb2.EntityAddress(entity_address=[1]),
+            use_case_event=control_service_types_pb2.UseCaseEvent(
+                use_case=control_service_types_pb2.UseCase(
+                    actor=control_service_types_pb2.UseCase.ActorType.ControllableSystem,
+                    name=control_service_types_pb2.UseCase.NameType.limitationOfPowerConsumption,
+                ),
+                event="WriteApprovalRequired",
+            ),
+        )
+        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(uc_event)
+
+        req = await async_get(cs_lpc_control_servicer.command_queues["PendingConsumptionLimit"].request_queue, timeout=5)
+        assert req is not None
+
+        negative_limit = common_types_pb2.LoadLimit(
+            duration_nanoseconds=0,
+            is_changeable=True,
+            is_active=True,
+            value=-100.0,
+            delete_duration=False,
+        )
+        res = cs_lpc_messages_pb2.PendingConsumptionLimitResponse(load_limits={0: negative_limit})
+        cs_lpc_control_servicer.command_queues["PendingConsumptionLimit"].response_queue.put_nowait(res)
+
+        approve_req = await async_get(
+            cs_lpc_control_servicer.command_queues["ApproveOrDenyConsumptionLimit"].request_queue, timeout=10
+        )
+        assert approve_req is not None
+        assert approve_req.approve is False
+        assert approve_req.msg_counter == 0
+        assert "LPC-001" in approve_req.reason
+        cs_lpc_control_servicer.command_queues["ApproveOrDenyConsumptionLimit"].response_queue.put_nowait(
+            cs_lpc_messages_pb2.ApproveOrDenyConsumptionLimitResponse()
+        )
+
+    @pytest.mark.asyncio
     async def test_update_failsafe_duration_minimum(
         self,
         eebus_test_env: dict,

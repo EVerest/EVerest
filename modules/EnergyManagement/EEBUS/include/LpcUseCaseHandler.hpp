@@ -54,6 +54,10 @@ public:
         return this->state;
     }
 
+    // [LPC-001] Active Power Consumption Limit value must be >= 0 W.
+    // Pure predicate; exposed publicly for unit-test access without adding friendships.
+    static bool limit_value_is_valid(const common_types::LoadLimit& limit);
+
 private:
     using event_handler_t = void (LpcUseCaseHandler::*)();
     using TP = std::chrono::time_point<std::chrono::steady_clock>;

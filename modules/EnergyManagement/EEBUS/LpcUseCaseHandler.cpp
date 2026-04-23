@@ -244,6 +244,10 @@ control_service::UseCase LpcUseCaseHandler::get_use_case_info() {
         control_service::UseCase_NameType_Enum::UseCase_NameType_Enum_limitationOfPowerConsumption);
 }
 
+bool LpcUseCaseHandler::limit_value_is_valid(const common_types::LoadLimit& limit) {
+    return limit.value() >= 0.0; // [LPC-001]
+}
+
 void LpcUseCaseHandler::configure_use_case() {
     if (!this->stub) {
         return;
@@ -299,9 +303,20 @@ void LpcUseCaseHandler::approve_pending_writes() {
     }
 
     for (const auto& entry : response.load_limits()) {
-        uint64_t msg_counter = entry.first;
+        const uint64_t msg_counter = entry.first;
+        const auto& limit = entry.second;
+
+        bool approve = true;
+        std::string reason;
+        if (!limit_value_is_valid(limit)) {
+            approve = false;
+            reason = "LPC-001: Active Power Consumption Limit must be >= 0 W";
+            EVLOG_warning << "Rejecting pending limit msg_counter=" << msg_counter << " value=" << limit.value()
+                          << " W: " << reason;
+        }
+
         cs_lpc::ApproveOrDenyConsumptionLimitRequest approve_request =
-            cs_lpc::CreateApproveOrDenyConsumptionLimitRequest(msg_counter, true, "");
+            cs_lpc::CreateApproveOrDenyConsumptionLimitRequest(msg_counter, approve, reason);
         cs_lpc::ApproveOrDenyConsumptionLimitResponse approve_response;
         auto approve_status = cs_lpc::CallApproveOrDenyConsumptionLimit(this->stub, approve_request, &approve_response);
         if (!approve_status.ok()) {

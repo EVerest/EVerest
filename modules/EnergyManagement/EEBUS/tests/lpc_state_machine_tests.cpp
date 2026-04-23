@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include <LpcUseCaseHandler.hpp>
 
 namespace module {
@@ -335,6 +337,34 @@ TEST_F(LpcStateMachineTest, failsafe_exits_to_unlimited_controlled_when_heartbea
 
     EXPECT_EQ(h->get_state(), LpcUseCaseHandler::State::UnlimitedControlled);
     EXPECT_TRUE(last_limit_is_unlimited());
+}
+
+// ===========================================================================
+// Phase 2 — [LPC-001] Active Power Consumption Limit value validator
+// ===========================================================================
+
+TEST(LpcLimitValueValidatorTest, AcceptsZero) {
+    common_types::LoadLimit limit;
+    limit.set_value(0.0);
+    EXPECT_TRUE(LpcUseCaseHandler::limit_value_is_valid(limit));
+}
+
+TEST(LpcLimitValueValidatorTest, AcceptsPositive) {
+    common_types::LoadLimit limit;
+    limit.set_value(4200.0);
+    EXPECT_TRUE(LpcUseCaseHandler::limit_value_is_valid(limit));
+}
+
+TEST(LpcLimitValueValidatorTest, RejectsNegative) {
+    common_types::LoadLimit limit;
+    limit.set_value(-100.0);
+    EXPECT_FALSE(LpcUseCaseHandler::limit_value_is_valid(limit));
+}
+
+TEST(LpcLimitValueValidatorTest, RejectsNegativeEpsilon) {
+    common_types::LoadLimit limit;
+    limit.set_value(-std::numeric_limits<double>::min());
+    EXPECT_FALSE(LpcUseCaseHandler::limit_value_is_valid(limit));
 }
 
 } // namespace module
