@@ -48,7 +48,7 @@ public:
     /// \param request
     /// \param start_time
     /// \return a vector of limits to enforce at the individual nodes of the \p request
-    std::vector<types::energy::EnforcedLimits> run_optimizer(types::energy::EnergyFlowRequest request,
+    std::vector<types::energy::EnforcedLimits> run_optimizer(const types::energy::EnergyFlowRequest& request,
                                                              date::utc_clock::time_point start_time,
                                                              const std::string& test_name = "");
 
