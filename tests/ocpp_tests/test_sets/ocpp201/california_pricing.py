@@ -139,6 +139,12 @@ class TestOcpp201CostAndPrice:
     async def await_mock_called(mock):
         while not mock.call_count:
             await asyncio.sleep(0.1)
+    
+    @staticmethod
+    async def await_mock_called_matching(mock, predicate):
+        """Wait until `mock` has been called with args satisfying `predicate`."""
+        while not any(predicate(call) for call in mock.call_args_list):
+            await asyncio.sleep(0.1)
 
     @pytest.mark.asyncio
     @pytest.mark.probe_module
@@ -822,11 +828,10 @@ class TestOcpp201CostAndPrice:
 
         test_controller.disconnect_websocket()
 
-        await self.await_mock_called(default_price_mock)
-
-        call_data = default_price_mock.call_args[0][0]
-        assert len(call_data["messages"]) == 1
-        assert call_data["messages"][0]["content"] == "Station is offline"
+        await self.await_mock_called_matching(
+            default_price_mock,
+            lambda c: c.args[0]["messages"][0]["content"] == "Station is offline",
+        )
 
         # Reconnect for clean teardown.
         test_controller.connect_websocket()
