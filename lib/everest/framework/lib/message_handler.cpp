@@ -98,18 +98,6 @@ MessageHandler::SharedTypedHandler copy_shared_handler(MessageHandler::SingleHan
     return handler_copy;
 }
 
-template <class FtorT, class... Args>
-void try_action_and_log(FtorT const& action, std::string const& error_source, std::string const& topic,
-                        Args&&... args) {
-    try {
-        action(topic, std::forward<Args>(args)...);
-    } catch (const std::exception& e) {
-        EVLOG_error << "Exception in " << error_source << " for topic '" << topic << "': " << e.what();
-    } catch (...) {
-        EVLOG_error << "Unknown exception in " << error_source << " for topic '" << topic << "'";
-    }
-}
-
 void warn_on_high_queue_size(everest::lib::util::simple_queue<ParsedMessage> const& queue, std::string const& topic) {
     if (queue.size() >= MAX_PENDING_MESSAGES_PER_TOPIC) {
         EVLOG_warning << "Pending message queue for topic '" << topic << "' has reached the limit ("
@@ -163,7 +151,7 @@ void MessageHandler::add(const ParsedMessage& message) {
                     action = handle->global_ready;
                 }
                 if (action) {
-                    try_action_and_log(*(action->handler), "global_ready", topic_copy, data_copy);
+                    (*action->handler)(topic_copy, data_copy);
                 }
             });
         } // release ready monitor lock before joining
@@ -237,11 +225,13 @@ void MessageHandler::schedule_operation_message(ParsedMessage&& message) {
     auto on_operation_message_done_ftor = bind_obj(&MessageHandler::on_operation_message_done, this);
     auto operation = [handle = std::move(handle_operation_message_ftor),
                       done = std::move(on_operation_message_done_ftor), message = std::move(message)]() {
-        // Wrap in try-catch so that on_operation_message_done is always called: an exception in
-        // the handler must not leave the topic permanently stuck in operation_topics_in_flight,
-        // which would block all subsequent messages for that topic.
-        try_action_and_log(handle, "handling operation message", message.topic, message.data);
-        try_action_and_log(done, "on_operation_message_done", message.topic);
+        try {
+            handle(message.topic, message.data);
+        } catch (...) {
+            done(message.topic);
+            throw;
+        }
+        done(message.topic);
     };
 
     if (operation_thread_pool) {
@@ -284,16 +274,14 @@ void MessageHandler::on_operation_message_done(const std::string& topic) {
 
 void MessageHandler::run_result_message_worker() {
     while (auto message = result_message_queue.wait_and_pop()) {
-        try_action_and_log(bind_obj(&MessageHandler::handle_result_message, this), "result worker", message->topic,
-                           message->data);
+        handle_result_message(message->topic, message->data);
     }
     EVLOG_info << "Cmd result worker thread stopped";
 }
 
 void MessageHandler::run_external_mqtt_worker() {
-    auto callback = bind_obj(&MessageHandler::handle_external_mqtt_message, this);
     while (auto message = external_mqtt_message_queue.wait_and_pop()) {
-        try_action_and_log(callback, "External MQTT worker", message->topic, message->data);
+        handle_external_mqtt_message(message->topic, message->data);
     }
     EVLOG_info << "External MQTT worker thread stopped";
 }
