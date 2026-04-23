@@ -472,8 +472,7 @@ void powermeterImpl::write_transaction_registers(const types::powermeter::Transa
     // The device accepts partial writes as long as the string is 0-terminated.
     std::string tariff_text;
     const std::string& base = transaction_req.tariff_text.value_or("");
-    tariff_text.reserve(base.size() + std::char_traits<char>::length(TARIFF_TEXT_TRANSACTION_ID_MARKER) +
-                        transaction_req.transaction_id.size());
+    tariff_text.reserve(base.size() + TARIFF_TEXT_TRANSACTION_ID_MARKER.size() + transaction_req.transaction_id.size());
     tariff_text.append(base);
     tariff_text.append(TARIFF_TEXT_TRANSACTION_ID_MARKER);
     tariff_text.append(transaction_req.transaction_id);
