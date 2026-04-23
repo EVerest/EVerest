@@ -18,7 +18,6 @@ struct adc_config {
     std::string item;
     std::uint16_t cb_port;
     std::string cb_remote;
-    std::uint16_t interval_s;
     std::string mqtt_remote;
     std::string mqtt_bind;
     std::uint16_t mqtt_port;
@@ -35,14 +34,11 @@ public:
 
 private:
     void handle_error_timer();
-    void handle_heartbeat_timer();
     void handle_udp_rx(everest::lib::io::udp::udp_payload const& payload);
     void send_mqtt(std::string const& topic, std::string const& message);
 
     everest::lib::io::udp::udp_client m_udp;
     bool m_udp_on_error{false};
-    everest::lib::io::event::timer_fd m_heartbeat_timer;
-    std::chrono::steady_clock::time_point last_heartbeat;
     std::string m_identifier;
     bool m_mqtt_on_error{false};
     everest::lib::io::mqtt::mqtt_client m_mqtt;

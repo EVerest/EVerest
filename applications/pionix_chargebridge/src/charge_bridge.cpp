@@ -401,7 +401,6 @@ void print_charge_bridge_config(charge_bridge_config const& c) {
         if (not c.adc->mqtt_bind.empty()) {
             std::cout << " on " << c.adc->mqtt_bind;
         }
-        std::cout << " send interval " << c.adc->interval_s << "s" << std::endl;
     }
 
     std::cout << "\n" << std::endl;

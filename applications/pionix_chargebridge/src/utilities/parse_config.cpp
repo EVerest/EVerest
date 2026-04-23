@@ -262,7 +262,6 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
     });
 
     get_block("adc", c.adc, [&](auto& cfg, auto const& main) {
-        get_node(cfg.interval_s, main, "interval_s");
         get_node(cfg.mqtt_remote, main, "mqtt_remote");
         get_node_or_default(cfg.mqtt_bind, main, "mqtt_bind", "");
         get_node(cfg.mqtt_port, main, "mqtt_port");
