@@ -499,9 +499,7 @@ void powermeterImpl::clear_transaction_states() {
     std::uint16_t ocmf_state = modbus_utils::to_uint16(state_data, modbus_utils::ByteOffset{0});
 
     if (ocmf_state == MODBUS_OCMF_STATE_READY) {
-        EVLOG_info << "Current OCMF state: "
-                   << ocmf_state_to_string(ocmf_state)
-                   << "(" << ocmf_state << ")";
+        EVLOG_info << "Current OCMF state: " << ocmf_state_to_string(ocmf_state) << "(" << ocmf_state << ")";
         EVLOG_info << "Cleanup necessary ...";
         read_ocmf_file();
         // write 0 to the OCMF state to confirm the reading of the OCMF file
@@ -528,9 +526,7 @@ powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& treq
         // start a new transaction
         transport::DataVector state_data = p_modbus_transport->fetch(MODBUS_OCMF_STATE_ADDRESS, 1);
         std::uint16_t ocmf_state = modbus_utils::to_uint16(state_data, modbus_utils::ByteOffset{0});
-        EVLOG_info << "Current OCMF state: "
-                   << ocmf_state_to_string(ocmf_state)
-                   << "(" << ocmf_state << ")";
+        EVLOG_info << "Current OCMF state: " << ocmf_state_to_string(ocmf_state) << "(" << ocmf_state << ")";
 
         if (ocmf_state != MODBUS_OCMF_STATE_NOT_READY) {
             EVLOG_warning << "Spurious transaction detected, clearing transaction states ...";
