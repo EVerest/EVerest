@@ -95,13 +95,13 @@ void EnergyManagerImpl::on_energy_flow_request(const types::energy::EnergyFlowRe
     }
 }
 
-std::vector<types::energy::EnforcedLimits> EnergyManagerImpl::run_optimizer(types::energy::EnergyFlowRequest request,
-                                                                            date::utc_clock::time_point start_time,
-                                                                            const std::string& test_name) {
+std::vector<types::energy::EnforcedLimits>
+EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request,
+                                 date::utc_clock::time_point start_time, const std::string& test_name) {
+    std::scoped_lock lock(energy_mutex);
+
     globals.init(start_time, config.schedule_interval_duration, config.schedule_total_duration, config.slice_ampere,
                  config.slice_watt, config.debug, request);
-
-    std::scoped_lock lock(energy_mutex);
 
     time_probe optimizer_start;
     optimizer_start.start();
