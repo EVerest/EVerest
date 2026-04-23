@@ -7,7 +7,6 @@
 #include <map>
 #include <mutex>
 #include <optional>
-#include <unordered_map>
 
 #include <cstdlib>
 #include <errno.h>
@@ -335,152 +334,6 @@ void Manager::publishStartupMetadata(const RuntimeContext& ctx) const {
                              QOS::QOS2, true);
 }
 
-/// \brief Publish startup metadata, register handlers, and spawn module processes.
-std::map<pid_t, std::string> Manager::startModules(const RuntimeContext& ctx) {
-    BOOST_LOG_FUNCTION();
-    auto& config = *ctx.config;
-    auto& mqtt_abstraction = ctx.mqtt_abstraction;
-    const auto& ignored_modules = ctx.ignored_modules;
-    const auto& standalone_modules = ctx.standalone_modules;
-    const auto& ms = ctx.ms;
-    auto& status_fifo = ctx.status_fifo;
-    const bool retain_topics = ctx.retain_topics;
-
-    std::vector<ModuleStartInfo> modules_to_spawn;
-
-    const auto& module_configurations = config.get_module_configurations();
-    modules_to_spawn.reserve(module_configurations.size());
-    const auto number_of_modules = module_configurations.size();
-    EVLOG_info << "Starting " << number_of_modules << " modules";
-
-    publishStartupMetadata(ctx);
-
-    for (const auto& [module_id_, module_config] : module_configurations) {
-        const auto& module_name = module_config.module_name;
-        const auto& module_id = module_id_;
-        if (std::any_of(ignored_modules.begin(), ignored_modules.end(),
-                        [module_id](const auto& element) { return element == module_id; })) {
-            EVLOG_info << fmt::format("Ignoring module: {}", module_id);
-            continue;
-        }
-
-        auto module_it = modules_ready_.emplace(module_id, ModuleReadyInfo{}).first;
-
-        std::vector<std::string> capabilities =
-            module_configurations.at(module_id).capabilities.value_or(std::vector<std::string>{});
-
-        if (not capabilities.empty()) {
-            EVLOG_info << fmt::format("Module {} wants to acquire the following capabilities: {}", module_name,
-                                      fmt::join(capabilities.begin(), capabilities.end(), " "));
-        }
-
-        const Handler module_ready_handler = [this, module_id, &mqtt_abstraction, &config, standalone_modules,
-                                              mqtt_everest_prefix = ms.mqtt_settings.everest_prefix, &status_fifo,
-                                              retain_topics](const std::string&, const nlohmann::json& json) {
-            EVLOG_debug << fmt::format("received module ready signal for module: {}({})", module_id, json.dump());
-            const std::unique_lock<std::mutex> lock(modules_ready_mutex_);
-            // FIXME (aw): here are race conditions, if the ready handler gets called while modules are shut down!
-            try {
-                modules_ready_.at(module_id).ready = json.get<bool>();
-            } catch (const std::out_of_range& ex) {
-                // This can happen if we're shutting down and a module becomes
-                // ready.
-                EVLOG_error << "The module " << module_id << " is not in `modules_ready`: " << ex.what();
-                return;
-            }
-            std::size_t modules_spawned = 0;
-            for (const auto& mod : modules_ready_) {
-                const std::string text_ready =
-                    fmt::format((mod.second.ready) ? TERMINAL_STYLE_OK : TERMINAL_STYLE_ERROR, "ready");
-                EVLOG_debug << fmt::format("  {}: {}", mod.first, text_ready);
-                if (mod.second.ready) {
-                    modules_spawned += 1;
-                }
-            }
-            if (!standalone_modules.empty() && std::find(standalone_modules.begin(), standalone_modules.end(),
-                                                         module_id) != standalone_modules.end()) {
-                EVLOG_info << fmt::format("Standalone module {} initialized.", module_id);
-            }
-            if (std::all_of(modules_ready_.begin(), modules_ready_.end(),
-                            [](const auto& element) { return element.second.ready; })) {
-                const auto complete_end_time = std::chrono::system_clock::now();
-                if (not retain_topics) {
-                    EVLOG_info << "Clearing retained topics published by manager during startup";
-                    mqtt_abstraction.clear_retained_topics();
-                } else {
-                    EVLOG_info << "Keeping retained topics published by manager during startup for inspection";
-                }
-                EVLOG_info << fmt::format(
-                    TERMINAL_STYLE_OK, "🚙🚙🚙 All modules are initialized. EVerest up and running [{}ms] 🚙🚙🚙",
-                    std::chrono::duration_cast<std::chrono::milliseconds>(complete_end_time - complete_start_time)
-                        .count());
-
-                transitionTo(ManagerState::Running);
-                status_fifo.update(StatusFifo::ALL_MODULES_STARTED);
-                MqttMessagePayload payload{MqttMessageType::GlobalReady, nlohmann::json(true)};
-
-                mqtt_abstraction.publish(fmt::format("{}ready", mqtt_everest_prefix), payload);
-            } else if (!standalone_modules.empty()) {
-                if (modules_spawned == modules_ready_.size() - standalone_modules.size()) {
-                    EVLOG_info << fmt::format(fg(fmt::terminal_color::green),
-                                              "Modules started by manager are ready, waiting for standalone modules.");
-                    status_fifo.update(StatusFifo::WAITING_FOR_STANDALONE_MODULES);
-                }
-            }
-        };
-
-        const std::string ready_topic = fmt::format("{}/ready", config.mqtt_module_prefix(module_id));
-        module_it->second.ready_token =
-            std::make_shared<TypedHandler>(HandlerType::ModuleReady, std::make_shared<Handler>(module_ready_handler));
-        mqtt_abstraction.register_handler(ready_topic, module_it->second.ready_token, QOS::QOS2);
-
-        if (std::any_of(standalone_modules.begin(), standalone_modules.end(),
-                        [module_id](const auto& element) { return element == module_id; })) {
-            EVLOG_info << "Not starting standalone module: " << fmt::format(TERMINAL_STYLE_BLUE, "{}", module_id);
-            continue;
-        }
-
-        const std::string binary_filename = fmt::format("{}", module_name);
-        const std::string javascript_library_filename = "index.js";
-        const std::string python_filename = "module.py";
-        const auto module_path = ms.runtime_settings.modules_dir / module_name;
-        const auto printable_module_name = config.printable_identifier(module_id);
-        const auto binary_path = module_path / binary_filename;
-        const auto javascript_library_path = module_path / javascript_library_filename;
-        const auto python_module_path = module_path / python_filename;
-
-        if (fs::exists(binary_path)) {
-            EVLOG_debug << fmt::format("module: {} ({}) provided as binary", module_id, module_name);
-            modules_to_spawn.emplace_back(module_id, printable_module_name, ModuleStartInfo::Language::cpp, binary_path,
-                                          capabilities);
-        } else if (fs::exists(javascript_library_path)) {
-            EVLOG_debug << fmt::format("module: {} ({}) provided as javascript library", module_id, module_name);
-            modules_to_spawn.emplace_back(module_id, printable_module_name, ModuleStartInfo::Language::javascript,
-                                          fs::canonical(javascript_library_path), capabilities);
-        } else if (fs::exists(python_module_path)) {
-            EVLOG_verbose << fmt::format("module: {} ({}) provided as python module", module_id, module_name);
-            modules_to_spawn.emplace_back(module_id, printable_module_name, ModuleStartInfo::Language::python,
-                                          fs::canonical(python_module_path), capabilities);
-        } else {
-            if (module_id == "probe" || module_name == "ProbeModule") {
-                EVLOG_error << "You are trying to start the probe module as binary, please check "
-                               "your test case, did you add \"@pytest.mark.probe_module\" to your test case?";
-            }
-            throw std::runtime_error(
-                fmt::format("module: {} ({}) cannot be loaded because no Binary, JavaScript or Python "
-                            "module has been found\n"
-                            "  checked paths:\n"
-                            "    binary: {}\n"
-                            "    js:  {}\n"
-                            "    py:  {}\n",
-                            module_id, module_name, binary_path.string(), javascript_library_path.string(),
-                            python_module_path.string()));
-        }
-    }
-
-    return spawn_modules(modules_to_spawn, ms);
-}
-
 /// \brief Unregister all module ready handlers and clear tracked ready state.
 void Manager::unregisterModuleReadyHandlers(ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
     ModulesReadyType modules_ready_moved;
@@ -611,12 +464,11 @@ void print_shutdown_message(const std::optional<std::chrono::system_clock::time_
 // ---- State/event handlers ---------------------------------------------------
 
 void Manager::handleRestartModulesAfterShutdown(RuntimeContext& ctx) {
-    transitionTo(ManagerState::StartingModules);
     unregisterModuleReadyHandlers(*ctx.config, ctx.mqtt_abstraction);
     ctx.mqtt_abstraction.clear_retained_topics();
 
     ctx.config = std::make_shared<ManagerConfig>(ctx.ms);
-    module_handles_ = startModules(ctx);
+    module_handles_ = handleStartModules(ctx);
     shutdown_cause_ = ShutdownCause::None;
     shutdown_start_time_ = std::nullopt;
     shutdown_info_.clear();
@@ -861,8 +713,11 @@ int Manager::run() {
 
     RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
                                ms,     status_fifo,       retain_topics};
-    if (const auto startup_exit = handleStartupSequence(runtime_ctx)) {
-        return *startup_exit;
+    module_handles_ = handleStartModules(runtime_ctx);
+
+    if (const auto err_set_user = ManagerAdminPanel::switch_manager_user_if_needed(runtime_ctx.ms)) {
+        EVLOG_error << "Error switching manager to user " << runtime_ctx.ms.run_as_user << ": " << *err_set_user;
+        return EXIT_FAILURE;
     }
 
     int wstatus; // NOLINT(cppcoreguidelines-init-variables): this is always initialized in the following waitpid call
@@ -873,11 +728,11 @@ int Manager::run() {
             continue;
         }
 
-        bool handled_transition = false;
-        if (const auto exit_code = handleStateTransitions(runtime_ctx, admin_panel, handled_transition)) {
-            return *exit_code;
+        const auto lifecycle_advance = advanceLifecycleStateIfReady(runtime_ctx, admin_panel);
+        if (lifecycle_advance.status == LifecycleAdvanceResult::Status::ExitRequested) {
+            return *lifecycle_advance.exit_code;
         }
-        if (handled_transition) {
+        if (lifecycle_advance.status == LifecycleAdvanceResult::Status::TransitionApplied) {
             continue;
         }
 
@@ -1024,20 +879,155 @@ bool Manager::areModulesStarted() const {
 
 // ---- Event loop dispatch handlers ------------------------------------------
 
-std::optional<int> Manager::handleStartupSequence(RuntimeContext& ctx) {
+/// \brief Handle module startup by publishing metadata, registering handlers, and spawning module processes.
+std::map<pid_t, std::string> Manager::handleStartModules(const RuntimeContext& ctx) {
+    BOOST_LOG_FUNCTION();
     transitionTo(ManagerState::StartingModules);
-    module_handles_ = startModules(ctx);
+    auto& config = *ctx.config;
+    auto& mqtt_abstraction = ctx.mqtt_abstraction;
+    const auto& ignored_modules = ctx.ignored_modules;
+    const auto& standalone_modules = ctx.standalone_modules;
+    const auto& ms = ctx.ms;
+    auto& status_fifo = ctx.status_fifo;
+    const bool retain_topics = ctx.retain_topics;
 
-    if (const auto err_set_user = ManagerAdminPanel::switch_manager_user_if_needed(ctx.ms)) {
-        EVLOG_error << "Error switching manager to user " << ctx.ms.run_as_user << ": " << *err_set_user;
-        return EXIT_FAILURE;
+    std::vector<ModuleStartInfo> modules_to_spawn;
+
+    const auto& module_configurations = config.get_module_configurations();
+    modules_to_spawn.reserve(module_configurations.size());
+    const auto number_of_modules = module_configurations.size();
+    EVLOG_info << "Starting " << number_of_modules << " modules";
+
+    publishStartupMetadata(ctx);
+
+    for (const auto& [module_id_, module_config] : module_configurations) {
+        const auto& module_name = module_config.module_name;
+        const auto& module_id = module_id_;
+        if (std::any_of(ignored_modules.begin(), ignored_modules.end(),
+                        [module_id](const auto& element) { return element == module_id; })) {
+            EVLOG_info << fmt::format("Ignoring module: {}", module_id);
+            continue;
+        }
+
+        auto module_it = modules_ready_.emplace(module_id, ModuleReadyInfo{}).first;
+
+        std::vector<std::string> capabilities =
+            module_configurations.at(module_id).capabilities.value_or(std::vector<std::string>{});
+
+        if (not capabilities.empty()) {
+            EVLOG_info << fmt::format("Module {} wants to acquire the following capabilities: {}", module_name,
+                                      fmt::join(capabilities.begin(), capabilities.end(), " "));
+        }
+
+        const Handler module_ready_handler = [this, module_id, &mqtt_abstraction, &config, standalone_modules,
+                                              mqtt_everest_prefix = ms.mqtt_settings.everest_prefix, &status_fifo,
+                                              retain_topics](const std::string&, const nlohmann::json& json) {
+            EVLOG_debug << fmt::format("received module ready signal for module: {}({})", module_id, json.dump());
+            const std::unique_lock<std::mutex> lock(modules_ready_mutex_);
+            // FIXME (aw): here are race conditions, if the ready handler gets called while modules are shut down!
+            try {
+                modules_ready_.at(module_id).ready = json.get<bool>();
+            } catch (const std::out_of_range& ex) {
+                // This can happen if we're shutting down and a module becomes
+                // ready.
+                EVLOG_error << "The module " << module_id << " is not in `modules_ready`: " << ex.what();
+                return;
+            }
+            std::size_t modules_spawned = 0;
+            for (const auto& mod : modules_ready_) {
+                const std::string text_ready =
+                    fmt::format((mod.second.ready) ? TERMINAL_STYLE_OK : TERMINAL_STYLE_ERROR, "ready");
+                EVLOG_debug << fmt::format("  {}: {}", mod.first, text_ready);
+                if (mod.second.ready) {
+                    modules_spawned += 1;
+                }
+            }
+            if (!standalone_modules.empty() && std::find(standalone_modules.begin(), standalone_modules.end(),
+                                                         module_id) != standalone_modules.end()) {
+                EVLOG_info << fmt::format("Standalone module {} initialized.", module_id);
+            }
+            if (std::all_of(modules_ready_.begin(), modules_ready_.end(),
+                            [](const auto& element) { return element.second.ready; })) {
+                const auto complete_end_time = std::chrono::system_clock::now();
+                if (not retain_topics) {
+                    EVLOG_info << "Clearing retained topics published by manager during startup";
+                    mqtt_abstraction.clear_retained_topics();
+                } else {
+                    EVLOG_info << "Keeping retained topics published by manager during startup for inspection";
+                }
+                EVLOG_info << fmt::format(
+                    TERMINAL_STYLE_OK, "🚙🚙🚙 All modules are initialized. EVerest up and running [{}ms] 🚙🚙🚙",
+                    std::chrono::duration_cast<std::chrono::milliseconds>(complete_end_time - complete_start_time)
+                        .count());
+
+                transitionTo(ManagerState::Running);
+                status_fifo.update(StatusFifo::ALL_MODULES_STARTED);
+                MqttMessagePayload payload{MqttMessageType::GlobalReady, nlohmann::json(true)};
+
+                mqtt_abstraction.publish(fmt::format("{}ready", mqtt_everest_prefix), payload);
+            } else if (!standalone_modules.empty()) {
+                if (modules_spawned == modules_ready_.size() - standalone_modules.size()) {
+                    EVLOG_info << fmt::format(fg(fmt::terminal_color::green),
+                                              "Modules started by manager are ready, waiting for standalone modules.");
+                    status_fifo.update(StatusFifo::WAITING_FOR_STANDALONE_MODULES);
+                }
+            }
+        };
+
+        const std::string ready_topic = fmt::format("{}/ready", config.mqtt_module_prefix(module_id));
+        module_it->second.ready_token =
+            std::make_shared<TypedHandler>(HandlerType::ModuleReady, std::make_shared<Handler>(module_ready_handler));
+        mqtt_abstraction.register_handler(ready_topic, module_it->second.ready_token, QOS::QOS2);
+
+        if (std::any_of(standalone_modules.begin(), standalone_modules.end(),
+                        [module_id](const auto& element) { return element == module_id; })) {
+            EVLOG_info << "Not starting standalone module: " << fmt::format(TERMINAL_STYLE_BLUE, "{}", module_id);
+            continue;
+        }
+
+        const std::string binary_filename = fmt::format("{}", module_name);
+        const std::string javascript_library_filename = "index.js";
+        const std::string python_filename = "module.py";
+        const auto module_path = ms.runtime_settings.modules_dir / module_name;
+        const auto printable_module_name = config.printable_identifier(module_id);
+        const auto binary_path = module_path / binary_filename;
+        const auto javascript_library_path = module_path / javascript_library_filename;
+        const auto python_module_path = module_path / python_filename;
+
+        if (fs::exists(binary_path)) {
+            EVLOG_debug << fmt::format("module: {} ({}) provided as binary", module_id, module_name);
+            modules_to_spawn.emplace_back(module_id, printable_module_name, ModuleStartInfo::Language::cpp, binary_path,
+                                          capabilities);
+        } else if (fs::exists(javascript_library_path)) {
+            EVLOG_debug << fmt::format("module: {} ({}) provided as javascript library", module_id, module_name);
+            modules_to_spawn.emplace_back(module_id, printable_module_name, ModuleStartInfo::Language::javascript,
+                                          fs::canonical(javascript_library_path), capabilities);
+        } else if (fs::exists(python_module_path)) {
+            EVLOG_verbose << fmt::format("module: {} ({}) provided as python module", module_id, module_name);
+            modules_to_spawn.emplace_back(module_id, printable_module_name, ModuleStartInfo::Language::python,
+                                          fs::canonical(python_module_path), capabilities);
+        } else {
+            if (module_id == "probe" || module_name == "ProbeModule") {
+                EVLOG_error << "You are trying to start the probe module as binary, please check "
+                               "your test case, did you add \"@pytest.mark.probe_module\" to your test case?";
+            }
+            throw std::runtime_error(
+                fmt::format("module: {} ({}) cannot be loaded because no Binary, JavaScript or Python "
+                            "module has been found\n"
+                            "  checked paths:\n"
+                            "    binary: {}\n"
+                            "    js:  {}\n"
+                            "    py:  {}\n",
+                            module_id, module_name, binary_path.string(), javascript_library_path.string(),
+                            python_module_path.string()));
+        }
     }
-    return std::nullopt;
+
+    return spawn_modules(modules_to_spawn, ms);
 }
 
-std::optional<int> Manager::handleStateTransitions(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
-                                                   bool& handled_transition) {
-    handled_transition = false;
+Manager::LifecycleAdvanceResult Manager::advanceLifecycleStateIfReady(RuntimeContext& ctx,
+                                                                      ManagerAdminPanel& admin_panel) {
     const bool in_shutdown_flow = isInShutdownFlowState();
     const bool crash_in_progress = (shutdown_cause_ == ShutdownCause::Crash) ||
                                    (state_ == ManagerState::ForceTerminating && unexpected_module_exit_count_ > 0);
@@ -1046,7 +1036,6 @@ std::optional<int> Manager::handleStateTransitions(RuntimeContext& ctx, ManagerA
     // Finalize shutdown as soon as all module processes are gone, even if we got here through ECHILD
     // after a timeout-triggered force shutdown.
     if (in_shutdown_flow && module_handles_.empty() && state_ != ManagerState::ShutdownFinalizing) {
-        handled_transition = true;
         transitionTo(ManagerState::ShutdownFinalizing);
         if (crash_in_progress && unexpected_module_exit_count_ <= MAX_UNEXPECTED_MODULE_RESTARTS) {
             EVLOG_warning << fmt::format(
@@ -1054,25 +1043,28 @@ std::optional<int> Manager::handleStateTransitions(RuntimeContext& ctx, ManagerA
                 "modules.",
                 unexpected_module_exit_count_, MAX_UNEXPECTED_MODULE_RESTARTS);
             handleRestartModulesAfterShutdown(ctx);
-            return std::nullopt;
+            return LifecycleAdvanceResult::transitionApplied();
         }
         if (crash_in_progress && unexpected_module_exit_count_ > MAX_UNEXPECTED_MODULE_RESTARTS) {
             EVLOG_error << fmt::format("Reached maximum unexpected module exit recovery attempts ({}/{}). "
                                        "Manager will stay idle after shutdown.",
                                        unexpected_module_exit_count_, MAX_UNEXPECTED_MODULE_RESTARTS);
         }
-        return handleFinalizeShutdownTransition(ctx, admin_panel, restart_requested, crash_in_progress);
+        if (const auto exit_code =
+                handleFinalizeShutdownTransition(ctx, admin_panel, restart_requested, crash_in_progress)) {
+            return LifecycleAdvanceResult::exitRequested(*exit_code);
+        }
+        return LifecycleAdvanceResult::transitionApplied();
     }
 
     // Admin restart can mark restart_modules while modules are still draining.
     // If all children are gone, restart immediately with reloaded config.
     if (restart_requested && module_handles_.empty()) {
-        handled_transition = true;
         handleRestartModulesAfterShutdown(ctx);
-        return std::nullopt;
+        return LifecycleAdvanceResult::transitionApplied();
     }
 
-    return std::nullopt;
+    return LifecycleAdvanceResult::noTransition();
 }
 
 bool Manager::handleChildExit(pid_t pid, int wstatus, RuntimeContext& ctx, ManagerAdminPanel& admin_panel) {
@@ -1201,7 +1193,7 @@ std::optional<int> Manager::handleControllerIpcPoll(RuntimeContext& ctx, Manager
     }
 
     // Keep RestartRequested while modules are draining; this preserves restart intent
-    // for handleStateTransitions() once all children have exited.
+    // for advanceLifecycleStateIfReady() once all children have exited.
     if (restart_requested) {
         shutdown_cause_ = ShutdownCause::Restart;
         transitionTo(ManagerState::RestartRequested);
