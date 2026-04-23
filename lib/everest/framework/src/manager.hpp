@@ -69,6 +69,7 @@ public:
     /// \brief Construct manager with parsed CLI arguments.
     /// \param vm Parsed command line options used by manager startup/runtime.
     explicit Manager(const boost::program_options::variables_map& vm);
+    
     /// \brief Start manager lifecycle and main event loop.
     /// \return Process exit code (EXIT_SUCCESS / EXIT_FAILURE).
     int run();
@@ -93,6 +94,27 @@ private:
         const Everest::ManagerSettings& ms;
         Everest::StatusFifo& status_fifo;
         bool retain_topics;
+    };
+    
+    /// \brief Outcome of one lifecycle state-advance evaluation.
+    struct LifecycleAdvanceResult {
+        enum class Status {
+            NoTransition,
+            TransitionApplied,
+            ExitRequested
+        };
+        Status status{Status::NoTransition};
+        std::optional<int> exit_code{};
+
+        static LifecycleAdvanceResult noTransition() {
+            return {Status::NoTransition, std::nullopt};
+        }
+        static LifecycleAdvanceResult transitionApplied() {
+            return {Status::TransitionApplied, std::nullopt};
+        }
+        static LifecycleAdvanceResult exitRequested(int code) {
+            return {Status::ExitRequested, code};
+        }
     };
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -121,11 +143,6 @@ private:
     /// \brief Publish interfaces/types/settings/manifests metadata on MQTT.
     /// \param ctx Runtime dependencies for the current run.
     void publishStartupMetadata(const RuntimeContext& ctx) const;
-
-    /// \brief Register ready handlers, prepare module start list, and spawn modules.
-    /// \param ctx Runtime dependencies for the current run.
-    /// \return Mapping of spawned child pid to module id.
-    std::map<pid_t, std::string> startModules(const RuntimeContext& ctx);
 
     /// \brief Unregister all module ready handlers and clear ready-tracking state.
     void unregisterModuleReadyHandlers(Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
@@ -157,18 +174,16 @@ private:
     // State/event handlers
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    /// \brief Execute startup sequence: spawn modules and perform startup user switch.
+    /// \brief Handle module startup: transition to StartingModules, register ready handlers, and spawn modules.
     /// \param ctx Runtime dependencies for the current run.
-    /// \return Exit code when startup should terminate manager, std::nullopt otherwise.
-    std::optional<int> handleStartupSequence(RuntimeContext& ctx);
+    /// \return Mapping of spawned child pid to module id.
+    std::map<pid_t, std::string> handleStartModules(const RuntimeContext& ctx);
 
-    /// \brief Process state-driven transitions and return optional exit code.
+    /// \brief Advance lifecycle state when current phase is complete.
     /// \param ctx Runtime dependencies for the current run.
     /// \param admin_panel Controller IPC/process integration helper.
-    /// \param handled_transition Set to true when this call performed a transition.
-    /// \return Exit code when manager should terminate, std::nullopt otherwise.
-    std::optional<int> handleStateTransitions(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
-                                              bool& handled_transition);
+    /// \return Result containing transition/exit outcome for this evaluation step.
+    LifecycleAdvanceResult advanceLifecycleStateIfReady(RuntimeContext& ctx, ManagerAdminPanel& admin_panel);
 
     /// \brief Complete shutdown finalization according to preserved restart/crash intent.
     /// \param ctx Runtime dependencies for the current run.
