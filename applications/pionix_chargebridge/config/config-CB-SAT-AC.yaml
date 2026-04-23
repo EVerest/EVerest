@@ -167,3 +167,82 @@ gpio:
     pulls: "PullDown"
     mdns: false
     config: 0
+  gpio_10:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_11:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_12:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_13:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_14:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_15:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_16:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_17:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_18:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_19:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_20:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+
+adc:
+  enable: true
+  mqtt_remote: "localhost"
+  mqtt_port: 1883
+  mqtt_bind: 127.0.0.1
+  mqtt_ping_interval_ms: 5000
+  adc_0:
+    mode: "OVM"
+    calib_offset_mV: 100
+    calib_gain: 1.02
+  adc_1:
+    mode: "PT1000"
+    calib_offset_mV: 100
+    calib_gain: 1.02
+  adc_2:
+    mode: "PT1000"
+    calib_offset_mV: 100
+    calib_gain: 1.02
+    config: 32767
+  adc_3:
+    mode: "Generic"
+    calib_offset_mV: 100
+    calib_gain: 1.02
