@@ -84,6 +84,13 @@ struct CB_COMPILER_ATTR_PACK CbGpioPacket {
 	uint16_t gpio_values[CB_NUMBER_OF_GPIOS]; // Actual value, 0: low, 1: high, or duty cycle for PWM
 };
 
+struct CB_COMPILER_ATTR_PACK CbAdcPacket {
+	uint8_t number_of_adcs; // Just to check compatibility
+	uint32_t adc_values_mV[CB_NUMBER_OF_ADCS]; // Actual values in mV
+};
+
+
+
 struct CB_COMPILER_ATTR_PACK CbHeartbeatPacket {
     CbConfig module_config;
 };

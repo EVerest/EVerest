@@ -24,6 +24,7 @@ add_executable(pionix_chargebridge
   src/utilities/sync_udp_client.cpp
   src/utilities/type_converters.cpp
 
+  src/adc_bridge.cpp
   src/can_bridge.cpp
   src/charge_bridge.cpp
   src/bsp_bridge.cpp

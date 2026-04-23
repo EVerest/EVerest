@@ -93,6 +93,10 @@ void charge_bridge::handle_discovery(std::string const& ip) {
     if (m_config.gpio) {
         m_config.gpio->cb_remote = ip;
     }
+    if (m_config.adc) {
+        m_config.adc->cb_remote = ip;
+    }
+
     m_config.firmware.cb_remote = ip;
 
     m_event_handler->add_action([this]() {
@@ -138,6 +142,9 @@ void charge_bridge::init() {
     }
     if (m_config.gpio.has_value()) {
         m_gpio = std::make_unique<gpio_bridge>(m_config.gpio.value());
+    }
+    if (m_config.adc.has_value()) {
+        m_adc = std::make_unique<adc_bridge>(m_config.adc.value());
     }
 }
 
@@ -271,6 +278,10 @@ bool charge_bridge::register_events(everest::lib::io::event::fd_event_handler& h
     if (m_gpio) {
         result = handler.register_event_handler(m_gpio.get()) && result;
     }
+    if (m_adc) {
+        result = handler.register_event_handler(m_adc.get()) && result;
+    }
+
     if (m_discovery) {
         result = handler.register_event_handler(m_discovery.get()) && result;
     }
@@ -302,6 +313,9 @@ bool charge_bridge::unregister_events(everest::lib::io::event::fd_event_handler&
     }
     if (m_gpio) {
         result = handler.unregister_event_handler(m_gpio.get()) && result;
+    }
+    if (m_adc) {
+        result = handler.unregister_event_handler(m_adc.get()) && result;
     }
     if (m_discovery) {
         result = handler.unregister_event_handler(m_discovery.get()) && result;
@@ -380,6 +394,14 @@ void print_charge_bridge_config(charge_bridge_config const& c) {
             std::cout << " on " << c.gpio->mqtt_bind;
         }
         std::cout << " send interval " << c.gpio->interval_s << "s" << std::endl;
+    }
+    if (c.adc) {
+        std::cout << " * adc:      " << c.cb_remote << ":" << c.cb_port;
+        std::cout << " MQTT " << c.adc->mqtt_remote << ":" << c.adc->mqtt_port;
+        if (not c.adc->mqtt_bind.empty()) {
+            std::cout << " on " << c.adc->mqtt_bind;
+        }
+        std::cout << " send interval " << c.adc->interval_s << "s" << std::endl;
     }
 
     std::cout << "\n" << std::endl;

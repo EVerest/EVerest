@@ -11,6 +11,7 @@
 #include <charge_bridge/heartbeat_service.hpp>
 #include <charge_bridge/plc_bridge.hpp>
 #include <charge_bridge/serial_bridge.hpp>
+#include <charge_bridge/adc_bridge.hpp>
 #include <charge_bridge/utilities/symlink.hpp>
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/serial/event_pty.hpp>
@@ -39,6 +40,7 @@ struct charge_bridge_config {
     std::optional<bsp_bridge_config> bsp;
     std::optional<heartbeat_config> heartbeat;
     std::optional<gpio_config> gpio;
+    std::optional<adc_config> adc;
     firmware_update::fw_update_config firmware;
 };
 
@@ -77,6 +79,7 @@ private:
     std::unique_ptr<heartbeat_service> m_heartbeat;
     std::unique_ptr<gpio_bridge> m_gpio;
     std::unique_ptr<discovery> m_discovery;
+    std::unique_ptr<adc_bridge> m_adc;
 
     everest::lib::io::event::fd_event_handler* m_event_handler{nullptr};
     bool m_force_firmware_update{false};

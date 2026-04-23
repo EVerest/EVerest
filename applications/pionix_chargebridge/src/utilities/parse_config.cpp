@@ -261,6 +261,16 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         cfg.cb_port = c.cb_port;
     });
 
+    get_block("adc", c.adc, [&](auto& cfg, auto const& main) {
+        get_node(cfg.interval_s, main, "interval_s");
+        get_node(cfg.mqtt_remote, main, "mqtt_remote");
+        get_node_or_default(cfg.mqtt_bind, main, "mqtt_bind", "");
+        get_node(cfg.mqtt_port, main, "mqtt_port");
+        get_node_or_default(cfg.mqtt_ping_interval_ms, main, "mqtt_ping_interval_ms", default_mqtt_ping_interval_ms);
+        cfg.cb_remote = c.cb_remote;
+        cfg.cb_port = c.cb_port;
+    });
+
     get_block("heartbeat", c.heartbeat, [&](auto& cfg, auto const& main) {
         get_node_or_default(cfg.interval_s, main, "interval_s", 1);
         get_node_or_default(cfg.connection_to_s, main, "connection_to_s", 3 * cfg.interval_s);
@@ -270,6 +280,7 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
 
         std::memset(cfg.cb_config.gpios, 0, CB_NUMBER_OF_GPIOS * sizeof(CbGpioConfig));
         std::memset(cfg.cb_config.uarts, 0, CB_NUMBER_OF_UARTS * sizeof(CbUartConfig));
+        std::memset(cfg.cb_config.adcs, 0, CB_NUMBER_OF_ADCS * sizeof(CbAdcConfig));
         if (c.serial1) {
             get_node(cfg.cb_config.uarts[0], "serial_1");
         }
@@ -285,6 +296,12 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
                 get_node(cfg.cb_config.gpios[i], "gpio", "gpio_" + std::to_string(i));
             }
         }
+        if (c.adc) {
+            for (auto i = 0; i < CB_NUMBER_OF_ADCS; ++i) {
+                get_node(cfg.cb_config.adcs[i], "adc", "adc_" + std::to_string(i));
+            }
+        }
+
         if (c.can0) {
             get_node(cfg.cb_config.can, "can_0");
         }
@@ -355,6 +372,10 @@ charge_bridge_config set_config_placeholders(charge_bridge_config const& src, ch
     if (result.gpio.has_value()) {
         result.gpio->cb = result.cb_name;
         result.gpio->cb_remote = ip;
+    }
+    if (result.adc.has_value()) {
+        result.adc->cb = result.cb_name;
+        result.adc->cb_remote = ip;
     }
 
     if (result.heartbeat.has_value()) {

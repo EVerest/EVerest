@@ -8,6 +8,7 @@
 
 #define CB_NUMBER_OF_GPIOS 21
 #define CB_NUMBER_OF_UARTS 3
+#define CB_NUMBER_OF_ADCS 4
 
 // enums
 
@@ -141,5 +142,5 @@ typedef struct CB_COMPILER_ATTR_PACK _cb_config {
 	CbUartConfig uarts[CB_NUMBER_OF_UARTS];
 	CbCanConfig can;
 	uint8_t plc_powersaving_mode;
-  CbAdcConfig adcs;
+  CbAdcConfig adcs[CB_NUMBER_OF_ADCS];
 } CbConfig;
