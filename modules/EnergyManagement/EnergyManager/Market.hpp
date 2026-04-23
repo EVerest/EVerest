@@ -54,7 +54,7 @@ private:
 
 class Market {
 public:
-    Market(types::energy::EnergyFlowRequest& _energy_flow_request, const float __nominal_ac_voltage,
+    Market(const types::energy::EnergyFlowRequest& _energy_flow_request, const float __nominal_ac_voltage,
            Market* __parent = nullptr);
 
     void trade(const ScheduleRes& s);
@@ -76,7 +76,7 @@ public:
     float nominal_ac_voltage();
 
     // local request only for this node
-    types::energy::EnergyFlowRequest& energy_flow_request;
+    const types::energy::EnergyFlowRequest& energy_flow_request;
 
 private:
     Market* _parent;
