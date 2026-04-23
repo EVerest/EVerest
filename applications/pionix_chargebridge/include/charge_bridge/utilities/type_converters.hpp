@@ -29,11 +29,13 @@ bool decode_CbUartParity(c4::yml::ConstNodeRef const& node, CbUartParity& rhs);
 bool decode_CbCanBaudrate(c4::yml::ConstNodeRef const& node, CbCanBaudrate& rhs);
 bool decode_CbRelayMode(c4::yml::ConstNodeRef const& node, CbRelayMode& rhs);
 bool decode_CbSafetyMode(c4::yml::ConstNodeRef const& node, CbSafetyMode& rhs);
+bool decode_CbAdcMode(c4::yml::ConstNodeRef const& node, CbAdcMode& rhs);
 bool decode_RelayConfig(c4::yml::ConstNodeRef const& node, RelayConfig& rhs);
 bool decode_SafetyConfig(c4::yml::ConstNodeRef const& node, SafetyConfig& rhs);
 bool decode_CbGpioConfig(c4::yml::ConstNodeRef const& node, CbGpioConfig& rhs);
 bool decode_CbUartConfig(c4::yml::ConstNodeRef const& node, CbUartConfig& rhs);
 bool decode_CbCanConfig(c4::yml::ConstNodeRef const& node, CbCanConfig& rhs);
+bool decode_CbAdcConfig(c4::yml::ConstNodeRef const& node, CbAdcConfig& rhs);
 bool decode_Connector_type(c4::yml::ConstNodeRef const& node, EXT_API_BSP::Connector_type& rhs);
 bool decode_HardwareCapabilities(c4::yml::ConstNodeRef const& node, EXT_API_BSP::HardwareCapabilities& rhs);
 
@@ -45,11 +47,13 @@ c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbUar
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbCanBaudrate& rhs);
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbRelayMode& rhs);
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbSafetyMode& rhs);
+c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbAdcMode& rhs);
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, RelayConfig& rhs);
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, SafetyConfig& rhs);
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbGpioConfig& rhs);
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbUartConfig& rhs);
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbCanConfig& rhs);
+c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbAdcConfig& rhs);
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, EXT_API_BSP::Connector_type& rhs);
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, EXT_API_BSP::HardwareCapabilities& rhs);
 

@@ -76,6 +76,13 @@ typedef enum _CbSafetyMode : uint8_t {
 
 } CbSafetyMode;
 
+
+typedef enum _CbAdcMode : uint8_t {
+	CBA_Generic = 0x00,
+	CBA_PT10000 = 0x01,
+	CBA_OVM = 0x03,
+} CbAdcMode;
+
 // Structs
 
 typedef struct CB_COMPILER_ATTR_PACK _relay_config {
@@ -118,6 +125,12 @@ typedef struct CB_COMPILER_ATTR_PACK _CbNetworkConfig {
 	char mdns_name[20]; // custom MDNS name
 } CbNetworkConfig;
 
+typedef struct CB_COMPILER_ATTR_PACK _CbAdcConfig {
+    CbAdcMode mode;
+    uint16_t calib_offset_mV;
+    float calib_gain;
+} CbAdcConfig;
+
 // Final complete config struct
 
 #define CB_CONFIG_VERSION 0
@@ -128,4 +141,5 @@ typedef struct CB_COMPILER_ATTR_PACK _cb_config {
 	CbUartConfig uarts[CB_NUMBER_OF_UARTS];
 	CbCanConfig can;
 	uint8_t plc_powersaving_mode;
+  CbAdcConfig adcs;
 } CbConfig;

@@ -351,6 +351,31 @@ bool decode_CbSafetyMode(c4::yml::ConstNodeRef const& node, CbSafetyMode& rhs) {
     return false;
 }
 
+bool decode_CbAdcMode(c4::yml::ConstNodeRef const& node, CbAdcMode& rhs) {
+    if (node.invalid()) {
+        return false;
+    }
+    std::string value;
+    decode(node, value);
+
+    if (value == "Generic") {
+        rhs = CBA_Generic;
+        return true;
+    }
+    if (value == "PT1000") {
+        rhs = CBA_PT10000;
+        return true;
+    }
+    if (value == "OVM") {
+        rhs = CBA_OVM;
+        return true;
+    }
+
+    throw yml_node_error(node);
+    return false;
+}
+
+
 bool decode_RelayConfig(c4::yml::ConstNodeRef const& node, RelayConfig& rhs) {
     using ryml::ConstNodeRef;
 
@@ -429,6 +454,20 @@ bool decode_CbCanConfig(c4::yml::ConstNodeRef const& node, CbCanConfig& rhs) {
 
     return true;
 }
+
+bool decode_CbAdcConfig(c4::yml::ConstNodeRef const& node, CbAdcConfig& rhs) {
+    using ryml::ConstNodeRef;
+
+    if (node.invalid()) {
+        return false;
+    }
+    rhs.mode = decode<decltype(rhs.mode)>(node, "mode");
+    rhs.calib_offset_mV = decode<decltype(rhs.calib_offset_mV)>(node, "calib_offset_mV");
+    rhs.calib_gain = decode<decltype(rhs.calib_gain)>(node, "calib_gain");
+
+    return true;
+}
+
 
 namespace EXT_API = everest::lib::API;
 namespace EXT_API_BSP = EXT_API::V1_0::types::evse_board_support;
@@ -526,6 +565,13 @@ c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbRel
     throw std::runtime_error("CbRelayMode");
 }
 
+c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbAdcMode& rhs) {
+    if (decode_CbAdcMode(node, rhs)) {
+        return node;
+    }
+    throw std::runtime_error("CbAdcMode");
+}
+
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbSafetyMode& rhs) {
     if (decode_CbSafetyMode(node, rhs)) {
         return node;
@@ -566,6 +612,13 @@ c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbCan
         return node;
     }
     throw std::runtime_error("CbCanConfig");
+}
+
+c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbAdcConfig& rhs) {
+    if (decode_CbAdcConfig(node, rhs)) {
+        return node;
+    }
+    throw std::runtime_error("CbAdcConfig");
 }
 
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, EXT_API_BSP::Connector_type& rhs) {
