@@ -342,13 +342,12 @@ class TestEEBUSModule:
         )
 
     @pytest.mark.asyncio
-    async def test_update_failsafe_duration_minimum(
+    async def test_ignores_out_of_range_failsafe_duration(
         self,
         eebus_test_env: dict,
     ):
-        """
-        This test verifies that the failsafe duration minimum can be updated.
-        """
+        """[LPC-022] CS must ignore EG-written FailsafeDurationMinimum outside [2h, 24h]
+        and keep the previously cached 2h default."""
         everest_core = eebus_test_env["everest_core"]
         control_service_servicer = eebus_test_env["control_service_servicer"]
         cs_lpc_control_servicer = eebus_test_env["cs_lpc_control_servicer"]
@@ -356,8 +355,8 @@ class TestEEBUSModule:
 
         probe = await perform_eebus_handshake(control_service_servicer, cs_lpc_control_servicer, cs_lpc_control_server, everest_core)
 
-        # Simulate a DataUpdateFailsafeDurationMinimum event
-        new_failsafe_duration_nanoseconds = 5 * 1000 * 1000 * 1000 # 5 seconds
+        # Inject an out-of-range DataUpdateFailsafeDurationMinimum event (5 s — below the 2 h minimum).
+        out_of_range_nanoseconds = 5 * 1000 * 1000 * 1000  # 5 seconds
         uc_event = control_service_messages_pb2.SubscribeUseCaseEventsResponse(
             remote_ski="this-is-a-ski-42",
             remote_entity_address=common_types_pb2.EntityAddress(entity_address=[1]),
@@ -371,10 +370,9 @@ class TestEEBUSModule:
         )
         control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(uc_event)
 
-        # The module should now ask for the failsafe duration minimum
         req = await async_get(cs_lpc_control_servicer.command_queues["FailsafeDurationMinimum"].request_queue, timeout=5)
         res = cs_lpc_messages_pb2.FailsafeDurationMinimumResponse(
-            duration_nanoseconds=new_failsafe_duration_nanoseconds,
+            duration_nanoseconds=out_of_range_nanoseconds,
             is_changeable=True,
         )
         cs_lpc_control_servicer.command_queues["FailsafeDurationMinimum"].response_queue.put_nowait(res)
@@ -382,42 +380,16 @@ class TestEEBUSModule:
         # Move out of Init so the heartbeat-timeout → Failsafe edge [LPC-911] is reachable.
         await transition_to_unlimited_controlled(control_service_servicer, cs_lpc_control_servicer, probe)
 
-        # Trigger failsafe state to check if the new duration is applied.
-        # Simulate missing heartbeat — wait for the 120s heartbeat timeout to expire.
+        # Let the 120 s heartbeat timeout expire — the module must enter Failsafe.
         test_data_failsafe = TestDataFailsafe()
-        failsafe_limits = test_data_failsafe.get_expected_failsafe_limits(4200) # this is the config default
+        failsafe_limits = test_data_failsafe.get_expected_failsafe_limits(4200)  # config default
         limits = await async_wait_for(probe.external_limits_queue, failsafe_limits, timeout=140)
 
-        # Send periodic heartbeats in the background to keep the module alive
-        # while we wait for the failsafe duration (5s) to expire and the module
-        # to transition to UnlimitedAutonomous.
-        hb_event = control_service_messages_pb2.SubscribeUseCaseEventsResponse(
-            remote_ski="this-is-a-ski-42",
-            remote_entity_address=common_types_pb2.EntityAddress(entity_address=[1]),
-            use_case_event=control_service_types_pb2.UseCaseEvent(
-                use_case=control_service_types_pb2.UseCase(
-                    actor=control_service_types_pb2.UseCase.ActorType.ControllableSystem,
-                    name=control_service_types_pb2.UseCase.NameType.limitationOfPowerConsumption,
-                ),
-                event="DataUpdateHeartbeat",
-            )
-        )
-
-        async def send_heartbeats():
-            for _ in range(3):
-                control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(hb_event)
-                await asyncio.sleep(50)
-
-        hb_task = asyncio.create_task(send_heartbeats())
-        try:
-            unlimited_autonomous_limits = test_data_failsafe.get_expected_unlimited_autonomous_limits()
-            limits = await async_wait_for(probe.external_limits_queue, unlimited_autonomous_limits, timeout=160)
-        finally:
-            hb_task.cancel()
-            try:
-                await hb_task
-            except asyncio.CancelledError:
-                pass
+        # The C++ predicate must have rejected the 5 s write and kept the 2 h default.
+        # Therefore the module must still be in Failsafe 10 s later — NOT in UnlimitedAutonomous.
+        await asyncio.sleep(10)
+        with pytest.raises(TimeoutError):
+            await async_get(probe.external_limits_queue, timeout=1)
 
     @pytest.mark.asyncio
     async def test_update_failsafe_consumption_active_power_limit(

@@ -58,6 +58,11 @@ public:
     // Pure predicate; exposed publicly for unit-test access without adding friendships.
     static bool limit_value_is_valid(const common_types::LoadLimit& limit);
 
+    // [LPC-022/1, LPC-022/4] Accepts an EG-written Failsafe Duration Minimum iff it sits in
+    // [LPC_VENDOR_CONFIG_MIN, LPC_CS_MAXIMUM] = [2h, 24h], the range the spec prescribes for both
+    // the vendor pre-configured value and the CS's maximum accepted write.
+    static bool failsafe_duration_is_valid(std::chrono::nanoseconds duration);
+
 private:
     using event_handler_t = void (LpcUseCaseHandler::*)();
     using TP = std::chrono::time_point<std::chrono::steady_clock>;

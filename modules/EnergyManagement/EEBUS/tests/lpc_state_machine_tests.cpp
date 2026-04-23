@@ -367,6 +367,34 @@ TEST(LpcLimitValueValidatorTest, RejectsNegativeEpsilon) {
     EXPECT_FALSE(LpcUseCaseHandler::limit_value_is_valid(limit));
 }
 
+// ===========================================================================
+// Phase 3 — [LPC-022] FailsafeDurationMinimum [2h, 24h] range validator
+// ===========================================================================
+
+TEST(LpcFailsafeDurationValidatorTest, AcceptsTwoHours) {
+    EXPECT_TRUE(LpcUseCaseHandler::failsafe_duration_is_valid(std::chrono::hours(2)));
+}
+
+TEST(LpcFailsafeDurationValidatorTest, AcceptsTwentyFourHours) {
+    EXPECT_TRUE(LpcUseCaseHandler::failsafe_duration_is_valid(std::chrono::hours(24)));
+}
+
+TEST(LpcFailsafeDurationValidatorTest, AcceptsFifteenHours) {
+    EXPECT_TRUE(LpcUseCaseHandler::failsafe_duration_is_valid(std::chrono::hours(15)));
+}
+
+TEST(LpcFailsafeDurationValidatorTest, RejectsOneHourFiftyNineMinutes) {
+    EXPECT_FALSE(LpcUseCaseHandler::failsafe_duration_is_valid(std::chrono::hours(1) + std::chrono::minutes(59)));
+}
+
+TEST(LpcFailsafeDurationValidatorTest, RejectsTwentyFourHoursOneSecond) {
+    EXPECT_FALSE(LpcUseCaseHandler::failsafe_duration_is_valid(std::chrono::hours(24) + std::chrono::seconds(1)));
+}
+
+TEST(LpcFailsafeDurationValidatorTest, RejectsZero) {
+    EXPECT_FALSE(LpcUseCaseHandler::failsafe_duration_is_valid(std::chrono::nanoseconds::zero()));
+}
+
 } // namespace module
 
 // ---------------------------------------------------------------------------

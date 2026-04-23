@@ -17,6 +17,11 @@ constexpr auto LPC_INIT_TIMEOUT = std::chrono::seconds(120);
 constexpr auto LPC_RECOVERY_TIMEOUT = std::chrono::seconds(120);
 // Default failsafe duration; matches the value pushed to the gRPC service in configure_use_case().
 constexpr auto LPC_DEFAULT_FAILSAFE_DURATION = std::chrono::hours(2);
+// [LPC-022/1] Vendor-configured lower bound for accepted Failsafe Duration Minimum writes.
+// Spec requires a value in [2h, 24h]; we pick the floor.
+constexpr auto LPC_VENDOR_CONFIG_MIN = std::chrono::hours(2);
+// [LPC-022/4] The CS's maximum value for the Failsafe Duration Minimum. Spec-wide 24h ceiling.
+constexpr auto LPC_CS_MAXIMUM = std::chrono::hours(24);
 
 using TP = std::chrono::time_point<std::chrono::steady_clock>;
 } // namespace
@@ -84,13 +89,22 @@ void LpcUseCaseHandler::handle_data_update_failsafe_duration_minimum() {
     cs_lpc::FailsafeDurationMinimumRequest read_duration_req;
     cs_lpc::FailsafeDurationMinimumResponse read_duration_res;
     auto read_status = cs_lpc::CallFailsafeDurationMinimum(this->stub, read_duration_req, &read_duration_res);
-    if (read_status.ok()) {
-        this->failsafe_duration_timeout = std::chrono::nanoseconds(read_duration_res.duration_nanoseconds());
-        EVLOG_info << "FailsafeDurationMinimum updated to " << read_duration_res.duration_nanoseconds() << "ns";
-    } else {
+    if (!read_status.ok()) {
         EVLOG_warning << "Could not re-read FailsafeDurationMinimum after update event: "
                       << read_status.error_message();
+        return;
     }
+
+    const auto new_duration = std::chrono::nanoseconds(read_duration_res.duration_nanoseconds());
+    if (!failsafe_duration_is_valid(new_duration)) {
+        EVLOG_warning << "Ignoring out-of-range FailsafeDurationMinimum " << read_duration_res.duration_nanoseconds()
+                      << " ns — spec [LPC-022] requires [2h, 24h]. Keeping previous value "
+                      << this->failsafe_duration_timeout.count() << " ns.";
+        return;
+    }
+
+    this->failsafe_duration_timeout = new_duration;
+    EVLOG_info << "FailsafeDurationMinimum updated to " << read_duration_res.duration_nanoseconds() << "ns";
 }
 
 void LpcUseCaseHandler::handle_data_update_failsafe_consumption_active_power_limit() {
@@ -246,6 +260,10 @@ control_service::UseCase LpcUseCaseHandler::get_use_case_info() {
 
 bool LpcUseCaseHandler::limit_value_is_valid(const common_types::LoadLimit& limit) {
     return limit.value() >= 0.0; // [LPC-001]
+}
+
+bool LpcUseCaseHandler::failsafe_duration_is_valid(std::chrono::nanoseconds duration) {
+    return duration >= LPC_VENDOR_CONFIG_MIN && duration <= LPC_CS_MAXIMUM; // [LPC-022/1, LPC-022/4]
 }
 
 void LpcUseCaseHandler::configure_use_case() {
