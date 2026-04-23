@@ -15,16 +15,23 @@
 namespace Everest {
 class ManagerConfig;
 class MQTTAbstraction;
-class StatusFifo;
-struct ManagerSettings;
 namespace system {
 class SignalPolling;
 }
+class StatusFifo;
+struct ManagerSettings;
+namespace system {
+class SubProcess;
+}
 } // namespace Everest
+
+/// \brief Forward declaration for typed MQTT handler registration tokens.
 struct TypedHandler;
 
+/// \brief Forward declaration for manager-controller IPC/process coordination helper.
 class ManagerAdminPanel;
 
+/// \brief Shutdown wait status captured for one managed module process.
 struct ModuleShutdownInfo {
     std::string id;
     int wstatus;
