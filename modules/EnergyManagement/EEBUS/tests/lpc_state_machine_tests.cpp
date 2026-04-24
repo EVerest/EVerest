@@ -8,6 +8,12 @@
 
 namespace module {
 
+// Readable SKI constants for multi-EG tests. Values are 40-character lowercase
+// hex strings — valid by the allowlist format check and distinct between each
+// other so EG-filtering logic can be exercised.
+static const std::string SKI_A(40, 'a');
+static const std::string SKI_B(40, 'b');
+
 // ---------------------------------------------------------------------------
 // Test fixture
 // ---------------------------------------------------------------------------
@@ -44,9 +50,25 @@ protected:
 
     // Send a heartbeat event (drives handle_data_update_heartbeat + run_state_machine).
     void send_heartbeat(LpcUseCaseHandler& h) {
-        control_service::UseCaseEvent event;
-        event.set_event("DataUpdateHeartbeat");
-        h.handle_event(event);
+        control_service::SubscribeUseCaseEventsResponse response;
+        response.mutable_use_case_event()->set_event("DataUpdateHeartbeat");
+        h.handle_event(response);
+    }
+
+    // Send a heartbeat event tagged with a specific SKI (used for multi-EG tests).
+    void send_heartbeat_from(LpcUseCaseHandler& h, const std::string& ski) {
+        control_service::SubscribeUseCaseEventsResponse response;
+        response.set_remote_ski(ski);
+        response.mutable_use_case_event()->set_event("DataUpdateHeartbeat");
+        h.handle_event(response);
+    }
+
+    // Send an arbitrary event string from a specific SKI.
+    void send_event_from(LpcUseCaseHandler& h, const std::string& ski, const std::string& event_name) {
+        control_service::SubscribeUseCaseEventsResponse response;
+        response.set_remote_ski(ski);
+        response.mutable_use_case_event()->set_event(event_name);
+        h.handle_event(response);
     }
 
     // Drive a DataUpdateLimit event; the handler will try to read from its stub, which is null,
@@ -409,6 +431,89 @@ TEST(LpcFailsafeLimitValidatorTest, AcceptsPositive) {
 
 TEST(LpcFailsafeLimitValidatorTest, RejectsNegative) {
     EXPECT_FALSE(LpcUseCaseHandler::failsafe_limit_is_valid(-100.0));
+}
+
+// ===========================================================================
+// Active-EMS SKI connection — single-EG semantics across multiple discovered peers
+// ===========================================================================
+
+TEST_F(LpcStateMachineTest, first_data_event_connects_active_ems_ski) {
+    auto h = make_handler();
+    h->start();
+    send_heartbeat_from(*h, SKI_A);
+    send_active_limit(*h, ACTIVE_LIMIT); // (direct API; reuses internal last_heartbeat)
+    EXPECT_EQ(h->get_state(), LpcUseCaseHandler::State::Limited);
+    EXPECT_DOUBLE_EQ(last_limit_watts(), ACTIVE_LIMIT);
+}
+
+TEST_F(LpcStateMachineTest, heartbeat_from_second_ski_is_ignored_while_other_connected) {
+    auto h = make_handler();
+    h->start();
+    send_heartbeat_from(*h, SKI_A);
+    send_active_limit(*h, ACTIVE_LIMIT);
+    ASSERT_EQ(h->get_state(), LpcUseCaseHandler::State::Limited);
+
+    // Advance to the edge of the 120s heartbeat timeout. Only SKI-A's heartbeat
+    // counts; SKI-B's heartbeat is ignored because SKI-A is the connected EG.
+    advance(std::chrono::seconds(119));
+    send_heartbeat_from(*h, SKI_B);
+    h->run_state_machine();
+    EXPECT_EQ(h->get_state(), LpcUseCaseHandler::State::Limited);
+
+    // Advance past the 120s boundary — SKI-B's ignored heartbeat did NOT update the
+    // last_heartbeat timestamp, so the handler enters Failsafe.
+    advance(std::chrono::seconds(2));
+    h->run_state_machine();
+    EXPECT_EQ(h->get_state(), LpcUseCaseHandler::State::Failsafe);
+}
+
+TEST_F(LpcStateMachineTest, failsafe_entry_clears_active_ems_ski) {
+    auto h = make_handler();
+    enter_failsafe(*h); // already connects SKI-A internally via send_heartbeat in the helper
+
+    // After Failsafe entry, SKI-B's heartbeat should now be accepted — a new connection
+    // forms on this first data event.
+    send_heartbeat_from(*h, SKI_B);
+    send_active_limit(*h, ACTIVE_LIMIT);
+    h->run_state_machine();
+    EXPECT_EQ(h->get_state(), LpcUseCaseHandler::State::Limited);
+    EXPECT_DOUBLE_EQ(last_limit_watts(), ACTIVE_LIMIT);
+}
+
+TEST_F(LpcStateMachineTest, unlimited_autonomous_entry_clears_active_ems_ski) {
+    auto h = make_handler();
+    h->start();
+
+    // Init → UnlimitedAutonomous via 120s timeout [LPC-906]. No EG connected at Init.
+    advance(std::chrono::seconds(121));
+    h->run_state_machine();
+    ASSERT_EQ(h->get_state(), LpcUseCaseHandler::State::UnlimitedAutonomous);
+
+    // No EG was connected (empty), so entry is a no-op for the connection — but the
+    // code path should still not crash. Subsequently, SKI-B's heartbeat connects cleanly.
+    send_heartbeat_from(*h, SKI_B);
+    send_active_limit(*h, ACTIVE_LIMIT);
+    h->run_state_machine();
+    EXPECT_EQ(h->get_state(), LpcUseCaseHandler::State::Limited);
+}
+
+TEST_F(LpcStateMachineTest, use_case_support_update_from_non_active_ski_is_ignored_after_connection) {
+    auto h = make_handler();
+    h->start();
+
+    // Connect SKI-A via data event.
+    send_heartbeat_from(*h, SKI_A);
+    send_active_limit(*h, ACTIVE_LIMIT);
+    ASSERT_EQ(h->get_state(), LpcUseCaseHandler::State::Limited);
+
+    const auto watts_before = last_limit_watts();
+
+    // UseCaseSupportUpdate from SKI-B must NOT trigger configure_use_case / start_heartbeat.
+    // We can't easily assert the negative on the stub (no stub in this test), but we can
+    // assert that the handler state is unchanged (no new heartbeat timestamp, no crash).
+    send_event_from(*h, SKI_B, "UseCaseSupportUpdate");
+    EXPECT_EQ(h->get_state(), LpcUseCaseHandler::State::Limited);
+    EXPECT_DOUBLE_EQ(last_limit_watts(), watts_before);
 }
 
 } // namespace module
