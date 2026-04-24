@@ -12,10 +12,22 @@ config:
     description: Port for grpc control service connection. This is the port on which we will create our control service channel and start the grpc binary with, required/used when manage_eebus_grpc_api_binary=true
     type: integer
     default: 50051
-  eebus_ems_ski:
-    description: EEBUS EMS SKI
+  eebus_ems_ski_allowlist:
+    description: >
+      Comma-separated list of pre-trusted EEBUS EMS SKIs (lowercase SHA-1 hex,
+      40 chars each). Any EG discovered on the LAN whose SKI matches an entry
+      is auto-registered with the sidecar at startup. May be empty when
+      accept_unknown_ems is true. Whitespace around entries is trimmed.
     type: string
-    required: true
+    default: ""
+  accept_unknown_ems:
+    description: >
+      When true, every EG SKI discovered at runtime that is NOT already in the
+      sidecar's trust list is auto-registered for the duration of this session.
+      Security note: only enable on isolated/trusted networks. When false
+      (default), unknown EGs are logged and ignored.
+    type: boolean
+    default: false
   certificate_path:
     description: Path to the certificate file used by eebus go client. If relative will be prefixed with everest prefix + etc/everest/certs. Otherwise absolute file path is used, required/used when manage_eebus_grpc_api_binary=true
     type: string

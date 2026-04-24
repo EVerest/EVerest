@@ -58,6 +58,10 @@ void EebusConnectionHandler::reset() {
         this->event_reader->stop();
         this->event_reader.reset();
     }
+    if (this->discovery_event_reader) {
+        this->discovery_event_reader->stop();
+        this->discovery_event_reader.reset();
+    }
     if (this->lpc_handler) {
         this->lpc_handler.reset();
     }
@@ -118,15 +122,22 @@ bool EebusConnectionHandler::configure_service() {
         // This is not considered a fatal error
     }
 
-    control_service::RegisterRemoteSkiRequest register_ski_request;
-    register_ski_request.set_remote_ski(this->config->get_eebus_ems_ski());
-    control_service::EmptyResponse register_ski_response;
-    auto register_ski_status = control_service::CallRegisterRemoteSki(this->control_service_stub, register_ski_request,
-                                                                      &register_ski_response);
-    if (!register_ski_status.ok()) {
-        EVLOG_error << "register_remote_ski failed: " << register_ski_status.error_message();
-        return false;
+    // Register every SKI in the effective allowlist before StartService.
+    for (const auto& ski : this->config->get_effective_ems_ski_allowlist()) {
+        control_service::RegisterRemoteSkiRequest register_ski_request;
+        register_ski_request.set_remote_ski(ski);
+        control_service::EmptyResponse register_ski_response;
+        auto register_ski_status = control_service::CallRegisterRemoteSki(this->control_service_stub,
+                                                                          register_ski_request, &register_ski_response);
+        if (!register_ski_status.ok()) {
+            EVLOG_warning << "register_remote_ski(" << ski << ") failed: " << register_ski_status.error_message();
+            // Non-fatal: other allowlisted SKIs may still succeed, and accept_unknown_ems
+            // may yet populate the trust list at runtime.
+            continue;
+        }
+        EVLOG_info << "Pre-registered allowlisted EG SKI=" << ski;
     }
+    // An empty allowlist is OK here — runtime discovery events may still add trust.
 
     return true;
 }
@@ -181,13 +192,21 @@ bool EebusConnectionHandler::add_use_case(eebus::EEBusUseCase use_case, const ee
         this->lpc_handler->configure_use_case();
         this->event_reader = std::make_unique<UseCaseEventReader>(
             this->control_service_stub,
-            [this](const auto& event) {
-                m_handler.add_action([this, event] { this->lpc_handler->handle_event(event); });
+            [this](const control_service::SubscribeUseCaseEventsResponse& response) {
+                m_handler.add_action([this, response] { this->lpc_handler->handle_event(response); });
             },
             [this] { m_handler.add_action([this] { this->handle_event(EebusConnectionEvents::DISCONNECTED); }); });
 
         common_types::EntityAddress entity_address_for_event_reader = common_types::CreateEntityAddress({1});
         this->event_reader->start(entity_address_for_event_reader, use_case_info);
+
+        this->discovery_event_reader = std::make_unique<DiscoveryEventReader>(
+            this->control_service_stub,
+            [this](const control_service::DiscoveryEvent& evt) {
+                m_handler.add_action([this, evt] { this->on_discovery_event(evt); });
+            },
+            [this] { m_handler.add_action([this] { this->handle_event(EebusConnectionEvents::DISCONNECTED); }); });
+        this->discovery_event_reader->start();
         break;
     }
 
@@ -237,6 +256,54 @@ void EebusConnectionHandler::stop() {
     this->stop_requested_ = true;
     if (this->event_reader) {
         this->event_reader->stop();
+    }
+    if (this->discovery_event_reader) {
+        this->discovery_event_reader->stop();
+    }
+}
+
+void EebusConnectionHandler::on_discovery_event(const control_service::DiscoveryEvent& evt) {
+    if (evt.type() != control_service::DiscoveryEvent_Type_DISCOVERED) {
+        EVLOG_debug << "Discovery event type=" << evt.type() << " ski=" << evt.remote_ski();
+        return;
+    }
+    const std::string& ski = evt.remote_ski();
+
+    if (evt.is_trusted()) {
+        EVLOG_debug << "Discovery: sidecar already trusts SKI=" << ski << " (" << evt.brand() << " " << evt.model()
+                    << ")";
+        return;
+    }
+
+    const auto& allowlist = this->config->get_effective_ems_ski_allowlist();
+    const bool in_allowlist = allowlist.count(ski) > 0;
+
+    if (in_allowlist) {
+        EVLOG_info << "Discovery: allowlisted EG appeared SKI=" << ski << " (" << evt.brand() << " " << evt.model()
+                   << "); registering";
+        this->register_remote_ski_runtime(ski);
+        return;
+    }
+
+    if (this->config->get_accept_unknown_ems()) {
+        EVLOG_warning << "Discovery: unknown EG auto-accepted SKI=" << ski << " (" << evt.brand() << " " << evt.model()
+                      << ")"
+                      << " (accept_unknown_ems=true)";
+        this->register_remote_ski_runtime(ski);
+        return;
+    }
+
+    EVLOG_info << "Discovery: unknown EG ignored SKI=" << ski << " (" << evt.brand() << " " << evt.model() << ")"
+               << " (not in allowlist; accept_unknown_ems=false)";
+}
+
+void EebusConnectionHandler::register_remote_ski_runtime(const std::string& ski) {
+    control_service::RegisterRemoteSkiRequest request;
+    request.set_remote_ski(ski);
+    control_service::EmptyResponse response;
+    auto status = control_service::CallRegisterRemoteSki(this->control_service_stub, request, &response);
+    if (!status.ok()) {
+        EVLOG_warning << "runtime register_remote_ski(" << ski << ") failed: " << status.error_message();
     }
 }
 

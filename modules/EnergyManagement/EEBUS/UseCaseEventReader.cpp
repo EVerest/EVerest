@@ -7,9 +7,10 @@
 #include "common_types/types.pb.h"
 #include "control_service/messages.pb.h"
 
-UseCaseEventReader::UseCaseEventReader(std::shared_ptr<control_service::ControlService::Stub> stub,
-                                       std::function<void(const control_service::UseCaseEvent&)> event_callback,
-                                       std::function<void()> disconnection_callback) :
+UseCaseEventReader::UseCaseEventReader(
+    std::shared_ptr<control_service::ControlService::Stub> stub,
+    std::function<void(const control_service::SubscribeUseCaseEventsResponse&)> event_callback,
+    std::function<void()> disconnection_callback) :
     stub(std::move(stub)),
     event_callback(std::move(event_callback)),
     disconnection_callback(std::move(disconnection_callback)),
@@ -43,7 +44,7 @@ void UseCaseEventReader::stop() {
 void UseCaseEventReader::OnReadDone(bool ok) {
     if (ok) {
         if (event_callback) {
-            event_callback(this->response.use_case_event());
+            event_callback(this->response);
         }
         StartRead(&this->response);
     }

@@ -102,8 +102,10 @@ Configuration
      - (integer) Port for the control service, this will be sent in the ``SetConfig`` call. Default: ``4715``
    * - ``grpc_port``
      - (integer) Port for gRPC control service connection. Required if ``manage_eebus_grpc_api_binary`` is true. Default: ``50051``
-   * - ``eebus_ems_ski``
-     - (string, required) The SKI of the EEBUS energy management system (e.g. HEMS) to connect to.
+   * - ``eebus_ems_ski_allowlist``
+     - (string) Comma-separated list of pre-trusted EEBUS EMS SKIs. Each entry is a 40-character lowercase SHA-1 hex digest; whitespace around entries is trimmed. Every allowlisted SKI is registered with the sidecar at startup. Default: ``""``
+   * - ``accept_unknown_ems``
+     - (boolean) If ``true``, every EG SKI discovered at runtime that is not already trusted and not in the allowlist is auto-registered for the duration of the session. Security-sensitive — only safe on isolated/trusted networks. Default: ``false``
    * - ``certificate_path``
      - (string) Path to the certificate file. If relative, it will be prefixed with ``<etc>/everest/certs``. Required if ``manage_eebus_grpc_api_binary`` is true. Default: ``eebus/evse_cert``
    * - ``private_key_path``
@@ -126,6 +128,79 @@ Configuration
      - (integer) Delay in seconds before restarting the ``eebus_grpc_api`` binary after it exits. Used when ``manage_eebus_grpc_api_binary`` is true. Default: ``5``
    * - ``reconnect_delay_s``
      - (integer) Delay in seconds before retrying a lost gRPC connection to the ``eebus_grpc_api`` service. Default: ``5``
+
+SKI allowlist and discovery
+===========================
+
+The module trusts peer EEBUS Energy Guards (EGs, typically HEMS-class
+controllers) via a combination of a static allowlist and optional runtime
+auto-trust.
+
+``eebus_ems_ski_allowlist``
+---------------------------
+
+Comma-separated list of pre-trusted EEBUS EMS SKIs. Each entry is a
+40-character lowercase SHA-1 hex digest; whitespace around entries is
+tolerated and trimmed.
+
+.. code-block:: yaml
+
+    eebus_ems_ski_allowlist: "abcdef0123456789abcdef0123456789abcdef01, aabbccddeeff00112233445566778899aabbccdd"
+
+At startup the module iterates over the effective allowlist and calls
+``RegisterRemoteSki`` once per entry with the sidecar before ``StartService``.
+At runtime the module subscribes to discovery events from the sidecar; events
+for SKIs already in the allowlist are treated as no-ops when the SKI is
+already trusted by the sidecar, and trigger a re-register otherwise.
+
+``accept_unknown_ems``
+----------------------
+
+Boolean flag (default ``false``). When ``true``, any EG SKI that appears in a
+discovery event and is neither already trusted nor in the allowlist is
+auto-registered for the duration of this session and a warning is logged.
+
+.. warning::
+
+   This flag is security-sensitive. Only enable it on isolated or trusted
+   networks where every EEBUS peer that could appear on the LAN is known to
+   be safe. Leave it ``false`` on production and shared networks.
+
+The flag interacts with the allowlist as follows: allowlisted SKIs are
+always auto-registered at startup regardless of this flag; the flag only
+controls the "not in allowlist" branch of the runtime discovery classifier.
+
+Discovery flow
+==============
+
+1. At startup every SKI in ``eebus_ems_ski_allowlist`` is registered with
+   the sidecar before the service is started.
+2. The module subscribes to discovery events from the sidecar via
+   ``SubscribeDiscoveryEvents``.
+3. For each ``DISCOVERED`` event the module applies one of four actions,
+   based on allowlist membership and the ``accept_unknown_ems`` flag:
+
+   .. list-table::
+      :widths: 40 20 40
+      :header-rows: 1
+
+      * - Condition
+        - Action
+        - Log level
+      * - SKI already trusted by sidecar
+        - no-op
+        - debug
+      * - SKI in allowlist (not yet trusted)
+        - register
+        - info
+      * - SKI unknown, ``accept_unknown_ems=true``
+        - register
+        - warning
+      * - SKI unknown, ``accept_unknown_ems=false``
+        - ignore
+        - info
+
+4. The sidecar initiates pairing handshakes with every trusted SKI.
 
 Provided and required interfaces
 ================================

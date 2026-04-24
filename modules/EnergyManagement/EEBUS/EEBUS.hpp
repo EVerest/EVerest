@@ -34,7 +34,8 @@ struct Conf {
     bool manage_eebus_grpc_api_binary;
     int eebus_service_port;
     int grpc_port;
-    std::string eebus_ems_ski;
+    std::string eebus_ems_ski_allowlist;
+    bool accept_unknown_ems;
     std::string certificate_path;
     std::string private_key_path;
     std::string eebus_grpc_api_binary_path;
@@ -56,7 +57,7 @@ public:
         ModuleBase(info),
         p_main(std::move(p_main)),
         r_eebus_energy_sink(std::move(r_eebus_energy_sink)),
-        config(config){};
+        config(config) {};
 
     const std::unique_ptr<emptyImplBase> p_main;
     const std::unique_ptr<external_energy_limitsIntf> r_eebus_energy_sink;

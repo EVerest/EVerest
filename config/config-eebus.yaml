@@ -12,7 +12,16 @@ active_modules:
       device_brand: "EVerest"
       device_model: "SIL"
       serial_number: "123456789"
-      eebus_ems_ski: "fa2548488be47c89a342ea29c2fc9867df7cf700"
+      # Comma-separated list of pre-trusted EEBUS EMS SKIs. Each entry is a
+      # 40-character lowercase SHA-1 hex digest (whitespace around entries is
+      # trimmed). Every allowlisted SKI is registered with the sidecar at
+      # startup; subsequent discovery events for those SKIs are no-ops.
+      eebus_ems_ski_allowlist: "fa2548488be47c89a342ea29c2fc9867df7cf700"
+      # When true, every EG SKI discovered on the LAN that is NOT already in
+      # the allowlist is auto-trusted for the duration of this session.
+      # SECURITY: leave this false on production / shared networks. Only
+      # enable on isolated/trusted networks where any EEBUS peer is safe.
+      accept_unknown_ems: false
   eebus_energy_sink:
     module: EnergyNode
     config_module:

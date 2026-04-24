@@ -4,6 +4,7 @@
 #define EVEREST_CORE_MODULES_EEBUS_INCLUDE_CONFIGVALIDATOR_HPP
 
 #include <filesystem>
+#include <set>
 #include <string>
 
 namespace module {
@@ -27,14 +28,16 @@ public:
     std::string get_serial_number() const;
     int get_failsafe_control_limit() const;
     int get_max_nominal_power() const;
-    std::string get_eebus_ems_ski() const;
     int get_restart_delay_s() const;
     int get_reconnect_delay_s() const;
+    const std::set<std::string>& get_effective_ems_ski_allowlist() const;
+    bool get_accept_unknown_ems() const;
 
 private:
     bool validate_eebus_service_port() const;
     bool validate_grpc_port() const;
-    bool validate_eebus_ems_ski() const;
+    bool validate_eebus_ems_ski_allowlist() const;
+    bool validate_accept_unknown_ems() const;
     bool validate_certificate_path() const;
     bool validate_private_key_path() const;
     bool validate_eebus_grpc_api_binary_path() const;
@@ -57,6 +60,7 @@ private:
     int eebus_service_port;
     int grpc_port;
     bool manage_eebus_grpc_api_binary;
+    std::set<std::string> effective_allowlist;
 };
 
 } // namespace module

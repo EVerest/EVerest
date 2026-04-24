@@ -10,6 +10,7 @@
 #include <control_service/control_service.grpc-ext.pb.h>
 #include <grpcpp/grpcpp.h>
 
+#include <DiscoveryEventReader.hpp>
 #include <EebusCallbacks.hpp>
 #include <UseCaseEventReader.hpp>
 #include <everest/io/event/fd_event_handler.hpp>
@@ -66,10 +67,14 @@ private:
     void reset();
     bool wait_for_channel_ready(const std::shared_ptr<grpc::Channel>& channel, std::chrono::milliseconds timeout);
 
+    void on_discovery_event(const control_service::DiscoveryEvent& evt);
+    void register_remote_ski_runtime(const std::string& ski);
+
     std::shared_ptr<ConfigValidator> config;
     std::unique_ptr<LpcUseCaseHandler> lpc_handler;
 
     std::unique_ptr<UseCaseEventReader> event_reader;
+    std::unique_ptr<DiscoveryEventReader> discovery_event_reader;
 
     std::shared_ptr<grpc::Channel> control_service_channel;
     std::shared_ptr<control_service::ControlService::Stub> control_service_stub;

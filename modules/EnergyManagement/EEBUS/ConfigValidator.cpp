@@ -1,6 +1,50 @@
 #include <ConfigValidator.hpp>
 
+#include <algorithm>
+#include <cctype>
+#include <sstream>
+#include <vector>
+
 #include "EEBUS.hpp"
+
+namespace {
+std::string normalize_ski(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+    s.erase(std::remove(s.begin(), s.end(), ' '), s.end());
+    return s;
+}
+bool is_valid_ski_format(const std::string& s) {
+    if (s.size() != 40) {
+        return false;
+    }
+    return std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isxdigit(c); });
+}
+
+// Mirrors ocpp::split_string from lib/everest/ocpp/lib/ocpp/common/utils.cpp.
+// Kept local to avoid a runtime dep from EEBUS onto libocpp.
+std::string trim_string(const std::string& s) {
+    const auto first = s.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+        return {};
+    }
+    const auto last = s.find_last_not_of(" \t\r\n");
+    return s.substr(first, last - first + 1);
+}
+std::vector<std::string> split_string(const std::string& string_to_split, char sep, bool trim) {
+    std::stringstream input(string_to_split);
+    std::string token;
+    std::vector<std::string> result;
+    while (std::getline(input, token, sep)) {
+        if (trim) {
+            token = trim_string(token);
+        }
+        if (!token.empty()) {
+            result.push_back(token);
+        }
+    }
+    return result;
+}
+} // namespace
 
 namespace module {
 
@@ -31,13 +75,19 @@ ConfigValidator::ConfigValidator(const Conf& config, std::filesystem::path etc_p
                        << this->eebus_grpc_api_binary_path;
         }
     }
+
+    // Build the effective allowlist as a deduplicated set of normalized SKIs.
+    for (const auto& ski : split_string(this->config.eebus_ems_ski_allowlist, ',', /*trim=*/true)) {
+        this->effective_allowlist.insert(normalize_ski(ski));
+    }
 }
 
 bool ConfigValidator::validate() {
     bool valid = true;
     valid &= this->validate_eebus_service_port();
     valid &= this->validate_grpc_port();
-    valid &= this->validate_eebus_ems_ski();
+    valid &= this->validate_eebus_ems_ski_allowlist();
+    valid &= this->validate_accept_unknown_ems();
     valid &= this->validate_certificate_path();
     valid &= this->validate_private_key_path();
     valid &= this->validate_eebus_grpc_api_binary_path();
@@ -114,18 +164,6 @@ bool ConfigValidator::validate_eebus_service_port() const {
 bool ConfigValidator::validate_grpc_port() const {
     if (this->config.grpc_port < 0) {
         EVLOG_error << "grpc port is negative";
-        return false;
-    }
-    return true;
-}
-
-std::string ConfigValidator::get_eebus_ems_ski() const {
-    return this->config.eebus_ems_ski;
-}
-
-bool ConfigValidator::validate_eebus_ems_ski() const {
-    if (this->config.eebus_ems_ski.empty()) {
-        EVLOG_error << "EEBUS EMS SKI is empty";
         return false;
     }
     return true;
@@ -238,6 +276,38 @@ bool ConfigValidator::validate_max_nominal_power() const {
         return false;
     }
     return true;
+}
+
+bool ConfigValidator::validate_eebus_ems_ski_allowlist() const {
+    for (const auto& ski : split_string(this->config.eebus_ems_ski_allowlist, ',', /*trim=*/true)) {
+        const auto normalized = normalize_ski(ski);
+        if (!is_valid_ski_format(normalized)) {
+            EVLOG_error << "eebus_ems_ski_allowlist entry is not 40 hex chars: " << ski;
+            return false;
+        }
+        EVLOG_info << "EEBUS: trusting allowlisted EMS SKI=" << normalized;
+    }
+    if (this->effective_allowlist.empty() && !this->config.accept_unknown_ems) {
+        EVLOG_warning << "EEBUS: no EMS SKI configured and accept_unknown_ems=false; "
+                      << "no EG will ever be trusted.";
+    }
+    return true;
+}
+
+bool ConfigValidator::validate_accept_unknown_ems() const {
+    if (this->config.accept_unknown_ems) {
+        EVLOG_info << "EEBUS: accept_unknown_ems=true — any discovered EG on the LAN "
+                   << "will be auto-trusted. Only enable on isolated networks.";
+    }
+    return true;
+}
+
+const std::set<std::string>& ConfigValidator::get_effective_ems_ski_allowlist() const {
+    return this->effective_allowlist;
+}
+
+bool ConfigValidator::get_accept_unknown_ems() const {
+    return this->config.accept_unknown_ems;
 }
 
 } // namespace module

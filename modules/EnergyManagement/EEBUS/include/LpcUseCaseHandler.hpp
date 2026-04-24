@@ -42,7 +42,7 @@ public:
     void start();
 
     void set_stub(std::shared_ptr<cs_lpc::ControllableSystemLPCControl::Stub> stub);
-    void handle_event(const control_service::UseCaseEvent& event);
+    void handle_event(const control_service::SubscribeUseCaseEventsResponse& response);
     void run_state_machine();
     static control_service::UseCase get_use_case_info();
     void configure_use_case();
@@ -74,6 +74,7 @@ private:
     void initialize_event_handlers();
     void set_state(State new_state);
     static std::string state_to_string(State state);
+    bool is_data_event(const std::string& event_name) const;
 
     void approve_pending_writes();
     void update_limit_from_event();
@@ -106,6 +107,11 @@ private:
 
     bool limit_value_changed{false};
     std::optional<common_types::LoadLimit> current_limit;
+
+    // SKI of the currently-connected Energy Guard (EG). Set on the first data-carrying
+    // event and cleared on entry to Failsafe or UnlimitedAutonomous. While connected,
+    // events from any other SKI are ignored.
+    std::optional<std::string> active_ems_ski;
 
     std::chrono::time_point<std::chrono::steady_clock> last_heartbeat_timestamp{
         std::chrono::time_point<std::chrono::steady_clock>::min()};

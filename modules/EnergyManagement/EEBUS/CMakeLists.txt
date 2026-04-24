@@ -26,6 +26,7 @@ target_sources(${MODULE_NAME}
         "EebusCallbacks.cpp"
         "EebusConnectionHandler.cpp"
         "LpcUseCaseHandler.cpp"
+        "DiscoveryEventReader.cpp"
         "UseCaseEventReader.cpp"
 )
 target_link_libraries(${MODULE_NAME}

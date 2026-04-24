@@ -12,7 +12,7 @@
 class UseCaseEventReader : public grpc::ClientReadReactor<control_service::SubscribeUseCaseEventsResponse> {
 public:
     UseCaseEventReader(std::shared_ptr<control_service::ControlService::Stub> stub,
-                       std::function<void(const control_service::UseCaseEvent&)> event_callback,
+                       std::function<void(const control_service::SubscribeUseCaseEventsResponse&)> event_callback,
                        std::function<void()> disconnection_callback);
     ~UseCaseEventReader();
     UseCaseEventReader(const UseCaseEventReader&) = delete;
@@ -28,7 +28,7 @@ public:
 
 private:
     std::shared_ptr<control_service::ControlService::Stub> stub;
-    std::function<void(const control_service::UseCaseEvent&)> event_callback;
+    std::function<void(const control_service::SubscribeUseCaseEventsResponse&)> event_callback;
     std::function<void()> disconnection_callback;
 
     grpc::ClientContext context;

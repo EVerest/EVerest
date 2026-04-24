@@ -63,8 +63,24 @@ void LpcUseCaseHandler::set_stub(std::shared_ptr<cs_lpc::ControllableSystemLPCCo
     this->stub = std::move(stub);
 }
 
-void LpcUseCaseHandler::handle_event(const control_service::UseCaseEvent& event) {
+void LpcUseCaseHandler::handle_event(const control_service::SubscribeUseCaseEventsResponse& response) {
+    const std::string& ski = response.remote_ski();
+    const auto& event = response.use_case_event();
     const auto& event_str = event.event();
+
+    // Record the first-seen data-carrying event's SKI as the connected EG. Non-data
+    // events (UseCaseSupportUpdate, …) do not establish the connection on their
+    // own — they are relayed only once an EG has been connected.
+    if (!this->active_ems_ski.has_value() && this->is_data_event(event_str)) {
+        this->active_ems_ski = ski;
+        EVLOG_info << "LPC connected to active EG SKI=" << ski;
+    }
+
+    // Filter events from non-active EGs once a connection is established.
+    if (this->active_ems_ski.has_value() && ski != *this->active_ems_ski) {
+        EVLOG_debug << "Ignoring event '" << event_str << "' from non-connected EG SKI=" << ski;
+        return;
+    }
 
     auto it = this->event_handlers.find(event_str);
     if (it != this->event_handlers.end()) {
@@ -74,6 +90,12 @@ void LpcUseCaseHandler::handle_event(const control_service::UseCaseEvent& event)
     }
 
     this->run_state_machine();
+}
+
+bool LpcUseCaseHandler::is_data_event(const std::string& event_name) const {
+    return event_name == "DataUpdateHeartbeat" || event_name == "DataUpdateLimit" ||
+           event_name == "DataUpdateFailsafeDurationMinimum" ||
+           event_name == "DataUpdateFailsafeConsumptionActivePowerLimit" || event_name == "WriteApprovalRequired";
 }
 
 void LpcUseCaseHandler::handle_data_update_heartbeat() {
@@ -462,6 +484,19 @@ void LpcUseCaseHandler::set_state(State new_state) {
             // the EG must reconnect and explicitly resend a limit; the stale value must not
             // drive transitions in post-Failsafe states (UnlimitedAutonomous, UnlimitedControlled).
             this->current_limit = std::nullopt;
+        }
+
+        // Clear the connected EG on entry to Failsafe or UnlimitedAutonomous:
+        // - Failsafe: we've lost contact with the current EG (heartbeat timeout);
+        //   a different EG must be allowed to take over on recovery.
+        // - UnlimitedAutonomous: reachable from Init via timeout [LPC-906] with an
+        //   EG still nominally connected (heartbeats but no limit arrived). Exit
+        //   per [LPC-918/919/920] needs heartbeat + limit from some EG, so we
+        //   must accept a fresh EG connection here.
+        if ((new_state == State::Failsafe || new_state == State::UnlimitedAutonomous) &&
+            this->active_ems_ski.has_value()) {
+            EVLOG_info << "LPC clearing active EG on entry to state " << state_to_string(new_state);
+            this->active_ems_ski.reset();
         }
     }
 }
