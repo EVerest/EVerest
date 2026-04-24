@@ -612,7 +612,7 @@ powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& treq
 
         return {types::powermeter::TransactionRequestStatus::OK};
     } catch (const std::exception& e) {
-        EVLOG_error << __PRETTY_FUNCTION__ << " Error: " << e.what() << std::endl;
+        EVLOG_error << e.what();
         return {types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, "can't start transaction", {}, {}};
     }
 }
@@ -640,7 +640,7 @@ types::powermeter::TransactionStopResponse powermeterImpl::handle_stop_transacti
             m_pending_closed_transaction = false;
             clear_transaction_states();
         } catch (const std::exception& e) {
-            EVLOG_error << __PRETTY_FUNCTION__ << " Error: " << e.what() << std::endl;
+            EVLOG_error << e.what();
         }
         m_pending_closed_transaction = false;
         return {types::powermeter::TransactionRequestStatus::OK, {}, {}};
@@ -709,7 +709,7 @@ types::powermeter::TransactionStopResponse powermeterImpl::handle_stop_transacti
                     "No open transaction or unknown transaction id"};
         }
     } catch (const std::exception& e) {
-        EVLOG_error << __PRETTY_FUNCTION__ << " Error: " << e.what() << std::endl;
+        EVLOG_error << e.what();
         return {types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {}, "can't stop transaction"};
     }
 }
