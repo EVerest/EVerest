@@ -960,6 +960,11 @@ std::map<pid_t, std::string> Manager::handleStartModules(const RuntimeContext& c
                     std::chrono::duration_cast<std::chrono::milliseconds>(complete_end_time - complete_start_time)
                         .count());
 
+                if (sigint_received_ || isInShutdownFlowState()) {
+                    EVLOG_info << "All modules reported ready while shutdown is already in progress. "
+                                    "Skipping transition to Running.";
+                    return;
+                }
                 transitionTo(ManagerState::Running);
                 status_fifo.update(StatusFifo::ALL_MODULES_STARTED);
                 MqttMessagePayload payload{MqttMessageType::GlobalReady, nlohmann::json(true)};
@@ -1029,8 +1034,7 @@ std::map<pid_t, std::string> Manager::handleStartModules(const RuntimeContext& c
 Manager::LifecycleAdvanceResult Manager::advanceLifecycleStateIfReady(RuntimeContext& ctx,
                                                                       ManagerAdminPanel& admin_panel) {
     const bool in_shutdown_flow = isInShutdownFlowState();
-    const bool crash_in_progress = (shutdown_cause_ == ShutdownCause::Crash) ||
-                                   (state_ == ManagerState::ForceTerminating && unexpected_module_exit_count_ > 0);
+    const bool crash_in_progress = (shutdown_cause_ == ShutdownCause::Crash);
     const bool restart_requested = (shutdown_cause_ == ShutdownCause::Restart);
 
     // Finalize shutdown as soon as all module processes are gone, even if we got here through ECHILD
@@ -1122,6 +1126,7 @@ std::optional<int> Manager::handleSignal(int signo, RuntimeContext& ctx, Manager
         return std::nullopt;
     }
     if (!sigint_received_) {
+        EVLOG_info << "SIGINT/SIGTERM received";
         sigint_received_ = true;
         shutdown_cause_ = ShutdownCause::Normal;
         shutdown_start_time_ = std::chrono::system_clock::now();

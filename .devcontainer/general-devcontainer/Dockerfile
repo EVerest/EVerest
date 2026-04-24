@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y \
     libsystemd-dev \
     libboost-log-dev \
     tmux \
+    psmisc \
     chrpath \
     cpio \
     diffstat \

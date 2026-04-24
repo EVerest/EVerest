@@ -221,13 +221,33 @@ class EverestCore:
         """Stops execution of EVerest by signaling SIGINT
         """
         logging.debug("CONTROLLER stop() function called...")
+        escalation_signal = None
         if self.process:
             # NOTE (aw): we could also call process.kill()
-            self.process.send_signal(SIGINT)
-            self.process.wait()
+            if self.process.poll() is None:
+                self.process.send_signal(SIGINT)
+                try:
+                    self.process.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    logging.warning("EVerest did not stop after SIGINT within timeout, sending SIGTERM")
+                    escalation_signal = "SIGTERM"
+                    self.process.terminate()
+                    try:
+                        self.process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        logging.warning("EVerest did not stop after SIGTERM within timeout, sending SIGKILL")
+                        escalation_signal = "SIGKILL"
+                        self.process.kill()
+                        self.process.wait(timeout=5)
 
         if self.log_reader_thread:
-            self.log_reader_thread.join()
+            self.log_reader_thread.join(timeout=5)
+
+        if escalation_signal is not None:
+            raise RuntimeError(
+                f"EVerest stop() required escalation to {escalation_signal}. "
+                "Tests must shut down cleanly via SIGINT only."
+            )
 
     def _create_testing_user_config(self):
         """Creates a user-config file to include the PyTestControlModule in the current SIL simulation.
