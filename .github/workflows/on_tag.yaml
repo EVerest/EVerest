@@ -1,14 +1,8 @@
 name: Build and Deploy Documentation
 on:
-  tag:
-    - '20[0-9][0-9].[0-9][0-9].[0-9]*'
-  workflow_dispatch:
-    inputs:
-      instance_name:
-        description: 'Override the documentation instance name (optional)'
-        required: false
-        type: string
-        default: ''
+  push:
+    tags:
+      - '20[0-9][0-9].[0-9][0-9].[0-9]*'
 
 jobs:
 
@@ -18,7 +12,6 @@ jobs:
     with:
       runner: 'ubuntu-24.04'
       ref_everest_ci: v1.5.5
-      instance_name_override: ${{ inputs.instance_name }}
 
 
   build-build-kit:
@@ -45,4 +38,6 @@ jobs:
       build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
       build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
       deploy_docs: true
-      instance_name: ${{ needs.setup-env.outputs.instance_name }}
+      instance_name: release_${{ github.ref_name }}
+      is_release: true
+      overwrite_existing_instance: false
