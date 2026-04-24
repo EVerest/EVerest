@@ -75,7 +75,7 @@ in the browser.
 ## How things work
 
 The trailbook is initialized in `${CMAKE_SOURCE_DIR}/docs/CMakeLists.txt`
-with the `add_trailbook_ev()` function call.
+with the `add_trailbook()` function call.
 
 At the same file an edm snapshot yaml file is added to the documentation by
 calling the function `trailbook_ev_create_snapshot()`.

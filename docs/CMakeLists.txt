@@ -18,7 +18,7 @@ find_package(
 )
 
 set(EVEREST_DOCS_REPO_URL "git@github.com:everest/everest.github.io" CACHE STRING "The git URL of the repository where the deployed docs are stored")
-add_trailbook_ev(
+add_trailbook(
     NAME "everest"
     STEM_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/source
     DEPLOYED_DOCS_REPO_URL ${EVEREST_DOCS_REPO_URL}

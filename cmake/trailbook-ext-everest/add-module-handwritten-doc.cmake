@@ -164,7 +164,7 @@ function(trailbook_ev_add_module_handwritten_doc)
         message(
             FATAL_ERROR
             "trailbook_ev_add_module_handwritten_doc: No target named trailbook_${args_TRAILBOOK_NAME} found."
-            " Did you forget to call add_trailbook_ev() first?"
+            " Did you forget to call add_trailbook() first?"
         )
     endif()
 
