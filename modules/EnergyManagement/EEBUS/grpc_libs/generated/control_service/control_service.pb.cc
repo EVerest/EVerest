@@ -37,7 +37,7 @@ const char descriptor_table_protodef_control_5fservice_2fcontrol_5fservice_2epro
     protodesc_cold) = {
     "\n%control_service/control_service.proto\022"
     "\017control_service\032\036control_service/messag"
-    "es.proto2\266\006\n\016ControlService\022O\n\014StartServ"
+    "es.proto2\251\007\n\016ControlService\022O\n\014StartServ"
     "ice\022\035.control_service.EmptyRequest\032\036.con"
     "trol_service.EmptyResponse\"\000\022N\n\013StopServ"
     "ice\022\035.control_service.EmptyRequest\032\036.con"
@@ -57,9 +57,12 @@ const char descriptor_table_protodef_control_5fservice_2fcontrol_5fservice_2epro
     "rvice.AddUseCaseResponse\"\000\022}\n\026SubscribeU"
     "seCaseEvents\022..control_service.Subscribe"
     "UseCaseEventsRequest\032/.control_service.S"
-    "ubscribeUseCaseEventsResponse\"\0000\001B=Z;git"
-    "hub.com/enbility/eebus-grpc/rpc_services"
-    "/control_serviceb\006proto3"
+    "ubscribeUseCaseEventsResponse\"\0000\001\022q\n\030Sub"
+    "scribeDiscoveryEvents\0220.control_service."
+    "SubscribeDiscoveryEventsRequest\032\037.contro"
+    "l_service.DiscoveryEvent\"\0000\001B=Z;github.c"
+    "om/enbility/eebus-grpc/rpc_services/cont"
+    "rol_serviceb\006proto3"
 };
 static const ::_pbi::DescriptorTable* const descriptor_table_control_5fservice_2fcontrol_5fservice_2eproto_deps[1] =
     {
@@ -69,7 +72,7 @@ static ::absl::once_flag descriptor_table_control_5fservice_2fcontrol_5fservice_
 PROTOBUF_CONSTINIT const ::_pbi::DescriptorTable descriptor_table_control_5fservice_2fcontrol_5fservice_2eproto = {
     false,
     false,
-    984,
+    1099,
     descriptor_table_protodef_control_5fservice_2fcontrol_5fservice_2eproto,
     "control_service/control_service.proto",
     &descriptor_table_control_5fservice_2fcontrol_5fservice_2eproto_once,

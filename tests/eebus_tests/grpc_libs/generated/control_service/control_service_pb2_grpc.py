@@ -5,7 +5,7 @@ import warnings
 
 from control_service import messages_pb2 as control__service_dot_messages__pb2
 
-GRPC_GENERATED_VERSION = '1.76.0'
+GRPC_GENERATED_VERSION = '1.78.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -79,6 +79,11 @@ class ControlServiceStub(object):
                 request_serializer=control__service_dot_messages__pb2.SubscribeUseCaseEventsRequest.SerializeToString,
                 response_deserializer=control__service_dot_messages__pb2.SubscribeUseCaseEventsResponse.FromString,
                 _registered_method=True)
+        self.SubscribeDiscoveryEvents = channel.unary_stream(
+                '/control_service.ControlService/SubscribeDiscoveryEvents',
+                request_serializer=control__service_dot_messages__pb2.SubscribeDiscoveryEventsRequest.SerializeToString,
+                response_deserializer=control__service_dot_messages__pb2.DiscoveryEvent.FromString,
+                _registered_method=True)
 
 
 class ControlServiceServicer(object):
@@ -148,6 +153,19 @@ class ControlServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SubscribeDiscoveryEvents(self, request, context):
+        """Subscribes to discovery events (DISCOVERED / REMOVED) for remote EEBUS
+        services seen on the local network via mDNS / SHIP.
+
+        Delivery is best-effort: each subscriber has a finite buffer and events
+        may be dropped if the client is slow to consume. On subscribe, the
+        current set of visible services is replayed as DISCOVERED events before
+        any live events are forwarded (atomic — no duplicate replay events).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ControlServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -195,6 +213,11 @@ def add_ControlServiceServicer_to_server(servicer, server):
                     servicer.SubscribeUseCaseEvents,
                     request_deserializer=control__service_dot_messages__pb2.SubscribeUseCaseEventsRequest.FromString,
                     response_serializer=control__service_dot_messages__pb2.SubscribeUseCaseEventsResponse.SerializeToString,
+            ),
+            'SubscribeDiscoveryEvents': grpc.unary_stream_rpc_method_handler(
+                    servicer.SubscribeDiscoveryEvents,
+                    request_deserializer=control__service_dot_messages__pb2.SubscribeDiscoveryEventsRequest.FromString,
+                    response_serializer=control__service_dot_messages__pb2.DiscoveryEvent.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -440,6 +463,33 @@ class ControlService(object):
             '/control_service.ControlService/SubscribeUseCaseEvents',
             control__service_dot_messages__pb2.SubscribeUseCaseEventsRequest.SerializeToString,
             control__service_dot_messages__pb2.SubscribeUseCaseEventsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SubscribeDiscoveryEvents(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/control_service.ControlService/SubscribeDiscoveryEvents',
+            control__service_dot_messages__pb2.SubscribeDiscoveryEventsRequest.SerializeToString,
+            control__service_dot_messages__pb2.DiscoveryEvent.FromString,
             options,
             channel_credentials,
             insecure,

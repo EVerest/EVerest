@@ -115,6 +115,22 @@ class ControlService final {
     std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::control_service::SubscribeUseCaseEventsResponse>> PrepareAsyncSubscribeUseCaseEvents(::grpc::ClientContext* context, const ::control_service::SubscribeUseCaseEventsRequest& request, ::grpc::CompletionQueue* cq) {
       return std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::control_service::SubscribeUseCaseEventsResponse>>(PrepareAsyncSubscribeUseCaseEventsRaw(context, request, cq));
     }
+    // Subscribes to discovery events (DISCOVERED / REMOVED) for remote EEBUS
+    // services seen on the local network via mDNS / SHIP.
+    //
+    // Delivery is best-effort: each subscriber has a finite buffer and events
+    // may be dropped if the client is slow to consume. On subscribe, the
+    // current set of visible services is replayed as DISCOVERED events before
+    // any live events are forwarded (atomic — no duplicate replay events).
+    std::unique_ptr< ::grpc::ClientReaderInterface< ::control_service::DiscoveryEvent>> SubscribeDiscoveryEvents(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest& request) {
+      return std::unique_ptr< ::grpc::ClientReaderInterface< ::control_service::DiscoveryEvent>>(SubscribeDiscoveryEventsRaw(context, request));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::control_service::DiscoveryEvent>> AsyncSubscribeDiscoveryEvents(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest& request, ::grpc::CompletionQueue* cq, void* tag) {
+      return std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::control_service::DiscoveryEvent>>(AsyncSubscribeDiscoveryEventsRaw(context, request, cq, tag));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::control_service::DiscoveryEvent>> PrepareAsyncSubscribeDiscoveryEvents(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncReaderInterface< ::control_service::DiscoveryEvent>>(PrepareAsyncSubscribeDiscoveryEventsRaw(context, request, cq));
+    }
     class async_interface {
      public:
       virtual ~async_interface() {}
@@ -145,6 +161,14 @@ class ControlService final {
       virtual void AddUseCase(::grpc::ClientContext* context, const ::control_service::AddUseCaseRequest* request, ::control_service::AddUseCaseResponse* response, ::grpc::ClientUnaryReactor* reactor) = 0;
       // Subscribes to usecase events
       virtual void SubscribeUseCaseEvents(::grpc::ClientContext* context, const ::control_service::SubscribeUseCaseEventsRequest* request, ::grpc::ClientReadReactor< ::control_service::SubscribeUseCaseEventsResponse>* reactor) = 0;
+      // Subscribes to discovery events (DISCOVERED / REMOVED) for remote EEBUS
+      // services seen on the local network via mDNS / SHIP.
+      //
+      // Delivery is best-effort: each subscriber has a finite buffer and events
+      // may be dropped if the client is slow to consume. On subscribe, the
+      // current set of visible services is replayed as DISCOVERED events before
+      // any live events are forwarded (atomic — no duplicate replay events).
+      virtual void SubscribeDiscoveryEvents(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest* request, ::grpc::ClientReadReactor< ::control_service::DiscoveryEvent>* reactor) = 0;
     };
     typedef class async_interface experimental_async_interface;
     virtual class async_interface* async() { return nullptr; }
@@ -169,6 +193,9 @@ class ControlService final {
     virtual ::grpc::ClientReaderInterface< ::control_service::SubscribeUseCaseEventsResponse>* SubscribeUseCaseEventsRaw(::grpc::ClientContext* context, const ::control_service::SubscribeUseCaseEventsRequest& request) = 0;
     virtual ::grpc::ClientAsyncReaderInterface< ::control_service::SubscribeUseCaseEventsResponse>* AsyncSubscribeUseCaseEventsRaw(::grpc::ClientContext* context, const ::control_service::SubscribeUseCaseEventsRequest& request, ::grpc::CompletionQueue* cq, void* tag) = 0;
     virtual ::grpc::ClientAsyncReaderInterface< ::control_service::SubscribeUseCaseEventsResponse>* PrepareAsyncSubscribeUseCaseEventsRaw(::grpc::ClientContext* context, const ::control_service::SubscribeUseCaseEventsRequest& request, ::grpc::CompletionQueue* cq) = 0;
+    virtual ::grpc::ClientReaderInterface< ::control_service::DiscoveryEvent>* SubscribeDiscoveryEventsRaw(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest& request) = 0;
+    virtual ::grpc::ClientAsyncReaderInterface< ::control_service::DiscoveryEvent>* AsyncSubscribeDiscoveryEventsRaw(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest& request, ::grpc::CompletionQueue* cq, void* tag) = 0;
+    virtual ::grpc::ClientAsyncReaderInterface< ::control_service::DiscoveryEvent>* PrepareAsyncSubscribeDiscoveryEventsRaw(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest& request, ::grpc::CompletionQueue* cq) = 0;
   };
   class Stub final : public StubInterface {
    public:
@@ -238,6 +265,15 @@ class ControlService final {
     std::unique_ptr< ::grpc::ClientAsyncReader< ::control_service::SubscribeUseCaseEventsResponse>> PrepareAsyncSubscribeUseCaseEvents(::grpc::ClientContext* context, const ::control_service::SubscribeUseCaseEventsRequest& request, ::grpc::CompletionQueue* cq) {
       return std::unique_ptr< ::grpc::ClientAsyncReader< ::control_service::SubscribeUseCaseEventsResponse>>(PrepareAsyncSubscribeUseCaseEventsRaw(context, request, cq));
     }
+    std::unique_ptr< ::grpc::ClientReader< ::control_service::DiscoveryEvent>> SubscribeDiscoveryEvents(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest& request) {
+      return std::unique_ptr< ::grpc::ClientReader< ::control_service::DiscoveryEvent>>(SubscribeDiscoveryEventsRaw(context, request));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncReader< ::control_service::DiscoveryEvent>> AsyncSubscribeDiscoveryEvents(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest& request, ::grpc::CompletionQueue* cq, void* tag) {
+      return std::unique_ptr< ::grpc::ClientAsyncReader< ::control_service::DiscoveryEvent>>(AsyncSubscribeDiscoveryEventsRaw(context, request, cq, tag));
+    }
+    std::unique_ptr< ::grpc::ClientAsyncReader< ::control_service::DiscoveryEvent>> PrepareAsyncSubscribeDiscoveryEvents(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest& request, ::grpc::CompletionQueue* cq) {
+      return std::unique_ptr< ::grpc::ClientAsyncReader< ::control_service::DiscoveryEvent>>(PrepareAsyncSubscribeDiscoveryEventsRaw(context, request, cq));
+    }
     class async final :
       public StubInterface::async_interface {
      public:
@@ -258,6 +294,7 @@ class ControlService final {
       void AddUseCase(::grpc::ClientContext* context, const ::control_service::AddUseCaseRequest* request, ::control_service::AddUseCaseResponse* response, std::function<void(::grpc::Status)>) override;
       void AddUseCase(::grpc::ClientContext* context, const ::control_service::AddUseCaseRequest* request, ::control_service::AddUseCaseResponse* response, ::grpc::ClientUnaryReactor* reactor) override;
       void SubscribeUseCaseEvents(::grpc::ClientContext* context, const ::control_service::SubscribeUseCaseEventsRequest* request, ::grpc::ClientReadReactor< ::control_service::SubscribeUseCaseEventsResponse>* reactor) override;
+      void SubscribeDiscoveryEvents(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest* request, ::grpc::ClientReadReactor< ::control_service::DiscoveryEvent>* reactor) override;
      private:
       friend class Stub;
       explicit async(Stub* stub): stub_(stub) { }
@@ -288,6 +325,9 @@ class ControlService final {
     ::grpc::ClientReader< ::control_service::SubscribeUseCaseEventsResponse>* SubscribeUseCaseEventsRaw(::grpc::ClientContext* context, const ::control_service::SubscribeUseCaseEventsRequest& request) override;
     ::grpc::ClientAsyncReader< ::control_service::SubscribeUseCaseEventsResponse>* AsyncSubscribeUseCaseEventsRaw(::grpc::ClientContext* context, const ::control_service::SubscribeUseCaseEventsRequest& request, ::grpc::CompletionQueue* cq, void* tag) override;
     ::grpc::ClientAsyncReader< ::control_service::SubscribeUseCaseEventsResponse>* PrepareAsyncSubscribeUseCaseEventsRaw(::grpc::ClientContext* context, const ::control_service::SubscribeUseCaseEventsRequest& request, ::grpc::CompletionQueue* cq) override;
+    ::grpc::ClientReader< ::control_service::DiscoveryEvent>* SubscribeDiscoveryEventsRaw(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest& request) override;
+    ::grpc::ClientAsyncReader< ::control_service::DiscoveryEvent>* AsyncSubscribeDiscoveryEventsRaw(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest& request, ::grpc::CompletionQueue* cq, void* tag) override;
+    ::grpc::ClientAsyncReader< ::control_service::DiscoveryEvent>* PrepareAsyncSubscribeDiscoveryEventsRaw(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest& request, ::grpc::CompletionQueue* cq) override;
     const ::grpc::internal::RpcMethod rpcmethod_StartService_;
     const ::grpc::internal::RpcMethod rpcmethod_StopService_;
     const ::grpc::internal::RpcMethod rpcmethod_SetConfig_;
@@ -297,6 +337,7 @@ class ControlService final {
     const ::grpc::internal::RpcMethod rpcmethod_RegisterRemoteSki_;
     const ::grpc::internal::RpcMethod rpcmethod_AddUseCase_;
     const ::grpc::internal::RpcMethod rpcmethod_SubscribeUseCaseEvents_;
+    const ::grpc::internal::RpcMethod rpcmethod_SubscribeDiscoveryEvents_;
   };
   static std::unique_ptr<Stub> NewStub(const std::shared_ptr< ::grpc::ChannelInterface>& channel, const ::grpc::StubOptions& options = ::grpc::StubOptions());
 
@@ -323,6 +364,14 @@ class ControlService final {
     virtual ::grpc::Status AddUseCase(::grpc::ServerContext* context, const ::control_service::AddUseCaseRequest* request, ::control_service::AddUseCaseResponse* response);
     // Subscribes to usecase events
     virtual ::grpc::Status SubscribeUseCaseEvents(::grpc::ServerContext* context, const ::control_service::SubscribeUseCaseEventsRequest* request, ::grpc::ServerWriter< ::control_service::SubscribeUseCaseEventsResponse>* writer);
+    // Subscribes to discovery events (DISCOVERED / REMOVED) for remote EEBUS
+    // services seen on the local network via mDNS / SHIP.
+    //
+    // Delivery is best-effort: each subscriber has a finite buffer and events
+    // may be dropped if the client is slow to consume. On subscribe, the
+    // current set of visible services is replayed as DISCOVERED events before
+    // any live events are forwarded (atomic — no duplicate replay events).
+    virtual ::grpc::Status SubscribeDiscoveryEvents(::grpc::ServerContext* context, const ::control_service::SubscribeDiscoveryEventsRequest* request, ::grpc::ServerWriter< ::control_service::DiscoveryEvent>* writer);
   };
   template <class BaseClass>
   class WithAsyncMethod_StartService : public BaseClass {
@@ -504,7 +553,27 @@ class ControlService final {
       ::grpc::Service::RequestAsyncServerStreaming(8, context, request, writer, new_call_cq, notification_cq, tag);
     }
   };
-  typedef WithAsyncMethod_StartService<WithAsyncMethod_StopService<WithAsyncMethod_SetConfig<WithAsyncMethod_StartSetup<WithAsyncMethod_AddEntity<WithAsyncMethod_RemoveEntity<WithAsyncMethod_RegisterRemoteSki<WithAsyncMethod_AddUseCase<WithAsyncMethod_SubscribeUseCaseEvents<Service > > > > > > > > > AsyncService;
+  template <class BaseClass>
+  class WithAsyncMethod_SubscribeDiscoveryEvents : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithAsyncMethod_SubscribeDiscoveryEvents() {
+      ::grpc::Service::MarkMethodAsync(9);
+    }
+    ~WithAsyncMethod_SubscribeDiscoveryEvents() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status SubscribeDiscoveryEvents(::grpc::ServerContext* /*context*/, const ::control_service::SubscribeDiscoveryEventsRequest* /*request*/, ::grpc::ServerWriter< ::control_service::DiscoveryEvent>* /*writer*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    void RequestSubscribeDiscoveryEvents(::grpc::ServerContext* context, ::control_service::SubscribeDiscoveryEventsRequest* request, ::grpc::ServerAsyncWriter< ::control_service::DiscoveryEvent>* writer, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+      ::grpc::Service::RequestAsyncServerStreaming(9, context, request, writer, new_call_cq, notification_cq, tag);
+    }
+  };
+  typedef WithAsyncMethod_StartService<WithAsyncMethod_StopService<WithAsyncMethod_SetConfig<WithAsyncMethod_StartSetup<WithAsyncMethod_AddEntity<WithAsyncMethod_RemoveEntity<WithAsyncMethod_RegisterRemoteSki<WithAsyncMethod_AddUseCase<WithAsyncMethod_SubscribeUseCaseEvents<WithAsyncMethod_SubscribeDiscoveryEvents<Service > > > > > > > > > > AsyncService;
   template <class BaseClass>
   class WithCallbackMethod_StartService : public BaseClass {
    private:
@@ -743,7 +812,29 @@ class ControlService final {
     virtual ::grpc::ServerWriteReactor< ::control_service::SubscribeUseCaseEventsResponse>* SubscribeUseCaseEvents(
       ::grpc::CallbackServerContext* /*context*/, const ::control_service::SubscribeUseCaseEventsRequest* /*request*/)  { return nullptr; }
   };
-  typedef WithCallbackMethod_StartService<WithCallbackMethod_StopService<WithCallbackMethod_SetConfig<WithCallbackMethod_StartSetup<WithCallbackMethod_AddEntity<WithCallbackMethod_RemoveEntity<WithCallbackMethod_RegisterRemoteSki<WithCallbackMethod_AddUseCase<WithCallbackMethod_SubscribeUseCaseEvents<Service > > > > > > > > > CallbackService;
+  template <class BaseClass>
+  class WithCallbackMethod_SubscribeDiscoveryEvents : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithCallbackMethod_SubscribeDiscoveryEvents() {
+      ::grpc::Service::MarkMethodCallback(9,
+          new ::grpc::internal::CallbackServerStreamingHandler< ::control_service::SubscribeDiscoveryEventsRequest, ::control_service::DiscoveryEvent>(
+            [this](
+                   ::grpc::CallbackServerContext* context, const ::control_service::SubscribeDiscoveryEventsRequest* request) { return this->SubscribeDiscoveryEvents(context, request); }));
+    }
+    ~WithCallbackMethod_SubscribeDiscoveryEvents() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status SubscribeDiscoveryEvents(::grpc::ServerContext* /*context*/, const ::control_service::SubscribeDiscoveryEventsRequest* /*request*/, ::grpc::ServerWriter< ::control_service::DiscoveryEvent>* /*writer*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    virtual ::grpc::ServerWriteReactor< ::control_service::DiscoveryEvent>* SubscribeDiscoveryEvents(
+      ::grpc::CallbackServerContext* /*context*/, const ::control_service::SubscribeDiscoveryEventsRequest* /*request*/)  { return nullptr; }
+  };
+  typedef WithCallbackMethod_StartService<WithCallbackMethod_StopService<WithCallbackMethod_SetConfig<WithCallbackMethod_StartSetup<WithCallbackMethod_AddEntity<WithCallbackMethod_RemoveEntity<WithCallbackMethod_RegisterRemoteSki<WithCallbackMethod_AddUseCase<WithCallbackMethod_SubscribeUseCaseEvents<WithCallbackMethod_SubscribeDiscoveryEvents<Service > > > > > > > > > > CallbackService;
   typedef CallbackService ExperimentalCallbackService;
   template <class BaseClass>
   class WithGenericMethod_StartService : public BaseClass {
@@ -894,6 +985,23 @@ class ControlService final {
     }
     // disable synchronous version of this method
     ::grpc::Status SubscribeUseCaseEvents(::grpc::ServerContext* /*context*/, const ::control_service::SubscribeUseCaseEventsRequest* /*request*/, ::grpc::ServerWriter< ::control_service::SubscribeUseCaseEventsResponse>* /*writer*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+  };
+  template <class BaseClass>
+  class WithGenericMethod_SubscribeDiscoveryEvents : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithGenericMethod_SubscribeDiscoveryEvents() {
+      ::grpc::Service::MarkMethodGeneric(9);
+    }
+    ~WithGenericMethod_SubscribeDiscoveryEvents() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status SubscribeDiscoveryEvents(::grpc::ServerContext* /*context*/, const ::control_service::SubscribeDiscoveryEventsRequest* /*request*/, ::grpc::ServerWriter< ::control_service::DiscoveryEvent>* /*writer*/) override {
       abort();
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
@@ -1076,6 +1184,26 @@ class ControlService final {
     }
     void RequestSubscribeUseCaseEvents(::grpc::ServerContext* context, ::grpc::ByteBuffer* request, ::grpc::ServerAsyncWriter< ::grpc::ByteBuffer>* writer, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
       ::grpc::Service::RequestAsyncServerStreaming(8, context, request, writer, new_call_cq, notification_cq, tag);
+    }
+  };
+  template <class BaseClass>
+  class WithRawMethod_SubscribeDiscoveryEvents : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithRawMethod_SubscribeDiscoveryEvents() {
+      ::grpc::Service::MarkMethodRaw(9);
+    }
+    ~WithRawMethod_SubscribeDiscoveryEvents() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status SubscribeDiscoveryEvents(::grpc::ServerContext* /*context*/, const ::control_service::SubscribeDiscoveryEventsRequest* /*request*/, ::grpc::ServerWriter< ::control_service::DiscoveryEvent>* /*writer*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    void RequestSubscribeDiscoveryEvents(::grpc::ServerContext* context, ::grpc::ByteBuffer* request, ::grpc::ServerAsyncWriter< ::grpc::ByteBuffer>* writer, ::grpc::CompletionQueue* new_call_cq, ::grpc::ServerCompletionQueue* notification_cq, void *tag) {
+      ::grpc::Service::RequestAsyncServerStreaming(9, context, request, writer, new_call_cq, notification_cq, tag);
     }
   };
   template <class BaseClass>
@@ -1274,6 +1402,28 @@ class ControlService final {
       return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
     }
     virtual ::grpc::ServerWriteReactor< ::grpc::ByteBuffer>* SubscribeUseCaseEvents(
+      ::grpc::CallbackServerContext* /*context*/, const ::grpc::ByteBuffer* /*request*/)  { return nullptr; }
+  };
+  template <class BaseClass>
+  class WithRawCallbackMethod_SubscribeDiscoveryEvents : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithRawCallbackMethod_SubscribeDiscoveryEvents() {
+      ::grpc::Service::MarkMethodRawCallback(9,
+          new ::grpc::internal::CallbackServerStreamingHandler< ::grpc::ByteBuffer, ::grpc::ByteBuffer>(
+            [this](
+                   ::grpc::CallbackServerContext* context, const::grpc::ByteBuffer* request) { return this->SubscribeDiscoveryEvents(context, request); }));
+    }
+    ~WithRawCallbackMethod_SubscribeDiscoveryEvents() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable synchronous version of this method
+    ::grpc::Status SubscribeDiscoveryEvents(::grpc::ServerContext* /*context*/, const ::control_service::SubscribeDiscoveryEventsRequest* /*request*/, ::grpc::ServerWriter< ::control_service::DiscoveryEvent>* /*writer*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    virtual ::grpc::ServerWriteReactor< ::grpc::ByteBuffer>* SubscribeDiscoveryEvents(
       ::grpc::CallbackServerContext* /*context*/, const ::grpc::ByteBuffer* /*request*/)  { return nullptr; }
   };
   template <class BaseClass>
@@ -1520,8 +1670,35 @@ class ControlService final {
     // replace default version of method with split streamed
     virtual ::grpc::Status StreamedSubscribeUseCaseEvents(::grpc::ServerContext* context, ::grpc::ServerSplitStreamer< ::control_service::SubscribeUseCaseEventsRequest,::control_service::SubscribeUseCaseEventsResponse>* server_split_streamer) = 0;
   };
-  typedef WithSplitStreamingMethod_SubscribeUseCaseEvents<Service > SplitStreamedService;
-  typedef WithStreamedUnaryMethod_StartService<WithStreamedUnaryMethod_StopService<WithStreamedUnaryMethod_SetConfig<WithStreamedUnaryMethod_StartSetup<WithStreamedUnaryMethod_AddEntity<WithStreamedUnaryMethod_RemoveEntity<WithStreamedUnaryMethod_RegisterRemoteSki<WithStreamedUnaryMethod_AddUseCase<WithSplitStreamingMethod_SubscribeUseCaseEvents<Service > > > > > > > > > StreamedService;
+  template <class BaseClass>
+  class WithSplitStreamingMethod_SubscribeDiscoveryEvents : public BaseClass {
+   private:
+    void BaseClassMustBeDerivedFromService(const Service* /*service*/) {}
+   public:
+    WithSplitStreamingMethod_SubscribeDiscoveryEvents() {
+      ::grpc::Service::MarkMethodStreamed(9,
+        new ::grpc::internal::SplitServerStreamingHandler<
+          ::control_service::SubscribeDiscoveryEventsRequest, ::control_service::DiscoveryEvent>(
+            [this](::grpc::ServerContext* context,
+                   ::grpc::ServerSplitStreamer<
+                     ::control_service::SubscribeDiscoveryEventsRequest, ::control_service::DiscoveryEvent>* streamer) {
+                       return this->StreamedSubscribeDiscoveryEvents(context,
+                         streamer);
+                  }));
+    }
+    ~WithSplitStreamingMethod_SubscribeDiscoveryEvents() override {
+      BaseClassMustBeDerivedFromService(this);
+    }
+    // disable regular version of this method
+    ::grpc::Status SubscribeDiscoveryEvents(::grpc::ServerContext* /*context*/, const ::control_service::SubscribeDiscoveryEventsRequest* /*request*/, ::grpc::ServerWriter< ::control_service::DiscoveryEvent>* /*writer*/) override {
+      abort();
+      return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+    }
+    // replace default version of method with split streamed
+    virtual ::grpc::Status StreamedSubscribeDiscoveryEvents(::grpc::ServerContext* context, ::grpc::ServerSplitStreamer< ::control_service::SubscribeDiscoveryEventsRequest,::control_service::DiscoveryEvent>* server_split_streamer) = 0;
+  };
+  typedef WithSplitStreamingMethod_SubscribeUseCaseEvents<WithSplitStreamingMethod_SubscribeDiscoveryEvents<Service > > SplitStreamedService;
+  typedef WithStreamedUnaryMethod_StartService<WithStreamedUnaryMethod_StopService<WithStreamedUnaryMethod_SetConfig<WithStreamedUnaryMethod_StartSetup<WithStreamedUnaryMethod_AddEntity<WithStreamedUnaryMethod_RemoveEntity<WithStreamedUnaryMethod_RegisterRemoteSki<WithStreamedUnaryMethod_AddUseCase<WithSplitStreamingMethod_SubscribeUseCaseEvents<WithSplitStreamingMethod_SubscribeDiscoveryEvents<Service > > > > > > > > > > StreamedService;
 };
 
 }  // namespace control_service

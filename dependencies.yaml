@@ -125,8 +125,8 @@ grpc:
     - gRPC_BUILD_GRPC_RUBY_PLUGIN OFF
   cmake_condition: "EVEREST_DEPENDENCY_ENABLED_GRPC AND GRPC_EDM"
 eebus-grpc:
-  git: https://github.com/enbility/eebus-grpc.git
-  git_tag: v0.1.0
+  git: https://github.com/mlitre/eebus-grpc.git
+  git_tag: 1ea381f74ae889d16a24a7d608ad20716c1347a3
   cmake_condition: "EVEREST_DEPENDENCY_ENABLED_EEBUS_GRPC"
 grpc-extended-cpp-plugin:
   git: https://github.com/EVerest/grpc-extended-cpp-plugin.git

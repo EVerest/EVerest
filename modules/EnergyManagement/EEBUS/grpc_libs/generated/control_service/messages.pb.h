@@ -29,6 +29,7 @@
 #include "google/protobuf/message_lite.h"
 #include "google/protobuf/repeated_field.h"  // IWYU pragma: export
 #include "google/protobuf/extension_set.h"  // IWYU pragma: export
+#include "google/protobuf/generated_enum_reflection.h"
 #include "google/protobuf/unknown_field_set.h"
 #include "control_service/types.pb.h"
 #include "common_types/types.pb.h"
@@ -64,6 +65,9 @@ extern AddUseCaseRequestDefaultTypeInternal _AddUseCaseRequest_default_instance_
 class AddUseCaseResponse;
 struct AddUseCaseResponseDefaultTypeInternal;
 extern AddUseCaseResponseDefaultTypeInternal _AddUseCaseResponse_default_instance_;
+class DiscoveryEvent;
+struct DiscoveryEventDefaultTypeInternal;
+extern DiscoveryEventDefaultTypeInternal _DiscoveryEvent_default_instance_;
 class EmptyRequest;
 struct EmptyRequestDefaultTypeInternal;
 extern EmptyRequestDefaultTypeInternal _EmptyRequest_default_instance_;
@@ -79,6 +83,9 @@ extern RemoveEntityRequestDefaultTypeInternal _RemoveEntityRequest_default_insta
 class SetConfigRequest;
 struct SetConfigRequestDefaultTypeInternal;
 extern SetConfigRequestDefaultTypeInternal _SetConfigRequest_default_instance_;
+class SubscribeDiscoveryEventsRequest;
+struct SubscribeDiscoveryEventsRequestDefaultTypeInternal;
+extern SubscribeDiscoveryEventsRequestDefaultTypeInternal _SubscribeDiscoveryEventsRequest_default_instance_;
 class SubscribeUseCaseEventsRequest;
 struct SubscribeUseCaseEventsRequestDefaultTypeInternal;
 extern SubscribeUseCaseEventsRequestDefaultTypeInternal _SubscribeUseCaseEventsRequest_default_instance_;
@@ -92,10 +99,190 @@ namespace protobuf {
 }  // namespace google
 
 namespace control_service {
+enum DiscoveryEvent_Type : int {
+  DiscoveryEvent_Type_UNKNOWN = 0,
+  DiscoveryEvent_Type_DISCOVERED = 1,
+  DiscoveryEvent_Type_REMOVED = 2,
+  DiscoveryEvent_Type_DiscoveryEvent_Type_INT_MIN_SENTINEL_DO_NOT_USE_ =
+      std::numeric_limits<::int32_t>::min(),
+  DiscoveryEvent_Type_DiscoveryEvent_Type_INT_MAX_SENTINEL_DO_NOT_USE_ =
+      std::numeric_limits<::int32_t>::max(),
+};
+
+bool DiscoveryEvent_Type_IsValid(int value);
+extern const uint32_t DiscoveryEvent_Type_internal_data_[];
+constexpr DiscoveryEvent_Type DiscoveryEvent_Type_Type_MIN = static_cast<DiscoveryEvent_Type>(0);
+constexpr DiscoveryEvent_Type DiscoveryEvent_Type_Type_MAX = static_cast<DiscoveryEvent_Type>(2);
+constexpr int DiscoveryEvent_Type_Type_ARRAYSIZE = 2 + 1;
+const ::google::protobuf::EnumDescriptor*
+DiscoveryEvent_Type_descriptor();
+template <typename T>
+const std::string& DiscoveryEvent_Type_Name(T value) {
+  static_assert(std::is_same<T, DiscoveryEvent_Type>::value ||
+                    std::is_integral<T>::value,
+                "Incorrect type passed to Type_Name().");
+  return DiscoveryEvent_Type_Name(static_cast<DiscoveryEvent_Type>(value));
+}
+template <>
+inline const std::string& DiscoveryEvent_Type_Name(DiscoveryEvent_Type value) {
+  return ::google::protobuf::internal::NameOfDenseEnum<DiscoveryEvent_Type_descriptor,
+                                                 0, 2>(
+      static_cast<int>(value));
+}
+inline bool DiscoveryEvent_Type_Parse(absl::string_view name, DiscoveryEvent_Type* value) {
+  return ::google::protobuf::internal::ParseNamedEnum<DiscoveryEvent_Type>(
+      DiscoveryEvent_Type_descriptor(), name, value);
+}
 
 // ===================================================================
 
 
+// -------------------------------------------------------------------
+
+class SubscribeDiscoveryEventsRequest final
+    : public ::google::protobuf::internal::ZeroFieldsBase
+/* @@protoc_insertion_point(class_definition:control_service.SubscribeDiscoveryEventsRequest) */ {
+ public:
+  inline SubscribeDiscoveryEventsRequest() : SubscribeDiscoveryEventsRequest(nullptr) {}
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  void operator delete(SubscribeDiscoveryEventsRequest* msg, std::destroying_delete_t) {
+    SharedDtor(*msg);
+    ::google::protobuf::internal::SizedDelete(msg, sizeof(SubscribeDiscoveryEventsRequest));
+  }
+#endif
+
+  template <typename = void>
+  explicit PROTOBUF_CONSTEXPR SubscribeDiscoveryEventsRequest(
+      ::google::protobuf::internal::ConstantInitialized);
+
+  inline SubscribeDiscoveryEventsRequest(const SubscribeDiscoveryEventsRequest& from) : SubscribeDiscoveryEventsRequest(nullptr, from) {}
+  inline SubscribeDiscoveryEventsRequest(SubscribeDiscoveryEventsRequest&& from) noexcept
+      : SubscribeDiscoveryEventsRequest(nullptr, std::move(from)) {}
+  inline SubscribeDiscoveryEventsRequest& operator=(const SubscribeDiscoveryEventsRequest& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline SubscribeDiscoveryEventsRequest& operator=(SubscribeDiscoveryEventsRequest&& from) noexcept {
+    if (this == &from) return *this;
+    if (::google::protobuf::internal::CanMoveWithInternalSwap(GetArena(), from.GetArena())) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  inline const ::google::protobuf::UnknownFieldSet& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance);
+  }
+  inline ::google::protobuf::UnknownFieldSet* mutable_unknown_fields()
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<::google::protobuf::UnknownFieldSet>();
+  }
+
+  static const ::google::protobuf::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::google::protobuf::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::google::protobuf::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const SubscribeDiscoveryEventsRequest& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const SubscribeDiscoveryEventsRequest* internal_default_instance() {
+    return reinterpret_cast<const SubscribeDiscoveryEventsRequest*>(
+        &_SubscribeDiscoveryEventsRequest_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages = 10;
+  friend void swap(SubscribeDiscoveryEventsRequest& a, SubscribeDiscoveryEventsRequest& b) { a.Swap(&b); }
+  inline void Swap(SubscribeDiscoveryEventsRequest* other) {
+    if (other == this) return;
+    if (::google::protobuf::internal::CanUseInternalSwap(GetArena(), other->GetArena())) {
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(SubscribeDiscoveryEventsRequest* other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  SubscribeDiscoveryEventsRequest* New(::google::protobuf::Arena* arena = nullptr) const {
+    return ::google::protobuf::internal::ZeroFieldsBase::DefaultConstruct<SubscribeDiscoveryEventsRequest>(arena);
+  }
+  using ::google::protobuf::internal::ZeroFieldsBase::CopyFrom;
+  inline void CopyFrom(const SubscribeDiscoveryEventsRequest& from) {
+    ::google::protobuf::internal::ZeroFieldsBase::CopyImpl(*this, from);
+  }
+  using ::google::protobuf::internal::ZeroFieldsBase::MergeFrom;
+  void MergeFrom(const SubscribeDiscoveryEventsRequest& from) {
+    ::google::protobuf::internal::ZeroFieldsBase::MergeImpl(*this, from);
+  }
+
+  public:
+  bool IsInitialized() const {
+    return true;
+  }
+ private:
+  template <typename T>
+  friend ::absl::string_view(
+      ::google::protobuf::internal::GetAnyMessageName)();
+  static ::absl::string_view FullMessageName() { return "control_service.SubscribeDiscoveryEventsRequest"; }
+
+ protected:
+  explicit SubscribeDiscoveryEventsRequest(::google::protobuf::Arena* arena);
+  SubscribeDiscoveryEventsRequest(::google::protobuf::Arena* arena, const SubscribeDiscoveryEventsRequest& from);
+  SubscribeDiscoveryEventsRequest(::google::protobuf::Arena* arena, SubscribeDiscoveryEventsRequest&& from) noexcept
+      : SubscribeDiscoveryEventsRequest(arena) {
+    *this = ::std::move(from);
+  }
+  const ::google::protobuf::internal::ClassData* GetClassData() const PROTOBUF_FINAL;
+  static void* PlacementNew_(const void*, void* mem,
+                             ::google::protobuf::Arena* arena);
+  static constexpr auto InternalNewImpl_();
+  static const ::google::protobuf::internal::ClassDataFull _class_data_;
+
+ public:
+  ::google::protobuf::Metadata GetMetadata() const;
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+  // @@protoc_insertion_point(class_scope:control_service.SubscribeDiscoveryEventsRequest)
+ private:
+  class _Internal;
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<
+      0, 0, 0,
+      0, 2>
+      _table_;
+
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+    inline explicit constexpr Impl_(
+        ::google::protobuf::internal::ConstantInitialized) noexcept;
+    inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                          ::google::protobuf::Arena* arena);
+    inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                          ::google::protobuf::Arena* arena, const Impl_& from,
+                          const SubscribeDiscoveryEventsRequest& from_msg);
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  friend struct ::TableStruct_control_5fservice_2fmessages_2eproto;
+};
 // -------------------------------------------------------------------
 
 class SetConfigRequest final
@@ -914,6 +1101,337 @@ class EmptyRequest final
                           const EmptyRequest& from_msg);
     PROTOBUF_TSAN_DECLARE_MEMBER
   };
+  friend struct ::TableStruct_control_5fservice_2fmessages_2eproto;
+};
+// -------------------------------------------------------------------
+
+class DiscoveryEvent final
+    : public ::google::protobuf::Message
+/* @@protoc_insertion_point(class_definition:control_service.DiscoveryEvent) */ {
+ public:
+  inline DiscoveryEvent() : DiscoveryEvent(nullptr) {}
+  ~DiscoveryEvent() PROTOBUF_FINAL;
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+  void operator delete(DiscoveryEvent* msg, std::destroying_delete_t) {
+    SharedDtor(*msg);
+    ::google::protobuf::internal::SizedDelete(msg, sizeof(DiscoveryEvent));
+  }
+#endif
+
+  template <typename = void>
+  explicit PROTOBUF_CONSTEXPR DiscoveryEvent(
+      ::google::protobuf::internal::ConstantInitialized);
+
+  inline DiscoveryEvent(const DiscoveryEvent& from) : DiscoveryEvent(nullptr, from) {}
+  inline DiscoveryEvent(DiscoveryEvent&& from) noexcept
+      : DiscoveryEvent(nullptr, std::move(from)) {}
+  inline DiscoveryEvent& operator=(const DiscoveryEvent& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline DiscoveryEvent& operator=(DiscoveryEvent&& from) noexcept {
+    if (this == &from) return *this;
+    if (::google::protobuf::internal::CanMoveWithInternalSwap(GetArena(), from.GetArena())) {
+      InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  inline const ::google::protobuf::UnknownFieldSet& unknown_fields() const
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance);
+  }
+  inline ::google::protobuf::UnknownFieldSet* mutable_unknown_fields()
+      ABSL_ATTRIBUTE_LIFETIME_BOUND {
+    return _internal_metadata_.mutable_unknown_fields<::google::protobuf::UnknownFieldSet>();
+  }
+
+  static const ::google::protobuf::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::google::protobuf::Descriptor* GetDescriptor() {
+    return default_instance().GetMetadata().descriptor;
+  }
+  static const ::google::protobuf::Reflection* GetReflection() {
+    return default_instance().GetMetadata().reflection;
+  }
+  static const DiscoveryEvent& default_instance() {
+    return *internal_default_instance();
+  }
+  static inline const DiscoveryEvent* internal_default_instance() {
+    return reinterpret_cast<const DiscoveryEvent*>(
+        &_DiscoveryEvent_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages = 11;
+  friend void swap(DiscoveryEvent& a, DiscoveryEvent& b) { a.Swap(&b); }
+  inline void Swap(DiscoveryEvent* other) {
+    if (other == this) return;
+    if (::google::protobuf::internal::CanUseInternalSwap(GetArena(), other->GetArena())) {
+      InternalSwap(other);
+    } else {
+      ::google::protobuf::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(DiscoveryEvent* other) {
+    if (other == this) return;
+    ABSL_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  DiscoveryEvent* New(::google::protobuf::Arena* arena = nullptr) const {
+    return ::google::protobuf::Message::DefaultConstruct<DiscoveryEvent>(arena);
+  }
+  using ::google::protobuf::Message::CopyFrom;
+  void CopyFrom(const DiscoveryEvent& from);
+  using ::google::protobuf::Message::MergeFrom;
+  void MergeFrom(const DiscoveryEvent& from) { DiscoveryEvent::MergeImpl(*this, from); }
+
+  private:
+  static void MergeImpl(
+      ::google::protobuf::MessageLite& to_msg,
+      const ::google::protobuf::MessageLite& from_msg);
+
+  public:
+  bool IsInitialized() const {
+    return true;
+  }
+  ABSL_ATTRIBUTE_REINITIALIZES void Clear() PROTOBUF_FINAL;
+  #if defined(PROTOBUF_CUSTOM_VTABLE)
+  private:
+  static ::size_t ByteSizeLong(const ::google::protobuf::MessageLite& msg);
+  static ::uint8_t* _InternalSerialize(
+      const MessageLite& msg, ::uint8_t* target,
+      ::google::protobuf::io::EpsCopyOutputStream* stream);
+
+  public:
+  ::size_t ByteSizeLong() const { return ByteSizeLong(*this); }
+  ::uint8_t* _InternalSerialize(
+      ::uint8_t* target,
+      ::google::protobuf::io::EpsCopyOutputStream* stream) const {
+    return _InternalSerialize(*this, target, stream);
+  }
+  #else   // PROTOBUF_CUSTOM_VTABLE
+  ::size_t ByteSizeLong() const final;
+  ::uint8_t* _InternalSerialize(
+      ::uint8_t* target,
+      ::google::protobuf::io::EpsCopyOutputStream* stream) const final;
+  #endif  // PROTOBUF_CUSTOM_VTABLE
+  int GetCachedSize() const { return _impl_._cached_size_.Get(); }
+
+  private:
+  void SharedCtor(::google::protobuf::Arena* arena);
+  static void SharedDtor(MessageLite& self);
+  void InternalSwap(DiscoveryEvent* other);
+ private:
+  template <typename T>
+  friend ::absl::string_view(
+      ::google::protobuf::internal::GetAnyMessageName)();
+  static ::absl::string_view FullMessageName() { return "control_service.DiscoveryEvent"; }
+
+ protected:
+  explicit DiscoveryEvent(::google::protobuf::Arena* arena);
+  DiscoveryEvent(::google::protobuf::Arena* arena, const DiscoveryEvent& from);
+  DiscoveryEvent(::google::protobuf::Arena* arena, DiscoveryEvent&& from) noexcept
+      : DiscoveryEvent(arena) {
+    *this = ::std::move(from);
+  }
+  const ::google::protobuf::internal::ClassData* GetClassData() const PROTOBUF_FINAL;
+  static void* PlacementNew_(const void*, void* mem,
+                             ::google::protobuf::Arena* arena);
+  static constexpr auto InternalNewImpl_();
+  static const ::google::protobuf::internal::ClassDataFull _class_data_;
+
+ public:
+  ::google::protobuf::Metadata GetMetadata() const;
+  // nested types ----------------------------------------------------
+  using Type = DiscoveryEvent_Type;
+  static constexpr Type UNKNOWN = DiscoveryEvent_Type_UNKNOWN;
+  static constexpr Type DISCOVERED = DiscoveryEvent_Type_DISCOVERED;
+  static constexpr Type REMOVED = DiscoveryEvent_Type_REMOVED;
+  static inline bool Type_IsValid(int value) {
+    return DiscoveryEvent_Type_IsValid(value);
+  }
+  static constexpr Type Type_MIN = DiscoveryEvent_Type_Type_MIN;
+  static constexpr Type Type_MAX = DiscoveryEvent_Type_Type_MAX;
+  static constexpr int Type_ARRAYSIZE = DiscoveryEvent_Type_Type_ARRAYSIZE;
+  static inline const ::google::protobuf::EnumDescriptor* Type_descriptor() {
+    return DiscoveryEvent_Type_descriptor();
+  }
+  template <typename T>
+  static inline const std::string& Type_Name(T value) {
+    return DiscoveryEvent_Type_Name(value);
+  }
+  static inline bool Type_Parse(absl::string_view name, Type* value) {
+    return DiscoveryEvent_Type_Parse(name, value);
+  }
+
+  // accessors -------------------------------------------------------
+  enum : int {
+    kRemoteSkiFieldNumber = 2,
+    kShipIdentifierFieldNumber = 3,
+    kBrandFieldNumber = 4,
+    kModelFieldNumber = 5,
+    kDeviceTypeFieldNumber = 6,
+    kSerialFieldNumber = 7,
+    kTypeFieldNumber = 1,
+    kIsTrustedFieldNumber = 8,
+  };
+  // string remote_ski = 2;
+  void clear_remote_ski() ;
+  const std::string& remote_ski() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_remote_ski(Arg_&& arg, Args_... args);
+  std::string* mutable_remote_ski();
+  PROTOBUF_NODISCARD std::string* release_remote_ski();
+  void set_allocated_remote_ski(std::string* value);
+
+  private:
+  const std::string& _internal_remote_ski() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_remote_ski(
+      const std::string& value);
+  std::string* _internal_mutable_remote_ski();
+
+  public:
+  // string ship_identifier = 3;
+  void clear_ship_identifier() ;
+  const std::string& ship_identifier() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_ship_identifier(Arg_&& arg, Args_... args);
+  std::string* mutable_ship_identifier();
+  PROTOBUF_NODISCARD std::string* release_ship_identifier();
+  void set_allocated_ship_identifier(std::string* value);
+
+  private:
+  const std::string& _internal_ship_identifier() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_ship_identifier(
+      const std::string& value);
+  std::string* _internal_mutable_ship_identifier();
+
+  public:
+  // string brand = 4;
+  void clear_brand() ;
+  const std::string& brand() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_brand(Arg_&& arg, Args_... args);
+  std::string* mutable_brand();
+  PROTOBUF_NODISCARD std::string* release_brand();
+  void set_allocated_brand(std::string* value);
+
+  private:
+  const std::string& _internal_brand() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_brand(
+      const std::string& value);
+  std::string* _internal_mutable_brand();
+
+  public:
+  // string model = 5;
+  void clear_model() ;
+  const std::string& model() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_model(Arg_&& arg, Args_... args);
+  std::string* mutable_model();
+  PROTOBUF_NODISCARD std::string* release_model();
+  void set_allocated_model(std::string* value);
+
+  private:
+  const std::string& _internal_model() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_model(
+      const std::string& value);
+  std::string* _internal_mutable_model();
+
+  public:
+  // string device_type = 6;
+  void clear_device_type() ;
+  const std::string& device_type() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_device_type(Arg_&& arg, Args_... args);
+  std::string* mutable_device_type();
+  PROTOBUF_NODISCARD std::string* release_device_type();
+  void set_allocated_device_type(std::string* value);
+
+  private:
+  const std::string& _internal_device_type() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_device_type(
+      const std::string& value);
+  std::string* _internal_mutable_device_type();
+
+  public:
+  // string serial = 7;
+  void clear_serial() ;
+  const std::string& serial() const;
+  template <typename Arg_ = const std::string&, typename... Args_>
+  void set_serial(Arg_&& arg, Args_... args);
+  std::string* mutable_serial();
+  PROTOBUF_NODISCARD std::string* release_serial();
+  void set_allocated_serial(std::string* value);
+
+  private:
+  const std::string& _internal_serial() const;
+  inline PROTOBUF_ALWAYS_INLINE void _internal_set_serial(
+      const std::string& value);
+  std::string* _internal_mutable_serial();
+
+  public:
+  // .control_service.DiscoveryEvent.Type type = 1;
+  void clear_type() ;
+  ::control_service::DiscoveryEvent_Type type() const;
+  void set_type(::control_service::DiscoveryEvent_Type value);
+
+  private:
+  ::control_service::DiscoveryEvent_Type _internal_type() const;
+  void _internal_set_type(::control_service::DiscoveryEvent_Type value);
+
+  public:
+  // bool is_trusted = 8;
+  void clear_is_trusted() ;
+  bool is_trusted() const;
+  void set_is_trusted(bool value);
+
+  private:
+  bool _internal_is_trusted() const;
+  void _internal_set_is_trusted(bool value);
+
+  public:
+  // @@protoc_insertion_point(class_scope:control_service.DiscoveryEvent)
+ private:
+  class _Internal;
+  friend class ::google::protobuf::internal::TcParser;
+  static const ::google::protobuf::internal::TcParseTable<
+      3, 8, 0,
+      99, 2>
+      _table_;
+
+  friend class ::google::protobuf::MessageLite;
+  friend class ::google::protobuf::Arena;
+  template <typename T>
+  friend class ::google::protobuf::Arena::InternalHelper;
+  using InternalArenaConstructable_ = void;
+  using DestructorSkippable_ = void;
+  struct Impl_ {
+    inline explicit constexpr Impl_(
+        ::google::protobuf::internal::ConstantInitialized) noexcept;
+    inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                          ::google::protobuf::Arena* arena);
+    inline explicit Impl_(::google::protobuf::internal::InternalVisibility visibility,
+                          ::google::protobuf::Arena* arena, const Impl_& from,
+                          const DiscoveryEvent& from_msg);
+    ::google::protobuf::internal::ArenaStringPtr remote_ski_;
+    ::google::protobuf::internal::ArenaStringPtr ship_identifier_;
+    ::google::protobuf::internal::ArenaStringPtr brand_;
+    ::google::protobuf::internal::ArenaStringPtr model_;
+    ::google::protobuf::internal::ArenaStringPtr device_type_;
+    ::google::protobuf::internal::ArenaStringPtr serial_;
+    int type_;
+    bool is_trusted_;
+    ::google::protobuf::internal::CachedSize _cached_size_;
+    PROTOBUF_TSAN_DECLARE_MEMBER
+  };
+  union { Impl_ _impl_; };
   friend struct ::TableStruct_control_5fservice_2fmessages_2eproto;
 };
 // -------------------------------------------------------------------
@@ -3474,6 +3992,346 @@ inline void SubscribeUseCaseEventsResponse::set_allocated_use_case_event(::contr
   // @@protoc_insertion_point(field_set_allocated:control_service.SubscribeUseCaseEventsResponse.use_case_event)
 }
 
+// -------------------------------------------------------------------
+
+// SubscribeDiscoveryEventsRequest
+
+// -------------------------------------------------------------------
+
+// DiscoveryEvent
+
+// .control_service.DiscoveryEvent.Type type = 1;
+inline void DiscoveryEvent::clear_type() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.type_ = 0;
+}
+inline ::control_service::DiscoveryEvent_Type DiscoveryEvent::type() const {
+  // @@protoc_insertion_point(field_get:control_service.DiscoveryEvent.type)
+  return _internal_type();
+}
+inline void DiscoveryEvent::set_type(::control_service::DiscoveryEvent_Type value) {
+  _internal_set_type(value);
+  // @@protoc_insertion_point(field_set:control_service.DiscoveryEvent.type)
+}
+inline ::control_service::DiscoveryEvent_Type DiscoveryEvent::_internal_type() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return static_cast<::control_service::DiscoveryEvent_Type>(_impl_.type_);
+}
+inline void DiscoveryEvent::_internal_set_type(::control_service::DiscoveryEvent_Type value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.type_ = value;
+}
+
+// string remote_ski = 2;
+inline void DiscoveryEvent::clear_remote_ski() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.remote_ski_.ClearToEmpty();
+}
+inline const std::string& DiscoveryEvent::remote_ski() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:control_service.DiscoveryEvent.remote_ski)
+  return _internal_remote_ski();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void DiscoveryEvent::set_remote_ski(Arg_&& arg,
+                                                     Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.remote_ski_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:control_service.DiscoveryEvent.remote_ski)
+}
+inline std::string* DiscoveryEvent::mutable_remote_ski() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_remote_ski();
+  // @@protoc_insertion_point(field_mutable:control_service.DiscoveryEvent.remote_ski)
+  return _s;
+}
+inline const std::string& DiscoveryEvent::_internal_remote_ski() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.remote_ski_.Get();
+}
+inline void DiscoveryEvent::_internal_set_remote_ski(const std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.remote_ski_.Set(value, GetArena());
+}
+inline std::string* DiscoveryEvent::_internal_mutable_remote_ski() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.remote_ski_.Mutable( GetArena());
+}
+inline std::string* DiscoveryEvent::release_remote_ski() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:control_service.DiscoveryEvent.remote_ski)
+  return _impl_.remote_ski_.Release();
+}
+inline void DiscoveryEvent::set_allocated_remote_ski(std::string* value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.remote_ski_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.remote_ski_.IsDefault()) {
+    _impl_.remote_ski_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:control_service.DiscoveryEvent.remote_ski)
+}
+
+// string ship_identifier = 3;
+inline void DiscoveryEvent::clear_ship_identifier() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.ship_identifier_.ClearToEmpty();
+}
+inline const std::string& DiscoveryEvent::ship_identifier() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:control_service.DiscoveryEvent.ship_identifier)
+  return _internal_ship_identifier();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void DiscoveryEvent::set_ship_identifier(Arg_&& arg,
+                                                     Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.ship_identifier_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:control_service.DiscoveryEvent.ship_identifier)
+}
+inline std::string* DiscoveryEvent::mutable_ship_identifier() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_ship_identifier();
+  // @@protoc_insertion_point(field_mutable:control_service.DiscoveryEvent.ship_identifier)
+  return _s;
+}
+inline const std::string& DiscoveryEvent::_internal_ship_identifier() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.ship_identifier_.Get();
+}
+inline void DiscoveryEvent::_internal_set_ship_identifier(const std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.ship_identifier_.Set(value, GetArena());
+}
+inline std::string* DiscoveryEvent::_internal_mutable_ship_identifier() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.ship_identifier_.Mutable( GetArena());
+}
+inline std::string* DiscoveryEvent::release_ship_identifier() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:control_service.DiscoveryEvent.ship_identifier)
+  return _impl_.ship_identifier_.Release();
+}
+inline void DiscoveryEvent::set_allocated_ship_identifier(std::string* value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.ship_identifier_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.ship_identifier_.IsDefault()) {
+    _impl_.ship_identifier_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:control_service.DiscoveryEvent.ship_identifier)
+}
+
+// string brand = 4;
+inline void DiscoveryEvent::clear_brand() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.brand_.ClearToEmpty();
+}
+inline const std::string& DiscoveryEvent::brand() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:control_service.DiscoveryEvent.brand)
+  return _internal_brand();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void DiscoveryEvent::set_brand(Arg_&& arg,
+                                                     Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.brand_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:control_service.DiscoveryEvent.brand)
+}
+inline std::string* DiscoveryEvent::mutable_brand() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_brand();
+  // @@protoc_insertion_point(field_mutable:control_service.DiscoveryEvent.brand)
+  return _s;
+}
+inline const std::string& DiscoveryEvent::_internal_brand() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.brand_.Get();
+}
+inline void DiscoveryEvent::_internal_set_brand(const std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.brand_.Set(value, GetArena());
+}
+inline std::string* DiscoveryEvent::_internal_mutable_brand() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.brand_.Mutable( GetArena());
+}
+inline std::string* DiscoveryEvent::release_brand() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:control_service.DiscoveryEvent.brand)
+  return _impl_.brand_.Release();
+}
+inline void DiscoveryEvent::set_allocated_brand(std::string* value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.brand_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.brand_.IsDefault()) {
+    _impl_.brand_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:control_service.DiscoveryEvent.brand)
+}
+
+// string model = 5;
+inline void DiscoveryEvent::clear_model() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.model_.ClearToEmpty();
+}
+inline const std::string& DiscoveryEvent::model() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:control_service.DiscoveryEvent.model)
+  return _internal_model();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void DiscoveryEvent::set_model(Arg_&& arg,
+                                                     Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.model_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:control_service.DiscoveryEvent.model)
+}
+inline std::string* DiscoveryEvent::mutable_model() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_model();
+  // @@protoc_insertion_point(field_mutable:control_service.DiscoveryEvent.model)
+  return _s;
+}
+inline const std::string& DiscoveryEvent::_internal_model() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.model_.Get();
+}
+inline void DiscoveryEvent::_internal_set_model(const std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.model_.Set(value, GetArena());
+}
+inline std::string* DiscoveryEvent::_internal_mutable_model() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.model_.Mutable( GetArena());
+}
+inline std::string* DiscoveryEvent::release_model() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:control_service.DiscoveryEvent.model)
+  return _impl_.model_.Release();
+}
+inline void DiscoveryEvent::set_allocated_model(std::string* value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.model_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.model_.IsDefault()) {
+    _impl_.model_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:control_service.DiscoveryEvent.model)
+}
+
+// string device_type = 6;
+inline void DiscoveryEvent::clear_device_type() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.device_type_.ClearToEmpty();
+}
+inline const std::string& DiscoveryEvent::device_type() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:control_service.DiscoveryEvent.device_type)
+  return _internal_device_type();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void DiscoveryEvent::set_device_type(Arg_&& arg,
+                                                     Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.device_type_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:control_service.DiscoveryEvent.device_type)
+}
+inline std::string* DiscoveryEvent::mutable_device_type() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_device_type();
+  // @@protoc_insertion_point(field_mutable:control_service.DiscoveryEvent.device_type)
+  return _s;
+}
+inline const std::string& DiscoveryEvent::_internal_device_type() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.device_type_.Get();
+}
+inline void DiscoveryEvent::_internal_set_device_type(const std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.device_type_.Set(value, GetArena());
+}
+inline std::string* DiscoveryEvent::_internal_mutable_device_type() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.device_type_.Mutable( GetArena());
+}
+inline std::string* DiscoveryEvent::release_device_type() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:control_service.DiscoveryEvent.device_type)
+  return _impl_.device_type_.Release();
+}
+inline void DiscoveryEvent::set_allocated_device_type(std::string* value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.device_type_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.device_type_.IsDefault()) {
+    _impl_.device_type_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:control_service.DiscoveryEvent.device_type)
+}
+
+// string serial = 7;
+inline void DiscoveryEvent::clear_serial() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.serial_.ClearToEmpty();
+}
+inline const std::string& DiscoveryEvent::serial() const
+    ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  // @@protoc_insertion_point(field_get:control_service.DiscoveryEvent.serial)
+  return _internal_serial();
+}
+template <typename Arg_, typename... Args_>
+inline PROTOBUF_ALWAYS_INLINE void DiscoveryEvent::set_serial(Arg_&& arg,
+                                                     Args_... args) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.serial_.Set(static_cast<Arg_&&>(arg), args..., GetArena());
+  // @@protoc_insertion_point(field_set:control_service.DiscoveryEvent.serial)
+}
+inline std::string* DiscoveryEvent::mutable_serial() ABSL_ATTRIBUTE_LIFETIME_BOUND {
+  std::string* _s = _internal_mutable_serial();
+  // @@protoc_insertion_point(field_mutable:control_service.DiscoveryEvent.serial)
+  return _s;
+}
+inline const std::string& DiscoveryEvent::_internal_serial() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.serial_.Get();
+}
+inline void DiscoveryEvent::_internal_set_serial(const std::string& value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.serial_.Set(value, GetArena());
+}
+inline std::string* DiscoveryEvent::_internal_mutable_serial() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  return _impl_.serial_.Mutable( GetArena());
+}
+inline std::string* DiscoveryEvent::release_serial() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  // @@protoc_insertion_point(field_release:control_service.DiscoveryEvent.serial)
+  return _impl_.serial_.Release();
+}
+inline void DiscoveryEvent::set_allocated_serial(std::string* value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.serial_.SetAllocated(value, GetArena());
+  if (::google::protobuf::internal::DebugHardenForceCopyDefaultString() && _impl_.serial_.IsDefault()) {
+    _impl_.serial_.Set("", GetArena());
+  }
+  // @@protoc_insertion_point(field_set_allocated:control_service.DiscoveryEvent.serial)
+}
+
+// bool is_trusted = 8;
+inline void DiscoveryEvent::clear_is_trusted() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.is_trusted_ = false;
+}
+inline bool DiscoveryEvent::is_trusted() const {
+  // @@protoc_insertion_point(field_get:control_service.DiscoveryEvent.is_trusted)
+  return _internal_is_trusted();
+}
+inline void DiscoveryEvent::set_is_trusted(bool value) {
+  _internal_set_is_trusted(value);
+  // @@protoc_insertion_point(field_set:control_service.DiscoveryEvent.is_trusted)
+}
+inline bool DiscoveryEvent::_internal_is_trusted() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.is_trusted_;
+}
+inline void DiscoveryEvent::_internal_set_is_trusted(bool value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.is_trusted_ = value;
+}
+
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
 #endif  // __GNUC__
@@ -3519,9 +4377,34 @@ SubscribeUseCaseEventsResponse CreateSubscribeUseCaseEventsResponse(
     common_types::EntityAddress* remote_entity_address,
     control_service::UseCaseEvent* use_case_event);
 
+SubscribeDiscoveryEventsRequest CreateSubscribeDiscoveryEventsRequest();
+
+DiscoveryEvent CreateDiscoveryEvent(
+    control_service::DiscoveryEvent::Type type,
+    std::string remote_ski,
+    std::string ship_identifier,
+    std::string brand,
+    std::string model,
+    std::string device_type,
+    std::string serial,
+    bool is_trusted);
+
 // @@protoc_insertion_point(namespace_scope)
 }  // namespace control_service
 
+
+namespace google {
+namespace protobuf {
+
+template <>
+struct is_proto_enum<::control_service::DiscoveryEvent_Type> : std::true_type {};
+template <>
+inline const EnumDescriptor* GetEnumDescriptor<::control_service::DiscoveryEvent_Type>() {
+  return ::control_service::DiscoveryEvent_Type_descriptor();
+}
+
+}  // namespace protobuf
+}  // namespace google
 
 // @@protoc_insertion_point(global_scope)
 

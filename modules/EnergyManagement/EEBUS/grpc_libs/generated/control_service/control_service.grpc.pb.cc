@@ -31,6 +31,7 @@ static const char* ControlService_method_names[] = {
   "/control_service.ControlService/RegisterRemoteSki",
   "/control_service.ControlService/AddUseCase",
   "/control_service.ControlService/SubscribeUseCaseEvents",
+  "/control_service.ControlService/SubscribeDiscoveryEvents",
 };
 
 std::unique_ptr< ControlService::Stub> ControlService::NewStub(const std::shared_ptr< ::grpc::ChannelInterface>& channel, const ::grpc::StubOptions& options) {
@@ -49,6 +50,7 @@ ControlService::Stub::Stub(const std::shared_ptr< ::grpc::ChannelInterface>& cha
   , rpcmethod_RegisterRemoteSki_(ControlService_method_names[6], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
   , rpcmethod_AddUseCase_(ControlService_method_names[7], options.suffix_for_stats(),::grpc::internal::RpcMethod::NORMAL_RPC, channel)
   , rpcmethod_SubscribeUseCaseEvents_(ControlService_method_names[8], options.suffix_for_stats(),::grpc::internal::RpcMethod::SERVER_STREAMING, channel)
+  , rpcmethod_SubscribeDiscoveryEvents_(ControlService_method_names[9], options.suffix_for_stats(),::grpc::internal::RpcMethod::SERVER_STREAMING, channel)
   {}
 
 ::grpc::Status ControlService::Stub::StartService(::grpc::ClientContext* context, const ::control_service::EmptyRequest& request, ::control_service::EmptyResponse* response) {
@@ -251,6 +253,22 @@ void ControlService::Stub::async::SubscribeUseCaseEvents(::grpc::ClientContext* 
   return ::grpc::internal::ClientAsyncReaderFactory< ::control_service::SubscribeUseCaseEventsResponse>::Create(channel_.get(), cq, rpcmethod_SubscribeUseCaseEvents_, context, request, false, nullptr);
 }
 
+::grpc::ClientReader< ::control_service::DiscoveryEvent>* ControlService::Stub::SubscribeDiscoveryEventsRaw(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest& request) {
+  return ::grpc::internal::ClientReaderFactory< ::control_service::DiscoveryEvent>::Create(channel_.get(), rpcmethod_SubscribeDiscoveryEvents_, context, request);
+}
+
+void ControlService::Stub::async::SubscribeDiscoveryEvents(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest* request, ::grpc::ClientReadReactor< ::control_service::DiscoveryEvent>* reactor) {
+  ::grpc::internal::ClientCallbackReaderFactory< ::control_service::DiscoveryEvent>::Create(stub_->channel_.get(), stub_->rpcmethod_SubscribeDiscoveryEvents_, context, request, reactor);
+}
+
+::grpc::ClientAsyncReader< ::control_service::DiscoveryEvent>* ControlService::Stub::AsyncSubscribeDiscoveryEventsRaw(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest& request, ::grpc::CompletionQueue* cq, void* tag) {
+  return ::grpc::internal::ClientAsyncReaderFactory< ::control_service::DiscoveryEvent>::Create(channel_.get(), cq, rpcmethod_SubscribeDiscoveryEvents_, context, request, true, tag);
+}
+
+::grpc::ClientAsyncReader< ::control_service::DiscoveryEvent>* ControlService::Stub::PrepareAsyncSubscribeDiscoveryEventsRaw(::grpc::ClientContext* context, const ::control_service::SubscribeDiscoveryEventsRequest& request, ::grpc::CompletionQueue* cq) {
+  return ::grpc::internal::ClientAsyncReaderFactory< ::control_service::DiscoveryEvent>::Create(channel_.get(), cq, rpcmethod_SubscribeDiscoveryEvents_, context, request, false, nullptr);
+}
+
 ControlService::Service::Service() {
   AddMethod(new ::grpc::internal::RpcServiceMethod(
       ControlService_method_names[0],
@@ -342,6 +360,16 @@ ControlService::Service::Service() {
              ::grpc::ServerWriter<::control_service::SubscribeUseCaseEventsResponse>* writer) {
                return service->SubscribeUseCaseEvents(ctx, req, writer);
              }, this)));
+  AddMethod(new ::grpc::internal::RpcServiceMethod(
+      ControlService_method_names[9],
+      ::grpc::internal::RpcMethod::SERVER_STREAMING,
+      new ::grpc::internal::ServerStreamingHandler< ControlService::Service, ::control_service::SubscribeDiscoveryEventsRequest, ::control_service::DiscoveryEvent>(
+          [](ControlService::Service* service,
+             ::grpc::ServerContext* ctx,
+             const ::control_service::SubscribeDiscoveryEventsRequest* req,
+             ::grpc::ServerWriter<::control_service::DiscoveryEvent>* writer) {
+               return service->SubscribeDiscoveryEvents(ctx, req, writer);
+             }, this)));
 }
 
 ControlService::Service::~Service() {
@@ -404,6 +432,13 @@ ControlService::Service::~Service() {
 }
 
 ::grpc::Status ControlService::Service::SubscribeUseCaseEvents(::grpc::ServerContext* context, const ::control_service::SubscribeUseCaseEventsRequest* request, ::grpc::ServerWriter< ::control_service::SubscribeUseCaseEventsResponse>* writer) {
+  (void) context;
+  (void) request;
+  (void) writer;
+  return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "");
+}
+
+::grpc::Status ControlService::Service::SubscribeDiscoveryEvents(::grpc::ServerContext* context, const ::control_service::SubscribeDiscoveryEventsRequest* request, ::grpc::ServerWriter< ::control_service::DiscoveryEvent>* writer) {
   (void) context;
   (void) request;
   (void) writer;

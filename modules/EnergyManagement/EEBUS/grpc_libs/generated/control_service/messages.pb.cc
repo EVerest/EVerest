@@ -25,6 +25,24 @@ namespace _pb = ::google::protobuf;
 namespace _pbi = ::google::protobuf::internal;
 namespace _fl = ::google::protobuf::internal::field_layout;
 namespace control_service {
+              template <typename>
+PROTOBUF_CONSTEXPR SubscribeDiscoveryEventsRequest::SubscribeDiscoveryEventsRequest(::_pbi::ConstantInitialized)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::internal::ZeroFieldsBase(_class_data_.base()){}
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::internal::ZeroFieldsBase() {
+}
+#endif  // PROTOBUF_CUSTOM_VTABLE
+struct SubscribeDiscoveryEventsRequestDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR SubscribeDiscoveryEventsRequestDefaultTypeInternal() : _instance(::_pbi::ConstantInitialized{}) {}
+  ~SubscribeDiscoveryEventsRequestDefaultTypeInternal() {}
+  union {
+    SubscribeDiscoveryEventsRequest _instance;
+  };
+};
+
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
+    PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 SubscribeDiscoveryEventsRequestDefaultTypeInternal _SubscribeDiscoveryEventsRequest_default_instance_;
 
 inline constexpr SetConfigRequest::Impl_::Impl_(
     ::_pbi::ConstantInitialized) noexcept
@@ -131,6 +149,50 @@ struct EmptyRequestDefaultTypeInternal {
 
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
     PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 EmptyRequestDefaultTypeInternal _EmptyRequest_default_instance_;
+
+inline constexpr DiscoveryEvent::Impl_::Impl_(
+    ::_pbi::ConstantInitialized) noexcept
+      : remote_ski_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        ship_identifier_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        brand_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        model_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        device_type_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        serial_(
+            &::google::protobuf::internal::fixed_address_empty_string,
+            ::_pbi::ConstantInitialized()),
+        type_{static_cast< ::control_service::DiscoveryEvent_Type >(0)},
+        is_trusted_{false},
+        _cached_size_{0} {}
+
+template <typename>
+PROTOBUF_CONSTEXPR DiscoveryEvent::DiscoveryEvent(::_pbi::ConstantInitialized)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(_class_data_.base()),
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(),
+#endif  // PROTOBUF_CUSTOM_VTABLE
+      _impl_(::_pbi::ConstantInitialized()) {
+}
+struct DiscoveryEventDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR DiscoveryEventDefaultTypeInternal() : _instance(::_pbi::ConstantInitialized{}) {}
+  ~DiscoveryEventDefaultTypeInternal() {}
+  union {
+    DiscoveryEvent _instance;
+  };
+};
+
+PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
+    PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 DiscoveryEventDefaultTypeInternal _DiscoveryEvent_default_instance_;
 
 inline constexpr AddUseCaseResponse::Impl_::Impl_(
     ::_pbi::ConstantInitialized) noexcept
@@ -291,8 +353,7 @@ struct SubscribeUseCaseEventsResponseDefaultTypeInternal {
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
     PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 SubscribeUseCaseEventsResponseDefaultTypeInternal _SubscribeUseCaseEventsResponse_default_instance_;
 }  // namespace control_service
-static constexpr const ::_pb::EnumDescriptor**
-    file_level_enum_descriptors_control_5fservice_2fmessages_2eproto = nullptr;
+static const ::_pb::EnumDescriptor* file_level_enum_descriptors_control_5fservice_2fmessages_2eproto[1];
 static constexpr const ::_pb::ServiceDescriptor**
     file_level_service_descriptors_control_5fservice_2fmessages_2eproto = nullptr;
 const ::uint32_t
@@ -409,6 +470,30 @@ const ::uint32_t
         ~0u,
         0,
         1,
+        ~0u,  // no _has_bits_
+        PROTOBUF_FIELD_OFFSET(::control_service::SubscribeDiscoveryEventsRequest, _internal_metadata_),
+        ~0u,  // no _extensions_
+        ~0u,  // no _oneof_case_
+        ~0u,  // no _weak_field_map_
+        ~0u,  // no _inlined_string_donated_
+        ~0u,  // no _split_
+        ~0u,  // no sizeof(Split)
+        ~0u,  // no _has_bits_
+        PROTOBUF_FIELD_OFFSET(::control_service::DiscoveryEvent, _internal_metadata_),
+        ~0u,  // no _extensions_
+        ~0u,  // no _oneof_case_
+        ~0u,  // no _weak_field_map_
+        ~0u,  // no _inlined_string_donated_
+        ~0u,  // no _split_
+        ~0u,  // no sizeof(Split)
+        PROTOBUF_FIELD_OFFSET(::control_service::DiscoveryEvent, _impl_.type_),
+        PROTOBUF_FIELD_OFFSET(::control_service::DiscoveryEvent, _impl_.remote_ski_),
+        PROTOBUF_FIELD_OFFSET(::control_service::DiscoveryEvent, _impl_.ship_identifier_),
+        PROTOBUF_FIELD_OFFSET(::control_service::DiscoveryEvent, _impl_.brand_),
+        PROTOBUF_FIELD_OFFSET(::control_service::DiscoveryEvent, _impl_.model_),
+        PROTOBUF_FIELD_OFFSET(::control_service::DiscoveryEvent, _impl_.device_type_),
+        PROTOBUF_FIELD_OFFSET(::control_service::DiscoveryEvent, _impl_.serial_),
+        PROTOBUF_FIELD_OFFSET(::control_service::DiscoveryEvent, _impl_.is_trusted_),
 };
 
 static const ::_pbi::MigrationSchema
@@ -423,6 +508,8 @@ static const ::_pbi::MigrationSchema
         {76, -1, -1, sizeof(::control_service::RegisterRemoteSkiRequest)},
         {85, 95, -1, sizeof(::control_service::SubscribeUseCaseEventsRequest)},
         {97, 108, -1, sizeof(::control_service::SubscribeUseCaseEventsResponse)},
+        {111, -1, -1, sizeof(::control_service::SubscribeDiscoveryEventsRequest)},
+        {119, -1, -1, sizeof(::control_service::DiscoveryEvent)},
 };
 static const ::_pb::Message* const file_default_instances[] = {
     &::control_service::_EmptyRequest_default_instance_._instance,
@@ -435,6 +522,8 @@ static const ::_pb::Message* const file_default_instances[] = {
     &::control_service::_RegisterRemoteSkiRequest_default_instance_._instance,
     &::control_service::_SubscribeUseCaseEventsRequest_default_instance_._instance,
     &::control_service::_SubscribeUseCaseEventsResponse_default_instance_._instance,
+    &::control_service::_SubscribeDiscoveryEventsRequest_default_instance_._instance,
+    &::control_service::_DiscoveryEvent_default_instance_._instance,
 };
 const char descriptor_table_protodef_control_5fservice_2fmessages_2eproto[] ABSL_ATTRIBUTE_SECTION_VARIABLE(
     protodesc_cold) = {
@@ -467,8 +556,15 @@ const char descriptor_table_protodef_control_5fservice_2fmessages_2eproto[] ABSL
     "\030\001 \001(\t\022:\n\025remote_entity_address\030\002 \001(\0132\033."
     "common_types.EntityAddress\0225\n\016use_case_e"
     "vent\030\003 \001(\0132\035.control_service.UseCaseEven"
-    "tB=Z;github.com/enbility/eebus-grpc/rpc_"
-    "services/control_serviceb\006proto3"
+    "t\"!\n\037SubscribeDiscoveryEventsRequest\"\372\001\n"
+    "\016DiscoveryEvent\0222\n\004type\030\001 \001(\0162$.control_"
+    "service.DiscoveryEvent.Type\022\022\n\nremote_sk"
+    "i\030\002 \001(\t\022\027\n\017ship_identifier\030\003 \001(\t\022\r\n\005bran"
+    "d\030\004 \001(\t\022\r\n\005model\030\005 \001(\t\022\023\n\013device_type\030\006 "
+    "\001(\t\022\016\n\006serial\030\007 \001(\t\022\022\n\nis_trusted\030\010 \001(\010\""
+    "0\n\004Type\022\013\n\007UNKNOWN\020\000\022\016\n\nDISCOVERED\020\001\022\013\n\007"
+    "REMOVED\020\002B=Z;github.com/enbility/eebus-g"
+    "rpc/rpc_services/control_serviceb\006proto3"
 };
 static const ::_pbi::DescriptorTable* const descriptor_table_control_5fservice_2fmessages_2eproto_deps[2] =
     {
@@ -479,13 +575,13 @@ static ::absl::once_flag descriptor_table_control_5fservice_2fmessages_2eproto_o
 PROTOBUF_CONSTINIT const ::_pbi::DescriptorTable descriptor_table_control_5fservice_2fmessages_2eproto = {
     false,
     false,
-    1232,
+    1520,
     descriptor_table_protodef_control_5fservice_2fmessages_2eproto,
     "control_service/messages.proto",
     &descriptor_table_control_5fservice_2fmessages_2eproto_once,
     descriptor_table_control_5fservice_2fmessages_2eproto_deps,
     2,
-    10,
+    12,
     schemas,
     file_default_instances,
     TableStruct_control_5fservice_2fmessages_2eproto::offsets,
@@ -493,6 +589,27 @@ PROTOBUF_CONSTINIT const ::_pbi::DescriptorTable descriptor_table_control_5fserv
     file_level_service_descriptors_control_5fservice_2fmessages_2eproto,
 };
 namespace control_service {
+const ::google::protobuf::EnumDescriptor* DiscoveryEvent_Type_descriptor() {
+  ::google::protobuf::internal::AssignDescriptors(&descriptor_table_control_5fservice_2fmessages_2eproto);
+  return file_level_enum_descriptors_control_5fservice_2fmessages_2eproto[0];
+}
+PROTOBUF_CONSTINIT const uint32_t DiscoveryEvent_Type_internal_data_[] = {
+    196608u, 0u, };
+bool DiscoveryEvent_Type_IsValid(int value) {
+  return 0 <= value && value <= 2;
+}
+#if (__cplusplus < 201703) && \
+  (!defined(_MSC_VER) || (_MSC_VER >= 1900 && _MSC_VER < 1912))
+
+constexpr DiscoveryEvent_Type DiscoveryEvent::UNKNOWN;
+constexpr DiscoveryEvent_Type DiscoveryEvent::DISCOVERED;
+constexpr DiscoveryEvent_Type DiscoveryEvent::REMOVED;
+constexpr DiscoveryEvent_Type DiscoveryEvent::Type_MIN;
+constexpr DiscoveryEvent_Type DiscoveryEvent::Type_MAX;
+constexpr int DiscoveryEvent::Type_ARRAYSIZE;
+
+#endif  // (__cplusplus < 201703) &&
+        // (!defined(_MSC_VER) || (_MSC_VER >= 1900 && _MSC_VER < 1912))
 // ===================================================================
 
 class EmptyRequest::_Internal {
@@ -3157,6 +3274,544 @@ void SubscribeUseCaseEventsResponse::InternalSwap(SubscribeUseCaseEventsResponse
 ::google::protobuf::Metadata SubscribeUseCaseEventsResponse::GetMetadata() const {
   return ::google::protobuf::Message::GetMetadataImpl(GetClassData()->full());
 }
+// ===================================================================
+
+class SubscribeDiscoveryEventsRequest::_Internal {
+ public:
+};
+
+SubscribeDiscoveryEventsRequest::SubscribeDiscoveryEventsRequest(::google::protobuf::Arena* arena)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::internal::ZeroFieldsBase(arena, _class_data_.base()) {
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::internal::ZeroFieldsBase(arena) {
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  // @@protoc_insertion_point(arena_constructor:control_service.SubscribeDiscoveryEventsRequest)
+}
+SubscribeDiscoveryEventsRequest::SubscribeDiscoveryEventsRequest(
+    ::google::protobuf::Arena* arena,
+    const SubscribeDiscoveryEventsRequest& from)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::internal::ZeroFieldsBase(arena, _class_data_.base()) {
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::internal::ZeroFieldsBase(arena) {
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  SubscribeDiscoveryEventsRequest* const _this = this;
+  (void)_this;
+  _internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
+      from._internal_metadata_);
+
+  // @@protoc_insertion_point(copy_constructor:control_service.SubscribeDiscoveryEventsRequest)
+}
+
+inline void* SubscribeDiscoveryEventsRequest::PlacementNew_(const void*, void* mem,
+                                        ::google::protobuf::Arena* arena) {
+  return ::new (mem) SubscribeDiscoveryEventsRequest(arena);
+}
+constexpr auto SubscribeDiscoveryEventsRequest::InternalNewImpl_() {
+  return ::google::protobuf::internal::MessageCreator::ZeroInit(sizeof(SubscribeDiscoveryEventsRequest),
+                                            alignof(SubscribeDiscoveryEventsRequest));
+}
+PROTOBUF_CONSTINIT
+PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
+const ::google::protobuf::internal::ClassDataFull SubscribeDiscoveryEventsRequest::_class_data_ = {
+    ::google::protobuf::internal::ClassData{
+        &_SubscribeDiscoveryEventsRequest_default_instance_._instance,
+        &_table_.header,
+        nullptr,  // OnDemandRegisterArenaDtor
+        nullptr,  // IsInitialized
+        &SubscribeDiscoveryEventsRequest::MergeImpl,
+        ::google::protobuf::internal::ZeroFieldsBase::GetNewImpl<SubscribeDiscoveryEventsRequest>(),
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+        &SubscribeDiscoveryEventsRequest::SharedDtor,
+        ::google::protobuf::internal::ZeroFieldsBase::GetClearImpl<SubscribeDiscoveryEventsRequest>(), &SubscribeDiscoveryEventsRequest::ByteSizeLong,
+            &SubscribeDiscoveryEventsRequest::_InternalSerialize,
+#endif  // PROTOBUF_CUSTOM_VTABLE
+        PROTOBUF_FIELD_OFFSET(SubscribeDiscoveryEventsRequest, _impl_._cached_size_),
+        false,
+    },
+    &SubscribeDiscoveryEventsRequest::kDescriptorMethods,
+    &descriptor_table_control_5fservice_2fmessages_2eproto,
+    nullptr,  // tracker
+};
+const ::google::protobuf::internal::ClassData* SubscribeDiscoveryEventsRequest::GetClassData() const {
+  ::google::protobuf::internal::PrefetchToLocalCache(&_class_data_);
+  ::google::protobuf::internal::PrefetchToLocalCache(_class_data_.tc_table);
+  return _class_data_.base();
+}
+PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
+const ::_pbi::TcParseTable<0, 0, 0, 0, 2> SubscribeDiscoveryEventsRequest::_table_ = {
+  {
+    0,  // no _has_bits_
+    0, // no _extensions_
+    0, 0,  // max_field_number, fast_idx_mask
+    offsetof(decltype(_table_), field_lookup_table),
+    4294967295,  // skipmap
+    offsetof(decltype(_table_), field_names),  // no field_entries
+    0,  // num_field_entries
+    0,  // num_aux_entries
+    offsetof(decltype(_table_), field_names),  // no aux_entries
+    _class_data_.base(),
+    nullptr,  // post_loop_handler
+    ::_pbi::TcParser::GenericFallback,  // fallback
+    #ifdef PROTOBUF_PREFETCH_PARSE_TABLE
+    ::_pbi::TcParser::GetTable<::control_service::SubscribeDiscoveryEventsRequest>(),  // to_prefetch
+    #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
+  }, {{
+    {::_pbi::TcParser::MiniParse, {}},
+  }}, {{
+    65535, 65535
+  }},
+  // no field_entries, or aux_entries
+  {{
+  }},
+};
+
+
+
+
+
+
+
+
+::google::protobuf::Metadata SubscribeDiscoveryEventsRequest::GetMetadata() const {
+  return ::google::protobuf::internal::ZeroFieldsBase::GetMetadataImpl(GetClassData()->full());
+}
+// ===================================================================
+
+class DiscoveryEvent::_Internal {
+ public:
+};
+
+DiscoveryEvent::DiscoveryEvent(::google::protobuf::Arena* arena)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(arena, _class_data_.base()) {
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(arena) {
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  SharedCtor(arena);
+  // @@protoc_insertion_point(arena_constructor:control_service.DiscoveryEvent)
+}
+inline PROTOBUF_NDEBUG_INLINE DiscoveryEvent::Impl_::Impl_(
+    ::google::protobuf::internal::InternalVisibility visibility, ::google::protobuf::Arena* arena,
+    const Impl_& from, const ::control_service::DiscoveryEvent& from_msg)
+      : remote_ski_(arena, from.remote_ski_),
+        ship_identifier_(arena, from.ship_identifier_),
+        brand_(arena, from.brand_),
+        model_(arena, from.model_),
+        device_type_(arena, from.device_type_),
+        serial_(arena, from.serial_),
+        _cached_size_{0} {}
+
+DiscoveryEvent::DiscoveryEvent(
+    ::google::protobuf::Arena* arena,
+    const DiscoveryEvent& from)
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+    : ::google::protobuf::Message(arena, _class_data_.base()) {
+#else   // PROTOBUF_CUSTOM_VTABLE
+    : ::google::protobuf::Message(arena) {
+#endif  // PROTOBUF_CUSTOM_VTABLE
+  DiscoveryEvent* const _this = this;
+  (void)_this;
+  _internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(
+      from._internal_metadata_);
+  new (&_impl_) Impl_(internal_visibility(), arena, from._impl_, from);
+  ::memcpy(reinterpret_cast<char *>(&_impl_) +
+               offsetof(Impl_, type_),
+           reinterpret_cast<const char *>(&from._impl_) +
+               offsetof(Impl_, type_),
+           offsetof(Impl_, is_trusted_) -
+               offsetof(Impl_, type_) +
+               sizeof(Impl_::is_trusted_));
+
+  // @@protoc_insertion_point(copy_constructor:control_service.DiscoveryEvent)
+}
+inline PROTOBUF_NDEBUG_INLINE DiscoveryEvent::Impl_::Impl_(
+    ::google::protobuf::internal::InternalVisibility visibility,
+    ::google::protobuf::Arena* arena)
+      : remote_ski_(arena),
+        ship_identifier_(arena),
+        brand_(arena),
+        model_(arena),
+        device_type_(arena),
+        serial_(arena),
+        _cached_size_{0} {}
+
+inline void DiscoveryEvent::SharedCtor(::_pb::Arena* arena) {
+  new (&_impl_) Impl_(internal_visibility(), arena);
+  ::memset(reinterpret_cast<char *>(&_impl_) +
+               offsetof(Impl_, type_),
+           0,
+           offsetof(Impl_, is_trusted_) -
+               offsetof(Impl_, type_) +
+               sizeof(Impl_::is_trusted_));
+}
+DiscoveryEvent::~DiscoveryEvent() {
+  // @@protoc_insertion_point(destructor:control_service.DiscoveryEvent)
+  SharedDtor(*this);
+}
+inline void DiscoveryEvent::SharedDtor(MessageLite& self) {
+  DiscoveryEvent& this_ = static_cast<DiscoveryEvent&>(self);
+  this_._internal_metadata_.Delete<::google::protobuf::UnknownFieldSet>();
+  ABSL_DCHECK(this_.GetArena() == nullptr);
+  this_._impl_.remote_ski_.Destroy();
+  this_._impl_.ship_identifier_.Destroy();
+  this_._impl_.brand_.Destroy();
+  this_._impl_.model_.Destroy();
+  this_._impl_.device_type_.Destroy();
+  this_._impl_.serial_.Destroy();
+  this_._impl_.~Impl_();
+}
+
+inline void* DiscoveryEvent::PlacementNew_(const void*, void* mem,
+                                        ::google::protobuf::Arena* arena) {
+  return ::new (mem) DiscoveryEvent(arena);
+}
+constexpr auto DiscoveryEvent::InternalNewImpl_() {
+  return ::google::protobuf::internal::MessageCreator::CopyInit(sizeof(DiscoveryEvent),
+                                            alignof(DiscoveryEvent));
+}
+PROTOBUF_CONSTINIT
+PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
+const ::google::protobuf::internal::ClassDataFull DiscoveryEvent::_class_data_ = {
+    ::google::protobuf::internal::ClassData{
+        &_DiscoveryEvent_default_instance_._instance,
+        &_table_.header,
+        nullptr,  // OnDemandRegisterArenaDtor
+        nullptr,  // IsInitialized
+        &DiscoveryEvent::MergeImpl,
+        ::google::protobuf::Message::GetNewImpl<DiscoveryEvent>(),
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+        &DiscoveryEvent::SharedDtor,
+        ::google::protobuf::Message::GetClearImpl<DiscoveryEvent>(), &DiscoveryEvent::ByteSizeLong,
+            &DiscoveryEvent::_InternalSerialize,
+#endif  // PROTOBUF_CUSTOM_VTABLE
+        PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_._cached_size_),
+        false,
+    },
+    &DiscoveryEvent::kDescriptorMethods,
+    &descriptor_table_control_5fservice_2fmessages_2eproto,
+    nullptr,  // tracker
+};
+const ::google::protobuf::internal::ClassData* DiscoveryEvent::GetClassData() const {
+  ::google::protobuf::internal::PrefetchToLocalCache(&_class_data_);
+  ::google::protobuf::internal::PrefetchToLocalCache(_class_data_.tc_table);
+  return _class_data_.base();
+}
+PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
+const ::_pbi::TcParseTable<3, 8, 0, 99, 2> DiscoveryEvent::_table_ = {
+  {
+    0,  // no _has_bits_
+    0, // no _extensions_
+    8, 56,  // max_field_number, fast_idx_mask
+    offsetof(decltype(_table_), field_lookup_table),
+    4294967040,  // skipmap
+    offsetof(decltype(_table_), field_entries),
+    8,  // num_field_entries
+    0,  // num_aux_entries
+    offsetof(decltype(_table_), field_names),  // no aux_entries
+    _class_data_.base(),
+    nullptr,  // post_loop_handler
+    ::_pbi::TcParser::GenericFallback,  // fallback
+    #ifdef PROTOBUF_PREFETCH_PARSE_TABLE
+    ::_pbi::TcParser::GetTable<::control_service::DiscoveryEvent>(),  // to_prefetch
+    #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
+  }, {{
+    // bool is_trusted = 8;
+    {::_pbi::TcParser::SingularVarintNoZag1<bool, offsetof(DiscoveryEvent, _impl_.is_trusted_), 63>(),
+     {64, 63, 0, PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.is_trusted_)}},
+    // .control_service.DiscoveryEvent.Type type = 1;
+    {::_pbi::TcParser::SingularVarintNoZag1<::uint32_t, offsetof(DiscoveryEvent, _impl_.type_), 63>(),
+     {8, 63, 0, PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.type_)}},
+    // string remote_ski = 2;
+    {::_pbi::TcParser::FastUS1,
+     {18, 63, 0, PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.remote_ski_)}},
+    // string ship_identifier = 3;
+    {::_pbi::TcParser::FastUS1,
+     {26, 63, 0, PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.ship_identifier_)}},
+    // string brand = 4;
+    {::_pbi::TcParser::FastUS1,
+     {34, 63, 0, PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.brand_)}},
+    // string model = 5;
+    {::_pbi::TcParser::FastUS1,
+     {42, 63, 0, PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.model_)}},
+    // string device_type = 6;
+    {::_pbi::TcParser::FastUS1,
+     {50, 63, 0, PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.device_type_)}},
+    // string serial = 7;
+    {::_pbi::TcParser::FastUS1,
+     {58, 63, 0, PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.serial_)}},
+  }}, {{
+    65535, 65535
+  }}, {{
+    // .control_service.DiscoveryEvent.Type type = 1;
+    {PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.type_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kOpenEnum)},
+    // string remote_ski = 2;
+    {PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.remote_ski_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kUtf8String | ::_fl::kRepAString)},
+    // string ship_identifier = 3;
+    {PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.ship_identifier_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kUtf8String | ::_fl::kRepAString)},
+    // string brand = 4;
+    {PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.brand_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kUtf8String | ::_fl::kRepAString)},
+    // string model = 5;
+    {PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.model_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kUtf8String | ::_fl::kRepAString)},
+    // string device_type = 6;
+    {PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.device_type_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kUtf8String | ::_fl::kRepAString)},
+    // string serial = 7;
+    {PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.serial_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kUtf8String | ::_fl::kRepAString)},
+    // bool is_trusted = 8;
+    {PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.is_trusted_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kBool)},
+  }},
+  // no aux_entries
+  {{
+    "\36\0\12\17\5\5\13\6\0\0\0\0\0\0\0\0"
+    "control_service.DiscoveryEvent"
+    "remote_ski"
+    "ship_identifier"
+    "brand"
+    "model"
+    "device_type"
+    "serial"
+  }},
+};
+
+PROTOBUF_NOINLINE void DiscoveryEvent::Clear() {
+// @@protoc_insertion_point(message_clear_start:control_service.DiscoveryEvent)
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  ::uint32_t cached_has_bits = 0;
+  // Prevent compiler warnings about cached_has_bits being unused
+  (void) cached_has_bits;
+
+  _impl_.remote_ski_.ClearToEmpty();
+  _impl_.ship_identifier_.ClearToEmpty();
+  _impl_.brand_.ClearToEmpty();
+  _impl_.model_.ClearToEmpty();
+  _impl_.device_type_.ClearToEmpty();
+  _impl_.serial_.ClearToEmpty();
+  ::memset(&_impl_.type_, 0, static_cast<::size_t>(
+      reinterpret_cast<char*>(&_impl_.is_trusted_) -
+      reinterpret_cast<char*>(&_impl_.type_)) + sizeof(_impl_.is_trusted_));
+  _internal_metadata_.Clear<::google::protobuf::UnknownFieldSet>();
+}
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+        ::uint8_t* DiscoveryEvent::_InternalSerialize(
+            const MessageLite& base, ::uint8_t* target,
+            ::google::protobuf::io::EpsCopyOutputStream* stream) {
+          const DiscoveryEvent& this_ = static_cast<const DiscoveryEvent&>(base);
+#else   // PROTOBUF_CUSTOM_VTABLE
+        ::uint8_t* DiscoveryEvent::_InternalSerialize(
+            ::uint8_t* target,
+            ::google::protobuf::io::EpsCopyOutputStream* stream) const {
+          const DiscoveryEvent& this_ = *this;
+#endif  // PROTOBUF_CUSTOM_VTABLE
+          // @@protoc_insertion_point(serialize_to_array_start:control_service.DiscoveryEvent)
+          ::uint32_t cached_has_bits = 0;
+          (void)cached_has_bits;
+
+          // .control_service.DiscoveryEvent.Type type = 1;
+          if (this_._internal_type() != 0) {
+            target = stream->EnsureSpace(target);
+            target = ::_pbi::WireFormatLite::WriteEnumToArray(
+                1, this_._internal_type(), target);
+          }
+
+          // string remote_ski = 2;
+          if (!this_._internal_remote_ski().empty()) {
+            const std::string& _s = this_._internal_remote_ski();
+            ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+                _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "control_service.DiscoveryEvent.remote_ski");
+            target = stream->WriteStringMaybeAliased(2, _s, target);
+          }
+
+          // string ship_identifier = 3;
+          if (!this_._internal_ship_identifier().empty()) {
+            const std::string& _s = this_._internal_ship_identifier();
+            ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+                _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "control_service.DiscoveryEvent.ship_identifier");
+            target = stream->WriteStringMaybeAliased(3, _s, target);
+          }
+
+          // string brand = 4;
+          if (!this_._internal_brand().empty()) {
+            const std::string& _s = this_._internal_brand();
+            ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+                _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "control_service.DiscoveryEvent.brand");
+            target = stream->WriteStringMaybeAliased(4, _s, target);
+          }
+
+          // string model = 5;
+          if (!this_._internal_model().empty()) {
+            const std::string& _s = this_._internal_model();
+            ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+                _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "control_service.DiscoveryEvent.model");
+            target = stream->WriteStringMaybeAliased(5, _s, target);
+          }
+
+          // string device_type = 6;
+          if (!this_._internal_device_type().empty()) {
+            const std::string& _s = this_._internal_device_type();
+            ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+                _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "control_service.DiscoveryEvent.device_type");
+            target = stream->WriteStringMaybeAliased(6, _s, target);
+          }
+
+          // string serial = 7;
+          if (!this_._internal_serial().empty()) {
+            const std::string& _s = this_._internal_serial();
+            ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+                _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "control_service.DiscoveryEvent.serial");
+            target = stream->WriteStringMaybeAliased(7, _s, target);
+          }
+
+          // bool is_trusted = 8;
+          if (this_._internal_is_trusted() != 0) {
+            target = stream->EnsureSpace(target);
+            target = ::_pbi::WireFormatLite::WriteBoolToArray(
+                8, this_._internal_is_trusted(), target);
+          }
+
+          if (PROTOBUF_PREDICT_FALSE(this_._internal_metadata_.have_unknown_fields())) {
+            target =
+                ::_pbi::WireFormat::InternalSerializeUnknownFieldsToArray(
+                    this_._internal_metadata_.unknown_fields<::google::protobuf::UnknownFieldSet>(::google::protobuf::UnknownFieldSet::default_instance), target, stream);
+          }
+          // @@protoc_insertion_point(serialize_to_array_end:control_service.DiscoveryEvent)
+          return target;
+        }
+
+#if defined(PROTOBUF_CUSTOM_VTABLE)
+        ::size_t DiscoveryEvent::ByteSizeLong(const MessageLite& base) {
+          const DiscoveryEvent& this_ = static_cast<const DiscoveryEvent&>(base);
+#else   // PROTOBUF_CUSTOM_VTABLE
+        ::size_t DiscoveryEvent::ByteSizeLong() const {
+          const DiscoveryEvent& this_ = *this;
+#endif  // PROTOBUF_CUSTOM_VTABLE
+          // @@protoc_insertion_point(message_byte_size_start:control_service.DiscoveryEvent)
+          ::size_t total_size = 0;
+
+          ::uint32_t cached_has_bits = 0;
+          // Prevent compiler warnings about cached_has_bits being unused
+          (void)cached_has_bits;
+
+          ::_pbi::Prefetch5LinesFrom7Lines(&this_);
+           {
+            // string remote_ski = 2;
+            if (!this_._internal_remote_ski().empty()) {
+              total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
+                                              this_._internal_remote_ski());
+            }
+            // string ship_identifier = 3;
+            if (!this_._internal_ship_identifier().empty()) {
+              total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
+                                              this_._internal_ship_identifier());
+            }
+            // string brand = 4;
+            if (!this_._internal_brand().empty()) {
+              total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
+                                              this_._internal_brand());
+            }
+            // string model = 5;
+            if (!this_._internal_model().empty()) {
+              total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
+                                              this_._internal_model());
+            }
+            // string device_type = 6;
+            if (!this_._internal_device_type().empty()) {
+              total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
+                                              this_._internal_device_type());
+            }
+            // string serial = 7;
+            if (!this_._internal_serial().empty()) {
+              total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
+                                              this_._internal_serial());
+            }
+            // .control_service.DiscoveryEvent.Type type = 1;
+            if (this_._internal_type() != 0) {
+              total_size += 1 +
+                            ::_pbi::WireFormatLite::EnumSize(this_._internal_type());
+            }
+            // bool is_trusted = 8;
+            if (this_._internal_is_trusted() != 0) {
+              total_size += 2;
+            }
+          }
+          return this_.MaybeComputeUnknownFieldsSize(total_size,
+                                                     &this_._impl_._cached_size_);
+        }
+
+void DiscoveryEvent::MergeImpl(::google::protobuf::MessageLite& to_msg, const ::google::protobuf::MessageLite& from_msg) {
+  auto* const _this = static_cast<DiscoveryEvent*>(&to_msg);
+  auto& from = static_cast<const DiscoveryEvent&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:control_service.DiscoveryEvent)
+  ABSL_DCHECK_NE(&from, _this);
+  ::uint32_t cached_has_bits = 0;
+  (void) cached_has_bits;
+
+  if (!from._internal_remote_ski().empty()) {
+    _this->_internal_set_remote_ski(from._internal_remote_ski());
+  }
+  if (!from._internal_ship_identifier().empty()) {
+    _this->_internal_set_ship_identifier(from._internal_ship_identifier());
+  }
+  if (!from._internal_brand().empty()) {
+    _this->_internal_set_brand(from._internal_brand());
+  }
+  if (!from._internal_model().empty()) {
+    _this->_internal_set_model(from._internal_model());
+  }
+  if (!from._internal_device_type().empty()) {
+    _this->_internal_set_device_type(from._internal_device_type());
+  }
+  if (!from._internal_serial().empty()) {
+    _this->_internal_set_serial(from._internal_serial());
+  }
+  if (from._internal_type() != 0) {
+    _this->_impl_.type_ = from._impl_.type_;
+  }
+  if (from._internal_is_trusted() != 0) {
+    _this->_impl_.is_trusted_ = from._impl_.is_trusted_;
+  }
+  _this->_internal_metadata_.MergeFrom<::google::protobuf::UnknownFieldSet>(from._internal_metadata_);
+}
+
+void DiscoveryEvent::CopyFrom(const DiscoveryEvent& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:control_service.DiscoveryEvent)
+  if (&from == this) return;
+  Clear();
+  MergeFrom(from);
+}
+
+
+void DiscoveryEvent::InternalSwap(DiscoveryEvent* PROTOBUF_RESTRICT other) {
+  using std::swap;
+  auto* arena = GetArena();
+  ABSL_DCHECK_EQ(arena, other->GetArena());
+  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.remote_ski_, &other->_impl_.remote_ski_, arena);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.ship_identifier_, &other->_impl_.ship_identifier_, arena);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.brand_, &other->_impl_.brand_, arena);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.model_, &other->_impl_.model_, arena);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.device_type_, &other->_impl_.device_type_, arena);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.serial_, &other->_impl_.serial_, arena);
+  ::google::protobuf::internal::memswap<
+      PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.is_trusted_)
+      + sizeof(DiscoveryEvent::_impl_.is_trusted_)
+      - PROTOBUF_FIELD_OFFSET(DiscoveryEvent, _impl_.type_)>(
+          reinterpret_cast<char*>(&_impl_.type_),
+          reinterpret_cast<char*>(&other->_impl_.type_));
+}
+
+::google::protobuf::Metadata DiscoveryEvent::GetMetadata() const {
+  return ::google::protobuf::Message::GetMetadataImpl(GetClassData()->full());
+}
 EmptyRequest CreateEmptyRequest() {
   EmptyRequest res;
   return res;
@@ -3246,6 +3901,32 @@ SubscribeUseCaseEventsResponse CreateSubscribeUseCaseEventsResponse(
   res.set_remote_ski(remote_ski);
   res.set_allocated_remote_entity_address(remote_entity_address);
   res.set_allocated_use_case_event(use_case_event);
+  return res;
+}
+
+SubscribeDiscoveryEventsRequest CreateSubscribeDiscoveryEventsRequest() {
+  SubscribeDiscoveryEventsRequest res;
+  return res;
+}
+
+DiscoveryEvent CreateDiscoveryEvent(
+    control_service::DiscoveryEvent::Type type,
+    std::string remote_ski,
+    std::string ship_identifier,
+    std::string brand,
+    std::string model,
+    std::string device_type,
+    std::string serial,
+    bool is_trusted) {
+  DiscoveryEvent res;
+  res.set_type(type);
+  res.set_remote_ski(remote_ski);
+  res.set_ship_identifier(ship_identifier);
+  res.set_brand(brand);
+  res.set_model(model);
+  res.set_device_type(device_type);
+  res.set_serial(serial);
+  res.set_is_trusted(is_trusted);
   return res;
 }
 

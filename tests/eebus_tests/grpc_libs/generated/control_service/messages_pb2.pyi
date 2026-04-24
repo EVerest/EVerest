@@ -1,6 +1,7 @@
 from control_service import types_pb2 as _types_pb2
 from common_types import types_pb2 as _types_pb2_1
 from google.protobuf.internal import containers as _containers
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
 from collections.abc import Iterable as _Iterable, Mapping as _Mapping
@@ -89,3 +90,35 @@ class SubscribeUseCaseEventsResponse(_message.Message):
     remote_entity_address: _types_pb2_1.EntityAddress
     use_case_event: _types_pb2.UseCaseEvent
     def __init__(self, remote_ski: _Optional[str] = ..., remote_entity_address: _Optional[_Union[_types_pb2_1.EntityAddress, _Mapping]] = ..., use_case_event: _Optional[_Union[_types_pb2.UseCaseEvent, _Mapping]] = ...) -> None: ...
+
+class SubscribeDiscoveryEventsRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class DiscoveryEvent(_message.Message):
+    __slots__ = ("type", "remote_ski", "ship_identifier", "brand", "model", "device_type", "serial", "is_trusted")
+    class Type(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+        __slots__ = ()
+        UNKNOWN: _ClassVar[DiscoveryEvent.Type]
+        DISCOVERED: _ClassVar[DiscoveryEvent.Type]
+        REMOVED: _ClassVar[DiscoveryEvent.Type]
+    UNKNOWN: DiscoveryEvent.Type
+    DISCOVERED: DiscoveryEvent.Type
+    REMOVED: DiscoveryEvent.Type
+    TYPE_FIELD_NUMBER: _ClassVar[int]
+    REMOTE_SKI_FIELD_NUMBER: _ClassVar[int]
+    SHIP_IDENTIFIER_FIELD_NUMBER: _ClassVar[int]
+    BRAND_FIELD_NUMBER: _ClassVar[int]
+    MODEL_FIELD_NUMBER: _ClassVar[int]
+    DEVICE_TYPE_FIELD_NUMBER: _ClassVar[int]
+    SERIAL_FIELD_NUMBER: _ClassVar[int]
+    IS_TRUSTED_FIELD_NUMBER: _ClassVar[int]
+    type: DiscoveryEvent.Type
+    remote_ski: str
+    ship_identifier: str
+    brand: str
+    model: str
+    device_type: str
+    serial: str
+    is_trusted: bool
+    def __init__(self, type: _Optional[_Union[DiscoveryEvent.Type, str]] = ..., remote_ski: _Optional[str] = ..., ship_identifier: _Optional[str] = ..., brand: _Optional[str] = ..., model: _Optional[str] = ..., device_type: _Optional[str] = ..., serial: _Optional[str] = ..., is_trusted: bool = ...) -> None: ...
