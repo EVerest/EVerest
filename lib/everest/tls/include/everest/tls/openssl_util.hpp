@@ -16,6 +16,7 @@
 #include <vector>
 
 struct evp_pkey_st;
+struct ssl_ctx_st;
 struct ssl_st;
 struct x509_st;
 
@@ -416,6 +417,30 @@ bool verify_chain(const chain_t& chain);
  * \return true when successfully applied
  */
 bool use_certificate_and_key(ssl_st* ssl, const chain_t& chain);
+
+/**
+ * \brief pin the SSL context's TLS signature_algorithms list to the
+ *        (ECDSA, hash) pair that matches the leaf certificate's EC curve.
+ *
+ * Behaviour:
+ *   - P-256 cert → "ECDSA+SHA256"
+ *   - P-384 cert → "ECDSA+SHA384"
+ *   - P-521 cert → "ECDSA+SHA512"
+ *   - No cert loaded, non-EC key, or unrecognised EC group → no-op (returns true)
+ *
+ * This ensures the signature algorithm advertised in the ServerKeyExchange /
+ * CertificateVerify message is consistent with the curve of the key that will
+ * actually produce the signature, so strict peers can parse the signature
+ * length correctly.
+ *
+ * Applies to both TLS 1.2 and TLS 1.3 sigalg negotiation (OpenSSL's
+ * SSL_CTX_set1_sigalgs_list governs both).
+ *
+ * \param[in] ctx SSL context with a leaf certificate already loaded
+ * \return true when no error was encountered (including the no-op case); false
+ *         if OpenSSL rejected the sigalgs list
+ */
+bool pin_sigalgs_to_cert_curve(ssl_ctx_st* ctx);
 
 /**
  * \brief convert a certificate to a PEM string

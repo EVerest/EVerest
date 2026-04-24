@@ -6,6 +6,7 @@ set(TLS_TEST_FILES
         openssl-pki.conf
         ocsp_response.der
         pki.sh
+        pki-multi-curve.sh
         pki-tpm.sh
 )
 
@@ -23,6 +24,41 @@ add_custom_target(tls_test_files_target
 set(TLS_GTEST_NAME tls_test)
 add_executable(${TLS_GTEST_NAME})
 add_dependencies(${TLS_GTEST_NAME} tls_test_files_target)
+
+# Multi-curve PKI generation for signature-algorithm pinning tests.
+# Builds a separate server + client chain per NIST curve so the test suite
+# can exercise P-256, P-384 and P-521 independently.
+foreach(CURVE P-256 P-384 P-521)
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/server_cert.pem
+               ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/server_priv.pem
+               ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/server_chain.pem
+               ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/server_root_cert.pem
+               ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/server_ca_cert.pem
+               ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/client_cert.pem
+               ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/client_priv.pem
+               ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/client_chain.pem
+               ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/client_root_cert.pem
+               ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/client_ca_cert.pem
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/pki/pki-multi-curve.sh ${CURVE}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/pki/pki-multi-curve.sh
+                ${CMAKE_CURRENT_SOURCE_DIR}/pki/openssl-pki.conf
+                ${CMAKE_CURRENT_BINARY_DIR}/openssl-pki.conf
+    )
+    list(APPEND TLS_MULTI_CURVE_PKI_FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/server_cert.pem
+        ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/server_chain.pem
+        ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/server_priv.pem
+        ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/server_root_cert.pem
+        ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/client_chain.pem
+        ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/client_priv.pem
+        ${CMAKE_CURRENT_BINARY_DIR}/pki-${CURVE}/client_root_cert.pem
+    )
+endforeach()
+
+add_custom_target(tls_multi_curve_pki_target DEPENDS ${TLS_MULTI_CURVE_PKI_FILES})
+add_dependencies(${TLS_GTEST_NAME} tls_multi_curve_pki_target)
 
 target_include_directories(${TLS_GTEST_NAME} PRIVATE
     ..

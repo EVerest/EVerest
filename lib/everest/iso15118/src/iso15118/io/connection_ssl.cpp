@@ -20,6 +20,7 @@
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/ssl.h>
+#include <openssl/x509.h>
 
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/detail/io/helper_ssl.hpp>
@@ -218,6 +219,47 @@ int private_key_callback(char* buf, int size, [[maybe_unused]] int rwflag, void*
     return max_copy_chars;
 }
 
+// Mirror of openssl::pin_sigalgs_to_cert_curve in lib/everest/tls.
+// Duplicated here because libiso15118 does not link against everest::tls.
+// Keep these two copies in sync.
+bool pin_sigalgs_to_cert_curve(SSL_CTX* ctx) {
+    X509* leaf = SSL_CTX_get0_certificate(ctx);
+    if (leaf == nullptr) {
+        return true;
+    }
+
+    EVP_PKEY* pkey = X509_get0_pubkey(leaf);
+    if (pkey == nullptr || EVP_PKEY_id(pkey) != EVP_PKEY_EC) {
+        return true;
+    }
+
+    std::array<char, 80> name{};
+    std::size_t name_len = 0;
+    if (EVP_PKEY_get_group_name(pkey, name.data(), name.size(), &name_len) != 1) {
+        logf_info("pin_sigalgs_to_cert_curve: unable to read EC group name");
+        return true;
+    }
+
+    const std::string group(name.data(), name_len);
+    const char* sigalgs = nullptr;
+    if (group == "P-256" || group == "prime256v1") {
+        sigalgs = "ECDSA+SHA256";
+    } else if (group == "P-384" || group == "secp384r1") {
+        sigalgs = "ECDSA+SHA384";
+    } else if (group == "P-521" || group == "secp521r1") {
+        sigalgs = "ECDSA+SHA512";
+    } else {
+        logf_info("pin_sigalgs_to_cert_curve: unrecognised EC group '%s'", group.c_str());
+        return true;
+    }
+
+    if (SSL_CTX_set1_sigalgs_list(ctx, sigalgs) != 1) {
+        logf_error("SSL_CTX_set1_sigalgs_list(%s) failed", sigalgs);
+        return false;
+    }
+    return true;
+}
+
 SSL_CTX* init_ssl(const config::SSLConfig& ssl_config) {
 
     // Note: openssl does not provide support for ECDH-ECDSA-AES128-SHA256 anymore
@@ -265,6 +307,11 @@ SSL_CTX* init_ssl(const config::SSLConfig& ssl_config) {
 
     if (SSL_CTX_use_PrivateKey_file(ctx, ssl_config.path_certificate_key.c_str(), SSL_FILETYPE_PEM) != 1) {
         log_and_raise_openssl_error("Failed in SSL_CTX_use_PrivateKey_file()");
+    }
+
+    // Default: pin signature_algorithms to match the leaf cert's EC curve.
+    if (!pin_sigalgs_to_cert_curve(ctx)) {
+        log_and_raise_openssl_error("Failed to pin sigalgs to cert curve");
     }
 
     // Loading root certificates to verify client (only for tls 1.3)

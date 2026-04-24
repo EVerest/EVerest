@@ -494,6 +494,14 @@ bool configure_ssl_ctx(bool is_server, SSL_CTX*& ctx, const char* ciphersuites, 
                 result = false;
             }
         }
+
+        // Default: pin signature_algorithms to match the leaf cert's EC curve.
+        // No-op for non-EC keys. Hard failure on SSL_CTX_set1_sigalgs_list error.
+        if (result && cert_config.certificate_chain_file != nullptr) {
+            if (!openssl::pin_sigalgs_to_cert_curve(ctx)) {
+                result = false;
+            }
+        }
     }
 
     return result;
@@ -1184,7 +1192,7 @@ void Server::wait_for_connection(const ConnectionHandler& handler) {
 
 void Server::configure_signal_handler(int interrupt_signal) {
     s_sig_int = interrupt_signal;
-    struct sigaction action {};
+    struct sigaction action{};
     action.sa_handler = &sig_int_handler;
     action.sa_flags = SA_RESTART;
     if (sigaction(s_sig_int, &action, nullptr) == -1) {
