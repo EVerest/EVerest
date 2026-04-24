@@ -50,6 +50,10 @@ inline std::ostream& operator<<(std::ostream& os, const Mapping& mapping) {
     return os;
 }
 
+inline bool operator==(const Mapping& lhs, const Mapping& rhs) {
+    return lhs.evse == rhs.evse && lhs.connector == rhs.connector;
+}
+
 /// \brief Writes the string representation of the given Mapping \p mapping to the given output stream \p os
 /// \returns an output stream with the Mapping written to
 inline std::ostream& operator<<(std::ostream& os, const std::optional<Mapping>& mapping) {
@@ -70,6 +74,10 @@ struct ModuleTierMappings {
         implementations; ///< Mappings for the individual implementations of the module
 };
 
+inline bool operator==(const ModuleTierMappings& lhs, const ModuleTierMappings& rhs) {
+    return lhs.module == rhs.module && lhs.implementations == rhs.implementations;
+}
+
 /// \brief A Requirement of an EVerest module
 struct Requirement {
     std::string id;
@@ -77,6 +85,10 @@ struct Requirement {
 };
 
 bool operator<(const Requirement& lhs, const Requirement& rhs);
+
+inline bool operator==(const Requirement& lhs, const Requirement& rhs) {
+    return lhs.id == rhs.id && lhs.index == rhs.index;
+}
 
 /// \brief A Fulfillment relates a Requirement to its connected implementation, identified via its module and
 /// implementation id.
@@ -86,11 +98,20 @@ struct Fulfillment {
     Requirement requirement;       // the requirement of the module that is fulfilled
 };
 
+inline bool operator==(const Fulfillment& lhs, const Fulfillment& rhs) {
+    return lhs.module_id == rhs.module_id && lhs.implementation_id == rhs.implementation_id &&
+           lhs.requirement == rhs.requirement;
+}
+
 struct TelemetryConfig {
     int id;
     explicit TelemetryConfig(int id) : id(id) {
     }
 };
+
+inline bool operator==(const TelemetryConfig& lhs, const TelemetryConfig& rhs) {
+    return lhs.id == rhs.id;
+}
 
 namespace everest::config {
 
@@ -172,6 +193,12 @@ struct ConfigurationParameterCharacteristics {
     std::optional<int32_t> max_value;
 };
 
+inline bool operator==(const ConfigurationParameterCharacteristics& lhs,
+                        const ConfigurationParameterCharacteristics& rhs) {
+    return lhs.datatype == rhs.datatype && lhs.mutability == rhs.mutability && lhs.unit == rhs.unit &&
+           lhs.min_value == rhs.min_value && lhs.max_value == rhs.max_value;
+}
+
 /// \brief Struct that contains the name, value and characteristics of a configuration parameter
 struct ConfigurationParameter {
     std::string name;
@@ -181,6 +208,10 @@ struct ConfigurationParameter {
     bool validate_type() const;
 };
 
+inline bool operator==(const ConfigurationParameter& lhs, const ConfigurationParameter& rhs) {
+    return lhs.name == rhs.name && lhs.value == rhs.value && lhs.characteristics == rhs.characteristics;
+}
+
 /// \brief Access control information to an individual module config
 struct ModuleConfigAccess {
     bool allow_read = false;  ///< Allow read access to config items
@@ -189,6 +220,11 @@ struct ModuleConfigAccess {
     bool allow_set_read_only = false; ///< If ReadOnly config items can be treated as ReadWrite (this typically requires
                                       ///< a reboot to have an effect)
 };
+
+inline bool operator==(const ModuleConfigAccess& lhs, const ModuleConfigAccess& rhs) {
+    return lhs.allow_read == rhs.allow_read && lhs.allow_write == rhs.allow_write &&
+           lhs.allow_set_read_only == rhs.allow_set_read_only;
+}
 
 /// \brief
 struct ConfigAccess {
@@ -201,10 +237,19 @@ struct ConfigAccess {
                  ///< and the value the associated access rights
 };
 
+inline bool operator==(const ConfigAccess& lhs, const ConfigAccess& rhs) {
+    return lhs.allow_global_read == rhs.allow_global_read && lhs.allow_global_write == rhs.allow_global_write &&
+           lhs.allow_set_read_only == rhs.allow_set_read_only && lhs.modules == rhs.modules;
+}
+
 /// \brief Access control information for a particular module
 struct Access {
     std::optional<ConfigAccess> config; ///< Access control to other modules configuration items
 };
+
+inline bool operator==(const Access& lhs, const Access& rhs) {
+    return lhs.config == rhs.config;
+}
 
 /// \brief Struct that contains the configuration of an EVerest module
 struct ModuleConfig {
@@ -220,6 +265,14 @@ struct ModuleConfig {
     ModuleTierMappings mapping;
     Access access;
 };
+
+inline bool operator==(const ModuleConfig& lhs, const ModuleConfig& rhs) {
+    return lhs.standalone == rhs.standalone && lhs.module_name == rhs.module_name &&
+           lhs.module_id == rhs.module_id && lhs.capabilities == rhs.capabilities &&
+           lhs.configuration_parameters == rhs.configuration_parameters &&
+           lhs.telemetry_enabled == rhs.telemetry_enabled && lhs.telemetry_config == rhs.telemetry_config &&
+           lhs.connections == rhs.connections && lhs.mapping == rhs.mapping && lhs.access == rhs.access;
+}
 
 enum class SetConfigStatus {
     Accepted,

@@ -27,27 +27,27 @@ enum class SetActiveSlotStatus {
     Success,
     AlreadyActive,
     DoesNotExist,
-    NotAllowed
+    Rejected
 };
 
 enum class DeleteSlotStatus {
     Success,
     CannotDeleteActiveSlot,
     DoesNotExist,
-    NotAllowed
+    Rejected
 };
 
 enum class StopModulesResult {
     Stopping,
     NoModulesToStop,
-    NotAllowed
+    Rejected
 };
 
 enum class RestartModulesResult {
     Starting,
     Restarting,
     NoConfigToStart,
-    NotAllowed
+    Rejected
 };
 
 enum class SetConfigParameterResult {
