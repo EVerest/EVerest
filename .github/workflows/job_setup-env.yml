@@ -12,11 +12,6 @@ on:
         description: 'The reference of the everest-ci repository to checkout'
         required: true
         type: string
-      instance_name_override:
-        description: 'Optional override for the documentation instance name'
-        required: false
-        default: ''
-        type: string
     outputs:
       ref_everest_ci:
         description: 'The reference of the everest-ci repository to checkout'
@@ -27,9 +22,6 @@ on:
       is_fork:
         description: 'Whether the current repository is a fork'
         value: ${{ jobs.setup-env.outputs.is_fork }}
-      instance_name:
-        description: 'The documentation instance name derived from the trigger'
-        value: ${{ jobs.setup-env.outputs.instance_name }}
 
 
 jobs:
@@ -39,7 +31,6 @@ jobs:
     outputs:
       is_fork: ${{ steps.is_fork.outputs.is_fork }}
       closest_tag_everest_ci: ${{ steps.set_tag_everest_ci.outputs.closest_tag }}
-      instance_name: ${{ steps.instance_name.outputs.instance_name }}
     steps:
       - name: Determine closest tag of everest-ci
         id: set_tag_everest_ci
@@ -70,24 +61,6 @@ jobs:
           fi
 
           echo "closest_tag=$TAG" >> $GITHUB_OUTPUT
-      - name: Determine documentation instance name
-        id: instance_name
-        run: |
-          override="${{ inputs.instance_name_override }}"
-          if [[ -n "${override}" ]]; then
-            raw="${override}"
-          elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
-            raw="nightly"
-          elif [[ "${GITHUB_REF}" == refs/heads/stable/* ]]; then
-            raw="${GITHUB_REF_NAME}"
-          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            raw="release_${GITHUB_REF_NAME}"
-          else
-            raw="ref_${GITHUB_REF_NAME}"
-          fi
-          # Sanitize: lowercase, replace any character not in [a-z0-9_] with _
-          sanitized=$(echo "${raw}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9_' '_')
-          echo "instance_name=${sanitized}" >> $GITHUB_OUTPUT
       - name: Determine whether the PR comes from fork
         id: is_fork
         run: |
