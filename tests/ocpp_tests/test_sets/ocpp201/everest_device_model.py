@@ -2,6 +2,7 @@
 # Copyright Pionix GmbH and Contributors to EVerest
 
 import pytest
+import asyncio
 from copy import deepcopy
 from typing import Dict
 from datetime import datetime
@@ -140,6 +141,7 @@ async def test_set_get_variable_01(
 
     # Restart the charge point to apply the changes
     test_controller.stop()
+    await asyncio.sleep(1)
     test_controller.start()
     charge_point_v201 = await central_system_v201.wait_for_chargepoint(
         wait_for_bootnotification=True
