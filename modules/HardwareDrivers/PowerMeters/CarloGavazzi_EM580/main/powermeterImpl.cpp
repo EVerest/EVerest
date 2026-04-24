@@ -613,7 +613,7 @@ powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& treq
         return {types::powermeter::TransactionRequestStatus::OK};
     } catch (const std::exception& e) {
         EVLOG_error << __PRETTY_FUNCTION__ << " Error: " << e.what() << std::endl;
-        return {types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {}, "can't start transaction"};
+        return {types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, "can't start transaction", {}, {}};
     }
 }
 
