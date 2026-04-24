@@ -5,7 +5,10 @@
 
 #include <memory>
 #include <mutex>
+#include <openssl/obj_mac.h>
+#include <openssl/ssl.h>
 #include <poll.h>
+#include <string>
 #include <thread>
 
 using namespace std::chrono_literals;
@@ -904,5 +907,108 @@ TEST_F(TlsTest, SuspendToRunning) {
     std::this_thread::sleep_for(std::chrono::milliseconds(tls::c_serve_timeout_ms + 100));
     EXPECT_EQ(server.state(), state_t::running);
 }
+
+// ----------------------------------------------------------------------------
+// Full-handshake sigalg pinning integration tests
+//
+// Exercises the end-to-end handshake: server is configured from one of the
+// per-curve PKI fixtures (pki-P-256/, pki-P-521/) generated at build time by
+// pki-multi-curve.sh. The client advertises all three ECDSA sigalgs so the
+// pin applied server-side by openssl::pin_sigalgs_to_cert_curve() is the only
+// thing that can pick the specific (ECDSA, hash) pair. We then verify via
+// SSL_get_peer_signature_nid() on the client connection that the actual wire
+// signature matches the curve of the server's leaf certificate.
+//
+// The P-256 test doubles as a regression guard: pre-Phase-1 behaviour was to
+// leave the default sigalg list alone, so SHA256 happened to be chosen by
+// OpenSSL anyway. With Phase 1 the same NID must still be observed.
+class TlsSigAlgTest : public TlsTest, public testing::WithParamInterface<const char*> {
+protected:
+    void SetUp() override {
+        TlsTest::SetUp();
+        // Replace the default (alt_)server_* fixtures with the curve-specific
+        // chain built by pki-multi-curve.sh. Only one chain is configured so
+        // there is no ambiguity about which leaf the server presents.
+        const std::string curve = GetParam();
+        const std::string dir = "pki-" + curve + "/";
+        server_config.chains.clear();
+        auto& ref = server_config.chains.emplace_back();
+        // store the constructed paths in the fixture so the const char*
+        // pointers remain valid for the lifetime of the test.
+        m_server_chain = dir + "server_chain.pem";
+        m_server_priv = dir + "server_priv.pem";
+        m_server_root = dir + "server_root_cert.pem";
+        m_client_verify = dir + "server_root_cert.pem";
+        ref.certificate_chain_file = m_server_chain.c_str();
+        ref.private_key_file = m_server_priv.c_str();
+        ref.trust_anchor_file = m_server_root.c_str();
+        ref.ocsp_response_files.clear();
+        // Force TLS 1.2: SSL_get_peer_signature_nid() is populated for both
+        // TLS 1.2 and 1.3, but TLS 1.2 gives the most direct observation
+        // (ServerKeyExchange's signature).
+        server_config.ciphersuites = "";
+
+        client_config.verify_locations_file = m_client_verify.c_str();
+        client_config.status_request = false;
+        client_config.status_request_v2 = false;
+    }
+
+    // Persist the std::string backing stores for the ConfigItem const char*
+    // pointers so they outlive SetUp().
+    std::string m_server_chain;
+    std::string m_server_priv;
+    std::string m_server_root;
+    std::string m_client_verify;
+};
+
+TEST_P(TlsSigAlgTest, PeerSignatureNidMatchesCurve) {
+    const std::string curve = GetParam();
+    // SSL_get_peer_signature_nid() returns the digest NID of the server's
+    // handshake signature. The expected value is the SHA* NID that matches
+    // the leaf cert's EC curve: P-256->SHA256, P-384->SHA384, P-521->SHA512.
+    const int expected_hash_nid = (curve == "P-256")   ? NID_sha256
+                                  : (curve == "P-384") ? NID_sha384
+                                  : (curve == "P-521") ? NID_sha512
+                                                       : 0;
+    ASSERT_NE(expected_hash_nid, 0) << "unhandled curve param " << curve;
+
+    int observed_hash_nid = 0;
+    int observed_sig_type_nid = 0;
+    bool connected = false;
+
+    auto client_handler = [&observed_hash_nid, &observed_sig_type_nid,
+                           &connected](tls::Client::ConnectionPtr& connection) {
+        if (!connection) {
+            return;
+        }
+        // Advertise all three ECDSA sigalgs so the server-side pin is what
+        // picks the pair. SSL_set1_sigalgs_list on the per-connection SSL
+        // takes effect before the handshake.
+        // ssl_context() is deprecated for production code but remains the
+        // only way for a test to reach the underlying SSL* for inspection.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+        SSL* ssl = connection->ssl_context();
+#pragma GCC diagnostic pop
+        ASSERT_NE(ssl, nullptr);
+        ASSERT_EQ(SSL_set1_sigalgs_list(ssl, "ECDSA+SHA256:ECDSA+SHA384:ECDSA+SHA512"), 1);
+
+        if (connection->connect() == tls::Connection::result_t::success) {
+            connected = true;
+            (void)SSL_get_peer_signature_nid(ssl, &observed_hash_nid);
+            (void)SSL_get_peer_signature_type_nid(ssl, &observed_sig_type_nid);
+            connection->shutdown();
+        }
+    };
+
+    start();
+    connect(client_handler);
+    EXPECT_TRUE(connected) << "TLS handshake failed for curve " << curve;
+    EXPECT_EQ(observed_hash_nid, expected_hash_nid) << "SSL_get_peer_signature_nid=" << observed_hash_nid
+                                                    << " expected " << expected_hash_nid << " for curve " << curve;
+    EXPECT_EQ(observed_sig_type_nid, EVP_PKEY_EC) << "expected ECDSA signature type for curve " << curve;
+}
+
+INSTANTIATE_TEST_SUITE_P(AllCurves, TlsSigAlgTest, ::testing::Values("P-256", "P-384", "P-521"));
 
 } // namespace
