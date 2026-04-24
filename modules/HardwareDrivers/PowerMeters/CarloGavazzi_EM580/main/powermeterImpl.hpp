@@ -43,6 +43,10 @@ public:
     powermeterImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<CarloGavazzi_EM580>& mod, Conf& config) :
         powermeterImplBase(ev, "main"), mod(mod), config(config){};
 
+    // Marker used to append the transaction id to the tariff text (TT field).
+    // Format: "<tariff_text><=><transaction_id>"
+    static constexpr std::string_view TARIFF_TEXT_TRANSACTION_ID_MARKER = "<=>";
+
     // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
     // insert your public definitions here
     ~powermeterImpl() override;
@@ -66,6 +70,10 @@ public:
 
         static void set_public_key_hex(powermeterImpl& self, std::string public_key_hex) {
             self.m_public_key_hex = std::move(public_key_hex);
+        }
+
+        static void set_signed_map_word_count(powermeterImpl& self, std::uint16_t signed_map_word_count) {
+            self.m_signed_map_word_count = signed_map_word_count;
         }
 
         static types::powermeter::TransactionStartResponse start_transaction(powermeterImpl& self,
@@ -102,12 +110,14 @@ private:
 
     std::optional<types::units_signed::SignedMeterValue> m_start_signed_meter_value;
 
-    int m_public_key_length_in_bits;
+    std::uint16_t m_public_key_length_in_bits;
     std::string m_public_key_hex;
     std::string m_transaction_id;
     std::string m_measure_module_firmware_version;
     std::string m_communication_module_firmware_version;
     std::string m_serial_number;
+    std::string m_signature_method_string;
+    std::uint16_t m_signed_map_word_count{0};
 
     std::atomic_bool m_transaction_active{false};
     std::atomic_bool m_pending_time_sync{false};
@@ -123,6 +133,7 @@ private:
     void configure_device();
 
     void read_signature_config();
+    types::units_signed::SignedMeterValue read_signed_meter_value();
     void read_powermeter_values();
     void dump_device_state(void);
     void read_firmware_versions();
