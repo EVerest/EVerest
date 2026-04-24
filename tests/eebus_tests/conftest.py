@@ -39,6 +39,32 @@ class EebusPortStrategy(EverestConfigAdjustmentStrategy):
         return adjusted
 
 
+class EebusModuleConfigStrategy(EverestConfigAdjustmentStrategy):
+    """Applies a dict of config_module overrides to every EEBUS module in the
+    test config. Lets individual tests customize the allowlist / accept_unknown
+    flag / etc. without maintaining a separate yaml per scenario.
+
+    Keys set to ``None`` are removed from the module config (lets a test drop
+    keys set to "" drop the override so the base yaml value applies).
+    """
+
+    def __init__(self, overrides: dict):
+        self._overrides = overrides
+
+    def adjust_everest_configuration(self, everest_config: dict) -> dict:
+        adjusted = deepcopy(everest_config)
+        for module_def in adjusted.get("active_modules", {}).values():
+            if module_def.get("module") != "EEBUS":
+                continue
+            config = module_def.setdefault("config_module", {})
+            for key, value in self._overrides.items():
+                if value is None:
+                    config.pop(key, None)
+                else:
+                    config[key] = value
+        return adjusted
+
+
 def get_free_port() -> int:
     """Return an unused TCP port."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

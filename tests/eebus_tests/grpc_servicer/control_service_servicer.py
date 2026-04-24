@@ -33,13 +33,22 @@ class ControlServiceServicer(control_service_pb2_grpc.ControlServiceServicer):
             "RegisterRemoteSki",
             "AddUseCase",
             "SubscribeUseCaseEvents",
+            "SubscribeDiscoveryEvents",
         ]
         self.command_queues = {}
 
         for command in self._commands:
-            if command == "SubscribeUseCaseEvents":
+            if command in ("SubscribeUseCaseEvents", "SubscribeDiscoveryEvents"):
                 self.command_queues[command] = CommandQueues(
                     request_queue=asyncio.Queue(maxsize=1),
+                    response_queue=asyncio.Queue()
+                )
+            elif command == "RegisterRemoteSki":
+                # RegisterRemoteSki may be called multiple times (once per allowlist
+                # entry at startup + runtime discovery events), so use unbounded
+                # queues and let each test pre-seed responses as needed.
+                self.command_queues[command] = CommandQueues(
+                    request_queue=asyncio.Queue(),
                     response_queue=asyncio.Queue()
                 )
             else:
@@ -86,6 +95,20 @@ class ControlServiceServicer(control_service_pb2_grpc.ControlServiceServicer):
         while not self._stopped:
             try:
                 res = await asyncio.wait_for(self.command_queues["SubscribeUseCaseEvents"].response_queue.get(), timeout=15)
+                yield res
+            except asyncio.TimeoutError:
+                continue
+
+    async def SubscribeDiscoveryEvents(self, request, context):
+        logging.info("SubscribeDiscoveryEvents called")
+        try:
+            self.command_queues["SubscribeDiscoveryEvents"].request_queue.put_nowait(request)
+        except asyncio.QueueFull:
+            raise asyncio.QueueFull("SubscribeDiscoveryEvents request queue is full, not able to put request")
+
+        while not self._stopped:
+            try:
+                res = await asyncio.wait_for(self.command_queues["SubscribeDiscoveryEvents"].response_queue.get(), timeout=15)
                 yield res
             except asyncio.TimeoutError:
                 continue

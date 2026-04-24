@@ -20,7 +20,7 @@ Starts the real [eebus-go](https://github.com/enbility/eebus-go) reference contr
 1. Build and install EVerest with `BUILD_TESTING=ON` (EEBUS certs must be installed at `<prefix>/etc/everest/certs/eebus/`)
 2. Place the compiled `controlbox` binary at `tests/eebus_tests/controlbox` (or `~/go/bin/controlbox`)
 3. Place the control box TLS cert and key at `tests/eebus_tests/eebus.crt` and `tests/eebus_tests/eebus.key`
-4. Ensure the control box cert's SKI matches the `eebus_ems_ski` value in `config-test-eebus-reference.yaml`
+4. Ensure the control box cert's SKI matches the `eebus_ems_ski_allowlist` value in `config-test-eebus-reference.yaml`
 
 The test automatically reads EVerest's SKI from the installed certs and passes it to the control box so the SHIP trust handshake completes in both directions.
 

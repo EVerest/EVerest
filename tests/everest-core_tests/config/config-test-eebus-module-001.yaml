@@ -13,6 +13,6 @@ active_modules:
       serial_number: "123456789"
       eebus_service_port: 4715
       grpc_port: 50051
-      eebus_ems_ski: "this-is-a-ski-42"
+      eebus_ems_ski_allowlist: "00112233445566778899aabbccddeeff00112233"
   probe:
     module: ProbeModule

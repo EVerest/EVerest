@@ -21,6 +21,7 @@ from fixtures.eebus_module_test import eebus_test_env, EebusTestProbeModule, eve
 from fixtures.grpc_testing_server import control_service_server, control_service_servicer, cs_lpc_control_server, cs_lpc_control_servicer
 from helpers.import_helpers import insert_dir_to_sys_path
 from helpers.async_helpers import async_get, async_wait_for
+from conftest import EebusModuleConfigStrategy
 
 from test_data.test_data import TestData
 from test_data.test_data_not_active_load_limit import TestDataNotActiveLoadLimit
@@ -36,8 +37,19 @@ import control_service.types_pb2 as control_service_types_pb2
 import control_service.messages_pb2 as control_service_messages_pb2
 
 
-async def perform_eebus_handshake(control_service_servicer: ControlServiceServicer, cs_lpc_control_servicer: CsLpcControlServicer, cs_lpc_control_server: CsLpcControlServer, everest_core: EverestCore) -> EebusTestProbeModule:
-    """This helper function handles the complete EEBUS module init handshake and returns a started probe module."""
+async def perform_eebus_handshake(
+    control_service_servicer: ControlServiceServicer,
+    cs_lpc_control_servicer: CsLpcControlServicer,
+    cs_lpc_control_server: CsLpcControlServer,
+    everest_core: EverestCore,
+    expected_register_ski_count: int = 1,
+) -> EebusTestProbeModule:
+    """This helper function handles the complete EEBUS module init handshake and returns a started probe module.
+
+    ``expected_register_ski_count`` is the number of ``RegisterRemoteSki`` calls the module is
+    expected to make before ``StartService`` (one per SKI in the effective allowlist). The caller
+    receives the list of observed SKIs via ``probe.registered_skis_at_boot`` after this returns.
+    """
 
     # Handle SetConfig
     control_service_servicer.command_queues["SetConfig"].response_queue.put_nowait(
@@ -57,11 +69,16 @@ async def perform_eebus_handshake(control_service_servicer: ControlServiceServic
         control_service_messages_pb2.EmptyResponse()
     )
 
-    # Handle RegisterRemoteSki
-    req = await async_get(control_service_servicer.command_queues["RegisterRemoteSki"].request_queue, timeout=5)
-    control_service_servicer.command_queues["RegisterRemoteSki"].response_queue.put_nowait(
-        control_service_messages_pb2.EmptyResponse()
-    )
+    # Handle RegisterRemoteSki — the module calls this once per SKI in the effective allowlist.
+    # Tests that customize the allowlist pass a matching ``expected_register_ski_count``.
+    probe.registered_skis_at_boot = []
+    for _ in range(expected_register_ski_count):
+        control_service_servicer.command_queues["RegisterRemoteSki"].response_queue.put_nowait(
+            control_service_messages_pb2.EmptyResponse()
+        )
+    for _ in range(expected_register_ski_count):
+        req = await async_get(control_service_servicer.command_queues["RegisterRemoteSki"].request_queue, timeout=5)
+        probe.registered_skis_at_boot.append(req.remote_ski)
 
     # Handle AddUseCase
     req = await async_get(control_service_servicer.command_queues["AddUseCase"].request_queue, timeout=5)
@@ -787,4 +804,391 @@ class TestEEBUSModule:
                 await hb_task
             except asyncio.CancelledError:
                 pass
+
+
+# ---------------------------------------------------------------------------
+# Phase 3A helpers: allowlist / discovery / active-EMS connection tests
+# ---------------------------------------------------------------------------
+
+
+def ski(first_char: str) -> str:
+    """Expand a single hex char to a 40-char lowercase SKI for readable inputs."""
+    return first_char * 40
+
+
+SKI_A = ski("a")
+SKI_B = ski("b")
+SKI_C = ski("c")
+SKI_UNKNOWN = ski("e")
+
+
+def _discovery_event(
+    ski_value: str,
+    is_trusted: bool = False,
+    event_type=None,
+    brand: str = "TestBrand",
+    model: str = "TestModel",
+) -> "control_service_messages_pb2.DiscoveryEvent":
+    return control_service_messages_pb2.DiscoveryEvent(
+        type=event_type if event_type is not None else control_service_messages_pb2.DiscoveryEvent.DISCOVERED,
+        remote_ski=ski_value,
+        brand=brand,
+        model=model,
+        is_trusted=is_trusted,
+    )
+
+
+def _usecase_event(ski_value: str, event_name: str) -> "control_service_messages_pb2.SubscribeUseCaseEventsResponse":
+    return control_service_messages_pb2.SubscribeUseCaseEventsResponse(
+        remote_ski=ski_value,
+        remote_entity_address=common_types_pb2.EntityAddress(entity_address=[1]),
+        use_case_event=control_service_types_pb2.UseCaseEvent(
+            use_case=control_service_types_pb2.UseCase(
+                actor=control_service_types_pb2.UseCase.ActorType.ControllableSystem,
+                name=control_service_types_pb2.UseCase.NameType.limitationOfPowerConsumption,
+            ),
+            event=event_name,
+        ),
+    )
+
+
+async def _assert_no_register_remote_ski(control_service_servicer: ControlServiceServicer, window_s: float = 2.0) -> None:
+    """Assert the module does NOT call RegisterRemoteSki within ``window_s`` seconds."""
+    try:
+        req = await asyncio.wait_for(
+            control_service_servicer.command_queues["RegisterRemoteSki"].request_queue.get(),
+            timeout=window_s,
+        )
+        pytest.fail(f"Unexpected RegisterRemoteSki call for SKI={req.remote_ski}")
+    except asyncio.TimeoutError:
+        pass  # expected — no register call
+
+
+@pytest.mark.probe_module
+class TestEEBUSAllowlistDiscovery:
+    """Phase 3A tests for the multi-SKI allowlist, runtime discovery events, and
+    the LPC active-EMS connection behavior."""
+
+    # --- Test 1 --------------------------------------------------------------
+
+    @pytest.mark.everest_core_config("config-test-eebus-module-001.yaml")
+    @pytest.mark.everest_config_adaptions(
+        EebusModuleConfigStrategy({
+            "eebus_ems_ski_allowlist": f"{SKI_A},{SKI_B},{SKI_C}",
+        })
+    )
+    @pytest.mark.asyncio
+    async def test_allowlist_registers_multiple_skis_at_boot(
+        self,
+        eebus_test_env: dict,
+    ):
+        """[Phase 3A] The module must call RegisterRemoteSki once per allowlist entry before StartService."""
+        everest_core = eebus_test_env["everest_core"]
+        control_service_servicer = eebus_test_env["control_service_servicer"]
+        cs_lpc_control_servicer = eebus_test_env["cs_lpc_control_servicer"]
+        cs_lpc_control_server = eebus_test_env["cs_lpc_control_server"]
+
+        probe = await perform_eebus_handshake(
+            control_service_servicer,
+            cs_lpc_control_servicer,
+            cs_lpc_control_server,
+            everest_core,
+            expected_register_ski_count=3,
+        )
+
+        assert set(probe.registered_skis_at_boot) == {SKI_A, SKI_B, SKI_C}
+
+    # --- Test 2 --------------------------------------------------------------
+
+    @pytest.mark.everest_core_config("config-test-eebus-module-001.yaml")
+    @pytest.mark.everest_config_adaptions(
+        EebusModuleConfigStrategy({
+            "eebus_ems_ski_allowlist": f"{SKI_A},{SKI_B}",
+        })
+    )
+    @pytest.mark.asyncio
+    async def test_discovery_event_allowlisted_auto_registers(
+        self,
+        eebus_test_env: dict,
+    ):
+        """[Phase 3A] A DISCOVERED (is_trusted=False) event for an allowlisted SKI triggers a runtime RegisterRemoteSki."""
+        everest_core = eebus_test_env["everest_core"]
+        control_service_servicer = eebus_test_env["control_service_servicer"]
+        cs_lpc_control_servicer = eebus_test_env["cs_lpc_control_servicer"]
+        cs_lpc_control_server = eebus_test_env["cs_lpc_control_server"]
+
+        probe = await perform_eebus_handshake(
+            control_service_servicer,
+            cs_lpc_control_servicer,
+            cs_lpc_control_server,
+            everest_core,
+            expected_register_ski_count=2,
+        )
+
+        # Pre-seed a response for the expected runtime RegisterRemoteSki call.
+        control_service_servicer.command_queues["RegisterRemoteSki"].response_queue.put_nowait(
+            control_service_messages_pb2.EmptyResponse()
+        )
+        # Push DISCOVERED event for allowlisted SKI_B (is_trusted=False).
+        control_service_servicer.command_queues["SubscribeDiscoveryEvents"].response_queue.put_nowait(
+            _discovery_event(SKI_B, is_trusted=False)
+        )
+
+        req = await async_get(
+            control_service_servicer.command_queues["RegisterRemoteSki"].request_queue, timeout=5
+        )
+        assert req.remote_ski == SKI_B
+
+    # --- Test 3 --------------------------------------------------------------
+
+    @pytest.mark.everest_core_config("config-test-eebus-module-001.yaml")
+    @pytest.mark.everest_config_adaptions(
+        EebusModuleConfigStrategy({
+            "eebus_ems_ski_allowlist": SKI_A,
+        })
+    )
+    @pytest.mark.asyncio
+    async def test_discovery_event_trusted_no_op(
+        self,
+        eebus_test_env: dict,
+    ):
+        """[Phase 3A] DISCOVERED events where the sidecar already trusts the SKI (is_trusted=True) are no-ops."""
+        everest_core = eebus_test_env["everest_core"]
+        control_service_servicer = eebus_test_env["control_service_servicer"]
+        cs_lpc_control_servicer = eebus_test_env["cs_lpc_control_servicer"]
+        cs_lpc_control_server = eebus_test_env["cs_lpc_control_server"]
+
+        probe = await perform_eebus_handshake(
+            control_service_servicer,
+            cs_lpc_control_servicer,
+            cs_lpc_control_server,
+            everest_core,
+            expected_register_ski_count=1,
+        )
+        assert probe.registered_skis_at_boot == [SKI_A]
+
+        # Trusted discovery event — must NOT trigger any further RegisterRemoteSki call.
+        control_service_servicer.command_queues["SubscribeDiscoveryEvents"].response_queue.put_nowait(
+            _discovery_event(SKI_A, is_trusted=True)
+        )
+        await _assert_no_register_remote_ski(control_service_servicer, window_s=2.0)
+
+    # --- Test 4 --------------------------------------------------------------
+
+    @pytest.mark.everest_core_config("config-test-eebus-module-001.yaml")
+    @pytest.mark.everest_config_adaptions(
+        EebusModuleConfigStrategy({
+            "eebus_ems_ski_allowlist": "",
+            "accept_unknown_ems": True,
+        })
+    )
+    @pytest.mark.asyncio
+    async def test_discovery_event_unknown_accepts_when_flag_true(
+        self,
+        eebus_test_env: dict,
+    ):
+        """[Phase 3A] accept_unknown_ems=true: unknown discovered EGs are auto-registered at runtime."""
+        everest_core = eebus_test_env["everest_core"]
+        control_service_servicer = eebus_test_env["control_service_servicer"]
+        cs_lpc_control_servicer = eebus_test_env["cs_lpc_control_servicer"]
+        cs_lpc_control_server = eebus_test_env["cs_lpc_control_server"]
+
+        probe = await perform_eebus_handshake(
+            control_service_servicer,
+            cs_lpc_control_servicer,
+            cs_lpc_control_server,
+            everest_core,
+            expected_register_ski_count=0,
+        )
+        assert probe.registered_skis_at_boot == []
+
+        # Pre-seed the runtime RegisterRemoteSki response.
+        control_service_servicer.command_queues["RegisterRemoteSki"].response_queue.put_nowait(
+            control_service_messages_pb2.EmptyResponse()
+        )
+        control_service_servicer.command_queues["SubscribeDiscoveryEvents"].response_queue.put_nowait(
+            _discovery_event(SKI_UNKNOWN, is_trusted=False)
+        )
+
+        req = await async_get(
+            control_service_servicer.command_queues["RegisterRemoteSki"].request_queue, timeout=5
+        )
+        assert req.remote_ski == SKI_UNKNOWN
+
+    # --- Test 5 --------------------------------------------------------------
+
+    @pytest.mark.everest_core_config("config-test-eebus-module-001.yaml")
+    @pytest.mark.everest_config_adaptions(
+        EebusModuleConfigStrategy({
+            "eebus_ems_ski_allowlist": SKI_A,
+            "accept_unknown_ems": False,
+        })
+    )
+    @pytest.mark.asyncio
+    async def test_discovery_event_unknown_ignores_when_flag_false(
+        self,
+        eebus_test_env: dict,
+    ):
+        """[Phase 3A] accept_unknown_ems=false: unknown discovered EGs are logged and ignored."""
+        everest_core = eebus_test_env["everest_core"]
+        control_service_servicer = eebus_test_env["control_service_servicer"]
+        cs_lpc_control_servicer = eebus_test_env["cs_lpc_control_servicer"]
+        cs_lpc_control_server = eebus_test_env["cs_lpc_control_server"]
+
+        probe = await perform_eebus_handshake(
+            control_service_servicer,
+            cs_lpc_control_servicer,
+            cs_lpc_control_server,
+            everest_core,
+            expected_register_ski_count=1,
+        )
+        assert probe.registered_skis_at_boot == [SKI_A]
+
+        control_service_servicer.command_queues["SubscribeDiscoveryEvents"].response_queue.put_nowait(
+            _discovery_event(SKI_UNKNOWN, is_trusted=False)
+        )
+        await _assert_no_register_remote_ski(control_service_servicer, window_s=2.0)
+
+    # --- Test 6 --------------------------------------------------------------
+
+    @pytest.mark.everest_core_config("config-test-eebus-module-001.yaml")
+    @pytest.mark.everest_config_adaptions(
+        EebusModuleConfigStrategy({
+            "eebus_ems_ski_allowlist": f"{SKI_A},{SKI_B}",
+        })
+    )
+    @pytest.mark.asyncio
+    async def test_active_ems_connection(
+        self,
+        eebus_test_env: dict,
+    ):
+        """[Phase 3A] LpcUseCaseHandler connects the first-seen data-event SKI; later data events from other
+        SKIs must be ignored (no downstream ConsumptionLimit read, no external limit update)."""
+        everest_core = eebus_test_env["everest_core"]
+        control_service_servicer = eebus_test_env["control_service_servicer"]
+        cs_lpc_control_servicer = eebus_test_env["cs_lpc_control_servicer"]
+        cs_lpc_control_server = eebus_test_env["cs_lpc_control_server"]
+
+        probe = await perform_eebus_handshake(
+            control_service_servicer,
+            cs_lpc_control_servicer,
+            cs_lpc_control_server,
+            everest_core,
+            expected_register_ski_count=2,
+        )
+
+        # Heartbeat from SKI-A connects the active EG. Not a ConsumptionLimit-triggering
+        # event, so no response pre-seed needed here.
+        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(
+            _usecase_event(SKI_A, "DataUpdateHeartbeat")
+        )
+
+        # DataUpdateLimit from SKI-B — must be ignored (connection is to SKI-A). If the module
+        # did NOT ignore it, it would call cs_lpc_control ConsumptionLimit to re-read.
+        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(
+            _usecase_event(SKI_B, "DataUpdateLimit")
+        )
+
+        try:
+            req = await asyncio.wait_for(
+                cs_lpc_control_servicer.command_queues["ConsumptionLimit"].request_queue.get(),
+                timeout=2.0,
+            )
+            pytest.fail(
+                f"ConsumptionLimit was read after a DataUpdateLimit from the non-active SKI "
+                f"(remote_ski field: {getattr(req, 'remote_ski', '<n/a>')}); the connected EG should have dropped it."
+            )
+        except asyncio.TimeoutError:
+            pass  # expected
+
+        # Confirm the connected EG still accepts events from SKI-A: a DataUpdateLimit from SKI-A
+        # should drive a ConsumptionLimit read through the stub.
+        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(
+            _usecase_event(SKI_A, "DataUpdateLimit")
+        )
+        req = await async_get(
+            cs_lpc_control_servicer.command_queues["ConsumptionLimit"].request_queue, timeout=5
+        )
+        assert req is not None
+        cs_lpc_control_servicer.command_queues["ConsumptionLimit"].response_queue.put_nowait(
+            cs_lpc_messages_pb2.ConsumptionLimitResponse(
+                load_limit=common_types_pb2.LoadLimit(is_active=False, value=0),
+            )
+        )
+
+    # --- Test 7 --------------------------------------------------------------
+
+    @pytest.mark.everest_core_config("config-test-eebus-module-001.yaml")
+    @pytest.mark.everest_config_adaptions(
+        EebusModuleConfigStrategy({
+            "eebus_ems_ski_allowlist": f"{SKI_A},{SKI_B}",
+        })
+    )
+    @pytest.mark.asyncio
+    async def test_active_ems_failover_through_failsafe(
+        self,
+        eebus_test_env: dict,
+    ):
+        """[Phase 3A] When the active EG goes quiet and the heartbeat timeout fires, the module enters
+        Failsafe which clears the connected EG. A different allowlisted EG can then take over."""
+        everest_core = eebus_test_env["everest_core"]
+        control_service_servicer = eebus_test_env["control_service_servicer"]
+        cs_lpc_control_servicer = eebus_test_env["cs_lpc_control_servicer"]
+        cs_lpc_control_server = eebus_test_env["cs_lpc_control_server"]
+
+        probe = await perform_eebus_handshake(
+            control_service_servicer,
+            cs_lpc_control_servicer,
+            cs_lpc_control_server,
+            everest_core,
+            expected_register_ski_count=2,
+        )
+
+        # Drive Init -> UnlimitedControlled via SKI-A (connects SKI-A).
+        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(
+            _usecase_event(SKI_A, "DataUpdateHeartbeat")
+        )
+        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(
+            _usecase_event(SKI_A, "DataUpdateLimit")
+        )
+        req = await async_get(
+            cs_lpc_control_servicer.command_queues["ConsumptionLimit"].request_queue, timeout=5
+        )
+        assert req is not None
+        cs_lpc_control_servicer.command_queues["ConsumptionLimit"].response_queue.put_nowait(
+            cs_lpc_messages_pb2.ConsumptionLimitResponse(
+                load_limit=common_types_pb2.LoadLimit(is_active=False, value=0),
+            )
+        )
+        # Drain the UnlimitedControlled transition limit the module emits.
+        await async_get(probe.external_limits_queue, timeout=5)
+
+        # No further heartbeats -> the 120 s heartbeat timeout must drive the module into
+        # Failsafe, which clears the active-EMS connected EG.
+        test_data_failsafe = TestDataFailsafe()
+        failsafe_limits = test_data_failsafe.get_expected_failsafe_limits(4200)
+        limits = await async_wait_for(probe.external_limits_queue, failsafe_limits, timeout=140)
+
+        # After Failsafe, SKI-B (different EG) heartbeats. The connected EG is unset, so SKI-B becomes the new active EG.
+        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(
+            _usecase_event(SKI_B, "DataUpdateHeartbeat")
+        )
+        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(
+            _usecase_event(SKI_B, "DataUpdateLimit")
+        )
+
+        req = await async_get(
+            cs_lpc_control_servicer.command_queues["ConsumptionLimit"].request_queue, timeout=10
+        )
+        assert req is not None
+        # Return an active limit so the module transitions Failsafe -> Limited.
+        test_data_active_load_limit = TestDataActiveLoadLimit()
+        cs_lpc_control_servicer.command_queues["ConsumptionLimit"].response_queue.put_nowait(
+            cs_lpc_messages_pb2.ConsumptionLimitResponse(
+                load_limit=test_data_active_load_limit.get_load_limit(),
+            )
+        )
+
+        expected_limits = test_data_active_load_limit.get_expected_external_limits()
+        limits = await async_wait_for(probe.external_limits_queue, expected_limits, timeout=10)
 
