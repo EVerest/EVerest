@@ -33,6 +33,12 @@ Have a look at this categorized list of all EVerest tutorials:
 
         Learn how to run a Plug-&-Charge simulation on your PC
 
+    .. grid-item-card:: Management APIs
+        :link: management_apis
+        :link-type: doc
+
+        Learn how to use the configuration API and the lifecycle API
+
     .. grid-item-card:: Using the Bazel Build Tool
         :link: bazel
         :link-type: doc
@@ -59,6 +65,7 @@ Have a look at this categorized list of all EVerest tutorials:
     ocpp16
     ocpp2
     plug-and-charge
+    management_apis
     bazel
     EVerest devcontainer <setup-devcontainer/index>
     everest_api
