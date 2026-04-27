@@ -39,14 +39,26 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
 add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})
 ev_register_test_target(${TEST_TARGET_NAME})
 
-# Copy the json files used for testing to the destination directory
+# Copy the json files used for testing to the destination directory.
+# Uses a stamp file so the copy only runs when source fixtures change —
+# plain add_custom_target always runs, which invalidates dependents on every build.
+# NOTE: glob is intentionally NOT CONFIGURE_DEPENDS — that flag triggers a cmake
+# reconfigure on any fixture mtime change, which cascades into ev-cli regeneration
+# and rebuilds hundreds of unrelated targets. If you add/remove a fixture file,
+# re-run cmake manually.
 file(GLOB JSON_TEST_FILES "${CMAKE_CURRENT_SOURCE_DIR}/json_tests/*")
+set(JSON_TESTS_STAMP "${CMAKE_CURRENT_BINARY_DIR}/json_tests.stamp")
 
-add_custom_target(copy_json_tests
+add_custom_command(
+    OUTPUT ${JSON_TESTS_STAMP}
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${CMAKE_CURRENT_SOURCE_DIR}/json_tests
             ${CMAKE_CURRENT_BINARY_DIR}/json_tests
+    COMMAND ${CMAKE_COMMAND} -E touch ${JSON_TESTS_STAMP}
     DEPENDS ${JSON_TEST_FILES}
+    VERBATIM
 )
+
+add_custom_target(copy_json_tests DEPENDS ${JSON_TESTS_STAMP})
 
 add_dependencies(${TEST_TARGET_NAME} copy_json_tests)
