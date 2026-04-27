@@ -432,7 +432,7 @@ Market::Market(const types::energy::EnergyFlowRequest& _energy_flow_request, con
     }
 }
 
-ScheduleRes Market::get_sold_energy() {
+const ScheduleRes& Market::get_sold_energy() const {
     return sold_root;
 }
 
