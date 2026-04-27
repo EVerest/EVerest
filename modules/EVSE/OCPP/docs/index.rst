@@ -22,6 +22,49 @@ JSON configuration file. The module uses the configuration parameter **ChargePoi
 :doc:`This EVerest OCPP tutorial </tutorials/ocpp16>`, the OCPP specification, and  
 `libocpp's documentation <https://github.com/EVerest/libocpp>`_ are great resources to learn about the different configuration options.
 
+OCPP 1.6 device model migration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+EVerest can migrate an existing OCPP 1.6 JSON configuration into the OCPP device model storage used by the module.
+This is intended for deployments that already use ``ChargePointConfigPath`` and ``UserConfigPath`` and want to move
+their effective configuration values into the device model database without manually recreating them.
+
+The following module configuration parameters control this process:
+
+* **ChargePointConfigPath**: path to the base OCPP 1.6 JSON configuration
+* **UserConfigPath**: path to the JSON overlay that contains persisted changes from local updates or from the CSMS
+* **DeviceModelDatabasePath**: path to the SQLite database file that stores the migrated device model values
+* **DeviceModelDatabaseMigrationPath**: path to the SQL migration files for the device model database schema
+* **DeviceModelConfigPath**: path to the component-config directory that serves as the migration baseline
+* **DeviceModelConfigMappingsPath**: optional YAML file for additional mappings of non-standard OCPP 1.6 keys into
+  device model variables
+* **EnableOCPP16ConfigMigration**: enables/disables migration of effective OCPP 1.6 JSON values into the device model
+* **ForceDeviceModelDatabaseOverride**: development option to rerun the migration and overwrite an existing device
+  model database
+
+At startup, the module evaluates the effective OCPP 1.6 configuration from the base JSON file and the user overlay,
+applies these values to the configured device model baseline, and stores the result in the device model database.
+This migration is normally performed once. On subsequent starts, the existing device model database is reused.
+
+The device model component configuration (JSON) has a dual role in this process: it defines which components and
+variables exist, and it can also define initial/default values for these variables. During migration, this component
+configuration is the structural baseline that receives patched OCPP 1.6 values. It is recommended to verify that 
+the delivered component configuration works with OCPP1.6 as well as with OCPP2.x.
+
+Migration is optional. Integrators can also choose to configure the device model directly via component configuration
+JSON files (and device model storage) without migrating OCPP 1.6 JSON values. To do so, set
+``EnableOCPP16ConfigMigration`` to ``false``.
+
+With ``EnableOCPP16ConfigMigration=false``, the module initializes/updates the device model from component
+configuration only. This allows starting directly from an OCPP2.x component configuration baseline. Note 
+that the configuration of the OCPP16LegacyCtrlr component is still required.
+
+``ForceDeviceModelDatabaseOverride`` can be used to deliberately recreate the device model database.
+With ``EnableOCPP16ConfigMigration=true`` this reruns migration from OCPP 1.6 JSON values.
+With ``EnableOCPP16ConfigMigration=false`` this recreates from component configuration only.
+
+For step-by-step operational instructions on performing a migration, see :ref:`howto-ocpp-storage-migration`.
+
 Integration in EVerest
 ======================
 
