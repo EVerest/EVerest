@@ -18,7 +18,7 @@ import yaml
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Creates a trailbook_metadata.yaml file')
+    parser = argparse.ArgumentParser(description='Creates metadata yaml and json files')
     
     parser.add_argument(
         '--multiversion-root-directory',
@@ -33,7 +33,7 @@ def main():
         type=Path,
         dest='yaml_output_path',
         action='store',
-        required=False,
+        required=True,
         default=None,
         help='Path where the trailbook_metadata.yaml file will be created'
     )
@@ -42,7 +42,7 @@ def main():
         type=Path,
         dest='json_output_path',
         action='store',
-        required=False,
+        required=True,
         default=None,
         help='Path where the trailbook_metadata.json file will be created'
     )
@@ -56,7 +56,7 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.yaml_output_path is None and args.json_output_path is None:
+    if args.yaml_output_path is None or args.json_output_path is None:
         parser.error("at least one of --yaml-output-path or --json-output-path is required")
 
     if not args.multiversion_root_dir.is_absolute():

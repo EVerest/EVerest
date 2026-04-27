@@ -7,6 +7,14 @@ on:
         required: false
         type: string
         default: ''
+      runner:
+        description: Which runner to use
+        type: choice
+        default: 'ubuntu-24.04'
+        required: true
+        options:
+          - 'ubuntu-24.04'
+          - 'large-ubuntu-24.04-xxl'
 
 jobs:
 
@@ -14,7 +22,7 @@ jobs:
     name: Setup Environment
     uses: ./.github/workflows/job_setup-env.yml
     with:
-      runner: 'ubuntu-24.04'
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
       ref_everest_ci: v1.5.5
 
 
@@ -24,7 +32,7 @@ jobs:
       - setup-env
     uses: ./.github/workflows/job_build-build-kit.yml
     with:
-      runner: 'ubuntu-24.04'
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
       base_image_tag_everest_ci: ${{ needs.setup-env.outputs.closest_tag_everest_ci }}
 
 
@@ -44,4 +52,4 @@ jobs:
       deploy_docs: true
       instance_name: ${{ inputs.instance_name || format('ref_{0}_{1}', github.ref_name, github.sha) }}
       is_release: false
-      overwrite_existing_instance: true
+      overwrite_existing_instance: false
