@@ -2444,6 +2444,24 @@ std::optional<std::string> ChargePointConfiguration::getDefaultPriceText(const s
     return std::nullopt;
 }
 
+std::optional<json> ChargePointConfiguration::getDefaultPriceText() {
+    if (!this->config.contains("CostAndPrice")) {
+        return std::nullopt;
+    }
+
+    if (!this->config["CostAndPrice"].contains("DefaultPriceText")) {
+        return std::nullopt;
+    }
+
+    const auto default_price_texts = this->config["CostAndPrice"].at("DefaultPriceText");
+
+    if (!default_price_texts.is_object()) {
+        return std::nullopt;
+    }
+
+    return default_price_texts;
+}
+
 TariffMessage ChargePointConfiguration::getDefaultTariffMessage(bool offline) {
     TariffMessage tariff_message;
 
@@ -2929,6 +2947,39 @@ std::optional<std::vector<KeyValue>> ChargePointConfiguration::getAllMeterPublic
     return key_values;
 }
 
+std::optional<std::string> ChargePointConfiguration::getMeterPublicKeysCsl() {
+    if (!this->config["Internal"].contains("MeterPublicKeys")) {
+        return std::nullopt;
+    }
+
+    const auto& meter_public_keys = this->config["Internal"].at("MeterPublicKeys");
+
+    if (!meter_public_keys.is_array()) {
+        return std::nullopt;
+    }
+
+    std::vector<std::string> keys;
+    for (const auto& key : meter_public_keys) {
+        keys.push_back(key.get<std::string>());
+    }
+
+    return utils::to_csl(keys);
+}
+
+std::optional<json> ChargePointConfiguration::getMeterPublicKeys() {
+    if (!this->config["Internal"].contains("MeterPublicKeys")) {
+        return std::nullopt;
+    }
+
+    const auto& meter_public_keys = this->config["Internal"].at("MeterPublicKeys");
+
+    if (!meter_public_keys.is_array()) {
+        return std::nullopt;
+    }
+
+    return meter_public_keys;
+}
+
 bool ChargePointConfiguration::setMeterPublicKey(const std::int32_t connector_id, const std::string& public_key_pem) {
     if (connector_id > this->getNumberOfConnectors() or connector_id < 1) {
         EVLOG_warning << "Cannot set MeterPublicKey for connector " << connector_id
@@ -3151,6 +3202,9 @@ std::optional<KeyValue> ChargePointConfiguration::get(const CiString<50>& key) {
     }
     if (key == "SupportedChargingProfilePurposeTypes") {
         return this->getSupportedChargingProfilePurposeTypesKeyValue();
+    }
+    if (key == "IFace") {
+        return this->getIFaceKeyValue();
     }
     if (key == "IgnoredProfilePurposesOffline") {
         return this->getIgnoredProfilePurposesOfflineKeyValue();
