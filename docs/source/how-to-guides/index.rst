@@ -109,6 +109,12 @@ Have a look at this categorized list of all guides:
 
       How to subscribe to tariff and session cost updates from the consumer APIs, including OCPP-specific configuration.
 
+   .. grid-item-card:: Migrate OCPP Storage
+      :link: ocpp-storage-migration
+      :link-type: doc
+
+      How to migrate OCPP 1.6 configuration storage from JSON files to the device model.
+
 .. toctree::
     :maxdepth: 1
     :hidden:
@@ -128,4 +134,5 @@ Have a look at this categorized list of all guides:
     choosing-version-and-upgrading
     pionix-belay-box
     integrate-tariff-and-cost
+    ocpp-storage-migration
     devcontainer-usage/index
