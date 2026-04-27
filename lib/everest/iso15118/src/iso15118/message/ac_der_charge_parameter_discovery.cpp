@@ -237,16 +237,45 @@ template <> void convert(const datatypes::DerCurve& in, struct iso20_ac_der_iec_
 
 template <>
 void convert(const struct iso20_ac_der_iec_ReactivePowerSupportType& in, datatypes::ReactivePowerSupport& out) {
-    convert(in.VoltVar, out.VoltVar);
-    convert(in.WattVar, out.WattVar);
-    convert(in.WattCosPhi, out.WattCosPhi);
+
+    using ReactivePowerSupportName = datatypes::ReactivePowerSupport::ReactivePowerSupportName;
+
+    if (in.VoltVar_isUsed) {
+        out.name = ReactivePowerSupportName::VoltVar;
+        convert(in.VoltVar, out.curve);
+    } else if (in.WattVar_isUsed) {
+        out.name = ReactivePowerSupportName::WattVar;
+        convert(in.WattVar, out.curve);
+    } else if (in.WattCosPhi_isUsed) {
+        out.name = ReactivePowerSupportName::WattCosPhi;
+        convert(in.WattCosPhi, out.curve);
+    } else {
+        // Should be not the case....
+    }
 }
 
 template <>
 void convert(const datatypes::ReactivePowerSupport& in, struct iso20_ac_der_iec_ReactivePowerSupportType& out) {
-    convert(in.VoltVar, out.VoltVar);
-    convert(in.WattVar, out.WattVar);
-    convert(in.WattCosPhi, out.WattCosPhi);
+    init_iso20_ac_der_iec_ReactivePowerSupportType(&out);
+
+    using ReactivePowerSupportName = datatypes::ReactivePowerSupport::ReactivePowerSupportName;
+    switch (in.name) {
+    case ReactivePowerSupportName::VoltVar:
+        out.VoltVar_isUsed = true;
+        convert(in.curve, out.VoltVar);
+        break;
+    case ReactivePowerSupportName::WattVar:
+        out.WattVar_isUsed = true;
+        convert(in.curve, out.WattVar);
+        break;
+    case ReactivePowerSupportName::WattCosPhi:
+        out.WattCosPhi_isUsed = true;
+        convert(in.curve, out.WattCosPhi);
+        break;
+    default:
+        // Should be not the case
+        break;
+    };
 }
 
 template <> void convert(const struct iso20_ac_der_iec_FrequencyWattType& in, datatypes::FrequencyWatt& out) {

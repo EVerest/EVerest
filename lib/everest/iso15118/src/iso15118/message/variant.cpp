@@ -150,7 +150,7 @@ static void handle_ac_der(VariantAccess& va) {
     const auto decode_status = decode_iso20_ac_der_iec_exiDocument(&va.input_stream, &doc);
 
     if (decode_status != 0) {
-        va.error = "decode_iso20_dc_exiDocument failed with " + std::to_string(decode_status);
+        va.error = "decode_iso20_ac_der_iec_exiDocument failed with " + std::to_string(decode_status);
         return;
     }
 
