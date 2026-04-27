@@ -94,7 +94,7 @@ Session::Session() {
 }
 
 Session::Session(const PauseContext& pause_ctx) :
-    id(pause_ctx.old_session_id), selected_services(pause_ctx.selected_service_parameters){};
+    id(pause_ctx.old_session_id), selected_services(pause_ctx.selected_service_parameters) {};
 
 Session::Session(SelectedServiceParameters service_parameters_) : selected_services(service_parameters_) {
     std::random_device rd;
@@ -135,6 +135,13 @@ bool Session::find_energy_parameter_set_id(const dt::ServiceCategory service, in
         }
         break;
 
+    case dt::ServiceCategory::AC_DER_IEC:
+        if (this->offered_services.ac_der_iec_parameter_list.find(id) !=
+            this->offered_services.ac_der_iec_parameter_list.end()) {
+            return true;
+        }
+        break;
+
     case dt::ServiceCategory::DC:
 
         if (this->offered_services.dc_parameter_list.find(id) != this->offered_services.dc_parameter_list.end()) {
@@ -165,7 +172,7 @@ bool Session::find_energy_parameter_set_id(const dt::ServiceCategory service, in
         [[fallthrough]];
     case dt::ServiceCategory::DC_ACDP_BPT:
         [[fallthrough]];
-    case dt::ServiceCategory::AC_DER:
+    case dt::ServiceCategory::AC_DER_SAE:
         [[fallthrough]];
     default:
         logf_warning("Service %u is not supported yet", message_20::to_underlying_value(service));
@@ -223,6 +230,19 @@ void Session::selected_service_parameters(const dt::ServiceCategory service, con
                 dt::ServiceCategory::AC_BPT, parameters.connector, parameters.control_mode,
                 parameters.mobility_needs_mode, parameters.pricing, parameters.bpt_channel, parameters.generator_mode,
                 parameters.evse_nominal_voltage, parameters.grid_code_detection_method);
+        } else {
+            // Todo(sl): Should be not the case -> Raise Error?
+        }
+        break;
+
+    case dt::ServiceCategory::AC_DER_IEC:
+        if (this->offered_services.ac_der_iec_parameter_list.find(id) !=
+            this->offered_services.ac_der_iec_parameter_list.end()) {
+            const auto& parameters = this->offered_services.ac_der_iec_parameter_list.at(id);
+            this->selected_services = SelectedServiceParameters(dt::ServiceCategory::AC_DER_IEC, parameters.connector,
+                                                                parameters.control_mode, parameters.mobility_needs_mode,
+                                                                parameters.pricing, parameters.evse_nominal_voltage);
+            this->selected_services.selected_der_control_functions = parameters.der_control_functions;
         } else {
             // Todo(sl): Should be not the case -> Raise Error?
         }
@@ -293,7 +313,7 @@ void Session::selected_service_parameters(const dt::ServiceCategory service, con
         [[fallthrough]];
     case dt::ServiceCategory::DC_ACDP_BPT:
         [[fallthrough]];
-    case dt::ServiceCategory::AC_DER:
+    case dt::ServiceCategory::AC_DER_SAE:
         [[fallthrough]];
     default:
         logf_warning("Service %u is not supported yet", message_20::to_underlying_value(service));
