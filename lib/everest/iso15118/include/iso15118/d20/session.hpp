@@ -3,6 +3,7 @@
 #pragma once
 
 #include <array>
+#include <bitset>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -29,6 +30,7 @@ struct OfferedServices {
 
     std::map<uint8_t, dt::AcParameterList> ac_parameter_list;
     std::map<uint8_t, dt::AcBptParameterList> ac_bpt_parameter_list;
+    std::map<uint8_t, dt::AcDerParameterList> ac_der_iec_parameter_list;
     std::map<uint8_t, dt::DcParameterList> dc_parameter_list;
     std::map<uint8_t, dt::DcBptParameterList> dc_bpt_parameter_list;
     std::map<uint8_t, dt::McsParameterList> mcs_parameter_list;
@@ -54,6 +56,8 @@ struct SelectedServiceParameters {
     // AC specific
     std::optional<float> evse_nominal_voltage;
     std::optional<dt::GridCodeIslandingDetectionMethod> selected_grid_code_method;
+
+    std::bitset<16> selected_der_control_functions{};
 
     SelectedServiceParameters() = default;
     SelectedServiceParameters(dt::ServiceCategory energy_service_, dt::DcConnector dc_connector_,
@@ -126,6 +130,10 @@ public:
     bool is_ac_charger() const {
         return selected_services.selected_energy_service == dt::ServiceCategory::AC or
                selected_services.selected_energy_service == dt::ServiceCategory::AC_BPT;
+    }
+
+    bool is_ac_der_iec_charger() const {
+        return selected_services.selected_energy_service == dt::ServiceCategory::AC_DER_IEC;
     }
 
     bool is_dc_charger() const {
