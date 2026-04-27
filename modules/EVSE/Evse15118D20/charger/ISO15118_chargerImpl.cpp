@@ -925,7 +925,7 @@ void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
             services.push_back(dt::ServiceCategory::AC_BPT);
             break;
         case types::iso15118::EnergyTransferMode::AC_DER:
-            services.push_back(dt::ServiceCategory::AC_DER);
+            services.push_back(dt::ServiceCategory::AC_DER_IEC);
             break;
         case types::iso15118::EnergyTransferMode::DC:
         case types::iso15118::EnergyTransferMode::DC_core:

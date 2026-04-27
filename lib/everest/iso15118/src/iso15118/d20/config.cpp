@@ -70,6 +70,29 @@ auto get_default_ac_bpt_parameter_list(const std::vector<ControlMobilityNeedsMod
     return param_list;
 }
 
+auto get_default_ac_der_iec_parameter_list(const std::vector<ControlMobilityNeedsModes>& control_mobility_modes,
+                                           const AcSetupConfig& ac_setup_config,
+                                           const DerSetupConfig& der_setup_config) {
+    using namespace dt;
+
+    std::vector<AcDerParameterList> param_list;
+
+    for (const auto& mode : control_mobility_modes) {
+        for (const auto& connector : ac_setup_config.connectors) {
+            param_list.push_back({{
+                                      connector,
+                                      mode.control_mode,
+                                      get_mobility_needs_mode(mode),
+                                      ac_setup_config.voltage,
+                                      Pricing::NoPricing,
+                                  },
+                                  der_setup_config.control_functions});
+        }
+    }
+
+    return param_list;
+}
+
 auto get_default_dc_parameter_list(const std::vector<ControlMobilityNeedsModes>& control_mobility_modes) {
     using namespace dt;
 
@@ -195,10 +218,13 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
         {dt::BptChannel::Unified, dt::GeneratorMode::GridFollowing, dt::GridCodeIslandingDetectionMethod::Passive}));
     const auto dc_bpt_setup_config = config.bpt_setup_config.value_or(
         BptSetupConfig({dt::BptChannel::Unified, dt::GeneratorMode::GridFollowing, std::nullopt}));
+    der_setup_config = config.der_setup_config.value_or(DerSetupConfig{});
 
     ac_parameter_list = get_default_ac_parameter_list(supported_control_mobility_modes, ac_setup_config);
     ac_bpt_parameter_list =
         get_default_ac_bpt_parameter_list(supported_control_mobility_modes, ac_setup_config, ac_bpt_setup_config);
+    ac_der_iec_parameter_list =
+        get_default_ac_der_iec_parameter_list(supported_control_mobility_modes, ac_setup_config, der_setup_config);
 
     dc_parameter_list = get_default_dc_parameter_list(supported_control_mobility_modes);
     dc_bpt_parameter_list = get_default_dc_bpt_parameter_list(supported_control_mobility_modes, dc_bpt_setup_config);
