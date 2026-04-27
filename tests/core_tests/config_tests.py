@@ -8,6 +8,7 @@ import logging
 import os
 from pathlib import Path
 import pty
+from re import T
 import pytest
 from tempfile import mkdtemp
 from typing import Dict

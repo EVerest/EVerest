@@ -26,6 +26,9 @@ from ._configuration.everest_configuration_strategies.probe_module_configuration
     ProbeModuleConfigurationStrategy
 
 STARTUP_TIMEOUT = 30
+SHUTDOWN_TIMEOUT_SIGINT_SECONDS = 60
+SHUTDOWN_TIMEOUT_SIGTERM_SECONDS = 15
+SHUTDOWN_TIMEOUT_SIGKILL_SECONDS = 5
 
 Connections = dict[str, List[Requirement]]
 
@@ -227,18 +230,22 @@ class EverestCore:
             if self.process.poll() is None:
                 self.process.send_signal(SIGINT)
                 try:
-                    self.process.wait(timeout=20)
+                    self.process.wait(timeout=SHUTDOWN_TIMEOUT_SIGINT_SECONDS)
                 except subprocess.TimeoutExpired:
-                    logging.warning("EVerest did not stop after SIGINT within timeout, sending SIGTERM")
+                    logging.warning(
+                        f"EVerest did not stop after SIGINT within {SHUTDOWN_TIMEOUT_SIGINT_SECONDS}s, sending SIGTERM"
+                    )
                     escalation_signal = "SIGTERM"
                     self.process.terminate()
                     try:
-                        self.process.wait(timeout=10)
+                        self.process.wait(timeout=SHUTDOWN_TIMEOUT_SIGTERM_SECONDS)
                     except subprocess.TimeoutExpired:
-                        logging.warning("EVerest did not stop after SIGTERM within timeout, sending SIGKILL")
+                        logging.warning(
+                            f"EVerest did not stop after SIGTERM within {SHUTDOWN_TIMEOUT_SIGTERM_SECONDS}s, sending SIGKILL"
+                        )
                         escalation_signal = "SIGKILL"
                         self.process.kill()
-                        self.process.wait(timeout=5)
+                        self.process.wait(timeout=SHUTDOWN_TIMEOUT_SIGKILL_SECONDS)
 
         if self.log_reader_thread:
             self.log_reader_thread.join(timeout=5)
