@@ -394,7 +394,61 @@ For the SECC Leaf certificate, this process is only triggered if Plug&Charge is 
 If a certificate has expired is then periodically checked every 12 hours.
 
 In addition to that, the charging station periodically updates the OCSP responses of the sub-CA certificates of the V2G certificate chain.
-The OCSP response is cached and can be used as part of the ISO15118 TLS handshake with EVs. The OCSP update is by default performed 
-every seven days (or can be configured using the **OCSPRequestInterval** configuration key). 
+The OCSP response is cached and can be used as part of the ISO15118 TLS handshake with EVs. The OCSP update is by default performed
+every seven days (or can be configured using the **OCSPRequestInterval** configuration key).
 The timestamp of the last update is stored persistently, so that this process is not necessarily performed at every start up.
+
+OCPP 1.6 device model storage backends
+=======================================
+
+.. note::
+
+   The separate OCPP and OCPP201 modules are planned to be merged into a single combined module. That new
+   module will use the device model as its only configuration storage backend. New integrations should
+   therefore use **ConfigBackend = "device_model"** from the start: the same database can then be reused
+   directly when switching to OCPP201 or adopting the new combined module without a further migration step.
+   Existing deployments using the legacy JSON backend should migrate using **"device_model_with_migration"**.
+
+The OCPP module supports three configuration storage backends, selected by the **ConfigBackend** parameter:
+
+* **"legacy"** *(default)*: reads OCPP 1.6 configuration from the JSON file at **ChargePointConfigPath**, with
+  an optional overlay from **UserConfigPath**. No device model database is used.
+* **"device_model"**: initializes and updates the device model database from component configuration JSON files.
+  **ChargePointConfigPath** is not needed. Recommended for all new integrations.
+* **"device_model_with_migration"**: on first startup, performs a one-time migration of the effective OCPP 1.6
+  JSON configuration (base file plus user overlay) into the device model database, then operates identically to
+  **"device_model"** on all subsequent starts. Use this when transitioning an existing deployment.
+
+The following module configuration parameters are relevant for device model backends:
+
+* **DeviceModelDatabasePath**: path to the SQLite database file for the device model
+  (default: ``device_model_storage.db``, resolved against the module share path)
+* **DeviceModelDatabaseMigrationPath**: path to the SQL migration files for the device model schema
+  (default: ``device_model_migrations``, resolved against the module share path)
+* **DeviceModelConfigPath**: path to the component-config directory that defines the device model structure
+  and optional default values (default: ``component_config``, resolved against the module share path)
+* **DeviceModelConfigMappings**: optional YAML file mapping non-standard OCPP 1.6 keys to device model
+  component/variable targets; only used with **"device_model_with_migration"**. The built-in mapping for
+  standard OCPP 1.6 keys is documented in
+  `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_
+* **Ocpp16NetworkConfigSlot**: ``NetworkConfiguration`` slot number that OCPP 1.6 network connection
+  details (``CentralSystemURI``, ``SecurityProfile``, ``AuthorizationKey``, ``HostName``,
+  ``ChargePointId``) are migrated to during the one-time migration (default: ``1``; set to ``0`` to skip)
+* **EnableDeviceModelFallbackToLegacyJson**: if ``true`` and device model initialization or integrity check
+  fails at startup, the module falls back to the legacy JSON backend; requires **ChargePointConfigPath** to
+  exist (default: ``false``)
+
+Migration is a one-time operation gated by the SQLite ``user_version`` of the database. Once the database
+has been initialized, subsequent starts skip the migration step and update the database from component
+configuration only. To rerun the migration, delete the database file at **DeviceModelDatabasePath**
+and restart.
+
+The component configuration at **DeviceModelConfigPath** serves as the structural baseline for the device
+model: it defines which components and variables exist and may also provide initial/default values.
+During migration, OCPP 1.6 values are patched on top of this baseline and take precedence over any
+defaults. The ``OCPP16LegacyCtrlr`` component is always required; if absent from **DeviceModelConfigPath**,
+the module injects a built-in default schema for it automatically.
+
+For step-by-step migration instructions, see :ref:`howto-ocpp-storage-migration`.
+
 

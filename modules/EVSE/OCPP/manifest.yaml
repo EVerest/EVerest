@@ -19,6 +19,51 @@ config:
       about the database and its structure.
     type: string
     default: /tmp/ocpp_1_6_charge_point
+  DeviceModelDatabasePath:
+    description: >-
+      Path to the SQLite database file for the OCPP device model.
+      Relative paths are resolved against this module's share path.
+      Required when ConfigBackend is "device_model" or "device_model_with_migration".
+    type: string
+    default: device_model_storage.db
+  DeviceModelDatabaseMigrationPath:
+    description: >-
+      Path to the migration files for the OCPP device model database.
+      Relative paths are resolved against this module's share path.
+      Required when ConfigBackend is "device_model" or "device_model_with_migration".
+    type: string
+    default: device_model_migrations
+  DeviceModelConfigPath:
+    description: >-
+      Path to the OCPP device model component config directory used as the baseline for the device model.
+      Relative paths are resolved against this module's share path.
+      Required when ConfigBackend is "device_model" or "device_model_with_migration".
+    type: string
+    default: component_config
+  DeviceModelConfigMappings:
+    description: >-
+      Optional path to a YAML file with custom OCPP1.6 to device model component-config mappings.
+      Relative paths are resolved against this module's share path.
+      If empty, only built-in mappings are used.
+      Only used when ConfigBackend is "device_model_with_migration".
+    type: string
+    default: ""
+  ConfigBackend:
+    description: >-
+      Selects the configuration storage backend for OCPP 1.6:
+      - "legacy" (default): use the legacy OCPP 1.6 JSON file. ChargePointConfigPath must exist.
+      - "device_model": bootstrap device model from component configs. All DeviceModel* paths must be set.
+      - "device_model_with_migration": like "device_model", but on first startup migrates OCPP 1.6 JSON
+        values into the device model database. ChargePointConfigPath must exist for the migration source.
+    type: string
+    default: "legacy"
+  EnableDeviceModelFallbackToLegacyJson:
+    description: >-
+      Only relevant when ConfigBackend is "device_model" or "device_model_with_migration".
+      If true and device model initialization or integrity check fails, fall back to the JSON backend.
+      Requires ChargePointConfigPath to exist.
+    type: boolean
+    default: false
   EnableExternalWebsocketControl:
     description: If true websocket can be disconnected and connected externally. This parameter is for debug and testing purposes.
     type: boolean
@@ -65,6 +110,14 @@ config:
       to the charge point's last messages before resetting.
     type: integer
     default: 0
+  Ocpp16NetworkConfigSlot:
+    description: >-
+      NetworkConfiguration slot number that OCPP 1.6 connection details (CentralSystemURI, SecurityProfile,
+      AuthorizationKey, HostName, ChargePointId) are migrated to during the one-time device model migration.
+      Any existing attribute values in the target slot are overwritten.
+      Set to 0 to skip migration of network connection details entirely.
+    type: integer
+    default: 1
 provides:
   main:
     description: This is a OCPP 1.6 charge point

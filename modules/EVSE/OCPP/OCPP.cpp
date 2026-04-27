@@ -2,8 +2,9 @@
 // Copyright 2020 - 2022 Pionix GmbH and Contributors to EVerest
 #include "OCPP.hpp"
 
+#include "charge_point_config_factory.hpp"
+
 #include <cmath>
-#include <fstream>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -11,8 +12,8 @@
 
 #include "generated/types/ocpp.hpp"
 #include "ocpp/common/types.hpp"
-#include "ocpp/v16/charge_point_configuration.hpp"
 #include "ocpp/v16/types.hpp"
+#include "ocpp/v2/ocpp_types.hpp"
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <fmt/core.h>
 
@@ -33,7 +34,7 @@ const std::string CERTS_SUB_DIR = "certs";
 const std::string SQL_CORE_MIGRTATIONS = "core_migrations";
 const std::string INOPERATIVE_ERROR_TYPE = "evse_manager/Inoperative";
 const std::string SWITCHING_PHASES_REASON = "SwitchingPhases";
-const ocpp::CiString<50> CONNECTION_TIMEOUT_CONFIG_KEY = "ConnectionTimeout";
+const ocpp::CiString<50> CONNECTION_TIMEOUT_CONFIG_KEY = "ConnectionTimeOut";
 const ocpp::CiString<50> ISO15118_PNC_ENABLED_CONFIG_KEY = "ISO15118PnCEnabled";
 const ocpp::CiString<50> CENTRAL_CONTRACT_VALIDATION_ALLOWED_CONFIG_KEY = "CentralContractValidationAllowed";
 const std::string OCPP_VERSION = "1.6";
@@ -120,18 +121,6 @@ static ocpp::v16::ErrorInfo get_error_info(const Everest::error::Error& error) {
         error.message,                                                           // vendor id
         get_simplified_error_type(error.type) + TYPE_DELIMITER + error.sub_type, // vendor error code
     };
-}
-
-void create_empty_user_config(const fs::path& user_config_path) {
-    if (fs::exists(user_config_path.parent_path())) {
-        std::ofstream fs(user_config_path.c_str());
-        auto user_config = json::object();
-        fs << user_config << std::endl;
-        fs.close();
-    } else {
-        EVLOG_AND_THROW(
-            std::runtime_error(fmt::format("Provided UserConfigPath is invalid: {}", user_config_path.string())));
-    }
 }
 
 void OCPP::set_external_limits(const std::map<int32_t, ocpp::v16::EnhancedChargingSchedule>& charging_schedules) {
@@ -548,52 +537,9 @@ void OCPP::init() {
 
     this->ocpp_share_path = this->info.paths.share;
 
-    auto configured_config_path = fs::path(this->config.ChargePointConfigPath);
+    charge_point_config = create_charge_point_configuration(this->ocpp_share_path, this->config,
+                                                            static_cast<int32_t>(this->r_evse_manager.size()));
 
-    // try to find the config file if it has been provided as a relative path
-    if (!fs::exists(configured_config_path) && configured_config_path.is_relative()) {
-        configured_config_path = this->ocpp_share_path / configured_config_path;
-    }
-    if (!fs::exists(configured_config_path)) {
-        EVLOG_AND_THROW(Everest::EverestConfigError(
-            fmt::format("OCPP config file is not available at given path: {} which was "
-                        "resolved to: {}",
-                        this->config.ChargePointConfigPath, configured_config_path.string())));
-    }
-    const auto config_path = configured_config_path;
-    EVLOG_info << "OCPP config: " << config_path.string();
-
-    auto configured_user_config_path = fs::path(this->config.UserConfigPath);
-    // try to find the user config file if it has been provided as a relative path
-    if (!fs::exists(configured_user_config_path) && configured_user_config_path.is_relative()) {
-        configured_user_config_path = this->ocpp_share_path / configured_user_config_path;
-    }
-    const auto user_config_path = configured_user_config_path;
-    EVLOG_info << "OCPP user config: " << user_config_path.string();
-
-    std::ifstream ifs(config_path.c_str());
-    std::string config_file((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
-    auto json_config = json::parse(config_file);
-    json_config.at("Core").at("NumberOfConnectors") = this->r_evse_manager.size();
-
-    if (fs::exists(user_config_path)) {
-        std::ifstream ifs(user_config_path.c_str());
-        std::string user_config_file((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
-
-        try {
-            const auto user_config = json::parse(user_config_file);
-            EVLOG_info << "Augmenting chargepoint config with user_config entries";
-            json_config.merge_patch(user_config);
-        } catch (const json::parse_error& e) {
-            EVLOG_error << "Error while parsing user config file.";
-            EVLOG_AND_THROW(e);
-        }
-    } else {
-        EVLOG_debug << "No user-config provided. Creating user config file";
-        create_empty_user_config(user_config_path);
-    }
-
-    const auto sql_init_path = this->ocpp_share_path / SQL_CORE_MIGRTATIONS;
     if (!fs::exists(this->config.MessageLogPath)) {
         try {
             fs::create_directory(this->config.MessageLogPath);
@@ -602,9 +548,8 @@ void OCPP::init() {
         }
     }
 
-    const auto charge_point_config_json = json_config.dump();
-    charge_point_config = std::make_unique<ocpp::v16::ChargePointConfiguration>(charge_point_config_json,
-                                                                                ocpp_share_path, user_config_path);
+    const auto sql_init_path = this->ocpp_share_path / SQL_CORE_MIGRTATIONS;
+
     std::shared_ptr<ocpp::EvseSecurity> security = std::make_shared<EvseSecurity>(*r_security);
     std::function<void(const std::string& message, ocpp::MessageDirection direction)> message_callback =
         [this](const std::string& message, ocpp::MessageDirection direction) {
