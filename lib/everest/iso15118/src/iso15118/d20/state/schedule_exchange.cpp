@@ -160,11 +160,13 @@ Result ScheduleExchange::feed(Event ev) {
         }
 
         session::feedback::EvseTransferLimits evse_limits;
-        if (m_ctx.session.is_ac_charger()) {
+        if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger()) {
             evse_limits = m_ctx.session_config.ac_limits;
         } else if (m_ctx.session.is_dc_charger()) {
             evse_limits = m_ctx.session_config.dc_limits;
         }
+
+        // TODO(SL): Checking if der_limits should also be published
 
         const session::feedback::EvTransferLimits& ev_limits = m_ctx.session_ev_info.ev_transfer_limits;
 
@@ -192,7 +194,7 @@ Result ScheduleExchange::feed(Event ev) {
 
         m_ctx.stop_timeout(d20::TimeoutType::ONGOING);
 
-        if (m_ctx.session.is_ac_charger()) {
+        if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger()) {
             // For AC move directly to power delivery
             return m_ctx.create_state<PowerDelivery>();
         }
