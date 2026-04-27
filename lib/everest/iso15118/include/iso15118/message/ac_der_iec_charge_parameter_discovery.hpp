@@ -106,9 +106,13 @@ struct DerCurve {
 };
 
 struct ReactivePowerSupport {
-    DerCurve VoltVar;
-    DerCurve WattVar;
-    DerCurve WattCosPhi;
+    enum class ReactivePowerSupportName {
+        VoltVar,
+        WattVar,
+        WattCosPhi
+    };
+    ReactivePowerSupportName name;
+    DerCurve curve;
 };
 
 struct FrequencyWatt {
