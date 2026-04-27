@@ -16,6 +16,9 @@ class OCPPModulePaths16(OCPPModuleConfigurationBase):
     ChargePointConfigPath: str
     UserConfigPath: str
     DatabasePath: str
+    DeviceModelDatabasePath: str
+    DeviceModelDatabaseMigrationPath: str
+    DeviceModelConfigPath: str
 
 
 @dataclass
@@ -32,10 +35,12 @@ class OCPPModuleConfigurationStrategy(EverestConfigAdjustmentStrategy):
 
     def __init__(self, ocpp_paths: Union[OCPPModulePaths16, OCPPModulePaths2X],
                  ocpp_module_id: str,
-                 ocpp_version: OCPPVersion):
+                 ocpp_version: OCPPVersion,
+                 enable_config_migration: bool = False):
         self._ocpp_paths = ocpp_paths
         self._ocpp_module_id = ocpp_module_id
         self._ocpp_version = ocpp_version
+        self._enable_config_migration = enable_config_migration
 
     def adjust_everest_configuration(self, everest_config: Dict):
         """ Changes the provided configuration of the Everest "OCPP" module .
@@ -51,6 +56,9 @@ class OCPPModuleConfigurationStrategy(EverestConfigAdjustmentStrategy):
 
         module_config["config_module"] = {**module_config["config_module"],
                                           **asdict(self._ocpp_paths)}
+
+        if self._ocpp_version == OCPPVersion.ocpp16 and self._enable_config_migration:
+            module_config["config_module"]["ConfigBackend"] = "device_model_with_migration"
 
         return adjusted_config
 

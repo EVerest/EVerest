@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+//
+// AUTO-GENERATED. Do not edit by hand.
+// Source: config/common/component_config/standardized/OCPP16LegacyCtrlr.json
+
+#include <ocpp/v2/ocpp16_legacy_ctrlr_default_schema.hpp>
+
+namespace ocpp::v2 {
+
+const std::string& get_default_ocpp16_legacy_ctrlr_schema() {
+    static const std::string schema = R"json(@OCPP16_LEGACY_CTRLR_DEFAULT_SCHEMA_JSON@)json";
+    return schema;
+}
+
+} // namespace ocpp::v2

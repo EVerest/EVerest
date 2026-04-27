@@ -224,7 +224,7 @@ void ConnectivityManager::confirm_successful_connection() {
 }
 
 void ConnectivityManager::try_connect_websocket() {
-    if (this->device_model.get_value<std::string>(ControllerComponentVariables::ChargePointId).find(':') !=
+    if (this->device_model.get_value<std::string>(ControllerComponentVariables::SecurityCtrlrIdentity).find(':') !=
         std::string::npos) {
         EVLOG_AND_THROW(std::runtime_error("ChargePointId must not contain \':\'"));
     }

@@ -53,12 +53,6 @@ const ComponentVariable InternalCtrlrEnabled = {
         "Enabled",
     }),
 };
-const RequiredComponentVariable ChargePointId = {
-    ControllerComponents::InternalCtrlr,
-    std::optional<Variable>({
-        "ChargePointId",
-    }),
-};
 const RequiredComponentVariable NetworkConnectionProfiles = {
     ControllerComponents::InternalCtrlr,
     std::optional<Variable>({
@@ -210,9 +204,15 @@ const ComponentVariable MaxCompositeScheduleDuration = {
     }),
 };
 const RequiredComponentVariable NumberOfConnectors = {
-    ControllerComponents::InternalCtrlr,
+    ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({
         "NumberOfConnectors",
+    }),
+};
+const ComponentVariable ConnectorEvseIds = {
+    ControllerComponents::OCPP16LegacyCtrlr,
+    std::optional<Variable>({
+        "ConnectorEvseIds",
     }),
 };
 const ComponentVariable UseSslDefaultVerifyPaths = {
@@ -1298,12 +1298,6 @@ const ComponentVariable ReserveConnectorZeroSupported = {
         "ReserveConnectorZeroSupported",
     }),
 };
-const ComponentVariable HostName = {
-    ControllerComponents::OCPP16LegacyCtrlr,
-    std::optional<Variable>({
-        "HostName",
-    }),
-};
 const ComponentVariable AllowChargingProfileWithoutStartSchedule = {
     ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({
@@ -1386,24 +1380,6 @@ const ComponentVariable WaitForSetUserPriceTimeout = {
     ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({
         "WaitForSetUserPriceTimeout",
-    }),
-};
-const ComponentVariable AuthorizationKey16 = {
-    ControllerComponents::CustomLegacyController,
-    std::optional<Variable>({
-        "AuthorizationKey",
-    }),
-};
-const RequiredComponentVariable CentralSystemURI16 = {
-    ControllerComponents::CustomLegacyController,
-    std::optional<Variable>({
-        "CentralSystemURI",
-    }),
-};
-const RequiredComponentVariable SecurityProfile16 = {
-    ControllerComponents::CustomLegacyController,
-    std::optional<Variable>({
-        "SecurityProfile",
     }),
 };
 } // namespace ControllerComponentVariables
@@ -1582,7 +1558,6 @@ const std::vector<RequiredComponentVariable> required_variables{
     ControllerComponentVariables::SampledDataTxStartedMeasurands,
     ControllerComponentVariables::SampledDataTxUpdatedMeasurands,
     ControllerComponentVariables::SampledDataTxUpdatedInterval,
-    ControllerComponentVariables::ChargePointId,
     ControllerComponentVariables::NetworkConnectionProfiles,
     ControllerComponentVariables::ChargeBoxSerialNumber,
     ControllerComponentVariables::ChargePointModel,
@@ -1674,6 +1649,7 @@ const Variable CsmsRootCertificateHashAlgorithm = {"CsmsRootCertificateHashAlgor
 const Variable CsmsRootCertificateIssuerKeyHash = {"CsmsRootCertificateIssuerKeyHash"};
 const Variable CsmsRootCertificateIssuerNameHash = {"CsmsRootCertificateIssuerNameHash"};
 const Variable CsmsRootCertificateSerialNumber = {"CsmsRootCertificateSerialNumber"};
+const Variable HostName = {"HostName"};
 
 ComponentVariable get_component_variable(const std::int32_t slot, const Variable& variable) {
     Component component;

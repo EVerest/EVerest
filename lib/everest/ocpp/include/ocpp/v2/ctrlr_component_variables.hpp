@@ -108,7 +108,6 @@ extern const Variable Fallback;
 // Provides access to standardized variables of OCPP2.0.1 spec
 namespace ControllerComponentVariables {
 extern const ComponentVariable InternalCtrlrEnabled;
-extern const RequiredComponentVariable ChargePointId;
 extern const RequiredComponentVariable NetworkConnectionProfiles;
 extern const RequiredComponentVariable ChargeBoxSerialNumber;
 extern const RequiredComponentVariable ChargePointModel;
@@ -135,6 +134,7 @@ extern const ComponentVariable RoundClockAlignedTimestamps;
 extern const ComponentVariable NetworkConfigTimeout;
 extern const ComponentVariable MaxCompositeScheduleDuration;
 extern const RequiredComponentVariable NumberOfConnectors;
+extern const ComponentVariable ConnectorEvseIds;
 extern const ComponentVariable UseSslDefaultVerifyPaths;
 extern const ComponentVariable VerifyCsmsCommonName;
 extern const ComponentVariable UseTPM;
@@ -334,7 +334,6 @@ extern const RequiredComponentVariable SupportedFeatureProfiles;
 extern const ComponentVariable SupportedFeatureProfilesMaxLength;
 extern const RequiredComponentVariable UnlockConnectorOnEVSideDisconnect;
 extern const ComponentVariable ReserveConnectorZeroSupported;
-extern const ComponentVariable HostName;
 extern const ComponentVariable AllowChargingProfileWithoutStartSchedule;
 extern const ComponentVariable WaitForStopTransactionsOnResetTimeout;
 extern const ComponentVariable StopTransactionIfUnlockNotSupported;
@@ -349,9 +348,6 @@ extern const ComponentVariable SupportedLanguages;
 extern const ComponentVariable CustomMultiLanguageMessages;
 extern const ComponentVariable Language;
 extern const ComponentVariable WaitForSetUserPriceTimeout;
-extern const ComponentVariable AuthorizationKey16;
-extern const RequiredComponentVariable CentralSystemURI16;
-extern const RequiredComponentVariable SecurityProfile16;
 } // namespace ControllerComponentVariables
 
 namespace EvseComponentVariables {
@@ -443,6 +439,7 @@ extern const Variable CsmsRootCertificateHashAlgorithm;
 extern const Variable CsmsRootCertificateIssuerKeyHash;
 extern const Variable CsmsRootCertificateIssuerNameHash;
 extern const Variable CsmsRootCertificateSerialNumber;
+extern const Variable HostName;
 ComponentVariable get_component_variable(const std::int32_t slot, const Variable& variable);
 std::optional<NetworkConnectionProfile> read_profile_from_device_model(DeviceModelInterface& dm, int32_t slot);
 bool write_profile_to_device_model(DeviceModelInterface& dm, int32_t slot, const NetworkConnectionProfile& profile,
