@@ -25,6 +25,7 @@ using CmdId = std::string;
 namespace Everest {
 
 constexpr std::size_t THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS = 50;
+constexpr std::size_t THREAD_POOL_SCALING_LATENCY_SCHEDULER_TICK_MS = 200;
 constexpr std::chrono::seconds THREAD_POOL_SCALING_IDLE_TIMEOUT{2};
 constexpr std::size_t THREAD_POOL_SCALING_MIN_THREAD_COUNT = 1;
 constexpr std::size_t MAX_PENDING_MESSAGES_PER_TOPIC = 100;
@@ -108,7 +109,9 @@ private:
     // outside the lock, preventing concurrent join/assignment races on the raw std::thread.
     everest::lib::util::monitor<std::thread> ready;
 
-    using LatencyScaling = everest::lib::util::LatencyScaling<THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS>;
+    using LatencyScaling = everest::lib::util::LatencyScaling<THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS,
+                                                              THREAD_POOL_SCALING_LATENCY_SCHEDULER_TICK_MS>;
+    using GreedyScaling = everest::lib::util::GreedyScaling;
     using ThreadPool = everest::lib::util::thread_pool_scaling<LatencyScaling, everest::lib::util::RethrowExceptions>;
     std::unique_ptr<ThreadPool> operation_thread_pool;
 
