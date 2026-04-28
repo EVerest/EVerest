@@ -12,7 +12,10 @@
 #include <functional>
 #include <future>
 #include <list>
+#include <optional>
 #include <thread>
+#include <type_traits>
+#include <variant>
 #include <vector>
 
 namespace everest::lib::util {
@@ -34,10 +37,15 @@ struct TrackedAction {
 
 // --- Scaling Policies ---
 
+// A policy advertises whether it needs a background supervisor (and at what
+// cadence) via a single constexpr: `supervisor_tick`. `std::nullopt` means no
+// supervisor; a value means "re-evaluate scaling every <tick> ms".
+
 /**
  * @brief Greedy scaling policy: grows whenever there is any backlog.
  */
 struct GreedyScaling {
+    static constexpr std::optional<std::chrono::milliseconds> supervisor_tick = std::nullopt;
     /**
      * @brief Decides to grow if there is any backlog.
      * @param current_workers Number of threads currently in the registry.
@@ -56,6 +64,7 @@ struct GreedyScaling {
  * @brief Conservative scaling policy: grows only when backlog is significant.
  */
 struct ConservativeScaling {
+    static constexpr std::optional<std::chrono::milliseconds> supervisor_tick = std::nullopt;
     static bool should_grow(std::size_t current_workers, std::size_t queue_size,
                             [[maybe_unused]] std::optional<std::chrono::steady_clock::time_point> oldest_task) {
         return queue_size > (current_workers * 2);
@@ -67,6 +76,7 @@ struct ConservativeScaling {
  * @tparam Limit The queue size threshold.
  */
 template <std::size_t Limit> struct FixedSizeScaling {
+    static constexpr std::optional<std::chrono::milliseconds> supervisor_tick = std::nullopt;
     static bool should_grow([[maybe_unused]] std::size_t current_workers, std::size_t queue_size,
                             [[maybe_unused]] std::optional<std::chrono::steady_clock::time_point> oldest_arrival) {
         return queue_size >= Limit;
@@ -75,12 +85,14 @@ template <std::size_t Limit> struct FixedSizeScaling {
 
 /**
  * @brief Latency-based scaling policy: grows if the oldest task has waited too long.
- * @tparam MaxWaitMs Maximum tolerable wait time in milliseconds.
+ * @tparam ThresholdMs Maximum tolerable wait time in milliseconds.
+ * @tparam TickMs Cadence at which the supervisor re-evaluates the policy.
  */
-template <std::size_t ThresholdMs = 10> struct LatencyScaling {
+template <std::size_t ThresholdMs = 10, std::size_t TickMs = 5> struct LatencyScaling {
+    static constexpr std::optional<std::chrono::milliseconds> supervisor_tick = std::chrono::milliseconds(TickMs);
     static bool should_grow([[maybe_unused]] std::size_t current_workers, std::size_t queue_size,
                             std::optional<std::chrono::steady_clock::time_point> oldest_arrival) {
-        if (queue_size <= 1 or not oldest_arrival.has_value()) {
+        if (queue_size < 1 or not oldest_arrival.has_value()) {
             return false;
         }
         const auto now = std::chrono::steady_clock::now();
@@ -148,6 +160,9 @@ public:
      * @param[in] max Maximum allowed worker threads.
      * @param[in] timeout Idle duration before a surplus worker retires. Defaults to 60s.
      * @param[in] queue_limit Maximum tasks allowed in the queue. Defaults to 0 (unbounded).
+     *
+     * The supervisor tick (if any) is carried by the ScalingPolicy itself; see
+     * @ref LatencyScaling for an example.
      */
     template <class Rep, class Period>
     thread_pool_scaling(std::size_t min, std::size_t max,
@@ -158,9 +173,14 @@ public:
         m_idle_timeout(std::chrono::duration_cast<std::chrono::milliseconds>(timeout)),
         m_action_queue(queue_limit) {
 
-        auto reg_h = m_reg.handle();
-        for (std::size_t i = 0; i < m_min_threads; ++i) {
-            spawn_worker_internal(reg_h);
+        {
+            auto reg_h = m_reg.handle();
+            for (std::size_t i = 0; i < m_min_threads; ++i) {
+                spawn_worker_internal(reg_h);
+            }
+        }
+        if constexpr (ScalingPolicy::supervisor_tick.has_value()) {
+            m_supervisor = std::thread([this] { run_supervisor(*ScalingPolicy::supervisor_tick); });
         }
     }
 
@@ -168,16 +188,25 @@ public:
      * @brief Destructor. Signals shutdown and joins all active worker threads.
      */
     ~thread_pool_scaling() {
-        // 1. Signal shutdown and stop queue
+        // 1. Signal shutdown and wake the supervisor + producers/consumers.
         {
             auto reg_h = m_reg.handle();
             reg_h->shutdown = true;
         }
+        m_reg.notify_all();
         m_action_queue.stop();
 
-        // 2. Steal the active workers list. Explicitly clear the source so that any
+        // 2. Join the supervisor before tearing down the worker list: the supervisor
+        // can spawn new workers, and we must not race with the steal in step 3.
+        if constexpr (ScalingPolicy::supervisor_tick.has_value()) {
+            if (m_supervisor.joinable()) {
+                m_supervisor.join();
+            }
+        }
+
+        // 3. Steal the active workers list. Explicitly clear the source so that any
         // worker that acquires the lock afterwards sees size()==0 and cannot
-        // voluntarily retire into the zombies deque after step 4's final reap.
+        // voluntarily retire into the zombies deque after step 5's final reap.
         std::list<std::thread> workers_to_join;
         {
             auto reg_h = m_reg.handle();
@@ -185,14 +214,14 @@ public:
             reg_h->workers.clear();
         }
 
-        // 3. Join everything in our stolen list
+        // 4. Join everything in our stolen list
         for (auto& t : workers_to_join) {
             if (t.joinable()) {
                 t.join();
             }
         }
 
-        // 4. Join any zombies that retired before the steal. Steal the deque first
+        // 5. Join any zombies that retired before the steal. Steal the deque first
         // so the join happens outside the lock (same pattern as the worker loop).
         std::deque<std::thread> zombies_to_join;
         {
@@ -261,7 +290,7 @@ private:
         std::size_t size_after_push = m_action_queue.push(TrackedAction(std::move(func)));
         auto oldest_arrival = m_action_queue.oldest_arrival();
 
-        if (size_after_push > 1) {
+        if (size_after_push > 0) {
             auto reg_h = m_reg.handle();
             if (reg_h->workers.size() < m_max_threads &&
                 ScalingPolicy::should_grow(reg_h->workers.size(), size_after_push, oldest_arrival)) {
@@ -281,7 +310,6 @@ private:
         *it = std::thread([this, it]() {
             while (true) {
                 auto task_opt = m_action_queue.try_pop(m_idle_timeout);
-
                 if (task_opt) {
                     try {
                         task_opt->func();
@@ -330,12 +358,44 @@ private:
         });
     }
 
+    /**
+     * @brief Supervisor loop. Periodically re-evaluates the scaling policy so that
+     * time-based policies (e.g. LatencyScaling) scale up when tasks sit in the queue
+     * without any new submission to trigger a check.
+     */
+    void run_supervisor(std::chrono::milliseconds tick) {
+        while (true) {
+            auto reg_h = m_reg.handle();
+            // wait_for returns true when the predicate is satisfied (shutdown requested),
+            // false on timeout.
+            if (reg_h.wait_for([&]() { return reg_h->shutdown; }, tick)) {
+                return;
+            }
+
+            const std::size_t queue_size = m_action_queue.size();
+            if (queue_size == 0) {
+                continue;
+            }
+            if (reg_h->workers.size() >= m_max_threads) {
+                continue;
+            }
+            const auto oldest_arrival = m_action_queue.oldest_arrival();
+            if (ScalingPolicy::should_grow(reg_h->workers.size(), queue_size, oldest_arrival)) {
+                spawn_worker_internal(reg_h);
+            }
+        }
+    }
+
     const std::size_t m_min_threads;                ///< Minimum persistent thread count.
     const std::size_t m_max_threads;                ///< Maximum allowed thread count.
     const std::chrono::milliseconds m_idle_timeout; ///< Surplus thread idle timeout.
 
     thread_safe_bounded_queue<TrackedAction> m_action_queue; ///< Task queue.
     monitor<RegistryData> m_reg;                             ///< Worker registry.
+    /// Background scaling supervisor. Only materialized as a real `std::thread`
+    /// for policies whose `supervisor_tick` has a value; otherwise collapses to
+    /// a `std::monostate` so non-supervisor pools don't carry a dead thread handle.
+    std::conditional_t<ScalingPolicy::supervisor_tick.has_value(), std::thread, std::monostate> m_supervisor;
 };
 
 } // namespace everest::lib::util
