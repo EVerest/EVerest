@@ -384,7 +384,7 @@ void apply_setpoints(ScheduleReq& imp, ScheduleReq& exp, const ScheduleSetpoints
     }
 }
 
-Market::Market(types::energy::EnergyFlowRequest& _energy_flow_request, const float __nominal_ac_voltage,
+Market::Market(const types::energy::EnergyFlowRequest& _energy_flow_request, const float __nominal_ac_voltage,
                Market* __parent) :
     energy_flow_request(_energy_flow_request), _parent(__parent), _nominal_ac_voltage(__nominal_ac_voltage) {
 
