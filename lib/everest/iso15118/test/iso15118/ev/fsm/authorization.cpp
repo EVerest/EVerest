@@ -25,10 +25,7 @@ SCENARIO("ISO15118-20 EV authorization state transitions") {
     GIVEN("Good case - authorization response with OK and EVSEProcessing Finished") {
 
         // setup the state and context to something reasonable
-        const auto header = message_20::Header{
-            .session_id = std::array<uint8_t, 8>{0x10, 0x34, 0xAB, 0x7A, 0x01, 0xF3, 0x95, 0x02},
-            .timestamp = 1691411798,
-        };
+        const auto header = message_20::Header{{0x10, 0x34, 0xAB, 0x7A, 0x01, 0xF3, 0x95, 0x02}, 1691411798};
 
         ctx.get_session().set_id(header.session_id);
 
@@ -58,10 +55,7 @@ SCENARIO("ISO15118-20 EV authorization state transitions") {
     GIVEN("Good case - authorization response with OK and EVSEProcessing Ongoing") {
 
         // setup the state and context to something reasonable
-        const auto header = message_20::Header{
-            .session_id = std::array<uint8_t, 8>{0x10, 0x34, 0xAB, 0x7A, 0x01, 0xF3, 0x95, 0x02},
-            .timestamp = 1691411798,
-        };
+        const auto header = message_20::Header{{0x10, 0x34, 0xAB, 0x7A, 0x01, 0xF3, 0x95, 0x02}, 1691411798};
 
         ctx.get_session().set_id(header.session_id);
 
