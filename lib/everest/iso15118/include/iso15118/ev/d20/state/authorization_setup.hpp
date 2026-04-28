@@ -7,6 +7,8 @@
 namespace iso15118::ev::d20::state {
 
 struct AuthorizationSetup : public StateBase {
+    static message_20::AuthorizationRequest CreateAuthorizationRequest(Context& ctx);
+
 public:
     AuthorizationSetup(Context& ctx) : StateBase(ctx, StateID::AuthorizationSetup) {
     }

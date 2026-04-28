@@ -2,6 +2,7 @@
 // Copyright 2025 Pionix GmbH, Roger Bedell, and Contributors to EVerest
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/state/authorization.hpp>
+#include <iso15118/ev/d20/state/authorization_setup.hpp>
 #include <iso15118/ev/d20/state/service_discovery.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/authorization.hpp>
@@ -55,17 +56,11 @@ Result Authorization::feed(Event ev) {
         }
 
         // If EVSEProcessing, we wait for it to be finished
-        if (res->evse_processing != message_20::datatypes::Processing::Finished) {
-            // resend the request, it needs to have been saved before.
-            const auto request_message = m_ctx.get_saved_request<message_20::AuthorizationRequest>();
-            if (request_message.has_value()) {
-                m_ctx.respond(request_message.value());
-                return {};
-            } else {
-                logf_error("No AuthorizationRequest found in context to resend.");
-                m_ctx.stop_session(true); // Tell stack to close the tcp/tls connection
-                return {};
-            }
+        if (res->evse_processing !=
+            message_20::datatypes::Processing::Finished) { // Ongoing or Ongoing_WaitingForCustomerInteraction
+            // resend the request, as the EVSE is still processing it
+            message_20::AuthorizationRequest req = AuthorizationSetup::CreateAuthorizationRequest(m_ctx);
+            m_ctx.respond(req);
         } else {
             // Send request and transition to next state
             message_20::ServiceDiscoveryRequest req;
@@ -84,6 +79,7 @@ Result Authorization::feed(Event ev) {
         m_ctx.stop_session(true); // Tell stack to close the tcp/tls connection
         return {};
     }
+    return {};
 }
 
 } // namespace iso15118::ev::d20::state
