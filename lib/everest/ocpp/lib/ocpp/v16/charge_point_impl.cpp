@@ -4910,6 +4910,11 @@ void ChargePointImpl::register_default_price_callback(
 }
 
 void ChargePointImpl::publish_default_price(bool is_offline) {
+
+    if (!this->configuration.getCustomDisplayCostAndPriceEnabled()) {
+        return;
+    }
+
     if (!this->default_price_callback) {
         return;
     }
