@@ -962,7 +962,7 @@ std::map<pid_t, std::string> Manager::handleStartModules(const RuntimeContext& c
 
                 if (sigint_received_ || isInShutdownFlowState()) {
                     EVLOG_info << "All modules reported ready while shutdown is already in progress. "
-                                    "Skipping transition to Running.";
+                                  "Skipping transition to Running.";
                     return;
                 }
                 transitionTo(ManagerState::Running);
