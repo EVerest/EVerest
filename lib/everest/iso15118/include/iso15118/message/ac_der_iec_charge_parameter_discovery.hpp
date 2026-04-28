@@ -5,6 +5,8 @@
 #include "ac_charge_parameter_discovery.hpp"
 #include "ac_der_types.hpp"
 
+#include <everest/util/vector/fixed_vector.hpp>
+
 namespace iso15118::message_20 {
 
 namespace datatypes {
@@ -88,9 +90,9 @@ struct DataTuple {
     SetPointExcitation y_value;
 };
 
-using CurveDataPointsList = std::vector<DataTuple>;
 constexpr auto CurveDataPointsMinLength = 2;
 constexpr auto CurveDataPointsMaxLength = 10;
+using CurveDataPointsList = everest::lib::util::fixed_vector<DataTuple, CurveDataPointsMaxLength>;
 
 struct DerCurve {
     CurveDataPointsUnit x_unit;
