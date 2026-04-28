@@ -822,11 +822,22 @@ class TestOcpp201CostAndPrice:
 
         test_controller.disconnect_websocket()
 
-        await self.await_mock_called(default_price_mock)
+        # Multiple publications can arrive around disconnect; wait for the explicit offline text.
+        offline_message_received = False
+        for _ in range(30):
+            for call_args in default_price_mock.call_args_list:
+                call_data = call_args[0][0]
+                if (
+                    len(call_data.get("messages", [])) == 1
+                    and call_data["messages"][0].get("content") == "Station is offline"
+                ):
+                    offline_message_received = True
+                    break
+            if offline_message_received:
+                break
+            await asyncio.sleep(0.1)
 
-        call_data = default_price_mock.call_args[0][0]
-        assert len(call_data["messages"]) == 1
-        assert call_data["messages"][0]["content"] == "Station is offline"
+        assert offline_message_received
 
         # Reconnect for clean teardown.
         test_controller.connect_websocket()
