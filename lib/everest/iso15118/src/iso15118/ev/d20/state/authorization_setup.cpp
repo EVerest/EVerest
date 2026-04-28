@@ -28,6 +28,32 @@ void AuthorizationSetup::enter() {
     // TODO(SL): Adding logging
 }
 
+// The request needs to be set up in an independent way so that it can be called from the authorization state also in
+// case of the EVSE processing of the AuthorizationReq is not finished yet and we need to resend the request
+message_20::AuthorizationRequest AuthorizationSetup::CreateAuthorizationRequest(Context& ctx) {
+    message_20::AuthorizationRequest req;
+    setup_header(req.header, ctx.get_session());
+    // TODO(RB): Choose the authorization service based on user preference and what the evse supports
+    // For now, we just pick the first one offered by the evse
+    if (ctx.evse_session_info.auth_services.empty()) {
+        logf_error("No authorization services offered by the EVSE. Abort the session.");
+        ctx.stop_session(true); // Tell stack to close the tcp/tls connection
+        return {req};
+    }
+    req.selected_authorization_service = ctx.evse_session_info.auth_services.front();
+    if (req.selected_authorization_service == message_20::datatypes::Authorization::EIM) {
+        req.authorization_mode = message_20::datatypes::EIM_ASReqAuthorizationMode{};
+    } else if (req.selected_authorization_service == message_20::datatypes::Authorization::PnC) {
+        // TODO(RB): Fill in the PnC authorization mode data
+        req.authorization_mode = message_20::datatypes::PnC_ASReqAuthorizationMode{};
+    } else {
+        logf_error("Unknown authorization service selected. Abort the session.");
+        ctx.stop_session(true); // Tell stack to close the tcp/tls connection
+        return {req};
+    }
+    return req;
+}
+
 Result AuthorizationSetup::feed([[maybe_unused]] Event ev) {
     if (ev != Event::V2GTP_MESSAGE) {
         return {};
@@ -65,26 +91,10 @@ Result AuthorizationSetup::feed([[maybe_unused]] Event ev) {
         m_ctx.feedback.evse_session_info(m_ctx.evse_session_info);
 
         // Send request and transition to next state
-        message_20::AuthorizationRequest req;
-        setup_header(req.header, m_ctx.get_session());
-        // TODO(RB): Choose the authorization service based on user preference and what the evse supports
-        // For now, we just pick the first one offered by the evse
-        if (m_ctx.evse_session_info.auth_services.empty()) {
-            logf_error("No authorization services offered by the EVSE. Abort the session.");
-            m_ctx.stop_session(true); // Tell stack to close the tcp/tls connection
-            return {};
-        }
-        req.selected_authorization_service = m_ctx.evse_session_info.auth_services.front();
-        if (req.selected_authorization_service == message_20::datatypes::Authorization::EIM) {
-            req.authorization_mode = message_20::datatypes::EIM_ASReqAuthorizationMode{};
-        } else if (req.selected_authorization_service == message_20::datatypes::Authorization::PnC) {
-            // TODO(RB): Fill in the PnC authorization mode data
-            req.authorization_mode = message_20::datatypes::PnC_ASReqAuthorizationMode{};
-        } else {
-            logf_error("Unknown authorization service selected. Abort the session.");
-            m_ctx.stop_session(true); // Tell stack to close the tcp/tls connection
-            return {};
-        }
+        // The request needs to be set up in an independent way so that it can be called from the authorization state
+        // also in case of the EVSE processing of the AuthorizationReq is not finished yet and we need to resend the
+        // request.
+        message_20::AuthorizationRequest req = CreateAuthorizationRequest(m_ctx);
         m_ctx.respond(req);
         return m_ctx.create_state<Authorization>();
     } else {

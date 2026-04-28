@@ -6,11 +6,9 @@
 
 namespace iso15118::ev::d20::state {
 
-struct AuthorizationSetup : public StateBase {
-    static message_20::AuthorizationRequest CreateAuthorizationRequest(Context& ctx);
-
+struct ServiceDiscovery : public StateBase {
 public:
-    AuthorizationSetup(Context& ctx) : StateBase(ctx, StateID::AuthorizationSetup) {
+    ServiceDiscovery(Context& ctx) : StateBase(ctx, StateID::ServiceDiscovery) {
     }
 
     void enter() final;
