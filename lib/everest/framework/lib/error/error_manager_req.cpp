@@ -90,11 +90,9 @@ void ErrorManagerReq::on_error_cleared(const Error& error) {
     const std::list<ErrorFilter> filters = {ErrorFilter(TypeFilter(error.type)),
                                             ErrorFilter(SubTypeFilter(error.sub_type))};
     const std::list<ErrorPtr> res = database->remove_errors(filters);
-    if (res.size() < 1) {
-        std::stringstream ss;
-        ss << "Error wasn't raised, type: " << error.type << ", sub_type: " << error.sub_type << ", ignored.";
-        ss << std::endl << "Error object: " << nlohmann::json(error).dump(2);
-        EVLOG_error << ss.str();
+    if (res.empty()) {
+        // Error was not raised, ignoring
+        // FIXME: can we prevent this from happening in the first place?
         return;
     }
     if (res.size() > 1) {
