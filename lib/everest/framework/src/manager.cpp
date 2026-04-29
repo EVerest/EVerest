@@ -818,10 +818,10 @@ std::shared_ptr<ManagerConfig> Manager::load_and_validate_config(
             const auto& mc = config->get_module_configurations();
             if (db_storage->write_module_configs(mc) != everest::config::GenericResponseStatus::Failed) {
                 EVLOG_info << "Module configs written to database successfully, marking config as valid";
-                db_storage->mark_valid(true, nlohmann::json(mc).dump(), ms.config_file);
+                db_storage->mark_valid(true, nlohmann::json(mc).dump(), ms.config_file, std::nullopt);
             } else {
                 EVLOG_warning << "Failed to write module configs to database, marking config as invalid";
-                db_storage->mark_valid(false, nlohmann::json(mc).dump(), ms.config_file);
+                db_storage->mark_valid(false, nlohmann::json(mc).dump(), ms.config_file, std::nullopt);
             }
         }
     } catch (EverestInternalError& e) {
