@@ -70,6 +70,8 @@ using ocpp_module_common::TxEvent;
 using ocpp_module_common::TxEventEffect;
 using ocpp_module_common::TxStartStopPoint;
 
+struct RwConf {};
+
 struct Conf {
     std::string MessageLogPath;
     std::string CoreDatabasePath;
@@ -85,6 +87,9 @@ struct Conf {
     int DelayOcppStart;
     int ResetStopDelay;
     std::string CustomMrecErrorMapPath;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class OCPP201 : public Everest::ModuleBase {
