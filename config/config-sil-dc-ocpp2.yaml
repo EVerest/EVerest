@@ -1,4 +1,4 @@
-  active_modules:
+active_modules:
   iso15118_charger:
     module: EvseV2G
     config_module:

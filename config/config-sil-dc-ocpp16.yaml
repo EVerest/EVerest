@@ -57,11 +57,11 @@ active_modules:
   slac:
     module: SlacSimulator
   imd:
+    module: IMDSimulator
     config_implementation:
       main:
         selftest_success: true
         resistance_F_Ohm: 900000
-    module: IMDSimulator
   ovm:
     module: OVMSimulator
     config_implementation:
