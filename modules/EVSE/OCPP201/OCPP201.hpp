@@ -49,6 +49,8 @@ using EventQueue =
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     std::string MessageLogPath;
     std::string CoreDatabasePath;
@@ -64,6 +66,9 @@ struct Conf {
     int DelayOcppStart;
     int ResetStopDelay;
     std::string CustomMrecErrorMapPath;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class OCPP201 : public Everest::ModuleBase {

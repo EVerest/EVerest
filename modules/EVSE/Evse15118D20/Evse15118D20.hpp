@@ -24,6 +24,8 @@
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     std::string device;
     std::string logging_path;
@@ -39,6 +41,9 @@ struct Conf {
     std::string custom_protocol_namespace;
     bool negative_bidirectional_limits;
     bool selecting_sap_based_on_energy_service;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class Evse15118D20 : public Everest::ModuleBase {

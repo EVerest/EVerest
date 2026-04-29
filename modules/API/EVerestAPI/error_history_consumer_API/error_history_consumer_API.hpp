@@ -30,9 +30,14 @@ namespace API_types_entry = API_types::entrypoint;
 
 namespace module {
 
+struct RwConf {};
+
 struct Conf {
     int cfg_communication_check_to_s;
     int cfg_heartbeat_interval_ms;
+
+    Conf() = default;
+    Conf(const RwConf&){};
 };
 
 class error_history_consumer_API : public Everest::ModuleBase {
