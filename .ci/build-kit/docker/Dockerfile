@@ -17,3 +17,7 @@ RUN apt-get update && apt-get -y install libsystemd-dev
 # FIXME(andistorm): Install rust tools
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/${HOME}/.cargo/bin:${PATH}"
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN echo "Path: ${PATH}"
+RUN which cargo || echo "Cargo not found in PATH"
