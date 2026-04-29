@@ -194,7 +194,7 @@ struct ConfigurationParameterCharacteristics {
 };
 
 inline bool operator==(const ConfigurationParameterCharacteristics& lhs,
-                        const ConfigurationParameterCharacteristics& rhs) {
+                       const ConfigurationParameterCharacteristics& rhs) {
     return lhs.datatype == rhs.datatype && lhs.mutability == rhs.mutability && lhs.unit == rhs.unit &&
            lhs.min_value == rhs.min_value && lhs.max_value == rhs.max_value;
 }
@@ -267,9 +267,8 @@ struct ModuleConfig {
 };
 
 inline bool operator==(const ModuleConfig& lhs, const ModuleConfig& rhs) {
-    return lhs.standalone == rhs.standalone && lhs.module_name == rhs.module_name &&
-           lhs.module_id == rhs.module_id && lhs.capabilities == rhs.capabilities &&
-           lhs.configuration_parameters == rhs.configuration_parameters &&
+    return lhs.standalone == rhs.standalone && lhs.module_name == rhs.module_name && lhs.module_id == rhs.module_id &&
+           lhs.capabilities == rhs.capabilities && lhs.configuration_parameters == rhs.configuration_parameters &&
            lhs.telemetry_enabled == rhs.telemetry_enabled && lhs.telemetry_config == rhs.telemetry_config &&
            lhs.connections == rhs.connections && lhs.mapping == rhs.mapping && lhs.access == rhs.access;
 }
