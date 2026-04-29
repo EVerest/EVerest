@@ -285,14 +285,14 @@ StopModulesResult ConfigServiceCore::stop_modules() {
     if (stop_fn_) {
         return stop_fn_();
     }
-    return StopModulesResult::NotAllowed;
+    return StopModulesResult::Rejected;
 }
 
 RestartModulesResult ConfigServiceCore::restart_modules() {
     if (restart_fn_) {
         return restart_fn_();
     }
-    return RestartModulesResult::NotAllowed;
+    return RestartModulesResult::Rejected;
 }
 
 // --- Push-event subscriptions ---
