@@ -14,5 +14,5 @@ FROM ghcr.io/everest/everest-ci/build-kit-base:${BASE_IMAGE_TAG}
 # FIXME(kai): Install libsystemd-dev as a dependency of sdbus-c++
 RUN apt-get update && apt-get -y install libsystemd-dev
 
-# FIXME(andistorm): Install cargo
-RUN apt-get -y install cargo
+# FIXME(andistorm): Install rust tools
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
