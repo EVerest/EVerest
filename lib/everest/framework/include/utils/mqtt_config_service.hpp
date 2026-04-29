@@ -170,7 +170,6 @@ private:
     std::string origin;
     std::unordered_map<std::string, std::string> module_names;
     std::map<std::string, ConfigChangeHandler> change_callbacks;
-    std::shared_ptr<TypedHandler> change_token;
 
     void mqtt_set_request(const nlohmann::json& data);
 };

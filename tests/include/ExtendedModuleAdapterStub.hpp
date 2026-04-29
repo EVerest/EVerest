@@ -124,7 +124,7 @@ public:
     }
 
     void runtime_config_set(const std::string_view& topic, const json& obj) {
-        call(HandlerType::RuntimeConfigSet, topic, obj);
+        call(HandlerType::ConfigurationRequest, topic, obj);
     }
 
     void runtime_config_set(const std::string_view& id, const std::string_view& name, const std::string& value) {
@@ -137,7 +137,7 @@ public:
         req.identifier.configuration_parameter_name = name;
         req.value = value;
         json obj = req;
-        call(HandlerType::RuntimeConfigSet, topic, obj);
+        call(HandlerType::ConfigurationRequest, topic, obj);
     }
 };
 

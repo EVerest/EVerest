@@ -108,7 +108,7 @@ TEST_F(OCPPExtensionTest, UpdateKeys) {
     ASSERT_EQ(log.size(), 1);
     EXPECT_EQ(
         log[0].msg,
-        R"({"data":{"response":{"status":"Accepted"},"status":"Ok","status_info":"","type":"Set"},"msg_type":"SetConfigResponse"})");
+        R"({"data":{"response":{"status":"Accepted"},"status":"Ok","status_info":"","type":"Set"},"msg_type":"ConfigurationResponse"})");
 
     publish_variable_updated("SecurityProfile", "2");
     // not expecting an additional publish
@@ -128,7 +128,7 @@ TEST_F(OCPPExtensionTest, RebootRequired) {
     ASSERT_EQ(log.size(), 1);
     EXPECT_EQ(
         log[0].msg,
-        R"({"data":{"response":{"status":"RebootRequired"},"status":"Ok","status_info":"","type":"Set"},"msg_type":"SetConfigResponse"})");
+        R"({"data":{"response":{"status":"RebootRequired"},"status":"Ok","status_info":"","type":"Set"},"msg_type":"ConfigurationResponse"})");
 }
 
 TEST_F(OCPPExtensionTest, Rejected) {
@@ -137,7 +137,7 @@ TEST_F(OCPPExtensionTest, Rejected) {
     ASSERT_EQ(log.size(), 1);
     EXPECT_EQ(
         log[0].msg,
-        R"({"data":{"response":{"status":"Rejected"},"status":"Ok","status_info":"handler not implemented","type":"Set"},"msg_type":"SetConfigResponse"})");
+        R"({"data":{"response":{"status":"Rejected"},"status":"Ok","status_info":"handler not implemented","type":"Set"},"msg_type":"ConfigurationResponse"})");
 }
 
 } // namespace
