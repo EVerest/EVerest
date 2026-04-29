@@ -108,6 +108,7 @@ jobs:
           run \
           ${{ inputs.test_service_name }} \
           tests/run-tests.sh integration \
+          --serial \
           --everest-prefix /ext/dist \
           --junitxml /ext/${{ inputs.result_xml_path }} \
           --html /ext/${{ inputs.report_html_path }}
