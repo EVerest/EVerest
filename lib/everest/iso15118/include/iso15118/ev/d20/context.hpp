@@ -112,6 +112,8 @@ public:
     // Contains the EVSE received data
     EVSESessionInfo evse_session_info;
 
+    message_20::datatypes::RationalNumber dc_pre_charge_target_voltage{0, 0};
+
     const iso15118::ev::d20::session::Feedback feedback;
 
     SessionLogger& log;
