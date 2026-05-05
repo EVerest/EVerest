@@ -14,6 +14,7 @@ enum class Event {
     RESET,
     V2GTP_MESSAGE,
     CONTROL_MESSAGE,
+    TIMEOUT,
 
     // internal events
     FAILED,
