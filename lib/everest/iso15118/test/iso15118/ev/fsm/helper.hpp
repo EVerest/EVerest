@@ -8,12 +8,13 @@
 #include <iso15118/ev/d20/states.hpp>
 #include <iso15118/fsm/fsm.hpp>
 #include <iso15118/message/variant.hpp>
+#include <iso15118/session/logger.hpp>
 
 using namespace iso15118;
 
 class FsmStateHelper {
 public:
-    FsmStateHelper(const ev::d20::session::feedback::Callbacks& callbacks) : ctx(callbacks, msg_exch){};
+    FsmStateHelper(const ev::d20::session::feedback::Callbacks& callbacks) : ctx(callbacks, msg_exch, logger){};
 
     ev::d20::Context& get_context();
 
@@ -27,6 +28,8 @@ private:
     io::StreamOutputView output_stream_view{output_buffer.data(), output_buffer.size()};
 
     ev::d20::MessageExchange msg_exch{output_stream_view};
+
+    iso15118::session::SessionLogger logger{this};
 
     ev::d20::Context ctx;
 };

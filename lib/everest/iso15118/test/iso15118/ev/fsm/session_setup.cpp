@@ -2,6 +2,8 @@
 // Copyright 2025 Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
+#include <type_traits>
+
 #include "helper.hpp"
 
 #include <iso15118/ev/d20/state/session_setup.hpp>
@@ -9,8 +11,18 @@
 #include <iso15118/message/dc_charge_parameter_discovery.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/type.hpp>
+#include <iso15118/session/logger.hpp>
 
 using namespace iso15118;
+
+TEST_CASE("ISO15118-20 EV Context exposes SessionLogger reference") {
+    const ev::d20::session::feedback::Callbacks callbacks{};
+    auto state_helper = FsmStateHelper(callbacks);
+    auto& ctx = state_helper.get_context();
+    static_assert(std::is_same_v<decltype(ctx.log), iso15118::session::SessionLogger&>,
+                  "Context::log must be a SessionLogger reference");
+    SUCCEED();
+}
 
 SCENARIO("ISO15118-20 EV session setup state transitions") {
 

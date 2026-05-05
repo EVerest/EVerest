@@ -11,6 +11,7 @@
 #include <iso15118/ev/d20/session.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 #include <iso15118/io/sha_hash.hpp>
+#include <iso15118/session/logger.hpp>
 
 namespace iso15118::ev::d20 {
 
@@ -57,7 +58,7 @@ class Session;
 
 class Context {
 public:
-    Context(session::feedback::Callbacks, MessageExchange&);
+    Context(session::feedback::Callbacks, MessageExchange&, iso15118::session::SessionLogger&);
 
     template <typename StateType, typename... Args> BasePointerType create_state(Args&&... args) {
         return std::make_unique<StateType>(*this, std::forward<Args>(args)...);
@@ -110,6 +111,8 @@ public:
     EVSESessionInfo evse_session_info;
 
     const iso15118::ev::d20::session::Feedback feedback;
+
+    iso15118::session::SessionLogger& log;
 
 private:
     MessageExchange& message_exchange;
