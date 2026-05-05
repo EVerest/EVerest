@@ -14,7 +14,13 @@ using namespace iso15118;
 
 class FsmStateHelper {
 public:
-    FsmStateHelper(const ev::d20::session::feedback::Callbacks& callbacks) : ctx(callbacks, msg_exch, logger){};
+    FsmStateHelper(const ev::d20::session::feedback::Callbacks& callbacks) : ctx(callbacks, msg_exch, logger) {
+        // Install a no-op session log callback so SessionLogger::event() does not throw bad_function_call
+        // when state enter() invokes m_ctx.log.enter_state(...). Tests that need to capture log output
+        // override this callback themselves and reset it at the end of the test case.
+        iso15118::session::logging::set_session_log_callback(
+            [](std::size_t, const iso15118::session::logging::Event&) {});
+    };
 
     ev::d20::Context& get_context();
 
