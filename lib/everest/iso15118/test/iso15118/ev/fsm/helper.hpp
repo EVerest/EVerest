@@ -22,6 +22,12 @@ public:
             [](std::size_t, const iso15118::session::logging::Event&) {});
     };
 
+    ~FsmStateHelper() {
+        // Reset the global session log callback so it does not leak across TEST_CASEs.
+        iso15118::session::logging::set_session_log_callback(
+            [](std::size_t, const iso15118::session::logging::Event&) {});
+    }
+
     ev::d20::Context& get_context();
 
     template <typename ResponseType> void handle_response(const ResponseType& response) {
