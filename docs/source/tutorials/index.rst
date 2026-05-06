@@ -44,6 +44,12 @@ Have a look at this categorized list of all EVerest tutorials:
         :link-type: doc
 
         Learn how to setup a development container for EVerest development.
+   
+    .. grid-item-card:: Get to know the EVerestAPI
+        :link: everest_api
+        :link-type: doc
+
+        Learn how the EVerestAPI can be used in your setup
 
 .. toctree::
     :maxdepth: 1
@@ -55,3 +61,4 @@ Have a look at this categorized list of all EVerest tutorials:
     plug-and-charge
     bazel
     EVerest devcontainer <setup-devcontainer/index>
+    everest_api
