@@ -75,7 +75,6 @@ ChargePointConfiguration::ChargePointConfiguration(const std::string& config, co
         if (fs::exists(cost_schema_path)) {
             std::ifstream ifs(cost_schema_path.c_str());
             std::string cost_schema_file((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
-            const auto cost_schema = json::parse(cost_schema_file);
             this->cost_and_price_schema = json::parse(cost_schema_file);
         }
     } catch (const json::parse_error& e) {
@@ -3098,7 +3097,7 @@ bool ChargePointConfiguration::setMeterPublicKey(const std::int32_t connector_id
 }
 
 ConfigurationStatus ChargePointConfiguration::setCustomDisplayCostAndPrice(const bool& value) {
-    auto status = ConfigurationStatus::NotSupported;
+    auto status = ConfigurationStatus::Rejected;
 
     if (!this->cost_and_price_schema["properties"]["CustomDisplayCostAndPrice"]["readOnly"]) {
         this->config["CostAndPrice"]["CustomDisplayCostAndPrice"] = value;
@@ -4221,6 +4220,9 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
             return ConfigurationStatus::Rejected;
         }
     } else if (key == "CustomDisplayCostAndPrice") {
+        if (!isBool(value.get())) {
+            return ConfigurationStatus::Rejected;
+        }
         const ConfigurationStatus result =
             this->setCustomDisplayCostAndPrice(ocpp::conversions::string_to_bool(value.get()));
         if (result != ConfigurationStatus::Accepted) {

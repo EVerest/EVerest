@@ -278,7 +278,6 @@ MemoryStorage::MemoryStorage() {
     vars_custom = required_vars_custom;
 
     vars_additional.clear();
-    read_only.clear();
 }
 
 void MemoryStorage::apply_full_config() {
@@ -380,12 +379,28 @@ MemoryStorage::SetVariableStatusEnum MemoryStorage::set_v16_custom(const std::st
 }
 
 void MemoryStorage::set_readonly(const std::string& key) {
-    read_only.insert(key);
+    configured_mutability[key] = MutabilityEnum::ReadOnly;
+}
+
+void MemoryStorage::set_readwrite(const std::string& key) {
+    configured_mutability[key] = MutabilityEnum::ReadWrite;
+}
+
+std::optional<MemoryStorage::MutabilityEnum>
+MemoryStorage::get_configured_mutability(const std::string& key_str) const {
+    if (const auto it = configured_mutability.find(key_str); it != configured_mutability.end()) {
+        return it->second;
+    }
+    return std::nullopt;
 }
 
 std::optional<MemoryStorage::MutabilityEnum> MemoryStorage::get_mutability(const std::string& key_str) {
-    std::optional<MutabilityEnum> result;
+    std::optional<MutabilityEnum> result = get_configured_mutability(key_str);
+    if (result) {
+        return result;
+    }
 
+    // fallback: derive the mutability from the known_keys readonly list
     const auto sv_key_opt = keys::convert(key_str);
     if (sv_key_opt) {
         const auto sv_key = sv_key_opt.value();
@@ -396,14 +411,10 @@ std::optional<MemoryStorage::MutabilityEnum> MemoryStorage::get_mutability(const
                                                  : MemoryStorage::MutabilityEnum::ReadWrite;
         }
     } else {
-        if (const auto it = read_only.find(key_str); it == read_only.end()) {
-            // check if key exists (not in the read only list)
-            auto found = locate_v16(key_str);
-            if (found) {
-                result = MemoryStorage::MutabilityEnum::ReadWrite;
-            }
-        } else {
-            result = MemoryStorage::MutabilityEnum::ReadOnly;
+        // check if key exists
+        auto found = locate_v16(key_str);
+        if (found) {
+            result = MemoryStorage::MutabilityEnum::ReadWrite;
         }
     }
 
@@ -597,6 +608,11 @@ MemoryStorage::SetVariableStatusEnum MemoryStorage::set_value(const Component& c
     const auto key_str = enhanced_convert(component_id, variable_id, attribute_enum);
     MemoryStorage::SetVariableStatusEnum result;
     if (!key_str.empty()) {
+        // mirror DeviceModel::set_value(): Reject writes when the configured
+        // mutability is ReadOnly
+        if (!allow_read_only && get_configured_mutability(key_str) == MutabilityEnum::ReadOnly) {
+            return MemoryStorage::SetVariableStatusEnum::Rejected;
+        }
         const auto key_opt = v16::keys::convert(key_str);
         std::string store_value = value;
         result = MemoryStorage::SetVariableStatusEnum::Accepted;
@@ -617,7 +633,7 @@ MemoryStorage::SetVariableStatusEnum MemoryStorage::set_read_only_value(const Co
                                                                         const AttributeEnum& attribute_enum,
                                                                         const std::string& value,
                                                                         const std::string& source) {
-    return set_value(component_id, variable_id, attribute_enum, value, source);
+    return set_value(component_id, variable_id, attribute_enum, value, source, true);
 }
 
 MemoryStorage::SetVariableStatusEnum MemoryStorage::clear_value(const Component& component_id,
