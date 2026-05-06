@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
 #include "external_energy_limits_consumer_API.hpp"
 
 #include <everest_api_types/energy/API.hpp>
@@ -27,31 +27,12 @@ void external_energy_limits_consumer_API::init() {
 void external_energy_limits_consumer_API::ready() {
     invoke_ready(*p_main);
 
-    generate_api_var_capabilities();
     generate_api_cmd_set_external_limits();
 
     helper.generate_api_var_communication_check(&comm_check);
-
     comm_check.start(config.cfg_communication_check_to_s);
     helper.setup_heartbeat_generator(&comm_check, config.cfg_heartbeat_interval_ms);
-
     helper.publish_ready_beacon();
-}
-
-auto external_energy_limits_consumer_API::forward_api_var(std::string const& var) {
-    using namespace API_types_ext;
-    const auto topic = helper.get_topics().everest_to_extern(var);
-    return [this, topic](auto const& val) {
-        try {
-            auto&& external = to_external_api(val);
-            auto&& payload = serialize(external);
-            mqtt_v.publish(topic, payload);
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Variable: '" << topic << "' failed with -> " << e.what();
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Cannot convert internal to external or serialize it.\n" << topic;
-        }
-    };
 }
 
 void external_energy_limits_consumer_API::generate_api_cmd_set_external_limits() {
@@ -63,10 +44,6 @@ void external_energy_limits_consumer_API::generate_api_cmd_set_external_limits()
         }
         return false;
     });
-}
-
-void external_energy_limits_consumer_API::generate_api_var_capabilities() {
-    r_energy_node->subscribe_capabilities(forward_api_var("capabilities"));
 }
 
 } // namespace module

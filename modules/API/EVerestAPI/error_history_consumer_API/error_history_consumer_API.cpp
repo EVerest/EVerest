@@ -44,14 +44,30 @@ void error_history_consumer_API::ready() {
     helper.publish_ready_beacon();
 }
 
-auto error_history_consumer_API::forward_api_var(std::string const& var) {
+auto error_history_consumer_API::forward_and_cache_api_var(std::string const& var) {
     using namespace API_types_ext;
     const auto topic = helper.get_topics().everest_to_extern(var);
+
+    if (config.latch_variable_values) {
+        helper.subscribe_api_topic(var + "/get", [this, topic](std::string const& data) {
+            API_generic::RequestReply msg;
+            if (deserialize(data, msg)) {
+                if (serialized_variables_cache.count(topic) > 0) {
+                    mqtt.publish(msg.replyTo, serialized_variables_cache[topic]);
+                } else {
+                    EVLOG_info << "No latched value for '" << topic << "' to return";
+                }
+                return true;
+            }
+            return false;
+        });
+    }
 
     return [this, topic](auto const& val) {
         try {
             auto&& external = to_external_api(val);
             auto&& payload = serialize(external);
+            serialized_variables_cache[topic] = payload;
             mqtt_v.publish(topic, payload);
         } catch (const std::exception& e) {
             EVLOG_warning << "Variable: '" << topic << "' failed with -> " << e.what();
@@ -98,7 +114,8 @@ void error_history_consumer_API::generate_api_var_error_events() {
     auto convert = [](auto const& ftor) {
         return [ftor](auto&& elem) { return ftor(error_converter::framework_to_internal_api(elem)); };
     };
-    subscribe_global_all_errors(convert(forward_api_var("error_raised")), convert(forward_api_var("error_cleared")));
+    subscribe_global_all_errors(convert(forward_and_cache_api_var("error_raised")),
+                                convert(forward_and_cache_api_var("error_cleared")));
 }
 
 } // namespace module

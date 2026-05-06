@@ -33,6 +33,7 @@ namespace module {
 struct Conf {
     int cfg_communication_check_to_s;
     int cfg_heartbeat_interval_ms;
+    bool latch_variable_values;
 };
 
 class error_history_consumer_API : public Everest::ModuleBase {
@@ -70,7 +71,9 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
-    auto forward_api_var(std::string const& var);
+    std::map<std::string, std::string> serialized_variables_cache;
+
+    auto forward_and_cache_api_var(std::string const& var);
 
     void generate_api_cmd_get_errors();
     void generate_api_cmd_active_errors();
