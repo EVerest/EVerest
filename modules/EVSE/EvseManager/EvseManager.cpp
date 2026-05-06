@@ -2084,34 +2084,36 @@ void EvseManager::cable_check() {
             r_imd[0]->call_start_self_test(config.cable_check_relays_open_voltage_V);
             EVLOG_info << "CableCheck: Early IMD self test started.";
 
-            // Wait for the result of the self test
-            bool result{false};
-            bool result_received{false};
+            if (not config.cable_check_enable_imd_self_test) {
+            //Wait for the result of the self test
+                bool result{false};
+                bool result_received{false};
 
-            for (int wait_seconds = 0; wait_seconds < CABLECHECK_SELFTEST_TIMEOUT; wait_seconds++) {
-                if (cable_check_should_exit()) {
-                    fail_cable_check("Cancel cable check");
+                for (int wait_seconds = 0; wait_seconds < CABLECHECK_SELFTEST_TIMEOUT; wait_seconds++) {
+                    if (cable_check_should_exit()) {
+                        fail_cable_check("Cancel cable check");
+                        return;
+                    }
+                    if (selftest_result.wait_for(result, 1s)) {
+                        result_received = true;
+                        break;
+                    }
+                }
+
+                if (not result_received) {
+                    fail_cable_check("CableCheck: Did not get a early self test result from IMD within timeout");
                     return;
                 }
-                if (selftest_result.wait_for(result, 1s)) {
-                    result_received = true;
-                    break;
+
+                if (not result) {
+                    EVLOG_error << "CableCheck: Early IMD Self test failed";
+                    fail_cable_check("Early IMD self test failed during cable check");
+                    return;
                 }
-            }
 
-            if (not result_received) {
-                fail_cable_check("CableCheck: Did not get a early self test result from IMD within timeout");
-                return;
+                powersupply_DC_off();
+                charger->get_stopwatch().mark("Early IMD self test");
             }
-
-            if (not result) {
-                EVLOG_error << "CableCheck: Early IMD Self test failed";
-                fail_cable_check("Early IMD self test failed during cable check");
-                return;
-            }
-
-            powersupply_DC_off();
-            charger->get_stopwatch().mark("Early IMD self test");
         }
 
         // normally contactors should be closed before entering cable check routine.
