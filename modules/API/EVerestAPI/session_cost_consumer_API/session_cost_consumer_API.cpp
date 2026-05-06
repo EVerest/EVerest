@@ -24,14 +24,15 @@ void session_cost_consumer_API::init() {
     comm_params.heartbeat_period_ms = config.cfg_heartbeat_interval_ms;
     comm_params.communication_check_period_s = config.cfg_communication_check_to_s;
     helper.init(comm_params);
+
+    // setup var forwarding before modules start publishing
+    generate_api_var_tariff_message();
+    generate_api_var_session_cost();
+    generate_api_var_default_price();
 }
 
 void session_cost_consumer_API::ready() {
     invoke_ready(*p_main);
-
-    generate_api_var_tariff_message();
-    generate_api_var_session_cost();
-    generate_api_var_default_price();
 
     helper.generate_api_var_communication_check(&comm_check);
     comm_check.start(config.cfg_communication_check_to_s);
@@ -39,33 +40,24 @@ void session_cost_consumer_API::ready() {
     helper.publish_ready_beacon();
 }
 
-auto session_cost_consumer_API::forward_api_var(std::string const& var) {
-    using namespace API_types_ext;
-    using namespace API_generic;
-    const auto topic = helper.get_topics().everest_to_extern(var);
-    return [this, topic](auto const& val) {
-        try {
-            auto&& external = to_external_api(val);
-            auto&& payload = serialize(external);
-            mqtt_v.publish(topic, payload);
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Variable: '" << topic << "' failed with -> " << e.what();
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Cannot convert internal to external or serialize it.\n" << topic;
-        }
-    };
+auto session_cost_consumer_API::forward_and_cache_api_var(std::string const& var) {
+    return helper.forward_and_cache_api_var(var, config.latch_variable_values, [](auto const& val) {
+        using namespace API_types_ext;
+        using namespace API_generic;
+        return serialize(to_external_api(val));
+    });
 }
 
 void session_cost_consumer_API::generate_api_var_tariff_message() {
-    r_session_cost->subscribe_tariff_message(forward_api_var("tariff_message"));
+    r_session_cost->subscribe_tariff_message(forward_and_cache_api_var("tariff_message"));
 }
 
 void session_cost_consumer_API::generate_api_var_session_cost() {
-    r_session_cost->subscribe_session_cost(forward_api_var("session_cost"));
+    r_session_cost->subscribe_session_cost(forward_and_cache_api_var("session_cost"));
 }
 
 void session_cost_consumer_API::generate_api_var_default_price() {
-    r_session_cost->subscribe_default_price(forward_api_var("default_price"));
+    r_session_cost->subscribe_default_price(forward_and_cache_api_var("default_price"));
 }
 
 } // namespace module

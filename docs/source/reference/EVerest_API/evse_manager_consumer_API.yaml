@@ -93,57 +93,167 @@ channels:
     messages:
       receive_session_event:
         $ref: '#/components/messages/receive_session_event'
+  send_request_get_session_event:
+    address: 'm2e/session_event/get'
+    messages:
+      send_request_get_session_event:
+        $ref: '#/components/messages/send_request_get_session_event'
+  receive_reply_get_session_event:
+    address: null
+    messages:
+      receive_reply_get_session_event:
+        $ref: '#/components/messages/receive_reply_get_session_event'
   receive_hlc_session_failed:
     address: 'e2m/hlc_session_failed'
     messages:
       receive_hlc_session_failed:
         $ref: '#/components/messages/receive_hlc_session_failed'
+  send_request_get_hlc_session_failed:
+    address: 'm2e/hlc_session_failed/get'
+    messages:
+      send_request_get_hlc_session_failed:
+        $ref: '#/components/messages/send_request_get_hlc_session_failed'
+  receive_reply_get_hlc_session_failed:
+    address: null
+    messages:
+      receive_reply_get_hlc_session_failed:
+        $ref: '#/components/messages/receive_reply_get_hlc_session_failed'
   receive_ev_info:
     address: 'e2m/ev_info'
     messages:
       receive_ev_info:
         $ref: '#/components/messages/receive_ev_info'
+  send_request_get_ev_info:
+    address: 'm2e/ev_info/get'
+    messages:
+      send_request_get_ev_info:
+        $ref: '#/components/messages/send_request_get_ev_info'
+  receive_reply_get_ev_info:
+    address: null
+    messages:
+      receive_reply_get_ev_info:
+        $ref: '#/components/messages/receive_reply_get_ev_info'
   receive_session_info:
     address: 'e2m/session_info'
     messages:
       receive_session_info:
         $ref: '#/components/messages/receive_session_info'
+  send_request_get_session_info:
+    address: 'm2e/session_info/get'
+    messages:
+      send_request_get_session_info:
+        $ref: '#/components/messages/send_request_get_session_info'
+  receive_reply_get_session_info:
+    address: null
+    messages:
+      receive_reply_get_session_info:
+        $ref: '#/components/messages/receive_reply_get_session_info'
   # telemetry not implemented
   receive_powermeter:
     address: 'e2m/powermeter'
     messages:
       receive_powermeter:
         $ref: '#/components/messages/receive_powermeter'
+  send_request_get_powermeter:
+    address: 'm2e/powermeter/get'
+    messages:
+      send_request_get_powermeter:
+        $ref: '#/components/messages/send_request_get_powermeter'
+  receive_reply_get_powermeter:
+    address: null
+    messages:
+      receive_reply_get_powermeter:
+        $ref: '#/components/messages/receive_reply_get_powermeter'
   receive_powermeter_public_key_ocmf:
     address: 'e2m/powermeter_public_key_ocmf'
     messages:
       receive_powermeter_public_key_ocmf:
         $ref: '#/components/messages/receive_powermeter_public_key_ocmf'
+  send_request_get_powermeter_public_key_ocmf:
+    address: 'm2e/powermeter_public_key_ocmf/get'
+    messages:
+      send_request_get_powermeter_public_key_ocmf:
+        $ref: '#/components/messages/send_request_get_powermeter_public_key_ocmf'
+  receive_reply_get_powermeter_public_key_ocmf:
+    address: null
+    messages:
+      receive_reply_get_powermeter_public_key_ocmf:
+        $ref: '#/components/messages/receive_reply_get_powermeter_public_key_ocmf'
   receive_evse_id:
     address: 'e2m/evse_id'
     messages:
       receive_evse_id:
         $ref: '#/components/messages/receive_evse_id'
+  send_request_get_evse_id:
+    address: 'm2e/evse_id/get'
+    messages:
+      send_request_get_evse_id:
+        $ref: '#/components/messages/send_request_get_evse_id'
+  receive_reply_get_evse_id:
+    address: null
+    messages:
+      receive_reply_get_evse_id:
+        $ref: '#/components/messages/receive_reply_get_evse_id'
   receive_hw_capabilities:
     address: 'e2m/hw_capabilities'
     messages:
       receive_hw_capabilities:
         $ref: '#/components/messages/receive_hw_capabilities'
+  send_request_get_hw_capabilities:
+    address: 'm2e/hw_capabilities/get'
+    messages:
+      send_request_get_hw_capabilities:
+        $ref: '#/components/messages/send_request_get_hw_capabilities'
+  receive_reply_get_hw_capabilities:
+    address: null
+    messages:
+      receive_reply_get_hw_capabilities:
+        $ref: '#/components/messages/receive_reply_get_hw_capabilities'
   receive_enforced_limits:
     address: 'e2m/enforced_limits'
     messages:
       receive_enforced_limits:
         $ref: '#/components/messages/receive_enforced_limits'
+  send_request_get_enforced_limits:
+    address: 'm2e/enforced_limits/get'
+    messages:
+      send_request_get_enforced_limits:
+        $ref: '#/components/messages/send_request_get_enforced_limits'
+  receive_reply_get_enforced_limits:
+    address: null
+    messages:
+      receive_reply_get_enforced_limits:
+        $ref: '#/components/messages/receive_reply_get_enforced_limits'
   receive_selected_protocol:
     address: 'e2m/selected_protocol'
     messages:
       receive_selected_protocol:
         $ref: '#/components/messages/receive_selected_protocol'
+  send_request_get_selected_protocol:
+    address: 'm2e/selected_protocol/get'
+    messages:
+      send_request_get_selected_protocol:
+        $ref: '#/components/messages/send_request_get_selected_protocol'
+  receive_reply_get_selected_protocol:
+    address: null
+    messages:
+      receive_reply_get_selected_protocol:
+        $ref: '#/components/messages/receive_reply_get_selected_protocol'
   receive_supported_energy_transfer_modes:
     address: 'e2m/supported_energy_transfer_modes'
     messages:
       receive_supported_energy_transfer_modes:
         $ref: '#/components/messages/receive_supported_energy_transfer_modes'
+  send_request_get_supported_energy_transfer_modes:
+    address: 'm2e/supported_energy_transfer_modes/get'
+    messages:
+      send_request_get_supported_energy_transfer_modes:
+        $ref: '#/components/messages/send_request_get_supported_energy_transfer_modes'
+  receive_reply_get_supported_energy_transfer_modes:
+    address: null
+    messages:
+      receive_reply_get_supported_energy_transfer_modes:
+        $ref: '#/components/messages/receive_reply_get_supported_energy_transfer_modes'
 
   ########## evse_board_support
   receive_ac_nr_of_phases_available:
@@ -151,11 +261,31 @@ channels:
     messages:
       receive_ac_nr_of_phases_available:
         $ref: '#/components/messages/receive_ac_nr_of_phases_available'
+  send_request_get_ac_nr_of_phases_available:
+    address: 'm2e/ac_nr_of_phases_available/get'
+    messages:
+      send_request_get_ac_nr_of_phases_available:
+        $ref: '#/components/messages/send_request_get_ac_nr_of_phases_available'
+  receive_reply_get_ac_nr_of_phases_available:
+    address: null
+    messages:
+      receive_reply_get_ac_nr_of_phases_available:
+        $ref: '#/components/messages/receive_reply_get_ac_nr_of_phases_available'
   receive_ac_pp_ampacity:
     address: 'e2m/ac_pp_ampacity'
     messages:
       receive_ac_pp_ampacity:
         $ref: '#/components/messages/receive_ac_pp_ampacity'
+  send_request_get_ac_pp_ampacity:
+    address: 'm2e/ac_pp_ampacity/get'
+    messages:
+      send_request_get_ac_pp_ampacity:
+        $ref: '#/components/messages/send_request_get_ac_pp_ampacity'
+  receive_reply_get_ac_pp_ampacity:
+    address: null
+    messages:
+      receive_reply_get_ac_pp_ampacity:
+        $ref: '#/components/messages/receive_reply_get_ac_pp_ampacity'
 
   ########## slac
   receive_dlink_ready:
@@ -163,6 +293,16 @@ channels:
     messages:
       receive_dlink_ready:
         $ref: '#/components/messages/receive_dlink_ready'
+  send_request_get_dlink_ready:
+    address: 'm2e/dlink_ready/get'
+    messages:
+      send_request_get_dlink_ready:
+        $ref: '#/components/messages/send_request_get_dlink_ready'
+  receive_reply_get_dlink_ready:
+    address: null
+    messages:
+      receive_reply_get_dlink_ready:
+        $ref: '#/components/messages/receive_reply_get_dlink_ready'
 
   ########## isolation_monitor
   receive_isolation_measurement:
@@ -170,6 +310,16 @@ channels:
     messages:
       receive_isolation_measurement:
         $ref: '#/components/messages/receive_isolation_measurement'
+  send_request_get_isolation_measurement:
+    address: 'm2e/isolation_measurement/get'
+    messages:
+      send_request_get_isolation_measurement:
+        $ref: '#/components/messages/send_request_get_isolation_measurement'
+  receive_reply_get_isolation_measurement:
+    address: null
+    messages:
+      receive_reply_get_isolation_measurement:
+        $ref: '#/components/messages/receive_reply_get_isolation_measurement'
 
   ########## power_supply_DC
   receive_dc_voltage_current:
@@ -177,16 +327,46 @@ channels:
     messages:
       receive_dc_voltage_current:
         $ref: '#/components/messages/receive_dc_voltage_current'
+  send_request_get_dc_voltage_current:
+    address: 'm2e/dc_voltage_current/get'
+    messages:
+      send_request_get_dc_voltage_current:
+        $ref: '#/components/messages/send_request_get_dc_voltage_current'
+  receive_reply_get_dc_voltage_current:
+    address: null
+    messages:
+      receive_reply_get_dc_voltage_current:
+        $ref: '#/components/messages/receive_reply_get_dc_voltage_current'
   receive_dc_mode:
     address: 'e2m/dc_mode'
     messages:
       receive_dc_mode:
         $ref: '#/components/messages/receive_dc_mode'
+  send_request_get_dc_mode:
+    address: 'm2e/dc_mode/get'
+    messages:
+      send_request_get_dc_mode:
+        $ref: '#/components/messages/send_request_get_dc_mode'
+  receive_reply_get_dc_mode:
+    address: null
+    messages:
+      receive_reply_get_dc_mode:
+        $ref: '#/components/messages/receive_reply_get_dc_mode'
   receive_dc_capabilities:
     address: 'e2m/dc_capabilities'
     messages:
       receive_dc_capabilities:
         $ref: '#/components/messages/receive_dc_capabilities'
+  send_request_get_dc_capabilities:
+    address: 'm2e/dc_capabilities/get'
+    messages:
+      send_request_get_dc_capabilities:
+        $ref: '#/components/messages/send_request_get_dc_capabilities'
+  receive_reply_get_dc_capabilities:
+    address: null
+    messages:
+      receive_reply_get_dc_capabilities:
+        $ref: '#/components/messages/receive_reply_get_dc_capabilities'
 
   ########## uk_random_delay
   send_random_delay_enable:
@@ -215,6 +395,16 @@ channels:
     messages:
       receive_random_delay_countdown:
         $ref: '#/components/messages/receive_random_delay_countdown'
+  send_request_get_random_delay_countdown:
+    address: 'm2e/random_delay_countdown/get'
+    messages:
+      send_request_get_random_delay_countdown:
+        $ref: '#/components/messages/send_request_get_random_delay_countdown'
+  receive_reply_get_random_delay_countdown:
+    address: null
+    messages:
+      receive_reply_get_random_delay_countdown:
+        $ref: '#/components/messages/receive_reply_get_random_delay_countdown'
 
 
   receive_heartbeat:
@@ -335,57 +525,266 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_session_event'
+  send_request_get_session_event:
+    title: 'Request current session event'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_session_event'
+    description: >-
+      Request the most recently published (latched) session event.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_session_event'
+  receive_reply_get_session_event:
+    title: 'Reply to get session event request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_session_event'
   receive_hlc_session_failed:
     title: 'Receive HLC session failed event'
     action: receive
     channel:
       $ref: '#/channels/receive_hlc_session_failed'
+  send_request_get_hlc_session_failed:
+    title: 'Request current hlc session failed'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_hlc_session_failed'
+    description: >-
+      Request the most recently published (latched) hlc session failed.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_hlc_session_failed'
+  receive_reply_get_hlc_session_failed:
+    title: 'Reply to get hlc session failed request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_hlc_session_failed'
   receive_ev_info:
     title: 'Receive details of EV'
     action: receive
     channel:
       $ref: '#/channels/receive_ev_info'
+  send_request_get_ev_info:
+    title: 'Request current ev info'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_ev_info'
+    description: >-
+      Request the most recently published (latched) ev info.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_ev_info'
+  receive_reply_get_ev_info:
+    title: 'Reply to get ev info request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_ev_info'
   receive_session_info:
     title: 'Receive session information'
     action: receive
     channel:
       $ref: '#/channels/receive_session_info'
+  send_request_get_session_info:
+    title: 'Request current session info'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_session_info'
+    description: >-
+      Request the most recently published (latched) session info.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_session_info'
+  receive_reply_get_session_info:
+    title: 'Reply to get session info request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_session_info'
   # telemetry not implemented
   receive_powermeter:
     title: 'Receive powermeter measured dataset'
     action: receive
     channel:
       $ref: '#/channels/receive_powermeter'
+  send_request_get_powermeter:
+    title: 'Request current powermeter'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_powermeter'
+    description: >-
+      Request the most recently published (latched) powermeter.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_powermeter'
+  receive_reply_get_powermeter:
+    title: 'Reply to get powermeter request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_powermeter'
   receive_powermeter_public_key_ocmf:
     title: 'Receive powermeter public key OCMF'
     action: receive
     channel:
       $ref: '#/channels/receive_powermeter_public_key_ocmf'
+  send_request_get_powermeter_public_key_ocmf:
+    title: 'Request current powermeter public key ocmf'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_powermeter_public_key_ocmf'
+    description: >-
+      Request the most recently published (latched) powermeter public key ocmf.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_powermeter_public_key_ocmf'
+  receive_reply_get_powermeter_public_key_ocmf:
+    title: 'Reply to get powermeter public key ocmf request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_powermeter_public_key_ocmf'
   receive_evse_id:
     title: 'Receive EVSE ID'
     action: receive
     channel:
       $ref: '#/channels/receive_evse_id'
+  send_request_get_evse_id:
+    title: 'Request current EVSE ID'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_evse_id'
+    description: >-
+      Request the most recently published (latched) EVSE ID.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_evse_id'
+  receive_reply_get_evse_id:
+    title: 'Reply to get EVSE ID request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_evse_id'
   receive_hw_capabilities:
     title: 'Receive hardware capabilites and limits'
     action: receive
     channel:
       $ref: '#/channels/receive_hw_capabilities'
+  send_request_get_hw_capabilities:
+    title: 'Request current hw capabilities'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_hw_capabilities'
+    description: >-
+      Request the most recently published (latched) hw capabilities.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_hw_capabilities'
+  receive_reply_get_hw_capabilities:
+    title: 'Reply to get hw capabilities request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_hw_capabilities'
   receive_enforced_limits:
     title: 'Receive enforced limits'
     action: receive
     channel:
       $ref: '#/channels/receive_enforced_limits'
+  send_request_get_enforced_limits:
+    title: 'Request current enforced limits'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_enforced_limits'
+    description: >-
+      Request the most recently published (latched) enforced limits.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_enforced_limits'
+  receive_reply_get_enforced_limits:
+    title: 'Reply to get enforced limits request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_enforced_limits'
   receive_selected_protocol:
     title: 'Receive selected protocol for charging'
     action: receive
     channel:
       $ref: '#/channels/receive_selected_protocol'
+  send_request_get_selected_protocol:
+    title: 'Request current selected protocol'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_selected_protocol'
+    description: >-
+      Request the most recently published (latched) selected protocol.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_selected_protocol'
+  receive_reply_get_selected_protocol:
+    title: 'Reply to get selected protocol request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_selected_protocol'
   receive_supported_energy_transfer_modes:
     title: 'Receive supported energy transfer modes'
     action: receive
     channel:
       $ref: '#/channels/receive_supported_energy_transfer_modes'
+  send_request_get_supported_energy_transfer_modes:
+    title: 'Request current supported energy transfer modes'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_supported_energy_transfer_modes'
+    description: >-
+      Request the most recently published (latched) supported energy transfer modes.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_supported_energy_transfer_modes'
+  receive_reply_get_supported_energy_transfer_modes:
+    title: 'Reply to get supported energy transfer modes request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_supported_energy_transfer_modes'
 
   ########## evse_board_support
   receive_ac_nr_of_phases_available:
@@ -393,11 +792,49 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_ac_nr_of_phases_available'
+  send_request_get_ac_nr_of_phases_available:
+    title: 'Request current ac nr of phases available'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_ac_nr_of_phases_available'
+    description: >-
+      Request the most recently published (latched) ac nr of phases available.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_ac_nr_of_phases_available'
+  receive_reply_get_ac_nr_of_phases_available:
+    title: 'Reply to get ac nr of phases available request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_ac_nr_of_phases_available'
   receive_ac_pp_ampacity:
     title: 'Receive current carrying capacity of the connected cable in ampere for AC charging'
     action: receive
     channel:
       $ref: '#/channels/receive_ac_pp_ampacity'
+  send_request_get_ac_pp_ampacity:
+    title: 'Request current ac pp ampacity'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_ac_pp_ampacity'
+    description: >-
+      Request the most recently published (latched) ac pp ampacity.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_ac_pp_ampacity'
+  receive_reply_get_ac_pp_ampacity:
+    title: 'Reply to get ac pp ampacity request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_ac_pp_ampacity'
 
   ########## slac
   receive_dlink_ready:
@@ -405,6 +842,25 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_dlink_ready'
+  send_request_get_dlink_ready:
+    title: 'Request current dlink ready'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_dlink_ready'
+    description: >-
+      Request the most recently published (latched) dlink ready.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_dlink_ready'
+  receive_reply_get_dlink_ready:
+    title: 'Reply to get dlink ready request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_dlink_ready'
 
   ########## isolation_monitor
   receive_isolation_measurement:
@@ -412,6 +868,25 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_isolation_measurement'
+  send_request_get_isolation_measurement:
+    title: 'Request current isolation measurement'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_isolation_measurement'
+    description: >-
+      Request the most recently published (latched) isolation measurement.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_isolation_measurement'
+  receive_reply_get_isolation_measurement:
+    title: 'Reply to get isolation measurement request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_isolation_measurement'
 
   ########## power_supply_DC
   receive_dc_voltage_current:
@@ -419,16 +894,73 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_dc_voltage_current'
+  send_request_get_dc_voltage_current:
+    title: 'Request current dc voltage current'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_dc_voltage_current'
+    description: >-
+      Request the most recently published (latched) dc voltage current.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_dc_voltage_current'
+  receive_reply_get_dc_voltage_current:
+    title: 'Reply to get dc voltage current request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_dc_voltage_current'
   receive_dc_mode:
     title: 'Receive current mode.'
     action: receive
     channel:
       $ref: '#/channels/receive_dc_mode'
+  send_request_get_dc_mode:
+    title: 'Request current dc mode'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_dc_mode'
+    description: >-
+      Request the most recently published (latched) dc mode.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_dc_mode'
+  receive_reply_get_dc_mode:
+    title: 'Reply to get dc mode request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_dc_mode'
   receive_dc_capabilities:
     title: 'Receive capabilities of the DC power supply'
     action: receive
     channel:
       $ref: '#/channels/receive_dc_capabilities'
+  send_request_get_dc_capabilities:
+    title: 'Request current dc capabilities'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_dc_capabilities'
+    description: >-
+      Request the most recently published (latched) dc capabilities.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_dc_capabilities'
+  receive_reply_get_dc_capabilities:
+    title: 'Reply to get dc capabilities request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_dc_capabilities'
 
   ########## uk_random_delay
   send_random_delay_enable:
@@ -457,6 +989,25 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_random_delay_countdown'
+  send_request_get_random_delay_countdown:
+    title: 'Request current random delay countdown'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_random_delay_countdown'
+    description: >-
+      Request the most recently published (latched) random delay countdown.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_random_delay_countdown'
+  receive_reply_get_random_delay_countdown:
+    title: 'Reply to get random delay countdown request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_random_delay_countdown'
 
 
   receive_heartbeat:
@@ -666,6 +1217,38 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/SessionEvent'
+    send_request_get_session_event:
+      name: send_request_get_session_event
+      title: 'Request current session event'
+      summary: 'Request the most recently published (latched) session event.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_session_event:
+      name: receive_reply_get_session_event
+      title: 'Reply to get session event request'
+      summary: 'The most recently published session event.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/SessionEvent'
+          - type: 'null'
     receive_hlc_session_failed:
       name: receive_hlc_session_failed
       title: 'Receive HLC session failed event'
@@ -673,6 +1256,38 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/HlcSessionFailedEvent'
+    send_request_get_hlc_session_failed:
+      name: send_request_get_hlc_session_failed
+      title: 'Request current hlc session failed'
+      summary: 'Request the most recently published (latched) hlc session failed.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_hlc_session_failed:
+      name: receive_reply_get_hlc_session_failed
+      title: 'Reply to get hlc session failed request'
+      summary: 'The most recently published hlc session failed.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/HlcSessionFailedEvent'
+          - type: 'null'
     receive_ev_info:
       name: receive_ev_info
       title: 'Receive details about EV'
@@ -680,6 +1295,38 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/EVInfo'
+    send_request_get_ev_info:
+      name: send_request_get_ev_info
+      title: 'Request current ev info'
+      summary: 'Request the most recently published (latched) ev info.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_ev_info:
+      name: receive_reply_get_ev_info
+      title: 'Reply to get ev info request'
+      summary: 'The most recently published ev info.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/EVInfo'
+          - type: 'null'
     receive_session_info:
       name: receive_session_info
       title: 'Receive session and transaction information'
@@ -699,6 +1346,38 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/SessionInfo'
+    send_request_get_session_info:
+      name: send_request_get_session_info
+      title: 'Request current session info'
+      summary: 'Request the most recently published (latched) session info.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_session_info:
+      name: receive_reply_get_session_info
+      title: 'Reply to get session info request'
+      summary: 'The most recently published session info.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/SessionInfo'
+          - type: 'null'
     # telemetry not implemented
     receive_powermeter:
       name: receive_powermeter
@@ -707,6 +1386,38 @@ components:
       contentType: application/json
       payload:
         $ref: 'powermeter_API.yaml#/components/schemas/Powermeter'
+    send_request_get_powermeter:
+      name: send_request_get_powermeter
+      title: 'Request current powermeter'
+      summary: 'Request the most recently published (latched) powermeter.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_powermeter:
+      name: receive_reply_get_powermeter
+      title: 'Reply to get powermeter request'
+      summary: 'The most recently published powermeter.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: 'powermeter_API.yaml#/components/schemas/Powermeter'
+          - type: 'null'
     receive_powermeter_public_key_ocmf:
       name: receive_powermeter_public_key_ocmf
       title: 'Receive powermeter public key OCMF'
@@ -714,6 +1425,38 @@ components:
       contentType: application/json
       payload:
         $ref: 'powermeter_API.yaml#/components/schemas/SendPublicKeyOCMF'
+    send_request_get_powermeter_public_key_ocmf:
+      name: send_request_get_powermeter_public_key_ocmf
+      title: 'Request current powermeter public key ocmf'
+      summary: 'Request the most recently published (latched) powermeter public key ocmf.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_powermeter_public_key_ocmf:
+      name: receive_reply_get_powermeter_public_key_ocmf
+      title: 'Reply to get powermeter public key ocmf request'
+      summary: 'The most recently published powermeter public key ocmf.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: 'powermeter_API.yaml#/components/schemas/SendPublicKeyOCMF'
+          - type: 'null'
     receive_evse_id:
       name: receive_evse_id
       title: 'Receive EVSE ID'
@@ -721,6 +1464,38 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/EvseId'
+    send_request_get_evse_id:
+      name: send_request_get_evse_id
+      title: 'Request current EVSE ID'
+      summary: 'Request the most recently published (latched) EVSE ID.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_evse_id:
+      name: receive_reply_get_evse_id
+      title: 'Reply to get EVSE ID request'
+      summary: 'The most recently published EVSE ID.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/EvseId'
+          - type: 'null'
     receive_hw_capabilities:
       name: receive_hw_capabilities
       title: 'Receive hardware capabilities and limits'
@@ -728,6 +1503,38 @@ components:
       contentType: application/json
       payload:
         $ref: 'evse_board_support_API.yaml#/components/schemas/HardwareCapabilities'
+    send_request_get_hw_capabilities:
+      name: send_request_get_hw_capabilities
+      title: 'Request current hw capabilities'
+      summary: 'Request the most recently published (latched) hw capabilities.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_hw_capabilities:
+      name: receive_reply_get_hw_capabilities
+      title: 'Reply to get hw capabilities request'
+      summary: 'The most recently published hw capabilities.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: 'evse_board_support_API.yaml#/components/schemas/HardwareCapabilities'
+          - type: 'null'
     receive_enforced_limits:
       name: receive_enforced_limits
       title: 'Receive enforced limits'
@@ -735,6 +1542,38 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/EnforcedLimits'
+    send_request_get_enforced_limits:
+      name: send_request_get_enforced_limits
+      title: 'Request current enforced limits'
+      summary: 'Request the most recently published (latched) enforced limits.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_enforced_limits:
+      name: receive_reply_get_enforced_limits
+      title: 'Reply to get enforced limits request'
+      summary: 'The most recently published enforced limits.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/EnforcedLimits'
+          - type: 'null'
     receive_selected_protocol:
       name: receive_selected_protocol
       title: 'Receive selected protocol for charging for informative purposes'
@@ -742,6 +1581,38 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/SelectedProtocol'
+    send_request_get_selected_protocol:
+      name: send_request_get_selected_protocol
+      title: 'Request current selected protocol'
+      summary: 'Request the most recently published (latched) selected protocol.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_selected_protocol:
+      name: receive_reply_get_selected_protocol
+      title: 'Reply to get selected protocol request'
+      summary: 'The most recently published selected protocol.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/SelectedProtocol'
+          - type: 'null'
     receive_supported_energy_transfer_modes:
       name: receive_supported_energy_transfer_modes
       title: 'Receive supported energy transfer modes'
@@ -749,6 +1620,38 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/SupportedEnergyTransferModeList'
+    send_request_get_supported_energy_transfer_modes:
+      name: send_request_get_supported_energy_transfer_modes
+      title: 'Request current supported energy transfer modes'
+      summary: 'Request the most recently published (latched) supported energy transfer modes.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_supported_energy_transfer_modes:
+      name: receive_reply_get_supported_energy_transfer_modes
+      title: 'Reply to get supported energy transfer modes request'
+      summary: 'The most recently published supported energy transfer modes.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/SupportedEnergyTransferModeList'
+          - type: 'null'
 
     ########## evse_board_support
     receive_ac_nr_of_phases_available:
@@ -758,6 +1661,38 @@ components:
       contentType: application/json
       payload:
         $ref: 'evse_board_support_API.yaml#/components/schemas/PhaseCount'
+    send_request_get_ac_nr_of_phases_available:
+      name: send_request_get_ac_nr_of_phases_available
+      title: 'Request current ac nr of phases available'
+      summary: 'Request the most recently published (latched) ac nr of phases available.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_ac_nr_of_phases_available:
+      name: receive_reply_get_ac_nr_of_phases_available
+      title: 'Reply to get ac nr of phases available request'
+      summary: 'The most recently published ac nr of phases available.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: 'evse_board_support_API.yaml#/components/schemas/PhaseCount'
+          - type: 'null'
     receive_ac_pp_ampacity:
       name: receive_ac_pp_ampacity
       title: 'Receive current carrying capacity of the connected cable in ampere for AC charging'
@@ -769,6 +1704,38 @@ components:
       contentType: application/json
       payload:
         $ref: 'evse_board_support_API.yaml#/components/schemas/ProximityPilot'
+    send_request_get_ac_pp_ampacity:
+      name: send_request_get_ac_pp_ampacity
+      title: 'Request current ac pp ampacity'
+      summary: 'Request the most recently published (latched) ac pp ampacity.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_ac_pp_ampacity:
+      name: receive_reply_get_ac_pp_ampacity
+      title: 'Reply to get ac pp ampacity request'
+      summary: 'The most recently published ac pp ampacity.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: 'evse_board_support_API.yaml#/components/schemas/ProximityPilot'
+          - type: 'null'
 
     ########## slac
     receive_dlink_ready:
@@ -778,6 +1745,38 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/SlacDlinkReady'
+    send_request_get_dlink_ready:
+      name: send_request_get_dlink_ready
+      title: 'Request current dlink ready'
+      summary: 'Request the most recently published (latched) dlink ready.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_dlink_ready:
+      name: receive_reply_get_dlink_ready
+      title: 'Reply to get dlink ready request'
+      summary: 'The most recently published dlink ready.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/SlacDlinkReady'
+          - type: 'null'
 
     ########## isolation_monitor
     receive_isolation_measurement:
@@ -787,6 +1786,38 @@ components:
       contentType: application/json
       payload:
         $ref: 'isolation_monitor_API.yaml#/components/schemas/IsolationMeasurement'
+    send_request_get_isolation_measurement:
+      name: send_request_get_isolation_measurement
+      title: 'Request current isolation measurement'
+      summary: 'Request the most recently published (latched) isolation measurement.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_isolation_measurement:
+      name: receive_reply_get_isolation_measurement
+      title: 'Reply to get isolation measurement request'
+      summary: 'The most recently published isolation measurement.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: 'isolation_monitor_API.yaml#/components/schemas/IsolationMeasurement'
+          - type: 'null'
 
     ########## power_supply_DC
     receive_dc_voltage_current:
@@ -796,6 +1827,38 @@ components:
       contentType: application/json
       payload:
         $ref: 'power_supply_DC_API.yaml#/components/schemas/VoltageCurrent'
+    send_request_get_dc_voltage_current:
+      name: send_request_get_dc_voltage_current
+      title: 'Request current dc voltage current'
+      summary: 'Request the most recently published (latched) dc voltage current.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_dc_voltage_current:
+      name: receive_reply_get_dc_voltage_current
+      title: 'Reply to get dc voltage current request'
+      summary: 'The most recently published dc voltage current.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: 'power_supply_DC_API.yaml#/components/schemas/VoltageCurrent'
+          - type: 'null'
     receive_dc_mode:
       name: receive_dc_mode
       title: 'Receive the current mode'
@@ -803,6 +1866,38 @@ components:
       contentType: application/json
       payload:
         $ref: 'power_supply_DC_API.yaml#/components/schemas/Mode'
+    send_request_get_dc_mode:
+      name: send_request_get_dc_mode
+      title: 'Request current dc mode'
+      summary: 'Request the most recently published (latched) dc mode.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_dc_mode:
+      name: receive_reply_get_dc_mode
+      title: 'Reply to get dc mode request'
+      summary: 'The most recently published dc mode.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: 'power_supply_DC_API.yaml#/components/schemas/Mode'
+          - type: 'null'
     receive_dc_capabilities:
       name: receive_dc_capabilities
       title: 'Receive the capabilities of the DC power supply'
@@ -810,6 +1905,38 @@ components:
       contentType: application/json
       payload:
         $ref: 'power_supply_DC_API.yaml#/components/schemas/Capabilities'
+    send_request_get_dc_capabilities:
+      name: send_request_get_dc_capabilities
+      title: 'Request current dc capabilities'
+      summary: 'Request the most recently published (latched) dc capabilities.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_dc_capabilities:
+      name: receive_reply_get_dc_capabilities
+      title: 'Reply to get dc capabilities request'
+      summary: 'The most recently published dc capabilities.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: 'power_supply_DC_API.yaml#/components/schemas/Capabilities'
+          - type: 'null'
 
     ########## uk_random_delay
     send_random_delay_enable:
@@ -842,6 +1969,38 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/CountDown'
+    send_request_get_random_delay_countdown:
+      name: send_request_get_random_delay_countdown
+      title: 'Request current random delay countdown'
+      summary: 'Request the most recently published (latched) random delay countdown.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_random_delay_countdown:
+      name: receive_reply_get_random_delay_countdown
+      title: 'Reply to get random delay countdown request'
+      summary: 'The most recently published random delay countdown.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/CountDown'
+          - type: 'null'
 
 
     receive_heartbeat:

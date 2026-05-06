@@ -24,13 +24,16 @@ void auth_consumer_API::init() {
     comm_params.heartbeat_period_ms = config.cfg_heartbeat_interval_ms;
     comm_params.communication_check_period_s = config.cfg_communication_check_to_s;
     helper.init(comm_params);
+
+    // setup var forwarding before modules start publishing
+    generate_api_var_token_validation_status();
 }
 
 void auth_consumer_API::ready() {
     invoke_ready(*p_main);
 
+    // setup commands now, as the target modules are ready
     generate_api_cmd_withdraw_authorization();
-    generate_api_var_token_validation_status();
 
     helper.generate_api_var_communication_check(&comm_check);
     comm_check.start(config.cfg_communication_check_to_s);
@@ -38,20 +41,11 @@ void auth_consumer_API::ready() {
     helper.publish_ready_beacon();
 }
 
-auto auth_consumer_API::forward_api_var(std::string const& var) {
-    using namespace API_types_ext;
-    const auto topic = helper.get_topics().everest_to_extern(var);
-    return [this, topic](auto const& val) {
-        try {
-            auto&& external = to_external_api(val);
-            auto&& payload = serialize(external);
-            mqtt_v.publish(topic, payload);
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Variable: '" << topic << "' failed with -> " << e.what();
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Cannot convert internal to external or serialize it.\n" << topic;
-        }
-    };
+auto auth_consumer_API::forward_and_cache_api_var(std::string const& var) {
+    return helper.forward_and_cache_api_var(var, config.latch_variable_values, [](auto const& val) {
+        using namespace API_types_ext;
+        return serialize(to_external_api(val));
+    });
 }
 
 void auth_consumer_API::generate_api_cmd_withdraw_authorization() {
@@ -71,7 +65,7 @@ void auth_consumer_API::generate_api_cmd_withdraw_authorization() {
 }
 
 void auth_consumer_API::generate_api_var_token_validation_status() {
-    r_auth->subscribe_token_validation_status(forward_api_var("token_validation_status"));
+    r_auth->subscribe_token_validation_status(forward_and_cache_api_var("token_validation_status"));
 }
 
 } // namespace module

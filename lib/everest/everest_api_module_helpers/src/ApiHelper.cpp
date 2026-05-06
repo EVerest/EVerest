@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <optional>
 #include <sstream>
 #include <string_view>
 #include <thread>
@@ -108,6 +109,45 @@ void ApiHelper::publish_ready_beacon() {
     if (responsible_for_sending_ready_beacon) {
         mqtt.publish(topics.entrypoint("ready_beacon"), std::string{"{}"});
     }
+}
+
+void ApiHelper::subscribe_latched_value_request(std::string const& var, std::string const& topic) {
+    subscribe_api_topic(var + "/get", [this, topic](std::string const& data) {
+        V1_0::types::generic::RequestReply msg;
+        if (deserialize(data, msg)) {
+            std::optional<std::string> payload;
+            {
+                std::lock_guard<std::mutex> lock(serialized_variables_mutex);
+                auto it = serialized_variables_cache.find(topic);
+                if (it != serialized_variables_cache.end()) {
+                    payload = it->second;
+                }
+            }
+            if (payload) {
+                mqtt.publish(msg.replyTo, *payload);
+            } else {
+                mqtt.publish(msg.replyTo, "null");
+            }
+            return true;
+        }
+        return false;
+    });
+}
+
+void ApiHelper::log_forward_api_var_error(std::string const& topic, char const* what) {
+    if (what) {
+        EVLOG_warning << "Variable: '" << topic << "' failed with -> " << what;
+    } else {
+        EVLOG_warning << "Invalid data: Cannot convert internal to external or serialize it.\n" << topic;
+    }
+}
+
+void ApiHelper::publish_and_cache_variable(std::string const& topic, std::string const& payload, bool cache_value) {
+    if (cache_value) {
+        std::lock_guard<std::mutex> lock(serialized_variables_mutex);
+        serialized_variables_cache[topic] = payload;
+    }
+    mqtt.publish(topic, payload);
 }
 
 void ApiHelper::subscribe_entrypoint_var(std::string const& var, ParseAndPublishFtor parse_and_publish) {

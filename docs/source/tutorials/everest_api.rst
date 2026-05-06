@@ -26,6 +26,37 @@ As a rule of thumb, each internal interface is typically provided by one module.
 Configuring the required APIs is done by adding the corresponding modules to your EVerest configuration;
 they connect to other modules using the standard EVerest logic.
 
+Providing vs Consumer APIs
+==========================
+
+The available EVerest APIs can be categorized into two groups: *consuming* APIs and *providing* APIs.
+Providing APIs (e.g. `auth_token_provider_API` or `power_supply_DC_API`) can be used to implement
+("provide") an interface outside of EVerest. For example the `power_supply_DC_API` module provides the
+internal `power_supply_DC` interface. The actual implementation is in the API client.
+Providing APIs usually subscribe to external topics and forward the received values to the internal
+interface as `variables`. They also define external topics which the client shall subscribe to, which
+are used for command invokations.
+
+On the other hand, *consuming* APIs (e.g. `evse_manager_consumer_API`) can be thought to allow API clients
+to monitor internal modules and send commands to them. They define topics which a client can subscribe to
+in order to monitor some variable. They subscribe to external topics to allow the client to invoke commands.
+
+Latching Variables
+==================
+
+In case a API client subscribes to an consumer_API variable, it may happen that EVerest has already been
+running and the client missed the first value published for that variable. It can now wait for the next
+value to be published, which may be acceptable in many cases, but sometimes not. Therefore, the latest
+published value of each variable is chached in the API modules. The client can actively request its value
+via the request-reply-pattern (see section further below). The corresponding topic is
+`<topic-that-variable-is-published-to>/get`. The API will then send the latest known value to the API client
+if such a value exists (if nothing was published yet, and no value is available, then the API will reply with
+"null").
+
+.. note::
+
+    Latching variables is enabled by default, but can be disabled by module configuration parameters.
+
 Configuration
 =============
 

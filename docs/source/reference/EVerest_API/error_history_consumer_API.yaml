@@ -51,12 +51,34 @@ channels:
     messages:
       receive_error_raised:
         $ref: '#/components/messages/receive_error_raised'
+  send_request_get_error_raised:
+    address: 'm2e/error_raised/get'
+    messages:
+      send_request_get_error_raised:
+        $ref: '#/components/messages/send_request_get_error_raised'
+  receive_reply_get_error_raised:
+    address: null
+    messages:
+      receive_reply_get_error_raised:
+        $ref: '#/components/messages/receive_reply_get_error_raised'
+
+
   receive_error_cleared:
     address: 'e2m/error_cleared'
     messages:
       receive_error_cleared:
         $ref: '#/components/messages/receive_error_cleared'
 
+  send_request_get_error_cleared:
+    address: 'm2e/error_cleared/get'
+    messages:
+      send_request_get_error_cleared:
+        $ref: '#/components/messages/send_request_get_error_cleared'
+  receive_reply_get_error_cleared:
+    address: null
+    messages:
+      receive_reply_get_error_cleared:
+        $ref: '#/components/messages/receive_reply_get_error_cleared'
 
   receive_heartbeat:
     address: 'e2m/heartbeat'
@@ -111,12 +133,52 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_error_raised'
+  send_request_get_error_raised:
+    title: 'Request raised errors'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_error_raised'
+    description: >-
+      Request the most recently published (latched) error raised.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_error_raised'
+  receive_reply_get_error_raised:
+    title: 'Reply to get error raised request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_error_raised'
+
+
   receive_error_cleared:
     title: 'Receive newly cleared error'
     action: receive
     channel:
       $ref: '#/channels/receive_error_cleared'
-
+  send_request_get_error_cleared:
+    title: 'Request cleared errors'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_error_cleared'
+    description: >-
+      Request the most recently published (latched) error cleared.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_error_cleared'
+  receive_reply_get_error_cleared:
+    title: 'Reply to get error cleared request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_error_cleared'
+  
 
   receive_heartbeat:
     title: 'Receive heartbeat'
@@ -189,6 +251,39 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ErrorObject'
+    send_request_get_error_raised:
+      name: send_request_get_error_raised
+      title: 'Request current raised errors'
+      summary: 'Request the most recently published (latched) raised errors.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_error_raised:
+      name: receive_reply_get_error_raised
+      title: 'Reply to get raised error request'
+      summary: 'The most recently published raised errors.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/ErrorObject'
+          - type: 'null'
+
     receive_error_cleared:
       name: receive_error_cleared
       title: 'Receive cleared error'
@@ -196,6 +291,38 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ErrorObject'
+    send_request_get_error_cleared:
+      name: send_request_get_error_raised
+      title: 'Request current cleared errors'
+      summary: 'Request the most recently published (latched) cleared errors.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_error_cleared:
+      name: receive_reply_get_error_cleared
+      title: 'Reply to get cleared error request'
+      summary: 'The most recently published cleared errors.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/ErrorObject'
+          - type: 'null'
 
 
     receive_heartbeat:

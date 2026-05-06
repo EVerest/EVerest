@@ -29,6 +29,7 @@ void evse_security_consumer_API::init() {
 void evse_security_consumer_API::ready() {
     invoke_ready(*p_main);
 
+    // setup commands now, as the target modules are ready
     generate_api_cmd_is_ca_certificate_installed();
     generate_api_cmd_get_leaf_certificate_info();
     generate_api_cmd_get_verify_location();

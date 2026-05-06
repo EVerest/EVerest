@@ -30,18 +30,22 @@ private:
     /// \brief External API representation
     everest::lib::API::V1_0::types::evse_manager::SessionInfo ext;
 
-    bool start_energy_export_wh_was_set{
-        false}; ///< Indicate if start export energy value (optional) has been received or not
-    bool end_energy_export_wh_was_set{
-        false}; ///< Indicate if end export energy value (optional) has been received or not
+    bool start_energy_export_wh_was_set{false}; ///< Indicate if start export energy value (optional) has been
+                                                ///< received or not
+    bool end_energy_export_wh_was_set{false};   ///< Indicate if end export energy value (optional) has been
+                                                ///< received or not
     bool transaction_running{false};
 
-    int32_t start_energy_import_wh; ///< Energy reading (import) at the beginning of this charging session in Wh
-    int32_t end_energy_import_wh;   ///< Energy reading (import) at the end of this charging session in Wh
-    int32_t start_energy_export_wh; ///< Energy reading (export) at the beginning of this charging session in Wh
-    int32_t end_energy_export_wh;   ///< Energy reading (export) at the end of this charging session in Wh
-    std::chrono::time_point<date::utc_clock> session_start_time_point;     ///< Start of the charging session
-    std::chrono::time_point<date::utc_clock> session_end_time_point;       ///< End of the charging session
+    int32_t start_energy_import_wh;                                    ///< Energy reading (import) at the beginning
+                                                                       ///< of this charging session in Wh
+    int32_t end_energy_import_wh;                                      ///< Energy reading (import) at the end of this
+                                                                       ///< charging session in Wh
+    int32_t start_energy_export_wh;                                    ///< Energy reading (export) at the beginning
+                                                                       ///< of this charging session in Wh
+    int32_t end_energy_export_wh;                                      ///< Energy reading (export) at the end of this
+                                                                       ///< charging session in Wh
+    std::chrono::time_point<date::utc_clock> session_start_time_point; ///< Start of the charging session
+    std::chrono::time_point<date::utc_clock> session_end_time_point;   ///< End of the charging session
     std::chrono::time_point<date::utc_clock> transaction_start_time_point; ///< Start of the transaction
     std::chrono::time_point<date::utc_clock> transaction_end_time_point;   ///< End of the transaction
 

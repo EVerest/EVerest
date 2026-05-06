@@ -27,14 +27,17 @@ void error_history_consumer_API::init() {
     comm_params.heartbeat_period_ms = config.cfg_heartbeat_interval_ms;
     comm_params.communication_check_period_s = config.cfg_communication_check_to_s;
     helper.init(comm_params);
+
+    // setup var forwarding before modules start publishing
+    generate_api_var_error_events();
 }
 
 void error_history_consumer_API::ready() {
     invoke_ready(*p_main);
 
+    // setup commands now, as the target modules are ready
     generate_api_cmd_active_errors();
     generate_api_cmd_get_errors();
-    generate_api_var_error_events();
 
     helper.generate_api_var_communication_check(&comm_check);
 
@@ -44,21 +47,11 @@ void error_history_consumer_API::ready() {
     helper.publish_ready_beacon();
 }
 
-auto error_history_consumer_API::forward_api_var(std::string const& var) {
-    using namespace API_types_ext;
-    const auto topic = helper.get_topics().everest_to_extern(var);
-
-    return [this, topic](auto const& val) {
-        try {
-            auto&& external = to_external_api(val);
-            auto&& payload = serialize(external);
-            mqtt_v.publish(topic, payload);
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Variable: '" << topic << "' failed with -> " << e.what();
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Cannot convert internal to external or serialize it.\n" << topic;
-        }
-    };
+auto error_history_consumer_API::forward_and_cache_api_var(std::string const& var) {
+    return helper.forward_and_cache_api_var(var, config.latch_variable_values, [](auto const& val) {
+        using namespace API_types_ext;
+        return serialize(to_external_api(val));
+    });
 }
 
 void error_history_consumer_API::generate_api_cmd_active_errors() {
@@ -98,7 +91,8 @@ void error_history_consumer_API::generate_api_var_error_events() {
     auto convert = [](auto const& ftor) {
         return [ftor](auto&& elem) { return ftor(error_converter::framework_to_internal_api(elem)); };
     };
-    subscribe_global_all_errors(convert(forward_api_var("error_raised")), convert(forward_api_var("error_cleared")));
+    subscribe_global_all_errors(convert(forward_and_cache_api_var("error_raised")),
+                                convert(forward_and_cache_api_var("error_cleared")));
 }
 
 } // namespace module

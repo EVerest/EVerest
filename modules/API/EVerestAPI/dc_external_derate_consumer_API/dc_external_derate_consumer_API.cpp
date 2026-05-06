@@ -26,13 +26,16 @@ void dc_external_derate_consumer_API::init() {
     comm_params.heartbeat_period_ms = config.cfg_heartbeat_interval_ms;
     comm_params.communication_check_period_s = config.cfg_communication_check_to_s;
     helper.init(comm_params);
+
+    // setup var forwarding before modules start publishing
+    generate_api_var_plug_temperature_C();
 }
 
 void dc_external_derate_consumer_API::ready() {
     invoke_ready(*p_generic_error);
 
+    // setup commands now, as the target modules are ready
     generate_api_cmd_set_external_derating();
-    generate_api_var_plug_temperature_C();
 
     helper.generate_api_var_communication_check(&comm_check);
     comm_check.start(config.cfg_communication_check_to_s);
@@ -40,25 +43,16 @@ void dc_external_derate_consumer_API::ready() {
     helper.publish_ready_beacon();
 }
 
-auto dc_external_derate_consumer_API::forward_api_var(std::string const& var) {
-    using namespace API_types_ext;
-    using namespace API_generic;
-    const auto topic = helper.get_topics().everest_to_extern(var);
-    return [this, topic](auto const& val) {
-        try {
-            auto&& external = to_external_api(val);
-            auto&& payload = serialize(external);
-            mqtt_v.publish(topic, payload);
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Variable: '" << topic << "' failed with -> " << e.what();
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Cannot convert internal to external or serialize it.\n" << topic;
-        }
-    };
+auto dc_external_derate_consumer_API::forward_and_cache_api_var(std::string const& var) {
+    return helper.forward_and_cache_api_var(var, config.latch_variable_values, [](auto const& val) {
+        using namespace API_types_ext;
+        using namespace API_generic;
+        return serialize(to_external_api(val));
+    });
 }
 
 void dc_external_derate_consumer_API::generate_api_var_plug_temperature_C() {
-    r_derate->subscribe_plug_temperature_C(forward_api_var("plug_temperature_C"));
+    r_derate->subscribe_plug_temperature_C(forward_and_cache_api_var("plug_temperature_C"));
 }
 
 void dc_external_derate_consumer_API::generate_api_cmd_set_external_derating() {
