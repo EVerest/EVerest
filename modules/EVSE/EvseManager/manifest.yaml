@@ -120,10 +120,13 @@ config:
   cable_check_enable_imd_self_test_relays_open:
     description: >-
       Enable self testing of IMD at the beginning of cable check where the relays may still be open.
-      The voltage is set by the cable_check_relays_open_voltage_V config option and may differ from the 
+      The voltage is set by the cable_check_relays_open_voltage_V config option and may differ from the
       voltage that is later used to perform the isolation resistance sample.
       cable_check_wait_number_of_imd_measurements needs to be >=1 in this case as no isolation resistance checking
       can be performed at this stage.
+      If both this option and cable_check_enable_imd_self_test are enabled, the selftest is started with
+      relays open, but the result is captured later on, as it would be with the regular selftest sequence.
+      In this case the powersupply will remain active and transition to the regular cable check voltage.
       A self test is required for IEC 61851-23 (2023) compliance.
     type: boolean
     default: false
