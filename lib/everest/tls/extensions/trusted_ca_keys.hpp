@@ -7,6 +7,9 @@
 #include <everest/tls/openssl_util.hpp>
 #include <everest/tls/tls_types.hpp>
 
+#include <openssl/safestack.h>
+#include <openssl/x509.h>
+
 #include <mutex>
 
 namespace tls::trusted_ca_keys {
@@ -118,6 +121,19 @@ bool match(const trusted_ca_keys_t& extension, const chain_t& chain);
  * \return a pointer to the chain (in chains) or nullptr when none match
  */
 const chain_t* select(const trusted_ca_keys_t& extension, const chain_list& chains);
+
+/**
+ * \brief select the certificate chain to use based on a DN list
+ * \param[in] names the list of distinguished names from the peer
+ * \param[in] chains the list of certificate chains to check against
+ * \return a pointer to the chain (in chains) or nullptr when none match
+ *
+ * Used to drive TLS 1.3 chain selection from the peer's
+ * certificate_authorities extension via SSL_get0_peer_CA_list. A chain
+ * matches when any of its trust anchors' subject DN equals an entry in
+ * names. Returns nullptr for an empty or null DN list.
+ */
+const chain_t* select_by_dn_list(const STACK_OF(X509_NAME) * names, const chain_list& chains);
 
 /// \brief per connection data
 struct server_trusted_ca_keys_t {

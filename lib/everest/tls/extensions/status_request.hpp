@@ -168,13 +168,12 @@ public:
                                     void* object);
 
     /**
-     * \brief the OpenSSL callback for the client hello record
+     * \brief handle the client hello record for the status_request extensions
      * \param[in] ctx the connection context
      * \param[in] alert the alert to send on error
-     * \param[in] object not used
      * \return success = 1, error = zero or negative
      *
-     * This callback has early access to the extensions requested by the client.
+     * This handler has early access to the extensions requested by the client.
      * It is used to determine whether status_request and status_request_v2
      * have been requested so that status_request_v2 can take priority.
      *
@@ -184,7 +183,7 @@ public:
      * Calls StatusFlags::has_status_request_v2() when a status_request_v2
      * extension is present.
      */
-    static int client_hello_cb(Ssl* ctx, int* alert, void* object);
+    int handle_client_hello(Ssl* ctx, int* alert);
 
     /**
      * \brief store pointer to connection data

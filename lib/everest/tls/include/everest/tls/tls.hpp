@@ -8,6 +8,7 @@
 #include "extensions/trusted_ca_keys.hpp"
 #include <everest/tls/tls_types.hpp>
 
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
@@ -57,6 +58,8 @@ public:
         if (ptr != nullptr) {
             value = ptr;
         }
+    }
+    ConfigItem(const std::string& s) : value(s) {
     }
     inline operator const char*() const {
         return (value) ? value.value().c_str() : nullptr;
@@ -309,6 +312,13 @@ public:
     }
 
     /**
+     * \brief obtain the SHA-512 digest of the peer's leaf certificate (DER)
+     * \returns the 64-byte digest, or std::nullopt if no peer certificate was
+     *          presented or the digest could not be computed
+     */
+    [[nodiscard]] std::optional<std::array<std::uint8_t, 64>> peer_certificate_sha512() const;
+
+    /**
      * \brief wait for all connections to be closed
      */
     static void wait_all_closed();
@@ -414,6 +424,9 @@ public:
 
         bool tls_key_logging{false};      //!< tls key logging is active when true
         std::string tls_key_logging_path; //!< tls key logging file path
+
+        //!< when true the server requires TLS 1.3 minimum; ciphersuites must be non-empty
+        bool enforce_tls_1_3{false};
     };
 
     using ConnectionPtr = std::unique_ptr<ServerConnection>;
@@ -482,6 +495,24 @@ private:
      * \param[in] handler - called with the new connection socket
      */
     void wait_for_connection(const ConnectionHandler& handler);
+
+    /**
+     * \brief upgrade verify mode to require a peer certificate when the
+     *        client advertises TLS 1.3 in its ClientHello
+     * \param[in] ssl the connection context
+     * \param[out] alert alert to send on error
+     * \return SSL_CLIENT_HELLO_SUCCESS
+     */
+    int handle_tls_1_3_verify_upgrade(Ssl* ssl, int* alert);
+
+    /**
+     * \brief dispatches the client_hello callback to per-feature handlers
+     * \param[in] ssl the connection context
+     * \param[out] alert alert to send on error
+     * \param[in] object the Server instance
+     * \return SSL_CLIENT_HELLO_SUCCESS on success
+     */
+    static int client_hello_cb_dispatch(Ssl* ssl, int* alert, void* object);
 
 public:
     Server();
@@ -574,6 +605,21 @@ public:
     [[nodiscard]] state_t state() const {
         return m_state;
     }
+
+    /**
+     * \brief wrap an externally-accepted TCP socket as a TLS server connection
+     * \param[in] soc accepted TCP socket file descriptor
+     * \param[in] ip peer IP address string (may be nullptr)
+     * \param[in] service peer service/port string (may be nullptr)
+     * \return ConnectionPtr that owns \p soc on success; nullptr if SSL_CTX is not initialised
+     * \note Lets callers take ownership of the listen/accept loop and hand the
+     *       accepted fd to a configured Server (mirrors the factory used by
+     *       the internal accept path in serve()).
+     * \note Ownership: on success the returned ServerConnection owns \p soc and
+     *       will close it. On a nullptr return the caller still owns \p soc and
+     *       must close it; this factory does not close \p soc on failure.
+     */
+    [[nodiscard]] ConnectionPtr wrap_accepted_fd(int soc, const char* ip, const char* service);
 };
 
 // ----------------------------------------------------------------------------
@@ -629,10 +675,12 @@ public:
         const char* verify_locations_path{nullptr};  //!< for server certificate
         trusted_ca_keys_t trusted_ca_keys_data;      //!< trusted CA keys configuration data
         std::int32_t io_timeout_ms{-1};              //!< default socket timeout in milliseconds (recommend > 1 sec)
-        bool verify_server{true};                    //!< verify the server certificate
-        bool status_request{false};                  //!< include a status request extension in the client hello
-        bool status_request_v2{false};               //!< include a status request v2 extension in the client hello
-        bool trusted_ca_keys{false};                 //!< include a trusted ca keys extension in the client hello
+        //!< minimum TLS protocol version, e.g. TLS1_2_VERSION or TLS1_3_VERSION; 0 means use default
+        int min_proto_version{0};
+        bool verify_server{true};      //!< verify the server certificate
+        bool status_request{false};    //!< include a status request extension in the client hello
+        bool status_request_v2{false}; //!< include a status request v2 extension in the client hello
+        bool trusted_ca_keys{false};   //!< include a trusted ca keys extension in the client hello
     };
 
     using ConnectionPtr = std::unique_ptr<ClientConnection>;

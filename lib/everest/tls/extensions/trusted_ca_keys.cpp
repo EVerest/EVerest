@@ -312,6 +312,40 @@ const chain_t* select(const trusted_ca_keys_t& extension, const chain_list& chai
     return result;
 }
 
+const chain_t* select_by_dn_list(const STACK_OF(X509_NAME) * names, const chain_list& chains) {
+    const chain_t* result{nullptr};
+    if (names == nullptr) {
+        return result;
+    }
+    const int name_count = sk_X509_NAME_num(names);
+    if (name_count <= 0) {
+        return result;
+    }
+
+    for (const auto& chain : chains) {
+        for (const auto& ta : chain.chain.trust_anchors) {
+            auto* subject = X509_get_subject_name(ta.get());
+            if (subject == nullptr) {
+                continue;
+            }
+            for (int i = 0; i < name_count; ++i) {
+                const auto* candidate = sk_X509_NAME_value(names, i);
+                if (candidate != nullptr && X509_NAME_cmp(subject, candidate) == 0) {
+                    result = &chain;
+                    break;
+                }
+            }
+            if (result != nullptr) {
+                break;
+            }
+        }
+        if (result != nullptr) {
+            break;
+        }
+    }
+    return result;
+}
+
 int ServerTrustedCaKeys::s_index{-1};
 
 ServerTrustedCaKeys::ServerTrustedCaKeys() {
@@ -322,7 +356,9 @@ ServerTrustedCaKeys::ServerTrustedCaKeys() {
 
 bool ServerTrustedCaKeys::init_ssl(SslContext* ctx) {
     bool bRes{true};
-    // TLS 1.2 and below only - use certificate_authorities in TLS 1.3
+    // Legacy custom trusted_ca_keys extension is TLS 1.2 and below only.
+    // TLS 1.3 multi-chain selection uses SSL_get0_peer_CA_list (driven by
+    // the peer's certificate_authorities extension) in handle_certificate_cb.
     constexpr int context_tck =
         SSL_EXT_TLS_ONLY | SSL_EXT_TLS1_2_AND_BELOW_ONLY | SSL_EXT_IGNORE_ON_RESUMPTION | SSL_EXT_CLIENT_HELLO;
     if (SSL_CTX_add_custom_ext(ctx, TLSEXT_TYPE_trusted_ca_keys, context_tck, nullptr, nullptr, nullptr,
@@ -375,7 +411,6 @@ int ServerTrustedCaKeys::handle_certificate_cb(SSL* ssl, void* arg) {
     int result{1};
 
     auto* tck_p = reinterpret_cast<ServerTrustedCaKeys*>(arg);
-    auto* keys_p = get_data(ssl);
 
     /*
      * From OpenSSL man page
@@ -385,7 +420,34 @@ int ServerTrustedCaKeys::handle_certificate_cb(SSL* ssl, void* arg) {
      * It might also call SSL_certs_clear().
      */
 
-    if ((tck_p != nullptr) && (keys_p != nullptr) && (keys_p->flags.has_trusted_ca_keys())) {
+    if (tck_p == nullptr) {
+        return result;
+    }
+
+    if (SSL_version(ssl) == TLS1_3_VERSION) {
+        // TLS 1.3: select chain based on the peer's certificate_authorities
+        // extension exposed via SSL_get0_peer_CA_list.
+        const STACK_OF(X509_NAME)* names = SSL_get0_peer_CA_list(ssl);
+        if (names != nullptr && sk_X509_NAME_num(names) > 0) {
+            std::lock_guard lock(tck_p->m_mux);
+
+            const auto* selected = select_by_dn_list(names, tck_p->m_chains);
+            if (selected != nullptr) {
+                if (!use_certificate_and_key(ssl, *selected)) {
+                    selected = tck_p->select_default();
+                    if (selected != nullptr && !use_certificate_and_key(ssl, *selected)) {
+                        result = 0;
+                        log_warning("terminating TLS handshake: certificate_authorities");
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    // TLS 1.2 and below: legacy custom trusted_ca_keys extension path.
+    auto* keys_p = get_data(ssl);
+    if ((keys_p != nullptr) && (keys_p->flags.has_trusted_ca_keys())) {
         // prevent update() from changing pointers
         std::lock_guard lock(tck_p->m_mux);
 

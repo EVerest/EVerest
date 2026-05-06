@@ -18,6 +18,9 @@
 
 #include "utils.hpp"
 
+#include <generated/types/evse_security.hpp>
+
+#include <iso15118/config.hpp>
 #include <iso15118/d20/config.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/tbd_controller.hpp>
@@ -100,6 +103,15 @@ private:
 
     void update_supported_vas_services();
     std::optional<size_t> get_vas_provider_index(uint16_t service_id);
+
+    /// Builds an SSLConfig snapshot from the current evse_security state, overlaying the
+    /// module-level TLS flags. Returns std::nullopt if no usable chains are available.
+    std::optional<iso15118::config::SSLConfig> build_initial_ssl_config();
+
+    /// Subscriber for evse_security::certificate_store_update. Filters for V2G leaf and
+    /// V2G/MO CA events, rebuilds the SSLConfig, and pushes it to the controller. On an
+    /// empty rebuild result, logs an error and preserves the last-good snapshot.
+    void on_certificate_store_update(const types::evse_security::CertificateStoreUpdate& event);
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

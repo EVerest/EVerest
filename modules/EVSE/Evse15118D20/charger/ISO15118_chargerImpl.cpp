@@ -4,6 +4,7 @@
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
+#include "build_ssl_config.hpp"
 #include "session_logger.hpp"
 #include "utils.hpp"
 
@@ -181,51 +182,41 @@ void ISO15118_chargerImpl::ready() {
 
     const auto session_logger = std::make_unique<SessionLogger>(mod->config.logging_path);
 
-    // Obtain certificate location from the security module
-    const auto certificate_response = mod->r_security->call_get_leaf_certificate_info(
-        types::evse_security::LeafCertificateType::V2G, types::evse_security::EncodingFormat::PEM, false);
-
-    if (certificate_response.status != types::evse_security::GetCertificateInfoStatus::Accepted or
-        !certificate_response.info.has_value()) {
-        EVLOG_AND_THROW(Everest::EverestConfigError("V2G certificate not found"));
-    }
-
-    const auto& certificate_info = certificate_response.info.value();
-    std::string path_chain;
-
-    if (certificate_info.certificate.has_value()) {
-        path_chain = certificate_info.certificate.value();
-    } else if (certificate_info.certificate_single.has_value()) {
-        path_chain = certificate_info.certificate_single.value();
-    } else {
-        EVLOG_AND_THROW(Everest::EverestConfigError("V2G certificate not found"));
-    }
-
-    const auto v2g_root_cert_path = mod->r_security->call_get_verify_file(types::evse_security::CaCertificateType::V2G);
-    const auto mo_root_cert_path = mod->r_security->call_get_verify_file(types::evse_security::CaCertificateType::MO);
-
     // TODO(mlitre): Should be updated once libiso supports service renegotiation
     this->mod->p_extensions->publish_service_renegotiation_supported(false);
 
-    const iso15118::TbdConfig tbd_config = {
-        {
-            iso15118::config::CertificateBackend::EVEREST_LAYOUT,
-            {},                                 ///< config_string
-            path_chain,                         ///< path_certificate_chain
-            certificate_info.key,               ///< path_certificate_key
-            certificate_info.password,          ///< private_key_password
-            v2g_root_cert_path,                 ///< path_certificate_v2g_root
-            mo_root_cert_path,                  ///< path_certificate_mo_root
-            mod->config.enable_ssl_logging,     ///< enable_ssl_logging
-            mod->config.enable_tls_key_logging, ///< enable_tls_key_logging
-            mod->config.enforce_tls_1_3,        ///< enforce_tls_1_3
-            mod->config.tls_key_logging_path,   ///< tls_key_logging_path
-        },
+    const auto negotiation_strategy = convert_tls_negotiation_strategy(mod->config.tls_negotiation_strategy);
+
+    auto initial_ssl = build_initial_ssl_config();
+
+    iso15118::config::SSLConfig ssl_for_controller{};
+    ssl_for_controller.backend = iso15118::config::CertificateBackend::EVEREST_LAYOUT;
+    ssl_for_controller.path_certificate_v2g_root =
+        mod->r_security->call_get_verify_file(types::evse_security::CaCertificateType::V2G);
+    ssl_for_controller.path_certificate_mo_root =
+        mod->r_security->call_get_verify_file(types::evse_security::CaCertificateType::MO);
+    ssl_for_controller.enable_ssl_logging = mod->config.enable_ssl_logging;
+    ssl_for_controller.enable_tls_key_logging = mod->config.enable_tls_key_logging;
+    ssl_for_controller.enforce_tls_1_3 = mod->config.enforce_tls_1_3;
+    ssl_for_controller.tls_key_logging_path = mod->config.tls_key_logging_path;
+
+    if (initial_ssl.has_value()) {
+        ssl_for_controller.chains = std::move(initial_ssl->chains);
+    } else if (negotiation_strategy == iso15118::config::TlsNegotiationStrategy::ENFORCE_TLS) {
+        EVLOG_AND_THROW(Everest::EverestConfigError(
+            "No usable V2G certificate chains available and tls_negotiation_strategy is ENFORCE_TLS"));
+    } else {
+        EVLOG_warning << "No usable V2G certificate chains available; continuing with empty chain list. "
+                         "TLS connection attempts will fail until certificates are provisioned.";
+    }
+
+    iso15118::TbdConfig tbd_config = {
+        std::move(ssl_for_controller),
         mod->config.device,
-        convert_tls_negotiation_strategy(mod->config.tls_negotiation_strategy),
+        negotiation_strategy,
         mod->config.enable_sdp_server,
     };
-    const auto callbacks = create_callbacks();
+    auto callbacks = create_callbacks();
 
     setup_config.control_mobility_modes = fill_mobility_needs_modes_from_config(mod->config);
 
@@ -233,7 +224,12 @@ void ISO15118_chargerImpl::ready() {
         setup_config.custom_protocol.emplace(mod->config.custom_protocol_namespace);
     }
 
-    controller = std::make_unique<iso15118::TbdController>(tbd_config, callbacks, setup_config);
+    controller = std::make_unique<iso15118::TbdController>(std::move(tbd_config), std::move(callbacks), setup_config);
+
+    mod->r_security->subscribe_certificate_store_update(
+        [this](const types::evse_security::CertificateStoreUpdate& event) {
+            this->on_certificate_store_update(event);
+        });
 
     // if the vas providers report their supported vas services before the controller exists,
     // we need to update the controller with the supported vas services after instantiation
@@ -247,6 +243,53 @@ void ISO15118_chargerImpl::ready() {
     } catch (const std::exception& e) {
         EVLOG_error << e.what();
     }
+}
+
+std::optional<iso15118::config::SSLConfig> ISO15118_chargerImpl::build_initial_ssl_config() {
+    const auto certs_result = mod->r_security->call_get_all_valid_certificates_info(
+        types::evse_security::LeafCertificateType::V2G, types::evse_security::EncodingFormat::PEM, true);
+
+    const auto v2g_root_cert_path = mod->r_security->call_get_verify_file(types::evse_security::CaCertificateType::V2G);
+    const auto mo_root_cert_path = mod->r_security->call_get_verify_file(types::evse_security::CaCertificateType::MO);
+
+    auto cfg = build_ssl_config(certs_result, v2g_root_cert_path, mo_root_cert_path);
+    if (!cfg.has_value()) {
+        return std::nullopt;
+    }
+
+    cfg->enable_ssl_logging = mod->config.enable_ssl_logging;
+    cfg->enable_tls_key_logging = mod->config.enable_tls_key_logging;
+    cfg->enforce_tls_1_3 = mod->config.enforce_tls_1_3;
+    cfg->tls_key_logging_path = mod->config.tls_key_logging_path;
+    return cfg;
+}
+
+void ISO15118_chargerImpl::on_certificate_store_update(const types::evse_security::CertificateStoreUpdate& event) {
+    // Only V2G leaf events and V2G/MO CA events affect our SSL config.
+    const bool relevant_leaf = event.leaf_certificate_type.has_value() &&
+                               event.leaf_certificate_type.value() == types::evse_security::LeafCertificateType::V2G;
+    const bool relevant_ca = event.ca_certificate_type.has_value() &&
+                             (event.ca_certificate_type.value() == types::evse_security::CaCertificateType::V2G ||
+                              event.ca_certificate_type.value() == types::evse_security::CaCertificateType::MO);
+
+    if (!relevant_leaf && !relevant_ca) {
+        return;
+    }
+
+    if (!controller) {
+        EVLOG_warning << "certificate_store_update received before controller construction; ignoring";
+        return;
+    }
+
+    auto refreshed = build_initial_ssl_config();
+    if (!refreshed.has_value()) {
+        EVLOG_error
+            << "certificate_store_update produced no usable V2G certificate chains; preserving last-good SSL config";
+        return;
+    }
+
+    EVLOG_info << "certificate_store_update: refreshing SSL config with " << refreshed->chains.size() << " chain(s)";
+    controller->set_ssl_config(std::move(*refreshed));
 }
 
 void ISO15118_chargerImpl::update_supported_vas_services() {
