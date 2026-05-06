@@ -30,7 +30,8 @@ void powermeterImpl::ready() {
 template <class T, class ReqT>
 auto powermeterImpl::generic_request_reply(T const& default_value, ReqT const& request, std::string const& topic) {
     using ExtT = decltype(API_types_ext::to_external_api(std::declval<T>()));
-    auto result = request_reply_handler<ExtT>(mod->mqtt, mod->get_topics(), request, topic, timeout_s);
+    auto result = everest::lib::API::request_reply_handler<ExtT>(mod->mqtt_v, mod->helper.get_topics(), request, topic,
+                                                                 timeout_s);
     if (!result) {
         return default_value;
     }

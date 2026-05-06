@@ -28,50 +28,50 @@ void evse_board_supportImpl::ready() {
 }
 
 void evse_board_supportImpl::handle_enable(bool& value) {
-    auto topic = mod->get_topics().everest_to_extern("enable");
+    auto topic = mod->helper.get_topics().everest_to_extern("enable");
     auto data = generic::serialize(value);
-    mod->mqtt.publish(topic, data);
+    mod->mqtt_v.publish(topic, data);
 }
 
 void evse_board_supportImpl::handle_pwm_on(double& value) {
-    auto topic = mod->get_topics().everest_to_extern("pwm_on");
+    auto topic = mod->helper.get_topics().everest_to_extern("pwm_on");
     auto data = generic::serialize(value);
-    mod->mqtt.publish(topic, data);
+    mod->mqtt_v.publish(topic, data);
 }
 
 void evse_board_supportImpl::handle_cp_state_X1() {
-    auto topic = mod->get_topics().everest_to_extern("cp_state_X1");
-    mod->mqtt.publish(topic, "");
+    auto topic = mod->helper.get_topics().everest_to_extern("cp_state_X1");
+    mod->mqtt_v.publish(topic, "");
 }
 
 void evse_board_supportImpl::handle_cp_state_F() {
-    auto topic = mod->get_topics().everest_to_extern("cp_state_F");
-    mod->mqtt.publish(topic, "");
+    auto topic = mod->helper.get_topics().everest_to_extern("cp_state_F");
+    mod->mqtt_v.publish(topic, "");
 }
 
 void evse_board_supportImpl::handle_cp_state_E() {
-    auto topic = mod->get_topics().everest_to_extern("cp_state_E");
-    mod->mqtt.publish(topic, "");
+    auto topic = mod->helper.get_topics().everest_to_extern("cp_state_E");
+    mod->mqtt_v.publish(topic, "");
 }
 
 void evse_board_supportImpl::handle_allow_power_on(types::evse_board_support::PowerOnOff& value) {
-    auto topic = mod->get_topics().everest_to_extern("allow_power_on");
+    auto topic = mod->helper.get_topics().everest_to_extern("allow_power_on");
     auto ext = API_types_ext::to_external_api(value);
     auto data = API_types_ext::serialize(ext);
-    mod->mqtt.publish(topic, data);
+    mod->mqtt_v.publish(topic, data);
 }
 
 void evse_board_supportImpl::handle_ac_switch_three_phases_while_charging(bool& value) {
-    auto topic = mod->get_topics().everest_to_extern("ac_switch_three_phases_while_charging");
+    auto topic = mod->helper.get_topics().everest_to_extern("ac_switch_three_phases_while_charging");
     std::string raw_data = value ? "ThreePhases" : "SinglePhase";
     auto data = generic::serialize(raw_data);
-    mod->mqtt.publish(topic, data);
+    mod->mqtt_v.publish(topic, data);
 }
 
 void evse_board_supportImpl::handle_ac_set_overcurrent_limit_A(double& value) {
-    auto topic = mod->get_topics().everest_to_extern("ac_overcurrent_limit");
+    auto topic = mod->helper.get_topics().everest_to_extern("ac_overcurrent_limit");
     auto data = generic::serialize(value);
-    mod->mqtt.publish(topic, data);
+    mod->mqtt_v.publish(topic, data);
 }
 
 } // namespace main

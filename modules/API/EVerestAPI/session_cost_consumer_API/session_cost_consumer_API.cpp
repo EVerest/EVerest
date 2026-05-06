@@ -13,7 +13,6 @@
 
 namespace module {
 
-namespace API_types = ev_API::V1_0::types;
 namespace API_types_ext = API_types::session_cost;
 namespace API_generic = API_types::generic;
 using ev_API::deserialize;
@@ -21,7 +20,10 @@ using ev_API::deserialize;
 void session_cost_consumer_API::init() {
     invoke_init(*p_main);
 
-    topics.setup(info.id, "session_cost_consumer", 1);
+    API_types_entry::CommunicationParameters comm_params{};
+    comm_params.heartbeat_period_ms = config.cfg_heartbeat_interval_ms;
+    comm_params.communication_check_period_s = config.cfg_communication_check_to_s;
+    helper.init(comm_params);
 }
 
 void session_cost_consumer_API::ready() {
@@ -31,21 +33,21 @@ void session_cost_consumer_API::ready() {
     generate_api_var_session_cost();
     generate_api_var_default_price();
 
-    generate_api_var_communication_check();
-
+    helper.generate_api_var_communication_check(&comm_check);
     comm_check.start(config.cfg_communication_check_to_s);
-    setup_heartbeat_generator();
+    helper.setup_heartbeat_generator(&comm_check, config.cfg_heartbeat_interval_ms);
+    helper.publish_ready_beacon();
 }
 
 auto session_cost_consumer_API::forward_api_var(std::string const& var) {
     using namespace API_types_ext;
     using namespace API_generic;
-    auto topic = topics.everest_to_extern(var);
+    auto topic = helper.get_topics().everest_to_extern(var);
     return [this, topic](auto const& val) {
         try {
             auto&& external = to_external_api(val);
             auto&& payload = serialize(external);
-            mqtt.publish(topic, payload);
+            mqtt_v.publish(topic, payload);
         } catch (const std::exception& e) {
             EVLOG_warning << "Variable: '" << topic << "' failed with -> " << e.what();
         } catch (...) {
@@ -64,42 +66,6 @@ void session_cost_consumer_API::generate_api_var_session_cost() {
 
 void session_cost_consumer_API::generate_api_var_default_price() {
     r_session_cost->subscribe_default_price(forward_api_var("default_price"));
-}
-
-void session_cost_consumer_API::generate_api_var_communication_check() {
-    subscribe_api_topic("communication_check", [this](std::string const& data) {
-        bool val = false;
-        if (deserialize(data, val)) {
-            comm_check.set_value(val);
-            return true;
-        }
-        return false;
-    });
-}
-
-void session_cost_consumer_API::setup_heartbeat_generator() {
-    auto topic = topics.everest_to_extern("heartbeat");
-    auto action = [this, topic]() {
-        mqtt.publish(topic, API_generic::serialize(hb_id++));
-        return true;
-    };
-    comm_check.heartbeat(config.cfg_heartbeat_interval_ms, action);
-}
-
-void session_cost_consumer_API::subscribe_api_topic(std::string const& var,
-                                                    ParseAndPublishFtor const& parse_and_publish) {
-    auto topic = topics.extern_to_everest(var);
-    mqtt.subscribe(topic, [=](std::string const& data) {
-        try {
-            if (not parse_and_publish(data)) {
-                EVLOG_warning << "Invalid data: Deserialization failed.\n" << topic << "\n" << data;
-            }
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Topic: '" << topic << "' failed with -> " << e.what() << "\n => " << data;
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Failed to parse JSON or to get data from it.\n" << topic;
-        }
-    });
 }
 
 } // namespace module

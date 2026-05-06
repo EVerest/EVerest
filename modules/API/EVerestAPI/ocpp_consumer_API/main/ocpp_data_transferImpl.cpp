@@ -26,7 +26,8 @@ auto ocpp_data_transferImpl::generic_request_reply(T const& default_value, ReqT 
                                                    std::string const& topic) {
     using namespace API_types_ext;
     using ExtT = decltype(to_external_api(std::declval<T>()));
-    auto result = request_reply_handler<ExtT>(mod->mqtt, mod->get_topics(), request, topic, timeout_s);
+    auto result = everest::lib::API::request_reply_handler<ExtT>(mod->mqtt_v, mod->helper.get_topics(), request, topic,
+                                                                 timeout_s);
     if (!result) {
         return default_value;
     }

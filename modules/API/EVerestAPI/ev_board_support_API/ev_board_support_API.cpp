@@ -17,14 +17,16 @@
 
 namespace module {
 
-namespace API_types = ev_API::V1_0::types;
 namespace API_generic = API_types::generic;
 using ev_API::deserialize;
 
 void ev_board_support_API::init() {
     invoke_init(*p_main);
 
-    topics.setup(info.id, "ev_board_support", 1);
+    API_types_entry::CommunicationParameters comm_params{};
+    comm_params.heartbeat_period_ms = config.cfg_heartbeat_interval_ms;
+    comm_params.communication_check_period_s = config.cfg_communication_check_to_s;
+    helper.init(comm_params);
 }
 
 void ev_board_support_API::ready() {
@@ -33,17 +35,18 @@ void ev_board_support_API::ready() {
     generate_api_var_bsp_event();
     generate_api_var_bsp_measurement();
     generate_api_var_ev_info();
-    generate_api_var_communication_check();
 
     generate_api_var_raise_error();
     generate_api_var_clear_error();
 
+    helper.generate_api_var_communication_check(&comm_check);
     comm_check.start(config.cfg_communication_check_to_s);
-    setup_heartbeat_generator();
+    helper.setup_heartbeat_generator(&comm_check, config.cfg_heartbeat_interval_ms);
+    helper.publish_ready_beacon();
 }
 
 void ev_board_support_API::generate_api_var_bsp_event() {
-    subscribe_api_topic("bsp_event", [=](std::string const& data) {
+    helper.subscribe_api_topic("bsp_event", [=](std::string const& data) {
         API_types::evse_board_support::BspEvent ext;
         if (deserialize(data, ext)) {
             p_main->publish_bsp_event(to_internal_api(ext));
@@ -54,7 +57,7 @@ void ev_board_support_API::generate_api_var_bsp_event() {
 }
 
 void ev_board_support_API::generate_api_var_bsp_measurement() {
-    subscribe_api_topic("bsp_measurement", [=](std::string const& data) {
+    helper.subscribe_api_topic("bsp_measurement", [=](std::string const& data) {
         API_types::ev_board_support::BspMeasurement ext;
         if (deserialize(data, ext)) {
             p_main->publish_bsp_measurement(to_internal_api(ext));
@@ -65,7 +68,7 @@ void ev_board_support_API::generate_api_var_bsp_measurement() {
 }
 
 void ev_board_support_API::generate_api_var_ev_info() {
-    subscribe_api_topic("ev_info", [=](std::string const& data) {
+    helper.subscribe_api_topic("ev_info", [=](std::string const& data) {
         API_types::evse_manager::EVInfo ext;
         if (deserialize(data, ext)) {
             p_main->publish_ev_info(to_internal_api(ext));
@@ -75,19 +78,8 @@ void ev_board_support_API::generate_api_var_ev_info() {
     });
 }
 
-void ev_board_support_API::generate_api_var_communication_check() {
-    subscribe_api_topic("communication_check", [this](std::string const& data) {
-        bool val = false;
-        if (deserialize(data, val)) {
-            comm_check.set_value(val);
-            return true;
-        }
-        return false;
-    });
-}
-
 void ev_board_support_API::generate_api_var_raise_error() {
-    subscribe_api_topic("raise_error", [=](std::string const& data) {
+    helper.subscribe_api_topic("raise_error", [=](std::string const& data) {
         API_types::generic::Error error;
         if (deserialize(data, error)) {
             auto sub_type_str = error.sub_type ? error.sub_type.value() : "";
@@ -103,7 +95,7 @@ void ev_board_support_API::generate_api_var_raise_error() {
 }
 
 void ev_board_support_API::generate_api_var_clear_error() {
-    subscribe_api_topic("clear_error", [=](std::string const& data) {
+    helper.subscribe_api_topic("clear_error", [=](std::string const& data) {
         API_types::generic::Error error;
         if (deserialize(data, error)) {
             std::string error_str = make_error_string(error);
@@ -122,34 +114,6 @@ std::string ev_board_support_API::make_error_string(API_types::generic::Error co
     auto error_str = API_generic::trimmed(serialize(error.type));
     auto result = "generic/" + error_str;
     return result;
-}
-
-void ev_board_support_API::setup_heartbeat_generator() {
-    auto topic = topics.everest_to_extern("heartbeat");
-    auto action = [this, topic]() {
-        mqtt.publish(topic, API_generic::serialize(hb_id++));
-        return true;
-    };
-    comm_check.heartbeat(config.cfg_heartbeat_interval_ms, action);
-}
-
-void ev_board_support_API::subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish) {
-    auto topic = topics.extern_to_everest(var);
-    mqtt.subscribe(topic, [=](std::string const& data) {
-        try {
-            if (not parse_and_publish(data)) {
-                EVLOG_warning << "Invalid data: Deserialization failed.\n" << topic << "\n" << data;
-            }
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Topic: '" << topic << "' failed with -> " << e.what() << "\n => " << data;
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Failed to parse JSON or to get data from it.\n" << topic;
-        }
-    });
-}
-
-const ev_API::Topics& ev_board_support_API::get_topics() const {
-    return topics;
 }
 
 } // namespace module

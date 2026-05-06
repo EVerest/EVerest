@@ -7,7 +7,6 @@
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
 // template version 3
 //
-
 #include <generated/interfaces/system/Implementation.hpp>
 
 #include "../system_API.hpp"

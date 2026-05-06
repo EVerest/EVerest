@@ -13,15 +13,18 @@
 
 namespace module {
 
-namespace ev_API_v = ev_API::V1_0;
-namespace API_types_ext = ev_API_v::types::system;
-namespace API_generic = ev_API_v::types::generic;
+namespace API_types_ext = API_types::system;
+namespace API_generic = API_types::generic;
 using ev_API::deserialize;
 
 void system_API::init() {
     invoke_init(*p_main);
 
-    topics.setup(info.id, "system", 1);
+    API_types_entry::CommunicationParameters comm_params{};
+    comm_params.heartbeat_period_ms = config.cfg_heartbeat_interval_ms;
+    comm_params.communication_check_period_s = config.cfg_communication_check_to_s;
+    comm_params.request_reply_timeout_s = config.cfg_request_reply_to_s;
+    helper.init(comm_params);
 }
 
 void system_API::ready() {
@@ -30,14 +33,14 @@ void system_API::ready() {
     generate_api_var_firmware_update_status();
     generate_api_var_log_status();
 
-    generate_api_var_communication_check();
-
+    helper.generate_api_var_communication_check(&comm_check);
     comm_check.start(config.cfg_communication_check_to_s);
-    setup_heartbeat_generator();
+    helper.setup_heartbeat_generator(&comm_check, config.cfg_heartbeat_interval_ms);
+    helper.publish_ready_beacon();
 }
 
 void system_API::generate_api_var_firmware_update_status() {
-    subscribe_api_topic("firmware_update_status", [this](std::string const& data) {
+    helper.subscribe_api_topic("firmware_update_status", [this](std::string const& data) {
         API_types_ext::FirmwareUpdateStatus payload;
         if (deserialize(data, payload)) {
             p_main->publish_firmware_update_status(to_internal_api(payload));
@@ -48,7 +51,7 @@ void system_API::generate_api_var_firmware_update_status() {
 }
 
 void system_API::generate_api_var_log_status() {
-    subscribe_api_topic("log_status", [this](std::string const& data) {
+    helper.subscribe_api_topic("log_status", [this](std::string const& data) {
         API_types_ext::LogStatus payload;
         if (deserialize(data, payload)) {
             p_main->publish_log_status(to_internal_api(payload));
@@ -56,45 +59,6 @@ void system_API::generate_api_var_log_status() {
         }
         return false;
     });
-}
-
-void system_API::generate_api_var_communication_check() {
-    subscribe_api_topic("communication_check", [this](std::string const& data) {
-        bool val = false;
-        if (deserialize(data, val)) {
-            comm_check.set_value(val);
-            return true;
-        }
-        return false;
-    });
-}
-
-void system_API::setup_heartbeat_generator() {
-    auto topic = topics.everest_to_extern("heartbeat");
-    auto action = [this, topic]() {
-        mqtt.publish(topic, API_generic::serialize(hb_id++));
-        return true;
-    };
-    comm_check.heartbeat(config.cfg_heartbeat_interval_ms, action);
-}
-
-void system_API::subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish) {
-    auto topic = topics.extern_to_everest(var);
-    mqtt.subscribe(topic, [=](std::string const& data) {
-        try {
-            if (not parse_and_publish(data)) {
-                EVLOG_warning << "Invalid data: Deserialization failed.\n" << topic << "\n" << data;
-            }
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Topic: '" << topic << "' failed with -> " << e.what() << "\n => " << data;
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Failed to parse JSON or to get data from it.\n" << topic;
-        }
-    });
-}
-
-const ev_API::Topics& system_API::get_topics() const {
-    return topics;
 }
 
 } // namespace module

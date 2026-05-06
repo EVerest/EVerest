@@ -26,6 +26,7 @@ set(EVEREST_LIB_SUBDIRS
     cbv2g
     conversions
     crc
+    everest_api_module_helpers
     everest_api_types
     evse_security
     external_energy_limits

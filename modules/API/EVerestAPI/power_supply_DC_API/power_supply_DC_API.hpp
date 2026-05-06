@@ -15,14 +15,14 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
-
+#include <everest_api_module_helpers/ApiHelper.hpp>
+#include <everest_api_types/entrypoint/API.hpp>
 #include <everest_api_types/power_supply_DC/API.hpp>
-#include <everest_api_types/utilities/CommCheckHandler.hpp>
-#include <everest_api_types/utilities/Topics.hpp>
 
 namespace ev_API = everest::lib::API;
 namespace API_types = ev_API::V1_0::types;
 namespace API_types_ext = API_types::power_supply_DC;
+namespace API_types_entry = API_types::entrypoint;
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -45,7 +45,8 @@ public:
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
-    const ev_API::Topics& get_topics() const;
+    ev_API::Mqtt::ValidatingMqttProxy mqtt_v{mqtt};
+    ev_API::ApiHelper helper{info, mqtt_v, {{"power_supply_DC", 1}}, get_config_service_client()};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
@@ -60,23 +61,16 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
-    using ParseAndPublishFtor = std::function<bool(std::string const&)>;
-    void subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish);
     void generate_api_var_mode();
     void generate_api_var_voltage_current();
     void generate_api_var_capabilities();
     void generate_api_var_raise_error();
     void generate_api_var_clear_error();
-    void generate_api_var_communication_check();
 
     std::string make_error_string(API_types_ext::Error const& error);
 
-    void setup_heartbeat_generator();
-
-    ev_API::Topics topics;
     ev_API::CommCheckHandler<power_supply_DCImplBase> comm_check{"power_supply_DC/CommunicationFault",
                                                                  "Bridge to implementation connection lost", p_main};
-    size_t hb_id{0};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

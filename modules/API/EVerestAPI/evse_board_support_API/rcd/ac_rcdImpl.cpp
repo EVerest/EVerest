@@ -27,7 +27,7 @@ template <class T, class ReqT>
 auto ac_rcdImpl::generic_request_reply(T const& default_value, ReqT const& request, std::string const& topic) {
     using namespace API_types_ext;
     using ExtT = decltype(to_external_api(std::declval<T>()));
-    auto result = request_reply_handler<ExtT>(mod->mqtt, mod->get_topics(), request, topic, timeout_s);
+    auto result = request_reply_handler<ExtT>(mod->mqtt_v, mod->helper.get_topics(), request, topic, timeout_s);
     if (!result) {
         return default_value;
     }
@@ -35,8 +35,8 @@ auto ac_rcdImpl::generic_request_reply(T const& default_value, ReqT const& reque
 }
 
 void ac_rcdImpl::handle_self_test() {
-    auto topic = mod->get_topics().everest_to_extern("self_test");
-    mod->mqtt.publish(topic, "");
+    auto topic = mod->helper.get_topics().everest_to_extern("self_test");
+    mod->mqtt_v.publish(topic, "");
 }
 
 bool ac_rcdImpl::handle_reset() {

@@ -1,0 +1,63 @@
+settings:
+  telemetry_enabled: true
+active_modules:
+  dm_1:
+    module: display_message_API
+    config_module:
+      cfg_communication_check_to_s: 5
+    access:
+      config:
+        allow_global_read: true
+  ps_dc_1:
+    module: power_supply_DC_API
+    config_module:
+      cfg_communication_check_to_s: 10
+      cfg_heartbeat_interval_ms: 10000
+    access:
+      config:
+        allow_global_read: true
+  ps_dc_2:
+    module: power_supply_DC_API
+    config_module:
+      cfg_communication_check_to_s: 10
+      cfg_heartbeat_interval_ms: 10000
+    access:
+      config:
+        allow_global_read: true
+  err_hist_1:
+    module: error_history_consumer_API
+    config_module:
+      cfg_communication_check_to_s: 10
+      cfg_heartbeat_interval_ms: 10000
+    connections:
+      error_history:
+        - implementation_id: error_history
+          module_id: error_history
+    access:
+      config:
+        allow_global_read: true
+  error_history:
+    module: ErrorHistory
+    config_implementation:
+      error_history:
+        database_path: /tmp/error_history.db
+  cli_ps1:
+    module: BUPowerSupplyDC
+    standalone: true
+    connections:
+      psu:
+        - module_id: ps_dc_1
+          implementation_id: main
+  cli_ps2:
+    module: BUPowerSupplyDC
+    standalone: true
+    connections:
+      psu:
+        - module_id: ps_dc_2
+          implementation_id: main
+
+# send "{"headers": { "replyTo": "my/reply/topic" } }" to "everest_api/discover"
+# and receive an bunch of messages: array of (module_id, type, version) tuples on the reply topic
+
+# send "{"headers": { "replyTo": "my/reply/topic" } }" to "everest_api/query-modules/power_supply_DC"
+# and receive the same reply as above, but limited to the ones with type==power_supply_DC

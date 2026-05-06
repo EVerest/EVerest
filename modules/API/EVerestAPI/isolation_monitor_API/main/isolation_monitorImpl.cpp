@@ -18,16 +18,16 @@ void isolation_monitorImpl::ready() {
 }
 
 void isolation_monitorImpl::handle_start() {
-    mod->mqtt.publish(mod->get_topics().everest_to_extern("start"), "{}");
+    mod->mqtt_v.publish(mod->helper.get_topics().everest_to_extern("start"), "{}");
 }
 
 void isolation_monitorImpl::handle_stop() {
-    mod->mqtt.publish(mod->get_topics().everest_to_extern("stop"), "{}");
+    mod->mqtt_v.publish(mod->helper.get_topics().everest_to_extern("stop"), "{}");
 }
 
 void isolation_monitorImpl::handle_start_self_test(double& test_voltage_V) {
     auto value = API_generic::serialize(test_voltage_V);
-    mod->mqtt.publish(mod->get_topics().everest_to_extern("start_self_test"), value);
+    mod->mqtt_v.publish(mod->helper.get_topics().everest_to_extern("start_self_test"), value);
 }
 
 } // namespace main
