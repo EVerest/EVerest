@@ -39,9 +39,13 @@ jobs:
 
       - name: Create backport PR
         id: backport
-        uses: korthout/backport-action@v4.2.0
+        uses: korthout/backport-action@v4.5.1
         with:
           github_token: ${{ steps.app-token.outputs.token }}
           merge_commits: "skip"
           add_author_as_assignee: true
           copy_requested_reviewers: true
+          experimental: >-
+            {
+              "conflict_resolution": "draft_commit_conflicts"
+            }
