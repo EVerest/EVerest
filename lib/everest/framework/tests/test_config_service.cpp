@@ -82,7 +82,7 @@ static nlohmann::json make_error_response(const std::string& info = "") {
 TEST_CASE("ConfigServiceClient::get_module_configs", "[config_service]") {
     const std::string prefix = "everest/";
     const std::string module_id = "my_module";
-    const std::unordered_map<std::string, std::string> module_names = {{"module_a", "TypeA"}};
+    const std::map<std::string, std::string, std::less<>> module_names = {{"module_a", "TypeA"}};
 
     auto mock = std::make_shared<MockMQTTAbstraction>(prefix);
     ConfigServiceClient client(mock, module_id, module_names);

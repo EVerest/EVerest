@@ -303,10 +303,20 @@ SqliteStorage::write_configuration_parameter(const ConfigurationParameterIdentif
                                              const ConfigurationParameterCharacteristics characteristics,
                                              const std::string& value) {
     try {
+        auto check = this->db->new_statement("SELECT 1 FROM MODULE WHERE CONFIG_ID = ? AND ID = ?");
+        check->bind_int(1, config_id_);
+        check->bind_text(2, identifier.module_id);
+        if (check->step() != SQLITE_ROW) {
+            return GetSetResponseStatus::NotFound;
+        }
+
         const std::string insert_query = "INSERT OR REPLACE INTO CONFIGURATION (CONFIG_ID, MODULE_ID, PARAMETER_NAME, "
                                          "VALUE, "
                                          "MUTABILITY_ID, DATATYPE_ID, UNIT, MODULE_IMPLEMENTATION_ID) VALUES "
                                          "(?, ?, ?, ?, ?, ?, ?, ?);";
+
+        const std::string module_implementation_id =
+            identifier.module_implementation_id.value_or(default_module_implementation_id());
 
         auto stmt = this->db->new_statement(insert_query);
         stmt->bind_int(to_int(ConfigurationColumnIndex::COL_CONFIG_ID), config_id_);
@@ -321,12 +331,10 @@ SqliteStorage::write_configuration_parameter(const ConfigurationParameterIdentif
         } else {
             stmt->bind_null(to_int(ConfigurationColumnIndex::COL_UNIT));
         }
-
-        stmt->bind_text(to_int(ConfigurationColumnIndex::COL_MODULE_IMPLEMENTATION_ID),
-                        identifier.module_implementation_id.value_or(default_module_implementation_id()));
+        stmt->bind_text(to_int(ConfigurationColumnIndex::COL_MODULE_IMPLEMENTATION_ID), module_implementation_id);
 
         if (stmt->step() != SQLITE_DONE) {
-            return GetSetResponseStatus::NotFound;
+            return GetSetResponseStatus::Failed;
         }
 
         return GetSetResponseStatus::OK;
