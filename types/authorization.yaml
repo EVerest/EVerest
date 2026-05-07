@@ -27,18 +27,6 @@ types:
       - NoCertificateAvailable
       - CertChainError
       - ContractCancelled
-  TokenValidationStatus:
-    description: Ongoing token validation status
-    type: string
-    enum:
-      - Processing
-      - Accepted
-      - Rejected
-      # Occurs when the token has been authorized but no connector is selected within connection_timeout seconds
-      - TimedOut
-      - UsedToStart
-      - UsedToStop
-      - Withdrawn
   CustomIdToken:
     description: Type for a custom id token with a free-form type
     type: object
@@ -131,26 +119,6 @@ types:
           $ref: /iso15118#/CertificateHashDataInfo
         minItems: 1
         maxItems: 4
-  TokenValidationStatusMessage:
-    description: The token validation status
-    type: object
-    additionalProperties: false
-    required:
-      - token
-      - status
-    properties:
-      token:
-        description: The id tag assigned to this transaction
-        type: object
-        $ref: /authorization#/ProvidedIdToken
-      status:
-        type: string
-        $ref: /authorization#/TokenValidationStatus
-      messages:
-        type: array
-        items:
-          type: object
-          $ref: /text_message#/MessageContent
   ValidationResult:
     description: >-
       Result object containing authorization status enum value and an optional
@@ -204,6 +172,42 @@ types:
           type: string
           $ref: /iso15118#/EnergyTransferMode
         minItems: 1
+  TokenValidationStatus:
+    description: Ongoing token validation status
+    type: string
+    enum:
+      - Processing
+      - Accepted
+      - Rejected
+      # Occurs when the token has been authorized but no connector is selected within connection_timeout seconds
+      - TimedOut
+      - UsedToStart
+      - UsedToStop
+      - Withdrawn
+  TokenValidationStatusMessage:
+    description: The token validation status
+    type: object
+    additionalProperties: false
+    required:
+      - token
+      - status
+    properties:
+      token:
+        description: The id tag assigned to this transaction
+        type: object
+        $ref: /authorization#/ProvidedIdToken
+      status:
+        type: string
+        $ref: /authorization#/TokenValidationStatus
+      validation_results:
+        description: >-
+          The validation results for the given token. Each entry carries its
+          own `tariff_messages`; consumers should read those rather than a
+          top-level message field.
+        type: array
+        items:
+          type: object
+          $ref: /authorization#/ValidationResult
   SelectionAlgorithm:
     description: >-
       The selection algorithm defines the logic to select one connector
