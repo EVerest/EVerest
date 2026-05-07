@@ -5,6 +5,7 @@ active_modules:
     module: display_message_API
     config_module:
       cfg_communication_check_to_s: 5
+      cfg_heartbeat_interval_ms: 5000
     access:
       config:
         allow_global_read: true
@@ -12,7 +13,7 @@ active_modules:
     module: power_supply_DC_API
     config_module:
       cfg_communication_check_to_s: 10
-      cfg_heartbeat_interval_ms: 10000
+      cfg_heartbeat_interval_ms: 5000
     access:
       config:
         allow_global_read: true
@@ -20,7 +21,7 @@ active_modules:
     module: power_supply_DC_API
     config_module:
       cfg_communication_check_to_s: 10
-      cfg_heartbeat_interval_ms: 10000
+      cfg_heartbeat_interval_ms: 8000
     access:
       config:
         allow_global_read: true
