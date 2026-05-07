@@ -198,7 +198,7 @@ private:
     std::shared_ptr<ErrorTypeMap> m_error_type_map;
     std::shared_ptr<ConfigServiceClient> m_config_service_client;
     std::map<std::string, Command> m_module_commands;
-    std::unordered_map<std::string, std::string> m_module_names;
+    std::map<std::string, std::string, std::less<>> m_module_names;
     std::shared_ptr<MQTTStub> m_mqtt;
     Hooks* handler{nullptr};
 
@@ -243,7 +243,7 @@ private:
     std::shared_ptr<ErrorStateMonitor> get_error_state_monitor_req_fn(const Requirement&) {
         return m_error_state_monitor;
     }
-    void ext_mqtt_publish_fn(const std::string& topic, const std::string& val) {
+    void ext_mqtt_publish_fn(const std::string& topic, const std::string& val, bool /*retained*/) {
         std::string full_topic = m_mqtt->get_external_prefix() + topic;
         m_mqtt->publish(full_topic, val);
     }
