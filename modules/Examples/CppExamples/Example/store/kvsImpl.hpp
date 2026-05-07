@@ -19,7 +19,13 @@
 namespace module {
 namespace store {
 
-struct Conf {};
+struct RwConf {};
+
+struct Conf {
+
+    Conf() = default;
+    Conf(const RwConf&){};
+};
 
 class kvsImpl : public kvsImplBase {
 public:
