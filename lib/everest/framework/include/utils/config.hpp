@@ -313,10 +313,11 @@ public:
     /// \brief Create a ManagerConfig from ConfigParseSettings only
     explicit ManagerConfig(const ConfigParseSettings& ps);
 
-    /// \brief Gets the configuration parameter associated with the \p identifier
-    /// \returns a result containing the configuration item or an error
+    everest::config::SetConfigStatus update_config_value(const everest::config::ConfigurationParameterIdentifier& identifier,
+                                                         const everest::config::ConfigEntry& value);
+
     everest::config::GetConfigurationParameterResponse
-    get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier) const;
+    get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier);
 };
 
 ///
