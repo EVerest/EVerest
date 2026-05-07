@@ -19,20 +19,59 @@
 namespace module {
 namespace example {
 
-struct Conf {
+struct RwConf {
     double current;
     std::string enum_test;
     int enum_test2;
 };
 
-class exampleImpl : public exampleImplBase {
+struct RwConfUpdate {
+    using ConfigChangeResult = Everest::config::ConfigChangeResult;
+
+    virtual ~RwConfUpdate() = default;
+
+    // override in class exampleImpl adding the implementation to exampleImpl.cpp
+    // or inline
+    // e.g.
+    // ConfigChangeResult on_current_changed(const double& value) override {
+    //     rw_config.current = value;
+    //     return ConfigChangeResult::Accepted();
+    // }
+
+    virtual ConfigChangeResult on_current_changed(const double& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
+    virtual ConfigChangeResult on_enum_test_changed(const std::string& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
+    virtual ConfigChangeResult on_enum_test2_changed(const int& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
+};
+
+struct Conf {
+    int read_only;
+
+    const double& current;
+    const std::string& enum_test;
+    const int& enum_test2;
+
+    Conf(const RwConf& rw) : current(rw.current), enum_test(rw.enum_test), enum_test2(rw.enum_test2) {
+    }
+};
+
+class exampleImpl : public exampleImplBase, public RwConfUpdate {
 public:
     exampleImpl() = delete;
-    exampleImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<Example>& mod, Conf& config) :
-        exampleImplBase(ev, "example"), mod(mod), config(config){};
+    exampleImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<Example>& mod, Conf& config,
+                RwConf& rw_config) :
+        exampleImplBase(ev, "example"), mod(mod), config(config), rw_config(rw_config){};
 
     // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
     // insert your public definitions here
+    Everest::config::ConfigChangeResult on_current_changed(const double& new_current);
+    Everest::config::ConfigChangeResult on_enum_test_changed(const std::string& new_value);
+    Everest::config::ConfigChangeResult on_enum_test2_changed(const int& new_value);
     // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
 
 protected:
@@ -46,6 +85,7 @@ protected:
 private:
     const Everest::PtrContainer<Example>& mod;
     const Conf& config;
+    RwConf& rw_config;
 
     virtual void init() override;
     virtual void ready() override;
@@ -53,6 +93,7 @@ private:
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here
+    RwConf original_config{};
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
