@@ -506,10 +506,12 @@ public:
     /// \param message_log_path Path to where logfiles are written to
     /// \param evse_security Pointer to evse_security that manages security related operations
     /// \param callbacks Callbacks that will be registered for ChargePoint
+    /// \param share_path Path where utility files for OCPP are read and written to
     ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connector_structure,
                 std::shared_ptr<DeviceModelAbstract> device_model, std::shared_ptr<DatabaseHandler> database_handler,
                 std::shared_ptr<MessageQueue<v2::MessageType>> message_queue, const std::string& message_log_path,
-                const std::shared_ptr<EvseSecurity> evse_security, const Callbacks& callbacks);
+                const std::shared_ptr<EvseSecurity> evse_security, const Callbacks& callbacks,
+                const fs::path& share_path = {});
 
     /// \brief Construct a new ChargePoint object
     /// \param evse_connector_structure Map that defines the structure of EVSE and connectors of the chargepoint. The

@@ -67,11 +67,12 @@ ChargePoint::ChargePoint(const std::map<int32_t, int32_t>& evse_connector_struct
                          std::shared_ptr<DatabaseHandler> database_handler,
                          std::shared_ptr<MessageQueue<v2::MessageType>> message_queue,
                          const std::string& message_log_path, const std::shared_ptr<EvseSecurity> evse_security,
-                         const Callbacks& callbacks) :
+                         const Callbacks& callbacks, const fs::path& share_path) :
     ocpp::ChargingStationBase(evse_security),
     message_queue(message_queue),
     device_model(device_model),
     database_handler(database_handler),
+    share_path(share_path),
     ocsp_updater(make_ocsp_updater()),
     callbacks(callbacks) {
     initialize(evse_connector_structure, message_log_path);
@@ -86,9 +87,8 @@ ChargePoint::ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connec
         evse_connector_structure, std::make_shared<DeviceModel>(std::move(device_model_storage_interface)),
         std::make_shared<DatabaseHandler>(
             std::make_unique<everest::db::sqlite::Connection>(fs::path(core_database_path) / "cp.db"), sql_init_path),
-        nullptr /* message_queue initialized in this constructor */, message_log_path, evse_security, callbacks) {
-
-    this->share_path = ocpp_main_path;
+        nullptr /* message_queue initialized in this constructor */, message_log_path, evse_security, callbacks,
+        ocpp_main_path) {
 }
 
 ChargePoint::ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connector_structure,
@@ -101,8 +101,6 @@ ChargePoint::ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connec
                 std::make_unique<DeviceModelStorageSqlite>(device_model_storage_address, device_model_migration_path,
                                                            device_model_config_path),
                 ocpp_main_path, core_database_path, sql_init_path, message_log_path, evse_security, callbacks) {
-
-    this->share_path = ocpp_main_path;
 }
 
 ChargePoint::~ChargePoint() = default;
