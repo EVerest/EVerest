@@ -312,6 +312,12 @@ public:
     ///
     /// \brief Create a ManagerConfig from ConfigParseSettings only
     explicit ManagerConfig(const ConfigParseSettings& ps);
+
+    everest::config::SetConfigStatus update_config_value(const everest::config::ConfigurationParameterIdentifier& identifier,
+                                                         const everest::config::ConfigEntry& value);
+
+    everest::config::GetConfigurationParameterResponse
+    get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier);
 };
 
 ///
