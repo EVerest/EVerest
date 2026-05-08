@@ -45,6 +45,7 @@ INSANE_SKIP:chargebridge = "already-stripped useless-rpaths arch file-rdeps"
 PACKAGES:prepend = "chargebridge "
 
 FILES:${PN} += "${libdir}/everest/* ${datadir}/everest/* ${systemd_system_unitdir}/everest.service"
+FILES:${PN}-dev += "${libdir}/libeverest_io.so"
 
 FILES:chargebridge = " \
     ${bindir}/pionix_chargebridge \
@@ -87,7 +88,7 @@ EXTRA_OECMAKE:append = " -DPYBIND11_INTERFACE_INCLUDE_DIRECTORIES=${STAGING_INCD
 
 SYSTEMD_PACKAGES:append = " chargebridge"
 SYSTEMD_SERVICE:${PN} = "everest.service"
-SYSTEMD_SERVICE:chargebridge = "chargebridge.service"
+SYSTEMD_SERVICE:chargebridge = "${@bb.utils.contains('PACKAGECONFIG', 'applications', 'chargebridge.service', '', d)}"
 
 PACKAGECONFIG ??= "applications python ${@bb.utils.filter('DISTRO_FEATURES', 'tpm2', d)}"
 
