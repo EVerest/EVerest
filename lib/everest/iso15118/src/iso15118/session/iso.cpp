@@ -150,7 +150,7 @@ TimePoint const& Session::poll() {
     }
 
     // check for new data to read
-    if (state.new_data) {
+    if (state.new_data and not message_exchange.has_response()) {
         const bool would_block = read_single_sdp_packet(*connection, packet);
 
         if (would_block) {
@@ -204,7 +204,7 @@ TimePoint const& Session::poll() {
     }
 
     // check for complete sdp packet
-    if (packet.is_complete()) {
+    if (packet.is_complete() and not message_exchange.has_response()) {
         // FIXME (aw): this event loop only acts on new packets, seems to be enough for now ...
         log_packet_from_car(packet, log);
 
