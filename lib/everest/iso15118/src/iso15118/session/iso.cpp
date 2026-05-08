@@ -255,7 +255,7 @@ TimePoint const& Session::poll() {
         response_send_after.reset();
     }
 
-    if (ctx.session_stopped or ctx.session_paused) {
+    if (is_finished()) {
         // TODO(SL): Does this also apply when a timeout is triggered? Or should the TCP/TLS connection be terminated
         // directly?
         // Wait for 5 seconds [V2G20-1643]
