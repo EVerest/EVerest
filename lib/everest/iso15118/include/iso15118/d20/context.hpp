@@ -54,6 +54,9 @@ public:
     }
 
     std::tuple<bool, size_t, io::v2gtp::PayloadType, message_20::Type> check_and_clear_response();
+    bool has_response() const {
+        return response_available;
+    }
 
 private:
     // input

@@ -41,7 +41,7 @@ public:
     void push_control_event(const d20::ControlEvent&);
 
     bool is_finished() const {
-        return (ctx.session_stopped or ctx.session_paused);
+        return (ctx.session_stopped or ctx.session_paused) and not message_exchange.has_response();
     }
 
     void close();
@@ -73,6 +73,9 @@ private:
     d20::Timeouts timeouts;
 
     void handle_connection_event(io::ConnectionEvent event);
+    void send_response();
+    std::optional<TimePoint> last_response_tx_time; // timestamp of the last response message sent
+    std::optional<TimePoint> response_send_after;   // time point when the next response message can be sent
 };
 
 } // namespace iso15118
