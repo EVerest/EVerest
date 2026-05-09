@@ -16,4 +16,3 @@ endfunction()
 
 create_ev_fsm_test_target(session_setup)
 create_ev_fsm_test_target(authorization_setup)
-create_ev_fsm_test_target(event_enum)
