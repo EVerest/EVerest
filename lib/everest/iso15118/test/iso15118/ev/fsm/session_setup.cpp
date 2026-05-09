@@ -15,37 +15,33 @@
 
 using namespace iso15118;
 
-TEST_CASE("ISO15118-20 EV Context exposes SessionLogger reference") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
-    auto state_helper = FsmStateHelper(callbacks);
-    auto& ctx = state_helper.get_context();
-    static_assert(std::is_same_v<decltype(ctx.log), iso15118::session::SessionLogger&>,
-                  "Context::log must be a SessionLogger reference");
-    SUCCEED();
-}
-
-TEST_CASE("ISO15118-20 EV SessionSetup logs enter_state on enter()") {
-    using namespace iso15118;
-
+SCENARIO("ISO15118-20 EV SessionSetup logging") {
     const ev::d20::session::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
 
-    // Install the capturing callback after FsmStateHelper construction so it is not overwritten
-    // by the helper's default no-op callback installation.
-    std::string captured;
-    session::logging::set_session_log_callback([&](std::size_t, const session::logging::Event& ev) {
-        if (auto simple = std::get_if<session::logging::SimpleEvent>(&ev)) {
-            captured = simple->info;
+    GIVEN("Context exposes a SessionLogger reference") {
+        static_assert(std::is_same_v<decltype(ctx.log), iso15118::session::SessionLogger&>,
+                      "Context::log must be a SessionLogger reference");
+        SUCCEED();
+    }
+
+    GIVEN("A capturing log callback installed after the helper's default no-op") {
+        std::string captured;
+        session::logging::set_session_log_callback([&](std::size_t, const session::logging::Event& ev) {
+            if (auto simple = std::get_if<session::logging::SimpleEvent>(&ev)) {
+                captured = simple->info;
+            }
+        });
+
+        WHEN("The SessionSetup state is entered") {
+            fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::SessionSetup>()};
+
+            THEN("The captured log message names the state") {
+                REQUIRE(captured.find("SessionSetup") != std::string::npos);
+            }
         }
-    });
-
-    fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::SessionSetup>()};
-
-    REQUIRE(captured.find("SessionSetup") != std::string::npos);
-
-    // Reset to a no-op so subsequent test cases that exercise enter_state do not throw bad_function_call
-    session::logging::set_session_log_callback([](std::size_t, const session::logging::Event&) {});
+    }
 }
 
 SCENARIO("ISO15118-20 EV session setup state transitions") {
