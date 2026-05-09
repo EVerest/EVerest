@@ -15,6 +15,8 @@
 
 namespace iso15118::ev::d20 {
 
+using SessionLogger = ::iso15118::session::SessionLogger;
+
 class MessageExchange {
 public:
     MessageExchange(io::StreamOutputView);
@@ -58,7 +60,7 @@ class Session;
 
 class Context {
 public:
-    Context(session::feedback::Callbacks, MessageExchange&, iso15118::session::SessionLogger&);
+    Context(session::feedback::Callbacks, MessageExchange&, SessionLogger&);
 
     template <typename StateType, typename... Args> BasePointerType create_state(Args&&... args) {
         return std::make_unique<StateType>(*this, std::forward<Args>(args)...);
@@ -112,7 +114,7 @@ public:
 
     const iso15118::ev::d20::session::Feedback feedback;
 
-    iso15118::session::SessionLogger& log;
+    SessionLogger& log;
 
 private:
     MessageExchange& message_exchange;

@@ -35,7 +35,7 @@ message_20::Type MessageExchange::peek_response_type() const {
 }
 
 Context::Context(session::feedback::Callbacks feedback_callbacks, MessageExchange& message_exchange_,
-                 iso15118::session::SessionLogger& log_) :
+                 SessionLogger& log_) :
     feedback(std::move(feedback_callbacks)), log(log_), message_exchange(message_exchange_) {
 }
 
