@@ -138,7 +138,7 @@ bool SoundingState::handle_valid_atten_char_ind() {
         return false;
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     // reply
     slac::messages::cm_atten_char_rsp response;
