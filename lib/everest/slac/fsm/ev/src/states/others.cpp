@@ -140,20 +140,28 @@ FSMSimpleState::HandleEventReturnType MatchRequestState::handle_event(AllocatorT
     }
 }
 
+// Field workaround: hold off first CM_SLAC_MATCH.REQ to give a slow/laggy EVSE
+// time to drain its RX backlog after CM_ATTEN_CHAR.RSP, before MATCH.REQ lands.
+static constexpr int INITIAL_MATCH_REQ_DELAY_MS = 200;
+
 void MatchRequestState::enter() {
     ctx.log_info("Entered MatchRequestState state");
+    next_timeout = std::chrono::steady_clock::now() + std::chrono::milliseconds(INITIAL_MATCH_REQ_DELAY_MS);
 }
 
 FSMSimpleState::CallbackReturnType MatchRequestState::callback() {
-    if (num_of_tries == 0) {
-        return send_match_req();
-    }
-
-    // did already send a parm req, check for timeout
-
     const auto now = std::chrono::steady_clock::now();
     const auto time_left = milliseconds_left(now, next_timeout);
 
+    if (num_of_tries == 0) {
+        if (time_left > 0) {
+            // honor initial delay before first send
+            return time_left;
+        }
+        return send_match_req();
+    }
+
+    // already sent at least one match req, check for timeout
     if (time_left > 0) {
         // still have time
         return time_left;
