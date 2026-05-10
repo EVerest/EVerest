@@ -3,9 +3,11 @@
 #include <everest/slac/fsm/ev/states/sounding.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <optional>
 #include <random>
+#include <thread>
 
 #include "timing_helper.hpp"
 
@@ -135,6 +137,8 @@ bool SoundingState::handle_valid_atten_char_ind() {
     if (run_id_match == false) {
         return false;
     }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
     // reply
     slac::messages::cm_atten_char_rsp response;
