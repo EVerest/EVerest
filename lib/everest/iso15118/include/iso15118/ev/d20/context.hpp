@@ -49,6 +49,9 @@ private:
     const io::StreamOutputView request;
     message_20::Type request_type;
     std::any request_message;
+
+    message_20::Type saved_request_type;
+    std::any saved_request_message;
 };
 
 struct StateBase;
