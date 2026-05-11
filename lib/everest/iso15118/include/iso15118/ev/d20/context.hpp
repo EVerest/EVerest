@@ -41,24 +41,6 @@ public:
         }
     }
 
-    template <typename Msg> void save_request(const Msg& msg) {
-        static_assert(message_20::TypeTrait<Msg>::type != message_20::Type::None, "Unhandled type!");
-        saved_request_type = message_20::TypeTrait<Msg>::type;
-        saved_request_message = msg;
-    }
-
-    template <typename Msg> std::optional<Msg> get_saved_request() {
-        static_assert(message_20::TypeTrait<Msg>::type != message_20::Type::None, "Unhandled type!");
-        if (message_20::TypeTrait<Msg>::type != saved_request_type) {
-            return std::nullopt;
-        }
-        try {
-            return std::any_cast<Msg>(saved_request_message);
-        } catch (const std::bad_any_cast& ex) {
-            return std::nullopt;
-        }
-    }
-
 private:
     // input
     std::unique_ptr<message_20::Variant> response{nullptr};
@@ -93,14 +75,6 @@ public:
 
     template <typename Msg> std::optional<Msg> get_request() {
         return message_exchange.get_request<Msg>();
-    }
-
-    template <typename Msg> void save_request(const Msg& msg) {
-        message_exchange.save_request(msg);
-    }
-
-    template <typename Msg> std::optional<Msg> get_saved_request() {
-        return message_exchange.get_saved_request<Msg>();
     }
 
     void stop_session(bool stop) {
