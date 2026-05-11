@@ -9,7 +9,7 @@ cc_everest_module(
     deps = [
         "//lib/everest/evse_security:libevse-security",
         "//lib:evse_security_conversions",
+        "//lib/everest/everest_api_types:everest_api_types",
     ],
     impls = IMPLS,
 )
-

@@ -1,0 +1,30 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "everest_api_types",
+    srcs = [
+        "src/everest_api_types/telemetry/codec.cpp",
+        "src/everest_api_types/telemetry/json_codec.cpp",
+    ],
+    hdrs = [
+        "include/everest_api_types/telemetry/API.hpp",
+        "include/everest_api_types/telemetry/codec.hpp",
+        "include/everest_api_types/utilities/constants.hpp",
+        "include/everest_api_types/utilities/deserialize_templates.inc",
+        "private_include/everest_api_types/telemetry/json_codec.hpp",
+        "private_include/everest_api_types/utilities/json_codec_helpers.hpp",
+    ],
+    includes = [
+        "include",
+        "private_include",
+    ],
+    copts = [
+        "-std=c++17",
+        "-Ilib/everest/everest_api_types/include/everest_api_types",
+        "-Ilib/everest/everest_api_types/private_include/everest_api_types",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_nlohmann_json//:json",
+    ],
+)

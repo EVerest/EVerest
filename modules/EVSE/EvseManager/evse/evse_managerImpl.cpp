@@ -7,6 +7,7 @@
 #include <date/tz.h>
 #include <utils/date.hpp>
 
+#include <everest_api_types/telemetry/json_codec.hpp>
 #include <fmt/core.h>
 
 #include "SessionLog.hpp"
@@ -20,6 +21,29 @@ bool str_to_bool(const std::string& data) {
         return true;
     }
     return false;
+}
+
+void evse_managerImpl::publish_control_telemetry(const ControlStatus& status_snapshot) {
+    if (!this->mod->info.telemetry_enabled) {
+        return;
+    }
+    const nlohmann::json payload = status_snapshot;
+    Everest::TelemetryMap telemetry;
+    for (const auto& [key, value] : payload.items()) {
+        telemetry.emplace(key, value);
+    }
+    this->mod->telemetry.publish("Evse", "control", telemetry);
+}
+
+void evse_managerImpl::update_control_telemetry(const std::function<void(ControlStatus&)>& update_fn) {
+    ControlStatus snapshot;
+    {
+        auto control_status_handle = control_status.handle();
+        update_fn(*control_status_handle);
+        snapshot = *control_status_handle;
+    }
+
+    publish_control_telemetry(snapshot);
 }
 
 void evse_managerImpl::init() {
@@ -77,6 +101,17 @@ void evse_managerImpl::ready() {
 
     // publish evse id at least once
     publish_evse_id(mod->config.evse_id);
+
+    update_control_telemetry([this](ControlStatus& status) {
+        status.contract_payment_enabled = mod->config.payment_enable_contract;
+        status.free_charging_enabled = mod->config.disable_authentication;
+    });
+
+    mod->error_handling->signal_error.connect([this](ErrorHandlingEvents event) {
+        if (event == ErrorHandlingEvents::ForceErrorShutdown) {
+            update_control_telemetry([](ControlStatus& status) { status.error_stop = true; });
+        }
+    });
 
     mod->r_bsp->subscribe_telemetry([this](types::evse_board_support::Telemetry telemetry) {
         // external Nodered interface
@@ -190,6 +225,13 @@ void evse_managerImpl::ready() {
         se.transaction_started.emplace(transaction_started);
         se.uuid = session_uuid;
         publish_session_event(se);
+
+        update_control_telemetry([](ControlStatus& status) {
+            status.authorisation_finished = true;
+            status.normal_stop = false;
+            status.error_stop = false;
+            status.emergency_stop = false;
+        });
     });
 
     mod->charger->signal_transaction_finished_event.connect(
@@ -234,6 +276,22 @@ void evse_managerImpl::ready() {
             se.uuid = session_uuid;
 
             publish_session_event(se);
+
+            switch (finished_reason) {
+            case types::evse_manager::StopTransactionReason::EmergencyStop:
+                update_control_telemetry([](ControlStatus& status) { status.emergency_stop = true; });
+                break;
+            case types::evse_manager::StopTransactionReason::GroundFault:
+            case types::evse_manager::StopTransactionReason::OvercurrentFault:
+            case types::evse_manager::StopTransactionReason::PowerQuality:
+            case types::evse_manager::StopTransactionReason::Timeout:
+            case types::evse_manager::StopTransactionReason::PowerLoss:
+                update_control_telemetry([](ControlStatus& status) { status.error_stop = true; });
+                break;
+            default:
+                update_control_telemetry([](ControlStatus& status) { status.normal_stop = true; });
+                break;
+            }
         });
 
     mod->charger->signal_charging_paused_evse_event.connect(
@@ -297,6 +355,13 @@ void evse_managerImpl::ready() {
         se.uuid = session_uuid;
 
         publish_session_event(se);
+
+        if (e == types::evse_manager::SessionEventEnum::Authorized) {
+            update_control_telemetry([](ControlStatus& status) { status.authorisation_finished = true; });
+        } else if (e == types::evse_manager::SessionEventEnum::Deauthorized ||
+                   e == types::evse_manager::SessionEventEnum::AuthRequired) {
+            update_control_telemetry([](ControlStatus& status) { status.authorisation_finished = false; });
+        }
 
         if (e == types::evse_manager::SessionEventEnum::SessionFinished) {
             this->mod->selected_protocol = "Unknown";
