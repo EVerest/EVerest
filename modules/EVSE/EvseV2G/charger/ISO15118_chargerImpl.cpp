@@ -4,6 +4,7 @@
 #include "ISO15118_chargerImpl.hpp"
 #include "log.hpp"
 #include "sdp.hpp"
+#include "telemetry_publisher.hpp"
 #include "tools.hpp"
 #include "v2g_ctx.hpp"
 #include <algorithm>
@@ -319,6 +320,11 @@ void ISO15118_chargerImpl::handle_cable_check_finished(bool& status) {
     } else {
         v2g_ctx->evse_v2g_data.evse_processing[PHASE_ISOLATION] = (uint8_t)iso2_EVSEProcessingType_Ongoing;
     }
+
+    if (v2g_ctx->telemetry_publisher) {
+        v2g_ctx->telemetry_publisher->charger_status.cable_check_status = status;
+        v2g_ctx->telemetry_publisher->publish_charger_status();
+    }
 }
 
 void ISO15118_chargerImpl::handle_receipt_is_required(bool& receipt_required) {
@@ -558,6 +564,13 @@ void ISO15118_chargerImpl::handle_update_dc_maximum_limits(types::iso15118::DcEv
     populate_physical_value_float(&v2g_ctx->evse_v2g_data.evse_maximum_voltage_limit,
                                   maximum_limits.evse_maximum_voltage_limit, 1, iso2_unitSymbolType_V);
     v2g_ctx->evse_v2g_data.evse_maximum_voltage_limit_is_used = 1;
+
+    if (v2g_ctx->telemetry_publisher) {
+        v2g_ctx->telemetry_publisher->charger_status.dynamic_max_current_A = maximum_limits.evse_maximum_current_limit;
+        v2g_ctx->telemetry_publisher->charger_status.dynamic_max_power_W = maximum_limits.evse_maximum_power_limit;
+        v2g_ctx->telemetry_publisher->charger_status.dynamic_max_voltage_V = maximum_limits.evse_maximum_voltage_limit;
+        v2g_ctx->telemetry_publisher->publish_charger_status();
+    }
 }
 
 void ISO15118_chargerImpl::handle_update_dc_minimum_limits(types::iso15118::DcEvseMinimumLimits& minimum_limits) {
@@ -573,6 +586,12 @@ void ISO15118_chargerImpl::handle_update_dc_minimum_limits(types::iso15118::DcEv
 void ISO15118_chargerImpl::handle_update_isolation_status(types::iso15118::IsolationStatus& isolation_status) {
     v2g_ctx->evse_v2g_data.evse_isolation_status = (uint8_t)isolation_status;
     v2g_ctx->evse_v2g_data.evse_isolation_status_is_used = 1;
+
+    if (v2g_ctx->telemetry_publisher) {
+        v2g_ctx->telemetry_publisher->charger_status.isolation_status =
+            types::iso15118::isolation_status_to_string(isolation_status);
+        v2g_ctx->telemetry_publisher->publish_charger_status();
+    }
 }
 
 void ISO15118_chargerImpl::handle_update_dc_present_values(

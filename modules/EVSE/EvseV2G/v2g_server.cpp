@@ -22,6 +22,7 @@
 #include "din_server.hpp"
 #include "iso_server.hpp"
 #include "log.hpp"
+#include "telemetry_publisher.hpp"
 #include "tools.hpp"
 
 #define MAX_RES_TIME 98
@@ -327,6 +328,10 @@ static enum v2g_event v2g_handle_apphandshake(struct v2g_connection* conn) {
     if (conn->ctx->debugMode == true) {
         conn->ctx->p_charger->publish_selected_protocol(selected_protocol_str);
     }
+    if (conn->ctx->telemetry_publisher) {
+        conn->ctx->telemetry_publisher->charger_status.selected_protocol = selected_protocol_str;
+        conn->ctx->telemetry_publisher->publish_charger_status();
+    }
 
     if (conn->ctx->is_connection_terminated == true) {
         dlog(DLOG_LEVEL_ERROR, "Connection is terminated. Abort charging");
@@ -523,6 +528,12 @@ int v2g_handle_connection(struct v2g_connection* conn) {
             break;
         default:
             goto error_out; //     if protocol is unknown
+        }
+
+        if (conn->ctx->telemetry_publisher) {
+            conn->ctx->telemetry_publisher->transport.comm_state = conn->ctx->state;
+            conn->ctx->telemetry_publisher->transport.message_state = conn->ctx->current_v2g_msg;
+            conn->ctx->telemetry_publisher->publish_transport();
         }
 
         /* form the content of V2G_Message type and publish the request*/
