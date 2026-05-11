@@ -4,6 +4,7 @@
 
 #include "connection.hpp"
 #include "log.hpp"
+#include "telemetry_publisher.hpp"
 #include "tls_connection.hpp"
 #include "tools.hpp"
 #include "v2g_server.hpp"
@@ -192,6 +193,14 @@ int connection_init(struct v2g_context* v2g_ctx) {
                 dlog(DLOG_LEVEL_INFO, "TCP server on %s is listening on port [%s%%%" PRIu32 "]:%" PRIu16,
                      v2g_ctx->if_name, buffer, v2g_ctx->local_tcp_addr->sin6_scope_id,
                      ntohs(v2g_ctx->local_tcp_addr->sin6_port));
+                if (v2g_ctx->telemetry_publisher) {
+                    v2g_ctx->telemetry_publisher->transport.tcp_listener_status = 1;
+                    v2g_ctx->telemetry_publisher->transport.tcp_discovery_enable = true;
+                    v2g_ctx->telemetry_publisher->transport.tcp_security_required = false;
+                    v2g_ctx->telemetry_publisher->transport.tcp_port_number =
+                        ntohs(v2g_ctx->local_tcp_addr->sin6_port);
+                    v2g_ctx->telemetry_publisher->publish_transport();
+                }
             } else {
                 dlog(DLOG_LEVEL_ERROR, "TCP server on %s is listening, but inet_ntop failed: %s", v2g_ctx->if_name,
                      strerror(errno));
@@ -220,6 +229,17 @@ int connection_init(struct v2g_context* v2g_ctx) {
                 dlog(DLOG_LEVEL_INFO, "TLS server on %s is listening on port [%s%%%" PRIu32 "]:%" PRIu16,
                      v2g_ctx->if_name, buffer, v2g_ctx->local_tls_addr->sin6_scope_id,
                      ntohs(v2g_ctx->local_tls_addr->sin6_port));
+                if (v2g_ctx->telemetry_publisher) {
+                    v2g_ctx->telemetry_publisher->transport.tcp_security_enable = true;
+                    v2g_ctx->telemetry_publisher->transport.tcp_security_required =
+                        v2g_ctx->tls_security == TLS_SECURITY_FORCE;
+                    if (!v2g_ctx->local_tcp_addr) {
+                        v2g_ctx->telemetry_publisher->transport.tcp_listener_status = 1;
+                        v2g_ctx->telemetry_publisher->transport.tcp_port_number =
+                            ntohs(v2g_ctx->local_tls_addr->sin6_port);
+                    }
+                    v2g_ctx->telemetry_publisher->publish_transport();
+                }
             } else {
                 dlog(DLOG_LEVEL_INFO, "TLS server on %s is listening, but inet_ntop failed: %s", v2g_ctx->if_name,
                      strerror(errno));
@@ -508,6 +528,11 @@ static void* connection_handle_tcp(void* data) {
     }
 
     conn->ctx->connection_initiated = false;
+    if (conn->ctx->telemetry_publisher) {
+        conn->ctx->telemetry_publisher->transport.tcp_connection_established = false;
+        conn->ctx->telemetry_publisher->transport.tcp_server_status = 0;
+        conn->ctx->telemetry_publisher->publish_transport();
+    }
 
     if (rv != ERROR_SESSION_ALREADY_STARTED) {
         /* cleanup and notify lower layers */
@@ -581,10 +606,20 @@ static void* connection_server(void* data) {
             continue;
         }
         ctx->connection_initiated = true;
+        if (ctx->telemetry_publisher) {
+            ctx->telemetry_publisher->transport.tcp_connection_established = true;
+            ctx->telemetry_publisher->transport.tcp_server_status = 1;
+            ctx->telemetry_publisher->publish_transport();
+        }
 
         if (pthread_create(&conn->thread_id, &attr, connection_handle_tcp, conn) != 0) {
             dlog(DLOG_LEVEL_ERROR, "pthread_create() failed: %s", strerror(errno));
             ctx->connection_initiated = false;
+            if (ctx->telemetry_publisher) {
+                ctx->telemetry_publisher->transport.tcp_connection_established = false;
+                ctx->telemetry_publisher->transport.tcp_server_status = 0;
+                ctx->telemetry_publisher->publish_transport();
+            }
             continue;
         }
 
