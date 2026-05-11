@@ -22,9 +22,177 @@
 #include "din_server.hpp"
 #include "iso_server.hpp"
 #include "log.hpp"
+#include "telemetry_publisher.hpp"
 #include "tools.hpp"
 
 #define MAX_RES_TIME 98
+
+namespace telemetry_types = everest::lib::API::V1_0::types::telemetry;
+using V2gTransportTracker = everest::lib::util::change_tracker<telemetry_types::V2gTransport>;
+using V2gEvElectricalTracker = everest::lib::util::change_tracker<telemetry_types::V2gEvElectrical>;
+using V2gPaymentServiceTracker = everest::lib::util::change_tracker<telemetry_types::V2gPaymentService>;
+using V2gChargerStatusTracker = everest::lib::util::change_tracker<telemetry_types::V2gChargerStatus>;
+
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::SupportedAppProtocol) ==
+                  static_cast<int>(V2G_SUPPORTED_APP_PROTOCOL_MSG),
+              "telemetry: SupportedAppProtocol should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::SessionSetup) ==
+                  static_cast<int>(V2G_SESSION_SETUP_MSG),
+              "telemetry: SessionSetup should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::ServiceDiscovery) ==
+                  static_cast<int>(V2G_SERVICE_DISCOVERY_MSG),
+              "telemetry: ServiceDiscovery should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::ServiceDetail) ==
+                  static_cast<int>(V2G_SERVICE_DETAIL_MSG),
+              "telemetry: ServiceDetail should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::PaymentServiceSelection) ==
+                  static_cast<int>(V2G_PAYMENT_SERVICE_SELECTION_MSG),
+              "telemetry: PaymentServiceSelection should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::PaymentDetails) ==
+                  static_cast<int>(V2G_PAYMENT_DETAILS_MSG),
+              "telemetry: PaymentDetails should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::Authorization) ==
+                  static_cast<int>(V2G_AUTHORIZATION_MSG),
+              "telemetry: Authorization should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::ChargeParameterDiscovery) ==
+                  static_cast<int>(V2G_CHARGE_PARAMETER_DISCOVERY_MSG),
+              "telemetry: ChargeParameterDiscovery should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::MeteringReceipt) ==
+                  static_cast<int>(V2G_METERING_RECEIPT_MSG),
+              "telemetry: MeteringReceipt should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::CertificateUpdate) ==
+                  static_cast<int>(V2G_CERTIFICATE_UPDATE_MSG),
+              "telemetry: CertificateUpdate should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::CertificateInstallation) ==
+                  static_cast<int>(V2G_CERTIFICATE_INSTALLATION_MSG),
+              "telemetry: CertificateInstallation should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::ChargingStatus) ==
+                  static_cast<int>(V2G_CHARGING_STATUS_MSG),
+              "telemetry: ChargingStatus should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::CableCheck) == static_cast<int>(V2G_CABLE_CHECK_MSG),
+              "telemetry: CableCheck should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::PreCharge) == static_cast<int>(V2G_PRE_CHARGE_MSG),
+              "telemetry: PreCharge should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::PowerDelivery) ==
+                  static_cast<int>(V2G_POWER_DELIVERY_MSG),
+              "telemetry: PowerDelivery should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::CurrentDemand) ==
+                  static_cast<int>(V2G_CURRENT_DEMAND_MSG),
+              "telemetry: CurrentDemand should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::WeldingDetection) ==
+                  static_cast<int>(V2G_WELDING_DETECTION_MSG),
+              "telemetry: WeldingDetection should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::SessionStop) == static_cast<int>(V2G_SESSION_STOP_MSG),
+              "telemetry: SessionStop should match protocol enum value");
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::Unknown) == static_cast<int>(V2G_UNKNOWN_MSG),
+              "telemetry: Unknown should match protocol enum value");
+
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::NO_ERROR) ==
+                  static_cast<int>(din_DC_EVErrorCodeType_NO_ERROR),
+              "telemetry: NO_ERROR should match DIN DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::FAILED_RESSTemperatureInhibit) ==
+                  static_cast<int>(din_DC_EVErrorCodeType_FAILED_RESSTemperatureInhibit),
+              "telemetry: FAILED_RESSTemperatureInhibit should match DIN DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::FAILED_EVShiftPosition) ==
+                  static_cast<int>(din_DC_EVErrorCodeType_FAILED_EVShiftPosition),
+              "telemetry: FAILED_EVShiftPosition should match DIN DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::FAILED_ChargerConnectorLockFault) ==
+                  static_cast<int>(din_DC_EVErrorCodeType_FAILED_ChargerConnectorLockFault),
+              "telemetry: FAILED_ChargerConnectorLockFault should match DIN DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::FAILED_EVRESSMalfunction) ==
+                  static_cast<int>(din_DC_EVErrorCodeType_FAILED_EVRESSMalfunction),
+              "telemetry: FAILED_EVRESSMalfunction should match DIN DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::FAILED_ChargingCurrentdifferential) ==
+                  static_cast<int>(din_DC_EVErrorCodeType_FAILED_ChargingCurrentdifferential),
+              "telemetry: FAILED_ChargingCurrentdifferential should match DIN DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::FAILED_ChargingVoltageOutOfRange) ==
+                  static_cast<int>(din_DC_EVErrorCodeType_FAILED_ChargingVoltageOutOfRange),
+              "telemetry: FAILED_ChargingVoltageOutOfRange should match DIN DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::Reserved_A) ==
+                  static_cast<int>(din_DC_EVErrorCodeType_Reserved_A),
+              "telemetry: Reserved_A should match DIN DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::Reserved_B) ==
+                  static_cast<int>(din_DC_EVErrorCodeType_Reserved_B),
+              "telemetry: Reserved_B should match DIN DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::Reserved_C) ==
+                  static_cast<int>(din_DC_EVErrorCodeType_Reserved_C),
+              "telemetry: Reserved_C should match DIN DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::FAILED_ChargingSystemIncompatibility) ==
+                  static_cast<int>(din_DC_EVErrorCodeType_FAILED_ChargingSystemIncompatibility),
+              "telemetry: FAILED_ChargingSystemIncompatibility should match DIN DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::NoData) ==
+                  static_cast<int>(din_DC_EVErrorCodeType_NoData),
+              "telemetry: NoData should match DIN DC EV error enum value");
+
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::NO_ERROR) ==
+                  static_cast<int>(iso2_DC_EVErrorCodeType_NO_ERROR),
+              "telemetry: NO_ERROR should match ISO2 DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::FAILED_RESSTemperatureInhibit) ==
+                  static_cast<int>(iso2_DC_EVErrorCodeType_FAILED_RESSTemperatureInhibit),
+              "telemetry: FAILED_RESSTemperatureInhibit should match ISO2 DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::FAILED_EVShiftPosition) ==
+                  static_cast<int>(iso2_DC_EVErrorCodeType_FAILED_EVShiftPosition),
+              "telemetry: FAILED_EVShiftPosition should match ISO2 DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::FAILED_ChargerConnectorLockFault) ==
+                  static_cast<int>(iso2_DC_EVErrorCodeType_FAILED_ChargerConnectorLockFault),
+              "telemetry: FAILED_ChargerConnectorLockFault should match ISO2 DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::FAILED_EVRESSMalfunction) ==
+                  static_cast<int>(iso2_DC_EVErrorCodeType_FAILED_EVRESSMalfunction),
+              "telemetry: FAILED_EVRESSMalfunction should match ISO2 DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::FAILED_ChargingCurrentdifferential) ==
+                  static_cast<int>(iso2_DC_EVErrorCodeType_FAILED_ChargingCurrentdifferential),
+              "telemetry: FAILED_ChargingCurrentdifferential should match ISO2 DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::FAILED_ChargingVoltageOutOfRange) ==
+                  static_cast<int>(iso2_DC_EVErrorCodeType_FAILED_ChargingVoltageOutOfRange),
+              "telemetry: FAILED_ChargingVoltageOutOfRange should match ISO2 DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::Reserved_A) ==
+                  static_cast<int>(iso2_DC_EVErrorCodeType_Reserved_A),
+              "telemetry: Reserved_A should match ISO2 DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::Reserved_B) ==
+                  static_cast<int>(iso2_DC_EVErrorCodeType_Reserved_B),
+              "telemetry: Reserved_B should match ISO2 DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::Reserved_C) ==
+                  static_cast<int>(iso2_DC_EVErrorCodeType_Reserved_C),
+              "telemetry: Reserved_C should match ISO2 DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::FAILED_ChargingSystemIncompatibility) ==
+                  static_cast<int>(iso2_DC_EVErrorCodeType_FAILED_ChargingSystemIncompatibility),
+              "telemetry: FAILED_ChargingSystemIncompatibility should match ISO2 DC EV error enum value");
+static_assert(static_cast<int>(telemetry_types::V2gEvErrorCode::NoData) ==
+                  static_cast<int>(iso2_DC_EVErrorCodeType_NoData),
+              "telemetry: NoData should match ISO2 DC EV error enum value");
+
+static_assert(static_cast<int>(telemetry_types::V2gDin70121CommunicationState::WaitForSessionSetup) == 0,
+              "telemetry: V2gDin70121CommunicationState should start at protocol state 0");
+static_assert(static_cast<int>(telemetry_types::V2gIso15118AcCommunicationState::WaitForSessionSetup) == 0,
+              "telemetry: V2gIso15118AcCommunicationState should start at protocol state 0");
+static_assert(static_cast<int>(telemetry_types::V2gIso15118DcCommunicationState::WaitForSessionSetup) == 0,
+              "telemetry: V2gIso15118DcCommunicationState should start at protocol state 0");
+static_assert(static_cast<int>(telemetry_types::V2gDin70121CommunicationState::WaitForTerminatedSession) ==
+                  static_cast<int>(din_state_id::WAIT_FOR_TERMINATED_SESSION),
+              "telemetry: V2gDin70121CommunicationState::WaitForTerminatedSession should map DIN terminal state");
+static_assert(static_cast<int>(telemetry_types::V2gIso15118AcCommunicationState::WaitForTerminatedSession) ==
+                  static_cast<int>(iso_ac_state_id::WAIT_FOR_TERMINATED_SESSION),
+              "telemetry: V2gIso15118AcCommunicationState::WaitForTerminatedSession should map ISO AC terminal state");
+static_assert(static_cast<int>(telemetry_types::V2gIso15118DcCommunicationState::WaitForTerminatedSession) ==
+                  static_cast<int>(iso_dc_state_id::WAIT_FOR_TERMINATED_SESSION),
+              "telemetry: V2gIso15118DcCommunicationState::WaitForTerminatedSession should map ISO DC terminal state");
+
+static telemetry_types::V2gCommunicationState get_v2g_communication_state(v2g_context const& ctx) {
+    telemetry_types::V2gCommunicationState communication_state{};
+
+    if (ctx.selected_protocol == V2G_PROTO_DIN70121) {
+        communication_state.din70121 = static_cast<telemetry_types::V2gDin70121CommunicationState>(ctx.state);
+    } else if (ctx.selected_protocol == V2G_PROTO_ISO15118_2010 || ctx.selected_protocol == V2G_PROTO_ISO15118_2013 ||
+               ctx.selected_protocol == V2G_PROTO_ISO15118_2015) {
+        if (ctx.is_dc_charger == true) {
+            communication_state.iso15118_dc = static_cast<telemetry_types::V2gIso15118DcCommunicationState>(ctx.state);
+        } else {
+            communication_state.iso15118_ac = static_cast<telemetry_types::V2gIso15118AcCommunicationState>(ctx.state);
+        }
+    }
+
+    return communication_state;
+}
 
 static types::iso15118::V2gMessageId get_v2g_message_id(enum V2gMsgTypeId v2g_msg, enum v2g_protocol selected_protocol,
                                                         bool is_req) {
@@ -327,6 +495,11 @@ static enum v2g_event v2g_handle_apphandshake(struct v2g_connection* conn) {
     if (conn->ctx->debugMode == true) {
         conn->ctx->p_charger->publish_selected_protocol(selected_protocol_str);
     }
+    if (conn->ctx->telemetry_publisher) {
+        conn->ctx->telemetry_publisher->update_charger_status([&](V2gChargerStatusTracker& charger_status) {
+            charger_status.set(&telemetry_types::V2gChargerStatus::selected_protocol, selected_protocol_str);
+        });
+    }
 
     if (conn->ctx->is_connection_terminated == true) {
         dlog(DLOG_LEVEL_ERROR, "Connection is terminated. Abort charging");
@@ -363,6 +536,9 @@ int v2g_handle_connection(struct v2g_connection* conn) {
     int64_t start_time = 0; // in ms
 
     enum v2g_protocol selected_protocol = V2G_UNKNOWN_PROTOCOL;
+    if (conn->ctx->telemetry_publisher) {
+        conn->ctx->telemetry_publisher->reset_session_state();
+    }
     v2g_ctx_init_charging_state(conn->ctx, false);
     conn->buffer = static_cast<uint8_t*>(malloc(DEFAULT_BUFFER_SIZE));
     if (!conn->buffer)
@@ -523,6 +699,14 @@ int v2g_handle_connection(struct v2g_connection* conn) {
             break;
         default:
             goto error_out; //     if protocol is unknown
+        }
+
+        if (conn->ctx->telemetry_publisher) {
+            conn->ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
+                transport.set(&telemetry_types::V2gTransport::comm_state, get_v2g_communication_state(*conn->ctx));
+                transport.set(&telemetry_types::V2gTransport::message_state,
+                              static_cast<telemetry_types::V2gMessageState>(conn->ctx->current_v2g_msg));
+            });
         }
 
         /* form the content of V2G_Message type and publish the request*/

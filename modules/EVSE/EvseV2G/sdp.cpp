@@ -3,6 +3,7 @@
 // Copyright (C) 2022-2023 Contributors to EVerest
 #include "sdp.hpp"
 #include "log.hpp"
+#include "telemetry_publisher.hpp"
 #include "tools.hpp"
 
 #include <arpa/inet.h>
@@ -19,6 +20,8 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#include <everest/util/misc/change_tracker.hpp>
 
 #define DEBUG 1
 
@@ -40,6 +43,12 @@
 /* link-local multicast address ff02::1 aka ip6-allnodes */
 #define IN6ADDR_ALLNODES                                                                                               \
     { 0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01 }
+
+namespace telemetry_types = everest::lib::API::V1_0::types::telemetry;
+using V2gTransportTracker = everest::lib::util::change_tracker<telemetry_types::V2gTransport>;
+using V2gEvElectricalTracker = everest::lib::util::change_tracker<telemetry_types::V2gEvElectrical>;
+using V2gPaymentServiceTracker = everest::lib::util::change_tracker<telemetry_types::V2gPaymentService>;
+using V2gChargerStatusTracker = everest::lib::util::change_tracker<telemetry_types::V2gChargerStatus>;
 
 /* bundles various aspects of a SDP query */
 struct sdp_query {
@@ -258,6 +267,12 @@ int sdp_init(struct v2g_context* v2g_ctx) {
 
     dlog(DLOG_LEVEL_TRACE, "joined multicast group");
 
+    if (v2g_ctx->telemetry_publisher) {
+        v2g_ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
+            transport.set(&telemetry_types::V2gTransport::udp_server_status, telemetry_types::V2gServerStatus::Active);
+        });
+    }
+
     return 0;
 }
 
@@ -335,6 +350,15 @@ int sdp_listen(struct v2g_context* v2g_ctx) {
             sdp_query.security_requested = (sdp_security)buffer[SDP_HEADER_LEN + 0];
             sdp_query.proto_requested = (sdp_transport_protocol)buffer[SDP_HEADER_LEN + 1];
 
+            if (v2g_ctx->telemetry_publisher) {
+                v2g_ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
+                    transport.set(&telemetry_types::V2gTransport::tcp_discovery_enable,
+                                  sdp_query.proto_requested == SDP_TRANSPORT_PROTOCOL_TCP);
+                    transport.set(&telemetry_types::V2gTransport::tcp_security_enable,
+                                  sdp_query.security_requested == SDP_SECURITY_TLS);
+                });
+            }
+
             dlog(DLOG_LEVEL_INFO, "Received packet from [%s]:%" PRIu16 " with security 0x%02x and protocol 0x%02x",
                  addr, ntohs(sdp_query.remote_addr.sin6_port), sdp_query.security_requested, sdp_query.proto_requested);
 
@@ -349,6 +373,12 @@ int sdp_listen(struct v2g_context* v2g_ctx) {
 
     if (close(v2g_ctx->sdp_socket) == -1) {
         dlog(DLOG_LEVEL_ERROR, "close() failed: %s", strerror(errno));
+    }
+    if (v2g_ctx->telemetry_publisher) {
+        v2g_ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
+            transport.set(&telemetry_types::V2gTransport::udp_server_status,
+                          telemetry_types::V2gServerStatus::Inactive);
+        });
     }
 
     return 0;

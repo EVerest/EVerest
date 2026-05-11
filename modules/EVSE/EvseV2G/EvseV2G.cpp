@@ -37,6 +37,9 @@ namespace module {
 
 void EvseV2G::init() {
 
+    telemetry_publisher = std::make_unique<V2gTelemetryPublisher>(telemetry, info.telemetry_enabled,
+                                                                  config.publish_telemetry_only_on_change);
+
     std::vector<ISO15118_vasIntf*> r_vas;
     r_vas.reserve(r_iso15118_vas.size());
     for (const auto& vas : r_iso15118_vas) {
@@ -52,6 +55,7 @@ void EvseV2G::init() {
     (void)openssl::set_log_handler(log_handler);
     tls::Server::configure_signal_handler(SIGUSR1);
     v2g_ctx->tls_server = &tls_server;
+    v2g_ctx->telemetry_publisher = telemetry_publisher.get();
 
     this->r_security->subscribe_certificate_store_update(
         [this](const types::evse_security::CertificateStoreUpdate& update) {
@@ -107,6 +111,8 @@ void EvseV2G::ready() {
 
     invoke_ready(*p_charger);
     invoke_ready(*p_extensions);
+
+    telemetry_publisher->publish_all();
 
     rv = sdp_listen(v2g_ctx);
 
