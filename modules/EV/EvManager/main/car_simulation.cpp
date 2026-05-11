@@ -372,7 +372,9 @@ bool CarSimulation::iso_draw_power_regulated(const CmdArguments& arguments) {
 bool CarSimulation::iso_stop_charging(const CmdArguments& arguments) {
     r_ev[0]->call_stop_charging();
     r_ev_board_support->call_allow_power_on(false);
-    sim_data.state = SimState::PLUGGED_IN;
+    if (sim_data.state != SimState::UNPLUGGED) {
+        sim_data.state = SimState::PLUGGED_IN;
+    }
     charge_mode = ChargeMode::None;
     return true;
 }
