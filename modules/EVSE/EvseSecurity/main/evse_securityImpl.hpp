@@ -71,6 +71,7 @@ protected:
 
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
     // insert your protected definitions here
+    void publish_cert_telemetry();
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
 
 private:

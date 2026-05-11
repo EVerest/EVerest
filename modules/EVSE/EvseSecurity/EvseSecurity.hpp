@@ -13,6 +13,7 @@
 // headers for provided interface implementations
 #include <generated/interfaces/evse_security/Implementation.hpp>
 
+
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
@@ -34,9 +35,19 @@ struct Conf {
 class EvseSecurity : public Everest::ModuleBase {
 public:
     EvseSecurity() = delete;
-    EvseSecurity(const ModuleInfo& info, std::unique_ptr<evse_securityImplBase> p_main, Conf& config) :
-        ModuleBase(info), p_main(std::move(p_main)), config(config){};
+    EvseSecurity(
+        const ModuleInfo& info,
+        Everest::TelemetryProvider& telemetry,
+        std::unique_ptr<evse_securityImplBase> p_main,
+        Conf& config
+    ) :
+        ModuleBase(info),
+        telemetry(telemetry),
+        p_main(std::move(p_main)),
+        config(config)
+    {};
 
+    Everest::TelemetryProvider& telemetry;
     const std::unique_ptr<evse_securityImplBase> p_main;
     const Conf& config;
 
@@ -57,6 +68,7 @@ private:
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
+
 };
 
 // ev@087e516b-124c-48df-94fb-109508c7cda9:v1

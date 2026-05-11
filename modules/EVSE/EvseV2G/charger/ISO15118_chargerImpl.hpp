@@ -20,13 +20,17 @@ extern struct v2g_context* v2g_ctx;
 namespace module {
 namespace charger {
 
-struct Conf {};
+struct Conf {
+};
 
 class ISO15118_chargerImpl : public ISO15118_chargerImplBase {
 public:
     ISO15118_chargerImpl() = delete;
-    ISO15118_chargerImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<EvseV2G>& mod, Conf& config) :
-        ISO15118_chargerImplBase(ev, "charger"), mod(mod), config(config){};
+    ISO15118_chargerImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<EvseV2G> &mod, Conf& config) :
+        ISO15118_chargerImplBase(ev, "charger"),
+        mod(mod),
+        config(config)
+    {};
 
     // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
     // insert your public definitions here
@@ -34,16 +38,12 @@ public:
 
 protected:
     // command handler functions (virtual)
-    virtual void handle_setup(types::iso15118::EVSEID& evse_id, types::iso15118::SaeJ2847BidiMode& sae_j2847_mode,
-                              bool& debug_mode) override;
+    virtual void handle_setup(types::iso15118::EVSEID& evse_id, types::iso15118::SaeJ2847BidiMode& sae_j2847_mode, bool& debug_mode) override;
     virtual void handle_set_charging_parameters(types::iso15118::SetupPhysicalValues& physical_values) override;
-    virtual void handle_session_setup(std::vector<types::iso15118::PaymentOption>& payment_options,
-                                      bool& supported_certificate_service,
-                                      bool& central_contract_validation_allowed) override;
+    virtual void handle_session_setup(std::vector<types::iso15118::PaymentOption>& payment_options, bool& supported_certificate_service, bool& central_contract_validation_allowed) override;
     virtual void handle_bpt_setup(types::iso15118::BptSetup& bpt_config) override;
     virtual void handle_set_powersupply_capabilities(types::power_supply_DC::Capabilities& capabilities) override;
-    virtual void handle_authorization_response(types::authorization::AuthorizationStatus& authorization_status,
-                                               types::authorization::CertificateStatus& certificate_status) override;
+    virtual void handle_authorization_response(types::authorization::AuthorizationStatus& authorization_status, types::authorization::CertificateStatus& certificate_status) override;
     virtual void handle_ac_contactor_closed(bool& status) override;
     virtual void handle_dlink_ready(bool& value) override;
     virtual void handle_cable_check_finished(bool& status) override;
@@ -51,10 +51,8 @@ protected:
     virtual void handle_stop_charging(bool& stop) override;
     virtual void handle_pause_charging(bool& pause) override;
     virtual void handle_no_energy_pause_charging(types::iso15118::NoEnergyPauseMode& mode) override;
-    virtual bool
-    handle_update_supported_app_protocols(types::iso15118::SupportedAppProtocols& supported_app_protocols) override;
-    virtual void handle_update_energy_transfer_modes(
-        std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes) override;
+    virtual bool handle_update_supported_app_protocols(types::iso15118::SupportedAppProtocols& supported_app_protocols) override;
+    virtual void handle_update_energy_transfer_modes(std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes) override;
     virtual void handle_update_ac_max_current(double& max_current) override;
     virtual void handle_update_ac_parameters(types::iso15118::AcParameters& ac_parameters) override;
     virtual void handle_update_ac_maximum_limits(types::iso15118::AcEvseMaximumPower& maximum_limits) override;
@@ -64,8 +62,7 @@ protected:
     virtual void handle_update_dc_maximum_limits(types::iso15118::DcEvseMaximumLimits& maximum_limits) override;
     virtual void handle_update_dc_minimum_limits(types::iso15118::DcEvseMinimumLimits& minimum_limits) override;
     virtual void handle_update_isolation_status(types::iso15118::IsolationStatus& isolation_status) override;
-    virtual void
-    handle_update_dc_present_values(types::iso15118::DcEvsePresentVoltageCurrent& present_voltage_current) override;
+    virtual void handle_update_dc_present_values(types::iso15118::DcEvsePresentVoltageCurrent& present_voltage_current) override;
     virtual void handle_update_meter_info(types::powermeter::Powermeter& powermeter) override;
     virtual void handle_send_error(types::iso15118::EvseError& error) override;
     virtual void handle_reset_error() override;
