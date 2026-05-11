@@ -84,6 +84,7 @@ target_include_directories(${TEST_TARGET_NAME} PUBLIC
 target_sources(${TEST_TARGET_NAME} PRIVATE
   manual_tests/serialization/generic.hpp
   manual_tests/serialization/generic.cpp
+  manual_tests/serialization/telemetry.cpp
   manual_tests/source_file_hash_check/source_file_hash_check.cpp
 )
 
@@ -116,13 +117,16 @@ set(
     VERBATIM
 )
 
-add_custom_command(OUTPUT ${GENERATED_TESTS_LOCATION}
+add_custom_command(
+    OUTPUT "${GENERATED_TESTS_LOCATION}CMakeLists.txt"
     COMMAND
     ${GENERATE_COMMAND}
     DEPENDS ${API_FILES} ${TEST_GENERATOR_PY_FILES} ${TEST_DISABLE_FILE} ${SERIALIZATION_TEST_HELPERS_HPP}
 )
 
-add_custom_target(generate_new_tests_on_file_change_only ALL   DEPENDS ${GENERATED_TESTS_LOCATION})
+add_custom_target(generate_new_tests_on_file_change_only ALL
+    DEPENDS "${GENERATED_TESTS_LOCATION}CMakeLists.txt"
+)
 
 add_dependencies(${TEST_TARGET_NAME} generate_new_tests_on_file_change_only generate_actual_hash_csv)
 

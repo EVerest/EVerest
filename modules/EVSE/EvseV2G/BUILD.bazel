@@ -25,6 +25,7 @@ cc_everest_module(
         "//lib/everest/tls",
         "@libevent//:event",
         "@libevent//:event_pthreads",
+        "//lib/everest/everest_api_types:everest_api_types",
     ],
 )
 
@@ -58,6 +59,7 @@ cc_library(
         "//lib/everest/cbv2g:tp",
         "//lib/everest/evse_security:libevse-security",
         "//lib/everest/framework",
+        "//lib/everest/everest_api_types:everest_api_types",
         "//lib/everest/tls",
         "//tests:module_adapter_stub",
         "@everest-core//interfaces:interfaces_lib",

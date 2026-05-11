@@ -13,6 +13,15 @@ using json = nlohmann::json;
 void to_json(json& j, ChargeProgress const& k) noexcept;
 void from_json(json const& j, ChargeProgress& k);
 
+void to_json(json& j, V2gDin70121CommunicationState const& k) noexcept;
+void from_json(json const& j, V2gDin70121CommunicationState& k);
+
+void to_json(json& j, V2gIso15118AcCommunicationState const& k) noexcept;
+void from_json(json const& j, V2gIso15118AcCommunicationState& k);
+
+void to_json(json& j, V2gIso15118DcCommunicationState const& k) noexcept;
+void from_json(json const& j, V2gIso15118DcCommunicationState& k);
+
 void to_json(json& j, V2gCommunicationState const& k) noexcept;
 void from_json(json const& j, V2gCommunicationState& k);
 
