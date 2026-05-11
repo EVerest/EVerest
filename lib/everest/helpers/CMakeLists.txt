@@ -7,15 +7,11 @@ ev_register_library_target(everest_helpers)
 target_sources(everest_helpers
     PRIVATE
         src/helpers.cpp
+        src/coverage.cpp
 )
 
-if (EVEREST_CORE_BUILD_TESTING)
+if (EVEREST_CORE_BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)
     target_compile_definitions(everest_helpers PUBLIC EVEREST_COVERAGE_ENABLED)
-
-    target_sources(everest_helpers
-        PRIVATE
-            src/coverage.cpp
-    )
 endif()
 
 target_include_directories(everest_helpers

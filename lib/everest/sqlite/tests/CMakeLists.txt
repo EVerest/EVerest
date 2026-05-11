@@ -19,7 +19,7 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
 
 add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})
 
-if (EVEREST_SQLITE_BUILD_TESTING AND NOT DISABLE_EDM)
+if (EVEREST_SQLITE_BUILD_TESTING AND NOT DISABLE_EDM AND EVEREST_ENABLE_COVERAGE)
     evc_include(CodeCoverage)
     append_coverage_compiler_flags_to_target(everest_sqlite)
 

@@ -16,7 +16,7 @@ option(EVSE_SECURITY_INSTALL "Install the library (shared data might be installe
 option(USING_TPM2 "Include code for using OpenSSL 3 and the tpm2 provider" OFF)
 option(USING_CUSTOM_PROVIDER "Include code for using OpenSSL 3 and the custom provider" OFF)
 
-if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
+if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)
     set(LIBEVSE_SECURITY_BUILD_TESTING ON)
     evc_include(CodeCoverage)
     append_coverage_compiler_flags()

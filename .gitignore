@@ -15,3 +15,6 @@ __pycache__/
 *.orig
 *.rej
 docs/source/conf.py
+Testing/
+tests/result*.xml
+tests/report*.html

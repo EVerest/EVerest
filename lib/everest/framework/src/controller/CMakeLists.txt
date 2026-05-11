@@ -32,7 +32,8 @@ target_link_libraries(controller
 
         websockets_shared
         fmt::fmt
-
+        ryml::ryml
+        
         everest::log
         everest::yaml
 
