@@ -31,7 +31,9 @@ static auto create_cm_set_key_req(uint8_t const* session_nmk) {
 
 void ResetState::enter() {
     ctx.log_info("Entered Reset state");
-    ctx.slac_config.generate_nmk();
+    if (ctx.slac_config.regenerate_key_on_reset) {
+        ctx.slac_config.generate_nmk();
+    }
 }
 
 FSMSimpleState::HandleEventReturnType ResetState::handle_event(AllocatorType& sa, Event ev) {

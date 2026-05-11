@@ -37,6 +37,7 @@ struct Conf {
     bool reset_instead_of_fail;
     int startup_delay_ms;
     int slac_init_timeout_ms;
+    bool regenerate_key_on_reset;
 };
 
 class slacImpl : public slacImplBase {

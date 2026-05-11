@@ -90,6 +90,11 @@ provides:
         minimum: 10000
         maximum: 50000
         default: 40000
+      regenerate_key_on_reset:
+        description: >-
+          Regenerate NMK on reset
+        type: boolean
+        default: true
 metadata:
   base_license: https://directory.fsf.org/wiki/License:BSD-3-Clause-Clear
   license: https://opensource.org/licenses/Apache-2.0
