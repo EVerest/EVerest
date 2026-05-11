@@ -9,6 +9,9 @@
 namespace slac::fsm::evse {
 
 void EvseSlacConfig::generate_nmk() {
+    if (initialized) {
+        return;
+    }
     const std::string CHARACTERS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
     std::random_device random_device;
@@ -18,6 +21,7 @@ void EvseSlacConfig::generate_nmk() {
     for (std::size_t i = 0; i < slac::defs::NMK_LEN; ++i) {
         session_nmk[i] = (uint8_t)CHARACTERS[distribution(generator)];
     }
+    initialized = true;
 }
 
 void Context::signal_cm_slac_parm_req(const uint8_t* mac) {
