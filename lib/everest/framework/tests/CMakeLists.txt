@@ -98,27 +98,29 @@ file(COPY ${PROJECT_SOURCE_DIR}/schemas/migrations
      DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-evc_include(CodeCoverage)
+if(EVEREST_ENABLE_COVERAGE)
+    evc_include(CodeCoverage)
 
-append_coverage_compiler_flags_to_target(framework)
-append_coverage_compiler_flags_to_target(manager)
-if (EVEREST_ENABLE_ADMIN_PANEL_BACKEND)
-    append_coverage_compiler_flags_to_target(controller)
+    append_coverage_compiler_flags_to_target(framework)
+    append_coverage_compiler_flags_to_target(manager)
+    if (EVEREST_ENABLE_ADMIN_PANEL_BACKEND)
+        append_coverage_compiler_flags_to_target(controller)
+    endif()
+
+    # set(GCOVR_ADDITIONAL_ARGS "--gcov-ignore-errors=all")
+    setup_target_for_coverage_gcovr_html(
+        NAME ${PROJECT_NAME}_gcovr_coverage
+        EXECUTABLE ctest --output-on-failure
+        BASE_DIRECTORY "${PROJECT_SOURCE_DIR}"
+        DEPENDENCIES ${PROJECT_NAME}_tests everest::framework
+        EXCLUDE "${CMAKE_BINARY_DIR}/*" "${CPM_SOURCE_CACHE}"
+    )
+
+    setup_target_for_coverage_gcovr_xml(
+        NAME ${PROJECT_NAME}_gcovr_coverage_xml
+        EXECUTABLE ctest --output-on-failure
+        BASE_DIRECTORY "${PROJECT_SOURCE_DIR}"
+        DEPENDENCIES ${PROJECT_NAME}_tests everest::framework
+        EXCLUDE "${CMAKE_BINARY_DIR}/*" "${CPM_SOURCE_CACHE}"
+    )
 endif()
-
-set(GCOVR_ADDITIONAL_ARGS "--gcov-ignore-errors=all")
-setup_target_for_coverage_gcovr_html(
-    NAME ${PROJECT_NAME}_gcovr_coverage
-    EXECUTABLE ctest --output-on-failure
-    BASE_DIRECTORY "${PROJECT_SOURCE_DIR}"
-    DEPENDENCIES ${PROJECT_NAME}_tests everest::framework
-    EXCLUDE "${CMAKE_BINARY_DIR}/*" "${CPM_SOURCE_CACHE}"
-)
-
-setup_target_for_coverage_gcovr_xml(
-    NAME ${PROJECT_NAME}_gcovr_coverage_xml
-    EXECUTABLE ctest --output-on-failure
-    BASE_DIRECTORY "${PROJECT_SOURCE_DIR}"
-    DEPENDENCIES ${PROJECT_NAME}_tests everest::framework
-    EXCLUDE "${CMAKE_BINARY_DIR}/*" "${CPM_SOURCE_CACHE}"
-)

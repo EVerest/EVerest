@@ -26,6 +26,9 @@ from ._configuration.everest_configuration_strategies.probe_module_configuration
     ProbeModuleConfigurationStrategy
 
 STARTUP_TIMEOUT = 30
+SHUTDOWN_TIMEOUT_SIGINT_SECONDS = 60
+SHUTDOWN_TIMEOUT_SIGTERM_SECONDS = 15
+SHUTDOWN_TIMEOUT_SIGKILL_SECONDS = 5
 
 Connections = dict[str, List[Requirement]]
 
@@ -95,7 +98,8 @@ class EverestCore:
         self.everest_uuid = uuid.uuid4().hex
 
         if not tmp_path:
-            temp_dir = Path(tempfile.mkdtemp(prefix=self.everest_uuid))
+            self._workspace_root = Path(tempfile.mkdtemp(prefix=self.everest_uuid))
+            temp_dir = self._workspace_root
             temp_everest_config_file = tempfile.NamedTemporaryFile(
                 delete=False, mode="w+", suffix=".yaml", dir=temp_dir)
             self.everest_config_path = Path(temp_everest_config_file.name)
@@ -105,6 +109,7 @@ class EverestCore:
             self._status_fifo_path = temp_dir / "status.fifo"
             self._db_path = temp_dir / "everest.db"
         else:
+            self._workspace_root = tmp_path
             config_dir = tmp_path / "everest_config"
             config_dir.mkdir()
             self.everest_core_user_config_path = config_dir / "user-config"
@@ -112,6 +117,12 @@ class EverestCore:
             self.everest_config_path = config_dir / "everest_config.yaml"
             self._status_fifo_path = tmp_path / "status.fifo"
             self._db_path = tmp_path / "everest.db"
+
+        # Coverage-instrumented binaries write .gcda next to objects unless redirected.
+        # Parallel runs (e.g. pytest-xdist) would otherwise share build-tree .gcda files
+        # and corrupt them (libgcov merge mismatch), which can destabilize shutdown.
+        self._gcda_root = self._workspace_root / "gcda"
+        self._gcda_root.mkdir(parents=True, exist_ok=True)
 
         self.prefix_path = prefix_path
         self.etc_path = Path('/etc/everest') if prefix_path == '/usr' else prefix_path / 'etc/everest'
@@ -133,6 +144,12 @@ class EverestCore:
         self.all_modules_started_event = threading.Event()
 
         self._standalone_module = standalone_module
+
+    def _manager_subprocess_env(self) -> Dict[str, str]:
+        env = os.environ.copy()
+        env["GCOV_PREFIX"] = str(self._gcda_root) + os.sep
+        env["GCOV_PREFIX_STRIP"] = "0"
+        return env
 
     @property
     def everest_config(self) -> Dict:
@@ -188,7 +205,12 @@ class EverestCore:
         logging.info('  '.join(args))
 
         self.process = subprocess.Popen(
-            args, cwd=self.prefix_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            args,
+            cwd=self.prefix_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=self._manager_subprocess_env(),
+        )
 
         self.log_reader_thread = Thread(target=self.read_everest_log)
         self.log_reader_thread.start()
@@ -223,13 +245,37 @@ class EverestCore:
         """Stops execution of EVerest by signaling SIGINT
         """
         logging.debug("CONTROLLER stop() function called...")
+        escalation_signal = None
         if self.process:
             # NOTE (aw): we could also call process.kill()
-            self.process.send_signal(SIGINT)
-            self.process.wait()
+            if self.process.poll() is None:
+                self.process.send_signal(SIGINT)
+                try:
+                    self.process.wait(timeout=SHUTDOWN_TIMEOUT_SIGINT_SECONDS)
+                except subprocess.TimeoutExpired:
+                    logging.warning(
+                        f"EVerest did not stop after SIGINT within {SHUTDOWN_TIMEOUT_SIGINT_SECONDS}s, sending SIGTERM"
+                    )
+                    escalation_signal = "SIGTERM"
+                    self.process.terminate()
+                    try:
+                        self.process.wait(timeout=SHUTDOWN_TIMEOUT_SIGTERM_SECONDS)
+                    except subprocess.TimeoutExpired:
+                        logging.warning(
+                            f"EVerest did not stop after SIGTERM within {SHUTDOWN_TIMEOUT_SIGTERM_SECONDS}s, sending SIGKILL"
+                        )
+                        escalation_signal = "SIGKILL"
+                        self.process.kill()
+                        self.process.wait(timeout=SHUTDOWN_TIMEOUT_SIGKILL_SECONDS)
 
         if self.log_reader_thread:
-            self.log_reader_thread.join()
+            self.log_reader_thread.join(timeout=5)
+
+        if escalation_signal is not None:
+            raise RuntimeError(
+                f"EVerest stop() required escalation to {escalation_signal}. "
+                "Tests must shut down cleanly via SIGINT only."
+            )
 
     def _create_testing_user_config(self):
         """Creates a user-config file to include the PyTestControlModule in the current SIL simulation.
