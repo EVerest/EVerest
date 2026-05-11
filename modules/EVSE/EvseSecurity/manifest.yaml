@@ -42,7 +42,7 @@ provides:
   main:
     description: Implementation of the evse_security interface
     interface: evse_security 
-enable_telemetry: false
+enable_telemetry: true
 metadata:
   license: https://opensource.org/licenses/Apache-2.0
   authors:

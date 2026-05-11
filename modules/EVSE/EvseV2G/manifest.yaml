@@ -93,6 +93,7 @@ requires:
     interface: ISO15118_vas
     min_connections: 0
     max_connections: 128
+enable_telemetry: true
 metadata:
   license: https://opensource.org/licenses/Apache-2.0
   authors:
