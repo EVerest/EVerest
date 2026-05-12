@@ -188,6 +188,8 @@ to_internal_api(ConfigurationParameterUpdateResultEnum_External const& val) {
         return TarT::WillApplyOnRestart;
     case SrcT::DoesNotExist:
         return TarT::DoesNotExist;
+    case SrcT::AccessDenied:
+        return TarT::AccessDenied;
     case SrcT::Rejected:
         return TarT::Rejected;
     }
@@ -207,10 +209,12 @@ to_external_api(ConfigurationParameterUpdateResultEnum_Internal const& val) {
         return TarT::WillApplyOnRestart;
     case SrcT::DoesNotExist:
         return TarT::DoesNotExist;
+    case SrcT::AccessDenied:
+        return TarT::AccessDenied;
     case SrcT::Rejected:
         return TarT::Rejected;
     }
-    throw std::out_of_range("Unexpected value for Everest::config::SetConfigParameterResult");
+    throw std::out_of_range("Unexpected value for Everest::config::SetConfigParameterResultEnum");
 }
 
 ActiveSlotStatusEnum_Internal to_internal_api(ActiveSlotStatusEnum_External const& val) {

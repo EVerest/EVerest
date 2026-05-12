@@ -185,9 +185,9 @@ void ConfigurationAPI::generate_api_cmd_set_config_parameters() {
             if (deserialize(msg.payload, payload)) {
                 if (m_readonly) {
                     API_types_ext::ConfigurationParameterUpdateRequestResult response;
-                    for (const auto& update : payload.parameter_updates) {
-                        response.results.push_back(API_types_ext::ConfigurationParameterUpdateResultEnum::Rejected);
-                    }
+
+                    std::fill_n(std::back_inserter(response.results), payload.parameter_updates.size(),
+                                API_types_ext::ConfigurationParameterUpdateResultEnum::Rejected);
                     m_mqtt_abstraction.publish(msg.replyTo, serialize(response));
                 } else {
                     std::vector<Everest::config::ConfigParameterUpdate> updates_internal = srcToTarVec(
@@ -195,7 +195,8 @@ void ConfigurationAPI::generate_api_cmd_set_config_parameters() {
                             return API_wrapper::to_internal_api(update_ext);
                         });
 
-                    auto int_res = m_config_service.set_config_parameters(payload.slot_id, updates_internal);
+                    auto int_res =
+                        m_config_service.set_config_parameters(payload.slot_id, updates_internal, {true, std::nullopt});
 
                     API_types_ext::ConfigurationParameterUpdateRequestResult response{};
                     if (int_res.parameter_results.has_value()) {

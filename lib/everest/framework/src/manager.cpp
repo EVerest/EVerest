@@ -28,10 +28,10 @@
 #include <everest/logging.hpp>
 #include <framework/everest.hpp>
 #include <framework/runtime.hpp>
+#include <iostream>
 #include <lifecycle_api.hpp>
 #include <utils/config.hpp>
 #include <utils/config/config_service_core.hpp>
-#include <iostream>
 #include <utils/config/slot_manager.hpp>
 #include <utils/mqtt_abstraction.hpp>
 #include <utils/status_fifo.hpp>
@@ -758,7 +758,25 @@ int Manager::run() {
                         : std::nullopt);
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core);
-    
+
+    config_service_core->register_set_runtime_parameter_handler(
+        [&config_service](const everest::config::ConfigurationParameterIdentifier& cfg_param_id,
+                          const std::string& value) {
+            // TODO(CB): Here or inside the called function we need to handle the no-module-is-running case
+            const auto result = config_service->cmd_set_cfg_param(cfg_param_id, value);
+            if (result) {
+                if (result->status == Everest::config::SetResponseStatus::Accepted) {
+                    return Everest::config::SetParameterResponse::ModuleReplied_Applied;
+                } else if (result->status == Everest::config::SetResponseStatus::RebootRequired) {
+                    return Everest::config::SetParameterResponse::ModuleReplied_RequiresRestart;
+                } else {
+                    return Everest::config::SetParameterResponse::ModuleReplied_Rejected;
+                }
+            } else {
+                return Everest::config::SetParameterResponse::SetCallFailed;
+            }
+        });
+
     bool cfg_api_read_only = false;
     std::unique_ptr<Everest::api::configuration::ConfigurationAPI> configuration_api;
     if (vm.count("configuration-api")) {
@@ -788,7 +806,7 @@ int Manager::run() {
     }
 
     RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
-                               ms,     status_fifo,       retain_topics, db_storage};
+                               ms,     status_fifo,       retain_topics,   db_storage};
     if (vm_.count("into-idle") == 0) {
         // TODO(CB): handle_start_modules may need to update the db_storage + ctx.config before starting
         // TODO(CB): it may of-course only do so if strictly required (slot_id changed)
@@ -860,7 +878,9 @@ std::string_view Manager::state_to_string(ManagerState state) const {
     }
 }
 
-std::shared_ptr<ManagerConfig> Manager::loadAndValidateConfig(const ManagerSettings& ms, std::unique_ptr<everest::config::SqliteStorage>& db_storage, bool db_storage_has_module_configs) const {
+std::shared_ptr<ManagerConfig>
+Manager::loadAndValidateConfig(const ManagerSettings& ms, std::unique_ptr<everest::config::SqliteStorage>& db_storage,
+                               bool db_storage_has_module_configs) const {
     const auto start_time = std::chrono::system_clock::now();
     std::shared_ptr<ManagerConfig> config;
     try {
