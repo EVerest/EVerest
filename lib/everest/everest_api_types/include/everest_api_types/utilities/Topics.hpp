@@ -20,6 +20,8 @@ public:
 
     void setup(std::string const& target_module_id, std::string const& api_type, unsigned int version);
     std::string entrypoint(const std::string& var) const;
+    std::string nonmodule_to_extern(const std::string& var) const;
+    std::string extern_to_nonmodule(const std::string& var) const;
     std::string everest_to_extern(const std::string& var) const;
     std::string extern_to_everest(const std::string& var) const;
     std::string reply_to_everest(const std::string& reply) const;
