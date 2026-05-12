@@ -288,6 +288,7 @@ config:
     type: string
     enum:
       - X1
+      - E
       - F
     default: X1
   soft_over_current_timeout_ms:

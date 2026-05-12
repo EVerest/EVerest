@@ -577,7 +577,9 @@ void Charger::run_state_machine() {
             if (initialize_state) {
                 session_log.evse(false, "Start switching phases");
                 signal_simple_event(types::evse_manager::SessionEventEnum::SwitchingPhases);
-                if (config_context.switch_3ph1ph_cp_state_F) {
+                if (config_context.switch_3ph1ph_cp_state == "E") {
+                    cp_state_E();
+                } else if (config_context.switch_3ph1ph_cp_state == "F") {
                     cp_state_F();
                 } else {
                     cp_state_X1();
@@ -1237,6 +1239,28 @@ void Charger::cp_state_F() {
     bsp->set_cp_state_F();
 }
 
+void Charger::cp_state_E() {
+    if (!supports_cp_state_E) {
+        EVLOG_warning << "CP state E requested but not supported by hardware. Falling back to CP state X1.";
+        cp_state_X1();
+        return;
+    }
+
+    session_log.evse(false, "Set CP state E");
+    shared_context.pwm_running = false;
+    internal_context.update_pwm_last_duty_cycle = 0.;
+    internal_context.pwm_set_last_ampere = 0.;
+    internal_context.cp_state_F_active = false;
+    bsp->set_cp_state_E();
+}
+
+void Charger::set_supports_cp_state_E(bool value) {
+    supports_cp_state_E = value;
+    if (!value and config_context.switch_3ph1ph_cp_state == "E") {
+        EVLOG_warning << "Phase switch CP state E configured but BSP does not support CP state E.";
+    }
+}
+
 void Charger::run() {
     // spawn new thread and return
     main_thread_handle = std::thread(&Charger::main_thread, this);
@@ -1532,7 +1556,7 @@ void Charger::setup(bool has_ventilation, const ChargeMode _charge_mode, bool _a
     soft_over_current_measurement_noise_A = _soft_over_current_measurement_noise_A;
 
     config_context.switch_3ph1ph_delay_s = _switch_3ph1ph_delay_s;
-    config_context.switch_3ph1ph_cp_state_F = _switch_3ph1ph_cp_state == "F";
+    config_context.switch_3ph1ph_cp_state = _switch_3ph1ph_cp_state;
 
     config_context.state_F_after_fault_ms = _state_F_after_fault_ms;
     config_context.fail_on_powermeter_errors = fail_on_powermeter_errors;

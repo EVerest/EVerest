@@ -272,6 +272,7 @@ void EvseManager::init() {
             hw_caps_handle.wait([this]() { return ready_for_capabilities.load(); });
             *hw_caps_handle = c;
         }
+        charger->set_supports_cp_state_E(c.supports_cp_state_E);
 
         if (ac_nr_phases_active == 0) {
             ac_nr_phases_active = c.max_phase_count_import;

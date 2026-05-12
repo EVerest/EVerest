@@ -118,6 +118,7 @@ public:
 
     // Returns active session_uuid. Returns empty string if not session is active
     std::string get_session_id() const;
+    void set_supports_cp_state_E(bool value);
 
     // call when in state WaitingForAuthentication
     void authorize(bool a, const types::authorization::ProvidedIdToken& token,
@@ -251,6 +252,7 @@ private:
     void update_pwm_now_if_changed_ampere(float duty_cycle);
     void update_pwm_max_every_5seconds_ampere(float duty_cycle);
     void cp_state_X1();
+    void cp_state_E();
     void cp_state_F();
 
     void process_cp_events_independent(CPEvent cp_event);
@@ -345,8 +347,8 @@ private:
         ChargeMode charge_mode{0};
         // Delay when switching from 1ph to 3ph or 3ph to 1ph
         int switch_3ph1ph_delay_s{10};
-        // Use state F if true, otherwise use X1
-        bool switch_3ph1ph_cp_state_F{false};
+        // CP state to use while switching phases
+        std::string switch_3ph1ph_cp_state{"X1"};
         // Tolerate soft over current for given time
         int soft_over_current_timeout_ms{7000};
         // Switch to F for configured ms after a fatal error
@@ -367,6 +369,7 @@ private:
     // Used by different threads, but requires no complete state machine locking
     std::atomic<float> soft_over_current_tolerance_percent{10.};
     std::atomic<float> soft_over_current_measurement_noise_A{0.5};
+    std::atomic_bool supports_cp_state_E{false};
     // HLC uses 5 percent signalling. Used both for AC and DC modes.
     std::atomic_bool hlc_use_5percent_current_session;
     // HLC enabled in current AC session. This can change during the session if e.g. HLC fails.
