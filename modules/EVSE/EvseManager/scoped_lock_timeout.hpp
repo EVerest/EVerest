@@ -58,6 +58,7 @@ enum class MutexDescription {
     IEC_state_machine,
     IEC_set_pwm,
     IEC_set_cp_state_X1,
+    IEC_set_cp_state_E,
     IEC_set_cp_state_F,
     IEC_allow_power_on,
     IEC_force_unlock,
@@ -175,6 +176,8 @@ static std::string to_string(MutexDescription d) {
         return "IECStateMachine::set_pwm";
     case MutexDescription::IEC_set_cp_state_X1:
         return "IECStateMachine::set_cp_state_X1";
+    case MutexDescription::IEC_set_cp_state_E:
+        return "IECStateMachine::set_cp_state_E";
     case MutexDescription::IEC_set_cp_state_F:
         return "IECStateMachine::set_cp_state_F";
     case MutexDescription::IEC_allow_power_on:

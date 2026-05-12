@@ -720,6 +720,10 @@ void IECStateMachine::set_pwm(double value) {
 }
 void IECStateMachine::set_cp_state_X1() {
 }
+
+void IECStateMachine::set_cp_state_E() {
+}
+
 void IECStateMachine::set_cp_state_F() {
 }
 
