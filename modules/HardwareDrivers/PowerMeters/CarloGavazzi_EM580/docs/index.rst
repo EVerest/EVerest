@@ -5,6 +5,7 @@
 .. *******************
 
 Module implementing the Carlo Gavazzi EM580 power meter driver adapter via Modbus RTU (through SerialCommHub).
+This module also supports models without OCMF/Eichrecht support (e.g. EM300 series).
 
 Description
 ===========
@@ -16,9 +17,11 @@ Features
 ========
 
 - Live meter reads and ``powermeter`` publishing (interval configurable)
+- Resilient Modbus transport with retries and protocol-compliant write chunking
+
+If supported by meter:
 - OCMF/Eichrecht transaction start/stop logic
 - Public key reading and publishing (hex)
-- Resilient Modbus transport with retries and protocol-compliant write chunking
 
 Module Configuration
 ====================
@@ -54,5 +57,18 @@ Notes / Limitations
 
 - Modbus ``Write Multiple Registers`` requests are chunked to max 123 registers per request.
 - TT is a ``CHAR[252]`` field (126 words); overlong strings are warned and truncated.
+
+Device identification code (register ``300012`` / ``000Bh``)
+----------------------------------------------------------
+At startup the driver reads the Carlo Gavazzi **Controls identification code** from Modbus register ``300012``
+(``000Bh``) to decide whether OCMF transactions are exposed.
+
+The following identification codes are **explicitly supported** as **EM300/ET300 series** (live metering only;
+``start_transaction`` / ``stop_transaction`` return ``NOT_SUPPORTED``): **331**, **332**, **335**, **336**, **340**,
+**341**, **345**, **346**, **355**.
+
+Any **other** identification code is treated as an OCMF-capable device (e.g. EM580 class): the full transaction flow
+applies. If a new meter without OCMF uses a code not listed above, the driver should be updated to recognise it;
+otherwise it may incorrectly attempt the OCMF path.
 
 
