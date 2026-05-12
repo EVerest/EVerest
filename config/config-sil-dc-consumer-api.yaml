@@ -119,6 +119,10 @@ active_modules:
       main:
         simulate_emergency_shutdown: false
         simulate_error_delay: 5
+    connections:
+      power_supply:
+        - module_id: powersupply_dc
+          implementation_id: main
   ev_manager:
     module: EvManager
     config_module:
