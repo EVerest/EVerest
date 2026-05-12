@@ -108,6 +108,9 @@ void to_json(json& j, ConfigurationParameterUpdateResultEnum const& k) noexcept 
     case ConfigurationParameterUpdateResultEnum::DoesNotExist:
         j = "DoesNotExist";
         return;
+    case ConfigurationParameterUpdateResultEnum::AccessDenied:
+        j = "AccessDenied";
+        return;
     case ConfigurationParameterUpdateResultEnum::Rejected:
         j = "Rejected";
         return;
@@ -128,6 +131,10 @@ void from_json(const json& j, ConfigurationParameterUpdateResultEnum& k) {
     }
     if (s == "DoesNotExist") {
         k = ConfigurationParameterUpdateResultEnum::DoesNotExist;
+        return;
+    }
+    if (s == "AccessDenied") {
+        k = ConfigurationParameterUpdateResultEnum::AccessDenied;
         return;
     }
     if (s == "Rejected") {
