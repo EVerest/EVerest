@@ -135,11 +135,11 @@ ModuleTierMappings adl_serializer<ModuleTierMappings>::from_json(const json& j) 
     ModuleTierMappings m;
     if (!j.is_null()) {
         if (j.contains("module")) {
-            m.module = j.at("module");
+            m.module = j.at("module").get<Mapping>();
         }
         if (j.contains("implementations")) {
             for (auto& impl : j.at("implementations").items()) {
-                m.implementations[impl.key()] = impl.value();
+                m.implementations[impl.key()] = impl.value().get<Mapping>();
             }
         }
     }

@@ -72,4 +72,48 @@ SCENARIO("Check conversions", "[!throws]") {
             CHECK(tp_from_slow == tp_from_fast);
         }
     }
+
+    GIVEN("ModuleTierMappings json with module mapping only") {
+        THEN("It should parse without throwing") {
+            const json j = {{"module", {{"evse", 1}, {"connector", 2}}}};
+            ModuleTierMappings m;
+            REQUIRE_NOTHROW(m = j.get<ModuleTierMappings>());
+            REQUIRE(m.module.has_value());
+            CHECK(m.module.value().evse == 1);
+            REQUIRE(m.module.value().connector.has_value());
+            CHECK(m.module.value().connector.value() == 2);
+            CHECK(m.implementations.empty());
+        }
+    }
+
+    GIVEN("ModuleTierMappings json with module and implementations") {
+        THEN("It should parse without throwing") {
+            const json j = {{"module", {{"evse", 1}}},
+                            {"implementations", {{"main", {{"evse", 1}, {"connector", 1}}}, {"sink", {{"evse", 2}}}}}};
+            ModuleTierMappings m;
+            REQUIRE_NOTHROW(m = j.get<ModuleTierMappings>());
+            REQUIRE(m.module.has_value());
+            CHECK(m.module.value().evse == 1);
+            CHECK_FALSE(m.module.value().connector.has_value());
+            REQUIRE(m.implementations.count("main") == 1);
+            REQUIRE(m.implementations.at("main").has_value());
+            CHECK(m.implementations.at("main").value().evse == 1);
+            REQUIRE(m.implementations.at("main").value().connector.has_value());
+            CHECK(m.implementations.at("main").value().connector.value() == 1);
+            REQUIRE(m.implementations.count("sink") == 1);
+            REQUIRE(m.implementations.at("sink").has_value());
+            CHECK(m.implementations.at("sink").value().evse == 2);
+            CHECK_FALSE(m.implementations.at("sink").value().connector.has_value());
+        }
+    }
+
+    GIVEN("Null ModuleTierMappings json") {
+        THEN("It should yield an empty mapping") {
+            const json j = nullptr;
+            ModuleTierMappings m;
+            REQUIRE_NOTHROW(m = j.get<ModuleTierMappings>());
+            CHECK_FALSE(m.module.has_value());
+            CHECK(m.implementations.empty());
+        }
+    }
 }
