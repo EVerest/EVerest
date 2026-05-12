@@ -74,6 +74,8 @@ struct Conf {
     bool ac_hlc_use_5percent;
     bool ac_enforce_hlc;
     bool ac_with_soc;
+    int reinit_duration_ms;
+    std::string reinit_method;
     int internal_over_voltage_duration_ms;
     bool dbg_hlc_auth_after_tstep;
     int dc_isolation_voltage_V;
