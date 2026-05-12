@@ -21,7 +21,7 @@ using DeleteSlotResultEnum_External = ::everest::lib::API::V1_0::types::configur
 DeleteSlotResultEnum_Internal to_internal_api(DeleteSlotResultEnum_External const& val);
 DeleteSlotResultEnum_External to_external_api(DeleteSlotResultEnum_Internal const& val);
 
-using ConfigurationParameterUpdateResultEnum_Internal = ::Everest::config::SetConfigParameterResult;
+using ConfigurationParameterUpdateResultEnum_Internal = ::Everest::config::SetConfigParameterResultEnum;
 using ConfigurationParameterUpdateResultEnum_External =
     ::everest::lib::API::V1_0::types::configuration::ConfigurationParameterUpdateResultEnum;
 

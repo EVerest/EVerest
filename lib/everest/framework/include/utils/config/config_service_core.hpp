@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <utils/config/settings.hpp>
@@ -13,6 +14,16 @@
 #include <utils/config_service_interface.hpp>
 
 namespace Everest::config {
+
+/// \brief Helper type, which should not be part of the config_service_interface
+///
+/// The provided set_parameter_callback uses it to return success/failure
+enum class SetParameterResponse {
+    SetCallFailed,
+    ModuleReplied_Applied,
+    ModuleReplied_RequiresRestart,
+    ModuleReplied_Rejected,
+};
 
 /// \brief Core framework implementation of ConfigServiceInterface.
 ///
@@ -47,8 +58,8 @@ public:
 
     // --- Slot-scoped configuration ---
     GetConfigurationResult get_configuration(int slot_id) override;
-    std::vector<SetConfigParameterResult>
-    set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates) override;
+    SetConfigParameterResult set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates,
+                                          const Origin& origin) override;
 
     // --- Module lifecycle ---
     StopModulesResult stop_modules() override;
@@ -57,6 +68,11 @@ public:
     // --- Push-event subscriptions ---
     void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) override;
     void register_config_update_handler(std::function<void(const ConfigurationUpdate&)> handler) override;
+
+    // \brief Provide the means, to change module config parameters at runtime
+    using SetParamCallback = std::function<SetParameterResponse(
+        const everest::config::ConfigurationParameterIdentifier&, const std::string&)>;
+    void register_set_runtime_parameter_handler(const SetParamCallback& callback);
 
 private:
     everest::config::ModuleConfigurations module_configs_;
@@ -77,6 +93,8 @@ private:
 
     /// \brief Storage handle for the currently active slot, used to persist runtime config writes.
     std::unique_ptr<everest::config::SqliteStorage> active_storage_;
+
+    SetParamCallback set_parameter_callback_;
 };
 
 } // namespace Everest::config

@@ -188,6 +188,8 @@ to_internal_api(ConfigurationParameterUpdateResultEnum_External const& val) {
         return TarT::WillApplyOnRestart;
     case SrcT::DoesNotExist:
         return TarT::DoesNotExist;
+    case SrcT::AccessDenied:
+        return TarT::AccessDenied;
     case SrcT::Rejected:
         return TarT::Rejected;
     }
@@ -207,10 +209,12 @@ to_external_api(ConfigurationParameterUpdateResultEnum_Internal const& val) {
         return TarT::WillApplyOnRestart;
     case SrcT::DoesNotExist:
         return TarT::DoesNotExist;
+    case SrcT::AccessDenied:
+        return TarT::AccessDenied;
     case SrcT::Rejected:
         return TarT::Rejected;
     }
-    throw std::out_of_range("Unexpected value for Everest::config::SetConfigParameterResult");
+    throw std::out_of_range("Unexpected value for Everest::config::SetConfigParameterResultEnum");
 }
 
 ActiveSlotStatusEnum_Internal to_internal_api(ActiveSlotStatusEnum_External const& val) {
@@ -479,7 +483,7 @@ ReqFulfillment_Internal to_internal_api(ReqFulfillment_External const& val, cons
     result.module_id = val.module_id;
     result.implementation_id = val.implementation_id;
     // TODO(CB): Does this create a compiler warning?
-    if (val.index < 0 || val.index > std::numeric_limits<size_t>::max()) {
+    if (val.index < 0 || static_cast<std::uintmax_t>(val.index) > std::numeric_limits<size_t>::max()) {
         throw std::invalid_argument("Index in ReqFulfillment is out of range for internal representation: " +
                                     std::to_string(val.index));
     }
