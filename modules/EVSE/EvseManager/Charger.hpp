@@ -104,7 +104,8 @@ public:
                bool ac_enforce_hlc, bool ac_with_soc_timeout, float soft_over_current_tolerance_percent,
                float soft_over_current_measurement_noise_A, const int switch_3ph1ph_delay_s,
                const std::string switch_3ph1ph_cp_state, const int soft_over_current_timeout_ms,
-               const int _state_F_after_fault_ms, const bool fail_on_powermeter_errors, const bool raise_mrec9,
+               const int _state_F_after_fault_ms, const int reinit_duration_ms, const std::string& reinit_method,
+               const bool fail_on_powermeter_errors, const bool raise_mrec9,
                const int sleep_before_enabling_pwm_hlc_mode_ms, const utils::SessionIdType session_id_type,
                const int hlc_charge_loop_without_energy_timeout_s);
 
@@ -349,6 +350,10 @@ private:
         int soft_over_current_timeout_ms{7000};
         // Switch to F for configured ms after a fatal error
         int state_F_after_fault_ms{300};
+        // Duration in milliseconds of the reinit state before returning to normal operation
+        int reinit_duration_ms{3000};
+        // CP state to use during reinitialization
+        std::string reinit_method{"CPStateF"};
         // Fail on powermeter errors
         bool fail_on_powermeter_errors;
         // Raise MREC9 authorization timeout error
