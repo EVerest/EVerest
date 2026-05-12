@@ -19,6 +19,18 @@ std::string Topics::entrypoint(const std::string& var) const {
     return topic.str();
 }
 
+std::string Topics::nonmodule_to_extern(const std::string& var) const {
+    std::stringstream topic;
+    topic << api_base << "/" << m_api_version << "/" << m_api_type << "/" << api_out << "/" << var;
+    return topic.str();
+}
+
+std::string Topics::extern_to_nonmodule(const std::string& var) const {
+    std::stringstream topic;
+    topic << api_base << "/" << m_api_version << "/" << m_api_type << "/" << api_in << "/" << var;
+    return topic.str();
+}
+
 std::string Topics::everest_to_extern(const std::string& var) const {
     std::stringstream topic;
     topic << api_base << "/" << m_api_version << "/" << m_api_type << "/" << m_target_module_id << "/" << api_out << "/"
