@@ -186,6 +186,10 @@ public:
     ///                          set_config_parameters) are routed through this interface.
     MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstraction, ConfigServiceInterface& config_svc);
 
+    // TODO(CB): Add comment
+    std::optional<Everest::config::SetResponse>
+    cmd_set_cfg_param(const everest::config::ConfigurationParameterIdentifier& cfg_param_id, const std::string& value);
+
 private:
     MQTTAbstraction& mqtt_abstraction;
     std::shared_ptr<TypedHandler> get_config_token;

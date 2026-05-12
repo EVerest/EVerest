@@ -50,11 +50,32 @@ enum class RestartModulesResult {
     Rejected
 };
 
-enum class SetConfigParameterResult {
+enum class SetConfigParameterResultEnum {
     Applied,
     WillApplyOnRestart,
     DoesNotExist,
+    AccessDenied,
     Rejected
+};
+
+enum class SetConfigParameterStatus {
+    Ok,
+    Error,
+    AccessDenied
+};
+
+struct SetConfigPerParameterResult {
+    SetConfigParameterResultEnum status;
+    std::string status_info;
+
+    SetConfigPerParameterResult(SetConfigParameterResultEnum status_, std::string status_info_) :
+        status(status_), status_info(status_info_){};
+};
+
+struct SetConfigParameterResult {
+    SetConfigParameterStatus status = SetConfigParameterStatus::Error;
+    std::string status_info;
+    std::optional<std::vector<SetConfigPerParameterResult>> parameter_results;
 };
 
 enum class GetConfigurationStatus {
@@ -87,9 +108,6 @@ struct LoadFromYamlResult {
 struct ConfigParameterUpdate {
     everest::config::ConfigurationParameterIdentifier identifier;
     std::string value;
-    /// \brief When true the module confirmed the value took effect without a reboot
-    /// When false (default) the value is only persisted to storage (WillApplyOnRestart).
-    bool immediately_applied = false;
 };
 
 struct ActiveSlotUpdate {
@@ -101,13 +119,19 @@ struct ActiveSlotUpdate {
 struct ConfigParameterUpdateNotice {
     everest::config::ConfigurationParameterIdentifier identifier;
     std::string value;
-    SetConfigParameterResult result;
+    SetConfigParameterResultEnum result;
+};
+
+struct Origin {
+    bool external;
+    std::optional<std::string> module_id;
 };
 
 struct ConfigurationUpdate {
     std::string timestamp;
     int slot_id;
     std::vector<ConfigParameterUpdateNotice> updates;
+    Origin origin;
 };
 
 struct GetConfigurationResult {
@@ -141,8 +165,8 @@ public:
 
     // --- Slot-scoped configuration ---
     virtual GetConfigurationResult get_configuration(int slot_id) = 0;
-    virtual std::vector<SetConfigParameterResult>
-    set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates) = 0;
+    virtual SetConfigParameterResult
+    set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates, const Origin& origin) = 0;
 
     // --- Module lifecycle (stubs for now) ---
     virtual StopModulesResult stop_modules() = 0;

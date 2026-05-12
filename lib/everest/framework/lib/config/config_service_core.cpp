@@ -3,6 +3,8 @@
 
 #include <utils/config/config_service_core.hpp>
 
+#include <optional>
+
 #include <date/tz.h>
 #include <everest/logging.hpp>
 
@@ -201,114 +203,240 @@ GetConfigurationResult ConfigServiceCore::get_configuration(int slot_id) {
     return {GetConfigurationStatus::Success, response.module_configs};
 }
 
-std::vector<SetConfigParameterResult>
-ConfigServiceCore::set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates) {
-    std::vector<SetConfigParameterResult> results;
-    results.reserve(updates.size());
+// TODO(CB) move to anonymous namespace
+std::optional<std::pair<everest::config::ConfigurationParameter*, everest::config::Access*>>
+get_parameter(everest::config::ConfigurationParameterIdentifier const& id,
+              everest::config::ModuleConfigurations& configurations) {
+    auto mod_it = configurations.find(id.module_id);
+    if (mod_it == configurations.end()) {
+        return std::nullopt;
+    }
+
+    auto impl_id = id.module_implementation_id.value_or("!module");
+    auto params_it = mod_it->second.configuration_parameters.find(impl_id);
+    if (params_it == mod_it->second.configuration_parameters.end()) {
+        return std::nullopt;
+    }
+    auto it = std::find_if(params_it->second.begin(), params_it->second.end(),
+                           [&](const auto& p) { return p.name == id.configuration_parameter_name; });
+    if (it != params_it->second.end()) {
+        return std::optional{std::pair{&*it, &mod_it->second.access}};
+    }
+    return std::nullopt;
+}
+
+// TODO(CB) move to anonymous namespace
+bool is_set_read_only_allowed(const everest::config::Access& access, const std::string& target_module_id) {
+    if (not access.config.has_value()) {
+        return false;
+    }
+    const auto& config_access = access.config.value();
+    if (config_access.allow_set_read_only) {
+        return true;
+    }
+    const auto it = config_access.modules.find(target_module_id);
+    return it != config_access.modules.end() && it->second.allow_set_read_only;
+}
+
+// TODO(CB): remove from here, if access check remains on the mqtt_config_service level
+// // TODO(CB) move to anonymous namespace
+// // TODO(CB) is duplicate from mqtt_config_service_cpp
+// bool access_allowed(const everest::config::Access& access, const std::string& origin, const std::string& target,
+//                     bool write_access) {
+//     if (origin == target) {
+//         // a module can always read and write its own config
+//         return true;
+//     }
+//     if (not access.config.has_value()) {
+//         return false;
+//     }
+//     const auto& config_access = access.config.value();
+//     const auto& config_access_modules_it = config_access.modules.find(target);
+//     if (write_access) {
+//         if (config_access.allow_global_write) {
+//             return true;
+//         }
+//         if (config_access_modules_it != config_access.modules.end()) {
+//             if (config_access_modules_it->second.allow_write) {
+//                 return true;
+//             }
+//         }
+//     } else {
+//         if (config_access.allow_global_read) {
+//             return true;
+//         }
+//         if (config_access_modules_it != config_access.modules.end()) {
+//             if (config_access_modules_it->second.allow_read) {
+//                 return true;
+//             }
+//         }
+//     }
+
+//     return false;
+// }
+
+// bool write_access_allowed(const everest::config::Access& access, const std::string& origin, const std::string&
+// target) {
+//     return access_allowed(access, origin, target, true);
+// }
+
+// bool read_access_allowed(const everest::config::Access& access, const std::string& origin, const std::string& target)
+// {
+//     return access_allowed(access, origin, target, false);
+// }
+
+SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
+                                                                  const std::vector<ConfigParameterUpdate>& updates,
+                                                                  const Origin& origin) {
+    SetConfigParameterResult result;
+    result.status = SetConfigParameterStatus::Ok;
 
     const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
+
+    // TODO(CB): remove from here, if access check remains on the mqtt_config_service level
+    // // initialized with std::nullopt and set to value only if applicable
+    // std::optional<everest::config::Access> access;
+
+    // // if the request is from an internal module: test if the origin exists
+    // if (!origin.external and origin.module_id.has_value()) {
+    //     const auto origin_it = module_configs_.find(origin.module_id.value());
+    //     if (origin_it == module_configs_.end()) {
+    //         result.status = SetConfigParameterStatus::Error;
+    //         result.status_info = fmt::format("Unknown origin module: {}", origin.module_id.value());
+    //         return result;
+    //     }
+
+    //     access = origin_it->second.access;
+    // }
+    const std::string& origin_module_id = origin.module_id.value_or("<external>");
+
+    result.parameter_results.emplace(
+        updates.size(), Everest::config::SetConfigPerParameterResult{SetConfigParameterResultEnum::DoesNotExist, ""});
 
     ConfigurationUpdate event;
     event.timestamp = now_rfc3339();
     event.slot_id = resolved_slot_id;
 
     if (resolved_slot_id == active_slot_id_) {
-        for (const auto& update : updates) {
-            const auto mod_it = module_configs_.find(update.identifier.module_id);
-            if (mod_it == module_configs_.end()) {
-                results.push_back(SetConfigParameterResult::DoesNotExist);
+        for (size_t i = 0; i < updates.size(); ++i) {
+            const auto& update = updates[i];
+            SetConfigParameterResultEnum& result_enum = result.parameter_results.value()[i].status;
+            std::string& status_info = result.parameter_results.value()[i].status_info;
+
+            // TODO(CB): remove from here, if access check remains on the mqtt_config_service level
+            // if (access.has_value() and
+            //     not write_access_allowed(access.value(), origin_module_id, update.identifier.module_id)) {
+            //     result_enum = SetConfigParameterResultEnum::AccessDenied;
+            //     result.parameter_results.value()[i].status_info = fmt::format(
+            //         "Access to config item denied: {} cannot access {}", origin_module_id,
+            //         update.identifier.module_id);
+            //     return result;
+            // }
+
+            // does the parameter exist?
+            auto parameter_lookup_result = get_parameter(update.identifier, module_configs_);
+            if (not parameter_lookup_result.has_value()) {
+                result.parameter_results.value()[i].status_info =
+                    fmt::format("Unknown target module: {}", update.identifier.module_id);
                 continue;
             }
+            auto [parameter, parameter_access] = parameter_lookup_result.value();
 
-            const auto impl_id = update.identifier.module_implementation_id.value_or("!module");
-            auto params_it = mod_it->second.configuration_parameters.find(impl_id);
-            if (params_it == mod_it->second.configuration_parameters.end()) {
-                results.push_back(SetConfigParameterResult::DoesNotExist);
-                continue;
-            }
-
-            std::optional<everest::config::ConfigurationParameterCharacteristics> characteristics;
-            for (const auto& param : params_it->second) {
-                if (param.name == update.identifier.configuration_parameter_name) {
-                    characteristics = param.characteristics;
+            // if applicable: set in module and mutate in memory at the same time
+            if (parameter->characteristics.mutability == everest::config::Mutability::ReadWrite) {
+                if (not set_parameter_callback_) {
+                    // TODO(CB): how hard should we fail here?
                     break;
                 }
-            }
-            if (!characteristics.has_value()) {
-                results.push_back(SetConfigParameterResult::DoesNotExist);
-                continue;
-            }
+                auto set_result = set_parameter_callback_(update.identifier, update.value);
 
-            // Persist to storage first.
-            const auto write_status =
-                active_storage_->write_configuration_parameter(update.identifier, *characteristics, update.value);
-            if (write_status != everest::config::GetSetResponseStatus::OK) {
-                results.push_back(SetConfigParameterResult::Rejected);
-                continue;
-            }
-
-            SetConfigParameterResult result;
-            if (update.immediately_applied) {
-                // Module confirmed it immediately applied the value; mutate the in-memory state
-                // so module_configs_ reflect the new runtime value.
-                const auto parsed_value = everest::config::parse_config_value(characteristics->datatype, update.value);
-                for (auto& param : params_it->second) {
-                    if (param.name == update.identifier.configuration_parameter_name) {
-                        param.value = parsed_value;
-                        break;
-                    }
+                switch (set_result) {
+                case SetParameterResponse::SetCallFailed:
+                    [[fallthrough]]; // TODO(CB) Or handle this one differently?
+                case SetParameterResponse::ModuleReplied_Rejected:
+                    result_enum = SetConfigParameterResultEnum::Rejected;
+                    status_info = "Rejected by module";
+                    continue;
+                case SetParameterResponse::ModuleReplied_Applied: {
+                    result_enum = SetConfigParameterResultEnum::Applied;
+                    // Module confirmed it immediately applied the value; mutate the in-memory state
+                    const auto parsed_value =
+                        everest::config::parse_config_value(parameter->characteristics.datatype, update.value);
+                    parameter->value = parsed_value;
+                    break;
                 }
-                result = SetConfigParameterResult::Applied;
+                case SetParameterResponse::ModuleReplied_RequiresRestart:
+                    result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
+                    break;
+                }
+            } else if (parameter->characteristics.mutability == everest::config::Mutability::ReadOnly) {
+                if (is_set_read_only_allowed(*parameter_access, update.identifier.module_id)) {
+                    // TODO(CB) !?!? why not forward to the module then ?!?!
+                    result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
+                } else {
+                    status_info = "Is a ReadOnly parameter";
+                    result_enum = SetConfigParameterResultEnum::Rejected;
+                }
             } else {
-                // Value stored for next boot; module_configs_ intentionally maintains current state
-                result = SetConfigParameterResult::WillApplyOnRestart;
+                // ReadOnly and WriteOnly don't go to the module at runtime
+                // TODO(CB): What does WriteOnly mean !?
+                result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
+                // TODO(CB): Again, why not forward to the module?
             }
-            results.push_back(result);
-            event.updates.push_back({update.identifier, update.value, result});
+
+            if (result_enum == SetConfigParameterResultEnum::Applied or
+                result_enum == SetConfigParameterResultEnum::WillApplyOnRestart) {
+                event.updates.push_back({update.identifier, update.value, result_enum});
+            }
+
+            if (result_enum == SetConfigParameterResultEnum::Applied or
+                result_enum == SetConfigParameterResultEnum::WillApplyOnRestart) {
+                const auto write_status = active_storage_->write_configuration_parameter(
+                    update.identifier, parameter->characteristics, update.value);
+                if (write_status != everest::config::GetSetResponseStatus::OK) {
+                    // TODO(CB): What to do, if applied, but couldn't be persisted?! -> return a more
+                    // complex result? (applied=true; persisted=false)
+                }
+            }
         }
     } else {
-        // Non-active slot: write directly to storage
         auto storage = make_storage(resolved_slot_id);
-        const auto existing = storage->get_module_configs();
+        auto inactive_configuration = storage->get_module_configs();
+        if (inactive_configuration.status != everest::config::GenericResponseStatus::OK) {
+            std::fill(result.parameter_results.value().begin(), result.parameter_results.value().end(),
+                      SetConfigPerParameterResult{SetConfigParameterResultEnum::Rejected, ""});
+            return result;
+        }
 
-        for (const auto& update : updates) {
-            // Look up characteristics from the stored config
-            if (existing.status != everest::config::GenericResponseStatus::OK) {
-                results.push_back(SetConfigParameterResult::Rejected);
+        for (size_t i = 0; i < updates.size(); ++i) {
+            const auto& update = updates[i];
+            SetConfigParameterResultEnum& result_enum = result.parameter_results.value()[i].status;
+
+            // does the parameter exist?
+            auto parameter_lookup_result = get_parameter(update.identifier, inactive_configuration.module_configs);
+            if (not parameter_lookup_result.has_value()) {
                 continue;
             }
-            const auto mod_it = existing.module_configs.find(update.identifier.module_id);
-            if (mod_it == existing.module_configs.end()) {
-                results.push_back(SetConfigParameterResult::DoesNotExist);
-                continue;
-            }
-            const auto impl_id = update.identifier.module_implementation_id.value_or("!module");
-            const auto params_it = mod_it->second.configuration_parameters.find(impl_id);
-            if (params_it == mod_it->second.configuration_parameters.end()) {
-                results.push_back(SetConfigParameterResult::DoesNotExist);
-                continue;
-            }
-            std::optional<everest::config::ConfigurationParameterCharacteristics> characteristics;
-            for (const auto& param : params_it->second) {
-                if (param.name == update.identifier.configuration_parameter_name) {
-                    characteristics = param.characteristics;
-                    break;
+            auto [parameter, parameter_access] = parameter_lookup_result.value();
+
+            // TODO(CB): Does this make sense? this is the non-active-config-slot branch -> allow to write all
+            // parameters!
+            if (parameter->characteristics.mutability == everest::config::Mutability::ReadWrite or
+                (parameter->characteristics.mutability == everest::config::Mutability::ReadOnly and
+                 is_set_read_only_allowed(*parameter_access, update.identifier.module_id)) or
+                parameter->characteristics.mutability == everest::config::Mutability::WriteOnly) {
+                const auto write_status =
+                    storage->write_configuration_parameter(update.identifier, parameter->characteristics, update.value);
+                if (write_status == everest::config::GetSetResponseStatus::OK) {
+                    result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
+                    event.updates.push_back(
+                        {update.identifier, update.value, SetConfigParameterResultEnum::WillApplyOnRestart});
+                } else {
+                    result_enum = SetConfigParameterResultEnum::Rejected;
+                    continue;
                 }
-            }
-            if (!characteristics.has_value()) {
-                results.push_back(SetConfigParameterResult::DoesNotExist);
-                continue;
-            }
-
-            const auto write_status =
-                storage->write_configuration_parameter(update.identifier, *characteristics, update.value);
-            if (write_status == everest::config::GetSetResponseStatus::OK) {
-                // For non-active slots results are not applied immediately, so we return WillApplyOnRestart
-                results.push_back(SetConfigParameterResult::WillApplyOnRestart);
-                event.updates.push_back(
-                    {update.identifier, update.value, SetConfigParameterResult::WillApplyOnRestart});
-            } else {
-                results.push_back(SetConfigParameterResult::Rejected);
+            } else { // everest::config::Mutability::ReadOnly but not is_set_read_only_allowed
+                result_enum = SetConfigParameterResultEnum::Rejected;
             }
         }
     }
@@ -317,7 +445,7 @@ ConfigServiceCore::set_config_parameters(int slot_id, const std::vector<ConfigPa
         publish_config_update(event);
     }
 
-    return results;
+    return result;
 }
 
 // --- Module lifecycle ---
@@ -344,6 +472,10 @@ void ConfigServiceCore::register_active_slot_update_handler(std::function<void(c
 
 void ConfigServiceCore::register_config_update_handler(std::function<void(const ConfigurationUpdate&)> handler) {
     config_update_handlers_.push_back(std::move(handler));
+}
+
+void ConfigServiceCore::register_set_runtime_parameter_handler(const SetParamCallback& callback) {
+    set_parameter_callback_ = callback;
 }
 
 } // namespace Everest::config
