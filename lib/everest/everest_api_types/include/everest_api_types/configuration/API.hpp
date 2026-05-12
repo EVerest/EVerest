@@ -28,6 +28,7 @@ enum class ConfigurationParameterUpdateResultEnum {
     Applied,
     WillApplyOnRestart,
     DoesNotExist,
+    AccessDenied,
     Rejected,
 };
 
