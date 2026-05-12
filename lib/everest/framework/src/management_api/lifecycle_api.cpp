@@ -56,6 +56,8 @@ LifecycleAPI::LifecycleAPI(MQTTAbstraction& mqtt_abstraction, ::Everest::config:
     generate_api_cmd_stop_modules();
     generate_api_cmd_start_modules();
     generate_api_cmd_get_everest_version();
+
+    generate_api_var_status();
 }
 
 void LifecycleAPI::modules_started_running() {
