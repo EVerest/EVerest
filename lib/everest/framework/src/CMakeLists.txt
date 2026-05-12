@@ -1,3 +1,5 @@
+add_subdirectory(management_api)
+
 add_executable(manager)
 target_sources(manager
     PRIVATE
