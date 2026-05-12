@@ -16,7 +16,7 @@ info:
     - name: ConfigService
 servers:
   default:
-    pathname: 'everest_api/1/configuration/'
+    pathname: 'everest_api/1/config/'
     host: 'localhost:1883'
     description: default local MQTT
     protocol: mqtt
@@ -901,12 +901,14 @@ components:
         - Applied: Update was accepted and applied successfully. The change is effective immediately.
         - WillApplyOnRestart: Update was accepted and applied successfully. The change will become effective on the next start of the slot (which may be immediately if modules are being restarted, or on the next restart if modules are currently running).
         - DoesNotExist: Rejected, because the specified configuration parameter does not exist
+        - AccessDenied: Rejected, because the access was denied
         - Rejected: Rejected for other reasons (e.g. invalid value format, invalid value for enum, etc.)
       type: string
       enum:
         - Applied
         - WillApplyOnRestart
         - DoesNotExist
+        - AccessDenied
         - Rejected
     ConfigurationParameterUpdateRequestResult:
       description: Result for a configuration parameter update request.
