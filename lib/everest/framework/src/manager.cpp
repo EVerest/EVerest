@@ -24,9 +24,11 @@
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
+#include <configuration_api.hpp>
 #include <everest/logging.hpp>
 #include <framework/everest.hpp>
 #include <framework/runtime.hpp>
+#include <lifecycle_api.hpp>
 #include <utils/config.hpp>
 #include <utils/config/config_service_core.hpp>
 #include <iostream>
@@ -756,6 +758,34 @@ int Manager::run() {
                         : std::nullopt);
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core);
+    
+    bool cfg_api_read_only = false;
+    std::unique_ptr<Everest::api::configuration::ConfigurationAPI> configuration_api;
+    if (vm.count("configuration-api")) {
+        cfg_api_read_only = vm["configuration-api"].as<std::string>() != "rw";
+        if (cfg_api_read_only) {
+            EVLOG_info << "Starting ConfigurationAPI in read-only mode";
+        } else {
+            EVLOG_info << "Starting ConfigurationAPI in read-write mode";
+        }
+        configuration_api = std::make_unique<Everest::api::configuration::ConfigurationAPI>(
+            *mqtt_abstraction, *config_service_core, cfg_api_read_only);
+    }
+    std::unique_ptr<Everest::api::lifecycle::LifecycleAPI> lifecycle_api;
+    if (vm.count("lifecycle-api")) {
+        bool lc_api_read_only = vm["lifecycle-api"].as<std::string>() != "rw";
+        if (lc_api_read_only) {
+            EVLOG_info << "Starting LifecycleAPI in read-only mode";
+        } else {
+            EVLOG_info << "Starting LifecycleAPI in read-write mode";
+        }
+        lifecycle_api = std::make_unique<Everest::api::lifecycle::LifecycleAPI>(
+            *mqtt_abstraction, *config_service_core,
+            configuration_api ? (cfg_api_read_only ? Everest::api::lifecycle::ConfigurationApiStatus::AvailableRO
+                                                   : Everest::api::lifecycle::ConfigurationApiStatus::AvailableRW)
+                              : Everest::api::lifecycle::ConfigurationApiStatus::NotAvailable,
+            lc_api_read_only);
+    }
 
     RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
                                ms,     status_fifo,       retain_topics, db_storage};
@@ -1358,6 +1388,10 @@ int main(int argc, char* argv[]) {
                        "Full path to a config file.  If the file does not exist and has no extension, it will be "
                        "looked up in the default config directory");
     desc.add_options()("into-idle", "Boot into idle state (no modules are started)");
+    desc.add_options()("configuration-api", po::value<std::string>()->implicit_value("ro"),
+                       "Start the ConfigurationAPI (append '=rw' for read-write)");
+    desc.add_options()("lifecycle-api", po::value<std::string>()->implicit_value("ro"),
+                       "Start the lifecycle_API (append '=rw' for read-write)");
     desc.add_options()(
         "db", po::value<std::string>(),
         "Full path to the configuration database file. Required. "

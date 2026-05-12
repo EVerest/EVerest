@@ -18,6 +18,7 @@ target_link_libraries(manager
     PRIVATE
         everest::framework
         Boost::program_options
+        management_api
         PkgConfig::libcap
 )
 
