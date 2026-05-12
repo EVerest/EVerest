@@ -218,6 +218,7 @@ void ConfigurationAPI::generate_api_cmd_set_config_parameters() {
 
                     std::fill_n(std::back_inserter(response.results), payload.parameter_updates.size(),
                                 API_types_ext::ConfigurationParameterUpdateResultEnum::Rejected);
+
                     m_mqtt_abstraction.publish(msg.replyTo, serialize(response));
                 } else {
                     std::vector<Everest::config::ConfigParameterUpdate> updates_internal = srcToTarVec(

@@ -56,6 +56,8 @@ LifecycleAPI::LifecycleAPI(MQTTAbstraction& mqtt_abstraction, ::Everest::config:
     generate_api_cmd_stop_modules();
     generate_api_cmd_start_modules();
     generate_api_cmd_get_everest_version();
+
+    generate_api_var_status();
 }
 
 void LifecycleAPI::modules_started_running() {
@@ -191,7 +193,13 @@ void LifecycleAPI::publish_execution_status(const std::string& tstamp,
 
     exec_status_update.module_status = module_status;
 
-    m_mqtt_abstraction.publish(topic, serialize(exec_status_update), QOS::QOS2, false);
+    EVLOG_warning << "Status topic: " << topic;
+    m_mqtt_abstraction.publish(topic, serialize(initial_update), QOS::QOS2, false);
+
+    // TODO(CB): register a callback somewhere and publish whenever the modules start/stop
+
+    // TODO(CB): This topics should be written to on disconnect via LWT, but the mqtt abstraction currently does not
+    // offer this
 }
 
 void LifecycleAPI::subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish) {
