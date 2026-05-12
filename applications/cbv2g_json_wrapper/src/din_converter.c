@@ -1202,19 +1202,60 @@ static cJSON* din_service_payment_selection_res_to_json(const struct din_Service
     return json;
 }
 
-/* ContractAuthenticationReq - has optional Id field but typically empty */
+/* ContractAuthenticationReq carries optional Id (IDREF) and GenChallenge
+ * (genChallengeType, base64-encoded 16-byte challenge stored as the raw
+ * EXI string value). Both must be preserved across encode/decode to keep
+ * the wrapper a transparent replacement for EXICodec.jar. */
 static int json_to_din_contract_authentication_req(cJSON* json, struct din_ContractAuthenticationReqType* msg) {
-    (void)json;
-    (void)msg;
-    /* ContractAuthenticationReq has optional Id and GenChallenge fields, typically empty */
-    msg->Id_isUsed = 0;
-    msg->GenChallenge_isUsed = 0;
+    msg->Id_isUsed = json_has_key(json, "Id");
+    if (msg->Id_isUsed) {
+        /* Bounded copy with snprintf (CWE-120 / CWE-126). */
+        const char* id = json_get_string(json, "Id");
+        size_t id_len = strnlen(id, din_Id_CHARACTER_SIZE);
+        int written = snprintf(msg->Id.characters, din_Id_CHARACTER_SIZE, "%.*s", (int)id_len, id);
+        if (written < 0) {
+            written = 0;
+        }
+        if ((size_t)written >= din_Id_CHARACTER_SIZE) {
+            written = din_Id_CHARACTER_SIZE - 1;
+        }
+        msg->Id.charactersLen = (size_t)written;
+    }
+
+    msg->GenChallenge_isUsed = json_has_key(json, "GenChallenge");
+    if (msg->GenChallenge_isUsed) {
+        /* genChallengeType is base64Binary length=16; cbv2g stores the raw
+         * string form of the EXI value, so we copy the JSON string through
+         * verbatim. Bounded copy with snprintf (CWE-120 / CWE-126). */
+        const char* gc = json_get_string(json, "GenChallenge");
+        size_t gc_len = strnlen(gc, din_GenChallenge_CHARACTER_SIZE);
+        int written = snprintf(msg->GenChallenge.characters, din_GenChallenge_CHARACTER_SIZE, "%.*s", (int)gc_len, gc);
+        if (written < 0) {
+            written = 0;
+        }
+        if ((size_t)written >= din_GenChallenge_CHARACTER_SIZE) {
+            written = din_GenChallenge_CHARACTER_SIZE - 1;
+        }
+        msg->GenChallenge.charactersLen = (size_t)written;
+    }
     return CBV2G_SUCCESS;
 }
 
 static cJSON* din_contract_authentication_req_to_json(const struct din_ContractAuthenticationReqType* msg) {
-    (void)msg;
-    return cJSON_CreateObject();
+    cJSON* json = cJSON_CreateObject();
+    if (msg->Id_isUsed) {
+        /* Bounded copy with snprintf (CWE-120). */
+        char id[din_Id_CHARACTER_SIZE + 1] = {0};
+        snprintf(id, sizeof(id), "%.*s", (int)msg->Id.charactersLen, msg->Id.characters);
+        cJSON_AddStringToObject(json, "Id", id);
+    }
+    if (msg->GenChallenge_isUsed) {
+        /* Bounded copy with snprintf (CWE-120). */
+        char gc[din_GenChallenge_CHARACTER_SIZE + 1] = {0};
+        snprintf(gc, sizeof(gc), "%.*s", (int)msg->GenChallenge.charactersLen, msg->GenChallenge.characters);
+        cJSON_AddStringToObject(json, "GenChallenge", gc);
+    }
+    return json;
 }
 
 /* ContractAuthenticationRes */
