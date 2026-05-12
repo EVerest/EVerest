@@ -1,6 +1,31 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
 
+"""Helpers to spawn a full EVerest stack from tests (`EverestCore`).
+
+**Parallel pytest / gcov**
+
+When the tree is built with coverage instrumentation (CMake option ``EVEREST_ENABLE_COVERAGE`` in
+everest-core), ``gcov`` writes ``.gcda`` files when processes exit. By default those files are
+placed next to the instrumented object files in the **build tree**. Several ``EverestCore``
+instances (for example ``pytest-xdist`` workers) would then write the **same** paths concurrently.
+That corrupts profiling data (``libgcov`` merge mismatch) and can also perturb process teardown
+timing.
+
+``EverestCore`` therefore sets ``GCOV_PREFIX`` (and ``GCOV_PREFIX_STRIP``) on the **manager**
+subprocess so each instance writes under its own workspace directory (``<workspace>/gcda/``). This
+keeps coverage data isolated per test session without changing non-coverage builds (the env vars
+are harmless when binaries are not instrumented).
+
+**Stopping the manager subprocess**
+
+``stop()`` mirrors what a human operator does: graceful shutdown first (``SIGINT``, which the
+manager treats as normal shutdown), then bounded waits. If the process does not exit, it escalates
+to ``SIGTERM`` and finally ``SIGKILL`` so CI and local runs do not hang indefinitely on a wedged
+stack. If escalation was required, ``stop()`` raises ``RuntimeError`` so tests that require a clean
+SIGINT-only shutdown cannot silently ignore a broken teardown.
+"""
+
 import logging
 import os
 import signal
@@ -77,7 +102,11 @@ class StatusFifoListener:
 
 
 class EverestCore:
-    """This class can be used to configure, start and stop a full build of EVerest
+    """Configure, start, and stop a full EVerest install from tests.
+
+    Each instance gets a private workspace (temp dir or supplied ``tmp_path``) including generated
+    config, status FIFO, and (when applicable) a per-instance ``gcda`` directory for coverage; see
+    module docstring.
     """
 
     def __init__(self,
@@ -116,9 +145,7 @@ class EverestCore:
             self.everest_config_path = config_dir / "everest_config.yaml"
             self._status_fifo_path = tmp_path / "status.fifo"
 
-        # Coverage-instrumented binaries write .gcda next to objects unless redirected.
-        # Parallel runs (e.g. pytest-xdist) would otherwise share build-tree .gcda files
-        # and corrupt them (libgcov merge mismatch), which can destabilize shutdown.
+        # See module docstring: isolate gcov output per workspace for parallel pytest.
         self._gcda_root = self._workspace_root / "gcda"
         self._gcda_root.mkdir(parents=True, exist_ok=True)
 
@@ -144,6 +171,7 @@ class EverestCore:
         self._standalone_module = standalone_module
 
     def _manager_subprocess_env(self) -> Dict[str, str]:
+        """Environment for the manager child: redirects gcov output when instrumentation is on."""
         env = os.environ.copy()
         env["GCOV_PREFIX"] = str(self._gcda_root) + os.sep
         env["GCOV_PREFIX_STRIP"] = "0"
@@ -240,7 +268,12 @@ class EverestCore:
         logging.debug("EVerest output stopped")
 
     def stop(self):
-        """Stops execution of EVerest by signaling SIGINT
+        """Request manager shutdown and wait for the subprocess to exit.
+
+        Sends ``SIGINT`` first (EVerest manager graceful path), waits up to
+        ``SHUTDOWN_TIMEOUT_SIGINT_SECONDS``, then ``SIGTERM`` / ``SIGKILL`` with shorter timeouts if
+        needed. Raises ``RuntimeError`` if escalation beyond SIGINT was required so callers can treat
+        a stuck stack as a failure; see module docstring.
         """
         logging.debug("CONTROLLER stop() function called...")
         escalation_signal = None
