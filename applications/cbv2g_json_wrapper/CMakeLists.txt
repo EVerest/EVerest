@@ -102,4 +102,26 @@ if(BUILD_CBV2G_JSON_WRAPPER_TESTS)
             GTest::gtest_main
     )
     add_test(NAME cbv2g_test_din COMMAND cbv2g_test_din)
+
+    # Fuzz-CSV replay binary. Driven by the EXICodec.jar-backed corpus
+    # produced by https://codeberg.org/sebalukas/fuzzy-exi-generator.
+    # Intentionally NOT registered with add_test() so plain `ctest` stays
+    # fast and contributors without the CSV are not penalised. Run with:
+    #   CBV2G_FUZZ_CSV=/path/to/din.csv ./cbv2g_test_din_fuzz
+    add_executable(cbv2g_test_din_fuzz)
+    target_sources(cbv2g_test_din_fuzz
+        PRIVATE
+            tests/test_din_fuzz.cpp
+    )
+    target_include_directories(cbv2g_test_din_fuzz PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cJSON
+    )
+    target_compile_features(cbv2g_test_din_fuzz PRIVATE cxx_std_17)
+    target_link_libraries(cbv2g_test_din_fuzz
+        PRIVATE
+            cbv2g_json_wrapper
+            cjson
+            GTest::gtest_main
+    )
 endif()
