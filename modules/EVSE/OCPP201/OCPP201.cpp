@@ -398,13 +398,17 @@ void OCPP201::init() {
 
     this->init_evse_maps();
 
+    this->mrec_error_map = this->config.CustomMrecErrorMapPath.empty()
+                               ? MREC_ERROR_MAP
+                               : load_mrec_error_map_overrides(this->config.CustomMrecErrorMapPath);
+
     const auto error_handler = [this](const Everest::error::Error& error) {
         if (error.type == EVSE_MANAGER_INOPERATIVE_ERROR) {
             // handled by specific evse_manager error handler
             return;
         }
         if (this->started) {
-            const auto event_data = get_event_data(error, false, this->event_id_counter++);
+            const auto event_data = get_event_data(error, false, this->event_id_counter++, this->mrec_error_map);
             this->charge_point->on_event({event_data});
         } else {
             std::scoped_lock lock(this->session_event_mutex);
@@ -418,7 +422,7 @@ void OCPP201::init() {
             return;
         }
         if (this->started) {
-            const auto event_data = get_event_data(error, true, this->event_id_counter++);
+            const auto event_data = get_event_data(error, true, this->event_id_counter++, this->mrec_error_map);
             this->charge_point->on_event({event_data});
         } else {
             std::scoped_lock lock(this->session_event_mutex);
@@ -1101,7 +1105,8 @@ void OCPP201::ready() {
                 const auto& error = std::get<Everest::error::Error>(queued_event);
                 EVLOG_info << "Processing queued error event for evse_id: " << evse_id << ": " << error.type;
                 bool is_active = error.state == Everest::error::State::Active;
-                const auto event_data = get_event_data(error, !is_active, this->event_id_counter++);
+                const auto event_data =
+                    get_event_data(error, !is_active, this->event_id_counter++, this->mrec_error_map);
                 this->charge_point->on_event({event_data});
 
                 // We do only report inoperative errors as faults
@@ -1236,7 +1241,7 @@ void OCPP201::init_evse_subscriptions() {
 
         auto fault_handler = [this, evse_id](const Everest::error::Error& error) {
             if (this->started) {
-                const auto event_data = get_event_data(error, false, this->event_id_counter++);
+                const auto event_data = get_event_data(error, false, this->event_id_counter++, this->mrec_error_map);
                 this->charge_point->on_event({event_data});
                 this->charge_point->on_faulted(evse_id, get_connector_id_from_error(error));
             } else {
@@ -1247,7 +1252,7 @@ void OCPP201::init_evse_subscriptions() {
 
         auto fault_cleared_handler = [this, evse_id](const Everest::error::Error& error) {
             if (this->started) {
-                const auto event_data = get_event_data(error, true, this->event_id_counter++);
+                const auto event_data = get_event_data(error, true, this->event_id_counter++, this->mrec_error_map);
                 this->charge_point->on_event({event_data});
                 this->charge_point->on_fault_cleared(evse_id, get_connector_id_from_error(error));
             } else {
