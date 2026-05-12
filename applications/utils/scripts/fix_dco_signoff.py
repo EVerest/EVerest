@@ -111,8 +111,6 @@ def main():
             "\033[0m"
         )
 
-    if args.remove_existing_signoffs:
-        remove_signoffs(args)
 
     subprocess_args = [
         'git', '-C', str(args.git_root),
