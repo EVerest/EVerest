@@ -116,6 +116,8 @@ Result SessionSetup::feed(Event ev) {
         }
 
         if (new_session) {
+            m_ctx.dc_limits_locked_after_charge_param = false;
+            m_ctx.dc_limits_after_charge_param_bounds.reset();
             logf_info("New session created with session_id: %s", session_id_to_string(m_ctx.session.get_id()).c_str());
             if (vehicle_cert_hash) {
                 auto& pause_ctx = m_ctx.pause_ctx.emplace();
@@ -130,6 +132,7 @@ Result SessionSetup::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session, evse_id, new_session);
 
         m_ctx.respond(res);
+        m_ctx.feedback.response_code(res.response_code);
 
         if (not new_session) {
             const auto& selected_services = m_ctx.session.get_selected_services();
@@ -154,6 +157,7 @@ Result SessionSetup::feed(Event ev) {
         const message_20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
+        m_ctx.feedback.response_code(dt::ResponseCode::FAILED_SequenceError);
         m_ctx.session_stopped = true;
         return {};
     }
