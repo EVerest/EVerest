@@ -346,6 +346,59 @@ bool pin_sigalgs_to_cert_curve(SSL_CTX* ctx) {
     return true;
 }
 
+// Mirror of openssl::pin_groups_to_cert_curve in lib/everest/tls.
+// Duplicated here because libiso15118 does not link against everest::tls.
+// Keep these two copies in sync.
+bool pin_groups_to_cert_curve(SSL_CTX* ctx) {
+    X509* leaf = SSL_CTX_get0_certificate(ctx);
+    if (leaf == nullptr) {
+        return true;
+    }
+
+    EVP_PKEY* pkey = X509_get0_pubkey(leaf);
+    if (pkey == nullptr || EVP_PKEY_id(pkey) != EVP_PKEY_EC) {
+        return true;
+    }
+
+    std::array<char, 80> name{};
+    std::size_t name_len = 0;
+    if (EVP_PKEY_get_group_name(pkey, name.data(), name.size(), &name_len) != 1) {
+        logf_info("pin_groups_to_cert_curve: unable to read EC group name");
+        return true;
+    }
+
+    const std::string group(name.data(), name_len);
+    const char* preferred = nullptr;
+    if (group == "P-256" || group == "prime256v1") {
+        preferred = "P-256";
+    } else if (group == "P-384" || group == "secp384r1") {
+        preferred = "P-384";
+    } else if (group == "P-521" || group == "secp521r1") {
+        preferred = "P-521";
+    } else {
+        logf_info("pin_groups_to_cert_curve: unrecognised EC group '%s'", group.c_str());
+        return true;
+    }
+
+    // Cert curve first; remaining standard NIST curves appended as fallback
+    // so that a client offering only one of them can still complete ECDHE.
+    // OpenSSL intersects this list with the client's supported_groups
+    // extension, so the client's preferences are still honored.
+    std::string list = preferred;
+    for (const char* g : {"P-521", "P-384", "P-256"}) {
+        if (std::strcmp(g, preferred) != 0) {
+            list += ":";
+            list += g;
+        }
+    }
+
+    if (SSL_CTX_set1_groups_list(ctx, list.c_str()) != 1) {
+        logf_error("SSL_CTX_set1_groups_list(%s) failed", list.c_str());
+        return false;
+    }
+    return true;
+}
+
 SSL_CTX* init_ssl(const config::SSLConfig& ssl_config) {
 
     // Note: openssl does not provide support for ECDH-ECDSA-AES128-SHA256 anymore
@@ -395,9 +448,13 @@ SSL_CTX* init_ssl(const config::SSLConfig& ssl_config) {
         log_and_raise_openssl_error("Failed in SSL_CTX_use_PrivateKey_file()");
     }
 
-    // Default: pin signature_algorithms to match the leaf cert's EC curve.
+    // Default: pin signature_algorithms and ECDHE groups to match the leaf
+    // cert's EC curve.
     if (!pin_sigalgs_to_cert_curve(ctx)) {
         log_and_raise_openssl_error("Failed to pin sigalgs to cert curve");
+    }
+    if (!pin_groups_to_cert_curve(ctx)) {
+        log_and_raise_openssl_error("Failed to pin groups to cert curve");
     }
 
     // Loading root certificates to verify client (only for tls 1.3)

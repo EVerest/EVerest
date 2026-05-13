@@ -457,6 +457,30 @@ bool use_certificate_and_key(ssl_st* ssl, const chain_t& chain);
 bool pin_sigalgs_to_cert_curve(ssl_ctx_st* ctx);
 
 /**
+ * \brief restrict the ECDHE groups list so the leaf certificate's EC curve
+ *        is preferred first
+ *
+ * Some ISO 15118-2 EV TLS stacks reject a handshake whose ECDHE share is on a
+ * different curve than the server certificate (e.g. P-256 ECDH share with a
+ * secp521r1 cert), aborting with a fatal decode_error alert. OpenSSL's default
+ * order prefers P-256 regardless of the cert curve, so without this pin the
+ * curves can mismatch whenever the cert uses P-384 or P-521.
+ *
+ * The list is constructed as `<cert-curve>:<remaining NIST curves>` so a
+ * client offering only one of the fallback curves can still complete ECDHE.
+ * OpenSSL intersects this list with the client's supported_groups extension,
+ * so the client's preferences are still honored.
+ *
+ * No-op for non-EC keys and for unrecognised EC curves (OpenSSL defaults stay
+ * in place in that case).
+ *
+ * \param[in] ctx SSL context with a leaf certificate already loaded
+ * \return true when no error was encountered (including the no-op cases);
+ *         false if OpenSSL rejected the groups list
+ */
+bool pin_groups_to_cert_curve(ssl_ctx_st* ctx);
+
+/**
  * \brief convert a certificate to a PEM string
  * \param[in] cert the certificate
  * \return the PEM string or empty on error
