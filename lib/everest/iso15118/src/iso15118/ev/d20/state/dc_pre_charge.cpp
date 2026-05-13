@@ -67,7 +67,7 @@ Result DC_PreCharge::feed(Event ev) {
         // First OK response transitions immediately; voltage threshold check is a future addition.
         m_ctx.respond(make_request(m_ctx.get_session(), message_20::datatypes::Processing::Finished,
                                    m_ctx.dc_pre_charge_target_voltage));
-        return m_ctx.create_state<PowerDelivery>();
+        return m_ctx.create_state<PowerDelivery>(message_20::datatypes::Progress::Start);
     }
 
     logf_error("Expected DC_PreChargeResponse, got code type id: %d", static_cast<int>(variant->get_type()));
