@@ -84,6 +84,9 @@ void to_json(json& j, StopTransactionReason const& k) noexcept {
     case StopTransactionReason::ReqEnergyTransferRejected:
         j = "ReqEnergyTransferRejected";
         return;
+    case StopTransactionReason::EVSEDisabled:
+        j = "EVSEDisabled";
+        return;
     }
 
     j = "INVALID_VALUE__everest::lib::API::V1_0::types::evse_manger::StopTransactionReason";
@@ -177,6 +180,10 @@ void from_json(json const& j, StopTransactionReason& k) {
     }
     if (s == "ReqEnergyTransferRejected") {
         k = StopTransactionReason::ReqEnergyTransferRejected;
+        return;
+    }
+    if (s == "EVSEDisabled") {
+        k = StopTransactionReason::EVSEDisabled;
         return;
     }
 

@@ -254,7 +254,6 @@ private:
 
     void process_cp_events_independent(CPEvent cp_event);
     void process_cp_events_state(CPEvent cp_event);
-    void run_state_machine();
 
     void main_thread();
     void error_thread();
@@ -311,6 +310,10 @@ private:
         bool session_active;
         std::string session_uuid;
         bool connector_enabled;
+        // Set when disable is requested while a session/transaction is active.
+        // Tells the state machine to transition to Disabled once the session is
+        // properly terminated instead of returning to Idle.
+        bool flag_disable_requested{false};
         EvseState current_state;
         std::optional<types::evse_manager::StopTransactionReason> last_stop_transaction_reason;
         types::evse_manager::StartSessionReason last_start_session_reason;
@@ -471,6 +474,7 @@ private:
 
 protected:
     // provide access for unit tests
+    void run_state_machine();
     constexpr auto& get_shared_context() {
         return shared_context;
     }

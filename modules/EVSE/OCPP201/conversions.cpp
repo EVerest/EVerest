@@ -616,6 +616,7 @@ ocpp::v2::ReasonEnum to_ocpp_reason(types::evse_manager::StopTransactionReason r
         return ocpp::v2::ReasonEnum::ReqEnergyTransferRejected;
     case types::evse_manager::StopTransactionReason::SoftReset:
     case types::evse_manager::StopTransactionReason::UnlockCommand:
+    case types::evse_manager::StopTransactionReason::EVSEDisabled:
         return ocpp::v2::ReasonEnum::Other;
     }
     return ocpp::v2::ReasonEnum::Other;
