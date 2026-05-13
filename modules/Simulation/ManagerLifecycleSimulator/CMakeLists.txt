@@ -6,8 +6,3 @@
 # module setup:
 #   - ${MODULE_NAME}: module name
 ev_setup_cpp_module()
-
-target_sources(${MODULE_NAME}
-    PRIVATE
-        "main/emptyImpl.cpp"
-)
