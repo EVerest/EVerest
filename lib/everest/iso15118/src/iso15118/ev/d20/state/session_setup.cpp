@@ -60,7 +60,7 @@ io::sha512_hash_t calculate_new_cert_session_id_hash(const io::sha512_hash_t& ch
 } // namespace
 
 void SessionSetup::enter() {
-    // TODO(SL): Adding logging
+    m_ctx.log.enter_state("SessionSetup");
 }
 
 Result SessionSetup::feed(Event ev) {
