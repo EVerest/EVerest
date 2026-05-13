@@ -34,8 +34,9 @@ message_20::Type MessageExchange::peek_response_type() const {
     return response->get_type();
 }
 
-Context::Context(session::feedback::Callbacks feedback_callbacks, MessageExchange& message_exchange_) :
-    feedback(std::move(feedback_callbacks)), message_exchange(message_exchange_) {
+Context::Context(session::feedback::Callbacks feedback_callbacks, MessageExchange& message_exchange_,
+                 SessionLogger& log_) :
+    feedback(std::move(feedback_callbacks)), log(log_), message_exchange(message_exchange_) {
 }
 
 std::unique_ptr<message_20::Variant> Context::pull_response() {
