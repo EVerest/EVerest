@@ -222,12 +222,28 @@ void Module::publish_variable(rust::Str implementation_id, rust::Str name, JsonB
 }
 
 void Module::raise_error(rust::Str implementation_id, ErrorType error_type) const {
+    // Here everything is called implementation_id: We have the Rust string type
+    // then we have its c++ counterpart as std::string. And then we have the
+    // ImplementationIdentifier type :S
+    const std::string impl_id = std::string(implementation_id);
+    const auto full_mapping = handle_->get_3_tier_model_mapping();
+    std::optional<Mapping> mapping;
+    if (full_mapping.has_value()) {
+        const auto& inner = *full_mapping;
+        mapping = inner.module;
+        // We might have multiple mappings. In this case we pick the
+        // implementation mapping is since this is more specific.
+        const auto impl_mapping_iter = inner.implementations.find(impl_id);
+        if (impl_mapping_iter != inner.implementations.end()) {
+            mapping = impl_mapping_iter->second;
+        }
+    }
+    const ImplementationIdentifier id{module_id_, impl_id, mapping};
     const Everest::error::Error error{std::string(error_type.error_type),
                                       std::string{},
                                       std::string(error_type.message),
                                       std::string(error_type.description),
-                                      module_id_,
-                                      std::string(implementation_id),
+                                      id,
                                       static_cast<Everest::error::Severity>(error_type.severity)};
     handle_->get_error_manager_impl(std::string(implementation_id))->raise_error(error);
 }

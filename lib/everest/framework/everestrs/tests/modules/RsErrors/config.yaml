@@ -6,9 +6,15 @@ active_modules:
       errors_multiple:
         - module_id: errors_1
           implementation_id: multiple
+    mapping:
+      module:
+        evse: 1
   errors_1:
     module: RsErrorsModule
     connections:
       errors_multiple:
         - module_id: errors_0
           implementation_id: multiple
+    mapping:
+      module:
+        evse: 2
