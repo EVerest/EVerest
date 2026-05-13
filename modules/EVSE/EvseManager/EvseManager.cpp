@@ -607,18 +607,39 @@ void EvseManager::ready() {
 
             // Cable check for DC charging
             r_hlc[0]->subscribe_start_cable_check([this] {
+                if (config.allow_dc_charging_during_renegotiation and
+                    charger->get_current_state() == Charger::EvseState::Charging) {
+                    renegotiation_while_charging = true;
+                    EVLOG_debug << "Skipping CableCheck during DC renegotiation and reporting success immediately";
+                    if (r_imd.empty()) {
+                        r_hlc[0]->call_update_isolation_status(types::iso15118::IsolationStatus::No_IMD);
+                    } else {
+                        r_hlc[0]->call_update_isolation_status(types::iso15118::IsolationStatus::Valid);
+                    }
+                    r_hlc[0]->call_cable_check_finished(true);
+                    return;
+                } else {
+                    renegotiation_while_charging = false;
+                }
+
                 power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::CableCheck;
                 cable_check();
             });
 
             // Cable check for DC charging
-            r_hlc[0]->subscribe_start_pre_charge(
-                [this] { power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::PreCharge; });
+            r_hlc[0]->subscribe_start_pre_charge([this] {
+                if (renegotiation_while_charging) {
+                    EVLOG_debug << "Skipping PreCharge phase switch during DC renegotiation";
+                    return;
+                }
+                power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::PreCharge;
+            });
 
             // Notification that current demand has started
             r_hlc[0]->subscribe_current_demand_started([this] {
                 power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Charging;
                 current_demand_active = true;
+                renegotiation_while_charging = false;
                 apply_new_target_voltage_current();
                 charger->notify_currentdemand_started();
                 if (not r_over_voltage_monitor.empty()) {

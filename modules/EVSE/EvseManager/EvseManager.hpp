@@ -83,6 +83,7 @@ struct Conf {
     int cable_check_relays_open_voltage_V;
     int cable_check_relays_closed_timeout_s;
     bool cable_check_wait_below_60V_before_finish;
+    bool allow_dc_charging_during_renegotiation;
     bool hack_skoda_enyaq;
     int hack_present_current_offset;
     bool hack_pause_imd_during_precharge;
@@ -410,6 +411,7 @@ private:
     static constexpr int CABLECHECK_SELFTEST_TIMEOUT{30};
 
     std::atomic_bool current_demand_active{false};
+    std::atomic_bool renegotiation_while_charging{false};
     std::atomic_bool slac_unmatched{false};
     std::mutex powermeter_mutex;
     std::condition_variable powermeter_cv;
