@@ -188,7 +188,7 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> con
                 connector_unlock();
             }
 
-            if (last_cp_state != RawCPState::A && last_cp_state != RawCPState::B) {
+            if (last_cp_state == RawCPState::C || last_cp_state == RawCPState::D) {
 
                 events.push(CPEvent::CarRequestedStopPower);
                 // Need to switch off according to Table A.6 Sequence 8.1
