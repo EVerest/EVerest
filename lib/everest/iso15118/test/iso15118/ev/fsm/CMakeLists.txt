@@ -16,3 +16,8 @@ endfunction()
 
 create_ev_fsm_test_target(session_setup)
 create_ev_fsm_test_target(authorization_setup)
+create_ev_fsm_test_target(dc_cable_check)
+create_ev_fsm_test_target(dc_pre_charge)
+create_ev_fsm_test_target(power_delivery)
+create_ev_fsm_test_target(session_stop)
+create_ev_fsm_test_target(dc_welding_detection)

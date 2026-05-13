@@ -13,7 +13,7 @@ message_20::AuthorizationRequest handle_request() {
 }
 
 void Authorization::enter() {
-    // TODO(SL): Adding logging
+    logf_debug("Enter state: Authorization");
 }
 
 Result Authorization::feed(Event ev) {

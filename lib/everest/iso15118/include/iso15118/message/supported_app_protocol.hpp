@@ -5,15 +5,12 @@
 #include <cstddef>
 #include <optional>
 #include <string>
-#include <vector>
 
 #include <iso15118/io/stream_view.hpp>
 
 #include <everest/util/vector/fixed_vector.hpp>
 
 namespace iso15118::message_20 {
-
-namespace datatypes {
 
 struct SupportedAppProtocol {
     std::string protocol_namespace;
@@ -28,8 +25,6 @@ struct SupportedAppProtocol {
                this->version_number_minor == other.version_number_minor;
     }
 };
-
-} // namespace datatypes
 
 struct SupportedAppProtocolRequest {
     everest::lib::util::fixed_vector<SupportedAppProtocol, 20> app_protocol;
