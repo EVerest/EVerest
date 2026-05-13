@@ -26,8 +26,6 @@ target_sources(everest_io
         serial/event_pty.cpp
         mdns/mdns.cpp
         mdns/mdns_socket.cpp
-        mqtt/mosquitto_cpp.cpp
-        mqtt/mqtt_client.cpp
         tun_tap/tap_handler.cpp
         tcp/tcp_socket.cpp
         netlink/vcan_netlink_manager.cpp
@@ -37,9 +35,20 @@ target_sources(everest_io
 target_include_directories(everest_io
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
-        $<BUILD_INTERFACE:${mosquitto_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
 )
+
+if(EVEREST_IO_WITH_MQTT)
+    target_sources(everest_io
+        PRIVATE
+            mqtt/mosquitto_cpp.cpp
+            mqtt/mqtt_client.cpp
+    )
+    target_include_directories(everest_io
+        PUBLIC
+            $<BUILD_INTERFACE:${mosquitto_SOURCE_DIR}/include>
+    )
+endif()
 
 target_link_libraries(everest_io
     PUBLIC
@@ -79,23 +88,25 @@ set_target_properties(everest_io
         POSITION_INDEPENDENT_CODE ON
 )
 
-if(DISABLE_EDM)
-  target_link_libraries(everest_io
-    PRIVATE
-    mosquitto
-  )
-else()
-  target_link_libraries(everest_io
-    PRIVATE
-    libmosquitto
-  )
-  install(TARGETS libmosquitto
-      EXPORT everest-core-targets
-      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-      RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-      INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-  )
+if(EVEREST_IO_WITH_MQTT)
+  if(DISABLE_EDM)
+    target_link_libraries(everest_io
+      PRIVATE
+      mosquitto
+    )
+  else()
+    target_link_libraries(everest_io
+      PRIVATE
+      libmosquitto
+    )
+    install(TARGETS libmosquitto
+        EXPORT everest-core-targets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+  endif()
 endif()
 
 install(TARGETS everest_io
@@ -106,7 +117,15 @@ install(TARGETS everest_io
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../include/everest
-    DESTINATION include
-    FILES_MATCHING PATTERN "*.hpp"
-)
+if(EVEREST_IO_WITH_MQTT)
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../include/everest
+        DESTINATION include
+        FILES_MATCHING PATTERN "*.hpp"
+    )
+else()
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../include/everest
+        DESTINATION include
+        FILES_MATCHING PATTERN "*.hpp"
+        PATTERN "mqtt" EXCLUDE
+    )
+endif()
