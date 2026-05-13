@@ -1299,6 +1299,7 @@ bool Charger::cancel_transaction(const types::evse_manager::StopTransactionReque
 void Charger::start_session(bool authfirst) {
     shared_context.session_active = true;
     shared_context.flag_authorized = false;
+    shared_context.authorized_pnc = false;
     shared_context.session_uuid = utils::generate_session_id(config_context.session_id_type);
     std::optional<types::authorization::ProvidedIdToken> provided_id_token;
     if (authfirst) {
@@ -1313,6 +1314,7 @@ void Charger::start_session(bool authfirst) {
 void Charger::stop_session() {
     shared_context.session_active = false;
     shared_context.flag_authorized = false;
+    shared_context.authorized_pnc = false;
     shared_context.flag_externally_cancelled = false;
     shared_context.flag_paused_by_evse = false;
     signal_simple_event(types::evse_manager::SessionEventEnum::SessionFinished);
