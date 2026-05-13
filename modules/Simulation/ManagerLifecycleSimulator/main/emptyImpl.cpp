@@ -15,7 +15,7 @@ void emptyImpl::init() {
     const std::string EXIT_TOPIC = "everest_api/" + this->mod->info.id + "/cmd/exit";
     EVLOG_info << "ManagerLifecycleSimulator: subscribing to exit command on topic: " << EXIT_TOPIC;
     this->mod->mqtt.subscribe(EXIT_TOPIC, [this](const std::string& payload) {
-        int exit_code = 0;
+        int exit_code = EXIT_SUCCESS;
         if (!payload.empty()) {
             try {
                 std::size_t parsed_chars = 0;
@@ -27,7 +27,7 @@ void emptyImpl::init() {
             } catch (const std::exception& e) {
                 EVLOG_warning << "ManagerLifecycleSimulator: invalid exit payload '" << payload
                               << "'. Expected integer, defaulting to exit code 0. Error: " << e.what();
-                exit_code = 0;
+                exit_code = EXIT_SUCCESS;
             }
         }
 
@@ -52,7 +52,7 @@ void emptyImpl::shutdown() {
         std::this_thread::sleep_for(BLOCKED_SHUTDOWN_SLEEP_DURATION);
     }
     EVLOG_info << "ManagerLifecycleSimulator: shutdown command received via framework, exiting process.";
-    std::exit(0);
+    std::exit(EXIT_SUCCESS);
 }
 
 } // namespace main
