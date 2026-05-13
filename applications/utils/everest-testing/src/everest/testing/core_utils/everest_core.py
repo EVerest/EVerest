@@ -299,7 +299,13 @@ class EverestCore:
                         )
                         escalation_signal = "SIGKILL"
                         self.process.kill()
-                        self.process.wait(timeout=SHUTDOWN_TIMEOUT_SIGKILL_SECONDS)
+                        try:
+                            self.process.wait(timeout=SHUTDOWN_TIMEOUT_SIGKILL_SECONDS)
+                        except subprocess.TimeoutExpired:
+                            logging.error(
+                                "EVerest child not reaped after SIGKILL within "
+                                f"{SHUTDOWN_TIMEOUT_SIGKILL_SECONDS}s (pid may be stuck as zombie)"
+                            )
 
         if self.log_reader_thread:
             self.log_reader_thread.join(timeout=5)
