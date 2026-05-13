@@ -6,6 +6,12 @@ project(everest-framework
     LANGUAGES CXX C
 )
 
+if(DEFINED EVEREST_IO_WITH_MQTT AND NOT EVEREST_IO_WITH_MQTT)
+    message(FATAL_ERROR "everest-framework requires MQTT support in everest::io. "
+            "Set EVEREST_IO_WITH_MQTT=ON or exclude framework from the build "
+            "(e.g. via EVEREST_EXCLUDE_LIBS=framework).")
+endif()
+
 find_package(everest-cmake 0.5 REQUIRED
     PATHS ../everest-cmake
 )

@@ -76,6 +76,7 @@ option(EVEREST_ENABLE_GLOBAL_COMPILE_WARNINGS "Enable compile warnings set in th
 option(EVEREST_ENABLE_DEBUG_BUILD "Enable debug build" OFF)
 option(EVEREST_BUILD_APPLICATIONS "Build applications like drivers for the EVerest stable API" ON)
 option(EVEREST_LIBS_ONLY "Only build libraries, skip modules/applications/config" OFF)
+option(EVEREST_IO_WITH_MQTT "Build MQTT (mosquitto) support in everest::io" ON)
 set(EVEREST_INCLUDE_LIBS "" CACHE STRING "Semicolon-separated allowlist of libraries to build (empty = all)")
 set(EVEREST_EXCLUDE_LIBS "" CACHE STRING "Semicolon-separated blocklist of libraries to skip")
 # list of compile options that are passed to modules if EVEREST_ENABLE_COMPILE_WARNINGS=ON
