@@ -10,9 +10,6 @@
 
 #include "ld-ev.hpp"
 
-// headers for provided interface implementations
-#include <generated/interfaces/empty/Implementation.hpp>
-
 namespace module {
 
 struct Conf {};
@@ -20,12 +17,11 @@ struct Conf {};
 class ManagerLifecycleSimulator : public Everest::ModuleBase {
 public:
     ManagerLifecycleSimulator() = delete;
-    ManagerLifecycleSimulator(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
-                              std::unique_ptr<emptyImplBase> p_main, Conf& config) :
-        ModuleBase(info), mqtt(mqtt_provider), p_main(std::move(p_main)), config(config){};
+    ManagerLifecycleSimulator(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider, Conf& config) :
+        ModuleBase(info), mqtt(mqtt_provider), config(config) {
+    }
 
     Everest::MqttProvider& mqtt;
-    const std::unique_ptr<emptyImplBase> p_main;
     const Conf& config;
 
 private:
@@ -33,6 +29,8 @@ private:
     void init();
     void ready();
     void shutdown();
+
+    bool blocked = false;
 };
 
 } // namespace module

@@ -79,18 +79,22 @@ add_custom_command(TARGET libocpp_unit_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${DEVICE_MODEL_CURRENT_EXAMPLE_CONFIG_LOCATION_V2} ${DEVICE_MODEL_EXAMPLE_CONFIG_LOCATION_V2}
 )
 
-set(GCOVR_ADDITIONAL_ARGS "--gcov-ignore-parse-errors=negative_hits.warn")
+if(EVEREST_ENABLE_COVERAGE)
+    evc_include(CodeCoverage)
 
-setup_target_for_coverage_gcovr_html(
-    NAME ${PROJECT_NAME}_gcovr_coverage
-    EXECUTABLE ctest
-    DEPENDENCIES libocpp_unit_tests ${GCOVR_DEPENDENCIES}
-    EXCLUDE "src/*" "tests/*"
-)
+    set(GCOVR_ADDITIONAL_ARGS "--gcov-ignore-parse-errors=negative_hits.warn")
 
-setup_target_for_coverage_gcovr_xml(
-    NAME ${PROJECT_NAME}_gcovr_coverage_xml
-    EXECUTABLE ctest
-    DEPENDENCIES libocpp_unit_tests ${GCOVR_DEPENDENCIES}
-    EXCLUDE "src/*" "tests/*"
-)
+    setup_target_for_coverage_gcovr_html(
+        NAME ${PROJECT_NAME}_gcovr_coverage
+        EXECUTABLE ctest
+        DEPENDENCIES libocpp_unit_tests ${GCOVR_DEPENDENCIES}
+        EXCLUDE "src/*" "tests/*"
+    )
+
+    setup_target_for_coverage_gcovr_xml(
+        NAME ${PROJECT_NAME}_gcovr_coverage_xml
+        EXECUTABLE ctest
+        DEPENDENCIES libocpp_unit_tests ${GCOVR_DEPENDENCIES}
+        EXCLUDE "src/*" "tests/*"
+    )
+endif()
