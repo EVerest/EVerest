@@ -2105,6 +2105,11 @@ void Charger::dlink_terminate() {
 void Charger::dlink_error() {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_dlink_error);
 
+    if (shared_context.reinit_requested or shared_context.reinit_running) {
+        EVLOG_debug << "Ignoring D-LINK_ERROR.req because reinit is active";
+        return;
+    }
+
     shared_context.hlc_allow_close_contactor = false;
 
     // Is PWM on at the moment?
