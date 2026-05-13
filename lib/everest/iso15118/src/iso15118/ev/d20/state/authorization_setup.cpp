@@ -25,7 +25,7 @@ bool check_response_code(ResponseCode response_code) {
 } // namespace
 
 void AuthorizationSetup::enter() {
-    // TODO(SL): Adding logging
+    logf_debug("Enter state: AuthorizationSetup");
 }
 
 Result AuthorizationSetup::feed([[maybe_unused]] Event ev) {
