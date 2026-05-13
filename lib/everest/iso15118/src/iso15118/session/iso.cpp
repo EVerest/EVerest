@@ -16,7 +16,7 @@
 namespace iso15118 {
 
 static constexpr auto SESSION_IDLE_TIMEOUT_MS = 5000;
-static constexpr auto MIN_RESPONSE_INTERVAL_MS = 100; // minimum time between two response messages
+static constexpr auto MIN_RESPONSE_INTERVAL_MS = 200; // minimum time between two response messages
 
 static void clamp_dc_limits(const d20::DcTransferLimits& upper_bound, d20::DcTransferLimits& candidate) {
     namespace dt = message_20::datatypes;
