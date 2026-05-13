@@ -755,11 +755,11 @@ std::tuple<json, int64_t> ManagerConfig::load_and_validate_with_schema(const fs:
     const json json_to_validate = load_yaml(file_path);
     int64_t validation_ms = 0;
 
-    const auto start_time_validate = std::chrono::system_clock::now();
+    const auto start_time_validate = std::chrono::steady_clock::now();
     json_validator validator(loader, format_checker);
     validator.set_root_schema(schema);
     validator.validate(json_to_validate);
-    const auto end_time_validate = std::chrono::system_clock::now();
+    const auto end_time_validate = std::chrono::steady_clock::now();
     EVLOG_debug
         << "YAML validation of " << file_path.string() << " took: "
         << std::chrono::duration_cast<std::chrono::milliseconds>(end_time_validate - start_time_validate).count()
@@ -1022,7 +1022,7 @@ void ManagerConfig::parse(ModuleConfigurations& module_configs) {
     if (this->ms.runtime_settings.validate_schema) {
         int64_t total_time_validation_ms = 0, total_time_parsing_ms = 0;
         for (auto const& types_entry : fs::recursive_directory_iterator(this->ms.types_dir)) {
-            const auto start_time = std::chrono::system_clock::now();
+            const auto start_time = std::chrono::steady_clock::now();
             const auto& type_file_path = types_entry.path();
             if (fs::is_regular_file(type_file_path) && type_file_path.extension() == ".yaml") {
                 const auto type_path =
@@ -1042,7 +1042,7 @@ void ManagerConfig::parse(ModuleConfigurations& module_configs) {
                         "Failed to load and parse type file '{}', reason: {}", type_file_path.string(), e.what())));
                 }
             }
-            const auto end_time = std::chrono::system_clock::now();
+            const auto end_time = std::chrono::steady_clock::now();
             total_time_parsing_ms +=
                 std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
             EVLOG_debug << "Parsing of type " << types_entry.path().string() << " took: "
@@ -1056,7 +1056,7 @@ void ManagerConfig::parse(ModuleConfigurations& module_configs) {
     if (this->ms.runtime_settings.validate_schema) {
         int64_t total_time_validation_ms = 0, total_time_parsing_ms = 0;
         for (auto const& errors_entry : fs::recursive_directory_iterator(this->ms.errors_dir)) {
-            const auto start_time = std::chrono::system_clock::now();
+            const auto start_time = std::chrono::steady_clock::now();
             const auto& error_file_path = errors_entry.path();
             if (fs::is_regular_file(error_file_path) && error_file_path.extension() == ".yaml") {
                 try {
@@ -1072,7 +1072,7 @@ void ManagerConfig::parse(ModuleConfigurations& module_configs) {
                         "Failed to load and parse error file '{}', reason: {}", error_file_path.string(), e.what())));
                 }
             }
-            const auto end_time = std::chrono::system_clock::now();
+            const auto end_time = std::chrono::steady_clock::now();
             total_time_parsing_ms +=
                 std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
             EVLOG_debug << "Parsing of error " << errors_entry.path().string() << " took: "

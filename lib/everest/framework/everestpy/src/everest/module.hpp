@@ -29,7 +29,7 @@ public:
             handle->register_on_ready_handler(on_ready_handler);
         }
 
-        const auto end_time = std::chrono::system_clock::now();
+        const auto end_time = std::chrono::steady_clock::now();
         EVLOG_info << "Module " << fmt::format(Everest::TERMINAL_STYLE_BLUE, "{}", this->module_id) << " initialized ["
                    << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - this->start_time).count()
                    << "ms]";
@@ -85,7 +85,7 @@ public:
 private:
     const std::string module_id;
     const RuntimeSession& session;
-    const std::chrono::time_point<std::chrono::system_clock> start_time;
+    const std::chrono::time_point<std::chrono::steady_clock> start_time;
     std::unique_ptr<Everest::RuntimeSettings> rs;
     std::shared_ptr<Everest::MQTTAbstraction> mqtt_abstraction;
     std::unique_ptr<Everest::Config> config_;
