@@ -13,7 +13,7 @@ using EVSupportedAppProtocols = everest::lib::util::fixed_vector<message_20::Sup
 // Holds information about the EV
 struct EVInformation {
     EVSupportedAppProtocols ev_supported_app_protocols;
-    message_20::datatypes::SupportedAppProtocol selected_app_protocol;
+    message_20::SupportedAppProtocol selected_app_protocol;
     std::string evcc_id;
     std::optional<std::string> ev_tls_leaf_cert;
     std::optional<std::string> ev_tls_sub_ca_1_cert;

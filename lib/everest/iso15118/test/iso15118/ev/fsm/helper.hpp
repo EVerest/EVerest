@@ -4,16 +4,17 @@
 
 #include <array>
 
+#include <everest/util/fsm/fsm.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/states.hpp>
-#include <iso15118/fsm/fsm.hpp>
 #include <iso15118/message/variant.hpp>
 
 using namespace iso15118;
 
 class FsmStateHelper {
 public:
-    FsmStateHelper(const ev::d20::session::feedback::Callbacks& callbacks) : ctx(callbacks, msg_exch){};
+    FsmStateHelper(const ev::d20::session::feedback::Callbacks& callbacks) : ctx(callbacks, msg_exch) {
+    }
 
     ev::d20::Context& get_context();
 
