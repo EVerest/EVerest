@@ -8,7 +8,7 @@
 namespace iso15118::ev::d20::state {
 
 void DC_ChargeParameterDiscovery::enter() {
-    // TODO(SL): Adding logging
+    m_ctx.log.enter_state("DC_ChargeParameterDiscovery");
 }
 
 Result DC_ChargeParameterDiscovery::feed(Event ev) {
