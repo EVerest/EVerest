@@ -12,7 +12,7 @@ add_library(everest::framework ALIAS framework)
 
 set_target_properties(framework PROPERTIES
     VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
+    SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
 )
 
 target_sources(framework
