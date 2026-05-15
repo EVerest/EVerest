@@ -161,7 +161,7 @@ def main():
     }
     # render yaml content
     with args.yaml_output_path.open('w') as f:
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        yaml.dump(data, f, default_flow_style=False)
 
     with args.json_output_path.open('w') as f:
         json.dump(data, f, indent=2)
