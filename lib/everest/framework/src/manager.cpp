@@ -272,7 +272,7 @@ std::map<pid_t, std::string> spawn_modules(const std::vector<ModuleStartInfo>& m
 } // namespace
 
 /// \brief Publish startup metadata, register handlers, and spawn module processes.
-void Manager::publishStartupMetadata(const RuntimeContext& ctx) const {
+void Manager::publish_startup_metadata(const RuntimeContext& ctx) const {
     const auto& config = *ctx.config;
     auto& mqtt_abstraction = ctx.mqtt_abstraction;
     const auto& ms = ctx.ms;
@@ -350,7 +350,7 @@ void Manager::publishStartupMetadata(const RuntimeContext& ctx) const {
 }
 
 /// \brief Unregister all module ready handlers and clear tracked ready state.
-void Manager::unregisterModuleReadyHandlers(ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
+void Manager::unregister_module_ready_handlers(ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
     ModulesReadyType modules_ready_moved;
     {
         const std::lock_guard<std::mutex> lck(modules_ready_mutex_);
@@ -368,10 +368,10 @@ void Manager::unregisterModuleReadyHandlers(ManagerConfig& config, MQTTAbstracti
 }
 
 /// \brief Stop all remaining module processes, escalating SIGTERM to SIGKILL.
-void Manager::shutdownModules(const std::map<pid_t, std::string>& modules, ManagerConfig& config,
+void Manager::shutdown_modules(const std::map<pid_t, std::string>& modules, ManagerConfig& config,
                               MQTTAbstraction& mqtt_abstraction) {
 
-    unregisterModuleReadyHandlers(config, mqtt_abstraction);
+    unregister_module_ready_handlers(config, mqtt_abstraction);
 
     for (const auto& child : modules) {
         auto retval = kill(child.first, SIGTERM);
@@ -478,8 +478,8 @@ void print_shutdown_message(const std::optional<std::chrono::system_clock::time_
 
 // ---- State/event handlers ---------------------------------------------------
 
-void Manager::handleRestartModulesAfterShutdown(RuntimeContext& ctx) {
-    unregisterModuleReadyHandlers(*ctx.config, ctx.mqtt_abstraction);
+void Manager::handle_restart_modules_after_shutdown(RuntimeContext& ctx) {
+    unregister_module_ready_handlers(*ctx.config, ctx.mqtt_abstraction);
     ctx.mqtt_abstraction.clear_retained_topics();
 
     {
@@ -491,7 +491,7 @@ void Manager::handleRestartModulesAfterShutdown(RuntimeContext& ctx) {
             ctx.config = std::make_shared<ManagerConfig>(ctx.ms, resp.module_configs);
         }
     }
-    module_handles_ = handleStartModules(ctx);
+    module_handles_ = handle_start_modules(ctx);
     shutdown_cause_ = ShutdownCause::None;
     shutdown_start_time_ = std::nullopt;
     force_terminate_start_time_ = std::nullopt;
@@ -500,7 +500,7 @@ void Manager::handleRestartModulesAfterShutdown(RuntimeContext& ctx) {
     EVLOG_info << "Modules restart initiated with reloaded configuration.";
 }
 
-std::optional<int> Manager::handleFinishNormalShutdown(MQTTAbstraction& mqtt_abstraction,
+std::optional<int> Manager::handle_finish_normal_shutdown(MQTTAbstraction& mqtt_abstraction,
                                                        ManagerAdminPanel& admin_panel) {
     std::string bad_modules;
     for (const auto& shutdown_info_entry : shutdown_info_) {
@@ -522,7 +522,7 @@ std::optional<int> Manager::handleFinishNormalShutdown(MQTTAbstraction& mqtt_abs
         shutdown_cause_ = ShutdownCause::None;
         force_terminate_start_time_ = std::nullopt;
         force_kill_sent_ = false;
-        transitionTo(ManagerState::Exiting);
+        transition_to(ManagerState::Exiting);
         return EXIT_SUCCESS;
     }
 
@@ -535,12 +535,12 @@ std::optional<int> Manager::handleFinishNormalShutdown(MQTTAbstraction& mqtt_abs
     shutdown_cause_ = ShutdownCause::None;
     force_terminate_start_time_ = std::nullopt;
     force_kill_sent_ = false;
-    transitionTo(ManagerState::Idle);
+    transition_to(ManagerState::Idle);
     EVLOG_info << "Manager is idle after module shutdown. Send SIGINT/SIGTERM to stop.";
     return std::nullopt;
 }
 
-void Manager::handleFinishCrashRecovery(MQTTAbstraction& mqtt_abstraction) {
+void Manager::handle_finish_crash_recovery(MQTTAbstraction& mqtt_abstraction) {
     const auto duration_ms = shutdown_start_time_.has_value()
                                  ? std::chrono::duration_cast<std::chrono::milliseconds>(
                                        std::chrono::system_clock::now() - shutdown_start_time_.value())
@@ -573,30 +573,30 @@ void Manager::handleFinishCrashRecovery(MQTTAbstraction& mqtt_abstraction) {
         modules_ready_.clear();
     }
 
-    transitionTo(ManagerState::Idle);
+    transition_to(ManagerState::Idle);
     EVLOG_info << "Crash recovery completed, manager is idle after module shutdown. Send SIGINT/SIGTERM to stop.";
 }
 
-std::optional<int> Manager::handleFinalizeShutdownTransition(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
+std::optional<int> Manager::handle_finalize_shutdown_transition(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
                                                              bool restart_requested, bool crash_in_progress) {
     if (crash_in_progress) {
-        handleFinishCrashRecovery(ctx.mqtt_abstraction);
+        handle_finish_crash_recovery(ctx.mqtt_abstraction);
         return std::nullopt;
     }
     if (restart_requested) {
-        handleRestartModulesAfterShutdown(ctx);
+        handle_restart_modules_after_shutdown(ctx);
         return std::nullopt;
     }
-    return handleFinishNormalShutdown(ctx.mqtt_abstraction, admin_panel);
+    return handle_finish_normal_shutdown(ctx.mqtt_abstraction, admin_panel);
 }
 
-void Manager::handleInitiateGracefulShutdown(const std::chrono::system_clock::time_point& module_exited_time,
+void Manager::handle_initiate_graceful_shutdown(const std::chrono::system_clock::time_point& module_exited_time,
                                              bool publish_when_sigint_received, const std::string* info_log,
                                              MQTTAbstraction& mqtt_abstraction, const ManagerSettings& ms) {
-    if (isInShutdownFlowState()) {
+    if (is_in_shutdown_flow_state()) {
         return;
     }
-    transitionTo(ManagerState::ShutdownRequested);
+    transition_to(ManagerState::ShutdownRequested);
     shutdown_start_time_ = module_exited_time;
     if (publish_when_sigint_received || not sigint_received_) {
         if (info_log != nullptr) {
@@ -613,7 +613,7 @@ int Manager::run() {
     const bool check = (vm_.count("check") != 0);
     sigint_received_ = false;
     shutdown_cause_ = ShutdownCause::None;
-    transitionTo(ManagerState::Initializing);
+    transition_to(ManagerState::Initializing);
     unexpected_module_exit_count_ = 0;
     shutdown_start_time_ = std::nullopt;
     force_terminate_start_time_ = std::nullopt;
@@ -700,7 +700,7 @@ int Manager::run() {
 
     std::shared_ptr<ManagerConfig> config; // TODO: maybe this can stay unique when we re-work start_modules()
     try {
-        config = loadAndValidateConfig(ms, db_storage, db_storage_has_module_configs );
+        config = load_and_validate_config(ms);
     } catch (...) {
         return EXIT_FAILURE;
     }
@@ -733,13 +733,13 @@ int Manager::run() {
         return EXIT_SUCCESS;
     }
 
-    std::vector<std::string> standalone_modules = collectStandaloneModules(*config);
-    std::vector<std::string> ignored_modules = collectIgnoredModules();
+    std::vector<std::string> standalone_modules = collect_standalone_modules(*config);
+    std::vector<std::string> ignored_modules = collect_ignored_modules();
 
     // create StatusFifo object
     auto status_fifo = StatusFifo::create_from_path(vm_["status-fifo"].as<std::string>());
 
-    auto mqtt_abstraction = createAndConnectMqtt(ms);
+    auto mqtt_abstraction = create_and_connect_mqtt(ms);
     if (!mqtt_abstraction) {
         return EXIT_FAILURE;
     }
@@ -753,7 +753,7 @@ int Manager::run() {
 
     RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
                                ms,     status_fifo,       retain_topics, db_storage};
-    module_handles_ = handleStartModules(runtime_ctx);
+    module_handles_ = handle_start_modules(runtime_ctx);
 
     if (const auto err_set_user = ManagerAdminPanel::switch_manager_user_if_needed(runtime_ctx.ms)) {
         EVLOG_error << "Error switching manager to user " << runtime_ctx.ms.run_as_user << ": " << *err_set_user;
@@ -764,11 +764,11 @@ int Manager::run() {
     shutdown_info_.clear();
 
     while (true) {
-        if (handleWaitpidEvent(wstatus, runtime_ctx, admin_panel)) {
+        if (handle_waitpid_event(wstatus, runtime_ctx, admin_panel)) {
             continue;
         }
 
-        const auto lifecycle_advance = advanceLifecycleStateIfReady(runtime_ctx, admin_panel);
+        const auto lifecycle_advance = advance_lifecycle_state_if_ready(runtime_ctx, admin_panel);
         if (lifecycle_advance.status == LifecycleAdvanceResult::Status::ExitRequested) {
             return *lifecycle_advance.exit_code;
         }
@@ -776,14 +776,14 @@ int Manager::run() {
             continue;
         }
 
-        if (const auto exit_from_panel = handleControllerIpcPoll(runtime_ctx, admin_panel, prefix_opt)) {
+        if (const auto exit_from_panel = handle_controller_ipc_poll(runtime_ctx, admin_panel, prefix_opt)) {
             return *exit_from_panel;
         }
-        if (const auto exit_from_signal = handleSignalPoll(signal_polling, runtime_ctx, admin_panel)) {
+        if (const auto exit_from_signal = handle_signal_poll(signal_polling, runtime_ctx, admin_panel)) {
             return *exit_from_signal;
         }
 
-        handleShutdownTimeout(runtime_ctx);
+        handle_shutdown_timeout(runtime_ctx);
     }
 
     return EXIT_SUCCESS;
@@ -791,7 +791,7 @@ int Manager::run() {
 
 // ---- Setup/helpers ----------------------------------------------------------
 
-const char* Manager::stateToString(ManagerState state) const {
+std::string_view Manager::state_to_string(ManagerState state) const {
     switch (state) {
     case ManagerState::Initializing:
         return "Initializing";
@@ -854,7 +854,7 @@ std::shared_ptr<ManagerConfig> Manager::loadAndValidateConfig(const ManagerSetti
     return config;
 }
 
-std::unique_ptr<MQTTAbstraction> Manager::createAndConnectMqtt(const ManagerSettings& ms) const {
+std::unique_ptr<MQTTAbstraction> Manager::create_and_connect_mqtt(const ManagerSettings& ms) const {
     auto mqtt_abstraction = make_mqtt_abstraction(ms.mqtt_settings);
     if (!mqtt_abstraction->connect()) {
         if (not ms.mqtt_settings.uses_socket()) {
@@ -871,7 +871,7 @@ std::unique_ptr<MQTTAbstraction> Manager::createAndConnectMqtt(const ManagerSett
     return mqtt_abstraction;
 }
 
-std::vector<std::string> Manager::collectStandaloneModules(const ManagerConfig& config) const {
+std::vector<std::string> Manager::collect_standalone_modules(const ManagerConfig& config) const {
     std::vector<std::string> standalone_modules;
     if (vm_.count("standalone")) {
         standalone_modules = vm_["standalone"].as<std::vector<std::string>>();
@@ -892,18 +892,18 @@ std::vector<std::string> Manager::collectStandaloneModules(const ManagerConfig& 
     return standalone_modules;
 }
 
-std::vector<std::string> Manager::collectIgnoredModules() const {
+std::vector<std::string> Manager::collect_ignored_modules() const {
     if (vm_.count("ignore")) {
         return vm_["ignore"].as<std::vector<std::string>>();
     }
     return {};
 }
 
-void Manager::transitionTo(ManagerState new_state) {
+void Manager::transition_to(ManagerState new_state) {
     if (state_ == new_state) {
         return;
     }
-    EVLOG_info << "Manager state transition: " << stateToString(state_) << " -> " << stateToString(new_state);
+    EVLOG_info << "Manager state transition: " << state_to_string(state_) << " -> " << state_to_string(new_state);
     state_ = new_state;
 }
 
@@ -912,30 +912,30 @@ Manager::Manager(const po::variables_map& vm) : vm_(vm) {
 
 // ---- State predicates -------------------------------------------------------
 
-bool Manager::isInShutdownFlowState() const {
+bool Manager::is_in_shutdown_flow_state() const {
     return (state_ == ManagerState::ShutdownRequested) || (state_ == ManagerState::CrashShutdownInProgress) ||
            (state_ == ManagerState::ForceTerminating) || (state_ == ManagerState::RestartRequested) ||
            (state_ == ManagerState::ShutdownFinalizing);
 }
 
-bool Manager::isRestartRequested() const {
+bool Manager::is_restart_requested() const {
     return state_ == ManagerState::RestartRequested;
 }
 
-bool Manager::isCrashInProgress() const {
+bool Manager::is_crash_in_progress() const {
     return state_ == ManagerState::CrashShutdownInProgress;
 }
 
-bool Manager::areModulesStarted() const {
+bool Manager::are_modules_started() const {
     return state_ == ManagerState::Running;
 }
 
 // ---- Event loop dispatch handlers ------------------------------------------
 
 /// \brief Handle module startup by publishing metadata, registering handlers, and spawning module processes.
-std::map<pid_t, std::string> Manager::handleStartModules(const RuntimeContext& ctx) {
+std::map<pid_t, std::string> Manager::handle_start_modules(const RuntimeContext& ctx) {
     BOOST_LOG_FUNCTION();
-    transitionTo(ManagerState::StartingModules);
+    transition_to(ManagerState::StartingModules);
     auto& config = *ctx.config;
     auto& mqtt_abstraction = ctx.mqtt_abstraction;
     const auto& ignored_modules = ctx.ignored_modules;
@@ -951,7 +951,7 @@ std::map<pid_t, std::string> Manager::handleStartModules(const RuntimeContext& c
     const auto number_of_modules = module_configurations.size();
     EVLOG_info << "Starting " << number_of_modules << " modules";
 
-    publishStartupMetadata(ctx);
+    publish_startup_metadata(ctx);
 
     for (const auto& [module_id_, module_config] : module_configurations) {
         const auto& module_name = module_config.module_name;
@@ -1013,12 +1013,12 @@ std::map<pid_t, std::string> Manager::handleStartModules(const RuntimeContext& c
                     std::chrono::duration_cast<std::chrono::milliseconds>(complete_end_time - complete_start_time)
                         .count());
 
-                if (sigint_received_ || isInShutdownFlowState()) {
+                if (sigint_received_ || is_in_shutdown_flow_state()) {
                     EVLOG_info << "All modules reported ready while shutdown is already in progress. "
                                   "Skipping transition to Running.";
                     return;
                 }
-                transitionTo(ManagerState::Running);
+                transition_to(ManagerState::Running);
                 status_fifo.update(StatusFifo::ALL_MODULES_STARTED);
                 MqttMessagePayload payload{MqttMessageType::GlobalReady, nlohmann::json(true)};
 
@@ -1084,23 +1084,23 @@ std::map<pid_t, std::string> Manager::handleStartModules(const RuntimeContext& c
     return spawn_modules(modules_to_spawn, ms);
 }
 
-Manager::LifecycleAdvanceResult Manager::advanceLifecycleStateIfReady(RuntimeContext& ctx,
+Manager::LifecycleAdvanceResult Manager::advance_lifecycle_state_if_ready(RuntimeContext& ctx,
                                                                       ManagerAdminPanel& admin_panel) {
-    const bool in_shutdown_flow = isInShutdownFlowState();
+    const bool in_shutdown_flow = is_in_shutdown_flow_state();
     const bool crash_in_progress = (shutdown_cause_ == ShutdownCause::Crash);
     const bool restart_requested = (shutdown_cause_ == ShutdownCause::Restart);
 
     // Finalize shutdown as soon as all module processes are gone, even if we got here through ECHILD
     // after a timeout-triggered force shutdown.
     if (in_shutdown_flow && module_handles_.empty() && state_ != ManagerState::ShutdownFinalizing) {
-        transitionTo(ManagerState::ShutdownFinalizing);
+        transition_to(ManagerState::ShutdownFinalizing);
         if (crash_in_progress && unexpected_module_exit_count_ <= MAX_UNEXPECTED_MODULE_RESTARTS) {
             EVLOG_warning << fmt::format(
                 "Unexpected module exit recovery attempt {}/{}. Reloading config and restarting "
                 "modules.",
                 unexpected_module_exit_count_, MAX_UNEXPECTED_MODULE_RESTARTS);
-            handleRestartModulesAfterShutdown(ctx);
-            return LifecycleAdvanceResult::transitionApplied();
+            handle_restart_modules_after_shutdown(ctx);
+            return {LifecycleAdvanceResult::Status::TransitionApplied, std::nullopt};
         }
         if (crash_in_progress && unexpected_module_exit_count_ > MAX_UNEXPECTED_MODULE_RESTARTS) {
             EVLOG_error << fmt::format("Reached maximum unexpected module exit recovery attempts ({}/{}). "
@@ -1108,27 +1108,27 @@ Manager::LifecycleAdvanceResult Manager::advanceLifecycleStateIfReady(RuntimeCon
                                        unexpected_module_exit_count_, MAX_UNEXPECTED_MODULE_RESTARTS);
         }
         if (const auto exit_code =
-                handleFinalizeShutdownTransition(ctx, admin_panel, restart_requested, crash_in_progress)) {
-            return LifecycleAdvanceResult::exitRequested(*exit_code);
+                handle_finalize_shutdown_transition(ctx, admin_panel, restart_requested, crash_in_progress)) {
+            return {LifecycleAdvanceResult::Status::ExitRequested, *exit_code};
         }
-        return LifecycleAdvanceResult::transitionApplied();
+        return {LifecycleAdvanceResult::Status::TransitionApplied, std::nullopt};
     }
 
     // Admin restart can mark restart_modules while modules are still draining.
     // If all children are gone, restart immediately with reloaded config.
     if (restart_requested && module_handles_.empty()) {
-        handleRestartModulesAfterShutdown(ctx);
-        return LifecycleAdvanceResult::transitionApplied();
+        handle_restart_modules_after_shutdown(ctx);
+        return {LifecycleAdvanceResult::Status::TransitionApplied, std::nullopt};
     }
 
-    return LifecycleAdvanceResult::noTransition();
+    return {LifecycleAdvanceResult::Status::NoTransition, std::nullopt};
 }
 
-bool Manager::handleChildExit(pid_t pid, int wstatus, RuntimeContext& ctx, ManagerAdminPanel& admin_panel) {
+bool Manager::handle_child_exit(pid_t pid, int wstatus, RuntimeContext& ctx, ManagerAdminPanel& admin_panel) {
     auto module_exited_time = std::chrono::system_clock::now();
     if (admin_panel.is_controller_process(pid)) {
         // During intentional manager shutdown/restart, controller exit is expected.
-        if (isInShutdownFlowState() || state_ == ManagerState::Exiting || sigint_received_ || isRestartRequested()) {
+        if (is_in_shutdown_flow_state() || state_ == ManagerState::Exiting || sigint_received_ || is_restart_requested()) {
             EVLOG_info << "Controller process exited during manager shutdown/restart.";
             return true;
         }
@@ -1152,13 +1152,13 @@ bool Manager::handleChildExit(pid_t pid, int wstatus, RuntimeContext& ctx, Manag
         ++unexpected_module_exit_count_;
         const auto shutdown_info_log = "Module " + fmt::format(TERMINAL_STYLE_BLUE, "{}", module_name) +
                                        " exited unexpectedly, signaling remaining modules to shut down gracefully...";
-        handleInitiateGracefulShutdown(module_exited_time, true, &shutdown_info_log, ctx.mqtt_abstraction, ctx.ms);
-        transitionTo(ManagerState::CrashShutdownInProgress);
+        handle_initiate_graceful_shutdown(module_exited_time, true, &shutdown_info_log, ctx.mqtt_abstraction, ctx.ms);
+        transition_to(ManagerState::CrashShutdownInProgress);
         shutdown_info_.push_back({module_name, wstatus});
         return true;
     }
 
-    if (isInShutdownFlowState() || sigint_received_) {
+    if (is_in_shutdown_flow_state() || sigint_received_) {
         // During shutdown drain, keep collecting statuses for final shutdown summary.
         EVLOG_info << "Module " << fmt::format(TERMINAL_STYLE_BLUE, "{}", module_name) << " (pid " << pid
                    << ") shutdown ["
@@ -1174,7 +1174,7 @@ bool Manager::handleChildExit(pid_t pid, int wstatus, RuntimeContext& ctx, Manag
     return false;
 }
 
-std::optional<int> Manager::handleSignal(int signo, RuntimeContext& ctx, ManagerAdminPanel& admin_panel) {
+std::optional<int> Manager::handle_signal(int signo, RuntimeContext& ctx, ManagerAdminPanel& admin_panel) {
     if (signo != SIGINT && signo != SIGTERM) {
         return std::nullopt;
     }
@@ -1189,10 +1189,10 @@ std::optional<int> Manager::handleSignal(int signo, RuntimeContext& ctx, Manager
             print_shutdown_message(shutdown_start_time_);
             admin_panel.shutdown_controller();
             cleanup(ctx.mqtt_abstraction);
-            transitionTo(ManagerState::Exiting);
+            transition_to(ManagerState::Exiting);
             return EXIT_SUCCESS;
         }
-        transitionTo(ManagerState::ShutdownRequested);
+        transition_to(ManagerState::ShutdownRequested);
         EVLOG_info << "Shutting down modules...";
         ctx.mqtt_abstraction.publish(fmt::format("{}shutdown", ctx.ms.mqtt_settings.everest_prefix),
                                      std::string("true"), QOS::QOS2, false);
@@ -1201,11 +1201,11 @@ std::optional<int> Manager::handleSignal(int signo, RuntimeContext& ctx, Manager
 
     EVLOG_info << "Terminating manager";
     admin_panel.shutdown_controller();
-    transitionTo(ManagerState::Exiting);
+    transition_to(ManagerState::Exiting);
     return EXIT_FAILURE;
 }
 
-void Manager::handleShutdownTimeout(RuntimeContext& ctx) {
+void Manager::handle_shutdown_timeout(RuntimeContext& ctx) {
     if (state_ == ManagerState::ShutdownFinalizing) {
         return;
     }
@@ -1218,9 +1218,9 @@ void Manager::handleShutdownTimeout(RuntimeContext& ctx) {
 
     if (should_check_shutdown_timeout &&
         now >= shutdown_start_time_.value() + std::chrono::milliseconds(SHUTDOWN_TIMEOUT_MS)) {
-        transitionTo(ManagerState::ForceTerminating);
+        transition_to(ManagerState::ForceTerminating);
         EVLOG_warning << "Not all modules shut down within the timeout. Forcefully terminating remaining modules.";
-        shutdownModules(module_handles_, *ctx.config, ctx.mqtt_abstraction);
+        shutdown_modules(module_handles_, *ctx.config, ctx.mqtt_abstraction);
         force_terminate_start_time_ = now;
         force_kill_sent_ = false;
         return;
@@ -1251,7 +1251,7 @@ void Manager::handleShutdownTimeout(RuntimeContext& ctx) {
     force_kill_sent_ = true;
 }
 
-bool Manager::handleWaitpidEvent(int& wstatus, RuntimeContext& ctx, ManagerAdminPanel& admin_panel) {
+bool Manager::handle_waitpid_event(int& wstatus, RuntimeContext& ctx, ManagerAdminPanel& admin_panel) {
     // non-blocking as this main loop also processes controller RPC and the signal fd
     const auto pid = waitpid(-1, &wstatus, WNOHANG);
     if (pid == 0) {
@@ -1272,23 +1272,23 @@ bool Manager::handleWaitpidEvent(int& wstatus, RuntimeContext& ctx, ManagerAdmin
         }
         return false;
     }
-    return handleChildExit(pid, wstatus, ctx, admin_panel);
+    return handle_child_exit(pid, wstatus, ctx, admin_panel);
 }
 
-std::optional<int> Manager::handleControllerIpcPoll(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
+std::optional<int> Manager::handle_controller_ipc_poll(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
                                                     const std::string& prefix_opt) {
-    bool modules_started = areModulesStarted();
-    bool restart_requested = isRestartRequested();
+    bool modules_started = are_modules_started();
+    bool restart_requested = is_restart_requested();
     if (const auto exit_from_panel = admin_panel.poll_controller_ipc(restart_requested, modules_started,
                                                                      ctx.mqtt_abstraction, ctx.ms, prefix_opt)) {
         return *exit_from_panel;
     }
 
     // Keep RestartRequested while modules are draining; this preserves restart intent
-    // for advanceLifecycleStateIfReady() once all children have exited.
+    // for advance_lifecycle_state_if_ready() once all children have exited.
     if (restart_requested) {
         shutdown_cause_ = ShutdownCause::Restart;
-        transitionTo(ManagerState::RestartRequested);
+        transition_to(ManagerState::RestartRequested);
     }
     // This also enables timeout/fallback handling if one or more modules do not exit after MQTT shutdown.
     if (restart_requested && !module_handles_.empty()) {
@@ -1298,13 +1298,13 @@ std::optional<int> Manager::handleControllerIpcPoll(RuntimeContext& ctx, Manager
     return std::nullopt;
 }
 
-std::optional<int> Manager::handleSignalPoll(system::SignalPolling& signal_polling, RuntimeContext& ctx,
+std::optional<int> Manager::handle_signal_poll(system::SignalPolling& signal_polling, RuntimeContext& ctx,
                                              ManagerAdminPanel& admin_panel) {
     const auto signal_received = signal_polling.poll_signal();
     if (!signal_received.has_value()) {
         return std::nullopt;
     }
-    return handleSignal(signal_received.value(), ctx, admin_panel);
+    return handle_signal(signal_received.value(), ctx, admin_panel);
 }
 
 int main(int argc, char* argv[]) {
