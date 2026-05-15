@@ -214,7 +214,7 @@ private:
 
     /// \brief Terminate remaining module processes (SIGTERM, then SIGKILL fallback).
     void shutdown_modules(const std::map<pid_t, std::string>& modules, Everest::ManagerConfig& config,
-                         Everest::MQTTAbstraction& mqtt_abstraction);
+                          Everest::MQTTAbstraction& mqtt_abstraction);
 
     /// \brief Convert ManagerState enum to a readable string for logs.
     std::string_view state_to_string(ManagerState state) const;
@@ -257,7 +257,7 @@ private:
     /// \param crash_in_progress Preserved crash-recovery intent for this finalization step.
     /// \return Exit code when manager should terminate, std::nullopt otherwise.
     std::optional<int> handle_finalize_shutdown_transition(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
-                                                        bool restart_requested, bool crash_in_progress);
+                                                           bool restart_requested, bool crash_in_progress);
 
     /// \brief Reload config and initiate module restart sequence.
     void handle_restart_modules_after_shutdown(RuntimeContext& ctx);
@@ -267,7 +267,7 @@ private:
     /// \param admin_panel Controller IPC/process integration helper.
     /// \return EXIT_SUCCESS/EXIT_FAILURE when manager exits, std::nullopt for idle mode.
     std::optional<int> handle_finish_normal_shutdown(Everest::MQTTAbstraction& mqtt_abstraction,
-                                                  ManagerAdminPanel& admin_panel);
+                                                     ManagerAdminPanel& admin_panel);
 
     /// \brief Finalize crash-recovery shutdown path.
     void handle_finish_crash_recovery(Everest::MQTTAbstraction& mqtt_abstraction);
@@ -279,8 +279,9 @@ private:
     /// \param mqtt_abstraction Active MQTT abstraction instance.
     /// \param ms Fully resolved manager settings for this run.
     void handle_initiate_graceful_shutdown(const std::chrono::system_clock::time_point& module_exited_time,
-                                        bool publish_when_sigint_received, const std::string* info_log,
-                                        Everest::MQTTAbstraction& mqtt_abstraction, const Everest::ManagerSettings& ms);
+                                           bool publish_when_sigint_received, const std::string* info_log,
+                                           Everest::MQTTAbstraction& mqtt_abstraction,
+                                           const Everest::ManagerSettings& ms);
 
     /// \brief Enforce shutdown timeout and force-terminate remaining modules.
     /// \param ctx Runtime dependencies for the current run.
@@ -307,7 +308,7 @@ private:
     /// \param prefix_opt Prefix passed to config-check requests.
     /// \return Exit code when manager should terminate, std::nullopt otherwise.
     std::optional<int> handle_controller_ipc_poll(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
-                                               const std::string& prefix_opt);
+                                                  const std::string& prefix_opt);
 
     /// \brief Handle SIGINT/SIGTERM transition and optional immediate exit.
     /// \param signo Signal number received by polling.
@@ -322,7 +323,7 @@ private:
     /// \param admin_panel Controller IPC/process integration helper.
     /// \return Exit code when manager should terminate, std::nullopt otherwise.
     std::optional<int> handle_signal_poll(Everest::system::SignalPolling& signal_polling, RuntimeContext& ctx,
-                                        ManagerAdminPanel& admin_panel);
+                                          ManagerAdminPanel& admin_panel);
 
     const boost::program_options::variables_map& vm_;
     ManagerState state_{ManagerState::Idle};

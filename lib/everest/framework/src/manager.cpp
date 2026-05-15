@@ -355,7 +355,7 @@ void Manager::unregister_module_ready_handlers(ManagerConfig& config, MQTTAbstra
 
 /// \brief Stop all remaining module processes, escalating SIGTERM to SIGKILL.
 void Manager::shutdown_modules(const std::map<pid_t, std::string>& modules, ManagerConfig& config,
-                              MQTTAbstraction& mqtt_abstraction) {
+                               MQTTAbstraction& mqtt_abstraction) {
 
     unregister_module_ready_handlers(config, mqtt_abstraction);
 
@@ -479,7 +479,7 @@ void Manager::handle_restart_modules_after_shutdown(RuntimeContext& ctx) {
 }
 
 std::optional<int> Manager::handle_finish_normal_shutdown(MQTTAbstraction& mqtt_abstraction,
-                                                       ManagerAdminPanel& admin_panel) {
+                                                          ManagerAdminPanel& admin_panel) {
     std::string bad_modules;
     for (const auto& shutdown_info_entry : shutdown_info_) {
         if (!is_clean_exit(shutdown_info_entry.wstatus)) {
@@ -556,7 +556,7 @@ void Manager::handle_finish_crash_recovery(MQTTAbstraction& mqtt_abstraction) {
 }
 
 std::optional<int> Manager::handle_finalize_shutdown_transition(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
-                                                             bool restart_requested, bool crash_in_progress) {
+                                                                bool restart_requested, bool crash_in_progress) {
     if (crash_in_progress) {
         handle_finish_crash_recovery(ctx.mqtt_abstraction);
         return std::nullopt;
@@ -569,8 +569,8 @@ std::optional<int> Manager::handle_finalize_shutdown_transition(RuntimeContext& 
 }
 
 void Manager::handle_initiate_graceful_shutdown(const std::chrono::system_clock::time_point& module_exited_time,
-                                             bool publish_when_sigint_received, const std::string* info_log,
-                                             MQTTAbstraction& mqtt_abstraction, const ManagerSettings& ms) {
+                                                bool publish_when_sigint_received, const std::string* info_log,
+                                                MQTTAbstraction& mqtt_abstraction, const ManagerSettings& ms) {
     if (is_in_shutdown_flow_state()) {
         return;
     }
@@ -1043,7 +1043,7 @@ std::map<pid_t, std::string> Manager::handle_start_modules(const RuntimeContext&
 }
 
 Manager::LifecycleAdvanceResult Manager::advance_lifecycle_state_if_ready(RuntimeContext& ctx,
-                                                                      ManagerAdminPanel& admin_panel) {
+                                                                          ManagerAdminPanel& admin_panel) {
     const bool in_shutdown_flow = is_in_shutdown_flow_state();
     const bool crash_in_progress = (shutdown_cause_ == ShutdownCause::Crash);
     const bool restart_requested = (shutdown_cause_ == ShutdownCause::Restart);
@@ -1086,7 +1086,8 @@ bool Manager::handle_child_exit(pid_t pid, int wstatus, RuntimeContext& ctx, Man
     auto module_exited_time = std::chrono::system_clock::now();
     if (admin_panel.is_controller_process(pid)) {
         // During intentional manager shutdown/restart, controller exit is expected.
-        if (is_in_shutdown_flow_state() || state_ == ManagerState::Exiting || sigint_received_ || is_restart_requested()) {
+        if (is_in_shutdown_flow_state() || state_ == ManagerState::Exiting || sigint_received_ ||
+            is_restart_requested()) {
             EVLOG_info << "Controller process exited during manager shutdown/restart.";
             return true;
         }
@@ -1234,7 +1235,7 @@ bool Manager::handle_waitpid_event(int& wstatus, RuntimeContext& ctx, ManagerAdm
 }
 
 std::optional<int> Manager::handle_controller_ipc_poll(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
-                                                    const std::string& prefix_opt) {
+                                                       const std::string& prefix_opt) {
     bool modules_started = are_modules_started();
     bool restart_requested = is_restart_requested();
     if (const auto exit_from_panel = admin_panel.poll_controller_ipc(restart_requested, modules_started,
@@ -1257,7 +1258,7 @@ std::optional<int> Manager::handle_controller_ipc_poll(RuntimeContext& ctx, Mana
 }
 
 std::optional<int> Manager::handle_signal_poll(system::SignalPolling& signal_polling, RuntimeContext& ctx,
-                                             ManagerAdminPanel& admin_panel) {
+                                               ManagerAdminPanel& admin_panel) {
     const auto signal_received = signal_polling.poll_signal();
     if (!signal_received.has_value()) {
         return std::nullopt;
