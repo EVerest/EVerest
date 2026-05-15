@@ -34,7 +34,6 @@ def main():
         dest='yaml_output_path',
         action='store',
         required=True,
-        default=None,
         help='Path where the trailbook_metadata.yaml file will be created'
     )
     parser.add_argument(
@@ -43,7 +42,6 @@ def main():
         dest='json_output_path',
         action='store',
         required=True,
-        default=None,
         help='Path where the trailbook_metadata.json file will be created'
     )
     parser.add_argument(
@@ -55,9 +53,6 @@ def main():
         help='Additional version to include in the metadata (can be used multiple times)'
     )
     args = parser.parse_args()
-
-    if args.yaml_output_path is None or args.json_output_path is None:
-        parser.error("at least one of --yaml-output-path or --json-output-path is required")
 
     if not args.multiversion_root_dir.is_absolute():
         raise ValueError("Multiversion root directory must be absolute")
@@ -91,13 +86,11 @@ def main():
         'versions': versions_list
     }
     # render yaml content
-    if args.yaml_output_path is not None:
-        with args.yaml_output_path.open('w') as f:
-            yaml.dump(data, f, default_flow_style=False)
+    with args.yaml_output_path.open('w') as f:
+        yaml.dump(data, f, default_flow_style=False)
 
-    if args.json_output_path is not None:
-        with args.json_output_path.open('w') as f:
-            json.dump(data, f, indent=2)
+    with args.json_output_path.open('w') as f:
+        json.dump(data, f, indent=2)
 
 
 if __name__ == "__main__":
