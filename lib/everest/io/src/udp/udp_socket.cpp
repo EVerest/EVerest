@@ -19,9 +19,9 @@
 
 namespace everest::lib::io::udp {
 
-bool udp_socket_base::open_as_client(std::string const& remote, uint16_t port) {
+bool udp_socket_base::open_as_client(std::string const& remote, uint16_t port, std::string const& device) {
     try {
-        auto socket = socket::open_udp_client_socket(remote, port);
+        auto socket = socket::open_udp_client_socket(remote, port, device);
         socket::set_non_blocking(socket);
         m_owned_udp_fd = std::move(socket);
         return socket::get_pending_error(m_owned_udp_fd) == 0;
@@ -30,8 +30,8 @@ bool udp_socket_base::open_as_client(std::string const& remote, uint16_t port) {
     return false;
 }
 
-bool udp_socket_base::open_as_server(uint16_t port) {
-    auto socket = socket::open_udp_server_socket(port);
+bool udp_socket_base::open_as_server(uint16_t port, std::string const& device) {
+    auto socket = socket::open_udp_server_socket(port, device);
     socket::set_non_blocking(socket);
     m_owned_udp_fd = std::move(socket);
     return socket::get_pending_error(m_owned_udp_fd) == 0;
@@ -90,17 +90,18 @@ std::optional<udp_info> udp_socket_base::rx_impl(void* buffer, size_t buffer_siz
 
 /////////////////////////////////////////////////
 
-bool udp_client_socket::setup(std::string const& remote, uint16_t port, int timeout_ms) {
+bool udp_client_socket::setup(std::string const& remote, uint16_t port, int timeout_ms, std::string const& device) {
     m_remote = remote;
     m_port = port;
     m_timeout_ms = timeout_ms;
+    m_device = device;
     m_owned_udp_fd.close();
     return true;
 }
 
 void udp_client_socket::connect(std::function<void(bool, int)> const& setup_cb) {
     try {
-        auto socket = socket::open_udp_client_socket(m_remote, m_port);
+        auto socket = socket::open_udp_client_socket(m_remote, m_port, m_device);
         socket::set_non_blocking(socket);
         setup_cb(true, socket);
         m_owned_udp_fd = std::move(socket);
@@ -110,8 +111,8 @@ void udp_client_socket::connect(std::function<void(bool, int)> const& setup_cb) 
     }
 }
 
-bool udp_client_socket::open(std::string const& remote, uint16_t port) {
-    return open_as_client(remote, port);
+bool udp_client_socket::open(std::string const& remote, uint16_t port, std::string const& device) {
+    return open_as_client(remote, port, device);
 }
 
 bool udp_client_socket::tx(udp_payload const& payload) {
@@ -129,8 +130,8 @@ bool udp_client_socket::rx(udp_payload& payload) {
 
 //////////////////////////////////////////////////
 
-bool udp_server_socket::open(uint16_t port) {
-    return open_as_server(port);
+bool udp_server_socket::open(uint16_t port, std::string const& device) {
+    return open_as_server(port, device);
 }
 
 bool udp_server_socket::tx(udp_payload const& payload) {
