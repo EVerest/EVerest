@@ -24,3 +24,15 @@ if(EVEREST_ENABLE_COVERAGE)
         EXECUTABLE ctest
     )
 endif()
+
+add_executable(evcc)
+
+target_sources(evcc
+    PRIVATE
+        evcc.cpp
+)
+
+target_link_libraries(evcc
+    PRIVATE
+        iso15118::iso15118
+)
