@@ -22,3 +22,16 @@ setup_target_for_coverage_gcovr_xml(
     NAME ${PROJECT_NAME}_gcovr_coverage_xml
     EXECUTABLE ctest
 )
+
+add_executable(evcc)
+
+target_sources(evcc
+    PRIVATE
+        evcc.cpp
+)
+
+target_link_libraries(evcc
+    PRIVATE
+        iso15118::iso15118
+)
+

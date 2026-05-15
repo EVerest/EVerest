@@ -24,6 +24,8 @@ target_sources(iso15118
         ev/d20/state/dc_welding_detection.cpp
         ev/d20/state/session_stop.cpp
         ev/session/feedback.cpp
+        ev/io/sdp_client.cpp
+        ev/ev_controller.cpp
 
         io/connection_plain.cpp
         io/logging.cpp
@@ -90,6 +92,7 @@ target_link_libraries(iso15118
         cbv2g::tp
         cbv2g::iso20
         everest::util
+        everest::io
     PRIVATE
         Threads::Threads
 )
