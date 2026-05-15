@@ -1554,6 +1554,14 @@ std::unique_ptr<ClientConnection> Client::connect(const char* host, const char* 
     return result;
 }
 
+Client::ConnectionPtr Client::wrap_connecting_fd(int fd, const char* host_for_sni) {
+    if (m_context == nullptr) {
+        return nullptr;
+    }
+    return std::make_unique<ClientConnection>(m_context->ctx.get(), fd, (host_for_sni != nullptr) ? host_for_sni : "",
+                                              "", m_timeout_ms);
+}
+
 Client::override_t Client::default_overrides() {
     return {
         &ClientStatusRequestV2::status_request_v2_multi_cb, &ClientStatusRequestV2::status_request_v2_add,

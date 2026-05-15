@@ -729,6 +729,19 @@ public:
     }
 
     /**
+     * \brief wrap an already-connecting TCP socket as a TLS client connection
+     * \param[in] fd connected (or in-progress) TCP socket file descriptor
+     * \param[in] host_for_sni hostname used for the peer-id / SNI slot (may be nullptr)
+     * \return ConnectionPtr that owns \p fd on success; nullptr if SSL_CTX is not initialised
+     * \note Lets callers own the TCP connect path and hand the resulting fd to a
+     *       configured Client (mirror of Server::wrap_accepted_fd).
+     * \note Ownership: on success the returned ClientConnection owns \p fd and
+     *       will close it. On a nullptr return the caller still owns \p fd and
+     *       must close it; this factory does not close \p fd on failure.
+     */
+    [[nodiscard]] ConnectionPtr wrap_connecting_fd(int fd, const char* host_for_sni);
+
+    /**
      * \brief the default SSL callbacks
      */
     static override_t default_overrides();
