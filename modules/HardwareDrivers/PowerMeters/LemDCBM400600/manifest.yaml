@@ -1,0 +1,142 @@
+description: Module implementing the LEM DCBM 400/600 power meter driver adapter via HTTP.
+config:
+  ip_address:
+    description: IP Address of the power meter API.
+    type: string
+  port:
+    description: Port of the power meter API.
+    type: integer
+    default: 80
+  interface:
+    description: Bind to a specific network interface. If left empty, the module will bind to all interfaces.
+    type: string
+    default: ""
+  meter_tls_certificate:
+    description: The DCBM's HTTPS certificate, in PEM format. If provided, HTTPS will be used. If left empty, regular HTTP will be used. Note that this does not affect the default port - specify a port explicitly if you wish to use a port other than 80.
+    type: string
+    default: ""
+  ntp_server_1_ip_addr:
+    description: The IPv4 address (in 4-octet form W.X.Y.Z) of the first NTP server to use for time sync. If this is left empty, NTP will not be configured on the DCBM - its time will be synced with EVerest's system time instead.
+    type: string
+    default: ""
+  ntp_server_1_port:
+    description: The port (1-65535) of the first NTP server.
+    type: integer
+    default: 123
+  ntp_server_2_ip_addr:
+    description: The IPv4 address (in 4-octet form W.X.Y.Z) of the second NTP server to use for time sync. This is ignored if ntp_server_1_ip_addr is empty.
+    type: string
+    default: ""
+  ntp_server_2_port:
+    description: The port (1-65535) fof the second NTP server.
+    type: integer
+    default: 123
+  meter_timezone:
+    description: The timezone offset (ignored if NTP servers are set) - it can go from -11 to +14 for hours and 00, 15, 30, 45 for minutes
+    type: string
+    default: "+00:00"
+  meter_dst:
+    description: The Daylight Saving Time (DST) settings (ignored if NTP is set)
+    type: string
+    default: '{"activated": false, "offset": 60, "start": {"order": "last", "day": "sunday", "month": "march", "hour": "T01:00Z"}, "end": {"order": "last", "day": "sunday", "month": "october", "hour": "T01:00Z" }}'
+  resilience_initial_connection_retries:
+    description: For the controller resilience, the number of retries to connect to the powermeter at module initialization.
+    type: integer
+    default: 25
+  resilience_initial_connection_retry_delay:
+    description: For the controller resilience, the delay in milliseconds before a retry attempt at module initialization..
+    type: integer
+    default: 10000
+  resilience_transaction_request_retries:
+    description: For the controller resilience, the number of retries to connect to the powermeter at a transaction start or stop request.
+    type: integer
+    default: 3
+  resilience_transaction_request_retry_delay:
+    description: For the controller resilience, the delay in milliseconds before a retry attempt  at a transaction start or stop request.
+    type: integer
+    default: 250
+  cable_id:
+    description: The cable loss compensation level to use. This allows compensating the measurements of the DCBM with a resistance.
+    type: integer
+    default: 0
+  tariff_id:
+    description: Used for a unique transaction tariff designation
+    type: integer
+    default: 0
+  IT:
+    description: >-
+      OCMF Identification Type (set on device at startup via /settings/ocmfId/IT).
+      Values per LEM DCBM Communication Protocol 4.2.10.3:
+      0=NONE, 1=DENIED, 2=UNDEFINED, 3=ISO14443, 4=ISO15693,
+      5=EMAID, 6=EVCCID, 7=EVCOID, 8=ISO7812, 9=CARD_TXN_NR,
+      10=CENTRAL, 11=CENTRAL_1, 12=CENTRAL_2, 13=LOCAL, 14=LOCAL_1,
+      15=LOCAL_2, 16=PHONE_NUMBER, 17=KEY_CODE.
+      A value of -1 means the field is not set on the device.
+      By setting this value you can control the content of the ID field of OCMF record.  
+      If this value is not set, ID is set to the transaction id.
+      Please check the device documentation for more details.
+
+      WARNING: The device documentation states: "For correct usage the IT fields shall 
+      be set once to the corresponding protocol used (or kept to NONE as per default value), 
+      and not be changed during the lifetime of the DCBM due to current software limitation."
+    type: integer
+    minimum: -1
+    maximum: 17
+    default: -1
+  SC:
+    description: SC (OCMF/transaction fields)
+    type: integer
+    default: 0
+  UV:
+    description: User SW Version (OCMF/transaction fields)
+    type: string
+    default: ""
+  UD:
+    description: UD (OCMF/transaction fields)
+    type: string
+    default: ""
+  temperature_warning_level_C:
+    description: >-
+      Temperature warning threshold in degrees Celsius. If the maximum of temperatureH
+      and temperatureL exceeds this value for at least temperature_min_time_as_valid_ms,
+      a VendorWarning is raised. Charging continues. Default of 5000 effectively disables this.
+    type: number
+    default: 5000
+  temperature_error_level_C:
+    description: >-
+      Temperature error threshold in degrees Celsius. If the maximum of temperatureH
+      and temperatureL exceeds this value for at least temperature_min_time_as_valid_ms,
+      a VendorError is raised. Charging is stopped. Default of 5000 effectively disables this.
+    type: number
+    default: 5000
+  temperature_hysteresis_K:
+    description: >-
+      Hysteresis in Kelvin for clearing temperature warnings and errors.
+      A warning is cleared when max temperature drops below warning_level - hysteresis.
+      An error is cleared when max temperature drops below error_level - hysteresis.
+    type: number
+    default: 3
+    minimum: 0
+  temperature_min_time_as_valid_ms:
+    description: >-
+      Minimum time in milliseconds that the temperature must continuously exceed
+      the warning or error level before the corresponding event is raised.
+    type: integer
+    default: 5000
+    minimum: 0
+  command_timeout_ms:
+    description: The timeout in milliseconds for a HTTP command to the LEM power meter.
+    type: integer
+    default: 5000
+    maximum: 20000
+    minimum: 1000
+
+provides:
+  main:
+    description: This is the main unit of the module
+    interface: powermeter
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Valentin Dimov, valentin.dimov@pionix.de
+    - Fabian Klemm, fabian.klemm@pionix.de

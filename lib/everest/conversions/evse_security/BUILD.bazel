@@ -1,0 +1,24 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "evse_security_conversions",
+    srcs = [
+        "src/conversions.cpp",
+    ],
+    hdrs = [
+        "include/everest/conversions/evse_security/conversions.hpp",
+    ],
+    copts = [
+        "-std=c++17",
+        "-Wimplicit-fallthrough",
+        "-Wno-error=switch-enum",  # boost.date_time 1.87.0 has incomplete switch statements
+    ],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/everest/framework:framework",
+        "//lib/everest/evse_security:libevse-security",
+        "//interfaces:interfaces_lib",
+    ],
+)
+

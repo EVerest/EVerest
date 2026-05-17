@@ -1,0 +1,8 @@
+description: Interactive bring up helper for Token Provider interface
+requires:
+  token_provider:
+    interface: auth_token_provider
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Christoph Burandt

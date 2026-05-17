@@ -1,0 +1,42 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//modules:module.bzl", "cc_everest_module")
+
+cc_library(
+    name = "auth_handler",
+    srcs = glob(["lib/*.cpp"]),
+    hdrs = glob(["include/*.hpp"]),
+    strip_include_prefix = "include",
+    deps = [
+        "//lib/everest/timer:libtimer",
+        "@boost.asio",
+        "//lib/everest/framework:framework",
+        "@com_github_HowardHinnant_date//:date",
+        "//types:types_lib",
+        "//interfaces:interfaces_lib",
+        "//lib/everest/helpers",
+        "//lib/everest/util",
+    ],
+    # See https://github.com/HowardHinnant/date/issues/324
+    local_defines = [
+        "BUILD_TZ_LIB=ON",
+        "USE_SYSTEM_TZ_DB=ON",
+        "USE_OS_TZDB=1",
+        "USE_AUTOLOAD=0",
+        "HAS_REMOTE_API=0",
+    ],
+    copts = ["-std=c++17"],
+)
+
+IMPLS = [
+    "main",
+    "reservation",
+]
+
+cc_everest_module(
+    name = "Auth",
+    deps = [
+        "//lib/everest/timer:libtimer",
+        ":auth_handler",
+    ],
+    impls = IMPLS,
+)

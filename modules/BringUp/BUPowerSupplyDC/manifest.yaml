@@ -1,0 +1,8 @@
+description: Interactive bring up helper for power supply DC interface
+requires:
+  psu:
+    interface: power_supply_DC
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Cornelius Claussen

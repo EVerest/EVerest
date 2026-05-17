@@ -1,0 +1,45 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "ocpp_evse_security",
+    srcs = [
+        "src/evse_security_ocpp.cpp"
+    ],
+    hdrs = [
+        "include/everest/conversions/ocpp/evse_security_ocpp.hpp",
+    ],
+    copts = [
+        "-std=c++17",
+        "-Wimplicit-fallthrough",
+        "-Wno-error=switch-enum",  # boost.date_time 1.87.0 has incomplete switch statements
+    ],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/everest/framework:framework",
+        "//lib/everest/ocpp:libocpp",
+        "//interfaces:interfaces_lib",
+    ],
+)
+
+cc_library(
+    name = "ocpp_conversions",
+    srcs = [
+        "src/ocpp_conversions.cpp",
+    ],
+    hdrs = [
+        "include/everest/conversions/ocpp/ocpp_conversions.hpp"
+    ],
+    copts = [
+        "-std=c++17",
+        "-Wimplicit-fallthrough",
+        "-Wno-error=switch-enum",  # boost.date_time 1.87.0 has incomplete switch statements
+    ],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/everest/framework:framework",
+        "//lib/everest/ocpp:libocpp",
+        "//types:types_lib",
+    ],
+)

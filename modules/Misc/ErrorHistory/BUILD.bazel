@@ -1,0 +1,43 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//modules:module.bzl", "cc_everest_module")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
+
+cc_everest_module(
+    name = "ErrorHistory",
+    srcs = glob([
+        "*.cpp",
+        "*.hpp",
+    ]),
+    impls = ["error_history"],
+    deps = [
+        "//lib/everest/sqlite:everest-sqlite",
+    ],
+)
+
+cc_test(
+    name = "ErrorHistory_test",
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    srcs = glob(
+        [
+            "tests/*.cpp",
+            "tests/*.hpp",
+            "ErrorDatabaseSqlite.*",
+        ],
+        exclude = [
+            "main/car_simulatorImpl.*",
+            "main/car_simulation.*",
+        ],
+    ),
+    local_defines = [
+        "BUILD_TZ_LIB=ON",
+        "USE_SYSTEM_TZ_DB=ON",
+        "USE_OS_TZDB=1",
+        "USE_AUTOLOAD=0",
+        "HAS_REMOTE_API=0",
+    ],
+    deps = [
+        "//lib/everest/framework",
+        "//lib/everest/log:liblog",
+        "@catch2//:catch2_main",
+    ],
+)

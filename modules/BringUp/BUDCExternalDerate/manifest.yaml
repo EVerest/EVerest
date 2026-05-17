@@ -1,0 +1,8 @@
+description: Interactive bring up helper for the dc_external_derate interface
+requires:
+  derate:
+    interface: dc_external_derate
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Jan Christoph Habig

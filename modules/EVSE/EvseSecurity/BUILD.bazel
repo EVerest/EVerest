@@ -1,0 +1,15 @@
+load("//modules:module.bzl", "cc_everest_module")
+
+IMPLS = [
+    "main",
+]
+
+cc_everest_module(
+    name = "EvseSecurity",
+    deps = [
+        "//lib/everest/evse_security:libevse-security",
+        "//lib:evse_security_conversions",
+    ],
+    impls = IMPLS,
+)
+

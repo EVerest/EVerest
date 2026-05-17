@@ -1,0 +1,442 @@
+---
+asyncapi: 3.0.0
+id: pionix:de:everest:evse_security_consumer_API
+info:
+  title: EVerest API definition for evse_security consumer
+  version: 1.0.0
+  description: API for EVerest API clients that use the EvseSecurity module.
+  license:
+    name: Apache-2.0
+    url: https://opensource.org/licenses/Apache-2.0
+  tags:
+  - name: EVerest
+  - name: OCPP
+servers:
+  default:
+    pathname: everest_api/1/evse_security_consumer/{module_id}
+    host: localhost:1883
+    description: default local MQTT
+    protocol: mqtt
+    variables:
+      module_id:
+        description: The ID of the module as defined in the EVerest config file.
+defaultContentType: application/json
+
+
+channels:
+  ########## evse_security
+  send_request_is_ca_certificate_installed:
+    address: m2e/is_ca_certificate_installed
+    messages:
+      send_request_is_ca_certificate_installed:
+        $ref: '#/components/messages/send_request_is_ca_certificate_installed'
+  receive_reply_is_ca_certificate_installed:
+    address:
+    messages:
+      receive_reply_is_ca_certificate_installed:
+        $ref: '#/components/messages/receive_reply_is_ca_certificate_installed'
+  send_request_get_leaf_certificate_info:
+    address: m2e/get_leaf_certificate_info
+    messages:
+      send_request_get_leaf_certificate_info:
+        $ref: '#/components/messages/send_request_get_leaf_certificate_info'
+  receive_reply_get_leaf_certificate_info:
+    address:
+    messages:
+      receive_reply_get_leaf_certificate_info:
+        $ref: '#/components/messages/receive_reply_get_leaf_certificate_info'
+  send_request_get_verify_location:
+    address: m2e/get_verify_location
+    messages:
+      send_request_get_verify_location:
+        $ref: '#/components/messages/send_request_get_verify_location'
+  receive_reply_get_verify_location:
+    address:
+    messages:
+      receive_reply_get_verify_location:
+        $ref: '#/components/messages/receive_reply_get_verify_location'
+
+
+  receive_heartbeat:
+    address: e2m/heartbeat
+    messages:
+      receive_heartbeat:
+        $ref: '#/components/messages/receive_heartbeat'
+  send_communication_check:
+    address: m2e/communication_check
+    messages:
+      send_communication_check:
+        $ref: '#/components/messages/send_communication_check'
+
+
+operations:
+  ########## evse_security
+  send_request_is_ca_certificate_installed:
+    title: Command that indicates if the given CA certificate type is installed
+    action: send
+    channel:
+      $ref: '#/channels/send_request_is_ca_certificate_installed'
+    description: Command that indicates if the given CA certificate type is installed
+    reply:
+      address:
+        location: $message.header#/replyTo
+      channel:
+        $ref: '#/channels/receive_reply_is_ca_certificate_installed'
+  receive_reply_is_ca_certificate_installed:
+    title: Reply to is ca certificate installed request
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_is_ca_certificate_installed'
+  send_request_get_leaf_certificate_info:
+    title: Command to get the paths of the certificate and the respective key
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_leaf_certificate_info'
+    description: Command to get the paths of the certificate and the respective key
+    reply:
+      address:
+        location: $message.header#/replyTo
+      channel:
+        $ref: '#/channels/receive_reply_get_leaf_certificate_info'
+  receive_reply_get_leaf_certificate_info:
+    title: Reply to get leaf certificate info request
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_leaf_certificate_info'
+  send_request_get_verify_location:
+    title: >-
+      Command to get the file path of the CA root directory that can be used for verification. Will also invoke c_rehash for
+      that directory
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_verify_location'
+    description: >-
+      Command to get the file path of the CA root directory that can be used for verification. Will also invoke c_rehash for
+      that directory
+    reply:
+      address:
+        location: $message.header#/replyTo
+      channel:
+        $ref: '#/channels/receive_reply_get_verify_location'
+  receive_reply_get_verify_location:
+    title: Reply to get verify location request
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_verify_location'
+
+
+  receive_heartbeat:
+    title: Receive heartbeat
+    action: receive
+    channel:
+      $ref: '#/channels/receive_heartbeat'
+  send_communication_check:
+    title: Send communication check
+    action: send
+    channel:
+      $ref: '#/channels/send_communication_check'
+
+
+components:
+  messages:
+    send_request_is_ca_certificate_installed:
+      name: send_request_is_ca_certificate_installed
+      title: Command that indicates if the given CA certificate type is installed
+      summary: Command that indicates if the given CA certificate type is installed
+      contentType: application/json
+      payload:
+        type: object
+        required:
+        - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:
+                type: string
+                description: >-
+                  Address to send the response to. If this information is missing, the command will still be accepted, but
+                  no response will be sent.
+          payload:
+            $ref: '#/components/schemas/CaCertificateType'
+      examples:
+      - summary: 'Ask if certificated of type CSMS is installed'
+        payload:
+          headers:
+            replyTo: reply/to/address
+          payload: CSMS
+    receive_reply_is_ca_certificate_installed:
+      name: receive_reply_is_ca_certificate_installed
+      title: Reply to is ca certificate installed request
+      summary: Reply to is ca certificate installed
+      contentType: application/json
+      payload:
+        description: True if CA certificate is installed, else false
+        type: boolean
+      examples:
+      - summary: ''
+        payload: true
+    send_request_get_leaf_certificate_info:
+      name: send_request_get_leaf_certificate_info
+      title: Command to get the paths of the certificate and the respective key
+      summary: Command to get the paths of the certificate and the respective key
+      contentType: application/json
+      payload:
+        type: object
+        required:
+        - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:
+                type: string
+                description: >-
+                  Address to send the response to. If this information is missing, the command will still be accepted, but
+                  no response will be sent.
+          payload:
+            $ref: '#/components/schemas/GetLeafCertificateInfoRequest'
+      examples:
+      - summary: 'Get information for CSMS type certificate'
+        payload:
+          headers:
+            replyTo: reply/to/address
+          payload:
+            certificate_type: CSMS
+            encoding: PEM
+            include_ocsp: false
+    receive_reply_get_leaf_certificate_info:
+      name: receive_reply_get_leaf_certificate_info
+      title: Reply to get leaf certificate info request
+      summary: Reply to get leaf certificate info
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/GetCertificateInfoResult'
+      examples:
+      - summary: 'Reply to get information request'
+        payload:
+          status: Accepted
+          info:
+            key: /etc/everest/certs/client/csms.key
+            certificate_count: 1
+    send_request_get_verify_location:
+      name: send_request_get_verify_location
+      title: >-
+        Command to get the file path of the CA root directory that can be used for verification. Will also invoke c_rehash
+        for that directory
+      summary: >-
+        Command to get the file path of the CA root directory that can be used for verification. Will also invoke c_rehash
+        for that directory
+      contentType: application/json
+      payload:
+        type: object
+        required:
+        - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:
+                type: string
+                description: >-
+                  Address to send the response to. If this information is missing, the command will still be accepted, but
+                  no response will be sent.
+          payload:
+            $ref: '#/components/schemas/CaCertificateType'
+      examples:
+      - summary: 'Get file path for V2G CA root directory'
+        payload:
+          headers:
+            replyTo: reply/to/address
+          payload: V2G
+    receive_reply_get_verify_location:
+      name: receive_reply_get_verify_location
+      title: Reply to get verify location request
+      summary: Reply to get verify location
+      contentType: application/json
+      payload:
+        description: The path of the CA certificates directory
+        type: string
+      examples:
+      - summary: 'Return the CA root directory'
+        payload: /path/to/ca/certificates
+    receive_heartbeat:
+      name: receive_heartbeat
+      title: Receive heartbeat
+      summary: >-
+        Heartbeat produced by EVerest as configured via cfg_heartbeat_interval_ms in the EVerest configuration
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/HeartBeatId'
+      examples:
+      - summary: Heartbeat
+        payload: 42
+    send_communication_check:
+      name: send_communication_check
+      title: Send communication check
+      summary: Signal to EVerest that communication is good or check shall be stopped
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CommunicationCheck'
+      examples:
+      - summary: CommunicationCheck
+        payload: true
+
+
+  schemas:
+    CaCertificateType:
+      description: Enum specifies the type of a CA certificate
+      type: string
+      enum:
+      - V2G
+      - MO
+      - CSMS
+      - MF
+    LeafCertificateType:
+      description: Enum specifies the type of a leaf certificate
+      type: string
+      enum:
+      - CSMS
+      - V2G
+      - MF
+      - MO
+    EncodingFormat:
+      description: Enum specifies the encoding of certificates or keys
+      type: string
+      enum:
+      - DER
+      - PEM
+    GetLeafCertificateInfoRequest:
+      type: object
+      additionalProperties: true
+      required:
+      - certificate_type
+      - encoding
+      - include_ocsp
+      properties:
+        certificate_type:
+          $ref: '#/components/schemas/LeafCertificateType'
+        encoding:
+          $ref: '#/components/schemas/EncodingFormat'
+        include_ocsp:
+          description: Specifies whether per-certificate OCSP data is also requested
+          type: boolean
+    GetCertificateInfoStatus:
+      description: Status indicates the result of the attempt to retrieve a certificate
+      type: string
+      enum:
+      - Accepted
+      - Rejected
+      - NotFound
+      - NotFoundValid
+      - PrivateKeyNotFound
+    HashAlgorithm:
+      description: Enum specifies a hash algorithm
+      type: string
+      enum:
+      - SHA256
+      - SHA384
+      - SHA512
+    CertificateHashData:
+      description: Type specifies the hash data of a certificate
+      type: object
+      required:
+      - hash_algorithm
+      - issuer_name_hash
+      - issuer_key_hash
+      - serial_number
+      properties:
+        hash_algorithm:
+          description: Algorithm used for the hashes provided
+          type: string
+          $ref: '#/components/schemas/HashAlgorithm'
+        issuer_name_hash:
+          description: >-
+            The hash of the issuer's distinguished name (DN), calculated over the DER encoding of the issuer's name field.
+          type: string
+          maxLength: 128
+        issuer_key_hash:
+          description: >-
+            The hash of the DER encoded public key: the value (excluding tag and length) of the subject public key field
+          type: string
+          maxLength: 128
+        serial_number:
+          description: >-
+            The string representation of the hexadecimal value of the serial number without the prefix "0x" and without leading
+            zeroes.
+          type: string
+          maxLength: 40
+      additionalProperties: true
+    CertificateOCSP:
+      description: OCSP data related to requested the certificates
+      type: object
+      required:
+      - hash
+      properties:
+        hash:
+          description: Hash of certificate linked to the provided data
+          type: object
+          $ref: '#/components/schemas/CertificateHashData'
+        ocsp_path:
+          description: OCSP path of the file containing the data
+          type: string
+      additionalProperties: true
+    CertificateInfo:
+      description: Type that specifies the paths of a certificate and the respective private key
+      type: object
+      required:
+      - key
+      - certificate_count
+      properties:
+        key:
+          description: The path of the PEM or DER encoded private key
+          type: string
+        certificate_root:
+          description: The PEM of the root certificate that issued this leaf
+          type: string
+        certificate:
+          description: The path of the PEM or DER encoded certificate chain
+          type: string
+        certificate_single:
+          description: The path of the PEM or DER encoded single certificate
+          type: string
+        certificate_count:
+          description: The count of certificates in the chain
+          type: integer
+        password:
+          description: Specifies the password for the private key if encrypted
+          type: string
+        ocsp:
+          description: Certificate related OCSP data, if requested
+          type: array
+          items:
+            minimum: 0
+            type: object
+            $ref: '#/components/schemas/CertificateOCSP'
+      additionalProperties: true
+    GetCertificateInfoResult:
+      description: Response to the command get_leaf_certificate_info
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          description: The status of the requested command
+          type: string
+          $ref: '#/components/schemas/GetCertificateInfoStatus'
+        info:
+          description: The requested info
+          type: object
+          $ref: '#/components/schemas/CertificateInfo'
+      additionalProperties: true
+
+    HeartBeatId:
+      type: integer
+      description: >-
+        64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value
+        is reached
+    CommunicationCheck:
+      type: boolean
+      description: >-
+        Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop
+        communication check

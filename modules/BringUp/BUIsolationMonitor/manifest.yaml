@@ -1,0 +1,8 @@
+description: Interactive bring up helper for Isolation Monitor interface
+requires:
+  imd:
+    interface: isolation_monitor
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Cornelius Claussen

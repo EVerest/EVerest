@@ -1,0 +1,35 @@
+load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+
+cargo_build_script(
+    name = "build_script",
+    srcs = ["build.rs"],
+    build_script_env = {
+        "EVEREST_CORE_ROOT": "../..",
+    },
+    data = [
+        "manifest.yaml",
+        "//lib/everest/framework/everestrs/tests/errors",
+        "//lib/everest/framework/everestrs/tests/interfaces",
+        "//lib/everest/framework/everestrs/tests/types",
+    ],
+    edition = "2021",
+    deps = [
+        "//lib/everest/framework/everestrs/everestrs-build",
+    ],
+)
+
+# For now just a compilation test
+rust_binary(
+    name = "RsOptionalConnection",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":build_script",
+        "//lib/everest/framework/everestrs/everestrs",
+        "//lib/everest/framework/everestrs/everestrs:everestrs_bridge",
+        "//lib/everest/framework/everestrs/everestrs:everestrs_sys",
+        "@everest_framework_crate_index//:log",
+    ],
+)

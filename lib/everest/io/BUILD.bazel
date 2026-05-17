@@ -1,0 +1,49 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "io",
+    srcs = glob(
+        [
+            "src/**/*.cpp",
+        ],
+        exclude = [
+            "src/can/*.cpp",
+            "src/raw/*.cpp",
+        ],
+    ) + select({
+        "@platforms//cpu:armv7": [],
+        "@platforms//cpu:aarch64": [],
+        "//conditions:default": glob([
+            "src/can/*.cpp",
+            "src/raw/*.cpp",
+        ]),
+    }),
+    hdrs = glob(
+        [
+            "include/everest/io/**/*.hpp",
+        ],
+        exclude = [
+            "include/everest/io/can/*.hpp",
+            "include/everest/io/raw/*.hpp",
+        ],
+    ) + select({
+        "@platforms//cpu:armv7": [],
+        "@platforms//cpu:aarch64": [],
+        "//conditions:default": glob([
+            "include/everest/io/can/*.hpp",
+            "include/everest/io/raw/*.hpp",
+        ]),
+    }),
+    copts = ["-std=c++17"],
+    includes = ["include"],
+    local_defines = select({
+        "@platforms//cpu:armv7": ["EVEREST_NO_PACKET_IGNORE_OUTGOING=ON"],
+        "@platforms//cpu:aarch64": ["EVEREST_NO_PACKET_IGNORE_OUTGOING=ON"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//lib/everest/util",
+        "@mosquitto",
+    ],
+)
