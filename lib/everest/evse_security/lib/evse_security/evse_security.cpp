@@ -327,28 +327,7 @@ EvseSecurity::EvseSecurity(const FilePaths& file_paths, const std::optional<std:
         }
     }
 
-    fs::path ctl_dir = file_paths.directories.ctl_directory.empty()
-        ? fs::path(CTL_DIR)
-        : file_paths.directories.ctl_directory;
-
-    if (!ctl_dir.empty() && fs::exists(ctl_dir)) {
-        EVLOG_info << "Loading CTL from: " << ctl_dir;
-        load_ctl(ctl_dir, this->ca_bundle_path_map);
-    } else {
-        EVLOG_info << "No CTL directory configured or found, skipping CTL load";
-    }
-
-    // Check that the leafs directory is not related to the bundle directory because
-    // on garbage collect that can delete relevant CA certificates instead of leaf ones
-    for (const auto& leaf_dir : dirs) {
-        for (auto const& [certificate_type, ca_bundle_path] : ca_bundle_path_map) {
-            if (ca_bundle_path == leaf_dir) {
-                throw std::runtime_error(leaf_dir.string() +
-                                         " leaf directory can not overlap CA directory: " + ca_bundle_path.string());
-            }
-        }
-    }
-
+    
     this->directories = file_paths.directories;
     this->links = file_paths.links;
 
