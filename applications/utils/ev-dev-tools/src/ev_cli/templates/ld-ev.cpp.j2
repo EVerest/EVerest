@@ -39,7 +39,12 @@ static Everest::PtrContainer<{{info.class_name }}> mod_ptr {};
 // per module configs
 {# FIXME (aw): instead of being static, this could also be inside a map #}
 {% for impl in provides %}
+{% if impl.rwconfig|length > 0 %}
+static {{ impl.id }}::RwConf {{ impl.id }}_rwconfig;
+static {{ impl.id }}::Conf {{ impl.id }}_config({{ impl.id }}_rwconfig);
+{% else %}
 static {{ impl.id }}::Conf {{ impl.id }}_config;
+{% endif %}
 {% endfor %}
 {% if info.module_rwconfig|length > 0 %}
 static RwConf module_rwconf;
@@ -78,6 +83,9 @@ void LdEverest::init(ModuleConfigs module_configs, const ModuleInfo& mod_info) {
     {% for item in impl.config %}
     {{ impl.id }}_config.{{ item.name }} = std::get<{{ item.cpp_type }}>({{ impl.id }}_config_input["{{ item.name }}"]);
     {% endfor %}
+    {% for item in impl.rwconfig %}
+    {{ impl.id }}_rwconfig.{{ item.name }} = std::get<{{ item.cpp_type }}>({{ impl.id }}_config_input["{{ item.name }}"]);
+    {% endfor %}
     {% endfor %}
 
     {% for item in info.module_config %}
@@ -89,13 +97,48 @@ void LdEverest::init(ModuleConfigs module_configs, const ModuleInfo& mod_info) {
 
     module_info = mod_info;
 
-    {% for item in info.module_rwconfig %}
+    {% set config_client_was_created = namespace(value=false) %}
+
+    {% for impl in provides %}
+    {% for item in impl.rwconfig %}
     {% if loop.first %}
-    // register runtime config change handlers for rw parameters
+    // register runtime config change handlers for rw parameters for implementations
+    {% if not config_client_was_created.value %}
     auto config_client = adapter.get_config_service_client();
+    {% set config_client_was_created.value = true %}
+    {% endif %}
+    // as the module only holds a pointer to the base class of the implementation, it has to be casted to the
+    // concrete implementation here
+    auto impl_p = static_cast<module::{{ impl.type }}::{{ impl.class_name }}*>(mod_ptr->p_{{ impl.id }}.get());
     if (config_client) {
     {% endif %}
-        config_client->register_config_change_handler("{{ item.name }}",
+        // Cast to the specialized implementation class, as the required header is included in this cpp file
+        // and we know which type this pointer points to
+        config_client->register_config_change_handler("{{ impl.id }}", "{{ item.name }}",
+            [impl_p](const std::string& new_value) -> Everest::config::ConfigChangeResult {
+    {% if item.cpp_type == "std::string" %}
+                // return mod_ptr->p_{{ impl.id }}->on_{{ item.name }}_changed(new_value);
+                return impl_p->on_{{ item.name }}_changed(new_value);
+    {% else %}
+                const auto typed_value = conversions::ConfigFromString<{{ item.cpp_type }}>(new_value);
+                return impl_p->on_{{ item.name }}_changed(typed_value);
+    {% endif %}
+            });
+    {% if loop.last %}
+    }
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
+
+    {% for item in info.module_rwconfig %}
+    {% if loop.first %}
+    {% if not config_client_was_created.value %}
+    // register runtime config change handlers for rw parameters
+    auto config_client = adapter.get_config_service_client();
+    {% endif %}
+    if (config_client) {
+    {% endif %}
+        config_client->register_config_change_handler("!module", "{{ item.name }}",
             [](const std::string& new_value) -> Everest::config::ConfigChangeResult {
     {% if item.cpp_type == "std::string" %}
                 return mod_ptr->on_{{ item.name }}_changed(new_value);
@@ -132,7 +175,11 @@ std::vector<Everest::cmd> everest_register(const RequirementInitialization& requ
     adapter.check_complete();
 
     {% for impl in provides %}
+    {% if impl.rwconfig|length > 0 %}
+    auto p_{{ impl.id }} = std::make_unique<{{ impl.id }}::{{ impl.class_name }}>(&adapter, mod_ptr, {{ impl.id }}_config, {{ impl.id }}_rwconfig);
+    {% else %}
     auto p_{{ impl.id }} = std::make_unique<{{ impl.id }}::{{ impl.class_name }}>(&adapter, mod_ptr, {{ impl.id }}_config);
+    {% endif %}
     adapter.gather_cmds(*p_{{ impl.id }});
 
     {% endfor %}
