@@ -1,0 +1,137 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//modules:module.bzl", "cc_everest_module")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
+
+cc_everest_module(
+    name = "EvseV2G",
+    srcs = glob([
+        "*.cpp",
+        "*.hpp",
+    ]),
+    impls = [
+        "charger",
+        "connection",
+        "crypto",
+        "extensions",
+    ],
+    includes = [
+        "connection",
+        "crypto",
+    ],
+    deps = [
+        "//lib/everest/cbv2g:din",
+        "//lib/everest/cbv2g:iso2",
+        "//lib/everest/cbv2g:tp",
+        "//lib/everest/tls",
+        "@libevent//:event",
+        "@libevent//:event_pthreads",
+    ],
+)
+
+# Shared test helpers: log stub, test stubs, and common includes.
+_TEST_COPTS = [
+    "-std=c++17",
+    "-DUNIT_TEST",
+]
+
+_TEST_INCLUDES = [
+    ".",
+    "connection",
+    "crypto",
+    "generated/modules/EvseV2G",
+]
+
+cc_library(
+    name = "test_helpers",
+    srcs = ["tests/log.cpp"],
+    hdrs = glob(["tests/*.hpp"]) + glob([
+        "*.hpp",
+        "connection/*.hpp",
+        "crypto/*.hpp",
+    ]),
+    copts = _TEST_COPTS,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":ld-ev",
+        "//lib/everest/cbv2g:din",
+        "//lib/everest/cbv2g:iso2",
+        "//lib/everest/cbv2g:tp",
+        "//lib/everest/evse_security:libevse-security",
+        "//lib/everest/framework",
+        "//lib/everest/tls",
+        "//tests:module_adapter_stub",
+        "@everest-core//interfaces:interfaces_lib",
+        "@libevent//:event",
+        "@libevent//:event_pthreads",
+    ],
+)
+
+cc_test(
+    name = "sdp_test",
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    srcs = [
+        "sdp.cpp",
+        "tests/sdp_test.cpp",
+        "tools.cpp",
+    ],
+    copts = _TEST_COPTS,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":test_helpers",
+        "//lib/everest/cbv2g:tp",
+        "//lib/everest/framework",
+        "//lib/everest/tls",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "din_server_test",
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    srcs = [
+        "din_server.cpp",
+        "tests/din_server_test.cpp",
+        "tools.cpp",
+    ],
+    copts = _TEST_COPTS + ["-DLIBEVSE_CRYPTO_SUPPLIER_OPENSSL"],
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":test_helpers",
+        "//lib/everest/cbv2g:din",
+        "//lib/everest/cbv2g:iso2",
+        "//lib/everest/cbv2g:tp",
+        "//lib/everest/evse_security:libevse-security",
+        "//lib/everest/framework",
+        "//lib/everest/tls",
+        "//third-party/bazel/openssl:crypto",
+        "//third-party/bazel/openssl:ssl",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "v2g_ctx_test",
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    srcs = [
+        "tests/tools_test.cpp",
+        "tests/v2g_ctx_test.cpp",
+        "tools.cpp",
+        "v2g_ctx.cpp",
+    ],
+    copts = _TEST_COPTS + ["-DLIBEVSE_CRYPTO_SUPPLIER_OPENSSL"],
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":test_helpers",
+        "//lib/everest/cbv2g:din",
+        "//lib/everest/cbv2g:iso2",
+        "//lib/everest/cbv2g:tp",
+        "//lib/everest/evse_security:libevse-security",
+        "//lib/everest/framework",
+        "//lib/everest/tls",
+        "//third-party/bazel/openssl:crypto",
+        "//third-party/bazel/openssl:ssl",
+        "@googletest//:gtest_main",
+        "@libevent//:event",
+        "@libevent//:event_pthreads",
+    ],
+)

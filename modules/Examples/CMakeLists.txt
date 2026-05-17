@@ -1,0 +1,5 @@
+add_subdirectory(CppExamples)
+if(${EVEREST_ENABLE_RS_SUPPORT})
+    add_subdirectory(RustExamples)
+endif()
+add_subdirectory(error-framework)

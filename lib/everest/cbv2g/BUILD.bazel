@@ -1,0 +1,76 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+_INCLUDES = ["include"]
+
+cc_library(
+    name = "exi_codec",
+    srcs = [
+        "lib/cbv2g/common/exi_basetypes.c",
+        "lib/cbv2g/common/exi_basetypes_decoder.c",
+        "lib/cbv2g/common/exi_basetypes_encoder.c",
+        "lib/cbv2g/common/exi_bitstream.c",
+        "lib/cbv2g/common/exi_header.c",
+        "lib/cbv2g/common/exi_types_decoder.c",
+    ],
+    hdrs = glob(["include/cbv2g/common/*.h"]),
+    includes = _INCLUDES,
+    visibility = ["//visibility:public"],
+)
+
+_APP_HANDSHAKE_SRCS = [
+    "lib/cbv2g/app_handshake/appHand_Datatypes.c",
+    "lib/cbv2g/app_handshake/appHand_Decoder.c",
+    "lib/cbv2g/app_handshake/appHand_Encoder.c",
+]
+
+cc_library(
+    name = "din",
+    srcs = _APP_HANDSHAKE_SRCS + [
+        "lib/cbv2g/din/din_msgDefDatatypes.c",
+        "lib/cbv2g/din/din_msgDefDecoder.c",
+        "lib/cbv2g/din/din_msgDefEncoder.c",
+    ],
+    hdrs = glob([
+        "include/cbv2g/app_handshake/*.h",
+        "include/cbv2g/din/*.h",
+    ]),
+    includes = _INCLUDES,
+    visibility = ["//visibility:public"],
+    deps = [":exi_codec"],
+)
+
+cc_library(
+    name = "iso2",
+    srcs = _APP_HANDSHAKE_SRCS + [
+        "lib/cbv2g/iso_2/iso2_msgDefDatatypes.c",
+        "lib/cbv2g/iso_2/iso2_msgDefDecoder.c",
+        "lib/cbv2g/iso_2/iso2_msgDefEncoder.c",
+    ],
+    hdrs = glob([
+        "include/cbv2g/app_handshake/*.h",
+        "include/cbv2g/iso_2/*.h",
+    ]),
+    includes = _INCLUDES,
+    visibility = ["//visibility:public"],
+    deps = [":exi_codec"],
+)
+
+cc_library(
+    name = "iso20",
+    srcs = _APP_HANDSHAKE_SRCS + glob(["lib/cbv2g/iso_20/*.c"]),
+    hdrs = glob([
+        "include/cbv2g/app_handshake/*.h",
+        "include/cbv2g/iso_20/*.h",
+    ]),
+    includes = _INCLUDES,
+    visibility = ["//visibility:public"],
+    deps = [":exi_codec"],
+)
+
+cc_library(
+    name = "tp",
+    srcs = ["lib/cbv2g/exi_v2gtp.c"],
+    hdrs = ["include/cbv2g/exi_v2gtp.h"],
+    includes = _INCLUDES,
+    visibility = ["//visibility:public"],
+)

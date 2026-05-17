@@ -1,0 +1,8 @@
+description: Interactive bring up helper for System component
+requires:
+  system:
+    interface: system
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Florin Mihut

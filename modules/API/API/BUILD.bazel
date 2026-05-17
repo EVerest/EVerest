@@ -1,0 +1,32 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//modules:module.bzl", "cc_everest_module")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
+
+cc_everest_module(
+    name = "API",
+    srcs = glob(
+        [
+            "*.cpp",
+            "*.hpp",
+        ],
+    ),
+    deps = [
+        "@everest-core//lib:external_energy_limits",
+        "@rapidyaml",
+    ],
+)
+
+cc_test(
+    name = "API_test",
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    srcs = [
+        "StartupMonitor.cpp",
+        "StartupMonitor.hpp",
+        "tests/StartupMonitor_test.cpp",
+    ],
+    includes = ["."],
+    deps = [
+        "//lib/everest/log:liblog",
+        "@googletest//:gtest_main",
+    ],
+)

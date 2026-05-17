@@ -1,0 +1,8 @@
+description: Interactive bring up helper for over_voltage_monitor interface
+requires:
+  ovm:
+    interface: over_voltage_monitor
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Jan Christoph Habig

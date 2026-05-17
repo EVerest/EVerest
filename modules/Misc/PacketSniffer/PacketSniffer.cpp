@@ -1,0 +1,113 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+#include "PacketSniffer.hpp"
+
+#include <fmt/core.h>
+
+#include <fmt/chrono.h>
+
+namespace module {
+
+const bool PROMISC_MODE = true;
+const int PACKET_BUFFER_TIMEOUT_MS = 1000;
+const int ALL_PACKETS_PROCESSED = -1;
+const int WAIT_FOR_MS = 10;
+const int BUFFERSIZE = 8192;
+
+void PacketSniffer::init() {
+    p_handle = pcap_open_live(config.device.c_str(), BUFFERSIZE, PROMISC_MODE, PACKET_BUFFER_TIMEOUT_MS, errbuf);
+    std::string errb{errbuf};
+    if (p_handle == nullptr) {
+        EVLOG_error << fmt::format("Could not open device \"{}\", Sniffing disabled.{}", config.device,
+                                   errb.size() > 0 ? (std::string(" Error: ") + errb) : "");
+        return;
+    }
+
+    if (config.device != "any" && pcap_datalink(p_handle) != DLT_EN10MB) {
+        EVLOG_error << fmt::format("Device \"{}\" doesn't provide Ethernet headers - not supported. Sniffing disabled.",
+                                   config.device);
+        pcap_close(p_handle);
+        return;
+    }
+
+    EVLOG_info << fmt::format("Sniffing on device \"{}\"", config.device);
+
+    r_evse_manager->subscribe_session_event([this](types::evse_manager::SessionEvent session_event) {
+        if (session_event.event == types::evse_manager::SessionEventEnum::SessionStarted) {
+            if (!already_started) {
+
+                if (!session_event.session_started.has_value()) {
+                    EVLOG_warning
+                        << "SessionStarted event type doesn't contain session_started data. Ignoring this event.";
+                    return;
+                }
+
+                std::string logging_path;
+                if (!config.session_logging_path.empty()) {
+                    logging_path = config.session_logging_path;
+                } else if (session_event.session_started->logging_path.has_value()) {
+                    logging_path = session_event.session_started->logging_path.value();
+                } else {
+                    EVLOG_warning << "No logging path configured and none provided in SessionStarted event. "
+                                     "Skipping capture.";
+                    return;
+                }
+
+                capturing_stopped = false;
+                std::thread(&PacketSniffer::capture, this, logging_path, session_event.uuid).detach();
+            } else {
+                EVLOG_warning << fmt::format("Capturing already started. Ignoring this SessionStarted event");
+            }
+        } else if (session_event.event == types::evse_manager::SessionEventEnum::SessionFinished) {
+            capturing_stopped = true;
+            pcap_breakloop(p_handle);
+        }
+    });
+}
+
+void PacketSniffer::ready() {
+}
+
+void PacketSniffer::capture(const std::string& logpath, const std::string& session_id) {
+    already_started = true;
+
+    std::string fn = fmt::format("{}/ethernet-traffic.pcap", logpath);
+    if (not config.session_logging_path.empty()) {
+        const auto now = std::chrono::system_clock::now();
+        const auto time_t_now = std::chrono::system_clock::to_time_t(now);
+        std::tm local_tm{};
+        localtime_r(&time_t_now, &local_tm);
+        const auto timestamp = fmt::format("{:%Y-%m-%d_%H-%M-%S%z}", local_tm);
+        fn = fmt::format("{}/{}_{}.pcap", logpath, timestamp, session_id);
+    }
+
+    EVLOG_info << fmt::format("Starting capturing to {}", fn);
+
+    if ((pdumpfile = pcap_dump_open(p_handle, fn.c_str())) == nullptr) {
+        EVLOG_error << fmt::format("Error opening savefile {} for writing: {}", fn, pcap_geterr(p_handle));
+        return;
+    }
+
+    while (!capturing_stopped) {
+        const int ret =
+            pcap_dispatch(p_handle, ALL_PACKETS_PROCESSED, &pcap_dump, reinterpret_cast<u_char*>(pdumpfile));
+        if (ret <= PCAP_ERROR) {
+            const std::string base_msg = fmt::format("Error reading packets from interface \"{}\"", config.device);
+            if (ret == PCAP_ERROR) {
+                EVLOG_error << fmt::format("{}, error: {}", base_msg, pcap_geterr(p_handle));
+            } else if (ret == PCAP_ERROR_BREAK) {
+                EVLOG_warning << fmt::format("{}, interrupted but no packets received", base_msg);
+            } else {
+                EVLOG_error << fmt::format("{}, unexpected error: {}", base_msg, ret);
+            }
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(WAIT_FOR_MS));
+    }
+
+    pcap_dump_close(pdumpfile);
+    EVLOG_info << fmt::format("Stopped capturing to {}", fn);
+    already_started = false;
+}
+
+} // namespace module

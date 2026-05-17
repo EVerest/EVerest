@@ -1,0 +1,5 @@
+load("//modules:module.bzl", "py_everest_module")
+
+py_everest_module(
+    name = "PyEvJosev",
+)

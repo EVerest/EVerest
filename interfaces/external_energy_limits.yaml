@@ -1,0 +1,17 @@
+description: >-
+  This interface allows to limit energy flow at a specific node of the energy tree from the outside (e.g. from ocpp).
+cmds:
+  set_external_limits:
+    description: Set additional external energy flow limits at this node.
+    arguments:
+      value:
+        description: External limits object
+        type: object
+        $ref: /energy#/ExternalLimits
+vars:
+  capabilities:
+    description: >-
+      Describes the maximum/rated energy flow at this node, e.g. how many phases are configured,
+      the maximum current and the nominal voltage. This is published at least once during start up.
+    type: object
+    $ref: /energy#/CapabilityLimits

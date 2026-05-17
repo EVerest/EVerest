@@ -1,6 +1,10 @@
 #!/bin/sh
 
+<<<<<<< HEAD
 CTEST_OUTPUT_ON_FAILURE=1 ninja -C "$EXT_MOUNT/build" test
+=======
+ninja -C "$EXT_MOUNT/build" test
+>>>>>>> blank
 retVal=$?
 
 # Copy the LastTest.log file to the mounted directory in any case
@@ -10,3 +14,8 @@ if [ $retVal -ne 0 ]; then
     echo "Unit tests failed with return code $retVal"
     exit $retVal
 fi
+<<<<<<< HEAD
+=======
+
+set -e
+>>>>>>> blank
