@@ -193,7 +193,7 @@ class ProbeModule:
             logging.error(error_message)
             raise RuntimeError(error_message)
 
-    def register_config_change_handler(self, param_name: str,
+    def register_config_change_handler(self, impl_id: str, param_name: str,
                                        handler: Callable[[str], dict]):
         """
         Register a handler for runtime configuration changes of a parameter owned by this probe module.
@@ -204,7 +204,7 @@ class ProbeModule:
         Note: Must be called before start().
         Note: The handler runs in a separate thread!
         """
-        self._mod.register_config_change_handler(param_name, handler)
+        self._mod.register_config_change_handler(impl_id, param_name, handler)
 
     def subscribe_all_errors(self, connection_id: str,
                             callback: Callable[[error.Error], None],

@@ -83,7 +83,8 @@ public:
                           const std::optional<std::string>& impl_id = std::nullopt);
     json get_config_value(const std::string& module_id, const std::string& param_name,
                           const std::optional<std::string>& impl_id = std::nullopt);
-    void register_config_change_handler(const std::string& param_name, std::function<json(const std::string&)> handler);
+    void register_config_change_handler(const std::string& impl_id, const std::string& param_name,
+                                        std::function<json(const std::string&)> handler);
 
     const auto& get_fulfillments() const {
         return fulfillments;
