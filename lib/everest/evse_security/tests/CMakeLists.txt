@@ -47,9 +47,6 @@ setup_target_for_coverage_gcovr_xml(
     EXCLUDE "tests/*"
 )
 
-target_compile_definitions(${TEST_TARGET_NAME} PRIVATE
-    CTL_DIR="${CMAKE_SOURCE_DIR}/CTL"
-)
 file(COPY
     "${CMAKE_CURRENT_SOURCE_DIR}/generate_test_certs.sh"
     "${CMAKE_CURRENT_SOURCE_DIR}/generate_test_certs_root_multi.sh"
