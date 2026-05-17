@@ -42,7 +42,8 @@ X509CertificateBundle::X509CertificateBundle(const std::string& certificate, con
 }
 
 X509CertificateBundle::X509CertificateBundle(const fs::path& path, const EncodingFormat encoding) :
-    hierarchy_invalidated(true), path(path) {
+    hierarchy_invalidated(true) {
+    this->path = path;
 
     // Attempt creation
     filesystem_utils::create_file_or_dir_if_nonexistent(path);
@@ -77,9 +78,8 @@ std::vector<X509Wrapper> X509CertificateBundle::split() {
 
     // Append all chains
     for (const auto& chains : certificates) {
-        for (const auto& cert : chains.second) {
+        for (const auto& cert : chains.second)
             full_certificates.push_back(cert);
-        }
     }
 
     return full_certificates;
@@ -101,14 +101,13 @@ int X509CertificateBundle::get_certificate_chains_count() const {
 void X509CertificateBundle::add_certificates(const std::string& data, const EncodingFormat encoding,
                                              const std::optional<fs::path>& path) {
     auto loaded = CryptoSupplier::load_certificates(data, encoding);
-    auto& list = certificates[path.value_or(fs::path())];
+    auto& list = certificates[path.value_or(std::filesystem::path())];
 
     for (auto& x509 : loaded) {
-        if (path.has_value()) {
+        if (path.has_value())
             list.emplace_back(std::move(x509), path.value());
-        } else {
+        else
             list.emplace_back(std::move(x509));
-        }
     }
 }
 
@@ -116,9 +115,8 @@ bool X509CertificateBundle::contains_certificate(const X509Wrapper& certificate)
     // Search through all the chains
     for (const auto& chain : certificates) {
         for (const auto& certif : chain.second) {
-            if (certif == certificate) {
+            if (certif == certificate)
                 return true;
-            }
         }
     }
 
@@ -128,13 +126,12 @@ bool X509CertificateBundle::contains_certificate(const X509Wrapper& certificate)
 bool X509CertificateBundle::contains_certificate(const CertificateHashData& certificate_hash) {
     // Try an initial search for root certificates, else a hierarchy build will be required
     for (const auto& chain : certificates) {
-        const bool found = std::find_if(std::begin(chain.second), std::end(chain.second), [&](const X509Wrapper& cert) {
-                               return cert.is_selfsigned() && cert == certificate_hash;
-                           }) != std::end(chain.second);
+        bool found = std::find_if(std::begin(chain.second), std::end(chain.second), [&](const X509Wrapper& cert) {
+                         return cert.is_selfsigned() && cert == certificate_hash;
+                     }) != std::end(chain.second);
 
-        if (found) {
+        if (found)
             return true;
-        }
     }
 
     // Nothing found, build the hierarchy and search by the issued hash
@@ -151,7 +148,7 @@ std::optional<X509Wrapper> X509CertificateBundle::find_certificate(const Certifi
                 bool matches = false;
 
                 if (case_insensitive_comparison) {
-                    const CertificateHashData certif_hash = certif.get_certificate_hash_data();
+                    CertificateHashData certif_hash = certif.get_certificate_hash_data();
                     matches = certif_hash.case_insensitive_comparison(certificate_hash);
                 } else {
                     matches = (certif == certificate_hash);
@@ -200,7 +197,7 @@ std::vector<X509Wrapper> X509CertificateBundle::delete_certificate(const X509Wra
 
         certifs.erase(std::remove_if(certifs.begin(), certifs.end(),
                                      [&](const auto& certif) {
-                                         const bool found =
+                                         bool found =
                                              std::find(to_delete.begin(), to_delete.end(), certif) != to_delete.end();
 
                                          if (found) {
@@ -239,7 +236,7 @@ void X509CertificateBundle::delete_all_certificates() {
 void X509CertificateBundle::add_certificate(X509Wrapper&& certificate) {
     if (source == X509CertificateSource::DIRECTORY) {
         // If it is in directory mode only allow sub-directories of that directory
-        const fs::path certif_path = certificate.get_file().value_or(fs::path());
+        std::filesystem::path certif_path = certificate.get_file().value_or(std::filesystem::path());
 
         if (filesystem_utils::is_subdirectory(path, certif_path)) {
             certificates[certif_path].push_back(std::move(certificate));
@@ -257,7 +254,7 @@ void X509CertificateBundle::add_certificate(X509Wrapper&& certificate) {
 
 void X509CertificateBundle::add_certificate_unique(X509Wrapper&& certificate) {
     if (!contains_certificate(certificate)) {
-        add_certificate(std::move(certificate));
+        return add_certificate(std::move(certificate));
         invalidate_hierarchy();
     }
 }
@@ -295,9 +292,8 @@ bool X509CertificateBundle::export_certificates() {
         // Write updated certificates
         for (auto& chains : certificates) {
             // Ignore empty chains (the file was deleted)
-            if (chains.second.empty()) {
+            if (chains.second.empty())
                 continue;
-            }
 
             // Each chain is a single file
             if (!filesystem_utils::write_to_file(chains.first, to_export_string(chains.first), std::ios::trunc)) {
@@ -306,9 +302,9 @@ bool X509CertificateBundle::export_certificates() {
         }
 
         return exported_all;
-    }
-    if (source == X509CertificateSource::FILE) {
+    } else if (source == X509CertificateSource::FILE) {
         // write to a separate file to minimise corruption and data loss; then rename
+        namespace fs = std::filesystem;
         bool result{false};
 
         try {
@@ -343,9 +339,8 @@ bool X509CertificateBundle::sync_to_certificate_store() {
         for (const auto& fs_chain : fs_certificates.certificates) {
             if (certificates.find(fs_chain.first) == certificates.end()) {
                 // fs certif chain not existing in our certificate list, delete
-                if (!filesystem_utils::delete_file(fs_chain.first)) {
+                if (!filesystem_utils::delete_file(fs_chain.first))
                     success = false;
-                }
             }
         }
 
@@ -353,29 +348,25 @@ bool X509CertificateBundle::sync_to_certificate_store() {
         for (const auto& chain : certificates) {
             if (chain.second.empty()) {
                 // If it's an empty chain, delete
-                if (!filesystem_utils::delete_file(chain.first)) {
+                if (!filesystem_utils::delete_file(chain.first))
                     success = false;
-                }
             } else if (fs_certificates.certificates.find(chain.first) == fs_certificates.certificates.end()) {
                 // Certif not existing in fs certificates write it out
-                if (!filesystem_utils::write_to_file(chain.first, to_export_string(chain.first), std::ios::trunc)) {
+                if (!filesystem_utils::write_to_file(chain.first, to_export_string(chain.first), std::ios::trunc))
                     success = false;
-                }
             }
         }
 
         // After fs deletion erase all empty files from our certificate list, so that we don't write them out
         for (auto first = certificates.begin(); first != certificates.end();) {
-            if (first->second.empty()) {
+            if (first->second.empty())
                 first = certificates.erase(first);
-            } else {
+            else
                 ++first;
-            }
         }
 
         return success;
-    }
-    if (source == X509CertificateSource::FILE) {
+    } else if (source == X509CertificateSource::FILE) {
         // Delete source file if we're empty
         if (certificates.empty()) {
             return filesystem_utils::delete_file(path);
@@ -419,14 +410,13 @@ std::string X509CertificateBundle::to_export_string() const {
     return export_string;
 }
 
-std::string X509CertificateBundle::to_export_string(const fs::path& chain) const {
+std::string X509CertificateBundle::to_export_string(const std::filesystem::path& chain) const {
     std::string export_string;
 
     auto found = certificates.find(chain);
     if (found != certificates.end()) {
-        for (auto& certificate : found->second) {
+        for (auto& certificate : found->second)
             export_string += certificate.get_export_string();
-        }
     }
 
     return export_string;
