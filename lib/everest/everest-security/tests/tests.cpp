@@ -14,7 +14,6 @@
 #include <evse_security/certificate/x509_wrapper.hpp>
 #include <evse_security/evse_security.hpp>
 #include <evse_security/utils/evse_filesystem.hpp>
-#include <evse_security/utils/enforce_certificate_rules.hpp>
 #include <evse_security/utils/load_ctl.hpp>
 
 
