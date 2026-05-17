@@ -173,11 +173,12 @@ json Module::get_config_value(const std::string& module_id, const std::string& p
     return json(handle->get_config_service_client()->get_config_value(identifier));
 }
 
-void Module::register_config_change_handler(const std::string& param_name,
+void Module::register_config_change_handler(const std::string& impl_id, const std::string& param_name,
                                             std::function<json(const std::string&)> handler) {
     auto& stored = config_change_handlers.emplace_back(std::move(handler));
+    // TODO(CB): Not working for implementations, does it?
     handle->get_config_service_client()->register_config_change_handler(
-        param_name, [&stored](const std::string& new_value) -> Everest::config::ConfigChangeResult {
+        impl_id, param_name, [&stored](const std::string& new_value) -> Everest::config::ConfigChangeResult {
             pybind11::gil_scoped_acquire acquire;
             try {
                 return stored(new_value).get<Everest::config::ConfigChangeResult>();
