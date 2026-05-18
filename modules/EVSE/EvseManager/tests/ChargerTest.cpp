@@ -8,6 +8,10 @@
 #include <memory>
 #include <optional>
 
+namespace module {
+std::vector<std::string> observed_cp_state_commands;
+}
+
 namespace {
 using namespace module;
 using namespace types::evse_manager;
@@ -72,6 +76,7 @@ struct ChargerTest : public testing::Test {
 
     void SetUp() override {
         reset_last_event();
+        observed_cp_state_commands.clear();
         charger = std::make_unique<ChargerDerived>(
             charger_bsp, charger_error_handling, charger_powermeter_billing, charger_store,
             types::evse_board_support::Connector_type::IEC62196Type2Socket, "EVSETEST");
@@ -764,11 +769,14 @@ TEST_F(ChargerTest, DisableDuringIdle) {
 
 // ----------------------------------------------------------------------------
 // tests for dlink_error()
-// A D-LINK_ERROR normally restarts SLAC matching via T_step_X1/T_step_EF
-// ([V2G3-M07-05] error recovery). When the session is being stopped for good or
-// is already finished, the D-LINK_ERROR is just the consequence of the HLC
-// session shutting down and matching must NOT be restarted, so the session can
-// end in StoppingCharging -> Finished.
+// A D-LINK_ERROR normally restarts SLAC matching according to the ISO 15118-3
+// error recovery sequence ([V2G3-M07-05]). For an HLC session, CP is first
+// switched to X1 before the state machine starts the configured reinitialization
+// (defaulting to T_step_EF).
+// When the session is being stopped for good or is already finished, the
+// D-LINK_ERROR is just the consequence of the HLC session shutting down and
+// matching must NOT be restarted, so the session can end in
+// StoppingCharging -> Finished.
 
 struct ChargerDlinkErrorTest : public ChargerTest {
     // never dereferenced: the IECStateMachine used here is the no-op stub below
@@ -844,13 +852,20 @@ TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWhenFinished) {
 
 TEST_F(ChargerDlinkErrorTest, MatchingRestartDuringActiveSession) {
     // A D-LINK_ERROR during an active session (e.g. HLC communication error during
-    // cable check with the transaction still running) must keep the ISO 15118-3
-    // error recovery: restart matching via T_step_X1 -> T_step_EF
+    // cable check with the transaction still running) switches CP to X1 before
+    // the configured reinitialization starts.
     setup_hlc_session_in(Charger::EvseState::PrepareCharging);
 
     charger->dlink_error();
 
-    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_X1);
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
+    EXPECT_FALSE(charger->get_shared_context().pwm_running);
+    EXPECT_TRUE(charger->get_shared_context().reinit_requested);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Reinit);
 }
 
 TEST_F(ChargerDlinkErrorTest, MatchingRestartWhenStoppingToPause) {
@@ -862,7 +877,16 @@ TEST_F(ChargerDlinkErrorTest, MatchingRestartWhenStoppingToPause) {
 
     charger->dlink_error();
 
-    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_X1);
+    // A pause continues the session, so it follows the same X1-before-reinit
+    // recovery sequence as an active session.
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
+    EXPECT_FALSE(ctx.pwm_running);
+    EXPECT_TRUE(ctx.reinit_requested);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::StoppingCharging);
+
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Reinit);
 }
 
 TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWithNominalPwm) {
@@ -920,8 +944,15 @@ void IECStateMachine::set_overcurrent_limit(double amps) {
 void IECStateMachine::set_pwm(double value) {
 }
 void IECStateMachine::set_cp_state_X1() {
+    observed_cp_state_commands.emplace_back("X1");
 }
+
+void IECStateMachine::set_cp_state_E() {
+    observed_cp_state_commands.emplace_back("E");
+}
+
 void IECStateMachine::set_cp_state_F() {
+    observed_cp_state_commands.emplace_back("F");
 }
 
 void IECStateMachine::enable(bool en) {
