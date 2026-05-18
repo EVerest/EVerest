@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <everest/io/event/unique_fd.hpp>
+#include <everest/io/udp/endpoint.hpp>
 
 namespace everest::lib::io::socket {
 
@@ -33,6 +34,24 @@ event::unique_fd open_udp_server_socket(std::uint16_t port, std::string const& d
  * @throws std::runtime_error if the operation fails.
  */
 event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t port, std::string const& device = {});
+
+/**
+ * @brief Open an unconnected UDP datagram socket (IPv4 or IPv6) for a target.
+ * @details Socket family is taken from @p target. SOCK_DGRAM, non-blocking,
+ * bound to the family wildcard address on an ephemeral port. For a multicast
+ * @p target the multicast egress interface is pinned (IP_MULTICAST_IF /
+ * IPV6_MULTICAST_IF) to @p iface (falling back to the interface carried by
+ * @p target); SO_BINDTODEVICE is applied best-effort for extra link
+ * confinement (tolerated to fail unprivileged). Performs neither ::connect()
+ * nor any multicast group join, so a unicast reply from an address other than
+ * the configured target is delivered on this same fd by destination address
+ * and port.
+ * @param[in] target Destination address; selects the socket family.
+ * @param[in] iface Optional interface name. Empty uses @p target's iface hint.
+ * @return The managed file descriptor of the socket.
+ * @throws std::runtime_error if the operation fails.
+ */
+event::unique_fd open_udp_unconnected_socket(udp::endpoint const& target, std::string const& iface = {});
 
 /**
  * @brief Open a UDP socket with <a href="https://man7.org/linux/man-pages/man7/ip.7.html">multicast</a>

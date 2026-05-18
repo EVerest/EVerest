@@ -25,6 +25,7 @@
 
 #include <everest/io/event/unique_fd.hpp>
 #include <everest/io/socket/socket.hpp>
+#include <everest/io/udp/endpoint.hpp>
 
 namespace {
 // a simple raii wrapper, which will call the given c-like deleter
@@ -722,6 +723,62 @@ std::vector<if_info> get_all_interaces() {
         interfaces.push_back({ifa->ifa_name, get_interface_address(ifa->ifa_name)});
     }
     return interfaces;
+}
+
+event::unique_fd open_udp_unconnected_socket(udp::endpoint const& target, std::string const& iface) {
+    const auto family = target.family();
+    if (family != AF_INET && family != AF_INET6) {
+        throw std::runtime_error("open_udp_unconnected_socket: target has no usable address family");
+    }
+
+    event::unique_fd sock(::socket(family, SOCK_DGRAM, 0));
+    if (not sock.is_fd()) {
+        throw std::runtime_error(build_errno_string("socket(SOCK_DGRAM) failed"));
+    }
+    set_non_blocking(sock);
+
+    // Wildcard bind on the target's family, ephemeral port. RX is by destination
+    // address and port; interface confinement (if any) comes from the options below.
+    if (family == AF_INET6) {
+        sockaddr_in6 local{};
+        local.sin6_family = AF_INET6;
+        local.sin6_addr = in6addr_any;
+        if (::bind(sock, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0) {
+            throw std::runtime_error(build_errno_string("bind([::]:0) failed"));
+        }
+    } else {
+        sockaddr_in local{};
+        local.sin_family = AF_INET;
+        local.sin_addr.s_addr = htonl(INADDR_ANY);
+        if (::bind(sock, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0) {
+            throw std::runtime_error(build_errno_string("bind(0.0.0.0:0) failed"));
+        }
+    }
+
+    const std::string& device = iface.empty() ? target.iface() : iface;
+
+    // Best-effort link confinement. Not required for the unicast-reply RX path
+    // (delivery is by destination address and port on the wildcard bind).
+    // Defense-in-depth only on multi-NIC hosts; unprivileged failure is tolerated.
+    if (not device.empty()) {
+        try {
+            bind_socket_to_device(sock, device);
+        } catch (const std::exception&) {
+            // ignore: multicast TX interface is pinned by set_multicast_if below
+        }
+    }
+
+    // Pin multicast egress to the chosen interface (no-op for unicast targets).
+    // A mutable copy is required: set_multicast_if writes sin6_scope_id, which
+    // is irrelevant here since the socket option is what matters.
+    sockaddr_storage ss{};
+    std::memcpy(&ss, target.sa(), target.sa_len());
+    set_multicast_if(sock, device, reinterpret_cast<sockaddr*>(&ss));
+
+    // No ::connect(), no group join: a connected datagram socket would drop a
+    // unicast reply whose source differs from the configured target; a group
+    // join is a receiver-side concern and is not needed to send to the group.
+    return sock;
 }
 
 event::unique_fd open_udp_multicast_socket(std::string const& multicast_group, std::uint16_t port,
