@@ -48,6 +48,11 @@ cmds:
           Indicates if the vehicle contract may be forwarded to and validated by a CSMS in case
           local validation was not successful
         type: boolean
+      fake_dc_enabled:
+        description: >-
+          If true, the charger will abort an active DC session after receiving the EV SOC value to allow
+          switching to AC basic charging.
+        type: boolean
   bpt_setup:
     description: >-
       At startup, set the bpt setup for ISO15118-20 at least once. May be updated later on.

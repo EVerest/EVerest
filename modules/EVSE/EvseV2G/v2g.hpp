@@ -243,6 +243,7 @@ struct v2g_context {
     int state;                         /* holds the current state id */
     bool is_dc_charger; /* Is set to true if it is a DC charger. Value is configured after configuration of the
                            supported energy type */
+    bool is_fake_dc;    /* Is set to true if fake DC (AC with SoC) is active */
     bool debugMode;     /* To activate/deactivate the debug mode */
     std::atomic<int8_t>
         supported_protocols; /* Is an bit mask and holds the supported app protocols. See v2g_protocol enum */
