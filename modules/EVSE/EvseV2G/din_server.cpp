@@ -296,8 +296,8 @@ static void publish_din_power_delivery_req(struct v2g_context* ctx,
     // V2G values that can be published: ReadyToChargeState
     if (ctx->telemetry_publisher) {
         ctx->telemetry_publisher->ev_electrical.charge_progress =
-            v2g_power_delivery_req->ReadyToChargeState == (int)1 ? everest::lib::v2g::ChargeProgress::Start
-                                                                 : everest::lib::v2g::ChargeProgress::Stop;
+            v2g_power_delivery_req->ReadyToChargeState == (int)1 ? everest::lib::API::V1_0::types::telemetry::ChargeProgress::Start
+                                                                 : everest::lib::API::V1_0::types::telemetry::ChargeProgress::Stop;
         ctx->telemetry_publisher->publish_ev_electrical();
     }
 

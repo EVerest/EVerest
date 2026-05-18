@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include <everest/cert/telemetry.hpp>
+#include "telemetry/cert.hpp"
 #include <nlohmann/json.hpp>
 
-namespace everest::lib::cert {
+namespace everest::lib::API::V1_0::types::telemetry {
 
 using json = nlohmann::json;
 
@@ -55,8 +55,8 @@ std::string serialize(CertTelemetry const& v) {
     return json(v).dump(0);
 }
 
-CertTelemetry deserialize(std::string const& s) {
+CertTelemetry deserialize_cert(std::string const& s) {
     return json::parse(s).get<CertTelemetry>();
 }
 
-} // namespace everest::lib::cert
+} // namespace everest::lib::API::V1_0::types::telemetry

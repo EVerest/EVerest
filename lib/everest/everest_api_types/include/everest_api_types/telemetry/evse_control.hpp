@@ -6,7 +6,7 @@
 #include <nlohmann/json_fwd.hpp>
 #include <string>
 
-namespace everest::lib::evse_control {
+namespace everest::lib::API::V1_0::types::telemetry {
 
 // Control-state telemetry sourced from EvseManager's session lifecycle and
 // authorization/payment configuration. Consumed by downstream telemetry
@@ -24,6 +24,6 @@ void to_json(nlohmann::json& j, EvseControlStatus const&) noexcept;
 void from_json(nlohmann::json const& j, EvseControlStatus&);
 
 std::string serialize(EvseControlStatus const&);
-EvseControlStatus deserialize(std::string const&);
+EvseControlStatus deserialize_evse_control_status(std::string const&);
 
-} // namespace everest::lib::evse_control
+} // namespace everest::lib::API::V1_0::types::telemetry

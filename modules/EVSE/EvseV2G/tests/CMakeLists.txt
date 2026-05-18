@@ -55,7 +55,7 @@ target_link_libraries(${TLS_GTEST_NAME} PRIVATE
     everest::framework
     everest::evse_security
     everest::tls
-    everest::v2g_telemetry
+    everest::everest_api_types
 )
 
 set(V2G_MAIN_NAME v2g_server)
@@ -92,7 +92,7 @@ target_link_libraries(${V2G_MAIN_NAME} PRIVATE
     everest::framework
     everest::evse_security
     everest::tls
-    everest::v2g_telemetry
+    everest::everest_api_types
     -levent -lpthread -levent_pthreads
 )
 
@@ -135,7 +135,7 @@ target_link_libraries(${DIN_SERVER_NAME}
         everest::framework
         everest::evse_security
         everest::tls
-        everest::v2g_telemetry
+        everest::everest_api_types
 )
 
 add_test(${DIN_SERVER_NAME} ${DIN_SERVER_NAME})
@@ -168,7 +168,7 @@ target_link_libraries(${SDP_NAME}
         cbv2g::tp
         everest::framework
         everest::tls
-        everest::v2g_telemetry
+        everest::everest_api_types
 )
 
 add_test(${SDP_NAME} ${SDP_NAME})
@@ -209,7 +209,7 @@ target_link_libraries(${V2GCTX_NAME}
         everest::framework
         everest::evse_security
         everest::tls
-        everest::v2g_telemetry
+        everest::everest_api_types
         -levent -lpthread -levent_pthreads
 )
 

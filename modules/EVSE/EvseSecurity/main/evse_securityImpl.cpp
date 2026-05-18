@@ -2,7 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "evse_securityImpl.hpp"
-#include <everest/cert/telemetry.hpp>
+#include <everest_api_types/telemetry/cert.hpp>
 #include <everest/conversions/evse_security/conversions.hpp>
 #include <nlohmann/json.hpp>
 
@@ -297,7 +297,7 @@ void evse_securityImpl::publish_cert_telemetry() {
         return;
     }
 
-    everest::lib::cert::CertTelemetry payload;
+    everest::lib::API::V1_0::types::telemetry::CertTelemetry payload;
 
     const int secc_count = this->evse_security->get_count_of_installed_certificates(
         {evse_security::CertificateType::V2GCertificateChain});

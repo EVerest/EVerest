@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include <everest/v2g/telemetry.hpp>
+#include "telemetry/v2g.hpp"
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 
-namespace everest::lib::v2g {
+namespace everest::lib::API::V1_0::types::telemetry {
 
 using json = nlohmann::json;
 
@@ -28,7 +28,7 @@ void to_json(json& j, ChargeProgress const& k) noexcept {
     case ChargeProgress::Pause:       j = "Pause"; return;
     case ChargeProgress::Terminate:   j = "Terminate"; return;
     }
-    j = "INVALID_everest::lib::v2g::ChargeProgress";
+    j = "INVALID_everest::lib::API::V1_0::types::telemetry::ChargeProgress";
 }
 
 void from_json(json const& j, ChargeProgress& k) {
@@ -38,7 +38,7 @@ void from_json(json const& j, ChargeProgress& k) {
     if (s == "Renegotiate") { k = ChargeProgress::Renegotiate; return; }
     if (s == "Pause")       { k = ChargeProgress::Pause; return; }
     if (s == "Terminate")   { k = ChargeProgress::Terminate; return; }
-    throw std::out_of_range("Cannot convert \"" + s + "\" to everest::lib::v2g::ChargeProgress");
+    throw std::out_of_range("Cannot convert \"" + s + "\" to everest::lib::API::V1_0::types::telemetry::ChargeProgress");
 }
 
 void to_json(json& j, V2gTransport const& k) noexcept {
@@ -205,4 +205,4 @@ V2gPaymentService  deserialize_payment_service(std::string const& s)  { return j
 V2gChargerStatus   deserialize_charger_status(std::string const& s)   { return json::parse(s).get<V2gChargerStatus>(); }
 V2gEvseElectrical  deserialize_evse_electrical(std::string const& s)  { return json::parse(s).get<V2gEvseElectrical>(); }
 
-} // namespace everest::lib::v2g
+} // namespace everest::lib::API::V1_0::types::telemetry

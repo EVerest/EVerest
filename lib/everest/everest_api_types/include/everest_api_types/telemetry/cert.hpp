@@ -6,7 +6,7 @@
 #include <nlohmann/json_fwd.hpp>
 #include <string>
 
-namespace everest::lib::cert {
+namespace everest::lib::API::V1_0::types::telemetry {
 
 struct CertChainState {
     bool configured{false};
@@ -29,6 +29,6 @@ void to_json(nlohmann::json& j, CertTelemetry const&) noexcept;
 void from_json(nlohmann::json const& j, CertTelemetry&);
 
 std::string serialize(CertTelemetry const&);
-CertTelemetry deserialize(std::string const&);
+CertTelemetry deserialize_cert(std::string const&);
 
-} // namespace everest::lib::cert
+} // namespace everest::lib::API::V1_0::types::telemetry

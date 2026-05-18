@@ -2,7 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <everest/v2g/telemetry.hpp>
+#include <everest_api_types/telemetry/v2g.hpp>
 #include <framework/everest.hpp>
 #include <mutex>
 #include <nlohmann/json.hpp>
@@ -17,10 +17,10 @@ public:
     V2gTelemetryPublisher(Everest::TelemetryProvider& telemetry, bool enabled) :
         m_telemetry(telemetry), m_enabled(enabled) {}
 
-    everest::lib::v2g::V2gTransport      transport;
-    everest::lib::v2g::V2gEvElectrical   ev_electrical;
-    everest::lib::v2g::V2gPaymentService payment_service;
-    everest::lib::v2g::V2gChargerStatus  charger_status;
+    everest::lib::API::V1_0::types::telemetry::V2gTransport      transport;
+    everest::lib::API::V1_0::types::telemetry::V2gEvElectrical   ev_electrical;
+    everest::lib::API::V1_0::types::telemetry::V2gPaymentService payment_service;
+    everest::lib::API::V1_0::types::telemetry::V2gChargerStatus  charger_status;
 
     void publish_transport()       { publish_block("transport", transport); }
     void publish_ev_electrical()   { publish_block("ev_electrical", ev_electrical); }

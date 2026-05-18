@@ -53,7 +53,7 @@ target_sources(${MODULE_NAME}
 target_link_libraries(${MODULE_NAME}
     PRIVATE
         everest::tls
-        everest::v2g_telemetry
+        everest::everest_api_types
 )
 target_sources(${MODULE_NAME}
     PRIVATE

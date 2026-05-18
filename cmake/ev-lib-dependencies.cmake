@@ -24,11 +24,9 @@
 set(EVEREST_LIB_SUBDIRS
     can_dpm1000
     cbv2g
-    cert_telemetry
     conversions
     crc
     everest_api_types
-    evse_control_telemetry
     evse_security
     external_energy_limits
     framework
@@ -46,7 +44,6 @@ set(EVEREST_LIB_SUBDIRS
     tls
     util
     slac_neo
-    v2g_telemetry
 )
 
 # --- Internal dependency map ---
