@@ -84,7 +84,7 @@ jobs:
       - name: Sanitize instance name
         id: sanitize
         run: |
-          sanitized=$(echo "${{ inputs.instance_name }}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9_' '_')
+          sanitized=$(echo -n "${{ inputs.instance_name }}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9_' '_')
           echo "instance_name=${sanitized}" >> $GITHUB_OUTPUT
           echo "Sanitized instance name: ${sanitized}"
       - name: Configure Git user
