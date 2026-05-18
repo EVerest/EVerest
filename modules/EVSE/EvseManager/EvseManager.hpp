@@ -239,6 +239,7 @@ public:
     void process_dc_ev_target_voltage_current(const types::iso15118::DcEvseMaximumLimits& hlc_limits);
 
     std::string selected_protocol = "Unknown";
+    bool fake_dc_enabled{false};
 
     std::atomic_bool sae_bidi_active{false};
 
@@ -367,7 +368,7 @@ private:
     // Voltage plausibility monitor
     std::unique_ptr<VoltagePlausibilityMonitor> voltage_plausibility_monitor;
 
-    void setup_AC_mode();
+    void setup_AC_mode(bool ac_hlc_enabled = true);
     void setup_fake_DC_mode();
 
     // special funtion to switch mode while session is active

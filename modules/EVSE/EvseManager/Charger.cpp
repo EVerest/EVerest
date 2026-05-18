@@ -157,6 +157,7 @@ void Charger::run_state_machine() {
     // run over state machine loop until current_state does not change anymore
     do {
         mainloop_runs++;
+        process_pending_reinit_request();
         // If a state change happened or an error recovered during a state we reinitialize the state
         bool initialize_state = (internal_context.last_state_detect_state_change not_eq shared_context.current_state) or
                                 (internal_context.last_shutdown_type not_eq shared_context.shutdown_type);
@@ -633,6 +634,34 @@ void Charger::run_state_machine() {
                     internal_context.pwm_set_last_ampere = internal_context.t_step_EF_return_ampere;
                 }
                 shared_context.current_state = internal_context.t_step_X1_return_state;
+            }
+            break;
+
+        case EvseState::Reinit:
+            if (initialize_state) {
+                session_log.evse(false, fmt::format("Reinit sequence started (method: {}, duration: {} ms)",
+                                                    shared_context.reinit_config.state_transition,
+                                                    shared_context.reinit_config.duration));
+                shared_context.reinit_running = true;
+                shared_context.iec_allow_close_contactor = false;
+                shared_context.hlc_allow_close_contactor = false;
+                apply_configured_reinit_method();
+                if (shared_context.reinit_config.duration > 0) {
+                    internal_context.reinit_timer_active = true;
+                    internal_context.reinit_deadline = std::chrono::steady_clock::now() +
+                                                       std::chrono::milliseconds(shared_context.reinit_config.duration);
+                } else {
+                    internal_context.reinit_timer_active = false;
+                }
+            }
+
+            if (!internal_context.reinit_timer_active or
+                std::chrono::steady_clock::now() >= internal_context.reinit_deadline) {
+                session_log.evse(false, "Exit reinit");
+                shared_context.reinit_running = false;
+                internal_context.reinit_timer_active = false;
+                cp_state_X1();
+                shared_context.current_state = EvseState::WaitingForAuthentication;
             }
             break;
 
@@ -1254,10 +1283,23 @@ void Charger::cp_state_E() {
     bsp->set_cp_state_E();
 }
 
+void Charger::apply_configured_reinit_method() {
+    if (shared_context.reinit_config.state_transition == "CPStateE") {
+        cp_state_E();
+    } else if (shared_context.reinit_config.state_transition == "CPStateX1") {
+        cp_state_X1();
+    } else {
+        cp_state_F();
+    }
+}
+
 void Charger::set_supports_cp_state_E(bool value) {
     supports_cp_state_E = value;
     if (!value and config_context.switch_3ph1ph_cp_state == "E") {
         EVLOG_warning << "Phase switch CP state E configured but BSP does not support CP state E.";
+    }
+    if (!value and config_context.reinit_method == "CPStateE") {
+        EVLOG_warning << "Reinit method CPStateE configured but BSP does not support CP state E.";
     }
 }
 
@@ -1532,6 +1574,53 @@ bool Charger::switch_three_phases_while_charging(bool n) {
     return true;
 }
 
+bool Charger::start_reinit() {
+    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_start_reinit);
+
+    if (shared_context.current_state == EvseState::Disabled or shared_context.current_state == EvseState::Idle) {
+        EVLOG_warning << "Rejecting reinit request: no EV plugged in or connector disabled";
+        return false;
+    }
+
+    if (config_context.reinit_method == "CPStateE" and !supports_cp_state_E) {
+        EVLOG_warning << "Reinit requested with CP state E but BSP does not support CP state E.";
+        return false;
+    }
+
+    if (shared_context.reinit_running) {
+        EVLOG_warning << "Skip reinit request. Reinit process already running";
+        return false;
+    }
+
+    shared_context.reinit_config = ReinitConfiguration{config_context.reinit_method, config_context.reinit_duration_ms};
+    shared_context.reinit_requested = true;
+    EVLOG_info << fmt::format("Reinit requested (method: {}, duration: {} ms)",
+                              shared_context.reinit_config.state_transition, shared_context.reinit_config.duration);
+    return true;
+}
+
+void Charger::process_pending_reinit_request() {
+    if (!shared_context.reinit_requested) {
+        return;
+    }
+
+    if (shared_context.current_state == EvseState::Charging) {
+        shared_context.current_state = EvseState::StoppingCharging;
+    }
+
+    if (shared_context.slac_matched) {
+        if (!shared_context.reinit_running) {
+            shared_context.reinit_running = true;
+            signal_hlc_stop_charging();
+        }
+        return;
+    }
+
+    shared_context.reinit_requested = false;
+    shared_context.reinit_running = true;
+    shared_context.current_state = EvseState::Reinit;
+}
+
 void Charger::setup(bool has_ventilation, const ChargeMode _charge_mode, bool _ac_hlc_enabled,
                     bool _ac_hlc_use_5percent, bool _ac_enforce_hlc, bool _ac_with_soc_timeout,
                     float _soft_over_current_tolerance_percent, float _soft_over_current_measurement_noise_A,
@@ -1567,6 +1656,12 @@ void Charger::setup(bool has_ventilation, const ChargeMode _charge_mode, bool _a
     config_context.sleep_before_enabling_pwm_hlc_mode_ms = sleep_before_enabling_pwm_hlc_mode_ms;
     config_context.session_id_type = session_id_type;
     config_context.hlc_charge_loop_without_energy_timeout_s = hlc_charge_loop_without_energy_timeout_s;
+
+    if (config_context.charge_mode == ChargeMode::DC) {
+        shared_context.hlc_charging_active = true;
+    } else if (not config_context.ac_hlc_enabled) {
+        shared_context.hlc_charging_active = false;
+    }
 
     if (config_context.charge_mode == ChargeMode::AC and config_context.ac_hlc_enabled)
         EVLOG_info << "AC HLC mode enabled.";
@@ -1888,6 +1983,9 @@ std::string Charger::evse_state_to_string(EvseState s) {
     case EvseState::T_step_X1:
         return ("T_step_X1");
         break;
+    case EvseState::Reinit:
+        return ("Reinit");
+        break;
     case EvseState::PrepareCharging:
         return ("PrepareCharging");
         break;
@@ -2006,6 +2104,12 @@ void Charger::request_error_sequence() {
 void Charger::set_matching_started(bool m) {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_set_matching_started);
     shared_context.matching_started = m;
+}
+
+void Charger::set_slac_matched(bool matched) {
+    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_set_matching_started);
+    shared_context.slac_matched = matched;
+    shared_context.matching_started = matched or shared_context.matching_started;
 }
 
 void Charger::reset_dc_enforce_target_limits_timer() {
