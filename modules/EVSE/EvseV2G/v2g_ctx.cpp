@@ -288,6 +288,7 @@ struct v2g_context* v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase,
     ctx->local_tls_addr = NULL;
 
     ctx->is_dc_charger = true;
+    ctx->is_fake_dc = false;
 
     v2g_ctx_init_charging_session(ctx, true);
 
