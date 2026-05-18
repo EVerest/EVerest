@@ -196,8 +196,6 @@ else()
     if (BUILD_TESTING)
         find_package(Catch2 REQUIRED)
     endif()
-
-    include(find-mqttc)
 endif()
 
 include(${everest-sqlite_SOURCE_DIR}/cmake/CollectMigrationFiles.cmake)
