@@ -10,15 +10,13 @@ SRCREV = "a0e195b575d62cb07016321ac9cd7e1b9e048fe5"
 
 inherit cmake
 
-S = "${WORKDIR}/git"
-
 RDEPENDS:${PN}-dev = "nlohmann-json-dev"
 
 EXTRA_OECMAKE = "-DCOMPILE_TESTS=OFF -DCOMPILE_EXAMPLES=OFF -DCODE_COVERAGE=OFF"
 
 do_install:append() {
     install -d ${D}${libdir}/cmake/json-rpc-cxx
-    install -p -m 0644 ${WORKDIR}/json-rpc-cxxConfig.cmake \
+    install -p -m 0644 ${UNPACKDIR}/json-rpc-cxxConfig.cmake \
         ${D}${libdir}/cmake/json-rpc-cxx/
 }
 

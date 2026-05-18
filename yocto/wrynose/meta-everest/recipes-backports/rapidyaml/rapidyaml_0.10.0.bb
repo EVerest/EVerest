@@ -9,7 +9,6 @@ SRC_URI = "gitsm://github.com/biojppm/rapidyaml.git;branch=master;protocol=https
 
 inherit cmake
 
-S = "${WORKDIR}/git"
 PV = "v0.10.0"
 
 SRCREV = "653eac9741c7728f2a87435b981737894149e002"
