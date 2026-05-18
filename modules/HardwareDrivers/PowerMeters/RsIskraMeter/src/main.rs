@@ -225,6 +225,7 @@ impl TransactionStartResponse {
             status: TransactionRequestStatus::UNEXPECTED_ERROR,
             transaction_max_stop_time: None,
             transaction_min_stop_time: None,
+            signed_meter_value: None,
         }
     }
 }
@@ -827,6 +828,7 @@ impl ReadyState {
             transaction_min_stop_time: Option::None,
             status: TransactionRequestStatus::OK,
             transaction_max_stop_time: Option::None,
+            signed_meter_value: Option::None,
         })
     }
 

@@ -1324,6 +1324,8 @@ void Charger::stop_session() {
 bool Charger::start_transaction() {
     shared_context.stop_transaction_id_token.reset();
     shared_context.last_stop_transaction_reason.reset();
+    shared_context.start_signed_meter_value.reset();
+    shared_context.stop_signed_meter_value.reset();
 
     types::powermeter::TransactionReq req;
     req.evse_id = evse_id;
@@ -1350,6 +1352,9 @@ bool Charger::start_transaction() {
                     "Failed to start transaction on the power meter");
                 return false;
             }
+        } else if (response.status == types::powermeter::TransactionRequestStatus::OK) {
+            shared_context.start_signed_meter_value = response.signed_meter_value;
+            break;
         }
     }
 
@@ -1376,7 +1381,10 @@ void Charger::stop_transaction() {
             EVLOG_error << "Failed to stop a transaction on the power meter " << response.error.value_or("");
             break;
         } else if (response.status == types::powermeter::TransactionRequestStatus::OK) {
-            shared_context.start_signed_meter_value = response.start_signed_meter_value;
+            // Only update the start_signed_meter_value if we did not already store one on transaction start
+            if (!shared_context.start_signed_meter_value.has_value()) {
+                shared_context.start_signed_meter_value = response.start_signed_meter_value;
+            }
             shared_context.stop_signed_meter_value = response.signed_meter_value;
             break;
         }
@@ -1425,21 +1433,14 @@ void Charger::cleanup_transactions_on_startup() {
     }
 }
 
-std::optional<types::units_signed::SignedMeterValue>
-Charger::take_signed_meter_data(std::optional<types::units_signed::SignedMeterValue>& in) {
-    std::optional<types::units_signed::SignedMeterValue> out;
-    std::swap(out, in);
-    return out;
-}
-
 std::optional<types::units_signed::SignedMeterValue> Charger::get_stop_signed_meter_value() {
     // This is used only inside of the state machine, so we do not need to lock here.
-    return take_signed_meter_data(shared_context.stop_signed_meter_value);
+    return shared_context.stop_signed_meter_value;
 }
 
 std::optional<types::units_signed::SignedMeterValue> Charger::get_start_signed_meter_value() {
     // This is used only inside of the state machine, so we do not need to lock here.
-    return take_signed_meter_data(shared_context.start_signed_meter_value);
+    return shared_context.start_signed_meter_value;
 }
 
 bool Charger::switch_three_phases_while_charging(bool n) {

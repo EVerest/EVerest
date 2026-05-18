@@ -198,6 +198,7 @@ struct ReplyStartTransaction {
     std::optional<std::string> error;
     std::optional<std::string> transaction_min_stop_time;
     std::optional<std::string> transaction_max_stop_time;
+    std::optional<SignedMeterValue> signed_meter_value;
 };
 
 struct ReplyStopTransaction {

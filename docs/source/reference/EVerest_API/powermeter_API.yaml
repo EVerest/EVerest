@@ -522,6 +522,10 @@ components:
           description:  Deadline for the transaction to be stopped again (if a minimum duration is required by the meter); yields a RFC3339 timestamp.
           type: string
           format: date-time
+        signed_meter_value:
+          description: The signed meter value report for start of transaction. Only set if the meter provides separate values for start and stop.
+          type: object
+          $ref: '#/components/schemas/units_signed/types/SignedMeterValue'
     StartTransactionRequest:
       type: object
       additionalProperties: true
