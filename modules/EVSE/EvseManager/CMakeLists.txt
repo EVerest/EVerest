@@ -25,9 +25,9 @@ target_sources(${MODULE_NAME}
 
 target_link_libraries(${MODULE_NAME}
     PRIVATE
+        everest::everest_api_types
         everest::helpers
         everest::util
-        everest::evse_control_telemetry
         Pal::Sigslot
         pugixml::pugixml
 )

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include <everest/evse_control/telemetry.hpp>
+#include "telemetry/evse_control.hpp"
 #include <nlohmann/json.hpp>
 
-namespace everest::lib::evse_control {
+namespace everest::lib::API::V1_0::types::telemetry {
 
 using json = nlohmann::json;
 
@@ -41,8 +41,8 @@ std::string serialize(EvseControlStatus const& v) {
     return json(v).dump(0);
 }
 
-EvseControlStatus deserialize(std::string const& s) {
+EvseControlStatus deserialize_evse_control_status(std::string const& s) {
     return json::parse(s).get<EvseControlStatus>();
 }
 
-} // namespace everest::lib::evse_control
+} // namespace everest::lib::API::V1_0::types::telemetry

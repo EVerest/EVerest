@@ -6,7 +6,7 @@
 #include <nlohmann/json_fwd.hpp>
 #include <string>
 
-namespace everest::lib::v2g {
+namespace everest::lib::API::V1_0::types::telemetry {
 
 enum class ChargeProgress {
     Start,
@@ -121,4 +121,4 @@ V2gPaymentService deserialize_payment_service(std::string const&);
 V2gChargerStatus deserialize_charger_status(std::string const&);
 V2gEvseElectrical deserialize_evse_electrical(std::string const&);
 
-} // namespace everest::lib::v2g
+} // namespace everest::lib::API::V1_0::types::telemetry

@@ -236,16 +236,16 @@ static auto get_emergency_status_code(const struct v2g_context* ctx, uint8_t pha
         return static_cast<iso2_DC_EVSEStatusCodeType>(ctx->evse_v2g_data.evse_status_code[phase_type]);
 }
 
-static everest::lib::v2g::ChargeProgress to_telemetry_charge_progress(iso2_chargeProgressType progress) {
+static everest::lib::API::V1_0::types::telemetry::ChargeProgress to_telemetry_charge_progress(iso2_chargeProgressType progress) {
     switch (progress) {
     case iso2_chargeProgressType_Start:
-        return everest::lib::v2g::ChargeProgress::Start;
+        return everest::lib::API::V1_0::types::telemetry::ChargeProgress::Start;
     case iso2_chargeProgressType_Stop:
-        return everest::lib::v2g::ChargeProgress::Stop;
+        return everest::lib::API::V1_0::types::telemetry::ChargeProgress::Stop;
     case iso2_chargeProgressType_Renegotiate:
-        return everest::lib::v2g::ChargeProgress::Renegotiate;
+        return everest::lib::API::V1_0::types::telemetry::ChargeProgress::Renegotiate;
     default:
-        return everest::lib::v2g::ChargeProgress::Terminate;
+        return everest::lib::API::V1_0::types::telemetry::ChargeProgress::Terminate;
     }
 }
 
