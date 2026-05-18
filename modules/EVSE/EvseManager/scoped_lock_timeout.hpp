@@ -52,6 +52,7 @@ enum class MutexDescription {
     Charger_errors_prevent_charging,
     Charger_set_max_current,
     Charger_switch_three_phases_while_charging,
+    Charger_start_reinit,
     Charger_get_last_stop_transaction,
     Charger_set_hlc_d20_active,
     IEC_process_bsp_event,
@@ -164,6 +165,8 @@ static std::string to_string(MutexDescription d) {
         return "Charger.cpp: set max current";
     case MutexDescription::Charger_switch_three_phases_while_charging:
         return "Charger.cpp switch_three_phases_while_charging";
+    case MutexDescription::Charger_start_reinit:
+        return "Charger.cpp: start_reinit";
     case MutexDescription::Charger_get_last_stop_transaction:
         return "Charger.cpp get_last_stop_transaction";
     case MutexDescription::Charger_set_hlc_d20_active:
