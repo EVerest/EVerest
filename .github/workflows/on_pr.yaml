@@ -1,4 +1,5 @@
-name: Build, Lint and Test
+name: On PR - Lint, Build CMake with GCC, Build Bazel, Build Docs, Test
+
 on:
   pull_request: {}
   merge_group: {}
@@ -19,7 +20,7 @@ jobs:
 
 
   setup-env:
-    name: Setup Environment
+    name: Call Setup Environment workflow
     uses: ./.github/workflows/job_setup-env.yml
     with:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
@@ -27,7 +28,7 @@ jobs:
 
 
   build-build-kit:
-    name: Build the build-kit
+    name: Call Build the build-kit workflow
     uses: ./.github/workflows/job_build-build-kit.yml
     needs:
       - setup-env
@@ -37,7 +38,7 @@ jobs:
 
 
   build-cmake-gcc:
-    name: Build with CMake and GCC
+    name: Call Build with CMake and GCC workflow
     uses: ./.github/workflows/job_build-cmake-gcc.yml
     needs:
       - setup-env
@@ -54,7 +55,7 @@ jobs:
 
 
   integration-tests:
-    name: Run Integration Tests
+    name: Call Integration Tests workflow
     uses: ./.github/workflows/job_integrations-tests.yml
     needs:
       - setup-env
@@ -69,7 +70,7 @@ jobs:
 
 
   ocpp-tests:
-    name: Run OCPP Tests
+    name: Call OCPP Tests workflow
     uses: ./.github/workflows/job_ocpp-tests.yml
     needs:
       - setup-env
@@ -84,7 +85,7 @@ jobs:
 
 
   lint:
-    name: Lint Repository
+    name: Call Lint workflow
     uses: ./.github/workflows/job_lint.yml
     needs:
       - setup-env
@@ -94,7 +95,7 @@ jobs:
 
 
   build-docs:
-    name: Call Build Documentation
+    name: Call Build Documentation workflow
     needs:
       - setup-env
       - build-build-kit
@@ -110,21 +111,21 @@ jobs:
 
 
   dco-check:
-    name: DCO Check
+    name: Call DCO Check workflow
     uses: ./.github/workflows/job_dco-check.yaml
     with:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
 
 
   bazel-build-and-test:
-    name: Bazel Build And Test
+    name: Call Bazel Build and Test workflow
     uses: ./.github/workflows/job_bazel-build-test.yaml
     with:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
 
 
   bazel-cross-build:
-    name: Bazel Cross-Build (${{ matrix.platform }})
+    name: Call Bazel Cross-Build workflow (${{ matrix.platform }})
     strategy:
       fail-fast: false
       matrix:

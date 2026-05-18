@@ -1,4 +1,4 @@
-name: Build and Deploy Documentation
+name: On Tag - Build Docs, Deploy Docs
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 jobs:
 
   setup-env:
-    name: Setup Environment
+    name: Call Setup Environment workflow
     uses: ./.github/workflows/job_setup-env.yml
     with:
       runner: ubuntu-24.04
@@ -17,7 +17,7 @@ jobs:
 
 
   build-build-kit:
-    name: Build the build-kit
+    name: Call Build the build-kit workflow
     needs:
       - setup-env
     uses: ./.github/workflows/job_build-build-kit.yml
@@ -27,7 +27,7 @@ jobs:
 
 
   build-docs:
-    name: Build and Deploy Documentation
+    name: Call Build and Deploy Documentation workflow
     needs:
       - setup-env
       - build-build-kit
