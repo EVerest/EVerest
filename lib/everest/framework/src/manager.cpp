@@ -42,7 +42,7 @@ using namespace Everest;
 
 const auto PARENT_DIED_SIGNAL = SIGTERM;
 const int CONTROLLER_IPC_READ_TIMEOUT_MS = 50;
-const auto complete_start_time = std::chrono::system_clock::now();
+const auto complete_start_time = std::chrono::steady_clock::now();
 
 #ifdef ENABLE_ADMIN_PANEL
 class ControllerHandle {
@@ -414,7 +414,7 @@ std::map<pid_t, std::string> start_modules(ManagerConfig& config, MQTTAbstractio
             }
             if (std::all_of(modules_ready.begin(), modules_ready.end(),
                             [](const auto& element) { return element.second.ready; })) {
-                const auto complete_end_time = std::chrono::system_clock::now();
+                const auto complete_end_time = std::chrono::steady_clock::now();
                 status_fifo.update(StatusFifo::ALL_MODULES_STARTED);
                 if (not retain_topics) {
                     EVLOG_info << "Clearing retained topics published by manager during startup";
@@ -713,7 +713,7 @@ int boot(const po::variables_map& vm) {
 
     const bool retain_topics = (vm.count("retain-topics") != 0);
 
-    const auto start_time = std::chrono::system_clock::now();
+    const auto start_time = std::chrono::steady_clock::now();
     std::shared_ptr<ManagerConfig> config; // TODO: maybe this can stay unique when we re-work start_modules()
     try {
         config = std::make_shared<ManagerConfig>(ms);
@@ -729,7 +729,7 @@ int boot(const po::variables_map& vm) {
         EVLOG_critical << fmt::format("Caught top level std::exception:\n{}", boost::diagnostic_information(e, true));
         return EXIT_FAILURE;
     }
-    const auto end_time = std::chrono::system_clock::now();
+    const auto end_time = std::chrono::steady_clock::now();
     EVLOG_info << "Config loading completed in "
                << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms";
 

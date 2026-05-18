@@ -448,14 +448,14 @@ int ModuleLoader::initialize() {
     }
     Logging::init(this->logging_config_file.string(), this->module_id);
 
-    const auto start_time = std::chrono::system_clock::now();
+    const auto start_time = std::chrono::steady_clock::now();
 
     this->mqtt = std::shared_ptr<MQTTAbstraction>(make_mqtt_abstraction(this->mqtt_settings));
     this->mqtt->connect();
     this->mqtt->spawn_main_loop_thread();
 
     const auto result = get_module_config(this->mqtt, this->module_id);
-    const auto get_config_time = std::chrono::system_clock::now();
+    const auto get_config_time = std::chrono::steady_clock::now();
     EVLOG_debug << "Module " << fmt::format(TERMINAL_STYLE_OK, "{}", module_id) << " get_config() ["
                 << std::chrono::duration_cast<std::chrono::milliseconds>(get_config_time - start_time).count() << "ms]";
 
@@ -479,7 +479,7 @@ int ModuleLoader::initialize() {
 
     try {
         const auto config = Config(this->mqtt_settings, result);
-        const auto config_instantiation_time = std::chrono::system_clock::now();
+        const auto config_instantiation_time = std::chrono::steady_clock::now();
         EVLOG_debug
             << "Module " << fmt::format(TERMINAL_STYLE_OK, "{}", module_id) << " after Config() instantiation ["
             << std::chrono::duration_cast<std::chrono::milliseconds>(config_instantiation_time - start_time).count()
@@ -617,7 +617,7 @@ int ModuleLoader::initialize() {
         // the module should now be ready
         everest.signal_ready();
 
-        const auto end_time = std::chrono::system_clock::now();
+        const auto end_time = std::chrono::steady_clock::now();
         EVLOG_info << "Module " << fmt::format(TERMINAL_STYLE_BLUE, "{}", module_id) << " initialized ["
                    << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms]";
 
