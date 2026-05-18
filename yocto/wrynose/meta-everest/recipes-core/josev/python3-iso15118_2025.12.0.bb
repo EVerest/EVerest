@@ -7,8 +7,6 @@ SRC_URI = "git://github.com/EVerest/ext-switchev-iso15118.git;protocol=https;bra
 
 SRCREV = "89db9d27db551801d45627f802e4c3a029ed29c2"
 
-S = "${WORKDIR}/git"
-
 inherit python_poetry_core
 
 # NOTE (aw): the cryptography dependency might be to old
