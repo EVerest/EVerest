@@ -360,7 +360,7 @@ void EvseManager::ready() {
             payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
         }
         r_hlc[0]->call_session_setup(payment_options, _contract_certificate_installation_enabled,
-                                     _central_contract_validation_allowed);
+                                     _central_contract_validation_allowed, false);
 
         r_hlc[0]->subscribe_hlc_session_failed([this](types::evse_manager::HlcSessionFailedReasonEnum reason) {
             types::evse_manager::HlcSessionFailedEvent ev;
@@ -1305,7 +1305,7 @@ void EvseManager::ready() {
             payment_options.push_back(types::iso15118::PaymentOption::ExternalPayment);
         }
         r_hlc[0]->call_session_setup(payment_options, _contract_certificate_installation_enabled,
-                                     _central_contract_validation_allowed);
+                                     _central_contract_validation_allowed, false);
     });
 
     charger->signal_session_started_event.connect(
@@ -1341,7 +1341,7 @@ void EvseManager::ready() {
                 }
             }
             r_hlc[0]->call_session_setup(payment_options, _contract_certificate_installation_enabled,
-                                         _central_contract_validation_allowed);
+                                         _central_contract_validation_allowed, false);
         });
 
     invoke_ready(*p_evse);
