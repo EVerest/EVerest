@@ -11,3 +11,5 @@ PYPI_PACKAGE = "caio"
 inherit pypi setuptools3
 
 RDEPENDS:${PN} += "python3-multiprocessing"
+
+TARGET_CFLAGS += "-Wno-int-conversion"
