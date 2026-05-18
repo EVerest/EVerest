@@ -47,7 +47,7 @@ types:
         type: string
       tariff_text:
         description: >-
-          A textual description used to identify a unique tariff. 
+          A textual description used to identify a unique tariff.
           This field is intended for the tariff designation in "Direct Payment" use case.
         type: string
         minLength: 0
@@ -81,6 +81,10 @@ types:
         description:  Deadline for the transaction to be stopped again (if a minimum duration is required by the meter); yields a RFC3339 timestamp.
         type: string
         format: date-time
+      signed_meter_value:
+        description: The signed meter value report for start of transaction. Only set if the meter provides separate values for start and stop.
+        type: object
+        $ref: /units_signed#/SignedMeterValue
   TransactionStopResponse:
     description: Report returned when a signed transaction is requested to stop. If successful, includes the signed meter value object. In case of an error, an additional error message can be provided.
     type: object
@@ -147,7 +151,7 @@ types:
       PLMN_RING: call
       PLMN_SMS: short message
     type: string
-    enum: 
+    enum:
       - RFID_NONE
       - RFID_PLAIN
       - RFID_RELATED
@@ -306,5 +310,3 @@ types:
         items:
           type: object
           $ref: /temperature#/Temperature
-
-
