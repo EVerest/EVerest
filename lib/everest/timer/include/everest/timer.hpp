@@ -55,16 +55,22 @@ public:
         work(boost::asio::make_work_guard(*io_context)) {
     }
 
+    /// \brief Cancel the asio timer and join the io_context thread.
+    ///
+    /// The mutex is released BEFORE joining the io_context thread. A timer callback running on
+    /// that thread may re-enter \ref at, \ref timeout, \ref interval, or \ref stop — each of which
+    /// takes the mutex; if the destructor still held it, \c join would deadlock waiting for the
+    /// callback to exit while the callback waited for the mutex.
     ~Timer() {
-        std::lock_guard<std::mutex> lock(this->mutex);
-        if (this->timer) {
-            // stop asio timer
-            this->timer->cancel();
-
-            if (this->timer_thread) {
-                this->io_context.stop();
-                this->timer_thread->join();
+        {
+            std::lock_guard<std::mutex> lock(this->mutex);
+            if (this->timer) {
+                this->timer->cancel();
             }
+        }
+        if (this->timer_thread) {
+            this->io_context.stop();
+            this->timer_thread->join();
         }
     }
 
