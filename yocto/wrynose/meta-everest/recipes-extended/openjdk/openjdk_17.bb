@@ -30,7 +30,7 @@ mangle_environement_vars() {
     unset LDFLAGS
 }
 
-TARGET_CFLAGS +=" -Wno-nonnull -Wno-maybe-uninitialized"
+TARGET_CFLAGS += " -Wno-nonnull -Wno-maybe-uninitialized"
 
 do_configure () {
     rm -rf ${B}
