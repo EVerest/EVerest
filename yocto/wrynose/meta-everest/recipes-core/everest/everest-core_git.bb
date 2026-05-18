@@ -100,11 +100,11 @@ PACKAGECONFIG[tpm2] = "-DUSING_TPM2=ON,-DUSING_TPM2=OFF,"
 do_install:append() {
     if ${@bb.utils.contains('DISTRO_FEATURES', 'systemd', 'true', 'false', d)}; then
         install -d ${D}${systemd_system_unitdir}
-        install -m 0644 ${WORKDIR}/everest.service ${D}${systemd_system_unitdir}/
+        install -m 0644 ${UNPACKDIR}/everest.service ${D}${systemd_system_unitdir}/
         if ${@bb.utils.contains('PACKAGECONFIG', 'applications', 'true', 'false', d)}; then
-            install -m 0644 ${WORKDIR}/chargebridge.service ${D}${systemd_system_unitdir}/
+            install -m 0644 ${UNPACKDIR}/chargebridge.service ${D}${systemd_system_unitdir}/
             install -d ${D}${systemd_system_unitdir}/everest.service.d
-            install -m 0644 ${WORKDIR}/10-chargebridge.conf ${D}${systemd_system_unitdir}/everest.service.d/
+            install -m 0644 ${UNPACKDIR}/10-chargebridge.conf ${D}${systemd_system_unitdir}/everest.service.d/
         fi
     fi
 }
