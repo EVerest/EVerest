@@ -67,6 +67,11 @@ public:
         DC
     };
 
+    struct ReinitConfiguration {
+        std::string state_transition;
+        int duration;
+    };
+
     enum class EvseState {
         Disabled,
         Idle,
@@ -79,6 +84,7 @@ public:
         Finished,
         T_step_EF,
         T_step_X1,
+        Reinit,
         SwitchPhases
     };
 
@@ -135,6 +141,7 @@ public:
 
     // trigger replug sequence while charging to switch number of phases
     bool switch_three_phases_while_charging(bool n);
+    bool start_reinit();
 
     bool pause_charging();
     bool resume_charging();
@@ -173,6 +180,7 @@ public:
     void request_error_sequence();
 
     void set_matching_started(bool m);
+    void set_slac_matched(bool matched);
 
     void notify_currentdemand_started();
     void reset_dc_enforce_target_limits_timer();
@@ -254,6 +262,8 @@ private:
     void cp_state_X1();
     void cp_state_E();
     void cp_state_F();
+    void apply_configured_reinit_method();
+    void process_pending_reinit_request();
 
     void process_cp_events_independent(CPEvent cp_event);
     void process_cp_events_state(CPEvent cp_event);
@@ -293,8 +303,8 @@ private:
         bool contactor_open{true};
         bool hlc_charging_active{false};
         HlcTerminatePause hlc_charging_terminate_pause;
-        types::iso15118::DcEvseMaximumLimits current_evse_max_limits;
-        types::iso15118::DcEvseMinimumLimits current_evse_min_limits;
+        types::iso15118::DcEvseMaximumLimits current_evse_max_limits{0, 0, 0, std::nullopt, std::nullopt};
+        types::iso15118::DcEvseMinimumLimits current_evse_min_limits{0, 0, 0, std::nullopt, std::nullopt};
         bool pwm_running{false};
         std::optional<types::authorization::ProvidedIdToken>
             stop_transaction_id_token; // only set in case transaction was stopped locally
@@ -307,6 +317,7 @@ private:
         // set to true if auth is from PnC, otherwise to false (EIM)
         bool authorized_pnc;
         bool matching_started;
+        std::atomic_bool slac_matched{false};
         float max_current;
         std::chrono::time_point<std::chrono::steady_clock> max_current_valid_until;
         float max_current_cable{0.};
@@ -326,6 +337,9 @@ private:
         bool contactor_welded{false};
         bool switch_3ph1ph_threephase{false};
         bool switch_3ph1ph_threephase_ongoing{false};
+        bool reinit_requested{false};
+        bool reinit_running{false};
+        ReinitConfiguration reinit_config{"CPStateF", 3000};
 
         std::optional<types::units_signed::SignedMeterValue> stop_signed_meter_value;
         std::optional<types::units_signed::SignedMeterValue> start_signed_meter_value;
@@ -417,6 +431,8 @@ private:
         std::chrono::time_point<std::chrono::steady_clock> fatal_error_became_active;
         bool fatal_error_timer_running{false};
         bool dc_statistics_printed{false};
+        bool reinit_timer_active{false};
+        std::chrono::time_point<std::chrono::steady_clock> reinit_deadline;
 
         types::evse_manager::ChargingPausedEVSEReasons last_charging_paused_evse_reasons;
     } internal_context;
