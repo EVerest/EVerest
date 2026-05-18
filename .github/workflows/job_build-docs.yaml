@@ -86,6 +86,7 @@ jobs:
         run: |
           sanitized=$(echo "${{ inputs.instance_name }}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9_' '_')
           echo "instance_name=${sanitized}" >> $GITHUB_OUTPUT
+          echo "Sanitized instance name: ${sanitized}"
       - name: Configure Git user
         run: |
           git config --global user.name "Pionix Github Service Account"
