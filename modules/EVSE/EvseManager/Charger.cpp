@@ -649,7 +649,8 @@ void Charger::run_state_machine() {
             }
 
             if (stop_charging_on_fatal_error_internal() or not shared_context.flag_authorized or
-                not shared_context.flag_transaction_active or not shared_context.flag_ev_plugged_in) {
+                not shared_context.flag_transaction_active or not shared_context.flag_ev_plugged_in or
+                shared_context.flag_disable_requested) {
                 // We started to initialize charging already, so we need to stop via StoppingCharging
                 set_state(EvseState::StoppingCharging);
                 break;
@@ -1668,8 +1669,10 @@ bool Charger::enable_disable(int connector_id, const types::evse_manager::Enable
     }
 
     if (shared_context.current_state == EvseState::Disabled && shared_context.connector_enabled) {
-        // note this can change state when connector_id = 0 when the previous
-        // state is enabled
+        // When re-enabling, clear the disable flag and re-enable the BSP before
+        // the state machine sees Idle for the first time.
+        shared_context.flag_disable_requested = false;
+        bsp->enable(true);
         shared_context.current_state = EvseState::Idle;
     }
 
@@ -1696,9 +1699,7 @@ bool Charger::enable_disable(int connector_id, const types::evse_manager::Enable
         active_enable_disable_source.enable_state != last.enable_state) {
         // the state has changed so process events
         if (is_enabled) {
-            shared_context.flag_disable_requested = false;
             signal_simple_event(types::evse_manager::SessionEventEnum::Enabled);
-            bsp->enable(true);
         } else {
             // Arm the state machine to tear down any active session and transition
             // to Disabled. Each active charging state (Charging, ChargingPausedEV/EVSE,
@@ -1707,7 +1708,6 @@ bool Charger::enable_disable(int connector_id, const types::evse_manager::Enable
             // cp_state_F() and bsp->enable(false) are called from the Disabled state
             // handler to guarantee correct ordering.
             shared_context.flag_disable_requested = true;
-            shared_context.authorized_pnc = false;
             shared_context.last_stop_transaction_reason = StopTransactionReason::EVSEDisabled;
         }
         // Drive the state machine synchronously so callers see the resulting

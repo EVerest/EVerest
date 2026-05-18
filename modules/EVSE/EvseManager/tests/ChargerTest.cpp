@@ -179,7 +179,6 @@ TEST_F(ChargerTest, EnableDisableSourceConnectorEnabled0) {
     // test with connector ID 0: connector_enabled must not change
     EXPECT_FALSE(charger->enable_disable(0, disable_source));
     EXPECT_TRUE(charger->connector_enabled());
-    charger->run_state_machine();
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Disabled);
     EXPECT_TRUE(charger->enable_disable(0, enable_source));
     EXPECT_TRUE(charger->connector_enabled());
@@ -190,7 +189,6 @@ TEST_F(ChargerTest, EnableDisableSourceConnectorEnabled0) {
     // force connector_enabled false
     EXPECT_FALSE(charger->enable_disable(1, disable_source));
     EXPECT_FALSE(charger->connector_enabled());
-    charger->run_state_machine();
 
     // test with connector ID 0: connector_enabled must not change
     EXPECT_FALSE(charger->enable_disable(0, disable_source));
@@ -212,14 +210,12 @@ TEST_F(ChargerTest, EnableDisableSourceConnectorEnabled1) {
     // test with connector ID 1: connector_enabled must change
     EXPECT_FALSE(charger->enable_disable(1, disable_source));
     EXPECT_FALSE(charger->connector_enabled());
-    charger->run_state_machine();
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Disabled);
     EXPECT_TRUE(charger->enable_disable(1, enable_source));
     EXPECT_TRUE(charger->connector_enabled());
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Idle);
     EXPECT_FALSE(charger->enable_disable(1, disable_source));
     EXPECT_FALSE(charger->connector_enabled());
-    charger->run_state_machine();
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Disabled);
 }
 
@@ -501,7 +497,6 @@ TEST_F(ChargerTest, EnableDisableSourceEnable1A) {
     auto last_source = charger->get_last_enable_disable_source();
     // Unassigned updates do not change the result from get_last_enable_disable_source()
     EXPECT_EQ(last_source, sourceA);
-    charger->run_state_machine();
     EXPECT_EQ(last_event, SessionEventEnum::Disabled);
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Disabled);
     EXPECT_FALSE(charger->connector_enabled());
@@ -525,7 +520,6 @@ TEST_F(ChargerTest, EnableDisableSourceEnable1B) {
     auto last_source = charger->get_last_enable_disable_source();
     // Unassigned updates do not change the result from get_last_enable_disable_source()
     EXPECT_EQ(last_source, sourceA);
-    charger->run_state_machine();
     EXPECT_EQ(last_event, SessionEventEnum::Disabled);
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Disabled);
     EXPECT_FALSE(charger->connector_enabled());
@@ -568,7 +562,6 @@ TEST_F(ChargerTest, EnableDisableSourceDisable0) {
     EXPECT_FALSE(charger->enable_disable(0, sourceB));
     last_source = charger->get_last_enable_disable_source();
     EXPECT_EQ(last_source, sourceB);
-    charger->run_state_machine();
     EXPECT_EQ(last_event, SessionEventEnum::Disabled);
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Disabled);
 }
@@ -591,7 +584,6 @@ TEST_F(ChargerTest, EnableDisableSourceDisable1) {
     EXPECT_FALSE(charger->enable_disable(0, sourceB));
     last_source = charger->get_last_enable_disable_source();
     EXPECT_EQ(last_source, sourceB);
-    charger->run_state_machine();
     EXPECT_EQ(last_event, SessionEventEnum::Disabled);
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Disabled);
 
@@ -623,7 +615,6 @@ TEST_F(ChargerTest, EnableDisableSourceDisableEnable) {
     EXPECT_FALSE(charger->enable_disable(0, sourceB));
     last_source = charger->get_last_enable_disable_source();
     EXPECT_EQ(last_source, sourceB);
-    charger->run_state_machine();
     EXPECT_EQ(last_event, SessionEventEnum::Disabled);
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Disabled);
 
@@ -706,14 +697,11 @@ TEST_F(ChargerTest, DisableDuringActiveTransaction) {
     reset_last_event();
     EXPECT_FALSE(charger->enable_disable(1, disable_source));
 
-    // Must NOT immediately jump to Disabled — session needs proper teardown
-    EXPECT_NE(ctx.current_state, Charger::EvseState::Disabled);
+    // enable_disable calls run_state_machine synchronously: Charging->StoppingCharging.
+    // Must NOT immediately jump to Disabled — session needs proper teardown.
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::StoppingCharging);
     EXPECT_TRUE(charger->flag_disable_requested());
     EXPECT_EQ(ctx.last_stop_transaction_reason, StopTransactionReason::EVSEDisabled);
-
-    // State machine: Charging->StoppingCharging (flag_disable_requested triggers the transition)
-    charger->run_state_machine();
-    EXPECT_EQ(ctx.current_state, Charger::EvseState::StoppingCharging);
 
     // Simulate relay opening and transaction already stopped
     ctx.contactor_open = true;
@@ -743,13 +731,9 @@ TEST_F(ChargerTest, DisableDuringWaitingForAuthentication) {
     reset_last_event();
     EXPECT_FALSE(charger->enable_disable(1, disable_source));
 
-    // Must NOT immediately jump to Disabled
-    EXPECT_NE(ctx.current_state, Charger::EvseState::Disabled);
-    EXPECT_TRUE(charger->flag_disable_requested());
-
-    // State machine: WaitingForAuthentication->Finished->Disabled (one loop)
-    reset_last_event();
-    charger->run_state_machine();
+    // run_state_machine is called synchronously inside enable_disable, so by
+    // the time enable_disable returns the state machine has already driven
+    // WaitingForAuthentication -> Finished -> Disabled.
     EXPECT_EQ(ctx.current_state, Charger::EvseState::Disabled);
     EXPECT_EQ(last_event, SessionEventEnum::Disabled);
 }
@@ -769,7 +753,6 @@ TEST_F(ChargerTest, DisableDuringIdle) {
 
     reset_last_event();
     EXPECT_FALSE(charger->enable_disable(1, disable_source));
-    charger->run_state_machine();
 
     // Must immediately transition to Disabled
     EXPECT_EQ(ctx.current_state, Charger::EvseState::Disabled);
