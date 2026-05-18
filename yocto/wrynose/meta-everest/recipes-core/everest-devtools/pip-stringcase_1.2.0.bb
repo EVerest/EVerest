@@ -2,7 +2,7 @@
 # (build by Robin Sebastian (https://github.com/robseb) (git@robseb.de) Vers.: 1.2) 
 
 SUMMARY = "Recipe to embedded the Python PiP Package stringcase"
-HOMEPAGE ="https://pypi.org/project/stringcase"
+HOMEPAGE = "https://pypi.org/project/stringcase"
 
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=59260a4045da59ac7cb0820ac544b150"
