@@ -214,19 +214,19 @@ components:
           type: object
           $ref: '#/components/schemas/CommunicationParameters'
     CommunicationParameters:
-      description: Parameters of the communication communication monitoring between EVerest and client
+      description: Parameters of the communication monitoring between EVerest and client
       type: object
       additionalProperties: true
       properties:
         heartbeat_period_ms:
           description: Period of heartbeat messages from EVerest to the client
-          type: number
+          type: integer
         communication_check_period_s:
           description: Maximum expected interval for alive messages from client to EVerest
-          type: number
+          type: integer
         request_reply_timeout_s:
-          description: Timeout within a client must reply to request from EVerest
-          type: number
+          description: Timeout within which a client must reply to request from EVerest
+          type: integer
 
     ReadyBeacon:
       type: object

@@ -6,7 +6,7 @@ Using the EVerestAPI
 
 .. note::
 
-	Find in-depth explanations about the EVerestAPI :doc:`here <../explanation/adapt-everest/apis>`.
+    Find in-depth explanations about the EVerestAPI :doc:`here <../explanation/adapt-everest/apis>`.
 
 Introduction
 ============
@@ -34,9 +34,9 @@ It does not implement internal functionality, but provides several API and Bring
 
 .. hint::
 
-	It is advisable to set the access specification in the configuration to ``allow_global_read: true`` for EVerestAPI modules.
-	This allows the modules to determine if multiple EVerestAPI modules are active, preventing the initial ``ready_beacon``
-	from being sent multiple times.
+    It is advisable to set the access specification in the configuration to ``allow_global_read: true`` for EVerestAPI modules.
+    This allows the modules to determine if multiple EVerestAPI modules are active, preventing the initial ``ready_beacon``
+    from being sent multiple times.
 
 Example
 =======
@@ -47,7 +47,7 @@ Start the example configuration:
 
 .. code-block:: bash
 
-	build $ ./run-scripts/run-bringup-EVerestAPI-entrypoint.sh
+    build $ ./run-scripts/run-bringup-EVerestAPI-entrypoint.sh
 
 You will see the EVerest log alongside two panes showing power supply control UIs.
 
@@ -57,7 +57,7 @@ Following this, messages will be periodically published to topics such as:
 
 .. note::
 
-	To exit the tmux session, press ``Ctrl+B`` and then ``d``.
+    To exit the tmux session, press ``Ctrl+B`` and then ``d``.
 
 MQTT Topic Structure
 ====================
@@ -68,8 +68,10 @@ Topics follow the structure: ``everest_api/{api-version}/{api-type}/{instance-id
 - **api-type**: Type of the API (e.g., *power_supply_DC*)
 - **instance-id**: Name of the API instance, allowing multiple instances of the same type (typically the module_id, e.g., *ps_dc_1*)
 - **{e2m|m2e}**:
+
   - **e2m**: everest-to-(api-client)-module — Published by EVerest, subscribed to by the client.
   - **m2e**: (api-client)-module-to-everest — Published by the client, subscribed to by the EVerestAPI.
+
 - **api-subtopic**: The actual subject of the topic (e.g., *heartbeat*).
 
 Communication Monitoring
@@ -90,8 +92,8 @@ or configuration file via ``cfg_heartbeat_interval_ms``.
 
 .. tip::
 
-	Look for other heartbeat signals and compare the topic structure to the designators in the configuration file. 
-	Observe how different intervals affect the timing in the MQTT logs.
+    Look for other heartbeat signals and compare the topic structure to the designators in the configuration file. 
+    Observe how different intervals affect the timing in the MQTT logs.
 
 Monitoring API Clients
 ----------------------
@@ -107,8 +109,8 @@ If a client fails to check in, the API modules will raise an error within EVeres
 
 .. tip::
 
-	Try clearing errors by sending the appropriate communication check messages, and observe how they are 
-	raised again once the timeout expires.
+    Try clearing errors by sending the appropriate communication check messages, and observe how they are 
+    raised again once the timeout expires.
 
 Request-Reply-Timeout
 ---------------------
@@ -133,19 +135,19 @@ To execute a command, the caller writes a message to the topic defined in the AP
 
 .. code:: json
 
-	{
-		"headers": {
-			"replyTo": "reply/to/address"
-		},
-		"payload": {}
-	}
+    {
+        "headers": {
+            "replyTo": "reply/to/address"
+        },
+        "payload": {}
+    }
 
 - ``payload``: Required only when calling commands that have non-empty arguments.
 - ``headers``: Required whenever the caller expects a result. The result is published to the replyTo topic provided by the caller.
 
 .. note::
 
-	Callers may omit the headers key if they do not require a result and only wish to trigger the command.
+    Callers may omit the headers key if they do not require a result and only wish to trigger the command.
 
 This pattern applies to both directions (API module calling a client command and vice versa).
 
@@ -166,30 +168,30 @@ To perform a basic query, send the following JSON to ``everest_api/discover``:
 
 .. code:: json
 
-	{
-		"headers": {
-			"replyTo": "reply/to/address"
-		}
-	}
+    {
+        "headers": {
+            "replyTo": "reply/to/address"
+        }
+    }
 
 In the example configuration, this results in four individual responses that the client must aggregate.
 Example response:
 
 .. code:: json
 
-	{
-		"apis": [
-			{
-				"communication_monitoring": {
-					"communication_check_period_s": 10,
-					"heartbeat_period_ms": 10000
-				},
-				"module_id": "ps_dc_1",
-				"type": "power_supply_DC",
-				"version": 1
-			}
-		]
-	}
+    {
+        "apis": [
+            {
+                "communication_monitoring": {
+                    "communication_check_period_s": 10,
+                    "heartbeat_period_ms": 10000
+                },
+                "module_id": "ps_dc_1",
+                "type": "power_supply_DC",
+                "version": 1
+            }
+        ]
+    }
 
 The modules reply directly from memory; therefore, a 1-second timeout is generally sufficient to gather all replies.
 Note that the "apis" key contains an array. While usually containing one entry, an API module
@@ -203,15 +205,15 @@ Alternatively, you can restrict responders to a specific type by sending the que
 
 .. code:: json
 
-	{
-		"headers": {
-			"replyTo": "reply/to/address"
-		}
-	}
+    {
+        "headers": {
+            "replyTo": "reply/to/address"
+        }
+    }
 
 The results will be filtered by the selected API type. Use the returned module_id, type,
 and version to construct topics as described in the MQTT Topic Structure section.
 
 .. note::
 
-	Even when using this discovery mechanism, a client must have prior knowledge of the subtopics available for a given API type.
+    Even when using this discovery mechanism, a client must have prior knowledge of the subtopics available for a given API type.

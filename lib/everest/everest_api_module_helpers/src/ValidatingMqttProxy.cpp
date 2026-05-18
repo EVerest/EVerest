@@ -7,6 +7,8 @@
 #include <string_view>
 #include <utility>
 
+#include <everest/logging.hpp>
+
 namespace everest::lib::API::Mqtt {
 
 ValidatingMqttProxy::ValidatingMqttProxy(Everest::MqttProvider& provider_) : provider(provider_) {
@@ -15,12 +17,16 @@ ValidatingMqttProxy::ValidatingMqttProxy(Everest::MqttProvider& provider_) : pro
 void ValidatingMqttProxy::publish(const std::string& topic, const std::string& data) {
     if (is_topic_valid(topic)) {
         provider.publish(topic, data);
+    } else {
+        EVLOG_warning << "ValidatingMqttProxy: Droped '" << data << "' as topic '" << topic << "' invalid";
     }
 }
 
 void ValidatingMqttProxy::publish(const std::string& topic, bool data) {
     if (is_topic_valid(topic)) {
         provider.publish(topic, data);
+    } else {
+        EVLOG_warning << "ValidatingMqttProxy: Droped '" << data << "' as topic '" << topic << "' invalid";
     }
 }
 

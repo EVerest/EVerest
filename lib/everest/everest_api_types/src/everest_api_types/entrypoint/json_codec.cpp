@@ -33,14 +33,14 @@ void from_json(const json& j, ApiParameter& k) {
 
 void to_json(json& j, ApiDiscoverResponse const& k) noexcept {
     j["apis"] = json::array();
-    for (auto val : k.apis) {
+    for (auto const& val : k.apis) {
         j["apis"].push_back(val);
     }
 }
 
 void from_json(const json& j, ApiDiscoverResponse& k) {
     k.apis.clear();
-    for (auto val : j.at("apis")) {
+    for (auto const& val : j.at("apis")) {
         k.apis.push_back(val);
     }
 }

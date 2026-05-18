@@ -31,44 +31,44 @@ void ev_board_supportImpl::ready() {
 }
 
 void ev_board_supportImpl::handle_enable(bool& value) {
-    const auto topic = mod->helper.get_topics().everest_to_extern("enable");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("enable");
     const auto data = generic::serialize(value);
     mod->mqtt_v.publish(topic, data);
 }
 
 void ev_board_supportImpl::handle_set_cp_state(types::ev_board_support::EvCpState& cp_state) {
-    const auto topic = mod->helper.get_topics().everest_to_extern("set_cp_state");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("set_cp_state");
     const auto ext = API_types::ev_board_support::to_external_api(cp_state);
     const auto data = serialize(ext);
     mod->mqtt_v.publish(topic, data);
 }
 
 void ev_board_supportImpl::handle_allow_power_on(bool& value) {
-    const auto topic = mod->helper.get_topics().everest_to_extern("allow_power_on");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("allow_power_on");
     const auto data = generic::serialize(value);
     mod->mqtt_v.publish(topic, data);
 }
 
 void ev_board_supportImpl::handle_diode_fail(bool& value) {
-    const auto topic = mod->helper.get_topics().everest_to_extern("diode_fail");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("diode_fail");
     const auto data = generic::serialize(value);
     mod->mqtt_v.publish(topic, data);
 }
 
 void ev_board_supportImpl::handle_set_ac_max_current(double& current) {
-    const auto topic = mod->helper.get_topics().everest_to_extern("set_ac_max_current");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("set_ac_max_current");
     const auto data = generic::serialize(current);
     mod->mqtt_v.publish(topic, data);
 }
 
 void ev_board_supportImpl::handle_set_three_phases(bool& three_phases) {
-    const auto topic = mod->helper.get_topics().everest_to_extern("set_three_phases");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("set_three_phases");
     const auto data = generic::serialize(three_phases);
     mod->mqtt_v.publish(topic, data);
 }
 
 void ev_board_supportImpl::handle_set_rcd_error(double& rcd_current_mA) {
-    const auto topic = mod->helper.get_topics().everest_to_extern("set_rcd_error");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("set_rcd_error");
     const auto data = generic::serialize(rcd_current_mA);
     mod->mqtt_v.publish(topic, data);
 }

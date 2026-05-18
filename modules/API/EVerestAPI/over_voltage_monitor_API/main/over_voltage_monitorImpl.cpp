@@ -20,7 +20,7 @@ void over_voltage_monitorImpl::ready() {
 
 void over_voltage_monitorImpl::handle_set_limits(double& emergency_over_voltage_limit_V,
                                                  double& error_over_voltage_limit_V) {
-    auto topic = mod->helper.get_topics().everest_to_extern("set_limits");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("set_limits");
     API_ovm::OverVoltageLimits data;
     data.emergency_limit_V = emergency_over_voltage_limit_V;
     data.error_limit_V = error_over_voltage_limit_V;
@@ -29,17 +29,17 @@ void over_voltage_monitorImpl::handle_set_limits(double& emergency_over_voltage_
 }
 
 void over_voltage_monitorImpl::handle_start() {
-    auto topic = mod->helper.get_topics().everest_to_extern("start");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("start");
     mod->mqtt_v.publish(topic, "{}");
 }
 
 void over_voltage_monitorImpl::handle_stop() {
-    auto topic = mod->helper.get_topics().everest_to_extern("stop");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("stop");
     mod->mqtt_v.publish(topic, "{}");
 }
 
 void over_voltage_monitorImpl::handle_reset_over_voltage_error() {
-    auto topic = mod->helper.get_topics().everest_to_extern("reset_over_voltage_error");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("reset_over_voltage_error");
     mod->mqtt_v.publish(topic, "{}");
 }
 

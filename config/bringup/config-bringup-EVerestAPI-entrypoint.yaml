@@ -58,7 +58,7 @@ active_modules:
           implementation_id: main
 
 # send "{"headers": { "replyTo": "my/reply/topic" } }" to "everest_api/discover"
-# and receive an bunch of messages: array of (module_id, type, version) tuples on the reply topic
+# and receive a bunch of messages: array of (module_id, type, version) tuples on the reply topic
 
 # send "{"headers": { "replyTo": "my/reply/topic" } }" to "everest_api/query-modules/power_supply_DC"
 # and receive the same reply as above, but limited to the ones with type==power_supply_DC

@@ -81,7 +81,7 @@ private:
     void generate_api_entrypoint_cmd_query_module();
 
     Topics topics;
-    size_t hb_id{0};
+    std::atomic<size_t> hb_id{0};
     V1_0::types::entrypoint::ApiDiscoverResponse discover_response{};
     std::map<std::string, V1_0::types::entrypoint::ApiDiscoverResponse> module_query_response{};
     std::map<std::string, size_t> implemented_apis;

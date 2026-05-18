@@ -20,33 +20,33 @@ void slacImpl::ready() {
 }
 
 void slacImpl::handle_reset(bool& enable) {
-    const auto topic = mod->helper.get_topics().everest_to_extern("reset");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("reset");
     const auto data = generic::serialize(enable);
     mod->mqtt_v.publish(topic, data);
 }
 
 void slacImpl::handle_enter_bcd() {
-    const auto topic = mod->helper.get_topics().everest_to_extern("enter_bcd");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("enter_bcd");
     mod->mqtt_v.publish(topic, "{}");
 }
 
 void slacImpl::handle_leave_bcd() {
-    const auto topic = mod->helper.get_topics().everest_to_extern("leave_bcd");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("leave_bcd");
     mod->mqtt_v.publish(topic, "{}");
 }
 
 void slacImpl::handle_dlink_terminate() {
-    const auto topic = mod->helper.get_topics().everest_to_extern("dlink_terminate");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("dlink_terminate");
     mod->mqtt_v.publish(topic, "{}");
 }
 
 void slacImpl::handle_dlink_error() {
-    const auto topic = mod->helper.get_topics().everest_to_extern("dlink_error");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("dlink_error");
     mod->mqtt_v.publish(topic, "{}");
 }
 
 void slacImpl::handle_dlink_pause() {
-    const auto topic = mod->helper.get_topics().everest_to_extern("dlink_pause");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("dlink_pause");
     mod->mqtt_v.publish(topic, "{}");
 }
 

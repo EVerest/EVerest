@@ -46,7 +46,7 @@ void error_history_consumer_API::ready() {
 
 auto error_history_consumer_API::forward_api_var(std::string const& var) {
     using namespace API_types_ext;
-    auto topic = helper.get_topics().everest_to_extern(var);
+    const auto topic = helper.get_topics().everest_to_extern(var);
 
     return [this, topic](auto const& val) {
         try {

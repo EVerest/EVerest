@@ -15,12 +15,12 @@ void connector_lockImpl::ready() {
 }
 
 void connector_lockImpl::handle_lock() {
-    auto topic = mod->helper.get_topics().everest_to_extern("lock");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("lock");
     mod->mqtt_v.publish(topic, "");
 }
 
 void connector_lockImpl::handle_unlock() {
-    auto topic = mod->helper.get_topics().everest_to_extern("unlock");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("unlock");
     mod->mqtt_v.publish(topic, "");
 }
 

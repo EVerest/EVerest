@@ -42,7 +42,7 @@ void session_cost_consumer_API::ready() {
 auto session_cost_consumer_API::forward_api_var(std::string const& var) {
     using namespace API_types_ext;
     using namespace API_generic;
-    auto topic = helper.get_topics().everest_to_extern(var);
+    const auto topic = helper.get_topics().everest_to_extern(var);
     return [this, topic](auto const& val) {
         try {
             auto&& external = to_external_api(val);

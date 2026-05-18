@@ -114,7 +114,7 @@ auto evse_manager_consumer_API::forward_api_var(std::string const& var) {
     using namespace API_imd;
     using namespace API_dc;
     using namespace API_random_delay;
-    auto topic = helper.get_topics().everest_to_extern(var);
+    const auto topic = helper.get_topics().everest_to_extern(var);
     return [this, topic](auto const& val) {
         try {
             auto&& external = to_external_api(val);
@@ -340,7 +340,7 @@ void evse_manager_consumer_API::generate_api_var_random_delay_countdown() {
 void evse_manager_consumer_API::generate_api_var_session_info() {
     this->session_info.handle()->set_publish_callback(
         [this](const everest::lib::API::V1_0::types::evse_manager::SessionInfo& external) {
-            auto topic = helper.get_topics().everest_to_extern("session_info");
+            static const auto topic = helper.get_topics().everest_to_extern("session_info");
             try {
                 auto&& payload = serialize(external);
                 mqtt_v.publish(topic, payload);

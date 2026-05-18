@@ -49,7 +49,7 @@ systemImpl::handle_update_firmware(types::system::FirmwareUpdateRequest& firmwar
 }
 
 void systemImpl::handle_allow_firmware_installation() {
-    auto topic = mod->helper.get_topics().everest_to_extern("allow_firmware_installation");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("allow_firmware_installation");
     mod->mqtt_v.publish(topic, "");
 }
 
@@ -66,7 +66,7 @@ bool systemImpl::handle_is_reset_allowed(types::system::ResetType& type) {
 }
 
 void systemImpl::handle_reset(types::system::ResetType& type, bool& scheduled) {
-    auto topic = mod->helper.get_topics().everest_to_extern("reset");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("reset");
     json args = API_types_ext::ResetRequest{API_types_ext::to_external_api(type), scheduled};
     mod->mqtt_v.publish(topic, args.dump());
 }
