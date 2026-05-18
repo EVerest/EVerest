@@ -13,3 +13,5 @@ DEPENDS = "\
 "
 
 EXTRA_OECMAKE += "-DDISABLE_EDM=ON"
+
+INSANE_SKIP:${PN}-dev += "buildpaths"
