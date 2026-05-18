@@ -1,11 +1,10 @@
 name: Build and Deploy Documentation
+
 on:
   push:
     tags:
       - '20[0-9][0-9].[0-9][0-9].[0-9]*'
 
-env:
-    runner: ubuntu-24.04
 
 jobs:
 
@@ -13,7 +12,7 @@ jobs:
     name: Setup Environment
     uses: ./.github/workflows/job_setup-env.yml
     with:
-      runner: ${{ env.runner }}
+      runner: ubuntu-24.04
       ref_everest_ci: v1.5.5
 
 
@@ -23,7 +22,7 @@ jobs:
       - setup-env
     uses: ./.github/workflows/job_build-build-kit.yml
     with:
-      runner: ${{ env.runner }}
+      runner: ubuntu-24.04
       base_image_tag_everest_ci: ${{ needs.setup-env.outputs.closest_tag_everest_ci }}
 
 
@@ -36,7 +35,7 @@ jobs:
     secrets:
       SA_GITHUB_SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
     with:
-      runner: ${{ env.runner }}
+      runner: ubuntu-24.04
       is_fork: ${{ needs.setup-env.outputs.is_fork == 'true' }}
       build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
       build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
