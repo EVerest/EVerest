@@ -7,8 +7,7 @@ SRC_URI[md5sum] = "22345a5235af2e003da25554732f2193"
 SRC_URI[wheel.md5sum] = "8667328e99732d4577eeb85d1ded8db8"
 
 PYPI_PACKAGE = "py4j"   
-PYPI_WHEEL_NAME = "py4j-0.10.9.7-py2.py3-none-any.whl"   
 
-inherit pypi_wheel
+inherit pypi setuptools3
 
 FILES:${PN} += "${datadir}/*"
