@@ -24,8 +24,7 @@ SRC_URI[sha256sum] = "514bd33c30e0bf56b0ed44ee15e120d7e47b61ad908b2b1011da68c48a
 
 inherit python_poetry_core pypi
 
-PYPI_ARCHIVE_NAME = "poetry_core-${PV}.${PYPI_PACKAGE_EXT}"
-S = "${WORKDIR}/poetry_core-${PV}"
+PYPI_PACKAGE = "poetry_core"
 
 # FIXME (aw): because in kirkstone poetry install itself by using itself
 do_compile:prepend () {
