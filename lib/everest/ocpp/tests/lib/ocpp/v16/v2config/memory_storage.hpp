@@ -85,6 +85,9 @@ public:
                                               const AttributeEnum& attribute_enum, const std::string& value,
                                               const std::string& source) override;
 
+    SetVariableStatusEnum clear_value(const Component& component_id, const Variable& variable_id,
+                                      const AttributeEnum& attribute_enum, const std::string& source) override;
+
     std::optional<MutabilityEnum> get_mutability(const Component& component_id, const Variable& variable_id,
                                                  const AttributeEnum& attribute_enum) override;
 
@@ -174,6 +177,11 @@ public:
                                               const AttributeEnum& attribute_enum, const std::string& value,
                                               const std::string& source) override {
         return storage.set_read_only_value(component_id, variable_id, attribute_enum, value, source);
+    }
+
+    SetVariableStatusEnum clear_value(const Component& component_id, const Variable& variable_id,
+                                      const AttributeEnum& attribute_enum, const std::string& source) override {
+        return storage.clear_value(component_id, variable_id, attribute_enum, source);
     }
 
     std::optional<MutabilityEnum> get_mutability(const Component& component_id, const Variable& variable_id,

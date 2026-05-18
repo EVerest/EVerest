@@ -631,6 +631,15 @@ MemoryStorage::SetVariableStatusEnum MemoryStorage::set_read_only_value(const Co
     return set_value(component_id, variable_id, attribute_enum, value, source);
 }
 
+MemoryStorage::SetVariableStatusEnum MemoryStorage::clear_value(const Component& component_id,
+                                                                const Variable& variable_id,
+                                                                const AttributeEnum& attribute_enum,
+                                                                const std::string& source) {
+    // Stub: clearing is equivalent to setting "" without validate_value gating; the in-memory
+    // storage doesn't enforce minLimit, so a plain set_value with allow_read_only=true matches.
+    return set_value(component_id, variable_id, attribute_enum, "", source, true);
+}
+
 std::optional<MemoryStorage::MutabilityEnum> MemoryStorage::get_mutability(const Component& component_id,
                                                                            const Variable& variable_id,
                                                                            const AttributeEnum& attribute_enum) {

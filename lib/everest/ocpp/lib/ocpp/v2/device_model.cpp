@@ -406,6 +406,41 @@ SetVariableStatusEnum DeviceModel::set_read_only_value(const Component& componen
                                 " and variable " + variable.name.get());
 }
 
+SetVariableStatusEnum DeviceModel::clear_value(const Component& component, const Variable& variable,
+                                               const AttributeEnum& attribute_enum, const std::string& source) {
+    if (this->device_model_map.find(component) == this->device_model_map.end()) {
+        return SetVariableStatusEnum::UnknownComponent;
+    }
+    auto& variable_map = this->device_model_map[component];
+    if (variable_map.find(variable) == variable_map.end()) {
+        return SetVariableStatusEnum::UnknownVariable;
+    }
+    const auto attribute = this->device_model->get_variable_attribute(component, variable, attribute_enum);
+    if (!attribute.has_value()) {
+        return SetVariableStatusEnum::NotSupportedAttributeType;
+    }
+    // Bypass validate_value: empty-string clears can violate length/range characteristics
+    // by design (the cleared row is the sentinel for "no value").
+    const std::string empty;
+    const auto result =
+        this->device_model->set_variable_attribute_value(component, variable, attribute_enum, empty, source);
+
+    // Fire variable_listener for value change observers, mirroring set_value's behavior.
+    if ((attribute_enum == AttributeEnum::Actual) && (result == SetVariableStatusEnum::Accepted) &&
+        !variable_listener.empty()) {
+        const auto& monitors = variable_map[variable].monitors;
+        static const std::string EMPTY_VALUE{};
+        const std::string& value_previous = attribute.value().value.value_or(EMPTY_VALUE);
+        if (value_previous != empty) {
+            for (const auto& listener : variable_listener) {
+                listener(monitors, component, variable, variable_map[variable].characteristics, attribute.value(),
+                         value_previous, empty);
+            }
+        }
+    }
+    return result;
+}
+
 std::optional<VariableMetaData> DeviceModel::get_variable_meta_data(const Component& component,
                                                                     const Variable& variable) {
     if ((this->device_model_map.count(component) != 0) and

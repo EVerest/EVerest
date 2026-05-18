@@ -99,6 +99,18 @@ public:
                                                       const AttributeEnum& attribute_enum, const std::string& value,
                                                       const std::string& source) = 0;
 
+    /// \brief Clear the Actual attribute of \p variable on \p component, bypassing
+    /// validate_value AND the read-only mutability check. Intended for spec-mandated
+    /// clears where the empty-string sentinel would otherwise fail length / range
+    /// constraints (e.g. B09.FR.27 clearing a per-slot BasicAuthPassword that has
+    /// minLimit=16). Do not use to clear ReadOnly attributes outside of an explicit
+    /// spec-mandated clear path: this method does not enforce the mutability
+    /// allowlist that set_read_only_value uses.
+    /// \param source identifier for the change source ("internal" / OCPP source)
+    /// \return SetVariableStatusEnum reflecting the storage write outcome
+    virtual SetVariableStatusEnum clear_value(const Component& component_id, const Variable& variable_id,
+                                              const AttributeEnum& attribute_enum, const std::string& source) = 0;
+
     // ============================================================================
     // Metadata and monitoring
     // ============================================================================
