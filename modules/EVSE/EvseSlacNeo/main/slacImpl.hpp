@@ -40,6 +40,7 @@ struct Conf {
     int startup_delay_ms;
     int slac_init_timeout_ms;
     bool print_state_transitions;
+    bool hack_disable_regenerate_key_on_reset;
 };
 
 class slacImpl : public slacImplBase {
