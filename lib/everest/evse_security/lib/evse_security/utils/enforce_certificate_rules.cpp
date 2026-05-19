@@ -192,78 +192,80 @@ static std::string get_file_name(X509* cert) {
 }
 
 int enforce_certificate_rules(evse_security::X509Handle* ctx) {
-    evse_security::X509Wrapper wrapper(evse_security::OpenSSLSupplier::x509_duplicate_unique(ctx));
-    X509* cert = wrapper.get_x509_raw();
-    if (!cert) return -1;
+    if(ENFORCE_CERT_PROFILES){
+        evse_security::X509Wrapper wrapper(evse_security::OpenSSLSupplier::x509_duplicate_unique(ctx));
+        X509* cert = wrapper.get_x509_raw();
+        if (!cert) return -1;
 
-    const std::string profile = get_file_name(cert);
-    EVLOG_info << "No matching security profile found for certificate, skipping rule enforcement.";
-    return 0;
+        const std::string profile = get_file_name(cert);
+        EVLOG_info << "No matching security profile found for certificate, skipping rule enforcement.";
+        return 0;
 
-    std::string key = std::filesystem::path(profile).stem().string();
-    key.erase(std::remove(key.begin(), key.end(), ' '), key.end());
+        std::string key = std::filesystem::path(profile).stem().string();
+        key.erase(std::remove(key.begin(), key.end(), ' '), key.end());
 
-    auto fields  = loadCertRules(profile, key, "stand");
-    auto kuRules = loadCertRules(profile, key, "key_usage");
-    auto bcRules = loadCertRules(profile, key, "basic_constraints");
-    auto dcRules = loadCertRules(profile, key, "domain_component");
+        auto fields  = loadCertRules(profile, key, "stand");
+        auto kuRules = loadCertRules(profile, key, "key_usage");
+        auto bcRules = loadCertRules(profile, key, "basic_constraints");
+        auto dcRules = loadCertRules(profile, key, "domain_component");
 
-    if (fields.empty()) {
-        EVLOG_warning << "No rules found for key: " << key;
-        return -1;
-    }
-
-    auto log = [](bool critical, const std::string& msg) {
-        if (critical) EVLOG_error << msg;
-        else          EVLOG_warning << msg;
-    };
-
-    static const std::vector<int> extensions{83, 87};
-    int is_valid = 0;
-    char buf[256];
-
-    for (auto& rule : fields) {
-        X509_NAME* name = (rule.target == CertPart::Subject)
-            ? X509_get_subject_name(cert) : X509_get_issuer_name(cert);
-
-        if (!std::binary_search(extensions.begin(), extensions.end(), rule.nid)) {
-            int len = X509_NAME_get_text_by_NID(name, rule.nid, buf, sizeof(buf));
-            if ((rule.mustExist && len <= 0) || (!rule.mustExist && len > 0)) {
-                log(rule.critical, "NID " + std::to_string(rule.nid) + " does not comply (expected " + std::to_string(rule.mustExist) + ")");
-                is_valid = 1;
-            }
+        if (fields.empty()) {
+            EVLOG_warning << "No rules found for key: " << key;
+            return -1;
         }
-        else if (rule.nid == 83 && rule.mustExist) {
-            ASN1_BIT_STRING* ku = (ASN1_BIT_STRING*)X509_get_ext_d2i(cert, NID_key_usage, nullptr, nullptr);
-            for (const auto& kr : kuRules) {
-                if ((ku->data[0] & (0x80 >> kr.nid)) != kr.mustExist) {
-                    log(kr.critical, "KeyUsage bit " + std::to_string(kr.nid) + " does not comply (expected " + std::to_string(kr.mustExist) + ")");
+
+        auto log = [](bool critical, const std::string& msg) {
+            if (critical) EVLOG_error << msg;
+            else          EVLOG_warning << msg;
+        };
+
+        static const std::vector<int> extensions{83, 87};
+        int is_valid = 0;
+        char buf[256];
+
+        for (auto& rule : fields) {
+            X509_NAME* name = (rule.target == CertPart::Subject)
+                ? X509_get_subject_name(cert) : X509_get_issuer_name(cert);
+
+            if (!std::binary_search(extensions.begin(), extensions.end(), rule.nid)) {
+                int len = X509_NAME_get_text_by_NID(name, rule.nid, buf, sizeof(buf));
+                if ((rule.mustExist && len <= 0) || (!rule.mustExist && len > 0)) {
+                    log(rule.critical, "NID " + std::to_string(rule.nid) + " does not comply (expected " + std::to_string(rule.mustExist) + ")");
                     is_valid = 1;
                 }
             }
-        }
-        else if (rule.nid == 87 && rule.mustExist) {
-            BASIC_CONSTRAINTS* bc = (BASIC_CONSTRAINTS*)X509_get_ext_d2i(cert, NID_basic_constraints, nullptr, nullptr);
-            for (const auto& br : bcRules) {
-                if (br.val == "path_length") {
-                    if ((br.mustExist && !bc->pathlen) || (!br.mustExist && bc->pathlen)) {
-                        EVLOG_warning << "Path length presence does not comply";
-                        is_valid = 1;
-                    } else if (br.mustExist && bc->pathlen && br.data != 0 && ASN1_INTEGER_get(bc->pathlen) != br.data) {
-                        log(br.critical, "Path length value does not match expected " + std::to_string(br.data));
+            else if (rule.nid == 83 && rule.mustExist) {
+                ASN1_BIT_STRING* ku = (ASN1_BIT_STRING*)X509_get_ext_d2i(cert, NID_key_usage, nullptr, nullptr);
+                for (const auto& kr : kuRules) {
+                    if ((ku->data[0] & (0x80 >> kr.nid)) != kr.mustExist) {
+                        log(kr.critical, "KeyUsage bit " + std::to_string(kr.nid) + " does not comply (expected " + std::to_string(kr.mustExist) + ")");
                         is_valid = 1;
                     }
-                } else if (br.val == "CA" && ((br.mustExist && bc->ca != 1) || (!br.mustExist && bc->ca == 1))) {
-                    log(br.critical, "CA flag does not comply");
-                    is_valid = 1;
                 }
             }
-        }
-        else if (rule.nid == 391 && rule.mustExist && !dcRules.empty()) {
-            int len = X509_NAME_get_text_by_NID(name, rule.nid, buf, sizeof(buf));
-            if (std::string(buf, len) != dcRules[0].val) {
-                log(rule.critical, "Domain component expected " + dcRules[0].val + " but received " + std::string(buf, len));
-                is_valid = 1;
+            else if (rule.nid == 87 && rule.mustExist) {
+                BASIC_CONSTRAINTS* bc = (BASIC_CONSTRAINTS*)X509_get_ext_d2i(cert, NID_basic_constraints, nullptr, nullptr);
+                for (const auto& br : bcRules) {
+                    if (br.val == "path_length") {
+                        if ((br.mustExist && !bc->pathlen) || (!br.mustExist && bc->pathlen)) {
+                            EVLOG_warning << "Path length presence does not comply";
+                            is_valid = 1;
+                        } else if (br.mustExist && bc->pathlen && br.data != 0 && ASN1_INTEGER_get(bc->pathlen) != br.data) {
+                            log(br.critical, "Path length value does not match expected " + std::to_string(br.data));
+                            is_valid = 1;
+                        }
+                    } else if (br.val == "CA" && ((br.mustExist && bc->ca != 1) || (!br.mustExist && bc->ca == 1))) {
+                        log(br.critical, "CA flag does not comply");
+                        is_valid = 1;
+                    }
+                }
+            }
+            else if (rule.nid == 391 && rule.mustExist && !dcRules.empty()) {
+                int len = X509_NAME_get_text_by_NID(name, rule.nid, buf, sizeof(buf));
+                if (std::string(buf, len) != dcRules[0].val) {
+                    log(rule.critical, "Domain component expected " + dcRules[0].val + " but received " + std::string(buf, len));
+                    is_valid = 1;
+                }
             }
         }
     }
