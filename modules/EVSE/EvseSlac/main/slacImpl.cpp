@@ -105,7 +105,7 @@ void slacImpl::run() {
 
     fsm_ctx.slac_config.reset_instead_of_fail = config.reset_instead_of_fail;
 
-    fsm_ctx.slac_config.regenerate_key_on_reset = config.regenerate_key_on_reset;
+    fsm_ctx.slac_config.regenerate_key_on_reset = !config.hack_disable_regenerate_key_on_reset;
 
     fsm_ctx.slac_config.generate_nmk();
 

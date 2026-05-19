@@ -90,11 +90,11 @@ provides:
         minimum: 10000
         maximum: 50000
         default: 40000
-      regenerate_key_on_reset:
+      hack_disable_regenerate_key_on_reset:
         description: >-
-          Regenerate NMK on reset
+          Hack: Do not regenerate NMK on reset, this is not spec compliant and should only be set for debugging purposes.
         type: boolean
-        default: true
+        default: false
 metadata:
   base_license: https://directory.fsf.org/wiki/License:BSD-3-Clause-Clear
   license: https://opensource.org/licenses/Apache-2.0
