@@ -40,9 +40,10 @@ public:
      * Implementation for \p ClientPolicy optional async capabilities
      * @param[in] remote The host to connect to
      * @param[in] port The port on host
+     * @param[in] device Optional interface name to bind to via SO_BINDTODEVICE. Empty = no binding.
      * @return True on success, false otherwise.
      */
-    bool open(std::string const& remote, uint16_t port);
+    bool open(std::string const& remote, uint16_t port, std::string const& device = {});
 
     /**
      * @brief Prepare the setup a TCP socket.
@@ -50,9 +51,10 @@ public:
      * @param[in] remote The host to connect to
      * @param[in] port The port on host
      * @param[in] timeout_ms Timeout for connecting to the remote
+     * @param[in] device Optional interface name to bind to via SO_BINDTODEVICE. Empty = no binding.
      * @return True on success, false otherwise.
      */
-    bool setup(std::string const& remote, uint16_t port, int timeout_ms);
+    bool setup(std::string const& remote, uint16_t port, int timeout_ms, std::string const& device = {});
 
     /**
      * @brief Long running part of the TCP connection process
@@ -129,6 +131,7 @@ private:
     uint16_t m_port{0};
     event::unique_fd m_fd;
     int m_timeout_ms{0};
+    std::string m_device;
     static constexpr size_t default_buffer_size{1500};
 };
 } // namespace everest::lib::io::tcp

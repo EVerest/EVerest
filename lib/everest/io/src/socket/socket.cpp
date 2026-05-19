@@ -74,7 +74,139 @@ namespace socket {
 // socket.hpp implementations
 //
 
-event::unique_fd open_udp_server_socket(std::uint16_t port) {
+namespace {
+// Returns true when SO_BINDTODEVICE succeeded. Returns false on EPERM/EACCES
+// (caller decides on a fallback). Throws on any other failure.
+bool apply_so_bindtodevice(int fd, std::string const& device) {
+    if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, device.c_str(), device.length()) == 0) {
+        return true;
+    }
+    if (errno == EPERM || errno == EACCES) {
+        return false;
+    }
+    throw std::runtime_error(build_errno_string("Failed to bind socket to device " + device));
+}
+
+// Returns the socket's address family via getsockname(). Returns AF_UNSPEC if unknown.
+sa_family_t get_socket_family(int fd) {
+    sockaddr_storage ss{};
+    socklen_t len = sizeof(ss);
+    if (getsockname(fd, reinterpret_cast<struct sockaddr*>(&ss), &len) < 0) {
+        return AF_UNSPEC;
+    }
+    return ss.ss_family;
+}
+
+// Restrict the outgoing interface for unicast packets without requiring CAP_NET_RAW.
+// IPv4: IP_UNICAST_IF takes uint32_t (ifindex in network byte order via in_addr layout).
+// IPv6: IPV6_UNICAST_IF takes int (ifindex in host byte order).
+// Returns true on success; false if the socket family is neither AF_INET nor AF_INET6.
+// Throws if the interface lookup fails or if setsockopt fails with a non-permission error.
+bool apply_unicast_if(int fd, std::string const& device) {
+    unsigned int ifindex = if_nametoindex(device.c_str());
+    if (ifindex == 0) {
+        throw std::runtime_error(build_errno_string("if_nametoindex(\"" + device + "\") failed"));
+    }
+    sa_family_t family = get_socket_family(fd);
+    if (family == AF_INET) {
+        std::uint32_t opt = htonl(ifindex);
+        if (setsockopt(fd, IPPROTO_IP, IP_UNICAST_IF, &opt, sizeof(opt)) == 0) {
+            return true;
+        }
+        throw std::runtime_error(build_errno_string("setsockopt(IP_UNICAST_IF, " + device + ") failed"));
+    }
+    if (family == AF_INET6) {
+        int opt = static_cast<int>(ifindex);
+        if (setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_IF, &opt, sizeof(opt)) == 0) {
+            return true;
+        }
+        throw std::runtime_error(build_errno_string("setsockopt(IPV6_UNICAST_IF, " + device + ") failed"));
+    }
+    return false;
+}
+
+// Steer multicast egress to @p device. SO_BINDTODEVICE and IP[V6]_UNICAST_IF do not
+// affect the multicast TX path; the kernel needs IP_MULTICAST_IF / IPV6_MULTICAST_IF
+// independently. For IPv6 we additionally populate sin6_scope_id on the destination
+// sockaddr so connect()/sendto() can resolve scope bound groups (ff02::/16). For IPv4
+// we use ip_mreqn so the interface is selected by index, avoiding the need for the
+// iface IPv4 address up front (works even before DHCP has assigned one). Returns
+// without action when not a multicast destination or device is empty.
+void set_multicast_if(int fd, std::string const& device, struct sockaddr* ai_addr) {
+    if (device.empty() || ai_addr == nullptr) {
+        return;
+    }
+    if (ai_addr->sa_family == AF_INET6) {
+        auto* sin6 = reinterpret_cast<sockaddr_in6*>(ai_addr);
+        if (!IN6_IS_ADDR_MULTICAST(&sin6->sin6_addr)) {
+            return;
+        }
+        unsigned int ifindex = if_nametoindex(device.c_str());
+        if (ifindex == 0) {
+            throw std::runtime_error(build_errno_string("if_nametoindex(\"" + device + "\") failed"));
+        }
+        if (setsockopt(fd, IPPROTO_IPV6, IPV6_MULTICAST_IF, &ifindex, sizeof(ifindex)) != 0) {
+            throw std::runtime_error(build_errno_string("setsockopt(IPV6_MULTICAST_IF, " + device + ") failed"));
+        }
+        sin6->sin6_scope_id = ifindex;
+        return;
+    }
+    if (ai_addr->sa_family == AF_INET) {
+        auto* sin = reinterpret_cast<sockaddr_in*>(ai_addr);
+        if (!IN_MULTICAST(ntohl(sin->sin_addr.s_addr))) {
+            return;
+        }
+        unsigned int ifindex = if_nametoindex(device.c_str());
+        if (ifindex == 0) {
+            throw std::runtime_error(build_errno_string("if_nametoindex(\"" + device + "\") failed"));
+        }
+        struct ip_mreqn mreq {};
+        mreq.imr_ifindex = static_cast<int>(ifindex);
+        if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF, &mreq, sizeof(mreq)) != 0) {
+            throw std::runtime_error(build_errno_string("setsockopt(IP_MULTICAST_IF, " + device + ") failed"));
+        }
+    }
+}
+
+// IPv4 source-IP bind to the address belonging to @p device. Used as a fallback
+// when SO_BINDTODEVICE is not permitted. @p port == 0 picks an ephemeral port.
+void bind_socket_to_interface_address(int fd, std::string const& device, std::uint16_t port) {
+    std::string ip = get_interface_address(device);
+    if (ip.empty()) {
+        throw std::runtime_error("Cannot bind socket to device " + device +
+                                 ": no IPv4 address on interface (and SO_BINDTODEVICE not permitted)");
+    }
+    sockaddr_in local{};
+    local.sin_family = AF_INET;
+    local.sin_port = htons(port);
+    if (inet_pton(AF_INET, ip.c_str(), &local.sin_addr) != 1) {
+        throw std::runtime_error("Failed to parse interface address " + ip);
+    }
+    if (::bind(fd, reinterpret_cast<struct sockaddr*>(&local), sizeof(local)) < 0) {
+        throw std::runtime_error(build_errno_string("Fallback bind to interface " + device + " (" + ip + ":" +
+                                                    std::to_string(port) + ") failed"));
+    }
+}
+} // namespace
+
+void bind_socket_to_device(int fd, std::string const& device) {
+    if (device.empty()) {
+        return;
+    }
+    if (apply_so_bindtodevice(fd, device)) {
+        return;
+    }
+    // Try IP[_V6]_UNICAST_IF for outgoing unicast routing without privilege. Works for both
+    // IPv4 and IPv6 client sockets.
+    if (apply_unicast_if(fd, device)) {
+        return;
+    }
+    // Last resort for IPv4 sockets with an unusable family: bind a source IP belonging to the
+    // interface (IPv4 only).
+    bind_socket_to_interface_address(fd, device, 0);
+}
+
+event::unique_fd open_udp_server_socket(std::uint16_t port, std::string const& device) {
     struct addrinfo hints {};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM;
@@ -91,23 +223,31 @@ event::unique_fd open_udp_server_socket(std::uint16_t port) {
 
     // open the first possible socket
     for (auto* p = servinfo; p != NULL; p = p->ai_next) {
-        const auto socket_fd = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        set_reuse_address(socket_fd);
+        auto socket_fd = event::unique_fd(::socket(p->ai_family, p->ai_socktype, p->ai_protocol));
         if (socket_fd == -1) {
             continue;
         }
+        set_reuse_address(socket_fd);
+
+        if (!device.empty()) {
+            if (!apply_so_bindtodevice(socket_fd, device)) {
+                // SO_BINDTODEVICE not permitted: bind to (interface_ip:port) instead of wildcard,
+                // so the server only receives traffic addressed to that interface's IPv4.
+                bind_socket_to_interface_address(socket_fd, device, port);
+                return socket_fd;
+            }
+        }
 
         if (bind(socket_fd, p->ai_addr, p->ai_addrlen) == -1) {
-            close(socket_fd);
             continue;
         }
 
-        return event::unique_fd{socket_fd};
+        return socket_fd;
     }
     throw std::runtime_error(std::string("Could not open a socket for localhost:") + std::to_string(port));
 }
 
-event::unique_fd open_udp_client_socket(const std::string& host, std::uint16_t port) {
+event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t port, std::string const& device) {
     struct addrinfo hints {};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM;
@@ -128,6 +268,14 @@ event::unique_fd open_udp_client_socket(const std::string& host, std::uint16_t p
         if (socket_fd == -1)
             continue;
 
+        try {
+            bind_socket_to_device(socket_fd, device);
+            set_multicast_if(socket_fd, device, p->ai_addr);
+        } catch (...) {
+            close(socket_fd);
+            throw;
+        }
+
         if (-1 == ::connect(socket_fd, p->ai_addr, p->ai_addrlen)) {
             close(socket_fd);
             continue;
@@ -139,7 +287,8 @@ event::unique_fd open_udp_client_socket(const std::string& host, std::uint16_t p
     throw std::runtime_error(std::string("Could not open a socket for ") + host + ":" + std::to_string(port));
 }
 
-event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint16_t port, unsigned int timeout_ms) {
+event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint16_t port, unsigned int timeout_ms,
+                                              const std::string& device) {
     struct addrinfo hints {};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -160,8 +309,14 @@ event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint
         if (socket_fd == -1)
             continue;
 
+        try {
+            bind_socket_to_device(socket_fd, device);
+        } catch (...) {
+            close(socket_fd);
+            throw;
+        }
+
         if (-1 == connect_with_timeout(socket_fd, p->ai_addr, p->ai_addrlen, timeout_ms)) {
-            //        if (-1 == ::connect(socket_fd, p->ai_addr, p->ai_addrlen)) {
             close(socket_fd);
             continue;
         }
@@ -172,7 +327,7 @@ event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint
     throw std::runtime_error(std::string("Could not open a socket for ") + host + ":" + std::to_string(port));
 }
 
-event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port) {
+event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, const std::string& device) {
     struct addrinfo hints {};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -192,6 +347,13 @@ event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port) {
 
         if (socket_fd == -1)
             continue;
+
+        try {
+            bind_socket_to_device(socket_fd, device);
+        } catch (...) {
+            close(socket_fd);
+            throw;
+        }
 
         if (-1 == connect(socket_fd, p->ai_addr, p->ai_addrlen)) {
             close(socket_fd);
