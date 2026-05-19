@@ -3,7 +3,14 @@
 {% block content %}
   {{ super() }}
   <h1>Versions Index</h1>
-  {% for version in versions %}    
-      <a href="/{{ version }}/index.html">{{ version }}</a> -> <a href="/{{ version }}/reference/snapshot.html">snapshot.yaml</a></br>
+  {% for version in versions %}
+      {% if version is mapping %}
+          {% set name = version.name %}
+          {% set display = version.display or version.name %}
+      {% else %}
+          {% set name = version %}
+          {% set display = version %}
+      {% endif %}
+      <a href="/{{ name }}/index.html">{{ display }}</a> -> <a href="/{{ name }}/reference/snapshot.html">snapshot.yaml</a></br>
   {% endfor %}
 {% endblock %}

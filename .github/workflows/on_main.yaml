@@ -74,5 +74,6 @@ jobs:
       build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
       deploy_docs: true
       instance_name: "nightly"
+      display_name: "nightly (main)"
       is_release: false
       overwrite_existing_instance: true

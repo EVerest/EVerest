@@ -2,11 +2,22 @@ name: On Workflow Dispatch - Build and Deploy Documentation
 on:
   workflow_dispatch:
     inputs:
-      instance_name:
-        description: 'Override the documentation instance name (optional)'
+      display_name:
+        description: >
+          Human-readable label for this docs build, shown in the version switcher.
+          The instance directory name is auto-derived from this (lowercased,
+          non-[a-z0-9_] chars collapsed to underscores).
+          If left empty, defaults to "<ref> @ <short sha>".
         required: false
         type: string
         default: ''
+      overwrite_if_exists:
+        description: >
+          If true, an existing instance with the same sanitized instance name
+          will be overwritten. If false (default), any collision fails the build.
+        required: false
+        type: boolean
+        default: false
       runner:
         description: Which runner to use
         type: choice
@@ -50,6 +61,9 @@ jobs:
       build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
       build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
       deploy_docs: true
-      instance_name: ${{ inputs.instance_name || format('ref_{0}_{1}', github.ref_name, github.sha) }}
+      # Single user input: display_name. The sanitize step in job_build-docs.yaml
+      # derives a valid instance directory name from it.
+      display_name:  ${{ inputs.display_name || format('{0} @ {1}', github.ref_name, github.sha) }}
+      instance_name: ${{ inputs.display_name || format('{0} @ {1}', github.ref_name, github.sha) }}
       is_release: false
-      overwrite_existing_instance: false
+      overwrite_existing_instance: ${{ inputs.overwrite_if_exists }}

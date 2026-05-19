@@ -41,5 +41,6 @@ jobs:
       build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
       deploy_docs: true
       instance_name: release_${{ github.ref_name }}
+      display_name: ${{ github.ref_name }}
       is_release: true
       overwrite_existing_instance: false
