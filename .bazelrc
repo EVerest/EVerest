@@ -4,6 +4,12 @@
 # This flag can be removed once all dependencies are updated for Bazel 9.
 build --incompatible_autoload_externally=+cc_library,+cc_binary,+cc_test,+cc_shared_library,+cc_import,+cc_toolchain,+py_binary,+py_library,+py_test,+sh_binary,+sh_library,+sh_test
 
+# Force -fPIC on C/C++ compilation so static archives can be linked into PIE
+# binaries. Required because modern rustc defaults to producing PIE executables
+# on x86_64-unknown-linux-gnu, and any static C++ library mixed into a Rust
+# binary therefore has to be position-independent.
+build --copt=-fPIC
+
 # CI config: smaller binaries, shared repo cache, disk cache for artifacts.
 build:ci -c opt
 build:ci --strip=always
