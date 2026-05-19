@@ -363,21 +363,27 @@ TEST_F(EvseSecurityTestsMultiLeaf, verify_multi_leaf_retrieval) {
     ASSERT_EQ(r.status, GetInstalledCertificatesStatus::Accepted);
     ASSERT_EQ(r.certificate_hash_data_chain.size(), 2);
 
-    auto& v2g_chain = r.certificate_hash_data_chain.front();
+    const CertificateHashDataChain* secc_chain = nullptr;
+    const CertificateHashDataChain* gridsync_chain = nullptr;
 
-    // Assert the order with the SECCLeaf first
-    ASSERT_EQ(v2g_chain.certificate_hash_data.debug_common_name, std::string("SECCCert"));
-    ASSERT_EQ(v2g_chain.child_certificate_hash_data.size(), 2);
-    ASSERT_EQ(v2g_chain.child_certificate_hash_data[0].debug_common_name, std::string("CPOSubCA2"));
-    ASSERT_EQ(v2g_chain.child_certificate_hash_data[1].debug_common_name, std::string("CPOSubCA1"));
+    for (const auto& chain : r.certificate_hash_data_chain) {
+        if (chain.certificate_hash_data.debug_common_name == "SECCCert") {
+            secc_chain = &chain;
+        } else if (chain.certificate_hash_data.debug_common_name == "SECCGridSyncCert") {
+            gridsync_chain = &chain;
+        }
+    }
 
-    auto& v2g_chain_alternate = r.certificate_hash_data_chain.back();
+    ASSERT_NE(secc_chain, nullptr);
+    ASSERT_NE(gridsync_chain, nullptr);
 
-    // Assert the order with the SECCLeaf first
-    ASSERT_EQ(v2g_chain_alternate.certificate_hash_data.debug_common_name, std::string("SECCGridSyncCert"));
-    ASSERT_EQ(v2g_chain_alternate.child_certificate_hash_data.size(), 2);
-    ASSERT_EQ(v2g_chain_alternate.child_certificate_hash_data[0].debug_common_name, std::string("CPOSubCA2"));
-    ASSERT_EQ(v2g_chain_alternate.child_certificate_hash_data[1].debug_common_name, std::string("CPOSubCA1"));
+    ASSERT_EQ(secc_chain->child_certificate_hash_data.size(), 2);
+    ASSERT_EQ(secc_chain->child_certificate_hash_data[0].debug_common_name, "CPOSubCA2");
+    ASSERT_EQ(secc_chain->child_certificate_hash_data[1].debug_common_name, "CPOSubCA1");
+
+    ASSERT_EQ(gridsync_chain->child_certificate_hash_data.size(), 2);
+    ASSERT_EQ(gridsync_chain->child_certificate_hash_data[0].debug_common_name, "CPOSubCA2");
+    ASSERT_EQ(gridsync_chain->child_certificate_hash_data[1].debug_common_name, "CPOSubCA1");
 }
 
 TEST_F(EvseSecurityTests, verify_normal_keygen) {

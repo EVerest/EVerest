@@ -58,7 +58,6 @@ file(COPY
 )
 
 file(COPY
-    "${CMAKE_SOURCE_DIR}/Security_Profiles"
     DESTINATION "${CMAKE_BINARY_DIR}/dist/share/everest"
 )
 
