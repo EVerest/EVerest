@@ -72,6 +72,7 @@ const std::uint16_t MMTYPE_LINK_STATUS = 0xA0B8;
 const std::uint16_t MMTYPE_OP_ATTR = 0xA068;
 const std::uint16_t MMTYPE_NW_INFO = 0xA038;
 const std::uint16_t MMTYPE_GET_SW = 0xA000;
+const uint16_t MMTYPE_QCA_VS_ATTENUATION_CHARACTERISTICS = 0xA14E;
 } // namespace qualcomm
 
 // Lumissil Vendor MMEs
