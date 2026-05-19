@@ -370,6 +370,8 @@ private:
 
     void setup_AC_mode(bool ac_hlc_enabled = true);
     void setup_fake_DC_mode();
+    void update_hlc_session_setup(bool include_contract_payment, bool supported_certificate_service,
+                                  bool central_contract_validation, bool force_external_payment);
 
     // special funtion to switch mode while session is active
     void switch_AC_mode();
