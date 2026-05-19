@@ -77,7 +77,7 @@ namespace socket {
 namespace {
 // Returns true when SO_BINDTODEVICE succeeded. Returns false on EPERM/EACCES
 // (caller decides on a fallback). Throws on any other failure.
-bool try_so_bindtodevice(int fd, std::string const& device) {
+bool apply_so_bindtodevice(int fd, std::string const& device) {
     if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, device.c_str(), device.length()) == 0) {
         return true;
     }
@@ -102,7 +102,7 @@ sa_family_t get_socket_family(int fd) {
 // IPv6: IPV6_UNICAST_IF takes int (ifindex in host byte order).
 // Returns true on success; false if the socket family is neither AF_INET nor AF_INET6.
 // Throws if the interface lookup fails or if setsockopt fails with a non-permission error.
-bool try_unicast_if(int fd, std::string const& device) {
+bool apply_unicast_if(int fd, std::string const& device) {
     unsigned int ifindex = if_nametoindex(device.c_str());
     if (ifindex == 0) {
         throw std::runtime_error(build_errno_string("if_nametoindex(\"" + device + "\") failed"));
@@ -193,12 +193,12 @@ void bind_socket_to_device(int fd, std::string const& device) {
     if (device.empty()) {
         return;
     }
-    if (try_so_bindtodevice(fd, device)) {
+    if (apply_so_bindtodevice(fd, device)) {
         return;
     }
     // Try IP[_V6]_UNICAST_IF for outgoing unicast routing without privilege. Works for both
     // IPv4 and IPv6 client sockets.
-    if (try_unicast_if(fd, device)) {
+    if (apply_unicast_if(fd, device)) {
         return;
     }
     // Last resort for IPv4 sockets with an unusable family: bind a source IP belonging to the
@@ -223,40 +223,26 @@ event::unique_fd open_udp_server_socket(std::uint16_t port, std::string const& d
 
     // open the first possible socket
     for (auto* p = servinfo; p != NULL; p = p->ai_next) {
-        const auto socket_fd = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        set_reuse_address(socket_fd);
+        auto socket_fd = event::unique_fd(::socket(p->ai_family, p->ai_socktype, p->ai_protocol));
         if (socket_fd == -1) {
             continue;
         }
+        set_reuse_address(socket_fd);
 
-        bool use_interface_address_bind = false;
         if (!device.empty()) {
-            try {
-                use_interface_address_bind = !try_so_bindtodevice(socket_fd, device);
-            } catch (...) {
-                close(socket_fd);
-                throw;
-            }
-        }
-
-        if (use_interface_address_bind) {
-            // SO_BINDTODEVICE not permitted: bind to (interface_ip:port) instead of wildcard,
-            // so the server only receives traffic addressed to that interface's IPv4.
-            try {
+            if (!apply_so_bindtodevice(socket_fd, device)) {
+                // SO_BINDTODEVICE not permitted: bind to (interface_ip:port) instead of wildcard,
+                // so the server only receives traffic addressed to that interface's IPv4.
                 bind_socket_to_interface_address(socket_fd, device, port);
-            } catch (...) {
-                close(socket_fd);
-                throw;
+                return socket_fd;
             }
-            return event::unique_fd{socket_fd};
         }
 
         if (bind(socket_fd, p->ai_addr, p->ai_addrlen) == -1) {
-            close(socket_fd);
             continue;
         }
 
-        return event::unique_fd{socket_fd};
+        return socket_fd;
     }
     throw std::runtime_error(std::string("Could not open a socket for localhost:") + std::to_string(port));
 }
