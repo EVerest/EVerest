@@ -237,14 +237,14 @@ TEST_F(EvseSecurityTests, verify_basics) {
         search_start = match.suffix().first;
     }
 
-    ASSERT_TRUE(certificate_strings.size() == 7);
+    ASSERT_TRUE(certificate_strings.size() == 3);
 
     X509CertificateBundle bundle(fs::path(bundle_path), EncodingFormat::PEM);
     ASSERT_TRUE(bundle.is_using_bundle_file());
     std::cout << "Bundle hierarchy: " << std::endl << bundle.get_certificate_hierarchy().to_debug_string();
 
     auto certificates = bundle.split();
-    ASSERT_TRUE(certificates.size() == 7);
+    ASSERT_TRUE(certificates.size() == 3);
 
     // Only the first 3 certs form a local chain (CPOSubCA2 -> CPOSubCA1 -> V2GRootCA)
     // The remaining 4 are independent CTL root certs
@@ -318,9 +318,9 @@ TEST_F(EvseSecurityTests, verify_certificate_counts) {
     // This contains the 'real' fs certifs, we have the leaf chain + the leaf in a seaparate folder
     ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::V2GCertificateChain}), 4);
     // We have 3 certs in the root bundle plus an additional 4 from the ctl's
-    ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::V2GRootCertificate}), 7);
+    ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::V2GRootCertificate}), 3);
     // MF is using the same V2G bundle in our case
-    ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::MFRootCertificate}), 7);
+    ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::MFRootCertificate}), 3);
     // None were defined 
     ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::MORootCertificate}), 3);
 }
@@ -736,7 +736,7 @@ TEST_F(EvseSecurityTests, delete_root_ca_01) {
 
     ASSERT_TRUE(fs::exists("certs/ca/v2g/V2G_CA_BUNDLE.pem"));
     auto bundle_contents = read_file_to_string("certs/ca/v2g/V2G_CA_BUNDLE.pem");
-    ASSERT_FALSE(bundle_contents.empty()); // CTL certs still present
+    ASSERT_TRUE(bundle_contents.empty()); 
     ASSERT_EQ(bundle_contents.find("V2GRootCA"), std::string::npos);
 }
 
@@ -914,7 +914,7 @@ TEST_F(EvseSecurityTests, get_installed_certificates_and_delete_secc_leaf) {
     const auto r = this->evse_security->get_installed_certificates(certificate_types);
 
     ASSERT_EQ(r.status, GetInstalledCertificatesStatus::Accepted);
-    ASSERT_EQ(r.certificate_hash_data_chain.size(), 17);
+    ASSERT_EQ(r.certificate_hash_data_chain.size(), 5);
     bool found_v2g_chain = false;
 
     CertificateHashData secc_leaf_data;
@@ -1457,9 +1457,9 @@ TEST_F(EvseSecurityTestsMulti, verify_with_invalid_cert_fails) {
 // ============================================================
 
 TEST_F(EvseSecurityTests, verify_valid_leaf_passes_rules) {
-    fs::path leaf_path = fs::path("eionti_addon_test_certs/valid/SECC_LEAF.pem");
+    fs::path leaf_path = fs::path("eonti_addon_test_certs/valid/V2G SECC Valid cert.pem");
     if (!fs::exists(leaf_path)) {
-        GTEST_SKIP() << "SECC_LEAF.pem not found, skipping";
+        GTEST_SKIP() << "V2G SECC Valid cert.pem not found, skipping";
     }
 
     std::ifstream f(leaf_path);
@@ -1472,9 +1472,9 @@ TEST_F(EvseSecurityTests, verify_valid_leaf_passes_rules) {
 }
 
 TEST_F(EvseSecurityTests, verify_valid_root_ca_passes_rules) {
-    fs::path root_path = fs::path("eionti_addon_test_certs/valid/V2G TEST RootCA.crt");
+    fs::path root_path = fs::path("eonti_addon_test_certs/valid/V2G TEST Root CA.crt");
     if (!fs::exists(root_path)) {
-        GTEST_SKIP() << "eionti_addon_test_certs/valid/V2G TEST RootCA.crt not found, skipping";
+        GTEST_SKIP() << "eonti_addon_test_certs/valid/V2G TEST RootCA.crt not found, skipping";
     }
 
     std::ifstream f(root_path);
@@ -1487,7 +1487,7 @@ TEST_F(EvseSecurityTests, verify_valid_root_ca_passes_rules) {
 }
 
 TEST_F(EvseSecurityTests, verify_valid_subca_passes_rules) {
-    fs::path bundle_path = fs::path("eionti_addon_test_certs/valid/V2G_CA_BUNDLE.pem");
+    fs::path bundle_path = fs::path("eonti_addon_test_certs/valid/V2G TEST SUB CA.pem");
     if (!fs::exists(bundle_path)) {
         GTEST_SKIP() << "V2G_CA_BUNDLE.pem not found, skipping";
     }

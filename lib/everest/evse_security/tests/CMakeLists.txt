@@ -58,6 +58,10 @@ file(COPY
     "${CMAKE_SOURCE_DIR}/Security_Profiles"
     DESTINATION "${CMAKE_BINARY_DIR}/dist/share/everest"
 )
+file(COPY
+    "${CMAKE_CURRENT_SOURCE_DIR}/eonti_addon_test_certs"
+    DESTINATION "${CMAKE_BINARY_DIR}/tests"
+)
 
 file(COPY
     "${CMAKE_CURRENT_SOURCE_DIR}/configs"

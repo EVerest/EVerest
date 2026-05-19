@@ -192,7 +192,8 @@ static std::string get_file_name(X509* cert) {
 }
 
 int enforce_certificate_rules(evse_security::X509Handle* ctx) {
-    if(ENFORCE_CERT_PROFILES){
+	int is_valid = 1;
+    	if(ENFORCE_CERT_PROFILES){
         evse_security::X509Wrapper wrapper(evse_security::OpenSSLSupplier::x509_duplicate_unique(ctx));
         X509* cert = wrapper.get_x509_raw();
         if (!cert) return -1;
