@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 
+if(DEFINED EVEREST_IO_WITH_MQTT AND NOT EVEREST_IO_WITH_MQTT)
+    message(FATAL_ERROR "pionix_chargebridge requires MQTT support in everest::io. "
+            "Set EVEREST_IO_WITH_MQTT=ON or disable EVEREST_BUILD_APPLICATIONS.")
+endif()
+
 find_package(ryml QUIET)
 
 set(CMAKE_CXX_STANDARD 17)
