@@ -389,6 +389,8 @@ private:
     std::atomic_bool hlc_use_5percent_current_session;
     // HLC enabled in current AC session. This can change during the session if e.g. HLC fails.
     std::atomic_bool ac_hlc_enabled_current_session;
+    // HLC failed for the current plug-in session. AC falls back to nominal PWM after this.
+    std::atomic_bool hlc_failed{false};
 
     // This struct is only used from main loop thread
     struct InternalContext {

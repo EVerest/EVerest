@@ -395,6 +395,11 @@ void EvseManager::ready() {
 
         r_hlc[0]->subscribe_dlink_error([this] {
             session_log.evse(true, "D-LINK_ERROR.req");
+            // In case the fake DC unexpectedly disconnects due to a d-link error, we'll need to switch
+            // back to AC basic mode.
+            if (fake_dc_enabled and config.ac_with_soc) {
+                setup_AC_mode(false);
+            }
             // Inform charger
             charger->dlink_error();
             // Inform SLAC layer, it will leave the logical network
