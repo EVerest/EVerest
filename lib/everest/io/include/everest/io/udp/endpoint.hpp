@@ -86,6 +86,19 @@ public:
     std::string const& iface() const;
 
     /**
+     * @brief True iff this is an IPv4-mapped IPv6 address (::ffff:a.b.c.d).
+     */
+    bool is_v4_mapped() const;
+
+    /**
+     * @brief IPv4 view of a v4-mapped address.
+     * @return If @ref is_v4_mapped(): an AF_INET endpoint with the embedded
+     * IPv4 address and the same port. Otherwise a default endpoint
+     * (family AF_UNSPEC, sa_len()==0).
+     */
+    endpoint as_v4() const;
+
+    /**
      * @brief Value equality (family, address, port, IPv6 scope id).
      */
     bool operator==(endpoint const& other) const;

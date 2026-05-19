@@ -781,6 +781,59 @@ event::unique_fd open_udp_unconnected_socket(udp::endpoint const& target, std::s
     return sock;
 }
 
+event::unique_fd open_udp_dualstack_server_socket(std::uint16_t port, std::string const& device) {
+    event::unique_fd sock(::socket(AF_INET6, SOCK_DGRAM, 0));
+    if (not sock.is_fd() && errno == EAFNOSUPPORT) {
+        // IPv6 unavailable on this host: v4-only fallback.
+        event::unique_fd v4(::socket(AF_INET, SOCK_DGRAM, 0));
+        if (not v4.is_fd()) {
+            throw std::runtime_error(build_errno_string("socket(AF_INET, SOCK_DGRAM) failed"));
+        }
+        set_reuse_address(v4);
+        set_non_blocking(v4);
+        sockaddr_in local{};
+        local.sin_family = AF_INET;
+        local.sin_addr.s_addr = htonl(INADDR_ANY);
+        local.sin_port = htons(port);
+        if (::bind(v4, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0) {
+            throw std::runtime_error(build_errno_string("bind(0.0.0.0:" + std::to_string(port) + ") failed"));
+        }
+        if (not device.empty()) {
+            try {
+                bind_socket_to_device(v4, device);
+            } catch (const std::exception&) {
+                // best-effort; wildcard bind retained
+            }
+        }
+        return v4;
+    }
+
+    if (not sock.is_fd()) {
+        throw std::runtime_error(build_errno_string("socket(AF_INET6, SOCK_DGRAM) failed"));
+    }
+    int v6only = 0;
+    if (setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only)) < 0) {
+        throw std::runtime_error(build_errno_string("setsockopt(IPV6_V6ONLY=0) failed"));
+    }
+    set_reuse_address(sock);
+    set_non_blocking(sock);
+    sockaddr_in6 local{};
+    local.sin6_family = AF_INET6;
+    local.sin6_addr = in6addr_any;
+    local.sin6_port = htons(port);
+    if (::bind(sock, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0) {
+        throw std::runtime_error(build_errno_string("bind([::]:" + std::to_string(port) + ") failed"));
+    }
+    if (not device.empty()) {
+        try {
+            bind_socket_to_device(sock, device);
+        } catch (const std::exception&) {
+            // best-effort; wildcard bind retained
+        }
+    }
+    return sock;
+}
+
 event::unique_fd open_udp_multicast_socket(std::string const& multicast_group, std::uint16_t port,
                                            std::string interface_address, std::string listen_address,
                                            bool reuse_address, bool reuse_port) {

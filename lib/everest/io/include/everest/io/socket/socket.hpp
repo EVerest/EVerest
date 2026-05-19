@@ -54,6 +54,22 @@ event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t p
 event::unique_fd open_udp_unconnected_socket(udp::endpoint const& target, std::string const& iface = {});
 
 /**
+ * @brief Open a dual-stack (IPv6 + IPv4-mapped) UDP server socket.
+ * @details AF_INET6/SOCK_DGRAM, IPV6_V6ONLY=0, non-blocking, SO_REUSEADDR,
+ * bound to [::]:@p port so it receives both native IPv6 and IPv4-mapped
+ * traffic. @p device (optional) is applied best-effort via
+ * bind_socket_to_device (SO_BINDTODEVICE → IPV6_UNICAST_IF); the wildcard
+ * bind is always kept. If IPv6 is unavailable (socket(AF_INET6) fails with
+ * EAFNOSUPPORT) it falls back to AF_INET bound to 0.0.0.0:@p port.
+ * @param[in] port Local UDP port; 0 picks an ephemeral port.
+ * @param[in] device Optional interface name. Empty = no binding.
+ * @return The managed file descriptor of the socket.
+ * @throws std::runtime_error on any failure other than the EAFNOSUPPORT
+ * v6→v4 fallback.
+ */
+event::unique_fd open_udp_dualstack_server_socket(std::uint16_t port, std::string const& device = {});
+
+/**
  * @brief Open a UDP socket with <a href="https://man7.org/linux/man-pages/man7/ip.7.html">multicast</a>
  * enabled
  * @details Description

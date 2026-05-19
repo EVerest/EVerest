@@ -20,6 +20,7 @@ target_sources(everest_io
         event/fd_event_client.cpp
         udp/udp_socket.cpp
         udp/udp_unconnected_socket.cpp
+        udp/udp_dualstack_server_socket.cpp
         udp/endpoint.cpp
         udp/udp_payload.cpp
         utilities/stop_watch.cpp
