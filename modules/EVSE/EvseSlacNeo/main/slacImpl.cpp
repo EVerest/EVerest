@@ -149,7 +149,17 @@ void slacImpl::run() {
 
     fsm_ctrl = std::make_unique<FSMController>(fsm_ctx);
 
-    slac_io.set_callback([](slac::messages::HomeplugMessage const& msg) { fsm_ctrl->signal_new_slac_message(msg); });
+    // Qualcomm PLC chip emits VS_ATTENUATION_CHARACTERISTICS (vendor MMTYPE 0xA14E) as
+    // unsolicited broadcasts during sounding from a sibling MAC. FSM does not handle this
+    // MMTYPE and logs "Received non-expected SLAC message of type 0xA14E" per frame, which
+    // adds RX/log load. Drop it pre-FSM. Other MMTYPEs (incl. CM_SET_KEY.CNF, CM_ATTEN_PROFILE.IND)
+    // pass through unchanged.
+    slac_io.set_callback([](slac::messages::HomeplugMessage const& msg) {
+        if (msg.get_mmtype() == everest::lib::slac::defs::qualcomm::MMTYPE_QCA_VS_ATTENUATION_CHARACTERISTICS) {
+            return;
+        }
+        fsm_ctrl->signal_new_slac_message(msg);
+    });
     slac_io.set_error_callback([](auto on_error) {
         if (on_error) {
             EVLOG_error << "SLAC on error. Waiting for hardware recovery" << std::endl;
