@@ -746,4 +746,253 @@ TEST(SigalgPinRsa, DoesNotNarrowForNonEcLeaf) {
 
 } // namespace sigalg_pin_test
 
+// ----------------------------------------------------------------------------
+// ECDHE group-pinning tests
+//
+// Verify that openssl::pin_groups_to_cert_curve():
+//  - makes the server select an ECDHE key-exchange group on the SAME curve as
+//    the leaf certificate (P-256 -> secp256r1, P-384 -> secp384r1,
+//    P-521 -> secp521r1), even when the client lists the certificate's curve
+//    last in its supported_groups extension;
+//  - is a no-op for non-EC (e.g. RSA) leaf certificates.
+//
+// Inspection strategy mirrors the sigalg tests: drive a full TLS 1.2
+// ECDHE-ECDSA handshake over an in-memory BIO pair and read back the group the
+// client observed via SSL_get0_group_name(). That string is the curve the
+// server actually used for the ServerKeyExchange ECDHE share -- exactly what a
+// strict ISO 15118-2 EV checks against the leaf cert curve before it sends a
+// fatal decode_error.
+//
+// The GroupsPinUnpinned negative control reproduces the field failure: with no
+// pin and a P-521 leaf, OpenSSL's default preference picks secp256r1 whenever
+// the client lists it first. That case proves these tests actually
+// discriminate -- it must report secp256r1, the very mismatch the pin fixes.
+namespace groups_pin_test {
+
+using SSL_CTX_ptr = std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)>;
+using SSL_ptr = std::unique_ptr<SSL, decltype(&SSL_free)>;
+using EVP_PKEY_ptr = std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)>;
+using EVP_PKEY_CTX_ptr = std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)>;
+using X509_ptr = std::unique_ptr<X509, decltype(&X509_free)>;
+
+// ISO 15118-2 mandates this TLS 1.2 ECDHE-ECDSA suite, so the key exchange is
+// always an ephemeral EC group and SSL_get0_group_name() is meaningful.
+constexpr auto iso_cipher = "ECDHE-ECDSA-AES128-SHA256";
+
+/// Run a TLS 1.2 ECDHE-ECDSA handshake between a pre-built server CTX and a
+/// fresh client CTX whose supported_groups is fixed to client_groups. Returns
+/// the negotiated group name observed by the client (empty on failure).
+std::string do_handshake_group(SSL_CTX* server_ctx, const char* client_groups) {
+    SSL_CTX_ptr client_ctx_owner(SSL_CTX_new(TLS_client_method()), &SSL_CTX_free);
+    if (!client_ctx_owner) {
+        return {};
+    }
+    SSL_CTX* client_ctx = client_ctx_owner.get();
+    SSL_CTX_set_min_proto_version(client_ctx, TLS1_2_VERSION);
+    SSL_CTX_set_max_proto_version(client_ctx, TLS1_2_VERSION);
+    SSL_CTX_set_verify(client_ctx, SSL_VERIFY_NONE, nullptr);
+    if (SSL_CTX_set_cipher_list(client_ctx, iso_cipher) != 1) {
+        return {};
+    }
+    if (SSL_CTX_set1_groups_list(client_ctx, client_groups) != 1) {
+        return {};
+    }
+
+    SSL_ptr server_ssl(SSL_new(server_ctx), &SSL_free);
+    SSL_ptr client_ssl(SSL_new(client_ctx), &SSL_free);
+    if (!server_ssl || !client_ssl) {
+        return {};
+    }
+    SSL_set_accept_state(server_ssl.get());
+    SSL_set_connect_state(client_ssl.get());
+
+    BIO* server_bio = nullptr;
+    BIO* client_bio = nullptr;
+    if (BIO_new_bio_pair(&server_bio, 0, &client_bio, 0) != 1) {
+        return {};
+    }
+    SSL_set_bio(server_ssl.get(), server_bio, server_bio);
+    SSL_set_bio(client_ssl.get(), client_bio, client_bio);
+
+    bool server_done = false;
+    bool client_done = false;
+    for (int i = 0; i < 32 && !(server_done && client_done); ++i) {
+        if (!client_done) {
+            const int rc = SSL_do_handshake(client_ssl.get());
+            if (rc == 1) {
+                client_done = true;
+            } else {
+                const int err = SSL_get_error(client_ssl.get(), rc);
+                if (err != SSL_ERROR_WANT_READ && err != SSL_ERROR_WANT_WRITE) {
+                    return {};
+                }
+            }
+        }
+        if (!server_done) {
+            const int rc = SSL_do_handshake(server_ssl.get());
+            if (rc == 1) {
+                server_done = true;
+            } else {
+                const int err = SSL_get_error(server_ssl.get(), rc);
+                if (err != SSL_ERROR_WANT_READ && err != SSL_ERROR_WANT_WRITE) {
+                    return {};
+                }
+            }
+        }
+    }
+
+    if (!(server_done && client_done)) {
+        return {};
+    }
+
+    const char* group = SSL_get0_group_name(client_ssl.get());
+    return group != nullptr ? std::string(group) : std::string{};
+}
+
+/// Build a TLS 1.2 server SSL_CTX with the given EC chain + key loaded,
+/// optionally applying openssl::pin_groups_to_cert_curve(). Mirrors what
+/// tls::Server::init_ssl() / iso15118 init_ssl() do.
+SSL_CTX_ptr make_server_ctx(const std::string& chain_path, const std::string& key_path, bool apply_pin,
+                            bool& setup_ok) {
+    setup_ok = false;
+    SSL_CTX_ptr ctx(SSL_CTX_new(TLS_server_method()), &SSL_CTX_free);
+    if (!ctx) {
+        return ctx;
+    }
+    SSL_CTX_set_min_proto_version(ctx.get(), TLS1_2_VERSION);
+    SSL_CTX_set_max_proto_version(ctx.get(), TLS1_2_VERSION);
+    if (SSL_CTX_set_cipher_list(ctx.get(), iso_cipher) != 1) {
+        return ctx;
+    }
+    if (SSL_CTX_use_certificate_chain_file(ctx.get(), chain_path.c_str()) != 1) {
+        return ctx;
+    }
+    if (SSL_CTX_use_PrivateKey_file(ctx.get(), key_path.c_str(), SSL_FILETYPE_PEM) != 1) {
+        return ctx;
+    }
+    if (SSL_CTX_check_private_key(ctx.get()) != 1) {
+        return ctx;
+    }
+    if (apply_pin) {
+        if (!openssl::pin_groups_to_cert_curve(ctx.get())) {
+            return ctx;
+        }
+    }
+    setup_ok = true;
+    return ctx;
+}
+
+/// OpenSSL reports P-256 as either "prime256v1" or "secp256r1" depending on
+/// version; the other two NIST curves have a single canonical short name.
+bool group_name_matches_curve(const std::string& observed, const std::string& curve) {
+    if (curve == "P-256") {
+        return observed == "prime256v1" || observed == "secp256r1";
+    }
+    if (curve == "P-384") {
+        return observed == "secp384r1";
+    }
+    if (curve == "P-521") {
+        return observed == "secp521r1";
+    }
+    return false;
+}
+
+class GroupsPin : public ::testing::TestWithParam<const char*> {};
+
+// The client lists curves in a fixed P-256, P-384, P-521 order, so for the
+// P-384 and P-521 cases the certificate's curve is NOT the client's first
+// preference. Only the server-side pin can still drive ECDHE onto the leaf
+// curve; without it OpenSSL would honor the client's first offered group.
+TEST_P(GroupsPin, EcdheGroupMatchesLeafCurve) {
+    const std::string curve = GetParam();
+    const std::string chain_path = "pki-" + curve + "/server_chain.pem";
+    const std::string key_path = "pki-" + curve + "/server_priv.pem";
+
+    bool setup_ok = false;
+    SSL_CTX_ptr server_ctx = make_server_ctx(chain_path, key_path, /*apply_pin=*/true, setup_ok);
+    ASSERT_TRUE(server_ctx) << "SSL_CTX_new failed for curve " << curve;
+    ASSERT_TRUE(setup_ok) << "server ctx setup / pin_groups_to_cert_curve failed for " << curve;
+
+    const std::string observed = do_handshake_group(server_ctx.get(), "P-256:P-384:P-521");
+    ASSERT_FALSE(observed.empty()) << "handshake failed for curve " << curve;
+    EXPECT_TRUE(group_name_matches_curve(observed, curve))
+        << "negotiated ECDHE group '" << observed << "' does not match leaf curve " << curve;
+}
+
+INSTANTIATE_TEST_SUITE_P(AllCurves, GroupsPin, ::testing::Values("P-256", "P-384", "P-521"));
+
+// Negative control / regression for the field decode_error: a P-521 leaf with
+// NO pin applied, client offering secp256r1 first then secp521r1 (exactly the
+// observed EV ClientHello). OpenSSL's default preference picks secp256r1,
+// producing an ECDHE share on a curve different from the P-521 cert -- the
+// mismatch strict ISO 15118-2 EVs reject. This documents why the pin exists
+// and proves the GroupsPin assertions above are not vacuous.
+TEST(GroupsPinUnpinned, P521LeafWithoutPinNegotiatesP256) {
+    bool setup_ok = false;
+    SSL_CTX_ptr server_ctx =
+        make_server_ctx("pki-P-521/server_chain.pem", "pki-P-521/server_priv.pem", /*apply_pin=*/false, setup_ok);
+    ASSERT_TRUE(server_ctx);
+    ASSERT_TRUE(setup_ok);
+
+    const std::string observed = do_handshake_group(server_ctx.get(), "P-256:P-521");
+    ASSERT_FALSE(observed.empty()) << "handshake failed";
+    EXPECT_TRUE(observed == "prime256v1" || observed == "secp256r1")
+        << "expected unpinned default to mismatch the P-521 leaf with secp256r1, got '" << observed << "'";
+    EXPECT_FALSE(group_name_matches_curve(observed, "P-521"))
+        << "unpinned ctx unexpectedly negotiated the leaf curve; negative control is vacuous";
+}
+
+// Same P-521 leaf, same client offer, but WITH the pin: ECDHE must now be on
+// secp521r1, matching the leaf. Side-by-side with GroupsPinUnpinned this is
+// the red->green evidence that pin_groups_to_cert_curve fixes the mismatch.
+TEST(GroupsPinPinned, P521LeafWithPinNegotiatesP521) {
+    bool setup_ok = false;
+    SSL_CTX_ptr server_ctx =
+        make_server_ctx("pki-P-521/server_chain.pem", "pki-P-521/server_priv.pem", /*apply_pin=*/true, setup_ok);
+    ASSERT_TRUE(server_ctx);
+    ASSERT_TRUE(setup_ok);
+
+    const std::string observed = do_handshake_group(server_ctx.get(), "P-256:P-521");
+    ASSERT_FALSE(observed.empty()) << "handshake failed";
+    EXPECT_EQ(observed, "secp521r1") << "pinned P-521 leaf negotiated '" << observed << "' instead of secp521r1";
+}
+
+// Non-EC leaf: the pin must be a no-op and report success, leaving OpenSSL's
+// default group handling untouched.
+TEST(GroupsPinRsa, DoesNotPinForNonEcLeaf) {
+    EVP_PKEY_CTX_ptr kctx(EVP_PKEY_CTX_new_from_name(nullptr, "RSA", nullptr), &EVP_PKEY_CTX_free);
+    ASSERT_TRUE(kctx);
+    ASSERT_GT(EVP_PKEY_keygen_init(kctx.get()), 0);
+    ASSERT_GT(EVP_PKEY_CTX_set_rsa_keygen_bits(kctx.get(), 2048), 0);
+    EVP_PKEY* pkey_raw = nullptr;
+    ASSERT_GT(EVP_PKEY_keygen(kctx.get(), &pkey_raw), 0);
+    EVP_PKEY_ptr pkey(pkey_raw, &EVP_PKEY_free);
+
+    X509_ptr cert(X509_new(), &X509_free);
+    ASSERT_TRUE(cert);
+    X509_set_version(cert.get(), 2);
+    ASN1_INTEGER_set(X509_get_serialNumber(cert.get()), 1);
+    X509_gmtime_adj(X509_getm_notBefore(cert.get()), 0);
+    X509_gmtime_adj(X509_getm_notAfter(cert.get()), 60L * 60 * 24);
+    X509_set_pubkey(cert.get(), pkey.get());
+    X509_NAME* name = X509_get_subject_name(cert.get());
+    X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char*>("rsa-test-leaf"), -1,
+                               -1, 0);
+    X509_set_issuer_name(cert.get(), name);
+    ASSERT_NE(X509_sign(cert.get(), pkey.get(), EVP_sha256()), 0);
+
+    SSL_CTX_ptr ctx(SSL_CTX_new(TLS_server_method()), &SSL_CTX_free);
+    ASSERT_TRUE(ctx);
+    SSL_CTX_set_min_proto_version(ctx.get(), TLS1_2_VERSION);
+    SSL_CTX_set_max_proto_version(ctx.get(), TLS1_2_VERSION);
+    ASSERT_EQ(SSL_CTX_use_certificate(ctx.get(), cert.get()), 1);
+    ASSERT_EQ(SSL_CTX_use_PrivateKey(ctx.get(), pkey.get()), 1);
+    ASSERT_EQ(SSL_CTX_check_private_key(ctx.get()), 1);
+
+    EXPECT_TRUE(openssl::pin_groups_to_cert_curve(ctx.get()))
+        << "pin_groups_to_cert_curve must be a no-op (true) for an RSA leaf";
+}
+
+} // namespace groups_pin_test
+
 } // namespace

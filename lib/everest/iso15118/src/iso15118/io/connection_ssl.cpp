@@ -382,8 +382,8 @@ bool pin_groups_to_cert_curve(SSL_CTX* ctx) {
 
     // Cert curve first; remaining standard NIST curves appended as fallback
     // so that a client offering only one of them can still complete ECDHE.
-    // OpenSSL intersects this list with the client's supported_groups
-    // extension, so the client's preferences are still honored.
+    // The list is intersected with the client's supported_groups extension,
+    // so a curve the client did not offer is never selected.
     std::string list = preferred;
     for (const char* g : {"P-521", "P-384", "P-256"}) {
         if (std::strcmp(g, preferred) != 0) {
@@ -396,6 +396,13 @@ bool pin_groups_to_cert_curve(SSL_CTX* ctx) {
         logf_error("SSL_CTX_set1_groups_list(%s) failed", list.c_str());
         return false;
     }
+
+    // Setting the groups list alone is not enough: for TLS 1.2 the server
+    // otherwise selects the ECDHE curve in the client's supported_groups
+    // order, so a client preferring P-256 still gets a P-256 share against a
+    // P-521 leaf. SSL_OP_CIPHER_SERVER_PREFERENCE makes the server honor its
+    // own (cert-curve-first) order, which is the whole point of the pin.
+    SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
     return true;
 }
 
