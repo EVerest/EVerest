@@ -504,7 +504,9 @@ struct Reset_def       : public state_machine_def<Reset_def> {
     template <class Event, class Fsm>
     void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
-        fsm.ctx->slac_config.generate_nmk();
+        if (fsm.ctx->slac_config.regenerate_key_on_reset){
+            fsm.ctx->slac_config.generate_nmk();
+        }
         to.setDurationMilliSeconds(fsm.ctx->slac_config.set_key_timeout_ms);
         to.reset();
         ctx->status.match_state = SlacState::Reset;

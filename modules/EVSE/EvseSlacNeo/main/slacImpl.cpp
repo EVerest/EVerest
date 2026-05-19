@@ -141,6 +141,8 @@ void slacImpl::run() {
     fsm_ctx.slac_config.print_state_transitions = config.print_state_transitions;
     fsm_ctx.slac_config.provide_telemetry = mod->info.telemetry_enabled;
 
+    fsm_ctx.slac_config.regenerate_key_on_reset = !config.hack_disable_regenerate_key_on_reset;
+
     fsm_ctx.slac_config.generate_nmk();
 
     memcpy(fsm_ctx.evse_mac, slac_io.get_mac_addr(), ETH_ALEN);

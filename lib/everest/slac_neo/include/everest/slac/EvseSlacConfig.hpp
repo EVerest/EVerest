@@ -52,6 +52,8 @@ struct EvseSlacConfig {
 
     bool print_state_transitions{false};
     bool provide_telemetry{false};
+
+    bool regenerate_key_on_reset{true};
 };
 
 } // namespace everest::lib::slac::fsm::evse
