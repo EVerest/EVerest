@@ -3,6 +3,8 @@
 
 #include <catch2/catch_all.hpp>
 
+#include <iostream>
+
 #include <everest/database/exceptions.hpp>
 #include <everest/database/sqlite/connection.hpp>
 #include <tests/helpers.hpp>
@@ -180,6 +182,9 @@ TEST_CASE("Database operations", "[db_operation]") {
         ConfigurationParameterCharacteristics characteristics;
         characteristics.datatype = Datatype::String;
         characteristics.mutability = Mutability::ReadWrite;
+        std::cout << "Writing : " << id.module_id << " | "
+                    << id.module_implementation_id.value_or("<unspecified>") << " | "
+                    << id.configuration_parameter_name << std::endl;
         auto response = storage.write_configuration_parameter(id, characteristics, "value");
         REQUIRE(response == GetSetResponseStatus::NotFound);
     }

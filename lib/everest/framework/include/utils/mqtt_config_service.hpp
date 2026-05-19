@@ -163,13 +163,15 @@ public:
     /// \returns a result containing the configuration item or an error
     GetConfigResult get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier);
 
-    void register_config_change_handler(const std::string_view name, ConfigChangeHandler handler);
+    void register_config_change_handler(const std::string& impl_id, const std::string_view param_name,
+                                        ConfigChangeHandler handler);
 
 private:
     std::shared_ptr<MQTTAbstraction> mqtt_abstraction;
     std::string origin;
     std::map<std::string, std::string, std::less<>> module_names;
-    std::map<std::string, ConfigChangeHandler> change_callbacks;
+    // a key-value (parameter-name to handler) store for each implementation_id
+    std::map<std::string, std::map<std::string, ConfigChangeHandler>> change_callbacks;
 
     void mqtt_set_request(const nlohmann::json& data);
 };
@@ -183,6 +185,10 @@ public:
     /// \param config_svc        All domain operations — reads (via get_configuration) and writes (via
     ///                          set_config_parameters) are routed through this interface.
     MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstraction, ConfigServiceInterface& config_svc);
+
+    // TODO(CB): Add comment
+    std::optional<Everest::config::SetResponse>
+    cmd_set_cfg_param(const everest::config::ConfigurationParameterIdentifier& cfg_param_id, const std::string& value);
 
 private:
     MQTTAbstraction& mqtt_abstraction;

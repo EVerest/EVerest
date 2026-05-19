@@ -24,9 +24,11 @@
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
+#include <configuration_api.hpp>
 #include <everest/logging.hpp>
 #include <framework/everest.hpp>
 #include <framework/runtime.hpp>
+#include <lifecycle_api.hpp>
 #include <utils/config.hpp>
 #include <utils/config/config_service_core.hpp>
 #include <utils/config/slot_manager.hpp>
@@ -803,6 +805,51 @@ int boot(const po::variables_map& vm) {
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core);
 
+    config_service_core->register_set_runtime_parameter_handler(
+        [&config_service](const everest::config::ConfigurationParameterIdentifier& cfg_param_id,
+                          const std::string& value) {
+            // TODO(CB): Here or inside the called function we need to handle the no-module-is-running case
+            const auto result = config_service->cmd_set_cfg_param(cfg_param_id, value);
+            if (result) {
+                if (result->status == Everest::config::SetResponseStatus::Accepted) {
+                    return Everest::config::SetParameterResponse::ModuleReplied_Applied;
+                } else if (result->status == Everest::config::SetResponseStatus::RebootRequired) {
+                    return Everest::config::SetParameterResponse::ModuleReplied_RequiresRestart;
+                } else {
+                    return Everest::config::SetParameterResponse::ModuleReplied_Rejected;
+                }
+            } else {
+                return Everest::config::SetParameterResponse::SetCallFailed;
+            }
+        });
+
+    bool cfg_api_read_only = false;
+    std::unique_ptr<Everest::api::configuration::ConfigurationAPI> configuration_api;
+    if (vm.count("configuration-api")) {
+        cfg_api_read_only = vm["configuration-api"].as<std::string>() != "rw";
+        if (cfg_api_read_only) {
+            EVLOG_info << "Starting ConfigurationAPI in read-only mode";
+        } else {
+            EVLOG_info << "Starting ConfigurationAPI in read-write mode";
+        }
+        configuration_api = std::make_unique<Everest::api::configuration::ConfigurationAPI>(
+            *mqtt_abstraction, *config_service_core, cfg_api_read_only);
+    }
+    std::unique_ptr<Everest::api::lifecycle::LifecycleAPI> lifecycle_api;
+    if (vm.count("lifecycle-api")) {
+        bool lc_api_read_only = vm["lifecycle-api"].as<std::string>() != "rw";
+        if (lc_api_read_only) {
+            EVLOG_info << "Starting LifecycleAPI in read-only mode";
+        } else {
+            EVLOG_info << "Starting LifecycleAPI in read-write mode";
+        }
+        lifecycle_api = std::make_unique<Everest::api::lifecycle::LifecycleAPI>(
+            *mqtt_abstraction, *config_service_core,
+            configuration_api ? (cfg_api_read_only ? Everest::api::lifecycle::ConfigurationApiStatus::AvailableRO
+                                                   : Everest::api::lifecycle::ConfigurationApiStatus::AvailableRW)
+                              : Everest::api::lifecycle::ConfigurationApiStatus::NotAvailable,
+            lc_api_read_only);
+    }
     auto module_handles =
         start_modules(*config, *mqtt_abstraction, ignored_modules, standalone_modules, ms, status_fifo, retain_topics);
     bool modules_started = true;
@@ -819,7 +866,8 @@ int boot(const po::variables_map& vm) {
     }
 #endif
 
-    int wstatus; // NOLINT(cppcoreguidelines-init-variables): this is always initialized in the following waitpid call
+    int wstatus; // NOLINT(cppcoreguidelines-init-variables): this is always initialized in the following waitpid
+                 // call
 
     while (true) {
 // check if anyone died
@@ -943,6 +991,10 @@ int main(int argc, char* argv[]) {
     desc.add_options()("config", po::value<std::string>(),
                        "Full path to a config file.  If the file does not exist and has no extension, it will be "
                        "looked up in the default config directory");
+    desc.add_options()("configuration-api", po::value<std::string>()->implicit_value("ro"),
+                       "Start the ConfigurationAPI (append '=rw' for read-write)");
+    desc.add_options()("lifecycle-api", po::value<std::string>()->implicit_value("ro"),
+                       "Start the lifecycle_API (append '=rw' for read-write)");
     desc.add_options()(
         "db", po::value<std::string>(),
         "Full path to the configuration database file. Required. "
