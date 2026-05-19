@@ -13,7 +13,7 @@ target_sources(evse_security
 
         utils/evse_filesystem.cpp
         utils/enforce_certificate_rules.cpp
-        utils/load_ctl.cpp
+
 
         crypto/interface/crypto_supplier.cpp
         crypto/interface/crypto_types.cpp
