@@ -814,4 +814,32 @@ TEST(certificate, apply) {
     SSL_CTX_free(ctx);
 }
 
+// supported_versions extension payload (RFC 8446 4.2.1):
+// client format is a 1-byte length prefix followed by a list of 2-byte version IDs.
+// TLS 1.3 = 0x0304, TLS 1.2 = 0x0303.
+TEST(openssl, isTls13PayloadWithTls13ReturnsTrue) {
+    const unsigned char payload[] = {0x04, 0x03, 0x04, 0x03, 0x03};
+    EXPECT_TRUE(openssl::is_tls_1_3(payload, sizeof(payload)));
+}
+
+TEST(openssl, isTls13PayloadWithoutTls13ReturnsFalse) {
+    const unsigned char payload[] = {0x02, 0x03, 0x03};
+    EXPECT_FALSE(openssl::is_tls_1_3(payload, sizeof(payload)));
+}
+
+TEST(openssl, isTls13PayloadNullReturnsFalse) {
+    EXPECT_FALSE(openssl::is_tls_1_3(nullptr, 4));
+}
+
+TEST(openssl, isTls13PayloadZeroLengthReturnsFalse) {
+    const unsigned char payload[1] = {0x00};
+    EXPECT_FALSE(openssl::is_tls_1_3(payload, 0));
+}
+
+TEST(openssl, isTls13PayloadLengthMismatchReturnsFalse) {
+    // length byte says 4 bytes follow, but only 2 are present
+    const unsigned char payload[] = {0x04, 0x03, 0x04};
+    EXPECT_FALSE(openssl::is_tls_1_3(payload, sizeof(payload)));
+}
+
 } // namespace

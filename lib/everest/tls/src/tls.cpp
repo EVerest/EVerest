@@ -414,11 +414,14 @@ ssl_result_t ssl_shutdown(SSL* ctx) {
  * \param[in] cipher_list are the TLS 1.2 ciphers, nullptr means use default
  * \param[in] cert_config are one of more sets of key and certificates
  * \param[in] required when true, fail when cert_config is missing
+ * \param[in] enforce_tls_1_3 when true the context requires TLS 1.3 minimum
+ *            and skips the TLS 1.2 cap; ignored for client contexts
  * \return true when successful
  * \note required will be true for a TLS server and can be false for a TLS client
  */
 bool configure_ssl_ctx(bool is_server, SSL_CTX*& ctx, const char* ciphersuites, const char* cipher_list,
-                       const tls::Server::certificate_config_t& cert_config, bool required) {
+                       const tls::Server::certificate_config_t& cert_config, bool required,
+                       bool enforce_tls_1_3 = false) {
     bool result{true};
 
     if (is_server) {
@@ -435,13 +438,27 @@ bool configure_ssl_ctx(bool is_server, SSL_CTX*& ctx, const char* ciphersuites, 
         log_error("server_init::SSL_CTX_new");
         result = false;
     } else {
-        if (SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION) == 0) {
+        const auto min_version = (is_server && enforce_tls_1_3) ? TLS1_3_VERSION : TLS1_2_VERSION;
+        if (SSL_CTX_set_min_proto_version(ctx, min_version) == 0) {
             log_error("SSL_CTX_set_min_proto_version");
             result = false;
         }
-        if ((ciphersuites != nullptr) && (ciphersuites[0] == '\0')) {
-            // no cipher suites configured - don't use TLS 1.3
-            // nullptr means use the defaults
+        if (is_server && enforce_tls_1_3) {
+            // Server is configured for TLS 1.3 only. We have already pinned
+            // SSL_CTX_set_min_proto_version to TLS1_3_VERSION above, so we do
+            // not also need to cap the max version. We do, however, want to
+            // disable the middlebox compatibility mode (RFC 8446 Appendix D.4),
+            // which makes the server emit a dummy ChangeCipherSpec record so
+            // the handshake looks like TLS 1.2 to legacy middleboxes — that
+            // workaround is unnecessary in the SECC use-case and would only
+            // confuse a strict 15118 EVCC.
+            SSL_CTX_clear_options(ctx, SSL_OP_ENABLE_MIDDLEBOX_COMPAT);
+        } else if ((ciphersuites != nullptr) && (ciphersuites[0] == '\0')) {
+            // Caller explicitly cleared the TLS 1.3 ciphersuite list, signalling
+            // "no TLS 1.3 ciphersuites configured". Cap the max protocol version
+            // at TLS 1.2 so the handshake cannot fall through to TLS 1.3 with no
+            // cipher available. (A nullptr ciphersuites string means "use the
+            // OpenSSL defaults" and is left alone.)
             if (SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION) == 0) {
                 log_error("SSL_CTX_set_max_proto_version");
                 result = false;
@@ -810,6 +827,23 @@ Connection::result_t ServerConnection::accept(int timeout_ms) {
     return convert(result);
 }
 
+std::optional<std::array<std::uint8_t, 64>> ServerConnection::peer_certificate_sha512() const {
+    assert(m_context != nullptr);
+    SSL* ssl = m_context->ctx.get();
+    X509* peer = SSL_get_peer_certificate(ssl);
+    if (peer == nullptr) {
+        return std::nullopt;
+    }
+    std::array<std::uint8_t, 64> out{};
+    unsigned int len{0};
+    const auto rc = X509_digest(peer, EVP_sha512(), out.data(), &len);
+    X509_free(peer);
+    if (rc == 0 || len != out.size()) {
+        return std::nullopt;
+    }
+    return out;
+}
+
 void ServerConnection::wait_all_closed() {
     std::unique_lock lock(m_cv_mutex);
     m_cv.wait(lock, [] { return m_count == 0; });
@@ -930,6 +964,43 @@ bool Server::init_socket(const config_t& cfg) {
     return result;
 }
 
+int Server::handle_tls_1_3_verify_upgrade(SSL* ssl, int* /*alert*/) {
+    // The verify upgrade only takes effect when the negotiated protocol will be
+    // TLS 1.3. Both sides must allow it: the client must advertise TLS 1.3 in
+    // supported_versions and the server must not have capped at TLS 1.2.
+    auto* ctx = SSL_get_SSL_CTX(ssl);
+    const auto server_max = (ctx != nullptr) ? SSL_CTX_get_max_proto_version(ctx) : 0;
+    if (server_max != 0 && server_max < TLS1_3_VERSION) {
+        return SSL_CLIENT_HELLO_SUCCESS;
+    }
+
+    const unsigned char* data{nullptr};
+    std::size_t datalen{0};
+
+    if (SSL_client_hello_get0_ext(ssl, TLSEXT_TYPE_supported_versions, &data, &datalen) == 1) {
+        if (openssl::is_tls_1_3(data, datalen)) {
+            SSL_set_verify(ssl, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, nullptr);
+        }
+    }
+
+    return SSL_CLIENT_HELLO_SUCCESS;
+}
+
+int Server::client_hello_cb_dispatch(SSL* ssl, int* alert, void* object) {
+    auto* self = static_cast<Server*>(object);
+    if (self == nullptr) {
+        return SSL_CLIENT_HELLO_SUCCESS;
+    }
+
+    if (const auto rc = self->handle_tls_1_3_verify_upgrade(ssl, alert); rc != SSL_CLIENT_HELLO_SUCCESS) {
+        return rc;
+    }
+    if (const auto rc = self->m_status_request_v2.handle_client_hello(ssl, alert); rc != SSL_CLIENT_HELLO_SUCCESS) {
+        return rc;
+    }
+    return SSL_CLIENT_HELLO_SUCCESS;
+}
+
 bool Server::init_ssl(const config_t& cfg) {
     assert(m_context != nullptr);
 
@@ -938,7 +1009,8 @@ bool Server::init_ssl(const config_t& cfg) {
 
     if (result) {
         // use the first server chain
-        result = configure_ssl_ctx(true, ctx, cfg.ciphersuites, cfg.cipher_list, cfg.chains[0], true);
+        result =
+            configure_ssl_ctx(true, ctx, cfg.ciphersuites, cfg.cipher_list, cfg.chains[0], true, cfg.enforce_tls_1_3);
         if (result) {
 
             if (cfg.tls_key_logging) {
@@ -962,25 +1034,24 @@ bool Server::init_ssl(const config_t& cfg) {
 
             int mode = SSL_VERIFY_NONE;
 
-            // TODO(james-ctc): verify may need to change based on TLS version
             // 15118-2 mandates TLS 1.2 and no client certificate
             // 15118-20 mandates TLS 1.3 and requires a client certificate
-            // There might be a requirement to support mutual authentication on
-            // TLS 1.2
-            //
-            // Potential solution is to provide optional mutual authentication
-            // for TLS 1.2 and mandatory mutual authentication for TLS 1.3
-            // SSL_set_verify() could be used in
-            // ServerStatusRequestV2::client_hello_cb
-            // TLS 1.3 has a post handshake flag SSL_VERIFY_POST_HANDSHAKE
-            // which might be a better approach
+            // The dispatcher upgrades verify mode to require a peer certificate
+            // for TLS 1.3 connections in handle_tls_1_3_verify_upgrade so that
+            // TLS 1.2 connections still honor cfg.verify_client below.
 
             if (cfg.verify_client) {
                 mode = SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
+            }
+            // Load explicit verify locations whenever they are configured. This makes the
+            // anchors available for the TLS 1.3 verify-mode upgrade in handle_tls_1_3_verify_upgrade
+            // even when verify_client is false (15118 mixed-mode use).
+            if (static_cast<const char*>(cfg.verify_locations_file) != nullptr ||
+                static_cast<const char*>(cfg.verify_locations_path) != nullptr) {
                 if (SSL_CTX_load_verify_locations(ctx, cfg.verify_locations_file, cfg.verify_locations_path) != 1) {
                     log_error("SSL_CTX_load_verify_locations");
                 }
-            } else {
+            } else if (!cfg.verify_client) {
                 if (SSL_CTX_set_default_verify_paths(ctx) != 1) {
                     log_error("SSL_CTX_set_default_verify_paths");
                     result = false;
@@ -990,6 +1061,8 @@ bool Server::init_ssl(const config_t& cfg) {
 
             result = result && m_status_request_v2.init_ssl(ctx);
             result = result && m_server_trusted_ca_keys.init_ssl(ctx);
+
+            SSL_CTX_set_client_hello_cb(ctx, &Server::client_hello_cb_dispatch, this);
         }
     }
 
@@ -1182,6 +1255,14 @@ void Server::wait_for_connection(const ConnectionHandler& handler) {
     }
 }
 
+Server::ConnectionPtr Server::wrap_accepted_fd(int soc, const char* ip, const char* service) {
+    if (m_context == nullptr) {
+        return nullptr;
+    }
+    return std::make_unique<ServerConnection>(m_context->ctx.get(), soc, ip, service, m_timeout_ms,
+                                              m_tls_key_interface);
+}
+
 void Server::configure_signal_handler(int interrupt_signal) {
     s_sig_int = interrupt_signal;
     struct sigaction action {};
@@ -1341,13 +1422,17 @@ bool Client::init(const config_t& cfg, const override_t& override) {
     m_timeout_ms = cfg.io_timeout_ms;
     m_trusted_ca_keys = cfg.trusted_ca_keys_data;
     SSL_CTX* ctx = nullptr;
-    const Server::certificate_config_t cert_config = {
-        cfg.certificate_chain_file,
-        nullptr,
-        cfg.private_key_file,
-        cfg.private_key_password,
-    };
+    Server::certificate_config_t cert_config{};
+    cert_config.certificate_chain_file = cfg.certificate_chain_file;
+    cert_config.private_key_file = cfg.private_key_file;
+    cert_config.private_key_password = cfg.private_key_password;
     auto result = configure_ssl_ctx(false, ctx, cfg.ciphersuites, cfg.cipher_list, cert_config, false);
+    if (result && cfg.min_proto_version != 0) {
+        if (SSL_CTX_set_min_proto_version(ctx, cfg.min_proto_version) == 0) {
+            log_error("SSL_CTX_set_min_proto_version");
+            result = false;
+        }
+    }
     if (result) {
         int mode = SSL_VERIFY_NONE;
 

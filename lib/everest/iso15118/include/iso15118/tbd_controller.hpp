@@ -22,7 +22,7 @@
 namespace iso15118 {
 
 struct TbdConfig {
-    config::SSLConfig ssl{config::CertificateBackend::EVEREST_LAYOUT, {}, {}, {}, {}, {}, {}};
+    config::SSLConfig ssl{};
     std::string interface_name;
     config::TlsNegotiationStrategy tls_negotiation_strategy{config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER};
     bool enable_sdp_server{true};
@@ -67,6 +67,8 @@ private:
 
     static constexpr uint32_t V2G_COMMUNICATION_SETUP_TIMEOUT_MS{18000};
     std::optional<Timeout> communication_setup_timeout;
+
+    config::SSLConfig m_ssl_config;
 };
 
 } // namespace iso15118
