@@ -87,6 +87,36 @@ TEST(endpoint_test, equality_distinguishes_port) {
     EXPECT_TRUE(a != b);
 }
 
+TEST(endpoint_test, v4_mapped_detected_and_unmapped) {
+    // Build a v4-mapped endpoint the way recvfrom on a dual-stack socket would.
+    sockaddr_storage ss{};
+    auto* s6 = reinterpret_cast<sockaddr_in6*>(&ss);
+    s6->sin6_family = AF_INET6;
+    s6->sin6_port = htons(40123);
+    inet_pton(AF_INET6, "::ffff:127.0.0.1", &s6->sin6_addr);
+    endpoint mapped(ss, sizeof(sockaddr_in6));
+
+    EXPECT_TRUE(mapped.is_v4_mapped());
+    auto v4 = mapped.as_v4();
+    EXPECT_EQ(v4.family(), AF_INET);
+    EXPECT_EQ(v4.addr_str(), "127.0.0.1");
+    EXPECT_EQ(v4.port(), 40123);
+}
+
+TEST(endpoint_test, native_v6_is_not_v4_mapped_and_as_v4_is_empty) {
+    endpoint v6("::1", 9000);
+    EXPECT_FALSE(v6.is_v4_mapped());
+    auto e = v6.as_v4();
+    EXPECT_EQ(e.family(), AF_UNSPEC);
+    EXPECT_EQ(e.sa_len(), 0);
+}
+
+TEST(endpoint_test, already_v4_is_not_mapped_and_as_v4_is_empty) {
+    endpoint v4("127.0.0.1", 1234);
+    EXPECT_FALSE(v4.is_v4_mapped());
+    EXPECT_EQ(v4.as_v4().family(), AF_UNSPEC);
+}
+
 // The raw sockaddr/len pair must be directly usable by sendto(): send one
 // datagram to a bound loopback UDP socket and read it back.
 TEST(endpoint_test, sa_usable_by_sendto) {

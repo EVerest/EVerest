@@ -114,6 +114,27 @@ std::string const& endpoint::iface() const {
     return m_iface;
 }
 
+bool endpoint::is_v4_mapped() const {
+    if (m_storage.ss_family != AF_INET6) {
+        return false;
+    }
+    auto const* s6 = reinterpret_cast<sockaddr_in6 const*>(&m_storage);
+    return IN6_IS_ADDR_V4MAPPED(&s6->sin6_addr);
+}
+
+endpoint endpoint::as_v4() const {
+    if (not is_v4_mapped()) {
+        return endpoint{};
+    }
+    auto const* s6 = reinterpret_cast<sockaddr_in6 const*>(&m_storage);
+    sockaddr_storage ss{};
+    auto* s4 = reinterpret_cast<sockaddr_in*>(&ss);
+    s4->sin_family = AF_INET;
+    s4->sin_port = s6->sin6_port; // network order preserved
+    std::memcpy(&s4->sin_addr.s_addr, reinterpret_cast<uint8_t const*>(&s6->sin6_addr) + 12, 4);
+    return endpoint(ss, sizeof(sockaddr_in));
+}
+
 bool endpoint::operator==(endpoint const& other) const {
     if (m_storage.ss_family != other.m_storage.ss_family) {
         return false;
