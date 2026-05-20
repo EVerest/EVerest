@@ -834,4 +834,68 @@ TEST_F(MessageQueueTest, test_boot_notification_survives_when_only_message_in_no
     EXPECT_TRUE(boot_sent) << "BootNotification was dropped from the queue!";
 }
 
+// Mismatched-uid CallResult must emit a CallError(RpcFrameworkError) outbound and
+// resolve the in-flight waiter with offline=true so the caller does not stall on
+// the in-flight timeout timer.
+TEST_F(MessageQueueTest, test_mismatching_uid_callresult_emits_rpc_framework_error) {
+    EXPECT_CALL(send_callback_mock, Call(json{2, "0", "non_transactional", json{{"data", "x"}}}))
+        .WillOnce(MarkAndReturn(true));
+    EXPECT_CALL(send_callback_mock, Call(json::array({4, "bogus-uid", "RpcFrameworkError",
+                                                      "messageId does not match in-flight call", json::object()})))
+        .WillOnce(MarkAndReturn(true));
+
+    Call<TestRequest> call;
+    call.msg.type = TestMessageType::NON_TRANSACTIONAL;
+    call.msg.data = "x";
+    call.uniqueId = "0";
+    auto future = message_queue->push_call_async(json(call));
+
+    wait_for_calls(1);
+
+    message_queue->receive(json::array({3, "bogus-uid", json::object()}).dump());
+
+    wait_for_calls(2);
+
+    auto status = future.wait_for(std::chrono::seconds(1));
+    ASSERT_EQ(status, std::future_status::ready);
+    auto enhanced = future.get();
+    EXPECT_TRUE(enhanced.offline);
+}
+
+// Unsolicited CallResult (no in-flight) must emit a CallError(RpcFrameworkError).
+TEST_F(MessageQueueTest, test_unsolicited_callresult_emits_rpc_framework_error) {
+    EXPECT_CALL(send_callback_mock, Call(json::array({4, "stray-uid", "RpcFrameworkError",
+                                                      "Received unsolicited CallResult/CallError", json::object()})))
+        .WillOnce(MarkAndReturn(true));
+
+    message_queue->receive(json::array({3, "stray-uid", json::object()}).dump());
+
+    wait_for_calls(1);
+}
+
+// CallError variant of the mismatched-uid path: same outbound + immediate waiter resolve.
+TEST_F(MessageQueueTest, test_mismatching_uid_callerror_emits_rpc_framework_error) {
+    EXPECT_CALL(send_callback_mock, Call(json{2, "0", "non_transactional", json{{"data", "x"}}}))
+        .WillOnce(MarkAndReturn(true));
+    EXPECT_CALL(send_callback_mock, Call(json::array({4, "other-uid", "RpcFrameworkError",
+                                                      "messageId does not match in-flight call", json::object()})))
+        .WillOnce(MarkAndReturn(true));
+
+    Call<TestRequest> call;
+    call.msg.type = TestMessageType::NON_TRANSACTIONAL;
+    call.msg.data = "x";
+    call.uniqueId = "0";
+    auto future = message_queue->push_call_async(json(call));
+
+    wait_for_calls(1);
+
+    message_queue->receive(json::array({4, "other-uid", "GenericError", "", json::object()}).dump());
+
+    wait_for_calls(2);
+
+    auto status = future.wait_for(std::chrono::seconds(1));
+    ASSERT_EQ(status, std::future_status::ready);
+    EXPECT_TRUE(future.get().offline);
+}
+
 } // namespace ocpp

@@ -849,24 +849,31 @@ public:
             }
         }
 
-        // TODO(kai): what happens if we receive a CallResult or CallError out of order?
         if (enhanced_message.messageTypeId == MessageTypeId::CALLRESULT ||
             enhanced_message.messageTypeId == MessageTypeId::CALLERROR) {
             {
                 const std::lock_guard<std::recursive_mutex> lk(this->next_message_mutex);
                 next_message_to_send.reset();
             }
-            // we need to remove Call messages from in_flight if we receive a CallResult OR a CallError
-
-            // TODO(kai): we need to do some error handling in the CallError case
             std::unique_lock<std::recursive_mutex> lk(this->message_mutex);
             if (this->in_flight == nullptr) {
-                EVLOG_error << "Received a CALLRESULT OR CALLERROR without a message in flight, this should not happen";
+                EVLOG_error << "Received a CALLRESULT OR CALLERROR without a message in flight; "
+                               "replying with RpcFrameworkError for uid "
+                            << enhanced_message.uniqueId;
+                this->push_call_error(CallError{enhanced_message.uniqueId, "RpcFrameworkError",
+                                                "Received unsolicited CallResult/CallError", json::object()});
                 return enhanced_message;
             }
             if (this->in_flight->uniqueId() != enhanced_message.uniqueId) {
                 EVLOG_error << "Received a CALLRESULT OR CALLERROR with mismatching uid: "
                             << this->in_flight->uniqueId() << " != " << enhanced_message.uniqueId;
+                EnhancedMessage<M> stale;
+                stale.uniqueId = this->in_flight->uniqueId();
+                stale.offline = true;
+                this->in_flight->promise.set_value(stale);
+                this->reset_in_flight();
+                this->push_call_error(CallError{enhanced_message.uniqueId, "RpcFrameworkError",
+                                                "messageId does not match in-flight call", json::object()});
                 return enhanced_message;
             }
             if (enhanced_message.messageTypeId == MessageTypeId::CALLERROR) {
