@@ -16,6 +16,10 @@ set(DEVICE_MODEL_CURRENT_CHANGED_RESOURCES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/confi
 set(DEVICE_MODEL_CURRENT_WRONG_RESOURCES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/config/v2/resources_wrong)
 set(DEVICE_MODEL_EXAMPLE_CONFIG_LOCATION_V2 "${CMAKE_CURRENT_BINARY_DIR}/resources/example_config/v2/component_config")
 set(DEVICE_MODEL_CURRENT_EXAMPLE_CONFIG_LOCATION_V2 "${PROJECT_SOURCE_DIR}/config/common/component_config")
+# Test-only DER controller config, imported into the example config above for the unit tests only.
+# Kept out of the shipped library config so DER is not enabled by default; the values live here
+# until a proper interface fills them dynamically.
+set(DEVICE_MODEL_TEST_DER_CONFIG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/config/v2/DCDERCtrlr_1.json")
 set(TEST_PROFILES_LOCATION_V16 "${CMAKE_CURRENT_BINARY_DIR}/resources/profiles/v16")
 set(TEST_PROFILES_LOCATION_V2 "${CMAKE_CURRENT_BINARY_DIR}/resources/profiles/v2")
 set(TEST_PROFILES_LOCATION_V21 "${CMAKE_CURRENT_BINARY_DIR}/resources/profiles/v21")
