@@ -747,34 +747,6 @@ int Manager::run() {
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core_);
     
-    bool cfg_api_read_only = false;
-    std::unique_ptr<Everest::api::configuration::ConfigurationAPI> configuration_api;
-    if (vm.count("configuration-api")) {
-        cfg_api_read_only = vm["configuration-api"].as<std::string>() != "rw";
-        if (cfg_api_read_only) {
-            EVLOG_info << "Starting ConfigurationAPI in read-only mode";
-        } else {
-            EVLOG_info << "Starting ConfigurationAPI in read-write mode";
-        }
-        configuration_api = std::make_unique<Everest::api::configuration::ConfigurationAPI>(
-            *mqtt_abstraction, *config_service_core, cfg_api_read_only);
-    }
-    std::unique_ptr<Everest::api::lifecycle::LifecycleAPI> lifecycle_api;
-    if (vm.count("lifecycle-api")) {
-        bool lc_api_read_only = vm["lifecycle-api"].as<std::string>() != "rw";
-        if (lc_api_read_only) {
-            EVLOG_info << "Starting LifecycleAPI in read-only mode";
-        } else {
-            EVLOG_info << "Starting LifecycleAPI in read-write mode";
-        }
-        lifecycle_api = std::make_unique<Everest::api::lifecycle::LifecycleAPI>(
-            *mqtt_abstraction, *config_service_core,
-            configuration_api ? (cfg_api_read_only ? Everest::api::lifecycle::ConfigurationApiStatus::AvailableRO
-                                                   : Everest::api::lifecycle::ConfigurationApiStatus::AvailableRW)
-                              : Everest::api::lifecycle::ConfigurationApiStatus::NotAvailable,
-            lc_api_read_only);
-    }
-
     config_service_core_->register_set_runtime_parameter_handler(
         [&config_service](const everest::config::ConfigurationParameterIdentifier& cfg_param_id,
                           const std::string& value) {
