@@ -407,30 +407,6 @@ void Manager::shutdown_modules(const std::map<pid_t, std::string>& modules, Mana
 
 namespace {
 
-/// \brief Select configuration boot mode from CLI options.
-ConfigBootMode parse_config_boot_mode(const std::string& config_opt, const std::string& db_opt, const bool db_init) {
-    if (config_opt.empty() and db_opt.empty()) {
-        // no config or db option given, use default
-        return ConfigBootMode::YamlFile;
-    }
-    if (!config_opt.empty() && !db_opt.empty()) {
-        if (db_init == false) {
-            throw BootException("Both --config and --db options are set, but no --db-init option is given. "
-                                "This is not allowed.");
-        }
-        return ConfigBootMode::DatabaseInit;
-    }
-    if (!config_opt.empty()) {
-        // only config option given, use yaml file
-        return ConfigBootMode::YamlFile;
-    }
-    if (!db_opt.empty()) {
-        // only db option given, use database
-        return ConfigBootMode::Database;
-    }
-    throw std::logic_error("Could not parse config boot source, this should never happen.");
-}
-
 /// \brief Disconnect MQTT and perform manager process cleanup.
 void cleanup(MQTTAbstraction& mqtt_abstraction) {
     mqtt_abstraction.disconnect();
@@ -632,7 +608,7 @@ int Manager::run() {
     const auto config_opt = parse_string_option(vm_, "config");
     const auto db_opt = parse_string_option(vm_, "db");
 
-    const bool reset_from_yaml = (vm.count("reset-from-yaml") != 0);
+    const bool reset_from_yaml = (vm_.count("reset-from-yaml") != 0);
     if (config_opt.empty()) {
         throw BootException("--config is required. A YAML config is always needed to provide ManagerSettings.");
     }
@@ -708,7 +684,7 @@ int Manager::run() {
 
     std::shared_ptr<ManagerConfig> config; // TODO: maybe this can stay unique when we re-work start_modules()
     try {
-        config = load_and_validate_config(ms);
+        config = load_and_validate_config(ms, db_storage, db_storage_has_module_configs, preloaded_module_configs);
     } catch (...) {
         return EXIT_FAILURE;
     }
@@ -779,8 +755,8 @@ int Manager::run() {
 
     bool cfg_api_read_only = false;
     std::unique_ptr<Everest::api::configuration::ConfigurationAPI> configuration_api;
-    if (vm.count("configuration-api")) {
-        cfg_api_read_only = vm["configuration-api"].as<std::string>() != "rw";
+    if (vm_.count("configuration-api")) {
+        cfg_api_read_only = vm_["configuration-api"].as<std::string>() != "rw";
         if (cfg_api_read_only) {
             EVLOG_info << "Starting ConfigurationAPI in read-only mode";
         } else {
@@ -790,8 +766,8 @@ int Manager::run() {
             *mqtt_abstraction, *config_service_core, cfg_api_read_only);
     }
     std::unique_ptr<Everest::api::lifecycle::LifecycleAPI> lifecycle_api;
-    if (vm.count("lifecycle-api")) {
-        bool lc_api_read_only = vm["lifecycle-api"].as<std::string>() != "rw";
+    if (vm_.count("lifecycle-api")) {
+        bool lc_api_read_only = vm_["lifecycle-api"].as<std::string>() != "rw";
         if (lc_api_read_only) {
             EVLOG_info << "Starting LifecycleAPI in read-only mode";
         } else {
@@ -878,9 +854,11 @@ std::string_view Manager::state_to_string(ManagerState state) const {
     }
 }
 
-std::shared_ptr<ManagerConfig>
-Manager::loadAndValidateConfig(const ManagerSettings& ms, std::unique_ptr<everest::config::SqliteStorage>& db_storage,
-                               bool db_storage_has_module_configs) const {
+// TODO(CB): this parameters list is a bit long(?)
+std::shared_ptr<ManagerConfig> Manager::load_and_validate_config(
+    const ManagerSettings& ms, std::unique_ptr<everest::config::SqliteStorage>& db_storage,
+    bool db_storage_has_module_configs,
+    std::optional<everest::config::ModuleConfigurations>& preloaded_module_configs) const {
     const auto start_time = std::chrono::system_clock::now();
     std::shared_ptr<ManagerConfig> config;
     try {
