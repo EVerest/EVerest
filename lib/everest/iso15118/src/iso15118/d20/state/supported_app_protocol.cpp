@@ -17,7 +17,7 @@ namespace iso15118::d20::state {
 constexpr auto ISO20_DC_NAMESPACE = "urn:iso:std:iso:15118:-20:DC";
 constexpr auto ISO20_AC_NAMESPACE = "urn:iso:std:iso:15118:-20:AC";
 constexpr auto ISO20_DER_IEC_NAMESPACE = "urn:iso:std:iso:15118:-20:AC-DER-IEC";
-// constexpr auto ISO20_DER_SAE_NAMESPACE = "urn:iso:std:iso:15118:-20:AC-DER-SAE";
+constexpr auto ISO20_DER_SAE_NAMESPACE = "urn:iso:std:iso:15118:-20:AC-DER-SAE";
 
 using ResponseCode = message_20::SupportedAppProtocolResponse::ResponseCode;
 
@@ -32,6 +32,7 @@ message_20::SupportedAppProtocolResponse handle_request(const message_20::Suppor
         if (protocol.protocol_namespace.compare(ISO20_DC_NAMESPACE) == 0 or
             protocol.protocol_namespace.compare(ISO20_AC_NAMESPACE) == 0 or
             protocol.protocol_namespace.compare(ISO20_DER_IEC_NAMESPACE) == 0 or
+            protocol.protocol_namespace.compare(ISO20_DER_SAE_NAMESPACE) == 0 or
             protocol.protocol_namespace.compare(custom_protocol_namespace.value_or("")) == 0) {
             ev_supported_protocols[protocol.priority] = protocol.schema_id;
         }
@@ -80,6 +81,8 @@ Result SupportedAppProtocol::feed(Event ev) {
                     m_ctx.feedback.selected_protocol("ISO15118-20:AC");
                 } else if (protocol.protocol_namespace.compare(ISO20_DER_IEC_NAMESPACE) == 0) {
                     m_ctx.feedback.selected_protocol("ISO15118-20:AC-DER-IEC");
+                } else if (protocol.protocol_namespace.compare(ISO20_DER_SAE_NAMESPACE) == 0) {
+                    m_ctx.feedback.selected_protocol("ISO15118-20:AC-DER-SAE");
                 } else if (protocol.protocol_namespace.compare(m_ctx.session_config.custom_protocol.value_or("")) ==
                            0) {
                     m_ctx.feedback.selected_protocol(m_ctx.session_config.custom_protocol.value());
