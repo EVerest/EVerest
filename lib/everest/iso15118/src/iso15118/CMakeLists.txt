@@ -69,6 +69,7 @@ target_sources(iso15118
         message/session_stop.cpp
         message/ac_der_charge_parameter_discovery.cpp
         message/ac_der_charge_loop.cpp
+        message/ac_der_sae_charge_parameter_discovery.cpp
 
         tbd_controller.cpp    
 )
