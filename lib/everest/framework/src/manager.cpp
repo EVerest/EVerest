@@ -766,37 +766,6 @@ int Manager::run() {
             }
         });
 
-    bool cfg_api_read_only = false;
-    std::unique_ptr<Everest::api::configuration::ConfigurationAPI> configuration_api;
-    if (vm.count("configuration-api")) {
-        cfg_api_read_only = vm["configuration-api"].as<std::string>() != "rw";
-        if (cfg_api_read_only) {
-            EVLOG_info << "Starting ConfigurationAPI in read-only mode";
-        } else {
-            EVLOG_info << "Starting ConfigurationAPI in read-write mode";
-        }
-        configuration_api = std::make_unique<Everest::api::configuration::ConfigurationAPI>(
-            *mqtt_abstraction, *config_service_core, cfg_api_read_only);
-    }
-    std::unique_ptr<Everest::api::lifecycle::LifecycleAPI> lifecycle_api;
-    if (vm.count("lifecycle-api")) {
-        bool lc_api_read_only = vm["lifecycle-api"].as<std::string>() != "rw";
-        if (lc_api_read_only) {
-            EVLOG_info << "Starting LifecycleAPI in read-only mode";
-        } else {
-            EVLOG_info << "Starting LifecycleAPI in read-write mode";
-        }
-        lifecycle_api = std::make_unique<Everest::api::lifecycle::LifecycleAPI>(
-            *mqtt_abstraction, *config_service_core,
-            configuration_api ? (cfg_api_read_only ? Everest::api::lifecycle::ConfigurationApiStatus::AvailableRO
-                                                   : Everest::api::lifecycle::ConfigurationApiStatus::AvailableRW)
-                              : Everest::api::lifecycle::ConfigurationApiStatus::NotAvailable,
-            lc_api_read_only);
-    }
-
-    RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
-                               ms,     status_fifo,       retain_topics};
-
     register_state_transition_handler([this](ManagerState from, ManagerState to) {
         if (to == ManagerState::Running) {
             config_service_core_->set_modules_running();
@@ -871,15 +840,6 @@ int Manager::run() {
                 }
                 return ret;
             });
-
-        register_state_transition_handler([this, &lifecycle_api](ManagerState from, ManagerState to) {
-            // TODO(CB): Might want to interprete some more to-states as "running"
-            if (to == ManagerState::Running) {
-                lifecycle_api->modules_started_running();
-            } else if (from == ManagerState::Running) {
-                lifecycle_api->modules_stopped_running();
-            }
-        });
     }
 
     if (not boot_into_idle and runtime_ctx_has_valid_config) {
