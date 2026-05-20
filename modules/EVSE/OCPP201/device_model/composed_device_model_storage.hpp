@@ -48,6 +48,7 @@ public:
     virtual ocpp::v2::ClearMonitoringStatusEnum clear_variable_monitor(int monitor_id, bool allow_protected) override;
     virtual int32_t clear_custom_variable_monitors() override;
     virtual void check_integrity() override;
+    virtual bool create_network_configuration_slot_from_default_schema(std::int32_t new_slot) override;
 
 private:
     ///

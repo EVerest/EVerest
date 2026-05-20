@@ -205,6 +205,13 @@ public:
     /// \brief Check data integrity of the device model
     /// \param evse_connector_structure The EVSE connector structure
     virtual void check_integrity(const std::map<std::int32_t, std::int32_t>& evse_connector_structure) = 0;
+
+    /// \brief Create a fresh NetworkConfiguration_<new_slot> from the embedded default schema.
+    /// \param new_slot  New NetworkConfiguration instance to create.
+    /// \return true on success; false on failure.
+    virtual bool create_network_configuration_slot_from_default_schema(std::int32_t /*new_slot*/) {
+        return false;
+    }
 };
 
 } // namespace v2

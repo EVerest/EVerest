@@ -4,6 +4,8 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
+#include <filesystem>
+
 #include <boost/asio/io_context.hpp>
 
 #include <component_state_manager_mock.hpp>
@@ -18,6 +20,7 @@
 #include <ocpp/common/message_queue.hpp>
 #include <ocpp/common/ocpp_logging.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
+#include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/device_model_interface.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
 #include <ocpp/v2/functional_blocks/availability.hpp>
@@ -28,6 +31,7 @@
 #include <ocpp/v2/functional_blocks/security.hpp>
 #include <ocpp/v2/functional_blocks/tariff_and_cost.hpp>
 #include <ocpp/v2/functional_blocks/transaction.hpp>
+#include <ocpp/v2/init_device_model_db.hpp>
 #include <ocpp/v2/messages/Get15118EVCertificate.hpp>
 #include <ocpp/v2/messages/SetNetworkProfile.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
@@ -381,6 +385,56 @@ TEST_F(NetworkConfigSyncTest, MigrateFromBlobPreservesBlobBasicAuthPassword) {
     ASSERT_TRUE(result.has_value());
     ASSERT_TRUE(result->basicAuthPassword.has_value());
     EXPECT_EQ(result->basicAuthPassword->get(), "SlotSpecificPassword!");
+}
+
+TEST_F(NetworkConfigSyncTest, MigrateFromBlobPullsIdentityFromSecurityCtrlr) {
+    NetworkConfigurationComponentVariables::clear_slot_in_device_model(*dm, 1);
+
+    // Set a known Identity in SecurityCtrlr (the global charging-station identifier)
+    const std::string expected_identity = "CP-001-station-alpha";
+    dm->set_read_only_value(ControllerComponentVariables::SecurityCtrlrIdentity.component,
+                            ControllerComponentVariables::SecurityCtrlrIdentity.variable.value(), AttributeEnum::Actual,
+                            expected_identity, "test");
+
+    // Build a blob whose profile does NOT contain an identity (typical legacy format)
+    SetNetworkProfileRequest req;
+    req.configurationSlot = 1;
+    req.connectionData = make_basic_profile(1, "wss://id-migration.example.com/ocpp");
+    ASSERT_FALSE(req.connectionData.identity.has_value());
+
+    seed_blob(*dm, make_blob({req}));
+    NetworkConfigurationComponentVariables::migrate_from_blob_if_needed(*dm);
+
+    // After migration, the per-slot Identity must have been populated from SecurityCtrlr
+    auto result = NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 1);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_TRUE(result->identity.has_value())
+        << "Migration must populate per-slot Identity from SecurityCtrlr when blob has none";
+    EXPECT_EQ(result->identity->get(), expected_identity);
+}
+
+TEST_F(NetworkConfigSyncTest, MigrateFromBlobPreservesBlobIdentity) {
+    NetworkConfigurationComponentVariables::clear_slot_in_device_model(*dm, 1);
+
+    // Set a different Identity in SecurityCtrlr
+    dm->set_read_only_value(ControllerComponentVariables::SecurityCtrlrIdentity.component,
+                            ControllerComponentVariables::SecurityCtrlrIdentity.variable.value(), AttributeEnum::Actual,
+                            "global-station-identity", "test");
+
+    // Build a blob whose profile DOES contain an identity
+    SetNetworkProfileRequest req;
+    req.configurationSlot = 1;
+    req.connectionData = make_basic_profile(1, "wss://id-migration.example.com/ocpp");
+    req.connectionData.identity = CiString<48>("slot-specific-identity");
+
+    seed_blob(*dm, make_blob({req}));
+    NetworkConfigurationComponentVariables::migrate_from_blob_if_needed(*dm);
+
+    // The per-slot identity from the blob must be used, not the SecurityCtrlr identity
+    auto result = NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 1);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_TRUE(result->identity.has_value());
+    EXPECT_EQ(result->identity->get(), "slot-specific-identity");
 }
 
 // ---------------------------------------------------------------------------
@@ -1722,6 +1776,411 @@ TEST_F(ProvisioningSetNetworkProfileTest, HappyPathReturnsAccepted) {
     provisioning->handle_message(em);
 
     EXPECT_EQ(response.status, SetNetworkProfileStatusEnum::Accepted);
+}
+
+// ---------------------------------------------------------------------------
+// Migration survives missing NetworkConfiguration JSON files
+//
+// `InitDeviceModelDb::initialize_database` used to delete every component row
+// in the database that no longer had a matching JSON in the component config
+// directory. That pruning broke blob migration on targets where the operator
+// updated the install without re-shipping `NetworkConfiguration_<N>.json`: the
+// per-slot device-model components vanished, the blob retry never had a
+// migration target, and the operator's connection profiles became unrecoverable.
+//
+// The fix replaced the prune with a warning, so the orphan rows are preserved
+// and a later `migrate_from_blob_if_needed` can still write into the existing
+// per-slot components. The tests below exercise that behavior end-to-end with
+// an on-disk database (so `InitDeviceModelDb`'s ctor sets `database_exists`
+// via the filesystem check on the second init, without test-only hacks).
+// ---------------------------------------------------------------------------
+
+class MigrationWithoutJsonTest : public ::testing::Test {
+protected:
+    std::filesystem::path db_path;
+    std::string config_path = "./resources/example_config/v2/component_config";
+    std::string migration_files_path = "./resources/v2/device_model_migration_files";
+
+    void SetUp() override {
+        const std::string unique = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+        db_path = std::filesystem::temp_directory_path() / ("libocpp_no_prune_" + unique + ".db");
+        std::error_code ec;
+        std::filesystem::remove(db_path, ec);
+    }
+
+    void TearDown() override {
+        std::error_code ec;
+        std::filesystem::remove(db_path, ec);
+    }
+
+    // Return a copy of the component config map with every NetworkConfiguration
+    // entry whose instance is `instance_to_drop` removed. Simulates a target
+    // where `NetworkConfiguration_<instance>.json` was not installed.
+    static std::map<ComponentKey, std::vector<DeviceModelVariable>>
+    drop_network_configuration_instance(std::map<ComponentKey, std::vector<DeviceModelVariable>> configs,
+                                        const std::string& instance_to_drop) {
+        for (auto it = configs.begin(); it != configs.end();) {
+            const auto& key = it->first;
+            const bool is_network_config = key.name == "NetworkConfiguration";
+            const bool matches_instance = key.instance.has_value() && key.instance.value() == instance_to_drop;
+            if (is_network_config && matches_instance) {
+                it = configs.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        return configs;
+    }
+};
+
+// The first init creates NetworkConfiguration_1 and _2 from the JSON config.
+// The second init runs with a config map that lacks NetworkConfiguration_2,
+// simulating the JSON file being absent. The orphan row must NOT be removed,
+// so that a later blob migration can still write into slot 2.
+TEST_F(MigrationWithoutJsonTest, OrphanNetworkConfigurationComponentSurvivesReinit) {
+    const auto full = get_all_component_configs(config_path);
+    {
+        InitDeviceModelDb db(db_path, migration_files_path);
+        ASSERT_NO_THROW(db.initialize_database(full, true));
+    }
+
+    // Sanity: the first init must have populated NetworkConfiguration_2 from JSON,
+    // otherwise the rest of the test is vacuous.
+    bool slot_2_in_first_init = false;
+    for (const auto& [key, _vars] : full) {
+        if (key.name == "NetworkConfiguration" && key.instance.has_value() && key.instance.value() == "2") {
+            slot_2_in_first_init = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(slot_2_in_first_init) << "Precondition: example component_config must declare NetworkConfiguration_2";
+
+    const auto reduced = drop_network_configuration_instance(full, "2");
+    {
+        InitDeviceModelDb db(db_path, migration_files_path);
+        ASSERT_NO_THROW(db.initialize_database(reduced, false));
+    }
+
+    // Open the DB through DeviceModel and confirm slot 2 variables still resolve.
+    auto storage = std::make_unique<DeviceModelStorageSqlite>(db_path);
+    DeviceModel dm(std::move(storage));
+
+    const auto slot_2_url_cv = NetworkConfigurationComponentVariables::get_component_variable(
+        2, NetworkConfigurationComponentVariables::OcppCsmsUrl);
+    auto status_after_reinit =
+        dm.set_value(slot_2_url_cv.component, slot_2_url_cv.variable.value(), AttributeEnum::Actual,
+                     "wss://orphan-survived.example.com/ocpp", "test", true);
+    EXPECT_EQ(status_after_reinit, SetVariableStatusEnum::Accepted)
+        << "NetworkConfiguration_2 must still be writable after the JSON config was removed";
+}
+
+// Same scenario but exercises the full migration path: seed a legacy blob with
+// a profile for slot 2 in a fresh DB, then re-init with the reduced config (no
+// NetworkConfiguration_2.json), then run migrate_from_blob_if_needed. The
+// migration must succeed because the orphan slot 2 row was preserved.
+TEST_F(MigrationWithoutJsonTest, MigrationSucceedsWhenNetworkConfigurationJsonRemoved) {
+    const auto full = get_all_component_configs(config_path);
+    {
+        InitDeviceModelDb db(db_path, migration_files_path);
+        ASSERT_NO_THROW(db.initialize_database(full, true));
+    }
+
+    // Seed the legacy blob and clear slot 2's defaults so the migration must
+    // actually write into the slot (rather than skipping it as already populated).
+    {
+        auto storage = std::make_unique<DeviceModelStorageSqlite>(db_path);
+        DeviceModel dm(std::move(storage));
+        NetworkConfigurationComponentVariables::clear_slot_in_device_model(dm, 1);
+        NetworkConfigurationComponentVariables::clear_slot_in_device_model(dm, 2);
+
+        SetNetworkProfileRequest req;
+        req.configurationSlot = 2;
+        req.connectionData = make_basic_profile(1, "wss://post-orphan.example.com/ocpp");
+        seed_blob(dm, make_blob({req}));
+    }
+
+    // Re-init the DB without NetworkConfiguration_2.json. Pre-fix this would have
+    // deleted the slot 2 component and the migration below would silently fail.
+    const auto reduced = drop_network_configuration_instance(full, "2");
+    {
+        InitDeviceModelDb db(db_path, migration_files_path);
+        ASSERT_NO_THROW(db.initialize_database(reduced, false));
+    }
+
+    auto storage = std::make_unique<DeviceModelStorageSqlite>(db_path);
+    DeviceModel dm(std::move(storage));
+
+    NetworkConfigurationComponentVariables::migrate_from_blob_if_needed(dm);
+
+    auto result = NetworkConfigurationComponentVariables::read_profile_from_device_model(dm, 2);
+    ASSERT_TRUE(result.has_value())
+        << "Slot 2 must be populated after migration even though NetworkConfiguration_2.json is missing";
+    EXPECT_EQ(result->ocppCsmsUrl.get(), "wss://post-orphan.example.com/ocpp");
+    EXPECT_EQ(read_blob(dm).size(), 0u) << "Blob must be cleared once migration writes every profile into its DM slot";
+}
+
+// Drops NetworkConfiguration_1 and _2 from the reduced config but keeps the
+// previously inserted rows. Both slots must survive the reinit (one warning
+// per orphan, no deletions), and migration into both slots must complete.
+TEST_F(MigrationWithoutJsonTest, MigrationSucceedsWhenAllNetworkConfigurationJsonRemoved) {
+    const auto full = get_all_component_configs(config_path);
+    {
+        InitDeviceModelDb db(db_path, migration_files_path);
+        ASSERT_NO_THROW(db.initialize_database(full, true));
+    }
+
+    {
+        auto storage = std::make_unique<DeviceModelStorageSqlite>(db_path);
+        DeviceModel dm(std::move(storage));
+        NetworkConfigurationComponentVariables::clear_slot_in_device_model(dm, 1);
+        NetworkConfigurationComponentVariables::clear_slot_in_device_model(dm, 2);
+
+        SetNetworkProfileRequest req1;
+        req1.configurationSlot = 1;
+        req1.connectionData = make_basic_profile(1, "wss://no-json-slot1.example.com/ocpp");
+
+        SetNetworkProfileRequest req2;
+        req2.configurationSlot = 2;
+        req2.connectionData = make_basic_profile(2, "wss://no-json-slot2.example.com/ocpp");
+
+        seed_blob(dm, make_blob({req1, req2}));
+    }
+
+    auto reduced = drop_network_configuration_instance(full, "1");
+    reduced = drop_network_configuration_instance(reduced, "2");
+    {
+        InitDeviceModelDb db(db_path, migration_files_path);
+        ASSERT_NO_THROW(db.initialize_database(reduced, false));
+    }
+
+    auto storage = std::make_unique<DeviceModelStorageSqlite>(db_path);
+    DeviceModel dm(std::move(storage));
+
+    NetworkConfigurationComponentVariables::migrate_from_blob_if_needed(dm);
+
+    auto r1 = NetworkConfigurationComponentVariables::read_profile_from_device_model(dm, 1);
+    auto r2 = NetworkConfigurationComponentVariables::read_profile_from_device_model(dm, 2);
+    ASSERT_TRUE(r1.has_value()) << "Slot 1 must be populated even with NetworkConfiguration_1.json missing";
+    ASSERT_TRUE(r2.has_value()) << "Slot 2 must be populated even with NetworkConfiguration_2.json missing";
+    EXPECT_EQ(r1->ocppCsmsUrl.get(), "wss://no-json-slot1.example.com/ocpp");
+    EXPECT_EQ(r2->ocppCsmsUrl.get(), "wss://no-json-slot2.example.com/ocpp");
+    EXPECT_EQ(read_blob(dm).size(), 0u);
+}
+
+// Direct storage-level coverage of the create entry point: with no NetworkConfiguration
+// components in the DB at all, the new method must insert a complete COMPONENT + VARIABLE +
+// VARIABLE_CHARACTERISTICS + VARIABLE_ATTRIBUTE tree under the new instance, and the next
+// `get_device_model()` snapshot must contain a NetworkConfiguration entry at that instance.
+TEST_F(MigrationWithoutJsonTest, StorageCreatesSlotFromEmbeddedSchema) {
+    auto reduced = get_all_component_configs(config_path);
+    reduced = drop_network_configuration_instance(reduced, "1");
+    reduced = drop_network_configuration_instance(reduced, "2");
+
+    {
+        InitDeviceModelDb db(db_path, migration_files_path);
+        ASSERT_NO_THROW(db.initialize_database(reduced, true));
+    }
+
+    DeviceModelStorageSqlite storage(db_path);
+
+    ASSERT_TRUE(storage.create_network_configuration_slot_from_default_schema(3));
+
+    // Repeat create on the same slot must be a no-op (returns false). Refuse to overwrite.
+    EXPECT_FALSE(storage.create_network_configuration_slot_from_default_schema(3));
+
+    const auto model = storage.get_device_model();
+    const VariableMap* slot_3_vars = nullptr;
+    for (const auto& [component, variables] : model) {
+        if (component.name == "NetworkConfiguration" && component.instance.has_value() &&
+            component.instance.value() == "3") {
+            slot_3_vars = &variables;
+            break;
+        }
+    }
+    ASSERT_NE(slot_3_vars, nullptr) << "Created slot must appear in the next get_device_model() snapshot";
+    EXPECT_GT(slot_3_vars->size(), 0u) << "Created slot must expose at least one variable";
+
+    // Pin embedded JSON against accidental field removal: assert the well-known per-slot variables
+    // are present by name.
+    const auto has_var_named = [&](const std::string& name) {
+        for (const auto& [variable, _] : *slot_3_vars) {
+            if (variable.name.get() == name) {
+                return true;
+            }
+        }
+        return false;
+    };
+    EXPECT_TRUE(has_var_named("OcppCsmsUrl"));
+    EXPECT_TRUE(has_var_named("SecurityProfile"));
+    EXPECT_TRUE(has_var_named("OcppInterface"));
+    EXPECT_TRUE(has_var_named("OcppTransport"));
+    EXPECT_TRUE(has_var_named("MessageTimeout"));
+    EXPECT_TRUE(has_var_named("Identity"));
+    EXPECT_TRUE(has_var_named("BasicAuthPassword"));
+}
+
+// First boot on a target that ships without any NetworkConfiguration_<N>.json. The device model
+// holds zero NetworkConfiguration components, so the clone path has no template to copy from.
+// Migration must instead create the slot from the embedded default schema.
+TEST_F(MigrationWithoutJsonTest, MigrationCreatesSlotWhenNoTemplateExists) {
+    auto reduced = get_all_component_configs(config_path);
+    reduced = drop_network_configuration_instance(reduced, "1");
+    reduced = drop_network_configuration_instance(reduced, "2");
+
+    {
+        InitDeviceModelDb db(db_path, migration_files_path);
+        ASSERT_NO_THROW(db.initialize_database(reduced, true));
+    }
+
+    {
+        auto storage = std::make_unique<DeviceModelStorageSqlite>(db_path);
+        DeviceModel dm(std::move(storage));
+
+        SetNetworkProfileRequest req;
+        req.configurationSlot = 3;
+        req.connectionData = make_basic_profile(1, "wss://bootstrap.example.com/ocpp");
+        seed_blob(dm, make_blob({req}));
+    }
+
+    auto storage = std::make_unique<DeviceModelStorageSqlite>(db_path);
+    DeviceModel dm(std::move(storage));
+
+    // Precondition: NO NetworkConfiguration slot should resolve before migration.
+    for (int probe_slot = 1; probe_slot <= 32; ++probe_slot) {
+        const auto probe_cv = NetworkConfigurationComponentVariables::get_component_variable(
+            probe_slot, NetworkConfigurationComponentVariables::OcppCsmsUrl);
+        ASSERT_FALSE(dm.get_variable_meta_data(probe_cv.component, probe_cv.variable.value()).has_value())
+            << "Precondition: NetworkConfiguration_" << probe_slot << " must be absent before create-path migration";
+    }
+
+    NetworkConfigurationComponentVariables::migrate_from_blob_if_needed(dm);
+
+    auto result = NetworkConfigurationComponentVariables::read_profile_from_device_model(dm, 3);
+    ASSERT_TRUE(result.has_value()) << "Slot 3 must be readable after create from the embedded schema";
+    EXPECT_EQ(result->ocppCsmsUrl.get(), "wss://bootstrap.example.com/ocpp");
+    EXPECT_EQ(read_blob(dm).size(), 0u);
+}
+
+// Multi-slot create in one migration pass. Blob seeds profiles for slots 3 and 5 on a
+// target that ships without NetworkConfiguration_<N>.json. Migration must create both
+// slots from the embedded schema and populate each.
+TEST_F(MigrationWithoutJsonTest, MigrationCreatesMultipleSlotsInOnePass) {
+    auto reduced = get_all_component_configs(config_path);
+    reduced = drop_network_configuration_instance(reduced, "1");
+    reduced = drop_network_configuration_instance(reduced, "2");
+
+    {
+        InitDeviceModelDb db(db_path, migration_files_path);
+        ASSERT_NO_THROW(db.initialize_database(reduced, true));
+    }
+
+    {
+        auto storage = std::make_unique<DeviceModelStorageSqlite>(db_path);
+        DeviceModel dm(std::move(storage));
+
+        SetNetworkProfileRequest req3;
+        req3.configurationSlot = 3;
+        req3.connectionData = make_basic_profile(1, "wss://multi-slot-3.example.com/ocpp");
+
+        SetNetworkProfileRequest req5;
+        req5.configurationSlot = 5;
+        req5.connectionData = make_basic_profile(1, "wss://multi-slot-5.example.com/ocpp");
+
+        seed_blob(dm, make_blob({req3, req5}));
+    }
+
+    auto storage = std::make_unique<DeviceModelStorageSqlite>(db_path);
+    DeviceModel dm(std::move(storage));
+
+    NetworkConfigurationComponentVariables::migrate_from_blob_if_needed(dm);
+
+    auto r3 = NetworkConfigurationComponentVariables::read_profile_from_device_model(dm, 3);
+    auto r5 = NetworkConfigurationComponentVariables::read_profile_from_device_model(dm, 5);
+    ASSERT_TRUE(r3.has_value()) << "Slot 3 must be populated after multi-slot create";
+    ASSERT_TRUE(r5.has_value()) << "Slot 5 must be populated after multi-slot create";
+    EXPECT_EQ(r3->ocppCsmsUrl.get(), "wss://multi-slot-3.example.com/ocpp");
+    EXPECT_EQ(r5->ocppCsmsUrl.get(), "wss://multi-slot-5.example.com/ocpp");
+    EXPECT_EQ(read_blob(dm).size(), 0u);
+}
+
+// SecurityCtrlr.Identity exceeds the per-slot CiString<48> length cap. Migration must skip
+// propagation (not crash) and leave the per-slot Identity unset.
+TEST_F(NetworkConfigSyncTest, MigrateFromBlobIgnoresOverlongSecurityCtrlrIdentity) {
+    NetworkConfigurationComponentVariables::clear_slot_in_device_model(*dm, 1);
+
+    // Build a 49-char Identity (per-slot cap is 48).
+    const std::string overlong_identity(49, 'X');
+    dm->set_read_only_value(ControllerComponentVariables::SecurityCtrlrIdentity.component,
+                            ControllerComponentVariables::SecurityCtrlrIdentity.variable.value(), AttributeEnum::Actual,
+                            overlong_identity, "test");
+
+    SetNetworkProfileRequest req;
+    req.configurationSlot = 1;
+    req.connectionData = make_basic_profile(1, "wss://overlong-identity.example.com/ocpp");
+    ASSERT_FALSE(req.connectionData.identity.has_value());
+
+    seed_blob(*dm, make_blob({req}));
+    NetworkConfigurationComponentVariables::migrate_from_blob_if_needed(*dm);
+
+    auto result = NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 1);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result->identity.has_value())
+        << "Migration must skip overflowing SecurityCtrlr.Identity (do not truncate, do not propagate)";
+    EXPECT_EQ(read_blob(*dm).size(), 0u);
+}
+
+// Malformed blob entry: the blob carries one well-formed profile and one that lacks
+// `configurationSlot`. The well-formed slot must be populated; the migration must not abort;
+// the blob must still be cleared (per the unconditional clear policy).
+TEST_F(NetworkConfigSyncTest, MigrateFromBlobSkipsMalformedProfileEntry) {
+    NetworkConfigurationComponentVariables::clear_slot_in_device_model(*dm, 1);
+
+    // Hand-craft a blob with one valid entry and one malformed (missing configurationSlot).
+    json arr = json::array();
+
+    SetNetworkProfileRequest good;
+    good.configurationSlot = 1;
+    good.connectionData = make_basic_profile(1, "wss://good.example.com/ocpp");
+    arr.push_back(json(good));
+
+    // Malformed entry: object with only connectionData, no configurationSlot field.
+    json bad;
+    bad["connectionData"] = json(make_basic_profile(1, "wss://bad.example.com/ocpp"));
+    arr.push_back(bad);
+
+    seed_blob(*dm, arr);
+    NetworkConfigurationComponentVariables::migrate_from_blob_if_needed(*dm);
+
+    auto result = NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 1);
+    ASSERT_TRUE(result.has_value()) << "Well-formed profile must be written even when a sibling is malformed";
+    EXPECT_EQ(result->ocppCsmsUrl.get(), "wss://good.example.com/ocpp");
+    EXPECT_EQ(read_blob(*dm).size(), 0u) << "Blob must be cleared after migration even with malformed siblings";
+}
+
+// After `create_network_configuration_slot_from_default_schema` returns, the freshly created
+// component must be immediately visible to subsequent `set_value` calls without manual cache
+// reload. Pins the in-memory device-model map reload behavior.
+TEST_F(MigrationWithoutJsonTest, CreatedSlotVisibleToSetValueWithoutManualReload) {
+    auto reduced = get_all_component_configs(config_path);
+    reduced = drop_network_configuration_instance(reduced, "1");
+    reduced = drop_network_configuration_instance(reduced, "2");
+
+    {
+        InitDeviceModelDb db(db_path, migration_files_path);
+        ASSERT_NO_THROW(db.initialize_database(reduced, true));
+    }
+
+    auto storage = std::make_unique<DeviceModelStorageSqlite>(db_path);
+    DeviceModel dm(std::move(storage));
+
+    ASSERT_TRUE(dm.create_network_configuration_slot_from_default_schema(7));
+
+    const auto cv = NetworkConfigurationComponentVariables::get_component_variable(
+        7, NetworkConfigurationComponentVariables::OcppCsmsUrl);
+    const auto status = dm.set_value(cv.component, cv.variable.value(), AttributeEnum::Actual,
+                                     "wss://bootstrap-visible.example.com/ocpp", "internal");
+    EXPECT_EQ(status, SetVariableStatusEnum::Accepted)
+        << "set_value into a freshly-created slot must succeed without manual cache reload";
 }
 
 } // namespace ocpp::v2

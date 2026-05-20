@@ -2,6 +2,30 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 exports_files(["config"])
 
+# Mirrors the CMake configure_file step in lib/CMakeLists.txt that embeds the
+# canonical NetworkConfiguration_1 schema into a generated translation unit so
+# blob migration can bootstrap a per-slot component without a filesystem read.
+genrule(
+    name = "network_configuration_default_schema_cpp",
+    srcs = [
+        "lib/ocpp/v2/network_configuration_default_schema.cpp.in",
+        "config/common/component_config/standardized/NetworkConfiguration_1.json",
+    ],
+    outs = ["generated/network_configuration_default_schema.cpp"],
+    cmd = """python3 - "$(location lib/ocpp/v2/network_configuration_default_schema.cpp.in)" "$(location config/common/component_config/standardized/NetworkConfiguration_1.json)" "$@" <<'PYEOF'
+import sys
+tpl_path, json_path, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(tpl_path) as f:
+    tpl = f.read()
+with open(json_path) as f:
+    js = f.read()
+with open(out_path, 'w') as f:
+    f.write(tpl.replace('@OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_JSON@', js))
+PYEOF
+""",
+    visibility = ["//visibility:private"],
+)
+
 cc_library(
     name = "websocketpp_utils",
     hdrs = glob([
@@ -24,7 +48,7 @@ cc_library(
         "lib/ocpp/v16/messages/*.cpp",
         "lib/ocpp/v2/messages/*.cpp",
         "lib/ocpp/v21/messages/*.cpp",
-    ]),
+    ]) + [":network_configuration_default_schema_cpp"],
     hdrs = glob([
         "include/**/*.hpp",
     ]),
