@@ -862,7 +862,15 @@ void Manager::transition_to(ManagerState new_state) {
         return;
     }
     EVLOG_info << "Manager state transition: " << state_to_string(state_) << " -> " << state_to_string(new_state);
+    const auto old_state = state_;
     state_ = new_state;
+    for (const auto& handler : state_transition_handlers_) {
+        handler(old_state, new_state);
+    }
+}
+
+void Manager::register_state_transition_handler(std::function<void(ManagerState, ManagerState)> handler) {
+    state_transition_handlers_.push_back(std::move(handler));
 }
 
 Manager::Manager(const po::variables_map& vm) : vm_(vm) {
