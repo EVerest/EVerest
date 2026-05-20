@@ -274,6 +274,18 @@ void energyImpl::request_energy_from_energy_manager(bool priority_request) {
             e.limits_to_root.ac_number_of_active_phases = mod->ac_nr_phases_active;
         }
 
+        // Cap by PP cable rating so the EnergyManager cannot allocate more than the cable allows
+        if (mod->config.charge_mode == "AC") {
+            const float pp_rating = mod->bsp->read_pp_ampacity();
+            const std::string source_pp = source_base + "/pp_ampacity";
+            for (auto& e : energy_flow_request.schedule_import) {
+                if (e.limits_to_root.ac_max_current_A.has_value() &&
+                    e.limits_to_root.ac_max_current_A.value().value > pp_rating) {
+                    e.limits_to_root.ac_max_current_A = {pp_rating, source_pp};
+                }
+            }
+        }
+
         if (mod->config.charge_mode == "DC") {
             // For DC mode remove amp limit on leave side if any
             for (auto& e : energy_flow_request.schedule_import) {
