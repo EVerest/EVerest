@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "ocpp/v2/profile.hpp"
 #include "everest/logging.hpp"
@@ -44,6 +44,31 @@ std::int32_t elapsed_seconds(const ocpp::DateTime& to, const ocpp::DateTime& fro
 
 ocpp::DateTime floor_seconds(const ocpp::DateTime& dt) {
     return ocpp::DateTime(std::chrono::floor<seconds>(dt.to_time_point()));
+}
+
+std::optional<date::utc_clock::time_point> dynamic_expiry_deadline(const ChargingProfile& profile) {
+    if (profile.chargingProfileKind != ChargingProfileKindEnum::Dynamic || profile.chargingSchedule.empty() ||
+        !profile.chargingSchedule.front().duration.has_value() ||
+        profile.chargingSchedule.front().duration.value() <= 0 || !profile.dynUpdateTime.has_value()) {
+        return std::nullopt;
+    }
+    return profile.dynUpdateTime.value().to_time_point() + seconds(profile.chargingSchedule.front().duration.value());
+}
+
+std::optional<date::utc_clock::time_point> dynamic_pull_deadline(const ChargingProfile& profile) {
+    if (profile.chargingProfileKind != ChargingProfileKindEnum::Dynamic || !profile.dynUpdateInterval.has_value() ||
+        profile.dynUpdateInterval.value() <= 0) {
+        return std::nullopt;
+    }
+    const auto interval = seconds(profile.dynUpdateInterval.value());
+    // Bootstrap (no dynUpdateTime): pull immediately the first time.
+    return profile.dynUpdateTime.has_value() ? profile.dynUpdateTime.value().to_time_point() + interval
+                                             : date::utc_clock::now();
+}
+
+bool dynamic_profile_expired(const ChargingProfile& profile, date::utc_clock::time_point now) {
+    const auto deadline = dynamic_expiry_deadline(profile);
+    return deadline.has_value() && now >= deadline.value();
 }
 
 OperationModeEnum effective_mode(const std::optional<OperationModeEnum>& mode) {
@@ -240,7 +265,8 @@ std::vector<DateTime> calculate_start(const DateTime& in_now, const DateTime& in
         start_times.push_back(start);
         break;
     case ChargingProfileKindEnum::Dynamic:
-        // FIXME: check if other requirements for dynamic exist
+        // Single period anchored at the schedule start; K28 pull/expiry/reactivation are handled
+        // by DynamicScheduleManager and the expiry filter, not the composite start-time logic.
         start_times.push_back(floor_seconds(start));
         break;
     }

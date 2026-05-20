@@ -132,8 +132,10 @@ public:
     using SmartCharging::add_profile;
     using SmartCharging::calculate_composite_schedule;
     using SmartCharging::clear_profiles;
+    using SmartCharging::dynamic_schedule_manager;
     using SmartCharging::get_reported_profiles;
     using SmartCharging::get_valid_profiles;
+    using SmartCharging::get_valid_profiles_for_evse;
     using SmartCharging::SmartCharging;
     using SmartCharging::validate_evse_exists;
     using SmartCharging::validate_phase_conflict;
