@@ -5,6 +5,7 @@
 
 #include <boost/program_options/variables_map.hpp>
 #include <chrono>
+#include <functional>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -338,4 +339,9 @@ private:
     std::vector<ModuleShutdownInfo> shutdown_info_;
     ModulesReadyType modules_ready_; // guarded by modules_ready_mutex_
     std::mutex modules_ready_mutex_;
+    std::vector<std::function<void(ManagerState, ManagerState)>> state_transition_handlers_;
+
+public:
+    /// \brief Register a callback invoked on every state transition with (old_state, new_state).
+    void register_state_transition_handler(std::function<void(ManagerState, ManagerState)> handler);
 };
