@@ -770,8 +770,7 @@ UnsubscribeToken Everest::provide_external_mqtt_handler(const std::string& topic
 void Everest::telemetry_publish(const std::string& topic, const std::string& data) {
     BOOST_LOG_FUNCTION();
 
-    MqttMessagePayload payload{MqttMessageType::ExternalMQTT, data};
-    this->mqtt_abstraction->publish(fmt::format("{}{}", this->telemetry_prefix, topic), payload);
+    this->mqtt_abstraction->publish(fmt::format("{}{}", this->telemetry_prefix, topic), data);
 }
 
 void Everest::telemetry_publish(const std::string& category, const std::string& subcategory, const std::string& type,
