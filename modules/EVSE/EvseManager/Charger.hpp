@@ -430,7 +430,6 @@ private:
     EventQueue<ErrorHandlingEvents> error_handling_event_queue;
 
     // constants
-    static constexpr float CHARGER_ABSOLUTE_MAX_CURRENT{1000.};
     constexpr static int LEGACY_WAKEUP_TIMEOUT{30000};
     constexpr static int PREPARING_TIMEOUT_PAUSED_BY_EV{10000};
     // valid Length of BCB toggles
