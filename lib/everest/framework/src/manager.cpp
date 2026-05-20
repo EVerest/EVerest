@@ -728,10 +728,21 @@ int Manager::run() {
         return EXIT_FAILURE;
     }
 
+    RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
+                               ms,     status_fifo,       retain_topics,   db_storage};
+
     auto config_service_core = std::make_unique<config::ConfigServiceCore>(
         config->get_module_configurations(), ms, std::move(shared_db),
         reset_from_yaml ? std::make_optional<int>(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID)
-                        : std::nullopt);
+                        : std::nullopt,
+        [this, &mqtt_abstraction, &ms]() {
+            handle_initiate_graceful_shutdown(std::chrono::system_clock::now(), false, nullptr, *mqtt_abstraction, ms);
+            return Everest::config::StopModulesResult::Stopping; // TODO(CB): return the correct value here
+        },
+        [this, &runtime_ctx]() {
+            module_handles_ = handle_start_modules(runtime_ctx);
+            return Everest::config::RestartModulesResult::Starting; // TODO(CB): return the correct value here
+        });
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core);
 
@@ -781,8 +792,6 @@ int Manager::run() {
             lc_api_read_only);
     }
 
-    RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
-                               ms,     status_fifo,       retain_topics,   db_storage};
     if (vm_.count("into-idle") == 0) {
         // TODO(CB): handle_start_modules may need to update the db_storage + ctx.config before starting
         // TODO(CB): it may of-course only do so if strictly required (slot_id changed)
