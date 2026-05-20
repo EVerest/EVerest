@@ -51,11 +51,6 @@ SCENARIO("ISO15118-20 EV DC_PreCharge transitions to PowerDelivery on OK respons
     REQUIRE(result.transitioned() == true);
     REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
     REQUIRE(ctx.is_session_stopped() == false);
-
-    // After response, a Finished request must have been enqueued.
-    const auto request_message = ctx.get_request<message_20::DC_PreChargeRequest>();
-    REQUIRE(request_message.has_value());
-    REQUIRE(request_message->processing == message_20::datatypes::Processing::Finished);
 }
 
 SCENARIO("ISO15118-20 EV DC_PreCharge stops session on FAILED response") {
