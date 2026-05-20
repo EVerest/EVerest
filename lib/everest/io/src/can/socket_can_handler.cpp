@@ -2,6 +2,7 @@
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include <algorithm>
+#include <everest/io/can/can_recv_filter.hpp>
 #include <everest/io/can/socket_can_handler.hpp>
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/event/unique_fd.hpp>
@@ -20,6 +21,29 @@
 #include <net/if.h>
 
 namespace everest::lib::io::can {
+
+namespace {
+
+canid_t to_linux_can_id(can_recv_filter const& filter) {
+    auto id = filter.can_id & CAN_EFF_MASK;
+    if (filter.extended) {
+        id |= CAN_EFF_FLAG;
+    }
+    if (filter.invert) {
+        id |= CAN_INV_FILTER;
+    }
+    return id;
+}
+
+canid_t to_linux_can_mask(can_recv_filter const& filter) {
+    auto mask = filter.can_mask & CAN_EFF_MASK;
+    if (filter.extended) {
+        mask |= CAN_EFF_FLAG;
+    }
+    return mask;
+}
+
+} // namespace
 
 bool socket_can_handler::data_valid(can_payload const& payload) {
     return payload.size() <= CAN_MAX_DLEN;
@@ -86,7 +110,7 @@ bool socket_can_handler::rx(can_dataset& data) {
     return status == 0;
 }
 
-bool socket_can_handler::open(std::string const& can_device) {
+bool socket_can_handler::open(std::string const& can_device, std::vector<can_recv_filter> const& recv_filters) {
     // IFNAMSIZ is the size of the buffer to write the name to.
     // This situation is special concerning null termination,
     // The name can occupy the fill buffer. If it does not, nulltermination is necessary
@@ -95,8 +119,40 @@ bool socket_can_handler::open(std::string const& can_device) {
     if (can_device.size() >= IFNAMSIZ) {
         return false;
     }
+    m_recv_filters = recv_filters;
     m_can_dev = can_device;
     return open_device() == 0;
+}
+
+bool socket_can_handler::set_recv_filters(std::vector<can_recv_filter> const& recv_filters) {
+    m_recv_filters = recv_filters;
+    if (!is_open()) {
+        return true;
+    }
+    return apply_recv_filters();
+}
+
+std::vector<can_recv_filter> const& socket_can_handler::get_recv_filters() const {
+    return m_recv_filters;
+}
+
+bool socket_can_handler::apply_recv_filters() {
+    if (!is_open()) {
+        return false;
+    }
+
+    if (m_recv_filters.empty()) {
+        return ::setsockopt(m_owned_can_fd, SOL_CAN_RAW, CAN_RAW_FILTER, nullptr, 0) == 0;
+    }
+
+    std::vector<can_filter> linux_filters;
+    linux_filters.reserve(m_recv_filters.size());
+    for (auto const& filter : m_recv_filters) {
+        linux_filters.push_back({to_linux_can_id(filter), to_linux_can_mask(filter)});
+    }
+
+    return ::setsockopt(m_owned_can_fd, SOL_CAN_RAW, CAN_RAW_FILTER, linux_filters.data(),
+                        linux_filters.size() * sizeof(can_filter)) == 0;
 }
 
 int socket_can_handler::open_device() {
@@ -129,6 +185,12 @@ int socket_can_handler::open_device() {
     socket::set_non_blocking(can_fd);
     socket::set_socket_send_buffer_to_min(can_fd);
     m_owned_can_fd = std::move(can_fd);
+
+    if (!apply_recv_filters()) {
+        m_owned_can_fd.close();
+        return errno != 0 ? errno : EINVAL;
+    }
+
     return 0;
 }
 
