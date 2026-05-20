@@ -18,13 +18,12 @@ import yaml
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'EVerest Documentation'
-copyright = '2021-2025, EVerest community'
+copyright = '2021-2026, EVerest community'
 author = 'EVerest community'
 
-# The full version, including alpha/beta/rc tags, taken from CMakeLists.txt
-release = '@PROJECT_VERSION@'
-# The short X.Y version.
-version = '.'.join(release.split('.')[:2])
+# Git-based version string: "<branch>@<git-describe>" (branch is empty on
+# detached HEAD, e.g. tag-triggered builds). Substituted at cmake configure.
+release = '@EVEREST_GIT_VERSION_STRING@'
 
 
 # -- General configuration ---------------------------------------------------

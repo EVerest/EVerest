@@ -1,3 +1,28 @@
+# Compute EVEREST_GIT_VERSION_STRING for conf.py.in substitution.
+# Mirrors everest-cmake's evc_generate_version_information(); we run it
+# here because this subdir is configured before ev_add_project() (which is
+# what eventually triggers the everest-cmake version macro).
+find_program(GIT_EXECUTABLE NAMES git REQUIRED)
+execute_process(
+    COMMAND ${GIT_EXECUTABLE} describe --dirty --always --tags
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    OUTPUT_VARIABLE _everest_git_describe
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+execute_process(
+    COMMAND ${GIT_EXECUTABLE} symbolic-ref --quiet --short HEAD
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    OUTPUT_VARIABLE _everest_git_branch
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+if("${_everest_git_branch}" STREQUAL "")
+    # Detached HEAD (e.g. tag-triggered build) — branch is empty,
+    # so omit the leading "@".
+    set(EVEREST_GIT_VERSION_STRING "${_everest_git_describe}")
+else()
+    set(EVEREST_GIT_VERSION_STRING "${_everest_git_branch}@${_everest_git_describe}")
+endif()
+
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/source/conf.py.in
     ${CMAKE_CURRENT_SOURCE_DIR}/source/conf.py
