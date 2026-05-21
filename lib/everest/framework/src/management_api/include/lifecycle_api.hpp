@@ -24,6 +24,9 @@ public:
     LifecycleAPI(MQTTAbstraction& mqtt_abstraction, ::Everest::config::ConfigServiceInterface& config_service,
                  ConfigurationApiStatus config_api_availability, bool readonly = true);
 
+    void modules_started_running();
+    void modules_stopped_running();
+
 private:
     MQTTAbstraction& m_mqtt_abstraction;
     ::Everest::config::ConfigServiceInterface& m_config_service;
@@ -35,7 +38,9 @@ private:
     void generate_api_cmd_stop_modules();
     void generate_api_cmd_start_modules();
 
-    void generate_api_var_status();
+    // no need to have this, as updates are triggered via module_runtime_status_changed() calls
+    // void generate_api_var_status();
+    void module_runtime_status_changed(bool running);
 
     using ParseAndPublishFtor = std::function<bool(std::string const&)>;
     void subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish);
