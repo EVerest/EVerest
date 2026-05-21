@@ -290,6 +290,8 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
                                                                   const Origin& origin) {
     SetConfigParameterResult result;
     result.status = SetConfigParameterStatus::Ok;
+    // TODO(CB): Good idea? for multiple parameters they should all be treated the same
+    bool modules_are_running = modules_running_;
 
     const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
 
@@ -343,7 +345,7 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
             auto [parameter, parameter_access] = parameter_lookup_result.value();
 
             // if applicable: set in module and mutate in memory at the same time
-            if (parameter->characteristics.mutability == everest::config::Mutability::ReadWrite) {
+            if (parameter->characteristics.mutability == everest::config::Mutability::ReadWrite and modules_are_running) {
                 if (not set_parameter_callback_) {
                     // TODO(CB): how hard should we fail here?
                     break;
@@ -369,7 +371,7 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
                     result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
                     break;
                 }
-            } else if (parameter->characteristics.mutability == everest::config::Mutability::ReadOnly) {
+            } else if (parameter->characteristics.mutability == everest::config::Mutability::ReadOnly and modules_are_running) {
                 if (is_set_read_only_allowed(*parameter_access, update.identifier.module_id)) {
                     // TODO(CB) !?!? why not forward to the module then ?!?!
                     result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
@@ -462,6 +464,14 @@ RestartModulesResult ConfigServiceCore::restart_modules() {
         return restart_fn_();
     }
     return RestartModulesResult::Rejected;
+}
+
+void ConfigServiceCore::set_modules_running() {
+    modules_running_ = true;
+}
+
+void ConfigServiceCore::set_modules_stopped() {
+    modules_running_ = false;
 }
 
 // --- Push-event subscriptions ---
