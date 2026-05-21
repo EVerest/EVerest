@@ -241,6 +241,9 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
                                                                   const Origin& origin) {
     SetConfigParameterResult result;
     result.status = SetConfigParameterStatus::Ok;
+    const bool modules_are_running = module_status_ == ActiveSlotStatus::Running;
+    const bool modules_in_transient =
+        (module_status_ != ActiveSlotStatus::Running and module_status_ != ActiveSlotStatus::Stopped);
 
     const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
 
@@ -299,7 +302,8 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
                 // If the callback is not defined (== cannot ask the modules), changes are rejected
                 if (not set_parameter_callback_) {
                     result_enum = SetConfigParameterResultEnum::Rejected;
-                    EVLOG_error << "ConfigServiceCore: No callback registered for setting the configuration parameter change in the module -> Rejecting.";
+                    EVLOG_error << "ConfigServiceCore: No callback registered for setting the configuration parameter "
+                                   "change in the module -> Rejecting.";
                     break;
                 }
                 auto set_result = set_parameter_callback_(update.identifier, update.value);
@@ -323,7 +327,8 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
                     result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
                     break;
                 }
-            } else if (parameter->characteristics.mutability == everest::config::Mutability::ReadOnly) {
+            } else if (parameter->characteristics.mutability == everest::config::Mutability::ReadOnly and
+                       modules_are_running) {
                 if (is_set_read_only_allowed(*parameter_access, update.identifier.module_id)) {
                     result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
                 } else {
@@ -347,7 +352,8 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
                 const auto write_status = active_storage_->write_configuration_parameter(
                     update.identifier, parameter->characteristics, update.value);
                 if (write_status != everest::config::GetSetResponseStatus::OK) {
-                    EVLOG_error << "ConfigServiceCore: Couldn't persist a configuration parameter change which was accepted by the module.";
+                    EVLOG_error << "ConfigServiceCore: Couldn't persist a configuration parameter change which was "
+                                   "accepted by the module.";
                 }
             }
         }
@@ -405,6 +411,14 @@ RestartModulesResult ConfigServiceCore::restart_modules() {
         return restart_fn_();
     }
     return RestartModulesResult::Rejected;
+}
+
+void ConfigServiceCore::set_modules_running() {
+    modules_running_ = true;
+}
+
+void ConfigServiceCore::set_modules_stopped() {
+    modules_running_ = false;
 }
 
 // --- Push-event subscriptions ---

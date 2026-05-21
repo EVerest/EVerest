@@ -764,6 +764,16 @@ int Manager::run() {
             }
         });
 
+    register_state_transition_handler([this, &config_service_core](ManagerState from, ManagerState to) {
+        // TODO(CB): This is black-and-white right now - maybe the transition states between running and stopped need to
+        // handled differently
+        if (to == ManagerState::Running) {
+            config_service_core->set_modules_running();
+        } else if (from == ManagerState::Running) {
+            config_service_core->set_modules_stopped();
+        }
+    });
+
     bool cfg_api_read_only = false;
     std::unique_ptr<Everest::api::configuration::ConfigurationAPI> configuration_api;
     if (vm_.count("configuration-api")) {
@@ -776,6 +786,7 @@ int Manager::run() {
         configuration_api = std::make_unique<Everest::api::configuration::ConfigurationAPI>(
             *mqtt_abstraction, *config_service_core, cfg_api_read_only);
     }
+
     std::unique_ptr<Everest::api::lifecycle::LifecycleAPI> lifecycle_api;
     if (vm_.count("lifecycle-api")) {
         bool lc_api_read_only = vm_["lifecycle-api"].as<std::string>() != "rw";
