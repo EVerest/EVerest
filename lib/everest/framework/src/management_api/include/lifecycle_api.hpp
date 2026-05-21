@@ -74,7 +74,9 @@ private:
     void generate_api_cmd_start_modules();
     void generate_api_cmd_get_everest_version();
 
-    void generate_api_var_status();
+    // no need to have this, as updates are triggered via module_runtime_status_changed() calls
+    // void generate_api_var_status();
+    void module_runtime_status_changed(bool running);
 
     void publish_execution_status(const std::string& tstamp,
                                   everest::lib::API::V1_0::types::lifecycle::ModuleExecutionStatusEnum module_status);
