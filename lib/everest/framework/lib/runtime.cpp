@@ -48,11 +48,13 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
 
     everest::config::SqliteConfigSlotManager slot_mgr(db_conn);
 
-    const bool db_valid = slot_mgr.is_valid(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
+    auto boot_slot_id = slot_mgr.get_next_boot_slot_id();
+    EVLOG_critical << "Boot slot id: " << std::to_string(boot_slot_id);
+
+    const bool db_valid = slot_mgr.is_valid(boot_slot_id);
     if (db_valid && !reset_from_yaml) {
         EVLOG_info << "Booting and parsing configuration from database: " << ms.db_dir;
-        bs.storage = std::make_unique<everest::config::SqliteStorage>(
-            db_conn, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
+        bs.storage = std::make_unique<everest::config::SqliteStorage>(db_conn, boot_slot_id);
         bs.module_configs_initialized = true;
         const auto resp = bs.storage->get_module_configs();
         if (resp.status == everest::config::GenericResponseStatus::Failed) {
@@ -64,12 +66,12 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
             EVLOG_info << "--reset-from-yaml requested, discarding existing database slot and re-seeding from YAML: "
                        << ms.config_file;
         } else {
-            EVLOG_info << "Database not initialized or valid, seeding from YAML config file: " << ms.config_file;
+            EVLOG_info << "Database not initialized or not valid, seeding from YAML config file: " << ms.config_file;
         }
-        slot_mgr.delete_slot(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
-        slot_mgr.write_config_slot(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
-        bs.storage = std::make_unique<everest::config::SqliteStorage>(
-            db_conn, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
+        // Delete the slot (no-op if it doesn't exist)
+        slot_mgr.delete_slot(boot_slot_id);
+        slot_mgr.write_config_slot(boot_slot_id);
+        bs.storage = std::make_unique<everest::config::SqliteStorage>(db_conn, boot_slot_id);
         bs.module_configs_initialized = false;
     }
 

@@ -728,6 +728,8 @@ int Manager::run() {
     const auto migrations_dir = ms.runtime_settings.data_dir / "migrations";
     auto config_service_core = std::make_unique<config::ConfigServiceCore>(
         config->get_module_configurations(), ms, std::move(shared_db),
+        // TODO(CB): Don't provide the slot_id here, but simply asume DEFAULT_SLOT_ID inside ConfigServiceCore if the db
+        // has none?
         reset_from_yaml ? std::make_optional<int>(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID)
                         : std::nullopt);
 
