@@ -64,7 +64,7 @@ private:
     void generate_api_var_public_key_ocmf();
 
     ev_API::CommCheckHandler<powermeterImplBase> comm_check{"powermeter/CommunicationFault",
-                                                            "Bridge to implementation connection lost", p_main};
+                                                            ev_API::bridge_connection_lost_message, p_main};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

@@ -92,7 +92,7 @@ private:
     ErrorHandler make_error_handler(API_types_ext::Error const& error);
 
     ev_API::CommCheckHandler<evse_board_supportImplBase> comm_check{"evse_board_support/CommunicationFault",
-                                                                    "Bridge to implementation connection lost", p_main};
+                                                                    ev_API::bridge_connection_lost_message, p_main};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

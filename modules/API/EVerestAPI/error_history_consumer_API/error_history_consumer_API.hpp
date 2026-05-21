@@ -78,7 +78,7 @@ private:
     void generate_api_var_error_events();
 
     ev_API::CommCheckHandler<generic_errorImplBase> comm_check{"generic/CommunicationFault",
-                                                               "Bridge to implementation connection lost", p_main};
+                                                               ev_API::bridge_connection_lost_message, p_main};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -24,6 +25,8 @@
 #include <everest_api_types/utilities/codec.hpp>
 
 namespace everest::lib::API {
+
+inline constexpr std::string_view bridge_connection_lost_message{"Bridge to implementation connection lost"};
 
 class ApiHelper {
 public:

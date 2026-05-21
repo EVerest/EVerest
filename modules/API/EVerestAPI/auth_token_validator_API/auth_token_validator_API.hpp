@@ -63,7 +63,7 @@ private:
     void generate_api_var_validation_result_update();
 
     ev_API::CommCheckHandler<auth_token_validatorImplBase> comm_check{
-        "generic/CommunicationFault", "Bridge to implementation connection lost", p_main};
+        "generic/CommunicationFault", ev_API::bridge_connection_lost_message, p_main};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

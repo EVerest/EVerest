@@ -70,7 +70,7 @@ private:
     std::string make_error_string(API_types_ext::Error const& error);
 
     ev_API::CommCheckHandler<power_supply_DCImplBase> comm_check{"power_supply_DC/CommunicationFault",
-                                                                 "Bridge to implementation connection lost", p_main};
+                                                                 ev_API::bridge_connection_lost_message, p_main};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 
