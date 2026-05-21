@@ -724,7 +724,11 @@ int Manager::run() {
 
     RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
                                ms,     status_fifo,       retain_topics};
-    module_handles_ = handle_start_modules(runtime_ctx);
+    if (vm_.count("into-idle") == 0) {
+        module_handles_ = handle_start_modules(runtime_ctx);
+    } else {
+        transition_to(ManagerState::Idle);
+    }
 
     if (const auto err_set_user = ManagerAdminPanel::switch_manager_user_if_needed(runtime_ctx.ms)) {
         EVLOG_error << "Error switching manager to user " << runtime_ctx.ms.run_as_user << ": " << *err_set_user;
@@ -1297,6 +1301,7 @@ int main(int argc, char* argv[]) {
     desc.add_options()("db", po::value<std::string>(), "Full path to the configuration database file");
     desc.add_options()("db-init", "Indicator to initialize the database if it does not contain a valid configuration. "
                                   "Requires --config and --db to be set.");
+    desc.add_options()("into-idle", "Boot into idle state (no modules are started)");
     desc.add_options()("status-fifo", po::value<std::string>()->default_value(""),
                        "Path to a named pipe, that shall be used for status updates from the manager");
     desc.add_options()("retain-topics", "Retain configuration MQTT topics setup by manager for inspection, by default "
