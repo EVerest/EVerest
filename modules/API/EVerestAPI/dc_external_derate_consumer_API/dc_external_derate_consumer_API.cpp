@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include "dc_external_derate_consumer_API.hpp"
 #include "everest_api_types/dc_external_derate/API.hpp"
 #include "everest_api_types/dc_external_derate/codec.hpp"

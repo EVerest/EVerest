@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include "display_message_API.hpp"
 #include <everest_api_types/display_message/API.hpp>
 #include <everest_api_types/display_message/codec.hpp>
