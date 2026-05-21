@@ -1458,13 +1458,14 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
         const auto ev_maximum_current_limit = physical_value_to_float(req->DC_EVChargeParameter.EVMaximumCurrentLimit);
         const auto ev_maximum_voltage_limit = physical_value_to_float(req->DC_EVChargeParameter.EVMaximumVoltageLimit);
         const auto evse_minimum_current_limit =
-            physical_value_to_float(conn->ctx->evse_v2g_data.evse_minimum_current_limit);
+            physical_value_to_float(conn->ctx->evse_v2g_data.power_capabilities.min_current);
         const auto evse_minimum_voltage_limit =
-            physical_value_to_float(conn->ctx->evse_v2g_data.evse_minimum_voltage_limit);
+            physical_value_to_float(conn->ctx->evse_v2g_data.power_capabilities.min_voltage);
 
-        if (ev_maximum_current_limit < evse_minimum_current_limit ||
-            ev_maximum_voltage_limit < evse_minimum_voltage_limit) {
+        if (ev_maximum_current_limit <= evse_minimum_current_limit ||
+            ev_maximum_voltage_limit <= evse_minimum_voltage_limit) {
             res->ResponseCode = iso2_responseCodeType_FAILED_WrongChargeParameter;
+            res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEStatusCode = iso2_DC_EVSEStatusCodeType_EVSE_Shutdown;
         }
 
         if (res->EVSEProcessing == iso2_EVSEProcessingType_Finished and
