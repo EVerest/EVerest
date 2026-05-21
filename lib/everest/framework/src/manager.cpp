@@ -473,7 +473,7 @@ void Manager::handle_restart_modules_after_shutdown(RuntimeContext& ctx) {
 
     {
         // Reload module configs from DB for the restarted config.
-        const auto resp = ctx.db_storage->get_module_configs();
+        const auto resp = db_storage->get_module_configs();
         if (resp.status == everest::config::GenericResponseStatus::Failed) {
             EVLOG_error << "Failed to reload module configs from DB for restart";
         } else {
@@ -561,14 +561,16 @@ void Manager::handle_finish_crash_recovery(RuntimeContext& ctx) {
     EVLOG_info << "Crash recovery completed, manager is idle after module shutdown. Send SIGINT/SIGTERM to stop.";
 }
 
-std::optional<int> Manager::handle_finalize_shutdown_transition(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
-                                                                bool restart_requested, bool crash_in_progress) {
+std::optional<int>
+Manager::handle_finalize_shutdown_transition(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
+                                             bool restart_requested, bool crash_in_progress,
+                                             std::unique_ptr<everest::config::SqliteStorage>& db_storage) {
     if (crash_in_progress) {
         handle_finish_crash_recovery(ctx);
         return std::nullopt;
     }
     if (restart_requested) {
-        handle_restart_modules_after_shutdown(ctx);
+        handle_restart_modules_after_shutdown(ctx, db_storage);
         return std::nullopt;
     }
     return handle_finish_normal_shutdown(ctx, admin_panel);
@@ -729,7 +731,7 @@ int Manager::run() {
     }
 
     RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
-                               ms,     status_fifo,       retain_topics,   db_storage};
+                               ms,     status_fifo,       retain_topics};
 
     auto config_service_core = std::make_unique<config::ConfigServiceCore>(
         config->get_module_configurations(), ms, std::move(shared_db),
@@ -835,7 +837,7 @@ int Manager::run() {
             continue;
         }
 
-        const auto lifecycle_advance = advance_lifecycle_state_if_ready(runtime_ctx, admin_panel);
+        const auto lifecycle_advance = advance_lifecycle_state_if_ready(runtime_ctx, admin_panel, db_storage);
         if (lifecycle_advance.status == LifecycleAdvanceResult::Status::ExitRequested) {
             return *lifecycle_advance.exit_code;
         }
@@ -1172,8 +1174,9 @@ std::map<pid_t, std::string> Manager::handle_start_modules(const RuntimeContext&
     return spawn_modules(modules_to_spawn, ms);
 }
 
-Manager::LifecycleAdvanceResult Manager::advance_lifecycle_state_if_ready(RuntimeContext& ctx,
-                                                                          ManagerAdminPanel& admin_panel) {
+Manager::LifecycleAdvanceResult
+Manager::advance_lifecycle_state_if_ready(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
+                                          std::unique_ptr<everest::config::SqliteStorage>& db_storage) {
     const bool in_shutdown_flow = is_in_shutdown_flow_state();
     const bool crash_in_progress = (shutdown_cause_ == ShutdownCause::Crash);
     const bool restart_requested = (shutdown_cause_ == ShutdownCause::Restart);
@@ -1187,7 +1190,7 @@ Manager::LifecycleAdvanceResult Manager::advance_lifecycle_state_if_ready(Runtim
                 "Unexpected module exit recovery attempt {}/{}. Reloading config and restarting "
                 "modules.",
                 unexpected_module_exit_count_, MAX_UNEXPECTED_MODULE_RESTARTS);
-            handle_restart_modules_after_shutdown(ctx);
+            handle_restart_modules_after_shutdown(ctx, db_storage);
             return {LifecycleAdvanceResult::Status::TransitionApplied, std::nullopt};
         }
         if (crash_in_progress && unexpected_module_exit_count_ > MAX_UNEXPECTED_MODULE_RESTARTS) {
@@ -1195,8 +1198,8 @@ Manager::LifecycleAdvanceResult Manager::advance_lifecycle_state_if_ready(Runtim
                                        "Manager will stay idle after shutdown.",
                                        unexpected_module_exit_count_, MAX_UNEXPECTED_MODULE_RESTARTS);
         }
-        if (const auto exit_code =
-                handle_finalize_shutdown_transition(ctx, admin_panel, restart_requested, crash_in_progress)) {
+        if (const auto exit_code = handle_finalize_shutdown_transition(ctx, admin_panel, restart_requested,
+                                                                       crash_in_progress, db_storage)) {
             return {LifecycleAdvanceResult::Status::ExitRequested, *exit_code};
         }
         return {LifecycleAdvanceResult::Status::TransitionApplied, std::nullopt};
@@ -1205,7 +1208,7 @@ Manager::LifecycleAdvanceResult Manager::advance_lifecycle_state_if_ready(Runtim
     // Admin restart can mark restart_modules while modules are still draining.
     // If all children are gone, restart immediately with reloaded config.
     if (restart_requested && module_handles_.empty()) {
-        handle_restart_modules_after_shutdown(ctx);
+        handle_restart_modules_after_shutdown(ctx, db_storage);
         return {LifecycleAdvanceResult::Status::TransitionApplied, std::nullopt};
     }
 

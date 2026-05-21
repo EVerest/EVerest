@@ -5,8 +5,8 @@
 
 #include <boost/program_options/variables_map.hpp>
 #include <chrono>
-#include <functional>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -170,7 +170,6 @@ private:
         const Everest::ManagerSettings& ms;
         Everest::StatusFifo& status_fifo;
         bool retain_topics;
-        std::unique_ptr<everest::config::SqliteStorage>& db_storage;
     };
 
     /// \brief Outcome of one lifecycle state-advance evaluation.
@@ -260,20 +259,26 @@ private:
     /// \brief Advance lifecycle state when current phase is complete.
     /// \param ctx Runtime dependencies for the current run.
     /// \param admin_panel Controller IPC/process integration helper.
+    /// \param db_storage Current handle to the database.
     /// \return Result containing transition/exit outcome for this evaluation step.
-    LifecycleAdvanceResult advance_lifecycle_state_if_ready(RuntimeContext& ctx, ManagerAdminPanel& admin_panel);
+    LifecycleAdvanceResult
+    advance_lifecycle_state_if_ready(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
+                                     std::unique_ptr<everest::config::SqliteStorage>& db_storage);
 
     /// \brief Complete shutdown finalization according to preserved restart/crash intent.
     /// \param ctx Runtime dependencies for the current run.
     /// \param admin_panel Controller IPC/process integration helper.
     /// \param restart_requested Preserved restart intent for this finalization step.
     /// \param crash_in_progress Preserved crash-recovery intent for this finalization step.
+    /// \param db_storage Current handle to the database.
     /// \return Exit code when manager should terminate, std::nullopt otherwise.
     std::optional<int> handle_finalize_shutdown_transition(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
-                                                           bool restart_requested, bool crash_in_progress);
+                                                           bool restart_requested, bool crash_in_progress,
+                                                           std::unique_ptr<everest::config::SqliteStorage>& db_storage);
 
     /// \brief Reload config and initiate module restart sequence.
-    void handle_restart_modules_after_shutdown(RuntimeContext& ctx);
+    void handle_restart_modules_after_shutdown(RuntimeContext& ctx,
+                                               std::unique_ptr<everest::config::SqliteStorage>& db_storage);
 
     /// \brief Finalize normal shutdown and decide exit vs idle outcome.
     /// \param ctx Runtime dependencies for the current run.
