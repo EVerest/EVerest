@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include "evse_manager_consumer_API.hpp"
 
 #include <everest_api_types/auth/wrapper.hpp>
@@ -42,7 +42,6 @@ template <class T> T const& to_external_api(T const& val) {
 
 namespace module {
 
-namespace API_types = ev_API::V1_0::types;
 namespace API_types_ext = API_types::evse_manager;
 namespace API_powermeter = API_types::powermeter;
 namespace API_iso = API_types::iso15118_charger;
@@ -57,7 +56,11 @@ using ev_API::deserialize;
 void evse_manager_consumer_API::init() {
     invoke_init(*p_main);
 
-    topics.setup(info.id, "evse_manager_consumer", 1);
+    API_types_entry::CommunicationParameters comm_params{};
+    comm_params.heartbeat_period_ms = config.cfg_heartbeat_interval_ms;
+    comm_params.communication_check_period_s = config.cfg_communication_check_to_s;
+    comm_params.request_reply_timeout_s = config.cfg_request_reply_to_s;
+    helper.init(comm_params);
 }
 
 void evse_manager_consumer_API::ready() {
@@ -95,10 +98,10 @@ void evse_manager_consumer_API::ready() {
     generate_api_var_dc_capabilities();
     generate_api_var_random_delay_countdown();
 
-    generate_api_var_communication_check();
-
+    helper.generate_api_var_communication_check(&comm_check);
     comm_check.start(config.cfg_communication_check_to_s);
-    setup_heartbeat_generator();
+    helper.setup_heartbeat_generator(&comm_check, config.cfg_heartbeat_interval_ms);
+    helper.publish_ready_beacon();
 }
 
 auto evse_manager_consumer_API::forward_api_var(std::string const& var) {
@@ -111,12 +114,12 @@ auto evse_manager_consumer_API::forward_api_var(std::string const& var) {
     using namespace API_imd;
     using namespace API_dc;
     using namespace API_random_delay;
-    auto topic = topics.everest_to_extern(var);
+    const auto topic = helper.get_topics().everest_to_extern(var);
     return [this, topic](auto const& val) {
         try {
             auto&& external = to_external_api(val);
             auto&& payload = serialize(external);
-            mqtt.publish(topic, payload);
+            mqtt_v.publish(topic, payload);
         } catch (const std::exception& e) {
             EVLOG_warning << "Variable: '" << topic << "' failed with -> " << e.what();
         } catch (...) {
@@ -126,11 +129,11 @@ auto evse_manager_consumer_API::forward_api_var(std::string const& var) {
 }
 
 void evse_manager_consumer_API::generate_api_cmd_get_evse() {
-    subscribe_api_topic("get_evse", [this](std::string const& data) {
+    helper.subscribe_api_topic("get_evse", [this](std::string const& data) {
         API_generic::RequestReply msg;
         if (deserialize(data, msg)) {
             auto reply = API_types_ext::to_external_api(r_evse_manager->call_get_evse());
-            mqtt.publish(msg.replyTo, serialize(reply));
+            mqtt_v.publish(msg.replyTo, serialize(reply));
             return true;
         }
         return false;
@@ -138,13 +141,13 @@ void evse_manager_consumer_API::generate_api_cmd_get_evse() {
 }
 
 void evse_manager_consumer_API::generate_api_cmd_enable_disable() {
-    subscribe_api_topic("enable_disable", [this](std::string const& data) {
+    helper.subscribe_api_topic("enable_disable", [this](std::string const& data) {
         API_generic::RequestReply msg;
         if (deserialize(data, msg)) {
             API_types_ext::EnableDisableRequest payload;
             if (deserialize(msg.payload, payload)) {
                 auto reply = r_evse_manager->call_enable_disable(payload.connector_id, to_internal_api(payload.source));
-                mqtt.publish(msg.replyTo, API_generic::serialize(reply));
+                mqtt_v.publish(msg.replyTo, API_generic::serialize(reply));
                 return true;
             }
         }
@@ -153,11 +156,11 @@ void evse_manager_consumer_API::generate_api_cmd_enable_disable() {
 }
 
 void evse_manager_consumer_API::generate_api_cmd_pause_charging() {
-    subscribe_api_topic("pause_charging", [this](std::string const& data) {
+    helper.subscribe_api_topic("pause_charging", [this](std::string const& data) {
         API_generic::RequestReply msg;
         if (deserialize(data, msg)) {
             auto result = r_evse_manager->call_pause_charging();
-            mqtt.publish(msg.replyTo, result);
+            mqtt_v.publish(msg.replyTo, result);
             return true;
         }
         return false;
@@ -165,11 +168,11 @@ void evse_manager_consumer_API::generate_api_cmd_pause_charging() {
 }
 
 void evse_manager_consumer_API::generate_api_cmd_resume_charging() {
-    subscribe_api_topic("resume_charging", [this](std::string const& data) {
+    helper.subscribe_api_topic("resume_charging", [this](std::string const& data) {
         API_generic::RequestReply msg;
         if (deserialize(data, msg)) {
             auto result = r_evse_manager->call_resume_charging();
-            mqtt.publish(msg.replyTo, result);
+            mqtt_v.publish(msg.replyTo, result);
             return true;
         }
         return false;
@@ -177,14 +180,14 @@ void evse_manager_consumer_API::generate_api_cmd_resume_charging() {
 }
 
 void evse_manager_consumer_API::generate_api_cmd_stop_transaction() {
-    subscribe_api_topic("stop_transaction", [this](std::string const& data) {
+    helper.subscribe_api_topic("stop_transaction", [this](std::string const& data) {
         auto result = false;
         API_generic::RequestReply msg;
         if (deserialize(data, msg)) {
             API_types_ext::StopTransactionRequest_External payload;
             if (deserialize(msg.payload, payload)) {
                 result = r_evse_manager->call_stop_transaction(API_types_ext::to_internal_api(payload));
-                mqtt.publish(msg.replyTo, result);
+                mqtt_v.publish(msg.replyTo, result);
                 return true;
             }
         }
@@ -193,13 +196,13 @@ void evse_manager_consumer_API::generate_api_cmd_stop_transaction() {
 }
 
 void evse_manager_consumer_API::generate_api_cmd_force_unlock() {
-    subscribe_api_topic("force_unlock", [this](std::string const& data) {
+    helper.subscribe_api_topic("force_unlock", [this](std::string const& data) {
         API_generic::RequestReply msg;
         if (deserialize(data, msg)) {
             int payload;
             if (deserialize(msg.payload, payload)) {
                 auto result = r_evse_manager->call_force_unlock(payload);
-                mqtt.publish(msg.replyTo, result);
+                mqtt_v.publish(msg.replyTo, result);
             }
             return true;
         }
@@ -209,7 +212,7 @@ void evse_manager_consumer_API::generate_api_cmd_force_unlock() {
 
 void evse_manager_consumer_API::generate_api_cmd_random_delay_enable() {
     if (not r_random_delay.empty()) {
-        subscribe_api_topic("random_delay_enable", [this](std::string const&) {
+        helper.subscribe_api_topic("random_delay_enable", [this](std::string const&) {
             r_random_delay[0]->call_enable();
             return true;
         });
@@ -218,7 +221,7 @@ void evse_manager_consumer_API::generate_api_cmd_random_delay_enable() {
 
 void evse_manager_consumer_API::generate_api_cmd_random_delay_disable() {
     if (not r_random_delay.empty()) {
-        subscribe_api_topic("random_delay_disable", [=](std::string const&) {
+        helper.subscribe_api_topic("random_delay_disable", [=](std::string const&) {
             r_random_delay[0]->call_disable();
             return true;
         });
@@ -227,7 +230,7 @@ void evse_manager_consumer_API::generate_api_cmd_random_delay_disable() {
 
 void evse_manager_consumer_API::generate_api_cmd_random_delay_cancel() {
     if (not r_random_delay.empty()) {
-        subscribe_api_topic("random_delay_cancel", [=](std::string const&) {
+        helper.subscribe_api_topic("random_delay_cancel", [=](std::string const&) {
             r_random_delay[0]->call_cancel();
             return true;
         });
@@ -236,7 +239,7 @@ void evse_manager_consumer_API::generate_api_cmd_random_delay_cancel() {
 
 void evse_manager_consumer_API::generate_api_cmd_random_delay_set_duration_s() {
     if (not r_random_delay.empty())
-        subscribe_api_topic("random_delay_set_duration_s", [=](std::string const& data) {
+        helper.subscribe_api_topic("random_delay_set_duration_s", [=](std::string const& data) {
             int32_t duration;
             if (deserialize(data, duration)) {
                 r_random_delay[0]->call_set_duration_s(duration);
@@ -334,49 +337,13 @@ void evse_manager_consumer_API::generate_api_var_random_delay_countdown() {
     }
 }
 
-void evse_manager_consumer_API::generate_api_var_communication_check() {
-    subscribe_api_topic("communication_check", [this](std::string const& data) {
-        bool val = false;
-        if (deserialize(data, val)) {
-            comm_check.set_value(val);
-            return true;
-        }
-        return false;
-    });
-}
-
-void evse_manager_consumer_API::setup_heartbeat_generator() {
-    auto topic = topics.everest_to_extern("heartbeat");
-    auto action = [this, topic]() {
-        mqtt.publish(topic, API_generic::serialize(hb_id++));
-        return true;
-    };
-    comm_check.heartbeat(config.cfg_heartbeat_interval_ms, action);
-}
-
-void evse_manager_consumer_API::subscribe_api_topic(std::string const& var,
-                                                    ParseAndPublishFtor const& parse_and_publish) {
-    auto topic = topics.extern_to_everest(var);
-    mqtt.subscribe(topic, [=](std::string const& data) {
-        try {
-            if (not parse_and_publish(data)) {
-                EVLOG_warning << "Invalid data: Deserialization failed.\n" << topic << "\n" << data;
-            }
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Topic: '" << topic << "' failed with -> " << e.what() << "\n => " << data;
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Failed to parse JSON or to get data from it.\n" << topic;
-        }
-    });
-}
-
 void evse_manager_consumer_API::generate_api_var_session_info() {
     this->session_info.handle()->set_publish_callback(
         [this](const everest::lib::API::V1_0::types::evse_manager::SessionInfo& external) {
-            auto topic = topics.everest_to_extern("session_info");
+            static const auto topic = helper.get_topics().everest_to_extern("session_info");
             try {
                 auto&& payload = serialize(external);
-                mqtt.publish(topic, payload);
+                mqtt_v.publish(topic, payload);
             } catch (const std::exception& e) {
                 EVLOG_warning << "Variable: '" << topic << "' failed with -> " << e.what();
             } catch (...) {

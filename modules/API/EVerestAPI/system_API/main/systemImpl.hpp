@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef MAIN_SYSTEM_IMPL_HPP
 #define MAIN_SYSTEM_IMPL_HPP
 
@@ -7,7 +7,6 @@
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
 // template version 3
 //
-
 #include <generated/interfaces/system/Implementation.hpp>
 
 #include "../system_API.hpp"

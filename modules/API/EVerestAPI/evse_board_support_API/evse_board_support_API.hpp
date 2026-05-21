@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef EVSE_BOARD_SUPPORT_API_HPP
 #define EVSE_BOARD_SUPPORT_API_HPP
 
@@ -17,12 +17,14 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
+#include <everest_api_module_helpers/ApiHelper.hpp>
+#include <everest_api_types/entrypoint/API.hpp>
 #include <everest_api_types/evse_board_support/API.hpp>
-#include <everest_api_types/utilities/CommCheckHandler.hpp>
-#include <everest_api_types/utilities/Topics.hpp>
 
 namespace ev_API = everest::lib::API;
 namespace ev_API_v = everest::lib::API::V1_0;
+namespace API_types = ev_API::V1_0::types;
+namespace API_types_entry = API_types::entrypoint;
 namespace API_types_ext = ev_API_v::types::evse_board_support;
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
@@ -55,9 +57,8 @@ public:
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
-    const ev_API::Topics& get_topics() const;
-    ev_API::CommCheckHandler<evse_board_supportImplBase> comm_check{"evse_board_support/CommunicationFault",
-                                                                    "Bridge to implementation connection lost", p_main};
+    ev_API::Mqtt::ValidatingMqttProxy mqtt_v{mqtt};
+    ev_API::ApiHelper helper{info, mqtt_v, {{"evse_board_support", 1}}, get_config_service_client()};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
@@ -72,31 +73,26 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
-    using ParseAndPublishFtor = std::function<bool(std::string const&)>;
     using HandleErrorFtor = std::function<void()>;
     struct ErrorHandler {
         HandleErrorFtor raiser;
         HandleErrorFtor clearer;
         std::string error_id;
     };
-    void subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish);
     void generate_api_var_event();
     void generate_api_var_ac_nr_of_phases();
     void generate_api_var_capabilities();
     void generate_api_var_ac_pp_ampacity();
     void generate_api_var_request_stop_transaction();
     void generate_api_var_rcd_current();
-    void generate_api_var_communication_check();
 
     void generate_api_var_raise_error();
     void generate_api_var_clear_error();
 
     ErrorHandler make_error_handler(API_types_ext::Error const& error);
 
-    void setup_heartbeat_generator();
-
-    ev_API::Topics topics;
-    size_t hb_id{0};
+    ev_API::CommCheckHandler<evse_board_supportImplBase> comm_check{"evse_board_support/CommunicationFault",
+                                                                    ev_API::bridge_connection_lost_message, p_main};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "isolation_monitor_API.hpp"
 
@@ -18,7 +18,10 @@ using ev_API::deserialize;
 void isolation_monitor_API::init() {
     invoke_init(*p_main);
 
-    topics.setup(info.id, "isolation_monitor", 1);
+    API_types_entry::CommunicationParameters comm_params{};
+    comm_params.heartbeat_period_ms = config.cfg_heartbeat_interval_ms;
+    comm_params.communication_check_period_s = config.cfg_communication_check_to_s;
+    helper.init(comm_params);
 }
 
 void isolation_monitor_API::ready() {
@@ -30,14 +33,14 @@ void isolation_monitor_API::ready() {
     generate_api_var_raise_error();
     generate_api_var_clear_error();
 
-    generate_api_var_communication_check();
-
+    helper.generate_api_var_communication_check(&comm_check);
     comm_check.start(config.cfg_communication_check_to_s);
-    setup_heartbeat_generator();
+    helper.setup_heartbeat_generator(&comm_check, config.cfg_heartbeat_interval_ms);
+    helper.publish_ready_beacon();
 }
 
 void isolation_monitor_API::generate_api_var_isolation_measurement() {
-    subscribe_api_topic("isolation_measurement", [=](std::string const& data) {
+    helper.subscribe_api_topic("isolation_measurement", [=](std::string const& data) {
         API_types_ext::IsolationMeasurement payload;
         if (deserialize(data, payload)) {
             p_main->publish_isolation_measurement(to_internal_api(payload));
@@ -48,7 +51,7 @@ void isolation_monitor_API::generate_api_var_isolation_measurement() {
 }
 
 void isolation_monitor_API::generate_api_var_self_test_result() {
-    subscribe_api_topic("self_test_result", [=](std::string const& data) {
+    helper.subscribe_api_topic("self_test_result", [=](std::string const& data) {
         bool val = false;
         if (deserialize(data, val)) {
             p_main->publish_self_test_result(val);
@@ -58,19 +61,8 @@ void isolation_monitor_API::generate_api_var_self_test_result() {
     });
 }
 
-void isolation_monitor_API::generate_api_var_communication_check() {
-    subscribe_api_topic("communication_check", [this](std::string const& data) {
-        bool val = false;
-        if (deserialize(data, val)) {
-            comm_check.set_value(val);
-            return true;
-        }
-        return false;
-    });
-}
-
 void isolation_monitor_API::generate_api_var_raise_error() {
-    subscribe_api_topic("raise_error", [=](std::string const& data) {
+    helper.subscribe_api_topic("raise_error", [=](std::string const& data) {
         API_types_ext::Error error;
         if (deserialize(data, error)) {
             auto sub_type_str = error.sub_type ? error.sub_type.value() : "";
@@ -86,7 +78,7 @@ void isolation_monitor_API::generate_api_var_raise_error() {
 }
 
 void isolation_monitor_API::generate_api_var_clear_error() {
-    subscribe_api_topic("clear_error", [=](std::string const& data) {
+    helper.subscribe_api_topic("clear_error", [=](std::string const& data) {
         API_types_ext::Error error;
         if (deserialize(data, error)) {
             std::string error_str = make_error_string(error);
@@ -101,38 +93,10 @@ void isolation_monitor_API::generate_api_var_clear_error() {
     });
 }
 
-void isolation_monitor_API::setup_heartbeat_generator() {
-    auto topic = topics.everest_to_extern("heartbeat");
-    auto action = [this, topic]() {
-        mqtt.publish(topic, API_generic::serialize(hb_id++));
-        return true;
-    };
-    comm_check.heartbeat(config.cfg_heartbeat_interval_ms, action);
-}
-
-void isolation_monitor_API::subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish) {
-    auto topic = topics.extern_to_everest(var);
-    mqtt.subscribe(topic, [=](std::string const& data) {
-        try {
-            if (not parse_and_publish(data)) {
-                EVLOG_warning << "Invalid data: Deserialization failed.\n" << topic << "\n" << data;
-            }
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Topic: '" << topic << "' failed with -> " << e.what() << "\n => " << data;
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Failed to parse JSON or to get data from it.\n" << topic;
-        }
-    });
-}
-
 std::string isolation_monitor_API::make_error_string(API_types_ext::Error const& error) {
     auto error_str = API_generic::trimmed(serialize(error.type));
     auto result = "isolation_monitor/" + error_str;
     return result;
-}
-
-const ev_API::Topics& isolation_monitor_API::get_topics() const {
-    return topics;
 }
 
 } // namespace module

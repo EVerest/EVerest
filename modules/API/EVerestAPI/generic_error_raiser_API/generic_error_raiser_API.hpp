@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef GENERIC_ERROR_RAISER_API_HPP
 #define GENERIC_ERROR_RAISER_API_HPP
 
@@ -15,12 +15,13 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
+#include <everest_api_module_helpers/ApiHelper.hpp>
+#include <everest_api_types/entrypoint/API.hpp>
 #include <everest_api_types/generic/API.hpp>
-#include <everest_api_types/utilities/CommCheckHandler.hpp>
-#include <everest_api_types/utilities/Topics.hpp>
 
 namespace ev_API = everest::lib::API;
 namespace API_types = ev_API::V1_0::types;
+namespace API_types_entry = API_types::entrypoint;
 namespace API_generic = API_types::generic;
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
@@ -44,19 +45,12 @@ public:
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
-    using ParseAndPublishFtor = std::function<bool(std::string const&)>;
-    void subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish);
+    ev_API::Mqtt::ValidatingMqttProxy mqtt_v{mqtt};
+    ev_API::ApiHelper helper{info, mqtt_v, {{"generic_error_raiser", 1}}, get_config_service_client()};
     std::string make_error_string(API_generic::Error const& error);
 
-    void generate_api_var_communication_check();
     void generate_api_var_raise_error();
     void generate_api_var_clear_error();
-
-    void setup_heartbeat_generator();
-
-    ev_API::Topics topics;
-    ev_API::CommCheckHandler<generic_errorImplBase> comm_check{"generic/CommunicationFault",
-                                                               "Bridge to implementation connection lost", p_main};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
@@ -71,7 +65,8 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
-    size_t hb_id{0};
+    ev_API::CommCheckHandler<generic_errorImplBase> comm_check{"generic/CommunicationFault",
+                                                               ev_API::bridge_connection_lost_message, p_main};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

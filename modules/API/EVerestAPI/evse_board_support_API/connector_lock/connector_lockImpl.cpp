@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "connector_lockImpl.hpp"
 
@@ -15,13 +15,13 @@ void connector_lockImpl::ready() {
 }
 
 void connector_lockImpl::handle_lock() {
-    auto topic = mod->get_topics().everest_to_extern("lock");
-    mod->mqtt.publish(topic, "");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("lock");
+    mod->mqtt_v.publish(topic, "");
 }
 
 void connector_lockImpl::handle_unlock() {
-    auto topic = mod->get_topics().everest_to_extern("unlock");
-    mod->mqtt.publish(topic, "");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("unlock");
+    mod->mqtt_v.publish(topic, "");
 }
 
 } // namespace connector_lock

@@ -11,6 +11,7 @@ generate_config_tmux_run_script(CONFIG bringup-api-slac)
 generate_config_tmux_run_script(CONFIG bringup-api-system)
 
 generate_config_tmux_run_script(CONFIG bringup-DZG)
+generate_config_tmux_run_script(CONFIG bringup-EVerestAPI-entrypoint)
 generate_config_tmux_run_script(CONFIG bringup-LEM)
 generate_config_tmux_run_script(CONFIG bringup-bender-isocha)
 generate_config_tmux_run_script(CONFIG bringup-dold-rn5893)

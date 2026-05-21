@@ -9,6 +9,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <string_view>
 #include <thread>
 
 #include <everest/logging.hpp>
@@ -22,7 +23,7 @@ class CommCheckHandlerBase {
 public:
     using HeartBeatFtor = std::function<bool()>;
 
-    CommCheckHandlerBase(std::string const& error_type_, std::string const& default_sub_type_,
+    CommCheckHandlerBase(std::string_view error_type_, std::string_view default_sub_type_,
                          std::shared_ptr<Everest::error::ErrorStateMonitor>& error_state_monitor_,
                          std::shared_ptr<Everest::error::ErrorFactory>& error_factory_,
                          std::shared_ptr<Everest::error::ErrorManagerImpl>& error_manager_) :
@@ -141,7 +142,7 @@ private:
 
 template <class InterfaceT> class CommCheckHandler : public CommCheckHandlerBase {
 public:
-    CommCheckHandler(std::string const& error_type_, std::string const& default_sub_type_,
+    CommCheckHandler(std::string_view error_type_, std::string_view default_sub_type_,
                      const std::unique_ptr<InterfaceT>& interface) :
         CommCheckHandlerBase(error_type_, default_sub_type_, interface->error_state_monitor, interface->error_factory,
                              interface->error_manager) {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include "external_energy_limits_consumer_API.hpp"
 
 #include <everest_api_types/energy/API.hpp>
@@ -18,7 +18,10 @@ using ev_API::deserialize;
 void external_energy_limits_consumer_API::init() {
     invoke_init(*p_main);
 
-    topics.setup(info.id, "external_energy_limits_consumer", 1);
+    API_types_entry::CommunicationParameters comm_params{};
+    comm_params.heartbeat_period_ms = config.cfg_heartbeat_interval_ms;
+    comm_params.communication_check_period_s = config.cfg_communication_check_to_s;
+    helper.init(comm_params);
 }
 
 void external_energy_limits_consumer_API::ready() {
@@ -27,20 +30,22 @@ void external_energy_limits_consumer_API::ready() {
     generate_api_var_capabilities();
     generate_api_cmd_set_external_limits();
 
-    generate_api_var_communication_check();
+    helper.generate_api_var_communication_check(&comm_check);
 
     comm_check.start(config.cfg_communication_check_to_s);
-    setup_heartbeat_generator();
+    helper.setup_heartbeat_generator(&comm_check, config.cfg_heartbeat_interval_ms);
+
+    helper.publish_ready_beacon();
 }
 
 auto external_energy_limits_consumer_API::forward_api_var(std::string const& var) {
     using namespace API_types_ext;
-    auto topic = topics.everest_to_extern(var);
+    const auto topic = helper.get_topics().everest_to_extern(var);
     return [this, topic](auto const& val) {
         try {
             auto&& external = to_external_api(val);
             auto&& payload = serialize(external);
-            mqtt.publish(topic, payload);
+            mqtt_v.publish(topic, payload);
         } catch (const std::exception& e) {
             EVLOG_warning << "Variable: '" << topic << "' failed with -> " << e.what();
         } catch (...) {
@@ -50,7 +55,7 @@ auto external_energy_limits_consumer_API::forward_api_var(std::string const& var
 }
 
 void external_energy_limits_consumer_API::generate_api_cmd_set_external_limits() {
-    subscribe_api_topic("set_external_limits", [this](std::string const& data) {
+    helper.subscribe_api_topic("set_external_limits", [this](std::string const& data) {
         API_types_ext::ExternalLimits val;
         if (deserialize(data, val)) {
             r_energy_node->call_set_external_limits(to_internal_api(val));
@@ -62,42 +67,6 @@ void external_energy_limits_consumer_API::generate_api_cmd_set_external_limits()
 
 void external_energy_limits_consumer_API::generate_api_var_capabilities() {
     r_energy_node->subscribe_capabilities(forward_api_var("capabilities"));
-}
-
-void external_energy_limits_consumer_API::generate_api_var_communication_check() {
-    subscribe_api_topic("communication_check", [this](std::string const& data) {
-        bool val = false;
-        if (deserialize(data, val)) {
-            comm_check.set_value(val);
-            return true;
-        }
-        return false;
-    });
-}
-
-void external_energy_limits_consumer_API::setup_heartbeat_generator() {
-    auto topic = topics.everest_to_extern("heartbeat");
-    auto action = [this, topic]() {
-        mqtt.publish(topic, API_generic::serialize(hb_id++));
-        return true;
-    };
-    comm_check.heartbeat(config.cfg_heartbeat_interval_ms, action);
-}
-
-void external_energy_limits_consumer_API::subscribe_api_topic(std::string const& var,
-                                                              ParseAndPublishFtor const& parse_and_publish) {
-    auto topic = topics.extern_to_everest(var);
-    mqtt.subscribe(topic, [=](std::string const& data) {
-        try {
-            if (not parse_and_publish(data)) {
-                EVLOG_warning << "Invalid data: Deserialization failed.\n" << topic << "\n" << data;
-            }
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Topic: '" << topic << "' failed with -> " << e.what() << "\n => " << data;
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Failed to parse JSON or to get data from it.\n" << topic;
-        }
-    });
 }
 
 } // namespace module
