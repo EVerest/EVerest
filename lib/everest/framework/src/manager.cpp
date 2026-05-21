@@ -790,6 +790,15 @@ int Manager::run() {
                                                    : Everest::api::lifecycle::ConfigurationApiStatus::AvailableRW)
                               : Everest::api::lifecycle::ConfigurationApiStatus::NotAvailable,
             lc_api_read_only);
+
+        register_state_transition_handler([this, &lifecycle_api](ManagerState from, ManagerState to) {
+            // TODO(CB): Might want to interprete some more to-states as "running"
+            if (to == ManagerState::Running) {
+                lifecycle_api->modules_started_running();
+            } else if (from == ManagerState::Running) {
+                lifecycle_api->modules_stopped_running();
+            }
+        });
     }
 
     if (vm_.count("into-idle") == 0) {

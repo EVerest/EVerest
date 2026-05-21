@@ -51,8 +51,14 @@ LifecycleAPI::LifecycleAPI(MQTTAbstraction& mqtt_abstraction, ::Everest::config:
 
     generate_api_cmd_stop_modules();
     generate_api_cmd_start_modules();
+}
 
-    generate_api_var_status();
+void LifecycleAPI::modules_started_running() {
+    module_runtime_status_changed(true);
+}
+
+void LifecycleAPI::modules_stopped_running() {
+    module_runtime_status_changed(false);
 }
 
 void LifecycleAPI::generate_api_cmd_stop_modules() {
@@ -93,23 +99,19 @@ void LifecycleAPI::generate_api_cmd_start_modules() {
     });
 }
 
-void LifecycleAPI::generate_api_var_status() {
-    auto topic = m_topics.nonmodule_to_extern("status");
+void LifecycleAPI::module_runtime_status_changed(bool running) {
+    static const auto topic = m_topics.nonmodule_to_extern("status");
 
-    API_types_ext::ExecutionStatusUpdateNotice initial_update{};
-    initial_update.configuration_api_available = to_configuration_api_availability(m_config_api_availability);
-    initial_update.tstamp = Everest::Date::to_rfc3339(date::utc_clock::now());
-    initial_update.status =
-        API_types_ext::ModuleExecutionStatusEnum::Running; // TODO(CB): This should be queried from the config_service,
-                                                           // but it currently does not offer this
+    API_types_ext::ExecutionStatusUpdateNotice exec_status_update{};
+    exec_status_update.configuration_api_available = to_configuration_api_availability(m_config_api_availability);
+    exec_status_update.tstamp = Everest::Date::to_rfc3339(date::utc_clock::now());
+    if (running) {
+        exec_status_update.status = API_types_ext::ModuleExecutionStatusEnum::Running;
+    } else {
+        exec_status_update.status = API_types_ext::ModuleExecutionStatusEnum::NotRunning;
+    }
 
-    EVLOG_warning << "Status topic: " << topic;
-    m_mqtt_abstraction.publish(topic, serialize(initial_update), QOS::QOS2, false);
-
-    // TODO(CB): register a callback somewhere and publish whenever the modules start/stop
-
-    // TODO(CB): This topics should be written to on disconnect via LWT, but the mqtt abstraction currently does not
-    // offer this
+    m_mqtt_abstraction.publish(topic, serialize(exec_status_update), QOS::QOS2, false);
 }
 
 void LifecycleAPI::subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish) {
