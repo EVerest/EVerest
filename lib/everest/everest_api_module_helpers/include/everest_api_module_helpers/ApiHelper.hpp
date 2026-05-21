@@ -20,7 +20,7 @@
 #include <everest_api_types/entrypoint/API.hpp>
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/utilities/CommCheckHandler.hpp>
-#include <everest_api_types/utilities/IMqttProvider.hpp>
+#include <everest_api_types/utilities/MqttProviderInterface.hpp>
 #include <everest_api_types/utilities/Topics.hpp>
 #include <everest_api_types/utilities/codec.hpp>
 
@@ -32,7 +32,7 @@ class ApiHelper {
 public:
     using ParseAndPublishFtor = std::function<bool(std::string const&)>;
 
-    ApiHelper(const ModuleInfo& info_, Mqtt::IMqttProvider& mqtt_provider_,
+    ApiHelper(const ModuleInfo& info_, Mqtt::MqttProviderInterface& mqtt_provider_,
               std::map<std::string, size_t> implemented_apis_,
               std::shared_ptr<Everest::config::ConfigServiceClient> config_service_client_) :
         info(info_),
@@ -42,7 +42,7 @@ public:
     }
 
     const ModuleInfo& info;
-    Mqtt::IMqttProvider& mqtt;
+    Mqtt::MqttProviderInterface& mqtt;
 
     const Topics& get_topics() const;
 

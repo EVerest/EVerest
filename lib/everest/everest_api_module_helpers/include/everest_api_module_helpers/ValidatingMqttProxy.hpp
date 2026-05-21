@@ -8,11 +8,11 @@
 
 #include <framework/ModuleAdapter.hpp>
 
-#include <everest_api_types/utilities/IMqttProvider.hpp>
+#include <everest_api_types/utilities/MqttProviderInterface.hpp>
 
 namespace everest::lib::API::Mqtt {
 
-class ValidatingMqttProxy : public IMqttProvider {
+class ValidatingMqttProxy : public MqttProviderInterface {
 public:
     explicit ValidatingMqttProxy(Everest::MqttProvider& provider_);
 

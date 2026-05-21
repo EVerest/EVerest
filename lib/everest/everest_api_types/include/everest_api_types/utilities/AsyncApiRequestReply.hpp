@@ -16,7 +16,7 @@
 
 #include <everest_api_types/utilities/Topics.hpp>
 
-#include "IMqttProvider.hpp"
+#include "MqttProviderInterface.hpp"
 
 namespace everest::lib::API {
 
@@ -31,7 +31,7 @@ using namespace std::chrono_literals;
 
 template <class ValueT> class AsyncApiRequestReply {
 public:
-    AsyncApiRequestReply(Mqtt::IMqttProvider& mqtt_, Topics const& topic_generator_,
+    AsyncApiRequestReply(Mqtt::MqttProviderInterface& mqtt_, Topics const& topic_generator_,
                          std::chrono::seconds timeout_ = 5s) :
         mqtt(mqtt_), topic_generator(topic_generator_), timeout(timeout_) {
     }
@@ -74,14 +74,14 @@ public:
     }
 
 private:
-    Mqtt::IMqttProvider& mqtt;
+    Mqtt::MqttProviderInterface& mqtt;
     Topics const& topic_generator;
     std::chrono::seconds timeout;
     boost::uuids::random_generator uuid_create;
 };
 
 template <class ReplyT, class ReqT>
-auto request_reply_handler(Mqtt::IMqttProvider& mqtt, Topics const& topic_generator, ReqT const& request,
+auto request_reply_handler(Mqtt::MqttProviderInterface& mqtt, Topics const& topic_generator, ReqT const& request,
                            std::string const& topic, int timeout_s) {
     using namespace internal;
     using ResultT = std::optional<decltype(to_internal_api(std::declval<ReplyT>()))>;
@@ -98,7 +98,7 @@ auto request_reply_handler(Mqtt::IMqttProvider& mqtt, Topics const& topic_genera
 }
 
 template <class ReplyT>
-auto request_reply_handler(Mqtt::IMqttProvider& mqtt, Topics const& topic_generator, std::string const& topic,
+auto request_reply_handler(Mqtt::MqttProviderInterface& mqtt, Topics const& topic_generator, std::string const& topic,
                            int timeout_s) {
     return request_reply_handler<ReplyT>(mqtt, topic_generator, internal::empty_payload, topic, timeout_s);
 }

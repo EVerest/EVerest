@@ -10,9 +10,9 @@
 
 namespace everest::lib::API::Mqtt {
 
-class IMqttProvider {
+class MqttProviderInterface {
 public:
-    virtual ~IMqttProvider() = default;
+    virtual ~MqttProviderInterface() = default;
 
     virtual void publish(const std::string& topic, const std::string& data) = 0;
     virtual void publish(const std::string& topic, bool data) = 0;
