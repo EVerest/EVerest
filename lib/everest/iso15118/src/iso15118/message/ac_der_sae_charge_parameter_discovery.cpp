@@ -13,6 +13,306 @@ namespace iso15118::message_20 {
 using DER_AC_ModeReq = datatypes::DER_SAE_AC_CPDReqEnergyTransferMode;
 using DER_AC_ModeRes = datatypes::DER_SAE_AC_CPDResEnergyTransferMode;
 
+template <>
+void convert(const struct iso20_ac_der_sae_EVApparentPowerLimitsType& in, datatypes::EVApparentPowerLimits& out) {
+    convert(in.EVMaximumApparentPowerDuringChargingAndVarAbsorption,
+            out.maximum_apparent_power_during_charging_and_var_absorption);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumApparentPowerDuringChargingAndVarAbsorption_L2,
+                           out.maximum_apparent_power_during_charging_and_var_absorption_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumApparentPowerDuringChargingAndVarAbsorption_L3,
+                           out.maximum_apparent_power_during_charging_and_var_absorption_L3);
+    convert(in.EVMaximumApparentPowerDuringChargingAndVarInjection,
+            out.maximum_apparent_power_during_charging_and_var_injection);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumApparentPowerDuringChargingAndVarInjection_L2,
+                           out.maximum_apparent_power_during_charging_and_var_injection_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumApparentPowerDuringChargingAndVarInjection_L3,
+                           out.maximum_apparent_power_during_charging_and_var_injection_L3);
+    convert(in.EVMaximumApparentPowerDuringDischargingAndVarAbsorption,
+            out.maximum_apparent_power_during_discharging_and_var_absorption);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumApparentPowerDuringDischargingAndVarAbsorption_L2,
+                           out.maximum_apparent_power_during_discharging_and_var_absorption_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumApparentPowerDuringDischargingAndVarAbsorption_L3,
+                           out.maximum_apparent_power_during_discharging_and_var_absorption_L3);
+    convert(in.EVMaximumApparentPowerDuringDischargingAndVarInjection,
+            out.maximum_apparent_power_during_discharging_and_var_injection);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumApparentPowerDuringDischargingAndVarInjection_L2,
+                           out.maximum_apparent_power_during_discharging_and_var_injection_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumApparentPowerDuringDischargingAndVarInjection_L3,
+                           out.maximum_apparent_power_during_discharging_and_var_injection_L3);
+}
+
+template <>
+void convert(const datatypes::EVApparentPowerLimits& in, struct iso20_ac_der_sae_EVApparentPowerLimitsType& out) {
+    init_iso20_ac_der_sae_EVApparentPowerLimitsType(&out);
+    convert(in.maximum_apparent_power_during_charging_and_var_absorption,
+            out.EVMaximumApparentPowerDuringChargingAndVarAbsorption);
+    CPP2CB_CONVERT_IF_USED(in.maximum_apparent_power_during_charging_and_var_absorption_L2,
+                           out.EVMaximumApparentPowerDuringChargingAndVarAbsorption_L2);
+    CPP2CB_CONVERT_IF_USED(in.maximum_apparent_power_during_charging_and_var_absorption_L3,
+                           out.EVMaximumApparentPowerDuringChargingAndVarAbsorption_L3);
+    convert(in.maximum_apparent_power_during_charging_and_var_injection,
+            out.EVMaximumApparentPowerDuringChargingAndVarInjection);
+    CPP2CB_CONVERT_IF_USED(in.maximum_apparent_power_during_charging_and_var_injection_L2,
+                           out.EVMaximumApparentPowerDuringChargingAndVarInjection_L2);
+    CPP2CB_CONVERT_IF_USED(in.maximum_apparent_power_during_charging_and_var_injection_L3,
+                           out.EVMaximumApparentPowerDuringChargingAndVarInjection_L3);
+    convert(in.maximum_apparent_power_during_discharging_and_var_absorption,
+            out.EVMaximumApparentPowerDuringDischargingAndVarAbsorption);
+    CPP2CB_CONVERT_IF_USED(in.maximum_apparent_power_during_discharging_and_var_absorption_L2,
+                           out.EVMaximumApparentPowerDuringDischargingAndVarAbsorption_L2);
+    CPP2CB_CONVERT_IF_USED(in.maximum_apparent_power_during_discharging_and_var_absorption_L3,
+                           out.EVMaximumApparentPowerDuringDischargingAndVarAbsorption_L3);
+    convert(in.maximum_apparent_power_during_discharging_and_var_injection,
+            out.EVMaximumApparentPowerDuringDischargingAndVarInjection);
+    CPP2CB_CONVERT_IF_USED(in.maximum_apparent_power_during_discharging_and_var_injection_L2,
+                           out.EVMaximumApparentPowerDuringDischargingAndVarInjection_L2);
+    CPP2CB_CONVERT_IF_USED(in.maximum_apparent_power_during_discharging_and_var_injection_L3,
+                           out.EVMaximumApparentPowerDuringDischargingAndVarInjection_L3);
+}
+
+template <>
+void convert(const struct iso20_ac_der_sae_EVReactivePowerLimitsType& in, datatypes::EVReactivePowerLimits& out) {
+    convert(in.EVMaximumVarAbsorptionDuringCharging, out.maximum_var_absorption_during_charging);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumVarAbsorptionDuringCharging_L2, out.maximum_var_absorption_during_charging_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumVarAbsorptionDuringCharging_L3, out.maximum_var_absorption_during_charging_L3);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumVarAbsorptionDuringCharging, out.minimum_var_absorption_during_charging);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumVarAbsorptionDuringCharging_L2, out.minimum_var_absorption_during_charging_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumVarAbsorptionDuringCharging_L3, out.minimum_var_absorption_during_charging_L3);
+    convert(in.EVMaximumVarInjectionDuringCharging, out.maximum_var_injection_during_charging);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumVarInjectionDuringCharging_L2, out.maximum_var_injection_during_charging_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumVarInjectionDuringCharging_L3, out.maximum_var_injection_during_charging_L3);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumVarInjectionDuringCharging, out.minimum_var_injection_during_charging);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumVarInjectionDuringCharging_L2, out.minimum_var_injection_during_charging_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumVarInjectionDuringCharging_L3, out.minimum_var_injection_during_charging_L3);
+    convert(in.EVMaximumVarAbsorptionDuringDischarging, out.maximum_var_absorption_during_discharging);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumVarAbsorptionDuringDischarging_L2,
+                           out.maximum_var_absorption_during_discharging_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumVarAbsorptionDuringDischarging_L3,
+                           out.maximum_var_absorption_during_discharging_L3);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumVarAbsorptionDuringDischarging, out.minimum_var_absorption_during_discharging);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumVarAbsorptionDuringDischarging_L2,
+                           out.minimum_var_absorption_during_discharging_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumVarAbsorptionDuringDischarging_L3,
+                           out.minimum_var_absorption_during_discharging_L3);
+    convert(in.EVMaximumVarInjectionDuringDischarging, out.maximum_var_injection_during_discharging);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumVarInjectionDuringDischarging_L2,
+                           out.maximum_var_injection_during_discharging_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumVarInjectionDuringDischarging_L3,
+                           out.maximum_var_injection_during_discharging_L3);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumVarInjectionDuringDischarging, out.minimum_var_injection_during_discharging);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumVarInjectionDuringDischarging_L2,
+                           out.minimum_var_injection_during_discharging_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumVarInjectionDuringDischarging_L3,
+                           out.minimum_var_injection_during_discharging_L3);
+    convert(in.EVReactiveSusceptance, out.reactive_susceptance);
+    CB2CPP_CONVERT_IF_USED(in.EVReactiveSusceptance_L2, out.reactive_susceptance_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVReactiveSusceptance_L3, out.reactive_susceptance_L3);
+}
+
+template <>
+void convert(const datatypes::EVReactivePowerLimits& in, struct iso20_ac_der_sae_EVReactivePowerLimitsType& out) {
+    init_iso20_ac_der_sae_EVReactivePowerLimitsType(&out);
+    convert(in.maximum_var_absorption_during_charging, out.EVMaximumVarAbsorptionDuringCharging);
+    CPP2CB_CONVERT_IF_USED(in.maximum_var_absorption_during_charging_L2, out.EVMaximumVarAbsorptionDuringCharging_L2);
+    CPP2CB_CONVERT_IF_USED(in.maximum_var_absorption_during_charging_L3, out.EVMaximumVarAbsorptionDuringCharging_L3);
+    CPP2CB_CONVERT_IF_USED(in.minimum_var_absorption_during_charging, out.EVMinimumVarAbsorptionDuringCharging);
+    CPP2CB_CONVERT_IF_USED(in.minimum_var_absorption_during_charging_L2, out.EVMinimumVarAbsorptionDuringCharging_L2);
+    CPP2CB_CONVERT_IF_USED(in.minimum_var_absorption_during_charging_L3, out.EVMinimumVarAbsorptionDuringCharging_L3);
+    convert(in.maximum_var_injection_during_charging, out.EVMaximumVarInjectionDuringCharging);
+    CPP2CB_CONVERT_IF_USED(in.maximum_var_injection_during_charging_L2, out.EVMaximumVarInjectionDuringCharging_L2);
+    CPP2CB_CONVERT_IF_USED(in.maximum_var_injection_during_charging_L3, out.EVMaximumVarInjectionDuringCharging_L3);
+    CPP2CB_CONVERT_IF_USED(in.minimum_var_injection_during_charging, out.EVMinimumVarInjectionDuringCharging);
+    CPP2CB_CONVERT_IF_USED(in.minimum_var_injection_during_charging_L2, out.EVMinimumVarInjectionDuringCharging_L2);
+    CPP2CB_CONVERT_IF_USED(in.minimum_var_injection_during_charging_L3, out.EVMinimumVarInjectionDuringCharging_L3);
+    convert(in.maximum_var_absorption_during_discharging, out.EVMaximumVarAbsorptionDuringDischarging);
+    CPP2CB_CONVERT_IF_USED(in.maximum_var_absorption_during_discharging_L2,
+                           out.EVMaximumVarAbsorptionDuringDischarging_L2);
+    CPP2CB_CONVERT_IF_USED(in.maximum_var_absorption_during_discharging_L3,
+                           out.EVMaximumVarAbsorptionDuringDischarging_L3);
+    CPP2CB_CONVERT_IF_USED(in.minimum_var_absorption_during_discharging, out.EVMinimumVarAbsorptionDuringDischarging);
+    CPP2CB_CONVERT_IF_USED(in.minimum_var_absorption_during_discharging_L2,
+                           out.EVMinimumVarAbsorptionDuringDischarging_L2);
+    CPP2CB_CONVERT_IF_USED(in.minimum_var_absorption_during_discharging_L3,
+                           out.EVMinimumVarAbsorptionDuringDischarging_L3);
+    convert(in.maximum_var_injection_during_discharging, out.EVMaximumVarInjectionDuringDischarging);
+    CPP2CB_CONVERT_IF_USED(in.maximum_var_injection_during_discharging_L2,
+                           out.EVMaximumVarInjectionDuringDischarging_L2);
+    CPP2CB_CONVERT_IF_USED(in.maximum_var_injection_during_discharging_L3,
+                           out.EVMaximumVarInjectionDuringDischarging_L3);
+    CPP2CB_CONVERT_IF_USED(in.minimum_var_injection_during_discharging, out.EVMinimumVarInjectionDuringDischarging);
+    CPP2CB_CONVERT_IF_USED(in.minimum_var_injection_during_discharging_L2,
+                           out.EVMinimumVarInjectionDuringDischarging_L2);
+    CPP2CB_CONVERT_IF_USED(in.minimum_var_injection_during_discharging_L3,
+                           out.EVMinimumVarInjectionDuringDischarging_L3);
+    convert(in.reactive_susceptance, out.EVReactiveSusceptance);
+    CPP2CB_CONVERT_IF_USED(in.reactive_susceptance_L2, out.EVReactiveSusceptance_L2);
+    CPP2CB_CONVERT_IF_USED(in.reactive_susceptance_L3, out.EVReactiveSusceptance_L3);
+}
+
+template <> void convert(const struct iso20_ac_der_sae_EVExcitationLimitsType& in, datatypes::EVExcitationLimits& out) {
+    convert(in.EVSpecifiedOverExcitedPowerFactor, out.specified_over_excited_power_factor);
+    CB2CPP_CONVERT_IF_USED(in.EVSpecifiedOverExcitedPowerFactor_L2, out.specified_over_excited_power_factor_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVSpecifiedOverExcitedPowerFactor_L3, out.specified_over_excited_power_factor_L3);
+    convert(in.EVSpecifiedOverExcitedDischargePower, out.specified_over_excited_discharge_power);
+    CB2CPP_CONVERT_IF_USED(in.EVSpecifiedOverExcitedDischargePower_L2, out.specified_over_excited_discharge_power_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVSpecifiedOverExcitedDischargePower_L3, out.specified_over_excited_discharge_power_L3);
+    convert(in.EVSpecifiedUnderExcitedPowerFactor, out.specified_under_excited_power_factor);
+    CB2CPP_CONVERT_IF_USED(in.EVSpecifiedUnderExcitedPowerFactor_L2, out.specified_under_excited_power_factor_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVSpecifiedUnderExcitedPowerFactor_L3, out.specified_under_excited_power_factor_L3);
+    convert(in.EVSpecifiedUnderExcitedDischargePower, out.specified_under_excited_discharge_power);
+    CB2CPP_CONVERT_IF_USED(in.EVSpecifiedUnderExcitedDischargePower_L2, out.specified_under_excited_discharge_power_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVSpecifiedUnderExcitedDischargePower_L3, out.specified_under_excited_discharge_power_L3);
+}
+
+template <> void convert(const datatypes::EVExcitationLimits& in, struct iso20_ac_der_sae_EVExcitationLimitsType& out) {
+    init_iso20_ac_der_sae_EVExcitationLimitsType(&out);
+    convert(in.specified_over_excited_power_factor, out.EVSpecifiedOverExcitedPowerFactor);
+    CPP2CB_CONVERT_IF_USED(in.specified_over_excited_power_factor_L2, out.EVSpecifiedOverExcitedPowerFactor_L2);
+    CPP2CB_CONVERT_IF_USED(in.specified_over_excited_power_factor_L3, out.EVSpecifiedOverExcitedPowerFactor_L3);
+    convert(in.specified_over_excited_discharge_power, out.EVSpecifiedOverExcitedDischargePower);
+    CPP2CB_CONVERT_IF_USED(in.specified_over_excited_discharge_power_L2, out.EVSpecifiedOverExcitedDischargePower_L2);
+    CPP2CB_CONVERT_IF_USED(in.specified_over_excited_discharge_power_L3, out.EVSpecifiedOverExcitedDischargePower_L3);
+    convert(in.specified_under_excited_power_factor, out.EVSpecifiedUnderExcitedPowerFactor);
+    CPP2CB_CONVERT_IF_USED(in.specified_under_excited_power_factor_L2, out.EVSpecifiedUnderExcitedPowerFactor_L2);
+    CPP2CB_CONVERT_IF_USED(in.specified_under_excited_power_factor_L3, out.EVSpecifiedUnderExcitedPowerFactor_L3);
+    convert(in.specified_under_excited_discharge_power, out.EVSpecifiedUnderExcitedDischargePower);
+    CPP2CB_CONVERT_IF_USED(in.specified_under_excited_discharge_power_L2, out.EVSpecifiedUnderExcitedDischargePower_L2);
+    CPP2CB_CONVERT_IF_USED(in.specified_under_excited_discharge_power_L3, out.EVSpecifiedUnderExcitedDischargePower_L3);
+}
+
+template <> void convert(const struct iso20_ac_der_sae_EVInverterDetailsType& in, datatypes::EVInverterDetails& out) {
+    out.inverter_sw_version = CB2CPP_STRING(in.EVInverterSwVersion);
+    CB2CPP_STRING_IF_USED(in.EVInverterHwVersion, out.inverter_hw_version);
+    out.inverter_manufacturer = CB2CPP_STRING(in.EVInverterManufacturer);
+    out.inverter_model = CB2CPP_STRING(in.EVInverterModel);
+    out.inverter_serial_number = CB2CPP_STRING(in.EVInverterSerialNumber);
+}
+
+template <> void convert(const datatypes::EVInverterDetails& in, struct iso20_ac_der_sae_EVInverterDetailsType& out) {
+    init_iso20_ac_der_sae_EVInverterDetailsType(&out);
+    CPP2CB_STRING(in.inverter_sw_version, out.EVInverterSwVersion);
+    CPP2CB_STRING_IF_USED(in.inverter_hw_version, out.EVInverterHwVersion);
+    CPP2CB_STRING(in.inverter_manufacturer, out.EVInverterManufacturer);
+    CPP2CB_STRING(in.inverter_model, out.EVInverterModel);
+    CPP2CB_STRING(in.inverter_serial_number, out.EVInverterSerialNumber);
+}
+
+template <> void convert(const struct iso20_ac_der_sae_DER_AC_CPDReqEnergyTransferModeType& in, DER_AC_ModeReq& out) {
+    // Convert base AC_CPDReqEnergyTransferMode fields
+    convert(in.EVMaximumChargePower, out.max_charge_power);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumChargePower_L2, out.max_charge_power_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumChargePower_L3, out.max_charge_power_L3);
+    convert(in.EVMinimumChargePower, out.min_charge_power);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumChargePower_L2, out.min_charge_power_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumChargePower_L3, out.min_charge_power_L3);
+
+    // Convert DER-specific fields
+    cb_convert_enum(in.EVProcessing, out.processing);
+    convert(in.EVMaximumDischargePower, out.maximum_discharge_power);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumDischargePower_L2, out.maximum_discharge_power_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMaximumDischargePower_L3, out.maximum_discharge_power_L3);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumDischargePower, out.minimum_discharge_power);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumDischargePower_L2, out.minimum_discharge_power_L2);
+    CB2CPP_CONVERT_IF_USED(in.EVMinimumDischargePower_L3, out.minimum_discharge_power_L3);
+    CB2CPP_CONVERT_IF_USED(in.EVSessionTotalDischargeEnergyAvailable, out.session_total_discharge_energy_available);
+    convert(in.EVApparentPowerLimits, out.apparent_power_limits);
+    convert(in.EVReactivePowerLimits, out.reactive_power_limits);
+    convert(in.EVExcitationLimits, out.excitation_limits);
+    convert(in.EVInverterDetails, out.inverter_details);
+    cb_convert_enum(in.IEEE1547NormalCategory, out.ieee1547_normal_category);
+    cb_convert_enum(in.IEEE1547AbnormalCategory, out.ieee1547_abnormal_category);
+    convert(in.EVNominalVoltage, out.nominal_voltage);
+    convert(in.EVMaximumVoltage, out.maximum_voltage);
+    convert(in.EVMinimumVoltage, out.minimum_voltage);
+    convert(in.EVNominalVoltageOffset, out.nominal_voltage_offset);
+    out.j3072_certified = static_cast<bool>(in.J3072Certified);
+    out.j3072_certification_date = in.J3072CertificationDate;
+    out.useable_watt_hours = in.EVUseableWattHours;
+    out.update_time = in.EVUpdateTime;
+    out.supported_modes = in.SupportedModes;
+    out.enabled_modes = in.EnabledModes;
+}
+
+template <>
+void convert(const struct iso20_ac_der_sae_AC_ChargeParameterDiscoveryReqType& in,
+             DER_SAE_AC_ChargeParameterDiscoveryRequest& out) {
+    convert(in.Header, out.header);
+
+    if (in.DER_AC_CPDReqEnergyTransferMode_isUsed) {
+        convert(in.DER_AC_CPDReqEnergyTransferMode, out.transfer_mode);
+    } else {
+        // TODO(SL): Add warning that a transfer mode other then DER
+    }
+}
+
+template <> void insert_type(VariantAccess& va, const struct iso20_ac_der_sae_AC_ChargeParameterDiscoveryReqType& in) {
+    va.insert_type<DER_SAE_AC_ChargeParameterDiscoveryRequest>(in);
+}
+
+template <>
+void convert(const datatypes::DER_SAE_AC_CPDReqEnergyTransferMode& in,
+             struct iso20_ac_der_sae_DER_AC_CPDReqEnergyTransferModeType& out) {
+    init_iso20_ac_der_sae_DER_AC_CPDReqEnergyTransferModeType(&out);
+
+    // Convert base AC_CPDReqEnergyTransferMode fields
+    convert(in.max_charge_power, out.EVMaximumChargePower);
+    CPP2CB_CONVERT_IF_USED(in.max_charge_power_L2, out.EVMaximumChargePower_L2);
+    CPP2CB_CONVERT_IF_USED(in.max_charge_power_L3, out.EVMaximumChargePower_L3);
+    convert(in.min_charge_power, out.EVMinimumChargePower);
+    CPP2CB_CONVERT_IF_USED(in.min_charge_power_L2, out.EVMinimumChargePower_L2);
+    CPP2CB_CONVERT_IF_USED(in.min_charge_power_L3, out.EVMinimumChargePower_L3);
+
+    // Convert DER-specific fields
+    cb_convert_enum(in.processing, out.EVProcessing);
+    convert(in.maximum_discharge_power, out.EVMaximumDischargePower);
+    CPP2CB_CONVERT_IF_USED(in.maximum_discharge_power_L2, out.EVMaximumDischargePower_L2);
+    CPP2CB_CONVERT_IF_USED(in.maximum_discharge_power_L3, out.EVMaximumDischargePower_L3);
+    CPP2CB_CONVERT_IF_USED(in.minimum_discharge_power, out.EVMinimumDischargePower);
+    CPP2CB_CONVERT_IF_USED(in.minimum_discharge_power_L2, out.EVMinimumDischargePower_L2);
+    CPP2CB_CONVERT_IF_USED(in.minimum_discharge_power_L3, out.EVMinimumDischargePower_L3);
+    CPP2CB_CONVERT_IF_USED(in.session_total_discharge_energy_available, out.EVSessionTotalDischargeEnergyAvailable);
+    convert(in.apparent_power_limits, out.EVApparentPowerLimits);
+    convert(in.reactive_power_limits, out.EVReactivePowerLimits);
+    convert(in.excitation_limits, out.EVExcitationLimits);
+    convert(in.inverter_details, out.EVInverterDetails);
+    cb_convert_enum(in.ieee1547_normal_category, out.IEEE1547NormalCategory);
+    cb_convert_enum(in.ieee1547_abnormal_category, out.IEEE1547AbnormalCategory);
+    convert(in.nominal_voltage, out.EVNominalVoltage);
+    convert(in.maximum_voltage, out.EVMaximumVoltage);
+    convert(in.minimum_voltage, out.EVMinimumVoltage);
+    convert(in.nominal_voltage_offset, out.EVNominalVoltageOffset);
+    out.J3072Certified = in.j3072_certified ? 1 : 0;
+    out.J3072CertificationDate = in.j3072_certification_date;
+    out.EVUseableWattHours = in.useable_watt_hours;
+    out.EVUpdateTime = in.update_time;
+    out.SupportedModes = in.supported_modes;
+    out.EnabledModes = in.enabled_modes;
+}
+
+template <>
+void convert(const DER_SAE_AC_ChargeParameterDiscoveryRequest& in,
+             struct iso20_ac_der_sae_AC_ChargeParameterDiscoveryReqType& out) {
+    init_iso20_ac_der_sae_AC_ChargeParameterDiscoveryReqType(&out);
+    convert(in.header, out.Header);
+
+    convert(in.transfer_mode, out.DER_AC_CPDReqEnergyTransferMode);
+    CB_SET_USED(out.DER_AC_CPDReqEnergyTransferMode);
+}
+
+template <> int serialize_to_exi(const DER_SAE_AC_ChargeParameterDiscoveryRequest& in, exi_bitstream_t& out) {
+    iso20_ac_der_sae_exiDocument doc{};
+    init_iso20_ac_der_sae_exiDocument(&doc);
+
+    CB_SET_USED(doc.AC_ChargeParameterDiscoveryReq);
+    convert(in, doc.AC_ChargeParameterDiscoveryReq);
+    return encode_iso20_ac_der_sae_exiDocument(&out, &doc);
+}
+template <> size_t serialize(const DER_SAE_AC_ChargeParameterDiscoveryRequest& in, const io::StreamOutputView& out) {
+    auto rv = serialize_helper(in, out);
+    return rv;
+}
+
+// DataTuple conversions
 template <> void convert(const struct iso20_ac_der_sae_DataTupleType& in, datatypes::DataTuple& out) {
     convert(in.xValue, out.x_value);
     convert(in.yValue, out.y_value);
