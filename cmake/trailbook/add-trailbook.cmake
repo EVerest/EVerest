@@ -262,7 +262,6 @@ macro(_add_trailbook_sphinx_build_command)
             --data-file ${CMAKE_CURRENT_BINARY_DIR}/sphinx_build_filelist.yaml
             --root-directory ${TRAILBOOK_INSTANCE_BUILD_DIRECTORY}/
         COMMAND
-            EVEREST_METADATA_YAML_PATH=${METADATA_YAML_FILE}
             ${_SPHINX_BUILD_EXECUTABLE}
             -b html
             ${TRAILBOOK_INSTANCE_SOURCE_DIRECTORY}
@@ -397,63 +396,29 @@ endmacro()
 # This macro is for internal use only
 #
 # It is used in the function add_trailbook.
-# It adds a custom command to copy the versions_index.html file to the multiversion root directory
+# It installs a static versions_index.html into the multiversion root directory.
+# The page reads versions.json at runtime via JavaScript, so it stays in sync
+# with the deployed set of instances without needing per-build regeneration
+# (and without depending on any particular instance's Sphinx output).
 macro(_add_trailbook_copy_versions_index_command)
     set(CHECK_DONE_FILE_COPY_VERSIONS_INDEX "${CMAKE_CURRENT_BINARY_DIR}/copy_versions_index.check_done")
     set(TRAILBOOK_VERSIONS_INDEX_FILE "${TRAILBOOK_BUILD_DIRECTORY}/versions_index.html")
-    set(TRAILBOOK_INSTANCE_VERSIONS_INDEX_FILE "${TRAILBOOK_INSTANCE_BUILD_DIRECTORY}/versions_index.html")
-    set(CHECK_DONE_FILE_CHECK_LATEST_INSTANCE "${CMAKE_CURRENT_BINARY_DIR}/check_latest_instance.check_done")
-    add_custom_command(
-        OUTPUT
-            ${TRAILBOOK_INSTANCE_VERSIONS_INDEX_FILE}
-        DEPENDS
-            trailbook_${args_NAME}_stage_postprocess_sphinx_before
-            $<TARGET_PROPERTY:trailbook_${args_NAME},ADDITIONAL_DEPS_STAGE_POSTPROCESS_SPHINX_BEFORE>
-            ${CHECK_DONE_FILE_SPHINX_BUILD_COMMAND}
-            ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/check_path_exists.py
-        COMMENT
-            "Trailbook: ${args_NAME} - Checking for versions_index.html in built documentation"
-        COMMAND
-            ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/check_path_exists.py
-            --file "${TRAILBOOK_INSTANCE_VERSIONS_INDEX_FILE}"
-            --return-zero-if-exists
-    )
-    add_custom_command(
-        OUTPUT
-            ${CHECK_DONE_FILE_CHECK_LATEST_INSTANCE}
-        DEPENDS
-            trailbook_${args_NAME}_stage_postprocess_sphinx_before
-            $<TARGET_PROPERTY:trailbook_${args_NAME},ADDITIONAL_DEPS_STAGE_POSTPROCESS_SPHINX_BEFORE>
-            ${CHECK_DONE_FILE_SPHINX_BUILD_COMMAND}
-            ${CHECK_DONE_FILE_REPLACE_LATEST}
-            ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/check_path_exists.py
-        COMMENT
-            "Trailbook: ${args_NAME} - Checking for latest/ in multiversion root directory"
-        COMMAND
-            ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/check_path_exists.py
-            --directory ${TRAILBOOK_BUILD_DIRECTORY}/latest
-            --return-zero-if-exists
-        COMMAND
-            ${CMAKE_COMMAND} -E touch ${CHECK_DONE_FILE_CHECK_LATEST_INSTANCE}
-    )
+    set(TRAILBOOK_VERSIONS_INDEX_SOURCE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/templates/versions_index.html")
     add_custom_command(
         OUTPUT
             ${CHECK_DONE_FILE_COPY_VERSIONS_INDEX}
         DEPENDS
             trailbook_${args_NAME}_stage_postprocess_sphinx_before
             $<TARGET_PROPERTY:trailbook_${args_NAME},ADDITIONAL_DEPS_STAGE_POSTPROCESS_SPHINX_BEFORE>
-            ${CHECK_DONE_FILE_SPHINX_BUILD_COMMAND}
-            ${TRAILBOOK_INSTANCE_VERSIONS_INDEX_FILE}
-            ${CHECK_DONE_FILE_CHECK_LATEST_INSTANCE}
+            ${CHECK_DONE_FILE_SETUP_BUILD_DIRECTORY}
+            ${TRAILBOOK_VERSIONS_INDEX_SOURCE}
         COMMENT
-            "Trailbook: ${args_NAME} - Copying versions_index.html to multiversion root directory"
+            "Trailbook: ${args_NAME} - Installing static versions_index.html in multiversion root directory"
         COMMAND
             ${CMAKE_COMMAND} -E rm -f ${TRAILBOOK_VERSIONS_INDEX_FILE}
         COMMAND
             ${CMAKE_COMMAND} -E copy
-            ${TRAILBOOK_INSTANCE_VERSIONS_INDEX_FILE}
+            ${TRAILBOOK_VERSIONS_INDEX_SOURCE}
             ${TRAILBOOK_VERSIONS_INDEX_FILE}
         COMMAND
             ${CMAKE_COMMAND} -E touch ${CHECK_DONE_FILE_COPY_VERSIONS_INDEX}

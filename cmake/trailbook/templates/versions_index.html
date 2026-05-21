@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Documentation Versions</title>
+    <!--
+        Multiversion landing page.
+
+        Deployed at the root of the docs repo (next to versions.json). Not tied
+        to any particular instance build; fetches /versions.json at load time
+        and renders the list dynamically, so the page never goes stale when an
+        instance is added or removed.
+
+        Reuses Furo's scaffold and stylesheet from /latest/ — assumes at least
+        one release has been deployed. The sidebar shows only the brand/logo
+        (no TOC, since this page is not part of any particular version).
+    -->
+    <link rel="icon" href="/latest/_static/favicon.png">
+    <link rel="stylesheet" href="/latest/_static/styles/furo.css">
+    <link rel="stylesheet" href="/latest/_static/styles/furo-extensions.css">
+    <style>
+        /* This page has no per-version TOC; hide Furo's right-hand drawer
+         * entirely and let the content occupy the freed width. */
+        .toc-drawer,
+        .toc-sticky { display: none !important; }
+
+        ul.versions-list { list-style: none; padding: 0; margin: 0.5em 0 1.5em; }
+        ul.versions-list li {
+            padding: 0.6em 0;
+            border-bottom: 1px solid var(--color-background-border, #e1e4e5);
+        }
+        ul.versions-list li a.version-link {
+            font-size: 1.1em;
+            text-decoration: none;
+        }
+        ul.versions-list li a:hover { text-decoration: underline; }
+        ul.versions-list li .snapshot-link {
+            margin-left: 0.75em;
+            font-size: 0.9em;
+            color: var(--color-foreground-secondary, #555);
+        }
+        ul.versions-list li .snapshot-link::before {
+            content: "→ ";
+            color: var(--color-foreground-muted, #999);
+        }
+        .versions-section-heading {
+            margin-top: 2em;
+            margin-bottom: 0.25em;
+            font-size: 0.9em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--color-foreground-secondary, #666);
+        }
+        .placeholder,
+        .error {
+            color: var(--color-foreground-secondary, #777);
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+<script>
+    // Match Furo's behaviour: respect the user's saved theme preference.
+    document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+</script>
+<div class="page">
+    <aside class="sidebar-drawer">
+        <div class="sidebar-container">
+            <div class="sidebar-sticky">
+                <a class="sidebar-brand" href="/latest/">
+                    <div class="sidebar-logo-container">
+                        <img class="sidebar-logo"
+                             src="/latest/_static/everest_icon-color.png"
+                             alt="EVerest">
+                    </div>
+                    <span class="sidebar-brand-text">EVerest Documentation</span>
+                </a>
+            </div>
+        </div>
+    </aside>
+    <div class="main">
+        <div class="content">
+            <div class="article-container">
+                <article role="main">
+                    <h1>Documentation Versions</h1>
+                    <p>Pick a version of the documentation to view.</p>
+                    <div id="versions-container">
+                        <p class="placeholder">Loading&hellip;</p>
+                    </div>
+                    <noscript>
+                        <p>JavaScript is required to render the list of available versions.
+                           You can browse <a href="/latest/">/latest/</a> directly.</p>
+                    </noscript>
+                </article>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    (function () {
+        var container = document.getElementById('versions-container');
+
+        function makeListItem(entry) {
+            var li = document.createElement('li');
+
+            var versionLink = document.createElement('a');
+            versionLink.className = 'version-link';
+            versionLink.href = '/' + entry.name + '/index.html';
+            versionLink.textContent = entry.display || entry.name;
+            li.appendChild(versionLink);
+
+            var snapshotLink = document.createElement('a');
+            snapshotLink.className = 'snapshot-link';
+            snapshotLink.href = '/' + entry.name + '/reference/snapshot.html';
+            snapshotLink.textContent = 'snapshot.yaml';
+            li.appendChild(snapshotLink);
+
+            return li;
+        }
+
+        function appendSection(headingText, entries) {
+            if (entries.length === 0) return;
+            if (headingText) {
+                var h = document.createElement('h2');
+                h.className = 'versions-section-heading';
+                h.textContent = headingText;
+                container.appendChild(h);
+            }
+            var ul = document.createElement('ul');
+            ul.className = 'versions-list';
+            entries.forEach(function (e) {
+                ul.appendChild(makeListItem(e));
+            });
+            container.appendChild(ul);
+        }
+
+        fetch('/versions.json')
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                var versions = (data && data.versions) || [];
+                container.innerHTML = '';
+
+                if (versions.length === 0) {
+                    container.innerHTML =
+                        '<p class="placeholder">No versions deployed yet.</p>';
+                    return;
+                }
+
+                // Within each group we render entries in the order delivered
+                // by versions.json — the aggregator (create_metadata_file.py)
+                // already sorts releases newest-first.
+                var nightly = [];
+                var releases = [];
+                var others = [];
+                versions.forEach(function (e) {
+                    if (e.name === 'nightly') nightly.push(e);
+                    else if (e.is_release) releases.push(e);
+                    else others.push(e);
+                });
+
+                appendSection('',         nightly);
+                appendSection('Releases', releases);
+                appendSection('Other',    others);
+            })
+            .catch(function (err) {
+                container.innerHTML =
+                    '<p class="error">Failed to load version list.</p>';
+                console.error('versions_index: failed to load /versions.json', err);
+            });
+    })();
+</script>
+</body>
+</html>
