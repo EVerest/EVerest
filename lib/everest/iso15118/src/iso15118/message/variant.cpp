@@ -178,16 +178,14 @@ static void handle_ac_sae_der(VariantAccess& va) {
         return;
     }
 
-    // if (doc.AC_ChargeParameterDiscoveryReq_isUsed) {
-    //     insert_type(va, doc.AC_ChargeParameterDiscoveryReq);
-    // } else if (doc.AC_ChargeParameterDiscoveryRes_isUsed) {
-    //     insert_type(va, doc.AC_ChargeParameterDiscoveryRes);
+    if (doc.AC_ChargeParameterDiscoveryReq_isUsed) {
+        insert_type(va, doc.AC_ChargeParameterDiscoveryReq);
+    } else if (doc.AC_ChargeParameterDiscoveryRes_isUsed) {
+        insert_type(va, doc.AC_ChargeParameterDiscoveryRes);
     // } else if (doc.AC_ChargeLoopReq_isUsed) {
     //     insert_type(va, doc.AC_ChargeLoopReq);
     // } else if (doc.AC_ChargeLoopRes_isUsed) {
     //     insert_type(va, doc.AC_ChargeLoopRes);
-    if (doc.AC_ChargeParameterDiscoveryRes_isUsed) {
-        insert_type(va, doc.AC_ChargeParameterDiscoveryRes);
     } else {
         va.error = "chosen message type unhandled";
     }
