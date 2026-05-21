@@ -8,7 +8,7 @@
 // template version 3
 //
 
-#include <generated/interfaces/auth_token_validator/Implementation.hpp>
+#include <generated/interfaces/auth_token_provider/Implementation.hpp>
 
 #include "../auth_token_provider_API.hpp"
 
