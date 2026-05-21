@@ -622,6 +622,23 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
     // res->SASchedules.noContent
     res->SASchedules_isUsed = (unsigned int)0;
 
+    constexpr auto physical_value_to_float = [](const din_PhysicalValueType& pv) {
+        return calc_physical_value(pv.Value, pv.Multiplier);
+    };
+
+    const auto ev_maximum_current_limit = physical_value_to_float(req->DC_EVChargeParameter.EVMaximumCurrentLimit);
+    const auto ev_maximum_voltage_limit = physical_value_to_float(req->DC_EVChargeParameter.EVMaximumVoltageLimit);
+    const auto evse_minimum_current_limit =
+        physical_value_to_float(res->DC_EVSEChargeParameter.EVSEMinimumCurrentLimit);
+    const auto evse_minimum_voltage_limit =
+        physical_value_to_float(res->DC_EVSEChargeParameter.EVSEMinimumVoltageLimit);
+
+    if (ev_maximum_current_limit <= evse_minimum_current_limit ||
+        ev_maximum_voltage_limit <= evse_minimum_voltage_limit) {
+        res->ResponseCode = din_responseCodeType_FAILED_WrongChargeParameter;
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEStatusCode = din_DC_EVSEStatusCodeType_EVSE_Shutdown;
+    }
+
     if (res->EVSEProcessing == din_EVSEProcessingType_Finished and
         conn->ctx->evse_v2g_data.no_energy_pause != NoEnergyPauseStatus::None) {
         res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSENotification = din_EVSENotificationType_StopCharging;
