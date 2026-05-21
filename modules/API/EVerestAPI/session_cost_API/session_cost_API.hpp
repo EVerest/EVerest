@@ -69,8 +69,8 @@ private:
     void generate_api_var_tariff_message();
     void generate_api_var_session_cost();
 
-    ev_API::CommCheckHandler<generic_errorImplBase> comm_check{
-        "generic/CommunicationFault", ev_API::bridge_connection_lost_message, p_generic_error};
+    ev_API::CommCheckHandler<generic_errorImplBase> comm_check{"generic/CommunicationFault",
+                                                               ev_API::bridge_connection_lost_message, p_generic_error};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

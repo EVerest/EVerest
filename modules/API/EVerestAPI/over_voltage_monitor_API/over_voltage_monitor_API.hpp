@@ -67,8 +67,8 @@ private:
 
     std::string make_error_string(API_types_ext::Error const& error);
 
-    ev_API::CommCheckHandler<over_voltage_monitorImplBase> comm_check{
-        "over_voltage_monitor/CommunicationFault", ev_API::bridge_connection_lost_message, p_main};
+    ev_API::CommCheckHandler<over_voltage_monitorImplBase> comm_check{"over_voltage_monitor/CommunicationFault",
+                                                                      ev_API::bridge_connection_lost_message, p_main};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 
