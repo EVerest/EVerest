@@ -753,7 +753,11 @@ int Manager::run() {
 
     RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
                                ms,     status_fifo,       retain_topics, db_storage};
-    module_handles_ = handle_start_modules(runtime_ctx);
+    if (vm_.count("into-idle") == 0) {
+        module_handles_ = handle_start_modules(runtime_ctx);
+    } else {
+        transition_to(ManagerState::Idle);
+    }
 
     if (const auto err_set_user = ManagerAdminPanel::switch_manager_user_if_needed(runtime_ctx.ms)) {
         EVLOG_error << "Error switching manager to user " << runtime_ctx.ms.run_as_user << ": " << *err_set_user;
@@ -1336,6 +1340,7 @@ int main(int argc, char* argv[]) {
     desc.add_options()("config", po::value<std::string>(),
                        "Full path to a config file.  If the file does not exist and has no extension, it will be "
                        "looked up in the default config directory");
+    desc.add_options()("into-idle", "Boot into idle state (no modules are started)");
     desc.add_options()(
         "db", po::value<std::string>(),
         "Full path to the configuration database file. Required. "
