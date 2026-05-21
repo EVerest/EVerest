@@ -45,7 +45,7 @@ public:
                       std::unique_ptr<ocpp_data_transferIntf> r_data_transfer, Conf& config) :
         ModuleBase(info),
         mqtt(mqtt_provider),
-        p_main((std::move(p_main))),
+        p_main(std::move(p_main)),
         p_generic_error(std::move(p_generic_error)),
         r_ocpp(std::move(r_ocpp)),
         r_data_transfer(std::move(r_data_transfer)),
