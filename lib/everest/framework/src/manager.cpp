@@ -361,10 +361,19 @@ void Manager::unregister_module_ready_handlers(ManagerConfig& config, MQTTAbstra
 
     for (const auto& module : modules_ready_moved) {
         const auto& ready_info = module.second;
+        if (!ready_info.ready_token) {
+            // Skip entries from a partial startup that never got a token assigned.
+            continue;
+        }
         const auto& module_name = module.first;
         const std::string topic = fmt::format("{}/ready", config.mqtt_module_prefix(module_name));
         mqtt_abstraction.unregister_handler(topic, ready_info.ready_token);
     }
+}
+
+void Manager::cleanup_modules_state(ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
+    unregister_module_ready_handlers(config, mqtt_abstraction);
+    mqtt_abstraction.clear_retained_topics();
 }
 
 /// \brief Stop all remaining module processes, escalating SIGTERM to SIGKILL.
@@ -479,8 +488,10 @@ void print_shutdown_message(const std::optional<std::chrono::system_clock::time_
 // ---- State/event handlers ---------------------------------------------------
 
 void Manager::handle_restart_modules_after_shutdown(RuntimeContext& ctx) {
-    unregister_module_ready_handlers(*ctx.config, ctx.mqtt_abstraction);
-    ctx.mqtt_abstraction.clear_retained_topics();
+    // Cleanup with the OLD config before the reload below. Required because this function is also
+    // called from advance_lifecycle_state_if_ready() (crash-with-restart path) which does not go
+    // through handle_finish_* finalize functions.
+    cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
 
     {
         // Reload module configs from DB for the restarted config.
@@ -500,8 +511,7 @@ void Manager::handle_restart_modules_after_shutdown(RuntimeContext& ctx) {
     EVLOG_info << "Modules restart initiated with reloaded configuration.";
 }
 
-std::optional<int> Manager::handle_finish_normal_shutdown(MQTTAbstraction& mqtt_abstraction,
-                                                          ManagerAdminPanel& admin_panel) {
+std::optional<int> Manager::handle_finish_normal_shutdown(RuntimeContext& ctx, ManagerAdminPanel& admin_panel) {
     std::string bad_modules;
     for (const auto& shutdown_info_entry : shutdown_info_) {
         if (!is_clean_exit(shutdown_info_entry.wstatus)) {
@@ -509,6 +519,8 @@ std::optional<int> Manager::handle_finish_normal_shutdown(MQTTAbstraction& mqtt_
                 fmt::format(" {} ({})", shutdown_info_entry.id, format_wait_status(shutdown_info_entry.wstatus));
         }
     }
+    // Cleanup module state while MQTT is still connected (must be before cleanup() in Exiting path).
+    cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
     if (sigint_received_) {
         if (bad_modules.empty()) {
             print_shutdown_message(shutdown_start_time_,
@@ -518,7 +530,7 @@ std::optional<int> Manager::handle_finish_normal_shutdown(MQTTAbstraction& mqtt_
             print_shutdown_message(shutdown_start_time_);
         }
         admin_panel.shutdown_controller();
-        cleanup(mqtt_abstraction);
+        cleanup(ctx.mqtt_abstraction);
         shutdown_cause_ = ShutdownCause::None;
         force_terminate_start_time_ = std::nullopt;
         force_kill_sent_ = false;
@@ -531,7 +543,6 @@ std::optional<int> Manager::handle_finish_normal_shutdown(MQTTAbstraction& mqtt_
     }
     shutdown_info_.clear();
     shutdown_start_time_ = std::nullopt;
-    mqtt_abstraction.clear_retained_topics();
     shutdown_cause_ = ShutdownCause::None;
     force_terminate_start_time_ = std::nullopt;
     force_kill_sent_ = false;
@@ -540,7 +551,7 @@ std::optional<int> Manager::handle_finish_normal_shutdown(MQTTAbstraction& mqtt_
     return std::nullopt;
 }
 
-void Manager::handle_finish_crash_recovery(MQTTAbstraction& mqtt_abstraction) {
+void Manager::handle_finish_crash_recovery(RuntimeContext& ctx) {
     const auto duration_ms = shutdown_start_time_.has_value()
                                  ? std::chrono::duration_cast<std::chrono::milliseconds>(
                                        std::chrono::system_clock::now() - shutdown_start_time_.value())
@@ -561,17 +572,12 @@ void Manager::handle_finish_crash_recovery(MQTTAbstraction& mqtt_abstraction) {
             bad_modules);
     }
 
-    mqtt_abstraction.clear_retained_topics();
+    cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
     shutdown_info_.clear();
     shutdown_start_time_ = std::nullopt;
     shutdown_cause_ = ShutdownCause::None;
     force_terminate_start_time_ = std::nullopt;
     force_kill_sent_ = false;
-
-    {
-        const std::lock_guard<std::mutex> lock(modules_ready_mutex_);
-        modules_ready_.clear();
-    }
 
     transition_to(ManagerState::Idle);
     EVLOG_info << "Crash recovery completed, manager is idle after module shutdown. Send SIGINT/SIGTERM to stop.";
@@ -580,14 +586,14 @@ void Manager::handle_finish_crash_recovery(MQTTAbstraction& mqtt_abstraction) {
 std::optional<int> Manager::handle_finalize_shutdown_transition(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
                                                                 bool restart_requested, bool crash_in_progress) {
     if (crash_in_progress) {
-        handle_finish_crash_recovery(ctx.mqtt_abstraction);
+        handle_finish_crash_recovery(ctx);
         return std::nullopt;
     }
     if (restart_requested) {
         handle_restart_modules_after_shutdown(ctx);
         return std::nullopt;
     }
-    return handle_finish_normal_shutdown(ctx.mqtt_abstraction, admin_panel);
+    return handle_finish_normal_shutdown(ctx, admin_panel);
 }
 
 void Manager::handle_initiate_graceful_shutdown(const std::chrono::system_clock::time_point& module_exited_time,
@@ -754,6 +760,8 @@ int Manager::run() {
     RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
                                ms,     status_fifo,       retain_topics, db_storage};
     if (vm_.count("into-idle") == 0) {
+        // TODO(CB): handle_start_modules may need to update the db_storage + ctx.config before starting
+        // TODO(CB): it may of-course only do so if strictly required (slot_id changed)
         module_handles_ = handle_start_modules(runtime_ctx);
     } else {
         transition_to(ManagerState::Idle);

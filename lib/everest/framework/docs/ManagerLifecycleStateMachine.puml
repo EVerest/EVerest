@@ -1,0 +1,83 @@
+@startuml ManagerLifecycleStateMachine
+title Manager Lifecycle State Machine
+
+[*] --> Idle: (initial C++ state)
+
+' Startup paths
+Idle --> Initializing: run()
+Initializing --> StartingModules: handle_start_modules() \n[default or no --into-idle]
+Initializing --> Idle: run() \n[--into-idle flag]
+
+' Normal running
+StartingModules --> Running: handle_start_modules() \n[all modules ready + \nno shutdown in progress]
+
+' Graceful shutdown paths
+Running --> ShutdownRequested: handle_initiate_graceful_shutdown() \n[SIGINT/SIGTERM or \nmodule crash]
+StartingModules --> ShutdownRequested: handle_initiate_graceful_shutdown()
+
+ShutdownRequested --> ForceTerminating: handle_shutdown_timeout() \n[>5s without all \nmodules exiting]
+
+CrashShutdownInProgress --> ForceTerminating: handle_shutdown_timeout() \n[>5s timeout]
+
+ForceTerminating --> ShutdownFinalizing: handle_shutdown_timeout() \n[>5s grace timeout \nfor SIGKILL]
+
+' Crash detection & handling
+Running --> CrashShutdownInProgress: handle_child_exit() \n[unexpected module exit \nduring Running]
+StartingModules --> CrashShutdownInProgress: handle_child_exit() \n[unexpected module exit \nduring StartingModules]
+
+' Shutdown finalization -> Idle (no SIGINT)
+ShutdownRequested --> ShutdownFinalizing: advance_lifecycle_state_if_ready() \n[all module_handles_ \nempty]
+CrashShutdownInProgress --> ShutdownFinalizing: advance_lifecycle_state_if_ready() \n[all module_handles_ \nempty]
+RestartRequested --> ShutdownFinalizing: advance_lifecycle_state_if_ready() \n[all module_handles_ \nempty]
+
+ShutdownFinalizing --> StartingModules: handle_restart_modules_after_shutdown() \n[crash recovery + \nattempts remaining]
+
+ShutdownFinalizing --> Idle: handle_finish_crash_recovery() \n[crash recovery + \nattempts exhausted]
+ShutdownFinalizing --> Idle: handle_finish_normal_shutdown() \n[normal shutdown, \nno SIGINT received]
+
+' Restart from Idle
+Idle --> StartingModules: handle_restart_modules_after_shutdown() \n[config service \nstart callback]
+
+' Admin restart
+Running --> RestartRequested: handle_controller_ipc_poll() \n[restart request \nfrom LifecycleAPI]
+
+' Exit paths
+ShutdownFinalizing --> Exiting: handle_finish_normal_shutdown() \n[normal shutdown + \nSIGINT received]
+ShutdownFinalizing --> Exiting: handle_shutdown_timeout() \n[force-kill \nescalation]
+
+Idle --> ShutdownRequested: handle_signal() \n[SIGINT/SIGTERM \nwhile in Idle]
+Idle --> Exiting: handle_signal() \n[second SIGINT \n(abort)]
+
+Exiting --> [*]: run() exit
+
+note right of Idle
+  Manager alive, modules down
+  Can restart via API or SIGINT to exit
+end note
+
+note right of Running
+  All modules started and ready
+  Can handle graceful shutdown or restarts
+end note
+
+note right of ShutdownRequested
+  Published MQTT shutdown topic
+  Waiting for modules to exit
+end note
+
+note right of CrashShutdownInProgress
+  Unexpected module exit detected
+  Draining remaining modules
+end note
+
+note right of ForceTerminating
+  Graceful timeout expired
+  Force-killing remaining modules
+end note
+
+note right of ShutdownFinalizing
+  All modules exited
+  Deciding: restart, idle, or exit
+end note
+
+@enduml
