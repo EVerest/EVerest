@@ -6,8 +6,8 @@ active_modules:
       tls_security: allow
     connections:
       security:
-        - module_id: evse_security
-          implementation_id: main
+      - module_id: evse_security
+        implementation_id: main
   iso15118_car:
     module: PyEvJosev
     config_module:
@@ -27,26 +27,26 @@ active_modules:
       hack_allow_bpt_with_iso2: true
     connections:
       bsp:
-        - module_id: yeti_driver
-          implementation_id: board_support
+      - module_id: yeti_driver
+        implementation_id: board_support
       powermeter_car_side:
-        - module_id: powersupply_dc
-          implementation_id: powermeter
+      - module_id: powersupply_dc
+        implementation_id: powermeter
       slac:
-        - module_id: slac
-          implementation_id: evse
+      - module_id: slac
+        implementation_id: evse
       hlc:
-        - module_id: iso15118_charger
-          implementation_id: charger
+      - module_id: iso15118_charger
+        implementation_id: charger
       powersupply_DC:
-        - module_id: powersupply_dc
-          implementation_id: main
+      - module_id: powersupply_dc
+        implementation_id: main
       imd:
-        - module_id: imd
-          implementation_id: main
+      - module_id: imd
+        implementation_id: main
       over_voltage_monitor:
-        - module_id: ovm
-          implementation_id: main
+      - module_id: ovm
+        implementation_id: main
   powersupply_dc:
     module: DCSupplySimulator
   yeti_driver:
@@ -69,27 +69,24 @@ active_modules:
         simulate_error_delay: 5
     connections:
       power_supply:
-        - module_id: powersupply_dc
-          implementation_id: main
+      - module_id: powersupply_dc
+        implementation_id: main
   ev_manager:
-    module: EvManager
+    module: EvSimulator
     config_module:
       connector_id: 1
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
       dc_target_current: 20
       dc_target_voltage: 400
     connections:
       ev_board_support:
-        - module_id: yeti_driver
-          implementation_id: ev_board_support
+      - module_id: yeti_driver
+        implementation_id: ev_board_support
       ev:
-        - module_id: iso15118_car
-          implementation_id: ev
+      - module_id: iso15118_car
+        implementation_id: ev
       slac:
-        - module_id: slac
-          implementation_id: ev
+      - module_id: slac
+        implementation_id: ev
   auth:
     module: Auth
     config_module:
@@ -97,14 +94,14 @@ active_modules:
       selection_algorithm: FindFirst
     connections:
       token_provider:
-        - module_id: token_provider
-          implementation_id: main
+      - module_id: token_provider
+        implementation_id: main
       token_validator:
-        - module_id: token_validator
-          implementation_id: main
+      - module_id: token_validator
+        implementation_id: main
       evse_manager:
-        - module_id: evse_manager
-          implementation_id: evse
+      - module_id: evse_manager
+        implementation_id: evse
   token_provider:
     module: DummyTokenProvider
     config_implementation:
@@ -112,8 +109,8 @@ active_modules:
         token: TOKEN1
     connections:
       evse:
-        - module_id: evse_manager
-          implementation_id: evse
+      - module_id: evse_manager
+        implementation_id: evse
   token_validator:
     module: DummyTokenValidator
     config_implementation:
@@ -133,8 +130,8 @@ active_modules:
       debug: false
     connections:
       energy_trunk:
-        - module_id: grid_connection_point
-          implementation_id: energy_grid
+      - module_id: grid_connection_point
+        implementation_id: energy_grid
   grid_connection_point:
     module: EnergyNode
     config_module:
@@ -143,11 +140,11 @@ active_modules:
     connections:
       price_information: []
       energy_consumer:
-        - module_id: api_sink
-          implementation_id: energy_grid
+      - module_id: api_sink
+        implementation_id: energy_grid
       powermeter:
-        - module_id: yeti_driver
-          implementation_id: powermeter
+      - module_id: yeti_driver
+        implementation_id: powermeter
   api_sink:
     module: EnergyNode
     mapping:
@@ -158,26 +155,26 @@ active_modules:
       phase_count: 3
     connections:
       energy_consumer:
-        - module_id: evse_manager
-          implementation_id: energy_grid
+      - module_id: evse_manager
+        implementation_id: energy_grid
   api:
     module: API
     connections:
       evse_manager:
-        - module_id: evse_manager
-          implementation_id: evse
+      - module_id: evse_manager
+        implementation_id: evse
       error_history:
-        - module_id: error_history
-          implementation_id: error_history
+      - module_id: error_history
+        implementation_id: error_history
       evse_energy_sink:
-        - module_id: api_sink
-          implementation_id: external_limits
+      - module_id: api_sink
+        implementation_id: external_limits
   ev_api:
     module: EvAPI
     connections:
       ev_manager:
-        - implementation_id: ev_manager
-          module_id: ev_manager
+      - implementation_id: ev_manager
+        module_id: ev_manager
   error_history:
     module: ErrorHistory
     config_implementation:
@@ -191,17 +188,17 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: charger
-          interface: ISO15118_charger
-          type: provide
-        - id: extensions
-          interface: iso15118_extensions
-          type: provide
+      - id: charger
+        interface: ISO15118_charger
+        type: provide
+      - id: extensions
+        interface: iso15118_extensions
+        type: provide
       bottom: []
       left:
-        - id: security
-          interface: evse_security
-          type: requirement
+      - id: security
+        interface: evse_security
+        type: requirement
   iso15118_car:
     position:
       x: -8
@@ -209,9 +206,9 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: ev
-          interface: ISO15118_ev
-          type: provide
+      - id: ev
+        interface: ISO15118_ev
+        type: provide
       bottom: []
       left: []
   evse_manager:
@@ -221,53 +218,53 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: evse
-          interface: evse_manager
-          type: provide
-        - id: energy_grid
-          interface: energy
-          type: provide
-        - id: random_delay
-          interface: uk_random_delay
-          type: provide
-        - id: token_provider
-          interface: auth_token_provider
-          type: provide
+      - id: evse
+        interface: evse_manager
+        type: provide
+      - id: energy_grid
+        interface: energy
+        type: provide
+      - id: random_delay
+        interface: uk_random_delay
+        type: provide
+      - id: token_provider
+        interface: auth_token_provider
+        type: provide
       bottom: []
       left:
-        - id: hlc
-          interface: ISO15118_charger
-          type: requirement
-        - id: over_voltage_monitor
-          interface: over_voltage_monitor
-          type: requirement
-        - id: imd
-          interface: isolation_monitor
-          type: requirement
-        - id: powersupply_DC
-          interface: power_supply_DC
-          type: requirement
-        - id: ac_rcd
-          interface: ac_rcd
-          type: requirement
-        - id: connector_lock
-          interface: connector_lock
-          type: requirement
-        - id: powermeter_grid_side
-          interface: powermeter
-          type: requirement
-        - id: store
-          interface: kvs
-          type: requirement
-        - id: powermeter_car_side
-          interface: powermeter
-          type: requirement
-        - id: slac
-          interface: slac
-          type: requirement
-        - id: bsp
-          interface: evse_board_support
-          type: requirement
+      - id: hlc
+        interface: ISO15118_charger
+        type: requirement
+      - id: over_voltage_monitor
+        interface: over_voltage_monitor
+        type: requirement
+      - id: imd
+        interface: isolation_monitor
+        type: requirement
+      - id: powersupply_DC
+        interface: power_supply_DC
+        type: requirement
+      - id: ac_rcd
+        interface: ac_rcd
+        type: requirement
+      - id: connector_lock
+        interface: connector_lock
+        type: requirement
+      - id: powermeter_grid_side
+        interface: powermeter
+        type: requirement
+      - id: store
+        interface: kvs
+        type: requirement
+      - id: powermeter_car_side
+        interface: powermeter
+        type: requirement
+      - id: slac
+        interface: slac
+        type: requirement
+      - id: bsp
+        interface: evse_board_support
+        type: requirement
   powersupply_dc:
     position:
       x: -8
@@ -275,12 +272,12 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: main
-          interface: power_supply_DC
-          type: provide
-        - id: powermeter
-          interface: powermeter
-          type: provide
+      - id: main
+        interface: power_supply_DC
+        type: provide
+      - id: powermeter
+        interface: powermeter
+        type: provide
       bottom: []
       left: []
   yeti_driver:
@@ -290,21 +287,21 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: board_support
-          interface: evse_board_support
-          type: provide
-        - id: connector_lock
-          interface: connector_lock
-          type: provide
-        - id: ev_board_support
-          interface: ev_board_support
-          type: provide
-        - id: powermeter
-          interface: powermeter
-          type: provide
-        - id: rcd
-          interface: ac_rcd
-          type: provide
+      - id: board_support
+        interface: evse_board_support
+        type: provide
+      - id: connector_lock
+        interface: connector_lock
+        type: provide
+      - id: ev_board_support
+        interface: ev_board_support
+        type: provide
+      - id: powermeter
+        interface: powermeter
+        type: provide
+      - id: rcd
+        interface: ac_rcd
+        type: provide
       bottom: []
       left: []
   slac:
@@ -314,12 +311,12 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: evse
-          interface: slac
-          type: provide
-        - id: ev
-          interface: ev_slac
-          type: provide
+      - id: evse
+        interface: slac
+        type: provide
+      - id: ev
+        interface: ev_slac
+        type: provide
       bottom: []
       left: []
   imd:
@@ -329,9 +326,9 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: main
-          interface: isolation_monitor
-          type: provide
+      - id: main
+        interface: isolation_monitor
+        type: provide
       bottom: []
       left: []
   ovm:
@@ -341,9 +338,9 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: main
-          interface: over_voltage_monitor
-          type: provide
+      - id: main
+        interface: over_voltage_monitor
+        type: provide
       bottom: []
       left: []
   ev_manager:
@@ -353,23 +350,23 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: main
-          interface: car_simulator
-          type: provide
+      - id: main
+        interface: car_simulator
+        type: provide
       bottom: []
       left:
-        - id: powermeter
-          interface: powermeter
-          type: requirement
-        - id: slac
-          interface: ev_slac
-          type: requirement
-        - id: ev_board_support
-          interface: ev_board_support
-          type: requirement
-        - id: ev
-          interface: ISO15118_ev
-          type: requirement
+      - id: powermeter
+        interface: powermeter
+        type: requirement
+      - id: slac
+        interface: ev_slac
+        type: requirement
+      - id: ev_board_support
+        interface: ev_board_support
+        type: requirement
+      - id: ev
+        interface: ISO15118_ev
+        type: requirement
   auth:
     position:
       x: 77
@@ -377,26 +374,26 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: main
-          interface: auth
-          type: provide
-        - id: reservation
-          interface: reservation
-          type: provide
+      - id: main
+        interface: auth
+        type: provide
+      - id: reservation
+        interface: reservation
+        type: provide
       bottom: []
       left:
-        - id: token_validator
-          interface: auth_token_validator
-          type: requirement
-        - id: kvs
-          interface: kvs
-          type: requirement
-        - id: token_provider
-          interface: auth_token_provider
-          type: requirement
-        - id: evse_manager
-          interface: evse_manager
-          type: requirement
+      - id: token_validator
+        interface: auth_token_validator
+        type: requirement
+      - id: kvs
+        interface: kvs
+        type: requirement
+      - id: token_provider
+        interface: auth_token_provider
+        type: requirement
+      - id: evse_manager
+        interface: evse_manager
+        type: requirement
   token_provider:
     position:
       x: 54
@@ -404,14 +401,14 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: main
-          interface: auth_token_provider
-          type: provide
+      - id: main
+        interface: auth_token_provider
+        type: provide
       bottom: []
       left:
-        - id: evse
-          interface: evse_manager
-          type: requirement
+      - id: evse
+        interface: evse_manager
+        type: requirement
   token_validator:
     position:
       x: 54
@@ -419,9 +416,9 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: main
-          interface: auth_token_validator
-          type: provide
+      - id: main
+        interface: auth_token_validator
+        type: provide
       bottom: []
       left: []
   evse_security:
@@ -431,9 +428,9 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: main
-          interface: evse_security
-          type: provide
+      - id: main
+        interface: evse_security
+        type: provide
       bottom: []
       left: []
   energy_manager:
@@ -443,14 +440,14 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: main
-          interface: energy_manager
-          type: provide
+      - id: main
+        interface: energy_manager
+        type: provide
       bottom: []
       left:
-        - id: energy_trunk
-          interface: energy
-          type: requirement
+      - id: energy_trunk
+        interface: energy
+        type: requirement
   grid_connection_point:
     position:
       x: 54
@@ -458,23 +455,23 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: energy_grid
-          interface: energy
-          type: provide
-        - id: external_limits
-          interface: external_energy_limits
-          type: provide
+      - id: energy_grid
+        interface: energy
+        type: provide
+      - id: external_limits
+        interface: external_energy_limits
+        type: provide
       bottom: []
       left:
-        - id: energy_consumer
-          interface: energy
-          type: requirement
-        - id: powermeter
-          interface: powermeter
-          type: requirement
-        - id: price_information
-          interface: energy_price_information
-          type: requirement
+      - id: energy_consumer
+        interface: energy
+        type: requirement
+      - id: powermeter
+        interface: powermeter
+        type: requirement
+      - id: price_information
+        interface: energy_price_information
+        type: requirement
   api:
     position:
       x: 77
@@ -484,21 +481,21 @@ x-module-layout:
       right: []
       bottom: []
       left:
-        - id: evse_energy_sink
-          interface: external_energy_limits
-          type: requirement
-        - id: evse_manager
-          interface: evse_manager
-          type: requirement
-        - id: ocpp
-          interface: ocpp
-          type: requirement
-        - id: random_delay
-          interface: uk_random_delay
-          type: requirement
-        - id: error_history
-          interface: error_history
-          type: requirement
+      - id: evse_energy_sink
+        interface: external_energy_limits
+        type: requirement
+      - id: evse_manager
+        interface: evse_manager
+        type: requirement
+      - id: ocpp
+        interface: ocpp
+        type: requirement
+      - id: random_delay
+        interface: uk_random_delay
+        type: requirement
+      - id: error_history
+        interface: error_history
+        type: requirement
   error_history:
     position:
       x: 54
@@ -506,8 +503,8 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: error_history
-          interface: error_history
-          type: provide
+      - id: error_history
+        interface: error_history
+        type: provide
       bottom: []
       left: []
