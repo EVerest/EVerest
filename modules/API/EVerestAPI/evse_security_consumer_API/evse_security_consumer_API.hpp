@@ -53,7 +53,7 @@ public:
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
     ev_API::Mqtt::ValidatingMqttProxy mqtt_v{mqtt};
-    ev_API::ApiHelper helper{info, mqtt_v, {{"auth_consumer", 1}}, get_config_service_client()};
+    ev_API::ApiHelper helper{info, mqtt_v, {{"evse_security_consumer", 1}}, get_config_service_client()};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
