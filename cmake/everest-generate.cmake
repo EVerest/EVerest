@@ -13,14 +13,30 @@ string(ASCII 27 ESCAPE)
 set(FMT_RESET "${ESCAPE}[m")
 set(FMT_BOLD "${ESCAPE}[1m")
 
-# NOTE (aw): maybe this could be also implemented as an IMPORTED target?
-add_custom_target(generate_cpp_files)
+add_library(generate_cpp_files INTERFACE)
+target_include_directories(generate_cpp_files
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/everest>
+)
+install(DIRECTORY ${CMAKE_BINARY_DIR}/generated/include/generated
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
+    FILES_MATCHING PATTERN "*.hpp"
+)
+
 set_target_properties(generate_cpp_files
     PROPERTIES
         EVEREST_SCHEMA_DIR "${EVEREST_SCHEMA_DIR}"
         EVEREST_GENERATED_OUTPUT_DIR "${CMAKE_BINARY_DIR}/generated"
         EVEREST_GENERATED_INCLUDE_DIR "${CMAKE_BINARY_DIR}/generated/include"
         EVEREST_PROJECT_DIRS ""
+)
+install(TARGETS generate_cpp_files
+    EXPORT everest-core-targets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
 #
