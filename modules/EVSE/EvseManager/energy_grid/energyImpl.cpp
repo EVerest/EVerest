@@ -276,12 +276,14 @@ void energyImpl::request_energy_from_energy_manager(bool priority_request) {
 
         // Cap by PP cable rating so the EnergyManager cannot allocate more than the cable allows
         if (mod->config.charge_mode == "AC") {
-            const float pp_rating = mod->bsp->read_pp_ampacity();
-            const std::string source_pp = source_base + "/pp_ampacity";
-            for (auto& e : energy_flow_request.schedule_import) {
-                if (e.limits_to_root.ac_max_current_A.has_value() &&
-                    e.limits_to_root.ac_max_current_A.value().value > pp_rating) {
-                    e.limits_to_root.ac_max_current_A = {pp_rating, source_pp};
+            const auto pp_rating = mod->bsp->read_pp_ampacity();
+            if (pp_rating) {
+                const std::string source_pp = source_base + "/pp_ampacity";
+                for (auto& e : energy_flow_request.schedule_import) {
+                    if (e.limits_to_root.ac_max_current_A.has_value() &&
+                        e.limits_to_root.ac_max_current_A.value().value > pp_rating.value()) {
+                        e.limits_to_root.ac_max_current_A = {static_cast<float>(pp_rating.value()), source_pp};
+                    }
                 }
             }
         }
@@ -490,10 +492,12 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
         // publish for e.g. OCPP module with the updated limit
         if (value.limits_root_side.ac_max_current_A) {
             // update based on the PP cable rating
-            const float pp_rating = mod->bsp->read_pp_ampacity();
-            types::energy::NumberWithSource nws_updated{std::min(limit, pp_rating),
-                                                        value.limits_root_side.ac_max_current_A.value().source};
-            value.limits_root_side.ac_max_current_A = std::move(nws_updated);
+            const auto pp_rating = mod->bsp->read_pp_ampacity();
+            if (pp_rating) {
+                types::energy::NumberWithSource nws_updated{std::min(limit, static_cast<float>(pp_rating.value())),
+                                                            value.limits_root_side.ac_max_current_A.value().source};
+                value.limits_root_side.ac_max_current_A = std::move(nws_updated);
+            }
         }
         mod->p_evse->publish_enforced_limits(value);
 

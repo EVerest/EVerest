@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <math.h>
+#include <optional>
 #include <string.h>
 
 namespace module {
@@ -447,8 +448,12 @@ void IECStateMachine::set_pp_ampacity(types::board_support_common::ProximityPilo
 // High level state machine requests reading PP ampacity value.
 // The high level state machine will never call this if it is not used
 // (e.g. in DC or AC tethered charging)
-double IECStateMachine::read_pp_ampacity() {
-    return pp_ampacity;
+std::optional<double> IECStateMachine::read_pp_ampacity() {
+    const double tmp = pp_ampacity;
+    if (tmp == 0.0) {
+        return std::nullopt;
+    }
+    return tmp;
 }
 
 // Forward special request to switch the number of phases during charging. BSP will need to implement a special

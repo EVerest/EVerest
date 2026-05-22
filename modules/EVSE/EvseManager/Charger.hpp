@@ -306,7 +306,7 @@ private:
         bool matching_started;
         float max_current;
         std::chrono::time_point<std::chrono::steady_clock> max_current_valid_until;
-        float max_current_cable{0.};
+        std::optional<double> max_current_cable;
         std::atomic_bool flag_transaction_active;
         bool session_active;
         std::string session_uuid;

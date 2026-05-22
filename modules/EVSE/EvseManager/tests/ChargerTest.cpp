@@ -6,6 +6,7 @@
 
 #include <Charger.hpp>
 #include <memory>
+#include <optional>
 
 namespace {
 using namespace module;
@@ -705,8 +706,8 @@ void IECStateMachine::process_bsp_event(const types::board_support_common::BspEv
 void IECStateMachine::allow_power_on(bool value, types::evse_board_support::Reason reason) {
 }
 
-double IECStateMachine::read_pp_ampacity() {
-    return 0.0;
+std::optional<double> IECStateMachine::read_pp_ampacity() {
+    return std::nullopt;
 }
 void IECStateMachine::switch_three_phases_while_charging(bool n) {
 }

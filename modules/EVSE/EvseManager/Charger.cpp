@@ -13,6 +13,7 @@
 #include <chrono>
 #include <generated/types/powermeter.hpp>
 #include <math.h>
+#include <optional>
 #include <string.h>
 #include <thread>
 #include <type_traits>
@@ -215,7 +216,7 @@ void Charger::run_state_machine() {
                     shared_context.hlc_charging_active = true;
                 }
                 shared_context.hlc_allow_close_contactor = false;
-                shared_context.max_current_cable = 0;
+                shared_context.max_current_cable.reset();
                 shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Unknown;
                 shared_context.legacy_wakeup_done = false;
                 shared_context.hlc_d20_active = false;
@@ -305,10 +306,10 @@ void Charger::run_state_machine() {
 
             // Read PP value in case of AC socket
             if (connector_type == types::evse_board_support::Connector_type::IEC62196Type2Socket and
-                shared_context.max_current_cable == 0) {
-                shared_context.max_current_cable = bsp->read_pp_ampacity();
+                not shared_context.max_current_cable.has_value()) {
                 // retry if the value is not yet available. Some BSPs may take some time to measure the PP.
-                if (shared_context.max_current_cable == 0) {
+                shared_context.max_current_cable = bsp->read_pp_ampacity();
+                if (not shared_context.max_current_cable.has_value()) {
                     if (not internal_context.pp_warning_printed) {
                         EVLOG_warning << "PP ampacity is zero, still waiting for BSP to report it...";
                         internal_context.pp_warning_printed = true;
@@ -1817,10 +1818,11 @@ std::string Charger::evse_state_to_string(EvseState s) {
 
 float Charger::get_max_current_internal() {
     auto maxc = shared_context.max_current;
+    const auto max_current_cable = shared_context.max_current_cable.value_or(0.0);
 
     if (connector_type == types::evse_board_support::Connector_type::IEC62196Type2Socket and
-        shared_context.max_current_cable < maxc and shared_context.current_state not_eq EvseState::Idle) {
-        maxc = shared_context.max_current_cable;
+        max_current_cable < maxc and shared_context.current_state not_eq EvseState::Idle) {
+        maxc = max_current_cable;
     }
 
     return maxc;
