@@ -6,8 +6,8 @@ active_modules:
       tls_security: allow
     connections:
       security:
-        - module_id: evse_security
-          implementation_id: main
+      - module_id: evse_security
+        implementation_id: main
   iso15118_car:
     module: PyEvJosev
     config_module:
@@ -30,17 +30,17 @@ active_modules:
       external_ready_to_start_charging: true
     connections:
       bsp:
-        - module_id: yeti_driver_1
-          implementation_id: board_support
+      - module_id: yeti_driver_1
+        implementation_id: board_support
       powermeter_grid_side:
-        - module_id: yeti_driver_1
-          implementation_id: powermeter
+      - module_id: yeti_driver_1
+        implementation_id: powermeter
       slac:
-        - module_id: slac
-          implementation_id: evse
+      - module_id: slac
+        implementation_id: evse
       hlc:
-        - module_id: iso15118_charger
-          implementation_id: charger
+      - module_id: iso15118_charger
+        implementation_id: charger
   evse_manager_2:
     module: EvseManager
     mapping:
@@ -58,17 +58,17 @@ active_modules:
       external_ready_to_start_charging: true
     connections:
       bsp:
-        - module_id: yeti_driver_2
-          implementation_id: board_support
+      - module_id: yeti_driver_2
+        implementation_id: board_support
       powermeter_grid_side:
-        - module_id: yeti_driver_2
-          implementation_id: powermeter
+      - module_id: yeti_driver_2
+        implementation_id: powermeter
       slac:
-        - module_id: slac
-          implementation_id: evse
+      - module_id: slac
+        implementation_id: evse
       hlc:
-        - module_id: iso15118_charger
-          implementation_id: charger
+      - module_id: iso15118_charger
+        implementation_id: charger
   yeti_driver_1:
     module: YetiSimulator
     mapping:
@@ -86,38 +86,33 @@ active_modules:
   slac:
     module: SlacSimulator
   ev_manager_1:
-    module: EvManager
+    module: EvSimulator
     config_module:
       connector_id: 1
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
     connections:
       ev_board_support:
-        - module_id: yeti_driver_1
-          implementation_id: ev_board_support
+      - module_id: yeti_driver_1
+        implementation_id: ev_board_support
       ev:
-        - module_id: iso15118_car
-          implementation_id: ev
+      - module_id: iso15118_car
+        implementation_id: ev
       slac:
-        - module_id: slac
-          implementation_id: ev
+      - module_id: slac
+        implementation_id: ev
   ev_manager_2:
-    module: EvManager
+    module: EvSimulator
     config_module:
       connector_id: 2
-      auto_enable: true
-      auto_exec: false
     connections:
       ev_board_support:
-        - module_id: yeti_driver_2
-          implementation_id: ev_board_support
+      - module_id: yeti_driver_2
+        implementation_id: ev_board_support
       ev:
-        - module_id: iso15118_car
-          implementation_id: ev
+      - module_id: iso15118_car
+        implementation_id: ev
       slac:
-        - module_id: slac
-          implementation_id: ev
+      - module_id: slac
+        implementation_id: ev
   auth:
     module: Auth
     config_module:
@@ -125,50 +120,50 @@ active_modules:
       selection_algorithm: FindFirst
     connections:
       token_provider:
-        - module_id: token_provider_1
-          implementation_id: main
-        - module_id: ocpp
-          implementation_id: auth_provider
+      - module_id: token_provider_1
+        implementation_id: main
+      - module_id: ocpp
+        implementation_id: auth_provider
       token_validator:
-        - module_id: ocpp
-          implementation_id: auth_validator
+      - module_id: ocpp
+        implementation_id: auth_validator
       evse_manager:
-        - module_id: evse_manager_1
-          implementation_id: evse
-        - module_id: evse_manager_2
-          implementation_id: evse
+      - module_id: evse_manager_1
+        implementation_id: evse
+      - module_id: evse_manager_2
+        implementation_id: evse
   ocpp:
     module: OCPP
     config_module:
       ChargePointConfigPath: config-docker.json
     connections:
       evse_manager:
-        - module_id: evse_manager_1
-          implementation_id: evse
-        - module_id: evse_manager_2
-          implementation_id: evse
+      - module_id: evse_manager_1
+        implementation_id: evse
+      - module_id: evse_manager_2
+        implementation_id: evse
       reservation:
-        - module_id: auth
-          implementation_id: reservation
+      - module_id: auth
+        implementation_id: reservation
       auth:
-        - module_id: auth
-          implementation_id: main
+      - module_id: auth
+        implementation_id: main
       system:
-        - module_id: system
-          implementation_id: main
+      - module_id: system
+        implementation_id: main
       security:
-        - module_id: evse_security
-          implementation_id: main
+      - module_id: evse_security
+        implementation_id: main
       data_transfer:
-        - module_id: ocpp_extension
-          implementation_id: data_transfer
+      - module_id: ocpp_extension
+        implementation_id: data_transfer
       evse_energy_sink:
-        - module_id: grid_connection_point
-          implementation_id: external_limits
-        - module_id: evse_manager_1_ocpp_sink
-          implementation_id: external_limits
-        - module_id: evse_manager_2_ocpp_sink
-          implementation_id: external_limits
+      - module_id: grid_connection_point
+        implementation_id: external_limits
+      - module_id: evse_manager_1_ocpp_sink
+        implementation_id: external_limits
+      - module_id: evse_manager_2_ocpp_sink
+        implementation_id: external_limits
   evse_security:
     module: EvseSecurity
     config_module:
@@ -179,11 +174,11 @@ active_modules:
       keys_to_monitor: HeartbeatInterval,SecurityProfile,ExampleConfigurationKey
     connections:
       ocpp:
-        - module_id: ocpp
-          implementation_id: ocpp_generic
+      - module_id: ocpp
+        implementation_id: ocpp_generic
       data_transfer:
-        - module_id: ocpp
-          implementation_id: data_transfer
+      - module_id: ocpp
+        implementation_id: data_transfer
   token_provider_1:
     module: DummyTokenProviderManual
     config_implementation:
@@ -193,8 +188,8 @@ active_modules:
     module: EnergyManager
     connections:
       energy_trunk:
-        - module_id: grid_connection_point
-          implementation_id: energy_grid
+      - module_id: grid_connection_point
+        implementation_id: energy_grid
   evse_manager_1_ocpp_sink:
     module: EnergyNode
     mapping:
@@ -205,8 +200,8 @@ active_modules:
       phase_count: 3
     connections:
       energy_consumer:
-        - module_id: evse_manager_1
-          implementation_id: energy_grid
+      - module_id: evse_manager_1
+        implementation_id: energy_grid
   evse_manager_2_ocpp_sink:
     module: EnergyNode
     mapping:
@@ -217,8 +212,8 @@ active_modules:
       phase_count: 3
     connections:
       energy_consumer:
-        - module_id: evse_manager_2
-          implementation_id: energy_grid
+      - module_id: evse_manager_2
+        implementation_id: energy_grid
   evse_manager_1_api_sink:
     module: EnergyNode
     mapping:
@@ -229,11 +224,11 @@ active_modules:
       phase_count: 3
     connections:
       energy_consumer:
-        - module_id: evse_manager_1_ocpp_sink
-          implementation_id: energy_grid
+      - module_id: evse_manager_1_ocpp_sink
+        implementation_id: energy_grid
       powermeter:
-        - module_id: yeti_driver_1
-          implementation_id: powermeter
+      - module_id: yeti_driver_1
+        implementation_id: powermeter
   evse_manager_2_api_sink:
     module: EnergyNode
     mapping:
@@ -244,11 +239,11 @@ active_modules:
       phase_count: 3
     connections:
       energy_consumer:
-        - module_id: evse_manager_2_ocpp_sink
-          implementation_id: energy_grid
+      - module_id: evse_manager_2_ocpp_sink
+        implementation_id: energy_grid
       powermeter:
-        - module_id: yeti_driver_2
-          implementation_id: powermeter
+      - module_id: yeti_driver_2
+        implementation_id: powermeter
   grid_connection_point:
     module: EnergyNode
     mapping:
@@ -260,37 +255,37 @@ active_modules:
     connections:
       price_information: []
       energy_consumer:
-        - module_id: evse_manager_1_api_sink
-          implementation_id: energy_grid
-        - module_id: evse_manager_2_api_sink
-          implementation_id: energy_grid
+      - module_id: evse_manager_1_api_sink
+        implementation_id: energy_grid
+      - module_id: evse_manager_2_api_sink
+        implementation_id: energy_grid
   api:
     module: API
     connections:
       evse_manager:
-        - module_id: evse_manager_1
-          implementation_id: evse
-        - module_id: evse_manager_2
-          implementation_id: evse
+      - module_id: evse_manager_1
+        implementation_id: evse
+      - module_id: evse_manager_2
+        implementation_id: evse
       ocpp:
-        - module_id: ocpp
-          implementation_id: ocpp_generic
+      - module_id: ocpp
+        implementation_id: ocpp_generic
       error_history:
-        - module_id: error_history
-          implementation_id: error_history
+      - module_id: error_history
+        implementation_id: error_history
       evse_energy_sink:
-        - module_id: evse_manager_1_api_sink
-          implementation_id: external_limits
-        - module_id: evse_manager_2_api_sink
-          implementation_id: external_limits
+      - module_id: evse_manager_1_api_sink
+        implementation_id: external_limits
+      - module_id: evse_manager_2_api_sink
+        implementation_id: external_limits
   ev_api:
     module: EvAPI
     connections:
       ev_manager:
-        - implementation_id: ev_manager
-          module_id: ev_manager_1
-        - implementation_id: ev_manager
-          module_id: ev_manager_2
+      - implementation_id: ev_manager
+        module_id: ev_manager_1
+      - implementation_id: ev_manager
+        module_id: ev_manager_2
   error_history:
     module: ErrorHistory
     config_implementation:

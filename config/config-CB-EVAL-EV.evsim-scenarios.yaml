@@ -1,0 +1,1 @@
+ev_manager: wait_for_real_plugin;iso_wait_pwm_is_running;iso_wait_slac_matched;iso_start_v2g_session DC;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 60;iso_wait_v2g_session_stopped;unplug;sleep 5;

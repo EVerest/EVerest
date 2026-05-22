@@ -5,13 +5,13 @@ active_modules:
     module: RpcApi
     connections:
       evse_manager:
-        - module_id: connector_1
-          implementation_id: evse
+      - module_id: connector_1
+        implementation_id: evse
       evse_energy_sink:
-        - module_id: grid_connection_point
-          implementation_id: external_limits
-        - module_id: api_sink_1_evsemgr
-          implementation_id: external_limits
+      - module_id: grid_connection_point
+        implementation_id: external_limits
+      - module_id: api_sink_1_evsemgr
+        implementation_id: external_limits
   auth:
     module: Auth
     config_module:
@@ -21,31 +21,28 @@ active_modules:
       ignore_connector_faults: true
     connections:
       evse_manager:
-        - implementation_id: evse
-          module_id: connector_1
+      - implementation_id: evse
+        module_id: connector_1
       token_provider:
-        - implementation_id: main
-          module_id: token_provider
+      - implementation_id: main
+        module_id: token_provider
       token_validator:
-        - implementation_id: main
-          module_id: token_validator
+      - implementation_id: main
+        module_id: token_validator
   ev_manager:
-    module: EvManager
+    module: EvSimulator
     config_module:
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
       connector_id: 1
     connections:
       ev:
-        - implementation_id: ev
-          module_id: iso15118_car
+      - implementation_id: ev
+        module_id: iso15118_car
       ev_board_support:
-        - implementation_id: ev_board_support
-          module_id: connector_1_powerpath
+      - implementation_id: ev_board_support
+        module_id: connector_1_powerpath
       slac:
-        - implementation_id: ev
-          module_id: slac
+      - implementation_id: ev
+        module_id: slac
   energy_manager:
     module: EnergyManager
     config_module:
@@ -59,8 +56,8 @@ active_modules:
       debug: false
     connections:
       energy_trunk:
-        - implementation_id: energy_grid
-          module_id: grid_connection_point
+      - implementation_id: energy_grid
+        module_id: grid_connection_point
   api_sink_1_evsemgr:
     module: EnergyNode
     mapping:
@@ -71,8 +68,8 @@ active_modules:
       phase_count: 3
     connections:
       energy_consumer:
-        - module_id: connector_1
-          implementation_id: energy_grid
+      - module_id: connector_1
+        implementation_id: energy_grid
   connector_1:
     module: EvseManager
     mapping:
@@ -97,23 +94,23 @@ active_modules:
       switch_3ph1ph_cp_state: X1
     connections:
       bsp:
-        - implementation_id: board_support
-          module_id: connector_1_powerpath
+      - implementation_id: board_support
+        module_id: connector_1_powerpath
       hlc:
-        - implementation_id: charger
-          module_id: iso15118_charger
+      - implementation_id: charger
+        module_id: iso15118_charger
       powermeter_grid_side:
-        - implementation_id: powermeter
-          module_id: connector_1_powerpath
+      - implementation_id: powermeter
+        module_id: connector_1_powerpath
       slac:
-        - implementation_id: evse
-          module_id: slac
+      - implementation_id: evse
+        module_id: slac
       ac_rcd:
-        - implementation_id: rcd
-          module_id: connector_1_powerpath
+      - implementation_id: rcd
+        module_id: connector_1_powerpath
       connector_lock:
-        - implementation_id: connector_lock
-          module_id: connector_1_powerpath
+      - implementation_id: connector_lock
+        module_id: connector_1_powerpath
     telemetry:
       id: 1
   grid_connection_point:
@@ -126,8 +123,8 @@ active_modules:
       phase_count: 3
     connections:
       energy_consumer:
-        - implementation_id: energy_grid
-          module_id: api_sink_1_evsemgr
+      - implementation_id: energy_grid
+        module_id: api_sink_1_evsemgr
   iso15118_car:
     module: PyEvJosev
     config_module:
@@ -141,8 +138,8 @@ active_modules:
       supported_DIN70121: false
     connections:
       security:
-        - module_id: evse_security
-          implementation_id: main
+      - module_id: evse_security
+        implementation_id: main
   evse_security:
     module: EvseSecurity
     config_module:
@@ -161,8 +158,8 @@ active_modules:
       setup_wifi: false
     connections:
       store:
-        - implementation_id: main
-          module_id: persistent_store
+      - implementation_id: main
+        module_id: persistent_store
   slac:
     module: SlacSimulator
   token_provider:
@@ -173,8 +170,8 @@ active_modules:
         token: DEADBEEF
     connections:
       evse:
-        - implementation_id: evse
-          module_id: connector_1
+      - implementation_id: evse
+        module_id: connector_1
   token_validator:
     module: DummyTokenValidator
     config_implementation:
