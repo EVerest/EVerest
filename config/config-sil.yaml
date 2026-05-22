@@ -4,17 +4,17 @@ active_modules:
   api:
     connections:
       evse_manager:
-        - implementation_id: evse
-          module_id: connector_1
+      - implementation_id: evse
+        module_id: connector_1
       error_history:
-        - module_id: error_history
-          implementation_id: error_history
+      - module_id: error_history
+        implementation_id: error_history
     module: API
   ev_api:
     connections:
       ev_manager:
-        - implementation_id: ev_manager
-          module_id: ev_manager
+      - implementation_id: ev_manager
+        module_id: ev_manager
     module: EvAPI
   error_history:
     module: ErrorHistory
@@ -29,32 +29,29 @@ active_modules:
       ignore_connector_faults: true
     connections:
       evse_manager:
-        - implementation_id: evse
-          module_id: connector_1
+      - implementation_id: evse
+        module_id: connector_1
       token_provider:
-        - implementation_id: main
-          module_id: token_provider
+      - implementation_id: main
+        module_id: token_provider
       token_validator:
-        - implementation_id: main
-          module_id: token_validator
+      - implementation_id: main
+        module_id: token_validator
     module: Auth
   ev_manager:
     config_module:
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
       connector_id: 1
     connections:
       ev:
-        - implementation_id: ev
-          module_id: iso15118_car
+      - implementation_id: ev
+        module_id: iso15118_car
       ev_board_support:
-        - implementation_id: ev_board_support
-          module_id: connector_1_powerpath
+      - implementation_id: ev_board_support
+        module_id: connector_1_powerpath
       slac:
-        - implementation_id: ev
-          module_id: slac
-    module: EvManager
+      - implementation_id: ev
+        module_id: slac
+    module: EvSimulator
   energy_manager:
     config_module:
       switch_3ph1ph_while_charging_mode: Both
@@ -67,8 +64,8 @@ active_modules:
       debug: false
     connections:
       energy_trunk:
-        - implementation_id: energy_grid
-          module_id: grid_connection_point
+      - implementation_id: energy_grid
+        module_id: grid_connection_point
     module: EnergyManager
   connector_1:
     config_module:
@@ -91,23 +88,23 @@ active_modules:
       switch_3ph1ph_cp_state: X1
     connections:
       bsp:
-        - implementation_id: board_support
-          module_id: connector_1_powerpath
+      - implementation_id: board_support
+        module_id: connector_1_powerpath
       hlc:
-        - implementation_id: charger
-          module_id: iso15118_charger
+      - implementation_id: charger
+        module_id: iso15118_charger
       powermeter_grid_side:
-        - implementation_id: powermeter
-          module_id: connector_1_powerpath
+      - implementation_id: powermeter
+        module_id: connector_1_powerpath
       slac:
-        - implementation_id: evse
-          module_id: slac
+      - implementation_id: evse
+        module_id: slac
       ac_rcd:
-        - implementation_id: rcd
-          module_id: connector_1_powerpath
+      - implementation_id: rcd
+        module_id: connector_1_powerpath
       connector_lock:
-        - implementation_id: connector_lock
-          module_id: connector_1_powerpath
+      - implementation_id: connector_lock
+        module_id: connector_1_powerpath
     module: EvseManager
     telemetry:
       id: 1
@@ -117,8 +114,8 @@ active_modules:
       phase_count: 3
     connections:
       energy_consumer:
-        - implementation_id: energy_grid
-          module_id: connector_1
+      - implementation_id: energy_grid
+        module_id: connector_1
     module: EnergyNode
   iso15118_car:
     config_module:
@@ -134,8 +131,8 @@ active_modules:
     module: EvseV2G
     connections:
       security:
-        - module_id: evse_security
-          implementation_id: main
+      - module_id: evse_security
+        implementation_id: main
   evse_security:
     module: EvseSecurity
     config_module:
@@ -154,8 +151,8 @@ active_modules:
       setup_wifi: false
     connections:
       store:
-        - implementation_id: main
-          module_id: persistent_store
+      - implementation_id: main
+        module_id: persistent_store
     module: Setup
   slac:
     module: SlacSimulator
@@ -166,8 +163,8 @@ active_modules:
         token: DEADBEEF
     connections:
       evse:
-        - implementation_id: evse
-          module_id: connector_1
+      - implementation_id: evse
+        module_id: connector_1
     module: DummyTokenProvider
   token_validator:
     config_implementation:
@@ -192,9 +189,9 @@ active_modules:
     terminals:
       bottom: []
       left:
-        - id: evse_manager
-          interface: evse_manager
-          type: requirement
+      - id: evse_manager
+        interface: evse_manager
+        type: requirement
       right: []
       top: []
   auth:
@@ -203,24 +200,24 @@ active_modules:
       y: 2
     terminals:
       bottom:
-        - id: main
-          interface: auth
-          type: provide
-        - id: reservation
-          interface: reservation
-          type: provide
+      - id: main
+        interface: auth
+        type: provide
+      - id: reservation
+        interface: reservation
+        type: provide
       left:
-        - id: evse_manager
-          interface: evse_manager
-          type: requirement
+      - id: evse_manager
+        interface: evse_manager
+        type: requirement
       right:
-        - id: token_validator
-          interface: auth_token_validator
-          type: requirement
+      - id: token_validator
+        interface: auth_token_validator
+        type: requirement
       top:
-        - id: token_provider
-          interface: auth_token_provider
-          type: requirement
+      - id: token_provider
+        interface: auth_token_provider
+        type: requirement
   ev_manager:
     position:
       x: 53
@@ -228,91 +225,91 @@ active_modules:
     terminals:
       bottom: []
       left:
-        - id: simulation_control
-          interface: yeti_simulation_control
-          type: requirement
-        - id: slac
-          interface: slac
-          type: requirement
+      - id: simulation_control
+        interface: yeti_simulation_control
+        type: requirement
+      - id: slac
+        interface: slac
+        type: requirement
       right:
-        - id: main
-          interface: ev_manager
-          type: provide
+      - id: main
+        interface: ev_manager
+        type: provide
       top:
-        - id: ev
-          interface: ISO15118_ev
-          type: requirement
+      - id: ev
+        interface: ISO15118_ev
+        type: requirement
   connector_1:
     position:
       x: 13
       y: 23
     terminals:
       bottom:
-        - id: powersupply_DC
-          interface: power_supply_DC
-          type: requirement
-        - id: imd
-          interface: isolation_monitor
-          type: requirement
-        - id: powermeter_car_side
-          interface: powermeter
-          type: requirement
-        - id: token_provider
-          interface: auth_token_provider
-          type: provide
-        - id: slac
-          interface: slac
-          type: requirement
+      - id: powersupply_DC
+        interface: power_supply_DC
+        type: requirement
+      - id: imd
+        interface: isolation_monitor
+        type: requirement
+      - id: powermeter_car_side
+        interface: powermeter
+        type: requirement
+      - id: token_provider
+        interface: auth_token_provider
+        type: provide
+      - id: slac
+        interface: slac
+        type: requirement
       left:
-        - id: hlc
-          interface: ISO15118_charger
-          type: requirement
+      - id: hlc
+        interface: ISO15118_charger
+        type: requirement
       right:
-        - id: bsp
-          interface: board_support_AC
-          type: requirement
-        - id: powermeter_grid_side
-          interface: powermeter
-          type: requirement
+      - id: bsp
+        interface: board_support_AC
+        type: requirement
+      - id: powermeter_grid_side
+        interface: powermeter
+        type: requirement
       top:
-        - id: energy_grid
-          interface: energy
-          type: provide
-        - id: evse
-          interface: evse_manager
-          type: provide
+      - id: energy_grid
+        interface: energy
+        type: provide
+      - id: evse
+        interface: evse_manager
+        type: provide
   connector_1_powerpath:
     position:
       x: 33
       y: 23
     terminals:
       bottom:
-        - id: debug_keepalive
-          interface: debug_json
-          type: provide
-        - id: debug_powermeter
-          interface: debug_json
-          type: provide
-        - id: debug_yeti
-          interface: debug_json
-          type: provide
-        - id: yeti_extras
-          interface: yeti_extras
-          type: provide
-        - id: debug_state
-          interface: debug_json
-          type: provide
+      - id: debug_keepalive
+        interface: debug_json
+        type: provide
+      - id: debug_powermeter
+        interface: debug_json
+        type: provide
+      - id: debug_yeti
+        interface: debug_json
+        type: provide
+      - id: yeti_extras
+        interface: yeti_extras
+        type: provide
+      - id: debug_state
+        interface: debug_json
+        type: provide
       left:
-        - id: board_support
-          interface: board_support_AC
-          type: provide
-        - id: powermeter
-          interface: powermeter
-          type: provide
+      - id: board_support
+        interface: board_support_AC
+        type: provide
+      - id: powermeter
+        interface: powermeter
+        type: provide
       right:
-        - id: yeti_simulation_control
-          interface: yeti_simulation_control
-          type: provide
+      - id: yeti_simulation_control
+        interface: yeti_simulation_control
+        type: provide
       top: []
   energy_manager:
     position:
@@ -320,14 +317,14 @@ active_modules:
       y: 2
     terminals:
       bottom:
-        - id: energy_trunk
-          interface: energy
-          type: requirement
+      - id: energy_trunk
+        interface: energy
+        type: requirement
       left: []
       right:
-        - id: main
-          interface: energy_manager
-          type: provide
+      - id: main
+        interface: energy_manager
+        type: provide
       top: []
   grid_connection_point:
     position:
@@ -336,32 +333,32 @@ active_modules:
     terminals:
       bottom: []
       left:
-        - id: price_information
-          interface: energy_price_information
-          type: requirement
-        - id: powermeter
-          interface: powermeter
-          type: requirement
+      - id: price_information
+        interface: energy_price_information
+        type: requirement
+      - id: powermeter
+        interface: powermeter
+        type: requirement
       right:
-        - id: external_limits
-          interface: external_energy_limits
-          type: provide
-        - id: energy_consumer
-          interface: energy
-          type: requirement
+      - id: external_limits
+        interface: external_energy_limits
+        type: provide
+      - id: energy_consumer
+        interface: energy
+        type: requirement
       top:
-        - id: energy_grid
-          interface: energy
-          type: provide
+      - id: energy_grid
+        interface: energy
+        type: provide
   iso15118_car:
     position:
       x: 53
       y: 23
     terminals:
       bottom:
-        - id: ev
-          interface: ISO15118_ev
-          type: provide
+      - id: ev
+        interface: ISO15118_ev
+        type: provide
       left: []
       right: []
       top: []
@@ -373,9 +370,9 @@ active_modules:
       bottom: []
       left: []
       right:
-        - id: charger
-          interface: ISO15118_charger
-          type: provide
+      - id: charger
+        interface: ISO15118_charger
+        type: provide
       top: []
   persistent_store:
     position:
@@ -385,9 +382,9 @@ active_modules:
       bottom: []
       left: []
       right:
-        - id: main
-          interface: kvs
-          type: provide
+      - id: main
+        interface: kvs
+        type: provide
       top: []
   setup:
     position:
@@ -396,9 +393,9 @@ active_modules:
     terminals:
       bottom: []
       left:
-        - id: store
-          interface: kvs
-          type: requirement
+      - id: store
+        interface: kvs
+        type: requirement
       right: []
       top: []
   slac:
@@ -408,13 +405,13 @@ active_modules:
     terminals:
       bottom: []
       left:
-        - id: evse
-          interface: slac
-          type: provide
+      - id: evse
+        interface: slac
+        type: provide
       right:
-        - id: ev
-          interface: slac
-          type: provide
+      - id: ev
+        interface: slac
+        type: provide
       top: []
   token_provider:
     position:
@@ -422,13 +419,13 @@ active_modules:
       y: -9
     terminals:
       bottom:
-        - id: main
-          interface: auth_token_provider
-          type: provide
+      - id: main
+        interface: auth_token_provider
+        type: provide
       left:
-        - id: evse
-          interface: evse_manager
-          type: requirement
+      - id: evse
+        interface: evse_manager
+        type: requirement
       right: []
       top: []
   token_validator:
@@ -438,8 +435,8 @@ active_modules:
     terminals:
       bottom: []
       left:
-        - id: main
-          interface: auth_token_validator
-          type: provide
+      - id: main
+        interface: auth_token_validator
+        type: provide
       right: []
       top: []
