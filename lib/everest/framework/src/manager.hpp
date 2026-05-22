@@ -213,6 +213,11 @@ private:
     /// \brief Unregister all module ready handlers and clear ready-tracking state.
     void unregister_module_ready_handlers(Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
 
+    /// \brief Unregister module ready handlers and clear retained MQTT topics.
+    /// \note Must be called with the config that was used to register handlers (before any reload).
+    /// \note MQTT must still be connected; call before any disconnect.
+    void cleanup_modules_state(Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
+
     /// \brief Terminate remaining module processes (SIGTERM, then SIGKILL fallback).
     void shutdown_modules(const std::map<pid_t, std::string>& modules, Everest::ManagerConfig& config,
                           Everest::MQTTAbstraction& mqtt_abstraction);
@@ -264,14 +269,14 @@ private:
     void handle_restart_modules_after_shutdown(RuntimeContext& ctx);
 
     /// \brief Finalize normal shutdown and decide exit vs idle outcome.
-    /// \param mqtt_abstraction Active MQTT abstraction instance.
+    /// \param ctx Runtime dependencies for the current run.
     /// \param admin_panel Controller IPC/process integration helper.
     /// \return EXIT_SUCCESS/EXIT_FAILURE when manager exits, std::nullopt for idle mode.
-    std::optional<int> handle_finish_normal_shutdown(Everest::MQTTAbstraction& mqtt_abstraction,
-                                                     ManagerAdminPanel& admin_panel);
+    std::optional<int> handle_finish_normal_shutdown(RuntimeContext& ctx, ManagerAdminPanel& admin_panel);
 
     /// \brief Finalize crash-recovery shutdown path.
-    void handle_finish_crash_recovery(Everest::MQTTAbstraction& mqtt_abstraction);
+    /// \param ctx Runtime dependencies for the current run.
+    void handle_finish_crash_recovery(RuntimeContext& ctx);
 
     /// \brief Start graceful shutdown and publish shutdown topic when required.
     /// \param module_exited_time Timestamp used as shutdown start reference.
