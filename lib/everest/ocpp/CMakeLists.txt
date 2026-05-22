@@ -87,6 +87,7 @@ if (OCPP_INSTALL)
         NAMESPACE everest
         EXPORT ocpp-targets
         ADDITIONAL_CONTENT
+            "find_dependency(everest-util)"
             "find_dependency(OpenSSL)"
             "find_dependency(SQLite3)"
             "find_dependency(libwebsockets)"

@@ -124,6 +124,7 @@ endif()
 
 include(ev-define-dependency)
 include(ev-lib-dependencies)
+include(ev-packaging)
 
 if(NOT EVEREST_LIBS_ONLY)
     include("module-dependencies.cmake")

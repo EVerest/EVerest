@@ -5,6 +5,7 @@ add_library(everest::io ALIAS everest_io)
 set_target_properties(everest_io PROPERTIES
   VERSION 0.1.0
   SOVERSION 0
+  EXPORT_NAME io
 )
 
 target_sources(everest_io
@@ -70,6 +71,7 @@ endif()
 
 target_link_libraries(everest_io
     PUBLIC
+        atomic
         $<BUILD_INTERFACE:everest_util>
         $<INSTALL_INTERFACE:everest::util>
         fmt::fmt
@@ -147,5 +149,15 @@ else()
         DESTINATION include
         FILES_MATCHING PATTERN "*.hpp"
         PATTERN "mqtt" EXCLUDE
+    )
+endif()
+
+if(DISABLE_EDM)
+    ev_packaging(
+        NAME everest-io
+        LIBRARY_NAME io
+        IMPORTED_LOCATION_FILENAME libeverest_io.so
+        NAMESPACE everest
+        TYPE SHARED
     )
 endif()
