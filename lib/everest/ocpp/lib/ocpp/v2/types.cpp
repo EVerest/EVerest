@@ -921,5 +921,27 @@ std::ostream& operator<<(std::ostream& os, const MessageType& message_type) {
     return os;
 }
 
+EnhancedCompositeSchedule::operator CompositeSchedule() const {
+    CompositeSchedule result;
+    result.evseId = evseId;
+    result.duration = duration;
+    result.scheduleStart = scheduleStart;
+    result.chargingRateUnit = chargingRateUnit;
+    for (const auto& i : chargingSchedulePeriod) {
+        result.chargingSchedulePeriod.push_back(i);
+    }
+    result.customData = customData;
+    return result;
+}
+
+EnhancedCompositeScheduleResponse::operator GetCompositeScheduleResponse() const {
+    GetCompositeScheduleResponse result;
+    result.status = status;
+    result.statusInfo = statusInfo;
+    result.schedule = schedule;
+    result.customData = customData;
+    return result;
+}
+
 } // namespace v2
 } // namespace ocpp

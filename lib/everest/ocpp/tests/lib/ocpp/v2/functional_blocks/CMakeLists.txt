@@ -24,6 +24,7 @@ set(TEST_SECURITY_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helpe
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/CertificateSigned.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/DeleteCertificate.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetInstalledCertificateIds.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetCompositeSchedule.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/InstallCertificate.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/SignCertificate.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/Get15118EVCertificate.cpp
@@ -50,6 +51,7 @@ set(TEST_AUTHORIZATION_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_
             ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/Authorize.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/ClearCache.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetCompositeSchedule.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetLocalListVersion.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/SendLocalList.cpp
             ${LIBOCPP_TEST_INCLUDE_COMMON_SOURCES}
@@ -71,6 +73,7 @@ set(TEST_AVAILABILITY_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_h
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/availability.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/ChangeAvailability.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetCompositeSchedule.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/Heartbeat.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/StatusNotification.cpp
             ${LIBOCPP_TEST_INCLUDE_COMMON_SOURCES}
@@ -93,6 +96,7 @@ set(TEST_TARIFF_AND_COST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_tes
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/display_message.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/ClearDisplayMessage.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetCompositeSchedule.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetDisplayMessages.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/NotifyDisplayMessages.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/SetDisplayMessage.cpp

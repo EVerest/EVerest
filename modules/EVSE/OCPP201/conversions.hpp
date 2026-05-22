@@ -5,7 +5,7 @@
 
 #include "ocpp/v2/messages/ChangeAvailability.hpp"
 #include "ocpp/v2/ocpp_enums.hpp"
-#include "ocpp/v2/ocpp_types.hpp"
+#include "ocpp/v2/types.hpp"
 #include <generated/types/display_message.hpp>
 #include <generated/types/evse_manager.hpp>
 #include <generated/types/iso15118.hpp>
@@ -239,13 +239,14 @@ to_everest_get_variable_status_enum_type(const ocpp::v2::GetVariableStatusEnum g
 types::ocpp::SetVariableStatusEnumType
 to_everest_set_variable_status_enum_type(const ocpp::v2::SetVariableStatusEnum set_variable_status);
 
-/// \brief Converts a given vector of ocpp::v2::CompositeSchedule \p composite_schedules to a
+/// \brief Converts a given vector of ocpp::v2::EnhancedCompositeSchedule \p composite_schedules to a
 /// types::ocpp::ChargingSchedules
 types::ocpp::ChargingSchedules
-to_everest_charging_schedules(const std::vector<ocpp::v2::CompositeSchedule>& composite_schedules);
+to_everest_charging_schedules(const std::vector<ocpp::v2::EnhancedCompositeSchedule>& composite_schedules);
 
-/// \brief Converts a given ocpp::v2::CompositeSchedule \p composite_schedule to a types::ocpp::ChargingSchedule
-types::ocpp::ChargingSchedule to_everest_charging_schedule(const ocpp::v2::CompositeSchedule& composite_schedule);
+/// \brief Converts a given ocpp::v2::EnhancedCompositeSchedule \p composite_schedule to a types::ocpp::ChargingSchedule
+types::ocpp::ChargingSchedule
+to_everest_charging_schedule(const ocpp::v2::EnhancedCompositeSchedule& composite_schedule);
 
 /// \brief Converts a given ocpp::v2::OperationModeEnum to a types::ocpp::Operation_mode enum.
 types::ocpp::Operation_mode to_everest_operation_mode(const ocpp::v2::OperationModeEnum operation_mode);

@@ -1576,7 +1576,7 @@ to_everest_set_variable_status_enum_type(const ocpp::v2::SetVariableStatusEnum s
 }
 
 types::ocpp::ChargingSchedules
-to_everest_charging_schedules(const std::vector<ocpp::v2::CompositeSchedule>& composite_schedules) {
+to_everest_charging_schedules(const std::vector<ocpp::v2::EnhancedCompositeSchedule>& composite_schedules) {
     types::ocpp::ChargingSchedules charging_schedules;
     for (const auto& composite_schedule : composite_schedules) {
         charging_schedules.schedules.push_back(conversions::to_everest_charging_schedule(composite_schedule));
@@ -1584,7 +1584,8 @@ to_everest_charging_schedules(const std::vector<ocpp::v2::CompositeSchedule>& co
     return charging_schedules;
 }
 
-types::ocpp::ChargingSchedule to_everest_charging_schedule(const ocpp::v2::CompositeSchedule& composite_schedule) {
+types::ocpp::ChargingSchedule
+to_everest_charging_schedule(const ocpp::v2::EnhancedCompositeSchedule& composite_schedule) {
     types::ocpp::ChargingSchedule charging_schedule;
     charging_schedule.evse = composite_schedule.evseId;
     charging_schedule.charging_rate_unit =

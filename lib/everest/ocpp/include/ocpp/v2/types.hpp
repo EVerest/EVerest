@@ -3,6 +3,7 @@
 #ifndef V2_TYPES_HPP
 #define V2_TYPES_HPP
 
+#include "ocpp/v2/messages/GetCompositeSchedule.hpp"
 #include <ocpp/v2/ocpp_types.hpp>
 
 #include <ostream>
@@ -206,6 +207,34 @@ struct ReportedChargingProfile {
     }
 };
 
+/// \brief This provides additional information alongside the ChargingSchedulePeriod.
+///        Similar to OCPP 1.6
+struct EnhancedChargingSchedulePeriod : public ChargingSchedulePeriod {
+    EnhancedChargingSchedulePeriod() = default;
+    EnhancedChargingSchedulePeriod(const ChargingSchedulePeriod& in) : ChargingSchedulePeriod(in){};
+    std::int32_t stackLevel;
+};
+
+struct EnhancedCompositeSchedule {
+    std::int32_t evseId;
+    std::int32_t duration;
+    ocpp::DateTime scheduleStart;
+    ChargingRateUnitEnum chargingRateUnit;
+    std::vector<EnhancedChargingSchedulePeriod> chargingSchedulePeriod;
+    std::optional<CustomData> customData;
+
+    operator CompositeSchedule() const;
+};
+
+struct EnhancedCompositeScheduleResponse {
+    GenericStatusEnum status;
+    std::optional<StatusInfo> statusInfo;
+    std::optional<EnhancedCompositeSchedule> schedule;
+    std::optional<CustomData> customData;
+
+    operator GetCompositeScheduleResponse() const;
+};
+
 namespace conversions {
 /// \brief Converts the given MessageType \p m to std::string
 /// \returns a string representation of the MessageType
@@ -214,7 +243,6 @@ std::string messagetype_to_string(MessageType m);
 /// \brief Converts the given std::string \p s to MessageType
 /// \returns a MessageType from a string representation
 MessageType string_to_messagetype(const std::string& s);
-
 } // namespace conversions
 
 /// \brief Writes the string representation of the given \p message_type to the given output stream \p os

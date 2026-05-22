@@ -191,10 +191,10 @@ private:
     void process_reservation_end(const int32_t evse_id, const int32_t connector_id);
 
     /// \brief This function publishes the given \p composite_schedules via the ocpp interface
-    void publish_charging_schedules(const std::vector<ocpp::v2::CompositeSchedule>& composite_schedules);
+    void publish_charging_schedules(const std::vector<ocpp::v2::EnhancedCompositeSchedule>& composite_schedules);
 
     /// \brief This function applies given \p composite_schedules for each connected evse_energy_sink
-    void set_external_limits(const std::vector<ocpp::v2::CompositeSchedule>& composite_schedules);
+    void set_external_limits(const std::vector<ocpp::v2::EnhancedCompositeSchedule>& composite_schedules);
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

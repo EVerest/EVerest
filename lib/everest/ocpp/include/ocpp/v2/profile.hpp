@@ -2,7 +2,7 @@
 // Copyright 2020 - 2024 Pionix GmbH and Contributors to EVerest
 
 #include <ocpp/common/constants.hpp>
-#include <ocpp/v2/ocpp_types.hpp>
+#include <ocpp/v2/types.hpp>
 
 namespace ocpp {
 namespace v2 {
@@ -30,7 +30,7 @@ struct IntermediatePeriod {
 
 using IntermediateProfile = std::vector<IntermediatePeriod>;
 
-/// \brief Returns elements from a specific ChargingProfile and ChargingSchedulePeriod
+/// \brief Returns elements from a specific ChargingProfile and EnhancedChargingSchedulePeriod
 ///        for use in the calculation of the CompositeSchedule within a specific slice
 ///        of time. These are aggregated by Profile.
 /// \param in_start The starting time
@@ -39,7 +39,7 @@ using IntermediateProfile = std::vector<IntermediatePeriod>;
 /// \param in_profile the charging profile
 /// \return an entry with smart charging information for a specific period in time
 struct period_entry_t {
-    void init(const ocpp::DateTime& in_start, int in_duration, const ChargingSchedulePeriod& in_period,
+    void init(const ocpp::DateTime& in_start, int in_duration, const EnhancedChargingSchedulePeriod& in_period,
               const ChargingProfile& in_profile);
     bool validate(const ChargingProfile& profile, const ocpp::DateTime& now);
 
@@ -147,7 +147,7 @@ void fill_gaps_with_defaults(IntermediateProfile& schedule, float default_limit,
 /// \brief Convert an intermediate profile into a final charging schedule.
 /// This will fill in defaults and convert merge the current and power limits into the final \p charging_rate_unit based
 /// limit
-std::vector<ChargingSchedulePeriod>
+std::vector<EnhancedChargingSchedulePeriod>
 convert_intermediate_into_schedule(const IntermediateProfile& profile, ChargingRateUnitEnum charging_rate_unit,
                                    float default_limit, std::int32_t default_number_phases, float supply_voltage);
 

@@ -121,8 +121,8 @@ public:
     /// \param duration of the request from. Composite schedules will be retrieved from now to (now + duration)
     /// \param unit of the period entries of the composite schedules
     /// \return vector of composite schedules, one for each evse_id including 0.
-    virtual std::vector<CompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
-                                                                       const ChargingRateUnitEnum& unit) = 0;
+    virtual std::vector<EnhancedCompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
+                                                                               const ChargingRateUnitEnum& unit) = 0;
 
     ///
     /// \brief for the given \p transaction_id removes the associated charging profile.
@@ -149,9 +149,9 @@ public:
 
     /// \brief Gets a composite schedule based on the given \p request
     /// \param request specifies different options for the request
-    /// \return GetCompositeScheduleResponse containing the status of the operation and the composite schedule if the
-    /// operation was successful
-    virtual GetCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) = 0;
+    /// \return EnhancedCompositeScheduleResponse containing the status of the operation and the composite schedule if
+    /// the operation was successful
+    virtual EnhancedCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) = 0;
 
     /// \brief Gets a composite schedule based on the given parameters.
     /// \note This will ignore TxDefaultProfiles and TxProfiles if no transaction is active on \p evse_id
@@ -159,8 +159,8 @@ public:
     /// \param duration How long the schedule should be
     /// \param unit ChargingRateUnit to thet the schedule for
     /// \return the composite schedule if the operation was successful, otherwise nullopt
-    virtual std::optional<CompositeSchedule> get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration,
-                                                                    ChargingRateUnitEnum unit) = 0;
+    virtual std::optional<EnhancedCompositeSchedule>
+    get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration, ChargingRateUnitEnum unit) = 0;
 
     /// \brief Initiates a NotifyEvChargingNeeds.req message to the CSMS
     /// \param req the request to send
@@ -179,11 +179,11 @@ public:
                   std::function<void()> set_charging_profiles_callback,
                   StopTransactionCallback stop_transaction_callback);
     void handle_message(const ocpp::EnhancedMessage<MessageType>& message) override;
-    GetCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) override;
-    std::optional<CompositeSchedule> get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration,
-                                                            ChargingRateUnitEnum unit) override;
-    std::vector<CompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
-                                                               const ChargingRateUnitEnum& unit) override;
+    EnhancedCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) override;
+    std::optional<EnhancedCompositeSchedule> get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration,
+                                                                    ChargingRateUnitEnum unit) override;
+    std::vector<EnhancedCompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
+                                                                       const ChargingRateUnitEnum& unit) override;
 
     void delete_transaction_tx_profiles(const std::string& transaction_id) override;
 
@@ -200,9 +200,10 @@ protected:
     ///
     /// \brief Calculates the composite schedule for the given \p valid_profiles and the given \p connector_id
     ///
-    CompositeSchedule calculate_composite_schedule(const ocpp::DateTime& start_time, const ocpp::DateTime& end_time,
-                                                   const std::int32_t evse_id, ChargingRateUnitEnum charging_rate_unit,
-                                                   bool is_offline, bool simulate_transaction_active);
+    EnhancedCompositeSchedule calculate_composite_schedule(const ocpp::DateTime& start_time,
+                                                           const ocpp::DateTime& end_time, const std::int32_t evse_id,
+                                                           ChargingRateUnitEnum charging_rate_unit, bool is_offline,
+                                                           bool simulate_transaction_active);
 
     ///
     /// \brief validates the existence of the given \p evse_id according to the specification
@@ -307,8 +308,8 @@ private: // Functions
     void handle_get_composite_schedule_req(Call<GetCompositeScheduleRequest> call);
     void handle_notify_ev_charging_needs_response(const EnhancedMessage<MessageType>& call_result);
 
-    GetCompositeScheduleResponse get_composite_schedule_internal(const GetCompositeScheduleRequest& request,
-                                                                 bool simulate_transaction_active = true);
+    EnhancedCompositeScheduleResponse get_composite_schedule_internal(const GetCompositeScheduleRequest& request,
+                                                                      bool simulate_transaction_active = true);
 
     ///
     /// \brief Checks a given \p candidate_profile and associated \p evse_id validFrom and validTo range

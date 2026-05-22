@@ -12,7 +12,7 @@ namespace ocpp::v2 {
 class SmartChargingMock : public SmartChargingInterface {
 public:
     MOCK_METHOD(void, handle_message, (const ocpp::EnhancedMessage<MessageType>& message));
-    MOCK_METHOD(std::vector<CompositeSchedule>, get_all_composite_schedules,
+    MOCK_METHOD(std::vector<EnhancedCompositeSchedule>, get_all_composite_schedules,
                 (const std::int32_t duration, const ChargingRateUnitEnum& unit));
     MOCK_METHOD(void, delete_transaction_tx_profiles, (const std::string& transaction_id));
     MOCK_METHOD(SetChargingProfileResponse, conform_validate_and_add_profile,

@@ -87,7 +87,7 @@ bool PeriodLimit::operator!=(const PeriodLimit& other) const {
 /// \param in_start the start time of the profile
 /// \param in_duration the time in seconds from the start of the profile to the end of this period
 /// \param in_period the details of this period
-void period_entry_t::init(const DateTime& in_start, int in_duration, const ChargingSchedulePeriod& in_period,
+void period_entry_t::init(const DateTime& in_start, int in_duration, const EnhancedChargingSchedulePeriod& in_period,
                           const ChargingProfile& in_profile) {
     // note duration can be negative and hence end time is before start time
     // see period_entry_t::validate()
@@ -473,7 +473,7 @@ IntermediateProfile generate_profile_from_periods(std::vector<period_entry_t>& p
             charging_schedule_period.operationMode = chosen->operationMode;
             charging_schedule_period.phaseToUse = std::nullopt;
 
-            // If the new ChargingSchedulePeriod.phaseToUse field is set, pass it on
+            // If the new EnhancedChargingSchedulePeriod.phaseToUse field is set, pass it on
             // Profile validation has already ensured that the values have been properly set.
             if (chosen->phase_to_use.has_value()) {
                 charging_schedule_period.phaseToUse = chosen->phase_to_use;
@@ -786,14 +786,14 @@ IntermediateProfile merge_profiles_by_summing_limits(const std::vector<Intermedi
     return combine_list_of_profiles(convert_to_ref_vector(profiles), combinator);
 }
 
-std::vector<ChargingSchedulePeriod>
+std::vector<EnhancedChargingSchedulePeriod>
 convert_intermediate_into_schedule(const IntermediateProfile& profile, ChargingRateUnitEnum charging_rate_unit,
                                    float default_limit, std::int32_t default_number_phases, float supply_voltage) {
 
-    std::vector<ChargingSchedulePeriod> output{};
+    std::vector<EnhancedChargingSchedulePeriod> output{};
 
     for (const auto& period : profile) {
-        ChargingSchedulePeriod period_out{};
+        EnhancedChargingSchedulePeriod period_out{};
         period_out.startPeriod = period.startPeriod;
         period_out.numberPhases = period.numberPhases;
 
