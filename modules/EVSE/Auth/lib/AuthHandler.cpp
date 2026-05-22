@@ -146,7 +146,9 @@ void AuthHandler::handle_token_validation_result_update(const ValidationResultUp
     std::unique_lock<std::mutex> lk(this->event_mutex);
     auto connector_id = validation_result_update.connector_id;
     if (this->evses.find(connector_id) != this->evses.end() and this->evses.at(connector_id)->identifier.has_value()) {
-        EVLOG_info << "Updating validation result on evse#" << connector_id; // old OCPP "connector" is now "EVSE"
+        // "connector" is old OCPP speak and corrsponds to "EVSE":
+        EVLOG_info << "Updating validation result on evse#" << connector_id << ": "
+                   << validation_result_update.validation_result.authorization_status;
         // Currently we only support updating the parent id token
         this->evses.at(connector_id)->identifier->authorization_status =
             validation_result_update.validation_result.authorization_status;
