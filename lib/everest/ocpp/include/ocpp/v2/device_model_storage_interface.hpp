@@ -98,6 +98,13 @@ public:
     /// \brief Check data integrity of the stored data:
     /// For "required" variables, assert values exist. Checks might be extended in the future.
     virtual void check_integrity() = 0;
+
+    /// \brief Create a fresh NetworkConfiguration_<new_slot> from the embedded default schema.
+    /// \param new_slot  The instance index to create.
+    /// \return true on success; false on failure.
+    virtual bool create_network_configuration_slot_from_default_schema(std::int32_t /*new_slot*/) {
+        return false;
+    }
 };
 
 } // namespace v2

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <fstream>
 #include <map>
+#include <sstream>
 #include <string>
 
 #include <everest/logging.hpp>
@@ -88,9 +89,13 @@ void InitDeviceModelDb::initialize_database(
     // Check if the config is consistent.
     check_integrity(component_configs);
 
-    // Remove components from db if they do not exist in the component config
+    // Components in the database that no longer have a matching entry in the component
+    // config (e.g. NetworkConfiguration_<N>.json was removed from the install) are kept
+    // in place and reported via a warning. Pruning these rows used to drop migration
+    // targets, so the operator could end up with a populated NetworkConnectionProfiles
+    // blob and no per-slot components to migrate it into.
     if (this->database_exists) {
-        remove_not_existing_components_from_db(component_configs, existing_components);
+        warn_about_components_missing_from_config(component_configs, existing_components);
     }
 
     // Starting a transaction makes this a lot faster (inserting all components takes a few seconds without it and a
@@ -170,18 +175,14 @@ read_component_config(const std::vector<std::filesystem::path>& components_confi
     for (const auto& path : components_config_path) {
         std::ifstream config_file(path);
         try {
-            json data = json::parse(config_file);
-            const ComponentKey p = data;
-            if (data.contains("properties")) {
-                const std::vector<DeviceModelVariable> variables = get_all_component_properties(data.at("properties"));
-                components.insert({p, variables});
-            } else {
-                EVLOG_warning << "Component " << data.at("name") << " does not contain any properties";
-                continue;
-            }
+            auto parsed = parse_component_config_from_json(json::parse(config_file));
+            components.insert({parsed.first, std::move(parsed.second)});
         } catch (const json::parse_error& e) {
             EVLOG_error << "Error while parsing config file: " << path;
             throw;
+        } catch (const InitDeviceModelDbError& e) {
+            EVLOG_warning << "Skipping component config " << path << ": " << e.what();
+            continue;
         }
     }
 
@@ -189,6 +190,20 @@ read_component_config(const std::vector<std::filesystem::path>& components_confi
 }
 
 } // namespace
+
+std::pair<ComponentKey, std::vector<DeviceModelVariable>> parse_component_config_from_json(const json& data) {
+    if (!data.contains("properties")) {
+        throw InitDeviceModelDbError("Component config has no \"properties\"");
+    }
+    const ComponentKey component_key = data;
+    auto variables = get_all_component_properties(data.at("properties"));
+    return {component_key, std::move(variables)};
+}
+
+std::pair<ComponentKey, std::vector<DeviceModelVariable>>
+parse_component_config_from_string(const std::string& json_content) {
+    return parse_component_config_from_json(json::parse(json_content));
+}
 
 std::map<ComponentKey, std::vector<DeviceModelVariable>>
 get_all_component_configs(const std::filesystem::path& directory) {
@@ -999,12 +1014,25 @@ bool component_exists_in_config(const std::map<ComponentKey, std::vector<DeviceM
 }
 } // namespace
 
-void InitDeviceModelDb::remove_not_existing_components_from_db(
+void InitDeviceModelDb::warn_about_components_missing_from_config(
     const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_config,
     const std::map<ComponentKey, std::vector<DeviceModelVariable>>& db_components) {
     for (const auto& component : db_components) {
         if (!component_exists_in_config(component_config, component.first)) {
-            remove_component_from_db(component.first);
+            std::ostringstream identifier;
+            identifier << component.first.name;
+            if (component.first.instance.has_value() && !component.first.instance.value().empty()) {
+                identifier << " (instance=" << component.first.instance.value() << ")";
+            }
+            if (component.first.evse_id.has_value()) {
+                identifier << " (evse_id=" << component.first.evse_id.value();
+                if (component.first.connector_id.has_value()) {
+                    identifier << ", connector_id=" << component.first.connector_id.value();
+                }
+                identifier << ")";
+            }
+            EVLOG_warning << "Component " << identifier.str()
+                          << " is present in the device model database but has no matching component config file";
         }
     }
 }

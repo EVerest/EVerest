@@ -130,6 +130,15 @@ private:
 std::map<ComponentKey, std::vector<DeviceModelVariable>>
 get_all_component_configs(const std::filesystem::path& directory);
 
+/// \brief Parse a component config JSON document into ComponentKey + variables.
+/// \throws InitDeviceModelDbError if "properties" missing.
+std::pair<ComponentKey, std::vector<DeviceModelVariable>> parse_component_config_from_json(const json& data);
+
+/// \brief Parse a component config JSON document from a string.
+/// \throws nlohmann::json::parse_error on invalid JSON; InitDeviceModelDbError if "properties" missing.
+std::pair<ComponentKey, std::vector<DeviceModelVariable>>
+parse_component_config_from_string(const std::string& json_content);
+
 class InitDeviceModelDb : public common::DatabaseHandlerCommon {
 private: // Members
     /// \brief Database path of the device model database.
@@ -360,13 +369,15 @@ private: // Functions
     std::map<ComponentKey, std::vector<DeviceModelVariable>> get_all_components_from_db();
 
     ///
-    /// \brief Remove components from db that do not exist in the component config.
+    /// \brief Warn about components that exist in the database but are not declared in the
+    ///        component config (no JSON file present on this install). The orphan rows are
+    ///        intentionally kept so per-slot components such as NetworkConfiguration_<N>
+    ///        survive missing JSON files and the legacy NetworkConnectionProfiles blob can
+    ///        still migrate into them on a later boot.
     /// \param component_config  The component config.
     /// \param db_components     The components in the database.
     ///
-    /// \throws InitDeviceModelDbError When one of the components could not be removed from the db.
-    ///
-    void remove_not_existing_components_from_db(
+    void warn_about_components_missing_from_config(
         const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_config,
         const std::map<ComponentKey, std::vector<DeviceModelVariable>>& db_components);
 

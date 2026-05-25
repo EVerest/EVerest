@@ -112,6 +112,25 @@ if(LIBOCPP_ENABLE_V2)
     )
     add_subdirectory(ocpp/v2/messages)
     add_subdirectory(ocpp/v21/messages)
+
+    # Embed the canonical NetworkConfiguration_1 schema as a build-time C++ string so
+    # blob migration can bootstrap a per-slot component without a filesystem dependency.
+    set(OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_SOURCE
+        "${PROJECT_SOURCE_DIR}/config/common/component_config/standardized/NetworkConfiguration_1.json")
+    file(READ "${OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_SOURCE}"
+         OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_JSON)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_SOURCE}")
+    set(OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_GENERATED
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/network_configuration_default_schema.cpp")
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/ocpp/v2/network_configuration_default_schema.cpp.in"
+        "${OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_GENERATED}"
+        @ONLY)
+    target_sources(ocpp PRIVATE
+        "${OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_GENERATED}")
+    set(OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_GENERATED
+        "${OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_GENERATED}" PARENT_SCOPE)
 endif()
 
 add_subdirectory(ocpp/common/websocket)

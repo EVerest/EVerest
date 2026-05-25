@@ -345,22 +345,24 @@ TEST_F(InitDeviceModelDbTest, init_db) {
     // Component added
     EXPECT_TRUE(component_exists("EVSE", std::nullopt, 3, std::nullopt));
     EXPECT_TRUE(component_exists("Connector", std::nullopt, 2, 2));
-    // Component removed, variables, characteristics and attributes should also have been removed.
-    EXPECT_FALSE(component_exists("Connector", std::nullopt, 2, 1));
-    EXPECT_FALSE(variable_exists("Connector", std::nullopt, 2, 1, "AvailabilityState", std::nullopt));
-    EXPECT_FALSE(variable_exists("Connector", std::nullopt, 2, 1, "Available", std::nullopt));
-    EXPECT_FALSE(variable_exists("Connector", std::nullopt, 2, 1, "ChargeProtocol", std::nullopt));
-    EXPECT_FALSE(variable_exists("Connector", std::nullopt, 2, 1, "ConnectorType", std::nullopt));
-    EXPECT_FALSE(variable_exists("Connector", std::nullopt, 2, 1, "SupplyPhases", std::nullopt));
-    EXPECT_FALSE(attribute_exists("Connector", std::nullopt, 2, 1, "ChargeProtocol", std::nullopt, std::nullopt,
-                                  AttributeEnum::Actual));
-    EXPECT_FALSE(attribute_exists("Connector", std::nullopt, 2, 1, "ConnectorType", std::nullopt,
-                                  MutabilityEnum::ReadOnly, AttributeEnum::Actual));
-    EXPECT_FALSE(characteristics_exists("Connector", std::nullopt, 2, 1, "Available", std::nullopt, DataEnum::boolean,
-                                        std::nullopt, std::nullopt, true, std::nullopt, std::nullopt));
-    EXPECT_FALSE(characteristics_exists("Connector", std::nullopt, 2, 1, "AvailabilityState", std::nullopt,
-                                        DataEnum::OptionList, std::nullopt, std::nullopt, true, std::nullopt,
-                                        "Available,Occupied,Reserved,Unavailable,Faulted"));
+    // Component is missing from the changed config but must NOT be removed on reinit.
+    // Pruning was replaced with a warning so per-slot components (NetworkConfiguration_<N>)
+    // survive missing JSON files and blob migration retries can still complete.
+    EXPECT_TRUE(component_exists("Connector", std::nullopt, 2, 1));
+    EXPECT_TRUE(variable_exists("Connector", std::nullopt, 2, 1, "AvailabilityState", std::nullopt));
+    EXPECT_TRUE(variable_exists("Connector", std::nullopt, 2, 1, "Available", std::nullopt));
+    EXPECT_TRUE(variable_exists("Connector", std::nullopt, 2, 1, "ChargeProtocol", std::nullopt));
+    EXPECT_TRUE(variable_exists("Connector", std::nullopt, 2, 1, "ConnectorType", std::nullopt));
+    EXPECT_TRUE(variable_exists("Connector", std::nullopt, 2, 1, "SupplyPhases", std::nullopt));
+    EXPECT_TRUE(attribute_exists("Connector", std::nullopt, 2, 1, "ChargeProtocol", std::nullopt, std::nullopt,
+                                 AttributeEnum::Actual));
+    EXPECT_TRUE(attribute_exists("Connector", std::nullopt, 2, 1, "ConnectorType", std::nullopt,
+                                 MutabilityEnum::ReadOnly, AttributeEnum::Actual));
+    EXPECT_TRUE(characteristics_exists("Connector", std::nullopt, 2, 1, "Available", std::nullopt, DataEnum::boolean,
+                                       std::nullopt, std::nullopt, true, std::nullopt, std::nullopt));
+    EXPECT_TRUE(characteristics_exists("Connector", std::nullopt, 2, 1, "AvailabilityState", std::nullopt,
+                                       DataEnum::OptionList, std::nullopt, std::nullopt, true, std::nullopt,
+                                       "Available,Occupied,Reserved,Unavailable,Faulted"));
 
     // Changed supports monitoring and datatype
     EXPECT_FALSE(characteristics_exists("EVSE", std::nullopt, 2, std::nullopt, "AvailabilityState", std::nullopt,

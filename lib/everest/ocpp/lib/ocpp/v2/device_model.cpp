@@ -395,6 +395,27 @@ DeviceModel::DeviceModel(std::unique_ptr<DeviceModelStorageInterface> device_mod
     this->device_model_map = this->device_model->get_device_model();
 }
 
+bool DeviceModel::create_network_configuration_slot_from_default_schema(std::int32_t new_slot) {
+    if (this->device_model == nullptr) {
+        return false;
+    }
+    if (!this->device_model->create_network_configuration_slot_from_default_schema(new_slot)) {
+        return false;
+    }
+    try {
+        // Reload the cached map so the freshly created component is visible to subsequent
+        // get_variable / set_value calls; the cache is built once at construction.
+        this->device_model_map = this->device_model->get_device_model();
+    } catch (const std::exception& e) {
+        EVLOG_error << "DeviceModel::create_network_configuration_slot_from_default_schema: storage "
+                       "committed slot "
+                    << new_slot << " but in-memory device-model reload failed (" << e.what()
+                    << "); restart required to pick up the new component";
+        throw;
+    }
+    return true;
+}
+
 SetVariableStatusEnum DeviceModel::set_read_only_value(const Component& component, const Variable& variable,
                                                        const AttributeEnum& attribute_enum, const std::string& value,
                                                        const std::string& source) {

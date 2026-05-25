@@ -133,6 +133,20 @@ void ComposedDeviceModelStorage::check_integrity() {
     }
 }
 
+bool ComposedDeviceModelStorage::create_network_configuration_slot_from_default_schema(std::int32_t new_slot) {
+    // NetworkConfiguration_<N> components live in the OCPP-source storage (the SQLite-backed
+    // EverestDeviceModelStorage). Without this dispatch, libocpp's blob-migration fallback hits
+    // DeviceModelStorageInterface's default virtual (returns false) and the operator's
+    // NetworkConnectionProfiles blob ends up cleared without ever populating the per-slot
+    // device-model rows on targets that ship no NetworkConfiguration_<N>.json.
+    const auto it = this->device_model_storages.find(VARIABLE_SOURCE_OCPP);
+    if (it == this->device_model_storages.end()) {
+        EVLOG_error << "OCPP device model storage not registered, cannot create NetworkConfiguration_" << new_slot;
+        return false;
+    }
+    return it->second->create_network_configuration_slot_from_default_schema(new_slot);
+}
+
 std::string module::device_model::ComposedDeviceModelStorage::get_variable_source(const ocpp::v2::Component& component,
                                                                                   const ocpp::v2::Variable& variable) {
     if (this->component_variable_source_map.find(component) == this->component_variable_source_map.end()) {

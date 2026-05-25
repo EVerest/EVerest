@@ -1960,7 +1960,17 @@ void migrate_from_blob_if_needed(DeviceModelInterface& dm) {
             return;
         }
 
-        // Check if DM slots are already populated — skip migration if any slot has a configured URL.
+        auto clear_blob = [&](const char* context) {
+            const auto status = dm.set_value(ControllerComponentVariables::NetworkConnectionProfiles.component,
+                                             ControllerComponentVariables::NetworkConnectionProfiles.variable.value(),
+                                             AttributeEnum::Actual, "", "internal");
+            if (status != SetVariableStatusEnum::Accepted) {
+                EVLOG_error << "Failed to clear NetworkConnectionProfiles blob (" << context << "): set_value returned "
+                            << conversions::set_variable_status_enum_to_string(status);
+            }
+        };
+
+        // Check if DM slots are already populated. Skip migration if any slot has a configured URL.
         // A malformed token in NetworkConfigurationPriority must not abort the whole migration;
         // skip the offending entry and keep scanning the remaining slots.
         const auto priority_str =
@@ -1981,9 +1991,7 @@ void migrate_from_blob_if_needed(DeviceModelInterface& dm) {
                     EVLOG_debug << "NetworkConfiguration DM slot " << slot
                                 << " already has a URL, skipping blob migration";
                     // Clear the blob so this check does not run again
-                    dm.set_value(ControllerComponentVariables::NetworkConnectionProfiles.component,
-                                 ControllerComponentVariables::NetworkConnectionProfiles.variable.value(),
-                                 AttributeEnum::Actual, "", "internal");
+                    clear_blob("slot already populated");
                     return;
                 }
             }
@@ -1991,49 +1999,91 @@ void migrate_from_blob_if_needed(DeviceModelInterface& dm) {
 
         const auto profiles = json::parse(blob_opt.value());
         if (profiles.empty()) {
-            dm.set_value(ControllerComponentVariables::NetworkConnectionProfiles.component,
-                         ControllerComponentVariables::NetworkConnectionProfiles.variable.value(),
-                         AttributeEnum::Actual, "", "internal");
+            clear_blob("empty profiles array");
             return;
         }
 
-        // Read the global BasicAuthPassword from SecurityCtrlr so we can populate per-slot passwords
-        // during migration when the blob does not contain one (the legacy format stored it separately).
-        // Whatever the operator has put in SecurityCtrlr is treated as the source of truth — propagate
-        // it as-is, skipping only when the value would not fit the per-slot CiString<64> length cap.
+        // Read SecurityCtrlr globals (BasicAuthPassword + Identity) so we can populate per-slot
+        // fields during migration when the blob does not carry one (legacy format stored them
+        // separately). Whatever the operator has put in SecurityCtrlr is treated as the source of
+        // truth. Propagate as-is, skipping only when the value would not fit the per-slot CiString
+        // length cap.
         static constexpr std::size_t basic_auth_password_max_length = 64;
-        const auto security_ctrlr_password =
-            get_optional_value<std::string>(dm, ControllerComponentVariables::BasicAuthPassword);
-        const bool security_ctrlr_password_is_usable =
-            security_ctrlr_password.has_value() && !security_ctrlr_password->empty() &&
-            security_ctrlr_password->size() <= basic_auth_password_max_length;
-        if (security_ctrlr_password.has_value() && security_ctrlr_password->size() > basic_auth_password_max_length) {
-            EVLOG_warning << "SecurityCtrlr.BasicAuthPassword exceeds the per-slot BasicAuthPassword length limit ("
-                          << security_ctrlr_password->size() << " > " << basic_auth_password_max_length
-                          << "); not propagating to migrated slots";
-        }
+        static constexpr std::size_t identity_max_length = 48;
+
+        auto load_security_ctrlr_fallback = [&](const ComponentVariable& cv, std::size_t max_len, const char* label) {
+            auto val = get_optional_value<std::string>(dm, cv);
+            const bool usable = val.has_value() && !val->empty() && val->size() <= max_len;
+            if (val.has_value() && val->size() > max_len) {
+                EVLOG_warning << label << " exceeds the per-slot length limit (" << val->size() << " > " << max_len
+                              << "); not propagating to migrated slots";
+            }
+            return std::pair{std::move(val), usable};
+        };
+
+        const auto [security_ctrlr_password, security_ctrlr_password_is_usable] =
+            load_security_ctrlr_fallback(ControllerComponentVariables::BasicAuthPassword,
+                                         basic_auth_password_max_length, "SecurityCtrlr.BasicAuthPassword");
+        const auto [security_ctrlr_identity, security_ctrlr_identity_is_usable] = load_security_ctrlr_fallback(
+            ControllerComponentVariables::SecurityCtrlrIdentity, identity_max_length, "SecurityCtrlr.Identity");
+
+        // Some legacy blobs reference NetworkConfiguration_<N> slots that were never installed
+        // via a per-slot JSON config on this target. Probe each slot before writing and create
+        // it from the embedded default schema if missing, so the write can succeed in-place
+        // rather than reporting "UnknownComponent" and dropping the profile.
+        auto ensure_slot_exists = [&](int slot) {
+            const auto probe_cv = get_component_variable(slot, OcppCsmsUrl);
+            if (dm.get_variable_meta_data(probe_cv.component, probe_cv.variable.value()).has_value()) {
+                return true;
+            }
+            if (dm.create_network_configuration_slot_from_default_schema(slot)) {
+                EVLOG_info << "Created NetworkConfiguration_" << slot
+                           << " from embedded default schema for blob migration";
+                return true;
+            }
+            EVLOG_warning << "Could not create NetworkConfiguration_" << slot
+                          << " for blob migration; profile will not be written";
+            return false;
+        };
 
         int imported = 0;
+        int failed = 0;
         for (const auto& profile_json : profiles) {
-            const int slot = profile_json.at("configurationSlot").get<int>();
-            NetworkConnectionProfile profile = profile_json.at("connectionData");
-            if (!profile.basicAuthPassword.has_value() && security_ctrlr_password_is_usable) {
-                profile.basicAuthPassword = CiString<64>(security_ctrlr_password.value());
-            }
-            if (write_profile_to_device_model(dm, slot, profile, "internal")) {
-                ++imported;
-            } else {
-                EVLOG_warning << "Failed to import NetworkConfiguration[" << slot << "] from blob";
+            try {
+                const int slot = profile_json.at("configurationSlot").get<int>();
+                NetworkConnectionProfile profile = profile_json.at("connectionData");
+                if (!profile.basicAuthPassword.has_value() && security_ctrlr_password_is_usable) {
+                    profile.basicAuthPassword = CiString<64>(security_ctrlr_password.value());
+                }
+                if (!profile.identity.has_value() && security_ctrlr_identity_is_usable) {
+                    profile.identity = CiString<48>(security_ctrlr_identity.value());
+                }
+                if (!ensure_slot_exists(slot)) {
+                    ++failed;
+                    continue;
+                }
+                if (write_profile_to_device_model(dm, slot, profile, "internal")) {
+                    ++imported;
+                } else {
+                    ++failed;
+                    EVLOG_warning << "Failed to import NetworkConfiguration[" << slot << "] from blob";
+                }
+            } catch (const std::exception& e) {
+                ++failed;
+                EVLOG_warning << "Skipping malformed profile entry in NetworkConnectionProfiles blob: " << e.what();
             }
         }
 
-        // Clear the blob so this migration does not run again on the next boot
-        dm.set_value(ControllerComponentVariables::NetworkConnectionProfiles.component,
-                     ControllerComponentVariables::NetworkConnectionProfiles.variable.value(), AttributeEnum::Actual,
-                     "", "internal");
-
-        EVLOG_info << "Imported " << imported
-                   << " profile(s) from NetworkConnectionProfiles blob into NetworkConfiguration DM components";
+        // Clear the blob so this migration does not run again on the next boot.
+        clear_blob("post-migration");
+        if (failed == 0) {
+            EVLOG_info << "Imported " << imported
+                       << " profile(s) from NetworkConnectionProfiles blob into NetworkConfiguration DM components";
+        } else {
+            EVLOG_error << "Imported " << imported << " of " << (imported + failed)
+                        << " profile(s) from NetworkConnectionProfiles blob; the remaining " << failed
+                        << " could not be written and the blob has been cleared";
+        }
     } catch (const std::exception& e) {
         EVLOG_error << "Error importing from NetworkConnectionProfiles blob: " << e.what();
     }

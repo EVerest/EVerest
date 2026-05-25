@@ -76,6 +76,7 @@ set(LIBOCPP_TEST_INCLUDE_V2_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/v16/ocpp_enums.cpp 
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/init_device_model_db.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/device_model_storage_sqlite.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/utils.cpp
+                                      ${OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_GENERATED}
 )
 
 function(add_libocpp_unittest)

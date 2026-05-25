@@ -78,6 +78,8 @@ public:
     std::int32_t clear_custom_variable_monitors() final;
 
     void check_integrity() final;
+
+    bool create_network_configuration_slot_from_default_schema(std::int32_t new_slot) final;
 };
 
 } // namespace v2

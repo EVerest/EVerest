@@ -773,4 +773,9 @@ int32_t EverestDeviceModelStorage::clear_custom_variable_monitors() {
 
 void EverestDeviceModelStorage::check_integrity() {
 }
+
+bool EverestDeviceModelStorage::create_network_configuration_slot_from_default_schema(std::int32_t new_slot) {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    return this->device_model_storage->create_network_configuration_slot_from_default_schema(new_slot);
+}
 } // namespace module::device_model
