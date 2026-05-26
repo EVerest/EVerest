@@ -203,6 +203,10 @@ struct DcEvStatus {
 };
 
 struct Parameter {
+    Parameter(std::string name, std::variant<bool, int8_t, int16_t, int32_t, PhysicalValue, std::string> value) :
+        name(name), value(value) {
+    }
+
     std::string name;
     std::variant<bool, int8_t, int16_t, int32_t, PhysicalValue, std::string> value;
 };
@@ -225,6 +229,8 @@ constexpr auto SelectedServiceListMaxLength = 16;
 
 float from_PhysicalValue(const PhysicalValue& in);
 PhysicalValue from_float(const float in, const data_types::UnitSymbol unit);
+
+ServiceCategory convert_service_id_to_service_category(const std::uint16_t service_id);
 
 } // namespace data_types
 

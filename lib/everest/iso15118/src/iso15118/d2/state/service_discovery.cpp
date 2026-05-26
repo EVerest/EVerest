@@ -29,25 +29,6 @@ dt::ServiceList filter_services(const dt::ServiceList& offered_services, const s
     return filtered_services;
 }
 
-dt::ServiceCategory convert_service_id_to_service_category(const std::uint16_t service_id) {
-    switch (service_id) {
-    case 1:
-        return dt::ServiceCategory::EvCharging;
-        break;
-    case 2:
-        return dt::ServiceCategory::ContractCertificate;
-        break;
-    case 3:
-        return dt::ServiceCategory::Internet;
-        break;
-    case 4:
-    // According to ISO15118-2 the service_category should be EVSEInformation but it is not defined in
-    // ServiceCategoryType so we fall back to OtherCustom
-    default:
-        return dt::ServiceCategory::OtherCustom;
-    }
-}
-
 dt::Service construct_service_from_id(const dt::ServiceID& id) {
     dt::Service service;
     service.service_id = id;
@@ -117,7 +98,7 @@ Result ServiceDiscovery::feed(Event ev) {
     if (const auto req = variant->get_if<msg::ServiceDiscoveryRequest>()) {
         std::vector<dt::Service> offered_services;
         for (const auto& id : m_ctx.session_config.offered_services) {
-            dt::ServiceCategory service_category = convert_service_id_to_service_category(id);
+            dt::ServiceCategory service_category = dt::convert_service_id_to_service_category(id);
             if (service_category == dt::ServiceCategory::OtherCustom) {
                 auto service = m_ctx.feedback.get_service_from_id(id);
                 if (service.has_value()) {

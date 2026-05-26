@@ -28,6 +28,25 @@ PhysicalValue from_float(const float in, const data_types::UnitSymbol unit) {
     return out;
 }
 
+ServiceCategory convert_service_id_to_service_category(const std::uint16_t service_id) {
+    switch (service_id) {
+    case 1:
+        return ServiceCategory::EvCharging;
+        break;
+    case 2:
+        return ServiceCategory::ContractCertificate;
+        break;
+    case 3:
+        return ServiceCategory::Internet;
+        break;
+    case 4:
+    // According to ISO15118-2 the service_category should be EVSEInformation but it is not defined in
+    // ServiceCategoryType so we fall back to OtherCustom
+    default:
+        return ServiceCategory::OtherCustom;
+    }
+}
+
 }; // namespace data_types
 
 void convert(const iso2_NotificationType& in, data_types::Notification& out) {

@@ -32,16 +32,11 @@ handle_request([[maybe_unused]] const d2::msg::PaymentServiceSelectionRequest& r
 }
 
 d2::msg::ServiceDetailResponse handle_request([[maybe_unused]] const d2::msg::ServiceDetailRequest& req,
-                                              d2::Session& session, dt::ServiceID service_id, bool service_supported,
+                                              d2::Session& session, dt::ServiceID service_id,
                                               std::optional<dt::ServiceParameterList> service_parameters) {
 
     d2::msg::ServiceDetailResponse res;
     setup_header(res.header, session);
-
-    // [V2G2-549]
-    if (!service_supported) {
-        return response_with_code(res, dt::ResponseCode::FAILED);
-    }
 
     res.service_id = service_id;
     res.service_parameter_list = service_parameters;
@@ -71,33 +66,13 @@ Result PaymentServiceSelection::feed(Event ev) {
                       m_ctx.session_config.supported_payment_options.end(),
                       req->selected_payment_option) != m_ctx.session_config.supported_payment_options.end();
         if (payment_option_supported) {
-            m_ctx.session.selected_payment_option = req->selected_payment_option;
+            m_ctx.session.set_selected_payment_option(req->selected_payment_option);
             processing_ok = true;
         } else {
             // m_ctx.log("Payment option not supported");
         }
 
         for (const auto& selected_service : req->selected_service_list) {
-            if (not m_ctx.feedback.get_service_from_id(selected_service.service_id).has_value()) {
-                // m_ctx.log("Error processing PaymentServiceSelectionReq - selected unsupported service");
-                processing_ok = false;
-                continue;
-            }
-
-            if (selected_service.parameter_set_id.has_value()) {
-                const auto parameters_list = m_ctx.feedback.get_service_parameters_list(selected_service.service_id);
-                if (not parameters_list.has_value() ||
-                    std::find_if(parameters_list.value().begin(), parameters_list.value().end(),
-                                 [&](const auto& entry) {
-                                     return entry.parameter_set_id == selected_service.parameter_set_id.value();
-                                 }) == parameters_list.value().end()) {
-                    // m_ctx.log("Error processing PaymentServiceSelectionReq - selected unsupported parameter set id
-                    // for service");
-                    processing_ok = false;
-                    continue;
-                }
-            }
-
             m_ctx.session.select_service(selected_service);
         }
 
@@ -115,16 +90,9 @@ Result PaymentServiceSelection::feed(Event ev) {
         return m_ctx.create_state<Authorization>();
     } else if (const auto req = variant->get_if<msg::ServiceDetailRequest>()) {
         // [V2G2-547] process ServiceDetailRequest
-
-        bool service_supported = m_ctx.feedback.get_service_from_id(req->service_id).has_value();
         std::optional<dt::ServiceParameterList> service_parameters(std::nullopt);
-        if (service_supported) {
-            service_parameters = m_ctx.feedback.get_service_parameters_list(req->service_id);
-        } else {
-            // m_ctx.log("Error processing ServiceDetailRequest - unsupported service id");
-        }
-
-        const auto res = handle_request(*req, m_ctx.session, req->service_id, service_supported, service_parameters);
+        service_parameters = m_ctx.session.get_service_parameter_list(req->service_id);
+        const auto res = handle_request(*req, m_ctx.session, req->service_id, service_parameters);
 
         m_ctx.respond(res);
 
