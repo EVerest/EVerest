@@ -100,7 +100,12 @@ Security::on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest
         const ocpp::CallResult<Get15118EVCertificateResponse> call_result = response_message.message;
         return call_result.msg;
     } catch (const EnumConversionException& e) {
-        EVLOG_error << "EnumConversionException during handling of message: " << e.what();
+        EVLOG_error << "EnumConversionException during handling of Get15118EVCertificateResponse: " << e.what();
+        auto call_error = CallError(response_message.uniqueId, "FormationViolation", e.what(), json({}));
+        this->context.message_dispatcher.dispatch_call_error(call_error);
+        return response;
+    } catch (const json::exception& e) {
+        EVLOG_error << "json::exception during handling of Get15118EVCertificateResponse: " << e.what();
         auto call_error = CallError(response_message.uniqueId, "FormationViolation", e.what(), json({}));
         this->context.message_dispatcher.dispatch_call_error(call_error);
         return response;
