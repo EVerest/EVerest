@@ -72,6 +72,7 @@ target_sources(iso15118
         d2/context_helper.cpp
         d2/session.cpp
 
+        d2/state/payment_service_selection.cpp
         d2/state/session_setup.cpp
         d2/state/service_discovery.cpp
 

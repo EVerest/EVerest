@@ -7,13 +7,16 @@
 
 namespace iso15118::d2::state {
 
-struct PaymentServiceSelection : public StateBase {
-    PaymentServiceSelection(Context& ctx) : StateBase(ctx, StateID::PaymentServiceSelection) {
+struct Authorization : public StateBase {
+    Authorization(Context& ctx) : StateBase(ctx, StateID::Authorization) {
     }
 
-    void enter() final;
+    void enter() final {
+    }
 
-    Result feed(Event) final;
+    Result feed(Event) final {
+        return {};
+    }
 
 private:
     std::string evse_id;

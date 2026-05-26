@@ -14,6 +14,7 @@ function(create_fsm_test_target NAME)
     catch_discover_tests(test_fsm_d2_${NAME})
 endfunction()
 
+create_fsm_test_target(payment_service_selection)
 create_fsm_test_target(service_discovery)
 create_fsm_test_target(session_setup)
 

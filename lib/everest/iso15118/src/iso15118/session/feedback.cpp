@@ -72,6 +72,14 @@ std::optional<d2::msg::data_types::Service> Feedback::get_service_from_id(uint16
     return std::invoke(callbacks.get_service_from_id, service_id);
 }
 
+std::optional<d2::msg::data_types::ServiceParameterList>
+Feedback::get_service_parameters_list(uint16_t service_id) const {
+    if (not callbacks.get_service_parameters_list) {
+        return std::nullopt;
+    }
+    return std::invoke(callbacks.get_service_parameters_list, service_id);
+}
+
 std::optional<dt::ServiceParameterList> Feedback::get_vas_parameters(uint16_t vas_id) const {
 
     logf_warning("Caution: This feedback call can block the entire state machine");
