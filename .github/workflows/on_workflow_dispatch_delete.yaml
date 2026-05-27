@@ -148,9 +148,6 @@ jobs:
           git commit -m "Delete docs instance: $INSTANCE_NAME
 
           Triggered by @$ACTOR via workflow_dispatch.
-          Source workflow run: $RUN_URL
-
-          Note: versions_index.html may still list this instance until the next
-          docs build regenerates it."
+          Source workflow run: $RUN_URL"
           git push
           echo "Pushed deletion to the docs repo."
