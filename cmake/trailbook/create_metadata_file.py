@@ -59,6 +59,52 @@ def load_instance_info(instance_dir: Path, legacy_release_prefix: str) -> dict:
     }
 
 
+def load_versions_data(
+    multiversion_root_dir: Path,
+    current_instance_info_path: Path = None,
+    legacy_release_prefix: str = 'release_',
+) -> dict:
+    """Aggregate per-instance metadata into the versions.json payload.
+
+    Returns {'versions': [...]} with releases sorted newest-first by name,
+    then non-releases ascending. If ``current_instance_info_path`` is given,
+    that entry takes precedence over any same-named deployed copy.
+
+    Returns {'versions': []} if no instances are found; callers decide
+    whether that is an error (it is during a build; it isn't for the delete
+    flow when the last instance gets removed).
+    """
+    versions_by_name = {}
+    if multiversion_root_dir.is_dir():
+        for instance_dir in multiversion_root_dir.iterdir():
+            if not instance_dir.is_dir():
+                continue
+            if not (instance_dir / 'index.html').is_file():
+                continue
+            info = load_instance_info(instance_dir, legacy_release_prefix)
+            versions_by_name[info['name']] = info
+
+    if current_instance_info_path is not None:
+        with current_instance_info_path.open('r') as f:
+            current_info = json.load(f)
+        current_info.setdefault('display', current_info.get('name', ''))
+        current_info.setdefault('is_release', False)
+        # Current build's info wins over a stale deployed copy with the same name.
+        versions_by_name[current_info['name']] = current_info
+
+    # Releases first (newest-named on top), then non-releases.
+    releases = sorted(
+        (v for v in versions_by_name.values() if v.get('is_release')),
+        key=lambda v: v['name'],
+        reverse=True,
+    )
+    non_releases = sorted(
+        (v for v in versions_by_name.values() if not v.get('is_release')),
+        key=lambda v: v['name'],
+    )
+    return {'versions': releases + non_releases}
+
+
 def main():
     parser = argparse.ArgumentParser(description='Creates metadata json file')
 
@@ -107,40 +153,14 @@ def main():
     if args.json_output_path.exists():
         raise FileExistsError("JSON output path already exists")
 
-    versions_by_name = {}
-    if args.multiversion_root_dir.is_dir():
-        for instance_dir in args.multiversion_root_dir.iterdir():
-            if not instance_dir.is_dir():
-                continue
-            if not (instance_dir / 'index.html').is_file():
-                continue
-            info = load_instance_info(instance_dir, args.legacy_release_prefix)
-            versions_by_name[info['name']] = info
+    data = load_versions_data(
+        multiversion_root_dir=args.multiversion_root_dir,
+        current_instance_info_path=args.current_instance_info,
+        legacy_release_prefix=args.legacy_release_prefix,
+    )
 
-    if args.current_instance_info is not None:
-        with args.current_instance_info.open('r') as f:
-            current_info = json.load(f)
-        current_info.setdefault('display', current_info.get('name', ''))
-        current_info.setdefault('is_release', False)
-        # Current build's info wins over a stale deployed copy with the same name.
-        versions_by_name[current_info['name']] = current_info
-
-    if not versions_by_name:
+    if not data['versions']:
         raise ValueError("No versions found in the specified multiversion root directory")
-
-    # Releases first (newest-named on top), then non-releases.
-    releases = sorted(
-        (v for v in versions_by_name.values() if v.get('is_release')),
-        key=lambda v: v['name'],
-        reverse=True,
-    )
-    non_releases = sorted(
-        (v for v in versions_by_name.values() if not v.get('is_release')),
-        key=lambda v: v['name'],
-    )
-    versions_list = releases + non_releases
-
-    data = {'versions': versions_list}
 
     with args.json_output_path.open('w') as f:
         json.dump(data, f, indent=2)

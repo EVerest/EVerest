@@ -93,56 +93,19 @@ jobs:
           echo "Cloning $DOCS_REPO_URL"
           git clone --depth 1 "$DOCS_REPO_URL" deployed_docs_repo
 
-      - name: Verify instance exists and check release status
+      - name: Delete instance and regenerate versions.json
         env:
           INSTANCE_NAME: ${{ steps.sanitize.outputs.instance_name }}
           ALLOW_RELEASE_DELETE: ${{ inputs.allow_release_delete }}
         run: |
-          INSTANCE_DIR="deployed_docs_repo/docs/$INSTANCE_NAME"
-          if [ ! -d "$INSTANCE_DIR" ]; then
-            echo "::error::Instance directory not found in the docs repo: docs/$INSTANCE_NAME"
-            exit 1
+          flags=""
+          if [ "$ALLOW_RELEASE_DELETE" = "true" ]; then
+            flags="--allow-release"
           fi
-
-          IS_RELEASE=false
-          SOURCE=""
-          INFO_FILE="$INSTANCE_DIR/info.json"
-          if [ -f "$INFO_FILE" ]; then
-            SOURCE="info.json"
-            if python3 -c "import json,sys; sys.exit(0 if json.load(open('$INFO_FILE')).get('is_release') else 1)"; then
-              IS_RELEASE=true
-            fi
-          else
-            SOURCE="legacy-prefix-heuristic"
-            case "$INSTANCE_NAME" in
-              release_*) IS_RELEASE=true ;;
-            esac
-          fi
-          echo "is_release=$IS_RELEASE (source: $SOURCE)"
-
-          if [ "$IS_RELEASE" = "true" ] && [ "$ALLOW_RELEASE_DELETE" != "true" ]; then
-            echo "::error::Instance '$INSTANCE_NAME' is a release. Set allow_release_delete=true to delete it."
-            exit 1
-          fi
-
-      - name: Remove instance directory
-        env:
-          INSTANCE_NAME: ${{ steps.sanitize.outputs.instance_name }}
-        run: |
-          rm -rf "deployed_docs_repo/docs/$INSTANCE_NAME"
-          echo "Removed deployed_docs_repo/docs/$INSTANCE_NAME"
-
-      - name: Regenerate versions.json
-        run: |
-          DOCS_DIR="$(pwd)/deployed_docs_repo/docs"
-          # The aggregator refuses to overwrite existing outputs; remove first.
-          # The yaml output is a throwaway (only versions.json is consumed at runtime).
-          rm -f "$DOCS_DIR/versions.json" /tmp/versions.yaml
-          python3 source/cmake/trailbook/create_metadata_file.py \
-            --multiversion-root-directory "$DOCS_DIR" \
-            --json-output-path "$DOCS_DIR/versions.json"
-          echo "--- regenerated versions.json ---"
-          cat "$DOCS_DIR/versions.json"
+          python3 source/cmake/trailbook/delete_instance.py \
+            --multiversion-root-directory "$(pwd)/deployed_docs_repo/docs" \
+            --instance-name "$INSTANCE_NAME" \
+            $flags
 
       - name: Commit and push
         working-directory: deployed_docs_repo
