@@ -18,6 +18,10 @@
 #include <unordered_map>
 #include <vector>
 
+namespace everest::db::sqlite {
+class ConnectionInterface;
+} // namespace everest::db::sqlite
+
 namespace Everest {
 class ManagerConfig;
 class MQTTAbstraction;
@@ -25,6 +29,9 @@ class StatusFifo;
 struct ManagerSettings;
 namespace system {
 class SignalPolling;
+}
+namespace config {
+class ConfigServiceCore;
 }
 } // namespace Everest
 struct TypedHandler;
@@ -94,8 +101,8 @@ private:
     struct RuntimeContext {
         std::shared_ptr<Everest::ManagerConfig>& config;
         Everest::MQTTAbstraction& mqtt_abstraction;
-        const std::vector<std::string>& ignored_modules;
-        const std::vector<std::string>& standalone_modules;
+        std::vector<std::string>& ignored_modules;
+        std::vector<std::string>& standalone_modules;
         const Everest::ManagerSettings& ms;
         Everest::StatusFifo& status_fifo;
         bool retain_topics;
@@ -159,6 +166,9 @@ private:
 
     /// \brief Apply state transition with transition logging.
     void transition_to(ManagerState new_state);
+
+    /// \brief Reload the configuration from the config_service_core class and update relevant fields in the context
+    void reload_and_update_context(RuntimeContext& ctx);
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // State predicates
@@ -296,6 +306,8 @@ private:
     ModulesReadyType modules_ready_; // guarded by modules_ready_mutex_
     std::mutex modules_ready_mutex_;
     std::vector<std::function<void(ManagerState, ManagerState)>> state_transition_handlers_;
+    std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection_;
+    std::unique_ptr<Everest::config::ConfigServiceCore> config_service_core_{};
 
 public:
     /// \brief Register a callback invoked on every state transition with (old_state, new_state).

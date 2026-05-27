@@ -490,8 +490,8 @@ void Manager::handle_restart_modules_after_shutdown(RuntimeContext& ctx) {
     // called from advance_lifecycle_state_if_ready() (crash-with-restart path) which does not go
     // through handle_finish_* finalize functions.
     cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
+    reload_and_update_context(ctx);
 
-    ctx.config = std::make_shared<ManagerConfig>(ctx.ms);
     module_handles_ = handle_start_modules(ctx);
     reset_shutdown_state();
     EVLOG_info << "Modules restart initiated with reloaded configuration.";
@@ -514,6 +514,8 @@ std::optional<int> Manager::handle_finish_normal_shutdown(RuntimeContext& ctx, M
         reset_shutdown_state();
         transition_to(ManagerState::Exiting);
         return EXIT_SUCCESS;
+    } else {
+        reload_and_update_context(ctx);
     }
 
     if (!bad_modules.empty()) {
@@ -542,7 +544,12 @@ std::optional<int> Manager::handle_finish_crash_recovery(RuntimeContext& ctx, Ma
     }
 
     cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
-    reset_shutdown_state();
+    reload_and_update_context(ctx);
+    shutdown_info_.clear();
+    shutdown_start_time_ = std::nullopt;
+    shutdown_cause_ = ShutdownCause::None;
+    force_terminate_start_time_ = std::nullopt;
+    force_kill_sent_ = false;
 
     // Stay idle only when the user has not requested a stop via SIGINT/SIGTERM.
     if (recover_module_crashes_ && !sigint_received_) {
@@ -586,6 +593,26 @@ void Manager::handle_initiate_graceful_shutdown(const std::chrono::steady_clock:
         mqtt_abstraction.publish(fmt::format("{}shutdown", ms.mqtt_settings.everest_prefix), std::string("true"),
                                  QOS::QOS2, false);
     }
+}
+
+void Manager::reload_and_update_context(RuntimeContext& ctx) {
+    config_service_core_->reinitialize_from_db();
+    auto module_cfg = std::make_optional<everest::config::ModuleConfigurations>(
+        config_service_core_->get_active_module_configurations());
+    auto slot_id = config_service_core_->get_active_slot_id();
+    auto db_storage = std::make_unique<everest::config::SqliteStorage>(db_connection_, slot_id);
+
+    std::shared_ptr<ManagerConfig> config;
+    try {
+        config = load_and_validate_config(ctx.ms, db_storage, true, module_cfg);
+    } catch (...) {
+        // TODO(CB): What should we do here? Can this be recovered?
+        return;
+    }
+
+    ctx.standalone_modules = collect_standalone_modules(*config);
+    ctx.ignored_modules = collect_ignored_modules();
+    ctx.config = config;
 }
 
 // ---- Core run loop ----------------------------------------------------------
@@ -641,14 +668,13 @@ int Manager::run() {
     }
 
     std::unique_ptr<everest::config::SqliteStorage> db_storage;
-    std::shared_ptr<everest::db::sqlite::ConnectionInterface> shared_db;
     bool db_storage_has_module_configs = false;
     std::optional<everest::config::ModuleConfigurations> preloaded_module_configs;
 
     {
         auto bs = init_database_bootstrap(ms, reset_from_yaml);
         db_storage = std::move(bs.storage);
-        shared_db = std::move(bs.db_connection);
+        db_connection_ = std::move(bs.db_connection);
         db_storage_has_module_configs = bs.module_configs_initialized;
         preloaded_module_configs = std::move(bs.module_configs);
     }
@@ -679,7 +705,12 @@ int Manager::run() {
 
     const bool retain_topics = (vm_.count("retain-topics") != 0);
 
+    // TODO(CB): These steps are also done in reload_and_update_context (more or less) - should be reused here
+    // - ManagerConfig
+    // - standalone/ignored_modules
+    // - RuntimeContext
     std::shared_ptr<ManagerConfig> config; // TODO: maybe this can stay unique when we re-work start_modules()
+
     try {
         config = load_and_validate_config(ms, db_storage, db_storage_has_module_configs, preloaded_module_configs);
     } catch (...) {
@@ -733,18 +764,19 @@ int Manager::run() {
         reset_from_yaml ? std::make_optional<int>(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID)
                         : std::nullopt);
 
-    auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core);
+    auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core_);
 
     RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
                                ms,     status_fifo,       retain_topics};
 
-    register_state_transition_handler([this, &config_service_core](ManagerState from, ManagerState to) {
+    register_state_transition_handler([this](ManagerState from, ManagerState to) {
         // TODO(CB): This is black-and-white right now - maybe the transition states between running and stopped need to
-        // handled differently
+        // TODO(CB): handled differently (transition phase during which the active config slot cannot be modified? - >
+        // or better switch to stopped early and therefore don't ask the modules on parameter-changes anymore)
         if (to == ManagerState::Running) {
-            config_service_core->set_modules_running();
+            config_service_core_->set_modules_running();
         } else if (from == ManagerState::Running) {
-            config_service_core->set_modules_stopped();
+            config_service_core_->set_modules_stopped();
         }
     });
 
@@ -997,7 +1029,7 @@ std::map<pid_t, std::string> Manager::handle_start_modules(const RuntimeContext&
                                       fmt::join(capabilities.begin(), capabilities.end(), " "));
         }
 
-        const Handler module_ready_handler = [this, module_id, &mqtt_abstraction, &config, standalone_modules,
+        const Handler module_ready_handler = [this, module_id, &mqtt_abstraction, standalone_modules,
                                               mqtt_everest_prefix = ms.mqtt_settings.everest_prefix, &status_fifo,
                                               retain_topics](const std::string&, const nlohmann::json& json) {
             EVLOG_debug << fmt::format("received module ready signal for module: {}({})", module_id, json.dump());
