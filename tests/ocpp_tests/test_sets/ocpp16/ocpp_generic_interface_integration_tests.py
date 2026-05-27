@@ -160,6 +160,13 @@ async def _env(
                          "", skip_implementation)
     _add_pm_command_mock("security", "verify_file_signature",
                          True, skip_implementation)
+
+    _add_pm_command_mock(
+        "security",
+        "set_max_fs_certificate_store_entries",
+        None,
+        skip_implementation,
+    )
     _add_pm_command_mock(
         "security",
         "get_all_valid_certificates_info",
