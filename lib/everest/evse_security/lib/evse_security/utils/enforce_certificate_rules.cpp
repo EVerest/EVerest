@@ -1,62 +1,75 @@
+#include "evse_security/utils/enforce_certificate_rules.hpp"
+#include <algorithm>
+#include <everest/logging.hpp>
+#include <evse_security/certificate/x509_wrapper.hpp>
+#include <fstream>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
+#include <sstream>
 #include <string>
 #include <vector>
-#include <fstream>
-#include <sstream>
-#include <algorithm>
-#include <everest/logging.hpp>
-#include "evse_security/utils/enforce_certificate_rules.hpp"
-#include <evse_security/certificate/x509_wrapper.hpp>
 
 namespace yaml {
-    static inline std::string trim(const std::string& s) {
+static inline std::string trim(const std::string& s) {
     const std::string* src = &s;
     std::string stripped;
-    auto start = std::find_if_not(src->begin(), src->end(), [](unsigned char c){ return std::isspace(c); });
-    auto end   = std::find_if_not(src->rbegin(), src->rend(), [](unsigned char c){ return std::isspace(c); }).base();
+    auto start = std::find_if_not(src->begin(), src->end(), [](unsigned char c) { return std::isspace(c); });
+    auto end = std::find_if_not(src->rbegin(), src->rend(), [](unsigned char c) { return std::isspace(c); }).base();
     return (start < end) ? std::string(start, end) : "";
 }
 
-    static CertPart parseCertPart(const std::string& val) {
-        if (val == "Subject") return CertPart::Subject;
-        if (val == "Issuer")  return CertPart::Issuer;
-        EVLOG_warning << "Unknown CertPart: " + val;
+static CertPart parseCertPart(const std::string& val) {
+    if (val == "Subject")
         return CertPart::Subject;
-    }
-
-    static CertRule parseRule(std::istream& in) {
-        CertRule rule{};
-        std::string line;
-        while (std::getline(in, line)) {
-            line = trim(line);
-            if (line.empty()) continue;
-            if (line[0] == '-') line = trim(line.substr(1));
-
-            auto pos = line.find(':');
-            if (pos == std::string::npos) continue;
-
-            std::string key = trim(line.substr(0, pos));
-            std::string value = trim(line.substr(pos + 1));
-            if (auto h = value.find('#'); h != std::string::npos)
-                value = trim(value.substr(0, h));
-
-            if (key == "nid" || key == "keyUsageBit") { if (!value.empty()) rule.nid  = std::stoi(value); }
-            else if (key == "data") { if (!value.empty() && value != "true" && value != "false") rule.data = std::stoi(value); }
-            else if (key == "val" || key == "value") rule.val  = value;
-            else if (key == "target") rule.target = parseCertPart(value);
-            else if (key == "mustExist" || key == "critical") {
-                std::string low = value;
-                std::transform(low.begin(), low.end(), low.begin(), ::tolower);
-                bool flag = (low == "true");
-                if (key == "mustExist") rule.mustExist = flag;
-                else                    rule.critical  = flag;
-            }
-        }
-        return rule;
-    }
+    if (val == "Issuer")
+        return CertPart::Issuer;
+    EVLOG_warning << "Unknown CertPart: " + val;
+    return CertPart::Subject;
 }
+
+static CertRule parseRule(std::istream& in) {
+    CertRule rule{};
+    std::string line;
+    while (std::getline(in, line)) {
+        line = trim(line);
+        if (line.empty())
+            continue;
+        if (line[0] == '-')
+            line = trim(line.substr(1));
+
+        auto pos = line.find(':');
+        if (pos == std::string::npos)
+            continue;
+
+        std::string key = trim(line.substr(0, pos));
+        std::string value = trim(line.substr(pos + 1));
+        if (auto h = value.find('#'); h != std::string::npos)
+            value = trim(value.substr(0, h));
+
+        if (key == "nid" || key == "keyUsageBit") {
+            if (!value.empty())
+                rule.nid = std::stoi(value);
+        } else if (key == "data") {
+            if (!value.empty() && value != "true" && value != "false")
+                rule.data = std::stoi(value);
+        } else if (key == "val" || key == "value")
+            rule.val = value;
+        else if (key == "target")
+            rule.target = parseCertPart(value);
+        else if (key == "mustExist" || key == "critical") {
+            std::string low = value;
+            std::transform(low.begin(), low.end(), low.begin(), ::tolower);
+            bool flag = (low == "true");
+            if (key == "mustExist")
+                rule.mustExist = flag;
+            else
+                rule.critical = flag;
+        }
+    }
+    return rule;
+}
+} // namespace yaml
 
 std::vector<CertRule> loadCertRules(const std::string& filename, const std::string& type, const std::string& section) {
     std::ifstream file(filename);
@@ -70,25 +83,35 @@ std::vector<CertRule> loadCertRules(const std::string& filename, const std::stri
 
     while (std::getline(file, line)) {
         line = yaml::trim(line);
-        if (!inType)  { inType  = line.find(type + ":") != std::string::npos; continue; }
-        if (!inStand) { inStand = line.find(section + ":") != std::string::npos; continue; }
-        if (line.empty()) break;
+        if (!inType) {
+            inType = line.find(type + ":") != std::string::npos;
+            continue;
+        }
+        if (!inStand) {
+            inStand = line.find(section + ":") != std::string::npos;
+            continue;
+        }
+        if (line.empty())
+            break;
 
     process_rule:
         if (line[0] == '-') {
             std::string ruleContent = line + "\n";
             while (std::getline(file, line)) {
                 line = yaml::trim(line);
-                if (line.empty() || line[0] == '-') break;
+                if (line.empty() || line[0] == '-')
+                    break;
                 ruleContent += line + "\n";
             }
             try {
                 std::istringstream ruleStream(ruleContent);
                 rules.push_back(yaml::parseRule(ruleStream));
             } catch (const std::exception& e) {
-                throw std::runtime_error(std::string("parseRule failed in ") + filename + " type=" + type + " section=" + section + " content='" + ruleContent + "' error=" + e.what());
+                throw std::runtime_error(std::string("parseRule failed in ") + filename + " type=" + type +
+                                         " section=" + section + " content='" + ruleContent + "' error=" + e.what());
             }
-            if (!line.empty() && line[0] == '-') goto process_rule;
+            if (!line.empty() && line[0] == '-')
+                goto process_rule;
         }
     }
     return rules;
@@ -192,11 +215,12 @@ static std::string get_file_name(X509* cert) {
 }
 
 int enforce_certificate_rules(evse_security::X509Handle* ctx) {
-	int is_valid = 1;
-    	if(ENFORCE_CERT_PROFILES){
+    int is_valid = 1;
+    if (ENFORCE_CERT_PROFILES) {
         evse_security::X509Wrapper wrapper(evse_security::OpenSSLSupplier::x509_duplicate_unique(ctx));
         X509* cert = wrapper.get_x509_raw();
-        if (!cert) return -1;
+        if (!cert)
+            return -1;
 
         const std::string profile = get_file_name(cert);
         EVLOG_info << "No matching security profile found for certificate, skipping rule enforcement.";
@@ -205,7 +229,7 @@ int enforce_certificate_rules(evse_security::X509Handle* ctx) {
         std::string key = std::filesystem::path(profile).stem().string();
         key.erase(std::remove(key.begin(), key.end(), ' '), key.end());
 
-        auto fields  = loadCertRules(profile, key, "stand");
+        auto fields = loadCertRules(profile, key, "stand");
         auto kuRules = loadCertRules(profile, key, "key_usage");
         auto bcRules = loadCertRules(profile, key, "basic_constraints");
         auto dcRules = loadCertRules(profile, key, "domain_component");
@@ -216,8 +240,10 @@ int enforce_certificate_rules(evse_security::X509Handle* ctx) {
         }
 
         auto log = [](bool critical, const std::string& msg) {
-            if (critical) EVLOG_error << msg;
-            else          EVLOG_warning << msg;
+            if (critical)
+                EVLOG_error << msg;
+            else
+                EVLOG_warning << msg;
         };
 
         static const std::vector<int> extensions{83, 87};
@@ -225,33 +251,35 @@ int enforce_certificate_rules(evse_security::X509Handle* ctx) {
         char buf[256];
 
         for (auto& rule : fields) {
-            X509_NAME* name = (rule.target == CertPart::Subject)
-                ? X509_get_subject_name(cert) : X509_get_issuer_name(cert);
+            X509_NAME* name =
+                (rule.target == CertPart::Subject) ? X509_get_subject_name(cert) : X509_get_issuer_name(cert);
 
             if (!std::binary_search(extensions.begin(), extensions.end(), rule.nid)) {
                 int len = X509_NAME_get_text_by_NID(name, rule.nid, buf, sizeof(buf));
                 if ((rule.mustExist && len <= 0) || (!rule.mustExist && len > 0)) {
-                    log(rule.critical, "NID " + std::to_string(rule.nid) + " does not comply (expected " + std::to_string(rule.mustExist) + ")");
+                    log(rule.critical, "NID " + std::to_string(rule.nid) + " does not comply (expected " +
+                                           std::to_string(rule.mustExist) + ")");
                     is_valid = 1;
                 }
-            }
-            else if (rule.nid == 83 && rule.mustExist) {
+            } else if (rule.nid == 83 && rule.mustExist) {
                 ASN1_BIT_STRING* ku = (ASN1_BIT_STRING*)X509_get_ext_d2i(cert, NID_key_usage, nullptr, nullptr);
                 for (const auto& kr : kuRules) {
                     if ((ku->data[0] & (0x80 >> kr.nid)) != kr.mustExist) {
-                        log(kr.critical, "KeyUsage bit " + std::to_string(kr.nid) + " does not comply (expected " + std::to_string(kr.mustExist) + ")");
+                        log(kr.critical, "KeyUsage bit " + std::to_string(kr.nid) + " does not comply (expected " +
+                                             std::to_string(kr.mustExist) + ")");
                         is_valid = 1;
                     }
                 }
-            }
-            else if (rule.nid == 87 && rule.mustExist) {
-                BASIC_CONSTRAINTS* bc = (BASIC_CONSTRAINTS*)X509_get_ext_d2i(cert, NID_basic_constraints, nullptr, nullptr);
+            } else if (rule.nid == 87 && rule.mustExist) {
+                BASIC_CONSTRAINTS* bc =
+                    (BASIC_CONSTRAINTS*)X509_get_ext_d2i(cert, NID_basic_constraints, nullptr, nullptr);
                 for (const auto& br : bcRules) {
                     if (br.val == "path_length") {
                         if ((br.mustExist && !bc->pathlen) || (!br.mustExist && bc->pathlen)) {
                             EVLOG_warning << "Path length presence does not comply";
                             is_valid = 1;
-                        } else if (br.mustExist && bc->pathlen && br.data != 0 && ASN1_INTEGER_get(bc->pathlen) != br.data) {
+                        } else if (br.mustExist && bc->pathlen && br.data != 0 &&
+                                   ASN1_INTEGER_get(bc->pathlen) != br.data) {
                             log(br.critical, "Path length value does not match expected " + std::to_string(br.data));
                             is_valid = 1;
                         }
@@ -260,11 +288,11 @@ int enforce_certificate_rules(evse_security::X509Handle* ctx) {
                         is_valid = 1;
                     }
                 }
-            }
-            else if (rule.nid == 391 && rule.mustExist && !dcRules.empty()) {
+            } else if (rule.nid == 391 && rule.mustExist && !dcRules.empty()) {
                 int len = X509_NAME_get_text_by_NID(name, rule.nid, buf, sizeof(buf));
                 if (std::string(buf, len) != dcRules[0].val) {
-                    log(rule.critical, "Domain component expected " + dcRules[0].val + " but received " + std::string(buf, len));
+                    log(rule.critical,
+                        "Domain component expected " + dcRules[0].val + " but received " + std::string(buf, len));
                     is_valid = 1;
                 }
             }

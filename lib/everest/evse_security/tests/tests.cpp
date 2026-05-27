@@ -13,10 +13,8 @@
 #include <evse_security/certificate/x509_bundle.hpp>
 #include <evse_security/certificate/x509_wrapper.hpp>
 #include <evse_security/evse_security.hpp>
-#include <evse_security/utils/evse_filesystem.hpp>
 #include <evse_security/utils/enforce_certificate_rules.hpp>
-
-
+#include <evse_security/utils/evse_filesystem.hpp>
 
 #include <evse_security/crypto/evse_crypto.hpp>
 
@@ -321,7 +319,7 @@ TEST_F(EvseSecurityTests, verify_certificate_counts) {
     ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::V2GRootCertificate}), 3);
     // MF is using the same V2G bundle in our case
     ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::MFRootCertificate}), 3);
-    // None were defined 
+    // None were defined
     ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::MORootCertificate}), 3);
 }
 
@@ -736,7 +734,7 @@ TEST_F(EvseSecurityTests, delete_root_ca_01) {
 
     ASSERT_TRUE(fs::exists("certs/ca/v2g/V2G_CA_BUNDLE.pem"));
     auto bundle_contents = read_file_to_string("certs/ca/v2g/V2G_CA_BUNDLE.pem");
-    ASSERT_TRUE(bundle_contents.empty()); 
+    ASSERT_TRUE(bundle_contents.empty());
     ASSERT_EQ(bundle_contents.find("V2GRootCA"), std::string::npos);
 }
 
@@ -1463,8 +1461,7 @@ TEST_F(EvseSecurityTests, verify_valid_leaf_passes_rules) {
     }
 
     std::ifstream f(leaf_path);
-    std::string pem((std::istreambuf_iterator<char>(f)),
-                     std::istreambuf_iterator<char>());
+    std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     X509Wrapper wrapper(pem, EncodingFormat::PEM);
 
     int result = enforce_certificate_rules(wrapper.get());
@@ -1478,8 +1475,7 @@ TEST_F(EvseSecurityTests, verify_valid_root_ca_passes_rules) {
     }
 
     std::ifstream f(root_path);
-    std::string pem((std::istreambuf_iterator<char>(f)),
-                     std::istreambuf_iterator<char>());
+    std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     X509Wrapper wrapper(pem, EncodingFormat::PEM);
 
     int result = enforce_certificate_rules(wrapper.get());
@@ -1517,11 +1513,10 @@ TEST_F(EvseSecurityTests, verify_expired_cert_does_not_crash) {
     }
 
     std::ifstream f(cert_path);
-    std::string pem((std::istreambuf_iterator<char>(f)),
-                     std::istreambuf_iterator<char>());
+    std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     X509Wrapper wrapper(pem, EncodingFormat::PEM);
 
     ASSERT_NO_THROW(enforce_certificate_rules(wrapper.get()));
-}// namespace evse_security
-}
+} // namespace evse_security
+} // namespace evse_security
 // FIXME(piet): Add more tests for getRootCertificateHashData (incl. V2GCertificateChain etc.)
