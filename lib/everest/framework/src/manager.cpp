@@ -733,10 +733,9 @@ int Manager::run() {
     RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
                                ms,     status_fifo,       retain_topics};
 
-    auto config_service_core = std::make_unique<config::ConfigServiceCore>(
-        config->get_module_configurations(), ms, std::move(shared_db),
-        // TODO(CB): Don't provide the slot_id here, but simply asume DEFAULT_SLOT_ID inside ConfigServiceCore if the db
-        // has none?
+    config_service_core = std::make_unique<config::ConfigServiceCore>(
+        ms, db_connection_,
+        // TODO(CB): Don't provide the slot_id here, but simply assume DEFAULT_SLOT_ID in construtor if the db has none?
         reset_from_yaml ? std::make_optional<int>(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID)
                         : std::nullopt,
         [this, &mqtt_abstraction, &ms]() {
