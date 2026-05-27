@@ -129,7 +129,6 @@ jobs:
           rm -f "$DOCS_DIR/versions.json" /tmp/versions.yaml
           python3 source/cmake/trailbook/create_metadata_file.py \
             --multiversion-root-directory "$DOCS_DIR" \
-            --yaml-output-path /tmp/versions.yaml \
             --json-output-path "$DOCS_DIR/versions.json"
           echo "--- regenerated versions.json ---"
           cat "$DOCS_DIR/versions.json"

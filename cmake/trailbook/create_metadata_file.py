@@ -6,7 +6,7 @@
 #
 """
 author: andreas.heinrich@pionix.de
-This script creates a trailbook_metadata.yaml file
+This script creates a metadata_everest.json file
 based on the versions found in the multiversion root directory.
 
 Each instance directory may contain an info.json with at least:
@@ -29,7 +29,6 @@ instance is rebuilt, so this fallback is only relevant during migration.
 import argparse
 import json
 from pathlib import Path
-import yaml
 
 
 def load_instance_info(instance_dir: Path, legacy_release_prefix: str) -> dict:
@@ -61,7 +60,7 @@ def load_instance_info(instance_dir: Path, legacy_release_prefix: str) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Creates metadata yaml and json files')
+    parser = argparse.ArgumentParser(description='Creates metadata json file')
 
     parser.add_argument(
         '--multiversion-root-directory',
@@ -70,14 +69,6 @@ def main():
         action='store',
         required=True,
         help='Path to the root directory of the multiversion documentation'
-    )
-    parser.add_argument(
-        '--yaml-output-path',
-        type=Path,
-        dest='yaml_output_path',
-        action='store',
-        required=True,
-        help='Path where the trailbook_metadata.yaml file will be created'
     )
     parser.add_argument(
         '--json-output-path',
@@ -113,12 +104,8 @@ def main():
         print(f"\033[33mWarning: {args.multiversion_root_dir} does not exist or is not a directory, it is treated as an empty multiversion root dir\033[0m")
     if not args.json_output_path.is_absolute():
         raise ValueError("JSON output path must be absolute")
-    if not args.yaml_output_path.is_absolute():
-        raise ValueError("YAML output path must be absolute")
     if args.json_output_path.exists():
         raise FileExistsError("JSON output path already exists")
-    if args.yaml_output_path.exists():
-        raise FileExistsError("YAML output path already exists")
 
     versions_by_name = {}
     if args.multiversion_root_dir.is_dir():
@@ -154,14 +141,6 @@ def main():
     versions_list = releases + non_releases
 
     data = {'versions': versions_list}
-
-    # create yaml content
-    data = {
-        'versions': versions_list
-    }
-    # render yaml content
-    with args.yaml_output_path.open('w') as f:
-        yaml.dump(data, f, default_flow_style=False)
 
     with args.json_output_path.open('w') as f:
         json.dump(data, f, indent=2)

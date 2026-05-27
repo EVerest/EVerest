@@ -203,16 +203,13 @@ endmacro()
 #
 # It is used in the function add_trailbook.
 # It adds a custom command to create the metadata file(s) for the trailbook instance.
-# The metadata YAML file is used by Sphinx during the build process.
 # The metadata JSON file can be used for dynamic features in the built documentation, such as the version switcher dropdown.
 # It contains a list of all versions available in the multiversion root directory.
 macro(_add_trailbook_create_metadata_file_command)
-    set(METADATA_YAML_FILE "${CMAKE_CURRENT_BINARY_DIR}/metadata_${args_NAME}.yaml")
     set(METADATA_JSON_FILE "${CMAKE_CURRENT_BINARY_DIR}/metadata_${args_NAME}.json")
 
     add_custom_command(
         OUTPUT
-            ${METADATA_YAML_FILE}
             ${METADATA_JSON_FILE}
         DEPENDS
             ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/create_metadata_file.py
@@ -224,12 +221,11 @@ macro(_add_trailbook_create_metadata_file_command)
         COMMENT
             "Trailbook: ${args_NAME} - Creating metadata file(s)"
         COMMAND
-            ${CMAKE_COMMAND} -E rm -f ${METADATA_YAML_FILE}
+            ${CMAKE_COMMAND} -E rm -f ${METADATA_JSON_FILE}
         COMMAND
             ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/create_metadata_file.py
             --multiversion-root-directory "${TRAILBOOK_BUILD_DIRECTORY}"
-            "--yaml-output-path" "${METADATA_YAML_FILE}"
             "--json-output-path" "${METADATA_JSON_FILE}"
             --current-instance-info "${CURRENT_INSTANCE_INFO_JSON}"
     )
