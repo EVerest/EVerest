@@ -746,7 +746,7 @@ int Manager::run() {
     }
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core_);
-    
+
     config_service_core_->register_set_runtime_parameter_handler(
         [&config_service](const everest::config::ConfigurationParameterIdentifier& cfg_param_id,
                           const std::string& value) {
