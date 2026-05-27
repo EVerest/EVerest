@@ -23,7 +23,6 @@
 #include <evse_security/crypto/openssl/openssl_types.hpp>
 #include <evse_security/utils/evse_filesystem.hpp>
 
-
 namespace evse_security {
 
 static X509* get(X509Handle* handle) {

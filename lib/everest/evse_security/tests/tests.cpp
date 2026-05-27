@@ -16,7 +16,6 @@
 #include <evse_security/utils/evse_filesystem.hpp>
 #include <evse_security/utils/load_ctl.hpp>
 
-
 #include <evse_security/crypto/evse_crypto.hpp>
 
 #include <openssl/opensslv.h>
@@ -320,7 +319,7 @@ TEST_F(EvseSecurityTests, verify_certificate_counts) {
     ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::V2GRootCertificate}), 7);
     // MF is using the same V2G bundle in our case
     ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::MFRootCertificate}), 7);
-    // None were defined 
+    // None were defined
     ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::MORootCertificate}), 3);
 }
 
@@ -1457,8 +1456,6 @@ TEST_F(EvseSecurityTestsMulti, verify_with_invalid_cert_fails) {
     ASSERT_EQ(result, CertificateValidationResult::Unknown);
 }
 
-
-
 // ============================================================
 // load_ctl tests
 // ============================================================
@@ -1466,26 +1463,24 @@ TEST_F(EvseSecurityTestsMulti, verify_with_invalid_cert_fails) {
 TEST_F(EvseSecurityTests, verify_ctl_loads_from_cmake_defined_dir) {
     fs::path cmake_ctl_dir = fs::path(CTL_DIR);
 
-    ASSERT_TRUE(fs::exists(cmake_ctl_dir))
-        << "CTL_DIR does not exist: " << cmake_ctl_dir;
-    ASSERT_FALSE(fs::is_empty(cmake_ctl_dir))
-        << "CTL_DIR is empty: " << cmake_ctl_dir;
+    ASSERT_TRUE(fs::exists(cmake_ctl_dir)) << "CTL_DIR does not exist: " << cmake_ctl_dir;
+    ASSERT_FALSE(fs::is_empty(cmake_ctl_dir)) << "CTL_DIR is empty: " << cmake_ctl_dir;
 
     // Use temp bundles so we don't corrupt the real ones
-    fs::path v2g_bundle  = fs::path("certs/ca/v2g/V2G_CA_BUNDLE_CTL_TEST.pem");
-    fs::path mo_bundle   = fs::path("certs/ca/mo/MO_CA_BUNDLE_CTL_TEST.pem");
+    fs::path v2g_bundle = fs::path("certs/ca/v2g/V2G_CA_BUNDLE_CTL_TEST.pem");
+    fs::path mo_bundle = fs::path("certs/ca/mo/MO_CA_BUNDLE_CTL_TEST.pem");
     fs::path csms_bundle = fs::path("certs/ca/v2g/CSMS_CA_BUNDLE_CTL_TEST.pem");
-    fs::path mf_bundle   = fs::path("certs/ca/v2g/MF_CA_BUNDLE_CTL_TEST.pem");
+    fs::path mf_bundle = fs::path("certs/ca/v2g/MF_CA_BUNDLE_CTL_TEST.pem");
 
     for (auto& p : {v2g_bundle, mo_bundle, csms_bundle, mf_bundle}) {
         std::ofstream f(p);
     }
 
     std::map<CaCertificateType, fs::path> ca_bundle_path_map = {
-        {CaCertificateType::V2G,  v2g_bundle},
-        {CaCertificateType::MO,   mo_bundle},
+        {CaCertificateType::V2G, v2g_bundle},
+        {CaCertificateType::MO, mo_bundle},
         {CaCertificateType::CSMS, csms_bundle},
-        {CaCertificateType::MF,   mf_bundle},
+        {CaCertificateType::MF, mf_bundle},
     };
 
     ASSERT_NO_THROW(load_ctl(cmake_ctl_dir, ca_bundle_path_map));
@@ -1496,15 +1491,13 @@ TEST_F(EvseSecurityTests, verify_ctl_loads_from_cmake_defined_dir) {
         if (fs::exists(path) && fs::file_size(path) > 0) {
             any_bundle_has_content = true;
             std::ifstream f(path);
-            std::string content((std::istreambuf_iterator<char>(f)),
-                                 std::istreambuf_iterator<char>());
+            std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
             EXPECT_NE(content.find("BEGIN CERTIFICATE"), std::string::npos)
                 << "Bundle does not contain PEM certificate: " << path;
             break;
         }
     }
-    EXPECT_TRUE(any_bundle_has_content)
-        << "No certificates were loaded into any bundle from CTL_DIR";
+    EXPECT_TRUE(any_bundle_has_content) << "No certificates were loaded into any bundle from CTL_DIR";
 
     // Cleanup
     for (auto& p : {v2g_bundle, mo_bundle, csms_bundle, mf_bundle}) {
@@ -1522,20 +1515,20 @@ TEST_F(EvseSecurityTests, verify_ctl_loads_der_certificate) {
     fs::create_directories(ctl_test_dir);
     fs::copy(src, ctl_test_dir / "TestCTL1.der");
 
-    fs::path v2g_bundle  = fs::path("certs/ca/v2g/V2G_CA_BUNDLE_CTL_TEST.pem");
-    fs::path mo_bundle   = fs::path("certs/ca/mo/MO_CA_BUNDLE_CTL_TEST.pem");
+    fs::path v2g_bundle = fs::path("certs/ca/v2g/V2G_CA_BUNDLE_CTL_TEST.pem");
+    fs::path mo_bundle = fs::path("certs/ca/mo/MO_CA_BUNDLE_CTL_TEST.pem");
     fs::path csms_bundle = fs::path("certs/ca/v2g/CSMS_CA_BUNDLE_CTL_TEST.pem");
-    fs::path mf_bundle   = fs::path("certs/ca/v2g/MF_CA_BUNDLE_CTL_TEST.pem");
+    fs::path mf_bundle = fs::path("certs/ca/v2g/MF_CA_BUNDLE_CTL_TEST.pem");
 
     for (auto& p : {v2g_bundle, mo_bundle, csms_bundle, mf_bundle}) {
         std::ofstream f(p);
     }
 
     std::map<CaCertificateType, fs::path> ca_bundle_path_map = {
-        {CaCertificateType::V2G,  v2g_bundle},
-        {CaCertificateType::MO,   mo_bundle},
+        {CaCertificateType::V2G, v2g_bundle},
+        {CaCertificateType::MO, mo_bundle},
         {CaCertificateType::CSMS, csms_bundle},
-        {CaCertificateType::MF,   mf_bundle},
+        {CaCertificateType::MF, mf_bundle},
     };
 
     ASSERT_NO_THROW(load_ctl(ctl_test_dir, ca_bundle_path_map));
@@ -1566,30 +1559,28 @@ TEST_F(EvseSecurityTests, verify_ctl_loads_pem_certificate) {
     fs::create_directories(ctl_test_dir);
     fs::copy(src, ctl_test_dir / "V2GRootG1.pem");
 
-    fs::path v2g_bundle  = fs::path("certs/ca/v2g/V2G_CA_BUNDLE_CTL_TEST.pem");
-    fs::path mo_bundle   = fs::path("certs/ca/mo/MO_CA_BUNDLE_CTL_TEST.pem");
+    fs::path v2g_bundle = fs::path("certs/ca/v2g/V2G_CA_BUNDLE_CTL_TEST.pem");
+    fs::path mo_bundle = fs::path("certs/ca/mo/MO_CA_BUNDLE_CTL_TEST.pem");
     fs::path csms_bundle = fs::path("certs/ca/v2g/CSMS_CA_BUNDLE_CTL_TEST.pem");
-    fs::path mf_bundle   = fs::path("certs/ca/v2g/MF_CA_BUNDLE_CTL_TEST.pem");
+    fs::path mf_bundle = fs::path("certs/ca/v2g/MF_CA_BUNDLE_CTL_TEST.pem");
 
     for (auto& p : {v2g_bundle, mo_bundle, csms_bundle, mf_bundle}) {
         std::ofstream f(p);
     }
 
     std::map<CaCertificateType, fs::path> ca_bundle_path_map = {
-        {CaCertificateType::V2G,  v2g_bundle},
-        {CaCertificateType::MO,   mo_bundle},
+        {CaCertificateType::V2G, v2g_bundle},
+        {CaCertificateType::MO, mo_bundle},
         {CaCertificateType::CSMS, csms_bundle},
-        {CaCertificateType::MF,   mf_bundle},
+        {CaCertificateType::MF, mf_bundle},
     };
 
     ASSERT_NO_THROW(load_ctl(ctl_test_dir, ca_bundle_path_map));
 
-    EXPECT_GT(fs::file_size(v2g_bundle), 0)
-        << "V2G bundle should have content after loading V2G PEM";
+    EXPECT_GT(fs::file_size(v2g_bundle), 0) << "V2G bundle should have content after loading V2G PEM";
 
     std::ifstream f(v2g_bundle);
-    std::string content((std::istreambuf_iterator<char>(f)),
-                         std::istreambuf_iterator<char>());
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     EXPECT_NE(content.find("BEGIN CERTIFICATE"), std::string::npos);
 
     // Cleanup
@@ -1603,27 +1594,26 @@ TEST_F(EvseSecurityTests, verify_ctl_empty_directory_no_crash) {
     fs::path ctl_test_dir = fs::path("certs/ctl_test_empty");
     fs::create_directories(ctl_test_dir);
 
-    fs::path v2g_bundle  = fs::path("certs/ca/v2g/V2G_CA_BUNDLE_CTL_TEST.pem");
-    fs::path mo_bundle   = fs::path("certs/ca/mo/MO_CA_BUNDLE_CTL_TEST.pem");
+    fs::path v2g_bundle = fs::path("certs/ca/v2g/V2G_CA_BUNDLE_CTL_TEST.pem");
+    fs::path mo_bundle = fs::path("certs/ca/mo/MO_CA_BUNDLE_CTL_TEST.pem");
     fs::path csms_bundle = fs::path("certs/ca/v2g/CSMS_CA_BUNDLE_CTL_TEST.pem");
-    fs::path mf_bundle   = fs::path("certs/ca/v2g/MF_CA_BUNDLE_CTL_TEST.pem");
+    fs::path mf_bundle = fs::path("certs/ca/v2g/MF_CA_BUNDLE_CTL_TEST.pem");
 
     for (auto& p : {v2g_bundle, mo_bundle, csms_bundle, mf_bundle}) {
         std::ofstream f(p);
     }
 
     std::map<CaCertificateType, fs::path> ca_bundle_path_map = {
-        {CaCertificateType::V2G,  v2g_bundle},
-        {CaCertificateType::MO,   mo_bundle},
+        {CaCertificateType::V2G, v2g_bundle},
+        {CaCertificateType::MO, mo_bundle},
         {CaCertificateType::CSMS, csms_bundle},
-        {CaCertificateType::MF,   mf_bundle},
+        {CaCertificateType::MF, mf_bundle},
     };
 
     ASSERT_NO_THROW(load_ctl(ctl_test_dir, ca_bundle_path_map));
 
     for (auto& [type, path] : ca_bundle_path_map) {
-        EXPECT_EQ(fs::file_size(path), 0)
-            << "Bundle should be empty after loading from empty dir: " << path;
+        EXPECT_EQ(fs::file_size(path), 0) << "Bundle should be empty after loading from empty dir: " << path;
     }
 
     // Cleanup
@@ -1641,27 +1631,26 @@ TEST_F(EvseSecurityTests, verify_ctl_malformed_file_skipped) {
     bad_file << "THIS IS NOT A VALID CERTIFICATE OR PKCS7 STRUCTURE!!!";
     bad_file.close();
 
-    fs::path v2g_bundle  = fs::path("certs/ca/v2g/V2G_CA_BUNDLE_CTL_TEST.pem");
-    fs::path mo_bundle   = fs::path("certs/ca/mo/MO_CA_BUNDLE_CTL_TEST.pem");
+    fs::path v2g_bundle = fs::path("certs/ca/v2g/V2G_CA_BUNDLE_CTL_TEST.pem");
+    fs::path mo_bundle = fs::path("certs/ca/mo/MO_CA_BUNDLE_CTL_TEST.pem");
     fs::path csms_bundle = fs::path("certs/ca/v2g/CSMS_CA_BUNDLE_CTL_TEST.pem");
-    fs::path mf_bundle   = fs::path("certs/ca/v2g/MF_CA_BUNDLE_CTL_TEST.pem");
+    fs::path mf_bundle = fs::path("certs/ca/v2g/MF_CA_BUNDLE_CTL_TEST.pem");
 
     for (auto& p : {v2g_bundle, mo_bundle, csms_bundle, mf_bundle}) {
         std::ofstream f(p);
     }
 
     std::map<CaCertificateType, fs::path> ca_bundle_path_map = {
-        {CaCertificateType::V2G,  v2g_bundle},
-        {CaCertificateType::MO,   mo_bundle},
+        {CaCertificateType::V2G, v2g_bundle},
+        {CaCertificateType::MO, mo_bundle},
         {CaCertificateType::CSMS, csms_bundle},
-        {CaCertificateType::MF,   mf_bundle},
+        {CaCertificateType::MF, mf_bundle},
     };
 
     ASSERT_NO_THROW(load_ctl(ctl_test_dir, ca_bundle_path_map));
 
     for (auto& [type, path] : ca_bundle_path_map) {
-        EXPECT_EQ(fs::file_size(path), 0)
-            << "Bundle should be empty after loading malformed file";
+        EXPECT_EQ(fs::file_size(path), 0) << "Bundle should be empty after loading malformed file";
     }
 
     // Cleanup
@@ -1677,20 +1666,20 @@ TEST_F(EvseSecurityTests, verify_ctl_certificates_sorted_by_dc) {
         GTEST_SKIP() << "CTL_DIR empty or missing, skipping";
     }
 
-    fs::path v2g_bundle  = fs::path("certs/ca/v2g/V2G_CA_BUNDLE_CTL_TEST.pem");
-    fs::path mo_bundle   = fs::path("certs/ca/mo/MO_CA_BUNDLE_CTL_TEST.pem");
+    fs::path v2g_bundle = fs::path("certs/ca/v2g/V2G_CA_BUNDLE_CTL_TEST.pem");
+    fs::path mo_bundle = fs::path("certs/ca/mo/MO_CA_BUNDLE_CTL_TEST.pem");
     fs::path csms_bundle = fs::path("certs/ca/v2g/CSMS_CA_BUNDLE_CTL_TEST.pem");
-    fs::path mf_bundle   = fs::path("certs/ca/v2g/MF_CA_BUNDLE_CTL_TEST.pem");
+    fs::path mf_bundle = fs::path("certs/ca/v2g/MF_CA_BUNDLE_CTL_TEST.pem");
 
     for (auto& p : {v2g_bundle, mo_bundle, csms_bundle, mf_bundle}) {
         std::ofstream f(p);
     }
 
     std::map<CaCertificateType, fs::path> ca_bundle_path_map = {
-        {CaCertificateType::V2G,  v2g_bundle},
-        {CaCertificateType::MO,   mo_bundle},
+        {CaCertificateType::V2G, v2g_bundle},
+        {CaCertificateType::MO, mo_bundle},
         {CaCertificateType::CSMS, csms_bundle},
-        {CaCertificateType::MF,   mf_bundle},
+        {CaCertificateType::MF, mf_bundle},
     };
 
     ASSERT_NO_THROW(load_ctl(cmake_ctl_dir, ca_bundle_path_map));
@@ -1700,8 +1689,7 @@ TEST_F(EvseSecurityTests, verify_ctl_certificates_sorted_by_dc) {
             ASSERT_NO_THROW({
                 X509CertificateBundle bundle(path, EncodingFormat::PEM);
                 EXPECT_GT(bundle.get_certificate_count(), 0)
-                    << "Bundle for type "
-                    << conversions::ca_certificate_type_to_string(type)
+                    << "Bundle for type " << conversions::ca_certificate_type_to_string(type)
                     << " has content but no parseable certificates";
             });
         }
@@ -1711,6 +1699,6 @@ TEST_F(EvseSecurityTests, verify_ctl_certificates_sorted_by_dc) {
     for (auto& p : {v2g_bundle, mo_bundle, csms_bundle, mf_bundle}) {
         fs::remove(p);
     }
-}// namespace evse_security
-}
+} // namespace evse_security
+} // namespace evse_security
 // FIXME(piet): Add more tests for getRootCertificateHashData (incl. V2GCertificateChain etc.)

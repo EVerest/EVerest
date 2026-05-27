@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
+#include <cctype>
 #include <evse_security/certificate/x509_wrapper.hpp>
 #include <evse_security/crypto/openssl/openssl_types.hpp>
-#include <cctype>
 #include <fstream>
 #include <iostream>
 #include <regex>
