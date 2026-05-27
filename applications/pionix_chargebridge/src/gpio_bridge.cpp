@@ -26,9 +26,10 @@ const int default_udp_timeout_ms = 1000;
 const int mqtt_reconnect_timeout_ms = 1000;
 } // namespace
 
-gpio_bridge::gpio_bridge(gpio_config const& config) :
+gpio_bridge::gpio_bridge(gpio_config const& config, everest::lib::io::event::event_fd& ready_notify) :
     m_udp(config.cb_remote, config.cb_port, default_udp_timeout_ms),
-    m_mqtt(mqtt_reconnect_timeout_ms)
+    m_mqtt(mqtt_reconnect_timeout_ms),
+    m_ready_notify(ready_notify)
 
 {
     m_identifier = config.cb + "/" + config.item;
@@ -40,6 +41,8 @@ gpio_bridge::gpio_bridge(gpio_config const& config) :
     m_udp.set_error_handler([this](auto id, auto const& msg) {
         utilities::print_error(m_identifier, "GPIO/UDP", id) << msg << std::endl;
         m_udp_on_error = id not_eq 0;
+        m_udp_ready = id == 0;
+        handle_ready();
     });
 
     m_receive_topic = "pionix/chargebridge/" + config.cb + "/gpio/output/";
@@ -48,6 +51,8 @@ gpio_bridge::gpio_bridge(gpio_config const& config) :
     m_mqtt.set_error_handler([this, config](int id, std::string const& msg) {
         utilities::print_error(m_identifier, "GPIO/MQTT", id) << msg << std::endl;
         m_mqtt_on_error = id not_eq 0;
+        m_mqtt_ready = id == 0;
+        handle_ready();
     });
 
     m_mqtt.set_callback_connect([this](auto&, auto, auto, auto const&) {
@@ -61,6 +66,8 @@ gpio_bridge::gpio_bridge(gpio_config const& config) :
     m_message.type = CbStructType::CST_HostToCb_Gpio;
     m_message.data.number_of_gpios = CB_NUMBER_OF_GPIOS;
     std::memset(m_message.data.gpio_values, 0, sizeof(m_message.data.gpio_values));
+
+    m_ready.setCallback([this](auto&, auto&) { m_ready_notify.notify(); });
 }
 
 gpio_bridge::~gpio_bridge() {
@@ -151,6 +158,14 @@ void gpio_bridge::handle_udp_rx(everest::lib::io::udp::udp_payload const& payloa
     } else {
         std::cout << "INVALID DATA SIZE in UDP RX of GPIO: " << payload.size() << " vs " << sizeof(data) << std::endl;
     }
+}
+
+void gpio_bridge::handle_ready() {
+    m_ready.set(m_udp_ready and m_mqtt_ready);
+}
+
+bool gpio_bridge::available() const {
+    return m_ready;
 }
 
 } // namespace charge_bridge

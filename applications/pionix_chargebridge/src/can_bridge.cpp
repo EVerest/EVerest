@@ -49,10 +49,11 @@ bool is_data_msg([[maybe_unused]] cb_can_message const& msg) {
 
 } // namespace
 
-can_bridge::can_bridge(can_bridge_config const& config) :
+can_bridge::can_bridge(can_bridge_config const& config, everest::lib::io::event::event_fd& ready_notify) :
     m_udp(config.cb_remote, config.cb_port, default_udp_timeout_ms),
     m_can_device(config.can_device),
-    m_last_msg_to_cb(std::chrono::steady_clock::time_point()) {
+    m_last_msg_to_cb(std::chrono::steady_clock::time_point()),
+    m_ready_notify(ready_notify) {
 
     auto& manager = everest::lib::io::netlink::vcan_netlink_manager::Instance();
     auto success = manager.create(config.can_device) && manager.bring_up(config.can_device);
@@ -90,20 +91,25 @@ can_bridge::can_bridge(can_bridge_config const& config) :
     m_identifier = config.cb + "/" + config.item;
     m_can->set_error_handler([this](auto id, auto const& msg) {
         utilities::print_error(m_identifier, "CAN/HW", id) << msg << std::endl;
-        if (id not_eq 0) {
+        m_can_ready = id == 0;
+        if (not m_can_ready) {
             // This is a smart pointer!! Using .reset() would delete the obj!
             m_can->reset();
         }
+        handle_ready();
     });
 
     m_udp.set_error_handler([this](auto id, auto const& msg) {
         utilities::print_error(m_identifier, "CAN/UDP", id) << msg << std::endl;
-        if (id not_eq 0) {
+        m_udp_ready = id == 0;
+        if (not m_udp_ready) {
             m_udp.reset();
         }
+        handle_ready();
     });
 
     m_heartbeat_timer.set_timeout(10s);
+    m_ready.setCallback([this](auto&, auto&) { m_ready_notify.notify(); });
 }
 
 can_bridge::~can_bridge() {
@@ -157,6 +163,14 @@ void can_bridge::handle_heartbeat_timer() {
         msg.packet_type = CanPacketType_Keep_Alive;
         send_can_to_udp(msg);
     }
+}
+
+void can_bridge::handle_ready() {
+    m_ready.set(m_udp_ready and m_can_ready);
+}
+
+bool can_bridge::available() const {
+    return m_ready;
 }
 
 } // namespace charge_bridge

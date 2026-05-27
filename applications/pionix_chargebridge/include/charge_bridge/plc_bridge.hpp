@@ -6,6 +6,7 @@
 #include <everest/io/event/timer_fd.hpp>
 #include <everest/io/tun_tap/tap_client.hpp>
 #include <everest/io/udp/udp_client.hpp>
+#include <everest/util/misc/observable.hpp>
 
 namespace charge_bridge {
 
@@ -22,20 +23,25 @@ struct plc_bridge_config {
 
 class plc_bridge : public everest::lib::io::event::fd_event_register_interface {
 public:
-    plc_bridge(plc_bridge_config const& config);
+    plc_bridge(plc_bridge_config const& config, everest::lib::io::event::event_fd& ready_notify);
     ~plc_bridge() = default;
 
     bool register_events(everest::lib::io::event::fd_event_handler& handler) override;
     bool unregister_events(everest::lib::io::event::fd_event_handler& handler) override;
+    bool available() const;
 
 private:
     void handle_timer_event();
-
+    void handle_ready();
     everest::lib::io::tun_tap::tap_client m_tap;
     everest::lib::io::udp::udp_client m_udp;
     everest::lib::io::event::timer_fd m_timer;
     bool m_udp_on_error{false};
     bool m_tap_on_error{false};
+    bool m_udp_ready{false};
+    bool m_tap_ready{false};
+    everest::lib::util::observable<bool> m_ready{false};
+    everest::lib::io::event::event_fd& m_ready_notify;
 };
 
 } // namespace charge_bridge

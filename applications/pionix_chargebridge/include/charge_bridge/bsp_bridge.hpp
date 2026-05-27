@@ -5,6 +5,7 @@
 #include <charge_bridge/everest_api/api_connector.hpp>
 #include <everest/io/event/fd_event_register_interface.hpp>
 #include <everest/io/udp/udp_client.hpp>
+#include <everest/util/misc/observable.hpp>
 #include <everest_api_types/evse_board_support/API.hpp>
 
 namespace charge_bridge {
@@ -19,11 +20,12 @@ struct bsp_bridge_config {
 
 class bsp_bridge : public everest::lib::io::event::fd_event_register_interface {
 public:
-    bsp_bridge(bsp_bridge_config const& config);
+    bsp_bridge(bsp_bridge_config const& config, everest::lib::io::event::event_fd& ready_notify);
     ~bsp_bridge() = default;
 
     bool register_events(everest::lib::io::event::fd_event_handler& handler) override;
     bool unregister_events(everest::lib::io::event::fd_event_handler& handler) override;
+    bool available() const;
 
 private:
     void handle_timer_event();
@@ -32,6 +34,8 @@ private:
     everest::lib::io::udp::udp_client m_udp;
     everest::lib::io::event::timer_fd m_timer;
     bool m_udp_on_error{false};
+    everest::lib::util::observable<bool> m_ready{false};
+    everest::lib::io::event::event_fd& m_ready_notify;
 };
 
 } // namespace charge_bridge

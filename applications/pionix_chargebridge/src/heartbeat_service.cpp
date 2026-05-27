@@ -20,9 +20,12 @@ namespace charge_bridge {
 using namespace std::chrono_literals;
 
 heartbeat_service::heartbeat_service(heartbeat_config const& config,
-                                     std::function<void(bool)> const& publish_connection_status) :
+                                     std::function<void(bool)> const& publish_connection_status,
+                                     everest::lib::io::event::event_fd& ready_notify) :
     m_udp(config.cb_remote, config.cb_port, default_udp_timeout_ms),
-    m_publish_connection_status(publish_connection_status) {
+    m_publish_connection_status(publish_connection_status),
+    m_ready_notify(ready_notify) {
+
     m_identifier = config.cb + "/" + config.item;
     std::memcpy(&m_config_message.data, &config.cb_config, sizeof(CbConfig));
     m_config_message.type = CbStructType::CST_HostToCb_Heartbeat;
@@ -40,7 +43,10 @@ heartbeat_service::heartbeat_service(heartbeat_config const& config,
             utilities::print_error(m_identifier, "HEARTBEAT/UDP", id) << msg << std::endl;
         }
         m_udp_on_error = id not_eq 0;
+        m_udp_ready = id == 0;
+        handle_ready();
     });
+    m_ready.setCallback([this](auto&, auto&) { m_ready_notify.notify(); });
 }
 
 heartbeat_service::~heartbeat_service() {
@@ -78,15 +84,25 @@ void heartbeat_service::handle_heartbeat_timer() {
     if (timeout and m_cb_connected) {
         utilities::print_error(m_identifier, "HEARTBEAT/UDP", 1) << "ChargeBridge connection lost" << std::endl;
         m_cb_connected = false;
+        handle_ready();
     }
 
     else if (not timeout and not m_cb_connected) {
         utilities::print_error(m_identifier, "HEARTBEAT/UDP", 0) << "ChargeBridge connected" << std::endl;
         m_cb_connected = true;
+        handle_ready();
     }
     if (m_publish_connection_status) {
         m_publish_connection_status(m_cb_connected);
     }
+}
+
+void heartbeat_service::handle_ready() {
+    m_ready.set(m_cb_connected and m_udp_ready);
+}
+
+bool heartbeat_service::available() const {
+    return m_ready;
 }
 
 void heartbeat_service::handle_udp_rx(everest::lib::io::udp::udp_payload const& payload) {

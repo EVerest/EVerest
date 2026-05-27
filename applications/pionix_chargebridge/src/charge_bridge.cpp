@@ -37,9 +37,14 @@ std::pair<bool, std::set<std::string>> make_interface_list(std::string const& st
     std::cout << std::endl;
     return {exclude, items};
 }
+
+const int mqtt_reconnect_timeout_ms = 1000;
+
 } // namespace
 
 charge_bridge::charge_bridge(charge_bridge_config const& config) : m_config(config) {
+    std::cout << "CB CONSTRUCT" << std::endl;
+
     if (utilities::string_starts_with(config.cb_remote, "ANY_EVSE")) {
         auto params = make_interface_list(config.cb_remote, "ANY_EVSE");
         init_discovery(discovery_device_type::CB_EVSE, params.second, params.first);
@@ -110,34 +115,37 @@ void charge_bridge::handle_discovery(std::string const& ip) {
 
 void charge_bridge::init() {
     if (m_config.can0.has_value()) {
-        m_can_0_client = std::make_unique<can_bridge>(m_config.can0.value());
+        m_can_0_client = std::make_unique<can_bridge>(m_config.can0.value(), m_ready_notify);
     }
     if (m_config.serial1.has_value()) {
-        m_pty_1 = std::make_unique<serial_bridge>(m_config.serial1.value());
+        m_pty_1 = std::make_unique<serial_bridge>(m_config.serial1.value(), m_ready_notify);
     }
     if (m_config.serial2.has_value()) {
-        m_pty_2 = std::make_unique<serial_bridge>(m_config.serial2.value());
+        m_pty_2 = std::make_unique<serial_bridge>(m_config.serial2.value(), m_ready_notify);
     }
     if (m_config.serial3.has_value()) {
-        m_pty_3 = std::make_unique<serial_bridge>(m_config.serial3.value());
+        m_pty_3 = std::make_unique<serial_bridge>(m_config.serial3.value(), m_ready_notify);
     }
     if (m_config.plc.has_value()) {
-        m_plc = std::make_unique<plc_bridge>(m_config.plc.value());
+        m_plc = std::make_unique<plc_bridge>(m_config.plc.value(), m_ready_notify);
     }
     if (m_config.bsp.has_value()) {
-        m_bsp = std::make_unique<bsp_bridge>(m_config.bsp.value());
+        m_bsp = std::make_unique<bsp_bridge>(m_config.bsp.value(), m_ready_notify);
     }
     if (m_config.heartbeat.has_value()) {
-        m_heartbeat = std::make_unique<heartbeat_service>(m_config.heartbeat.value(), [this](bool connected) {
-            {
-                auto handle = m_cb_status.handle();
-                handle->is_connected = connected;
-            }
-            m_cb_status.notify_one();
-        });
+        m_heartbeat = std::make_unique<heartbeat_service>(
+            m_config.heartbeat.value(),
+            [this](bool connected) {
+                {
+                    auto handle = m_cb_status.handle();
+                    handle->is_connected = connected;
+                }
+                m_cb_status.notify_one();
+            },
+            m_ready_notify);
     }
     if (m_config.gpio.has_value()) {
-        m_gpio = std::make_unique<gpio_bridge>(m_config.gpio.value());
+        m_gpio = std::make_unique<gpio_bridge>(m_config.gpio.value(), m_ready_notify);
     }
 }
 
@@ -170,6 +178,15 @@ void charge_bridge::manage(everest::lib::io::event::fd_event_handler& handler, s
         }
         if (not m_was_connected) {
             if (update_firmware(m_force_firmware_update)) {
+                m_event_handler->add_action([this]() {
+                    if (m_config.telemetry.has_value()) {
+                        m_mqtt = std::make_unique<everest::lib::io::mqtt::mqtt_client>(mqtt_reconnect_timeout_ms);
+                        m_mqtt->connect(m_config.telemetry->mqtt_bind, m_config.telemetry->mqtt_remote,
+                                        m_config.telemetry->mqtt_port, m_config.telemetry->mqtt_ping_interval_ms);
+
+                        m_mqtt->set_callback_connect([](auto&, auto, auto, auto const&) {});
+                    }
+                });
                 m_event_handler->add_action([this]() { register_events(*m_event_handler); });
                 m_was_connected = true;
                 error_count = 0;
@@ -245,6 +262,59 @@ std::string charge_bridge::get_pty_3_slave_path() {
     return "";
 }
 
+void charge_bridge::handle_ready() {
+    if (not m_config.telemetry.has_value()) {
+        return;
+    }
+    bool status = true;
+    auto publish = [this](std::string const& component, bool status) {
+        auto topic = m_config.telemetry->telemetry_topic + "/" + m_config.cb_name + "/" + component + "/status";
+        auto payload = status ? "true" : "false";
+        m_mqtt->publish(topic, payload);
+    };
+    if (m_can_0_client) {
+        auto available = m_can_0_client->available();
+        status = status && available;
+        publish("can_0", available);
+    }
+    if (m_pty_1) {
+        auto available = m_pty_1->available();
+        status = status && available;
+        publish("serial_1", available);
+    }
+    if (m_pty_2) {
+        auto available = m_pty_2->available();
+        status = status && available;
+        publish("serial_2", available);
+    }
+    if (m_pty_3) {
+        auto available = m_pty_3->available();
+        status = status && available;
+        publish("serial_3", available);
+    }
+    if (m_bsp) {
+        auto available = m_bsp->available();
+        status = status && available;
+        publish("bsp", available);
+    }
+    if (m_plc) {
+        auto available = m_plc->available();
+        status = status && available;
+        publish("plc", available);
+    }
+    if (m_heartbeat) {
+        auto available = m_heartbeat->available();
+        status = status && available;
+        publish("heatbeat", available);
+    }
+    if (m_gpio) {
+        auto available = m_gpio->available();
+        status = status && available;
+        publish("gpio", available);
+    }
+    publish("chargebridge", status);
+}
+
 bool charge_bridge::register_events(everest::lib::io::event::fd_event_handler& handler) {
     auto result = true;
     if (m_can_0_client) {
@@ -273,6 +343,12 @@ bool charge_bridge::register_events(everest::lib::io::event::fd_event_handler& h
     }
     if (m_discovery) {
         result = handler.register_event_handler(m_discovery.get()) && result;
+    }
+    if (m_mqtt) {
+        result = handler.register_event_handler(m_mqtt.get()) && result;
+        result = handler.register_event_handler(&m_ready_notify,
+                                                everest::lib::util::bind_obj(&charge_bridge::handle_ready, this)) &&
+                 result;
     }
 
     return result;
@@ -306,6 +382,11 @@ bool charge_bridge::unregister_events(everest::lib::io::event::fd_event_handler&
     if (m_discovery) {
         result = handler.unregister_event_handler(m_discovery.get()) && result;
     }
+    if (m_mqtt) {
+        result = handler.unregister_event_handler(m_mqtt.get()) && result;
+        result = handler.unregister_event_handler(&m_ready_notify) && result;
+    }
+
     return result;
 }
 
