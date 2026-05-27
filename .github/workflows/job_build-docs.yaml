@@ -88,6 +88,8 @@ jobs:
           ssh-add ~/.ssh/id_ed25519
       - name: Sanitize instance name
         id: sanitize
+        # Keep this formula in sync with the "Sanitize display_name into
+        # instance name" step in .github/workflows/on_workflow_dispatch_delete.yaml.
         run: |
           sanitized=$(echo -n "${{ inputs.instance_name }}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9_' '_')
           echo "instance_name=${sanitized}" >> $GITHUB_OUTPUT

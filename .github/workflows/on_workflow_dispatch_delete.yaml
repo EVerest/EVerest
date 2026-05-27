@@ -2,10 +2,12 @@ name: On Workflow Dispatch - Delete Deployed Documentation Instance
 on:
   workflow_dispatch:
     inputs:
-      instance_name:
+      display_name:
         description: >
-          Name of the docs instance directory under <docs_repo>/docs/ to delete.
-          Must be typed exactly; there is no default to prevent accidents.
+          Same human-readable label you provided when the build was triggered.
+          The on-disk directory name is auto-derived from this (lowercased,
+          non-[a-z0-9_] chars collapsed to underscores) using the same
+          formula as the build workflow.
         required: true
         type: string
       confirm:
@@ -35,17 +37,26 @@ jobs:
       - name: Verify confirmation
         env:
           CONFIRM: ${{ inputs.confirm }}
-          INSTANCE_NAME: ${{ inputs.instance_name }}
         run: |
           if [ "$CONFIRM" != "true" ]; then
             echo "::error::The 'confirm' input must be checked to perform deletion."
             exit 1
           fi
-          if ! echo "$INSTANCE_NAME" | grep -qE '^[a-z0-9_]+$'; then
-            echo "::error::instance_name must match [a-z0-9_]+ (got: '$INSTANCE_NAME')"
+
+      - name: Sanitize display_name into instance name
+        id: sanitize
+        # Keep this formula in sync with the "Sanitize instance name" step
+        # in .github/workflows/job_build-docs.yaml.
+        env:
+          DISPLAY_NAME: ${{ inputs.display_name }}
+        run: |
+          sanitized=$(echo -n "$DISPLAY_NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9_' '_')
+          if ! echo "$sanitized" | grep -qE '^[a-z0-9_]+$'; then
+            echo "::error::display_name '$DISPLAY_NAME' sanitized to '$sanitized', which is not a valid instance name ([a-z0-9_]+)."
             exit 1
           fi
-          echo "Confirmation OK; instance_name='$INSTANCE_NAME'"
+          echo "instance_name=${sanitized}" >> $GITHUB_OUTPUT
+          echo "Sanitized: display_name='$DISPLAY_NAME' -> instance_name='${sanitized}'"
 
       - name: Setup SSH Agent
         env:
@@ -84,7 +95,7 @@ jobs:
 
       - name: Verify instance exists and check release status
         env:
-          INSTANCE_NAME: ${{ inputs.instance_name }}
+          INSTANCE_NAME: ${{ steps.sanitize.outputs.instance_name }}
           ALLOW_RELEASE_DELETE: ${{ inputs.allow_release_delete }}
         run: |
           INSTANCE_DIR="deployed_docs_repo/docs/$INSTANCE_NAME"
@@ -116,7 +127,7 @@ jobs:
 
       - name: Remove instance directory
         env:
-          INSTANCE_NAME: ${{ inputs.instance_name }}
+          INSTANCE_NAME: ${{ steps.sanitize.outputs.instance_name }}
         run: |
           rm -rf "deployed_docs_repo/docs/$INSTANCE_NAME"
           echo "Removed deployed_docs_repo/docs/$INSTANCE_NAME"
@@ -136,7 +147,8 @@ jobs:
       - name: Commit and push
         working-directory: deployed_docs_repo
         env:
-          INSTANCE_NAME: ${{ inputs.instance_name }}
+          INSTANCE_NAME: ${{ steps.sanitize.outputs.instance_name }}
+          DISPLAY_NAME: ${{ inputs.display_name }}
           ACTOR: ${{ github.actor }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -145,7 +157,7 @@ jobs:
             echo "::error::No changes to commit (this shouldn't happen — instance dir was present earlier)."
             exit 1
           fi
-          git commit -m "Delete docs instance: $INSTANCE_NAME
+          git commit -m "Delete docs instance: $INSTANCE_NAME (from display_name: \"$DISPLAY_NAME\")
 
           Triggered by @$ACTOR via workflow_dispatch.
           Source workflow run: $RUN_URL"
