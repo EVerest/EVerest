@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Contributors to the EVerest Project.
+
 #include "evse_security/utils/enforce_certificate_rules.hpp"
 #include <algorithm>
 #include <everest/logging.hpp>
