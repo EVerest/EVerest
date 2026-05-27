@@ -746,12 +746,10 @@ int Manager::run() {
     }
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core_);
-    
 
     config_service_core_->register_set_runtime_parameter_handler(
         [&config_service](const everest::config::ConfigurationParameterIdentifier& cfg_param_id,
                           const std::string& value) {
-            // TODO(CB): Here or inside the called function we need to handle the no-module-is-running case
             const auto result = config_service->cmd_set_cfg_param(cfg_param_id, value);
             if (result) {
                 if (result->status == Everest::config::SetResponseStatus::Accepted) {
