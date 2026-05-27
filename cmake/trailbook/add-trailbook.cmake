@@ -202,6 +202,47 @@ endmacro()
 # This macro is for internal use only
 #
 # It is used in the function add_trailbook.
+# It adds a custom command to create the current_instance_info.json file for the currently build instance.
+# These json files from different instances are used to build a versions.json file.
+# The latter can be used e.g. to show a table of existing versions.
+# current_instance_info.json is copied into the deployed folder for the respective instance as info.json, so future aggregations can pick it up.
+macro(_add_trailbook_create_instance_info_file_command)
+    # Resolve display name (fallback to instance name) and write info.json for the current instance.
+    if("${TRAILBOOK_${args_NAME}_DISPLAY_NAME}" STREQUAL "")
+        set(TRAILBOOK_INSTANCE_DISPLAY_NAME "${TRAILBOOK_${args_NAME}_INSTANCE_NAME}")
+    else()
+        set(TRAILBOOK_INSTANCE_DISPLAY_NAME "${TRAILBOOK_${args_NAME}_DISPLAY_NAME}")
+    endif()
+    if(TRAILBOOK_INSTANCE_IS_RELEASE)
+        set(_trailbook_is_release_json "true")
+    else()
+        set(_trailbook_is_release_json "false")
+    endif()
+
+    add_custom_command(
+        OUTPUT
+            ${CURRENT_INSTANCE_INFO_JSON}
+        DEPENDS
+            ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/create_instance_info.py
+            trailbook_${args_NAME}_stage_prepare_sphinx_source_before
+            $<TARGET_PROPERTY:trailbook_${args_NAME},ADDITIONAL_DEPS_STAGE_PREPARE_SPHINX_SOURCE_BEFORE>
+        COMMENT
+            "Trailbook: ${args_NAME} - Creating instance info file"
+        COMMAND
+            ${CMAKE_COMMAND} -E rm -f ${CURRENT_INSTANCE_INFO_JSON}
+        COMMAND
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/create_instance_info.py
+            "--json-output-path" "${CURRENT_INSTANCE_INFO_JSON}"
+            "--instance-name" "${TRAILBOOK_${args_NAME}_INSTANCE_NAME}"
+            "--display-name" "${TRAILBOOK_INSTANCE_DISPLAY_NAME}"
+            "--is-release" "${_trailbook_is_release_json}"
+    )
+endmacro()
+
+# This macro is for internal use only
+#
+# It is used in the function add_trailbook.
 # It adds a custom command to create the metadata file(s) for the trailbook instance.
 # The metadata JSON file can be used for dynamic features in the built documentation, such as the version switcher dropdown.
 # It contains a list of all versions available in the multiversion root directory.
@@ -632,27 +673,8 @@ function(add_trailbook)
     set(TRAILBOOK_INSTANCE_IS_RELEASE "${TRAILBOOK_${args_NAME}_IS_RELEASE}")
     set(TRAILBOOK_INSTANCE_DOWNLOAD_ALL_VERSIONS "${TRAILBOOK_${args_NAME}_DOWNLOAD_ALL_VERSIONS}")
 
-    # Resolve display name (fallback to instance name) and write info.json for the current instance.
-    # This file is consumed by create_metadata_file.py to build versions.json and is later
-    # copied into the instance build directory so future aggregations can pick it up.
-    if("${TRAILBOOK_${args_NAME}_DISPLAY_NAME}" STREQUAL "")
-        set(TRAILBOOK_INSTANCE_DISPLAY_NAME "${TRAILBOOK_${args_NAME}_INSTANCE_NAME}")
-    else()
-        set(TRAILBOOK_INSTANCE_DISPLAY_NAME "${TRAILBOOK_${args_NAME}_DISPLAY_NAME}")
-    endif()
-    if(TRAILBOOK_INSTANCE_IS_RELEASE)
-        set(_trailbook_is_release_json "true")
-    else()
-        set(_trailbook_is_release_json "false")
-    endif()
     set(CURRENT_INSTANCE_INFO_JSON "${CMAKE_CURRENT_BINARY_DIR}/current_instance_info.json")
-    file(WRITE "${CURRENT_INSTANCE_INFO_JSON}"
-"{
-  \"name\": \"${TRAILBOOK_${args_NAME}_INSTANCE_NAME}\",
-  \"display\": \"${TRAILBOOK_INSTANCE_DISPLAY_NAME}\",
-  \"is_release\": ${_trailbook_is_release_json}
-}
-")
+    _add_trailbook_create_instance_info_file_command()
 
     message(STATUS "Adding trailbook:               ${args_NAME}")
     message(STATUS "  Stem directory:               ${args_STEM_DIRECTORY}")
