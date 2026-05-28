@@ -237,6 +237,7 @@ macro(_add_trailbook_create_instance_info_file_command)
             "--instance-name" "${TRAILBOOK_${args_NAME}_INSTANCE_NAME}"
             "--display-name" "${TRAILBOOK_INSTANCE_DISPLAY_NAME}"
             "--is-release" "${_trailbook_is_release_json}"
+        VERBATIM
     )
 endmacro()
 
