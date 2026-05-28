@@ -135,6 +135,7 @@ async def test_meter_signed_meter_values(
 ):
     test_controller.plug_in(1)
 
+    assert test_config.authorization_info is not None
     test_controller.swipe(test_config.authorization_info.valid_id_tag_1)
     # expect authorize.req
     assert await wait_for_and_validate(
@@ -163,7 +164,7 @@ async def test_meter_signed_meter_values(
 
     # expect StopTransaction.req
     stop_transaction_msg: call.StopTransaction = call.StopTransaction(
-        **await wait_for_and_validate(
+        **await wait_for_and_validate(  # pyright: ignore[reportCallIssue]
             test_utility,
             charge_point_v16,
             "StopTransaction",
