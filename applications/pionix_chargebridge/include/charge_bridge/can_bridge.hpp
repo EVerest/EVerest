@@ -4,7 +4,7 @@
 
 #include <chrono>
 #include <everest/io/can/can_payload.hpp>
-#include <everest/io/can/socket_can.hpp>
+#include <everest/io/can/socket_can_handler.hpp>
 #include <everest/io/event/fd_event_register_interface.hpp>
 #include <everest/io/event/timer_fd.hpp>
 #include <everest/io/udp/udp_client.hpp>
@@ -31,14 +31,16 @@ public:
     bool unregister_events(everest::lib::io::event::fd_event_handler& handler) override;
 
 private:
-    void handle_error_timer();
     void handle_heartbeat_timer();
+    void drain_can_from_vcan();
     void send_can_to_udp(cb_can_message const& pl);
-    std::unique_ptr<everest::lib::io::can::socket_can> m_can;
+    everest::lib::io::can::socket_can_handler m_can;
+    int m_registered_can_fd{-1};
     everest::lib::io::udp::udp_client m_udp;
     std::string m_can_device;
     std::string m_identifier;
     everest::lib::io::event::timer_fd m_heartbeat_timer;
+    everest::lib::io::event::timer_fd m_can_poll_timer;
     std::chrono::steady_clock::time_point m_last_msg_to_cb;
 };
 

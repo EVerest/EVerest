@@ -142,7 +142,8 @@ bool socket_can_handler::apply_recv_filters() {
     }
 
     if (m_recv_filters.empty()) {
-        return ::setsockopt(m_owned_can_fd, SOL_CAN_RAW, CAN_RAW_FILTER, nullptr, 0) == 0;
+        struct can_filter accept_all {};
+        return ::setsockopt(m_owned_can_fd, SOL_CAN_RAW, CAN_RAW_FILTER, &accept_all, sizeof(accept_all)) == 0;
     }
 
     std::vector<can_filter> linux_filters;

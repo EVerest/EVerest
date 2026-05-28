@@ -151,7 +151,7 @@ void charge_bridge::manage(everest::lib::io::event::fd_event_handler& handler, s
     m_event_handler = &handler;
     m_force_firmware_update = force_update;
 
-    auto action = [this](bool is_connected, bool discovery_pending, int& error_count) {
+    auto action = [this](bool discovery_pending, int& error_count, bool heartbeat_disconnected) {
         if (discovery_pending) {
             if (m_discovery_active) {
                 return;
@@ -160,7 +160,7 @@ void charge_bridge::manage(everest::lib::io::event::fd_event_handler& handler, s
             m_event_handler->add_action([this]() { register_events(*m_event_handler); });
             return;
         }
-        if (m_was_connected and not is_connected) {
+        if (m_was_connected and heartbeat_disconnected) {
             if (error_count > 1) {
                 m_event_handler->add_action([this]() { unregister_events(*m_event_handler); });
                 m_was_connected = false;
@@ -195,9 +195,11 @@ void charge_bridge::manage(everest::lib::io::event::fd_event_handler& handler, s
             return false;
         };
         while (run.load()) {
-            action(handle->is_connected, handle->discovery_pending, error_count);
+            auto const is_connected = handle->is_connected;
+            auto const heartbeat_disconnected = last_is_connected and not is_connected;
+            action(handle->discovery_pending, error_count, heartbeat_disconnected);
             handle.wait_for(condition, 10s);
-            last_is_connected = handle->is_connected;
+            last_is_connected = is_connected;
             last_discovery_pending = handle->discovery_pending;
         }
     });
