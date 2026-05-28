@@ -171,18 +171,18 @@ async def test_meter_signed_meter_values(
         )
     )
 
+    # verify start and stop signed meter values (order independent)
     assert stop_transaction_msg is not None
     assert stop_transaction_msg.transaction_data is not None
-    assert len(stop_transaction_msg.transaction_data) == 2
-
-    # verify start and stop signed meter values (order independent)
     start_sv = None
     stop_sv = None
     for mv in stop_transaction_msg.transaction_data:
         for sv in mv['sampled_value']:
             if sv['context'] == 'Transaction.Begin':
+                assert start_sv is None, "transaction_data contains multiple start signed meter values"
                 start_sv = sv
             elif sv['context'] == 'Transaction.End':
+                assert stop_sv is None, "transaction_data contains multiple stop signed meter values"
                 stop_sv = sv
 
     assert start_sv is not None, "Start signed meter value not found"
