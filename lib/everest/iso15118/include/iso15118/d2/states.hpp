@@ -22,6 +22,7 @@ enum class StateID {
     SupportedAppProtocol,
     SessionSetup,
     Authorization,
+    ChargeParameterDiscovery,
     ServiceDetail,
     ServiceDiscovery,
     PaymentServiceSelection,
