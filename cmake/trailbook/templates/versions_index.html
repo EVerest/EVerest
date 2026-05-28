@@ -85,7 +85,6 @@
             <div class="article-container">
                 <article role="main">
                     <h1>Documentation Versions</h1>
-                    <p>Pick a version of the documentation to view.</p>
                     <div id="versions-container">
                         <p class="placeholder">Loading&hellip;</p>
                     </div>
@@ -154,18 +153,19 @@
                 // Within each group we render entries in the order delivered
                 // by versions.json — the aggregator (create_metadata_file.py)
                 // already sorts releases newest-first.
-                var nightly = [];
+                var top = [];
                 var releases = [];
                 var others = [];
                 versions.forEach(function (e) {
-                    if (e.name === 'nightly') nightly.push(e);
+                    if (e.name === 'nightly') top.push(e);
+                    if (e.name === 'latest') top.push(e);
                     else if (e.is_release) releases.push(e);
                     else others.push(e);
                 });
 
-                appendSection('',         nightly);
-                appendSection('Releases', releases);
-                appendSection('Other',    others);
+                appendSection('Most Viewed', top);
+                appendSection('Releases',    releases);
+                appendSection('Other',       others);
             })
             .catch(function (err) {
                 container.innerHTML =
