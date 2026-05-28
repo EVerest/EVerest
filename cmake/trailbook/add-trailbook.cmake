@@ -214,9 +214,9 @@ macro(_add_trailbook_create_instance_info_file_command)
         set(TRAILBOOK_INSTANCE_DISPLAY_NAME "${TRAILBOOK_${args_NAME}_DISPLAY_NAME}")
     endif()
     if(TRAILBOOK_INSTANCE_IS_RELEASE)
-        set(_trailbook_is_release_json "true")
+        set(_trailbook_is_release_option "--release")
     else()
-        set(_trailbook_is_release_json "false")
+        set(_trailbook_is_release_option "--no-release")
     endif()
 
     add_custom_command(
@@ -236,7 +236,7 @@ macro(_add_trailbook_create_instance_info_file_command)
             "--json-output-path" "${CURRENT_INSTANCE_INFO_JSON}"
             "--instance-name" "${TRAILBOOK_${args_NAME}_INSTANCE_NAME}"
             "--display-name" "${TRAILBOOK_INSTANCE_DISPLAY_NAME}"
-            "--is-release" "${_trailbook_is_release_json}"
+            "${_trailbook_is_release_option}"
         VERBATIM
     )
 endmacro()

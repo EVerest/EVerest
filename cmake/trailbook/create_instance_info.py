@@ -50,10 +50,9 @@ def main():
         help='Display name for the instance'
     )
     parser.add_argument(
-        '--is-release',
-        type=bool,
+        '--release',
+        action=argparse.BooleanOptionalAction,
         dest='is_release',
-        required=True,
         help='If this instance is a release'
     )
     args = parser.parse_args()
