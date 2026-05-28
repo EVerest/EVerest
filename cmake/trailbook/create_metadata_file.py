@@ -19,7 +19,7 @@ If info.json is missing or unreadable (LEGACY entries, deployed before
 info.json was introduced):
   - name and display fall back to the directory name
   - is_release is inferred from the configured legacy prefix
-    (--legacy-release-prefix, default 'release_')
+    (--legacy-release-prefix, default 'old-documentation-2025')
 
 Legacy entries get rewritten with a proper info.json the next time their
 instance is rebuilt, so this fallback is only relevant during migration.
@@ -35,7 +35,7 @@ def load_instance_info(instance_dir: Path, legacy_release_prefix: str) -> dict:
     """Read info.json from an instance directory, falling back to dir name.
 
     For legacy entries (no/unreadable info.json), is_release is inferred from
-    `legacy_release_prefix` so legacy `release_*` dirs still sort with the
+    `legacy_release_prefix` so legacy `old-documentation-2025*` dirs still sort with the
     other releases in the version switcher.
     """
     info_file = instance_dir / 'info.json'
@@ -62,7 +62,7 @@ def load_instance_info(instance_dir: Path, legacy_release_prefix: str) -> dict:
 def load_versions_data(
     multiversion_root_dir: Path,
     current_instance_info_path: Path = None,
-    legacy_release_prefix: str = 'release_',
+    legacy_release_prefix: str = 'old-documentation-2025',
 ) -> dict:
     """Aggregate per-instance metadata into the versions.json payload.
 
@@ -137,10 +137,9 @@ def main():
         '--legacy-release-prefix',
         type=str,
         dest='legacy_release_prefix',
-        default='release_',
+        default='old-documentation-',
         help='For instance directories with no info.json, treat them as '
              'releases if their directory name starts with this prefix. '
-             'Empty string disables the heuristic. Default: "release_".'
     )
     args = parser.parse_args()
 
