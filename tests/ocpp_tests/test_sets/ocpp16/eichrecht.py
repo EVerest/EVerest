@@ -160,6 +160,35 @@ async def test_meter_signed_meter_values(
         {}
     )
 
+    # Because the StartTransaction message can not contain a signed meter value, it is sent in a separate MeterValues message
+    meter_values_msg: call.MeterValues = call.MeterValues(
+        **await wait_for_and_validate(  # pyright: ignore[reportCallIssue]
+            test_utility,
+            charge_point_v16,
+            "MeterValues",
+            {},
+        )
+    )
+
+    assert meter_values_msg is not None
+    start_sv = None
+    for mv in meter_values_msg.meter_value:
+        for sv in mv['sampled_value']:
+            if sv['context'] == 'Transaction.Begin':
+                assert start_sv is None, "MeterValues message contains multiple transaction start signed meter values"
+                start_sv = sv
+    assert start_sv is not None, "MeterValues message does not contain a transaction start signed meter value"
+    assert start_sv['value'] == "test start value"
+    assert start_sv['format'] == 'SignedData'
+
+    assert any(
+        sv.get('context') == 'Transaction.Begin'
+        and sv.get('format') == 'SignedData'
+        and sv.get('value') == 'test start value'
+        for mv in meter_values_msg.meter_value
+        for sv in mv['sampled_value']
+    ), "Initial signed meter value not found in MeterValues"
+
     test_controller.plug_out()
 
     # expect StopTransaction.req
