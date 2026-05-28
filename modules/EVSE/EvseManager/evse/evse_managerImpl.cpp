@@ -161,6 +161,8 @@ void evse_managerImpl::ready() {
         se.timestamp = Everest::Date::to_rfc3339(date::utc_clock::now());
 
         transaction_started.meter_value = mod->get_latest_powermeter_data_billing();
+        transaction_started.signed_meter_value = mod->charger->get_start_signed_meter_value();
+
         if (mod->is_reserved()) {
             transaction_started.reservation_id.emplace(mod->get_reservation_id());
             mod->cancel_reservation(false); // this allows OCPP1.6 to not move back to available.
