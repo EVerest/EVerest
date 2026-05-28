@@ -239,6 +239,13 @@ macro(_add_trailbook_create_instance_info_file_command)
             "${_trailbook_is_release_option}"
         VERBATIM
     )
+    add_custom_target(
+        trailbook_${args_NAME}_create_instance_info_file
+        DEPENDS
+            ${CURRENT_INSTANCE_INFO_JSON}
+        COMMENT
+            "Trailbook: ${args_NAME} - create instance info file for currently build version"
+    )
 endmacro()
 
 # This macro is for internal use only
@@ -256,10 +263,10 @@ macro(_add_trailbook_create_metadata_file_command)
         DEPENDS
             ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/create_metadata_file.py
             ${STEM_FILES_BUILD_DIR}
+            ${CHECK_DONE_FILE_REPLACE_LATEST}
             ${CHECK_DONE_FILE_SETUP_BUILD_DIRECTORY}
-            ${CURRENT_INSTANCE_INFO_JSON}
-            trailbook_${args_NAME}_stage_prepare_sphinx_source_before
-            $<TARGET_PROPERTY:trailbook_${args_NAME},ADDITIONAL_DEPS_STAGE_PREPARE_SPHINX_SOURCE_BEFORE>
+            trailbook_${args_NAME}_stage_postprocess_sphinx_before
+            $<TARGET_PROPERTY:trailbook_${args_NAME},ADDITIONAL_DEPS_STAGE_POSTPROCESS_SPHINX_BEFORE>
         COMMENT
             "Trailbook: ${args_NAME} - Creating metadata file(s)"
         COMMAND
@@ -270,6 +277,13 @@ macro(_add_trailbook_create_metadata_file_command)
             --multiversion-root-directory "${TRAILBOOK_BUILD_DIRECTORY}"
             "--json-output-path" "${METADATA_JSON_FILE}"
             --current-instance-info "${CURRENT_INSTANCE_INFO_JSON}"
+    )
+    add_custom_target(
+        trailbook_${args_NAME}_create_metadata_file
+        DEPENDS
+            ${METADATA_JSON_FILE}
+        COMMENT
+            "Trailbook: ${args_NAME} - create metadata file for all versions"
     )
 endmacro()
 
@@ -288,7 +302,6 @@ macro(_add_trailbook_sphinx_build_command)
             trailbook_${args_NAME}_stage_build_sphinx_before
             $<TARGET_PROPERTY:trailbook_${args_NAME},ADDITIONAL_DEPS_STAGE_BUILD_SPHINX_BEFORE>
             ${STEM_FILES_BUILD_DIR}
-            ${METADATA_YAML_FILE}
             ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/filelist_manager.py
         COMMENT
             "Trailbook: ${args_NAME} - Building HTML documentation with Sphinx"
@@ -332,13 +345,17 @@ endmacro()
 # It should be only called if TRAILBOOK_INSTANCE_IS_RELEASE is ON.
 macro(_add_trailbook_replace_latest_command)
     set(CHECK_DONE_FILE_REPLACE_LATEST "${CMAKE_CURRENT_BINARY_DIR}/replace_latest.check_done")
+    set(LATEST_INFO_JSON_SOURCE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/templates/latest_info.json")
     add_custom_command(
         OUTPUT
             ${CHECK_DONE_FILE_REPLACE_LATEST}
         DEPENDS
-            trailbook_${args_NAME}_stage_postprocess_sphinx_before
-            $<TARGET_PROPERTY:trailbook_${args_NAME},ADDITIONAL_DEPS_STAGE_POSTPROCESS_SPHINX_BEFORE>
+            trailbook_${args_NAME}_stage_build_sphinx_after
             ${CHECK_DONE_FILE_SPHINX_BUILD_COMMAND}
+            # Wait for info.json to be placed inside the instance build dir
+            # before snapshotting it as 'latest', otherwise the snapshot is
+            # missing info.json.
+            ${CHECK_DONE_FILE_COPY_INSTANCE_INFO}
         COMMENT
             "Trailbook: ${args_NAME} - Replacing 'latest' copy with copy of current instance"
         COMMAND
@@ -347,6 +364,8 @@ macro(_add_trailbook_replace_latest_command)
             ${CMAKE_COMMAND} -E copy_directory
             ${TRAILBOOK_INSTANCE_BUILD_DIRECTORY}
             ${TRAILBOOK_BUILD_DIRECTORY}/latest
+        COMMAND
+            ${CMAKE_COMMAND} -E copy ${LATEST_INFO_JSON_SOURCE} ${TRAILBOOK_BUILD_DIRECTORY}/latest/info.json
         COMMAND
             ${CMAKE_COMMAND} -E touch ${CHECK_DONE_FILE_REPLACE_LATEST}
     )
@@ -475,7 +494,7 @@ macro(_add_trailbook_copy_versions_json_command)
         OUTPUT
             ${CHECK_DONE_FILE_COPY_VERSIONS_JSON}
         DEPENDS
-            ${METADATA_JSON_FILE}
+            trailbook_${args_NAME}_create_metadata_file
             ${CHECK_DONE_FILE_SETUP_BUILD_DIRECTORY}
         COMMENT
             "Trailbook: ${args_NAME} - Copying versions.json to multiversion root directory"
@@ -503,10 +522,9 @@ macro(_add_trailbook_copy_instance_info_command)
         OUTPUT
             ${CHECK_DONE_FILE_COPY_INSTANCE_INFO}
         DEPENDS
-            trailbook_${args_NAME}_stage_postprocess_sphinx_before
-            $<TARGET_PROPERTY:trailbook_${args_NAME},ADDITIONAL_DEPS_STAGE_POSTPROCESS_SPHINX_BEFORE>
+            trailbook_${args_NAME}_stage_build_sphinx_before
+            $<TARGET_PROPERTY:trailbook_${args_NAME},ADDITIONAL_DEPS_STAGE_BUILD_SPHINX_BEFORE>
             ${CHECK_DONE_FILE_SPHINX_BUILD_COMMAND}
-            ${CURRENT_INSTANCE_INFO_JSON}
         COMMENT
             "Trailbook: ${args_NAME} - Copying info.json to instance build directory"
         COMMAND
@@ -515,6 +533,13 @@ macro(_add_trailbook_copy_instance_info_command)
             ${TRAILBOOK_INSTANCE_INFO_FILE}
         COMMAND
             ${CMAKE_COMMAND} -E touch ${CHECK_DONE_FILE_COPY_INSTANCE_INFO}
+    )
+    add_custom_target(
+        trailbook_${args_NAME}_copy_instance_info_file
+        DEPENDS
+            ${CHECK_DONE_FILE_COPY_INSTANCE_INFO}
+        COMMENT
+            "Trailbook: ${args_NAME} - copy instance info file"
     )
 endmacro()
 
@@ -675,7 +700,6 @@ function(add_trailbook)
     set(TRAILBOOK_INSTANCE_DOWNLOAD_ALL_VERSIONS "${TRAILBOOK_${args_NAME}_DOWNLOAD_ALL_VERSIONS}")
 
     set(CURRENT_INSTANCE_INFO_JSON "${CMAKE_CURRENT_BINARY_DIR}/current_instance_info.json")
-    _add_trailbook_create_instance_info_file_command()
 
     message(STATUS "Adding trailbook:               ${args_NAME}")
     message(STATUS "  Stem directory:               ${args_STEM_DIRECTORY}")
@@ -700,12 +724,12 @@ function(add_trailbook)
 
     _add_trailbook_setup_build_directory()
     _add_trailbook_copy_stem_command()
-    _add_trailbook_create_metadata_file_command()
+    _add_trailbook_create_instance_info_file_command()
     set(DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER
         trailbook_${args_NAME}_stage_prepare_sphinx_source_before
         ${CHECK_DONE_FILE_SETUP_BUILD_DIRECTORY}
         ${STEM_FILES_BUILD_DIR}
-        ${METADATA_YAML_FILE}
+        trailbook_${args_NAME}_create_instance_info_file
     )
     add_custom_target(
         trailbook_${args_NAME}_stage_prepare_sphinx_source_after
@@ -721,9 +745,11 @@ function(add_trailbook)
             trailbook_${args_NAME}_stage_prepare_sphinx_source_after
     )
     _add_trailbook_sphinx_build_command()
+    _add_trailbook_copy_instance_info_command()
     set(DEPS_STAGE_BUILD_SPHINX_AFTER
         trailbook_${args_NAME}_stage_build_sphinx_before
         ${CHECK_DONE_FILE_SPHINX_BUILD_COMMAND}
+        trailbook_${args_NAME}_copy_instance_info_file
     )
     add_custom_target(
         trailbook_${args_NAME}_stage_build_sphinx_after
@@ -732,29 +758,34 @@ function(add_trailbook)
         COMMENT
             "Build Sphinx documentation for trailbook: ${args_NAME}"
     )
+    if(TRAILBOOK_INSTANCE_IS_RELEASE)
+        _add_trailbook_replace_latest_command()
+    endif()
+    set(DEPS_STAGE_POSTPROCESS_SPHINX_BEFORE
+        trailbook_${args_NAME}_stage_build_sphinx_after
+        ${CHECK_DONE_FILE_REPLACE_LATEST}
+    )
     add_custom_target(
         trailbook_${args_NAME}_stage_postprocess_sphinx_before
         DEPENDS
             $<TARGET_PROPERTY:trailbook_${args_NAME},ADDITIONAL_DEPS_STAGE_POSTPROCESS_SPHINX_BEFORE>
-            trailbook_${args_NAME}_stage_build_sphinx_after
+            ${DEPS_STAGE_POSTPROCESS_SPHINX_BEFORE}
     )
-    _add_trailbook_copy_versions_index_command()
-    _add_trailbook_copy_versions_json_command()
-    _add_trailbook_copy_instance_info_command()
     if(TRAILBOOK_INSTANCE_IS_RELEASE)
-        _add_trailbook_replace_latest_command()
         _add_trailbook_copy_404_command()
         _add_trailbook_render_redirect_template_command()
     endif()
+    _add_trailbook_create_metadata_file_command()
+    _add_trailbook_copy_versions_index_command()
+    _add_trailbook_copy_versions_json_command()
 
     set(DEPS_STAGE_POSTPROCESS_SPHINX_AFTER
         trailbook_${args_NAME}_stage_postprocess_sphinx_before
-        ${CHECK_DONE_FILE_REPLACE_LATEST}
         ${CHECK_DONE_FILE_COPY_404}
         ${CHECK_DONE_FILE_COPY_VERSIONS_INDEX}
         ${CHECK_DONE_FILE_COPY_VERSIONS_JSON}
-        ${CHECK_DONE_FILE_COPY_INSTANCE_INFO}
         ${CHECK_DONE_FILE_RENDER_REDIRECT_TEMPLATE}
+        trailbook_${args_NAME}_create_metadata_file
     )
     add_custom_target(
         trailbook_${args_NAME}_stage_postprocess_sphinx_after

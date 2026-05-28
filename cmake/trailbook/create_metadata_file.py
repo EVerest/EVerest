@@ -19,7 +19,7 @@ If info.json is missing or unreadable (LEGACY entries, deployed before
 info.json was introduced):
   - name and display fall back to the directory name
   - is_release is inferred from the configured legacy prefix
-    (--legacy-release-prefix, default 'old-documentation-2025')
+    (--legacy-release-prefix, default 'old-documentation-')
 
 Legacy entries get rewritten with a proper info.json the next time their
 instance is rebuilt, so this fallback is only relevant during migration.
@@ -35,7 +35,7 @@ def load_instance_info(instance_dir: Path, legacy_release_prefix: str) -> dict:
     """Read info.json from an instance directory, falling back to dir name.
 
     For legacy entries (no/unreadable info.json), is_release is inferred from
-    `legacy_release_prefix` so legacy `old-documentation-2025*` dirs still sort with the
+    `legacy_release_prefix` so legacy `old-documentation-*` dirs still sort with the
     other releases in the version switcher.
     """
     info_file = instance_dir / 'info.json'
@@ -51,7 +51,7 @@ def load_instance_info(instance_dir: Path, legacy_release_prefix: str) -> dict:
             print(f"\033[33mWarning: failed to read {info_file}: {e}; falling back to directory name\033[0m")
     return {
         'name': instance_dir.name,
-        'display': instance_dir.name,
+        'display': instance_dir.name.replace(legacy_release_prefix, " OLD: "),
         'is_release': (
             bool(legacy_release_prefix)
             and instance_dir.name.startswith(legacy_release_prefix)
@@ -62,7 +62,7 @@ def load_instance_info(instance_dir: Path, legacy_release_prefix: str) -> dict:
 def load_versions_data(
     multiversion_root_dir: Path,
     current_instance_info_path: Path = None,
-    legacy_release_prefix: str = 'old-documentation-2025',
+    legacy_release_prefix: str = 'old-documentation-',
 ) -> dict:
     """Aggregate per-instance metadata into the versions.json payload.
 
@@ -95,12 +95,12 @@ def load_versions_data(
     # Releases first (newest-named on top), then non-releases.
     releases = sorted(
         (v for v in versions_by_name.values() if v.get('is_release')),
-        key=lambda v: v['name'],
+        key=lambda v: v['display'],
         reverse=True,
     )
     non_releases = sorted(
         (v for v in versions_by_name.values() if not v.get('is_release')),
-        key=lambda v: v['name'],
+        key=lambda v: v['display'],
     )
     return {'versions': releases + non_releases}
 

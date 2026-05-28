@@ -158,7 +158,7 @@
                 var others = [];
                 versions.forEach(function (e) {
                     if (e.name === 'nightly') top.push(e);
-                    if (e.name === 'latest') top.push(e);
+                    else if (e.name === 'latest') top.push(e);
                     else if (e.is_release) releases.push(e);
                     else others.push(e);
                 });
