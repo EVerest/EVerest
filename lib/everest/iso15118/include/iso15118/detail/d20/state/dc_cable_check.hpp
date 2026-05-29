@@ -3,7 +3,7 @@
 #pragma once
 
 #include <iso15118/d20/session.hpp>
-#include <iso15118/message/dc_cable_check.hpp>
+#include <iso15118/message/d20/dc_cable_check.hpp>
 
 namespace iso15118::d20::state {
 

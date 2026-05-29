@@ -15,7 +15,7 @@
 #include <iso15118/io/poll_manager.hpp>
 #include <iso15118/io/sdp_server.hpp>
 #include <iso15118/io/time.hpp>
-#include <iso15118/message/common_types.hpp>
+#include <iso15118/message/d20/common_types.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/session/iso.hpp>
 

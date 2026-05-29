@@ -4,7 +4,7 @@
 
 #include <cassert>
 
-#include <iso15118/message/variant.hpp>
+#include <iso15118/message/d20/variant.hpp>
 
 #include "cb_exi.hpp"
 

@@ -7,7 +7,7 @@
 #include <iso15118/d20/state/service_detail.hpp>
 #include <iso15118/d20/state/service_selection.hpp>
 
-#include <iso15118/message/service_detail.hpp>
+#include <iso15118/message/d20/service_detail.hpp>
 
 #include <iso15118/detail/helper.hpp>
 

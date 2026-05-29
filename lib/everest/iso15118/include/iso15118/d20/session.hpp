@@ -10,7 +10,7 @@
 #include <vector>
 
 #include <iso15118/io/sha_hash.hpp>
-#include <iso15118/message/common_types.hpp>
+#include <iso15118/message/d20/common_types.hpp>
 
 #include <everest/util/vector/fixed_vector.hpp>
 

@@ -7,8 +7,8 @@
 #include <variant>
 
 #include <iso15118/message/d2/variant.hpp>
-#include <iso15118/message/payload_type.hpp>
-#include <iso15118/message/variant.hpp>
+#include <iso15118/message/d20/payload_type.hpp>
+#include <iso15118/message/d20/variant.hpp>
 
 namespace iso15118 {
 

@@ -11,14 +11,14 @@
 #include <iso15118/d20/ev_information.hpp>
 #include <iso15118/d20/limits.hpp>
 #include <iso15118/d20/session.hpp>
-#include <iso15118/message/ac_charge_loop.hpp>
-#include <iso15118/message/ac_charge_parameter_discovery.hpp>
-#include <iso15118/message/dc_charge_loop.hpp>
-#include <iso15118/message/dc_charge_parameter_discovery.hpp>
-#include <iso15118/message/schedule_exchange.hpp>
-#include <iso15118/message/service_detail.hpp>
-#include <iso15118/message/service_selection.hpp>
-#include <iso15118/message/type.hpp>
+#include <iso15118/message/d20/ac_charge_loop.hpp>
+#include <iso15118/message/d20/ac_charge_parameter_discovery.hpp>
+#include <iso15118/message/d20/dc_charge_loop.hpp>
+#include <iso15118/message/d20/dc_charge_parameter_discovery.hpp>
+#include <iso15118/message/d20/schedule_exchange.hpp>
+#include <iso15118/message/d20/service_detail.hpp>
+#include <iso15118/message/d20/service_selection.hpp>
+#include <iso15118/message/d20/type.hpp>
 
 namespace iso15118::session {
 

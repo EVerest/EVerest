@@ -6,7 +6,7 @@
 #include <tuple>
 
 #include <iso15118/d20/session.hpp>
-#include <iso15118/message/dc_pre_charge.hpp>
+#include <iso15118/message/d20/dc_pre_charge.hpp>
 
 #include <iso15118/session/feedback.hpp>
 

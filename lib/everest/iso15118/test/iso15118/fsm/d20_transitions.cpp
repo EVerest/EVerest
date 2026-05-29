@@ -7,7 +7,7 @@
 #include <iso15118/d20/state/session_setup.hpp>
 #include <iso15118/d20/state/supported_app_protocol.hpp>
 
-#include <iso15118/message/supported_app_protocol.hpp>
+#include <iso15118/message/d20/supported_app_protocol.hpp>
 
 using namespace iso15118;
 

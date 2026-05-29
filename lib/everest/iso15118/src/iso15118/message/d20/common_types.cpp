@@ -2,10 +2,10 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #include <cmath>
 
-#include <iso15118/message/common_types.hpp>
+#include <iso15118/message/d20/common_types.hpp>
 
 #include <iso15118/detail/cb_exi.hpp>
-#include <iso15118/message/variant.hpp>
+#include <iso15118/message/d20/variant.hpp>
 
 #include <cbv2g/iso_20/iso20_AC_Datatypes.h>
 #include <cbv2g/iso_20/iso20_CommonMessages_Datatypes.h>

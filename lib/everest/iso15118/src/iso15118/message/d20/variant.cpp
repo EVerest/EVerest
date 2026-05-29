@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
-#include <iso15118/message/variant.hpp>
+#include <iso15118/message/d20/variant.hpp>
 
 #include <cassert>
 #include <string>

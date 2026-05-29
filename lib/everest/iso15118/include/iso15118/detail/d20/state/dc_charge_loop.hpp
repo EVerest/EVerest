@@ -11,7 +11,7 @@
 #include <iso15118/d20/dynamic_mode_parameters.hpp>
 #include <iso15118/d20/limits.hpp>
 #include <iso15118/d20/session.hpp>
-#include <iso15118/message/dc_charge_loop.hpp>
+#include <iso15118/message/d20/dc_charge_loop.hpp>
 
 #include <iso15118/session/feedback.hpp>
 

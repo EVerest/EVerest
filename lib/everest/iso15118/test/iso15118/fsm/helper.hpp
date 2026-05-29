@@ -15,7 +15,7 @@
 #include <iso15118/io/logging.hpp>
 #include <iso15118/io/sdp.hpp>
 #include <iso15118/io/stream_view.hpp>
-#include <iso15118/message/variant.hpp>
+#include <iso15118/message/d20/variant.hpp>
 #include <iso15118/session/feedback.hpp>
 
 using namespace iso15118;

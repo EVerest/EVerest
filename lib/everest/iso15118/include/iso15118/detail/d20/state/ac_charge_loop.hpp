@@ -3,7 +3,7 @@
 #pragma once
 
 #include <iso15118/d20/session.hpp>
-#include <iso15118/message/ac_charge_loop.hpp>
+#include <iso15118/message/d20/ac_charge_loop.hpp>
 
 #include <iso15118/d20/ac_powers.hpp>
 #include <iso15118/d20/dynamic_mode_parameters.hpp>

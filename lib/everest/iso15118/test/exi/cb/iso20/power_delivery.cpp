@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <iso15118/message/power_delivery.hpp>
-#include <iso15118/message/variant.hpp>
+#include <iso15118/message/d20/power_delivery.hpp>
+#include <iso15118/message/d20/variant.hpp>
 
 #include "helper.hpp"
 

@@ -3,7 +3,7 @@
 #pragma once
 
 #include "../states.hpp"
-#include <iso15118/message/authorization.hpp>
+#include <iso15118/message/d20/authorization.hpp>
 
 namespace iso15118::d20::state {
 struct Authorization : public StateBase {

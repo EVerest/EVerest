@@ -3,7 +3,7 @@
 #pragma once
 
 #include <iso15118/d20/session.hpp>
-#include <iso15118/message/session_stop.hpp>
+#include <iso15118/message/d20/session_stop.hpp>
 
 namespace iso15118::d20::state {
 

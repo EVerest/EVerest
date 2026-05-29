@@ -5,7 +5,7 @@
 #include <iso15118/d20/ac_powers.hpp>
 #include <iso15118/d20/config.hpp>
 #include <iso15118/d20/session.hpp>
-#include <iso15118/message/ac_charge_parameter_discovery.hpp>
+#include <iso15118/message/d20/ac_charge_parameter_discovery.hpp>
 
 namespace iso15118::d20::state {
 

@@ -7,7 +7,7 @@
 
 #include <iso15118/d20/state/session_setup.hpp>
 
-#include <iso15118/message/supported_app_protocol.hpp>
+#include <iso15118/message/d20/supported_app_protocol.hpp>
 
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/helper.hpp>

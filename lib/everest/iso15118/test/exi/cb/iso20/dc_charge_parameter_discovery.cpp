@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <iso15118/message/dc_charge_parameter_discovery.hpp>
-#include <iso15118/message/variant.hpp>
+#include <iso15118/message/d20/dc_charge_parameter_discovery.hpp>
+#include <iso15118/message/d20/variant.hpp>
 
 #include "helper.hpp"
 

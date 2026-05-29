@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
-#include <iso15118/message/dc_welding_detection.hpp>
+#include <iso15118/message/d20/dc_welding_detection.hpp>
 
 #include <type_traits>
 

@@ -3,7 +3,7 @@
 #pragma once
 
 #include <iso15118/d20/session.hpp>
-#include <iso15118/message/schedule_exchange.hpp>
+#include <iso15118/message/d20/schedule_exchange.hpp>
 
 #include <cstdint>
 #include <ctime>

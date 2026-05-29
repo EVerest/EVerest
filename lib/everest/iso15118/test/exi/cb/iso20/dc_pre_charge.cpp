@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <iso15118/message/dc_pre_charge.hpp>
-#include <iso15118/message/variant.hpp>
+#include <iso15118/message/d20/dc_pre_charge.hpp>
+#include <iso15118/message/d20/variant.hpp>
 
 #include "helper.hpp"
 

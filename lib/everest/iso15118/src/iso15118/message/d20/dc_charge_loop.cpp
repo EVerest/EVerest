@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
-#include <iso15118/message/dc_charge_loop.hpp>
+#include <iso15118/message/d20/dc_charge_loop.hpp>
 
 #include <type_traits>
 

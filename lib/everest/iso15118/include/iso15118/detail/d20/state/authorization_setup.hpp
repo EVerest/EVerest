@@ -4,7 +4,7 @@
 
 #include <iso15118/d20/config.hpp>
 #include <iso15118/d20/session.hpp>
-#include <iso15118/message/authorization_setup.hpp>
+#include <iso15118/message/d20/authorization_setup.hpp>
 
 namespace iso15118::d20::state {
 

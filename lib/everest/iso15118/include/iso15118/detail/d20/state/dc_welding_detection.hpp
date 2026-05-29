@@ -3,7 +3,7 @@
 #pragma once
 
 #include <iso15118/d20/session.hpp>
-#include <iso15118/message/dc_welding_detection.hpp>
+#include <iso15118/message/d20/dc_welding_detection.hpp>
 
 namespace iso15118::d20::state {
 

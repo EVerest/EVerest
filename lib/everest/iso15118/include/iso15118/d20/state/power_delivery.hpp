@@ -4,7 +4,7 @@
 
 #include "../states.hpp"
 
-#include <iso15118/message/power_delivery.hpp>
+#include <iso15118/message/d20/power_delivery.hpp>
 #include <optional>
 
 namespace iso15118::d20::state {

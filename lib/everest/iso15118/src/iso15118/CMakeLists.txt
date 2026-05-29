@@ -48,25 +48,25 @@ target_sources(iso15118
         d20/state/ac_charge_loop.cpp
         d20/state/session_stop.cpp
         
-        message/variant.cpp
-        message/supported_app_protocol.cpp
-        message/session_setup.cpp
-        message/common_types.cpp
-        message/authorization_setup.cpp
-        message/authorization.cpp
-        message/service_discovery.cpp
-        message/service_detail.cpp
-        message/service_selection.cpp
-        message/ac_charge_parameter_discovery.cpp
-        message/dc_charge_parameter_discovery.cpp
-        message/schedule_exchange.cpp
-        message/dc_cable_check.cpp
-        message/dc_pre_charge.cpp
-        message/power_delivery.cpp
-        message/ac_charge_loop.cpp
-        message/dc_charge_loop.cpp
-        message/dc_welding_detection.cpp
-        message/session_stop.cpp
+        message/d20/variant.cpp
+        message/d20/supported_app_protocol.cpp
+        message/d20/session_setup.cpp
+        message/d20/common_types.cpp
+        message/d20/authorization_setup.cpp
+        message/d20/authorization.cpp
+        message/d20/service_discovery.cpp
+        message/d20/service_detail.cpp
+        message/d20/service_selection.cpp
+        message/d20/ac_charge_parameter_discovery.cpp
+        message/d20/dc_charge_parameter_discovery.cpp
+        message/d20/schedule_exchange.cpp
+        message/d20/dc_cable_check.cpp
+        message/d20/dc_pre_charge.cpp
+        message/d20/power_delivery.cpp
+        message/d20/ac_charge_loop.cpp
+        message/d20/dc_charge_loop.cpp
+        message/d20/dc_welding_detection.cpp
+        message/d20/session_stop.cpp
 
         message/d2/variant.cpp
         message/d2/session_setup.cpp

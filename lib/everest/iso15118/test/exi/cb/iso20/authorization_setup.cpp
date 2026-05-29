@@ -2,8 +2,8 @@
 
 #include <string>
 
-#include <iso15118/message/authorization_setup.hpp>
-#include <iso15118/message/variant.hpp>
+#include <iso15118/message/d20/authorization_setup.hpp>
+#include <iso15118/message/d20/variant.hpp>
 
 #include "helper.hpp"
 

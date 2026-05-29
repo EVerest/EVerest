@@ -9,8 +9,8 @@
 #include <tuple>
 
 #include <iso15118/d20/timeout.hpp>
-#include <iso15118/message/payload_type.hpp>
-#include <iso15118/message/variant.hpp>
+#include <iso15118/message/d20/payload_type.hpp>
+#include <iso15118/message/d20/variant.hpp>
 #include <iso15118/message_exchange.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/session/logger.hpp>

@@ -4,7 +4,7 @@
 
 #include <iso15118/d20/config.hpp>
 #include <iso15118/d20/session.hpp>
-#include <iso15118/message/service_selection.hpp>
+#include <iso15118/message/d20/service_selection.hpp>
 
 namespace iso15118::d20::state {
 
