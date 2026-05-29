@@ -21,19 +21,14 @@ void Stopping::enter() {
 
 StateBase::Result Stopping::feed(EventType ev) {
     using EK = EventKind;
-    switch (ev.kind) {
+    switch (kind_of(ev)) {
     case EK::IsoV2GFinished:
         return {false, std::make_unique<Unplugged>(ctx)};
     case EK::StateDeadline:
-        // Forced timeout - fall through to Unplugged.
+        // Forced timeout - transition to Unplugged.
         return {false, std::make_unique<Unplugged>(ctx)};
-    case EK::BspEvent: {
-        const auto& p = std::get<BspEventPayload>(ev.payload);
-        if (::types::board_support_common::event_to_string(p.bsp_event.event) == "Disconnected") {
-            return {false, std::make_unique<Unplugged>(ctx)};
-        }
-        return {true, nullptr};
-    }
+    case EK::BspEvent:
+        return handle_disconnect(ev);
     case EK::InjectFault: {
         auto p = std::get<api::InjectFaultParams>(ev.payload);
         return transition_to_fault(ctx, p);
@@ -42,33 +37,15 @@ StateBase::Result Stopping::feed(EventType ev) {
         return transition_to_disabled(ctx);
     case EK::QueryState:
         return handle_query_state(ctx, api::FsmState::Stopping);
-    case EK::StartSession:
-        ctx.publish_e2m_command_ack("start_session", "session stopping");
-        return {false, nullptr};
     case EK::StopSession:
-        ctx.publish_e2m_command_ack("stop_session", "session stopping");
-        return {false, nullptr};
     case EK::PauseSession:
-        ctx.publish_e2m_command_ack("pause_session", "session stopping");
-        return {false, nullptr};
     case EK::ResumeSession:
-        ctx.publish_e2m_command_ack("resume_session", "session stopping");
-        return {false, nullptr};
     case EK::SetChargingCurrent:
-        ctx.publish_e2m_command_ack("set_charging_current", "session stopping");
-        return {false, nullptr};
     case EK::ClearFault:
-        ctx.publish_e2m_command_ack("clear_fault", "session stopping");
-        return {false, nullptr};
     case EK::BcbToggle:
-        ctx.publish_e2m_command_ack("bcb_toggle", "session stopping");
-        return {false, nullptr};
     case EK::SetSoc:
-        ctx.publish_e2m_command_ack("set_soc", "session stopping");
-        return {false, nullptr};
     case EK::RunScenario:
-        ctx.publish_e2m_command_ack("run_scenario", "session stopping");
-        return {false, nullptr};
+        return reject(ev, "session stopping");
     case EK::Unplug:
     case EK::Plug:
     case EK::Enable:
@@ -81,6 +58,14 @@ StateBase::Result Stopping::feed(EventType ev) {
     case EK::IsoStopFromCharger:
     case EK::IsoDcPowerOn:
     case EK::IsoPauseFromCharger:
+    // RaiseError / ClearError are intercepted on the loop thread before the
+    // FSM feed; listed only to keep the switch exhaustive (-Werror=switch).
+    // ConfigureSession is intercepted pre-FSM (loop thread); BeginSession is
+    // an internal Plugged-only self-advance. Listed for switch exhaustiveness.
+    case EK::ConfigureSession:
+    case EK::BeginSession:
+    case EK::RaiseError:
+    case EK::ClearError:
     case EK::Shutdown:
         return {true, nullptr};
     }

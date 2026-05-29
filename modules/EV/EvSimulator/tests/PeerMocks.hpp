@@ -6,11 +6,10 @@
 //
 // The ev-cli generated `ev_board_supportIntf`, `ISO15118_evIntf`, `ev_slacIntf`,
 // and `kvsIntf` classes have non-virtual `call_*` methods and require a real
-// `Everest::ModuleAdapter*` for construction, so they cannot be subclassed and
-// passed through `PeerHandles` to intercept calls. Instead, this header
-// provides hand-rolled recorder classes that mirror the subset of `call_*`
-// methods FsmContext invokes; tests use these recorders directly to assert
-// expected calls.
+// `Everest::ModuleAdapter*` for construction, so they cannot be subclassed to
+// intercept calls. This header provides hand-rolled recorder classes that mirror
+// the subset of `call_*` methods FsmContext invokes; tests use these recorders
+// directly to assert expected calls.
 //
 // FsmContext shortcuts (set_cp, allow_power_on, iso_*, slac_trigger_matching,
 // kvs_*) route through these recorders via PeerActions function-pointer
@@ -99,14 +98,6 @@ public:
     void clear() {
         records.clear();
     }
-};
-
-// Bundle of all four mocks; convenience for test fixture wiring.
-struct MockPeerHandles {
-    MockBoardSupport bsp;
-    MockIso15118Ev iso;
-    MockEvSlac slac;
-    MockKvs kvs;
 };
 
 } // namespace module::test

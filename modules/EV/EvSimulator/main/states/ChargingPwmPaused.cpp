@@ -19,7 +19,7 @@ void ChargingPwmPaused::enter() {
 
 StateBase::Result ChargingPwmPaused::feed(EventType ev) {
     using EK = EventKind;
-    switch (ev.kind) {
+    switch (kind_of(ev)) {
     case EK::BspMeasurement: {
         const auto& m = std::get<BspMeasurementPayload>(ev.payload);
         ctx.vars.pwm_duty_cycle = m.cp_pwm_duty_cycle;
@@ -30,13 +30,8 @@ StateBase::Result ChargingPwmPaused::feed(EventType ev) {
     }
     case EK::Unplug:
         return {false, std::make_unique<Unplugged>(ctx)};
-    case EK::BspEvent: {
-        const auto& p = std::get<BspEventPayload>(ev.payload);
-        if (::types::board_support_common::event_to_string(p.bsp_event.event) == "Disconnected") {
-            return {false, std::make_unique<Unplugged>(ctx)};
-        }
-        return {true, nullptr};
-    }
+    case EK::BspEvent:
+        return handle_disconnect(ev);
     case EK::StopSession:
         // AC IEC: direct unplug-equivalent.
         return {false, std::make_unique<Unplugged>(ctx)};
@@ -69,7 +64,6 @@ StateBase::Result ChargingPwmPaused::feed(EventType ev) {
         return transition_to_disabled(ctx);
     case EK::QueryState:
         return handle_query_state(ctx, api::FsmState::ChargingPwmPaused);
-    case EK::StartSession:
     case EK::ClearFault:
     case EK::SetSoc:
     case EK::RunScenario:
@@ -82,6 +76,14 @@ StateBase::Result ChargingPwmPaused::feed(EventType ev) {
     case EK::IsoV2GFinished:
     case EK::IsoDcPowerOn:
     case EK::StateDeadline:
+    // RaiseError / ClearError are intercepted on the loop thread before the
+    // FSM feed; listed only to keep the switch exhaustive (-Werror=switch).
+    // ConfigureSession is intercepted pre-FSM (loop thread); BeginSession is
+    // an internal Plugged-only self-advance. Listed for switch exhaustiveness.
+    case EK::ConfigureSession:
+    case EK::BeginSession:
+    case EK::RaiseError:
+    case EK::ClearError:
     case EK::Shutdown:
         return {true, nullptr};
     }

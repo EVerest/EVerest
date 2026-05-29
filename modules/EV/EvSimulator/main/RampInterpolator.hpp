@@ -10,7 +10,7 @@ class FsmContext;
 
 // Advances an in-flight current ramp captured in ctx.vars.active_ramp.
 //
-// Invoked from EvSimRuntime::on_tick() before SocIntegrator::step so that SoC
+// Invoked from EvSimRuntime::on_tick() before soc_step so that SoC
 // integration sees the freshly commanded current. When now >= end_at the
 // commanded current snaps to target_a and active_ramp is cleared; otherwise
 // the commanded current is the linear interpolation between start_a and
@@ -18,9 +18,6 @@ class FsmContext;
 //
 // `now` is injected so unit tests can drive the interpolator deterministically
 // against a controlled time source.
-class RampInterpolator {
-public:
-    static void step(FsmContext& ctx, std::chrono::steady_clock::time_point now);
-};
+void ramp_step(FsmContext& ctx, std::chrono::steady_clock::time_point now);
 
 } // namespace module

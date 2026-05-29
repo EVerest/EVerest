@@ -96,6 +96,18 @@ def test_dc_iso_bpt_end_to_end(everest_core, evsim_test_controller):
 
     _assert_not_faulted(evsim_test_controller)
 
+    # "Charging + not Faulted" alone passes vacuously if the negotiated
+    # BPT envelope was ignored. Require real energy transfer (the tick
+    # integrator advancing SoC) as an affirmative signal the session is
+    # live end to end.
+    # NOTE: directional BPT discharge (negative current) is not
+    # observable from the EV side over the current e2m topic set; a true
+    # "BPT params applied" assertion needs an EVSE-side probe and is
+    # tracked separately.
+    assert evsim_test_controller.state_collector.wait_for_soc_progress(
+        min_increase=0.01, timeout=_TIMEOUT_BSP_EVENT
+    ), "SoC did not advance under DcIsoBpt; session not charging end to end"
+
 
 @pytest.mark.everest_core_config("config-sil-evsim-dc-bpt.yaml")
 def test_dc_iso_mcs_end_to_end(everest_core, evsim_test_controller):
@@ -123,3 +135,8 @@ def test_dc_iso_mcs_end_to_end(everest_core, evsim_test_controller):
         "EvSimulator did not publish any bsp_event under DcIsoMcs; "
         "MCS power class envelope not observable"
     )
+
+    # Real energy transfer under the MCS envelope, not just FSM state.
+    assert evsim_test_controller.state_collector.wait_for_soc_progress(
+        min_increase=0.01, timeout=_TIMEOUT_BSP_EVENT
+    ), "SoC did not advance under DcIsoMcs; session not charging end to end"

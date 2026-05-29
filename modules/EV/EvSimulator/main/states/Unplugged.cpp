@@ -6,19 +6,25 @@
 #include "../ScenarioDispatcher.hpp"
 #include "Plugged.hpp"
 
+#include <algorithm>
+
 namespace module {
 
 namespace api = API_types::ev_simulator;
 
 void Unplugged::enter() {
+    // The BSP peer's simulation loop is gated on its own enabled flag; arm
+    // it on every Unplugged entry so the path from Disabled (where the BSP
+    // is parked) back to Unplugged restarts the peer's CP/PWM propagation.
+    // Idempotent on transitions between non-Disabled states.
+    ctx.enable_bsp(true);
     ctx.set_cp(::types::ev_board_support::EvCpState::A);
     ctx.allow_power_on(false);
     ctx.iso_stop_charging();
-    ctx.vars.charge_mode.reset();
-    ctx.vars.bpt.reset();
-    ctx.vars.mcs.reset();
+    ctx.vars.session.reset();
     ctx.vars.last_fault.reset();
-    ctx.persisted.plugged_in = false;
+    ctx.vars.was_full = false;
+    ctx.mark_plugged_in(false);
     ctx.scenario.reset();
     ctx.kvs_save();
     ctx.publish_e2m_state(api::FsmState::Unplugged);
@@ -26,48 +32,35 @@ void Unplugged::enter() {
 
 StateBase::Result Unplugged::feed(EventType ev) {
     using EK = EventKind;
-    switch (ev.kind) {
+    switch (kind_of(ev)) {
     case EK::Plug:
         return {false, std::make_unique<Plugged>(ctx)};
     case EK::RunScenario: {
         auto p = std::get<api::RunScenarioParams>(ev.payload);
-        ctx.scenario.start(p.name, ctx);
+        ctx.scenario.start(p.name, p.timing, ctx);
         return {false, nullptr};
     }
     case EK::Disable:
         return transition_to_disabled(ctx);
     case EK::SetSoc: {
         auto p = std::get<api::SetSocParams>(ev.payload);
-        ctx.vars.battery_charge_wh = (p.soc_pct / 100.0f) * ctx.vars.battery_capacity_wh;
-        ctx.vars.soc_pct = p.soc_pct;
+        // Clamp at the write site so a single out-of-range value (e.g. 1e30)
+        // cannot publish on e2m/ev_info before the next-tick clamp catches it.
+        const float clamped_soc = std::clamp(p.soc_pct, 0.0f, 100.0f);
+        ctx.vars.soc_pct = clamped_soc;
+        ctx.vars.battery_charge_wh = ctx.vars.battery_capacity_wh * (clamped_soc / 100.0f);
         return {false, nullptr};
     }
     case EK::QueryState:
         return handle_query_state(ctx, api::FsmState::Unplugged);
-    case EK::StartSession:
-        ctx.publish_e2m_command_ack("start_session", "no session active");
-        return {false, nullptr};
     case EK::StopSession:
-        ctx.publish_e2m_command_ack("stop_session", "no session active");
-        return {false, nullptr};
     case EK::PauseSession:
-        ctx.publish_e2m_command_ack("pause_session", "no session active");
-        return {false, nullptr};
     case EK::ResumeSession:
-        ctx.publish_e2m_command_ack("resume_session", "no session active");
-        return {false, nullptr};
     case EK::SetChargingCurrent:
-        ctx.publish_e2m_command_ack("set_charging_current", "no session active");
-        return {false, nullptr};
     case EK::InjectFault:
-        ctx.publish_e2m_command_ack("inject_fault", "no session active");
-        return {false, nullptr};
     case EK::ClearFault:
-        ctx.publish_e2m_command_ack("clear_fault", "no session active");
-        return {false, nullptr};
     case EK::BcbToggle:
-        ctx.publish_e2m_command_ack("bcb_toggle", "no session active");
-        return {false, nullptr};
+        return reject(ev, "no session active");
     case EK::Unplug:
         return {true, nullptr};
     case EK::BspEvent:
@@ -82,6 +75,14 @@ StateBase::Result Unplugged::feed(EventType ev) {
     case EK::IsoDcPowerOn:
     case EK::IsoPauseFromCharger:
     case EK::StateDeadline:
+    // RaiseError / ClearError are intercepted on the loop thread before the
+    // FSM feed; listed only to keep the switch exhaustive (-Werror=switch).
+    // ConfigureSession is intercepted pre-FSM (loop thread); BeginSession is
+    // an internal Plugged-only self-advance. Listed for switch exhaustiveness.
+    case EK::ConfigureSession:
+    case EK::BeginSession:
+    case EK::RaiseError:
+    case EK::ClearError:
     case EK::Shutdown:
     case EK::Enable:
         return {true, nullptr};

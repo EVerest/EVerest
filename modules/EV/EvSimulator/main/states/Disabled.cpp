@@ -13,7 +13,7 @@ void Disabled::enter() {
 
 StateBase::Result Disabled::feed(EventType ev) {
     using EK = EventKind;
-    switch (ev.kind) {
+    switch (kind_of(ev)) {
     case EK::Enable:
         return {false, std::make_unique<Unplugged>(ctx)};
     case EK::QueryState:
@@ -23,39 +23,17 @@ StateBase::Result Disabled::feed(EventType ev) {
     case EK::InjectFault:
         ctx.publish_e2m_command_ack("inject_fault", "InjectFault requires session");
         return {false, nullptr};
-    case EK::StartSession:
-        ctx.publish_e2m_command_ack("start_session", "module disabled");
-        return {false, nullptr};
     case EK::StopSession:
-        ctx.publish_e2m_command_ack("stop_session", "module disabled");
-        return {false, nullptr};
     case EK::SetSoc:
-        ctx.publish_e2m_command_ack("set_soc", "module disabled");
-        return {false, nullptr};
     case EK::SetChargingCurrent:
-        ctx.publish_e2m_command_ack("set_charging_current", "module disabled");
-        return {false, nullptr};
     case EK::PauseSession:
-        ctx.publish_e2m_command_ack("pause_session", "module disabled");
-        return {false, nullptr};
     case EK::ResumeSession:
-        ctx.publish_e2m_command_ack("resume_session", "module disabled");
-        return {false, nullptr};
     case EK::BcbToggle:
-        ctx.publish_e2m_command_ack("bcb_toggle", "module disabled");
-        return {false, nullptr};
     case EK::RunScenario:
-        ctx.publish_e2m_command_ack("run_scenario", "module disabled");
-        return {false, nullptr};
     case EK::ClearFault:
-        ctx.publish_e2m_command_ack("clear_fault", "module disabled");
-        return {false, nullptr};
     case EK::Plug:
-        ctx.publish_e2m_command_ack("plug", "module disabled");
-        return {false, nullptr};
     case EK::Unplug:
-        ctx.publish_e2m_command_ack("unplug", "module disabled");
-        return {false, nullptr};
+        return reject(ev, "module disabled");
     case EK::BspEvent:
     case EK::BspMeasurement:
     case EK::EvInfo:
@@ -68,6 +46,15 @@ StateBase::Result Disabled::feed(EventType ev) {
     case EK::IsoDcPowerOn:
     case EK::IsoPauseFromCharger:
     case EK::StateDeadline:
+    // RaiseError / ClearError are intercepted on the loop thread before the
+    // FSM feed, so they never reach a state; listed only to keep the switch
+    // exhaustive (-Werror=switch).
+    // ConfigureSession is intercepted pre-FSM (loop thread); BeginSession is
+    // an internal Plugged-only self-advance. Listed for switch exhaustiveness.
+    case EK::ConfigureSession:
+    case EK::BeginSession:
+    case EK::RaiseError:
+    case EK::ClearError:
     case EK::Shutdown:
         return {true, nullptr};
     }

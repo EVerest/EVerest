@@ -8,7 +8,10 @@
 #include <everest/logging.hpp>
 #include <everest_api_types/ev_simulator/codec.hpp>
 
+#include <cstddef>
 #include <string>
+#include <type_traits>
+#include <variant>
 
 namespace module {
 
@@ -22,33 +25,35 @@ std::string kvs_key(int connector_id) {
 
 // PersistedState <-> JSON. Enum members are stored via their public typed-API
 // serializer to avoid pulling in the private `json_codec.hpp`.
+//
+// Unknown keys (e.g. a `last_scenario` from an older blob) are silently
+// dropped by nlohmann::json's `find` / `value` lookups, so a KVS payload
+// produced before the field was removed still round-trips correctly.
 void to_json(nlohmann::json& j, const PersistedState& s) {
     j = nlohmann::json{{"plugged_in", s.plugged_in}};
-    if (s.last_mode) {
-        j["last_mode"] = nlohmann::json::parse(API_types::ev_simulator::serialize(*s.last_mode));
-    }
-    if (s.last_scenario) {
-        j["last_scenario"] = nlohmann::json::parse(API_types::ev_simulator::serialize(*s.last_scenario));
+    if (s.configured_session) {
+        j["configured_session"] = nlohmann::json::parse(API_types::ev_simulator::serialize(*s.configured_session));
     }
 }
 
 void from_json(const nlohmann::json& j, PersistedState& s) {
-    s.plugged_in = j.value("plugged_in", false);
-    s.last_mode.reset();
-    s.last_scenario.reset();
-    if (auto it = j.find("last_mode"); it != j.end() && !it->is_null()) {
-        s.last_mode = API_types::ev_simulator::deserialize<API_types::ev_simulator::ChargeMode>(it->dump());
-    }
-    if (auto it = j.find("last_scenario"); it != j.end() && !it->is_null()) {
-        s.last_scenario = API_types::ev_simulator::deserialize<API_types::ev_simulator::ScenarioName>(it->dump());
+    // Use `at` rather than `value(..., false)` so a missing or wrong-type
+    // "plugged_in" field surfaces as a json::exception caught by kvs_load and
+    // logged at error level. The previous `value` form silently fabricated
+    // `false` for a corrupt payload missing the field.
+    s.plugged_in = j.at("plugged_in").get<bool>();
+    s.configured_session.reset();
+    // Unknown keys (e.g. a `last_mode` from a pre-configure_session blob) are
+    // ignored by this find, so legacy KVS payloads load without throwing.
+    if (auto it = j.find("configured_session"); it != j.end() && !it->is_null()) {
+        s.configured_session =
+            API_types::ev_simulator::deserialize<API_types::ev_simulator::SessionConfigParams>(it->dump());
     }
 }
 
-FsmContext::FsmContext(PeerHandles peers_, PeerActions actions, Publisher pub, TimerArm timer_arm,
-                       TimerCancel timer_cancel, TickArm tick_arm, TickDisarm tick_disarm,
-                       ScenarioEnqueue enqueue_event, ScenarioTimerArm scenario_timer_arm, const Conf& cfg_,
-                       const ev_API::Topics& topics) :
-    peers(peers_),
+FsmContext::FsmContext(PeerActions actions, Publisher pub, TimerArm timer_arm, TimerCancel timer_cancel,
+                       TickArm tick_arm, TickDisarm tick_disarm, ScenarioEnqueue enqueue_event,
+                       ScenarioTimerArm scenario_timer_arm, const Conf& cfg_, const ev_API::Topics& topics) :
     peer_actions(std::move(actions)),
     cfg(cfg_),
     publisher_(std::move(pub)),
@@ -59,6 +64,13 @@ FsmContext::FsmContext(PeerHandles peers_, PeerActions actions, Publisher pub, T
     enqueue_event_(std::move(enqueue_event)),
     scenario_timer_arm_(std::move(scenario_timer_arm)),
     topics_(topics) {
+    // Validate cfg.on_battery_full once at construction. parse_on_battery_full
+    // throws std::invalid_argument on an unknown value; the throw propagates
+    // out of the FsmContext ctor and aborts module init so a typo in the
+    // config (e.g. "stopsesion") is caught loudly instead of silently
+    // downgrading to Clamp on every SocIntegrator tick.
+    on_battery_full_policy = parse_on_battery_full(cfg.on_battery_full);
+
     // Seed SimVars from Conf.
     vars.battery_capacity_wh = static_cast<float>(cfg.dc_energy_capacity);
     vars.soc_pct = static_cast<float>(cfg.soc_initial_pct);
@@ -75,37 +87,41 @@ FsmContext::FsmContext(PeerHandles peers_, PeerActions actions, Publisher pub, T
 // ---- CP / power shortcuts ----------------------------------------------
 
 void FsmContext::set_cp(::types::ev_board_support::EvCpState s) {
-    if (peer_actions.bsp_set_cp) {
-        peer_actions.bsp_set_cp(s);
+    if (peer_actions.bsp.present) {
+        peer_actions.bsp.set_cp(s);
     }
 }
 
 void FsmContext::allow_power_on(bool on) {
-    if (peer_actions.bsp_allow_power_on) {
-        peer_actions.bsp_allow_power_on(on);
+    if (peer_actions.bsp.present) {
+        peer_actions.bsp.allow_power_on(on);
+    }
+}
+
+void FsmContext::enable_bsp(bool on) {
+    if (peer_actions.bsp.present) {
+        peer_actions.bsp.enable(on);
     }
 }
 
 void FsmContext::clear_diode_fail() {
-    if (peer_actions.bsp_diode_fail) {
-        peer_actions.bsp_diode_fail(false);
+    if (peer_actions.bsp.present) {
+        peer_actions.bsp.diode_fail(false);
     }
 }
 
 void FsmContext::clear_rcd_error() {
-    if (peer_actions.bsp_set_rcd_error) {
-        peer_actions.bsp_set_rcd_error(0.0f);
+    if (peer_actions.bsp.present) {
+        peer_actions.bsp.set_rcd_error(0.0f);
     }
 }
 
 // ---- AC params shortcut ------------------------------------------------
 
 void FsmContext::bsp_apply_ac_params(float current_a, bool three_phases_) {
-    if (peer_actions.bsp_set_ac_max_current) {
-        peer_actions.bsp_set_ac_max_current(current_a);
-    }
-    if (peer_actions.bsp_set_three_phases) {
-        peer_actions.bsp_set_three_phases(three_phases_);
+    if (peer_actions.bsp.present) {
+        peer_actions.bsp.set_ac_max_current(current_a);
+        peer_actions.bsp.set_three_phases(three_phases_);
     }
     vars.charging_current_a = current_a;
     vars.three_phases = three_phases_;
@@ -119,11 +135,12 @@ bool FsmContext::iso_start_charging(API_types::ev_simulator::ChargeMode mode,
     using CM = API_types::ev_simulator::ChargeMode;
     using ETM = ::types::iso15118::EnergyTransferMode;
 
-    // BPT applies only to D20 modes — non-D20 modes ignore vars.bpt.
-    const bool bpt_active = vars.bpt.has_value() && (mode == CM::AcIsoD20 || mode == CM::DcIsoD20);
+    // BPT applies only to D20 modes — non-D20 modes ignore the session bpt.
+    const auto session_bpt = vars.bpt();
+    const bool bpt_active = session_bpt.has_value() && (mode == CM::AcIsoD20 || mode == CM::DcIsoD20);
     // MCS applies only to DcIsoD20 — Plugged rejects mcs on other modes; here
     // we still gate on the mode so unexpected callers don't silently flip etm.
-    const bool mcs_active = vars.mcs.has_value() && mode == CM::DcIsoD20;
+    const bool mcs_active = vars.mcs_enabled() && mode == CM::DcIsoD20;
 
     ETM etm;
     switch (mode) {
@@ -146,81 +163,171 @@ bool FsmContext::iso_start_charging(API_types::ev_simulator::ChargeMode mode,
         }
         break;
     }
-    if (!peer_actions.iso_start_charging) {
+    // The ISO peer's presence flag implies every iso_* function is wired
+    // (build_peer_actions sets them together), so the inner sub-calls below
+    // need no separate guards.
+    if (!peer_actions.iso.present) {
         return false;
     }
 
     if (bpt_active) {
-        if (peer_actions.iso_enable_sae_j2847_v2g_v2h) {
-            peer_actions.iso_enable_sae_j2847_v2g_v2h();
-        }
-        if (peer_actions.iso_set_bpt_dc_params) {
-            ::types::iso15118::DcEvBPTParameters internal_bpt{};
-            internal_bpt.discharge_max_current_limit = vars.bpt->discharge_max_current_limit;
-            internal_bpt.discharge_max_power_limit = vars.bpt->discharge_max_power_limit;
-            internal_bpt.discharge_target_current = vars.bpt->discharge_target_current;
-            internal_bpt.discharge_minimal_soc = vars.bpt->discharge_minimal_soc;
-            peer_actions.iso_set_bpt_dc_params(internal_bpt);
-        }
+        peer_actions.iso.enable_sae_j2847_v2g_v2h();
+        ::types::iso15118::DcEvBPTParameters internal_bpt{};
+        internal_bpt.discharge_max_current_limit = session_bpt->discharge_max_current_limit;
+        internal_bpt.discharge_max_power_limit = session_bpt->discharge_max_power_limit;
+        internal_bpt.discharge_target_current = session_bpt->discharge_target_current;
+        internal_bpt.discharge_minimal_soc = session_bpt->discharge_minimal_soc;
+        peer_actions.iso.set_bpt_dc_params(internal_bpt);
     }
 
     auto payment = payment_opt.value_or(API_types::ev_simulator::PaymentOption::ExternalPayment);
     auto internal_payment = (payment == API_types::ev_simulator::PaymentOption::Contract)
                                 ? ::types::iso15118::PaymentOption::Contract
                                 : ::types::iso15118::PaymentOption::ExternalPayment;
-    return peer_actions.iso_start_charging(etm, internal_payment, departure, e_amount, vars.force_payment_option);
+    return peer_actions.iso.start_charging(etm, internal_payment, departure, e_amount, vars.force_payment_option);
 }
 
 void FsmContext::iso_stop_charging() {
-    if (peer_actions.iso_stop_charging) {
-        peer_actions.iso_stop_charging();
+    if (peer_actions.iso.present) {
+        peer_actions.iso.stop_charging();
     }
 }
 
 void FsmContext::iso_pause_charging() {
-    if (peer_actions.iso_pause_charging) {
-        peer_actions.iso_pause_charging();
+    if (peer_actions.iso.present) {
+        peer_actions.iso.pause_charging();
     }
 }
 
 void FsmContext::iso_update_soc(float pct) {
-    if (peer_actions.iso_update_soc) {
-        peer_actions.iso_update_soc(pct);
+    if (peer_actions.iso.present) {
+        peer_actions.iso.update_soc(pct);
     }
 }
 
 // ---- SLAC shortcut -----------------------------------------------------
 
 bool FsmContext::slac_trigger_matching() {
-    if (!peer_actions.slac_trigger_matching) {
+    if (!peer_actions.slac.present) {
         return false;
     }
-    return peer_actions.slac_trigger_matching();
+    return peer_actions.slac.trigger_matching();
+}
+
+// ---- Persisted state ---------------------------------------------------
+
+void FsmContext::mark_plugged_in(bool plugged_in) {
+    persisted.plugged_in = plugged_in;
+}
+
+void FsmContext::remember_session_config(const std::optional<API_types::ev_simulator::SessionConfigParams>& sp) {
+    persisted.configured_session = sp;
 }
 
 // ---- KVS shortcuts -----------------------------------------------------
 
 void FsmContext::kvs_load() {
-    if (!cfg.keep_cross_boot_plugin_state || !peer_actions.kvs_load_raw) {
+    if (!cfg.keep_cross_boot_plugin_state || !peer_actions.kvs.present) {
         return;
     }
-    auto raw = peer_actions.kvs_load_raw(kvs_key(cfg.connector_id));
+    auto raw_opt = peer_actions.kvs.load_raw(kvs_key(cfg.connector_id));
+    if (!raw_opt.has_value()) {
+        return; // first boot or key unset
+    }
+    const auto& raw = *raw_opt;
     if (raw.empty()) {
-        return; // first boot or unset
+        EVLOG_warning << "EvSimulator: KVS load returned empty payload for key " << kvs_key(cfg.connector_id)
+                      << "; defaulting persisted state";
+        persisted = PersistedState{};
+        return;
     }
     try {
         persisted = nlohmann::json::parse(raw).get<PersistedState>();
-    } catch (...) {
-        EVLOG_warning << "EvSimulator: KVS load corrupted, ignoring";
+        // Seed the live latched config from what was persisted so a
+        // cross-boot plug consumes the pre-restart configure_session.
+        configured_session = persisted.configured_session;
+    } catch (const nlohmann::json::exception& e) {
+        EVLOG_error << "EvSimulator: KVS load failed for key " << kvs_key(cfg.connector_id) << ": " << e.what()
+                    << " payload=" << raw;
+        persisted = PersistedState{};
     }
 }
 
 void FsmContext::kvs_save() {
-    if (!cfg.keep_cross_boot_plugin_state || !peer_actions.kvs_store) {
+    if (!cfg.keep_cross_boot_plugin_state || !peer_actions.kvs.present) {
         return;
     }
     auto payload = nlohmann::json(persisted).dump();
-    peer_actions.kvs_store(kvs_key(cfg.connector_id), payload);
+    peer_actions.kvs.store(kvs_key(cfg.connector_id), payload);
+}
+
+// ---- Out-of-band error raise/clear -------------------------------------
+
+void FsmContext::raise_error(const RaiseErrorCmd& cmd) {
+    if (!peer_actions.error.present) {
+        return;
+    }
+    peer_actions.error.raise(cmd.type, cmd.sub_type, cmd.message, cmd.severity);
+}
+
+void FsmContext::clear_error(const ClearErrorCmd& cmd) {
+    if (!peer_actions.error.present) {
+        return;
+    }
+    const auto sub = cmd.sub_type.value_or("");
+    // Surface a Rejected CommandAck when the framework has no matching active
+    // error: clear_error otherwise returns an empty list silently, so the user
+    // never learns the request was a no-op.
+    if (peer_actions.error.is_active && !peer_actions.error.is_active(cmd.type, sub)) {
+        publish_e2m_command_ack("clear_error", "no such error active");
+        return;
+    }
+    peer_actions.error.clear(cmd.type, cmd.sub_type);
+}
+
+// ---- configure_session interceptor -------------------------------------
+
+bool FsmContext::validate_session_config(const API_types::ev_simulator::SessionConfigParams& sp,
+                                         std::string& reject_reason) const {
+    namespace api = API_types::ev_simulator;
+
+    // Every SessionConfigParams alternative carries an optional curve; pull it
+    // out with a generic visitor (no per-alternative branching needed).
+    std::optional<api::ChargingCurve> curve;
+    std::visit([&](const auto& v) { curve = v.curve; }, sp);
+    if (curve.has_value()) {
+        if (curve->points.empty()) {
+            reject_reason = "curve has empty points";
+            return false;
+        }
+        for (std::size_t i = 1; i < curve->points.size(); ++i) {
+            if (curve->points[i].t_offset_ms <= curve->points[i - 1].t_offset_ms) {
+                reject_reason = "curve points not monotonic";
+                return false;
+            }
+        }
+    }
+
+    const api::ChargeMode mode = api::mode_of(sp);
+    const bool iso_mode = mode == api::ChargeMode::AcIso2 || mode == api::ChargeMode::AcIsoD20 ||
+                          mode == api::ChargeMode::DcIso2 || mode == api::ChargeMode::DcIsoD20;
+    if (iso_mode && (!peer_actions.iso.present || !peer_actions.slac.present)) {
+        reject_reason = "no ev_slac peer";
+        return false;
+    }
+    return true;
+}
+
+void FsmContext::configure_session(const API_types::ev_simulator::SessionConfigParams& sp) {
+    std::string reject_reason;
+    if (!validate_session_config(sp, reject_reason)) {
+        publish_e2m_command_ack("configure_session", reject_reason);
+        return;
+    }
+    configured_session = sp;
+    remember_session_config(sp);
+    kvs_save();
+    publish_e2m_command_ack_accepted("configure_session", "configuration latched; applies at next plug");
 }
 
 // ---- External publish helpers ------------------------------------------
@@ -228,13 +335,11 @@ void FsmContext::kvs_save() {
 void FsmContext::publish_e2m_state(API_types::ev_simulator::FsmState s) {
     using namespace API_types::ev_simulator;
     publisher_(topics_.everest_to_extern("state"), serialize(s));
-    snapshot.handle()->current_state = s;
 }
 
 void FsmContext::publish_e2m_fault(API_types::ev_simulator::FaultReport f) {
     using namespace API_types::ev_simulator;
     publisher_(topics_.everest_to_extern("fault"), serialize(f));
-    snapshot.handle()->last_fault = f;
 }
 
 void FsmContext::publish_e2m_iso_session_event(API_types::ev_simulator::IsoSessionEvent e) {
@@ -247,19 +352,55 @@ void FsmContext::publish_e2m_ev_info() {
     EvInfo info{vars.soc_pct, vars.battery_capacity_wh, vars.battery_charge_wh,
                 /*target_current_a*/ 0.0f, /*target_voltage_v*/ 0.0f};
     publisher_(topics_.everest_to_extern("ev_info"), serialize(info));
-    snapshot.handle()->soc_pct = vars.soc_pct;
 }
 
 void FsmContext::publish_e2m_slac_state() {
     using namespace API_types::ev_simulator;
-    SlacState s{vars.slac_state};
+    // vars.slac_state mirrors the internal ::types::slac enum names
+    // ("UNMATCHED"/"MATCHING"/"MATCHED"); translate to the external enum.
+    SlacStateKind k = SlacStateKind::Unmatched;
+    if (vars.slac_state == "MATCHING") {
+        k = SlacStateKind::Matching;
+    } else if (vars.slac_state == "MATCHED") {
+        k = SlacStateKind::Matched;
+    }
+    SlacState s{k};
     publisher_(topics_.everest_to_extern("slac_state"), serialize(s));
 }
 
 void FsmContext::publish_e2m_bsp_event(const ::types::board_support_common::BspEvent& e) {
     using namespace API_types::ev_simulator;
-    BspEvent ext;
-    ext.event = ::types::board_support_common::event_to_string(e.event);
+    BspEventKind kind = BspEventKind::Disconnected;
+    switch (e.event) {
+    case ::types::board_support_common::Event::A:
+        kind = BspEventKind::A;
+        break;
+    case ::types::board_support_common::Event::B:
+        kind = BspEventKind::B;
+        break;
+    case ::types::board_support_common::Event::C:
+        kind = BspEventKind::C;
+        break;
+    case ::types::board_support_common::Event::D:
+        kind = BspEventKind::D;
+        break;
+    case ::types::board_support_common::Event::E:
+        kind = BspEventKind::E;
+        break;
+    case ::types::board_support_common::Event::F:
+        kind = BspEventKind::F;
+        break;
+    case ::types::board_support_common::Event::PowerOn:
+        kind = BspEventKind::PowerOn;
+        break;
+    case ::types::board_support_common::Event::PowerOff:
+        kind = BspEventKind::PowerOff;
+        break;
+    case ::types::board_support_common::Event::Disconnected:
+        kind = BspEventKind::Disconnected;
+        break;
+    }
+    BspEvent ext{kind};
     publisher_(topics_.everest_to_extern("bsp_event"), serialize(ext));
 }
 
@@ -279,26 +420,42 @@ void FsmContext::publish_e2m_command_ack(const std::string& command, const std::
     publisher_(topics_.everest_to_extern("command_ack"), serialize(ack));
 }
 
+void FsmContext::publish_e2m_command_ack_accepted(const std::string& command, const std::string& note) {
+    using namespace API_types::ev_simulator;
+    CommandAck ack{command, CommandAckStatus::Accepted, note};
+    publisher_(topics_.everest_to_extern("command_ack"), serialize(ack));
+}
+
 void FsmContext::publish_internal_bsp_event(const ::types::board_support_common::BspEvent& e) {
-    if (peer_actions.publish_internal_bsp_event) {
-        peer_actions.publish_internal_bsp_event(e);
+    if (peer_actions.publisher.present) {
+        peer_actions.publisher.bsp_event(e);
     }
 }
 
 void FsmContext::publish_internal_ev_info() {
-    if (!peer_actions.publish_internal_ev_info) {
+    if (!peer_actions.publisher.present) {
         return;
     }
     ::types::evse_manager::EVInfo ev_info{};
     ev_info.soc = vars.soc_pct;
     ev_info.battery_capacity = vars.battery_capacity_wh;
-    peer_actions.publish_internal_ev_info(ev_info);
+    peer_actions.publisher.ev_info(ev_info);
 }
 
 // ---- Free helpers -------------------------------------------------------
 
 StateBase::Result transition_to_fault(FsmContext& ctx, const API_types::ev_simulator::InjectFaultParams& p) {
-    ctx.vars.last_fault = API_types::ev_simulator::FaultReport{p.type, std::nullopt, p.rcd_mA};
+    // Message precedence: a message carried on the InjectFault payload itself
+    // (a state synthesizing a fault on a peer precondition failure) wins. It
+    // travels with the event, so an intervening transition cannot leave it
+    // stale. Only if the payload carries no message do we fall back to a
+    // same-type last_fault so existing descriptive context is not clobbered
+    // by this catch-all replacement.
+    std::optional<std::string> message = p.message;
+    if (!message && ctx.vars.last_fault && ctx.vars.last_fault->type == p.type) {
+        message = ctx.vars.last_fault->message;
+    }
+    ctx.vars.last_fault = API_types::ev_simulator::FaultReport{p.type, message, p.rcd_mA};
     return {false, std::make_unique<Faulted>(ctx)};
 }
 
@@ -313,12 +470,15 @@ StateBase::Result transition_to_disabled(FsmContext& ctx) {
     ctx.set_cp(::types::ev_board_support::EvCpState::A);
     ctx.allow_power_on(false);
     ctx.iso_stop_charging();
-    ctx.vars.charge_mode.reset();
-    ctx.vars.bpt.reset();
-    ctx.vars.mcs.reset();
+    ctx.vars.session.reset();
     ctx.vars.last_fault.reset();
-    ctx.persisted.plugged_in = false;
+    ctx.vars.was_full = false;
+    ctx.mark_plugged_in(false);
     ctx.kvs_save();
+    // Park the BSP peer's simulation loop. The set_cp(A) and
+    // allow_power_on(false) above must run first so the peer observes a
+    // clean teardown before its simulation_step is suspended.
+    ctx.enable_bsp(false);
     return {false, std::make_unique<Disabled>(ctx)};
 }
 

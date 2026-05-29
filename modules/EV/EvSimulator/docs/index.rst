@@ -20,8 +20,8 @@ the FSM and the only mutable state. Four ``fd``\ s drive that loop:
 
 - ``wake_fd`` — external producers (MQTT commands, peer subscriptions, scenario
   steps) push ``Event``\ s onto a ``thread_safe_queue`` and poke this fd.
-- ``state_timer_fd`` — per-state deadline (SLAC 30 s, V2G 60 s, BCB 250 ms
-  step, Paused 1 h watchdog, Stopping 10 s fallback, BcbToggling 250 ms).
+- ``state_timer_fd`` — per-state deadline (SLAC 30 s, V2G 60 s, Paused 1 h
+  watchdog, Stopping 10 s fallback, BcbToggling 250 ms step).
 - ``tick_fd`` — periodic ``tick_interval_ms`` while ``Charging``; drives
   ``RampInterpolator`` and ``SocIntegrator``.
 - ``scenario_timer_fd`` — one-shot used by ``ScenarioDispatcher`` to advance
@@ -222,20 +222,39 @@ Inbound suffixes (``m2e/*``):
    :widths: 20 18 62
 
    * - Suffix
-     - Resulting EventKind
+     - Resulting event
      - Payload
    * - ``enable``
      - ``Enable`` (true) / ``Disable`` (false)
      - ``bool``
    * - ``plug``
-     - ``Plug``
+     - ``Plug`` (``Plugged::enter`` self-advances via an internal
+       ``BeginSession`` that consumes the latched config / AcIec default)
      - —
    * - ``unplug``
      - ``Unplug``
      - —
-   * - ``start_session``
-     - ``StartSession``
-     - ``StartSessionParams`` (mode, current, phases, BPT, MCS, curve)
+   * - ``configure_session``
+     - ``ConfigureSession`` (intercepted pre-FSM)
+     - ``SessionConfigParams`` — a mode-tagged object
+       ``{ "mode": <ChargeMode>, "params": { … } }``. ``mode`` selects one of
+       ``AcIec`` / ``AcIso2`` / ``AcIsoD20`` / ``DcIso2`` / ``DcIsoD20`` and
+       ``params`` only carries the fields valid for that mode:
+       ``AcIec`` → ``charging_current_a?``, ``three_phases?``, ``curve?``;
+       ``AcIso2`` adds ``payment?``, ``departure_time_s?``, ``e_amount_wh?``;
+       ``AcIsoD20`` = ``AcIso2`` + ``bpt?``;
+       ``DcIso2`` → ``payment?``, ``departure_time_s?``, ``e_amount_wh?``,
+       ``curve?``; ``DcIsoD20`` = ``DcIso2`` + ``bpt?`` + ``mcs_enabled``.
+       Unknown ``mode`` is rejected; fields foreign to a mode are ignored.
+       Accepted in **any** state and **not** fed to the FSM: intercepted on
+       the loop thread, validated (curve non-empty + strictly monotonic;
+       ISO/SLAC peer presence for ISO modes), then latched into
+       ``ctx.configured_session`` with an **Accepted** ``command_ack``
+       (or **Rejected** with a reason, leaving the prior latch intact).
+       The latched config is consumed at every ``plug``; reconfiguring
+       replaces it and applies at the next plug. A ``plug`` with no prior
+       ``configure_session`` synthesizes a bare ``AcIec`` session from
+       ``cfg.max_current_a`` / ``cfg.three_phases``.
    * - ``stop_session``
      - ``StopSession``
      - —
@@ -253,7 +272,7 @@ Inbound suffixes (``m2e/*``):
      - ``SetSocParams`` (soc_pct)
    * - ``inject_fault``
      - ``InjectFault``
-     - ``InjectFaultParams`` (type, optional fields)
+     - ``InjectFaultParams`` (type, rcd_mA?, message?)
    * - ``clear_fault``
      - ``ClearFault``
      - —
@@ -264,24 +283,27 @@ Inbound suffixes (``m2e/*``):
      - ``RunScenario``
      - ``RunScenarioParams`` (name)
    * - ``query_state``
-     - ``QueryState``
-     - — (re-publishes ``e2m/state``)
+     - ``QueryStateCmd``
+     - — (FSM handles via ``handle_query_state``, re-publishing
+       ``e2m/state``; no transition)
    * - ``communication_check``
-     - — (direct: ``comm_check.set_value``)
+     - — (direct: ``comm_check.set_value``, bypasses the queue)
      - ``bool``
    * - ``raise_error``
-     - — (direct: ``p_ev_manager->raise_error``)
-     - ``Error``
+     - ``RaiseErrorCmd``
+     - ``Error`` (parsed on the MQTT thread; the queued event applies
+       ``p_ev_manager->raise_error`` on the loop thread)
    * - ``clear_error``
-     - — (direct: ``p_ev_manager->clear_error``)
-     - ``Error``
+     - ``ClearErrorCmd``
+     - ``Error`` (parsed on the MQTT thread; the queued event applies
+       ``p_ev_manager->clear_error`` on the loop thread)
 
 Outbound suffixes (``e2m/*``):
 
 - ``state`` — current ``FsmState``
 - ``ev_info`` — synthesized ``EVInfo`` (SoC, etc.)
-- ``bsp_event`` — peer BSP events mirrored verbatim
-- ``slac_state`` — string form of SLAC peer state
+- ``bsp_event`` — peer BSP events as a typed ``BspEventKind``
+- ``slac_state`` — SLAC peer state as a typed ``SlacStateKind``
 - ``iso_session_event`` — ISO session lifecycle events
 - ``fault`` — ``FaultReport`` (type + reason) on entry to ``Faulted``
 - ``command_ack`` — ``{command, status, reason}``. Out-of-state commands are
@@ -369,11 +391,17 @@ Per-state reference
    * - ``SlacMatching``
      - 30 s
      - —
-     - ``slac_trigger_matching``, ``vars.slac_state="MATCHING"``
+     - ``slac_trigger_matching``, ``vars.slac_state="MATCHING"``; on failure
+       enqueues a synthetic ``InjectFault`` whose ``message`` is
+       ``"no ev_slac peer"`` (peer absent) or
+       ``"ev_slac trigger_matching rejected"`` (wired peer returned false),
+       routing to ``Faulted`` without arming the 30 s deadline
    * - ``V2GNegotiating``
      - 60 s
      - —
-     - ``iso_start_charging(mode, …)`` (if ``charge_mode`` set)
+     - ``iso_start_charging(mode, …)`` (if ``charge_mode`` set); on rejection
+       enqueues a synthetic ``InjectFault`` with
+       ``message="iso_start_charging rejected"`` → ``Faulted`` (no 60 s wait)
    * - ``BcbToggling``
      - 250 ms (re-armed)
      - —
@@ -404,7 +432,12 @@ Per-state reference
 
 The free helpers in ``FsmContext.cpp`` are reused across states:
 
-- ``transition_to_fault(ctx, p)`` — store ``last_fault``, go to ``Faulted``.
+- ``transition_to_fault(ctx, p)`` — store ``last_fault`` and go to
+  ``Faulted``. Message precedence: ``p.message`` (carried on the
+  ``InjectFault`` payload) wins; only when it is unset does a same-type
+  existing ``last_fault`` message survive. States no longer pre-seed
+  ``last_fault`` before enqueuing a synthetic ``InjectFault``, so an
+  intervening transition cannot leave a stale message for a later fault.
 - ``transition_to_disabled(ctx)`` — clear faults, CP=A, power off, reset
   mode/last_fault, ``persisted.plugged_in=false``, ``kvs_save``, go to
   ``Disabled``.
@@ -426,9 +459,11 @@ Source: `images/drive_mechanisms.mmd <images/drive_mechanisms.mmd>`_.
 1. **External MQTT commands** — ``CommandRouter`` (``main/CommandRouter.cpp``)
    subscribes to each ``m2e/<verb>`` topic. Each handler deserializes the
    payload via ``everest_api_types`` codecs, constructs an ``Event``, and
-   calls ``EvSimRuntime::enqueue``. Three verbs bypass the queue
-   (``communication_check``, ``raise_error``, ``clear_error``) and are routed
-   directly to ``comm_check`` or to the provided ``ev_manager`` impl.
+   calls ``EvSimRuntime::enqueue``. ``communication_check`` is the only verb
+   that bypasses the queue, routed directly to ``comm_check``;
+   ``raise_error`` / ``clear_error`` parse on the MQTT thread but enqueue a
+   ``RaiseErrorCmd`` / ``ClearErrorCmd`` so the ``p_ev_manager`` interaction
+   runs on the loop thread.
 
 2. **Peer-module variables** — ``PeerSubscriptions``
    (``main/PeerSubscriptions.cpp``) registers ``subscribe_*`` callbacks on
@@ -447,7 +482,7 @@ Source: `images/drive_mechanisms.mmd <images/drive_mechanisms.mmd>`_.
    - ``state_timer_fd`` (per-state deadline) → enqueues a ``StateDeadline``
      event from ``EvSimRuntime::on_state_timer``.
    - ``tick_fd`` (only while ``Charging``) → calls
-     ``RampInterpolator::step`` then ``SocIntegrator::step`` directly on the
+     ``ramp_step`` then ``soc_step`` directly on the
      loop thread; no FSM event produced.
    - ``scenario_timer_fd`` → ``ScenarioDispatcher::on_timer_fire``.
 
@@ -458,7 +493,7 @@ Command path
 ~~~~~~~~~~~~
 
 Generic m2e command lifecycle: external publisher → MQTT topic →
-``CommandRouter`` → ``Event`` queue → ``EvSimRuntime`` drain → FSM
+``CommandRouter`` → ``Event`` queue → ``EvSimRuntime`` flush → FSM
 ``feed``.
 
 .. image:: images/event_ingress_command.png
@@ -470,7 +505,8 @@ Source: `images/event_ingress_command.mmd <images/event_ingress_command.mmd>`_.
 Session sequence
 ~~~~~~~~~~~~~~~~
 
-Peer-driven progression from ``StartSession`` through ``SlacMatching``,
+Peer-driven progression from the internal ``BeginSession`` (enqueued by
+``Plugged::enter`` to consume the latched config) through ``SlacMatching``,
 ``V2GNegotiating``, and into ``Charging``. Per-tick activity in ``Charging``
 covered separately below.
 
@@ -484,7 +520,7 @@ Per-tick activity
 ~~~~~~~~~~~~~~~~~
 
 ``tick_fd`` fires every ``tick_interval_ms`` while ``Charging``. The loop
-thread runs ``RampInterpolator::step`` then ``SocIntegrator::step`` directly
+thread runs ``ramp_step`` then ``soc_step`` directly
 — no FSM event is produced.
 
 .. image:: images/event_ingress_tick.png
@@ -501,6 +537,12 @@ scenarios below are implemented; each preset is a static
 ``std::vector<ScenarioStep>`` of time-offsetted events that
 ``ScenarioDispatcher`` drips into the FSM queue.
 
+Every preset emits a ``configure_session`` step then a ``plug`` step, both
+at t=0 (the dispatcher enqueues in order, so the config is intercepted and
+latched before the plug self-advances into it). Only the
+``configure_session`` arguments are shown below; the t=0 ``plug`` is
+implicit for every row.
+
 .. list-table::
    :header-rows: 1
    :widths: 24 76
@@ -508,39 +550,296 @@ scenarios below are implemented; each preset is a static
    * - Scenario
      - Step sequence
    * - ``AcIecBasic``
-     - t=0: Plug + StartSession(AcIec, 16A, 3ph). t=30s: StopSession.
+     - t=0: ConfigureSession(AcIec, 16A, 3ph). t=30s: StopSession.
    * - ``AcIecPauseResume``
-     - t=0: Plug + StartSession(AcIec, 16A, 3ph). t=30s: Pause. t=60s:
+     - t=0: ConfigureSession(AcIec, 16A, 3ph). t=30s: Pause. t=60s:
        Resume. t=120s: Stop. t=125s: Unplug.
    * - ``AcIsoBasic``
-     - t=0: Plug + StartSession(AcIso2, 16A, 3ph). t=60s: StopSession.
+     - t=0: ConfigureSession(AcIso2, 16A, 3ph). t=60s: StopSession.
    * - ``AcIsoD20Basic``
-     - t=0: Plug + StartSession(AcIsoD20, 16A, 3ph). t=120s: Stop. t=125s:
+     - t=0: ConfigureSession(AcIsoD20, 16A, 3ph). t=120s: Stop. t=125s:
        Unplug.
    * - ``DcIsoBasic``
-     - t=0: Plug + StartSession(DcIso2). No scripted stop.
+     - t=0: ConfigureSession(DcIso2). No scripted stop.
    * - ``DcIsoD20Basic``
-     - t=0: Plug + StartSession(DcIsoD20). t=180s: Stop. t=185s: Unplug.
+     - t=0: ConfigureSession(DcIsoD20). t=180s: Stop. t=185s: Unplug.
    * - ``DcIsoPauseResume``
-     - t=0: Plug + StartSession(DcIso2). t=45s: Pause. t=75s: Resume.
+     - t=0: ConfigureSession(DcIso2). t=45s: Pause. t=75s: Resume.
        t=180s: Stop. t=185s: Unplug.
    * - ``DcIsoBpt``
-     - t=0: Plug + StartSession(DcIsoD20, BptParams 50A/11kW discharge,
+     - t=0: ConfigureSession(DcIsoD20, BptParams 50A/11kW discharge,
        30A target, 20% min SoC). t=180s: Stop. t=185s: Unplug.
    * - ``DcIsoMcs``
-     - t=0: Plug + StartSession(DcIsoD20, McsProfile{}). t=180s: Stop.
+     - t=0: ConfigureSession(DcIsoD20, mcs_enabled=true). t=180s: Stop.
        t=185s: Unplug.
    * - ``DiodeFailSmoke``
-     - t=0: Plug + StartSession(AcIec, 32A, 3ph). t=15s: InjectFault
+     - t=0: ConfigureSession(AcIec, 32A, 3ph). t=15s: InjectFault
        (DiodeFail). t=20s: ClearFault.
    * - ``AcIecRampUp``
-     - t=0: Plug + StartSession(AcIec, 0A, 3ph, ChargingCurve
+     - t=0: ConfigureSession(AcIec, 0A, 3ph, ChargingCurve
        [2s→8A/2s-ramp, 8s→16A/2s-ramp, 20s→32A/4s-ramp]). t=60s: Stop.
        t=65s: Unplug.
    * - ``DcIsoTaper``
-     - t=0: Plug + StartSession(DcIso2, ChargingCurve
+     - t=0: ConfigureSession(DcIso2, ChargingCurve
        [0→100A, 30s→50A/10s-ramp, 60s→20A/10s-ramp, 90s→5A/5s-ramp]).
        t=120s: Stop. t=125s: Unplug.
+
+Session API templates
+=====================
+
+Copy-paste recipes for driving the most common session shapes. Each
+template gives the ``EvSimulatorTestController`` form (Python integration
+tests) and the equivalent raw ``m2e/*`` MQTT publish sequence (any
+language / manual ``mosquitto_pub``). Raw payloads use the suffixes from
+`External MQTT API`_; topic prefix is
+``<mqtt_external_prefix>everest_api/1/ev_simulator/<module_id>/m2e/``.
+
+All recipes assume the simulator was enabled (``m2e/enable`` → ``true``,
+done implicitly by ``controller.start()``) and a compatible SIL config is
+running (see `SIL configurations`_).
+
+AC IEC — basic charge
+---------------------
+
+PWM-driven AC, no SLAC/V2G. ``plug_in()`` defaults to 32 A / 3-phase.
+
+.. code-block:: python
+
+    ctrl.start()
+    ctrl.plug_in()                                      # blocks until Charging
+    assert ctrl.state_collector.wait_for_soc_progress(timeout=30)
+    ctrl.plug_out()
+    assert ctrl.state_collector.wait_for_state("Unplugged", timeout=10)
+
+.. code-block:: text
+
+    configure_session {"mode":"AcIec","params":{"charging_current_a":32.0,"three_phases":true}}
+    plug              {}
+    # ... charge ...
+    unplug          {}
+
+AC IEC — pause / resume
+-----------------------
+
+Pause leaves ``Charging`` via a PWM pause (duty out of the 7–97 % band),
+resume returns to ``Charging``.
+
+.. code-block:: python
+
+    ctrl.start()
+    ctrl.plug_in()
+    assert ctrl.state_collector.wait_for_state("Charging", timeout=30)
+    ctrl.pause_session()
+    assert ctrl.state_collector.wait_for_state_not("Charging", timeout=10)
+    ctrl.resume_session()
+    assert ctrl.state_collector.wait_for_state("Charging", timeout=15)
+    ctrl.plug_out()
+
+.. code-block:: text
+
+    configure_session {"mode":"AcIec","params":{"charging_current_a":32.0,"three_phases":true}}
+    plug              {}
+    pause_session   {}
+    resume_session  {}
+    unplug          {}
+
+AC ISO 15118-2
+--------------
+
+SLAC → V2G → Charging. Optional ``payment`` (``"eim"`` / ``"pnc"``).
+
+.. code-block:: python
+
+    ctrl.start()
+    ctrl.plug_in_ac_iso(payment_type="eim")
+    assert ctrl.state_collector.wait_for_state("Charging", timeout=60)
+    ctrl.plug_out_iso()                                 # graceful stop_session + unplug
+
+.. code-block:: text
+
+    configure_session {"mode":"AcIso2","params":{"charging_current_a":16.0,"three_phases":true,"payment":"eim"}}
+    plug              {}
+    stop_session    {}
+    unplug          {}
+
+DC ISO 15118-2 — basic
+----------------------
+
+The workhorse DC route. ``plug_in_dc_iso`` carries no current params; the
+EVSE drives the setpoint.
+
+.. code-block:: python
+
+    ctrl.start()
+    ctrl.plug_in_dc_iso(payment_type="eim")
+    assert ctrl.state_collector.wait_for_state("Charging", timeout=30)
+    assert ctrl.state_collector.wait_for_soc_progress(timeout=30)
+    ctrl.plug_out_iso()
+
+.. code-block:: text
+
+    configure_session {"mode":"DcIso2","params":{"payment":"eim"}}
+    plug              {}
+    stop_session    {}
+    unplug          {}
+
+DC ISO 15118-2 — EV-initiated pause / resume
+--------------------------------------------
+
+ISO pause-from-EV (distinct from the AC PWM pause).
+
+.. code-block:: python
+
+    ctrl.start()
+    ctrl.plug_in_dc_iso()
+    assert ctrl.state_collector.wait_for_state("Charging", timeout=30)
+    ctrl.pause_session()
+    assert ctrl.state_collector.wait_for_state_not("Charging", timeout=10)
+    ctrl.resume_session()
+    assert ctrl.state_collector.wait_for_state("Charging", timeout=15)
+    ctrl.plug_out_iso()
+
+DC ISO 15118-2 — fault then recover
+-----------------------------------
+
+Inject a fault mid-charge, then clear it and re-reach ``Charging``.
+``inject_fault`` covers every ``FaultType``; ``diode_fail()`` is the
+``"DiodeFail"`` shortcut.
+
+.. code-block:: python
+
+    ctrl.start()
+    ctrl.plug_in_dc_iso()
+    assert ctrl.state_collector.wait_for_state("Charging", timeout=30)
+    ctrl.inject_fault("DiodeFail")
+    assert ctrl.state_collector.wait_for_state_not("Charging", timeout=10)
+    fault = ctrl.state_collector.wait_for_fault(timeout=10)
+    assert fault is not None
+    ctrl.clear_fault()
+    assert ctrl.state_collector.wait_for_state("Charging", timeout=30)
+
+.. code-block:: text
+
+    configure_session {"mode":"DcIso2","params":{}}
+    plug              {}
+    inject_fault    {"type":"DiodeFail"}
+    clear_fault     {}
+
+DC ISO 15118-20 (D20)
+---------------------
+
+.. code-block:: python
+
+    ctrl.start()
+    ctrl.plug_in_dc_d20(payment_type="eim")
+    assert ctrl.state_collector.wait_for_state("Charging", timeout=60)
+    ctrl.plug_out_iso()
+
+.. code-block:: text
+
+    configure_session {"mode":"DcIsoD20","params":{"payment":"eim"}}
+    plug              {}
+    stop_session    {}
+    unplug          {}
+
+DC BPT (bidirectional, ISO-20)
+------------------------------
+
+Bidirectional power transfer. ``bpt`` params default to ``DEFAULT_BPT``;
+discharge phases produce negative power in the ``SocIntegrator``.
+
+.. code-block:: python
+
+    ctrl.start()
+    ctrl.plug_in_dc_bpt()                               # or bpt_params={...}
+    assert ctrl.state_collector.wait_for_state("Charging", timeout=60)
+    assert ctrl.state_collector.wait_for_soc_progress(timeout=60)
+    ctrl.plug_out_iso()
+
+.. code-block:: text
+
+    configure_session {"mode":"DcIsoD20","params":{"bpt":{ ... }}}
+    plug              {}
+
+DC MCS (ISO-20)
+---------------
+
+Megawatt Charging System. ``mcs_enabled`` is a boolean flag on the wire.
+
+.. code-block:: python
+
+    ctrl.start()
+    ctrl.plug_in_dc_mcs()
+    assert ctrl.state_collector.wait_for_state("Charging", timeout=60)
+    assert ctrl.state_collector.wait_for_soc_progress(timeout=60)
+    ctrl.plug_out_iso()
+
+.. code-block:: text
+
+    configure_session {"mode":"DcIsoD20","params":{"mcs_enabled":true}}
+    plug              {}
+
+Declarative charging curve
+--------------------------
+
+Run a piecewise current profile. ``play_charging_curve`` issues one
+``set_charging_current`` per point; ``loop=True`` repeats the cycle. Note:
+in DC / ISO-2 mode the EVSE owns the setpoint, so each
+``set_charging_current`` is acknowledged ``Rejected`` at the FSM — the ack
+stream is still the observable contract.
+
+.. code-block:: python
+
+    ctrl.start()
+    ctrl.plug_in_dc_iso()
+    assert ctrl.state_collector.wait_for_state("Charging", timeout=30)
+    ctrl.play_charging_curve(
+        [(0, 100.0), (10, 50.0), (20, 20.0), (30, 5.0)],
+        loop=False,
+        mode="dc",
+    )
+
+Or run a built-in curve preset by name (see `Scenarios`_):
+
+.. code-block:: python
+
+    ctrl.run_scenario("DcIsoTaper")
+    assert ctrl.state_collector.wait_for_state("Charging", timeout=30)
+
+Runtime current ramp
+--------------------
+
+Ad-hoc linear ramp to a new current over a window (valid where the EV owns
+the setpoint, e.g. ``AcIsoBasic`` / AC IEC).
+
+.. code-block:: python
+
+    ctrl.start()
+    ctrl.run_scenario("AcIsoBasic")
+    assert ctrl.state_collector.wait_for_state("Charging", timeout=30)
+    ctrl.ramp_to_current(target_a=16, three_phases=True, duration_s=5)
+    assert ctrl.state_collector.wait_for_soc_progress(timeout=30)
+
+.. code-block:: text
+
+    set_charging_current  {"current_a":16.0,"three_phases":true,"ramp_ms":5000}
+
+Fully scenario-driven
+---------------------
+
+A preset is a self-contained timed step list (plug → … → unplug); the
+controller only needs ``run_scenario`` and a state assertion. Smallest
+possible end-to-end driver:
+
+.. code-block:: python
+
+    ctrl.start()
+    ctrl.run_scenario("DcIsoD20Basic")
+    assert ctrl.state_collector.wait_for_state("Charging", timeout=60)
+
+.. code-block:: text
+
+    run_scenario    {"name":"DcIsoD20Basic"}
 
 Subsystems
 ==========
@@ -548,19 +847,19 @@ Subsystems
 RampInterpolator
 ----------------
 
-``RampInterpolator::step(ctx, now)`` interpolates ``vars.charging_current_a``
+``ramp_step(ctx, now)`` interpolates ``vars.charging_current_a``
 linearly between ``ActiveRamp::start_a`` and ``ActiveRamp::target_a`` between
 ``start_at`` and ``end_at``. Triggered when ``SetChargingCurrent`` carries a
 non-zero ``ramp_ms``. Each tick calls
 ``ctx.bsp_apply_ac_params(current, three_phases)``; on ``now >= end_at`` it
 snaps to target and clears ``vars.active_ramp``. Called before
-``SocIntegrator::step`` so SoC integration sees the freshly interpolated
+``soc_step`` so SoC integration sees the freshly interpolated
 current on the same tick.
 
 SocIntegrator
 -------------
 
-``SocIntegrator::step(ctx)`` integrates power into
+``soc_step(ctx)`` integrates power into
 ``vars.battery_charge_wh`` once per tick while ``Charging``:
 
 - AC modes: ``power_w = charging_current_a * ac_nominal_voltage * (three_phases ? 3 : 1)``
@@ -585,10 +884,13 @@ if the ISO peer is connected.
 
 When SoC reaches ``cfg.battery_full_threshold_pct``, the integrator applies
 the policy named by ``cfg.on_battery_full`` (see the Configuration section
-for value semantics). ``vars.was_full`` is an edge latch: it is set the
-first tick the threshold is crossed and cleared when SoC drops below, so
-the ``stop_session`` / ``pause_if_iso`` FSM events fire exactly once per
-rising edge.
+for value semantics). For every policy except ``clamp``, accumulated charge
+is trimmed back to the threshold energy *after* integration (positive power
+only; discharge is never trimmed), so the threshold is reached exactly on
+the crossing tick with no one-tick overshoot past it. ``vars.was_full`` is
+an edge latch: it is set the first tick the threshold is crossed and cleared
+when SoC drops below, so the ``stop_session`` / ``pause_if_iso`` FSM events
+fire exactly once per rising edge — including the crossing tick itself.
 
 ScenarioDispatcher
 ------------------
@@ -628,9 +930,11 @@ Tests
 C++ unit tests
 --------------
 
-Built into the ``EvSimulator_tests`` Catch2 binary when
-``EVEREST_CORE_BUILD_TESTING`` is set. Production state-machine sources are
-compiled directly into the test binary; no MQTT broker is required.
+Built into the ``everest-core_EvSimulator_tests`` Catch2 binary when
+``BUILD_TESTING`` is set (which enables the internal
+``EVEREST_CORE_BUILD_TESTING`` gate the module CMake checks).
+Production state-machine sources are compiled directly into the test
+binary; no MQTT broker is required.
 
 .. list-table::
    :header-rows: 1

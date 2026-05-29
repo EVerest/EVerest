@@ -7,6 +7,13 @@
 #include "SlacMatching.hpp"
 #include "Unplugged.hpp"
 
+#include <everest/logging.hpp>
+
+#include <cstddef>
+#include <optional>
+#include <type_traits>
+#include <variant>
+
 namespace module {
 
 namespace api = API_types::ev_simulator;
@@ -14,87 +21,126 @@ namespace api = API_types::ev_simulator;
 void Plugged::enter() {
     ctx.set_cp(::types::ev_board_support::EvCpState::B);
     ctx.allow_power_on(false);
-    ctx.persisted.plugged_in = true;
+    ctx.mark_plugged_in(true);
     ctx.kvs_save();
     ctx.publish_e2m_state(api::FsmState::Plugged);
+    // Self-advance: a plug consumes the latched session config (or an AcIec
+    // default) on the next on_wake flush. Synthetic-event idiom mirrors
+    // SlacMatching::enter — keeps Plugged::enter void and the resolve logic
+    // in feed where transitions are returned.
+    ctx.enqueue(Event{BeginSessionEvt{}});
 }
 
 StateBase::Result Plugged::feed(EventType ev) {
     using EK = EventKind;
-    switch (ev.kind) {
-    case EK::StartSession: {
-        auto p = std::get<api::StartSessionParams>(ev.payload);
-        ctx.vars.charge_mode = p.mode;
-        ctx.vars.bpt = p.bpt;
-        if (p.mcs.has_value() && p.mode != api::ChargeMode::DcIsoD20) {
-            ctx.publish_e2m_command_ack("start_session", "MCS requires DcIsoD20 mode");
-            ctx.vars.charge_mode.reset();
-            ctx.vars.bpt.reset();
-            return {false, nullptr};
-        }
-        if (p.curve.has_value()) {
-            if (p.curve->points.empty()) {
-                ctx.publish_e2m_command_ack("start_session", "curve has empty points");
-                ctx.vars.charge_mode.reset();
-                ctx.vars.bpt.reset();
-                return {false, nullptr};
-            }
-            for (std::size_t i = 1; i < p.curve->points.size(); ++i) {
-                if (p.curve->points[i].t_offset_ms <= p.curve->points[i - 1].t_offset_ms) {
-                    ctx.publish_e2m_command_ack("start_session", "curve points not monotonic");
-                    ctx.vars.charge_mode.reset();
-                    ctx.vars.bpt.reset();
-                    return {false, nullptr};
+    switch (kind_of(ev)) {
+    case EK::BeginSession: {
+        // Source the spec from the latched configure_session, or synthesize a
+        // bare AcIec session from cfg defaults when nothing was configured.
+        // The latched spec was already validated (curve + ISO/SLAC peer) at
+        // configure time, and a synthesized default has no curve, so no
+        // validation is repeated here.
+        const api::SessionConfigParams sp =
+            ctx.configured_session.has_value()
+                ? *ctx.configured_session
+                : api::SessionConfigParams{api::AcIecSessionParams{static_cast<float>(ctx.cfg.max_current_a),
+                                                                   ctx.cfg.three_phases, std::nullopt}};
+        const api::ChargeMode mode = api::mode_of(sp);
+
+        // Pull the fields each alternative carries into a flat local view.
+        // Fields absent from an alternative stay nullopt — the variant makes
+        // illegal combinations (mcs on AcIec, bpt on a non-D20 mode)
+        // unrepresentable, so the old runtime rejections are gone.
+        std::optional<api::PaymentOption> payment;
+        std::optional<int32_t> departure_time_s;
+        std::optional<int32_t> e_amount_wh;
+        std::optional<float> charging_current_a;
+        std::optional<bool> three_phases;
+        std::optional<api::BptParams> bpt;
+        bool mcs_enabled = false;
+        std::optional<api::ChargingCurve> curve;
+        std::visit(
+            [&](const auto& v) {
+                using T = std::decay_t<decltype(v)>;
+                if constexpr (std::is_same_v<T, api::AcIecSessionParams>) {
+                    charging_current_a = v.charging_current_a;
+                    three_phases = v.three_phases;
+                    curve = v.curve;
+                } else if constexpr (std::is_same_v<T, api::AcIso2SessionParams>) {
+                    payment = v.payment;
+                    departure_time_s = v.departure_time_s;
+                    e_amount_wh = v.e_amount_wh;
+                    charging_current_a = v.charging_current_a;
+                    three_phases = v.three_phases;
+                    curve = v.curve;
+                } else if constexpr (std::is_same_v<T, api::AcIsoD20SessionParams>) {
+                    payment = v.payment;
+                    departure_time_s = v.departure_time_s;
+                    e_amount_wh = v.e_amount_wh;
+                    charging_current_a = v.charging_current_a;
+                    three_phases = v.three_phases;
+                    bpt = v.bpt;
+                    curve = v.curve;
+                } else if constexpr (std::is_same_v<T, api::DcIso2SessionParams>) {
+                    payment = v.payment;
+                    departure_time_s = v.departure_time_s;
+                    e_amount_wh = v.e_amount_wh;
+                    curve = v.curve;
+                } else if constexpr (std::is_same_v<T, api::DcIsoD20SessionParams>) {
+                    payment = v.payment;
+                    departure_time_s = v.departure_time_s;
+                    e_amount_wh = v.e_amount_wh;
+                    bpt = v.bpt;
+                    mcs_enabled = v.mcs_enabled;
+                    curve = v.curve;
                 }
-            }
+            },
+            sp);
+
+        // Falling back on cfg defaults when the user omits a field is
+        // intentional UX for AC scenarios — but log the substitution so the
+        // omission is visible rather than silent.
+        float current_a;
+        if (charging_current_a) {
+            current_a = *charging_current_a;
+        } else {
+            current_a = static_cast<float>(ctx.cfg.max_current_a);
+            EVLOG_info << "EvSimulator: session config omitted charging_current_a; using cfg.max_current_a="
+                       << current_a;
         }
-        ctx.vars.mcs = p.mcs;
-        auto current_a = p.charging_current_a.value_or(static_cast<float>(ctx.cfg.max_current_a));
-        auto three_ph = p.three_phases.value_or(ctx.cfg.three_phases);
-        if (p.mode == api::ChargeMode::AcIso2 || p.mode == api::ChargeMode::AcIsoD20 ||
-            p.mode == api::ChargeMode::DcIso2 || p.mode == api::ChargeMode::DcIsoD20) {
-            if (!ctx.peer_actions.iso_start_charging || !ctx.peer_actions.slac_trigger_matching) {
-                ctx.publish_e2m_command_ack("start_session", "no ev_slac peer");
-                ctx.vars.charge_mode.reset();
-                ctx.vars.bpt.reset();
-                ctx.vars.mcs.reset();
-                return {false, nullptr};
-            }
+        bool three_ph;
+        if (three_phases) {
+            three_ph = *three_phases;
+        } else {
+            three_ph = ctx.cfg.three_phases;
+            EVLOG_info << "EvSimulator: session config omitted three_phases; using cfg.three_phases=" << three_ph;
         }
-        if (p.mode == api::ChargeMode::AcIec || p.mode == api::ChargeMode::AcIso2 ||
-            p.mode == api::ChargeMode::AcIsoD20) {
+        if (mode == api::ChargeMode::AcIec || mode == api::ChargeMode::AcIso2 || mode == api::ChargeMode::AcIsoD20) {
             ctx.bsp_apply_ac_params(current_a, three_ph);
         }
-        if (p.departure_time_s) {
-            ctx.vars.departure_time_s = *p.departure_time_s;
+        if (departure_time_s) {
+            ctx.vars.departure_time_s = *departure_time_s;
         }
-        if (p.e_amount_wh) {
-            ctx.vars.e_amount_wh = *p.e_amount_wh;
+        if (e_amount_wh) {
+            ctx.vars.e_amount_wh = *e_amount_wh;
         }
-        if (p.payment) {
-            ctx.persisted.last_mode = p.mode;
+        // Commit the whole session in one assignment. The pending_curve is
+        // carried so Charging::enter can splice it into the scenario
+        // dispatcher: splicing here would let an offset-0 step land in the
+        // runtime queue while the FSM is still in SlacMatching /
+        // V2GNegotiating / BcbToggling, all of which reject
+        // SetChargingCurrent. Curve well-formedness is already enforced at
+        // configure_session time.
+        Session sess;
+        sess.mode = mode;
+        sess.payment = payment;
+        sess.bpt = bpt;
+        sess.mcs_enabled = mcs_enabled;
+        if (curve.has_value()) {
+            sess.pending_curve = std::move(curve);
         }
-        if (p.curve.has_value() && !p.curve->points.empty()) {
-            std::vector<ScenarioStep> curve_steps;
-            curve_steps.reserve(p.curve->points.size());
-            for (const auto& cp : p.curve->points) {
-                Event sc_ev;
-                sc_ev.kind = EventKind::SetChargingCurrent;
-                api::SetChargingCurrentParams sc;
-                sc.current_a = cp.current_a;
-                sc.three_phases = cp.three_phases;
-                sc.ramp_ms = cp.ramp_ms;
-                sc_ev.payload = std::move(sc);
-                curve_steps.push_back({std::chrono::milliseconds(cp.t_offset_ms), std::move(sc_ev)});
-            }
-            const std::size_t loop_begin = ctx.scenario.step_count();
-            const std::size_t loop_end = loop_begin + curve_steps.size();
-            ctx.scenario.append_steps(std::move(curve_steps), ctx);
-            if (p.curve->loop) {
-                ctx.scenario.mark_loop(loop_begin, loop_end);
-            }
-        }
-        switch (p.mode) {
+        ctx.vars.session = std::move(sess);
+        switch (mode) {
         case api::ChargeMode::AcIec:
             return {false, nullptr};
         case api::ChargeMode::AcIso2:
@@ -102,27 +148,21 @@ StateBase::Result Plugged::feed(EventType ev) {
         case api::ChargeMode::DcIso2:
         case api::ChargeMode::DcIsoD20:
             return {false, std::make_unique<SlacMatching>(ctx)};
-        default:
-            return {false, nullptr};
         }
+        return {false, nullptr};
     }
     case EK::BspMeasurement: {
         const auto& m = std::get<BspMeasurementPayload>(ev.payload);
         ctx.vars.pwm_duty_cycle = m.cp_pwm_duty_cycle;
-        if (ctx.vars.charge_mode == api::ChargeMode::AcIec && m.cp_pwm_duty_cycle > 7 && m.cp_pwm_duty_cycle < 97) {
+        if (ctx.vars.charge_mode() == api::ChargeMode::AcIec && m.cp_pwm_duty_cycle > 7 && m.cp_pwm_duty_cycle < 97) {
             return {false, std::make_unique<Charging>(ctx)};
         }
         return {false, nullptr};
     }
     case EK::Unplug:
         return {false, std::make_unique<Unplugged>(ctx)};
-    case EK::BspEvent: {
-        const auto& p = std::get<BspEventPayload>(ev.payload);
-        if (::types::board_support_common::event_to_string(p.bsp_event.event) == "Disconnected") {
-            return {false, std::make_unique<Unplugged>(ctx)};
-        }
-        return {true, nullptr};
-    }
+    case EK::BspEvent:
+        return handle_disconnect(ev);
     case EK::InjectFault: {
         auto p = std::get<api::InjectFaultParams>(ev.payload);
         return transition_to_fault(ctx, p);
@@ -132,29 +172,14 @@ StateBase::Result Plugged::feed(EventType ev) {
     case EK::QueryState:
         return handle_query_state(ctx, api::FsmState::Plugged);
     case EK::StopSession:
-        ctx.publish_e2m_command_ack("stop_session", "no session active");
-        return {false, nullptr};
     case EK::PauseSession:
-        ctx.publish_e2m_command_ack("pause_session", "no session active");
-        return {false, nullptr};
     case EK::ResumeSession:
-        ctx.publish_e2m_command_ack("resume_session", "no session active");
-        return {false, nullptr};
     case EK::SetChargingCurrent:
-        ctx.publish_e2m_command_ack("set_charging_current", "no session active");
-        return {false, nullptr};
     case EK::ClearFault:
-        ctx.publish_e2m_command_ack("clear_fault", "no session active");
-        return {false, nullptr};
     case EK::BcbToggle:
-        ctx.publish_e2m_command_ack("bcb_toggle", "no session active");
-        return {false, nullptr};
     case EK::SetSoc:
-        ctx.publish_e2m_command_ack("set_soc", "no session active");
-        return {false, nullptr};
     case EK::RunScenario:
-        ctx.publish_e2m_command_ack("run_scenario", "no session active");
-        return {false, nullptr};
+        return reject(ev, "no session active");
     case EK::Plug:
     case EK::Enable:
     case EK::EvInfo:
@@ -167,6 +192,12 @@ StateBase::Result Plugged::feed(EventType ev) {
     case EK::IsoDcPowerOn:
     case EK::IsoPauseFromCharger:
     case EK::StateDeadline:
+    // ConfigureSession is intercepted pre-FSM (loop thread); RaiseError /
+    // ClearError likewise. Listed only to keep the switch exhaustive
+    // (-Werror=switch).
+    case EK::ConfigureSession:
+    case EK::RaiseError:
+    case EK::ClearError:
     case EK::Shutdown:
         return {true, nullptr};
     }

@@ -33,8 +33,6 @@ DEFAULT_BPT: Dict[str, float] = {
     "discharge_minimal_soc": 20.0,
 }
 
-DEFAULT_MCS: Dict[str, Any] = {}
-
 _API_PATH = "everest_api/1/ev_simulator"
 _DEFAULT_MODULE_ID = "ev_manager"
 
@@ -53,9 +51,13 @@ class StateCollector:
         self._state_topic = f"{base_e2m}/state"
         self._fault_topic = f"{base_e2m}/fault"
         self._command_ack_topic = f"{base_e2m}/command_ack"
+        self._ev_info_topic = f"{base_e2m}/ev_info"
+        self._bsp_event_topic = f"{base_e2m}/bsp_event"
         self.states: List[str] = []
         self.faults: List[Dict[str, Any]] = []
         self.command_acks: List[Dict[str, Any]] = []
+        self.ev_infos: List[Dict[str, Any]] = []
+        self.bsp_events: List[Dict[str, Any]] = []
         self.last_state: Optional[str] = None
         self._cv = threading.Condition()
 
@@ -63,6 +65,10 @@ class StateCollector:
         mqtt_client.message_callback_add(self._fault_topic, self._on_fault)
         mqtt_client.message_callback_add(
             self._command_ack_topic, self._on_command_ack
+        )
+        mqtt_client.message_callback_add(self._ev_info_topic, self._on_ev_info)
+        mqtt_client.message_callback_add(
+            self._bsp_event_topic, self._on_bsp_event
         )
         mqtt_client.subscribe(f"{base_e2m}/+")
 
@@ -100,19 +106,112 @@ class StateCollector:
             self.command_acks.append(value)
             self._cv.notify_all()
 
-    def wait_for_state(self, target: str, timeout: float = 30.0) -> bool:
-        """Block until `last_state == target` or until `timeout` elapses.
+    def _on_ev_info(self, _client, _userdata, msg) -> None:
+        try:
+            value = json.loads(msg.payload.decode())
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return
+        if not isinstance(value, dict):
+            return
+        with self._cv:
+            self.ev_infos.append(value)
+            self._cv.notify_all()
 
-        Returns True on a match, False on timeout.
+    def _on_bsp_event(self, _client, _userdata, msg) -> None:
+        try:
+            value = json.loads(msg.payload.decode())
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return
+        if not isinstance(value, dict):
+            return
+        with self._cv:
+            self.bsp_events.append(value)
+            self._cv.notify_all()
+
+    def wait_for_fault(
+        self, fault_type: str, timeout: float = 30.0
+    ) -> Optional[Dict[str, Any]]:
+        """Block until an `e2m/fault` of `fault_type` is seen, or timeout.
+
+        Returns the matching FaultReport dict (keys: ``type``,
+        optional ``message``/``rcd_mA``) on success, None on timeout.
+        Asserting the fault TYPE — not merely that state left Charging —
+        prevents a spurious unrelated transition from passing a
+        fault-injection test falsely.
         """
         deadline = time.time() + timeout
         with self._cv:
-            while self.last_state != target:
+            scanned = 0
+            while True:
+                while scanned < len(self.faults):
+                    f = self.faults[scanned]
+                    if f.get("type") == fault_type:
+                        return f
+                    scanned += 1
                 remaining = deadline - time.time()
                 if remaining <= 0:
-                    return self.last_state == target
+                    return None
                 self._cv.wait(timeout=remaining)
-            return True
+
+    def wait_for_soc_progress(
+        self, min_increase: float = 0.01, timeout: float = 30.0
+    ) -> bool:
+        """Block until SoC advances by at least `min_increase` percent.
+
+        Anchored on the first `e2m/ev_info` observed from call entry;
+        returns True once a later ev_info reports
+        ``soc_pct >= baseline + min_increase``. This is a positive
+        observable that the session is actually charging (not merely
+        that the FSM reached `Charging` at 0 A). False on timeout or if
+        no ev_info ever arrives.
+        """
+        deadline = time.time() + timeout
+        with self._cv:
+            scanned = len(self.ev_infos)
+            baseline: Optional[float] = None
+            while True:
+                while scanned < len(self.ev_infos):
+                    soc = self.ev_infos[scanned].get("soc_pct")
+                    if isinstance(soc, (int, float)):
+                        if baseline is None:
+                            baseline = float(soc)
+                        elif float(soc) >= baseline + min_increase:
+                            return True
+                    scanned += 1
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    return False
+                self._cv.wait(timeout=remaining)
+
+    def wait_for_state(self, target: str, timeout: float = 30.0) -> bool:
+        """Block until `target` is observed on `e2m/state`, or `timeout`.
+
+        Matches against the full state history rather than only
+        `last_state`: the FSM can pass through `target` transiently
+        between two e2m publishes, and a `last_state`-only check would
+        miss it and spuriously time out. A high-water mark anchored at
+        call entry ensures only states observed from this call onward
+        are considered (a stale earlier occurrence from a prior session
+        does not produce a false positive). Returns True on a match,
+        False on timeout.
+        """
+        deadline = time.time() + timeout
+        with self._cv:
+            # Already in the target state when the call is made.
+            if self.last_state == target:
+                return True
+            scanned = len(self.states)
+            while True:
+                while scanned < len(self.states):
+                    if self.states[scanned] == target:
+                        return True
+                    scanned += 1
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    # Final scan in case states were appended right at
+                    # the deadline boundary.
+                    return target in self.states[scanned:] or self.last_state == target
+                self._cv.wait(timeout=remaining)
 
     def wait_for_state_not(self, target: str, timeout: float = 30.0) -> bool:
         """Block until `last_state != target` or until `timeout` elapses.
@@ -127,6 +226,32 @@ class StateCollector:
                     return self.last_state != target
                 self._cv.wait(timeout=remaining)
             return True
+
+    def wait_for_command_ack(
+        self,
+        command: str,
+        status: str,
+        timeout: float = 10.0,
+    ) -> Optional[Dict[str, Any]]:
+        """Block until a ``command_ack`` matching ``command`` and ``status`` arrives.
+
+        Scans ``command_acks`` from a high-water mark set at call entry
+        so earlier acks from a prior command are not matched. Returns the
+        matching ack dict on success, None on timeout.
+        """
+        deadline = time.time() + timeout
+        with self._cv:
+            scanned = len(self.command_acks)
+            while True:
+                while scanned < len(self.command_acks):
+                    ack = self.command_acks[scanned]
+                    if ack.get("command") == command and ack.get("status") == status:
+                        return ack
+                    scanned += 1
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    return None
+                self._cv.wait(timeout=remaining)
 
 
 class EvSimulatorTestController:
@@ -184,29 +309,50 @@ class EvSimulatorTestController:
     def start(self, connector_id: int = 1) -> None:
         """Enable the simulator (publishes `m2e/enable` for `connector_id`)."""
         del connector_id  # topic is per-module; connector_id reserved for API symmetry
-        self._publish("enable", {"enable": True})
+        # m2e/enable carries a bare JSON bool, not an object: CommandRouter
+        # deserializes the payload directly into `bool` (a `{"enable": ...}`
+        # object fails adl_deserialize, the throw is swallowed, and the FSM
+        # never leaves Disabled). Matches evsimulator_smoke_test's json.dumps(True).
+        #
+        # MQTT has no retained delivery here, so an `enable` published before
+        # the module finishes subscribing to its m2e topics is silently lost
+        # and the FSM stays Disabled forever. Re-publish (Enable is idempotent)
+        # until the FSM reports it left Disabled, or give up after the bound.
+        deadline = time.time() + 15.0
+        while time.time() < deadline:
+            self._publish("enable", True)
+            if self.state_collector.wait_for_state("Unplugged", timeout=1.0):
+                return
+        # Final attempt recorded; callers' own wait_for_state will surface a
+        # clear failure if the module never came up.
+        self._publish("enable", True)
 
     def stop(self) -> None:
         """Tear down the MQTT client and stop the background network loop."""
         if self._mqtt_client is not None:
             try:
-                self._mqtt_client.loop_stop()
-            finally:
+                # disconnect() before loop_stop() (paho-recommended): the
+                # network loop must still be running to flush the DISCONNECT
+                # packet, otherwise the broker sees an ungraceful drop.
                 self._mqtt_client.disconnect()
+            finally:
+                self._mqtt_client.loop_stop()
             self._mqtt_client = None
 
     def plug_in(self, connector_id: int = 1) -> None:
-        """Plug in and start a default AC IEC session, then wait for Charging."""
+        """Configure a default AC IEC session, plug in, wait for Charging."""
         del connector_id
-        self._publish("plug", {})
         self._publish(
-            "start_session",
+            "configure_session",
             {
                 "mode": "AcIec",
-                "charging_current_a": 32.0,
-                "three_phases": True,
+                "params": {
+                    "charging_current_a": 32.0,
+                    "three_phases": True,
+                },
             },
         )
+        self._publish("plug", {})
         self.state_collector.wait_for_state("Charging", timeout=30.0)
 
     def plug_in_ac_iso(
@@ -214,71 +360,84 @@ class EvSimulatorTestController:
         connector_id: int = 1,
         payment_type: Optional[str] = None,
     ) -> None:
-        """Plug in and start an AC ISO 15118-2 session."""
+        """Configure an AC ISO 15118-2 session, then plug in."""
         del connector_id
-        self._publish("plug", {})
-        payload: Dict[str, Any] = {
-            "mode": "AcIso2",
+        params: Dict[str, Any] = {
             "charging_current_a": 16.0,
             "three_phases": True,
         }
         if payment_type is not None:
-            payload["payment"] = payment_type
-        self._publish("start_session", payload)
+            params["payment"] = payment_type
+        self._publish(
+            "configure_session",
+            {"mode": "AcIso2", "params": params},
+        )
+        self._publish("plug", {})
 
     def plug_in_dc_iso(
         self,
         connector_id: int = 1,
         payment_type: Optional[str] = None,
     ) -> None:
-        """Plug in and start a DC ISO 15118-2 session."""
+        """Configure a DC ISO 15118-2 session, then plug in."""
         del connector_id
-        self._publish("plug", {})
-        payload: Dict[str, Any] = {"mode": "DcIso2"}
+        params: Dict[str, Any] = {}
         if payment_type is not None:
-            payload["payment"] = payment_type
-        self._publish("start_session", payload)
+            params["payment"] = payment_type
+        self._publish(
+            "configure_session",
+            {"mode": "DcIso2", "params": params},
+        )
+        self._publish("plug", {})
 
     def plug_in_dc_d20(
         self,
         connector_id: int = 1,
         payment_type: Optional[str] = None,
     ) -> None:
-        """Plug in and start a DC ISO 15118-20 session."""
+        """Configure a DC ISO 15118-20 session, then plug in."""
         del connector_id
-        self._publish("plug", {})
-        payload: Dict[str, Any] = {"mode": "DcIsoD20"}
+        params: Dict[str, Any] = {}
         if payment_type is not None:
-            payload["payment"] = payment_type
-        self._publish("start_session", payload)
+            params["payment"] = payment_type
+        self._publish(
+            "configure_session",
+            {"mode": "DcIsoD20", "params": params},
+        )
+        self._publish("plug", {})
 
     def plug_in_dc_bpt(
         self,
         connector_id: int = 1,
         bpt_params: Optional[Dict[str, float]] = None,
     ) -> None:
-        """Plug in and start a DC ISO 15118-20 BPT session."""
+        """Configure a DC ISO 15118-20 BPT session, then plug in."""
         del connector_id
-        params = dict(DEFAULT_BPT) if bpt_params is None else dict(bpt_params)
-        self._publish("plug", {})
+        bpt = dict(DEFAULT_BPT) if bpt_params is None else dict(bpt_params)
         self._publish(
-            "start_session",
-            {"mode": "DcIsoD20", "bpt": params},
+            "configure_session",
+            {"mode": "DcIsoD20", "params": {"bpt": bpt}},
         )
+        self._publish("plug", {})
 
     def plug_in_dc_mcs(
         self,
         connector_id: int = 1,
         mcs_profile: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Plug in and start a DC ISO 15118-20 MCS session."""
+        """Configure a DC ISO 15118-20 MCS session, then plug in.
+
+        MCS is now a boolean enable flag on the wire (`mcs_enabled`);
+        `mcs_profile` is accepted only for backward call-site
+        compatibility and is otherwise ignored.
+        """
         del connector_id
-        profile = dict(DEFAULT_MCS) if mcs_profile is None else dict(mcs_profile)
-        self._publish("plug", {})
+        del mcs_profile
         self._publish(
-            "start_session",
-            {"mode": "DcIsoD20", "mcs": profile},
+            "configure_session",
+            {"mode": "DcIsoD20", "params": {"mcs_enabled": True}},
         )
+        self._publish("plug", {})
 
     def plug_out(self, connector_id: int = 1) -> None:
         """Unplug without negotiating an ISO 15118 stop first."""
@@ -317,10 +476,26 @@ class EvSimulatorTestController:
         del connector_id
         self._publish("clear_fault", {})
 
-    def run_scenario(self, name: str, connector_id: int = 1) -> None:
-        """Run a named end-to-end scenario."""
+    def run_scenario(
+        self,
+        name: str,
+        connector_id: int = 1,
+        timing: Optional[Dict[str, int]] = None,
+    ) -> None:
+        """Run a named end-to-end scenario.
+
+        `timing` is an optional dict of scenario timing override fields.
+        Accepted keys (all in milliseconds, all optional):
+          ``pause_at_ms``, ``resume_at_ms``, ``stop_after_ms``,
+          ``unplug_after_ms``, ``fault_at_ms``, ``clear_fault_at_ms``.
+        When ``timing`` is None or empty it is omitted from the wire
+        payload and the simulator applies its built-in preset timings.
+        """
         del connector_id
-        self._publish("run_scenario", {"name": name})
+        payload: Dict[str, Any] = {"name": name}
+        if timing:
+            payload["timing"] = timing
+        self._publish("run_scenario", payload)
 
     def query_state(self, connector_id: int = 1) -> Optional[str]:
         """Return the last FSM state observed on `e2m/state`.
@@ -380,19 +555,22 @@ class EvSimulatorTestController:
         mode: str = "DcIso2",
         connector_id: int = 1,
     ) -> None:
-        """Re-issue `start_session` with an attached charging curve.
+        """Latch a `configure_session` with an attached charging curve.
 
         Each entry in `points` is a `CurvePoint` dict with the keys
         `t_offset_ms`, `current_a`, `three_phases`, and optionally
         `ramp_ms`. The published payload has the shape
-        `{"mode": mode, "curve": {"points": points, "loop": loop}}`.
+        `{"mode": mode, "params": {"curve": {"points": points,
+        "loop": loop}}}`.
 
-        This method re-issues `m2e/start_session` with the given curve;
-        it is typically used by tests already inside a session that
-        want to inject a profile mid-test.
+        Publishes `m2e/configure_session`; the curve is latched and
+        applied at the next plug (it does not alter a live session).
         """
         del connector_id
         self._publish(
-            "start_session",
-            {"mode": mode, "curve": {"points": list(points), "loop": loop}},
+            "configure_session",
+            {
+                "mode": mode,
+                "params": {"curve": {"points": list(points), "loop": loop}},
+            },
         )

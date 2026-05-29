@@ -6,6 +6,8 @@
 #include "Unplugged.hpp"
 #include "V2GNegotiating.hpp"
 
+#include <everest/logging.hpp>
+
 #include <chrono>
 
 namespace module {
@@ -13,9 +15,13 @@ namespace module {
 namespace api = API_types::ev_simulator;
 
 void BcbToggling::enter() {
-    // bcb_remaining is pre-set by Paused::feed(ResumeSession) (= 6 = 3 round-trips × 2 edges);
-    // default to 6 here for robustness if entered via a path that didn't seed it.
+    // bcb_remaining is pre-set by callers: Paused::feed(ResumeSession) seeds 6
+    // (= 3 round-trips × 2 edges); Paused::feed(BcbToggle) seeds
+    // params.count * 2 (defaulting to 6 when count is absent). Default to 6
+    // here for robustness if entered via a path that did not seed it.
     if (ctx.vars.bcb_remaining == 0) {
+        EVLOG_warning << "EvSimulator: BcbToggling::enter found bcb_remaining=0; reseeding to default 6 "
+                         "(caller should have set this)";
         ctx.vars.bcb_remaining = 6;
     }
     ctx.set_cp(::types::ev_board_support::EvCpState::B);
@@ -26,7 +32,7 @@ void BcbToggling::enter() {
 StateBase::Result BcbToggling::feed(EventType ev) {
     using EK = EventKind;
     using CpS = ::types::ev_board_support::EvCpState;
-    switch (ev.kind) {
+    switch (kind_of(ev)) {
     case EK::StateDeadline: {
         // Parity: even → set_cp(C); odd → set_cp(B). Then decrement; when 0 → V2GNegotiating.
         if (ctx.vars.bcb_remaining % 2 == 0) {
@@ -43,13 +49,8 @@ StateBase::Result BcbToggling::feed(EventType ev) {
     }
     case EK::Unplug:
         return {false, std::make_unique<Unplugged>(ctx)};
-    case EK::BspEvent: {
-        const auto& p = std::get<BspEventPayload>(ev.payload);
-        if (::types::board_support_common::event_to_string(p.bsp_event.event) == "Disconnected") {
-            return {false, std::make_unique<Unplugged>(ctx)};
-        }
-        return {true, nullptr};
-    }
+    case EK::BspEvent:
+        return handle_disconnect(ev);
     case EK::InjectFault: {
         auto p = std::get<api::InjectFaultParams>(ev.payload);
         return transition_to_fault(ctx, p);
@@ -58,33 +59,15 @@ StateBase::Result BcbToggling::feed(EventType ev) {
         return transition_to_disabled(ctx);
     case EK::QueryState:
         return handle_query_state(ctx, api::FsmState::BcbToggling);
-    case EK::StartSession:
-        ctx.publish_e2m_command_ack("start_session", "BCB toggling in progress");
-        return {false, nullptr};
     case EK::StopSession:
-        ctx.publish_e2m_command_ack("stop_session", "BCB toggling in progress");
-        return {false, nullptr};
     case EK::PauseSession:
-        ctx.publish_e2m_command_ack("pause_session", "BCB toggling in progress");
-        return {false, nullptr};
     case EK::ResumeSession:
-        ctx.publish_e2m_command_ack("resume_session", "BCB toggling in progress");
-        return {false, nullptr};
     case EK::SetChargingCurrent:
-        ctx.publish_e2m_command_ack("set_charging_current", "BCB toggling in progress");
-        return {false, nullptr};
     case EK::ClearFault:
-        ctx.publish_e2m_command_ack("clear_fault", "BCB toggling in progress");
-        return {false, nullptr};
     case EK::BcbToggle:
-        ctx.publish_e2m_command_ack("bcb_toggle", "BCB toggling in progress");
-        return {false, nullptr};
     case EK::SetSoc:
-        ctx.publish_e2m_command_ack("set_soc", "BCB toggling in progress");
-        return {false, nullptr};
     case EK::RunScenario:
-        ctx.publish_e2m_command_ack("run_scenario", "BCB toggling in progress");
-        return {false, nullptr};
+        return reject(ev, "BCB toggling in progress");
     case EK::Plug:
     case EK::Enable:
     case EK::BspMeasurement:
@@ -97,6 +80,14 @@ StateBase::Result BcbToggling::feed(EventType ev) {
     case EK::IsoV2GFinished:
     case EK::IsoDcPowerOn:
     case EK::IsoPauseFromCharger:
+    // RaiseError / ClearError are intercepted on the loop thread before the
+    // FSM feed; listed only to keep the switch exhaustive (-Werror=switch).
+    // ConfigureSession is intercepted pre-FSM (loop thread); BeginSession is
+    // an internal Plugged-only self-advance. Listed for switch exhaustiveness.
+    case EK::ConfigureSession:
+    case EK::BeginSession:
+    case EK::RaiseError:
+    case EK::ClearError:
     case EK::Shutdown:
         return {true, nullptr};
     }

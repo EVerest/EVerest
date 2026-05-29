@@ -12,10 +12,12 @@
 #include <everest/io/event/timer_fd.hpp>
 #include <everest/util/fsm/fsm.hpp>
 #include <everest/util/queue/thread_safe_queue.hpp>
+#include <framework/everest.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <vector>
 
 namespace module {
 
@@ -23,7 +25,7 @@ namespace module {
 //   - wake_fd: external producers enqueue events and poke wake_fd
 //   - state_timer_fd: per-state deadline (e.g. BcbToggling step timer)
 //   - tick_fd: periodic SoC integrator while Charging
-//   - scenario_timer_fd: scenario-end one-shot, armed by ScenarioDispatcher
+//   - scenario_timer_fd: re-armed per scenario step by ScenarioDispatcher
 class EvSimRuntime {
 public:
     explicit EvSimRuntime(EvSimulator& mod);
@@ -47,8 +49,7 @@ public:
 
     void arm_tick(int interval_ms);
     void disarm_tick();
-    void arm_scenario_timer(std::chrono::seconds s);
-    void disarm_scenario_timer();
+    void arm_scenario_timer(std::chrono::milliseconds ms);
 
 private:
     void on_wake();
@@ -71,6 +72,15 @@ private:
     everest::lib::io::event::timer_fd tick_fd;
     everest::lib::io::event::timer_fd scenario_timer_fd;
     everest::lib::util::thread_safe_queue<Event> queue;
+
+    // MQTT UnsubscribeTokens for the m2e command-router subscriptions. The
+    // dtor invokes each token so the captured `*this` references stop seeing
+    // MQTT deliveries before the rest of the runtime is destroyed. Peer-side
+    // (`r_ev_board_support->subscribe_*` etc.) subscriptions go through the
+    // framework-generated `subscribe_<var>` methods that do not return tokens
+    // — those rely on framework-level shutdown to stop event delivery before
+    // module destruction.
+    std::vector<Everest::UnsubscribeToken> command_router_tokens;
 };
 
 } // namespace module

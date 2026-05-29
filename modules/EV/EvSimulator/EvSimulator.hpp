@@ -61,6 +61,7 @@ struct Conf {
     double battery_full_threshold_pct;
     int cfg_communication_check_to_s;
     int cfg_heartbeat_interval_ms;
+    bool enabled_at_startup;
 };
 
 class EvSimulator : public Everest::ModuleBase {
