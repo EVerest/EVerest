@@ -1,0 +1,27 @@
+stateDiagram-v2
+    direction TB
+
+    [*] --> Plugged
+
+    Plugged --> SlacMatching : StartSession (AcIso2 / AcIsoD20 / DcIso2 / DcIsoD20)
+
+    SlacMatching --> V2GNegotiating : SlacState=MATCHED
+    SlacMatching --> Faulted : StateDeadline (30s, SlacTimeout)
+
+    V2GNegotiating --> Charging : IsoPowerReady
+    V2GNegotiating --> Stopping : IsoStopFromCharger / Unplug
+    V2GNegotiating --> Faulted : StateDeadline (60s, V2GTimeout)
+
+    Charging --> Paused : PauseSession / IsoPauseFromCharger
+    Charging --> Stopping : StopSession / IsoStopFromCharger
+    Charging --> Faulted : InjectFault
+
+    Paused --> BcbToggling : ResumeSession (seeds bcb_remaining=6)
+    Paused --> Stopping : Unplug / StateDeadline (1h watchdog)
+    Paused --> Faulted : InjectFault
+
+    BcbToggling --> V2GNegotiating : 6x StateDeadline (B<->C, 250ms)
+    BcbToggling --> Faulted : InjectFault
+
+    Stopping --> [*] : IsoV2GFinished / StateDeadline (10s)
+    Stopping --> Faulted : InjectFault
