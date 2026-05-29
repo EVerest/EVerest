@@ -4,7 +4,7 @@
 
 #include "common_types.hpp"
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 struct DC_WeldingDetectionRequest {
     Header header;
@@ -19,4 +19,4 @@ struct DC_WeldingDetectionResponse {
     datatypes::RationalNumber present_voltage;
 };
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

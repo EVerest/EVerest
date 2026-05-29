@@ -11,7 +11,7 @@
 
 namespace iso15118::d20::state {
 
-message_20::AC_ChargeLoopResponse handle_request(const message_20::AC_ChargeLoopRequest& req,
+msg::d20::AC_ChargeLoopResponse handle_request(const msg::d20::AC_ChargeLoopRequest& req,
                                                  const d20::Session& session, bool stop, bool pause,
                                                  float target_frequency, const AcTargetPower& target_powers,
                                                  const AcPresentPower& present_powers,

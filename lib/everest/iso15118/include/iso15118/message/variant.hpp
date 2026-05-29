@@ -11,7 +11,7 @@
 
 #include "type.hpp"
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 class Variant {
 public:
@@ -23,7 +23,7 @@ public:
         data = new MessageType;
         *static_cast<MessageType*>(data) = in;
         custom_deleter = [](void* ptr) { delete static_cast<MessageType*>(ptr); };
-        type = message_20::TypeTrait<MessageType>::type;
+        type = msg::d20::TypeTrait<MessageType>::type;
     }
     ~Variant();
 
@@ -55,4 +55,4 @@ private:
     Type type{Type::None};
     std::string error;
 };
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

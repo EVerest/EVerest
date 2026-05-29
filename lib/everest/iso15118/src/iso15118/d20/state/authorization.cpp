@@ -12,7 +12,7 @@
 
 namespace iso15118::d20::state {
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 using AuthStatus = dt::AuthStatus;
 
@@ -23,11 +23,11 @@ static bool find_auth_service_in_offered_services(const dt::Authorization& req_s
            offered_auth_services.end();
 }
 
-message_20::AuthorizationResponse handle_request(const message_20::AuthorizationRequest& req,
+msg::d20::AuthorizationResponse handle_request(const msg::d20::AuthorizationRequest& req,
                                                  const d20::Session& session,
                                                  const dt::AuthStatus& authorization_status, bool timeout_reached) {
 
-    message_20::AuthorizationResponse res = message_20::AuthorizationResponse();
+    msg::d20::AuthorizationResponse res = msg::d20::AuthorizationResponse();
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
@@ -112,7 +112,7 @@ Result Authorization::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::AuthorizationRequest>()) {
+    if (const auto req = variant->get_if<msg::d20::AuthorizationRequest>()) {
 
         if (first_req_msg) {
             // TODO(SL): Check if ExternalPayment or Contract is active
@@ -136,7 +136,7 @@ Result Authorization::feed(Event ev) {
         } else {
             return {};
         }
-    } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+    } else if (const auto req = variant->get_if<msg::d20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
         m_ctx.respond(res);
 
@@ -146,7 +146,7 @@ Result Authorization::feed(Event ev) {
         m_ctx.log("expected AuthorizationReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
-        const message_20::Type req_type = variant->get_type();
+        const msg::d20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
         m_ctx.session_stopped = true;

@@ -17,12 +17,12 @@ SCENARIO("App Protocol Ser/Des") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::SAP, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::SAP, stream_view);
 
         THEN("It should be decoded succussfully") {
-            REQUIRE(variant.get_type() == message_20::Type::SupportedAppProtocolReq);
+            REQUIRE(variant.get_type() == msg::d20::Type::SupportedAppProtocolReq);
 
-            const auto& msg = variant.get<message_20::SupportedAppProtocolRequest>();
+            const auto& msg = variant.get<msg::d20::SupportedAppProtocolRequest>();
 
             REQUIRE(msg.app_protocol.size() == 1);
 

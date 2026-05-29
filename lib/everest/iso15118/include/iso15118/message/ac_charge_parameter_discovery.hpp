@@ -7,7 +7,7 @@
 
 #include "common_types.hpp"
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 namespace datatypes {
 
@@ -68,4 +68,4 @@ struct AC_ChargeParameterDiscoveryResponse {
         datatypes::AC_CPDResEnergyTransferMode();
 };
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

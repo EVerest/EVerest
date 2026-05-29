@@ -8,11 +8,11 @@
 
 namespace iso15118::d20::state {
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
-message_20::SessionStopResponse handle_request(const message_20::SessionStopRequest& req, const d20::Session& session) {
+msg::d20::SessionStopResponse handle_request(const msg::d20::SessionStopRequest& req, const d20::Session& session) {
 
-    message_20::SessionStopResponse res;
+    msg::d20::SessionStopResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
@@ -40,7 +40,7 @@ Result SessionStop::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+    if (const auto req = variant->get_if<msg::d20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         std::string ev_termination_code;
@@ -61,14 +61,14 @@ Result SessionStop::feed(Event ev) {
         m_ctx.respond(res);
 
         // Todo(sl): Tell the reason why the charger is stopping. Shutdown, Error, etc.
-        if (req->charging_session == message_20::datatypes::ChargingSession::Pause) {
+        if (req->charging_session == msg::d20::datatypes::ChargingSession::Pause) {
             m_ctx.session_paused = true;
             if (not m_ctx.pause_ctx.has_value()) {
                 logf_error("Pause the session but pause_ctx has no value");
                 return {};
             }
             m_ctx.pause_ctx->selected_service_parameters = m_ctx.session.get_selected_services();
-        } else if (req->charging_session == message_20::datatypes::ChargingSession::Terminate) {
+        } else if (req->charging_session == msg::d20::datatypes::ChargingSession::Terminate) {
             m_ctx.session_stopped = true;
             m_ctx.pause_ctx.reset();
         }
@@ -78,7 +78,7 @@ Result SessionStop::feed(Event ev) {
         m_ctx.log("expected SessionStop! But code type id: %d", variant->get_type());
 
         // Sequence Error
-        const message_20::Type req_type = variant->get_type();
+        const msg::d20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
         m_ctx.session_stopped = true;

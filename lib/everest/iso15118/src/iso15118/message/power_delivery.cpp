@@ -8,7 +8,7 @@
 
 #include <cbv2g/iso_20/iso20_CommonMessages_Encoder.h>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 // Begin conversion for deserializing a PowerDeliveryRequest (EVSEside)
 template <>
@@ -174,4 +174,4 @@ template <> size_t serialize(const PowerDeliveryRequest& in, const io::StreamOut
 }
 // End conversion for serializing a PowerDeliveryRequest (EVside)
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

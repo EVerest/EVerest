@@ -8,7 +8,7 @@
 
 #include <cbv2g/iso_20/iso20_CommonMessages_Encoder.h>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 namespace datatypes {
 
@@ -254,7 +254,7 @@ struct ParameterValueVisitor {
         CB_SET_USED(parameter.finiteString);
         CPP2CB_STRING(in, parameter.finiteString);
     }
-    void operator()(const message_20::datatypes::RationalNumber& in) {
+    void operator()(const msg::d20::datatypes::RationalNumber& in) {
         CB_SET_USED(parameter.rationalNumber);
         parameter.rationalNumber.Exponent = in.exponent;
         parameter.rationalNumber.Value = in.value;
@@ -330,4 +330,4 @@ template <> size_t serialize(const ServiceDetailRequest& in, const io::StreamOut
     return serialize_helper(in, out);
 }
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

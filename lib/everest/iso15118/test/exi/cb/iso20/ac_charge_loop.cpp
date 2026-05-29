@@ -7,7 +7,7 @@
 
 using namespace iso15118;
 
-namespace dt = iso15118::message_20::datatypes;
+namespace dt = iso15118::msg::d20::datatypes;
 
 SCENARIO("Se/Deserialize ac charge loop messages") {
 
@@ -21,19 +21,19 @@ SCENARIO("Se/Deserialize ac charge loop messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20AC, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20AC, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::AC_ChargeLoopReq);
+            REQUIRE(variant.get_type() == msg::d20::Type::AC_ChargeLoopReq);
 
-            const auto& msg = variant.get<message_20::AC_ChargeLoopRequest>();
+            const auto& msg = variant.get<msg::d20::AC_ChargeLoopRequest>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
             REQUIRE(header.timestamp == 1725456333);
             REQUIRE(msg.meter_info_requested == false);
 
-            using ScheduledMode = message_20::datatypes::Scheduled_AC_CLReqControlMode;
+            using ScheduledMode = msg::d20::datatypes::Scheduled_AC_CLReqControlMode;
 
             REQUIRE(std::holds_alternative<ScheduledMode>(msg.control_mode));
             const auto& control_mode = std::get<ScheduledMode>(msg.control_mode);
@@ -55,27 +55,27 @@ SCENARIO("Se/Deserialize ac charge loop messages") {
             REQUIRE(control_mode.present_reactive_power_L3.has_value() == true);
             REQUIRE(dt::from_RationalNumber(*control_mode.present_reactive_power_L3) == 0.0f);
             REQUIRE(control_mode.max_charge_power.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*control_mode.max_charge_power) == 32);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*control_mode.max_charge_power) == 32);
             REQUIRE(control_mode.max_charge_power_L2.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*control_mode.max_charge_power_L2) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*control_mode.max_charge_power_L2) == 0.0f);
             REQUIRE(control_mode.max_charge_power_L3.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*control_mode.max_charge_power_L3) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*control_mode.max_charge_power_L3) == 0.0f);
             REQUIRE(control_mode.min_charge_power.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*control_mode.min_charge_power) == 20);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*control_mode.min_charge_power) == 20);
             REQUIRE(control_mode.min_charge_power_L2.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*control_mode.min_charge_power_L2) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*control_mode.min_charge_power_L2) == 0.0f);
             REQUIRE(control_mode.min_charge_power_L3.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*control_mode.min_charge_power_L3) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*control_mode.min_charge_power_L3) == 0.0f);
         }
     }
 
     GIVEN("Serialize ac_charge_loop request_scheduled mode") {
 
-        message_20::AC_ChargeLoopRequest req;
+        msg::d20::AC_ChargeLoopRequest req;
 
-        req.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456333};
+        req.header = msg::d20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456333};
         req.meter_info_requested = false;
-        auto& control_mode = req.control_mode.emplace<message_20::datatypes::Scheduled_AC_CLReqControlMode>();
+        auto& control_mode = req.control_mode.emplace<msg::d20::datatypes::Scheduled_AC_CLReqControlMode>();
 
         control_mode.target_energy_request = {12345, 0};
         control_mode.max_energy_request = {12000, 0};
@@ -116,12 +116,12 @@ SCENARIO("Se/Deserialize ac charge loop messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20AC, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20AC, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::AC_ChargeLoopReq);
+            REQUIRE(variant.get_type() == msg::d20::Type::AC_ChargeLoopReq);
 
-            const auto& msg = variant.get<message_20::AC_ChargeLoopRequest>();
+            const auto& msg = variant.get<msg::d20::AC_ChargeLoopRequest>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
@@ -134,7 +134,7 @@ SCENARIO("Se/Deserialize ac charge loop messages") {
             REQUIRE(display_parameters.present_soc.value_or(0) == 10);
             REQUIRE(display_parameters.charging_complete.value_or(true) == false);
 
-            using DynamicMode = message_20::datatypes::Dynamic_AC_CLReqControlMode;
+            using DynamicMode = msg::d20::datatypes::Dynamic_AC_CLReqControlMode;
 
             REQUIRE(std::holds_alternative<DynamicMode>(msg.control_mode));
             const auto& control_mode = std::get<DynamicMode>(msg.control_mode);
@@ -146,14 +146,14 @@ SCENARIO("Se/Deserialize ac charge loop messages") {
             REQUIRE(dt::from_RationalNumber(control_mode.min_energy_request) == 1.0f);
             REQUIRE(dt::from_RationalNumber(control_mode.max_charge_power) == 150000.0f);
             REQUIRE(control_mode.max_charge_power_L2.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*control_mode.max_charge_power_L2) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*control_mode.max_charge_power_L2) == 0.0f);
             REQUIRE(control_mode.max_charge_power_L3.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*control_mode.max_charge_power_L3) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*control_mode.max_charge_power_L3) == 0.0f);
             REQUIRE(dt::from_RationalNumber(control_mode.min_charge_power) == 0.0f);
             REQUIRE(control_mode.min_charge_power_L2.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*control_mode.min_charge_power_L2) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*control_mode.min_charge_power_L2) == 0.0f);
             REQUIRE(control_mode.min_charge_power_L3.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*control_mode.min_charge_power_L3) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*control_mode.min_charge_power_L3) == 0.0f);
             REQUIRE(dt::from_RationalNumber(control_mode.present_active_power) == 12000.0f);
             REQUIRE(control_mode.present_active_power_L2.has_value() == true);
             REQUIRE(dt::from_RationalNumber(*control_mode.present_active_power_L2) == 0.0f);
@@ -169,14 +169,14 @@ SCENARIO("Se/Deserialize ac charge loop messages") {
 
     GIVEN("Serialize ac_charge_loop request_dynamic mode") {
 
-        message_20::AC_ChargeLoopRequest req;
+        msg::d20::AC_ChargeLoopRequest req;
 
-        req.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456333};
+        req.header = msg::d20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456333};
         req.meter_info_requested = false;
         auto& disparam = req.display_parameters.emplace();
         disparam.present_soc = 10;
         disparam.charging_complete = false;
-        auto& control_mode = req.control_mode.emplace<message_20::datatypes::Dynamic_AC_CLReqControlMode>();
+        auto& control_mode = req.control_mode.emplace<msg::d20::datatypes::Dynamic_AC_CLReqControlMode>();
         control_mode.departure_time = 1727440880;
         control_mode.target_energy_request = {6000, 1};
         control_mode.max_energy_request = {6000, 1};
@@ -215,12 +215,12 @@ SCENARIO("Se/Deserialize ac charge loop messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20AC, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20AC, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::AC_ChargeLoopRes);
+            REQUIRE(variant.get_type() == msg::d20::Type::AC_ChargeLoopRes);
 
-            const auto& msg = variant.get<message_20::AC_ChargeLoopResponse>();
+            const auto& msg = variant.get<msg::d20::AC_ChargeLoopResponse>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
@@ -232,7 +232,7 @@ SCENARIO("Se/Deserialize ac charge loop messages") {
             REQUIRE(meter_info.meter_id == "1");
             REQUIRE(meter_info.charged_energy_reading_wh == 1234);
 
-            using ScheduledMode = message_20::datatypes::Scheduled_AC_CLResControlMode;
+            using ScheduledMode = msg::d20::datatypes::Scheduled_AC_CLResControlMode;
 
             REQUIRE(std::holds_alternative<ScheduledMode>(msg.control_mode));
             const auto& control_mode = std::get<ScheduledMode>(msg.control_mode);
@@ -260,16 +260,16 @@ SCENARIO("Se/Deserialize ac charge loop messages") {
 
     GIVEN("Serialize ac_charge_loop response scheduled") {
 
-        message_20::AC_ChargeLoopResponse res;
+        msg::d20::AC_ChargeLoopResponse res;
 
-        res.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456334};
-        res.response_code = message_20::datatypes::ResponseCode::OK;
+        res.header = msg::d20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456334};
+        res.response_code = msg::d20::datatypes::ResponseCode::OK;
         res.target_frequency = {50, 0};
         auto& met_info = res.meter_info.emplace();
         met_info.meter_id = "1";
         met_info.charged_energy_reading_wh = 1234;
 
-        auto& res_ctrl_mode = res.control_mode.emplace<message_20::datatypes::Scheduled_AC_CLResControlMode>();
+        auto& res_ctrl_mode = res.control_mode.emplace<msg::d20::datatypes::Scheduled_AC_CLResControlMode>();
         res_ctrl_mode.target_active_power = {12000, 0};
         res_ctrl_mode.target_active_power_L2 = {0, 0};
         res_ctrl_mode.target_active_power_L3 = {0, 0};

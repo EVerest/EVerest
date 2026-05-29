@@ -6,7 +6,7 @@
 
 #include "common_types.hpp"
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 struct SessionSetupRequest {
     Header header;
@@ -19,4 +19,4 @@ struct SessionSetupResponse {
     datatypes::Identifier evseid;
 };
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

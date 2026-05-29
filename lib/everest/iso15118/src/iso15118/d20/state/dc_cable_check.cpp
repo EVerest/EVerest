@@ -10,12 +10,12 @@
 
 namespace iso15118::d20::state {
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
-message_20::DC_CableCheckResponse handle_request(const message_20::DC_CableCheckRequest& req,
+msg::d20::DC_CableCheckResponse handle_request(const msg::d20::DC_CableCheckRequest& req,
                                                  const d20::Session& session, bool cable_check_done) {
 
-    message_20::DC_CableCheckResponse res;
+    msg::d20::DC_CableCheckResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
@@ -54,7 +54,7 @@ Result DC_CableCheck::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::DC_CableCheckRequest>()) {
+    if (const auto req = variant->get_if<msg::d20::DC_CableCheckRequest>()) {
         if (not cable_check_initiated) {
             m_ctx.feedback.signal(session::feedback::Signal::START_CABLE_CHECK);
             cable_check_initiated = true;
@@ -74,7 +74,7 @@ Result DC_CableCheck::feed(Event ev) {
         } else {
             return {};
         }
-    } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+    } else if (const auto req = variant->get_if<msg::d20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
@@ -85,7 +85,7 @@ Result DC_CableCheck::feed(Event ev) {
         m_ctx.log("expected DC_CableCheckReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
-        const message_20::Type req_type = variant->get_type();
+        const msg::d20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
         m_ctx.session_stopped = true;

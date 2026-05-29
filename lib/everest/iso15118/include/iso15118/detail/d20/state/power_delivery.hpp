@@ -7,7 +7,7 @@
 
 namespace iso15118::d20::state {
 
-message_20::PowerDeliveryResponse handle_request(const message_20::PowerDeliveryRequest& req,
+msg::d20::PowerDeliveryResponse handle_request(const msg::d20::PowerDeliveryRequest& req,
                                                  const d20::Session& session, bool contactor_error);
 
 } // namespace iso15118::d20::state

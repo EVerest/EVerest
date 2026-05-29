@@ -6,16 +6,16 @@
 
 using namespace iso15118;
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
-using AuthStatus = message_20::datatypes::AuthStatus;
+using AuthStatus = msg::d20::datatypes::AuthStatus;
 
 SCENARIO("Authorization state handling") {
 
     GIVEN("Bad Case - Unknown session") {
         d20::Session session = d20::Session();
 
-        message_20::AuthorizationRequest req;
+        msg::d20::AuthorizationRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -35,7 +35,7 @@ SCENARIO("Authorization state handling") {
         d20::Session session = d20::Session();
         session.offered_services.auth_services = {dt::Authorization::PnC};
 
-        message_20::AuthorizationRequest req;
+        msg::d20::AuthorizationRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -57,7 +57,7 @@ SCENARIO("Authorization state handling") {
         d20::Session session = d20::Session();
         session.offered_services.auth_services = {dt::Authorization::EIM, dt::Authorization::PnC};
 
-        message_20::AuthorizationRequest req;
+        msg::d20::AuthorizationRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -77,7 +77,7 @@ SCENARIO("Authorization state handling") {
         d20::Session session = d20::Session();
         session.offered_services.auth_services = {dt::Authorization::EIM, dt::Authorization::PnC};
 
-        message_20::AuthorizationRequest req;
+        msg::d20::AuthorizationRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -97,7 +97,7 @@ SCENARIO("Authorization state handling") {
         d20::Session session = d20::Session();
         session.offered_services.auth_services = {dt::Authorization::EIM, dt::Authorization::PnC};
 
-        message_20::AuthorizationRequest req;
+        msg::d20::AuthorizationRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 

@@ -42,7 +42,7 @@ public:
     d20::Context& get_context();
 
     template <typename RequestType> void handle_request(const RequestType& request) {
-        msg_exch.set_input(std::make_unique<message_20::Variant>(request));
+        msg_exch.set_input(std::make_unique<msg::d20::Variant>(request));
     }
 
 private:

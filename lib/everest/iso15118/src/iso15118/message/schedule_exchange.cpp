@@ -10,7 +10,7 @@
 #include <cbv2g/iso_20/iso20_CommonMessages_Decoder.h>
 #include <cbv2g/iso_20/iso20_CommonMessages_Encoder.h>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 // Begin conversion for deserializing a ScheduleExchangeRequest (EVSEside)
 template <> void convert(const struct iso20_EVPowerScheduleEntryType& in, datatypes::EVPowerScheduleEntry& out) {
@@ -684,4 +684,4 @@ template <> size_t serialize(const ScheduleExchangeRequest& in, const io::Stream
 }
 // End conversion for serializing a ScheduleExchangeRequest (EVCCSide)
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

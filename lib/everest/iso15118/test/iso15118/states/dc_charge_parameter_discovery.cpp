@@ -6,13 +6,13 @@
 
 using namespace iso15118;
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
-using DC_ModeReq = message_20::datatypes::DC_CPDReqEnergyTransferMode;
-using BPT_DC_ModeReq = message_20::datatypes::BPT_DC_CPDReqEnergyTransferMode;
+using DC_ModeReq = msg::d20::datatypes::DC_CPDReqEnergyTransferMode;
+using BPT_DC_ModeReq = msg::d20::datatypes::BPT_DC_CPDReqEnergyTransferMode;
 
-using DC_ModeRes = message_20::datatypes::DC_CPDResEnergyTransferMode;
-using BPT_DC_ModeRes = message_20::datatypes::BPT_DC_CPDResEnergyTransferMode;
+using DC_ModeRes = msg::d20::datatypes::DC_CPDResEnergyTransferMode;
+using BPT_DC_ModeRes = msg::d20::datatypes::BPT_DC_CPDResEnergyTransferMode;
 
 SCENARIO("DC charge parameter discovery state handling") {
 
@@ -35,7 +35,7 @@ SCENARIO("DC charge parameter discovery state handling") {
 
         d20::Session session = d20::Session();
 
-        message_20::DC_ChargeParameterDiscoveryRequest req;
+        msg::d20::DC_ChargeParameterDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -79,7 +79,7 @@ SCENARIO("DC charge parameter discovery state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeParameterDiscoveryRequest req;
+        msg::d20::DC_ChargeParameterDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -122,7 +122,7 @@ SCENARIO("DC charge parameter discovery state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeParameterDiscoveryRequest req;
+        msg::d20::DC_ChargeParameterDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -176,7 +176,7 @@ SCENARIO("DC charge parameter discovery state handling") {
         dt::RationalNumber power_ramp_limit = {20, 0};
         powersupply_limits.power_ramp_limit.emplace<>(power_ramp_limit);
 
-        message_20::DC_ChargeParameterDiscoveryRequest req;
+        msg::d20::DC_ChargeParameterDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -231,7 +231,7 @@ SCENARIO("DC charge parameter discovery state handling") {
         discharge_limits.power.max = {11, 3};
         discharge_limits.current.max = {25, 0};
 
-        message_20::DC_ChargeParameterDiscoveryRequest req;
+        msg::d20::DC_ChargeParameterDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -291,7 +291,7 @@ SCENARIO("DC charge parameter discovery state handling") {
         powersupply_limits.charge_limits.current.max = {25, 0};
         powersupply_limits.voltage.max = {900, 0};
 
-        message_20::DC_ChargeParameterDiscoveryRequest req;
+        msg::d20::DC_ChargeParameterDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -348,7 +348,7 @@ SCENARIO("DC charge parameter discovery state handling") {
         dt::RationalNumber power_ramp_limit = {20, 0};
         powersupply_limits.power_ramp_limit.emplace<>(power_ramp_limit);
 
-        message_20::DC_ChargeParameterDiscoveryRequest req;
+        msg::d20::DC_ChargeParameterDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -403,7 +403,7 @@ SCENARIO("DC charge parameter discovery state handling") {
         discharge_limits.power.max = {11, 3};
         discharge_limits.current.max = {25, 0};
 
-        message_20::DC_ChargeParameterDiscoveryRequest req;
+        msg::d20::DC_ChargeParameterDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 

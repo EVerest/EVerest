@@ -8,7 +8,7 @@
 
 #include "cb_exi.hpp"
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 struct VariantAccess {
     // input
@@ -16,15 +16,15 @@ struct VariantAccess {
 
     // output
     void*& data;
-    iso15118::message_20::Type& type;
-    iso15118::message_20::Variant::CustomDeleter& custom_deleter;
+    iso15118::msg::d20::Type& type;
+    iso15118::msg::d20::Variant::CustomDeleter& custom_deleter;
     std::string& error;
 
     template <typename MessageType, typename CbExiMessageType> void insert_type(const CbExiMessageType& in) {
         assert(data == nullptr);
 
         data = new MessageType;
-        type = iso15118::message_20::TypeTrait<MessageType>::type;
+        type = iso15118::msg::d20::TypeTrait<MessageType>::type;
         custom_deleter = [](void* ptr) { delete static_cast<MessageType*>(ptr); };
 
         convert(in, *static_cast<MessageType*>(data));
@@ -33,4 +33,4 @@ struct VariantAccess {
 
 template <typename CbExiMessageType> void insert_type(VariantAccess& va, const CbExiMessageType&);
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

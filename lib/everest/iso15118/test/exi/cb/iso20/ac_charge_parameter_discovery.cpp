@@ -17,41 +17,41 @@ SCENARIO("Se/Deserialize ac charge parameter discovery messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20AC, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20AC, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::AC_ChargeParameterDiscoveryReq);
+            REQUIRE(variant.get_type() == msg::d20::Type::AC_ChargeParameterDiscoveryReq);
 
-            const auto& msg = variant.get<message_20::AC_ChargeParameterDiscoveryRequest>();
+            const auto& msg = variant.get<msg::d20::AC_ChargeParameterDiscoveryRequest>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
             REQUIRE(header.timestamp == 1725456323);
 
-            using AC_ModeReq = message_20::datatypes::AC_CPDReqEnergyTransferMode;
+            using AC_ModeReq = msg::d20::datatypes::AC_CPDReqEnergyTransferMode;
 
             REQUIRE(std::holds_alternative<AC_ModeReq>(msg.transfer_mode));
             const auto& transfer_mode = std::get<AC_ModeReq>(msg.transfer_mode);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.max_charge_power) == 32);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.max_charge_power) == 32);
             REQUIRE(transfer_mode.max_charge_power_L2.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*transfer_mode.max_charge_power_L2) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*transfer_mode.max_charge_power_L2) == 0.0f);
             REQUIRE(transfer_mode.max_charge_power_L3.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*transfer_mode.max_charge_power_L3) == 0.0f);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.min_charge_power) == 20);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*transfer_mode.max_charge_power_L3) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.min_charge_power) == 20);
             REQUIRE(transfer_mode.min_charge_power_L2.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*transfer_mode.min_charge_power_L2) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*transfer_mode.min_charge_power_L2) == 0.0f);
             REQUIRE(transfer_mode.min_charge_power_L3.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*transfer_mode.min_charge_power_L3) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*transfer_mode.min_charge_power_L3) == 0.0f);
         }
     }
 
     GIVEN("Serialize ac_charge_parameter_discovery_req") {
 
-        using AC_ModeReq = message_20::datatypes::AC_CPDReqEnergyTransferMode;
+        using AC_ModeReq = msg::d20::datatypes::AC_CPDReqEnergyTransferMode;
 
-        message_20::AC_ChargeParameterDiscoveryRequest req;
+        msg::d20::AC_ChargeParameterDiscoveryRequest req;
 
-        req.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456323};
+        req.header = msg::d20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456323};
         auto& mode = req.transfer_mode.emplace<AC_ModeReq>();
         mode.max_charge_power = {3200, -2};
         mode.max_charge_power_L2 = {0, 0};
@@ -80,43 +80,43 @@ SCENARIO("Se/Deserialize ac charge parameter discovery messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20AC, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20AC, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::AC_ChargeParameterDiscoveryRes);
+            REQUIRE(variant.get_type() == msg::d20::Type::AC_ChargeParameterDiscoveryRes);
 
-            const auto& msg = variant.get<message_20::AC_ChargeParameterDiscoveryResponse>();
+            const auto& msg = variant.get<msg::d20::AC_ChargeParameterDiscoveryResponse>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
             REQUIRE(header.timestamp == 1725456324);
-            REQUIRE(msg.response_code == message_20::datatypes::ResponseCode::OK);
+            REQUIRE(msg.response_code == msg::d20::datatypes::ResponseCode::OK);
 
-            using AC_ModeRes = message_20::datatypes::AC_CPDResEnergyTransferMode;
+            using AC_ModeRes = msg::d20::datatypes::AC_CPDResEnergyTransferMode;
 
             REQUIRE(std::holds_alternative<AC_ModeRes>(msg.transfer_mode));
             const auto& transfer_mode = std::get<AC_ModeRes>(msg.transfer_mode);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.max_charge_power) == 22080);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.max_charge_power) == 22080);
             REQUIRE(transfer_mode.max_charge_power_L2.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*transfer_mode.max_charge_power_L2) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*transfer_mode.max_charge_power_L2) == 0.0f);
             REQUIRE(transfer_mode.max_charge_power_L3.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*transfer_mode.max_charge_power_L3) == 0.0f);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.min_charge_power) == 20000);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*transfer_mode.max_charge_power_L3) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.min_charge_power) == 20000);
             REQUIRE(transfer_mode.min_charge_power_L2.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*transfer_mode.min_charge_power_L2) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*transfer_mode.min_charge_power_L2) == 0.0f);
             REQUIRE(transfer_mode.min_charge_power_L3.has_value() == true);
-            REQUIRE(message_20::datatypes::from_RationalNumber(*transfer_mode.min_charge_power_L3) == 0.0f);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(*transfer_mode.min_charge_power_L3) == 0.0f);
         }
     }
 
     GIVEN("Serialize ac_charge_parameter_discovery_res") {
 
-        using AC_ModeRes = message_20::datatypes::AC_CPDResEnergyTransferMode;
+        using AC_ModeRes = msg::d20::datatypes::AC_CPDResEnergyTransferMode;
 
-        message_20::AC_ChargeParameterDiscoveryResponse res;
+        msg::d20::AC_ChargeParameterDiscoveryResponse res;
 
-        res.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456324};
-        res.response_code = message_20::datatypes::ResponseCode::OK;
+        res.header = msg::d20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456324};
+        res.response_code = msg::d20::datatypes::ResponseCode::OK;
         auto& mode = res.transfer_mode.emplace<AC_ModeRes>();
         mode.max_charge_power = {2208, 1};
         mode.max_charge_power_L2 = {0, 0};

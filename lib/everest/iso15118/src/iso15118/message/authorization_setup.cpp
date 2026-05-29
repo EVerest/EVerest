@@ -10,7 +10,7 @@
 
 #include <iso15118/detail/helper.hpp>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 template <> void convert(const struct iso20_AuthorizationSetupReqType& in, AuthorizationSetupRequest& out) {
     convert(in.Header, out.header);
@@ -119,4 +119,4 @@ template <> size_t serialize(const AuthorizationSetupRequest& in, const io::Stre
     return serialize_helper(in, out);
 }
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

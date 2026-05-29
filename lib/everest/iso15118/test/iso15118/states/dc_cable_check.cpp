@@ -6,14 +6,14 @@
 
 using namespace iso15118;
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 SCENARIO("DC cable check state handling") {
     GIVEN("Bad case - Unknown session") {
 
         d20::Session session = d20::Session();
 
-        message_20::DC_CableCheckRequest req;
+        msg::d20::DC_CableCheckRequest req;
 
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
@@ -29,7 +29,7 @@ SCENARIO("DC cable check state handling") {
     GIVEN("Good case - ongoing ") {
         d20::Session session = d20::Session();
 
-        message_20::DC_CableCheckRequest req;
+        msg::d20::DC_CableCheckRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -44,7 +44,7 @@ SCENARIO("DC cable check state handling") {
     GIVEN("Good case - finished ") {
         d20::Session session = d20::Session();
 
-        message_20::DC_CableCheckRequest req;
+        msg::d20::DC_CableCheckRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 

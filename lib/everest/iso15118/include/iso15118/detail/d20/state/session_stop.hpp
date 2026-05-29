@@ -7,6 +7,6 @@
 
 namespace iso15118::d20::state {
 
-message_20::SessionStopResponse handle_request(const message_20::SessionStopRequest& req, const d20::Session& session);
+msg::d20::SessionStopResponse handle_request(const msg::d20::SessionStopRequest& req, const d20::Session& session);
 
 } // namespace iso15118::d20::state

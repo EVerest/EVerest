@@ -12,7 +12,7 @@
 #include <cbv2g/iso_20/iso20_DC_Decoder.h>
 #include <cbv2g/iso_20/iso20_DC_Encoder.h>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 // Begin DC_ChargeLoopRequest Deserialization (EVSEside)
 template <> void convert(const struct iso20_dc_DisplayParametersType& in, datatypes::DisplayParameters& out) {
@@ -512,4 +512,4 @@ template <> size_t serialize(const DC_ChargeLoopRequest& in, const io::StreamOut
 
 // End DC_ChargeLoopRequest Serialization (EVside)
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

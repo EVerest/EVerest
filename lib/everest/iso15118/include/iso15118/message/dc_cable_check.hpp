@@ -4,7 +4,7 @@
 
 #include "common_types.hpp"
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 struct DC_CableCheckRequest {
     Header header;
@@ -17,4 +17,4 @@ struct DC_CableCheckResponse {
     datatypes::Processing processing{datatypes::Processing::Ongoing};
 };
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

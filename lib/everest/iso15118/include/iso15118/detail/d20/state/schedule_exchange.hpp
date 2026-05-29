@@ -13,9 +13,9 @@
 
 namespace iso15118::d20::state {
 
-message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleExchangeRequest& req,
+msg::d20::ScheduleExchangeResponse handle_request(const msg::d20::ScheduleExchangeRequest& req,
                                                     const d20::Session& session,
-                                                    const message_20::datatypes::RationalNumber& max_power,
+                                                    const msg::d20::datatypes::RationalNumber& max_power,
                                                     const UpdateDynamicModeParameters& dynamic_parameters,
                                                     bool timeout_reached);
 

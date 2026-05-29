@@ -16,12 +16,12 @@ SCENARIO("Se/Deserialize dc cable check messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::DC_CableCheckReq);
+            REQUIRE(variant.get_type() == msg::d20::Type::DC_CableCheckReq);
 
-            const auto& msg = variant.get<message_20::DC_CableCheckRequest>();
+            const auto& msg = variant.get<msg::d20::DC_CableCheckRequest>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
@@ -31,9 +31,9 @@ SCENARIO("Se/Deserialize dc cable check messages") {
 
     GIVEN("Serialize dc_cable_check_req") {
 
-        message_20::DC_CableCheckRequest req;
+        msg::d20::DC_CableCheckRequest req;
 
-        req.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456327};
+        req.header = msg::d20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456327};
 
         std::vector<uint8_t> expected = {0x80, 0x2c, 0x04, 0x1e, 0xa6, 0x5f, 0xc9, 0x9b, 0xa7,
                                          0x6c, 0x4d, 0x8c, 0x7b, 0xfe, 0x1b, 0x60, 0x62};
@@ -45,11 +45,11 @@ SCENARIO("Se/Deserialize dc cable check messages") {
 
     GIVEN("Serialize dc_cable_check_res ongoing") {
 
-        message_20::DC_CableCheckResponse res;
+        msg::d20::DC_CableCheckResponse res;
 
-        res.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456328};
-        res.response_code = message_20::datatypes::ResponseCode::OK;
-        res.processing = message_20::datatypes::Processing::Ongoing;
+        res.header = msg::d20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456328};
+        res.response_code = msg::d20::datatypes::ResponseCode::OK;
+        res.processing = msg::d20::datatypes::Processing::Ongoing;
 
         std::vector<uint8_t> expected = {0x80, 0x30, 0x04, 0x1e, 0xa6, 0x5f, 0xc9, 0x9b, 0xa7, 0x6c,
                                          0x4d, 0x8c, 0x8b, 0xfe, 0x1b, 0x60, 0x62, 0x00, 0x10};
@@ -66,28 +66,28 @@ SCENARIO("Se/Deserialize dc cable check messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::DC_CableCheckRes);
+            REQUIRE(variant.get_type() == msg::d20::Type::DC_CableCheckRes);
 
-            const auto& msg = variant.get<message_20::DC_CableCheckResponse>();
+            const auto& msg = variant.get<msg::d20::DC_CableCheckResponse>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
             REQUIRE(header.timestamp == 1725456328);
-            REQUIRE(msg.response_code == message_20::datatypes::ResponseCode::OK);
-            REQUIRE(msg.processing == message_20::datatypes::Processing::Ongoing);
+            REQUIRE(msg.response_code == msg::d20::datatypes::ResponseCode::OK);
+            REQUIRE(msg.processing == msg::d20::datatypes::Processing::Ongoing);
         }
     }
 
     GIVEN("Serialize dc_cable_check_res finished") {
 
-        message_20::DC_CableCheckResponse res;
+        msg::d20::DC_CableCheckResponse res;
 
-        res.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456331};
-        res.response_code = message_20::datatypes::ResponseCode::OK;
-        res.processing = message_20::datatypes::Processing::Finished;
+        res.header = msg::d20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456331};
+        res.response_code = msg::d20::datatypes::ResponseCode::OK;
+        res.processing = msg::d20::datatypes::Processing::Finished;
 
         std::vector<uint8_t> expected = {0x80, 0x30, 0x04, 0x1e, 0xa6, 0x5f, 0xc9, 0x9b, 0xa7, 0x6c,
                                          0x4d, 0x8c, 0xbb, 0xfe, 0x1b, 0x60, 0x62, 0x00, 0x00};
@@ -104,18 +104,18 @@ SCENARIO("Se/Deserialize dc cable check messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::DC_CableCheckRes);
+            REQUIRE(variant.get_type() == msg::d20::Type::DC_CableCheckRes);
 
-            const auto& msg = variant.get<message_20::DC_CableCheckResponse>();
+            const auto& msg = variant.get<msg::d20::DC_CableCheckResponse>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
             REQUIRE(header.timestamp == 1725456331);
-            REQUIRE(msg.response_code == message_20::datatypes::ResponseCode::OK);
-            REQUIRE(msg.processing == message_20::datatypes::Processing::Finished);
+            REQUIRE(msg.response_code == msg::d20::datatypes::ResponseCode::OK);
+            REQUIRE(msg.processing == msg::d20::datatypes::Processing::Finished);
         }
     }
 }

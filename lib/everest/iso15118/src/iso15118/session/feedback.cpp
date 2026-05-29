@@ -29,7 +29,7 @@ void Feedback::ac_charge_loop_req(const feedback::AcChargeLoopReq& req_values) c
     call_if_available(callbacks.ac_charge_loop_req, req_values);
 }
 
-void Feedback::v2g_message(const message_20::Type& v2g_message) const {
+void Feedback::v2g_message(const msg::d20::Type& v2g_message) const {
     call_if_available(callbacks.v2g_message, v2g_message);
 }
 
@@ -46,7 +46,7 @@ void Feedback::notify_ev_charging_needs(
     const dt::ControlMode& control_mode, const dt::MobilityNeedsMode& mobility_needs_mode,
     const feedback::EvseTransferLimits& evse_limits, const feedback::EvTransferLimits& ev_limits,
     const feedback::EvSEControlMode& ev_control_mode,
-    const std::vector<message_20::datatypes::ServiceCategory>& ev_energy_services) const {
+    const std::vector<msg::d20::datatypes::ServiceCategory>& ev_energy_services) const {
     call_if_available(callbacks.notify_ev_charging_needs, service_category, ac_connector, control_mode,
                       mobility_needs_mode, evse_limits, ev_limits, ev_control_mode, ev_energy_services);
 }

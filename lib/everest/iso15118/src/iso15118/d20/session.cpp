@@ -8,7 +8,7 @@
 
 namespace iso15118::d20 {
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 SelectedServiceParameters::SelectedServiceParameters(dt::ServiceCategory energy_service_, dt::DcConnector dc_connector_,
                                                      dt::ControlMode control_mode_, dt::MobilityNeedsMode mobility_,
@@ -168,7 +168,7 @@ bool Session::find_energy_parameter_set_id(const dt::ServiceCategory service, in
     case dt::ServiceCategory::AC_DER:
         [[fallthrough]];
     default:
-        logf_warning("Service %u is not supported yet", message_20::to_underlying_value(service));
+        logf_warning("Service %u is not supported yet", msg::d20::to_underlying_value(service));
         break;
     }
 
@@ -176,12 +176,12 @@ bool Session::find_energy_parameter_set_id(const dt::ServiceCategory service, in
 }
 
 bool Session::find_vas_parameter_set_id(const uint16_t vas_service, int16_t id) {
-    if (vas_service == message_20::to_underlying_value(dt::ServiceCategory::Internet)) {
+    if (vas_service == msg::d20::to_underlying_value(dt::ServiceCategory::Internet)) {
         if (this->offered_services.internet_parameter_list.find(id) !=
             this->offered_services.internet_parameter_list.end()) {
             return true;
         }
-    } else if (vas_service == message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)) {
+    } else if (vas_service == msg::d20::to_underlying_value(dt::ServiceCategory::ParkingStatus)) {
         if (this->offered_services.parking_parameter_list.find(id) !=
             this->offered_services.parking_parameter_list.end()) {
             return true;
@@ -296,14 +296,14 @@ void Session::selected_service_parameters(const dt::ServiceCategory service, con
     case dt::ServiceCategory::AC_DER:
         [[fallthrough]];
     default:
-        logf_warning("Service %u is not supported yet", message_20::to_underlying_value(service));
+        logf_warning("Service %u is not supported yet", msg::d20::to_underlying_value(service));
         break;
     }
 }
 
 void Session::selected_service_parameters(const uint16_t vas_service, const uint16_t id) {
 
-    if (vas_service == message_20::to_underlying_value(dt::ServiceCategory::Internet)) {
+    if (vas_service == msg::d20::to_underlying_value(dt::ServiceCategory::Internet)) {
         if (this->offered_services.internet_parameter_list.find(id) !=
             this->offered_services.internet_parameter_list.end()) {
             this->selected_vas_services.vas_services.push_back(dt::ServiceCategory::Internet);
@@ -311,7 +311,7 @@ void Session::selected_service_parameters(const uint16_t vas_service, const uint
             this->selected_vas_services.internet_port = parameters.port;
             this->selected_vas_services.internet_protocol = parameters.protocol;
         }
-    } else if (vas_service == message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)) {
+    } else if (vas_service == msg::d20::to_underlying_value(dt::ServiceCategory::ParkingStatus)) {
         if (this->offered_services.parking_parameter_list.find(id) !=
             this->offered_services.parking_parameter_list.end()) {
             this->selected_vas_services.vas_services.push_back(dt::ServiceCategory::ParkingStatus);

@@ -6,14 +6,14 @@
 
 using namespace iso15118;
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 SCENARIO("Service selection state handling") {
     GIVEN("Bad case - Unknown session") {
 
         d20::Session session = d20::Session();
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::DC_BPT;
@@ -40,7 +40,7 @@ SCENARIO("Service selection state handling") {
             dt::Pricing::NoPricing,
         };
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::DC;
@@ -65,7 +65,7 @@ SCENARIO("Service selection state handling") {
             dt::Pricing::NoPricing,
         };
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::AC;
@@ -89,7 +89,7 @@ SCENARIO("Service selection state handling") {
             dt::Pricing::NoPricing,
         };
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::DC;
@@ -113,7 +113,7 @@ SCENARIO("Service selection state handling") {
             dt::Pricing::NoPricing,
         };
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::DC;
@@ -143,7 +143,7 @@ SCENARIO("Service selection state handling") {
                                                              dt::BptChannel::Unified,
                                                              dt::GeneratorMode::GridFollowing};
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::DC_BPT;
@@ -171,19 +171,19 @@ SCENARIO("Service selection state handling") {
             dt::Pricing::NoPricing,
         };
 
-        session.offered_services.vas_services = {message_20::to_underlying_value(dt::ServiceCategory::Internet)};
+        session.offered_services.vas_services = {msg::d20::to_underlying_value(dt::ServiceCategory::Internet)};
         session.offered_services.internet_parameter_list[0] = {
             dt::Protocol::Http,
             dt::Port::Port80,
         };
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::DC;
         req.selected_energy_transfer_service.parameter_set_id = 0;
 
-        req.selected_vas_list = {{message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus), 0}};
+        req.selected_vas_list = {{msg::d20::to_underlying_value(dt::ServiceCategory::ParkingStatus), 0}};
 
         const auto res = d20::state::handle_request(req, session);
 
@@ -203,19 +203,19 @@ SCENARIO("Service selection state handling") {
             dt::Pricing::NoPricing,
         };
 
-        session.offered_services.vas_services = {message_20::to_underlying_value(dt::ServiceCategory::Internet)};
+        session.offered_services.vas_services = {msg::d20::to_underlying_value(dt::ServiceCategory::Internet)};
         session.offered_services.internet_parameter_list[0] = {
             dt::Protocol::Http,
             dt::Port::Port80,
         };
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::DC;
         req.selected_energy_transfer_service.parameter_set_id = 0;
 
-        req.selected_vas_list = {{message_20::to_underlying_value(dt::ServiceCategory::Internet), 1}};
+        req.selected_vas_list = {{msg::d20::to_underlying_value(dt::ServiceCategory::Internet), 1}};
 
         const auto res = d20::state::handle_request(req, session);
 
@@ -235,8 +235,8 @@ SCENARIO("Service selection state handling") {
             dt::Pricing::NoPricing,
         };
 
-        session.offered_services.vas_services = {message_20::to_underlying_value(dt::ServiceCategory::Internet),
-                                                 message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
+        session.offered_services.vas_services = {msg::d20::to_underlying_value(dt::ServiceCategory::Internet),
+                                                 msg::d20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
         session.offered_services.internet_parameter_list[0] = {
             dt::Protocol::Http,
             dt::Port::Port80,
@@ -247,14 +247,14 @@ SCENARIO("Service selection state handling") {
             dt::ParkingStatus::ManualExternal,
         };
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::DC;
         req.selected_energy_transfer_service.parameter_set_id = 0;
 
-        req.selected_vas_list = {{message_20::to_underlying_value(dt::ServiceCategory::Internet), 0},
-                                 {message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus), 0}};
+        req.selected_vas_list = {{msg::d20::to_underlying_value(dt::ServiceCategory::Internet), 0},
+                                 {msg::d20::to_underlying_value(dt::ServiceCategory::ParkingStatus), 0}};
 
         const auto res = d20::state::handle_request(req, session);
 
@@ -272,7 +272,7 @@ SCENARIO("Service selection state handling") {
             dt::Pricing::NoPricing,
         };
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::AC;
@@ -300,7 +300,7 @@ SCENARIO("Service selection state handling") {
                                                              dt::GeneratorMode::GridFollowing,
                                                              dt::GridCodeIslandingDetectionMethod::Passive};
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::AC_BPT;
@@ -328,7 +328,7 @@ SCENARIO("Service selection state handling") {
             dt::Pricing::NoPricing,
         };
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::MCS;
@@ -359,7 +359,7 @@ SCENARIO("Service selection state handling") {
                                                               dt::BptChannel::Unified,
                                                               dt::GeneratorMode::GridFollowing};
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::MCS_BPT;
@@ -394,7 +394,7 @@ SCENARIO("Service selection state handling") {
         session.offered_services.vas_services = {4599};
         session.offered_services.custom_vas_list[4599] = {0, 2};
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::DC;

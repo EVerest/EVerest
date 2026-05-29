@@ -8,8 +8,8 @@
 
 namespace iso15118::d20::state {
 
-message_20::AuthorizationSetupResponse
-handle_request(const message_20::AuthorizationSetupRequest& req, d20::Session& session, bool cert_install_service,
-               const std::vector<message_20::datatypes::Authorization>& authorization_services);
+msg::d20::AuthorizationSetupResponse
+handle_request(const msg::d20::AuthorizationSetupRequest& req, d20::Session& session, bool cert_install_service,
+               const std::vector<msg::d20::datatypes::Authorization>& authorization_services);
 
 } // namespace iso15118::d20::state

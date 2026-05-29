@@ -9,7 +9,7 @@
 #include <cbv2g/iso_20/iso20_DC_Decoder.h>
 #include <cbv2g/iso_20/iso20_DC_Encoder.h>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 template <> void convert(const struct iso20_dc_DC_CableCheckReqType& in, DC_CableCheckRequest& out) {
     convert(in.Header, out.header);
@@ -71,4 +71,4 @@ template <> size_t serialize(const DC_CableCheckRequest& in, const io::StreamOut
     return serialize_helper(in, out);
 }
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

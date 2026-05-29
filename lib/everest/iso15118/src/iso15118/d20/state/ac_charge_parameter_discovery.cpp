@@ -10,7 +10,7 @@
 
 namespace iso15118::d20::state {
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 using AC_ModeReq = dt::AC_CPDReqEnergyTransferMode;
 using BPT_AC_ModeReq = dt::BPT_AC_CPDReqEnergyTransferMode;
@@ -64,39 +64,39 @@ void convert(BPT_AC_ModeRes& out, const d20::AcTransferLimits& limits, const d20
     }
 }
 
-message_20::AC_ChargeParameterDiscoveryResponse
-handle_request(const message_20::AC_ChargeParameterDiscoveryRequest& req, const d20::Session& session,
+msg::d20::AC_ChargeParameterDiscoveryResponse
+handle_request(const msg::d20::AC_ChargeParameterDiscoveryRequest& req, const d20::Session& session,
                const d20::AcTransferLimits& limits, const d20::AcPresentPower& powers) {
 
-    message_20::AC_ChargeParameterDiscoveryResponse res;
+    msg::d20::AC_ChargeParameterDiscoveryResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_UnknownSession);
+        return response_with_code(res, msg::d20::datatypes::ResponseCode::FAILED_UnknownSession);
     }
 
     const auto selected_energy_service = session.get_selected_services().selected_energy_service;
 
     if (std::holds_alternative<AC_ModeReq>(req.transfer_mode)) {
-        if (selected_energy_service != message_20::datatypes::ServiceCategory::AC) {
-            return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
+        if (selected_energy_service != msg::d20::datatypes::ServiceCategory::AC) {
+            return response_with_code(res, msg::d20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
         }
 
         auto& mode = res.transfer_mode.emplace<AC_ModeRes>();
         convert(mode, limits, powers);
 
     } else if (std::holds_alternative<BPT_AC_ModeReq>(req.transfer_mode)) {
-        if (selected_energy_service != message_20::datatypes::ServiceCategory::AC_BPT) {
-            return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
+        if (selected_energy_service != msg::d20::datatypes::ServiceCategory::AC_BPT) {
+            return response_with_code(res, msg::d20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
         }
 
         auto& mode = res.transfer_mode.emplace<BPT_AC_ModeRes>();
         convert(mode, limits, powers);
 
     } else {
-        return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
+        return response_with_code(res, msg::d20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
     }
 
-    return response_with_code(res, message_20::datatypes::ResponseCode::OK);
+    return response_with_code(res, msg::d20::datatypes::ResponseCode::OK);
 }
 
 void AC_ChargeParameterDiscovery::enter() {
@@ -119,7 +119,7 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::AC_ChargeParameterDiscoveryRequest>()) {
+    if (const auto req = variant->get_if<msg::d20::AC_ChargeParameterDiscoveryRequest>()) {
 
         if (const auto* mode = std::get_if<AC_ModeReq>(&req->transfer_mode)) {
             // Set EV transfer limits
@@ -133,7 +133,7 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
 
         m_ctx.respond(res);
 
-        if (res.response_code >= message_20::datatypes::ResponseCode::FAILED) {
+        if (res.response_code >= msg::d20::datatypes::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
             return {};
         }
@@ -142,7 +142,7 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
 
         return m_ctx.create_state<ScheduleExchange>();
 
-    } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+    } else if (const auto req = variant->get_if<msg::d20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
@@ -154,7 +154,7 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
         m_ctx.session_stopped = true;
 
         // Sequence Error
-        const message_20::Type req_type = variant->get_type();
+        const msg::d20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
         return {};

@@ -69,7 +69,7 @@ private:
     bool pause;
 };
 
-using EnergyServices = std::vector<message_20::datatypes::ServiceCategory>;
+using EnergyServices = std::vector<msg::d20::datatypes::ServiceCategory>;
 
 class ClosedContactor {
 public:

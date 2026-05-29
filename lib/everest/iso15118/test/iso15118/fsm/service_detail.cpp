@@ -15,7 +15,7 @@ using namespace iso15118;
 
 SCENARIO("ISO15118-20 service detail state transitions") {
 
-    namespace dt = message_20::datatypes;
+    namespace dt = msg::d20::datatypes;
 
     const auto evse_id = std::string("everest se");
     const std::vector<dt::ServiceCategory> supported_energy_services = {dt::ServiceCategory::DC};
@@ -44,12 +44,12 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             parameter_set.id = 0;
             parameter_set.parameter.push_back({"Service1", 40});
             parameter_set.parameter.push_back({"Service2", "house"});
-        } else if (id == message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)) {
+        } else if (id == msg::d20::to_underlying_value(dt::ServiceCategory::ParkingStatus)) {
             auto& parameter_set = service_parameter_list.emplace_back();
             parameter_set.id = 0;
             parameter_set.parameter.push_back({"IntendedService", 1});
             parameter_set.parameter.push_back({"ParkingStatusType", 4});
-        } else if (id == message_20::to_underlying_value(dt::ServiceCategory::Internet)) {
+        } else if (id == msg::d20::to_underlying_value(dt::ServiceCategory::Internet)) {
             auto& parameter_set = service_parameter_list.emplace_back();
             parameter_set.id = 3;
             parameter_set.parameter.push_back({"Protocol", "http"});
@@ -67,9 +67,9 @@ SCENARIO("ISO15118-20 service detail state transitions") {
 
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{d20::Session().get_id(), 1691411798};
+        const auto header_req = msg::d20::Header{d20::Session().get_id(), 1691411798};
         const auto req =
-            message_20::ServiceDetailRequest{header_req, message_20::to_underlying_value(dt::ServiceCategory::DC)};
+            msg::d20::ServiceDetailRequest{header_req, msg::d20::to_underlying_value(dt::ServiceCategory::DC)};
 
         state_helper.handle_request(req);
 
@@ -79,13 +79,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == false);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceDetail);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& res = response_message.value();
 
             REQUIRE(res.response_code == dt::ResponseCode::FAILED_UnknownSession);
-            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::DC));
+            REQUIRE(res.service == msg::d20::to_underlying_value(dt::ServiceCategory::DC));
             REQUIRE(res.service_parameter_list.size() == 1);
         }
     }
@@ -94,9 +94,9 @@ SCENARIO("ISO15118-20 service detail state transitions") {
 
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
         const auto req =
-            message_20::ServiceDetailRequest{header_req, message_20::to_underlying_value(dt::ServiceCategory::DC_BPT)};
+            msg::d20::ServiceDetailRequest{header_req, msg::d20::to_underlying_value(dt::ServiceCategory::DC_BPT)};
 
         state_helper.handle_request(req);
 
@@ -106,13 +106,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == false);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceDetail);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& res = response_message.value();
 
             REQUIRE(res.response_code == dt::ResponseCode::FAILED_ServiceIDInvalid);
-            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::DC));
+            REQUIRE(res.service == msg::d20::to_underlying_value(dt::ServiceCategory::DC));
             REQUIRE(res.service_parameter_list.size() == 1);
         }
     }
@@ -120,9 +120,9 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     GIVEN("Good Case - DC Service") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
         const auto req =
-            message_20::ServiceDetailRequest{header_req, message_20::to_underlying_value(dt::ServiceCategory::DC)};
+            msg::d20::ServiceDetailRequest{header_req, msg::d20::to_underlying_value(dt::ServiceCategory::DC)};
 
         state_helper.handle_request(req);
 
@@ -134,13 +134,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& res = response_message.value();
 
             REQUIRE(res.response_code == dt::ResponseCode::OK);
-            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::DC));
+            REQUIRE(res.service == msg::d20::to_underlying_value(dt::ServiceCategory::DC));
             REQUIRE(res.service_parameter_list.size() == 1);
             auto& parameters = res.service_parameter_list[0];
             REQUIRE(parameters.id == 0);
@@ -168,9 +168,9 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     GIVEN("Good Case - DC_BPT Service") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
         const auto req =
-            message_20::ServiceDetailRequest{header_req, message_20::to_underlying_value(dt::ServiceCategory::DC_BPT)};
+            msg::d20::ServiceDetailRequest{header_req, msg::d20::to_underlying_value(dt::ServiceCategory::DC_BPT)};
 
         state_helper.handle_request(req);
 
@@ -182,13 +182,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& res = response_message.value();
 
             REQUIRE(res.response_code == dt::ResponseCode::OK);
-            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::DC_BPT));
+            REQUIRE(res.service == msg::d20::to_underlying_value(dt::ServiceCategory::DC_BPT));
             REQUIRE(res.service_parameter_list.size() == 1);
             auto& parameters = res.service_parameter_list[0];
             REQUIRE(parameters.id == 0);
@@ -224,9 +224,9 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     GIVEN("Good Case - 2x DC Service") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
         const auto req =
-            message_20::ServiceDetailRequest{header_req, message_20::to_underlying_value(dt::ServiceCategory::DC)};
+            msg::d20::ServiceDetailRequest{header_req, msg::d20::to_underlying_value(dt::ServiceCategory::DC)};
 
         state_helper.handle_request(req);
 
@@ -252,13 +252,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& res = response_message.value();
 
             REQUIRE(res.response_code == dt::ResponseCode::OK);
-            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::DC));
+            REQUIRE(res.service == msg::d20::to_underlying_value(dt::ServiceCategory::DC));
             REQUIRE(res.service_parameter_list.size() == 2);
             auto& parameters_0 = res.service_parameter_list[0];
             REQUIRE(parameters_0.id == 0);
@@ -309,9 +309,9 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     GIVEN("Good Case - DC Service: Scheduled Mode: 1, MobilityNeedsMode: 2 change to 1") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
         const auto req =
-            message_20::ServiceDetailRequest{header_req, message_20::to_underlying_value(dt::ServiceCategory::DC)};
+            msg::d20::ServiceDetailRequest{header_req, msg::d20::to_underlying_value(dt::ServiceCategory::DC)};
 
         state_helper.handle_request(req);
 
@@ -323,13 +323,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& res = response_message.value();
 
             REQUIRE(res.response_code == dt::ResponseCode::OK);
-            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::DC));
+            REQUIRE(res.service == msg::d20::to_underlying_value(dt::ServiceCategory::DC));
             REQUIRE(res.service_parameter_list.size() == 1);
             auto& parameters = res.service_parameter_list[0];
             REQUIRE(parameters.id == 0);
@@ -357,9 +357,9 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     GIVEN("Good Case - Internet Service") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
-        const auto req = message_20::ServiceDetailRequest{
-            header_req, message_20::to_underlying_value(dt::ServiceCategory::Internet)};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
+        const auto req = msg::d20::ServiceDetailRequest{
+            header_req, msg::d20::to_underlying_value(dt::ServiceCategory::Internet)};
 
         state_helper.handle_request(req);
 
@@ -367,7 +367,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             {dt::Protocol::Http, dt::Port::Port80}}; // TODO(SL): Reset to start
 
         ctx.session.offered_services.energy_services = {dt::ServiceCategory::DC};
-        ctx.session.offered_services.vas_services = {message_20::to_underlying_value(dt::ServiceCategory::Internet)};
+        ctx.session.offered_services.vas_services = {msg::d20::to_underlying_value(dt::ServiceCategory::Internet)};
 
         const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
 
@@ -375,13 +375,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& res = response_message.value();
 
             REQUIRE(res.response_code == dt::ResponseCode::OK);
-            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::Internet));
+            REQUIRE(res.service == msg::d20::to_underlying_value(dt::ServiceCategory::Internet));
             REQUIRE(res.service_parameter_list.size() == 1);
             auto& parameters = res.service_parameter_list[0];
             REQUIRE(parameters.id == 3);
@@ -401,9 +401,9 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     GIVEN("Good Case - Parking status service") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
-        const auto req = message_20::ServiceDetailRequest{
-            header_req, message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
+        const auto req = msg::d20::ServiceDetailRequest{
+            header_req, msg::d20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
 
         state_helper.handle_request(req);
 
@@ -412,7 +412,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
 
         ctx.session.offered_services.energy_services = {dt::ServiceCategory::DC};
         ctx.session.offered_services.vas_services = {
-            message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
+            msg::d20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
 
         const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
 
@@ -420,13 +420,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& res = response_message.value();
 
             REQUIRE(res.response_code == dt::ResponseCode::OK);
-            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus));
+            REQUIRE(res.service == msg::d20::to_underlying_value(dt::ServiceCategory::ParkingStatus));
             REQUIRE(res.service_parameter_list.size() == 1);
             auto& parameters = res.service_parameter_list[0];
             REQUIRE(parameters.id == 0);
@@ -446,9 +446,9 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     GIVEN("Good Case - AC Service") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
         const auto req =
-            message_20::ServiceDetailRequest{header_req, message_20::to_underlying_value(dt::ServiceCategory::AC)};
+            msg::d20::ServiceDetailRequest{header_req, msg::d20::to_underlying_value(dt::ServiceCategory::AC)};
 
         state_helper.handle_request(req);
 
@@ -468,13 +468,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& res = response_message.value();
 
             REQUIRE(res.response_code == dt::ResponseCode::OK);
-            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::AC));
+            REQUIRE(res.service == msg::d20::to_underlying_value(dt::ServiceCategory::AC));
             REQUIRE(res.service_parameter_list.size() == 1);
             auto& parameters = res.service_parameter_list[0];
             REQUIRE(parameters.id == 0);
@@ -506,9 +506,9 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     GIVEN("Good Case - AC_BPT Service") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
         const auto req =
-            message_20::ServiceDetailRequest{header_req, message_20::to_underlying_value(dt::ServiceCategory::AC_BPT)};
+            msg::d20::ServiceDetailRequest{header_req, msg::d20::to_underlying_value(dt::ServiceCategory::AC_BPT)};
 
         state_helper.handle_request(req);
 
@@ -533,13 +533,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& res = response_message.value();
 
             REQUIRE(res.response_code == dt::ResponseCode::OK);
-            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::AC_BPT));
+            REQUIRE(res.service == msg::d20::to_underlying_value(dt::ServiceCategory::AC_BPT));
             REQUIRE(res.service_parameter_list.size() == 1);
             auto& parameters = res.service_parameter_list[0];
             REQUIRE(parameters.id == 0);
@@ -583,9 +583,9 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     GIVEN("Good Case - 2x AC Services") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
         const auto req =
-            message_20::ServiceDetailRequest{header_req, message_20::to_underlying_value(dt::ServiceCategory::AC)};
+            msg::d20::ServiceDetailRequest{header_req, msg::d20::to_underlying_value(dt::ServiceCategory::AC)};
 
         state_helper.handle_request(req);
 
@@ -611,13 +611,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& res = response_message.value();
 
             REQUIRE(res.response_code == dt::ResponseCode::OK);
-            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::AC));
+            REQUIRE(res.service == msg::d20::to_underlying_value(dt::ServiceCategory::AC));
             REQUIRE(res.service_parameter_list.size() == 2);
             auto& parameters_0 = res.service_parameter_list[0];
             REQUIRE(parameters_0.id == 0);
@@ -674,9 +674,9 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     GIVEN("Good Case - AC Service: Scheduled Mode: 1, MobilityNeedsMode: 2 change to 1") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
         const auto req =
-            message_20::ServiceDetailRequest{header_req, message_20::to_underlying_value(dt::ServiceCategory::AC)};
+            msg::d20::ServiceDetailRequest{header_req, msg::d20::to_underlying_value(dt::ServiceCategory::AC)};
 
         state_helper.handle_request(req);
 
@@ -695,13 +695,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& res = response_message.value();
 
             REQUIRE(res.response_code == dt::ResponseCode::OK);
-            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::AC));
+            REQUIRE(res.service == msg::d20::to_underlying_value(dt::ServiceCategory::AC));
             REQUIRE(res.service_parameter_list.size() == 1);
             auto& parameters = res.service_parameter_list[0];
             REQUIRE(parameters.id == 0);
@@ -733,9 +733,9 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     GIVEN("Good Case - MCS Service") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
         const auto req =
-            message_20::ServiceDetailRequest{header_req, message_20::to_underlying_value(dt::ServiceCategory::MCS)};
+            msg::d20::ServiceDetailRequest{header_req, msg::d20::to_underlying_value(dt::ServiceCategory::MCS)};
 
         state_helper.handle_request(req);
 
@@ -747,13 +747,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& res = response_message.value();
 
             REQUIRE(res.response_code == dt::ResponseCode::OK);
-            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::MCS));
+            REQUIRE(res.service == msg::d20::to_underlying_value(dt::ServiceCategory::MCS));
             REQUIRE(res.service_parameter_list.size() == 1);
             auto& parameters = res.service_parameter_list[0];
             REQUIRE(parameters.id == 0);
@@ -781,9 +781,9 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     GIVEN("Good Case - MCS_BPT Service") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
         const auto req =
-            message_20::ServiceDetailRequest{header_req, message_20::to_underlying_value(dt::ServiceCategory::MCS_BPT)};
+            msg::d20::ServiceDetailRequest{header_req, msg::d20::to_underlying_value(dt::ServiceCategory::MCS_BPT)};
 
         state_helper.handle_request(req);
 
@@ -795,13 +795,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& res = response_message.value();
 
             REQUIRE(res.response_code == dt::ResponseCode::OK);
-            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::MCS_BPT));
+            REQUIRE(res.service == msg::d20::to_underlying_value(dt::ServiceCategory::MCS_BPT));
             REQUIRE(res.service_parameter_list.size() == 1);
             auto& parameters = res.service_parameter_list[0];
             REQUIRE(parameters.id == 0);
@@ -837,8 +837,8 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     GIVEN("Good case - Ev requests parameter from custom vas") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
-        const auto req = message_20::ServiceDetailRequest{header_req, 4599};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
+        const auto req = msg::d20::ServiceDetailRequest{header_req, 4599};
 
         state_helper.handle_request(req);
 
@@ -850,7 +850,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& service_detail_res = response_message.value();
@@ -875,14 +875,14 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     GIVEN("Good case - Ev requests parameter from parking vas") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
-        const auto req = message_20::ServiceDetailRequest{
-            header_req, message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
+        const auto req = msg::d20::ServiceDetailRequest{
+            header_req, msg::d20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
 
         state_helper.handle_request(req);
 
         ctx.session.offered_services.vas_services = {
-            message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
+            msg::d20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
 
         const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
 
@@ -890,13 +890,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& service_detail_res = response_message.value();
 
             REQUIRE(service_detail_res.response_code == dt::ResponseCode::OK);
-            REQUIRE(service_detail_res.service == message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus));
+            REQUIRE(service_detail_res.service == msg::d20::to_underlying_value(dt::ServiceCategory::ParkingStatus));
             REQUIRE(service_detail_res.service_parameter_list.size() == 1);
             auto& parameters = service_detail_res.service_parameter_list[0];
             REQUIRE(parameters.id == 0);
@@ -915,13 +915,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     GIVEN("Good case - Ev requests parameter from internet vas") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
-        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
-        const auto req = message_20::ServiceDetailRequest{
-            header_req, message_20::to_underlying_value(dt::ServiceCategory::Internet)};
+        const auto header_req = msg::d20::Header{ctx.session.get_id(), 1691411798};
+        const auto req = msg::d20::ServiceDetailRequest{
+            header_req, msg::d20::to_underlying_value(dt::ServiceCategory::Internet)};
 
         state_helper.handle_request(req);
 
-        ctx.session.offered_services.vas_services = {message_20::to_underlying_value(dt::ServiceCategory::Internet)};
+        ctx.session.offered_services.vas_services = {msg::d20::to_underlying_value(dt::ServiceCategory::Internet)};
 
         const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
 
@@ -929,13 +929,13 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& service_detail_res = response_message.value();
 
             REQUIRE(service_detail_res.response_code == dt::ResponseCode::OK);
-            REQUIRE(service_detail_res.service == message_20::to_underlying_value(dt::ServiceCategory::Internet));
+            REQUIRE(service_detail_res.service == msg::d20::to_underlying_value(dt::ServiceCategory::Internet));
             REQUIRE(service_detail_res.service_parameter_list.size() == 1);
             auto& parameters = service_detail_res.service_parameter_list[0];
             REQUIRE(parameters.id == 3);

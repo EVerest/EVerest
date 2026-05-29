@@ -11,7 +11,7 @@
 #include <cbv2g/iso_20/iso20_CommonMessages_Datatypes.h>
 #include <cbv2g/iso_20/iso20_DC_Datatypes.h>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 template <typename cb_HeaderType> void convert(const cb_HeaderType& in, Header& out) {
 
@@ -207,4 +207,4 @@ std::string from_mobility_needs_mode(const MobilityNeedsMode& in) {
 
 } // namespace datatypes
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

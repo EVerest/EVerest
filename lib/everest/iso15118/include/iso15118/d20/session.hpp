@@ -16,7 +16,7 @@
 
 namespace iso15118::d20 {
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 // Key: service IDs, value: vector with the parameter set ids
 using CustomVasList = std::map<std::uint16_t, std::vector<uint16_t>>;

@@ -8,7 +8,7 @@
 
 #include <cbv2g/iso_20/iso20_CommonMessages_Encoder.h>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 template <> void convert(const struct iso20_SessionStopReqType& in, SessionStopRequest& out) {
     convert(in.Header, out.header);
@@ -83,4 +83,4 @@ template <> size_t serialize(const SessionStopRequest& in, const io::StreamOutpu
     return serialize_helper(in, out);
 }
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

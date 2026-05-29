@@ -6,14 +6,14 @@
 
 using namespace iso15118;
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 SCENARIO("Authorization setup state handling") {
 
     GIVEN("Bad Case - Unknown session") {
         auto session = d20::Session();
 
-        message_20::AuthorizationSetupRequest req;
+        msg::d20::AuthorizationSetupRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -37,7 +37,7 @@ SCENARIO("Authorization setup state handling") {
 
         auto session = d20::Session();
 
-        message_20::AuthorizationSetupRequest req;
+        msg::d20::AuthorizationSetupRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -60,7 +60,7 @@ SCENARIO("Authorization setup state handling") {
 
         auto session = d20::Session();
 
-        message_20::AuthorizationSetupRequest req;
+        msg::d20::AuthorizationSetupRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -85,7 +85,7 @@ SCENARIO("Authorization setup state handling") {
 
         auto session = d20::Session();
 
-        message_20::AuthorizationSetupRequest req;
+        msg::d20::AuthorizationSetupRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 

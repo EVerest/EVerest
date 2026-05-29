@@ -22,7 +22,7 @@
 
 namespace iso15118::session {
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 namespace feedback {
 
@@ -72,13 +72,13 @@ struct Callbacks {
     std::function<void(const DcChargeLoopReq&)> dc_charge_loop_req;
     std::function<void(const DcMaximumLimits&)> dc_max_limits;
     std::function<void(const AcChargeLoopReq&)> ac_charge_loop_req;
-    std::function<void(const message_20::Type&)> v2g_message;
+    std::function<void(const msg::d20::Type&)> v2g_message;
     std::function<void(const std::string&)> evccid;
     std::function<void(const std::string&)> selected_protocol;
 
     std::function<void(const dt::ServiceCategory&, const std::optional<dt::AcConnector>&, const dt::ControlMode&,
                        const dt::MobilityNeedsMode&, const EvseTransferLimits&, const EvTransferLimits&,
-                       const EvSEControlMode&, const std::vector<message_20::datatypes::ServiceCategory>&)>
+                       const EvSEControlMode&, const std::vector<msg::d20::datatypes::ServiceCategory>&)>
         notify_ev_charging_needs;
     std::function<void(const d20::SelectedServiceParameters&)> selected_service_parameters;
     std::function<void(const d20::EVInformation&)> ev_information;
@@ -99,7 +99,7 @@ public:
     void dc_charge_loop_req(const feedback::DcChargeLoopReq&) const;
     void dc_max_limits(const feedback::DcMaximumLimits&) const;
     void ac_charge_loop_req(const feedback::AcChargeLoopReq&) const;
-    void v2g_message(const message_20::Type&) const;
+    void v2g_message(const msg::d20::Type&) const;
     void evcc_id(const std::string&) const;
     void selected_protocol(const std::string&) const;
 
@@ -107,7 +107,7 @@ public:
                                   const dt::ControlMode&, const dt::MobilityNeedsMode&,
                                   const feedback::EvseTransferLimits&, const feedback::EvTransferLimits&,
                                   const feedback::EvSEControlMode&,
-                                  const std::vector<message_20::datatypes::ServiceCategory>&) const;
+                                  const std::vector<msg::d20::datatypes::ServiceCategory>&) const;
     void selected_service_parameters(const d20::SelectedServiceParameters&) const;
     void ev_information(const d20::EVInformation&) const;
     std::optional<dt::ServiceParameterList> get_vas_parameters(uint16_t) const;

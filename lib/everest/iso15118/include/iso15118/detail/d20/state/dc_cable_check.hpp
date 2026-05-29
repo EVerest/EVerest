@@ -7,7 +7,7 @@
 
 namespace iso15118::d20::state {
 
-message_20::DC_CableCheckResponse handle_request(const message_20::DC_CableCheckRequest& req,
+msg::d20::DC_CableCheckResponse handle_request(const msg::d20::DC_CableCheckRequest& req,
                                                  const d20::Session& session, bool cable_check_done);
 
 } // namespace iso15118::d20::state

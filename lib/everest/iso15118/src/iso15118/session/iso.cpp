@@ -35,8 +35,8 @@ static void log_packet_from_car(const iso15118::io::SdpPacket& packet, session::
                packet.get_payload_length(), session::logging::ExiMessageDirection::FROM_EV);
 }
 
-static std::unique_ptr<message_20::Variant> make_variant_from_packet(const iso15118::io::SdpPacket& packet) {
-    return std::make_unique<message_20::Variant>(
+static std::unique_ptr<msg::d20::Variant> make_variant_from_packet(const iso15118::io::SdpPacket& packet) {
+    return std::make_unique<msg::d20::Variant>(
         packet.get_payload_type(), io::StreamInputView{packet.get_payload_buffer(), packet.get_payload_length()});
 }
 
@@ -215,7 +215,7 @@ TimePoint const& Session::poll() {
         const auto request_msg_type = ctx.peek_request_type();
 
         // There is no sequence timer before SupportedAppProtocol
-        if (request_msg_type != message_20::Type::SupportedAppProtocolReq) {
+        if (request_msg_type != msg::d20::Type::SupportedAppProtocolReq) {
             timeouts.stop_timeout(d20::TimeoutType::SEQUENCE);
         }
 
@@ -286,7 +286,7 @@ void Session::send_response() {
     log.exi(static_cast<uint16_t>(stored_payload_type), response_buffer + io::SdpPacket::V2GTP_HEADER_SIZE,
             payload_size, session::logging::ExiMessageDirection::TO_EV);
 
-    ctx.feedback.v2g_message(std::get<message_20::Type>(stored_response_type));
+    ctx.feedback.v2g_message(std::get<msg::d20::Type>(stored_response_type));
 }
 
 void Session::handle_connection_event(io::ConnectionEvent event) {

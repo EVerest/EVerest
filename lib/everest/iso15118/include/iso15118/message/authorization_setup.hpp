@@ -12,7 +12,7 @@
 
 #include <everest/util/vector/fixed_vector.hpp>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 namespace datatypes {
 using SupportedProvidersList = everest::lib::util::fixed_vector<Name, 128>; // [0 - 128]
@@ -39,4 +39,4 @@ struct AuthorizationSetupResponse {
         datatypes::EIM_ASResAuthorizationMode();
 };
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

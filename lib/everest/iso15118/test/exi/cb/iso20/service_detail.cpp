@@ -16,28 +16,28 @@ SCENARIO("Se/Deserialize service_detail messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
-            REQUIRE(variant.get_type() == message_20::Type::ServiceDetailReq);
+            REQUIRE(variant.get_type() == msg::d20::Type::ServiceDetailReq);
 
-            const auto& msg = variant.get<message_20::ServiceDetailRequest>();
+            const auto& msg = variant.get<msg::d20::ServiceDetailRequest>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x04, 0xEB, 0xFF, 0x2C, 0x94, 0x59, 0xDB, 0x42});
             REQUIRE(header.timestamp == 1692009443);
 
-            REQUIRE(msg.service == message_20::to_underlying_value(message_20::datatypes::ServiceCategory::AC_BPT));
+            REQUIRE(msg.service == msg::d20::to_underlying_value(msg::d20::datatypes::ServiceCategory::AC_BPT));
         }
     }
 
     GIVEN("Serialize service_detail_req") {
 
-        message_20::ServiceDetailRequest req;
+        msg::d20::ServiceDetailRequest req;
 
-        req.header = message_20::Header{{0x04, 0xEB, 0xFF, 0x2C, 0x94, 0x59, 0xDB, 0x42}, 1692009443};
-        req.service = message_20::to_underlying_value(message_20::datatypes::ServiceCategory::AC_BPT);
+        req.header = msg::d20::Header{{0x04, 0xEB, 0xFF, 0x2C, 0x94, 0x59, 0xDB, 0x42}, 1692009443};
+        req.service = msg::d20::to_underlying_value(msg::d20::datatypes::ServiceCategory::AC_BPT);
 
         std::vector<uint8_t> expected = {0x80, 0x74, 0x04, 0x02, 0x75, 0xff, 0x96, 0x4a, 0x2c, 0xed,
                                          0xa1, 0x0e, 0x38, 0x7e, 0x8a, 0x60, 0x62, 0x02, 0x80};
@@ -49,16 +49,16 @@ SCENARIO("Se/Deserialize service_detail messages") {
 
     GIVEN("Serialize service_detail_res") {
 
-        message_20::ServiceDetailResponse res;
+        msg::d20::ServiceDetailResponse res;
 
-        res.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456323};
-        res.response_code = message_20::datatypes::ResponseCode::OK;
-        res.service = message_20::to_underlying_value(message_20::datatypes::ServiceCategory::DC);
+        res.header = msg::d20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456323};
+        res.response_code = msg::d20::datatypes::ResponseCode::OK;
+        res.service = msg::d20::to_underlying_value(msg::d20::datatypes::ServiceCategory::DC);
 
-        const auto list = message_20::datatypes::DcParameterList{
-            message_20::datatypes::DcConnector::Extended, message_20::datatypes::ControlMode::Scheduled,
-            message_20::datatypes::MobilityNeedsMode::ProvidedByEvcc, message_20::datatypes::Pricing::NoPricing};
-        res.service_parameter_list = {message_20::datatypes::ParameterSet(0, list)};
+        const auto list = msg::d20::datatypes::DcParameterList{
+            msg::d20::datatypes::DcConnector::Extended, msg::d20::datatypes::ControlMode::Scheduled,
+            msg::d20::datatypes::MobilityNeedsMode::ProvidedByEvcc, msg::d20::datatypes::Pricing::NoPricing};
+        res.service_parameter_list = {msg::d20::datatypes::ParameterSet(0, list)};
 
         std::vector<uint8_t> expected = {
             0x80, 0x78, 0x04, 0x1e, 0xa6, 0x5f, 0xc9, 0x9b, 0xa7, 0x6c, 0x4d, 0x8c, 0x3b, 0xfe, 0x1b, 0x60,
@@ -83,39 +83,39 @@ SCENARIO("Se/Deserialize service_detail messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
-            REQUIRE(variant.get_type() == message_20::Type::ServiceDetailRes);
+            REQUIRE(variant.get_type() == msg::d20::Type::ServiceDetailRes);
 
-            const auto& msg = variant.get<message_20::ServiceDetailResponse>();
+            const auto& msg = variant.get<msg::d20::ServiceDetailResponse>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
             REQUIRE(header.timestamp == 1725456323);
 
-            REQUIRE(msg.service == message_20::to_underlying_value(message_20::datatypes::ServiceCategory::DC));
-            REQUIRE(msg.response_code == message_20::datatypes::ResponseCode::OK);
+            REQUIRE(msg.service == msg::d20::to_underlying_value(msg::d20::datatypes::ServiceCategory::DC));
+            REQUIRE(msg.response_code == msg::d20::datatypes::ResponseCode::OK);
             REQUIRE(msg.service_parameter_list.size() == 1);
             REQUIRE(msg.service_parameter_list[0].id == 0);
             REQUIRE(msg.service_parameter_list[0].parameter.size() == 4);
             REQUIRE(msg.service_parameter_list[0].parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(msg.service_parameter_list[0].parameter[0].value));
             REQUIRE(std::get<int32_t>(msg.service_parameter_list[0].parameter[0].value) ==
-                    static_cast<int32_t>(message_20::datatypes::DcConnector::Extended));
+                    static_cast<int32_t>(msg::d20::datatypes::DcConnector::Extended));
             REQUIRE(msg.service_parameter_list[0].parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(msg.service_parameter_list[0].parameter[1].value));
             REQUIRE(std::get<int32_t>(msg.service_parameter_list[0].parameter[1].value) ==
-                    static_cast<int32_t>(message_20::datatypes::ControlMode::Scheduled));
+                    static_cast<int32_t>(msg::d20::datatypes::ControlMode::Scheduled));
             REQUIRE(msg.service_parameter_list[0].parameter[2].name == "MobilityNeedsMode");
             REQUIRE(std::holds_alternative<int32_t>(msg.service_parameter_list[0].parameter[2].value));
             REQUIRE(std::get<int32_t>(msg.service_parameter_list[0].parameter[2].value) ==
-                    static_cast<int32_t>(message_20::datatypes::MobilityNeedsMode::ProvidedByEvcc));
+                    static_cast<int32_t>(msg::d20::datatypes::MobilityNeedsMode::ProvidedByEvcc));
             REQUIRE(msg.service_parameter_list[0].parameter[3].name == "Pricing");
             REQUIRE(std::holds_alternative<int32_t>(msg.service_parameter_list[0].parameter[3].value));
             REQUIRE(std::get<int32_t>(msg.service_parameter_list[0].parameter[3].value) ==
-                    static_cast<int32_t>(message_20::datatypes::Pricing::NoPricing));
+                    static_cast<int32_t>(msg::d20::datatypes::Pricing::NoPricing));
         }
     }
 }

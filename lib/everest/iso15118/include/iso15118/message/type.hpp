@@ -4,7 +4,7 @@
 
 #include <iso15118/io/stream_view.hpp>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 enum class Type {
     None,
@@ -106,4 +106,4 @@ CREATE_TYPE_TRAIT(AC_ChargeLoopResponse, AC_ChargeLoopRes);
 #undef CREATE_TYPE_TRAIT
 #endif
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

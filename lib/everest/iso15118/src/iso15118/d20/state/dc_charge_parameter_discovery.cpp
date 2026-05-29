@@ -10,7 +10,7 @@
 
 namespace iso15118::d20::state {
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 using DC_ModeReq = dt::DC_CPDReqEnergyTransferMode;
 using BPT_DC_ModeReq = dt::BPT_DC_CPDReqEnergyTransferMode;
@@ -42,11 +42,11 @@ template <> void convert(BPT_DC_ModeRes& out, const d20::DcTransferLimits& in) {
     }
 }
 
-message_20::DC_ChargeParameterDiscoveryResponse
-handle_request(const message_20::DC_ChargeParameterDiscoveryRequest& req, const d20::Session& session,
+msg::d20::DC_ChargeParameterDiscoveryResponse
+handle_request(const msg::d20::DC_ChargeParameterDiscoveryRequest& req, const d20::Session& session,
                const d20::DcTransferLimits& dc_limits) {
 
-    message_20::DC_ChargeParameterDiscoveryResponse res;
+    msg::d20::DC_ChargeParameterDiscoveryResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
@@ -97,7 +97,7 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::DC_ChargeParameterDiscoveryRequest>()) {
+    if (const auto req = variant->get_if<msg::d20::DC_ChargeParameterDiscoveryRequest>()) {
 
         auto dc_max_limits = session::feedback::DcMaximumLimits{};
 
@@ -134,7 +134,7 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
         }
 
         return m_ctx.create_state<ScheduleExchange>();
-    } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+    } else if (const auto req = variant->get_if<msg::d20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
@@ -146,7 +146,7 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
         m_ctx.session_stopped = true;
 
         // Sequence Error
-        const message_20::Type req_type = variant->get_type();
+        const msg::d20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
         return {};

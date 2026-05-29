@@ -6,7 +6,7 @@
 
 using namespace iso15118;
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 SCENARIO("DC Welding Detection state handling") {
 
@@ -14,7 +14,7 @@ SCENARIO("DC Welding Detection state handling") {
 
         auto session = d20::Session();
 
-        message_20::DC_WeldingDetectionRequest req;
+        msg::d20::DC_WeldingDetectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.processing = dt::Processing::Ongoing;
@@ -34,7 +34,7 @@ SCENARIO("DC Welding Detection state handling") {
 
         auto session = d20::Session();
 
-        message_20::DC_WeldingDetectionRequest req;
+        msg::d20::DC_WeldingDetectionRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.processing = dt::Processing::Ongoing;

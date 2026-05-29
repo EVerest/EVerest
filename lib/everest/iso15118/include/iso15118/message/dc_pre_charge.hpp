@@ -4,7 +4,7 @@
 
 #include "common_types.hpp"
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 struct DC_PreChargeRequest {
     Header header;
@@ -21,4 +21,4 @@ struct DC_PreChargeResponse {
     datatypes::RationalNumber present_voltage;
 };
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

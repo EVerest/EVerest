@@ -9,7 +9,7 @@
 #include <cbv2g/iso_20/iso20_AC_Decoder.h>
 #include <cbv2g/iso_20/iso20_AC_Encoder.h>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 using AC_ModeReq = datatypes::AC_CPDReqEnergyTransferMode;
 using BPT_AC_ModeReq = datatypes::BPT_AC_CPDReqEnergyTransferMode;
@@ -239,4 +239,4 @@ template <> size_t serialize(const AC_ChargeParameterDiscoveryRequest& in, const
     return rv;
 }
 // End conversion for serializing an ACChargeParameterRequest (EVside)
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

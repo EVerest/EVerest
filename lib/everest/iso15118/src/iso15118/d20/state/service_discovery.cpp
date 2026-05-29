@@ -14,51 +14,51 @@
 #include <everest/util/vector/fixed_vector.hpp>
 
 namespace {
-iso15118::message_20::datatypes::ServiceCategory
+iso15118::msg::d20::datatypes::ServiceCategory
 convert_service_id_to_service_category(const std::uint16_t service_id) {
     switch (service_id) {
     case 1:
-        return iso15118::message_20::datatypes::ServiceCategory::AC;
+        return iso15118::msg::d20::datatypes::ServiceCategory::AC;
     case 2:
-        return iso15118::message_20::datatypes::ServiceCategory::DC;
+        return iso15118::msg::d20::datatypes::ServiceCategory::DC;
     case 3:
-        return iso15118::message_20::datatypes::ServiceCategory::WPT;
+        return iso15118::msg::d20::datatypes::ServiceCategory::WPT;
     case 4:
-        return iso15118::message_20::datatypes::ServiceCategory::DC_ACDP;
+        return iso15118::msg::d20::datatypes::ServiceCategory::DC_ACDP;
     case 5:
-        return iso15118::message_20::datatypes::ServiceCategory::AC_BPT;
+        return iso15118::msg::d20::datatypes::ServiceCategory::AC_BPT;
     case 6:
-        return iso15118::message_20::datatypes::ServiceCategory::DC_BPT;
+        return iso15118::msg::d20::datatypes::ServiceCategory::DC_BPT;
     case 7:
-        return iso15118::message_20::datatypes::ServiceCategory::DC_ACDP_BPT;
+        return iso15118::msg::d20::datatypes::ServiceCategory::DC_ACDP_BPT;
     case 8:
-        return iso15118::message_20::datatypes::ServiceCategory::MCS;
+        return iso15118::msg::d20::datatypes::ServiceCategory::MCS;
     case 9:
-        return iso15118::message_20::datatypes::ServiceCategory::MCS_BPT;
+        return iso15118::msg::d20::datatypes::ServiceCategory::MCS_BPT;
     case 10:
-        return iso15118::message_20::datatypes::ServiceCategory::AC_DER;
+        return iso15118::msg::d20::datatypes::ServiceCategory::AC_DER;
     default:
         // returning ParkingStatus as default to show nonsense
-        return iso15118::message_20::datatypes::ServiceCategory::ParkingStatus;
+        return iso15118::msg::d20::datatypes::ServiceCategory::ParkingStatus;
     }
 }
 } // namespace
 
 namespace iso15118::d20::state {
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 static bool find_service_id(const everest::lib::util::fixed_vector<uint16_t, 16>& req_service_ids,
                             const uint16_t service) {
     return std::find(req_service_ids.begin(), req_service_ids.end(), service) != req_service_ids.end();
 }
 
-message_20::ServiceDiscoveryResponse
-handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& session,
+msg::d20::ServiceDiscoveryResponse
+handle_request(const msg::d20::ServiceDiscoveryRequest& req, d20::Session& session,
                const std::vector<dt::ServiceCategory>& energy_services, const std::vector<uint16_t>& vas_services,
-               std::vector<message_20::datatypes::ServiceCategory>& ev_energy_services) {
+               std::vector<msg::d20::datatypes::ServiceCategory>& ev_energy_services) {
 
-    message_20::ServiceDiscoveryResponse res;
+    msg::d20::ServiceDiscoveryResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
@@ -77,7 +77,7 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     // EV supported service ID's
     if (req.supported_service_ids.has_value() == true) {
         for (auto& energy_service : energy_services) {
-            if (find_service_id(req.supported_service_ids.value(), message_20::to_underlying_value(energy_service))) {
+            if (find_service_id(req.supported_service_ids.value(), msg::d20::to_underlying_value(energy_service))) {
                 energy_services_list.push_back({energy_service, false});
             }
         }
@@ -90,7 +90,7 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
         for (auto service : req.supported_service_ids.value()) {
             const auto energy_service = convert_service_id_to_service_category(service);
             // ParkingStatus is used as a nonsense value
-            if (energy_service != message_20::datatypes::ServiceCategory::ParkingStatus) {
+            if (energy_service != msg::d20::datatypes::ServiceCategory::ParkingStatus) {
                 ev_energy_services.emplace_back(energy_service);
             }
         }
@@ -132,7 +132,7 @@ Result ServiceDiscovery::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::ServiceDiscoveryRequest>()) {
+    if (const auto req = variant->get_if<msg::d20::ServiceDiscoveryRequest>()) {
         if (req->supported_service_ids) {
             logf_info("Possible ids");
             for (auto id : req->supported_service_ids.value()) {
@@ -152,7 +152,7 @@ Result ServiceDiscovery::feed(Event ev) {
         }
 
         return m_ctx.create_state<ServiceDetail>();
-    } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+    } else if (const auto req = variant->get_if<msg::d20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
@@ -163,7 +163,7 @@ Result ServiceDiscovery::feed(Event ev) {
         m_ctx.log("expected ServiceDiscoveryReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
-        const message_20::Type req_type = variant->get_type();
+        const msg::d20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
         m_ctx.session_stopped = true;

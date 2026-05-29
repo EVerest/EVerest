@@ -8,7 +8,7 @@
 
 #include <everest/util/vector/fixed_vector.hpp>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 namespace datatypes {
 
@@ -49,4 +49,4 @@ struct ServiceDetailResponse {
     datatypes::ServiceParameterList service_parameter_list{datatypes::ParameterSet(0)};
 };
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

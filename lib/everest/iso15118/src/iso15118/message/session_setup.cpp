@@ -9,7 +9,7 @@
 #include <cbv2g/iso_20/iso20_CommonMessages_Datatypes.h>
 #include <cbv2g/iso_20/iso20_CommonMessages_Encoder.h>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 //
 // conversions
@@ -78,4 +78,4 @@ template <> size_t serialize(const SessionSetupRequest& in, const io::StreamOutp
     return serialize_helper(in, out);
 }
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

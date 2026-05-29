@@ -18,12 +18,12 @@ SCENARIO("Se/Deserialize session setup messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::SessionSetupReq);
+            REQUIRE(variant.get_type() == msg::d20::Type::SessionSetupReq);
 
-            const auto& msg = variant.get<message_20::SessionSetupRequest>();
+            const auto& msg = variant.get<msg::d20::SessionSetupRequest>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0});
@@ -35,10 +35,10 @@ SCENARIO("Se/Deserialize session setup messages") {
 
     GIVEN("Serialize session_setup_res") {
 
-        const auto header = message_20::Header{{0x2E, 0xFA, 0x18, 0x94, 0xDC, 0x7B, 0x90, 0x11}, 1739635913};
+        const auto header = msg::d20::Header{{0x2E, 0xFA, 0x18, 0x94, 0xDC, 0x7B, 0x90, 0x11}, 1739635913};
 
-        const auto res = message_20::SessionSetupResponse{
-            header, message_20::datatypes::ResponseCode::OK_NewSessionEstablished, "DE*PNX*E12345*1"};
+        const auto res = msg::d20::SessionSetupResponse{
+            header, msg::d20::datatypes::ResponseCode::OK_NewSessionEstablished, "DE*PNX*E12345*1"};
 
         std::vector<uint8_t> expected = {0x80, 0x90, 0x4,  0x17, 0x7d, 0xc,  0x4a, 0x6e, 0x3d, 0xc8, 0x8,  0x8c,
                                          0x9f, 0x9c, 0x2b, 0xd0, 0x62, 0x4,  0x4,  0x51, 0x11, 0x4a, 0x94, 0x13,
@@ -56,12 +56,12 @@ SCENARIO("Se/Deserialize session setup messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::SessionSetupRes);
+            REQUIRE(variant.get_type() == msg::d20::Type::SessionSetupRes);
 
-            const auto& msg = variant.get<message_20::SessionSetupResponse>();
+            const auto& msg = variant.get<msg::d20::SessionSetupResponse>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x2E, 0xFA, 0x18, 0x94, 0xDC, 0x7B, 0x90, 0x11});
@@ -73,9 +73,9 @@ SCENARIO("Se/Deserialize session setup messages") {
 
     GIVEN("Serialize session_setup_req") {
 
-        const auto header = message_20::Header{{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 1739635913};
+        const auto header = msg::d20::Header{{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 1739635913};
 
-        const auto res = message_20::SessionSetupRequest{header, "WMIV1234567890ABCDEX"};
+        const auto res = msg::d20::SessionSetupRequest{header, "WMIV1234567890ABCDEX"};
 
         std::vector<uint8_t> expected = {0x80, 0x8c, 0x4,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0xc,  0x9f,
                                          0x9c, 0x2b, 0xd0, 0x62, 0xb,  0x2b, 0xa6, 0xa4, 0xab, 0x18, 0x99, 0x19, 0x9a,

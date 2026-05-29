@@ -6,13 +6,13 @@
 
 using namespace iso15118;
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 SCENARIO("Power delivery state handling") {
     GIVEN("Bad case - Unknown session") {
         d20::Session session = d20::Session();
 
-        message_20::PowerDeliveryRequest req;
+        msg::d20::PowerDeliveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -29,7 +29,7 @@ SCENARIO("Power delivery state handling") {
     GIVEN("Not so bad case - WARNING_StandbyNotAllowed") {
         d20::Session session = d20::Session();
 
-        message_20::PowerDeliveryRequest req;
+        msg::d20::PowerDeliveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -63,7 +63,7 @@ SCENARIO("Power delivery state handling") {
     GIVEN("Bad case - AC ContactorError") {
         d20::Session session = d20::Session();
 
-        message_20::PowerDeliveryRequest req;
+        msg::d20::PowerDeliveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 

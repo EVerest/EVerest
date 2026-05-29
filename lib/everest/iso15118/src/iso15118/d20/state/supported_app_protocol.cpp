@@ -17,11 +17,11 @@ namespace iso15118::d20::state {
 constexpr auto ISO20_DC_NAMESPACE = "urn:iso:std:iso:15118:-20:DC";
 constexpr auto ISO20_AC_NAMESPACE = "urn:iso:std:iso:15118:-20:AC";
 
-using ResponseCode = message_20::SupportedAppProtocolResponse::ResponseCode;
+using ResponseCode = msg::d20::SupportedAppProtocolResponse::ResponseCode;
 
-message_20::SupportedAppProtocolResponse handle_request(const message_20::SupportedAppProtocolRequest& req,
+msg::d20::SupportedAppProtocolResponse handle_request(const msg::d20::SupportedAppProtocolRequest& req,
                                                         const std::optional<std::string>& custom_protocol_namespace) {
-    message_20::SupportedAppProtocolResponse res;
+    msg::d20::SupportedAppProtocolResponse res;
 
     std::map<uint8_t, uint8_t> ev_supported_protocols{}; // key: priority, value: schema_id
 
@@ -54,7 +54,7 @@ Result SupportedAppProtocol::feed(Event ev) {
 
     auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::SupportedAppProtocolRequest>()) {
+    if (const auto req = variant->get_if<msg::d20::SupportedAppProtocolRequest>()) {
 
         const auto res = handle_request(*req, m_ctx.session_config.custom_protocol);
         m_ctx.respond(res);

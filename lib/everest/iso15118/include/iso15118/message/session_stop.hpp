@@ -7,7 +7,7 @@
 
 #include "common_types.hpp"
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 struct SessionStopRequest {
     Header header;
@@ -21,4 +21,4 @@ struct SessionStopResponse {
     datatypes::ResponseCode response_code;
 };
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

@@ -95,7 +95,7 @@ void TbdController::send_control_event(const d20::ControlEvent& event) {
     }
 }
 
-void TbdController::update_authorization_services(const std::vector<message_20::datatypes::Authorization>& services,
+void TbdController::update_authorization_services(const std::vector<msg::d20::datatypes::Authorization>& services,
                                                   bool cert_install_service) {
 
     evse_setup.enable_certificate_install_service = cert_install_service;
@@ -120,7 +120,7 @@ void TbdController::update_powersupply_limits(const d20::DcTransferLimits& limit
     evse_setup.powersupply_limits = limits;
 }
 
-void TbdController::update_energy_modes(const std::vector<message_20::datatypes::ServiceCategory>& modes) {
+void TbdController::update_energy_modes(const std::vector<msg::d20::datatypes::ServiceCategory>& modes) {
     evse_setup.supported_energy_services = modes;
 
     if (session) {

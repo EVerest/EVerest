@@ -13,13 +13,13 @@
 
 namespace iso15118::d20::state {
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
-message_20::AuthorizationSetupResponse handle_request(const message_20::AuthorizationSetupRequest& req,
+msg::d20::AuthorizationSetupResponse handle_request(const msg::d20::AuthorizationSetupRequest& req,
                                                       d20::Session& session, bool cert_install_service,
                                                       const std::vector<dt::Authorization>& authorization_services) {
 
-    auto res = message_20::AuthorizationSetupResponse(); // default mandatory values [V2G20-736]
+    auto res = msg::d20::AuthorizationSetupResponse(); // default mandatory values [V2G20-736]
 
     if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
@@ -65,7 +65,7 @@ Result AuthorizationSetup::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::AuthorizationSetupRequest>()) {
+    if (const auto req = variant->get_if<msg::d20::AuthorizationSetupRequest>()) {
         const auto res = handle_request(*req, m_ctx.session, m_ctx.session_config.cert_install_service,
                                         m_ctx.session_config.authorization_services);
 
@@ -82,7 +82,7 @@ Result AuthorizationSetup::feed(Event ev) {
         m_ctx.feedback.signal(session::feedback::Signal::REQUIRE_AUTH_EIM);
 
         return m_ctx.create_state<Authorization>();
-    } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+    } else if (const auto req = variant->get_if<msg::d20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
@@ -93,7 +93,7 @@ Result AuthorizationSetup::feed(Event ev) {
         m_ctx.log("expected AuthorizationSetupReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
-        const message_20::Type req_type = variant->get_type();
+        const msg::d20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
         m_ctx.session_stopped = true;

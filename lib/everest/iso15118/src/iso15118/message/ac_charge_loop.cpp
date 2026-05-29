@@ -9,7 +9,7 @@
 #include <cbv2g/iso_20/iso20_AC_Decoder.h>
 #include <cbv2g/iso_20/iso20_AC_Encoder.h>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 // Begin conversion for deserializing an ACChargeLoopRequest (EVSEside)
 template <> void convert(const struct iso20_ac_DisplayParametersType& in, datatypes::DisplayParameters& out) {
@@ -542,4 +542,4 @@ template <> size_t serialize(const AC_ChargeLoopRequest& in, const io::StreamOut
 }
 // End conversion for serializing an ACChargeLoopRequest (EVside)
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

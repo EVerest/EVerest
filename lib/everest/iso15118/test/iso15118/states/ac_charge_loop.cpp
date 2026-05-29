@@ -8,7 +8,7 @@
 
 using namespace iso15118;
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 using Scheduled_AC_Req = dt::Scheduled_AC_CLReqControlMode;
 using Scheduled_BPT_AC_Req = dt::BPT_Scheduled_AC_CLReqControlMode;
@@ -50,7 +50,7 @@ SCENARIO("AC charge loop state handling") {
 
     GIVEN("Bad case - Unknown session") {
         d20::Session session = d20::Session();
-        message_20::AC_ChargeLoopRequest req;
+        msg::d20::AC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -80,7 +80,7 @@ SCENARIO("AC charge loop state handling") {
             dt::GeneratorMode::GridFollowing, 230, dt::GridCodeIslandingDetectionMethod::Passive);
 
         d20::Session session = d20::Session(service_parameters);
-        message_20::AC_ChargeLoopRequest req;
+        msg::d20::AC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -109,7 +109,7 @@ SCENARIO("AC charge loop state handling") {
             dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230);
 
         d20::Session session = d20::Session(service_parameters);
-        message_20::AC_ChargeLoopRequest req;
+        msg::d20::AC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -138,7 +138,7 @@ SCENARIO("AC charge loop state handling") {
             dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230);
 
         d20::Session session = d20::Session(service_parameters);
-        message_20::AC_ChargeLoopRequest req;
+        msg::d20::AC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -176,7 +176,7 @@ SCENARIO("AC charge loop state handling") {
             dt::GeneratorMode::GridFollowing, 230, dt::GridCodeIslandingDetectionMethod::Passive);
 
         d20::Session session = d20::Session(service_parameters);
-        message_20::AC_ChargeLoopRequest req;
+        msg::d20::AC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -213,7 +213,7 @@ SCENARIO("AC charge loop state handling") {
             dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230);
 
         d20::Session session = d20::Session(service_parameters);
-        message_20::AC_ChargeLoopRequest req;
+        msg::d20::AC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -255,7 +255,7 @@ SCENARIO("AC charge loop state handling") {
             dt::GeneratorMode::GridFollowing, 230, dt::GridCodeIslandingDetectionMethod::Passive);
 
         d20::Session session = d20::Session(service_parameters);
-        message_20::AC_ChargeLoopRequest req;
+        msg::d20::AC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -297,7 +297,7 @@ SCENARIO("AC charge loop state handling") {
             dt::MobilityNeedsMode::ProvidedBySecc, dt::Pricing::NoPricing, 230);
 
         d20::Session session = d20::Session(service_parameters);
-        message_20::AC_ChargeLoopRequest req;
+        msg::d20::AC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -345,7 +345,7 @@ SCENARIO("AC charge loop state handling") {
             dt::GeneratorMode::GridFollowing, 230, dt::GridCodeIslandingDetectionMethod::Passive);
 
         d20::Session session = d20::Session(service_parameters);
-        message_20::AC_ChargeLoopRequest req;
+        msg::d20::AC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -393,7 +393,7 @@ SCENARIO("AC charge loop state handling") {
             dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230);
 
         d20::Session session = d20::Session(service_parameters);
-        message_20::AC_ChargeLoopRequest req;
+        msg::d20::AC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 

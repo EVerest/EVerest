@@ -11,7 +11,7 @@
 
 #include <everest/util/vector/fixed_vector.hpp>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 struct SupportedAppProtocol {
     std::string protocol_namespace;
@@ -20,7 +20,7 @@ struct SupportedAppProtocol {
     uint8_t schema_id;
     uint8_t priority;
 
-    bool operator==(const iso15118::message_20::SupportedAppProtocol& other) const {
+    bool operator==(const iso15118::msg::d20::SupportedAppProtocol& other) const {
         return this->protocol_namespace == other.protocol_namespace and this->priority == other.priority and
                this->schema_id == other.schema_id and this->version_number_major == other.version_number_major and
                this->version_number_minor == other.version_number_minor;
@@ -44,4 +44,4 @@ struct SupportedAppProtocolResponse {
 
 size_t encode_supported_app_protocol_response(const io::StreamOutputView&, const SupportedAppProtocolResponse&);
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

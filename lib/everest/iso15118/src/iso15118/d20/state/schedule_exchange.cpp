@@ -13,13 +13,13 @@
 
 namespace iso15118::d20::state {
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
-using ScheduledReqControlMode = message_20::datatypes::Scheduled_SEReqControlMode;
-using ScheduledResControlMode = message_20::datatypes::Scheduled_SEResControlMode;
+using ScheduledReqControlMode = msg::d20::datatypes::Scheduled_SEReqControlMode;
+using ScheduledResControlMode = msg::d20::datatypes::Scheduled_SEResControlMode;
 
-using DynamicReqControlMode = message_20::datatypes::Dynamic_SEReqControlMode;
-using DynamicResControlMode = message_20::datatypes::Dynamic_SEResControlMode;
+using DynamicReqControlMode = msg::d20::datatypes::Dynamic_SEReqControlMode;
+using DynamicResControlMode = msg::d20::datatypes::Dynamic_SEResControlMode;
 
 namespace {
 auto create_default_scheduled_control_mode(const dt::RationalNumber& max_power) {
@@ -56,14 +56,14 @@ void set_dynamic_parameters_in_res(DynamicResControlMode& res_mode, const Update
 } // namespace
 } // namespace
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
-message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleExchangeRequest& req,
+msg::d20::ScheduleExchangeResponse handle_request(const msg::d20::ScheduleExchangeRequest& req,
                                                     const d20::Session& session, const dt::RationalNumber& max_power,
                                                     const UpdateDynamicModeParameters& dynamic_parameters,
                                                     bool timeout_reached) {
 
-    message_20::ScheduleExchangeResponse res;
+    msg::d20::ScheduleExchangeResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
@@ -138,7 +138,7 @@ Result ScheduleExchange::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::ScheduleExchangeRequest>()) {
+    if (const auto req = variant->get_if<msg::d20::ScheduleExchangeRequest>()) {
 
         if (first_req_msg) {
             m_ctx.start_timeout(d20::TimeoutType::ONGOING, TIMEOUT_ONGOING);
@@ -205,7 +205,7 @@ Result ScheduleExchange::feed(Event ev) {
         m_ctx.session_stopped = true;
         return {};
 
-    } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+    } else if (const auto req = variant->get_if<msg::d20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
@@ -216,7 +216,7 @@ Result ScheduleExchange::feed(Event ev) {
         m_ctx.log("expected ScheduleExchangeReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
-        const message_20::Type req_type = variant->get_type();
+        const msg::d20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
         m_ctx.session_stopped = true;

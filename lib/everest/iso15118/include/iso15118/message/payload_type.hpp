@@ -6,7 +6,7 @@
 
 #include <iso15118/io/sdp.hpp>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 template <typename T> struct PayloadTypeTrait;
 
@@ -47,4 +47,4 @@ CREATE_TYPE_TRAIT(AC_ChargeLoopResponse, Part20AC);
 #undef CREATE_TYPE_TRAIT
 #endif
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

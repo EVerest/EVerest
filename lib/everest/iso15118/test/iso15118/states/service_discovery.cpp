@@ -6,14 +6,14 @@
 
 using namespace iso15118;
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 SCENARIO("Service discovery state handling") {
 
     GIVEN("Bad Case - Unknown session") {
         auto session = d20::Session();
 
-        message_20::ServiceDiscoveryRequest req;
+        msg::d20::ServiceDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -38,7 +38,7 @@ SCENARIO("Service discovery state handling") {
 
         d20::Session session = d20::Session();
 
-        message_20::ServiceDiscoveryRequest req;
+        msg::d20::ServiceDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -67,7 +67,7 @@ SCENARIO("Service discovery state handling") {
 
         d20::Session session = d20::Session();
 
-        message_20::ServiceDiscoveryRequest req;
+        msg::d20::ServiceDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -96,7 +96,7 @@ SCENARIO("Service discovery state handling") {
 
         d20::Session session = d20::Session();
 
-        message_20::ServiceDiscoveryRequest req;
+        msg::d20::ServiceDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -125,14 +125,14 @@ SCENARIO("Service discovery state handling") {
 
         d20::Session session = d20::Session();
 
-        message_20::ServiceDiscoveryRequest req;
+        msg::d20::ServiceDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
         std::vector<dt::ServiceCategory> supported_energy_transfer_services = {dt::ServiceCategory::DC,
                                                                                dt::ServiceCategory::DC_BPT};
         std::vector<uint16_t> supported_vas_services = {
-            message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
+            msg::d20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
         std::vector<dt::ServiceCategory> ev_energy_services{};
 
         const auto res = d20::state::handle_request(req, session, supported_energy_transfer_services,
@@ -151,7 +151,7 @@ SCENARIO("Service discovery state handling") {
             REQUIRE(res.vas_list.has_value() == true);
             REQUIRE(res.vas_list.value()[0].free_service == false);
             REQUIRE(res.vas_list.value()[0].service_id ==
-                    message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus));
+                    msg::d20::to_underlying_value(dt::ServiceCategory::ParkingStatus));
         }
     }
 
@@ -159,7 +159,7 @@ SCENARIO("Service discovery state handling") {
 
         d20::Session session = d20::Session();
 
-        message_20::ServiceDiscoveryRequest req;
+        msg::d20::ServiceDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -170,7 +170,7 @@ SCENARIO("Service discovery state handling") {
         std::vector<dt::ServiceCategory> supported_energy_transfer_services = {dt::ServiceCategory::DC,
                                                                                dt::ServiceCategory::DC_BPT};
         std::vector<uint16_t> supported_vas_services = {
-            message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
+            msg::d20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
         std::vector<dt::ServiceCategory> ev_energy_services{};
 
         const auto res = d20::state::handle_request(req, session, supported_energy_transfer_services,

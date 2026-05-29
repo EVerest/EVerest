@@ -15,7 +15,7 @@
 
 using PayloadType = iso15118::io::v2gtp::PayloadType;
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 static void handle_sap(VariantAccess& va) {
     appHand_exiDocument doc;
@@ -184,4 +184,4 @@ const std::string& Variant::get_error() const {
     return error;
 }
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

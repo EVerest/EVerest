@@ -9,7 +9,7 @@
 
 #include <cbv2g/app_handshake/appHand_Encoder.h>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 template <> void convert(const struct appHand_supportedAppProtocolReq& in, SupportedAppProtocolRequest& out) {
     const auto& ap_in = in.AppProtocol;
@@ -91,4 +91,4 @@ template <> size_t serialize(const SupportedAppProtocolRequest& in, const io::St
     return serialize_helper(in, out);
 }
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

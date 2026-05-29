@@ -9,7 +9,7 @@
 
 #include <everest/util/vector/fixed_vector.hpp>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 namespace datatypes {
 using ServiceIdList = everest::lib::util::fixed_vector<std::uint16_t, 16>; // 16
@@ -45,4 +45,4 @@ struct ServiceDiscoveryResponse {
     std::optional<datatypes::VasServiceList> vas_list;
 };
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

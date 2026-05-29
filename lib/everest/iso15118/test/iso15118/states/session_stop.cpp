@@ -6,7 +6,7 @@
 
 using namespace iso15118;
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 SCENARIO("Session Stop state handling") {
 
@@ -14,7 +14,7 @@ SCENARIO("Session Stop state handling") {
 
         auto session = d20::Session();
 
-        message_20::SessionStopRequest req;
+        msg::d20::SessionStopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.charging_session = dt::ChargingSession::Terminate;
@@ -30,7 +30,7 @@ SCENARIO("Session Stop state handling") {
 
         auto session = d20::Session();
 
-        message_20::SessionStopRequest req;
+        msg::d20::SessionStopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.charging_session = dt::ChargingSession::Terminate;
@@ -47,7 +47,7 @@ SCENARIO("Session Stop state handling") {
 
         session.service_renegotiation_supported = false;
 
-        message_20::SessionStopRequest req;
+        msg::d20::SessionStopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
         req.charging_session = dt::ChargingSession::ServiceRenegotiation;

@@ -15,7 +15,7 @@ public:
     Result feed(Event) final;
 
 private:
-    message_20::datatypes::AuthStatus authorization_status{message_20::datatypes::AuthStatus::Pending};
+    msg::d20::datatypes::AuthStatus authorization_status{msg::d20::datatypes::AuthStatus::Pending};
     bool first_req_msg{true};
     bool timeout_ongoing_reached{false};
 };

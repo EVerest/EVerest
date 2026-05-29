@@ -8,7 +8,7 @@
 
 namespace iso15118::d20 {
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 template <typename T> struct Limit {
     T max;
@@ -16,15 +16,15 @@ template <typename T> struct Limit {
 };
 
 struct Limits {
-    Limit<message_20::datatypes::RationalNumber> power;
-    Limit<message_20::datatypes::RationalNumber> current;
+    Limit<msg::d20::datatypes::RationalNumber> power;
+    Limit<msg::d20::datatypes::RationalNumber> current;
 };
 
 struct DcTransferLimits {
     Limits charge_limits;
     std::optional<Limits> discharge_limits;
-    Limit<message_20::datatypes::RationalNumber> voltage;
-    std::optional<message_20::datatypes::RationalNumber> power_ramp_limit;
+    Limit<msg::d20::datatypes::RationalNumber> voltage;
+    std::optional<msg::d20::datatypes::RationalNumber> power_ramp_limit;
 };
 
 struct AcTransferLimits {

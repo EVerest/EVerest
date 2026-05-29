@@ -7,7 +7,7 @@
 
 using namespace iso15118;
 
-namespace dt = iso15118::message_20::datatypes;
+namespace dt = iso15118::msg::d20::datatypes;
 
 SCENARIO("Se/Deserialize dc charge loop messages") {
 
@@ -18,12 +18,12 @@ SCENARIO("Se/Deserialize dc charge loop messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::DC_ChargeLoopReq);
+            REQUIRE(variant.get_type() == msg::d20::Type::DC_ChargeLoopReq);
 
-            const auto& msg = variant.get<message_20::DC_ChargeLoopRequest>();
+            const auto& msg = variant.get<msg::d20::DC_ChargeLoopRequest>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
@@ -31,7 +31,7 @@ SCENARIO("Se/Deserialize dc charge loop messages") {
             REQUIRE(msg.meter_info_requested == false);
             REQUIRE(dt::from_RationalNumber(msg.present_voltage) == 400);
 
-            using ScheduledMode = message_20::datatypes::Scheduled_DC_CLReqControlMode;
+            using ScheduledMode = msg::d20::datatypes::Scheduled_DC_CLReqControlMode;
 
             REQUIRE(std::holds_alternative<ScheduledMode>(msg.control_mode));
             const auto& control_mode = std::get<ScheduledMode>(msg.control_mode);
@@ -42,11 +42,11 @@ SCENARIO("Se/Deserialize dc charge loop messages") {
 
     GIVEN("Serialize dc_charge_loop request") {
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
 
-        req.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456333};
+        req.header = msg::d20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456333};
         req.meter_info_requested = false;
-        auto& control_mode = req.control_mode.emplace<message_20::datatypes::Scheduled_DC_CLReqControlMode>();
+        auto& control_mode = req.control_mode.emplace<msg::d20::datatypes::Scheduled_DC_CLReqControlMode>();
         control_mode.target_current = {20, 0};
         control_mode.target_voltage = {400, 0};
 
@@ -70,12 +70,12 @@ SCENARIO("Se/Deserialize dc charge loop messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::DC_ChargeLoopReq);
+            REQUIRE(variant.get_type() == msg::d20::Type::DC_ChargeLoopReq);
 
-            const auto& msg = variant.get<message_20::DC_ChargeLoopRequest>();
+            const auto& msg = variant.get<msg::d20::DC_ChargeLoopRequest>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x64, 0xEA, 0xED, 0x3D, 0x8E, 0x20, 0xC9, 0x59});
@@ -89,7 +89,7 @@ SCENARIO("Se/Deserialize dc charge loop messages") {
             REQUIRE(display_parameters.present_soc.value_or(0) == 10);
             REQUIRE(display_parameters.charging_complete.value_or(true) == false);
 
-            using DynamicMode = message_20::datatypes::Dynamic_DC_CLReqControlMode;
+            using DynamicMode = msg::d20::datatypes::Dynamic_DC_CLReqControlMode;
 
             REQUIRE(std::holds_alternative<DynamicMode>(msg.control_mode));
             const auto& control_mode = std::get<DynamicMode>(msg.control_mode);
@@ -107,11 +107,11 @@ SCENARIO("Se/Deserialize dc charge loop messages") {
 
     GIVEN("Serialize dc_charge_loop request dynamic mode") {
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
 
-        req.header = message_20::Header{{0x64, 0xEA, 0xED, 0x3D, 0x8E, 0x20, 0xC9, 0x59}, 1727440880};
+        req.header = msg::d20::Header{{0x64, 0xEA, 0xED, 0x3D, 0x8E, 0x20, 0xC9, 0x59}, 1727440880};
         req.meter_info_requested = false;
-        auto& control_mode = req.control_mode.emplace<message_20::datatypes::Dynamic_DC_CLReqControlMode>();
+        auto& control_mode = req.control_mode.emplace<msg::d20::datatypes::Dynamic_DC_CLReqControlMode>();
 
         req.present_voltage = {400, 0};
         control_mode.target_energy_request = {6000, 1};
@@ -138,11 +138,11 @@ SCENARIO("Se/Deserialize dc charge loop messages") {
 
     GIVEN("Serialize dc_charge_loop_res ongoing") {
 
-        message_20::DC_ChargeLoopResponse res;
+        msg::d20::DC_ChargeLoopResponse res;
 
-        res.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456334};
-        res.response_code = message_20::datatypes::ResponseCode::OK;
-        res.control_mode.emplace<message_20::datatypes::Scheduled_DC_CLResControlMode>();
+        res.header = msg::d20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456334};
+        res.response_code = msg::d20::datatypes::ResponseCode::OK;
+        res.control_mode.emplace<msg::d20::datatypes::Scheduled_DC_CLResControlMode>();
         res.current_limit_achieved = true;
         res.power_limit_achieved = true;
         res.voltage_limit_achieved = true;
@@ -160,11 +160,11 @@ SCENARIO("Se/Deserialize dc charge loop messages") {
 
     GIVEN("Serialize dc_charge_loop_res dynamic dc_bpt") {
 
-        message_20::DC_ChargeLoopResponse res;
+        msg::d20::DC_ChargeLoopResponse res;
 
-        res.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456334};
-        res.response_code = message_20::datatypes::ResponseCode::OK;
-        auto& mode = res.control_mode.emplace<message_20::datatypes::Dynamic_DC_CLResControlMode>();
+        res.header = msg::d20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456334};
+        res.response_code = msg::d20::datatypes::ResponseCode::OK;
+        auto& mode = res.control_mode.emplace<msg::d20::datatypes::Dynamic_DC_CLResControlMode>();
 
         mode.max_charge_power = {150, 3};
         mode.min_charge_power = {100, 0};
@@ -194,24 +194,24 @@ SCENARIO("Se/Deserialize dc charge loop messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::DC_ChargeLoopRes);
+            REQUIRE(variant.get_type() == msg::d20::Type::DC_ChargeLoopRes);
 
-            const auto& msg = variant.get<message_20::DC_ChargeLoopResponse>();
+            const auto& msg = variant.get<msg::d20::DC_ChargeLoopResponse>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
             REQUIRE(header.timestamp == 1725456334);
-            REQUIRE(msg.response_code == message_20::datatypes::ResponseCode::OK);
+            REQUIRE(msg.response_code == msg::d20::datatypes::ResponseCode::OK);
             REQUIRE(msg.current_limit_achieved == true);
             REQUIRE(msg.power_limit_achieved == true);
             REQUIRE(msg.voltage_limit_achieved == true);
             REQUIRE(dt::from_RationalNumber(msg.present_current) == 1);
             REQUIRE(dt::from_RationalNumber(msg.present_voltage) == 400);
-            REQUIRE(std::holds_alternative<message_20::datatypes::Scheduled_DC_CLResControlMode>(msg.control_mode));
-            const auto& control_mode = std::get<message_20::datatypes::Scheduled_DC_CLResControlMode>(msg.control_mode);
+            REQUIRE(std::holds_alternative<msg::d20::datatypes::Scheduled_DC_CLResControlMode>(msg.control_mode));
+            const auto& control_mode = std::get<msg::d20::datatypes::Scheduled_DC_CLResControlMode>(msg.control_mode);
             REQUIRE(control_mode.max_charge_current.has_value() == false);
             REQUIRE(control_mode.max_charge_power.has_value() == false);
             REQUIRE(control_mode.max_voltage.has_value() == false);

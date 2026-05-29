@@ -19,7 +19,7 @@ namespace iso15118::d20::state {
 
 namespace {
 
-std::string session_id_to_string(const message_20::datatypes::SessionId& session_id) {
+std::string session_id_to_string(const msg::d20::datatypes::SessionId& session_id) {
     std::stringstream ss;
     ss << "0x" << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(session_id[0]);
     for (unsigned int i = 1; i < session_id.size(); ++i) {
@@ -29,12 +29,12 @@ std::string session_id_to_string(const message_20::datatypes::SessionId& session
     return ss.str();
 }
 
-bool session_is_zero(const message_20::datatypes::SessionId& session_id) {
+bool session_is_zero(const msg::d20::datatypes::SessionId& session_id) {
     return std::all_of(session_id.begin(), session_id.end(), [](int i) { return i == 0; });
 }
 
 io::sha512_hash_t calculate_new_cert_session_id_hash(const io::sha512_hash_t& vehicle_cert_hash,
-                                                     const message_20::datatypes::SessionId& session_id) {
+                                                     const msg::d20::datatypes::SessionId& session_id) {
     io::sha512_hash_t session_id_vehicle_hash{};
     std::array<std::uint8_t, 64 + 8> concatenated_session_id_vehicle{};
 
@@ -55,13 +55,13 @@ io::sha512_hash_t calculate_new_cert_session_id_hash(const io::sha512_hash_t& ve
 }
 } // namespace
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
-message_20::SessionSetupResponse handle_request([[maybe_unused]] const message_20::SessionSetupRequest& req,
+msg::d20::SessionSetupResponse handle_request([[maybe_unused]] const msg::d20::SessionSetupRequest& req,
                                                 const d20::Session& session, const std::string& evse_id,
                                                 bool new_session) {
 
-    message_20::SessionSetupResponse res;
+    msg::d20::SessionSetupResponse res;
     setup_header(res.header, session);
 
     res.evseid = evse_id;
@@ -85,7 +85,7 @@ Result SessionSetup::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::SessionSetupRequest>()) {
+    if (const auto req = variant->get_if<msg::d20::SessionSetupRequest>()) {
 
         logf_info("Received session setup with evccid: %s", req->evccid.c_str());
         m_ctx.feedback.evcc_id(req->evccid);
@@ -151,7 +151,7 @@ Result SessionSetup::feed(Event ev) {
         m_ctx.log("expected SessionSetupReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
-        const message_20::Type req_type = variant->get_type();
+        const msg::d20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
         m_ctx.session_stopped = true;

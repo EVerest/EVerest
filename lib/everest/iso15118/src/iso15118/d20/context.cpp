@@ -19,12 +19,12 @@ Context::Context(session::feedback::Callbacks feedback_callbacks, session::Sessi
     timeouts(timeouts_) {
 }
 
-std::unique_ptr<message_20::Variant> Context::pull_request() {
-    return message_exchange.pull_input<message_20::Variant>();
+std::unique_ptr<msg::d20::Variant> Context::pull_request() {
+    return message_exchange.pull_input<msg::d20::Variant>();
 }
 
-message_20::Type Context::peek_request_type() const {
-    return message_exchange.peek_input_type<message_20::Type>();
+msg::d20::Type Context::peek_request_type() const {
+    return message_exchange.peek_input_type<msg::d20::Type>();
 }
 
 } // namespace iso15118::d20

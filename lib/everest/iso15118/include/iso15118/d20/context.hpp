@@ -39,8 +39,8 @@ public:
         return std::make_unique<StateType>(*this, std::forward<Args>(args)...);
     }
 
-    std::unique_ptr<message_20::Variant> pull_request();
-    message_20::Type peek_request_type() const;
+    std::unique_ptr<msg::d20::Variant> pull_request();
+    msg::d20::Type peek_request_type() const;
 
     template <typename MessageType> void respond(const MessageType& msg) {
         message_exchange.set_d20_response(msg);

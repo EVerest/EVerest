@@ -7,7 +7,7 @@
 
 using namespace iso15118;
 
-namespace dt = iso15118::message_20::datatypes;
+namespace dt = iso15118::msg::d20::datatypes;
 
 SCENARIO("Se/Deserialize schedule_exchange messages") {
 
@@ -22,13 +22,13 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
-            REQUIRE(variant.get_type() == message_20::Type::ScheduleExchangeReq);
+            REQUIRE(variant.get_type() == msg::d20::Type::ScheduleExchangeReq);
 
-            const auto& msg = variant.get<message_20::ScheduleExchangeRequest>();
+            const auto& msg = variant.get<msg::d20::ScheduleExchangeRequest>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x47, 0xFD, 0x3B, 0x4F, 0x13, 0x25, 0x57, 0xCA});
@@ -67,8 +67,8 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
     }
 
     GIVEN("Serialize schedule_exchange_req - scheduled mode") {
-        message_20::ScheduleExchangeRequest req;
-        req.header = message_20::Header{{0x47, 0xFD, 0x3B, 0x4F, 0x13, 0x25, 0x57, 0xCA}, 1727082830};
+        msg::d20::ScheduleExchangeRequest req;
+        req.header = msg::d20::Header{{0x47, 0xFD, 0x3B, 0x4F, 0x13, 0x25, 0x57, 0xCA}, 1727082830};
         req.max_supporting_points = 1024;
         auto& control_mode = req.control_mode.emplace<dt::Scheduled_SEReqControlMode>();
         control_mode.departure_time = 7200;
@@ -110,13 +110,13 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
-            REQUIRE(variant.get_type() == message_20::Type::ScheduleExchangeReq);
+            REQUIRE(variant.get_type() == msg::d20::Type::ScheduleExchangeReq);
 
-            const auto& msg = variant.get<message_20::ScheduleExchangeRequest>();
+            const auto& msg = variant.get<msg::d20::ScheduleExchangeRequest>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x39, 0x20, 0xB0, 0x04, 0x6E, 0x4A, 0xF9, 0x09});
@@ -142,9 +142,9 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
 
     GIVEN("Serialize schedule_exchange_req - dynamic mode") {
 
-        message_20::ScheduleExchangeRequest req;
+        msg::d20::ScheduleExchangeRequest req;
 
-        req.header = message_20::Header{{0x39, 0x20, 0xB0, 0x04, 0x6E, 0x4A, 0xF9, 0x09}, 1727076438};
+        req.header = msg::d20::Header{{0x39, 0x20, 0xB0, 0x04, 0x6E, 0x4A, 0xF9, 0x09}, 1727076438};
         req.max_supporting_points = 1024;
         auto& control_mode = req.control_mode.emplace<dt::Dynamic_SEReqControlMode>();
         control_mode.departure_time = 7200;
@@ -168,9 +168,9 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
 
     GIVEN("Serialize schedule_exchange_res - scheduled mode - no price") {
 
-        message_20::ScheduleExchangeResponse res;
+        msg::d20::ScheduleExchangeResponse res;
 
-        res.header = message_20::Header{{0x47, 0xFD, 0x3B, 0x4F, 0x13, 0x25, 0x57, 0xCA}, 1727082831};
+        res.header = msg::d20::Header{{0x47, 0xFD, 0x3B, 0x4F, 0x13, 0x25, 0x57, 0xCA}, 1727082831};
         res.response_code = dt::ResponseCode::OK;
         res.processing = dt::Processing::Finished;
         auto& control_mode = res.control_mode.emplace<dt::Scheduled_SEResControlMode>();
@@ -198,13 +198,13 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
-            REQUIRE(variant.get_type() == message_20::Type::ScheduleExchangeRes);
+            REQUIRE(variant.get_type() == msg::d20::Type::ScheduleExchangeRes);
 
-            const auto& msg = variant.get<message_20::ScheduleExchangeResponse>();
+            const auto& msg = variant.get<msg::d20::ScheduleExchangeResponse>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x47, 0xFD, 0x3B, 0x4F, 0x13, 0x25, 0x57, 0xCA});
@@ -227,9 +227,9 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
     }
 
     GIVEN("Serialize schedule_exchange_res - scheduled mode - price level") {
-        message_20::ScheduleExchangeResponse res;
+        msg::d20::ScheduleExchangeResponse res;
 
-        res.header = message_20::Header{{0x47, 0xFD, 0x3B, 0x4F, 0x13, 0x25, 0x57, 0xCA}, 1727082831};
+        res.header = msg::d20::Header{{0x47, 0xFD, 0x3B, 0x4F, 0x13, 0x25, 0x57, 0xCA}, 1727082831};
         res.response_code = dt::ResponseCode::OK;
         res.processing = dt::Processing::Finished;
         auto& control_mode = res.control_mode.emplace<dt::Scheduled_SEResControlMode>();
@@ -265,13 +265,13 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
-            REQUIRE(variant.get_type() == message_20::Type::ScheduleExchangeRes);
+            REQUIRE(variant.get_type() == msg::d20::Type::ScheduleExchangeRes);
 
-            const auto& msg = variant.get<message_20::ScheduleExchangeResponse>();
+            const auto& msg = variant.get<msg::d20::ScheduleExchangeResponse>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x47, 0xFD, 0x3B, 0x4F, 0x13, 0x25, 0x57, 0xCA});
@@ -311,9 +311,9 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
     }
 
     GIVEN("Serialize schedule_exchange_res - dynamic mode") {
-        message_20::ScheduleExchangeResponse res;
+        msg::d20::ScheduleExchangeResponse res;
 
-        res.header = message_20::Header{{0x39, 0x20, 0xB0, 0x04, 0x6E, 0x4A, 0xF9, 0x09}, 1727076439};
+        res.header = msg::d20::Header{{0x39, 0x20, 0xB0, 0x04, 0x6E, 0x4A, 0xF9, 0x09}, 1727076439};
         res.response_code = dt::ResponseCode::OK;
         res.processing = dt::Processing::Finished;
         auto& control_mode = res.control_mode.emplace<dt::Dynamic_SEResControlMode>();
@@ -333,13 +333,13 @@ SCENARIO("Se/Deserialize schedule_exchange messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
-            REQUIRE(variant.get_type() == message_20::Type::ScheduleExchangeRes);
+            REQUIRE(variant.get_type() == msg::d20::Type::ScheduleExchangeRes);
 
-            const auto& msg = variant.get<message_20::ScheduleExchangeResponse>();
+            const auto& msg = variant.get<msg::d20::ScheduleExchangeResponse>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x39, 0x20, 0xB0, 0x04, 0x6E, 0x4A, 0xF9, 0x09});

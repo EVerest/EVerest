@@ -8,17 +8,17 @@
 
 using namespace iso15118;
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
-using Scheduled_DC_Req = message_20::datatypes::Scheduled_DC_CLReqControlMode;
-using Scheduled_BPT_DC_Req = message_20::datatypes::BPT_Scheduled_DC_CLReqControlMode;
-using Dynamic_DC_Req = message_20::datatypes::Dynamic_DC_CLReqControlMode;
-using Dynamic_BPT_DC_Req = message_20::datatypes::BPT_Dynamic_DC_CLReqControlMode;
+using Scheduled_DC_Req = msg::d20::datatypes::Scheduled_DC_CLReqControlMode;
+using Scheduled_BPT_DC_Req = msg::d20::datatypes::BPT_Scheduled_DC_CLReqControlMode;
+using Dynamic_DC_Req = msg::d20::datatypes::Dynamic_DC_CLReqControlMode;
+using Dynamic_BPT_DC_Req = msg::d20::datatypes::BPT_Dynamic_DC_CLReqControlMode;
 
-using Scheduled_DC_Res = message_20::datatypes::Scheduled_DC_CLResControlMode;
-using Scheduled_BPT_DC_Res = message_20::datatypes::BPT_Scheduled_DC_CLResControlMode;
-using Dynamic_DC_Res = message_20::datatypes::Dynamic_DC_CLResControlMode;
-using Dynamic_BPT_DC_Res = message_20::datatypes::BPT_Dynamic_DC_CLResControlMode;
+using Scheduled_DC_Res = msg::d20::datatypes::Scheduled_DC_CLResControlMode;
+using Scheduled_BPT_DC_Res = msg::d20::datatypes::BPT_Scheduled_DC_CLResControlMode;
+using Dynamic_DC_Res = msg::d20::datatypes::Dynamic_DC_CLResControlMode;
+using Dynamic_BPT_DC_Res = msg::d20::datatypes::BPT_Dynamic_DC_CLResControlMode;
 
 SCENARIO("DC charge loop state handling") {
 
@@ -54,7 +54,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session();
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -88,7 +88,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -121,7 +121,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -154,7 +154,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -196,7 +196,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -244,7 +244,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -289,7 +289,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -339,7 +339,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -389,7 +389,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -445,7 +445,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -494,7 +494,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -536,7 +536,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -584,7 +584,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -629,7 +629,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -679,7 +679,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -729,7 +729,7 @@ SCENARIO("DC charge loop state handling") {
 
         d20::Session session = d20::Session(service_parameters);
 
-        message_20::DC_ChargeLoopRequest req;
+        msg::d20::DC_ChargeLoopRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 

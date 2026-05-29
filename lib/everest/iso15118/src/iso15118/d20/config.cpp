@@ -8,7 +8,7 @@
 
 namespace iso15118::d20 {
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 namespace {
 

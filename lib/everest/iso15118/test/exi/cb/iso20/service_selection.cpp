@@ -7,7 +7,7 @@
 
 using namespace iso15118;
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 SCENARIO("Se/Deserialize service_selection messages") {
 
@@ -18,13 +18,13 @@ SCENARIO("Se/Deserialize service_selection messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
-            REQUIRE(variant.get_type() == message_20::Type::ServiceSelectionReq);
+            REQUIRE(variant.get_type() == msg::d20::Type::ServiceSelectionReq);
 
-            const auto& msg = variant.get<message_20::ServiceSelectionRequest>();
+            const auto& msg = variant.get<msg::d20::ServiceSelectionRequest>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x04, 0xEB, 0xFF, 0x2C, 0x94, 0x59, 0xDB, 0x42});
@@ -42,13 +42,13 @@ SCENARIO("Se/Deserialize service_selection messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
-            REQUIRE(variant.get_type() == message_20::Type::ServiceSelectionReq);
+            REQUIRE(variant.get_type() == msg::d20::Type::ServiceSelectionReq);
 
-            const auto& msg = variant.get<message_20::ServiceSelectionRequest>();
+            const auto& msg = variant.get<msg::d20::ServiceSelectionRequest>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x04, 0xEB, 0xFF, 0x2C, 0x94, 0x59, 0xDB, 0x42});
@@ -61,16 +61,16 @@ SCENARIO("Se/Deserialize service_selection messages") {
             const auto& selected_vas_list = msg.selected_vas_list.value();
             REQUIRE(selected_vas_list.size() == 1);
             REQUIRE(selected_vas_list.at(0).service_id ==
-                    message_20::to_underlying_value(dt::ServiceCategory::Internet));
+                    msg::d20::to_underlying_value(dt::ServiceCategory::Internet));
             REQUIRE(selected_vas_list.at(0).parameter_set_id == 2);
         }
     }
 
     GIVEN("Serialize service_selection_req") {
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
 
-        req.header = message_20::Header{{0x04, 0xEB, 0xFF, 0x2C, 0x94, 0x59, 0xDB, 0x42}, 1692009443};
+        req.header = msg::d20::Header{{0x04, 0xEB, 0xFF, 0x2C, 0x94, 0x59, 0xDB, 0x42}, 1692009443};
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::AC_BPT;
         req.selected_energy_transfer_service.parameter_set_id = 1;
 
@@ -84,13 +84,13 @@ SCENARIO("Se/Deserialize service_selection messages") {
 
     GIVEN("Serialize service_selection_req vas") {
 
-        message_20::ServiceSelectionRequest req;
+        msg::d20::ServiceSelectionRequest req;
 
-        req.header = message_20::Header{{0x04, 0xEB, 0xFF, 0x2C, 0x94, 0x59, 0xDB, 0x42}, 1692009443};
+        req.header = msg::d20::Header{{0x04, 0xEB, 0xFF, 0x2C, 0x94, 0x59, 0xDB, 0x42}, 1692009443};
         req.selected_energy_transfer_service.service_id = dt::ServiceCategory::AC_BPT;
         req.selected_energy_transfer_service.parameter_set_id = 1;
 
-        const auto vas = dt::VasSelectedService{message_20::to_underlying_value(dt::ServiceCategory::Internet), 2};
+        const auto vas = dt::VasSelectedService{msg::d20::to_underlying_value(dt::ServiceCategory::Internet), 2};
 
         req.selected_vas_list.emplace({vas});
 
@@ -104,9 +104,9 @@ SCENARIO("Se/Deserialize service_selection messages") {
 
     GIVEN("Serialize service_selection_res") {
 
-        message_20::ServiceSelectionResponse res;
+        msg::d20::ServiceSelectionResponse res;
 
-        res.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456323};
+        res.header = msg::d20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456323};
         res.response_code = dt::ResponseCode::OK;
 
         std::vector<uint8_t> expected = {0x80, 0x88, 0x04, 0x1e, 0xa6, 0x5f, 0xc9, 0x9b, 0xa7, 0x6c,
@@ -124,13 +124,13 @@ SCENARIO("Se/Deserialize service_selection messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It should be decoded successfully") {
 
-            REQUIRE(variant.get_type() == message_20::Type::ServiceSelectionRes);
+            REQUIRE(variant.get_type() == msg::d20::Type::ServiceSelectionRes);
 
-            const auto& msg = variant.get<message_20::ServiceSelectionResponse>();
+            const auto& msg = variant.get<msg::d20::ServiceSelectionResponse>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});

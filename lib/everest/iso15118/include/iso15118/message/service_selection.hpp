@@ -8,7 +8,7 @@
 
 #include <everest/util/vector/fixed_vector.hpp>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 namespace datatypes {
 
@@ -37,4 +37,4 @@ struct ServiceSelectionResponse {
     datatypes::ResponseCode response_code;
 };
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

@@ -6,7 +6,7 @@
 
 using namespace iso15118;
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 SCENARIO("DC Pre charge state handling") {
 
@@ -14,7 +14,7 @@ SCENARIO("DC Pre charge state handling") {
 
         auto session = d20::Session();
 
-        message_20::DC_PreChargeRequest req;
+        msg::d20::DC_PreChargeRequest req;
 
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
@@ -36,7 +36,7 @@ SCENARIO("DC Pre charge state handling") {
     GIVEN("Good Case") {
         auto session = d20::Session();
 
-        message_20::DC_PreChargeRequest req;
+        msg::d20::DC_PreChargeRequest req;
 
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;

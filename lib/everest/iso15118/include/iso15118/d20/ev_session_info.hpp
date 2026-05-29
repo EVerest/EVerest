@@ -11,7 +11,7 @@ namespace iso15118::d20 {
 struct EVSessionInfo {
     session::feedback::EvTransferLimits ev_transfer_limits;
     session::feedback::EvSEControlMode ev_control_mode;
-    std::vector<message_20::datatypes::ServiceCategory> ev_energy_services;
+    std::vector<msg::d20::datatypes::ServiceCategory> ev_energy_services;
 };
 
 } // namespace iso15118::d20

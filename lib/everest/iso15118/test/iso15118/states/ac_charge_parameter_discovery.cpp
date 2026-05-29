@@ -6,7 +6,7 @@
 
 using namespace iso15118;
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 using AC_ModeReq = dt::AC_CPDReqEnergyTransferMode;
 using BPT_AC_ModeReq = dt::BPT_AC_CPDReqEnergyTransferMode;
@@ -34,7 +34,7 @@ SCENARIO("AC charge parameter discovery state handling") {
             evse_id,   supported_energy_services, auth_services, vas_services, cert_install, dc_limits,
             ac_limits, control_mobility_modes,    std::nullopt,  std::nullopt, std::nullopt, powersupply_limits};
 
-        message_20::AC_ChargeParameterDiscoveryRequest req;
+        msg::d20::AC_ChargeParameterDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -80,7 +80,7 @@ SCENARIO("AC charge parameter discovery state handling") {
 
         auto session = d20::Session(service_parameters);
 
-        message_20::AC_ChargeParameterDiscoveryRequest req;
+        msg::d20::AC_ChargeParameterDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -125,7 +125,7 @@ SCENARIO("AC charge parameter discovery state handling") {
 
         auto session = d20::Session(service_parameters);
 
-        message_20::AC_ChargeParameterDiscoveryRequest req;
+        msg::d20::AC_ChargeParameterDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -184,7 +184,7 @@ SCENARIO("AC charge parameter discovery state handling") {
         config.ac_limits.nominal_frequency = dt::from_float(nominal_frequency);
         config.ac_limits.power_ramp_limitation = dt::from_float(power_ramp_limitation);
 
-        message_20::AC_ChargeParameterDiscoveryRequest req;
+        msg::d20::AC_ChargeParameterDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -251,7 +251,7 @@ SCENARIO("AC charge parameter discovery state handling") {
         discharge_power.min = dt::from_float(min_discharge_power);
         config.ac_limits.discharge_power = discharge_power;
 
-        message_20::AC_ChargeParameterDiscoveryRequest req;
+        msg::d20::AC_ChargeParameterDiscoveryRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 

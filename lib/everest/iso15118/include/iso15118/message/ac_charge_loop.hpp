@@ -7,7 +7,7 @@
 
 #include "common_types.hpp"
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 namespace datatypes {
 
@@ -119,4 +119,4 @@ struct AC_ChargeLoopResponse {
         control_mode = datatypes::Scheduled_AC_CLResControlMode();
 };
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

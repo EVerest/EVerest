@@ -9,7 +9,7 @@
 #include <cbv2g/iso_20/iso20_DC_Decoder.h>
 #include <cbv2g/iso_20/iso20_DC_Encoder.h>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 using DC_ModeReq = datatypes::DC_CPDReqEnergyTransferMode;
 using BPT_DC_ModeReq = datatypes::BPT_DC_CPDReqEnergyTransferMode;
@@ -217,4 +217,4 @@ template <> size_t serialize(const DC_ChargeParameterDiscoveryRequest& in, const
 }
 // End conversion for serializing a DCChargeParameterRequest (EVside)
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

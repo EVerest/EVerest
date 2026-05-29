@@ -15,10 +15,10 @@ template <typename Response, typename ResponseCode> Response& response_with_code
     return res;
 }
 
-bool validate_and_setup_header(message_20::Header&, const Session&, const decltype(message_20::Header::session_id)&);
+bool validate_and_setup_header(msg::d20::Header&, const Session&, const decltype(msg::d20::Header::session_id)&);
 
-void setup_header(message_20::Header&, const Session&);
+void setup_header(msg::d20::Header&, const Session&);
 
-void send_sequence_error(const message_20::Type, d20::Context&);
+void send_sequence_error(const msg::d20::Type, d20::Context&);
 
 } // namespace iso15118::d20

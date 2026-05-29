@@ -17,37 +17,37 @@ SCENARIO("Se/Deserialize dc charge parameter discovery messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::DC_ChargeParameterDiscoveryReq);
+            REQUIRE(variant.get_type() == msg::d20::Type::DC_ChargeParameterDiscoveryReq);
 
-            const auto& msg = variant.get<message_20::DC_ChargeParameterDiscoveryRequest>();
+            const auto& msg = variant.get<msg::d20::DC_ChargeParameterDiscoveryRequest>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
             REQUIRE(header.timestamp == 1725456323);
 
-            using DC_ModeReq = message_20::datatypes::DC_CPDReqEnergyTransferMode;
+            using DC_ModeReq = msg::d20::datatypes::DC_CPDReqEnergyTransferMode;
 
             REQUIRE(std::holds_alternative<DC_ModeReq>(msg.transfer_mode));
             const auto& transfer_mode = std::get<DC_ModeReq>(msg.transfer_mode);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.max_charge_current) == 300);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.max_charge_power) == 150000);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.max_voltage) == 900);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.min_charge_current) == 10);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.min_charge_power) == 100);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.min_voltage) == 10);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.max_charge_current) == 300);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.max_charge_power) == 150000);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.max_voltage) == 900);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.min_charge_current) == 10);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.min_charge_power) == 100);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.min_voltage) == 10);
         }
     }
 
     GIVEN("Serialize dc_charge_parameter_discovery_req") {
 
-        using DC_ModeReq = message_20::datatypes::DC_CPDReqEnergyTransferMode;
+        using DC_ModeReq = msg::d20::datatypes::DC_CPDReqEnergyTransferMode;
 
-        message_20::DC_ChargeParameterDiscoveryRequest req;
+        msg::d20::DC_ChargeParameterDiscoveryRequest req;
 
-        req.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456323};
+        req.header = msg::d20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456323};
         auto& mode = req.transfer_mode.emplace<DC_ModeReq>();
         mode.max_charge_current = {300, 0};
         mode.max_charge_power = {15000, 1};
@@ -77,39 +77,39 @@ SCENARIO("Se/Deserialize dc charge parameter discovery messages") {
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
+        msg::d20::Variant variant(io::v2gtp::PayloadType::Part20DC, stream_view);
 
         THEN("It should be deserialized successfully") {
-            REQUIRE(variant.get_type() == message_20::Type::DC_ChargeParameterDiscoveryRes);
+            REQUIRE(variant.get_type() == msg::d20::Type::DC_ChargeParameterDiscoveryRes);
 
-            const auto& msg = variant.get<message_20::DC_ChargeParameterDiscoveryResponse>();
+            const auto& msg = variant.get<msg::d20::DC_ChargeParameterDiscoveryResponse>();
             const auto& header = msg.header;
 
             REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
             REQUIRE(header.timestamp == 1725456324);
-            REQUIRE(msg.response_code == message_20::datatypes::ResponseCode::OK);
+            REQUIRE(msg.response_code == msg::d20::datatypes::ResponseCode::OK);
 
-            using DC_ModeRes = message_20::datatypes::DC_CPDResEnergyTransferMode;
+            using DC_ModeRes = msg::d20::datatypes::DC_CPDResEnergyTransferMode;
 
             REQUIRE(std::holds_alternative<DC_ModeRes>(msg.transfer_mode));
             const auto& transfer_mode = std::get<DC_ModeRes>(msg.transfer_mode);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.max_charge_current) == 200);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.max_charge_power) == 22080);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.max_voltage) == 900);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.min_charge_current) == 1);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.min_charge_power) == 200);
-            REQUIRE(message_20::datatypes::from_RationalNumber(transfer_mode.min_voltage) == 200);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.max_charge_current) == 200);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.max_charge_power) == 22080);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.max_voltage) == 900);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.min_charge_current) == 1);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.min_charge_power) == 200);
+            REQUIRE(msg::d20::datatypes::from_RationalNumber(transfer_mode.min_voltage) == 200);
         }
     }
 
     GIVEN("Serialize dc_charge_parameter_discovery_res") {
 
-        using DC_ModeRes = message_20::datatypes::DC_CPDResEnergyTransferMode;
+        using DC_ModeRes = msg::d20::datatypes::DC_CPDResEnergyTransferMode;
 
-        message_20::DC_ChargeParameterDiscoveryResponse res;
+        msg::d20::DC_ChargeParameterDiscoveryResponse res;
 
-        res.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456324};
-        res.response_code = message_20::datatypes::ResponseCode::OK;
+        res.header = msg::d20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456324};
+        res.response_code = msg::d20::datatypes::ResponseCode::OK;
         auto& mode = res.transfer_mode.emplace<DC_ModeRes>();
         mode.max_charge_current = {2000, -1};
         mode.max_charge_power = {2208, 1};

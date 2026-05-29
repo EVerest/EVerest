@@ -10,7 +10,7 @@
 
 #include <everest/util/vector/fixed_vector.hpp>
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 template <typename InType, typename OutType> void convert(const InType&, OutType&);
 
@@ -375,4 +375,4 @@ template <typename cb_HeaderType> void convert(const cb_HeaderType& in, Header& 
 template <typename cb_RationalNumberType> void convert(const cb_RationalNumberType& in, datatypes::RationalNumber& out);
 template <typename cb_RationalNumberType> void convert(const datatypes::RationalNumber& in, cb_RationalNumberType& out);
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20

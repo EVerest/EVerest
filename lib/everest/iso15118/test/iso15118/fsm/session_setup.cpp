@@ -14,7 +14,7 @@ using namespace iso15118;
 
 SCENARIO("ISO15118-20 session setup state transitions") {
 
-    namespace dt = message_20::datatypes;
+    namespace dt = msg::d20::datatypes;
 
     // Move to helper function?
     const auto evse_id = std::string("everest se");
@@ -56,8 +56,8 @@ SCENARIO("ISO15118-20 session setup state transitions") {
 
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::SessionSetup>()};
 
-        const auto header_req = message_20::Header{{0, 0, 0, 0, 0, 0, 0, 0}, 1691411798};
-        const auto req = message_20::SessionSetupRequest{header_req, "WMIV1234567890ABCDEX"};
+        const auto header_req = msg::d20::Header{{0, 0, 0, 0, 0, 0, 0, 0}, 1691411798};
+        const auto req = msg::d20::SessionSetupRequest{header_req, "WMIV1234567890ABCDEX"};
 
         state_helper.handle_request(req);
         const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
@@ -67,7 +67,7 @@ SCENARIO("ISO15118-20 session setup state transitions") {
             REQUIRE(fsm.get_current_state_id() == d20::StateID::AuthorizationSetup);
             REQUIRE(ctx.session.get_id() != std::array<uint8_t, 8>{0});
 
-            const auto response_message = ctx.get_response<message_20::SessionSetupResponse>();
+            const auto response_message = ctx.get_response<msg::d20::SessionSetupResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& session_setup_res = response_message.value();
@@ -85,8 +85,8 @@ SCENARIO("ISO15118-20 session setup state transitions") {
             0xE5, 0xA5, 0xF2, 0x56, 0x74, 0x5A, 0xFA, 0xF2, 0x28, 0x31, 0xCE, 0xAB, 0xE8, 0x3C, 0xD7, 0x3C,
             0xF2, 0x83, 0x81, 0xAA, 0x5D, 0x87, 0x13, 0xA5, 0x78, 0xA8, 0xB4, 0xAB, 0x0D, 0x62, 0x1F, 0x83});
 
-        const auto header_req = message_20::Header{session_id, 1691411798};
-        const auto req = message_20::SessionSetupRequest{header_req, "WMIV1234567890ABCDEX"};
+        const auto header_req = msg::d20::Header{session_id, 1691411798};
+        const auto req = msg::d20::SessionSetupRequest{header_req, "WMIV1234567890ABCDEX"};
 
         state_helper.handle_request(req);
         const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
@@ -96,7 +96,7 @@ SCENARIO("ISO15118-20 session setup state transitions") {
             REQUIRE(fsm.get_current_state_id() == d20::StateID::DC_ChargeParameterDiscovery);
             REQUIRE(ctx.session.get_id() == session_id);
 
-            const auto response_message = ctx.get_response<message_20::SessionSetupResponse>();
+            const auto response_message = ctx.get_response<msg::d20::SessionSetupResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& session_setup_res = response_message.value();
@@ -116,8 +116,8 @@ SCENARIO("ISO15118-20 session setup state transitions") {
             0xE5, 0xA5, 0xF2, 0x56, 0x74, 0x5A, 0xFA, 0xF2, 0x28, 0x31, 0xCE, 0xAB, 0xE8, 0x3C, 0xD7, 0x3C,
             0xF2, 0x83, 0x81, 0xAA, 0x5D, 0x87, 0x13, 0xA5, 0x78, 0xA8, 0xB4, 0xAB, 0x0D, 0x62, 0x1F, 0x83});
 
-        const auto header_req = message_20::Header{{0x10, 0x34, 0xAB, 0x7B, 0x01, 0xF3, 0x95, 0x02}, 1691411798};
-        const auto req = message_20::SessionSetupRequest{header_req, "WMIV1234567890ABCDEX"};
+        const auto header_req = msg::d20::Header{{0x10, 0x34, 0xAB, 0x7B, 0x01, 0xF3, 0x95, 0x02}, 1691411798};
+        const auto req = msg::d20::SessionSetupRequest{header_req, "WMIV1234567890ABCDEX"};
 
         state_helper.handle_request(req);
         const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
@@ -128,7 +128,7 @@ SCENARIO("ISO15118-20 session setup state transitions") {
             REQUIRE(ctx.session.get_id() != session_id);
             REQUIRE(ctx.session.get_id() != std::array<uint8_t, 8>{0});
 
-            const auto response_message = ctx.get_response<message_20::SessionSetupResponse>();
+            const auto response_message = ctx.get_response<msg::d20::SessionSetupResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& session_setup_res = response_message.value();
@@ -142,8 +142,8 @@ SCENARIO("ISO15118-20 session setup state transitions") {
     GIVEN("Try to resume old session with no vehicle cert hash") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::SessionSetup>()};
 
-        const auto header_req = message_20::Header{session_id, 1691411798};
-        const auto req = message_20::SessionSetupRequest{header_req, "WMIV1234567890ABCDEX"};
+        const auto header_req = msg::d20::Header{session_id, 1691411798};
+        const auto req = msg::d20::SessionSetupRequest{header_req, "WMIV1234567890ABCDEX"};
 
         state_helper.handle_request(req);
         const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
@@ -154,7 +154,7 @@ SCENARIO("ISO15118-20 session setup state transitions") {
             REQUIRE(ctx.session.get_id() != session_id);
             REQUIRE(ctx.session.get_id() != std::array<uint8_t, 8>{0});
 
-            const auto response_message = ctx.get_response<message_20::SessionSetupResponse>();
+            const auto response_message = ctx.get_response<msg::d20::SessionSetupResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& session_setup_res = response_message.value();
@@ -174,8 +174,8 @@ SCENARIO("ISO15118-20 session setup state transitions") {
             0xE5, 0xA5, 0xF2, 0x56, 0x74, 0x5A, 0xFA, 0xF2, 0x28, 0x31, 0xCE, 0xAB, 0xE8, 0x3C, 0xD7, 0x3C,
             0xF2, 0x83, 0x81, 0xAA, 0x5D, 0x87, 0x13, 0xA5, 0x78, 0xA8, 0xB4, 0xAB, 0x0D, 0x62, 0x1F, 0x83});
 
-        const auto header_req = message_20::Header{session_id, 1691411798};
-        const auto req = message_20::SessionSetupRequest{header_req, "WMIV1234567890ABCDEX"};
+        const auto header_req = msg::d20::Header{session_id, 1691411798};
+        const auto req = msg::d20::SessionSetupRequest{header_req, "WMIV1234567890ABCDEX"};
 
         state_helper.handle_request(req);
         const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
@@ -186,7 +186,7 @@ SCENARIO("ISO15118-20 session setup state transitions") {
             REQUIRE(ctx.session.get_id() != session_id);
             REQUIRE(ctx.session.get_id() != std::array<uint8_t, 8>{0});
 
-            const auto response_message = ctx.get_response<message_20::SessionSetupResponse>();
+            const auto response_message = ctx.get_response<msg::d20::SessionSetupResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& session_setup_res = response_message.value();
@@ -200,9 +200,9 @@ SCENARIO("ISO15118-20 session setup state transitions") {
     GIVEN("Sequence Error") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::SessionSetup>()};
 
-        const auto header_req = message_20::Header{d20::Session().get_id(), 1691411798};
+        const auto header_req = msg::d20::Header{d20::Session().get_id(), 1691411798};
         const auto req =
-            message_20::ServiceDetailRequest{header_req, message_20::to_underlying_value(dt::ServiceCategory::DC)};
+            msg::d20::ServiceDetailRequest{header_req, msg::d20::to_underlying_value(dt::ServiceCategory::DC)};
 
         state_helper.handle_request(req);
 
@@ -212,12 +212,12 @@ SCENARIO("ISO15118-20 session setup state transitions") {
             REQUIRE(result.transitioned() == false);
             REQUIRE(fsm.get_current_state_id() == d20::StateID::SessionSetup);
 
-            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            const auto response_message = ctx.get_response<msg::d20::ServiceDetailResponse>();
             REQUIRE(response_message.has_value());
 
             const auto& res = response_message.value();
             REQUIRE(res.response_code == dt::ResponseCode::FAILED_SequenceError);
-            REQUIRE(res.service == message_20::to_underlying_value(dt::ServiceCategory::DC));
+            REQUIRE(res.service == msg::d20::to_underlying_value(dt::ServiceCategory::DC));
             REQUIRE(res.service_parameter_list.size() == 1);
         }
     }

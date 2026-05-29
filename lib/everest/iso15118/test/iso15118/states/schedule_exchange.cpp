@@ -6,20 +6,20 @@
 
 using namespace iso15118;
 
-namespace dt = message_20::datatypes;
+namespace dt = msg::d20::datatypes;
 
 SCENARIO("Schedule Exchange state handling") {
 
-    using Scheduled_ModeReq = message_20::datatypes::Scheduled_SEReqControlMode;
-    using Scheduled_ModeRes = message_20::datatypes::Scheduled_SEResControlMode;
-    using Dynamic_ModeReq = message_20::datatypes::Dynamic_SEReqControlMode;
-    using Dynamic_ModeRes = message_20::datatypes::Dynamic_SEResControlMode;
+    using Scheduled_ModeReq = msg::d20::datatypes::Scheduled_SEReqControlMode;
+    using Scheduled_ModeRes = msg::d20::datatypes::Scheduled_SEResControlMode;
+    using Dynamic_ModeReq = msg::d20::datatypes::Dynamic_SEReqControlMode;
+    using Dynamic_ModeRes = msg::d20::datatypes::Dynamic_SEResControlMode;
 
     GIVEN("Bad case - Unknown session") {
 
         d20::Session session = d20::Session();
 
-        message_20::ScheduleExchangeRequest req;
+        msg::d20::ScheduleExchangeRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -48,7 +48,7 @@ SCENARIO("Schedule Exchange state handling") {
 
         auto session = d20::Session(service_parameters);
 
-        message_20::ScheduleExchangeRequest req;
+        msg::d20::ScheduleExchangeRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -76,7 +76,7 @@ SCENARIO("Schedule Exchange state handling") {
 
         auto session = d20::Session(service_parameters);
 
-        message_20::ScheduleExchangeRequest req;
+        msg::d20::ScheduleExchangeRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -109,7 +109,7 @@ SCENARIO("Schedule Exchange state handling") {
 
         auto session = d20::Session(service_parameters);
 
-        message_20::ScheduleExchangeRequest req;
+        msg::d20::ScheduleExchangeRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 
@@ -134,7 +134,7 @@ SCENARIO("Schedule Exchange state handling") {
 
         auto session = d20::Session(service_parameters);
 
-        message_20::ScheduleExchangeRequest req;
+        msg::d20::ScheduleExchangeRequest req;
         req.header.session_id = session.get_id();
         req.header.timestamp = 1691411798;
 

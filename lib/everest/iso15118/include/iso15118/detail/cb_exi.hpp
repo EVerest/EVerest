@@ -79,7 +79,7 @@ template <typename T1, typename T2> void cb_convert_enum(const T1& in, T2& out) 
 exi_bitstream_t get_exi_input_stream(const iso15118::io::StreamInputView&);
 exi_bitstream_t get_exi_output_stream(const iso15118::io::StreamOutputView&);
 
-namespace iso15118::message_20 {
+namespace iso15118::msg::d20 {
 
 template <typename MessageType> int serialize_to_exi(const MessageType& in, exi_bitstream_t& out);
 
@@ -96,7 +96,7 @@ size_t serialize_helper(const MessageType& in, const io::StreamOutputView& strea
     return exi_bitstream_get_length(&out);
 }
 
-} // namespace iso15118::message_20
+} // namespace iso15118::msg::d20
 
 // namespace iso15118::msg::d2 {
 namespace iso15118::msg {

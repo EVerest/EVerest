@@ -12,24 +12,24 @@
 
 namespace iso15118 {
 
-using Variants = std::variant<std::unique_ptr<message_20::Variant>, std::unique_ptr<msg::d2::Variant>>;
-using ResponseTypes = std::variant<message_20::Type, msg::d2::Type>;
+using Variants = std::variant<std::unique_ptr<msg::d20::Variant>, std::unique_ptr<msg::d2::Variant>>;
+using ResponseTypes = std::variant<msg::d20::Type, msg::d2::Type>;
 
 class MessageExchange {
 public:
     explicit MessageExchange(io::StreamOutputView);
 
-    void set_input(std::unique_ptr<message_20::Variant> new_input);
+    void set_input(std::unique_ptr<msg::d20::Variant> new_input);
     void set_input(std::unique_ptr<msg::d2::Variant> new_input);
     template <typename Variant> std::unique_ptr<Variant> pull_input();
     template <typename Type> Type peek_input_type() const;
 
     template <typename MessageType> void set_d20_response(const MessageType& msg) {
-        response_size = message_20::serialize(msg, response);
+        response_size = msg::d20::serialize(msg, response);
         response_available = true;
-        payload_type = message_20::PayloadTypeTrait<MessageType>::type;
+        payload_type = msg::d20::PayloadTypeTrait<MessageType>::type;
 
-        const auto res_type = message_20::TypeTrait<MessageType>::type;
+        const auto res_type = msg::d20::TypeTrait<MessageType>::type;
         response_type = res_type;
 
         response_message = msg;
@@ -47,13 +47,13 @@ public:
     }
     // -----------------
     template <typename Msg> std::optional<Msg> get_d20_response() {
-        static_assert(message_20::TypeTrait<Msg>::type != message_20::Type::None, "Unhandled type!");
+        static_assert(msg::d20::TypeTrait<Msg>::type != msg::d20::Type::None, "Unhandled type!");
 
-        if (not std::holds_alternative<message_20::Type>(response_type)) {
+        if (not std::holds_alternative<msg::d20::Type>(response_type)) {
             return std::nullopt;
         }
 
-        if (message_20::TypeTrait<Msg>::type != std::get<message_20::Type>(response_type)) {
+        if (msg::d20::TypeTrait<Msg>::type != std::get<msg::d20::Type>(response_type)) {
             return std::nullopt;
         }
         try {
