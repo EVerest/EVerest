@@ -45,13 +45,16 @@ void setup_peer_subscriptions(EvSimRuntime& rt, EvSimulator& mod) {
         iso->subscribe_dc_power_on([&rt]() { rt.enqueue(Event{IsoDcPowerOnEvt{}}); });
         iso->subscribe_pause_from_charger([&rt]() { rt.enqueue(Event{IsoPauseFromChargerEvt{}}); });
 
-        // AC negotiation values — forwarded to the FSM as kind-only events; no
-        // state currently consumes the payload (states list these kinds in a
-        // fall-through case to satisfy -Werror=switch). Subscribed so the FSM
-        // queue receives the wake.
-        iso->subscribe_ac_evse_max_current([&rt](const double&) { rt.enqueue(Event{IsoAcMaxCurrentEvt{}}); });
-        iso->subscribe_ac_evse_target_power(
-            [&rt](const ::types::iso15118::AcTargetPower&) { rt.enqueue(Event{IsoAcTargetPowerEvt{}}); });
+        // AC negotiation values — the EVSE-communicated AC current ceiling
+        // (ac_evse_max_current) and target power are forwarded with their
+        // payloads so the FSM can clamp the applied charge current against
+        // them.
+        iso->subscribe_ac_evse_max_current([&rt](const double& max_current) {
+            rt.enqueue(Event{IsoAcMaxCurrentEvt{static_cast<float>(max_current)}});
+        });
+        iso->subscribe_ac_evse_target_power([&rt](const ::types::iso15118::AcTargetPower& target_power) {
+            rt.enqueue(Event{IsoAcTargetPowerEvt{target_power}});
+        });
     }
 }
 

@@ -5,6 +5,7 @@
 #include <everest_api_types/ev_simulator/API.hpp>
 #include <generated/types/board_support_common.hpp>
 #include <generated/types/evse_manager.hpp>
+#include <generated/types/iso15118.hpp>
 #include <utils/error.hpp>
 
 #include <cstddef>
@@ -72,8 +73,16 @@ struct ResumeSessionCmd {};
 struct ClearFaultCmd {};
 struct QueryStateCmd {};
 struct IsoPowerReadyEvt {};
-struct IsoAcMaxCurrentEvt {};
-struct IsoAcTargetPowerEvt {};
+// AC EVSE-communicated limit forwards. Unlike the other ISO edge events
+// these carry a payload: the most recent ac_evse_max_current value, and
+// the ac_evse_target_power struct from which a per-phase current is
+// derived. The FSM clamps the applied charge current against them.
+struct IsoAcMaxCurrentEvt {
+    float max_current_a{0.0f};
+};
+struct IsoAcTargetPowerEvt {
+    ::types::iso15118::AcTargetPower target_power{};
+};
 struct IsoStopFromChargerEvt {};
 struct IsoV2GFinishedEvt {};
 struct IsoDcPowerOnEvt {};

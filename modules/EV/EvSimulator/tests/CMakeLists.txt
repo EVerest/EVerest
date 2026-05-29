@@ -13,6 +13,7 @@ target_include_directories(${TEST_TARGET} PRIVATE
 target_sources(${TEST_TARGET} PRIVATE
     EventsTest.cpp
     StateTransitionsTest.cpp
+    AcLimitTest.cpp
     SocIntegratorTest.cpp
     BcbTogglingTest.cpp
     ScenarioDispatcherTest.cpp
