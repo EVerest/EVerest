@@ -56,6 +56,10 @@ inline PeerActions make_peer_actions(ActionMocks& mocks) {
     actions.iso_stop_charging = [&mocks]() { mocks.iso.call_stop_charging(); };
     actions.iso_pause_charging = [&mocks]() { mocks.iso.call_pause_charging(); };
     actions.iso_update_soc = [&mocks](float pct) { mocks.iso.call_update_soc(static_cast<double>(pct)); };
+    actions.iso_enable_sae_j2847_v2g_v2h = [&mocks]() { mocks.iso.call_enable_sae_j2847_v2g_v2h(); };
+    actions.iso_set_bpt_dc_params = [&mocks](const ::types::iso15118::DcEvBPTParameters& params) {
+        mocks.iso.call_set_bpt_dc_params(params);
+    };
 
     actions.slac_trigger_matching = [&mocks]() -> bool { return mocks.slac.call_trigger_matching(); };
 
@@ -116,8 +120,9 @@ struct TestFixture {
             peers, make_peer_actions(mocks),
             [this](const std::string& topic, const std::string& payload) { sink(topic, payload); },
             [this](std::chrono::milliseconds ms) { timer.arm(ms); }, [this]() { timer.cancel(); },
-            [this](int ms) { timer.arm_tick(ms); }, [this]() { timer.disarm_tick(); }, [](Event) {},
-            [](std::chrono::seconds) {}, cfg, topics);
+            [this](int ms) { timer.arm_tick(ms); }, [this]() { timer.disarm_tick(); },
+            [this](Event ev) { timer.record_enqueue(std::move(ev)); },
+            [this](std::chrono::seconds s) { timer.arm_scenario(s); }, cfg, topics);
     }
 };
 

@@ -21,6 +21,7 @@ void Charging::enter() {
 
 void Charging::leave() {
     ctx.disarm_tick();
+    ctx.vars.active_ramp.reset();
     StateBase::leave();
 }
 
@@ -37,7 +38,19 @@ StateBase::Result Charging::feed(EventType ev) {
     case EK::SetChargingCurrent: {
         auto p = std::get<api::SetChargingCurrentParams>(ev.payload);
         if (ctx.vars.charge_mode == api::ChargeMode::AcIec || ctx.vars.charge_mode == api::ChargeMode::AcIso2) {
-            ctx.bsp_apply_ac_params(p.current_a, p.three_phases);
+            if (p.ramp_ms.has_value() && *p.ramp_ms > 0) {
+                const auto now = std::chrono::steady_clock::now();
+                ActiveRamp ramp;
+                ramp.start_a = ctx.vars.charging_current_a;
+                ramp.target_a = p.current_a;
+                ramp.three_phases = p.three_phases;
+                ramp.start_at = now;
+                ramp.end_at = now + std::chrono::milliseconds{*p.ramp_ms};
+                ctx.vars.active_ramp = ramp;
+            } else {
+                ctx.vars.active_ramp.reset();
+                ctx.bsp_apply_ac_params(p.current_a, p.three_phases);
+            }
         } else {
             ctx.publish_e2m_command_ack("set_charging_current", "set_charging_current not supported in DC/ISO-20 mode");
         }
