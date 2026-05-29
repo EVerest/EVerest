@@ -55,6 +55,7 @@ period_entry_t gen_pe(ocpp::DateTime start, ocpp::DateTime end, ChargingProfile 
         profile.chargingSchedule.front().chargingSchedulePeriod[period_at].limit_L3.value_or(NO_SETPOINT_SPECIFIED);
     period_entry.stack_level = profile.stackLevel;
     period_entry.charging_rate_unit = profile.chargingSchedule.front().chargingRateUnit;
+    period_entry.stack_level = profile.stackLevel;
     return period_entry;
 }
 
@@ -75,8 +76,8 @@ const ChargingProfile weekly_profile =
 const ChargingProfile weekly_profile_no_duration =
     SmartChargingTestUtils::get_charging_profile_from_file("singles/Recurring_Weekly_NoDuration_301.json");
 
-CompositeSchedule generate_default_schedule() {
-    CompositeSchedule schedule;
+EnhancedCompositeSchedule generate_default_schedule() {
+    EnhancedCompositeSchedule schedule;
     schedule.chargingSchedulePeriod = {};
     schedule.evseId = EVSEID_NOT_SET;
     schedule.duration = 600;
@@ -85,7 +86,7 @@ CompositeSchedule generate_default_schedule() {
     return schedule;
 }
 
-CompositeSchedule DEFAULT_SCHEDULE = generate_default_schedule();
+EnhancedCompositeSchedule DEFAULT_SCHEDULE = generate_default_schedule();
 
 class ChargingProfileType_Param_Test
     : public ::testing::TestWithParam<std::tuple<ocpp::DateTime, ocpp::DateTime, std::optional<ocpp::DateTime>,
@@ -294,6 +295,7 @@ TEST_P(CalculateProfileEntryType_Param_Test, CalculateProfileEntry_Positive) {
         profile.chargingSchedule.front().chargingSchedulePeriod[period_index].limit_L3.value_or(NO_SETPOINT_SPECIFIED);
     expected_entry.stack_level = profile.stackLevel;
     expected_entry.charging_rate_unit = profile.chargingSchedule.front().chargingRateUnit;
+    expected_entry.stack_level = profile.stackLevel;
 
     for (period_entry_t pet : period_entries) {
         EVLOG_debug << ">>> " << pet;
@@ -313,6 +315,7 @@ TEST_P(CalculateProfileEntryType_Param_Test, CalculateProfileEntry_Positive) {
             profile.chargingSchedule.front().chargingSchedulePeriod[period_index].limit.value_or(FIXME_DEFAULT_LIMIT);
         expected_second_entry.stack_level = profile.stackLevel;
         expected_second_entry.charging_rate_unit = profile.chargingSchedule.front().chargingRateUnit;
+        expected_second_entry.stack_level = profile.stackLevel;
 
         EVLOG_debug << "         second_entry> " << second_entry;
         EVLOG_debug << "expected_second_entry> " << expected_second_entry;

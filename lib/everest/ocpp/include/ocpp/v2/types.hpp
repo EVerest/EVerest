@@ -209,12 +209,43 @@ struct ReportedChargingProfile {
 
 /// \brief This provides additional information alongside the ChargingSchedulePeriod.
 ///        Similar to OCPP 1.6
-struct EnhancedChargingSchedulePeriod : public ChargingSchedulePeriod {
-    EnhancedChargingSchedulePeriod() = default;
-    EnhancedChargingSchedulePeriod(const ChargingSchedulePeriod& in) : ChargingSchedulePeriod(in){};
-    std::int32_t stackLevel;
+///
+/// - does not inherit ChargingSchedulePeriod to avoid automatic conversions
+/// - does not use the cast operator to avoid automatic conversions
+struct EnhancedChargingSchedulePeriod {
+    // elemets from ChargingSchedulePeriod
+    std::int32_t startPeriod;
+    std::optional<float> limit;
+    std::optional<float> limit_L2;
+    std::optional<float> limit_L3;
+    std::optional<std::int32_t> numberPhases;
+    std::optional<std::int32_t> phaseToUse;
+    std::optional<float> dischargeLimit;
+    std::optional<float> dischargeLimit_L2;
+    std::optional<float> dischargeLimit_L3;
+    std::optional<float> setpoint;
+    std::optional<float> setpoint_L2;
+    std::optional<float> setpoint_L3;
+    std::optional<float> setpointReactive;
+    std::optional<float> setpointReactive_L2;
+    std::optional<float> setpointReactive_L3;
+    std::optional<bool> preconditioningRequest;
+    std::optional<bool> evseSleep;
+    std::optional<float> v2xBaseline;
+    std::optional<OperationModeEnum> operationMode;
+    std::optional<std::vector<V2XFreqWattPoint>> v2xFreqWattCurve;
+    std::optional<std::vector<V2XSignalWattPoint>> v2xSignalWattCurve;
+    std::optional<CustomData> customData;
+    // additional element
+    std::int32_t stackLevel{0};
+
+    ChargingSchedulePeriod get() const;
 };
 
+/// \brief This provides additional information alongside the ChargingSchedulePeriod.
+///        Similar to OCPP 1.6
+/// \note uses EnhancedChargingSchedulePeriod rather than ChargingSchedulePeriod
+///       for chargingSchedulePeriod
 struct EnhancedCompositeSchedule {
     std::int32_t evseId;
     std::int32_t duration;
@@ -223,9 +254,17 @@ struct EnhancedCompositeSchedule {
     std::vector<EnhancedChargingSchedulePeriod> chargingSchedulePeriod;
     std::optional<CustomData> customData;
 
-    operator CompositeSchedule() const;
+    CompositeSchedule get() const;
+    // operator CompositeSchedule() const;
 };
 
+/// \brief stream outputter for unit test debugging
+std::ostream& operator<<(std::ostream& os, const EnhancedCompositeSchedule& k);
+
+/// \brief This provides additional information alongside the CompositeSchedule.
+///        Similar to OCPP 1.6
+/// \note uses EnhancedCompositeSchedule rather than CompositeSchedule
+///       for schedule
 struct EnhancedCompositeScheduleResponse {
     GenericStatusEnum status;
     std::optional<StatusInfo> statusInfo;

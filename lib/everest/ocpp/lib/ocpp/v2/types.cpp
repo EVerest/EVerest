@@ -921,24 +921,75 @@ std::ostream& operator<<(std::ostream& os, const MessageType& message_type) {
     return os;
 }
 
-EnhancedCompositeSchedule::operator CompositeSchedule() const {
+ChargingSchedulePeriod EnhancedChargingSchedulePeriod::get() const {
+    ChargingSchedulePeriod result;
+    result.startPeriod = startPeriod;
+    result.limit = limit;
+    result.limit_L2 = limit_L2;
+    result.limit_L3 = limit_L3;
+    result.numberPhases = numberPhases;
+    result.phaseToUse = phaseToUse;
+    result.dischargeLimit = dischargeLimit;
+    result.dischargeLimit_L2 = dischargeLimit_L2;
+    result.dischargeLimit_L3 = dischargeLimit_L3;
+    result.setpoint = setpoint;
+    result.setpoint_L2 = setpoint_L2;
+    result.setpoint_L3 = setpoint_L3;
+    result.setpointReactive = setpointReactive;
+    result.setpointReactive_L2 = setpointReactive_L2;
+    result.setpointReactive_L3 = setpointReactive_L3;
+    result.preconditioningRequest = preconditioningRequest;
+    result.evseSleep = evseSleep;
+    result.v2xBaseline = v2xBaseline;
+    result.operationMode = operationMode;
+    result.v2xFreqWattCurve = v2xFreqWattCurve;
+    result.v2xSignalWattCurve = v2xSignalWattCurve;
+    result.customData = customData;
+    return result;
+}
+
+CompositeSchedule EnhancedCompositeSchedule::get() const {
     CompositeSchedule result;
     result.evseId = evseId;
     result.duration = duration;
     result.scheduleStart = scheduleStart;
     result.chargingRateUnit = chargingRateUnit;
     for (const auto& i : chargingSchedulePeriod) {
-        result.chargingSchedulePeriod.push_back(i);
+        result.chargingSchedulePeriod.push_back(i.get());
     }
     result.customData = customData;
     return result;
+}
+
+std::ostream& operator<<(std::ostream& os, const EnhancedCompositeSchedule& k) {
+    json j = {
+        {"evseId", k.evseId},
+        {"duration", k.duration},
+        {"scheduleStart", k.scheduleStart.to_rfc3339()},
+        {"chargingRateUnit", conversions::charging_rate_unit_enum_to_string(k.chargingRateUnit)},
+    };
+    auto array = json::array();
+    for (const auto& i : k.chargingSchedulePeriod) {
+        json item = i.get();
+        item["stackLevel"] = i.stackLevel;
+        array.push_back(item);
+    }
+    j["customData"] = array;
+    // the optional parts of the message
+    if (k.customData) {
+        j["customData"] = k.customData.value();
+    }
+    os << j.dump(4);
+    return os;
 }
 
 EnhancedCompositeScheduleResponse::operator GetCompositeScheduleResponse() const {
     GetCompositeScheduleResponse result;
     result.status = status;
     result.statusInfo = statusInfo;
-    result.schedule = schedule;
+    if (schedule) {
+        result.schedule = schedule.value().get();
+    }
     result.customData = customData;
     return result;
 }

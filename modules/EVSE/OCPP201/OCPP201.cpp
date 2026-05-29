@@ -1756,7 +1756,7 @@ void OCPP201::set_external_limits(const std::vector<ocpp::v2::EnhancedCompositeS
     }
 
     auto create_setpoint_entry =
-        [&](const std::string& timestamp, const ocpp::v2::ChargingSchedulePeriod& period,
+        [&](const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
             const ocpp::v2::ChargingRateUnitEnum& unit) -> std::optional<types::energy::ScheduleSetpointEntry> {
         const bool has_basic_setpoint = period.setpoint.has_value();
         const bool has_freq_table = period.v2xFreqWattCurve.has_value() && !period.v2xFreqWattCurve->empty();
@@ -1795,7 +1795,7 @@ void OCPP201::set_external_limits(const std::vector<ocpp::v2::EnhancedCompositeS
     };
 
     auto create_limits_entry =
-        [&](const std::string& timestamp, const ocpp::v2::ChargingSchedulePeriod& period,
+        [&](const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
             const ocpp::v2::ChargingRateUnitEnum& unit) -> std::optional<types::energy::ScheduleReqEntry> {
         if (!period.limit.has_value()) {
             return std::nullopt;

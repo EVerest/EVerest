@@ -23,6 +23,8 @@ struct IntermediatePeriod {
     PeriodLimit power_discharge_limit;
     PeriodLimit current_setpoint;
     PeriodLimit power_setpoint;
+    std::int32_t stack_level_current;
+    std::int32_t stack_level_power;
     std::optional<std::int32_t> numberPhases;
     std::optional<std::int32_t> phaseToUse;
     std::optional<OperationModeEnum> operationMode;
@@ -30,7 +32,7 @@ struct IntermediatePeriod {
 
 using IntermediateProfile = std::vector<IntermediatePeriod>;
 
-/// \brief Returns elements from a specific ChargingProfile and EnhancedChargingSchedulePeriod
+/// \brief Returns elements from a specific ChargingProfile and ChargingSchedulePeriod
 ///        for use in the calculation of the CompositeSchedule within a specific slice
 ///        of time. These are aggregated by Profile.
 /// \param in_start The starting time
@@ -39,7 +41,7 @@ using IntermediateProfile = std::vector<IntermediatePeriod>;
 /// \param in_profile the charging profile
 /// \return an entry with smart charging information for a specific period in time
 struct period_entry_t {
-    void init(const ocpp::DateTime& in_start, int in_duration, const EnhancedChargingSchedulePeriod& in_period,
+    void init(const ocpp::DateTime& in_start, int in_duration, const ChargingSchedulePeriod& in_period,
               const ChargingProfile& in_profile);
     bool validate(const ChargingProfile& profile, const ocpp::DateTime& now);
 
