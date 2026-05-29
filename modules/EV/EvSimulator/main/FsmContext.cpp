@@ -8,6 +8,7 @@
 #include <everest/logging.hpp>
 #include <everest_api_types/ev_simulator/codec.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <string>
 #include <type_traits>
@@ -125,6 +126,40 @@ void FsmContext::bsp_apply_ac_params(float current_a, bool three_phases_) {
     }
     vars.charging_current_a = current_a;
     vars.three_phases = three_phases_;
+}
+
+void FsmContext::bsp_apply_ac_params_clamped(float desired_current_a, bool three_phases_) {
+    float effective = desired_current_a;
+    if (vars.evse_ac_max_current_a.has_value()) {
+        effective = std::min(desired_current_a, *vars.evse_ac_max_current_a);
+    }
+    bsp_apply_ac_params(effective, three_phases_);
+}
+
+void FsmContext::note_evse_ac_max_current(float max_current_a) {
+    vars.evse_ac_max_current_a = max_current_a;
+}
+
+void FsmContext::note_evse_ac_target_power(const ::types::iso15118::AcTargetPower& target_power) {
+    if (!target_power.target_active_power.has_value()) {
+        return;
+    }
+    // Count the phases the charger is actually driving: start from the
+    // configured phase count and drop a phase for each per-phase target the
+    // EVSE omits, matching the EvManager reference derivation.
+    int phase_count = cfg.three_phases ? 3 : 1;
+    if (!target_power.target_active_power_L2.has_value() && cfg.three_phases) {
+        phase_count--;
+    }
+    if (!target_power.target_active_power_L3.has_value() && cfg.three_phases) {
+        phase_count--;
+    }
+    const double voltage = cfg.ac_nominal_voltage;
+    if (voltage <= 0.0 || phase_count <= 0) {
+        return;
+    }
+    const double current = *target_power.target_active_power / (voltage * phase_count);
+    vars.evse_ac_max_current_a = static_cast<float>(current);
 }
 
 // ---- ISO 15118 shortcuts ----------------------------------------------
