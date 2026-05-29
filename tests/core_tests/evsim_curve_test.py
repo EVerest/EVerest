@@ -215,10 +215,21 @@ def test_runtime_ramp_end_to_end(everest_core, evsim_test_controller):
         duration_s=_RAMP_DURATION_S,
     )
 
-    # Wait at least one full ramp duration so any rejection ack would
-    # have time to arrive.
-    time.sleep(_TIMEOUT_RAMP_OBSERVE)
+    # Positive observable: the session must keep charging through the
+    # ramp window (SoC advances via the tick integrator). A fixed sleep
+    # with only a "no rejection ack" check passed vacuously if the ramp
+    # command was dropped entirely; requiring forward SoC progress while
+    # the ramp is in flight is an affirmative signal the ramp path is
+    # live, and bounds the observation window on a condition rather than
+    # a bare sleep.
+    assert evsim_test_controller.state_collector.wait_for_soc_progress(
+        min_increase=0.01, timeout=_TIMEOUT_RAMP_OBSERVE
+    ), (
+        "SoC did not advance during the runtime ramp window; the ramp "
+        "path is not live (session not charging through the ramp)"
+    )
 
+    # And the ramp command itself must not have been rejected.
     new_acks = ack_collector.acks[pre_ramp_ack_count:]
     rejected_set_current = [
         a for a in new_acks
@@ -228,4 +239,52 @@ def test_runtime_ramp_end_to_end(everest_core, evsim_test_controller):
     assert not rejected_set_current, (
         "ramp_to_current was rejected during AcIsoBasic Charging; "
         f"acks={rejected_set_current}"
+    )
+
+
+@pytest.mark.everest_core_config("config-sil-evsim-dc.yaml")
+def test_charging_curve_loop_repeats(everest_core, evsim_test_controller):
+    """A `loop=True` ChargingCurve re-fires its points past one pass.
+
+    Covers the ScenarioDispatcher loop subsystem end to end (it is
+    reached only via a looping curve, never a build_* preset). A
+    2-point curve in DC/ISO-2 mode yields one rejected
+    `set_charging_current` ack per point per cycle; with `loop=True`
+    the ack count must exceed a single pass (2), proving the dispatcher
+    rewound and replayed the curve.
+    """
+    command_ack_topic = f"{evsim_test_controller.base_e2m}/command_ack"
+    ack_collector = _CommandAckCollector(
+        evsim_test_controller._mqtt_client, command_ack_topic
+    )
+
+    everest_core.start()
+
+    evsim_test_controller.start()
+    evsim_test_controller.plug_in_dc_iso()
+
+    assert evsim_test_controller.state_collector.wait_for_state(
+        "Charging", timeout=_TIMEOUT_CHARGING
+    ), (
+        "EvSimulator did not reach Charging before curve loop; "
+        f"saw {evsim_test_controller.state_collector.states}"
+    )
+
+    evsim_test_controller.play_charging_curve(
+        points=[
+            {"t_offset_ms": 0, "current_a": 50.0, "three_phases": False},
+            {"t_offset_ms": 2000, "current_a": 20.0, "three_phases": False},
+        ],
+        loop=True,
+        mode="DcIso2",
+    )
+
+    # Single pass = 2 acks; >= 4 proves at least two cycles, i.e. the
+    # loop rewound and replayed rather than running once.
+    assert ack_collector.wait_for_acks_for(
+        "set_charging_current", 4, timeout=_TIMEOUT_CURVE_ACKS
+    ), (
+        "looping ChargingCurve did not replay; "
+        f"saw {len(ack_collector.acks_for('set_charging_current'))} "
+        "set_charging_current acks (expected >= 4 across loop cycles)"
     )

@@ -26,8 +26,10 @@ from everest.testing.core_utils.fixtures import *  # noqa: F401,F403
 
 # Generous timeout: a DC ISO 15118-20 session involves SLAC, TLS
 # handshake, schedule negotiation, cable check, pre-charge, and the
-# energy transfer loop before the FSM lands on `Charging`.
-_TIMEOUT_CHARGING = 30.0
+# energy transfer loop before the FSM lands on `Charging`. Matches the
+# 90 s used by the sibling DC-D20 BPT/MCS suite for the same session
+# class; 30 s flaked under CI load.
+_TIMEOUT_CHARGING = 90.0
 
 
 @pytest.mark.everest_core_config("config-sil-evsim-dc-d20.yaml")

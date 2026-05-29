@@ -11,14 +11,23 @@ target_include_directories(${TEST_TARGET} PRIVATE
 )
 
 target_sources(${TEST_TARGET} PRIVATE
+    EventsTest.cpp
     StateTransitionsTest.cpp
     SocIntegratorTest.cpp
     BcbTogglingTest.cpp
     ScenarioDispatcherTest.cpp
     RampInterpolatorTest.cpp
+    TimerFdFlushTest.cpp
+    CommCheckHandlerTeardownTest.cpp
+    SilentFailureFixesTest.cpp
+    CommandRouterTest.cpp
+    ConfigureSessionTest.cpp
+    RuntimeTickTimerTest.cpp
     PeerMocks.cpp
     PublisherSink.cpp
     TimerSink.cpp
+    ../main/EventDispatch.cpp
+    ../main/Events.cpp
     ../main/FsmContext.cpp
     ../main/StateBase.cpp
     ../main/states/Disabled.cpp
@@ -37,7 +46,7 @@ target_sources(${TEST_TARGET} PRIVATE
     ../main/SocIntegrator.cpp)
 target_compile_definitions(${TEST_TARGET} PRIVATE BUILD_TESTING_MODULE_EV_SIMULATOR)
 target_link_libraries(${TEST_TARGET}
-    PRIVATE everest::framework everest::log everest::util everest::everest_api_types
+    PRIVATE everest::framework everest::log everest::util everest::everest_api_types everest::io
             Catch2::Catch2WithMain Threads::Threads)
 
 if (NOT DISABLE_EDM)

@@ -18,3 +18,11 @@ stateDiagram-v2
     Plugged --> Faulted : InjectFault
     Charging --> Faulted : InjectFault
     Faulted --> Unplugged : ClearFault / Unplug
+
+    note right of Disabled
+        Every non-Faulted active state accepts Disable
+        and routes to Disabled (SlacMatching,
+        V2GNegotiating, BcbToggling, Paused, Stopping,
+        ChargingPwmPaused too, not just the arrows
+        shown). Faulted ignores Disable.
+    end note

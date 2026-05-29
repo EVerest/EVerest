@@ -17,19 +17,39 @@ void Charging::enter() {
     ctx.allow_power_on(true);
     ctx.arm_tick(ctx.cfg.tick_interval_ms);
     ctx.publish_e2m_state(api::FsmState::Charging);
+
+    if (ctx.vars.session && ctx.vars.session->pending_curve.has_value()) {
+        const auto& curve = *ctx.vars.session->pending_curve;
+        std::vector<ScenarioStep> curve_steps;
+        curve_steps.reserve(curve.points.size());
+        for (const auto& cp : curve.points) {
+            api::SetChargingCurrentParams sc;
+            sc.current_a = cp.current_a;
+            sc.three_phases = cp.three_phases;
+            sc.ramp_ms = cp.ramp_ms;
+            curve_steps.push_back({std::chrono::milliseconds(cp.t_offset_ms), Event{std::move(sc)}});
+        }
+        const std::size_t loop_begin = ctx.scenario.step_count();
+        const std::size_t loop_end = loop_begin + curve_steps.size();
+        const bool should_loop = curve.loop;
+        ctx.scenario.append_steps(std::move(curve_steps), ctx);
+        if (should_loop) {
+            ctx.scenario.mark_loop(loop_begin, loop_end);
+        }
+        ctx.vars.session->pending_curve.reset();
+    }
 }
 
-void Charging::leave() {
+void Charging::on_leave() {
     ctx.disarm_tick();
     ctx.vars.active_ramp.reset();
-    StateBase::leave();
 }
 
 StateBase::Result Charging::feed(EventType ev) {
     using EK = EventKind;
-    switch (ev.kind) {
+    switch (kind_of(ev)) {
     case EK::StopSession:
-        if (ctx.vars.charge_mode == api::ChargeMode::AcIec) {
+        if (ctx.vars.charge_mode() == api::ChargeMode::AcIec) {
             return {false, std::make_unique<Unplugged>(ctx)};
         }
         return {false, std::make_unique<Stopping>(ctx)};
@@ -37,7 +57,7 @@ StateBase::Result Charging::feed(EventType ev) {
         return {false, std::make_unique<Paused>(ctx)};
     case EK::SetChargingCurrent: {
         auto p = std::get<api::SetChargingCurrentParams>(ev.payload);
-        if (ctx.vars.charge_mode == api::ChargeMode::AcIec || ctx.vars.charge_mode == api::ChargeMode::AcIso2) {
+        if (ctx.vars.charge_mode() == api::ChargeMode::AcIec || ctx.vars.charge_mode() == api::ChargeMode::AcIso2) {
             if (p.ramp_ms.has_value() && *p.ramp_ms > 0) {
                 const auto now = std::chrono::steady_clock::now();
                 ActiveRamp ramp;
@@ -63,23 +83,19 @@ StateBase::Result Charging::feed(EventType ev) {
     case EK::BspMeasurement: {
         const auto& m = std::get<BspMeasurementPayload>(ev.payload);
         ctx.vars.pwm_duty_cycle = m.cp_pwm_duty_cycle;
-        if (ctx.vars.charge_mode == api::ChargeMode::AcIec && (m.cp_pwm_duty_cycle <= 7 || m.cp_pwm_duty_cycle >= 97)) {
+        if (ctx.vars.charge_mode() == api::ChargeMode::AcIec &&
+            (m.cp_pwm_duty_cycle <= 7 || m.cp_pwm_duty_cycle >= 97)) {
             return {false, std::make_unique<ChargingPwmPaused>(ctx)};
         }
         return {false, nullptr};
     }
     case EK::Unplug:
-        if (ctx.vars.charge_mode == api::ChargeMode::AcIec) {
+        if (ctx.vars.charge_mode() == api::ChargeMode::AcIec) {
             return {false, std::make_unique<Unplugged>(ctx)};
         }
         return {false, std::make_unique<Stopping>(ctx)};
-    case EK::BspEvent: {
-        const auto& p = std::get<BspEventPayload>(ev.payload);
-        if (::types::board_support_common::event_to_string(p.bsp_event.event) == "Disconnected") {
-            return {false, std::make_unique<Unplugged>(ctx)};
-        }
-        return {true, nullptr};
-    }
+    case EK::BspEvent:
+        return handle_disconnect(ev);
     case EK::InjectFault: {
         auto p = std::get<api::InjectFaultParams>(ev.payload);
         return transition_to_fault(ctx, p);
@@ -88,7 +104,6 @@ StateBase::Result Charging::feed(EventType ev) {
         return transition_to_disabled(ctx);
     case EK::QueryState:
         return handle_query_state(ctx, api::FsmState::Charging);
-    case EK::StartSession:
     case EK::ResumeSession:
     case EK::ClearFault:
     case EK::BcbToggle:
@@ -104,6 +119,14 @@ StateBase::Result Charging::feed(EventType ev) {
     case EK::IsoV2GFinished:
     case EK::IsoDcPowerOn:
     case EK::StateDeadline:
+    // RaiseError / ClearError are intercepted on the loop thread before the
+    // FSM feed; listed only to keep the switch exhaustive (-Werror=switch).
+    // ConfigureSession is intercepted pre-FSM (loop thread); BeginSession is
+    // an internal Plugged-only self-advance. Listed for switch exhaustiveness.
+    case EK::ConfigureSession:
+    case EK::BeginSession:
+    case EK::RaiseError:
+    case EK::ClearError:
     case EK::Shutdown:
         return {true, nullptr};
     }

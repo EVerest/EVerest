@@ -31,26 +31,42 @@ std::string make_error_string(API_generic::Error const& err) {
 
 } // namespace
 
-void setup_command_router(EvSimRuntime& rt, EvSimulator& mod) {
+std::vector<Everest::UnsubscribeToken> setup_command_router(EvSimRuntime& rt, EvSimulator& mod) {
     const auto& topics = mod.get_topics();
     auto& mqtt = mod.mqtt;
 
+    std::vector<Everest::UnsubscribeToken> tokens;
+    tokens.reserve(17);
+
     // Common wrapper: resolves the topic, wraps the user handler in a
-    // try/catch and swallows decode failures with a warning. The
-    // UnsubscribeToken returned by `mqtt.subscribe` is intentionally
-    // discarded — subscriptions live for the lifetime of the module, same
-    // convention as the EVerestAPI subscribe_api_topic helper.
+    // try/catch. Handler failures are logged at error and surfaced via a
+    // CommandAck Rejected on the response topic so the caller sees feedback.
+    // The catch must be total: this lambda runs on the framework's single
+    // serial external_mqtt_worker_thread, flushed by wait_and_pop(). An
+    // escaping exception (std or otherwise) ends that worker thread, after
+    // which every subsequent MQTT command for the whole module is silently
+    // dropped — strictly worse than swallowing one bad message. So a
+    // non-std::exception is logged and contained too, never rethrown.
+    // The UnsubscribeToken returned by `mqtt.subscribe` is captured into
+    // `tokens` and invoked by ~EvSimRuntime so the handler stops firing
+    // before the runtime references it captures are torn down.
     auto subscribe = [&](const std::string& var, auto handler) {
         const auto topic = topics.extern_to_everest(var);
-        mqtt.subscribe(topic, [topic, var, handler](const std::string& payload) {
+        tokens.push_back(mqtt.subscribe(topic, [&rt, topic, var, handler](const std::string& payload) {
             try {
                 handler(payload);
             } catch (const std::exception& e) {
-                EVLOG_warning << "Topic: '" << topic << "' (" << var << ") failed -> " << e.what() << " => " << payload;
+                EVLOG_error << "Topic: '" << topic << "' (" << var << ") failed -> " << e.what() << " => " << payload;
+                if (auto* ctx = rt.ctx_ptr()) {
+                    ctx->publish_e2m_command_ack(var, e.what());
+                }
             } catch (...) {
-                EVLOG_warning << "Topic: '" << topic << "' (" << var << ") failed with unknown exception";
+                EVLOG_error << "Topic: '" << topic << "' (" << var << ") failed -> unknown exception => " << payload;
+                if (auto* ctx = rt.ctx_ptr()) {
+                    ctx->publish_e2m_command_ack(var, "unknown exception");
+                }
             }
-        });
+        }));
     };
 
     // ---- enable/disable -----------------------------------------------------
@@ -61,20 +77,24 @@ void setup_command_router(EvSimRuntime& rt, EvSimulator& mod) {
         if (!API_generic::adl_deserialize(payload, v)) {
             throw std::runtime_error("bad enable payload");
         }
-        rt.enqueue(Event{v ? EventKind::Enable : EventKind::Disable, {}});
+        if (v) {
+            rt.enqueue(Event{EnableCmd{}});
+        } else {
+            rt.enqueue(Event{DisableCmd{}});
+        }
     });
 
     // ---- parameterless verbs -----------------------------------------------
-    auto sub_void = [&](const std::string& var, EventKind k) {
-        subscribe(var, [&rt, k](const std::string&) { rt.enqueue(Event{k, {}}); });
+    auto sub_void = [&](const std::string& var, EventPayload payload) {
+        subscribe(var, [&rt, payload](const std::string&) { rt.enqueue(Event{payload}); });
     };
-    sub_void("plug", EventKind::Plug);
-    sub_void("unplug", EventKind::Unplug);
-    sub_void("stop_session", EventKind::StopSession);
-    sub_void("pause_session", EventKind::PauseSession);
-    sub_void("resume_session", EventKind::ResumeSession);
-    sub_void("clear_fault", EventKind::ClearFault);
-    sub_void("query_state", EventKind::QueryState);
+    sub_void("plug", PlugCmd{});
+    sub_void("unplug", UnplugCmd{});
+    sub_void("stop_session", StopSessionCmd{});
+    sub_void("pause_session", PauseSessionCmd{});
+    sub_void("resume_session", ResumeSessionCmd{});
+    sub_void("clear_fault", ClearFaultCmd{});
+    sub_void("query_state", QueryStateCmd{});
 
     // ---- param-bearing verbs ------------------------------------------------
     subscribe("set_soc", [&rt](const std::string& payload) {
@@ -82,42 +102,42 @@ void setup_command_router(EvSimRuntime& rt, EvSimulator& mod) {
         if (!API_evsim::adl_deserialize(payload, p)) {
             throw std::runtime_error("bad set_soc payload");
         }
-        rt.enqueue(Event{EventKind::SetSoc, p});
+        rt.enqueue(Event{p});
     });
-    subscribe("start_session", [&rt](const std::string& payload) {
-        API_evsim::StartSessionParams p;
+    subscribe("configure_session", [&rt](const std::string& payload) {
+        API_evsim::SessionConfigParams p;
         if (!API_evsim::adl_deserialize(payload, p)) {
-            throw std::runtime_error("bad start_session payload");
+            throw std::runtime_error("bad configure_session payload");
         }
-        rt.enqueue(Event{EventKind::StartSession, p});
+        rt.enqueue(Event{p});
     });
     subscribe("set_charging_current", [&rt](const std::string& payload) {
         API_evsim::SetChargingCurrentParams p;
         if (!API_evsim::adl_deserialize(payload, p)) {
             throw std::runtime_error("bad set_charging_current payload");
         }
-        rt.enqueue(Event{EventKind::SetChargingCurrent, p});
+        rt.enqueue(Event{p});
     });
     subscribe("inject_fault", [&rt](const std::string& payload) {
         API_evsim::InjectFaultParams p;
         if (!API_evsim::adl_deserialize(payload, p)) {
             throw std::runtime_error("bad inject_fault payload");
         }
-        rt.enqueue(Event{EventKind::InjectFault, p});
+        rt.enqueue(Event{p});
     });
     subscribe("bcb_toggle", [&rt](const std::string& payload) {
         API_evsim::BcbToggleParams p;
         if (!API_evsim::adl_deserialize(payload, p)) {
             throw std::runtime_error("bad bcb_toggle payload");
         }
-        rt.enqueue(Event{EventKind::BcbToggle, p});
+        rt.enqueue(Event{p});
     });
     subscribe("run_scenario", [&rt](const std::string& payload) {
         API_evsim::RunScenarioParams p;
         if (!API_evsim::adl_deserialize(payload, p)) {
             throw std::runtime_error("bad run_scenario payload");
         }
-        rt.enqueue(Event{EventKind::RunScenario, p});
+        rt.enqueue(Event{p});
     });
 
     // ---- direct (non-queue) handlers ---------------------------------------
@@ -128,29 +148,36 @@ void setup_command_router(EvSimRuntime& rt, EvSimulator& mod) {
         }
         mod.comm_check.set_value(v);
     });
-    subscribe("raise_error", [&mod](const std::string& payload) {
+
+    // raise_error / clear_error parse here on the MQTT thread but do NOT touch
+    // p_ev_manager: the parsed args are enqueued and the actual error
+    // interaction happens on the loop thread (which owns all peer/error
+    // publishing), so it cannot interleave with Faulted::enter's fault
+    // publishing.
+    subscribe("raise_error", [&rt](const std::string& payload) {
         API_generic::Error err;
         if (!API_generic::adl_deserialize(payload, err)) {
             throw std::runtime_error("bad raise_error payload");
         }
-        const auto sub = err.sub_type.value_or("");
-        const auto msg = err.message.value_or("");
-        const auto type = make_error_string(err);
-        auto ev_error = mod.p_ev_manager->error_factory->create_error(type, sub, msg, Everest::error::Severity::High);
-        mod.p_ev_manager->raise_error(ev_error);
+        RaiseErrorCmd cmd;
+        cmd.type = make_error_string(err);
+        cmd.sub_type = err.sub_type.value_or("");
+        cmd.message = err.message.value_or("");
+        cmd.severity = Everest::error::Severity::High;
+        rt.enqueue(Event{cmd});
     });
-    subscribe("clear_error", [&mod](const std::string& payload) {
+    subscribe("clear_error", [&rt](const std::string& payload) {
         API_generic::Error err;
         if (!API_generic::adl_deserialize(payload, err)) {
             throw std::runtime_error("bad clear_error payload");
         }
-        const auto type = make_error_string(err);
-        if (err.sub_type) {
-            mod.p_ev_manager->clear_error(type, *err.sub_type);
-        } else {
-            mod.p_ev_manager->clear_error(type);
-        }
+        ClearErrorCmd cmd;
+        cmd.type = make_error_string(err);
+        cmd.sub_type = err.sub_type;
+        rt.enqueue(Event{cmd});
     });
+
+    return tokens;
 }
 
 } // namespace module

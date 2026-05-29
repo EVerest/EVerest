@@ -19,11 +19,6 @@ namespace api = everest::lib::API::V1_0::types::ev_simulator;
 
 namespace {
 
-bool contains_substr(const std::vector<std::string>& records, const std::string& needle) {
-    return std::any_of(records.begin(), records.end(),
-                       [&](const std::string& r) { return r.find(needle) != std::string::npos; });
-}
-
 int count_substr(const std::vector<std::string>& records, const std::string& needle) {
     return static_cast<int>(std::count_if(records.begin(), records.end(),
                                           [&](const std::string& r) { return r.find(needle) != std::string::npos; }));
@@ -96,12 +91,98 @@ TEST_CASE("EvSimulator BcbToggling cycle B<->C * 3 rounds -> V2GNegotiating", "[
                          std::chrono::milliseconds(250)) >= 5);
     }
 
-    SECTION("Paused.feed(ResumeSession) seeds bcb_remaining=6 and transitions to BcbToggling") {
+    SECTION("Paused.feed(ResumeSession) in ISO mode seeds bcb_remaining=6 and -> BcbToggling") {
+        auto ctx = fx.make_ctx();
+        set_mode(*ctx, api::ChargeMode::DcIso2);
+        Paused p{*ctx};
+        auto result = p.feed(Event{EventKind::ResumeSession});
+        REQUIRE(result.new_state);
+        CHECK(result.new_state->get_id() == api::FsmState::BcbToggling);
+        CHECK(ctx->vars.bcb_remaining == 6);
+    }
+
+    SECTION("Paused.feed(ResumeSession) in AcIec mode -> Charging directly (no BCB)") {
+        auto ctx = fx.make_ctx();
+        set_mode(*ctx, api::ChargeMode::AcIec);
+        Paused p{*ctx};
+        auto result = p.feed(Event{EventKind::ResumeSession});
+        REQUIRE(result.new_state);
+        CHECK(result.new_state->get_id() == api::FsmState::Charging);
+        CHECK(ctx->vars.bcb_remaining == 0);
+    }
+
+    SECTION("Paused.feed(ResumeSession) with no session -> BcbToggling (preserves prior behavior)") {
         auto ctx = fx.make_ctx();
         Paused p{*ctx};
         auto result = p.feed(Event{EventKind::ResumeSession});
         REQUIRE(result.new_state);
         CHECK(result.new_state->get_id() == api::FsmState::BcbToggling);
         CHECK(ctx->vars.bcb_remaining == 6);
+    }
+
+    SECTION("Paused.feed(BcbToggle) without count defaults to 3 round-trips (6 edges) and -> BcbToggling") {
+        auto ctx = fx.make_ctx();
+        Paused p{*ctx};
+        Event ev{EventKind::BcbToggle};
+        ev.payload = api::BcbToggleParams{std::nullopt};
+        auto result = p.feed(ev);
+        REQUIRE(result.new_state);
+        CHECK(result.new_state->get_id() == api::FsmState::BcbToggling);
+        CHECK(ctx->vars.bcb_remaining == 6);
+    }
+
+    SECTION("Paused.feed(BcbToggle{count=4}) seeds bcb_remaining=8 and -> BcbToggling") {
+        auto ctx = fx.make_ctx();
+        Paused p{*ctx};
+        Event ev{EventKind::BcbToggle};
+        ev.payload = api::BcbToggleParams{4};
+        auto result = p.feed(ev);
+        REQUIRE(result.new_state);
+        CHECK(result.new_state->get_id() == api::FsmState::BcbToggling);
+        CHECK(ctx->vars.bcb_remaining == 8);
+    }
+
+    SECTION("Paused.feed(BcbToggle{count=1}) seeds 1 round-trip (2 edges) reaching V2GNegotiating") {
+        auto ctx = fx.make_ctx();
+        Paused p{*ctx};
+        Event ev{EventKind::BcbToggle};
+        ev.payload = api::BcbToggleParams{1};
+        auto result = p.feed(ev);
+        REQUIRE(result.new_state);
+        CHECK(result.new_state->get_id() == api::FsmState::BcbToggling);
+        CHECK(ctx->vars.bcb_remaining == 2);
+
+        // Drive the BcbToggling state to verify the count is respected end-to-end.
+        BcbToggling s{*ctx};
+        s.enter();
+        // First deadline produces one edge, bcb_remaining -> 1, still in BcbToggling.
+        auto r1 = s.feed(Event{EventKind::StateDeadline});
+        CHECK_FALSE(r1.new_state);
+        // Second deadline produces the final edge and transitions out.
+        auto r2 = s.feed(Event{EventKind::StateDeadline});
+        REQUIRE(r2.new_state);
+        CHECK(r2.new_state->get_id() == api::FsmState::V2GNegotiating);
+    }
+
+    SECTION("Paused.feed(BcbToggle{count=0}) is rejected, stays in Paused") {
+        auto ctx = fx.make_ctx();
+        Paused p{*ctx};
+        Event ev{EventKind::BcbToggle};
+        ev.payload = api::BcbToggleParams{0};
+        auto result = p.feed(ev);
+        CHECK(result.new_state == nullptr);
+    }
+
+    SECTION("Paused.feed(BcbToggle{count=1001}) is rejected (above 1000 cap)") {
+        // Guards `round_trips * 2` against signed-overflow UB and against a
+        // pathologically long toggle loop. The cap is paranoia-only; 1001 is
+        // the smallest value that must be rejected.
+        auto ctx = fx.make_ctx();
+        Paused p{*ctx};
+        Event ev{EventKind::BcbToggle};
+        ev.payload = api::BcbToggleParams{1001};
+        auto result = p.feed(ev);
+        CHECK(result.new_state == nullptr);
+        CHECK(ctx->vars.bcb_remaining == 0);
     }
 }

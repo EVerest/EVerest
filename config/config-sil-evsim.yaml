@@ -54,6 +54,8 @@ active_modules:
         - { module_id: iso15118_car,          implementation_id: ev }
       slac:
         - { module_id: slac,                  implementation_id: ev }
+      kvs:
+        - { module_id: persistent_store,      implementation_id: main }
   energy_manager:
     config_module:
       switch_3ph1ph_while_charging_mode: Both

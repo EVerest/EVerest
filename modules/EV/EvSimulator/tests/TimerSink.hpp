@@ -31,8 +31,8 @@ public:
     void disarm_tick() {
         tick_disarms++;
     }
-    void arm_scenario(std::chrono::seconds s) {
-        scenario_timer_arms.push_back(s);
+    void arm_scenario(std::chrono::milliseconds ms) {
+        scenario_timer_arms.push_back(ms);
     }
     void record_enqueue(Event ev) {
         enqueued_events.push_back(std::move(ev));
@@ -40,7 +40,7 @@ public:
 
     std::vector<std::chrono::milliseconds> state_timer_arms;
     std::vector<int> tick_arms;
-    std::vector<std::chrono::seconds> scenario_timer_arms;
+    std::vector<std::chrono::milliseconds> scenario_timer_arms;
     std::vector<Event> enqueued_events;
     int state_timer_cancels{0};
     int tick_disarms{0};

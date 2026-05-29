@@ -65,7 +65,7 @@ TEST_CASE("RampInterpolator advances charging_current_a linearly", "[evsim][ramp
         ctx->vars.active_ramp = r;
         // No-op: at start_at the interpolated value still equals start_a, but
         // the ramp must remain active for subsequent ticks.
-        RampInterpolator::step(*ctx, t0);
+        ramp_step(*ctx, t0);
         REQUIRE(ctx->vars.active_ramp.has_value());
         auto currents = recorded_currents(fx.mocks.bsp.records);
         REQUIRE(currents.size() == 1);
@@ -83,10 +83,35 @@ TEST_CASE("RampInterpolator advances charging_current_a linearly", "[evsim][ramp
         r.start_at = t0;
         r.end_at = t0 + std::chrono::milliseconds{1000};
         ctx->vars.active_ramp = r;
-        RampInterpolator::step(*ctx, t0 + std::chrono::milliseconds{500});
+        ramp_step(*ctx, t0 + std::chrono::milliseconds{500});
         auto currents = recorded_currents(fx.mocks.bsp.records);
         REQUIRE_FALSE(currents.empty());
         CHECK(std::abs(currents.back() - 11.0f) < 0.01f);
+        CHECK(ctx->vars.active_ramp.has_value());
+    }
+
+    SECTION("step with now strictly before start_at clamps to start_a (no reverse overshoot)") {
+        // Future-armed ramp / clock skew: now < start_at makes elapsed_ms
+        // negative. Pre-fix the unclamped t drove `current` below start_a in
+        // the wrong direction; post-fix t is clamped to 0 so the BSP sees
+        // exactly start_a.
+        auto ctx = fx.make_ctx();
+        ctx->vars.charging_current_a = 6.0f;
+        const auto t0 = std::chrono::steady_clock::time_point{std::chrono::milliseconds{10000}};
+        ActiveRamp r;
+        r.start_a = 6.0f;
+        r.target_a = 16.0f;
+        r.three_phases = true;
+        r.start_at = t0;
+        r.end_at = t0 + std::chrono::milliseconds{1000};
+        ctx->vars.active_ramp = r;
+
+        ramp_step(*ctx, t0 - std::chrono::milliseconds{500});
+
+        auto currents = recorded_currents(fx.mocks.bsp.records);
+        REQUIRE(currents.size() == 1);
+        CHECK(std::abs(currents.front() - 6.0f) < 0.01f);
+        CHECK(currents.front() >= 6.0f); // never below start_a
         CHECK(ctx->vars.active_ramp.has_value());
     }
 
@@ -102,10 +127,10 @@ TEST_CASE("RampInterpolator advances charging_current_a linearly", "[evsim][ramp
         r.end_at = t0 + std::chrono::milliseconds{2000};
         ctx->vars.active_ramp = r;
         // Simulate four 500 ms ticks: 0.25 / 0.5 / 0.75 / 1.0 of the ramp.
-        RampInterpolator::step(*ctx, t0 + std::chrono::milliseconds{500});
-        RampInterpolator::step(*ctx, t0 + std::chrono::milliseconds{1000});
-        RampInterpolator::step(*ctx, t0 + std::chrono::milliseconds{1500});
-        RampInterpolator::step(*ctx, t0 + std::chrono::milliseconds{2000});
+        ramp_step(*ctx, t0 + std::chrono::milliseconds{500});
+        ramp_step(*ctx, t0 + std::chrono::milliseconds{1000});
+        ramp_step(*ctx, t0 + std::chrono::milliseconds{1500});
+        ramp_step(*ctx, t0 + std::chrono::milliseconds{2000});
         auto currents = recorded_currents(fx.mocks.bsp.records);
         REQUIRE(currents.size() == 4);
         CHECK(std::abs(currents[0] - 8.5f) < 0.01f);
@@ -129,7 +154,7 @@ TEST_CASE("RampInterpolator advances charging_current_a linearly", "[evsim][ramp
         r.end_at = t0 + std::chrono::milliseconds{2000};
         ctx->vars.active_ramp = r;
         // Advance well past end_at — interpolator must snap to target_a.
-        RampInterpolator::step(*ctx, t0 + std::chrono::milliseconds{5000});
+        ramp_step(*ctx, t0 + std::chrono::milliseconds{5000});
         auto currents = recorded_currents(fx.mocks.bsp.records);
         REQUIRE_FALSE(currents.empty());
         CHECK(std::abs(currents.back() - 13.7f) < 0.01f);
@@ -137,11 +162,57 @@ TEST_CASE("RampInterpolator advances charging_current_a linearly", "[evsim][ramp
         CHECK(std::abs(ctx->vars.charging_current_a - 13.7f) < 0.01f);
     }
 
+    SECTION("degenerate ramp (end_at before start_at) snaps to target and clears") {
+        // A non-positive total_ms can only be reached when `now < end_at`
+        // (otherwise the now>=end_at branch handles it first) yet
+        // `end_at <= start_at`. Place start_at in the future relative to now,
+        // with end_at strictly before start_at: now(0) < end_at(50) < start_at(100).
+        auto ctx = fx.make_ctx();
+        ctx->vars.charging_current_a = 6.0f;
+        const auto now = std::chrono::steady_clock::time_point{std::chrono::milliseconds{0}};
+        ActiveRamp r;
+        r.start_a = 6.0f;
+        r.target_a = 16.0f;
+        r.three_phases = true;
+        r.start_at = now + std::chrono::milliseconds{100};
+        r.end_at = now + std::chrono::milliseconds{50}; // end before start -> total_ms < 0
+        ctx->vars.active_ramp = r;
+
+        ramp_step(*ctx, now);
+
+        // Snapped straight to target; ramp cleared so no further ticks process it.
+        auto currents = recorded_currents(fx.mocks.bsp.records);
+        REQUIRE(currents.size() == 1);
+        CHECK(currents.front() == 16.0f);
+        CHECK_FALSE(ctx->vars.active_ramp.has_value());
+        CHECK(std::abs(ctx->vars.charging_current_a - 16.0f) < 0.01f);
+    }
+
+    SECTION("zero-length ramp (end_at == start_at, both ahead of now) snaps to target") {
+        auto ctx = fx.make_ctx();
+        ctx->vars.charging_current_a = 6.0f;
+        const auto now = std::chrono::steady_clock::time_point{std::chrono::milliseconds{0}};
+        ActiveRamp r;
+        r.start_a = 4.0f;
+        r.target_a = 12.0f;
+        r.three_phases = false;
+        r.start_at = now + std::chrono::milliseconds{100};
+        r.end_at = now + std::chrono::milliseconds{100}; // total_ms == 0
+        ctx->vars.active_ramp = r;
+
+        ramp_step(*ctx, now);
+
+        auto currents = recorded_currents(fx.mocks.bsp.records);
+        REQUIRE(currents.size() == 1);
+        CHECK(currents.front() == 12.0f);
+        CHECK_FALSE(ctx->vars.active_ramp.has_value());
+    }
+
     SECTION("step without active_ramp is a no-op") {
         auto ctx = fx.make_ctx();
         ctx->vars.charging_current_a = 16.0f;
         const auto t0 = std::chrono::steady_clock::time_point{std::chrono::milliseconds{40000}};
-        RampInterpolator::step(*ctx, t0);
+        ramp_step(*ctx, t0);
         CHECK(fx.mocks.bsp.records.empty());
         CHECK(ctx->vars.charging_current_a == 16.0f);
     }

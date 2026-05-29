@@ -24,6 +24,8 @@ target_sources(${MODULE_NAME}
     PRIVATE
         "ev_manager/ev_managerImpl.cpp"
         "main/CommandRouter.cpp"
+        "main/EventDispatch.cpp"
+        "main/Events.cpp"
         "main/EvSimRuntime.cpp"
         "main/FsmContext.cpp"
         "main/PeerSubscriptions.cpp"

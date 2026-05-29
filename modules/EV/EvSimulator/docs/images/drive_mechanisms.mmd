@@ -13,4 +13,4 @@ flowchart TB
     B -->|PeerSubscriptions| Q
     C -->|ScenarioDispatcher.on_timer_fire| Q
     D -->|StateDeadline / tick on_tick / scenario fire| Q
-    Q -->|on_wake drains| FSM
+    Q -->|on_wake flushes| FSM

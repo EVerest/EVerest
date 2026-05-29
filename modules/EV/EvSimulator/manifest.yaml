@@ -88,13 +88,27 @@ config:
     type: number
     default: 100
   cfg_communication_check_to_s:
-    description: Communication check timeout in seconds
+    description: >-
+      Communication check timeout in seconds. 0 disables the check (no
+      external heartbeat required). When > 0, the test driver must
+      publish `m2e/communication_check true` periodically faster than
+      this timeout or EvSimulator raises a CommunicationFault on its
+      ev_manager interface, which evse_manager surfaces as connector
+      OtherError. Disabled by default to match historical EvManager
+      behavior; opt in by setting > 0.
     type: integer
-    default: 5
+    default: 0
   cfg_heartbeat_interval_ms:
     description: Heartbeat publish interval in milliseconds
     type: integer
     default: 1000
+  enabled_at_startup:
+    description: >-
+      Auto-enable the EV simulator at module startup (equivalent to publishing
+      `m2e/enable true` immediately after ready). Set to false for tests that
+      need to observe the initial Disabled state before driving enable.
+    type: boolean
+    default: true
 provides:
   ev_manager:
     interface: ev_manager
