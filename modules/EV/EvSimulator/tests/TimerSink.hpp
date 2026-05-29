@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include "../main/Events.hpp"
+
 #include <chrono>
 #include <vector>
 
@@ -29,15 +31,25 @@ public:
     void disarm_tick() {
         tick_disarms++;
     }
+    void arm_scenario(std::chrono::seconds s) {
+        scenario_timer_arms.push_back(s);
+    }
+    void record_enqueue(Event ev) {
+        enqueued_events.push_back(std::move(ev));
+    }
 
     std::vector<std::chrono::milliseconds> state_timer_arms;
     std::vector<int> tick_arms;
+    std::vector<std::chrono::seconds> scenario_timer_arms;
+    std::vector<Event> enqueued_events;
     int state_timer_cancels{0};
     int tick_disarms{0};
 
     void clear() {
         state_timer_arms.clear();
         tick_arms.clear();
+        scenario_timer_arms.clear();
+        enqueued_events.clear();
         state_timer_cancels = 0;
         tick_disarms = 0;
     }

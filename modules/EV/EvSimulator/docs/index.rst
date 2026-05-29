@@ -6,6 +6,7 @@ EvSimulator
 
 Simplified EV simulator with a versioned MQTT API and an ``fsm::v2`` state
 machine. Coexists with ``EvManager`` and is targeted as its replacement.
+Implements all 12 declared scenarios.
 
 Configuration
 =============
@@ -116,29 +117,106 @@ Outbound suffixes (``e2m/*``):
 Scenarios
 ---------
 
-The ``run_scenario`` command selects a preset by ``ScenarioName``.
+The ``run_scenario`` command selects a preset by ``ScenarioName``. All 12
+scenarios below are implemented and dispatch through the FSM:
 
-Implemented in v1:
-
-- ``AcIecBasic``
-- ``AcIsoBasic``
-- ``DcIsoBasic``
-
-Deferred (currently rejected via ``e2m/command_ack`` with
-``reason: "scenario not implemented in v1"``):
-
-- ``AcIecPauseResume``
-- ``AcIsoD20Basic``
-- ``DcIsoD20Basic``
-- ``DcIsoPauseResume``
-- ``DcIsoBpt``
-- ``DcIsoMcs``
-- ``DiodeFailSmoke``
+- ``AcIecBasic`` — Basic AC IEC 61851 session: Plug, StartSession, charge
+  for 30 s.
+- ``AcIecPauseResume`` — AC IEC session that pauses at 30 s then resumes at
+  60 s, stops at 120 s.
+- ``AcIsoBasic`` — Basic AC ISO 15118-2 session with EIM payment.
+- ``AcIsoD20Basic`` — Basic AC ISO 15118-20 session.
+- ``DcIsoBasic`` — Basic DC ISO 15118-2 session with EIM payment.
+- ``DcIsoD20Basic`` — Basic DC ISO 15118-20 session.
+- ``DcIsoPauseResume`` — DC ISO 15118-2 session that pauses then resumes
+  before stopping.
+- ``DcIsoBpt`` — DC ISO 15118-20 with Bidirectional Power Transfer.
+- ``DcIsoMcs`` — DC ISO 15118-20 with Megawatt Charging System.
+- ``DiodeFailSmoke`` — Smoke test that injects a diode fault and verifies
+  the session aborts.
+- ``AcIecRampUp`` — AC IEC session that ramps current from 0 to 8 to 16 to
+  32 A.
+- ``DcIsoTaper`` — DC ISO-2 with a tapering current profile
+  (100 to 50 to 20 to 5 A).
 
 Command rejection
 -----------------
 
-Out-of-state or unsupported commands are not silently dropped. They are
-acknowledged on ``e2m/command_ack`` with ``status: "Rejected"`` and a
-``reason`` string identifying why the command was refused. Accepted commands
-likewise publish ``status: "Accepted"`` on the same channel where applicable.
+Out-of-state commands are not silently dropped. They are acknowledged on
+``e2m/command_ack`` with ``status: "Rejected"`` and a ``reason`` string
+identifying why the command was refused. Accepted commands likewise publish
+``status: "Accepted"`` on the same channel where applicable.
+
+Python test controller
+----------------------
+
+Integration tests drive the simulator through
+``EvSimulatorTestController``. Minimal usage:
+
+.. code-block:: python
+
+    from everest.testing.core_utils.controller.evsim_test_controller import EvSimulatorTestController
+
+    def test_my_scenario(everest_core, evsim_test_controller):
+        evsim_test_controller.start()
+        evsim_test_controller.plug_in_dc_iso(payment_type="eim")
+        assert evsim_test_controller.state_collector.wait_for_state("Charging", timeout=30)
+        evsim_test_controller.plug_out_iso()
+
+For declarative charging profiles, run a preset by name:
+
+.. code-block:: python
+
+    evsim_test_controller.run_scenario("DcIsoTaper")
+
+For ad-hoc current changes, ramp to a target:
+
+.. code-block:: python
+
+    evsim_test_controller.ramp_to_current(target_a=16, three_phases=True, duration_s=5)
+
+SIL configurations
+------------------
+
+The following SIL configs wire the simulator to representative EVSE stacks:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 36 8 12 10 8 8
+
+   * - Config
+     - AC
+     - DC ISO-2
+     - ISO-20
+     - BPT
+     - MCS
+   * - ``config-sil-evsim.yaml``
+     - ✓
+     -
+     -
+     -
+     -
+   * - ``config-sil-evsim-dc.yaml``
+     -
+     - ✓
+     -
+     -
+     -
+   * - ``config-sil-evsim-dc-isomux.yaml``
+     -
+     - ✓
+     - ✓
+     -
+     -
+   * - ``config-sil-evsim-dc-d20.yaml``
+     -
+     -
+     - ✓
+     -
+     -
+   * - ``config-sil-evsim-dc-bpt.yaml``
+     -
+     -
+     - ✓
+     - ✓
+     - ✓

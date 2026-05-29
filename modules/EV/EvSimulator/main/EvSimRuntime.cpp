@@ -4,6 +4,7 @@
 
 #include "CommandRouter.hpp"
 #include "PeerSubscriptions.hpp"
+#include "RampInterpolator.hpp"
 #include "SocIntegrator.hpp"
 #include "states/Disabled.hpp"
 
@@ -68,6 +69,10 @@ PeerActions EvSimRuntime::build_peer_actions() {
         a.iso_stop_charging = [iso]() { iso->call_stop_charging(); };
         a.iso_pause_charging = [iso]() { iso->call_pause_charging(); };
         a.iso_update_soc = [iso](float pct) { iso->call_update_soc(static_cast<double>(pct)); };
+        a.iso_enable_sae_j2847_v2g_v2h = [iso]() { iso->call_enable_sae_j2847_v2g_v2h(); };
+        a.iso_set_bpt_dc_params = [iso](const ::types::iso15118::DcEvBPTParameters& params) {
+            iso->call_set_bpt_dc_params(params);
+        };
     }
 
     // SLAC — optional.
@@ -148,14 +153,15 @@ void EvSimRuntime::on_state_timer() {
 
 void EvSimRuntime::on_tick() {
     if (ctx) {
+        RampInterpolator::step(*ctx, std::chrono::steady_clock::now());
         SocIntegrator::step(*ctx);
     }
 }
 
 void EvSimRuntime::on_scenario_timer() {
-    Event ev{};
-    ev.kind = EventKind::StopSession;
-    enqueue(std::move(ev));
+    if (ctx) {
+        ctx->scenario.on_timer_fire(*ctx);
+    }
 }
 
 void EvSimRuntime::arm_tick(int ms) {
