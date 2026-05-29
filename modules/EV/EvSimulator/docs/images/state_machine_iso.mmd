@@ -3,7 +3,7 @@ stateDiagram-v2
 
     [*] --> Plugged
 
-    Plugged --> SlacMatching : StartSession (AcIso2 / AcIsoD20 / DcIso2 / DcIsoD20)
+    Plugged --> SlacMatching : BeginSession, latched ISO mode (AcIso2 / AcIsoD20 / DcIso2 / DcIsoD20)
 
     SlacMatching --> V2GNegotiating : SlacState=MATCHED
     SlacMatching --> Faulted : StateDeadline (30s, SlacTimeout)

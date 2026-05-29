@@ -10,32 +10,35 @@ namespace everest::lib::API::V1_0::types::ev_simulator {
 
 using json = nlohmann::json;
 
-void to_json(json& j, FsmState const& k) noexcept;
+void to_json(json& j, FsmState const& k);
 void from_json(const json& j, FsmState& k);
 
-void to_json(json& j, ChargeMode const& k) noexcept;
+void to_json(json& j, ChargeMode const& k);
 void from_json(const json& j, ChargeMode& k);
 
-void to_json(json& j, PaymentOption const& k) noexcept;
+void to_json(json& j, PaymentOption const& k);
 void from_json(const json& j, PaymentOption& k);
 
-void to_json(json& j, FaultType const& k) noexcept;
+void to_json(json& j, FaultType const& k);
 void from_json(const json& j, FaultType& k);
 
-void to_json(json& j, ScenarioName const& k) noexcept;
+void to_json(json& j, ScenarioName const& k);
 void from_json(const json& j, ScenarioName& k);
 
-void to_json(json& j, IsoSessionEventKind const& k) noexcept;
+void to_json(json& j, IsoSessionEventKind const& k);
 void from_json(const json& j, IsoSessionEventKind& k);
 
-void to_json(json& j, CommandAckStatus const& k) noexcept;
+void to_json(json& j, CommandAckStatus const& k);
 void from_json(const json& j, CommandAckStatus& k);
+
+void to_json(json& j, BspEventKind const& k);
+void from_json(const json& j, BspEventKind& k);
+
+void to_json(json& j, SlacStateKind const& k);
+void from_json(const json& j, SlacStateKind& k);
 
 void to_json(json& j, BptParams const& k) noexcept;
 void from_json(const json& j, BptParams& k);
-
-void to_json(json& j, McsProfile const& k) noexcept;
-void from_json(const json& j, McsProfile& k);
 
 void to_json(json& j, CurvePoint const& k) noexcept;
 void from_json(const json& j, CurvePoint& k);
@@ -43,8 +46,8 @@ void from_json(const json& j, CurvePoint& k);
 void to_json(json& j, ChargingCurve const& k) noexcept;
 void from_json(const json& j, ChargingCurve& k);
 
-void to_json(json& j, StartSessionParams const& k) noexcept;
-void from_json(const json& j, StartSessionParams& k);
+void to_json(json& j, SessionConfigParams const& k) noexcept;
+void from_json(const json& j, SessionConfigParams& k);
 
 void to_json(json& j, SetChargingCurrentParams const& k) noexcept;
 void from_json(const json& j, SetChargingCurrentParams& k);
@@ -57,6 +60,9 @@ void from_json(const json& j, BcbToggleParams& k);
 
 void to_json(json& j, InjectFaultParams const& k) noexcept;
 void from_json(const json& j, InjectFaultParams& k);
+
+void to_json(json& j, ScenarioTimingOverrides const& k) noexcept;
+void from_json(const json& j, ScenarioTimingOverrides& k);
 
 void to_json(json& j, RunScenarioParams const& k) noexcept;
 void from_json(const json& j, RunScenarioParams& k);

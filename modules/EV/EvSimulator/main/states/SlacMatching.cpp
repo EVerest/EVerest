@@ -14,7 +14,20 @@ namespace module {
 namespace api = API_types::ev_simulator;
 
 void SlacMatching::enter() {
-    ctx.slac_trigger_matching();
+    // slac_trigger_matching returns false in two distinct cases: the ev_slac
+    // peer is not wired at all, or a wired peer's trigger_matching() call
+    // returned false. Without an early fault transition the state would arm
+    // the 30s deadline timer and only fault later with a misleading
+    // SlacTimeout. Route into Faulted on the next on_wake flush via a
+    // synthetic InjectFault, carrying the descriptive message on the payload
+    // so it cannot go stale if an intervening transition is flushed first.
+    if (!ctx.slac_trigger_matching()) {
+        const std::string message =
+            ctx.peer_actions.slac.present ? "ev_slac trigger_matching rejected" : "no ev_slac peer";
+        ctx.enqueue(Event{api::InjectFaultParams{api::FaultType::Internal, std::nullopt, message}});
+        ctx.publish_e2m_state(api::FsmState::SlacMatching);
+        return;
+    }
     ctx.vars.slac_state = "MATCHING";
     ctx.arm_timer(std::chrono::seconds(30));
     ctx.publish_e2m_state(api::FsmState::SlacMatching);
@@ -22,7 +35,7 @@ void SlacMatching::enter() {
 
 StateBase::Result SlacMatching::feed(EventType ev) {
     using EK = EventKind;
-    switch (ev.kind) {
+    switch (kind_of(ev)) {
     case EK::SlacState: {
         const auto& p = std::get<SlacStatePayload>(ev.payload);
         if (p.state == "MATCHED") {
@@ -36,13 +49,8 @@ StateBase::Result SlacMatching::feed(EventType ev) {
         return {false, std::make_unique<Faulted>(ctx)};
     case EK::Unplug:
         return {false, std::make_unique<Unplugged>(ctx)};
-    case EK::BspEvent: {
-        const auto& p = std::get<BspEventPayload>(ev.payload);
-        if (::types::board_support_common::event_to_string(p.bsp_event.event) == "Disconnected") {
-            return {false, std::make_unique<Unplugged>(ctx)};
-        }
-        return {true, nullptr};
-    }
+    case EK::BspEvent:
+        return handle_disconnect(ev);
     case EK::InjectFault: {
         auto p = std::get<api::InjectFaultParams>(ev.payload);
         return transition_to_fault(ctx, p);
@@ -51,33 +59,15 @@ StateBase::Result SlacMatching::feed(EventType ev) {
         return transition_to_disabled(ctx);
     case EK::QueryState:
         return handle_query_state(ctx, api::FsmState::SlacMatching);
-    case EK::StartSession:
-        ctx.publish_e2m_command_ack("start_session", "slac matching in progress");
-        return {false, nullptr};
     case EK::StopSession:
-        ctx.publish_e2m_command_ack("stop_session", "slac matching in progress");
-        return {false, nullptr};
     case EK::PauseSession:
-        ctx.publish_e2m_command_ack("pause_session", "slac matching in progress");
-        return {false, nullptr};
     case EK::ResumeSession:
-        ctx.publish_e2m_command_ack("resume_session", "slac matching in progress");
-        return {false, nullptr};
     case EK::SetChargingCurrent:
-        ctx.publish_e2m_command_ack("set_charging_current", "slac matching in progress");
-        return {false, nullptr};
     case EK::ClearFault:
-        ctx.publish_e2m_command_ack("clear_fault", "slac matching in progress");
-        return {false, nullptr};
     case EK::BcbToggle:
-        ctx.publish_e2m_command_ack("bcb_toggle", "slac matching in progress");
-        return {false, nullptr};
     case EK::SetSoc:
-        ctx.publish_e2m_command_ack("set_soc", "slac matching in progress");
-        return {false, nullptr};
     case EK::RunScenario:
-        ctx.publish_e2m_command_ack("run_scenario", "slac matching in progress");
-        return {false, nullptr};
+        return reject(ev, "slac matching in progress");
     case EK::Plug:
     case EK::Enable:
     case EK::BspMeasurement:
@@ -89,6 +79,14 @@ StateBase::Result SlacMatching::feed(EventType ev) {
     case EK::IsoV2GFinished:
     case EK::IsoDcPowerOn:
     case EK::IsoPauseFromCharger:
+    // RaiseError / ClearError are intercepted on the loop thread before the
+    // FSM feed; listed only to keep the switch exhaustive (-Werror=switch).
+    // ConfigureSession is intercepted pre-FSM (loop thread); BeginSession is
+    // an internal Plugged-only self-advance. Listed for switch exhaustiveness.
+    case EK::ConfigureSession:
+    case EK::BeginSession:
+    case EK::RaiseError:
+    case EK::ClearError:
     case EK::Shutdown:
         return {true, nullptr};
     }

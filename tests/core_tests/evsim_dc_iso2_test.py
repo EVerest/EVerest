@@ -48,6 +48,12 @@ def test_iso15118_dc_session(everest_core, evsim_test_controller):
         f"saw {evsim_test_controller.state_collector.states}"
     )
 
+    # Affirm energy actually flows: a Charging-at-0 A regression would
+    # otherwise pass on the state name alone.
+    assert evsim_test_controller.state_collector.wait_for_soc_progress(
+        min_increase=0.01, timeout=_TIMEOUT_FINISH
+    ), "SoC did not advance while in Charging under DC ISO-2"
+
     evsim_test_controller.plug_out_iso()
 
     assert evsim_test_controller.state_collector.wait_for_state(
@@ -60,13 +66,19 @@ def test_iso15118_dc_session(everest_core, evsim_test_controller):
 
 @pytest.mark.everest_core_config("config-sil-evsim-dc.yaml")
 def test_iso15118_dc_session_stop_by_evse(everest_core, evsim_test_controller):
-    """DC ISO 15118-2 session terminated by an EVSE-side fault injection.
+    """DC ISO 15118-2 session terminated by an EV-side fault injection.
 
     The reference test triggers stop via probe-module
-    `stop_transaction`. EvSimulator does not expose a probe module, so
-    we approximate an EVSE-initiated stop by injecting an EmergencyShutdown
-    fault — the EVSE FSM reacts identically (StoppingCharging ->
-    TransactionFinished) and the EV side leaves `Charging`.
+    `stop_transaction`. EvSimulator does not expose a probe module and
+    has no EVSE-stop hook today, so we approximate an externally driven
+    stop by injecting a DiodeFail fault on the EV side. DiodeFail is the
+    closest representable EV-side fault in the typed API enum
+    (DiodeFail / RcdError / CpErrorE / SlacTimeout / V2GTimeout /
+    Internal); the EVSE FSM reacts to the CP fault and the EV side
+    leaves `Charging`.
+
+    TODO: replace with a true EVSE-initiated stop once EvSimulator
+    exposes an externally driven stop hook.
     """
     everest_core.start()
 
@@ -80,13 +92,25 @@ def test_iso15118_dc_session_stop_by_evse(everest_core, evsim_test_controller):
         f"saw {evsim_test_controller.state_collector.states}"
     )
 
-    evsim_test_controller.inject_fault("EmergencyShutdown")
+    evsim_test_controller.inject_fault("DiodeFail")
 
     assert evsim_test_controller.state_collector.wait_for_state_not(
         "Charging", timeout=_TIMEOUT_FINISH
     ), (
         "EvSimulator stayed in Charging after EVSE-side stop; "
         f"saw {evsim_test_controller.state_collector.states}"
+    )
+
+    # Assert the fault TYPE actually propagated, not merely that the
+    # state left Charging: a spurious unrelated transition off Charging
+    # would pass a state-only check falsely.
+    fault = evsim_test_controller.state_collector.wait_for_fault(
+        "DiodeFail", timeout=_TIMEOUT_FINISH
+    )
+    assert fault is not None, (
+        "EvSimulator did not publish a DiodeFail e2m/fault after "
+        "inject_fault('DiodeFail'); "
+        f"faults={evsim_test_controller.state_collector.faults}"
     )
 
 
@@ -124,6 +148,78 @@ def test_iso15118_dc_session_paused_by_ev(everest_core, evsim_test_controller):
     )
 
     evsim_test_controller.plug_out_iso()
+
+
+@pytest.mark.everest_core_config("config-sil-evsim-dc.yaml")
+def test_iso15118_dc_fault_then_clear_recovers(
+    everest_core, evsim_test_controller
+):
+    """Inject a fault, observe Faulted, clear it, recover to Unplugged.
+
+    Covers the fault-recovery path (inject -> Faulted -> clear_fault ->
+    Unplugged) that no other integration test exercises. The Faulted
+    FSM state routes ClearFault to Unplugged.
+    """
+    everest_core.start()
+
+    evsim_test_controller.start()
+    evsim_test_controller.plug_in_dc_iso()
+
+    assert evsim_test_controller.state_collector.wait_for_state(
+        "Charging", timeout=_TIMEOUT_CHARGING
+    ), f"saw {evsim_test_controller.state_collector.states}"
+
+    evsim_test_controller.inject_fault("DiodeFail")
+
+    assert evsim_test_controller.state_collector.wait_for_state(
+        "Faulted", timeout=_TIMEOUT_FINISH
+    ), (
+        "EvSimulator did not enter Faulted after inject_fault; "
+        f"saw {evsim_test_controller.state_collector.states}"
+    )
+    assert evsim_test_controller.state_collector.wait_for_fault(
+        "DiodeFail", timeout=_TIMEOUT_FINISH
+    ) is not None, "no DiodeFail fault published"
+
+    evsim_test_controller.clear_fault()
+
+    assert evsim_test_controller.state_collector.wait_for_state(
+        "Unplugged", timeout=_TIMEOUT_FINISH
+    ), (
+        "EvSimulator did not recover to Unplugged after clear_fault; "
+        f"saw {evsim_test_controller.state_collector.states}"
+    )
+
+
+@pytest.mark.everest_core_config("config-sil-evsim-dc.yaml")
+def test_iso15118_dc_unplug_from_fault(everest_core, evsim_test_controller):
+    """Graceful teardown from Faulted: unplug while faulted -> Unplugged.
+
+    Guards the teardown path from a fault state (no hang, no stuck FSM).
+    """
+    everest_core.start()
+
+    evsim_test_controller.start()
+    evsim_test_controller.plug_in_dc_iso()
+
+    assert evsim_test_controller.state_collector.wait_for_state(
+        "Charging", timeout=_TIMEOUT_CHARGING
+    ), f"saw {evsim_test_controller.state_collector.states}"
+
+    evsim_test_controller.inject_fault("DiodeFail")
+
+    assert evsim_test_controller.state_collector.wait_for_state(
+        "Faulted", timeout=_TIMEOUT_FINISH
+    ), f"saw {evsim_test_controller.state_collector.states}"
+
+    evsim_test_controller.plug_out()
+
+    assert evsim_test_controller.state_collector.wait_for_state(
+        "Unplugged", timeout=_TIMEOUT_FINISH
+    ), (
+        "EvSimulator did not return to Unplugged after unplug-from-fault; "
+        f"saw {evsim_test_controller.state_collector.states}"
+    )
 
 
 @pytest.mark.skip(
