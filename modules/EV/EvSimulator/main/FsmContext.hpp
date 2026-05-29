@@ -170,6 +170,12 @@ struct SimVars {
     std::optional<API_types::ev_simulator::FaultReport> last_fault;
     float charging_current_a{16.0f};
     bool three_phases{true};
+    // Most recent AC limit communicated by the EVSE over ISO 15118
+    // (ac_evse_max_current, or a per-phase current derived from
+    // ac_evse_target_power). nullopt until the charger sends one; once set,
+    // the applied charge current is clamped to min(configured, this limit)
+    // so a SetChargingCurrent or session restart cannot exceed it.
+    std::optional<float> evse_ac_max_current_a;
     std::optional<ActiveRamp> active_ramp;
     // DC live current/voltage. Seeded from cfg.dc_target_current /
     // dc_target_voltage by FsmContext ctor and overwritten by peer EvInfo
@@ -267,6 +273,23 @@ public:
 
     // AC params shortcut
     void bsp_apply_ac_params(float current_a, bool three_phases);
+
+    // Apply the desired AC current clamped against the most recent EVSE
+    // limit (vars.evse_ac_max_current_a). When no EVSE limit has been
+    // received the desired current is applied verbatim; otherwise the
+    // smaller of the two is used. Routes through bsp_apply_ac_params so the
+    // peer and vars.charging_current_a stay in sync.
+    void bsp_apply_ac_params_clamped(float desired_current_a, bool three_phases);
+
+    // Record the EVSE-communicated AC current limit (from
+    // ac_evse_max_current) into vars.evse_ac_max_current_a.
+    void note_evse_ac_max_current(float max_current_a);
+
+    // Derive a per-phase current from an ac_evse_target_power payload and
+    // record it as the EVSE limit, mirroring the EvManager reference
+    // (power / (nominal_voltage * active_phase_count)). A payload without a
+    // target_active_power leaves the limit unchanged.
+    void note_evse_ac_target_power(const ::types::iso15118::AcTargetPower& target_power);
 
     // ISO 15118 shortcuts (guard peer_actions.iso.present)
     bool iso_start_charging(API_types::ev_simulator::ChargeMode, std::optional<API_types::ev_simulator::PaymentOption>,

@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "Charging.hpp"
 
+#include <algorithm>
+
 #include "../FsmContext.hpp"
 #include "ChargingPwmPaused.hpp"
 #include "Paused.hpp"
@@ -17,6 +19,13 @@ void Charging::enter() {
     ctx.allow_power_on(true);
     ctx.arm_tick(ctx.cfg.tick_interval_ms);
     ctx.publish_e2m_state(api::FsmState::Charging);
+
+    // Re-apply the AC current clamped against any EVSE limit received during
+    // Plugged so the first applied current already respects that ceiling.
+    const auto mode = ctx.vars.charge_mode();
+    if (mode == api::ChargeMode::AcIec || mode == api::ChargeMode::AcIso2 || mode == api::ChargeMode::AcIsoD20) {
+        ctx.bsp_apply_ac_params_clamped(ctx.vars.charging_current_a, ctx.vars.three_phases);
+    }
 
     if (ctx.vars.session && ctx.vars.session->pending_curve.has_value()) {
         const auto& curve = *ctx.vars.session->pending_curve;
@@ -58,18 +67,25 @@ StateBase::Result Charging::feed(EventType ev) {
     case EK::SetChargingCurrent: {
         auto p = std::get<api::SetChargingCurrentParams>(ev.payload);
         if (ctx.vars.charge_mode() == api::ChargeMode::AcIec || ctx.vars.charge_mode() == api::ChargeMode::AcIso2) {
+            // Re-clamp the requested current against the most recent EVSE
+            // limit so a SetChargingCurrent cannot exceed an AC ceiling the
+            // charger already communicated.
+            float requested = p.current_a;
+            if (ctx.vars.evse_ac_max_current_a.has_value()) {
+                requested = std::min(requested, *ctx.vars.evse_ac_max_current_a);
+            }
             if (p.ramp_ms.has_value() && *p.ramp_ms > 0) {
                 const auto now = std::chrono::steady_clock::now();
                 ActiveRamp ramp;
                 ramp.start_a = ctx.vars.charging_current_a;
-                ramp.target_a = p.current_a;
+                ramp.target_a = requested;
                 ramp.three_phases = p.three_phases;
                 ramp.start_at = now;
                 ramp.end_at = now + std::chrono::milliseconds{*p.ramp_ms};
                 ctx.vars.active_ramp = ramp;
             } else {
                 ctx.vars.active_ramp.reset();
-                ctx.bsp_apply_ac_params(p.current_a, p.three_phases);
+                ctx.bsp_apply_ac_params(requested, p.three_phases);
             }
         } else {
             ctx.publish_e2m_command_ack("set_charging_current", "set_charging_current not supported in DC/ISO-20 mode");
@@ -113,9 +129,21 @@ StateBase::Result Charging::feed(EventType ev) {
     case EK::Enable:
     case EK::EvInfo:
     case EK::SlacState:
+    case EK::IsoAcMaxCurrent: {
+        const auto& p = std::get<IsoAcMaxCurrentEvt>(ev.payload);
+        ctx.note_evse_ac_max_current(p.max_current_a);
+        ctx.vars.active_ramp.reset();
+        ctx.bsp_apply_ac_params_clamped(ctx.vars.charging_current_a, ctx.vars.three_phases);
+        return {false, nullptr};
+    }
+    case EK::IsoAcTargetPower: {
+        const auto& p = std::get<IsoAcTargetPowerEvt>(ev.payload);
+        ctx.note_evse_ac_target_power(p.target_power);
+        ctx.vars.active_ramp.reset();
+        ctx.bsp_apply_ac_params_clamped(ctx.vars.charging_current_a, ctx.vars.three_phases);
+        return {false, nullptr};
+    }
     case EK::IsoPowerReady:
-    case EK::IsoAcMaxCurrent:
-    case EK::IsoAcTargetPower:
     case EK::IsoV2GFinished:
     case EK::IsoDcPowerOn:
     case EK::StateDeadline:
