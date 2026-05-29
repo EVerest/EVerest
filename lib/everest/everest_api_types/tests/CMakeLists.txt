@@ -85,6 +85,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
   manual_tests/serialization/generic.hpp
   manual_tests/serialization/generic.cpp
   manual_tests/serialization/ev_simulator.cpp
+  manual_tests/serialization/yeti_simulator.cpp
   manual_tests/source_file_hash_check/source_file_hash_check.cpp
 )
 
