@@ -81,7 +81,12 @@ FsmContext::FsmContext(PeerActions actions, Publisher pub, TimerArm timer_arm, T
     vars.departure_time_s = cfg.departure_time_s;
     vars.e_amount_wh = cfg.e_amount_wh;
     vars.force_payment_option = cfg.force_payment_option;
-    vars.dc_present_current_a = static_cast<float>(cfg.dc_target_current);
+    // DC present current stays 0 until a real EvInfo arrives
+    // (EvSimRuntime::apply_passthrough_vars). Seeding it from
+    // cfg.dc_target_current would make the SoC integrator deliver phantom
+    // energy on a zero-energy EVSE before any current is actually delivered.
+    // Voltage is seeded so a delivered current integrates against a sane bus
+    // voltage; with current at 0 the integrated power is 0 regardless.
     vars.dc_present_voltage_v = static_cast<float>(cfg.dc_target_voltage);
 }
 
