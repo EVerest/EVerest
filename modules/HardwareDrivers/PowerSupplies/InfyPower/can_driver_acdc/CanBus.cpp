@@ -6,8 +6,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <sys/timerfd.h>
-
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -74,7 +72,8 @@ bool CanBus::open_device(const std::string& dev) {
     ev_handler.register_event_handler(
         &poll_status_timer, [&](event::fd_event_handler::event_list const& events) { poll_status_handler(); });
 
-    pace_tx_timer.set_timeout(CAN_PACE_TX_INTERVAL);
+    pace_tx_timer.set_single_shot(true);
+    pace_tx_timer.disarm();
     ev_handler.register_event_handler(&pace_tx_timer,
                                       [&](event::fd_event_handler::event_list const& events) { pace_tx_handler(); });
 
@@ -158,18 +157,11 @@ void CanBus::pace_tx_handler() {
 }
 
 bool CanBus::arm_pace_tx_one_shot() {
-    const auto interval_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(CAN_PACE_TX_INTERVAL);
-    struct itimerspec timer {};
-    timer.it_value.tv_sec = interval_ns.count() / 1000000000;
-    timer.it_value.tv_nsec = interval_ns.count() % 1000000000;
-    timer.it_interval.tv_sec = 0;
-    timer.it_interval.tv_nsec = 0;
-    return timerfd_settime(pace_tx_timer.get_raw_fd(), 0, &timer, nullptr) == 0;
+    return pace_tx_timer.set_timeout(CAN_PACE_TX_INTERVAL);
 }
 
 void CanBus::disarm_pace_tx_timer() {
-    struct itimerspec timer {};
-    timerfd_settime(pace_tx_timer.get_raw_fd(), 0, &timer, nullptr);
+    pace_tx_timer.disarm();
 }
 
 bool CanBus::_tx(uint32_t can_id, const std::vector<uint8_t>& payload) {
