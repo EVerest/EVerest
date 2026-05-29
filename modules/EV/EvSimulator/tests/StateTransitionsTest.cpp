@@ -31,6 +31,17 @@ bool contains_substr(const std::vector<std::string>& records, const std::string&
                        [&](const std::string& r) { return r.find(needle) != std::string::npos; });
 }
 
+// First index whose record contains `needle`, or -1 if absent. Used to assert
+// ordering between recorded peer calls.
+int index_of_substr(const std::vector<std::string>& records, const std::string& needle) {
+    for (size_t i = 0; i < records.size(); ++i) {
+        if (records[i].find(needle) != std::string::npos) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
 bool topic_recorded(const PublisherSink& sink, const std::string& topic) {
     return std::any_of(sink.records.begin(), sink.records.end(), [&](const auto& kv) { return kv.first == topic; });
 }
@@ -151,24 +162,137 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evsim][helpers]") {
         CHECK(contains_substr(fx.mocks.iso.records, "mode=DC_extended"));
     }
 
-    SECTION("iso_start_charging(AcIsoD20) returns false without action call") {
+    SECTION("iso_start_charging(AcIsoD20, three_phases=true) maps to AC_three_phase_core") {
         auto ctx = fx.make_ctx();
+        ctx->vars.three_phases = true;
         auto ok = ctx->iso_start_charging(api::ChargeMode::AcIsoD20, std::nullopt, 0, 0);
-        CHECK(ok == false);
-        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "start_charging"));
+        CHECK(ok == true);
+        CHECK(contains_substr(fx.mocks.iso.records, "mode=AC_three_phase_core"));
     }
 
-    SECTION("iso_start_charging(DcIsoD20) returns false without action call") {
+    SECTION("iso_start_charging(AcIsoD20, three_phases=false) maps to AC_single_phase_core") {
+        auto ctx = fx.make_ctx();
+        ctx->vars.three_phases = false;
+        auto ok = ctx->iso_start_charging(api::ChargeMode::AcIsoD20, std::nullopt, 0, 0);
+        CHECK(ok == true);
+        CHECK(contains_substr(fx.mocks.iso.records, "mode=AC_single_phase_core"));
+    }
+
+    SECTION("iso_start_charging(DcIsoD20) maps to DC") {
         auto ctx = fx.make_ctx();
         auto ok = ctx->iso_start_charging(api::ChargeMode::DcIsoD20, std::nullopt, 0, 0);
-        CHECK(ok == false);
-        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "start_charging"));
+        CHECK(ok == true);
+        CHECK(contains_substr(fx.mocks.iso.records, "mode=DC,"));
     }
 
     SECTION("iso_start_charging passes Contract through") {
         auto ctx = fx.make_ctx();
         ctx->iso_start_charging(api::ChargeMode::AcIso2, api::PaymentOption::Contract, 0, 0);
         CHECK(contains_substr(fx.mocks.iso.records, "payment=Contract"));
+    }
+
+    SECTION("iso_start_charging(DcIsoD20) with bpt calls enable_sae then set_bpt_dc_params then start_charging") {
+        auto ctx = fx.make_ctx();
+        api::BptParams bpt{};
+        bpt.discharge_max_current_limit = 32.0f;
+        bpt.discharge_max_power_limit = 11000.0f;
+        bpt.discharge_target_current = 16.0f;
+        bpt.discharge_minimal_soc = 20.0f;
+        ctx->vars.bpt = bpt;
+
+        auto ok = ctx->iso_start_charging(api::ChargeMode::DcIsoD20, std::nullopt, 0, 0);
+        CHECK(ok == true);
+
+        auto enable_idx = index_of_substr(fx.mocks.iso.records, "enable_sae_j2847_v2g_v2h");
+        auto set_bpt_idx = index_of_substr(fx.mocks.iso.records, "set_bpt_dc_params");
+        auto start_idx = index_of_substr(fx.mocks.iso.records, "start_charging(mode=DC_BPT,");
+        REQUIRE(enable_idx >= 0);
+        REQUIRE(set_bpt_idx >= 0);
+        REQUIRE(start_idx >= 0);
+        CHECK(enable_idx < set_bpt_idx);
+        CHECK(set_bpt_idx < start_idx);
+    }
+
+    SECTION("iso_start_charging(AcIsoD20) with bpt selects AC_BPT etm") {
+        auto ctx = fx.make_ctx();
+        api::BptParams bpt{};
+        bpt.discharge_max_current_limit = 16.0f;
+        bpt.discharge_max_power_limit = 7400.0f;
+        bpt.discharge_target_current = 8.0f;
+        bpt.discharge_minimal_soc = 25.0f;
+        ctx->vars.bpt = bpt;
+
+        auto ok = ctx->iso_start_charging(api::ChargeMode::AcIsoD20, std::nullopt, 0, 0);
+        CHECK(ok == true);
+
+        CHECK(contains_substr(fx.mocks.iso.records, "start_charging(mode=AC_BPT,"));
+        CHECK(contains_substr(fx.mocks.iso.records, "enable_sae_j2847_v2g_v2h"));
+        CHECK(contains_substr(fx.mocks.iso.records, "set_bpt_dc_params"));
+    }
+
+    SECTION("iso_start_charging(DcIsoD20) without bpt does NOT call BPT actions") {
+        auto ctx = fx.make_ctx();
+        ctx->vars.bpt.reset();
+
+        auto ok = ctx->iso_start_charging(api::ChargeMode::DcIsoD20, std::nullopt, 0, 0);
+        CHECK(ok == true);
+        CHECK(contains_substr(fx.mocks.iso.records, "start_charging(mode=DC,"));
+        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "enable_sae_j2847"));
+        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "set_bpt_dc_params"));
+    }
+
+    SECTION("iso_start_charging(AcIso2) ignores bpt setting (no BPT pre-calls, etm unchanged)") {
+        auto ctx = fx.make_ctx();
+        ctx->vars.three_phases = true;
+        api::BptParams bpt{};
+        bpt.discharge_max_current_limit = 32.0f;
+        bpt.discharge_max_power_limit = 11000.0f;
+        bpt.discharge_target_current = 16.0f;
+        bpt.discharge_minimal_soc = 20.0f;
+        ctx->vars.bpt = bpt;
+
+        auto ok = ctx->iso_start_charging(api::ChargeMode::AcIso2, std::nullopt, 0, 0);
+        CHECK(ok == true);
+        // bpt is harmless metadata on non-D20 modes: etm stays AC_three_phase_core
+        // and no BPT pre-calls fire.
+        CHECK(contains_substr(fx.mocks.iso.records, "start_charging(mode=AC_three_phase_core,"));
+        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "enable_sae_j2847"));
+        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "set_bpt_dc_params"));
+    }
+
+    SECTION("iso_start_charging(DcIsoD20) with mcs selects MCS etm") {
+        auto ctx = fx.make_ctx();
+        ctx->vars.mcs = api::McsProfile{};
+
+        auto ok = ctx->iso_start_charging(api::ChargeMode::DcIsoD20, std::nullopt, 0, 0);
+        CHECK(ok == true);
+        CHECK(contains_substr(fx.mocks.iso.records, "start_charging(mode=MCS,"));
+        // MCS without BPT does not fire BPT pre-calls.
+        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "enable_sae_j2847"));
+        CHECK_FALSE(contains_substr(fx.mocks.iso.records, "set_bpt_dc_params"));
+    }
+
+    SECTION("iso_start_charging(DcIsoD20) with mcs + bpt selects MCS_BPT etm") {
+        auto ctx = fx.make_ctx();
+        api::BptParams bpt{};
+        bpt.discharge_max_current_limit = 32.0f;
+        bpt.discharge_max_power_limit = 11000.0f;
+        bpt.discharge_target_current = 16.0f;
+        bpt.discharge_minimal_soc = 20.0f;
+        ctx->vars.bpt = bpt;
+        ctx->vars.mcs = api::McsProfile{};
+
+        auto ok = ctx->iso_start_charging(api::ChargeMode::DcIsoD20, std::nullopt, 0, 0);
+        CHECK(ok == true);
+
+        auto enable_idx = index_of_substr(fx.mocks.iso.records, "enable_sae_j2847_v2g_v2h");
+        auto set_bpt_idx = index_of_substr(fx.mocks.iso.records, "set_bpt_dc_params");
+        auto start_idx = index_of_substr(fx.mocks.iso.records, "start_charging(mode=MCS_BPT,");
+        REQUIRE(enable_idx >= 0);
+        REQUIRE(set_bpt_idx >= 0);
+        REQUIRE(start_idx >= 0);
+        CHECK(enable_idx < set_bpt_idx);
+        CHECK(set_bpt_idx < start_idx);
     }
 
     SECTION("iso_update_soc records call") {
@@ -424,19 +548,6 @@ TEST_CASE("EvSimulator group1 transitions", "[evsim][group1]") {
         CHECK(payload_for(fx.sink, ack_topic).empty());
     }
 
-    SECTION("Unplugged: RunScenario unimplemented preset rejects via ack") {
-        auto ctx = fx.make_ctx();
-        Unplugged s{*ctx};
-        Event ev{EventKind::RunScenario};
-        ev.payload = api::RunScenarioParams{api::ScenarioName::DcIsoBpt};
-        auto result = s.feed(ev);
-        CHECK(result.new_state == nullptr);
-        auto ack = api::deserialize<api::CommandAck>(payload_for(fx.sink, ack_topic));
-        CHECK(ack.command == "run_scenario");
-        REQUIRE(ack.reason.has_value());
-        CHECK(*ack.reason == "scenario not implemented in v1");
-    }
-
     SECTION("Unplugged: QueryState publishes Unplugged, no transition") {
         auto ctx = fx.make_ctx();
         Unplugged s{*ctx};
@@ -522,19 +633,18 @@ TEST_CASE("EvSimulator group1 transitions", "[evsim][group1]") {
         CHECK_FALSE(contains_substr(fx.mocks.bsp.records, "set_ac_max_current"));
     }
 
-    SECTION("Plugged: StartSession(AcIsoD20) rejected with iso15118-20 reason") {
+    SECTION("Plugged: StartSession(AcIsoD20) -> SlacMatching") {
         auto ctx = fx.make_ctx();
         Plugged s{*ctx};
         Event ev{EventKind::StartSession};
         ev.payload = api::StartSessionParams{
             api::ChargeMode::AcIsoD20, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt};
         auto result = s.feed(ev);
-        CHECK(result.new_state == nullptr);
-        CHECK_FALSE(ctx->vars.charge_mode.has_value());
-        auto ack = api::deserialize<api::CommandAck>(payload_for(fx.sink, ack_topic));
-        CHECK(ack.command == "start_session");
-        REQUIRE(ack.reason.has_value());
-        CHECK(*ack.reason == "iso15118-20 not supported in v1");
+        REQUIRE(result.new_state);
+        CHECK(result.new_state->get_id() == api::FsmState::SlacMatching);
+        CHECK(ctx->vars.charge_mode == api::ChargeMode::AcIsoD20);
+        // AC params applied for AcIsoD20 like AcIso2
+        CHECK(contains_substr(fx.mocks.bsp.records, "set_ac_max_current"));
     }
 
     SECTION("Plugged: StartSession(AcIso2) without slac peer rejected") {
@@ -931,6 +1041,71 @@ TEST_CASE("EvSimulator group2 transitions", "[evsim][group2]") {
         CHECK(result.new_state == nullptr);
         CHECK(contains_substr(fx.mocks.bsp.records, "set_ac_max_current(current=12.5)"));
         CHECK(contains_substr(fx.mocks.bsp.records, "set_three_phases(three_phases=false)"));
+    }
+
+    SECTION("Charging: SetChargingCurrent without ramp_ms applies instantly") {
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::AcIec;
+        ctx->vars.charging_current_a = 6.0f;
+        Charging s{*ctx};
+        Event ev{EventKind::SetChargingCurrent};
+        ev.payload = api::SetChargingCurrentParams{20.0f, true, std::nullopt};
+        auto result = s.feed(ev);
+        CHECK(result.new_state == nullptr);
+        CHECK(contains_substr(fx.mocks.bsp.records, "set_ac_max_current(current=20)"));
+        CHECK(contains_substr(fx.mocks.bsp.records, "set_three_phases(three_phases=true)"));
+        CHECK_FALSE(ctx->vars.active_ramp.has_value());
+        CHECK(ctx->vars.charging_current_a == 20.0f);
+    }
+
+    SECTION("Charging: SetChargingCurrent with ramp_ms captures ActiveRamp and defers BSP apply") {
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::AcIec;
+        ctx->vars.charging_current_a = 6.0f;
+        ctx->vars.three_phases = true;
+        Charging s{*ctx};
+        Event ev{EventKind::SetChargingCurrent};
+        ev.payload = api::SetChargingCurrentParams{16.0f, false, 2000};
+        auto result = s.feed(ev);
+        CHECK(result.new_state == nullptr);
+        // Capture must NOT touch the BSP immediately; the tick handler drives
+        // the ramp.
+        CHECK_FALSE(contains_substr(fx.mocks.bsp.records, "set_ac_max_current"));
+        CHECK_FALSE(contains_substr(fx.mocks.bsp.records, "set_three_phases"));
+        REQUIRE(ctx->vars.active_ramp.has_value());
+        const auto& r = *ctx->vars.active_ramp;
+        CHECK(r.start_a == 6.0f);
+        CHECK(r.target_a == 16.0f);
+        CHECK(r.three_phases == false);
+        CHECK(r.end_at - r.start_at == std::chrono::milliseconds{2000});
+    }
+
+    SECTION("Charging: SetChargingCurrent with ramp_ms=0 applies instantly") {
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::AcIec;
+        Charging s{*ctx};
+        Event ev{EventKind::SetChargingCurrent};
+        ev.payload = api::SetChargingCurrentParams{8.0f, true, 0};
+        auto result = s.feed(ev);
+        CHECK(result.new_state == nullptr);
+        CHECK(contains_substr(fx.mocks.bsp.records, "set_ac_max_current(current=8)"));
+        CHECK_FALSE(ctx->vars.active_ramp.has_value());
+    }
+
+    SECTION("Charging::leave clears active_ramp") {
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::AcIec;
+        Charging s{*ctx};
+        s.enter();
+        ActiveRamp r;
+        r.start_a = 6.0f;
+        r.target_a = 16.0f;
+        r.three_phases = true;
+        r.start_at = std::chrono::steady_clock::now();
+        r.end_at = r.start_at + std::chrono::milliseconds{2000};
+        ctx->vars.active_ramp = r;
+        s.leave();
+        CHECK_FALSE(ctx->vars.active_ramp.has_value());
     }
 
     SECTION("Charging: SetChargingCurrent in DcIso2 rejected with DC reason") {
@@ -1491,5 +1666,151 @@ TEST_CASE("EvSimulator group2 transitions", "[evsim][group2]") {
         auto result = s.feed(Event{EventKind::StartSession});
         CHECK(result.new_state == nullptr);
         CHECK(result.unhandled == true);
+    }
+}
+
+TEST_CASE("EvSimulator group3 transitions", "[evsim][group3]") {
+    TestFixture fx;
+    const auto ack_topic = fx.topics.everest_to_extern("command_ack");
+
+    // ---- Plugged + D20 -------------------------------------------------
+
+    SECTION("Plugged: StartSession{AcIsoD20, three_phases=true} -> SlacMatching") {
+        auto ctx = fx.make_ctx();
+        Plugged s{*ctx};
+        Event ev{EventKind::StartSession};
+        ev.payload =
+            api::StartSessionParams{api::ChargeMode::AcIsoD20, std::nullopt, std::nullopt, std::nullopt, 16.0f, true};
+        auto result = s.feed(ev);
+        REQUIRE(result.new_state);
+        CHECK(result.new_state->get_id() == api::FsmState::SlacMatching);
+        CHECK(ctx->vars.charge_mode == api::ChargeMode::AcIsoD20);
+        // No reject ack should have been recorded.
+        CHECK_FALSE(topic_recorded(fx.sink, ack_topic));
+    }
+
+    SECTION("Plugged: StartSession{DcIsoD20} -> SlacMatching") {
+        auto ctx = fx.make_ctx();
+        Plugged s{*ctx};
+        Event ev{EventKind::StartSession};
+        ev.payload = api::StartSessionParams{
+            api::ChargeMode::DcIsoD20, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt};
+        auto result = s.feed(ev);
+        REQUIRE(result.new_state);
+        CHECK(result.new_state->get_id() == api::FsmState::SlacMatching);
+        CHECK(ctx->vars.charge_mode == api::ChargeMode::DcIsoD20);
+        // DC path: no AC params applied.
+        CHECK_FALSE(contains_substr(fx.mocks.bsp.records, "set_ac_max_current"));
+        CHECK_FALSE(topic_recorded(fx.sink, ack_topic));
+    }
+
+    SECTION("Plugged: AC D20 still calls bsp_apply_ac_params") {
+        auto ctx = fx.make_ctx();
+        Plugged s{*ctx};
+        Event ev{EventKind::StartSession};
+        ev.payload =
+            api::StartSessionParams{api::ChargeMode::AcIsoD20, std::nullopt, std::nullopt, std::nullopt, 20.0f, false};
+        auto result = s.feed(ev);
+        REQUIRE(result.new_state);
+        CHECK(result.new_state->get_id() == api::FsmState::SlacMatching);
+        CHECK(contains_substr(fx.mocks.bsp.records, "set_ac_max_current(current=20)"));
+        CHECK(contains_substr(fx.mocks.bsp.records, "set_three_phases(three_phases=false)"));
+    }
+
+    SECTION("Plugged: StartSession{AcIsoD20} without slac peer rejected") {
+        auto ctx = fx.make_ctx();
+        ctx->peer_actions.iso_start_charging = nullptr;
+        ctx->peer_actions.slac_trigger_matching = nullptr;
+        Plugged s{*ctx};
+        Event ev{EventKind::StartSession};
+        ev.payload = api::StartSessionParams{
+            api::ChargeMode::AcIsoD20, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt};
+        auto result = s.feed(ev);
+        CHECK(result.new_state == nullptr);
+        CHECK_FALSE(ctx->vars.charge_mode.has_value());
+        auto ack = api::deserialize<api::CommandAck>(payload_for(fx.sink, ack_topic));
+        REQUIRE(ack.reason.has_value());
+        CHECK(*ack.reason == "no ev_slac peer");
+    }
+
+    SECTION("Plugged: StartSession{AcIso2, mcs=set} publishes command_ack rejection") {
+        auto ctx = fx.make_ctx();
+        Plugged s{*ctx};
+        Event ev{EventKind::StartSession};
+        api::StartSessionParams params{};
+        params.mode = api::ChargeMode::AcIso2;
+        params.mcs = api::McsProfile{};
+        ev.payload = params;
+        auto result = s.feed(ev);
+        CHECK(result.new_state == nullptr);
+        CHECK_FALSE(ctx->vars.charge_mode.has_value());
+        CHECK_FALSE(ctx->vars.mcs.has_value());
+        auto ack = api::deserialize<api::CommandAck>(payload_for(fx.sink, ack_topic));
+        REQUIRE(ack.reason.has_value());
+        CHECK(*ack.reason == "MCS requires DcIsoD20 mode");
+    }
+
+    SECTION("Plugged: StartSession{DcIsoD20, mcs=set} -> SlacMatching") {
+        auto ctx = fx.make_ctx();
+        Plugged s{*ctx};
+        Event ev{EventKind::StartSession};
+        api::StartSessionParams params{};
+        params.mode = api::ChargeMode::DcIsoD20;
+        params.mcs = api::McsProfile{};
+        ev.payload = params;
+        auto result = s.feed(ev);
+        REQUIRE(result.new_state);
+        CHECK(result.new_state->get_id() == api::FsmState::SlacMatching);
+        CHECK(ctx->vars.charge_mode == api::ChargeMode::DcIsoD20);
+        REQUIRE(ctx->vars.mcs.has_value());
+        // No reject ack should have been recorded.
+        CHECK_FALSE(topic_recorded(fx.sink, ack_topic));
+    }
+
+    // ---- Plugged + ChargingCurve --------------------------------------
+
+    SECTION("Plugged: StartSession with ChargingCurve appends curve steps to dispatcher") {
+        auto ctx = fx.make_ctx();
+        Plugged s{*ctx};
+        Event ev{EventKind::StartSession};
+        api::StartSessionParams params{};
+        params.mode = api::ChargeMode::AcIec;
+        params.charging_current_a = 16.0f;
+        params.three_phases = true;
+        api::ChargingCurve curve;
+        curve.loop = false;
+        api::CurvePoint p0;
+        p0.t_offset_ms = 2000;
+        p0.current_a = 12.0f;
+        p0.three_phases = true;
+        curve.points.push_back(p0);
+        api::CurvePoint p1;
+        p1.t_offset_ms = 5000;
+        p1.current_a = 8.0f;
+        p1.three_phases = false;
+        curve.points.push_back(p1);
+        params.curve = curve;
+        ev.payload = params;
+        auto result = s.feed(ev);
+        CHECK(result.new_state == nullptr);
+        CHECK(ctx->vars.charge_mode == api::ChargeMode::AcIec);
+        REQUIRE(ctx->scenario.active());
+        CHECK_FALSE(topic_recorded(fx.sink, ack_topic));
+    }
+
+    SECTION("Plugged: StartSession with empty curve points rejected") {
+        auto ctx = fx.make_ctx();
+        Plugged s{*ctx};
+        Event ev{EventKind::StartSession};
+        api::StartSessionParams params{};
+        params.mode = api::ChargeMode::AcIec;
+        params.curve = api::ChargingCurve{}; // empty points
+        ev.payload = params;
+        auto result = s.feed(ev);
+        CHECK(result.new_state == nullptr);
+        CHECK_FALSE(ctx->vars.charge_mode.has_value());
+        auto ack = api::deserialize<api::CommandAck>(payload_for(fx.sink, ack_topic));
+        REQUIRE(ack.reason.has_value());
+        CHECK(*ack.reason == "curve has empty points");
     }
 }

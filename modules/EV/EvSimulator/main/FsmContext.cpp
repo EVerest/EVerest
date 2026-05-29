@@ -117,6 +117,12 @@ bool FsmContext::iso_start_charging(API_types::ev_simulator::ChargeMode mode,
     using CM = API_types::ev_simulator::ChargeMode;
     using ETM = ::types::iso15118::EnergyTransferMode;
 
+    // BPT applies only to D20 modes — non-D20 modes ignore vars.bpt.
+    const bool bpt_active = vars.bpt.has_value() && (mode == CM::AcIsoD20 || mode == CM::DcIsoD20);
+    // MCS applies only to DcIsoD20 — Plugged rejects mcs on other modes; here
+    // we still gate on the mode so unexpected callers don't silently flip etm.
+    const bool mcs_active = vars.mcs.has_value() && mode == CM::DcIsoD20;
+
     ETM etm;
     switch (mode) {
     case CM::AcIec:
@@ -124,15 +130,36 @@ bool FsmContext::iso_start_charging(API_types::ev_simulator::ChargeMode mode,
     case CM::AcIso2:
         etm = vars.three_phases ? ETM::AC_three_phase_core : ETM::AC_single_phase_core;
         break;
+    case CM::AcIsoD20:
+        etm = bpt_active ? ETM::AC_BPT : (vars.three_phases ? ETM::AC_three_phase_core : ETM::AC_single_phase_core);
+        break;
     case CM::DcIso2:
         etm = ETM::DC_extended;
         break;
-    case CM::AcIsoD20:
     case CM::DcIsoD20:
-        return false;
+        if (mcs_active) {
+            etm = bpt_active ? ETM::MCS_BPT : ETM::MCS;
+        } else {
+            etm = bpt_active ? ETM::DC_BPT : ETM::DC;
+        }
+        break;
     }
     if (!peer_actions.iso_start_charging) {
         return false;
+    }
+
+    if (bpt_active) {
+        if (peer_actions.iso_enable_sae_j2847_v2g_v2h) {
+            peer_actions.iso_enable_sae_j2847_v2g_v2h();
+        }
+        if (peer_actions.iso_set_bpt_dc_params) {
+            ::types::iso15118::DcEvBPTParameters internal_bpt{};
+            internal_bpt.discharge_max_current_limit = vars.bpt->discharge_max_current_limit;
+            internal_bpt.discharge_max_power_limit = vars.bpt->discharge_max_power_limit;
+            internal_bpt.discharge_target_current = vars.bpt->discharge_target_current;
+            internal_bpt.discharge_minimal_soc = vars.bpt->discharge_minimal_soc;
+            peer_actions.iso_set_bpt_dc_params(internal_bpt);
+        }
     }
 
     auto payment = payment_opt.value_or(API_types::ev_simulator::PaymentOption::ExternalPayment);
@@ -285,6 +312,8 @@ StateBase::Result transition_to_disabled(FsmContext& ctx) {
     ctx.allow_power_on(false);
     ctx.iso_stop_charging();
     ctx.vars.charge_mode.reset();
+    ctx.vars.bpt.reset();
+    ctx.vars.mcs.reset();
     ctx.vars.last_fault.reset();
     ctx.persisted.plugged_in = false;
     ctx.kvs_save();

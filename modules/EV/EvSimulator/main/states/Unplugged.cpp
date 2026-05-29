@@ -15,8 +15,11 @@ void Unplugged::enter() {
     ctx.allow_power_on(false);
     ctx.iso_stop_charging();
     ctx.vars.charge_mode.reset();
+    ctx.vars.bpt.reset();
+    ctx.vars.mcs.reset();
     ctx.vars.last_fault.reset();
     ctx.persisted.plugged_in = false;
+    ctx.scenario.reset();
     ctx.kvs_save();
     ctx.publish_e2m_state(api::FsmState::Unplugged);
 }
@@ -28,7 +31,7 @@ StateBase::Result Unplugged::feed(EventType ev) {
         return {false, std::make_unique<Plugged>(ctx)};
     case EK::RunScenario: {
         auto p = std::get<api::RunScenarioParams>(ev.payload);
-        start_scenario(p.name, ctx);
+        ctx.scenario.start(p.name, ctx);
         return {false, nullptr};
     }
     case EK::Disable:

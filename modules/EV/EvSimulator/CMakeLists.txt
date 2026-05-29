@@ -27,6 +27,7 @@ target_sources(${MODULE_NAME}
         "main/EvSimRuntime.cpp"
         "main/FsmContext.cpp"
         "main/PeerSubscriptions.cpp"
+        "main/RampInterpolator.cpp"
         "main/ScenarioDispatcher.cpp"
         "main/SocIntegrator.cpp"
         "main/StateBase.cpp"

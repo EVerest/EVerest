@@ -266,6 +266,12 @@ void to_json(json& j, ScenarioName const& k) noexcept {
     case ScenarioName::DiodeFailSmoke:
         j = "DiodeFailSmoke";
         return;
+    case ScenarioName::AcIecRampUp:
+        j = "AcIecRampUp";
+        return;
+    case ScenarioName::DcIsoTaper:
+        j = "DcIsoTaper";
+        return;
     }
     j = "INVALID_VALUE__everest::lib::API::V1_0::types::ev_simulator::ScenarioName";
 }
@@ -310,6 +316,14 @@ void from_json(json const& j, ScenarioName& k) {
     }
     if (s == "DiodeFailSmoke") {
         k = ScenarioName::DiodeFailSmoke;
+        return;
+    }
+    if (s == "AcIecRampUp") {
+        k = ScenarioName::AcIecRampUp;
+        return;
+    }
+    if (s == "DcIsoTaper") {
+        k = ScenarioName::DcIsoTaper;
         return;
     }
 

@@ -57,6 +57,8 @@ enum class ScenarioName {
     DcIsoBpt,
     DcIsoMcs,
     DiodeFailSmoke,
+    AcIecRampUp,
+    DcIsoTaper,
 };
 
 enum class IsoSessionEventKind {

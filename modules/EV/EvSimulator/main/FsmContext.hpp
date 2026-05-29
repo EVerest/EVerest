@@ -4,6 +4,7 @@
 
 #include "EvSimulator.hpp" // for Conf, ev_managerImplBase, ev_board_supportIntf, etc.
 #include "Events.hpp"
+#include "ScenarioDispatcher.hpp"
 #include "StateBase.hpp"
 
 #include <everest/util/async/monitor.hpp>
@@ -56,6 +57,8 @@ struct PeerActions {
     std::function<void()> iso_stop_charging;
     std::function<void()> iso_pause_charging;
     std::function<void(float /*soc_pct*/)> iso_update_soc;
+    std::function<void()> iso_enable_sae_j2847_v2g_v2h;
+    std::function<void(const ::types::iso15118::DcEvBPTParameters&)> iso_set_bpt_dc_params;
     // DC params seam — currently unset; populated when DC peer support is wired.
 
     std::function<bool()> slac_trigger_matching;
@@ -69,17 +72,31 @@ struct PeerActions {
     std::function<void(const ::types::evse_manager::EVInfo&)> publish_internal_ev_info;
 };
 
+// Linear current ramp captured when SetChargingCurrent carries a non-zero
+// ramp_ms. The tick handler interpolates charging_current_a from start_a to
+// target_a between start_at and end_at, then clears the optional.
+struct ActiveRamp {
+    float start_a;
+    float target_a;
+    bool three_phases;
+    std::chrono::steady_clock::time_point start_at;
+    std::chrono::steady_clock::time_point end_at;
+};
+
 struct SimVars {
     float battery_capacity_wh{60000};
     float battery_charge_wh{18000};
     float soc_pct{30.0f};
     float pwm_duty_cycle{0};
     std::optional<API_types::ev_simulator::ChargeMode> charge_mode;
+    std::optional<API_types::ev_simulator::BptParams> bpt;
+    std::optional<API_types::ev_simulator::McsProfile> mcs;
     std::string slac_state{"UNMATCHED"};
     int32_t bcb_remaining{0};
     std::optional<API_types::ev_simulator::FaultReport> last_fault;
     float charging_current_a{16.0f};
     bool three_phases{true};
+    std::optional<ActiveRamp> active_ramp;
     int32_t departure_time_s{86400};
     int32_t e_amount_wh{0};
     bool force_payment_option{false};
@@ -125,6 +142,7 @@ public:
     everest::lib::util::monitor<SimSnapshot> snapshot;
     PeerHandles peers;
     PeerActions peer_actions;
+    ScenarioDispatcher scenario;
     const Conf& cfg;
 
     // CP / power shortcuts
