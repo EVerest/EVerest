@@ -23,7 +23,7 @@ namespace module {
 //   - wake_fd: external producers enqueue events and poke wake_fd
 //   - state_timer_fd: per-state deadline (e.g. BcbToggling step timer)
 //   - tick_fd: periodic SoC integrator while Charging
-//   - scenario_timer_fd: scenario-end one-shot (T-D3 will arm it)
+//   - scenario_timer_fd: scenario-end one-shot, armed by ScenarioDispatcher
 class EvSimRuntime {
 public:
     explicit EvSimRuntime(EvSimulator& mod);
@@ -35,7 +35,7 @@ public:
     void run(std::atomic_bool& online);
     void wake();
 
-    // Subscription wiring — bodies land in T-C3 / T-C4.
+    // External MQTT command intake + peer-module event passthrough.
     void register_m2e_subscriptions();
     void register_peer_subscriptions();
 

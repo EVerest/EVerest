@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace everest::lib::API::V1_0::types::ev_simulator {
 
@@ -72,6 +73,31 @@ enum class CommandAckStatus {
     Rejected,
 };
 
+// 1:1 with types::iso15118::DcEvBPTParameters
+struct BptParams {
+    float discharge_max_current_limit; // [A]
+    float discharge_max_power_limit;   // [W]
+    float discharge_target_current;    // [A]
+    float discharge_minimal_soc;       // [%]
+};
+
+// presence flag — selects EnergyTransferMode::MCS{_BPT}
+struct McsProfile {};
+
+struct CurvePoint {
+    int32_t t_offset_ms; // absolute offset from session start
+    float current_a;     // commanded current at this point
+    bool three_phases;
+    std::optional<int32_t> ramp_ms; // if set, linearly ramp from current
+                                    // value to current_a over ramp_ms;
+                                    // otherwise instantaneous step
+};
+
+struct ChargingCurve {
+    std::vector<CurvePoint> points; // monotonically increasing t_offset_ms
+    bool loop{false};               // repeat curve from t=0 after last point
+};
+
 struct StartSessionParams {
     ChargeMode mode;
     std::optional<PaymentOption> payment;
@@ -79,11 +105,15 @@ struct StartSessionParams {
     std::optional<int32_t> e_amount_wh;
     std::optional<float> charging_current_a;
     std::optional<bool> three_phases;
+    std::optional<BptParams> bpt;
+    std::optional<McsProfile> mcs;
+    std::optional<ChargingCurve> curve;
 };
 
 struct SetChargingCurrentParams {
     float current_a;
     bool three_phases;
+    std::optional<int32_t> ramp_ms;
 };
 
 struct SetSocParams {

@@ -12,9 +12,9 @@
 // methods FsmContext invokes; tests use these recorders directly to assert
 // expected calls.
 //
-// T-B3 will wire FsmContext shortcuts (set_cp, allow_power_on, iso_*,
-// slac_trigger_matching, kvs_*) through these recorders rather than raw
-// `*Intf*` peers.
+// FsmContext shortcuts (set_cp, allow_power_on, iso_*, slac_trigger_matching,
+// kvs_*) route through these recorders via PeerActions function-pointer
+// injection rather than raw `*Intf*` peers.
 
 #include <cstdint>
 #include <optional>

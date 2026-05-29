@@ -30,6 +30,7 @@ target_sources(${TEST_TARGET} PRIVATE
     ../main/states/Paused.cpp
     ../main/states/Stopping.cpp
     ../main/states/Faulted.cpp
+    ../main/ScenarioDispatcher.cpp
     ../main/SocIntegrator.cpp)
 target_compile_definitions(${TEST_TARGET} PRIVATE BUILD_TESTING_MODULE_EV_SIMULATOR)
 target_link_libraries(${TEST_TARGET}

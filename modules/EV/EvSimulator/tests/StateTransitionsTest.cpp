@@ -412,17 +412,29 @@ TEST_CASE("EvSimulator group1 transitions", "[evsim][group1]") {
         CHECK(ctx->vars.battery_charge_wh == 0.5f * ctx->vars.battery_capacity_wh);
     }
 
-    SECTION("Unplugged: RunScenario calls stub dispatcher (Rejected ack)") {
+    SECTION("Unplugged: RunScenario AcIecBasic dispatches without ack") {
         auto ctx = fx.make_ctx();
         Unplugged s{*ctx};
         Event ev{EventKind::RunScenario};
         ev.payload = api::RunScenarioParams{api::ScenarioName::AcIecBasic};
         auto result = s.feed(ev);
         CHECK(result.new_state == nullptr);
+        // Implemented presets enqueue events through the runtime seam and do
+        // not publish a command_ack on the e2m channel.
+        CHECK(payload_for(fx.sink, ack_topic).empty());
+    }
+
+    SECTION("Unplugged: RunScenario unimplemented preset rejects via ack") {
+        auto ctx = fx.make_ctx();
+        Unplugged s{*ctx};
+        Event ev{EventKind::RunScenario};
+        ev.payload = api::RunScenarioParams{api::ScenarioName::DcIsoBpt};
+        auto result = s.feed(ev);
+        CHECK(result.new_state == nullptr);
         auto ack = api::deserialize<api::CommandAck>(payload_for(fx.sink, ack_topic));
         CHECK(ack.command == "run_scenario");
         REQUIRE(ack.reason.has_value());
-        CHECK(*ack.reason == "scenario dispatcher not implemented");
+        CHECK(*ack.reason == "scenario not implemented in v1");
     }
 
     SECTION("Unplugged: QueryState publishes Unplugged, no transition") {

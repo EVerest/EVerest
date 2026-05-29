@@ -27,6 +27,7 @@ target_sources(${MODULE_NAME}
         "main/EvSimRuntime.cpp"
         "main/FsmContext.cpp"
         "main/PeerSubscriptions.cpp"
+        "main/ScenarioDispatcher.cpp"
         "main/SocIntegrator.cpp"
         "main/StateBase.cpp"
         "main/states/Disabled.cpp"
@@ -46,7 +47,6 @@ target_sources(${MODULE_NAME}
 # insert other things like install cmds etc here
 target_compile_features(${MODULE_NAME} PRIVATE cxx_std_17)
 set_target_properties(${MODULE_NAME} PROPERTIES CXX_EXTENSIONS OFF)
-# Note: ScenarioDispatcher sources will be added when that component lands.
 
 if (EVEREST_CORE_BUILD_TESTING)
     add_subdirectory(tests)

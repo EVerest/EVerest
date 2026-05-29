@@ -402,6 +402,71 @@ void from_json(json const& j, CommandAckStatus& k) {
         " could not be converted to enum of type everest::lib::API::V1_0::types::ev_simulator::CommandAckStatus");
 }
 
+void to_json(json& j, BptParams const& k) noexcept {
+    j = json{
+        {"discharge_max_current_limit", k.discharge_max_current_limit},
+        {"discharge_max_power_limit", k.discharge_max_power_limit},
+        {"discharge_target_current", k.discharge_target_current},
+        {"discharge_minimal_soc", k.discharge_minimal_soc},
+    };
+}
+
+void from_json(json const& j, BptParams& k) {
+    k.discharge_max_current_limit = j.at("discharge_max_current_limit");
+    k.discharge_max_power_limit = j.at("discharge_max_power_limit");
+    k.discharge_target_current = j.at("discharge_target_current");
+    k.discharge_minimal_soc = j.at("discharge_minimal_soc");
+}
+
+void to_json(json& j, McsProfile const&) noexcept {
+    j = json::object();
+}
+
+void from_json(json const&, McsProfile&) {
+}
+
+void to_json(json& j, CurvePoint const& k) noexcept {
+    j = json{
+        {"t_offset_ms", k.t_offset_ms},
+        {"current_a", k.current_a},
+        {"three_phases", k.three_phases},
+    };
+    if (k.ramp_ms) {
+        j["ramp_ms"] = k.ramp_ms.value();
+    }
+}
+
+void from_json(json const& j, CurvePoint& k) {
+    k.t_offset_ms = j.at("t_offset_ms");
+    k.current_a = j.at("current_a");
+    k.three_phases = j.at("three_phases");
+
+    if (j.contains("ramp_ms")) {
+        k.ramp_ms.emplace(j.at("ramp_ms"));
+    }
+}
+
+void to_json(json& j, ChargingCurve const& k) noexcept {
+    j = json{
+        {"points", k.points},
+        {"loop", k.loop},
+    };
+}
+
+void from_json(json const& j, ChargingCurve& k) {
+    k.points = j.at("points").get<std::vector<CurvePoint>>();
+    k.loop = j.at("loop");
+
+    if (k.points.empty()) {
+        throw std::out_of_range("ChargingCurve points is empty");
+    }
+    for (size_t i = 1; i < k.points.size(); ++i) {
+        if (k.points[i].t_offset_ms <= k.points[i - 1].t_offset_ms) {
+            throw std::out_of_range("ChargingCurve t_offset_ms not monotonic");
+        }
+    }
+}
+
 void to_json(json& j, StartSessionParams const& k) noexcept {
     j = json{
         {"mode", k.mode},
@@ -420,6 +485,15 @@ void to_json(json& j, StartSessionParams const& k) noexcept {
     }
     if (k.three_phases) {
         j["three_phases"] = k.three_phases.value();
+    }
+    if (k.bpt) {
+        j["bpt"] = k.bpt.value();
+    }
+    if (k.mcs) {
+        j["mcs"] = k.mcs.value();
+    }
+    if (k.curve) {
+        j["curve"] = k.curve.value();
     }
 }
 
@@ -441,6 +515,15 @@ void from_json(json const& j, StartSessionParams& k) {
     if (j.contains("three_phases")) {
         k.three_phases.emplace(j.at("three_phases"));
     }
+    if (j.contains("bpt")) {
+        k.bpt.emplace(j.at("bpt"));
+    }
+    if (j.contains("mcs")) {
+        k.mcs.emplace(j.at("mcs"));
+    }
+    if (j.contains("curve")) {
+        k.curve.emplace(j.at("curve"));
+    }
 }
 
 void to_json(json& j, SetChargingCurrentParams const& k) noexcept {
@@ -448,11 +531,18 @@ void to_json(json& j, SetChargingCurrentParams const& k) noexcept {
         {"current_a", k.current_a},
         {"three_phases", k.three_phases},
     };
+    if (k.ramp_ms) {
+        j["ramp_ms"] = k.ramp_ms.value();
+    }
 }
 
 void from_json(json const& j, SetChargingCurrentParams& k) {
     k.current_a = j.at("current_a");
     k.three_phases = j.at("three_phases");
+
+    if (j.contains("ramp_ms")) {
+        k.ramp_ms.emplace(j.at("ramp_ms"));
+    }
 }
 
 void to_json(json& j, SetSocParams const& k) noexcept {

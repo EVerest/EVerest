@@ -116,7 +116,8 @@ struct TestFixture {
             peers, make_peer_actions(mocks),
             [this](const std::string& topic, const std::string& payload) { sink(topic, payload); },
             [this](std::chrono::milliseconds ms) { timer.arm(ms); }, [this]() { timer.cancel(); },
-            [this](int ms) { timer.arm_tick(ms); }, [this]() { timer.disarm_tick(); }, cfg, topics);
+            [this](int ms) { timer.arm_tick(ms); }, [this]() { timer.disarm_tick(); }, [](Event) {},
+            [](std::chrono::seconds) {}, cfg, topics);
     }
 };
 
