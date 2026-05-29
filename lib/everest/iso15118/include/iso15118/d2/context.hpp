@@ -18,6 +18,13 @@
 // #include "ev_session_info.hpp"
 #include "session.hpp"
 
+// TODO(kd): Change this after control_event.hpp is moved to a common place
+#include <iso15118/d20/control_event.hpp>
+#include <iso15118/d20/timeout.hpp>
+typedef ::iso15118::d20::ControlEvent ControlEvent;
+typedef ::iso15118::d20::Timeouts Timeouts;
+typedef ::iso15118::d20::TimeoutType TimeoutType;
+
 namespace iso15118::d2 {
 
 // forward declare
@@ -73,7 +80,8 @@ using BasePointerType = std::unique_ptr<StateBase>;
 
 class Context {
 public:
-    Context(session::feedback::Callbacks, SessionConfig, MessageExchange&);
+    Context(session::feedback::Callbacks, SessionConfig, const std::optional<ControlEvent>&, MessageExchange&,
+            Timeouts&);
 
     template <typename StateType, typename... Args> BasePointerType create_state(Args&&... args) {
         return std::make_unique<StateType>(*this, std::forward<Args>(args)...);
@@ -89,6 +97,42 @@ public:
     template <typename Msg> std::optional<Msg> get_response() {
         return message_exchange.get_response<Msg>();
     }
+
+    const auto& get_control_event() {
+        return current_control_event;
+    }
+
+    template <typename T> T const* get_control_event() {
+        if (not current_control_event.has_value()) {
+            return nullptr;
+        }
+
+        if (not std::holds_alternative<T>(*current_control_event)) {
+            return nullptr;
+        }
+
+        return &std::get<T>(*current_control_event);
+    }
+
+    void start_timeout(d20::TimeoutType type, uint32_t time_ms) {
+        timeouts.start_timeout(type, time_ms);
+    }
+
+    void stop_timeout(d20::TimeoutType type) {
+        timeouts.stop_timeout(type);
+    }
+
+    d20::TimeoutType const* get_active_timeout() {
+        if (not current_timeout.has_value()) {
+            return nullptr;
+        }
+        return &current_timeout.value();
+    }
+
+    void set_active_timeout(TimeoutType timeout) {
+        current_timeout = timeout;
+    }
+
     bool session_stopped{false};
     bool session_paused{false};
 
@@ -99,29 +143,13 @@ public:
     const session::Feedback feedback;
 
 private:
-    //     const auto& get_control_event() {
-    //         return current_control_event;
-    //     }
-
-    //     template <typename T> T const* get_control_event() {
-    //         if (not current_control_event.has_value()) {
-    //             return nullptr;
-    //         }
-
-    //         if (not std::holds_alternative<T>(*current_control_event)) {
-    //             return nullptr;
-    //         }
-
-    //         return &std::get<T>(*current_control_event);
-    //     }
-
     //     session::SessionLogger& log;
 
-    //     const std::optional<ControlEvent>& current_control_event;
+    const std::optional<ControlEvent>& current_control_event;
     MessageExchange& message_exchange;
 
-    //     Timeouts& timeouts;
-    //     std::optional<TimeoutType> current_timeout{std::nullopt};
+    Timeouts& timeouts;
+    std::optional<TimeoutType> current_timeout{std::nullopt};
 };
 
 } // namespace iso15118::d2

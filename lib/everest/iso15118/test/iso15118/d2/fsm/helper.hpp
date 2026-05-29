@@ -14,12 +14,17 @@
 #include <iso15118/io/stream_view.hpp>
 #include <iso15118/message/d2/variant.hpp>
 
+// TODO(kd): Change this after files are moved to a common place
+#include <iso15118/d20/timeout.hpp>
+typedef ::iso15118::d20::Timeouts Timeouts;
+typedef ::iso15118::d20::TimeoutType TimeoutType;
+
 using namespace iso15118;
 
 class FsmStateHelper {
 public:
     FsmStateHelper(const d2::SessionConfig& config, session::feedback::Callbacks& feedback_callbacks) :
-        ctx(feedback_callbacks, config, msg_exch){
+        ctx(feedback_callbacks, config, current_control_event, msg_exch, timeouts){
 
         };
 
@@ -29,11 +34,17 @@ public:
         msg_exch.set_request(std::make_unique<d2::msg::Variant>(request));
     }
 
+    void set_current_control_event(const ControlEvent& evt) {
+        current_control_event = evt;
+    }
+
 private:
     std::array<uint8_t, 1024> output_buffer{};
     io::StreamOutputView output_stream_view{output_buffer.data(), output_buffer.size()};
 
+    std::optional<ControlEvent> current_control_event;
     d2::MessageExchange msg_exch{output_stream_view};
+    Timeouts timeouts;
 
     d2::Context ctx;
 };

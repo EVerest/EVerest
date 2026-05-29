@@ -11,7 +11,7 @@ namespace iso15118::d2::msg {
 
 struct AuthorizationRequest {
     Header header;
-    std::string id;
+    std::optional<std::string> id;
     std::optional<data_types::GenChallenge> gen_challenge;
 };
 

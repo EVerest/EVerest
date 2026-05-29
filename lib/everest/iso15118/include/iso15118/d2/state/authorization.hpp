@@ -7,8 +7,8 @@
 
 namespace iso15118::d2::state {
 
-struct PaymentServiceSelection : public StateBase {
-    PaymentServiceSelection(Context& ctx) : StateBase(ctx, StateID::PaymentServiceSelection) {
+struct Authorization : public StateBase {
+    Authorization(Context& ctx) : StateBase(ctx, StateID::Authorization) {
     }
 
     void enter() final;
@@ -16,7 +16,10 @@ struct PaymentServiceSelection : public StateBase {
     Result feed(Event) final;
 
 private:
-    std::string evse_id;
+    bool authorization_pending{true};
+    bool authorized{false};
+    bool first_req_msg{true};
+    bool timeout_ongoing_reached{false};
 };
 
 } // namespace iso15118::d2::state
