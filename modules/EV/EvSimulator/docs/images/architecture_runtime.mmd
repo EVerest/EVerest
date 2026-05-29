@@ -1,0 +1,25 @@
+flowchart LR
+    subgraph fds["epoll fds"]
+        Wake[wake_fd]
+        StateTimer[state_timer_fd]
+        Tick[tick_fd]
+        ScenTimer[scenario_timer_fd]
+    end
+
+    Queue[(Event queue)]
+    FSM["fsm::v2::FSM&lt;StateBase&gt;"]
+    Ctx[FsmContext / SimVars]
+    Ramp[RampInterpolator]
+    Soc[SocIntegrator]
+    Scen[ScenarioDispatcher]
+
+    Wake --> Queue
+    Queue --> FSM
+    StateTimer -->|StateDeadline| FSM
+    Tick --> Ramp
+    Tick --> Soc
+    ScenTimer --> Scen
+    Scen -->|enqueue| Queue
+    FSM <--> Ctx
+    Ramp --> Ctx
+    Soc --> Ctx

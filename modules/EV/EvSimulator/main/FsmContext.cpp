@@ -68,6 +68,8 @@ FsmContext::FsmContext(PeerHandles peers_, PeerActions actions, Publisher pub, T
     vars.departure_time_s = cfg.departure_time_s;
     vars.e_amount_wh = cfg.e_amount_wh;
     vars.force_payment_option = cfg.force_payment_option;
+    vars.dc_present_current_a = static_cast<float>(cfg.dc_target_current);
+    vars.dc_present_voltage_v = static_cast<float>(cfg.dc_target_voltage);
 }
 
 // ---- CP / power shortcuts ----------------------------------------------

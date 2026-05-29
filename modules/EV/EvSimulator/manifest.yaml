@@ -69,6 +69,24 @@ config:
     description: FSM tick interval in milliseconds
     type: integer
     default: 100
+  on_battery_full:
+    description: >-
+      Policy applied by SocIntegrator when SoC crosses
+      battery_full_threshold_pct. One of:
+      `clamp` (silently cap energy at battery_capacity_wh, current behavior);
+      `idle_at_full` (stay in session, zero charge power, discharge still works);
+      `stop_session` (rising-edge: enqueue StopSession, terminate FSM session);
+      `pause_if_iso` (rising-edge: if charge_mode is ISO, enqueue PauseSession to
+      transition to Paused; falls back to idle_at_full when in AcIec).
+    type: string
+    default: clamp
+  battery_full_threshold_pct:
+    description: >-
+      SoC percentage at which on_battery_full fires (edge-triggered). Default
+      100 mirrors physical full; lower values simulate strategies like
+      "charge to 80%".
+    type: number
+    default: 100
   cfg_communication_check_to_s:
     description: Communication check timeout in seconds
     type: integer
