@@ -57,6 +57,8 @@ struct Conf {
     bool keep_cross_boot_plugin_state;
     bool publish_bsp_measurements;
     int tick_interval_ms;
+    std::string on_battery_full;
+    double battery_full_threshold_pct;
     int cfg_communication_check_to_s;
     int cfg_heartbeat_interval_ms;
 };

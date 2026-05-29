@@ -109,6 +109,8 @@ struct TestFixture {
         cfg.keep_cross_boot_plugin_state = false;
         cfg.publish_bsp_measurements = false;
         cfg.tick_interval_ms = 250;
+        cfg.on_battery_full = "clamp";
+        cfg.battery_full_threshold_pct = 100.0;
         cfg.cfg_communication_check_to_s = 0;
         cfg.cfg_heartbeat_interval_ms = 0;
 

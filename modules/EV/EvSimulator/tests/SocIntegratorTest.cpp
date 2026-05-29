@@ -17,14 +17,18 @@
 //   AC 3ph:   power = current_a * ac_nominal_voltage * 3.0           [line 124]
 //   DC:       power = dc_target_current * dc_target_voltage          [line 129]
 //   battery_charge_wh += power * factor                               [line 138]
-//   (if already > capacity: clamp to capacity, no accumulation       [lines 135-137])
 //   soc = battery_charge_wh / battery_capacity_wh * 100               [line 141]
 //   (soc clamped to [0, 100])                                         [lines 143-147]
 //
-// SocIntegrator additionally hard-clamps `battery_charge_wh` to [0, capacity]
-// after accumulation to keep the source-of-truth invariant — this is a
-// tightening of the original's one-tick-overshoot behavior but yields the
-// same steady-state values.
+// SocIntegrator diverges from the original on two points, both required
+// for BPT / V2X discharge support:
+//   * Always integrates: drops the legacy "skip accumulation when already
+//     over capacity" short-circuit (car_simulation.cpp:135-137), which
+//     silently dropped discharge energy when starting above capacity.
+//   * Hard-clamps `battery_charge_wh` to [0, capacity] after accumulation,
+//     keeping the source-of-truth invariant and handling underflow on
+//     discharge symmetrically to overshoot on charge.
+// Steady-state charge-only values match the original parity-tested cases.
 
 #include "../main/SocIntegrator.hpp"
 #include "../main/FsmContext.hpp"
@@ -143,7 +147,70 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         CHECK_THAT(ctx->vars.soc_pct, WithinAbs(static_cast<float>(expected_soc), kTol));
     }
 
-    SECTION("DcIso2 + 125A + 400V + 100ms tick + iso_update_soc record") {
+    SECTION("AcIso2 + 16A + 1-phase + 230V + 1000ms tick") {
+        TestFixture fx;
+        fx.cfg.ac_nominal_voltage = 230.0;
+        fx.cfg.tick_interval_ms = 1000;
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::AcIso2;
+        ctx->vars.charging_current_a = 16.0f;
+        ctx->vars.three_phases = false;
+        const float initial_charge = ctx->vars.battery_charge_wh;
+
+        const double power = reference_power(api::ChargeMode::AcIso2, 16.0, 230.0, false, 0.0, 0.0);
+        const double factor = MS_FACTOR * 1000.0;
+        const double expected_charge = static_cast<double>(initial_charge) + power * factor;
+        const double expected_soc = expected_charge / 60000.0 * 100.0;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(static_cast<float>(expected_charge), kTol));
+        CHECK_THAT(ctx->vars.soc_pct, WithinAbs(static_cast<float>(expected_soc), kTol));
+    }
+
+    SECTION("AcIsoD20 + 32A + 3-phase + 230V + 1000ms tick") {
+        TestFixture fx;
+        fx.cfg.ac_nominal_voltage = 230.0;
+        fx.cfg.tick_interval_ms = 1000;
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::AcIsoD20;
+        ctx->vars.charging_current_a = 32.0f;
+        ctx->vars.three_phases = true;
+        const float initial_charge = ctx->vars.battery_charge_wh;
+
+        const double power = reference_power(api::ChargeMode::AcIsoD20, 32.0, 230.0, true, 0.0, 0.0);
+        const double factor = MS_FACTOR * 1000.0;
+        const double expected_charge = static_cast<double>(initial_charge) + power * factor;
+        const double expected_soc = expected_charge / 60000.0 * 100.0;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(static_cast<float>(expected_charge), kTol));
+        CHECK_THAT(ctx->vars.soc_pct, WithinAbs(static_cast<float>(expected_soc), kTol));
+    }
+
+    SECTION("AcIsoD20 + 16A + 1-phase + 230V + 100ms tick") {
+        TestFixture fx;
+        fx.cfg.ac_nominal_voltage = 230.0;
+        fx.cfg.tick_interval_ms = 100;
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::AcIsoD20;
+        ctx->vars.charging_current_a = 16.0f;
+        ctx->vars.three_phases = false;
+        const float initial_charge = ctx->vars.battery_charge_wh;
+
+        const double power = reference_power(api::ChargeMode::AcIsoD20, 16.0, 230.0, false, 0.0, 0.0);
+        const double factor = MS_FACTOR * 100.0;
+        const double expected_charge = static_cast<double>(initial_charge) + power * factor;
+        const double expected_soc = expected_charge / 60000.0 * 100.0;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(static_cast<float>(expected_charge), kTol));
+        CHECK_THAT(ctx->vars.soc_pct, WithinAbs(static_cast<float>(expected_soc), kTol));
+    }
+
+    SECTION("DcIso2 + cfg defaults 125A/400V seeded into vars + 100ms tick + iso_update_soc record") {
         TestFixture fx;
         fx.cfg.dc_target_current = 125;
         fx.cfg.dc_target_voltage = 400;
@@ -151,6 +218,12 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         auto ctx = fx.make_ctx();
         ctx->vars.charge_mode = api::ChargeMode::DcIso2;
         const float initial_charge = ctx->vars.battery_charge_wh; // 18000
+
+        // Defaults: vars.dc_present_current_a / dc_present_voltage_v seeded
+        // from cfg.dc_target_current / dc_target_voltage by FsmContext ctor,
+        // so absent any live peer update the integration matches legacy parity.
+        REQUIRE(ctx->vars.dc_present_current_a == 125.0f);
+        REQUIRE(ctx->vars.dc_present_voltage_v == 400.0f);
 
         // Golden: power = 125 * 400 = 50000 W; factor = 100/3600000; delta ≈ 1.3889 Wh
         const double power = reference_power(api::ChargeMode::DcIso2, 0.0, 0.0, false, 125.0, 400.0);
@@ -164,6 +237,203 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         CHECK_THAT(ctx->vars.soc_pct, WithinAbs(static_cast<float>(expected_soc), kTol));
         // iso_update_soc routed through PeerActions (wired in TestFixture).
         CHECK(contains_substr(fx.mocks.iso.records, "update_soc("));
+    }
+
+    SECTION("DcIso2 uses live vars.dc_present_current_a / dc_present_voltage_v over cfg") {
+        TestFixture fx;
+        fx.cfg.dc_target_current = 125;
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.tick_interval_ms = 1000;
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIso2;
+        // Peer EvInfo passthrough (apply_passthrough_vars in EvSimRuntime)
+        // overrides the cfg-seeded defaults at runtime — emulate that here.
+        ctx->vars.dc_present_current_a = 60.0f;
+        ctx->vars.dc_present_voltage_v = 500.0f;
+        const float initial_charge = ctx->vars.battery_charge_wh;
+
+        // Golden uses live vars, not cfg: power = 60 * 500 = 30000 W.
+        const double power = 60.0 * 500.0;
+        const double factor = MS_FACTOR * 1000.0;
+        const double expected_charge = static_cast<double>(initial_charge) + power * factor;
+        const double expected_soc = expected_charge / 60000.0 * 100.0;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(static_cast<float>(expected_charge), kTol));
+        CHECK_THAT(ctx->vars.soc_pct, WithinAbs(static_cast<float>(expected_soc), kTol));
+    }
+
+    SECTION("DcIsoD20 uses live vars.dc_present_current_a / dc_present_voltage_v over cfg") {
+        TestFixture fx;
+        fx.cfg.dc_target_current = 200;
+        fx.cfg.dc_target_voltage = 800;
+        fx.cfg.tick_interval_ms = 100;
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIsoD20;
+        ctx->vars.dc_present_current_a = 150.0f;
+        ctx->vars.dc_present_voltage_v = 700.0f;
+        const float initial_charge = ctx->vars.battery_charge_wh;
+
+        const double power = 150.0 * 700.0;
+        const double factor = MS_FACTOR * 100.0;
+        const double expected_charge = static_cast<double>(initial_charge) + power * factor;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(static_cast<float>(expected_charge), kTol));
+    }
+
+    SECTION("DcIso2 with zero live current yields no SoC delta") {
+        TestFixture fx;
+        fx.cfg.dc_target_current = 125;
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.tick_interval_ms = 1000;
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIso2;
+        ctx->vars.dc_present_current_a = 0.0f;
+        ctx->vars.dc_present_voltage_v = 400.0f;
+        const float initial_charge = ctx->vars.battery_charge_wh;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(initial_charge, kTol));
+    }
+
+    // BPT / V2X discharge: negative current in vars represents reverse-power
+    // flow from EV to EVSE. The integrator multiplies current * voltage
+    // unchanged, so negative current produces negative power and reduces SoC.
+    SECTION("DcIso2 negative live current discharges SoC") {
+        TestFixture fx;
+        fx.cfg.dc_target_current = 125;
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.tick_interval_ms = 1000;
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIso2;
+        ctx->vars.dc_present_current_a = -60.0f;
+        ctx->vars.dc_present_voltage_v = 500.0f;
+        const float initial_charge = ctx->vars.battery_charge_wh;
+
+        const double power = -60.0 * 500.0;
+        const double factor = MS_FACTOR * 1000.0;
+        const double expected_charge = static_cast<double>(initial_charge) + power * factor;
+        const double expected_soc = expected_charge / 60000.0 * 100.0;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(static_cast<float>(expected_charge), kTol));
+        CHECK_THAT(ctx->vars.soc_pct, WithinAbs(static_cast<float>(expected_soc), kTol));
+    }
+
+    SECTION("DcIsoD20 negative live current discharges SoC") {
+        TestFixture fx;
+        fx.cfg.tick_interval_ms = 100;
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIsoD20;
+        ctx->vars.dc_present_current_a = -150.0f;
+        ctx->vars.dc_present_voltage_v = 700.0f;
+        const float initial_charge = ctx->vars.battery_charge_wh;
+
+        const double power = -150.0 * 700.0;
+        const double factor = MS_FACTOR * 100.0;
+        const double expected_charge = static_cast<double>(initial_charge) + power * factor;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(static_cast<float>(expected_charge), kTol));
+    }
+
+    SECTION("AcIso2 negative charging_current_a discharges SoC") {
+        TestFixture fx;
+        fx.cfg.ac_nominal_voltage = 230.0;
+        fx.cfg.tick_interval_ms = 1000;
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::AcIso2;
+        ctx->vars.charging_current_a = -10.0f;
+        ctx->vars.three_phases = true;
+        const float initial_charge = ctx->vars.battery_charge_wh;
+
+        const double power = -10.0 * 230.0 * 3.0;
+        const double factor = MS_FACTOR * 1000.0;
+        const double expected_charge = static_cast<double>(initial_charge) + power * factor;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(static_cast<float>(expected_charge), kTol));
+        CHECK(ctx->vars.battery_charge_wh < initial_charge);
+    }
+
+    SECTION("Discharge from near-empty floors at 0 (no underflow)") {
+        TestFixture fx;
+        fx.cfg.dc_target_current = 125;
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.tick_interval_ms = 1000;
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIso2;
+        ctx->vars.dc_present_current_a = -125.0f;
+        ctx->vars.dc_present_voltage_v = 400.0f;
+        ctx->vars.battery_charge_wh = 5.0f; // far less than a single-tick discharge
+
+        SocIntegrator::step(*ctx);
+
+        CHECK(ctx->vars.battery_charge_wh == 0.0f);
+        CHECK_THAT(ctx->vars.soc_pct, WithinAbs(0.0f, kTol));
+    }
+
+    SECTION("Discharge from over-capacity drains by the integrated amount") {
+        // Inverse of the existing overshoot-then-clamp case: when battery is
+        // already above capacity AND discharging, the integrator must still
+        // subtract energy from the over-capacity starting point rather than
+        // short-circuit to capacity and silently drop the discharged energy.
+        TestFixture fx;
+        fx.cfg.dc_target_current = 125;
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.tick_interval_ms = 1000;
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIso2;
+        ctx->vars.dc_present_current_a = -10.0f;
+        ctx->vars.dc_present_voltage_v = 400.0f;
+        ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh + 50.0f;
+        const float starting_charge = ctx->vars.battery_charge_wh;
+
+        // power = -10 * 400 = -4000 W; factor = 1/3600; delta = -1.1111 Wh.
+        // Expected = 60050 - 1.1111 = 60048.889; still above 60000 capacity,
+        // so the post-clamp brings it down to capacity = 60000.
+        const double power = -10.0 * 400.0;
+        const double factor = MS_FACTOR * 1000.0;
+        const double integrated = static_cast<double>(starting_charge) + power * factor;
+        const double expected_charge = std::min(integrated, static_cast<double>(ctx->vars.battery_capacity_wh));
+
+        SocIntegrator::step(*ctx);
+
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(static_cast<float>(expected_charge), kTol));
+    }
+
+    SECTION("Deep discharge from over-capacity drops below capacity") {
+        // Strict case: over-capacity start + discharge larger than the
+        // over-capacity headroom must integrate fully, landing below capacity.
+        // The short-circuit-to-capacity branch on the legacy path silently
+        // ignored discharge here.
+        TestFixture fx;
+        fx.cfg.dc_target_current = 125;
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.tick_interval_ms = 1000;
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIso2;
+        ctx->vars.dc_present_current_a = -125.0f;
+        ctx->vars.dc_present_voltage_v = 400.0f;
+        ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh + 5.0f;
+        const float starting_charge = ctx->vars.battery_charge_wh;
+
+        // power = -50000 W; delta = -13.889 Wh; expected = 60005 - 13.889 = 59991.111
+        const double power = -125.0 * 400.0;
+        const double factor = MS_FACTOR * 1000.0;
+        const double expected_charge = static_cast<double>(starting_charge) + power * factor;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(static_cast<float>(expected_charge), kTol));
+        CHECK(ctx->vars.battery_charge_wh < ctx->vars.battery_capacity_wh);
     }
 
     SECTION("Battery clamps to capacity on overshoot") {
@@ -299,5 +569,203 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         // initial soc_pct was already (charge/capacity)*100, so identity.
         CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(initial_charge, kTol));
         CHECK_THAT(ctx->vars.soc_pct, WithinAbs(initial_soc, kTol));
+    }
+}
+
+namespace {
+// Predicate to assert an Event of a given kind was enqueued.
+bool event_kind_enqueued(const std::vector<module::Event>& evs, module::EventKind k) {
+    return std::any_of(evs.begin(), evs.end(), [k](const module::Event& ev) { return ev.kind == k; });
+}
+} // namespace
+
+TEST_CASE("SocIntegrator on_battery_full policy", "[evsim][soc]") {
+    using Catch::Matchers::WithinAbs;
+    constexpr float kTol = 1e-3f;
+
+    SECTION("clamp policy preserves legacy integrate-then-clamp on full") {
+        TestFixture fx;
+        fx.cfg.dc_target_current = 125;
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.tick_interval_ms = 1000;
+        fx.cfg.on_battery_full = "clamp";
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIso2;
+        ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh; // exactly 100%
+        ctx->vars.soc_pct = 100.0f;
+        ctx->vars.was_full = true;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK(ctx->vars.battery_charge_wh == ctx->vars.battery_capacity_wh);
+        CHECK_THAT(ctx->vars.soc_pct, WithinAbs(100.0f, kTol));
+        CHECK(fx.timer.enqueued_events.empty());
+    }
+
+    SECTION("idle_at_full: at cap with positive power, zero accumulation, no event") {
+        TestFixture fx;
+        fx.cfg.dc_target_current = 125;
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.tick_interval_ms = 1000;
+        fx.cfg.on_battery_full = "idle_at_full";
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIso2;
+        ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh;
+        ctx->vars.soc_pct = 100.0f;
+        ctx->vars.was_full = true;
+        const float starting_charge = ctx->vars.battery_charge_wh;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(starting_charge, kTol));
+        CHECK(fx.timer.enqueued_events.empty());
+    }
+
+    SECTION("idle_at_full: discharge from full still subtracts energy") {
+        TestFixture fx;
+        fx.cfg.dc_target_current = 125;
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.tick_interval_ms = 1000;
+        fx.cfg.on_battery_full = "idle_at_full";
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIso2;
+        ctx->vars.dc_present_current_a = -100.0f;
+        ctx->vars.dc_present_voltage_v = 400.0f;
+        ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh;
+        ctx->vars.soc_pct = 100.0f;
+        ctx->vars.was_full = true;
+        const float starting_charge = ctx->vars.battery_charge_wh;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK(ctx->vars.battery_charge_wh < starting_charge);
+        CHECK(fx.timer.enqueued_events.empty());
+    }
+
+    SECTION("stop_session: rising edge enqueues StopSession") {
+        TestFixture fx;
+        fx.cfg.dc_target_current = 125;
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.tick_interval_ms = 1000;
+        fx.cfg.on_battery_full = "stop_session";
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIso2;
+        // Start just below capacity so the integrator crosses the threshold
+        // this tick: delta = 50000 * 1/3600 = 13.89 Wh > 10 Wh headroom.
+        ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh - 10.0f;
+        ctx->vars.was_full = false;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK(event_kind_enqueued(fx.timer.enqueued_events, module::EventKind::StopSession));
+        CHECK(ctx->vars.was_full);
+    }
+
+    SECTION("stop_session: no refire on subsequent ticks while still full") {
+        TestFixture fx;
+        fx.cfg.dc_target_current = 125;
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.tick_interval_ms = 1000;
+        fx.cfg.on_battery_full = "stop_session";
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIso2;
+        ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh;
+        ctx->vars.soc_pct = 100.0f;
+        ctx->vars.was_full = true;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK_FALSE(event_kind_enqueued(fx.timer.enqueued_events, module::EventKind::StopSession));
+    }
+
+    SECTION("pause_if_iso: ISO mode rising edge enqueues PauseSession") {
+        TestFixture fx;
+        fx.cfg.dc_target_current = 125;
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.tick_interval_ms = 1000;
+        fx.cfg.on_battery_full = "pause_if_iso";
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIso2;
+        ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh - 10.0f;
+        ctx->vars.was_full = false;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK(event_kind_enqueued(fx.timer.enqueued_events, module::EventKind::PauseSession));
+    }
+
+    SECTION("pause_if_iso: AcIec rising edge falls back to idle (no event, zero power)") {
+        TestFixture fx;
+        fx.cfg.ac_nominal_voltage = 230.0;
+        fx.cfg.tick_interval_ms = 1000;
+        fx.cfg.on_battery_full = "pause_if_iso";
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::AcIec;
+        ctx->vars.charging_current_a = 32.0f;
+        ctx->vars.three_phases = true;
+        // Cross-threshold tick: starting just below 100%.
+        ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh - 1.0f;
+        ctx->vars.soc_pct = 99.998f;
+        ctx->vars.was_full = false;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK_FALSE(event_kind_enqueued(fx.timer.enqueued_events, module::EventKind::PauseSession));
+        CHECK_FALSE(event_kind_enqueued(fx.timer.enqueued_events, module::EventKind::StopSession));
+        CHECK(ctx->vars.was_full);
+    }
+
+    SECTION("battery_full_threshold_pct=80 fires policy at 80%, not 100%") {
+        TestFixture fx;
+        fx.cfg.dc_target_current = 125;
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.tick_interval_ms = 1000;
+        fx.cfg.on_battery_full = "stop_session";
+        fx.cfg.battery_full_threshold_pct = 80.0;
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIso2;
+        // 79% start: 47400 Wh of 60000. Cross to 80% (48000) requires +600.
+        // Per-tick delta at 50000 W * 1s = 13.89 Wh; need many ticks. Skip
+        // by setting charge just below threshold so a single tick crosses.
+        ctx->vars.battery_charge_wh = 47990.0f;
+        ctx->vars.soc_pct = 79.983f;
+        ctx->vars.was_full = false;
+
+        SocIntegrator::step(*ctx);
+
+        CHECK(event_kind_enqueued(fx.timer.enqueued_events, module::EventKind::StopSession));
+    }
+
+    SECTION("Edge re-arms after SoC drops below threshold") {
+        TestFixture fx;
+        fx.cfg.dc_target_current = 125;
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.tick_interval_ms = 1000;
+        fx.cfg.on_battery_full = "stop_session";
+        auto ctx = fx.make_ctx();
+        ctx->vars.charge_mode = api::ChargeMode::DcIso2;
+        // Already full, was_full latched.
+        ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh - 5000.0f;
+        ctx->vars.soc_pct = 91.667f; // forced below 100 for the test
+        ctx->vars.was_full = true;
+
+        // Switch to discharge to drop SoC below threshold this tick.
+        ctx->vars.dc_present_current_a = -125.0f;
+        SocIntegrator::step(*ctx);
+
+        // Edge cleared.
+        CHECK_FALSE(ctx->vars.was_full);
+        CHECK(fx.timer.enqueued_events.empty());
+
+        // Now charge again — cross threshold from below.
+        ctx->vars.dc_present_current_a = 125.0f;
+        ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh - 10.0f;
+        ctx->vars.soc_pct = 99.983f;
+        fx.timer.enqueued_events.clear();
+
+        SocIntegrator::step(*ctx);
+
+        CHECK(event_kind_enqueued(fx.timer.enqueued_events, module::EventKind::StopSession));
+        CHECK(ctx->vars.was_full);
     }
 }

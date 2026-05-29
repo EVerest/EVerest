@@ -97,6 +97,17 @@ struct SimVars {
     float charging_current_a{16.0f};
     bool three_phases{true};
     std::optional<ActiveRamp> active_ramp;
+    // DC live current/voltage. Seeded from cfg.dc_target_current /
+    // dc_target_voltage by FsmContext ctor and overwritten by peer EvInfo
+    // (apply_passthrough_vars in EvSimRuntime) so SocIntegrator integrates
+    // actual delivered DC power rather than the static cfg target.
+    float dc_present_current_a{0.0f};
+    float dc_present_voltage_v{0.0f};
+    // Edge-detection state for on_battery_full policies. SocIntegrator sets
+    // this to true the first tick SoC reaches cfg.battery_full_threshold_pct
+    // and clears it when SoC drops back below; the stop_session / pause_if_iso
+    // policies fire only on the false -> true transition.
+    bool was_full{false};
     int32_t departure_time_s{86400};
     int32_t e_amount_wh{0};
     bool force_payment_option{false};
