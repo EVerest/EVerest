@@ -38,6 +38,22 @@ std::string serialize(CommandAckStatus val) noexcept {
     return nlohmann::json(val).dump(json_indent);
 }
 
+std::string serialize(BptParams const& val) noexcept {
+    return nlohmann::json(val).dump(json_indent);
+}
+
+std::string serialize(McsProfile const& val) noexcept {
+    return nlohmann::json(val).dump(json_indent);
+}
+
+std::string serialize(CurvePoint const& val) noexcept {
+    return nlohmann::json(val).dump(json_indent);
+}
+
+std::string serialize(ChargingCurve const& val) noexcept {
+    return nlohmann::json(val).dump(json_indent);
+}
+
 std::string serialize(StartSessionParams const& val) noexcept {
     return nlohmann::json(val).dump(json_indent);
 }
@@ -117,6 +133,26 @@ std::ostream& operator<<(std::ostream& os, IsoSessionEventKind const& val) {
 }
 
 std::ostream& operator<<(std::ostream& os, CommandAckStatus const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, BptParams const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, McsProfile const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, CurvePoint const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, ChargingCurve const& val) {
     os << serialize(val);
     return os;
 }
@@ -206,6 +242,22 @@ template <> IsoSessionEventKind deserialize(std::string const& val) {
 }
 
 template <> CommandAckStatus deserialize(std::string const& val) {
+    return json::parse(val);
+}
+
+template <> BptParams deserialize(std::string const& val) {
+    return json::parse(val);
+}
+
+template <> McsProfile deserialize(std::string const& val) {
+    return json::parse(val);
+}
+
+template <> CurvePoint deserialize(std::string const& val) {
+    return json::parse(val);
+}
+
+template <> ChargingCurve deserialize(std::string const& val) {
     return json::parse(val);
 }
 

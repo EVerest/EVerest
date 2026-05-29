@@ -31,10 +31,13 @@ EvSimRuntime::EvSimRuntime(EvSimulator& mod_) : mod(mod_) {
     auto timer_cancel = [this]() { state_timer_fd.set_timeout_ms(0); };
     auto tick_arm_fn = [this](int ms) { arm_tick(ms); };
     auto tick_disarm_fn = [this]() { disarm_tick(); };
+    auto scenario_enqueue = [this](Event ev) { enqueue(std::move(ev)); };
+    auto scenario_timer_arm = [this](std::chrono::seconds s) { arm_scenario_timer(s); };
 
     ctx = std::make_unique<FsmContext>(peers, std::move(actions), std::move(publisher), std::move(timer_arm),
                                        std::move(timer_cancel), std::move(tick_arm_fn), std::move(tick_disarm_fn),
-                                       mod.config, mod.get_topics());
+                                       std::move(scenario_enqueue), std::move(scenario_timer_arm), mod.config,
+                                       mod.get_topics());
 }
 
 EvSimRuntime::~EvSimRuntime() = default;

@@ -86,6 +86,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
   manual_tests/serialization/generic.cpp
   manual_tests/serialization/evse_board_support.cpp
   manual_tests/serialization/telemetry.cpp
+  manual_tests/serialization/ev_simulator.cpp
   manual_tests/source_file_hash_check/source_file_hash_check.cpp
 )
 

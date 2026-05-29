@@ -45,7 +45,8 @@ void from_json(const nlohmann::json& j, PersistedState& s) {
 }
 
 FsmContext::FsmContext(PeerHandles peers_, PeerActions actions, Publisher pub, TimerArm timer_arm,
-                       TimerCancel timer_cancel, TickArm tick_arm, TickDisarm tick_disarm, const Conf& cfg_,
+                       TimerCancel timer_cancel, TickArm tick_arm, TickDisarm tick_disarm,
+                       ScenarioEnqueue enqueue_event, ScenarioTimerArm scenario_timer_arm, const Conf& cfg_,
                        const ev_API::Topics& topics) :
     peers(peers_),
     peer_actions(std::move(actions)),
@@ -55,6 +56,8 @@ FsmContext::FsmContext(PeerHandles peers_, PeerActions actions, Publisher pub, T
     timer_cancel_(std::move(timer_cancel)),
     tick_arm_(std::move(tick_arm)),
     tick_disarm_(std::move(tick_disarm)),
+    enqueue_event_(std::move(enqueue_event)),
+    scenario_timer_arm_(std::move(scenario_timer_arm)),
     topics_(topics) {
     // Seed SimVars from Conf.
     vars.battery_capacity_wh = static_cast<float>(cfg.dc_energy_capacity);
