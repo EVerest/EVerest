@@ -31,6 +31,18 @@ void from_json(const json& j, IsoSessionEventKind& k);
 void to_json(json& j, CommandAckStatus const& k) noexcept;
 void from_json(const json& j, CommandAckStatus& k);
 
+void to_json(json& j, BptParams const& k) noexcept;
+void from_json(const json& j, BptParams& k);
+
+void to_json(json& j, McsProfile const& k) noexcept;
+void from_json(const json& j, McsProfile& k);
+
+void to_json(json& j, CurvePoint const& k) noexcept;
+void from_json(const json& j, CurvePoint& k);
+
+void to_json(json& j, ChargingCurve const& k) noexcept;
+void from_json(const json& j, ChargingCurve& k);
+
 void to_json(json& j, StartSessionParams const& k) noexcept;
 void from_json(const json& j, StartSessionParams& k);
 

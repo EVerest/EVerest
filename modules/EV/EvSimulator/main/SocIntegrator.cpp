@@ -57,9 +57,9 @@ void SocIntegrator::step(FsmContext& ctx) {
         ctx.vars.battery_charge_wh += static_cast<float>(power * factor);
     }
 
-    // Decision #39: battery_charge_wh is the source-of-truth; soc_pct is the
-    // cached derived value updated in lockstep. Defensive clamp on
-    // battery_charge_wh to keep the derived value in [0, capacity].
+    // battery_charge_wh is the source of truth; soc_pct is the cached derived
+    // value updated in lockstep. Defensive clamp keeps the derived value in
+    // [0, capacity].
     ctx.vars.battery_charge_wh = std::clamp(ctx.vars.battery_charge_wh, 0.0f, ctx.vars.battery_capacity_wh);
 
     // car_simulation.cpp:141-147 — derive SoC, clamp to [0, 100].

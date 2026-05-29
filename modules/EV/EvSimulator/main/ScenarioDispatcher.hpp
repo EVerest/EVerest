@@ -8,10 +8,9 @@
 
 namespace module {
 
-// Stub for T-B4 — T-D3 replaces this header-only inline with a real .cpp.
-// `start_scenario` is invoked from `Unplugged::feed(RunScenario)`.
-inline void start_scenario(everest::lib::API::V1_0::types::ev_simulator::ScenarioName, FsmContext& ctx) {
-    ctx.publish_e2m_command_ack("run_scenario", "scenario dispatcher not implemented");
-}
+// Invoked from `Unplugged::feed(RunScenario)`. Implementation in
+// ScenarioDispatcher.cpp dispatches the 3 working presets and rejects the rest
+// via `e2m/command_ack`.
+void start_scenario(everest::lib::API::V1_0::types::ev_simulator::ScenarioName name, FsmContext& ctx);
 
 } // namespace module

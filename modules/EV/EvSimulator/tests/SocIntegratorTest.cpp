@@ -22,8 +22,8 @@
 //   (soc clamped to [0, 100])                                         [lines 143-147]
 //
 // SocIntegrator additionally hard-clamps `battery_charge_wh` to [0, capacity]
-// after accumulation (Decision #39: source-of-truth invariant) — this is a
-// tightening of the original's one-tick-overshoot behaviour but yields the
+// after accumulation to keep the source-of-truth invariant — this is a
+// tightening of the original's one-tick-overshoot behavior but yields the
 // same steady-state values.
 
 #include "../main/SocIntegrator.hpp"
@@ -234,8 +234,8 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         // Even in AcIec the integrator calls iso_update_soc; the runtime's
         // iso_update_soc action will be unset in AcIec scenarios at the
         // EvSimRuntime layer, but at the FsmContext layer we still route it.
-        // This SECTION documents that behavior — the silent-no-op contract
-        // sits at the PeerActions function-pointer level (verified in T-B3).
+        // The silent-no-op contract sits at the PeerActions function-pointer
+        // level.
         CHECK(contains_substr(fx.mocks.iso.records, "update_soc("));
     }
 

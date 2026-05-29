@@ -34,13 +34,13 @@ struct PeerHandles {
     kvsIntf* kvs{nullptr};
 };
 
-// Decision #44 — peer action function-pointer pack. FsmContext invokes peer
-// behaviours through these callbacks rather than calling `call_*` directly,
-// which (a) decouples the FSM from the ev-cli generated `*Intf` types (their
-// `call_*` methods are non-virtual and need a real ModuleAdapter), and (b)
-// lets tests record calls without needing to mock the full interfaces.
+// Peer-action function-pointer pack. FsmContext invokes peer behaviors
+// through these callbacks rather than calling `call_*` directly so that
+// (a) the FSM stays decoupled from the ev-cli generated `*Intf` types (their
+// `call_*` methods are non-virtual and require a real ModuleAdapter), and
+// (b) tests can record calls without mocking the full interfaces.
 //
-// Runtime construction (T-C1) wires these to `mod.r_*->call_*` and to
+// The real runtime wires these to `mod.r_*->call_*` and to
 // `mod.p_ev_manager->publish_*`. Unset members are silently no-op'd.
 struct PeerActions {
     std::function<void(::types::ev_board_support::EvCpState)> bsp_set_cp;
@@ -56,7 +56,7 @@ struct PeerActions {
     std::function<void()> iso_stop_charging;
     std::function<void()> iso_pause_charging;
     std::function<void(float /*soc_pct*/)> iso_update_soc;
-    // DC params lands when T-C1 wires the runtime; for T-B3 leave optional/unset.
+    // DC params seam — currently unset; populated when DC peer support is wired.
 
     std::function<bool()> slac_trigger_matching;
 
@@ -113,9 +113,12 @@ public:
     using TimerCancel = std::function<void()>;
     using TickArm = std::function<void(int)>;
     using TickDisarm = std::function<void()>;
+    using ScenarioEnqueue = std::function<void(Event)>;
+    using ScenarioTimerArm = std::function<void(std::chrono::seconds)>;
 
     FsmContext(PeerHandles peers, PeerActions actions, Publisher pub, TimerArm timer_arm, TimerCancel timer_cancel,
-               TickArm tick_arm, TickDisarm tick_disarm, const Conf& cfg, const ev_API::Topics& topics);
+               TickArm tick_arm, TickDisarm tick_disarm, ScenarioEnqueue enqueue_event,
+               ScenarioTimerArm scenario_timer_arm, const Conf& cfg, const ev_API::Topics& topics);
 
     SimVars vars;
     PersistedState persisted;
@@ -166,6 +169,15 @@ public:
         tick_disarm_();
     }
 
+    // Scenario seams: states reach the runtime queue and scenario timer
+    // through injected callbacks so they never depend on EvSimRuntime.
+    void enqueue(Event ev) {
+        enqueue_event_(std::move(ev));
+    }
+    void arm_scenario_timer(std::chrono::seconds s) {
+        scenario_timer_arm_(s);
+    }
+
     // External publish helpers (each also updates `snapshot` for
     // snapshot-observable fields).
     void publish_e2m_state(API_types::ev_simulator::FsmState);
@@ -187,6 +199,8 @@ private:
     TimerCancel timer_cancel_;
     TickArm tick_arm_;
     TickDisarm tick_disarm_;
+    ScenarioEnqueue enqueue_event_;
+    ScenarioTimerArm scenario_timer_arm_;
     const ev_API::Topics& topics_;
 };
 

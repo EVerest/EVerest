@@ -16,6 +16,10 @@ std::string serialize(ScenarioName val) noexcept;
 std::string serialize(IsoSessionEventKind val) noexcept;
 std::string serialize(CommandAckStatus val) noexcept;
 
+std::string serialize(BptParams const& val) noexcept;
+std::string serialize(McsProfile const& val) noexcept;
+std::string serialize(CurvePoint const& val) noexcept;
+std::string serialize(ChargingCurve const& val) noexcept;
 std::string serialize(StartSessionParams const& val) noexcept;
 std::string serialize(SetChargingCurrentParams const& val) noexcept;
 std::string serialize(SetSocParams const& val) noexcept;
@@ -37,6 +41,10 @@ std::ostream& operator<<(std::ostream& os, ScenarioName const& val);
 std::ostream& operator<<(std::ostream& os, IsoSessionEventKind const& val);
 std::ostream& operator<<(std::ostream& os, CommandAckStatus const& val);
 
+std::ostream& operator<<(std::ostream& os, BptParams const& val);
+std::ostream& operator<<(std::ostream& os, McsProfile const& val);
+std::ostream& operator<<(std::ostream& os, CurvePoint const& val);
+std::ostream& operator<<(std::ostream& os, ChargingCurve const& val);
 std::ostream& operator<<(std::ostream& os, StartSessionParams const& val);
 std::ostream& operator<<(std::ostream& os, SetChargingCurrentParams const& val);
 std::ostream& operator<<(std::ostream& os, SetSocParams const& val);

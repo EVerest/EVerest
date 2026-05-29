@@ -8,7 +8,7 @@
 namespace module::test {
 
 // Records both state_timer (arm/cancel) AND tick_fd (arm_tick/disarm_tick)
-// callbacks issued by the FSM. T-B3+ test fixtures hand `arm` / `cancel` /
+// callbacks issued by the FSM. Test fixtures hand `arm` / `cancel` /
 // `arm_tick` / `disarm_tick` as `std::function` wrappers around the member
 // methods to FsmContext's constructor.
 //

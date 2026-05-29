@@ -9,7 +9,7 @@
 namespace module::test {
 
 // Captures FsmContext publish() calls in arrival order; wired as the
-// `Publisher` callback in test fixtures (T-B3+).
+// `Publisher` callback in test fixtures.
 class PublisherSink {
 public:
     void operator()(const std::string& topic, const std::string& payload) {
