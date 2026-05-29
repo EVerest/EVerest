@@ -1,0 +1,200 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+#pragma once
+
+#include "EvSimulator.hpp" // for Conf, ev_managerImplBase, ev_board_supportIntf, etc.
+#include "Events.hpp"
+#include "StateBase.hpp"
+
+#include <everest/util/async/monitor.hpp>
+#include <everest_api_types/ev_simulator/API.hpp>
+#include <everest_api_types/utilities/Topics.hpp>
+#include <generated/types/board_support_common.hpp>
+#include <generated/types/ev_board_support.hpp>
+#include <generated/types/evse_manager.hpp>
+#include <generated/types/iso15118.hpp>
+#include <generated/types/slac.hpp>
+
+#include <chrono>
+#include <cstdint>
+#include <functional>
+#include <nlohmann/json.hpp>
+#include <optional>
+#include <string>
+
+namespace module {
+
+namespace API_types = everest::lib::API::V1_0::types;
+namespace ev_API = everest::lib::API; // for ev_API::Topics
+
+struct PeerHandles {
+    ev_board_supportIntf* bsp{nullptr};
+    ISO15118_evIntf* iso{nullptr};
+    ev_slacIntf* slac{nullptr};
+    kvsIntf* kvs{nullptr};
+};
+
+// Decision #44 — peer action function-pointer pack. FsmContext invokes peer
+// behaviours through these callbacks rather than calling `call_*` directly,
+// which (a) decouples the FSM from the ev-cli generated `*Intf` types (their
+// `call_*` methods are non-virtual and need a real ModuleAdapter), and (b)
+// lets tests record calls without needing to mock the full interfaces.
+//
+// Runtime construction (T-C1) wires these to `mod.r_*->call_*` and to
+// `mod.p_ev_manager->publish_*`. Unset members are silently no-op'd.
+struct PeerActions {
+    std::function<void(::types::ev_board_support::EvCpState)> bsp_set_cp;
+    std::function<void(bool)> bsp_allow_power_on;
+    std::function<void(float)> bsp_set_ac_max_current;
+    std::function<void(bool)> bsp_set_three_phases;
+    std::function<void(bool)> bsp_diode_fail;
+    std::function<void(float /*rcd_mA*/)> bsp_set_rcd_error;
+
+    std::function<bool(::types::iso15118::EnergyTransferMode, ::types::iso15118::PaymentOption,
+                       int32_t /*departure_time_s*/, int32_t /*e_amount_wh*/, bool /*force_payment_option*/)>
+        iso_start_charging;
+    std::function<void()> iso_stop_charging;
+    std::function<void()> iso_pause_charging;
+    std::function<void(float /*soc_pct*/)> iso_update_soc;
+    // DC params lands when T-C1 wires the runtime; for T-B3 leave optional/unset.
+
+    std::function<bool()> slac_trigger_matching;
+
+    std::function<void(const std::string& /*key*/, const std::string& /*json*/)> kvs_store;
+    std::function<std::string(const std::string& /*key*/)> kvs_load_raw; // returns "" for missing
+
+    // Internal-side publishers (consumed by EvAPI / other in-module subscribers).
+    // Type-erased so FsmContext does not need ev_managerImplBase& injection.
+    std::function<void(const ::types::board_support_common::BspEvent&)> publish_internal_bsp_event;
+    std::function<void(const ::types::evse_manager::EVInfo&)> publish_internal_ev_info;
+};
+
+struct SimVars {
+    float battery_capacity_wh{60000};
+    float battery_charge_wh{18000};
+    float soc_pct{30.0f};
+    float pwm_duty_cycle{0};
+    std::optional<API_types::ev_simulator::ChargeMode> charge_mode;
+    std::string slac_state{"UNMATCHED"};
+    int32_t bcb_remaining{0};
+    std::optional<API_types::ev_simulator::FaultReport> last_fault;
+    float charging_current_a{16.0f};
+    bool three_phases{true};
+    int32_t departure_time_s{86400};
+    int32_t e_amount_wh{0};
+    bool force_payment_option{false};
+};
+
+struct SimSnapshot {
+    API_types::ev_simulator::FsmState current_state{API_types::ev_simulator::FsmState::Disabled};
+    std::optional<API_types::ev_simulator::ChargeMode> charge_mode;
+    std::optional<API_types::ev_simulator::FaultReport> last_fault;
+    float soc_pct{30.0f};
+};
+
+struct PersistedState {
+    bool plugged_in{false};
+    std::optional<API_types::ev_simulator::ChargeMode> last_mode;
+    std::optional<API_types::ev_simulator::ScenarioName> last_scenario;
+};
+
+// Hand-rolled JSON conversion. We can't use NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE
+// here because nlohmann::json's adl resolution can't find to_json/from_json
+// for the API_types enums (their json_codec is in `private_include`). The
+// optional enum fields are persisted as their public string form via
+// `serialize`/`deserialize` from the typed API codec.
+void to_json(nlohmann::json& j, const PersistedState& s);
+void from_json(const nlohmann::json& j, PersistedState& s);
+
+class FsmContext {
+public:
+    using Publisher = std::function<void(const std::string&, const std::string&)>;
+    using TimerArm = std::function<void(std::chrono::milliseconds)>;
+    using TimerCancel = std::function<void()>;
+    using TickArm = std::function<void(int)>;
+    using TickDisarm = std::function<void()>;
+
+    FsmContext(PeerHandles peers, PeerActions actions, Publisher pub, TimerArm timer_arm, TimerCancel timer_cancel,
+               TickArm tick_arm, TickDisarm tick_disarm, const Conf& cfg, const ev_API::Topics& topics);
+
+    SimVars vars;
+    PersistedState persisted;
+    everest::lib::util::monitor<SimSnapshot> snapshot;
+    PeerHandles peers;
+    PeerActions peer_actions;
+    const Conf& cfg;
+
+    // CP / power shortcuts
+    void set_cp(::types::ev_board_support::EvCpState);
+    void allow_power_on(bool);
+
+    // BSP fault state clear (used by transition_to_disabled)
+    void clear_diode_fail();
+    void clear_rcd_error();
+
+    // AC params shortcut
+    void bsp_apply_ac_params(float current_a, bool three_phases);
+
+    // ISO 15118 shortcuts (guard peers.iso nullptr via peer_actions presence)
+    bool iso_start_charging(API_types::ev_simulator::ChargeMode, std::optional<API_types::ev_simulator::PaymentOption>,
+                            int32_t departure_time_s, int32_t e_amount_wh);
+    void iso_stop_charging();
+    void iso_pause_charging();
+    void iso_update_soc(float pct);
+
+    // SLAC shortcut (guard peers.slac nullptr via peer_actions presence)
+    bool slac_trigger_matching();
+
+    // KVS shortcuts (silent no-op if peer_actions members unset OR
+    // cfg.keep_cross_boot_plugin_state == false)
+    void kvs_load();
+    void kvs_save();
+
+    // State timer (per-state deadline; default StateBase::leave() cancels)
+    void arm_timer(std::chrono::milliseconds ms) {
+        timer_arm_(ms);
+    }
+    void cancel_timer() {
+        timer_cancel_();
+    }
+
+    // SoC tick (Charging.enter arms; Charging.leave disarms)
+    void arm_tick(int interval_ms) {
+        tick_arm_(interval_ms);
+    }
+    void disarm_tick() {
+        tick_disarm_();
+    }
+
+    // External publish helpers (each also updates `snapshot` for
+    // snapshot-observable fields).
+    void publish_e2m_state(API_types::ev_simulator::FsmState);
+    void publish_e2m_fault(API_types::ev_simulator::FaultReport);
+    void publish_e2m_iso_session_event(API_types::ev_simulator::IsoSessionEvent);
+    void publish_e2m_ev_info();
+    void publish_e2m_slac_state();
+    void publish_e2m_bsp_event(const ::types::board_support_common::BspEvent&);
+    void publish_e2m_bsp_measurement(const BspMeasurementPayload&);
+    void publish_e2m_command_ack(const std::string& command, const std::string& reason); // Rejected only
+
+    // Internal-side mirror (consumed by EvAPI)
+    void publish_internal_bsp_event(const ::types::board_support_common::BspEvent&);
+    void publish_internal_ev_info();
+
+private:
+    Publisher publisher_;
+    TimerArm timer_arm_;
+    TimerCancel timer_cancel_;
+    TickArm tick_arm_;
+    TickDisarm tick_disarm_;
+    const ev_API::Topics& topics_;
+};
+
+// Free helpers — implemented in FsmContext.cpp so the state header for
+// Faulted / Disabled can be included only at the implementation site,
+// avoiding a cycle with state .hpps that forward-declare FsmContext.
+StateBase::Result transition_to_fault(FsmContext& ctx, const API_types::ev_simulator::InjectFaultParams& p);
+StateBase::Result handle_query_state(FsmContext& ctx, API_types::ev_simulator::FsmState s);
+StateBase::Result transition_to_disabled(FsmContext& ctx);
+
+} // namespace module
