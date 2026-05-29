@@ -14,3 +14,4 @@ vars:
     $ref: /evse_manager#/EVInfo
 errors:
   - reference: /errors/evse_manager
+  - reference: /errors/generic
