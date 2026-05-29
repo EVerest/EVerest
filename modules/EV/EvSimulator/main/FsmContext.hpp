@@ -177,10 +177,11 @@ struct SimVars {
     // so a SetChargingCurrent or session restart cannot exceed it.
     std::optional<float> evse_ac_max_current_a;
     std::optional<ActiveRamp> active_ramp;
-    // DC live current/voltage. Seeded from cfg.dc_target_current /
-    // dc_target_voltage by FsmContext ctor and overwritten by peer EvInfo
-    // (apply_passthrough_vars in EvSimRuntime) so SocIntegrator integrates
-    // actual delivered DC power rather than the static cfg target.
+    // DC live current/voltage. dc_present_current_a stays 0 until peer EvInfo
+    // (apply_passthrough_vars in EvSimRuntime) reports a delivered current, so
+    // SocIntegrator integrates actual delivered DC power rather than the static
+    // cfg target. dc_present_voltage_v is seeded from cfg.dc_target_voltage by
+    // the FsmContext ctor; with current at 0 the integrated power is 0 anyway.
     float dc_present_current_a{0.0f};
     float dc_present_voltage_v{0.0f};
     // Edge-detection state for on_battery_full policies. SocIntegrator sets

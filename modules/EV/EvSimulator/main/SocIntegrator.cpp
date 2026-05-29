@@ -66,11 +66,10 @@ double instantaneous_power_w(const FsmContext& ctx) {
                (ctx.vars.three_phases ? 3.0 : 1.0);
     case api::ChargeMode::DcIso2:
     case api::ChargeMode::DcIsoD20:
-        // DC: live present current * present voltage. Seeded from
-        // cfg.dc_target_current / dc_target_voltage by FsmContext ctor and
-        // overwritten at runtime by EvInfo passthrough (apply_passthrough_vars
-        // in EvSimRuntime) so SoC tracks the actual delivered DC power rather
-        // than the static cfg target.
+        // DC: live present current * present voltage. Present current is 0
+        // until a real EvInfo arrives (apply_passthrough_vars in EvSimRuntime),
+        // so SoC tracks the actual delivered DC power rather than the static
+        // cfg target — a zero-energy EVSE yields ~0 delivered energy.
         return static_cast<double>(ctx.vars.dc_present_current_a) * static_cast<double>(ctx.vars.dc_present_voltage_v);
     }
     return 0.0;
