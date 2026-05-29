@@ -57,7 +57,7 @@ private:
     // output buffer
     uint8_t response_buffer[1028];
 
-    d20::MessageExchange message_exchange{{response_buffer + io::SdpPacket::V2GTP_HEADER_SIZE,
+    MessageExchange message_exchange{{response_buffer + io::SdpPacket::V2GTP_HEADER_SIZE,
                                            sizeof(response_buffer) - io::SdpPacket::V2GTP_HEADER_SIZE}};
 
     // control event buffer

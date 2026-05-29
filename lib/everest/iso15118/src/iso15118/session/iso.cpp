@@ -208,7 +208,7 @@ TimePoint const& Session::poll() {
         // FIXME (aw): this event loop only acts on new packets, seems to be enough for now ...
         log_packet_from_car(packet, log);
 
-        message_exchange.set_request(make_variant_from_packet(packet));
+        message_exchange.set_input(make_variant_from_packet(packet));
 
         packet = {}; // reset the packet
 
@@ -286,7 +286,7 @@ void Session::send_response() {
     log.exi(static_cast<uint16_t>(stored_payload_type), response_buffer + io::SdpPacket::V2GTP_HEADER_SIZE,
             payload_size, session::logging::ExiMessageDirection::TO_EV);
 
-    ctx.feedback.v2g_message(stored_response_type);
+    ctx.feedback.v2g_message(std::get<message_20::Type>(stored_response_type));
 }
 
 void Session::handle_connection_event(io::ConnectionEvent event) {

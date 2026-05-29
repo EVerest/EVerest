@@ -11,6 +11,7 @@
 #include <iso15118/d20/timeout.hpp>
 #include <iso15118/message/payload_type.hpp>
 #include <iso15118/message/variant.hpp>
+#include <iso15118/message_exchange.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/session/logger.hpp>
 
@@ -24,54 +25,6 @@ namespace iso15118::d20 {
 
 // forward declare
 class ControlEventQueue;
-
-class MessageExchange {
-public:
-    MessageExchange(io::StreamOutputView);
-
-    void set_request(std::unique_ptr<message_20::Variant> new_request);
-    std::unique_ptr<message_20::Variant> pull_request();
-    message_20::Type peek_request_type() const;
-
-    template <typename MessageType> void set_response(const MessageType& msg) {
-        response_size = message_20::serialize(msg, response);
-        response_available = true;
-        payload_type = message_20::PayloadTypeTrait<MessageType>::type;
-        response_type = message_20::TypeTrait<MessageType>::type;
-        response_message = msg;
-    }
-
-    template <typename Msg> std::optional<Msg> get_response() {
-        static_assert(message_20::TypeTrait<Msg>::type != message_20::Type::None, "Unhandled type!");
-        if (message_20::TypeTrait<Msg>::type != response_type) {
-            return std::nullopt;
-        }
-        try {
-            return std::any_cast<Msg>(response_message);
-        } catch (const std::bad_any_cast& ex) {
-            return std::nullopt;
-        }
-    }
-
-    std::tuple<bool, size_t, io::v2gtp::PayloadType, message_20::Type> check_and_clear_response();
-    bool has_response() const {
-        return response_available;
-    }
-
-private:
-    // input
-    std::unique_ptr<message_20::Variant> request{nullptr};
-
-    // output
-    const io::StreamOutputView response;
-    size_t response_size{0};
-    bool response_available{false};
-    io::v2gtp::PayloadType payload_type;
-    message_20::Type response_type;
-    std::any response_message;
-};
-
-std::unique_ptr<MessageExchange> create_message_exchange(uint8_t* buf, const size_t len);
 
 struct StateBase;
 using BasePointerType = std::unique_ptr<StateBase>;
@@ -90,11 +43,11 @@ public:
     message_20::Type peek_request_type() const;
 
     template <typename MessageType> void respond(const MessageType& msg) {
-        message_exchange.set_response(msg);
+        message_exchange.set_d20_response(msg);
     }
 
     template <typename Msg> std::optional<Msg> get_response() {
-        return message_exchange.get_response<Msg>();
+        return message_exchange.get_d20_response<Msg>();
     }
 
     const auto& get_control_event() {

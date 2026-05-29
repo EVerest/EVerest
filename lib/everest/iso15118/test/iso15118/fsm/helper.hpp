@@ -3,7 +3,6 @@
 #pragma once
 
 #include <array>
-#include <iostream>
 #include <optional>
 
 #include <everest/util/fsm/fsm.hpp>
@@ -43,14 +42,14 @@ public:
     d20::Context& get_context();
 
     template <typename RequestType> void handle_request(const RequestType& request) {
-        msg_exch.set_request(std::make_unique<message_20::Variant>(request));
+        msg_exch.set_input(std::make_unique<message_20::Variant>(request));
     }
 
 private:
     std::array<uint8_t, 1024> output_buffer{};
     io::StreamOutputView output_stream_view{output_buffer.data(), output_buffer.size()};
 
-    d20::MessageExchange msg_exch{output_stream_view};
+    MessageExchange msg_exch{output_stream_view};
     std::optional<d20::ControlEvent> active_control_event;
 
     session::SessionLogger log;

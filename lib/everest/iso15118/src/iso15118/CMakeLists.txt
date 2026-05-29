@@ -68,6 +68,12 @@ target_sources(iso15118
         message/dc_welding_detection.cpp
         message/session_stop.cpp
 
+        message/d2/variant.cpp
+        message/d2/session_setup.cpp
+        message/d2/session_stop.cpp
+        message/d2/msg_data_types.cpp
+
+        message_exchange.cpp
         tbd_controller.cpp    
 )
 
@@ -76,6 +82,7 @@ target_link_libraries(iso15118
         # FIXME (aw): would be nice if we could make this private!
         cbv2g::tp
         cbv2g::iso20
+        cbv2g::iso2
         everest::util
     PRIVATE
         Threads::Threads
