@@ -177,24 +177,34 @@ void InfyCanDevice::poll_status_handler() {
         signalVoltageCurrent(telemetries);
     }
 
-    // --- Telemetry Polling ---
-    // Poll ALL configured modules (not just active ones) to allow offline modules to recover.
-    // This enables automatic recovery when temporarily offline modules come back online.
-    if (operating_mode == OperatingMode::GROUP_DISCOVERY) {
-        send_command<can_packet_acdc::ReadModuleCount>(group_address, true);
-    }
-    for (const auto& addr : active_module_addresses) {
-        send_command<can_packet_acdc::ReadModuleVI>(addr);
-        send_command<can_packet_acdc::PowerModuleStatus>(addr);
-        send_command<can_packet_acdc::ReadModuleVIAfterDiode>(addr);
+    // --- Telemetry Polling (paced on CAN event thread) ---
+    static const std::vector<uint8_t> empty_read_payload(8, 0);
 
-        // Read serial number if we don't have it yet (only poll once to avoid spam)
+    clear_paced_tx_queue();
+
+    if (operating_mode == OperatingMode::GROUP_DISCOVERY) {
+        enqueue_poll_command(group_address, can_packet_acdc::ReadModuleCount::CMD_ID, empty_read_payload, true);
+    }
+
+    std::vector<uint8_t> poll_addresses;
+    {
+        std::lock_guard<std::mutex> lock(active_modules_mutex);
+        poll_addresses = active_module_addresses;
+    }
+
+    for (const auto& addr : poll_addresses) {
+        enqueue_poll_command(addr, can_packet_acdc::ReadModuleVI::CMD_ID, empty_read_payload);
+        enqueue_poll_command(addr, can_packet_acdc::PowerModuleStatus::CMD_ID, empty_read_payload);
+        enqueue_poll_command(addr, can_packet_acdc::ReadModuleVIAfterDiode::CMD_ID, empty_read_payload);
+
         auto it = telemetries.find(addr);
         if (it == telemetries.end() || it->second.serial_number.empty()) {
-            send_command<can_packet_acdc::ReadModuleCapabilities>(addr);
-            send_command<can_packet_acdc::ReadModuleBarcode>(addr);
+            enqueue_poll_command(addr, can_packet_acdc::ReadModuleCapabilities::CMD_ID, empty_read_payload);
+            enqueue_poll_command(addr, can_packet_acdc::ReadModuleBarcode::CMD_ID, empty_read_payload);
         }
     }
+
+    start_paced_tx_cycle();
 }
 
 bool InfyCanDevice::switch_on_off(bool on) {
@@ -243,12 +253,19 @@ bool InfyCanDevice::send_command_impl(uint8_t destination_address, uint8_t comma
     uint32_t can_id = can_packet_acdc::encode_can_id(
         controller_address, destination_address, command_number,
         group ? InfyProtocol::DEVICE_GROUP_MODULE : InfyProtocol::DEVICE_SINGLE_MODULE, 0x00);
-    can_id |= InfyProtocol::CAN_EXTENDED_FLAG; // Extended frame format
     auto result = _tx(can_id, payload);
     if (not result) {
         EVLOG_warning << "Infy: CAN transmission failed for can_id: 0x" << std::hex << std::uppercase << can_id;
     }
     return result;
+}
+
+void InfyCanDevice::enqueue_poll_command(uint8_t destination_address, uint8_t command_number,
+                                         const std::vector<uint8_t>& payload, bool group) {
+    uint32_t can_id = can_packet_acdc::encode_can_id(
+        controller_address, destination_address, command_number,
+        group ? InfyProtocol::DEVICE_GROUP_MODULE : InfyProtocol::DEVICE_SINGLE_MODULE, 0x00);
+    enqueue_paced_tx(can_id, payload);
 }
 
 void InfyCanDevice::handle_module_count_packet(const std::vector<uint8_t>& payload) {

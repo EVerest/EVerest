@@ -39,18 +39,18 @@ uint32_t encode_can_id(uint8_t source_address, uint8_t destination_address, uint
 }
 
 uint8_t destination_address_from_can_id(uint32_t id) {
-    return (id >> CAN_ID_DESTINATION_ADDRESS_SHIFT) & 0xFF;
+    return ((id & CAN_EFF_MASK) >> CAN_ID_DESTINATION_ADDRESS_SHIFT) & 0xFF;
 }
 uint8_t source_address_from_can_id(uint32_t id) {
-    return id & 0xFF;
+    return id & CAN_EFF_MASK & 0xFF;
 }
 
 uint8_t command_number_from_can_id(uint32_t id) {
-    return (id >> CAN_ID_COMMAND_NUMBER_SHIFT) & InfyProtocol::COMMAND_MASK;
+    return ((id & CAN_EFF_MASK) >> CAN_ID_COMMAND_NUMBER_SHIFT) & InfyProtocol::COMMAND_MASK;
 }
 
 uint8_t error_code_from_can_id(uint32_t id) {
-    return (id >> CAN_ID_ERROR_CODE_SHIFT) & InfyProtocol::ERROR_CODE_MASK;
+    return ((id & CAN_EFF_MASK) >> CAN_ID_ERROR_CODE_SHIFT) & InfyProtocol::ERROR_CODE_MASK;
 }
 
 // packet definitions
