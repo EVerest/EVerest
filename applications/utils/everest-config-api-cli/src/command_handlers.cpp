@@ -226,10 +226,14 @@ void CommandHandlers::get_active_slot() {
         std::cerr << "Failed to get active slot; API did not respond.\n";
         return;
     }
-    if (res->slot_id.has_value()) {
-        std::cout << "Active slot: [" << res->slot_id.value() << "]\n";
-    } else {
-        std::cout << "No active slot configured.\n";
+    if (res->active_slot_id.has_value()) {
+        std::cout << "Active slot: [" << res->active_slot_id.value() << "]\n";
+    }
+    if (res->next_boot_slot_id.has_value()) {
+        std::cout << "Next boot slot: [" << res->next_boot_slot_id.value() << "]\n";
+    }
+    if (not res->next_boot_slot_id.has_value() and not res->active_slot_id.has_value()) {
+        std::cout << "Could not retrieve information for the active slot.\n";
     }
 }
 
@@ -417,7 +421,8 @@ void CommandHandlers::monitor(bool suppress_parameter_updates) {
             for (const auto& record : notice.update_results) {
                 std::cout << record.update.cfg_param_id.module_id << "|"
                           << record.update.cfg_param_id.implementation_id.value_or("\b") << "|"
-                          << record.update.cfg_param_id.parameter_name << " -> " << record.update.value << " (" << record.result << ")\n";
+                          << record.update.cfg_param_id.parameter_name << " -> " << record.update.value << " ("
+                          << record.result << ")\n";
             }
         };
 
