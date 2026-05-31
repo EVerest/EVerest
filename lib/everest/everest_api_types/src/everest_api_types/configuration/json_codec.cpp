@@ -365,14 +365,20 @@ void from_json(const json& j, ListSlotIdsResult& k) {
 
 void to_json(json& j, GetActiveSlotIdResult const& k) noexcept {
     j = json{};
-    if (k.slot_id) {
-        j["slot_id"] = *k.slot_id;
+    if (k.active_slot_id) {
+        j["active_slot_id"] = *k.active_slot_id;
+    }
+    if (k.next_boot_slot_id) {
+        j["next_boot_slot_id"] = *k.next_boot_slot_id;
     }
 }
 
 void from_json(const json& j, GetActiveSlotIdResult& k) {
-    if (j.contains("slot_id")) {
-        k.slot_id = j.at("slot_id");
+    if (j.contains("active_slot_id")) {
+        k.active_slot_id = j.at("active_slot_id");
+    }
+    if (j.contains("next_boot_slot_id")) {
+        k.next_boot_slot_id = j.at("next_boot_slot_id");
     }
 }
 

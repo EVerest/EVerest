@@ -75,7 +75,8 @@ struct ListSlotIdsResult {
 };
 
 struct GetActiveSlotIdResult {
-    std::optional<int32_t> slot_id;
+    std::optional<int32_t> active_slot_id;
+    std::optional<int32_t> next_boot_slot_id;
 };
 
 struct MarkActiveSlotResult {

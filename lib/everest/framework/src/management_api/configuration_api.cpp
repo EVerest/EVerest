@@ -71,8 +71,11 @@ void ConfigurationAPI::generate_api_cmd_get_active_slot() {
     subscribe_api_topic("get_active_slot", [this](std::string const& data) {
         API_generic::RequestReply msg;
         if (deserialize(data, msg)) {
-            auto slot_id = m_config_service.get_active_slot_id();
-            API_types_ext::GetActiveSlotIdResult payload{slot_id};
+            auto active_slot_id = m_config_service.get_active_slot_id();
+            auto next_boot_slot_id = m_config_service.get_next_boot_slot_id();
+            API_types_ext::GetActiveSlotIdResult payload;
+            payload.active_slot_id = active_slot_id;
+            payload.next_boot_slot_id = next_boot_slot_id;
             m_mqtt_abstraction.publish(msg.replyTo, serialize(payload));
             return true;
         }
@@ -236,12 +239,12 @@ void ConfigurationAPI::generate_api_cmd_get_configuration() {
 }
 
 void ConfigurationAPI::generate_api_var_active_slot() {
-    // TODO(CB): The configuration does not offer to query the status of the active slot,
-    // so for now we just set it to "Running" here, but we might want to add a query function to the config_service
     API_types_ext::ActiveSlotUpdateNotice initial_update{};
     initial_update.tstamp = Everest::Date::to_rfc3339(date::utc_clock::now());
-    initial_update.slot_id = m_config_service.get_active_slot_id();
-    initial_update.status = API_types_ext::ActiveSlotStatusEnum::Running;
+    initial_update.active_slot_id = m_config_service.get_active_slot_id();
+    initial_update.next_boot_slot_id = m_config_service.get_next_boot_slot_id();
+    // set this to Stopped, as the API is created before any module starts
+    initial_update.status = API_types_ext::ActiveSlotStatusEnum::Stopped;
     m_mqtt_abstraction.publish(m_topics.nonmodule_to_extern("active_slot"), serialize(initial_update));
 
     m_config_service.register_active_slot_update_handler([this](const Everest::config::ActiveSlotUpdate& update) {
