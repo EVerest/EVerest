@@ -76,7 +76,7 @@ ConfigServiceCore::ConfigServiceCore(const ConfigParseSettings& parse_settings,
     if (slot_manager_.is_valid(active_slot_id_)) {
         // TODO(CB): This is arguable - this is usually the reset-from-yaml scenario
         // should the config be stored in the currently active slot, or always the default slot?
-        if (active_slot_id_ == active_slot_id_from_db) {
+        if (active_slot_id_ != active_slot_id_from_db) {
             slot_manager_.set_next_boot_slot_id(active_slot_id_);
         }
         active_storage_ = make_storage(active_slot_id_);
