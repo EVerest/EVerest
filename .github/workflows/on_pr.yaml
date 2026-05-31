@@ -108,7 +108,7 @@ jobs:
       build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
       build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
       deploy_docs: false
-
+      instance_name: ${{ format('{0} @ {1}', github.ref_name, github.sha) }}
 
   dco-check:
     name: Call DCO Check workflow
