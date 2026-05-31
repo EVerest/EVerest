@@ -742,7 +742,9 @@ components:
       type: object
       additionalProperties: true
       properties:
-        slot_id:
+        active_slot_id:
+          type: integer
+        next_boot_slot_id:
           type: integer
     MarkActiveSlotRequest:
       description: A request to mark a configuration slot as active, consisting of the slot_id of the slot to be marked as active.
@@ -1217,9 +1219,11 @@ components:
       properties:
         tstamp:
           type: string
-        slot_id:
+        active_slot_id:
           type: integer
-          description: 'The slot ID relevant to the status update. For "Running": currently active slot. For "FailedToStart": slot that failed to start. For "RestartTriggered": slot that will be restarted (system may still be running with previous slot).'
+          description: 'The slot ID relevant to the status update. Only included if modules are running. For "FailedToStart": slot that failed to start.'
+        next_boot_slot_id:
+          type: integer
         status:
           $ref: '#/components/schemas/ActiveSlotStatusEnum'
       required:

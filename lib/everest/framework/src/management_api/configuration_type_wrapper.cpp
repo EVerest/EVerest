@@ -51,8 +51,8 @@ MarkActiveSlotResultEnum_Internal to_internal_api(MarkActiveSlotResultEnum_Exter
     switch (val) {
     case SrcT::Success:
         return TarT::Success;
-    case SrcT::AlreadyActive:
-        return TarT::AlreadyActive;
+    case SrcT::NoChangeRequired:
+        return TarT::NoChangeRequired;
     case SrcT::DoesNotExist:
         return TarT::DoesNotExist;
     case SrcT::Rejected:
@@ -68,8 +68,8 @@ MarkActiveSlotResultEnum_External to_external_api(MarkActiveSlotResultEnum_Inter
     switch (val) {
     case SrcT::Success:
         return TarT::Success;
-    case SrcT::AlreadyActive:
-        return TarT::AlreadyActive;
+    case SrcT::NoChangeRequired:
+        return TarT::NoChangeRequired;
     case SrcT::DoesNotExist:
         return TarT::DoesNotExist;
     case SrcT::Rejected:
@@ -223,6 +223,8 @@ ActiveSlotStatusEnum_Internal to_internal_api(ActiveSlotStatusEnum_External cons
     switch (val) {
     case SrcT::Running:
         return TarT::Running;
+    case SrcT::Stopped:
+        return TarT::Stopped;
     case SrcT::FailedToStart:
         return TarT::FailedToStart;
     case SrcT::RestartTriggered:
@@ -238,6 +240,8 @@ ActiveSlotStatusEnum_External to_external_api(ActiveSlotStatusEnum_Internal cons
     switch (val) {
     case SrcT::Running:
         return TarT::Running;
+    case SrcT::Stopped:
+        return TarT::Stopped;
     case SrcT::FailedToStart:
         return TarT::FailedToStart;
     case SrcT::RestartTriggered:
@@ -388,7 +392,8 @@ OriginOfChange_External to_external_api(OriginOfChange_Internal const& val) {
 ActiveSlotUpdateNotice_Internal to_internal_api(ActiveSlotUpdateNotice_External const& val) {
     ActiveSlotUpdateNotice_Internal result;
     result.timestamp = val.tstamp;
-    result.slot_id = val.slot_id;
+    result.active_slot_id = val.active_slot_id;
+    result.next_boot_slot_id = val.next_boot_slot_id;
     result.status = to_internal_api(val.status);
     return result;
 }
@@ -396,7 +401,8 @@ ActiveSlotUpdateNotice_Internal to_internal_api(ActiveSlotUpdateNotice_External 
 ActiveSlotUpdateNotice_External to_external_api(ActiveSlotUpdateNotice_Internal const& val) {
     ActiveSlotUpdateNotice_External result;
     result.tstamp = val.timestamp;
-    result.slot_id = val.slot_id;
+    result.active_slot_id = val.active_slot_id;
+    result.next_boot_slot_id = val.next_boot_slot_id;
     result.status = to_external_api(val.status);
     return result;
 }
