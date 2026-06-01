@@ -28,7 +28,9 @@ types::powermeter::TransactionStartResponse
 powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& _) {
     types::powermeter::TransactionStartResponse response;
     response.status = types::powermeter::TransactionRequestStatus::OK;
-    response.signed_meter_value = format_signed_meter_value(this->mod->config.dummy_meter_value_blob_start);
+    if (this->mod->config.dummy_meter_value_send_on_transaction_start) {
+        response.signed_meter_value = format_signed_meter_value(this->mod->config.dummy_meter_value_blob_start);
+    }
     return response;
 }
 
