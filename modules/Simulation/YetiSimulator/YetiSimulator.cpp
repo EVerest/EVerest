@@ -452,7 +452,7 @@ void YetiSimulator::read_from_car() {
     // the car stays connected (not only on disconnect).
     const auto diode_fault_active =
         p_board_support->error_state_monitor->is_error_active(diode_fault.type, diode_fault.sub_type);
-    if (cp_signal::is_diode_fault(module_state->pwm_running, cpHi, cpLo)) {
+    if (cp_signal::is_diode_fault(module_state->pwm_running, module_state->simulation_data.diode_fail, cpHi, cpLo)) {
         if (not diode_fault_active) {
             const auto error = p_board_support->error_factory->create_error(diode_fault.type, diode_fault.sub_type,
                                                                             diode_fault.message, diode_fault.severity);
