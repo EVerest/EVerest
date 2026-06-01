@@ -151,7 +151,8 @@ void FsmContext::note_evse_ac_target_power(const ::types::iso15118::AcTargetPowe
     }
     // Count the phases the charger is actually driving: start from the
     // configured phase count and drop a phase for each per-phase target the
-    // EVSE omits, matching the EvManager reference derivation.
+    // EVSE omits (a charger driving only L1 reports no L2/L3 target), then
+    // derive per-phase current as total power / (voltage * phase_count).
     int phase_count = cfg.three_phases ? 3 : 1;
     if (!target_power.target_active_power_L2.has_value() && cfg.three_phases) {
         phase_count--;

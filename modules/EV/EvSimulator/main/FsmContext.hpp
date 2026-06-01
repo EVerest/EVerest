@@ -296,8 +296,9 @@ public:
     void note_evse_ac_max_current(float max_current_a);
 
     // Derive a per-phase current from an ac_evse_target_power payload and
-    // record it as the EVSE limit, mirroring the EvManager reference
-    // (power / (nominal_voltage * active_phase_count)). A payload without a
+    // record it as the EVSE limit: power / (nominal_voltage * active_phase_count),
+    // where active_phase_count is the number of phases the charger drives,
+    // inferred from the present per-phase targets. A payload without a
     // target_active_power leaves the limit unchanged.
     void note_evse_ac_target_power(const ::types::iso15118::AcTargetPower& target_power);
 
