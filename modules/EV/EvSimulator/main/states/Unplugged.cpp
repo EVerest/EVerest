@@ -24,6 +24,9 @@ void Unplugged::enter() {
     ctx.vars.session.reset();
     ctx.vars.last_fault.reset();
     ctx.vars.was_full = false;
+    // Clear any pending resume PWM-wait so an aborted resume cannot leak into
+    // the first V2GNegotiating of a fresh session (which must start immediately).
+    ctx.vars.resume_awaiting_pwm = false;
     ctx.mark_plugged_in(false);
     ctx.scenario.reset();
     ctx.kvs_save();
