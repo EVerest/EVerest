@@ -14,28 +14,78 @@ namespace module {
 
 namespace api = API_types::ev_simulator;
 
-void V2GNegotiating::enter() {
-    // iso_start_charging returns false when the ISO peer is not wired (or for
-    // AcIec, which has no ISO session); both indicate a misconfiguration when
-    // we reach this state. Without an early fault transition the state would
-    // arm the 60s deadline timer and only fault later with a misleading
-    // V2GTimeout. Route into Faulted on the next on_wake flush via a synthetic
-    // InjectFault, carrying the descriptive message on the payload so it
-    // cannot go stale if an intervening transition is flushed first.
+namespace {
+
+// CP PWM duty-cycle window the SECC drives once it is ready for HLC. Matches
+// EvManager's iso_wait_pwm_is_running gate (> 4% .. < 97%); the lower bound is
+// generous so the "PWM running" edge is observed as soon as the SECC re-applies
+// any non-nominal duty cycle on resume.
+constexpr float kPwmRunningLowPct = 4.0f;
+constexpr float kPwmRunningHighPct = 97.0f;
+
+// Issue the ISO start_charging request with the (resumed) session parameters
+// and, on success, arm the 60 s negotiation deadline. Returns false when the
+// wired peer rejects the start (or the peer is absent / AcIec), in which case
+// the deadline is NOT armed and the caller routes into Faulted. The deadline is
+// armed only after the request is sent.
+bool start_iso_charging(FsmContext& ctx) {
     const auto cm = ctx.vars.charge_mode();
     if (cm && !ctx.iso_start_charging(*cm, ctx.vars.payment(), ctx.vars.departure_time_s, ctx.vars.e_amount_wh)) {
-        ctx.enqueue(Event{api::InjectFaultParams{api::FaultType::Internal, std::nullopt,
-                                                 std::string{"iso_start_charging rejected"}}});
+        return false;
+    }
+    ctx.arm_timer(std::chrono::seconds(60));
+    return true;
+}
+
+} // namespace
+
+void V2GNegotiating::enter() {
+    // On an EV-initiated resume BcbToggling sets resume_awaiting_pwm: the SECC
+    // has just been woken by the CP wake-up edges but has not yet re-applied
+    // the charging PWM. Defer start_charging (and the 60 s deadline) until a
+    // PWM-running BspMeasurement arrives, mirroring EvManager's
+    // iso_wait_pwm_is_running step. Issuing start_charging before the SECC is
+    // ready races its handshake and leaves the resume hanging until the 60 s
+    // timeout. The first-session path (SlacMatching -> V2GNegotiating) leaves
+    // the flag false and starts immediately.
+    if (ctx.vars.resume_awaiting_pwm) {
         ctx.publish_e2m_state(api::FsmState::V2GNegotiating);
         return;
     }
-    ctx.arm_timer(std::chrono::seconds(60));
+    // start_iso_charging returns false when the ISO peer is not wired (or for
+    // AcIec, which has no ISO session); both indicate a misconfiguration when
+    // we reach this state. Without an early fault transition the state would
+    // arm the 60 s deadline timer and only fault later with a misleading
+    // V2GTimeout. Route into Faulted on the next on_wake flush via a synthetic
+    // InjectFault, carrying the descriptive message on the payload so it cannot
+    // go stale if an intervening transition is flushed first.
+    if (!start_iso_charging(ctx)) {
+        ctx.enqueue(Event{api::InjectFaultParams{api::FaultType::Internal, std::nullopt,
+                                                 std::string{"iso_start_charging rejected"}}});
+    }
     ctx.publish_e2m_state(api::FsmState::V2GNegotiating);
 }
 
 StateBase::Result V2GNegotiating::feed(EventType ev) {
     using EK = EventKind;
     switch (kind_of(ev)) {
+    case EK::BspMeasurement: {
+        const auto& m = std::get<BspMeasurementPayload>(ev.payload);
+        ctx.vars.pwm_duty_cycle = m.cp_pwm_duty_cycle;
+        // Resume gate: once the SECC re-applies the charging PWM, issue the
+        // deferred start_charging and arm the deadline. Outside the resume gate
+        // a BspMeasurement is informational (no transition).
+        if (ctx.vars.resume_awaiting_pwm && m.cp_pwm_duty_cycle > kPwmRunningLowPct &&
+            m.cp_pwm_duty_cycle < kPwmRunningHighPct) {
+            ctx.vars.resume_awaiting_pwm = false;
+            if (!start_iso_charging(ctx)) {
+                ctx.vars.last_fault = api::FaultReport{api::FaultType::Internal,
+                                                       std::string{"iso_start_charging rejected"}, std::nullopt};
+                return {false, std::make_unique<Faulted>(ctx)};
+            }
+        }
+        return {false, nullptr};
+    }
     case EK::IsoPowerReady:
         return {false, std::make_unique<Charging>(ctx)};
     case EK::IsoStopFromCharger:
@@ -67,7 +117,6 @@ StateBase::Result V2GNegotiating::feed(EventType ev) {
         return reject(ev, "negotiation in progress");
     case EK::Plug:
     case EK::Enable:
-    case EK::BspMeasurement:
     case EK::EvInfo:
     case EK::SlacState:
     case EK::IsoAcMaxCurrent:

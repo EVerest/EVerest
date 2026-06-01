@@ -42,6 +42,12 @@ StateBase::Result BcbToggling::feed(EventType ev) {
         }
         --ctx.vars.bcb_remaining;
         if (ctx.vars.bcb_remaining == 0) {
+            // BcbToggling is only entered on an EV-initiated resume, so the
+            // SECC has just been woken by the CP wake-up edges and has not yet
+            // re-applied the charging PWM. Tell V2GNegotiating to wait for the
+            // PWM-is-running BspMeasurement before re-issuing start_charging
+            // (mirrors EvManager's iso_wait_pwm_is_running step).
+            ctx.vars.resume_awaiting_pwm = true;
             return {false, std::make_unique<V2GNegotiating>(ctx)};
         }
         ctx.arm_timer(std::chrono::milliseconds(250));

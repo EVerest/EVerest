@@ -167,6 +167,15 @@ struct SimVars {
     std::optional<Session> session;
     std::string slac_state{"UNMATCHED"};
     int32_t bcb_remaining{0};
+    // Set by BcbToggling before it hands control to V2GNegotiating on an
+    // EV-initiated resume. It tells V2GNegotiating to defer iso_start_charging
+    // (and the 60 s deadline) until the SECC re-applies the CP PWM, mirroring
+    // the proven EvManager resume sequence (iso_start_bcb_toggle ->
+    // iso_wait_pwm_is_running -> iso_start_v2g_session). Issuing start_charging
+    // before the SECC has woken up races its handshake and is the source of the
+    // unstable resume. The first-session path (SlacMatching -> V2GNegotiating)
+    // leaves this false and starts immediately.
+    bool resume_awaiting_pwm{false};
     std::optional<API_types::ev_simulator::FaultReport> last_fault;
     float charging_current_a{16.0f};
     bool three_phases{true};
