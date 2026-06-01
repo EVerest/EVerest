@@ -1102,6 +1102,16 @@ TEST_CASE("EvSimulator group1 transitions", "[evsim][group1]") {
         CHECK(result.new_state->get_id() == api::FsmState::Charging);
     }
 
+    SECTION("V2GNegotiating: IsoDcPowerOn closes contactors (allow_power_on true), stays") {
+        auto ctx = fx.make_ctx();
+        set_mode(*ctx, api::ChargeMode::DcIso2);
+        V2GNegotiating s{*ctx};
+        auto result = s.feed(Event{EventKind::IsoDcPowerOn});
+        CHECK(result.unhandled == false);
+        CHECK(result.new_state == nullptr);
+        CHECK(contains_substr(fx.mocks.bsp.records, "allow_power_on(value=true)"));
+    }
+
     SECTION("V2GNegotiating: IsoStopFromCharger -> Stopping") {
         auto ctx = fx.make_ctx();
         V2GNegotiating s{*ctx};
