@@ -124,21 +124,31 @@ void FsmContext::clear_rcd_error() {
 
 // ---- AC params shortcut ------------------------------------------------
 
-void FsmContext::bsp_apply_ac_params(float current_a, bool three_phases_) {
+void FsmContext::set_desired_ac_params(float desired_a, bool three_phases_) {
+    vars.charging_current_a = desired_a; // EV desired (intent)
+    bsp_apply_ac_params_clamped(desired_a, three_phases_);
+}
+
+void FsmContext::bsp_apply_ac_params_clamped(float desired_a, bool three_phases_) {
+    float effective = desired_a;
+    if (vars.evse_ac_max_current_a.has_value()) {
+        effective = std::min(desired_a, *vars.evse_ac_max_current_a);
+    }
     if (peer_actions.bsp.present) {
-        peer_actions.bsp.set_ac_max_current(current_a);
+        peer_actions.bsp.set_ac_max_current(effective);
         peer_actions.bsp.set_three_phases(three_phases_);
     }
-    vars.charging_current_a = current_a;
+    // Tracking three_phases is fine; the desired current (charging_current_a)
+    // is left untouched so a transient EVSE ceiling can never destroy it.
     vars.three_phases = three_phases_;
 }
 
-void FsmContext::bsp_apply_ac_params_clamped(float desired_current_a, bool three_phases_) {
-    float effective = desired_current_a;
+float FsmContext::effective_ac_current_a() const {
+    float effective = vars.charging_current_a;
     if (vars.evse_ac_max_current_a.has_value()) {
-        effective = std::min(desired_current_a, *vars.evse_ac_max_current_a);
+        effective = std::min(effective, *vars.evse_ac_max_current_a);
     }
-    bsp_apply_ac_params(effective, three_phases_);
+    return effective;
 }
 
 void FsmContext::note_evse_ac_max_current(float max_current_a) {

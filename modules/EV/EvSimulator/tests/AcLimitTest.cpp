@@ -37,7 +37,7 @@ TEST_CASE("EvSimulator AC EVSE limit clamping", "[evsim][aclimit]") {
         // The EVSE limit (0 A) is below the configured 16 A, so the applied
         // current is clamped to the limit.
         CHECK(contains_substr(fx.mocks.bsp.records, "set_ac_max_current(current=0)"));
-        CHECK(ctx->vars.charging_current_a == 0.0f);
+        CHECK(ctx->vars.charging_current_a == 16.0f);
     }
 
     SECTION("Charging: IsoAcTargetPower derives a per-phase current and clamps") {
@@ -58,7 +58,7 @@ TEST_CASE("EvSimulator AC EVSE limit clamping", "[evsim][aclimit]") {
 
         CHECK(result.new_state == nullptr);
         CHECK(contains_substr(fx.mocks.bsp.records, "set_ac_max_current(current=5)"));
-        CHECK(ctx->vars.charging_current_a == 5.0f);
+        CHECK(ctx->vars.charging_current_a == 16.0f);
     }
 
     SECTION("Charging: SetChargingCurrent re-clamps against the most recent EVSE limit") {
@@ -76,7 +76,7 @@ TEST_CASE("EvSimulator AC EVSE limit clamping", "[evsim][aclimit]") {
 
         CHECK(result.new_state == nullptr);
         CHECK(contains_substr(fx.mocks.bsp.records, "set_ac_max_current(current=10)"));
-        CHECK(ctx->vars.charging_current_a == 10.0f);
+        CHECK(ctx->vars.charging_current_a == 16.0f);
     }
 
     SECTION("Charging: SetChargingCurrent below the EVSE limit applies verbatim") {
@@ -110,7 +110,7 @@ TEST_CASE("EvSimulator AC EVSE limit clamping", "[evsim][aclimit]") {
         REQUIRE(result.new_state);
         CHECK(result.new_state->get_id() == api::FsmState::SlacMatching);
         CHECK(contains_substr(fx.mocks.bsp.records, "set_ac_max_current(current=8)"));
-        CHECK(ctx->vars.charging_current_a == 8.0f);
+        CHECK(ctx->vars.charging_current_a == 16.0f);
     }
 
     SECTION("Charging::enter clamps the first applied current to the EVSE limit") {
@@ -127,6 +127,26 @@ TEST_CASE("EvSimulator AC EVSE limit clamping", "[evsim][aclimit]") {
         s.enter();
 
         CHECK(contains_substr(fx.mocks.bsp.records, "set_ac_max_current(current=12)"));
-        CHECK(ctx->vars.charging_current_a == 12.0f);
+        CHECK(ctx->vars.charging_current_a == 16.0f);
+    }
+
+    SECTION("Charging: raising IsoAcMaxCurrent restores applied current toward desired") {
+        auto ctx = fx.make_ctx();
+        set_mode(*ctx, api::ChargeMode::AcIso2);
+        ctx->vars.charging_current_a = 16.0f; // EV desired
+        ctx->vars.three_phases = true;
+        Charging s{*ctx};
+        fx.mocks.bsp.clear();
+
+        // Transient EVSE ceiling of 0 A clamps applied to 0 but must NOT destroy desired.
+        s.feed(Event{IsoAcMaxCurrentEvt{/*max_current_a=*/0.0f}});
+        CHECK(contains_substr(fx.mocks.bsp.records, "set_ac_max_current(current=0)"));
+        CHECK(ctx->vars.charging_current_a == 16.0f);
+
+        // Raising the ceiling to 32 A recovers the applied current to the desired 16 A (min(16,32)).
+        fx.mocks.bsp.clear();
+        s.feed(Event{IsoAcMaxCurrentEvt{/*max_current_a=*/32.0f}});
+        CHECK(contains_substr(fx.mocks.bsp.records, "set_ac_max_current(current=16)"));
+        CHECK(ctx->vars.charging_current_a == 16.0f);
     }
 }
