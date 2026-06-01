@@ -200,10 +200,11 @@ TEST_CASE("EvSimulator BcbToggling cycle B<->C * 3 rounds -> V2GNegotiating", "[
 // i.e. after the BCB wake-up the EV WAITS for the SECC to re-apply the CP PWM
 // (PWM-is-running) before it re-issues start_charging. EvSimulator must mirror
 // this: V2GNegotiating reached via a resume must NOT call iso_start_charging
-// (nor arm the 60 s deadline) until a PWM-running BspMeasurement arrives.
-// Issuing start_charging immediately races the SECC's wake-up and is the source
-// of the unstable resume (start_charging dropped -> no IsoPowerReady -> 60 s
-// V2G timeout).
+// until a PWM-running BspMeasurement arrives. Issuing start_charging
+// immediately races the SECC's wake-up and is the source of the unstable
+// resume (start_charging dropped -> no IsoPowerReady -> 60 s V2G timeout). The
+// bounding deadline IS armed on entry, so a SECC that never re-applies PWM
+// faults with V2GTimeout instead of hanging.
 TEST_CASE("EvSimulator resume waits for PWM-running before iso_start_charging", "[evsim][group2]") {
     TestFixture fx;
     auto ctx = fx.make_ctx();
@@ -231,11 +232,12 @@ TEST_CASE("EvSimulator resume waits for PWM-running before iso_start_charging", 
     REQUIRE(fsm.get_current_state_id() == api::FsmState::V2GNegotiating);
 
     // On the resume path V2GNegotiating must defer start_charging until the
-    // SECC re-applies the CP PWM. Immediately after the BCB toggle, neither
-    // start_charging nor the 60 s deadline should have fired yet.
+    // SECC re-applies the CP PWM: immediately after the BCB toggle start_charging
+    // has NOT fired. The bounding deadline IS armed, though, so a SECC that
+    // never re-applies PWM faults (V2GTimeout) instead of hanging.
     CHECK_FALSE(contains_substr(fx.mocks.iso.records, "start_charging"));
-    CHECK_FALSE(std::any_of(fx.timer.state_timer_arms.begin(), fx.timer.state_timer_arms.end(),
-                            [](std::chrono::milliseconds ms) { return ms == std::chrono::seconds(60); }));
+    CHECK(std::any_of(fx.timer.state_timer_arms.begin(), fx.timer.state_timer_arms.end(),
+                      [](std::chrono::milliseconds ms) { return ms == std::chrono::seconds(60); }));
 
     // The SECC re-applies the CP PWM (PWM-is-running). Now the EV re-issues
     // start_charging with the resumed session parameters and arms the deadline.
@@ -255,4 +257,32 @@ TEST_CASE("EvSimulator resume waits for PWM-running before iso_start_charging", 
     REQUIRE(fsm.get_current_state_id() == api::FsmState::Charging);
     CHECK(contains_substr(fx.mocks.bsp.records, "set_cp_state(cp_state=C)"));
     CHECK(contains_substr(fx.mocks.bsp.records, "allow_power_on(value=true)"));
+}
+
+// Companion to the resume test: if the SECC never re-applies PWM after the BCB
+// wake-up, the bounding deadline (armed on the deferred V2GNegotiating::enter)
+// must surface a V2GTimeout Faulted state rather than hang the resume forever.
+TEST_CASE("EvSimulator resume faults with V2GTimeout if PWM never returns", "[evsim][group2]") {
+    TestFixture fx;
+    auto ctx = fx.make_ctx();
+    set_mode(*ctx, api::ChargeMode::AcIso2);
+    ensure_session(*ctx).payment = api::PaymentOption::ExternalPayment;
+    ctx->vars.three_phases = true;
+
+    fsm::v2::FSM<StateBase> fsm{std::make_unique<Charging>(*ctx)};
+    fsm.feed(Event{EventKind::PauseSession});
+    fsm.feed(Event{EventKind::ResumeSession});
+    REQUIRE(fsm.get_current_state_id() == api::FsmState::BcbToggling);
+    fx.mocks.iso.clear();
+    for (int i = 0; i < 6; ++i) {
+        fsm.feed(Event{EventKind::StateDeadline});
+    }
+    REQUIRE(fsm.get_current_state_id() == api::FsmState::V2GNegotiating);
+
+    // No PWM-running BspMeasurement arrives; the bounding deadline fires.
+    CHECK_FALSE(contains_substr(fx.mocks.iso.records, "start_charging"));
+    fsm.feed(Event{EventKind::StateDeadline});
+    REQUIRE(fsm.get_current_state_id() == api::FsmState::Faulted);
+    REQUIRE(ctx->vars.last_fault.has_value());
+    CHECK(ctx->vars.last_fault->type == api::FaultType::V2GTimeout);
 }

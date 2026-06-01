@@ -42,13 +42,15 @@ bool start_iso_charging(FsmContext& ctx) {
 void V2GNegotiating::enter() {
     // On an EV-initiated resume BcbToggling sets resume_awaiting_pwm: the SECC
     // has just been woken by the CP wake-up edges but has not yet re-applied
-    // the charging PWM. Defer start_charging (and the 60 s deadline) until a
-    // PWM-running BspMeasurement arrives, mirroring EvManager's
-    // iso_wait_pwm_is_running step. Issuing start_charging before the SECC is
-    // ready races its handshake and leaves the resume hanging until the 60 s
-    // timeout. The first-session path (SlacMatching -> V2GNegotiating) leaves
-    // the flag false and starts immediately.
+    // the charging PWM. Defer start_charging until a PWM-running BspMeasurement
+    // arrives, mirroring EvManager's iso_wait_pwm_is_running step -- issuing it
+    // before the SECC is ready races its handshake and leaves the resume
+    // hanging. The deadline IS armed here, though: a SECC that never re-applies
+    // PWM then faults via StateDeadline -> V2GTimeout instead of hanging
+    // forever. Only start_charging is deferred. The first-session path
+    // (SlacMatching -> V2GNegotiating) leaves the flag false and starts now.
     if (ctx.vars.resume_awaiting_pwm) {
+        ctx.arm_timer(std::chrono::seconds(60));
         ctx.publish_e2m_state(api::FsmState::V2GNegotiating);
         return;
     }
@@ -87,6 +89,9 @@ StateBase::Result V2GNegotiating::feed(EventType ev) {
         return {false, nullptr};
     }
     case EK::IsoPowerReady:
+        // Clear the resume gate on the way into the charge loop so an
+        // unconsumed flag can never leak into a later V2GNegotiating.
+        ctx.vars.resume_awaiting_pwm = false;
         return {false, std::make_unique<Charging>(ctx)};
     case EK::IsoStopFromCharger:
         return {false, std::make_unique<Stopping>(ctx)};
