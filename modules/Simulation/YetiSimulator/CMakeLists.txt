@@ -30,6 +30,7 @@ target_sources(${MODULE_NAME}
 target_sources(${MODULE_NAME}
         PRIVATE
         "util/state.cpp"
+        "util/cp_signal.cpp"
         "util/errors.cpp"
         "util/raise_error_router.cpp"
         "util/util.cpp"
