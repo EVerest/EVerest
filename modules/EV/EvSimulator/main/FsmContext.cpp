@@ -124,16 +124,23 @@ void FsmContext::clear_rcd_error() {
 
 // ---- AC params shortcut ------------------------------------------------
 
+namespace {
+// Clamp an EV desired AC current to an optional EVSE-communicated ceiling. The
+// single clamp implementation shared by effective_ac_current_a() (the SoC read
+// side) and bsp_apply_ac_params_clamped() (the BSP push side), so the
+// integrated and applied currents apply one identical clamp and cannot diverge.
+float clamp_ac_current(float desired_a, const std::optional<float>& ceiling) {
+    return ceiling.has_value() ? std::min(desired_a, *ceiling) : desired_a;
+}
+} // namespace
+
 void FsmContext::set_desired_ac_params(float desired_a, bool three_phases_) {
     vars.charging_current_a = desired_a; // EV desired (intent)
     bsp_apply_ac_params_clamped(desired_a, three_phases_);
 }
 
 void FsmContext::bsp_apply_ac_params_clamped(float desired_a, bool three_phases_) {
-    float effective = desired_a;
-    if (vars.evse_ac_max_current_a.has_value()) {
-        effective = std::min(desired_a, *vars.evse_ac_max_current_a);
-    }
+    const float effective = clamp_ac_current(desired_a, vars.evse_ac_max_current_a);
     if (peer_actions.bsp.present) {
         peer_actions.bsp.set_ac_max_current(effective);
         peer_actions.bsp.set_three_phases(three_phases_);
@@ -144,11 +151,7 @@ void FsmContext::bsp_apply_ac_params_clamped(float desired_a, bool three_phases_
 }
 
 float FsmContext::effective_ac_current_a() const {
-    float effective = vars.charging_current_a;
-    if (vars.evse_ac_max_current_a.has_value()) {
-        effective = std::min(effective, *vars.evse_ac_max_current_a);
-    }
-    return effective;
+    return clamp_ac_current(vars.charging_current_a, vars.evse_ac_max_current_a);
 }
 
 void FsmContext::note_evse_ac_max_current(float max_current_a) {

@@ -142,6 +142,37 @@ TEST_CASE("RampInterpolator advances charging_current_a linearly", "[evsim][ramp
         CHECK(contains_three_phases(fx.mocks.bsp.records, false));
     }
 
+    SECTION("Ramp under an EVSE ceiling clamps the BSP current but tracks desired") {
+        // The ramp drives the EV desired (charging_current_a) up to the raw
+        // target while the BSP only ever sees min(desired, ceiling). A
+        // regression pushing the raw interpolated value straight to the BSP
+        // would be invisible to the other ramp tests (none set a ceiling).
+        auto ctx = fx.make_ctx();
+        ctx->vars.charging_current_a = 6.0f;
+        ctx->vars.evse_ac_max_current_a = 10.0f; // EVSE ceiling below the target
+        const auto t0 = std::chrono::steady_clock::time_point{std::chrono::milliseconds{40000}};
+        ActiveRamp r;
+        r.start_a = 6.0f;
+        r.target_a = 16.0f;
+        r.three_phases = false;
+        r.start_at = t0;
+        r.end_at = t0 + std::chrono::milliseconds{2000};
+        ctx->vars.active_ramp = r;
+        // Four 500 ms ticks: interpolated 8.5 / 11 / 13.5 / 16, clamped at 10.
+        ramp_step(*ctx, t0 + std::chrono::milliseconds{500});
+        ramp_step(*ctx, t0 + std::chrono::milliseconds{1000});
+        ramp_step(*ctx, t0 + std::chrono::milliseconds{1500});
+        ramp_step(*ctx, t0 + std::chrono::milliseconds{2000});
+        auto currents = recorded_currents(fx.mocks.bsp.records);
+        REQUIRE(currents.size() == 4);
+        CHECK(std::abs(currents[0] - 8.5f) < 0.01f);  // below ceiling -> verbatim
+        CHECK(std::abs(currents[1] - 10.0f) < 0.01f); // clamped
+        CHECK(std::abs(currents[2] - 10.0f) < 0.01f); // clamped
+        CHECK(std::abs(currents[3] - 10.0f) < 0.01f); // clamped
+        // Desired tracked the raw ramp target, not the clamped value.
+        CHECK(std::abs(ctx->vars.charging_current_a - 16.0f) < 0.01f);
+    }
+
     SECTION("Ramp end value matches target_a within float tolerance") {
         auto ctx = fx.make_ctx();
         ctx->vars.charging_current_a = 0.0f;
