@@ -362,19 +362,31 @@ class SimRegistry:
                         drv.module_id, timeout)
             return False
 
-    def autostart(self) -> None:
+    def autostart(self, replay_scenarios: bool = False) -> None:
         """
-        Run each instance's sidecar DSL in a daemon thread.
+        Enable each simulator instance, optionally replaying its sidecar DSL.
 
-        First waits for the heartbeat (so m2e subscriptions are wired),
-        emits `enable true`, then plays the DSL. Per the original
-        EvManager semantics, the DSL is expected to terminate with `unplug`
-        (or run forever until torn down). Background thread is daemon so
-        teardown does not block.
+        Always waits for the heartbeat (so m2e subscriptions are wired) and
+        emits `enable true` so the EvSimulator leaves Disabled and accepts the
+        plug_in_* commands the test drives explicitly.
+
+        Scenario replay is OFF by default. The sidecar DSLs are the legacy
+        EvManager auto_exec sequences (e.g. `iec_wait_pwr_ready;
+        draw_power_regulated 16,3; ...; unplug`); they never `plug` themselves,
+        so they cannot start a session in the test harness -- they only wake
+        once the test plugs and then draw power / unplug on the same connector,
+        racing and corrupting the test-driven session (e.g. violating the
+        no-energy assertions). The explicit plug_in_* methods already drive
+        their own draw, so the replay is redundant here. Pass
+        replay_scenarios=True only for a standalone replay that is not also
+        driving the connector. Background threads are daemon so teardown does
+        not block.
         """
         for mid, drv in self._by_module.items():
             self._wait_ready(drv)
             drv.enable(True)
+            if not replay_scenarios:
+                continue
             dsl = self._scenarios_by_module.get(mid)
             if not dsl:
                 continue
