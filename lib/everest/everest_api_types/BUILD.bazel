@@ -1,0 +1,22 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "everest_api_types",
+    srcs = glob(["src/everest_api_types/**/*.cpp"]),
+    hdrs = glob([
+        "include/everest_api_types/**/*.hpp",
+        "private_include/everest_api_types/**/*.hpp",
+    ]),
+    copts = ["-std=c++17"],
+    includes = [
+        "include",
+        "private_include",
+        "include/everest_api_types",
+        "private_include/everest_api_types",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//types:types_lib",
+        "@com_github_nlohmann_json//:json",
+    ],
+)
