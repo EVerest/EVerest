@@ -84,6 +84,28 @@ def _translate_legacy_error_type(short_name: str) -> str:
     return full
 
 
+# EvSimulator's PaymentOption codec accepts only the PascalCase enum spellings
+# ("ExternalPayment", "Contract"); the legacy EvManager DSL accepted lowercase
+# ("externalpayment", "contract"). Tests still pass the legacy spelling, so
+# normalize here (case-insensitively) before it reaches configure_session.
+# Source of truth: lib/everest/everest_api_types/.../ev_simulator/json_codec.cpp.
+_PAYMENT_OPTION_MAP: dict = {
+    "contract": "Contract",
+    "externalpayment": "ExternalPayment",
+    "external_payment": "ExternalPayment",
+    "eim": "ExternalPayment",
+}
+
+
+def _normalize_payment_option(payment_type: str) -> str:
+    """Map a legacy/lowercase payment name to the EvSimulator PaymentOption enum.
+
+    Unknown values are returned verbatim so the EvSimulator codec rejects them
+    loudly rather than silently downgrading to EIM.
+    """
+    return _PAYMENT_OPTION_MAP.get(payment_type.strip().lower(), payment_type)
+
+
 class EverestTestController(TestController):
 
     def __init__(self,
@@ -111,7 +133,9 @@ class EverestTestController(TestController):
             mqtt_external_prefix=self._mqtt_external_prefix,
             config_path=Path(self._everest_core.everest_config_path),
         )
-        # Drive autostart per sidecar (EvManager auto_exec_commands replay).
+        # Enable the simulators so the explicit plug_in_* helpers below can
+        # drive sessions. Scenario replay stays off (default): the legacy
+        # sidecar DSL would race and corrupt the test-driven session.
         self._registry.autostart()
 
     def stop(self, *exc_details):
@@ -165,7 +189,7 @@ class EverestTestController(TestController):
         params: dict = {"charging_current_a": 16.0, "three_phases": True,
                         "departure_time_s": 86400, "e_amount_wh": 0}
         if payment_type:
-            params["payment"] = payment_type
+            params["payment"] = _normalize_payment_option(payment_type)
         drv.configure_session("AcIso2", params)
         drv.plug()
         threading.Thread(
@@ -179,7 +203,7 @@ class EverestTestController(TestController):
             return
         params: dict = {"departure_time_s": 86400, "e_amount_wh": 0}
         if payment_type:
-            params["payment"] = payment_type
+            params["payment"] = _normalize_payment_option(payment_type)
         drv.configure_session("DcIso2", params)
         drv.plug()
         threading.Thread(
