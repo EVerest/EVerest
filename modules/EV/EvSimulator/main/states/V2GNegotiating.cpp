@@ -93,6 +93,9 @@ StateBase::Result V2GNegotiating::feed(EventType ev) {
         // unconsumed flag can never leak into a later V2GNegotiating.
         ctx.vars.resume_awaiting_pwm = false;
         return {false, std::make_unique<Charging>(ctx)};
+    case EK::IsoDcPowerOn:
+        ctx.allow_power_on(true);
+        return {false, nullptr};
     case EK::IsoStopFromCharger:
         return {false, std::make_unique<Stopping>(ctx)};
     case EK::Unplug:
@@ -127,7 +130,6 @@ StateBase::Result V2GNegotiating::feed(EventType ev) {
     case EK::IsoAcMaxCurrent:
     case EK::IsoAcTargetPower:
     case EK::IsoV2GFinished:
-    case EK::IsoDcPowerOn:
     case EK::IsoPauseFromCharger:
     // RaiseError / ClearError are intercepted on the loop thread before the
     // FSM feed; listed only to keep the switch exhaustive (-Werror=switch).
