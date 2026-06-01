@@ -851,7 +851,7 @@ RampInterpolator
 linearly between ``ActiveRamp::start_a`` and ``ActiveRamp::target_a`` between
 ``start_at`` and ``end_at``. Triggered when ``SetChargingCurrent`` carries a
 non-zero ``ramp_ms``. Each tick calls
-``ctx.bsp_apply_ac_params(current, three_phases)``; on ``now >= end_at`` it
+``ctx.set_desired_ac_params(current, three_phases)``; on ``now >= end_at`` it
 snaps to target and clears ``vars.active_ramp``. Called before
 ``soc_step`` so SoC integration sees the freshly interpolated
 current on the same tick.

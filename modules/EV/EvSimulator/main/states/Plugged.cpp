@@ -116,10 +116,11 @@ StateBase::Result Plugged::feed(EventType ev) {
             EVLOG_info << "EvSimulator: session config omitted three_phases; using cfg.three_phases=" << three_ph;
         }
         if (mode == api::ChargeMode::AcIec || mode == api::ChargeMode::AcIso2 || mode == api::ChargeMode::AcIsoD20) {
-            // Clamp against any EVSE AC limit already received so a ceiling
-            // communicated before Charging is entered constrains the params
-            // applied here.
-            ctx.bsp_apply_ac_params_clamped(current_a, three_ph);
+            // Establish the EV's desired current from the session config and
+            // apply it clamped against any EVSE AC limit already received, so a
+            // ceiling communicated before Charging is entered constrains the
+            // params applied here without discarding the desired.
+            ctx.set_desired_ac_params(current_a, three_ph);
         }
         if (departure_time_s) {
             ctx.vars.departure_time_s = *departure_time_s;

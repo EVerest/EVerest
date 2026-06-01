@@ -293,6 +293,48 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         CHECK(ctx->vars.battery_charge_wh < initial_charge);
     }
 
+    // The EV's desired current is retained in charging_current_a, but the
+    // EVSE-communicated ceiling caps what is actually delivered. SoC must
+    // integrate the applied (delivered) current = min(desired, ceiling), not
+    // the unclamped desired, mirroring the DC delivered-current path.
+    SECTION("AC: zero EVSE ceiling delivers ~0 energy despite nonzero desired") {
+        TestFixture fx;
+        fx.cfg.ac_nominal_voltage = 230.0;
+        fx.cfg.tick_interval_ms = 1000;
+        auto ctx = fx.make_ctx();
+        set_mode(*ctx, api::ChargeMode::AcIso2);
+        ctx->vars.charging_current_a = 16.0f; // EV desired
+        ctx->vars.three_phases = true;
+        ctx->vars.evse_ac_max_current_a = 0.0f; // EVSE ceiling: deliver nothing
+        const float initial_charge = ctx->vars.battery_charge_wh;
+
+        soc_step(*ctx);
+
+        // Applied current is min(16, 0) = 0, so no energy is delivered.
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(initial_charge, kTol));
+    }
+
+    SECTION("AC: EVSE ceiling below desired integrates the clamped current") {
+        TestFixture fx;
+        fx.cfg.ac_nominal_voltage = 230.0;
+        fx.cfg.tick_interval_ms = 1000;
+        auto ctx = fx.make_ctx();
+        set_mode(*ctx, api::ChargeMode::AcIso2);
+        ctx->vars.charging_current_a = 16.0f; // EV desired
+        ctx->vars.three_phases = true;
+        ctx->vars.evse_ac_max_current_a = 8.0f; // EVSE ceiling below desired
+        const float initial_charge = ctx->vars.battery_charge_wh;
+
+        // Applied = min(16, 8) = 8 A; power = 8 * 230 * 3.
+        const double power = 8.0 * 230.0 * 3.0;
+        const double factor = MS_FACTOR * 1000.0;
+        const double expected_charge = static_cast<double>(initial_charge) + power * factor;
+
+        soc_step(*ctx);
+
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(static_cast<float>(expected_charge), kTol));
+    }
+
     SECTION("Discharge from near-empty floors at 0 (no underflow)") {
         TestFixture fx;
         fx.cfg.dc_target_current = 125;

@@ -281,15 +281,24 @@ public:
     void clear_diode_fail();
     void clear_rcd_error();
 
-    // AC params shortcut
-    void bsp_apply_ac_params(float current_a, bool three_phases);
+    // Set the EV's desired AC current and apply it clamped. Records the
+    // intent (vars.charging_current_a = desired_a) and then routes through
+    // bsp_apply_ac_params_clamped so the BSP sees min(desired, EVSE limit).
+    void set_desired_ac_params(float desired_a, bool three_phases);
 
-    // Apply the desired AC current clamped against the most recent EVSE
-    // limit (vars.evse_ac_max_current_a). When no EVSE limit has been
-    // received the desired current is applied verbatim; otherwise the
-    // smaller of the two is used. Routes through bsp_apply_ac_params so the
-    // peer and vars.charging_current_a stay in sync.
-    void bsp_apply_ac_params_clamped(float desired_current_a, bool three_phases);
+    // Pure apply: push the desired AC current to the BSP clamped against the
+    // most recent EVSE limit (vars.evse_ac_max_current_a). When no EVSE limit
+    // has been received the desired current is applied verbatim; otherwise the
+    // smaller of the two is used. This NEVER writes vars.charging_current_a
+    // (the desired/intent), so a transient EVSE ceiling can be lifted later and
+    // the applied current recovers toward the retained desired.
+    void bsp_apply_ac_params_clamped(float desired_a, bool three_phases);
+
+    // Applied AC current = the EV desired (vars.charging_current_a) clamped to
+    // the most recent EVSE limit (vars.evse_ac_max_current_a). Single source of
+    // truth for what the BSP is actually delivering so the SoC energy
+    // integrator and the clamped BSP push never diverge.
+    float effective_ac_current_a() const;
 
     // Record the EVSE-communicated AC current limit (from
     // ac_evse_max_current) into vars.evse_ac_max_current_a.

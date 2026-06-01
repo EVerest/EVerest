@@ -61,8 +61,12 @@ double instantaneous_power_w(const FsmContext& ctx) {
     case api::ChargeMode::AcIec:
     case api::ChargeMode::AcIso2:
     case api::ChargeMode::AcIsoD20:
-        // AC: current * voltage, times 3 for three-phase. car_simulation.cpp:118-127
-        return static_cast<double>(ctx.vars.charging_current_a) * ctx.cfg.ac_nominal_voltage *
+        // AC: applied current * voltage, times 3 for three-phase. The applied
+        // current is the EV desired clamped to any EVSE limit
+        // (effective_ac_current_a), so SoC tracks delivered energy: a 0 A
+        // ceiling yields ~0 delivered power even though the EV still desires
+        // its configured current. Parallels the DC delivered-current path below.
+        return static_cast<double>(ctx.effective_ac_current_a()) * ctx.cfg.ac_nominal_voltage *
                (ctx.vars.three_phases ? 3.0 : 1.0);
     case api::ChargeMode::DcIso2:
     case api::ChargeMode::DcIsoD20:

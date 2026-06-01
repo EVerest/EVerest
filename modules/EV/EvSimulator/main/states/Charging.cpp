@@ -2,8 +2,6 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "Charging.hpp"
 
-#include <algorithm>
-
 #include "../FsmContext.hpp"
 #include "ChargingPwmPaused.hpp"
 #include "Paused.hpp"
@@ -67,25 +65,23 @@ StateBase::Result Charging::feed(EventType ev) {
     case EK::SetChargingCurrent: {
         auto p = std::get<api::SetChargingCurrentParams>(ev.payload);
         if (ctx.vars.charge_mode() == api::ChargeMode::AcIec || ctx.vars.charge_mode() == api::ChargeMode::AcIso2) {
-            // Re-clamp the requested current against the most recent EVSE
-            // limit so a SetChargingCurrent cannot exceed an AC ceiling the
-            // charger already communicated.
-            float requested = p.current_a;
-            if (ctx.vars.evse_ac_max_current_a.has_value()) {
-                requested = std::min(requested, *ctx.vars.evse_ac_max_current_a);
-            }
+            // Store the RAW request as the EV's desired current. Clamping
+            // against the most recent EVSE limit happens at apply time
+            // (set_desired_ac_params / the ramp step), so a transient ceiling
+            // never overwrites the desired and the applied current can recover
+            // toward it once the ceiling is lifted.
             if (p.ramp_ms.has_value() && *p.ramp_ms > 0) {
                 const auto now = std::chrono::steady_clock::now();
                 ActiveRamp ramp;
                 ramp.start_a = ctx.vars.charging_current_a;
-                ramp.target_a = requested;
+                ramp.target_a = p.current_a;
                 ramp.three_phases = p.three_phases;
                 ramp.start_at = now;
                 ramp.end_at = now + std::chrono::milliseconds{*p.ramp_ms};
                 ctx.vars.active_ramp = ramp;
             } else {
                 ctx.vars.active_ramp.reset();
-                ctx.bsp_apply_ac_params(requested, p.three_phases);
+                ctx.set_desired_ac_params(p.current_a, p.three_phases);
             }
         } else {
             ctx.publish_e2m_command_ack("set_charging_current", "set_charging_current not supported in DC/ISO-20 mode");
