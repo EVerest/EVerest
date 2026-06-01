@@ -295,9 +295,10 @@ public:
     void bsp_apply_ac_params_clamped(float desired_a, bool three_phases);
 
     // Applied AC current = the EV desired (vars.charging_current_a) clamped to
-    // the most recent EVSE limit (vars.evse_ac_max_current_a). Single source of
-    // truth for what the BSP is actually delivering so the SoC energy
-    // integrator and the clamped BSP push never diverge.
+    // the most recent EVSE limit (vars.evse_ac_max_current_a), via the same
+    // clamp helper bsp_apply_ac_params_clamped() uses. The SoC energy integrator
+    // (read side) and the BSP push (write side) therefore apply one identical
+    // clamp and cannot diverge.
     float effective_ac_current_a() const;
 
     // Record the EVSE-communicated AC current limit (from
