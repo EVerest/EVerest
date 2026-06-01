@@ -12,6 +12,8 @@ target_include_directories(${TEST_TARGET} PRIVATE
 
 target_sources(${TEST_TARGET} PRIVATE
     RaiseErrorRouterTest.cpp
+    DiodeFaultDetectionTest.cpp
+    ../util/cp_signal.cpp
     ../util/errors.cpp
     ../util/raise_error_router.cpp
 )
