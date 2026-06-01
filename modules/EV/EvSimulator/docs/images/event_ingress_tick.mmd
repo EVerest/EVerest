@@ -11,7 +11,7 @@ sequenceDiagram
 
     Runtime->>Ramp: step(ctx, now)
     Ramp->>Ctx: update charging_current_a
-    Ramp->>Ctx: bsp_apply_ac_params
+    Ramp->>Ctx: set_desired_ac_params
 
     Runtime->>Soc: step(ctx)
     Soc->>Ctx: integrate power -> battery_charge_wh

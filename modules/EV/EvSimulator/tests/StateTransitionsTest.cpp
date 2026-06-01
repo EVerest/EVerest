@@ -101,9 +101,9 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evsim][helpers]") {
         CHECK(contains_substr(fx.mocks.bsp.records, "allow_power_on(value=true)"));
     }
 
-    SECTION("bsp_apply_ac_params records calls and updates SimVars") {
+    SECTION("set_desired_ac_params records calls and updates SimVars") {
         auto ctx = fx.make_ctx();
-        ctx->bsp_apply_ac_params(16.0f, true);
+        ctx->set_desired_ac_params(16.0f, true);
         CHECK(contains_substr(fx.mocks.bsp.records, "set_ac_max_current(current=16)"));
         CHECK(contains_substr(fx.mocks.bsp.records, "set_three_phases(three_phases=true)"));
         CHECK(ctx->vars.charging_current_a == 16.0f);
@@ -1898,7 +1898,7 @@ TEST_CASE("EvSimulator group3 transitions", "[evsim][group3]") {
         CHECK_FALSE(topic_recorded(fx.sink, ack_topic));
     }
 
-    SECTION("Plugged: latched AC D20 still calls bsp_apply_ac_params") {
+    SECTION("Plugged: latched AC D20 still calls set_desired_ac_params") {
         auto ctx = fx.make_ctx();
         api::AcIsoD20SessionParams d20{};
         d20.charging_current_a = 20.0f;
