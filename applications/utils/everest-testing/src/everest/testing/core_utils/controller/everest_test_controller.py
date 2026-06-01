@@ -100,10 +100,19 @@ _PAYMENT_OPTION_MAP: dict = {
 def _normalize_payment_option(payment_type: str) -> str:
     """Map a legacy/lowercase payment name to the EvSimulator PaymentOption enum.
 
-    Unknown values are returned verbatim so the EvSimulator codec rejects them
-    loudly rather than silently downgrading to EIM.
+    Raises ValueError on an unknown spelling. configure_session is
+    fire-and-forget, so a value the EvSimulator codec rejects is dropped without
+    a test-visible error and the session silently falls back to EIM. Failing
+    here makes the misconfiguration loud at the call site instead.
     """
-    return _PAYMENT_OPTION_MAP.get(payment_type.strip().lower(), payment_type)
+    key = payment_type.strip().lower()
+    try:
+        return _PAYMENT_OPTION_MAP[key]
+    except KeyError as e:
+        raise ValueError(
+            f"unknown payment_type {payment_type!r}; expected one of "
+            f"{sorted(set(_PAYMENT_OPTION_MAP.values()))} (case-insensitive)"
+        ) from e
 
 
 class EverestTestController(TestController):
