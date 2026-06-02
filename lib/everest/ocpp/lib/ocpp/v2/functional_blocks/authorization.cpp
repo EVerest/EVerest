@@ -95,9 +95,12 @@ ocpp::v2::Authorization::authorize_req(const IdToken id_token, const std::option
         const ocpp::CallResult<AuthorizeResponse> call_result = enhanced_message.message;
         return call_result.msg;
     } catch (const EnumConversionException& e) {
-        // We don't get here normally, because the future.get() already throws. Code was not removed, because something
-        // might be overseen here.
-        EVLOG_error << "EnumConversionException during handling of message: " << e.what();
+        EVLOG_error << "EnumConversionException during handling of AuthorizeResponse: " << e.what();
+        auto call_error = CallError(enhanced_message.uniqueId, "FormationViolation", e.what(), json({}));
+        this->context.message_dispatcher.dispatch_call_error(call_error);
+        return response;
+    } catch (const json::exception& e) {
+        EVLOG_error << "json::exception during handling of AuthorizeResponse: " << e.what();
         auto call_error = CallError(enhanced_message.uniqueId, "FormationViolation", e.what(), json({}));
         this->context.message_dispatcher.dispatch_call_error(call_error);
         return response;
