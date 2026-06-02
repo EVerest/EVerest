@@ -288,6 +288,7 @@ public:
             return dt::DC_EVSEStatusCode::EVSE_UtilityInterruptEvent;
         case d20::EvseErrorCode::Malfunction:
             return dt::DC_EVSEStatusCode::EVSE_Malfunction;
+        case d20::EvseErrorCode::ErrorShutdown:
         case d20::EvseErrorCode::EmergencyShutdown:
             return dt::DC_EVSEStatusCode::EVSE_EmergencyShutdown;
         default:

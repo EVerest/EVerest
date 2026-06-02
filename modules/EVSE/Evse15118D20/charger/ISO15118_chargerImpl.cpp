@@ -2408,8 +2408,7 @@ void ISO15118_chargerImpl::handle_update_meter_info(types::powermeter::Powermete
 void ISO15118_chargerImpl::handle_send_error(types::iso15118::EvseError& error) {
     // Map the EvseManager error to the library's neutral EVSE error code and forward it as a control
     // event. The SECC engines stamp Malfunction / UtilityInterruptEvent (RCD -> AC RCD flag) into the DC
-    // charge responses so the EV sees the fault, and abort the session on EmergencyShutdown (mirrors
-    // EvseV2G's handle_send_error).
+    // charge responses so the EV sees the fault, and distinguish error shutdown from emergency shutdown.
     auto code = iso15118::d20::EvseErrorCode::None;
     switch (error) {
     case types::iso15118::EvseError::Error_Contactor:
@@ -2425,9 +2424,10 @@ void ISO15118_chargerImpl::handle_send_error(types::iso15118::EvseError& error) 
         code = iso15118::d20::EvseErrorCode::Malfunction;
         break;
     case types::iso15118::EvseError::Error_EmergencyShutdown:
-    case types::iso15118::EvseError::Error_ErrorShutdown:
-        // The C++ stack has no keep-alive error shutdown (see EvseV2G); treat it as an emergency shutdown.
         code = iso15118::d20::EvseErrorCode::EmergencyShutdown;
+        break;
+    case types::iso15118::EvseError::Error_ErrorShutdown:
+        code = iso15118::d20::EvseErrorCode::ErrorShutdown;
         break;
     }
 
