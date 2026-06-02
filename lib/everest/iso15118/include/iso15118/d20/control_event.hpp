@@ -69,6 +69,19 @@ private:
     bool pause;
 };
 
+class ErrorShutdown {
+public:
+    explicit ErrorShutdown(bool active_) : active(active_) {
+    }
+
+    operator bool() const {
+        return active;
+    }
+
+private:
+    bool active;
+};
+
 using EnergyServices = std::vector<message_20::datatypes::ServiceCategory>;
 
 class ClosedContactor {
@@ -87,8 +100,9 @@ private:
 // TODO(SL): Define this globally for message and states
 using SupportedVASs = std::vector<uint16_t>;
 
-using ControlEvent = std::variant<CableCheckFinished, PresentVoltageCurrent, AuthorizationResponse, StopCharging,
-                                  PauseCharging, DcTransferLimits, AcTransferLimits, UpdateDynamicModeParameters,
-                                  ClosedContactor, AcTargetPower, AcPresentPower, EnergyServices, SupportedVASs>;
+using ControlEvent =
+    std::variant<CableCheckFinished, PresentVoltageCurrent, AuthorizationResponse, StopCharging, PauseCharging,
+                 ErrorShutdown, DcTransferLimits, AcTransferLimits, UpdateDynamicModeParameters, ClosedContactor,
+                 AcTargetPower, AcPresentPower, EnergyServices, SupportedVASs>;
 
 } // namespace iso15118::d20
