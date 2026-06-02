@@ -955,8 +955,14 @@ bool Manager::are_modules_started() const {
 /// \brief Handle module startup by publishing metadata, registering handlers, and spawning module processes.
 std::map<pid_t, std::string> Manager::handle_start_modules(const RuntimeContext& ctx) {
     BOOST_LOG_FUNCTION();
-    transition_to(ManagerState::StartingModules);
     auto& config = *ctx.config;
+    const auto& module_configurations = config.get_module_configurations();
+    if (module_configurations.size() == 0) {
+        EVLOG_info << "List of modules to start is empty";
+        transition_to(ManagerState::Idle);
+        return {};
+    }
+    transition_to(ManagerState::StartingModules);
     auto& mqtt_abstraction = ctx.mqtt_abstraction;
     const auto& ignored_modules = ctx.ignored_modules;
     const auto& standalone_modules = ctx.standalone_modules;
@@ -966,7 +972,6 @@ std::map<pid_t, std::string> Manager::handle_start_modules(const RuntimeContext&
 
     std::vector<ModuleStartInfo> modules_to_spawn;
 
-    const auto& module_configurations = config.get_module_configurations();
     modules_to_spawn.reserve(module_configurations.size());
     const auto number_of_modules = module_configurations.size();
     EVLOG_info << "Starting " << number_of_modules << " modules";
