@@ -138,6 +138,8 @@ StateBase::Result V2GNegotiating::feed(EventType ev) {
     case EK::Enable:
     case EK::EvInfo:
     case EK::SlacState:
+    case EK::DcEvsePresentCurrent:
+    case EK::DcEvsePresentVoltage:
     case EK::IsoAcMaxCurrent:
     case EK::IsoAcTargetPower:
     case EK::IsoV2GFinished:

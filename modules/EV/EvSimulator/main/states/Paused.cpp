@@ -85,6 +85,8 @@ StateBase::Result Paused::feed(EventType ev) {
     case EK::BspMeasurement:
     case EK::EvInfo:
     case EK::SlacState:
+    case EK::DcEvsePresentCurrent:
+    case EK::DcEvsePresentVoltage:
     case EK::IsoPowerReady:
     case EK::IsoAcMaxCurrent:
     case EK::IsoAcTargetPower:

@@ -55,6 +55,15 @@ void setup_peer_subscriptions(EvSimRuntime& rt, EvSimulator& mod) {
         iso->subscribe_ac_evse_target_power([&rt](const ::types::iso15118::AcTargetPower& target_power) {
             rt.enqueue(Event{IsoAcTargetPowerEvt{target_power}});
         });
+
+        // DC live present current / voltage from the SECC. Forwarded into the
+        // SoC integrator's closed-loop input: a reported present current
+        // populates vars.evse_dc_present_current_a (the open-loop fallback is
+        // used while it stays nullopt).
+        iso->subscribe_dc_evse_present_current(
+            [&rt](const double& a) { rt.enqueue(Event{DcEvsePresentCurrentPayload{a}}); });
+        iso->subscribe_dc_evse_present_voltage(
+            [&rt](const double& v) { rt.enqueue(Event{DcEvsePresentVoltagePayload{v}}); });
     }
 }
 
