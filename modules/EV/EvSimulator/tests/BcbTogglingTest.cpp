@@ -265,10 +265,18 @@ TEST_CASE("EvSimulator resume waits for PWM-running before iso_start_charging", 
 
 // DC variant of the resume test: on a DC resume the SECC re-runs CableCheck and
 // waits for the EV contactor to close within its
-// cable_check_relays_closed_timeout_s (5 s) window. Reacting to josev's
-// re-emitted dc_power_on loses that race -> MREC11CableCheckFault. So on the DC
-// resume V2GNegotiating::enter the contactor must be closed proactively
-// (allow_power_on true) BEFORE any IsoDcPowerOn event is fed.
+// cable_check_relays_closed_timeout_s window. But the contactor must NOT close
+// the instant V2GNegotiating is entered: the SECC has just been woken by the BCB
+// edges and has not yet switched its CP PWM off / back on for the pause window.
+// While the SECC's PWM is off it runs a 6 s C1 timer ("EV did not go back to
+// state B after PWM was switched off") that force-powers-off under load if it
+// sees the EV still at CP=C. So during the pause + BCB wake + SLAC re-match the
+// EV must hold CP=B; it asserts CP=C (which closes the SECC contactor for the
+// resume CableCheck) only AFTER a PWM-running BspMeasurement confirms the SECC
+// re-applied the charging PWM -- exactly EvManager's iso_wait_pwm_is_running ->
+// iso_start_v2g_session ordering. The EV presents CP state C (the EVSE BSP sim
+// emits PowerOn on the CP=C edge; allow_power_on is a no-op on the EV BSP), so
+// CP=C is what closes the SECC contactor, mirroring Charging::enter.
 TEST_CASE("EvSimulator DC resume closes contactor on V2GNegotiating entry", "[evsim][group2]") {
     TestFixture fx;
     auto ctx = fx.make_ctx();
@@ -295,13 +303,28 @@ TEST_CASE("EvSimulator DC resume closes contactor on V2GNegotiating entry", "[ev
     }
     REQUIRE(fsm.get_current_state_id() == api::FsmState::SlacMatching);
     fx.mocks.bsp.clear();
+    fx.mocks.iso.clear();
     fsm.feed(Event{SlacStatePayload{"MATCHED"}});
     REQUIRE(fsm.get_current_state_id() == api::FsmState::V2GNegotiating);
 
-    // The contactor is closed on the resume V2GNegotiating::enter -- before any
-    // IsoDcPowerOn is fed -- so the EV beats the SECC's resume CableCheck
-    // relays-closed timeout instead of reacting to josev's dc_power_on.
-    REQUIRE(index_of_substr(fx.mocks.bsp.records, "allow_power_on(value=true)") >= 0);
+    // On entry the EV must hold CP=B, NOT CP=C: while the SECC's pause-window PWM
+    // is off, presenting CP=C trips its 6 s C1 "powering off under load" timer and
+    // it force-powers-off, so the resume hangs. Closing the contactor (CP=C) and
+    // re-issuing start_charging is deferred until a PWM-running BspMeasurement.
+    CHECK_FALSE(contains_substr(fx.mocks.bsp.records, "set_cp_state(cp_state=C)"));
+    CHECK_FALSE(contains_substr(fx.mocks.iso.records, "start_charging"));
+
+    // The SECC re-applies the charging PWM (PWM-is-running). Only NOW does the EV
+    // close the contactor by presenting CP=C (mirroring Charging::enter) and
+    // re-issue start_charging, beating the SECC's resume CableCheck relays-closed
+    // timeout while still respecting its C1 timer.
+    Event pwm{EventKind::BspMeasurement};
+    pwm.payload = BspMeasurementPayload{50.0f, std::nullopt, ::types::board_support_common::ProximityPilot{}};
+    fsm.feed(pwm);
+    REQUIRE(fsm.get_current_state_id() == api::FsmState::V2GNegotiating);
+    REQUIRE(index_of_substr(fx.mocks.bsp.records, "set_cp_state(cp_state=C)") >= 0);
+    CHECK(contains_substr(fx.mocks.bsp.records, "allow_power_on(value=true)"));
+    CHECK(contains_substr(fx.mocks.iso.records, "start_charging"));
 }
 
 // AC EV-initiated resume must re-establish SLAC before re-negotiating. On AC the
