@@ -24,6 +24,11 @@ std::string kvs_key(int connector_id) {
 
 } // namespace
 
+bool is_iso_mode(API_types::ev_simulator::ChargeMode m) {
+    using CM = API_types::ev_simulator::ChargeMode;
+    return m == CM::AcIso2 || m == CM::AcIsoD20 || m == CM::DcIso2 || m == CM::DcIsoD20;
+}
+
 // PersistedState <-> JSON. Enum members are stored via their public typed-API
 // serializer to avoid pulling in the private `json_codec.hpp`.
 //
@@ -389,9 +394,7 @@ bool FsmContext::validate_session_config(const API_types::ev_simulator::SessionC
     }
 
     const api::ChargeMode mode = api::mode_of(sp);
-    const bool iso_mode = mode == api::ChargeMode::AcIso2 || mode == api::ChargeMode::AcIsoD20 ||
-                          mode == api::ChargeMode::DcIso2 || mode == api::ChargeMode::DcIsoD20;
-    if (iso_mode && (!peer_actions.iso.present || !peer_actions.slac.present)) {
+    if (is_iso_mode(mode) && (!peer_actions.iso.present || !peer_actions.slac.present)) {
         reject_reason = "no ev_slac peer";
         return false;
     }

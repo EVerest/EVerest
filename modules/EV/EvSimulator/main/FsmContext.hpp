@@ -170,10 +170,10 @@ struct SimVars {
     // True once a SLAC UNMATCHED (D-LINK_TERMINATE) is observed after a match,
     // i.e. the SECC tore the SLAC link down. On AC this happens on pause; on DC
     // the link survives a pause, so this stays false. The EV-initiated resume
-    // path (BcbToggling) consults it to decide whether SLAC must be re-matched
-    // before re-negotiating: AC must re-match (mirrors EvManager's
-    // iso_wait_slac_matched reset+trigger_matching on UNMATCHED), DC must not
-    // (a redundant re-match would race its resume CableCheck timing). Cleared
+    // path (BcbToggling) re-matches SLAC for every ISO mode (gated on the charge
+    // mode, not this flag) because the SECC re-enters MATCHING on the BCB wake-up
+    // and waits for a fresh both-sides match; this flag is an additional trigger
+    // so a non-ISO resume that still saw an UNMATCHED re-matches too. Cleared
     // when SlacMatching observes the new MATCHED.
     bool slac_unmatched{false};
     int32_t bcb_remaining{0};
@@ -434,6 +434,12 @@ private:
     ScenarioTimerArm scenario_timer_arm_;
     const ev_API::Topics& topics_;
 };
+
+// True for the ISO 15118 charge modes (AcIso2 / AcIsoD20 / DcIso2 / DcIsoD20),
+// i.e. the modes that run SLAC. AcIec is plain IEC 61851 (no SLAC) and is NOT
+// an ISO mode. Shared so the SoC integrator, session-config validation, and
+// the resume re-match path apply one identical definition.
+bool is_iso_mode(API_types::ev_simulator::ChargeMode m);
 
 // Free helpers — implemented in FsmContext.cpp so the state header for
 // Faulted / Disabled can be included only at the implementation site,

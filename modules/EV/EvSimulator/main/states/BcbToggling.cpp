@@ -52,15 +52,23 @@ StateBase::Result BcbToggling::feed(EventType ev) {
             // detour below, so the deferred-start contract holds whichever way
             // V2GNegotiating is finally entered.
             ctx.vars.resume_awaiting_pwm = true;
-            // On AC the pause tore the SLAC link down (D-LINK_TERMINATE ->
-            // UNMATCHED), so re-establish SLAC before re-negotiating: route
-            // through SlacMatching, whose enter re-triggers matching and whose
-            // MATCHED handler advances to V2GNegotiating. Mirrors EvManager's
-            // iso_wait_slac_matched reset + trigger_matching on UNMATCHED.
-            // On DC the link survives the pause (slac_unmatched stays false),
-            // so the direct V2GNegotiating path is kept -- a redundant re-match
-            // would race the SECC's resume CableCheck relays-closed timeout.
-            if (ctx.vars.slac_unmatched) {
+            // Every ISO mode must re-establish SLAC before re-negotiating: the
+            // SECC's BCB-toggle wake-up puts ITS SLAC back into MATCHING and will
+            // not honor the resume (its CableCheck needs a fresh D-LINK_READY)
+            // until the EV re-triggers matching too -- the SlacSimulator co-match
+            // fires only with BOTH sides MATCHING. So route through SlacMatching,
+            // whose enter re-triggers matching and whose MATCHED handler advances
+            // to V2GNegotiating, for AC and DC alike. Mirrors EvManager's
+            // iso_wait_slac_matched reset + trigger_matching (car_simulation.cpp
+            // iso_wait_slac_matched). The earlier "DC link survives the pause, so
+            // skip the re-match" premise was wrong: the SECC still waits for a
+            // both-sides MATCHING, so a DC resume that skips SlacMatching hangs.
+            // slac_unmatched alone (AC's UNMATCHED latch) is insufficient because
+            // DC never latches it; gate on the ISO mode directly (AcIec has no
+            // SLAC, so it is excluded and takes the direct path). charge_mode()
+            // is optional -- a resume without a session takes the direct path.
+            const auto cm = ctx.vars.charge_mode();
+            if (ctx.vars.slac_unmatched || (cm && is_iso_mode(*cm))) {
                 return {false, std::make_unique<SlacMatching>(ctx)};
             }
             return {false, std::make_unique<V2GNegotiating>(ctx)};

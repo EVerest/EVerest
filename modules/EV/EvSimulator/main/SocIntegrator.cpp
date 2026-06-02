@@ -45,11 +45,6 @@ constexpr double MS_FACTOR = (1.0 / 60.0 / 60.0 / 1000.0);
 
 namespace api = everest::lib::API::V1_0::types::ev_simulator;
 
-bool is_iso_mode(api::ChargeMode m) {
-    return m == api::ChargeMode::AcIso2 || m == api::ChargeMode::AcIsoD20 || m == api::ChargeMode::DcIso2 ||
-           m == api::ChargeMode::DcIsoD20;
-}
-
 // Compute the instantaneous power draw in Watts according to the current
 // charge mode. Mirrors car_simulation.cpp:114-133.
 double instantaneous_power_w(const FsmContext& ctx) {
