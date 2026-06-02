@@ -51,17 +51,17 @@ void V2GNegotiating::enter() {
     // (SlacMatching -> V2GNegotiating) leaves the flag false and starts now.
     if (ctx.vars.resume_awaiting_pwm) {
         ctx.arm_timer(std::chrono::seconds(60));
-        // On a DC resume the SECC re-runs CableCheck and expects the EV
-        // contactor closed within its cable_check_relays_closed_timeout_s
-        // window. Closing it only reactively (on josev's re-emitted
-        // dc_power_on, handled below) races that timeout and trips an
-        // MREC11 CableCheckFault. Close it proactively here so the EV beats
-        // the SECC's resume CableCheck. AC resume needs no contactor command
-        // (the EVSE relays drive power), so this is gated on DC modes only.
-        const auto cm = ctx.vars.charge_mode();
-        if (cm && (*cm == api::ChargeMode::DcIso2 || *cm == api::ChargeMode::DcIsoD20)) {
-            ctx.allow_power_on(true);
-        }
+        // The EV must hold CP=B for the whole pause window. The SECC switches
+        // its CP PWM off across the pause and runs a 6 s C1 timer ("EV did not
+        // go back to state B after PWM was switched off"); if it sees the EV
+        // still at CP=C it force-powers-off under load and never re-applies PWM,
+        // hanging the resume. BcbToggling already leaves CP=B and SlacMatching
+        // does not touch it, so re-assert B explicitly here for clarity/safety.
+        // The DC resume's contactor close (CP=C) is what the SECC's resume
+        // CableCheck needs, but it must wait until the SECC re-applies the
+        // charging PWM: a PWM-running BspMeasurement drives CP=C in feed()
+        // below, mirroring EvManager's iso_wait_pwm_is_running -> CP=C ordering.
+        ctx.set_cp(::types::ev_board_support::EvCpState::B);
         ctx.publish_e2m_state(api::FsmState::V2GNegotiating);
         return;
     }
@@ -91,6 +91,18 @@ StateBase::Result V2GNegotiating::feed(EventType ev) {
         if (ctx.vars.resume_awaiting_pwm && m.cp_pwm_duty_cycle > kPwmRunningLowPct &&
             m.cp_pwm_duty_cycle < kPwmRunningHighPct) {
             ctx.vars.resume_awaiting_pwm = false;
+            // The SECC has re-applied the charging PWM and is ready for the
+            // resume CableCheck. Now close the EV contactor by presenting CP=C
+            // (the EVSE BSP sim emits PowerOn, clearing contactor_open, only on
+            // the CP=C edge; allow_power_on is a no-op on the EV BSP), mirroring
+            // Charging::enter. Held until here so CP=B spans the SECC's PWM-off
+            // C1 timer window. AC resume needs no contactor command (the EVSE
+            // relays drive power), so this is gated on DC modes only.
+            const auto cm = ctx.vars.charge_mode();
+            if (cm && (*cm == api::ChargeMode::DcIso2 || *cm == api::ChargeMode::DcIsoD20)) {
+                ctx.set_cp(::types::ev_board_support::EvCpState::C);
+                ctx.allow_power_on(true);
+            }
             if (!start_iso_charging(ctx)) {
                 ctx.vars.last_fault = api::FaultReport{api::FaultType::Internal,
                                                        std::string{"iso_start_charging rejected"}, std::nullopt};
