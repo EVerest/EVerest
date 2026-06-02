@@ -316,17 +316,29 @@ bool sha_512(const void* data, std::size_t len, sha_512_digest_t& digest) {
 }
 
 std::vector<std::uint8_t> base64_decode(const char* text, std::size_t len) {
-    assert(text != nullptr);
-    assert(len > 0);
-
-    // remove \n
+    // Strip whitespace; pass everything else to BIO_f_base64. Byte set matches
+    // EVP_Decode*'s B64_WS table so this stays drop-in equivalent to the
+    // evse_security path (consolidation target). NUL terminates the scan: an
+    // embedded NUL almost certainly indicates a length-parameter error and
+    // continuing would feed garbage to the decoder.
     auto input = std::make_unique<std::uint8_t[]>(len);
     std::size_t input_len{0};
 
     for (std::size_t i = 0; i < len; i++) {
         const auto item = text[i];
-        if (item != '\n') {
-            input.get()[input_len++] = item;
+        if (item == '\0') {
+            break;
+        }
+        switch (item) {
+        case '\t':
+        case '\n':
+        case '\v':
+        case '\f':
+        case '\r':
+        case ' ':
+            continue;
+        default:
+            input.get()[input_len++] = static_cast<std::uint8_t>(item);
         }
     }
 
@@ -370,9 +382,6 @@ bool base64_decode(const char* text, std::size_t len, std::uint8_t* out_data, st
 }
 
 std::string base64_encode(const std::uint8_t* data, std::size_t len, bool newLine) {
-    assert(data != nullptr);
-    assert(len > 0);
-
     auto* b64 = BIO_new(BIO_f_base64());
     auto* mem = BIO_new(BIO_s_mem());
     BIO_push(b64, mem);
