@@ -439,6 +439,18 @@ class EvSimulatorTestController:
         )
         self._publish("plug", {})
 
+    def plug(self, connector_id: int = 1) -> None:
+        """Plug in using the session config already latched via
+        `configure_session` / `play_charging_curve`.
+
+        The `plug_in_dc_*` helpers configure-then-plug in one call, which
+        overwrites any previously latched curve. Use this when the session
+        (e.g. a looping `ChargingCurve`) was latched separately and must be
+        consumed by this plug rather than replaced.
+        """
+        del connector_id
+        self._publish("plug", {})
+
     def plug_out(self, connector_id: int = 1) -> None:
         """Unplug without negotiating an ISO 15118 stop first."""
         del connector_id

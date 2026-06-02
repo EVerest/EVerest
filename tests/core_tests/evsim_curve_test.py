@@ -254,6 +254,11 @@ def test_charging_curve_loop_repeats(everest_core, evsim_test_controller):
     `set_charging_current` ack per point per cycle; with `loop=True`
     the ack count must exceed a single pass (2), proving the dispatcher
     rewound and replayed the curve.
+
+    The curve is latched via `play_charging_curve` and consumed at the
+    plug (Charging::enter splices the session's pending curve); it does
+    not alter a live session, so it must be configured before plugging,
+    not after Charging is reached.
     """
     command_ack_topic = f"{evsim_test_controller.base_e2m}/command_ack"
     ack_collector = _CommandAckCollector(
@@ -263,15 +268,9 @@ def test_charging_curve_loop_repeats(everest_core, evsim_test_controller):
     everest_core.start()
 
     evsim_test_controller.start()
-    evsim_test_controller.plug_in_dc_iso()
-
-    assert evsim_test_controller.state_collector.wait_for_state(
-        "Charging", timeout=_TIMEOUT_CHARGING
-    ), (
-        "EvSimulator did not reach Charging before curve loop; "
-        f"saw {evsim_test_controller.state_collector.states}"
-    )
-
+    # Latch the looping curve, then plug; the plug consumes this session
+    # config so Charging::enter splices the loop=True curve into the
+    # ScenarioDispatcher.
     evsim_test_controller.play_charging_curve(
         points=[
             {"t_offset_ms": 0, "current_a": 50.0, "three_phases": False},
@@ -279,6 +278,14 @@ def test_charging_curve_loop_repeats(everest_core, evsim_test_controller):
         ],
         loop=True,
         mode="DcIso2",
+    )
+    evsim_test_controller.plug()
+
+    assert evsim_test_controller.state_collector.wait_for_state(
+        "Charging", timeout=_TIMEOUT_CHARGING
+    ), (
+        "EvSimulator did not reach Charging before curve loop; "
+        f"saw {evsim_test_controller.state_collector.states}"
     )
 
     # Single pass = 2 acks; >= 4 proves at least two cycles, i.e. the
