@@ -132,7 +132,9 @@ void TransactionBlock::on_transaction_finished(const std::int32_t evse_id, const
 
     // If the meter only returns a start_signed_meter_value once the transaction stops we inject it here
     // Otherwise the one recorded on transaction start will be kept
-    if (start_signed_meter_value.has_value() && this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::SampledDataSignReadings).value_or(false)) {
+    if (start_signed_meter_value.has_value() &&
+        this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::SampledDataSignReadings)
+            .value_or(false)) {
         ([&]() {
             SampledValue* begin_sampled_value = nullptr;
 
@@ -144,7 +146,8 @@ void TransactionBlock::on_transaction_finished(const std::int32_t evse_id, const
                                 // A signed meter value has already been recorded on transaction start. Exit here
                                 return;
                             }
-                            // Check if this is a suitable SampledValue to attach our signed meter value to and, if so, save it for later
+                            // Check if this is a suitable SampledValue to attach our signed meter value to and, if so,
+                            // save it for later
                             if (!sv.phase.has_value() && sv.measurand == MeasurandEnum::Energy_Active_Import_Register) {
                                 begin_sampled_value = &sv;
                             }

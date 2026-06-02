@@ -4488,9 +4488,9 @@ void ChargePointImpl::on_transaction_stopped(const std::int32_t connector, const
             }
         }
         if (!has_start_entry) {
-            const auto start_meter_value = get_signed_meter_value(
-                start_signed_meter_value.value(), ReadingContext::Transaction_Begin,
-                transaction->get_start_energy_wh()->timestamp);
+            const auto start_meter_value =
+                get_signed_meter_value(start_signed_meter_value.value(), ReadingContext::Transaction_Begin,
+                                       transaction->get_start_energy_wh()->timestamp);
             transaction->add_meter_value(start_meter_value);
         }
     }
