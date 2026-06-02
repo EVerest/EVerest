@@ -103,6 +103,9 @@ inline PeerActions make_peer_actions(ActionMocks& mocks) {
     actions.iso.set_bpt_dc_params = [&mocks](const ::types::iso15118::DcEvBPTParameters& params) {
         mocks.iso.call_set_bpt_dc_params(params);
     };
+    actions.iso.set_dc_params = [&mocks](const ::types::iso15118::DcEvParameters& params) {
+        mocks.iso.call_set_dc_params(params);
+    };
     actions.iso.present = true;
 
     actions.slac.trigger_matching = [&mocks]() -> bool { return mocks.slac.call_trigger_matching(); };
