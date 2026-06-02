@@ -863,14 +863,18 @@ SocIntegrator
 ``vars.battery_charge_wh`` once per tick while ``Charging``:
 
 - AC modes: ``power_w = charging_current_a * ac_nominal_voltage * (three_phases ? 3 : 1)``
-- DC modes: ``power_w = vars.dc_present_current_a * vars.dc_present_voltage_v``
-  (seeded from ``cfg.dc_target_current`` / ``cfg.dc_target_voltage`` at
-  construction; overwritten by peer ``EvInfo`` passthrough so the integrator
-  tracks the delivered DC power, not the static cfg target)
+- DC modes: ``power_w = effective_dc_current_a() * vars.dc_present_voltage_v``,
+  where ``effective_dc_current_a()`` returns the live measured
+  ``vars.evse_dc_present_current_a`` (an ``optional``) when a present-current
+  event has arrived, else the open-loop fallback
+  ``clamp(cfg.dc_target_current, 0, cfg.dc_max_current_limit)``.
+  ``vars.dc_present_voltage_v`` is seeded from ``cfg.dc_target_voltage`` at
+  construction.
 - ``delta_wh = power_w * (tick_ms / 3.6e6)``
 
 Power may be negative when BPT / V2X discharge is active (negative
-``charging_current_a`` for AC or negative ``dc_present_current_a`` for DC);
+``charging_current_a`` for AC or a negative live ``evse_dc_present_current_a``
+for DC; the open-loop DC fallback is floored at ``0`` and never discharges);
 the integrator subtracts energy and the post-clamp floor at ``0`` handles
 underflow symmetrically to the overshoot clamp at ``battery_capacity_wh``.
 
