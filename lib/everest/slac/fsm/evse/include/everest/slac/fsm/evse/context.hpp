@@ -190,6 +190,8 @@ struct EvseSlacConfig {
     int sounding_atten_adjustment = 0;
 
     bool reset_instead_of_fail{false};
+
+    bool regenerate_key_on_reset{true};
 };
 
 struct Context {
