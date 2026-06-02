@@ -1136,22 +1136,73 @@ TEST_CASE("EvSimulator group1 transitions", "[evsim][group1]") {
         CHECK(fx.timer.state_timer_arms[0] == std::chrono::seconds(60));
     }
 
-    SECTION("V2GNegotiating: IsoPowerReady -> Charging") {
+    SECTION("V2GNegotiating: IsoPowerReady in AcIso2 -> Charging") {
+        // AC ISO has no dc_power_on milestone, so ev_power_ready is the
+        // charge-loop entry gate. Mirrors EvManager's AC path.
         auto ctx = fx.make_ctx();
+        set_mode(*ctx, api::ChargeMode::AcIso2);
         V2GNegotiating s{*ctx};
         auto result = s.feed(Event{EventKind::IsoPowerReady});
         REQUIRE(result.new_state);
         CHECK(result.new_state->get_id() == api::FsmState::Charging);
     }
 
-    SECTION("V2GNegotiating: IsoDcPowerOn closes contactors (allow_power_on true), stays") {
+    SECTION("V2GNegotiating: IsoPowerReady in AcIsoD20 -> Charging") {
+        auto ctx = fx.make_ctx();
+        set_mode(*ctx, api::ChargeMode::AcIsoD20);
+        V2GNegotiating s{*ctx};
+        auto result = s.feed(Event{EventKind::IsoPowerReady});
+        REQUIRE(result.new_state);
+        CHECK(result.new_state->get_id() == api::FsmState::Charging);
+    }
+
+    SECTION("V2GNegotiating: IsoPowerReady in DcIso2 asserts CP=C and STAYS (not Charging)") {
+        // DC ISO splits the charge-loop entry into two milestones, mirroring
+        // EvManager: ev_power_ready (ISO_POWER_READY) asserts CP=C and holds
+        // through CableCheck/PreCharge; only dc_power_on enters Charging.
+        // Transitioning to Charging here is premature -- it signals "Charging"
+        // while the SECC is still entering CableCheck and pausing then drops
+        // CP to B mid-CableCheck, killing the PSU.
+        auto ctx = fx.make_ctx();
+        set_mode(*ctx, api::ChargeMode::DcIso2);
+        V2GNegotiating s{*ctx};
+        auto result = s.feed(Event{EventKind::IsoPowerReady});
+        CHECK(result.unhandled == false);
+        CHECK(result.new_state == nullptr);
+        CHECK(contains_substr(fx.mocks.bsp.records, "set_cp_state(cp_state=C)"));
+        CHECK(contains_substr(fx.mocks.bsp.records, "allow_power_on(value=true)"));
+    }
+
+    SECTION("V2GNegotiating: IsoPowerReady in DcIsoD20 asserts CP=C and STAYS (not Charging)") {
+        // DcIsoD20 also publishes dc_power_on (iso15118_20_states.py DCPreCharge),
+        // so it follows the same two-milestone gate as DcIso2.
+        auto ctx = fx.make_ctx();
+        set_mode(*ctx, api::ChargeMode::DcIsoD20);
+        V2GNegotiating s{*ctx};
+        auto result = s.feed(Event{EventKind::IsoPowerReady});
+        CHECK(result.unhandled == false);
+        CHECK(result.new_state == nullptr);
+        CHECK(contains_substr(fx.mocks.bsp.records, "set_cp_state(cp_state=C)"));
+        CHECK(contains_substr(fx.mocks.bsp.records, "allow_power_on(value=true)"));
+    }
+
+    SECTION("V2GNegotiating: IsoDcPowerOn in DcIso2 -> Charging") {
+        // dc_power_on (PreCharge complete) is the DC charging milestone.
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
         V2GNegotiating s{*ctx};
         auto result = s.feed(Event{EventKind::IsoDcPowerOn});
-        CHECK(result.unhandled == false);
-        CHECK(result.new_state == nullptr);
-        CHECK(contains_substr(fx.mocks.bsp.records, "allow_power_on(value=true)"));
+        REQUIRE(result.new_state);
+        CHECK(result.new_state->get_id() == api::FsmState::Charging);
+    }
+
+    SECTION("V2GNegotiating: IsoDcPowerOn in DcIsoD20 -> Charging") {
+        auto ctx = fx.make_ctx();
+        set_mode(*ctx, api::ChargeMode::DcIsoD20);
+        V2GNegotiating s{*ctx};
+        auto result = s.feed(Event{EventKind::IsoDcPowerOn});
+        REQUIRE(result.new_state);
+        CHECK(result.new_state->get_id() == api::FsmState::Charging);
     }
 
     SECTION("V2GNegotiating: IsoStopFromCharger -> Stopping") {
@@ -2470,7 +2521,12 @@ TEST_CASE("EvSimulator group3 transitions", "[evsim][group3]") {
 
         slac_result.new_state->enter();
         V2GNegotiating& v2g = static_cast<V2GNegotiating&>(*slac_result.new_state);
-        auto v2g_result = v2g.feed(Event{EventKind::IsoPowerReady});
+        // DC ISO: ev_power_ready (CableCheck/PreCharge gate) asserts CP=C and
+        // holds; it does NOT enter Charging. dc_power_on (PreCharge complete)
+        // is the charge-loop entry milestone.
+        auto pr_result = v2g.feed(Event{EventKind::IsoPowerReady});
+        CHECK(pr_result.new_state == nullptr);
+        auto v2g_result = v2g.feed(Event{EventKind::IsoDcPowerOn});
         REQUIRE(v2g_result.new_state);
         CHECK(v2g_result.new_state->get_id() == api::FsmState::Charging);
         CHECK(fx.timer.enqueued_events.empty());
