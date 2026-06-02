@@ -599,7 +599,7 @@ std::optional<int> Manager::handle_finalize_shutdown_transition(RuntimeContext& 
 void Manager::handle_initiate_graceful_shutdown(const std::chrono::system_clock::time_point& module_exited_time,
                                                 bool publish_when_sigint_received, const std::string* info_log,
                                                 MQTTAbstraction& mqtt_abstraction, const ManagerSettings& ms) {
-    if (is_in_shutdown_flow_state()) {
+    if (is_in_shutdown_flow_state() or is_idle()) {
         return;
     }
     transition_to(ManagerState::ShutdownRequested);
@@ -948,6 +948,10 @@ bool Manager::is_crash_in_progress() const {
 
 bool Manager::are_modules_started() const {
     return state_ == ManagerState::Running;
+}
+
+bool Manager::is_idle() const {
+    return state_ == ManagerState::Idle;
 }
 
 // ---- Event loop dispatch handlers ------------------------------------------
