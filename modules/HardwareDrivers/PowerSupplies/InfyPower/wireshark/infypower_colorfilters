@@ -1,0 +1,13 @@
+# Wireshark coloring rules for InfyPower internal traffic
+# Import: View -> Coloring Rules -> Import... -> select this file
+#
+@InfyPower internal (cmd 0x17)
+infypower.internal
+True
+65535
+65535
+43520
+0
+0
+0
+InfyPower internal cmd 0x17

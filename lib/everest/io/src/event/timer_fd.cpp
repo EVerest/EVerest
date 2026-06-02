@@ -36,6 +36,15 @@ bool timer_fd::reset() {
     return set_timeout_ns(m_to_ns);
 }
 
+void timer_fd::set_single_shot(bool on) {
+    m_single_shot = on;
+}
+
+bool timer_fd::disarm() {
+    struct itimerspec timer {};
+    return ::timerfd_settime(m_fd, 0, &timer, nullptr) == 0;
+}
+
 bool timer_fd::set_timeout_ms(long long to) {
     return set_timeout_ns(1000 * 1000 * to);
 }
@@ -46,16 +55,21 @@ bool timer_fd::set_timeout_us(long long to) {
 
 bool timer_fd::set_timeout_ns(long long to) {
     m_to_ns = to;
-    struct itimerspec timer;
-    auto sec = to / 1000000000;
-    auto nano = to % 1000000000;
+    struct itimerspec timer {};
+    auto const sec = to / 1000000000LL;
+    auto const nano = to % 1000000000LL;
 
-    timer.it_interval.tv_nsec = nano;
-    timer.it_interval.tv_sec = sec;
-    timer.it_value.tv_nsec = nano;
     timer.it_value.tv_sec = sec;
+    timer.it_value.tv_nsec = nano;
+    if (m_single_shot) {
+        timer.it_interval.tv_sec = 0;
+        timer.it_interval.tv_nsec = 0;
+    } else {
+        timer.it_interval.tv_sec = sec;
+        timer.it_interval.tv_nsec = nano;
+    }
 
-    return timerfd_settime(m_fd, 0, &timer, NULL) == 0;
+    return ::timerfd_settime(m_fd, 0, &timer, nullptr) == 0;
 }
 
 } // namespace everest::lib::io::event

@@ -5,6 +5,7 @@
 #define INFY_CAN_DEVICE_HPP
 
 #include "CanBus.hpp"
+#include "CanPackets.hpp"
 #include <chrono>
 #include <linux/can.h>
 #include <map>
@@ -111,6 +112,9 @@ private:
     // Private implementation for template methods
     bool send_command_impl(uint8_t destination_address, uint8_t command_number, const std::vector<uint8_t>& payload,
                            bool group = false);
+
+    void enqueue_poll_command(uint8_t destination_address, uint8_t command_number, const std::vector<uint8_t>& payload,
+                              bool group = false);
 };
 
 #endif // INFY_CAN_DEVICE_HPP
