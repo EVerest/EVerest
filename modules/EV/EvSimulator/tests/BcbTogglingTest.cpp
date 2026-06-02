@@ -270,14 +270,12 @@ TEST_CASE("EvSimulator resume waits for PWM-running before iso_start_charging", 
 // edges and has not yet switched its CP PWM off / back on for the pause window.
 // While the SECC's PWM is off it runs a 6 s C1 timer ("EV did not go back to
 // state B after PWM was switched off") that force-powers-off under load if it
-// sees the EV still at CP=C. So during the pause + BCB wake + SLAC re-match the
-// EV must hold CP=B; it asserts CP=C (which closes the SECC contactor for the
-// resume CableCheck) only AFTER a PWM-running BspMeasurement confirms the SECC
-// re-applied the charging PWM -- exactly EvManager's iso_wait_pwm_is_running ->
-// iso_start_v2g_session ordering. The EV presents CP state C (the EVSE BSP sim
-// emits PowerOn on the CP=C edge; allow_power_on is a no-op on the EV BSP), so
-// CP=C is what closes the SECC contactor, mirroring Charging::enter.
-TEST_CASE("EvSimulator DC resume closes contactor on V2GNegotiating entry", "[evsim][group2]") {
+// sees the EV still at CP=C. So the EV holds CP=B through the pause + BCB wake +
+// SLAC re-match AND through the PWM-running BspMeasurement (which only re-issues
+// start_charging); it asserts CP=C only at ev_power_ready (ISO_POWER_READY),
+// mirroring EvManager which holds CP=B until pwr_ready and then closes the
+// contactor for the resume CableCheck. dc_power_on then enters Charging.
+TEST_CASE("EvSimulator DC resume closes contactor at IsoPowerReady, charges on IsoDcPowerOn", "[evsim][group2]") {
     TestFixture fx;
     auto ctx = fx.make_ctx();
     set_mode(*ctx, api::ChargeMode::DcIso2);
@@ -309,22 +307,32 @@ TEST_CASE("EvSimulator DC resume closes contactor on V2GNegotiating entry", "[ev
 
     // On entry the EV must hold CP=B, NOT CP=C: while the SECC's pause-window PWM
     // is off, presenting CP=C trips its 6 s C1 "powering off under load" timer and
-    // it force-powers-off, so the resume hangs. Closing the contactor (CP=C) and
-    // re-issuing start_charging is deferred until a PWM-running BspMeasurement.
+    // it force-powers-off, so the resume hangs. start_charging is deferred until a
+    // PWM-running BspMeasurement; CP=C is deferred until ev_power_ready.
     CHECK_FALSE(contains_substr(fx.mocks.bsp.records, "set_cp_state(cp_state=C)"));
     CHECK_FALSE(contains_substr(fx.mocks.iso.records, "start_charging"));
 
-    // The SECC re-applies the charging PWM (PWM-is-running). Only NOW does the EV
-    // close the contactor by presenting CP=C (mirroring Charging::enter) and
-    // re-issue start_charging, beating the SECC's resume CableCheck relays-closed
-    // timeout while still respecting its C1 timer.
+    // The SECC re-applies the charging PWM (PWM-is-running). The EV re-issues
+    // start_charging, but STILL holds CP=B: the contactor must stay open until
+    // the SECC signals power-ready, mirroring EvManager (CP=B until pwr_ready).
     Event pwm{EventKind::BspMeasurement};
     pwm.payload = BspMeasurementPayload{50.0f, std::nullopt, ::types::board_support_common::ProximityPilot{}};
     fsm.feed(pwm);
     REQUIRE(fsm.get_current_state_id() == api::FsmState::V2GNegotiating);
+    CHECK(contains_substr(fx.mocks.iso.records, "start_charging"));
+    CHECK_FALSE(contains_substr(fx.mocks.bsp.records, "set_cp_state(cp_state=C)"));
+
+    // ev_power_ready (ISO_POWER_READY): the EV closes the contactor by presenting
+    // CP=C and holds it through CableCheck/PreCharge -- but does NOT enter
+    // Charging yet (premature would drop CP mid-CableCheck on pause).
+    fsm.feed(Event{EventKind::IsoPowerReady});
+    REQUIRE(fsm.get_current_state_id() == api::FsmState::V2GNegotiating);
     REQUIRE(index_of_substr(fx.mocks.bsp.records, "set_cp_state(cp_state=C)") >= 0);
     CHECK(contains_substr(fx.mocks.bsp.records, "allow_power_on(value=true)"));
-    CHECK(contains_substr(fx.mocks.iso.records, "start_charging"));
+
+    // dc_power_on (PreCharge complete): NOW the EV enters the charge loop.
+    fsm.feed(Event{EventKind::IsoDcPowerOn});
+    REQUIRE(fsm.get_current_state_id() == api::FsmState::Charging);
 }
 
 // AC EV-initiated resume must re-establish SLAC before re-negotiating. On AC the
