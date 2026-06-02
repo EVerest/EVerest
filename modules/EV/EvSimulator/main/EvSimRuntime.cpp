@@ -353,7 +353,7 @@ void EvSimRuntime::apply_passthrough_vars(const Event& ev) {
                 ctx->vars.soc_pct = *p->ev_info.soc;
             }
             if (p->ev_info.present_current) {
-                ctx->vars.dc_present_current_a = static_cast<float>(*p->ev_info.present_current);
+                ctx->vars.evse_dc_present_current_a = static_cast<float>(*p->ev_info.present_current);
             }
             if (p->ev_info.present_voltage) {
                 ctx->vars.dc_present_voltage_v = static_cast<float>(*p->ev_info.present_voltage);

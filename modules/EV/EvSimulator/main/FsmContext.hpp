@@ -196,12 +196,15 @@ struct SimVars {
     // so a SetChargingCurrent or session restart cannot exceed it.
     std::optional<float> evse_ac_max_current_a;
     std::optional<ActiveRamp> active_ramp;
-    // DC live current/voltage. dc_present_current_a stays 0 until peer EvInfo
-    // (apply_passthrough_vars in EvSimRuntime) reports a delivered current, so
-    // SocIntegrator integrates actual delivered DC power rather than the static
-    // cfg target. dc_present_voltage_v is seeded from cfg.dc_target_voltage by
-    // the FsmContext ctor; with current at 0 the integrated power is 0 anyway.
-    float dc_present_current_a{0.0f};
+    // DC live current/voltage. evse_dc_present_current_a holds the live
+    // measured present current once a peer EvInfo (apply_passthrough_vars in
+    // EvSimRuntime) reports one; it stays nullopt until then. SocIntegrator
+    // reads it via effective_dc_current_a(), which closes the loop on the live
+    // value when present (un-clamped, so BPT discharge can be negative) and
+    // otherwise falls back open-loop to the configured cfg.dc_target_current.
+    // dc_present_voltage_v is seeded from cfg.dc_target_voltage by the
+    // FsmContext ctor and overwritten by a live present voltage when reported.
+    std::optional<float> evse_dc_present_current_a;
     float dc_present_voltage_v{0.0f};
     // Edge-detection state for on_battery_full policies. SocIntegrator sets
     // this to true the first tick SoC reaches cfg.battery_full_threshold_pct
@@ -310,6 +313,14 @@ public:
     // (read side) and the BSP push (write side) therefore apply one identical
     // clamp and cannot diverge.
     float effective_ac_current_a() const;
+
+    // Delivered DC current the SoC integrator should integrate. When a live
+    // present current has been reported (vars.evse_dc_present_current_a) it is
+    // returned verbatim — including negative values for BPT discharge — so the
+    // closed loop tracks measured delivery. Otherwise it falls back open-loop
+    // to cfg.dc_target_current clamped to [0, cfg.dc_max_current_limit], so DC
+    // SoC still advances when no peer EvInfo producer is wired.
+    float effective_dc_current_a() const;
 
     // Record the EVSE-communicated AC current limit (from
     // ac_evse_max_current) into vars.evse_ac_max_current_a.
