@@ -387,6 +387,12 @@ void EvSimRuntime::apply_passthrough_vars(const Event& ev) {
             ctx->vars.dc_present_voltage_v = static_cast<float>(p->voltage_v);
         }
         break;
+    case K::IsoV2GFinished:
+        // The Josev V2G comm session has fully torn down. Clear the live-session
+        // flag before the FSM feed so Paused::feed can release a deferred resume
+        // (the SECC is now safely paused and ready for the BCB wake-up).
+        ctx->vars.iso_session_active = false;
+        break;
     default:
         break;
     }

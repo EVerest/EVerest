@@ -18,6 +18,10 @@ void Paused::enter() {
     ctx.set_cp(::types::ev_board_support::EvCpState::B);
     ctx.allow_power_on(false);
     ctx.iso_pause_charging();
+    // A resume requested mid-teardown is deferred until IsoV2GFinished; start
+    // each pause with a clean slate so a stale flag from an earlier cycle can
+    // never auto-fire a resume.
+    ctx.vars.resume_pending = false;
     ctx.arm_timer(std::chrono::hours(1));
     ctx.publish_e2m_state(api::FsmState::Paused);
 }
@@ -32,6 +36,17 @@ StateBase::Result Paused::feed(EventType ev) {
         // signals EVCC's intent to resume HLC to the SECC.
         if (ctx.vars.charge_mode() == api::ChargeMode::AcIec) {
             return {false, std::make_unique<Charging>(ctx)};
+        }
+        // Josev runs one V2G comm session per start_charging. If the paused
+        // session has not finished tearing down yet, defer the resume: starting
+        // the BCB wake-up + re-SLAC now would let the previous session's lagging
+        // SessionStop clobber the freshly re-established link (the SECC then
+        // drops to D-LINK_PAUSE + PWM off and never re-applies the charging PWM,
+        // so the resume hangs). feed(IsoV2GFinished) releases it once the
+        // session is gone. If the session already finished, fall through.
+        if (ctx.vars.iso_session_active) {
+            ctx.vars.resume_pending = true;
+            return {false, nullptr};
         }
         // bcb_remaining is the edge count consumed by BcbToggling; see
         // BcbToggling::enter for how the default 6 maps to round-trips.
@@ -59,6 +74,16 @@ StateBase::Result Paused::feed(EventType ev) {
         ctx.vars.bcb_remaining = round_trips * 2;
         return {false, std::make_unique<BcbToggling>(ctx)};
     }
+    case EK::IsoV2GFinished:
+        // The paused V2G session has finished tearing down (iso_session_active
+        // was cleared pre-feed). If a resume was requested while it was still
+        // live, release it now: seed the BCB edge count and wake the SECC.
+        if (ctx.vars.resume_pending) {
+            ctx.vars.resume_pending = false;
+            ctx.vars.bcb_remaining = 6;
+            return {false, std::make_unique<BcbToggling>(ctx)};
+        }
+        return {false, nullptr};
     case EK::Unplug:
         return {false, std::make_unique<Stopping>(ctx)};
     case EK::StateDeadline:
@@ -91,7 +116,6 @@ StateBase::Result Paused::feed(EventType ev) {
     case EK::IsoAcMaxCurrent:
     case EK::IsoAcTargetPower:
     case EK::IsoStopFromCharger:
-    case EK::IsoV2GFinished:
     case EK::IsoDcPowerOn:
     case EK::IsoPauseFromCharger:
     // RaiseError / ClearError are intercepted on the loop thread before the

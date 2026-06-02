@@ -115,6 +115,9 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evsim][helpers]") {
         auto ok = ctx->iso_start_charging(api::ChargeMode::AcIec, std::nullopt, 0, 0);
         CHECK(ok == false);
         CHECK_FALSE(contains_substr(fx.mocks.iso.records, "start_charging"));
+        // A rejected start does not open a V2G session, so the resume-gate flag
+        // must stay false.
+        CHECK_FALSE(ctx->vars.iso_session_active);
     }
 
     SECTION("iso_start_charging(AcIso2, three_phases=true) maps to AC_three_phase_core") {
@@ -124,6 +127,8 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evsim][helpers]") {
         CHECK(ok == true); // MockIso15118Ev defaults next_start_charging_result=true
         CHECK(contains_substr(fx.mocks.iso.records, "mode=AC_three_phase_core"));
         CHECK(contains_substr(fx.mocks.iso.records, "payment=ExternalPayment"));
+        // A successful start marks the V2G session live for the resume gate.
+        CHECK(ctx->vars.iso_session_active);
     }
 
     SECTION("iso_start_charging(AcIso2, three_phases=false) maps to AC_single_phase_core") {

@@ -22,6 +22,12 @@ void Plugged::enter() {
     ctx.set_cp(::types::ev_board_support::EvCpState::B);
     ctx.allow_power_on(false);
     ctx.mark_plugged_in(true);
+    // A fresh plug has no prior V2G session. Reset the resume-gate bookkeeping
+    // so a session that ended without an IsoV2GFinished (e.g. a hard
+    // teardown) cannot leave iso_session_active stale-true and defer a future
+    // resume forever.
+    ctx.vars.iso_session_active = false;
+    ctx.vars.resume_pending = false;
     ctx.kvs_save();
     ctx.publish_e2m_state(api::FsmState::Plugged);
     // Self-advance: a plug consumes the latched session config (or an AcIec
