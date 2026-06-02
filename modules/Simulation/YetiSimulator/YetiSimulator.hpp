@@ -27,6 +27,7 @@ namespace module {
 struct Conf {
     int connector_id;
     bool reset_powermeter_on_session_start;
+    bool dummy_meter_value_send_on_transaction_start;
     std::string dummy_meter_value_blob_start;
     std::string dummy_meter_value_blob_stop;
 };

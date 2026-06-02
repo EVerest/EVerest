@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include "ocpp/v2/ocpp_enums.hpp"
+#include "ocpp/v2/ocpp_types.hpp"
 #include <ocpp/v2/functional_blocks/transaction.hpp>
 
 #include <ocpp/common/connectivity_manager.hpp>
@@ -17,6 +19,8 @@
 
 #include <ocpp/v2/messages/GetTransactionStatus.hpp>
 #include <ocpp/v2/messages/TransactionEvent.hpp>
+#include <optional>
+#include <unistd.h>
 
 namespace ocpp::v2 {
 TransactionBlock::TransactionBlock(
@@ -92,7 +96,8 @@ void TransactionBlock::on_transaction_finished(const std::int32_t evse_id, const
                                                const TriggerReasonEnum trigger_reason,
                                                const std::optional<IdToken>& id_token,
                                                const std::optional<std::string>& /*signed_meter_value*/,
-                                               const ChargingStateEnum charging_state) {
+                                               const ChargingStateEnum charging_state,
+                                               const std::optional<SignedMeterValue>& start_signed_meter_value) {
     auto& evse_handle = this->context.evse_manager.get_evse(evse_id);
     auto& enhanced_transaction = evse_handle.get_transaction();
     if (enhanced_transaction == nullptr) {
@@ -123,6 +128,53 @@ void TransactionBlock::on_transaction_finished(const std::int32_t evse_id, const
         }
     } catch (const everest::db::Exception& e) {
         EVLOG_warning << "Could not get metervalues of transaction: " << e.what();
+    }
+
+    // If the meter only returns a start_signed_meter_value once the transaction stops we inject it here
+    // Otherwise the one recorded on transaction start will be kept
+    if (start_signed_meter_value.has_value() &&
+        this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::SampledDataSignReadings)
+            .value_or(false)) {
+        ([&]() {
+            SampledValue* begin_sampled_value = nullptr;
+
+            if (meter_values.has_value()) {
+                for (auto& mv : meter_values.value()) {
+                    for (auto& sv : mv.sampledValue) {
+                        if (sv.context == ReadingContextEnum::Transaction_Begin) {
+                            if (sv.signedMeterValue.has_value()) {
+                                // A signed meter value has already been recorded on transaction start. Exit here
+                                return;
+                            }
+                            // Check if this is a suitable SampledValue to attach our signed meter value to and, if so,
+                            // save it for later
+                            if (!sv.phase.has_value() && sv.measurand == MeasurandEnum::Energy_Active_Import_Register) {
+                                begin_sampled_value = &sv;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Attach to the candidate we found
+            if (begin_sampled_value != nullptr) {
+                begin_sampled_value->signedMeterValue = start_signed_meter_value;
+                return;
+            }
+
+            // There was no candidate, so we create a brand-new Transaction.Begin SampledValue object
+            SampledValue synthetic_sv;
+            synthetic_sv.context = ReadingContextEnum::Transaction_Begin;
+            synthetic_sv.measurand = MeasurandEnum::Energy_Active_Import_Register;
+            synthetic_sv.signedMeterValue = start_signed_meter_value;
+            MeterValue synthetic_mv;
+            synthetic_mv.timestamp = timestamp;
+            synthetic_mv.sampledValue.push_back(synthetic_sv);
+            if (!meter_values.has_value()) {
+                meter_values.emplace(std::vector<MeterValue>{});
+            }
+            meter_values.value().push_back(synthetic_mv);
+        })();
     }
 
     // E07.FR.02 The field idToken is provided when the authorization of the transaction has been ended
