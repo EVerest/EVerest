@@ -974,7 +974,7 @@ std::ostream& operator<<(std::ostream& os, const EnhancedCompositeSchedule& k) {
         item["stackLevel"] = i.stackLevel;
         array.push_back(item);
     }
-    j["customData"] = array;
+    j["chargingSchedulePeriod"] = array;
     // the optional parts of the message
     if (k.customData) {
         j["customData"] = k.customData.value();
@@ -983,7 +983,7 @@ std::ostream& operator<<(std::ostream& os, const EnhancedCompositeSchedule& k) {
     return os;
 }
 
-EnhancedCompositeScheduleResponse::operator GetCompositeScheduleResponse() const {
+GetCompositeScheduleResponse EnhancedCompositeScheduleResponse::get() const {
     GetCompositeScheduleResponse result;
     result.status = status;
     result.statusInfo = statusInfo;

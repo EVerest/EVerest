@@ -507,7 +507,7 @@ std::vector<EnhancedCompositeSchedule> SmartCharging::get_all_composite_schedule
             composite_schedules.push_back(composite_schedule_response.schedule.value());
         } else {
             EVLOG_warning << "Could not internally retrieve composite schedule for evse id " << evse_id << ": "
-                          << composite_schedule_response;
+                          << composite_schedule_response.get();
         }
     }
 
@@ -1415,7 +1415,7 @@ void SmartCharging::handle_notify_ev_charging_needs_response(const EnhancedMessa
 void SmartCharging::handle_get_composite_schedule_req(Call<GetCompositeScheduleRequest> call) {
     EVLOG_debug << "Received GetCompositeScheduleRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
     const auto schedule = this->get_composite_schedule_internal(call.msg);
-    const GetCompositeScheduleResponse response = schedule;
+    const GetCompositeScheduleResponse response = schedule.get();
 
     const ocpp::CallResult<GetCompositeScheduleResponse> call_result(response, call.uniqueId);
     this->context.message_dispatcher.dispatch_call_result(call_result);

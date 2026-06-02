@@ -213,7 +213,7 @@ struct ReportedChargingProfile {
 /// - does not inherit ChargingSchedulePeriod to avoid automatic conversions
 /// - does not use the cast operator to avoid automatic conversions
 struct EnhancedChargingSchedulePeriod {
-    // elemets from ChargingSchedulePeriod
+    // elements from ChargingSchedulePeriod
     std::int32_t startPeriod;
     std::optional<float> limit;
     std::optional<float> limit_L2;
@@ -255,7 +255,6 @@ struct EnhancedCompositeSchedule {
     std::optional<CustomData> customData;
 
     CompositeSchedule get() const;
-    // operator CompositeSchedule() const;
 };
 
 /// \brief stream outputter for unit test debugging
@@ -271,7 +270,7 @@ struct EnhancedCompositeScheduleResponse {
     std::optional<EnhancedCompositeSchedule> schedule;
     std::optional<CustomData> customData;
 
-    operator GetCompositeScheduleResponse() const;
+    GetCompositeScheduleResponse get() const;
 };
 
 namespace conversions {
