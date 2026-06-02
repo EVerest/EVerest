@@ -110,7 +110,7 @@ PeerActions EvSimRuntime::build_peer_actions() {
     a.bsp.enable = [bsp](bool on) { bsp->call_enable(on); };
     a.bsp.present = true;
 
-    // ISO — optional. All six functions and `present` are set in this block,
+    // ISO — optional. All seven functions and `present` are set in this block,
     // never separately, so `iso.present` IFF the whole peer is wired.
     if (!mod.r_ev.empty()) {
         auto* iso = mod.r_ev[0].get();
@@ -128,6 +128,9 @@ PeerActions EvSimRuntime::build_peer_actions() {
         a.iso.enable_sae_j2847_v2g_v2h = [iso]() { iso->call_enable_sae_j2847_v2g_v2h(); };
         a.iso.set_bpt_dc_params = [iso](const ::types::iso15118::DcEvBPTParameters& params) {
             iso->call_set_bpt_dc_params(params);
+        };
+        a.iso.set_dc_params = [iso](const ::types::iso15118::DcEvParameters& params) {
+            iso->call_set_dc_params(params);
         };
         a.iso.present = true;
     }

@@ -190,6 +190,38 @@ TEST_CASE("FsmContext helpers and shortcuts", "[evsim][helpers]") {
         CHECK(set_bpt_idx < start_idx);
     }
 
+    SECTION("iso_start_charging(DcIso2) sets DC params from cfg with non-zero target current") {
+        fx.cfg.dc_target_current = 5;
+        fx.cfg.dc_target_voltage = 200;
+        fx.cfg.dc_max_current_limit = 300;
+        fx.cfg.dc_max_power_limit = 60000;
+        fx.cfg.dc_max_voltage_limit = 500;
+        fx.cfg.dc_energy_capacity = 60000;
+        auto ctx = fx.make_ctx();
+
+        auto ok = ctx->iso_start_charging(api::ChargeMode::DcIso2, std::nullopt, 0, 0);
+        CHECK(ok == true);
+        REQUIRE(index_of_substr(fx.mocks.iso.records, "set_dc_params(target_current=5") >= 0);
+        CHECK(contains_substr(fx.mocks.iso.records, "target_voltage=200"));
+        CHECK(contains_substr(fx.mocks.iso.records, "max_current_limit=300"));
+    }
+
+    SECTION("iso_start_charging(DcIsoD20) sets DC params from cfg with non-zero target current") {
+        fx.cfg.dc_target_current = 5;
+        fx.cfg.dc_target_voltage = 200;
+        fx.cfg.dc_max_current_limit = 300;
+        fx.cfg.dc_max_power_limit = 60000;
+        fx.cfg.dc_max_voltage_limit = 500;
+        fx.cfg.dc_energy_capacity = 60000;
+        auto ctx = fx.make_ctx();
+
+        auto ok = ctx->iso_start_charging(api::ChargeMode::DcIsoD20, std::nullopt, 0, 0);
+        CHECK(ok == true);
+        REQUIRE(index_of_substr(fx.mocks.iso.records, "set_dc_params(target_current=5") >= 0);
+        CHECK(contains_substr(fx.mocks.iso.records, "target_voltage=200"));
+        CHECK(contains_substr(fx.mocks.iso.records, "max_current_limit=300"));
+    }
+
     SECTION("iso_start_charging(AcIsoD20) with bpt selects AC_BPT etm") {
         auto ctx = fx.make_ctx();
         api::BptParams bpt{};

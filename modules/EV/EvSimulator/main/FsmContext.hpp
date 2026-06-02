@@ -70,6 +70,7 @@ struct IsoPeer {
     std::function<void(float /*soc_pct*/)> update_soc;
     std::function<void()> enable_sae_j2847_v2g_v2h;
     std::function<void(const ::types::iso15118::DcEvBPTParameters&)> set_bpt_dc_params;
+    std::function<void(const ::types::iso15118::DcEvParameters&)> set_dc_params;
     bool present{false};
 };
 

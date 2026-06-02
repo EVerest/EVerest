@@ -224,6 +224,20 @@ bool FsmContext::iso_start_charging(API_types::ev_simulator::ChargeMode mode,
         return false;
     }
 
+    // DC modes report the EV's DC limits/targets to the SECC. Without this the
+    // EV's target_current stays 0 and the SECC commands 0 A. BPT/MCS modes set
+    // these too; the bpt_active block below additionally adds discharge params.
+    if (mode == CM::DcIso2 || mode == CM::DcIsoD20) {
+        ::types::iso15118::DcEvParameters dc_params{};
+        dc_params.target_current = static_cast<float>(cfg.dc_target_current);
+        dc_params.target_voltage = static_cast<float>(cfg.dc_target_voltage);
+        dc_params.max_current_limit = static_cast<float>(cfg.dc_max_current_limit);
+        dc_params.max_power_limit = static_cast<float>(cfg.dc_max_power_limit);
+        dc_params.max_voltage_limit = static_cast<float>(cfg.dc_max_voltage_limit);
+        dc_params.energy_capacity = static_cast<float>(cfg.dc_energy_capacity);
+        peer_actions.iso.set_dc_params(dc_params);
+    }
+
     if (bpt_active) {
         peer_actions.iso.enable_sae_j2847_v2g_v2h();
         ::types::iso15118::DcEvBPTParameters internal_bpt{};
