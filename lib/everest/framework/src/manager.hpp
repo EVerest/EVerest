@@ -240,6 +240,8 @@ private:
     bool is_restart_requested() const;
     /// \brief True when crash-shutdown flow is active.
     bool is_crash_in_progress() const;
+    /// \brief True when in idle.
+    bool is_idle() const;
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // State/event handlers
