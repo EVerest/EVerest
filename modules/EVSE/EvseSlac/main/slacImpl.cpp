@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "slacImpl.hpp"
 
@@ -116,9 +116,8 @@ void slacImpl::run() {
     // MMTYPE and logs "Received non-expected SLAC message of type 0xA14E" per frame, which
     // adds RX/log load. Drop it pre-FSM. Other MMTYPEs (incl. CM_SET_KEY.CNF, CM_ATTEN_PROFILE.IND)
     // pass through unchanged.
-    constexpr uint16_t MMTYPE_QCA_VS_ATTENUATION_CHARACTERISTICS = 0xA14E;
     slac_io.run([](slac::messages::HomeplugMessage& msg) {
-        if (msg.get_mmtype() == MMTYPE_QCA_VS_ATTENUATION_CHARACTERISTICS) {
+        if (msg.get_mmtype() == slac::defs::qualcomm::MMTYPE_VS_ATTENUATION_CHARACTERISTICS) {
             return;
         }
         fsm_ctrl->signal_new_slac_message(msg);

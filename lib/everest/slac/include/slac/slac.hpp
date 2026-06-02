@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2022 Pionix GmbH and Contributors to EVerest
+// Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef SLAC_SLAC_HPP
 #define SLAC_SLAC_HPP
 
@@ -72,6 +72,7 @@ const uint16_t MMTYPE_LINK_STATUS = 0xA0B8;
 const uint16_t MMTYPE_OP_ATTR = 0xA068;
 const uint16_t MMTYPE_NW_INFO = 0xA038;
 const uint16_t MMTYPE_GET_SW = 0xA000;
+const uint16_t MMTYPE_VS_ATTENUATION_CHARACTERISTICS = 0xA14E;
 } // namespace qualcomm
 
 // Lumissil Vendor MMEs
