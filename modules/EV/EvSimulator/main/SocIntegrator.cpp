@@ -70,11 +70,12 @@ double instantaneous_power_w(const FsmContext& ctx) {
                (ctx.vars.three_phases ? 3.0 : 1.0);
     case api::ChargeMode::DcIso2:
     case api::ChargeMode::DcIsoD20:
-        // DC: live present current * present voltage. Present current is 0
-        // until a real EvInfo arrives (apply_passthrough_vars in EvSimRuntime),
-        // so SoC tracks the actual delivered DC power rather than the static
-        // cfg target — a zero-energy EVSE yields ~0 delivered energy.
-        return static_cast<double>(ctx.vars.dc_present_current_a) * static_cast<double>(ctx.vars.dc_present_voltage_v);
+        // DC: delivered current * present voltage. effective_dc_current_a()
+        // returns the live measured present current when a peer EvInfo has
+        // reported one (closed loop, un-clamped so BPT discharge stays
+        // negative), and otherwise falls back open-loop to the configured
+        // cfg.dc_target_current so SoC still advances with no live producer.
+        return static_cast<double>(ctx.effective_dc_current_a()) * static_cast<double>(ctx.vars.dc_present_voltage_v);
     }
     return 0.0;
 }
@@ -111,7 +112,7 @@ void soc_step(FsmContext& ctx) {
 
     // Always integrate then clamp. Power may be negative when BPT / V2X
     // discharge is active (negative `charging_current_a` for AC or negative
-    // `dc_present_current_a` for DC), so the legacy car_simulation.cpp:135-139
+    // live `evse_dc_present_current_a` for DC), so the legacy car_simulation.cpp:135-139
     // short-circuit (skip accumulation when already over capacity) is dropped:
     // it silently dropped discharge energy when the battery started above
     // capacity. The post-integration clamp keeps battery_charge_wh in

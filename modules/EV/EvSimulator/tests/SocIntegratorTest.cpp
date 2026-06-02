@@ -126,12 +126,12 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         set_mode(*ctx, api::ChargeMode::DcIso2);
         const float initial_charge = ctx->vars.battery_charge_wh; // 18000
 
-        // Voltage is seeded from cfg.dc_target_voltage; the live present current
-        // stays 0 until a real EvInfo arrives, so emulate the passthrough that
+        // Voltage is seeded from cfg.dc_target_voltage; no live present current
+        // has arrived yet (optional is nullopt), so emulate the passthrough that
         // EvSimRuntime::apply_passthrough_vars performs to deliver 125 A.
-        REQUIRE(ctx->vars.dc_present_current_a == 0.0f);
+        REQUIRE_FALSE(ctx->vars.evse_dc_present_current_a.has_value());
         REQUIRE(ctx->vars.dc_present_voltage_v == 400.0f);
-        ctx->vars.dc_present_current_a = 125.0f;
+        ctx->vars.evse_dc_present_current_a = 125.0f;
 
         // Golden: power = 125 * 400 = 50000 W; factor = 100/3600000; delta ≈ 1.3889 Wh
         const double power = reference_power(api::ChargeMode::DcIso2, 0.0, 0.0, false, 125.0, 400.0);
@@ -147,29 +147,87 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         CHECK(contains_substr(fx.mocks.iso.records, "update_soc("));
     }
 
-    SECTION("DC session with no EvInfo yet delivers ~0 energy, not cfg target") {
-        // Root cause (T2): the FsmContext ctor must not seed
-        // vars.dc_present_current_a from cfg.dc_target_current. Until a real
-        // EvInfo passthrough (EvSimRuntime::apply_passthrough_vars) sets the
-        // live present current, the integrator must treat delivered current as
-        // 0 so a zero-energy EVSE yields ~0 delivered energy rather than
-        // integrating the static cfg.dc_target_current * dc_target_voltage.
+    SECTION("DC with no live present current integrates open-loop from cfg.dc_target_current") {
+        // With no live EvInfo passthrough the present-current optional is
+        // nullopt, so the integrator falls back open-loop to the configured
+        // dc_target_current (clamped to dc_max_current_limit) times the seeded
+        // present voltage. This keeps DC SoC advancing on a SIL run where no
+        // peer EvInfo producer is wired.
         TestFixture fx;
         fx.cfg.dc_target_current = 125;
         fx.cfg.dc_target_voltage = 400;
+        fx.cfg.dc_max_current_limit = 300; // >= dc_target_current, no clamp
         fx.cfg.tick_interval_ms = 1000;
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
-        // No EvInfo has arrived: present current must be 0, not the cfg target.
-        REQUIRE(ctx->vars.dc_present_current_a == 0.0f);
+        // No live present current: fallback uses cfg.dc_target_current = 125 A.
+        REQUIRE_FALSE(ctx->vars.evse_dc_present_current_a.has_value());
+        REQUIRE(ctx->vars.dc_present_voltage_v == 400.0f);
         const float initial_charge = ctx->vars.battery_charge_wh;
+
+        // power = 125 * 400 = 50000 W; factor = 1000/3600000 = 1/3600 h;
+        // delta = 50000/3600 ≈ 13.889 Wh.
+        const double power = 125.0 * 400.0;
+        const double factor = MS_FACTOR * 1000.0;
+        const double expected_charge = static_cast<double>(initial_charge) + power * factor;
+        const double expected_soc = expected_charge / 60000.0 * 100.0;
 
         soc_step(*ctx);
 
-        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(initial_charge, kTol));
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(static_cast<float>(expected_charge), kTol));
+        CHECK(ctx->vars.battery_charge_wh > initial_charge);
+        CHECK_THAT(ctx->vars.soc_pct, WithinAbs(static_cast<float>(expected_soc), kTol));
     }
 
-    SECTION("DcIso2 uses live vars.dc_present_current_a / dc_present_voltage_v over cfg") {
+    SECTION("live present current overrides open-loop fallback") {
+        TestFixture fx;
+        fx.cfg.dc_target_current = 125;
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.dc_max_current_limit = 300;
+        fx.cfg.tick_interval_ms = 1000;
+        auto ctx = fx.make_ctx();
+        set_mode(*ctx, api::ChargeMode::DcIso2);
+        // A live present current is reported: it must win over the cfg fallback.
+        ctx->vars.evse_dc_present_current_a = 60.0f;
+        ctx->vars.dc_present_voltage_v = 500.0f;
+        const float initial_charge = ctx->vars.battery_charge_wh;
+
+        // Golden uses live current, not cfg: power = 60 * 500 = 30000 W (NOT
+        // the cfg 125 * 400 = 50000 W fallback).
+        const double power = 60.0 * 500.0;
+        const double factor = MS_FACTOR * 1000.0;
+        const double expected_charge = static_cast<double>(initial_charge) + power * factor;
+        const double expected_soc = expected_charge / 60000.0 * 100.0;
+
+        soc_step(*ctx);
+
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(static_cast<float>(expected_charge), kTol));
+        CHECK_THAT(ctx->vars.soc_pct, WithinAbs(static_cast<float>(expected_soc), kTol));
+    }
+
+    SECTION("fallback clamps cfg.dc_target_current to dc_max_current_limit") {
+        TestFixture fx;
+        fx.cfg.dc_target_current = 300; // above the limit
+        fx.cfg.dc_target_voltage = 400;
+        fx.cfg.dc_max_current_limit = 200; // open-loop ceiling
+        fx.cfg.tick_interval_ms = 1000;
+        auto ctx = fx.make_ctx();
+        set_mode(*ctx, api::ChargeMode::DcIso2);
+        // No live present current: fallback clamps 300 -> 200 A.
+        REQUIRE_FALSE(ctx->vars.evse_dc_present_current_a.has_value());
+        const float initial_charge = ctx->vars.battery_charge_wh;
+
+        // power = 200 * dc_present_voltage_v = 200 * 400 = 80000 W.
+        const double power = 200.0 * static_cast<double>(ctx->vars.dc_present_voltage_v);
+        const double factor = MS_FACTOR * 1000.0;
+        const double expected_charge = static_cast<double>(initial_charge) + power * factor;
+
+        soc_step(*ctx);
+
+        CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(static_cast<float>(expected_charge), kTol));
+    }
+
+    SECTION("DcIso2 uses live evse_dc_present_current_a / dc_present_voltage_v over cfg") {
         TestFixture fx;
         fx.cfg.dc_target_current = 125;
         fx.cfg.dc_target_voltage = 400;
@@ -177,8 +235,8 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
         // Peer EvInfo passthrough (apply_passthrough_vars in EvSimRuntime)
-        // overrides the cfg-seeded defaults at runtime — emulate that here.
-        ctx->vars.dc_present_current_a = 60.0f;
+        // reports a live present current at runtime — emulate that here.
+        ctx->vars.evse_dc_present_current_a = 60.0f;
         ctx->vars.dc_present_voltage_v = 500.0f;
         const float initial_charge = ctx->vars.battery_charge_wh;
 
@@ -194,14 +252,14 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         CHECK_THAT(ctx->vars.soc_pct, WithinAbs(static_cast<float>(expected_soc), kTol));
     }
 
-    SECTION("DcIsoD20 uses live vars.dc_present_current_a / dc_present_voltage_v over cfg") {
+    SECTION("DcIsoD20 uses live evse_dc_present_current_a / dc_present_voltage_v over cfg") {
         TestFixture fx;
         fx.cfg.dc_target_current = 200;
         fx.cfg.dc_target_voltage = 800;
         fx.cfg.tick_interval_ms = 100;
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIsoD20);
-        ctx->vars.dc_present_current_a = 150.0f;
+        ctx->vars.evse_dc_present_current_a = 150.0f;
         ctx->vars.dc_present_voltage_v = 700.0f;
         const float initial_charge = ctx->vars.battery_charge_wh;
 
@@ -214,14 +272,16 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         CHECK_THAT(ctx->vars.battery_charge_wh, WithinAbs(static_cast<float>(expected_charge), kTol));
     }
 
-    SECTION("DcIso2 with zero live current yields no SoC delta") {
+    SECTION("DcIso2 with zero live present current yields no SoC delta") {
         TestFixture fx;
         fx.cfg.dc_target_current = 125;
         fx.cfg.dc_target_voltage = 400;
         fx.cfg.tick_interval_ms = 1000;
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
-        ctx->vars.dc_present_current_a = 0.0f;
+        // An explicit live 0 A reading (not nullopt) must win over the cfg
+        // fallback, so a measured-zero-current EVSE delivers no energy.
+        ctx->vars.evse_dc_present_current_a = 0.0f;
         ctx->vars.dc_present_voltage_v = 400.0f;
         const float initial_charge = ctx->vars.battery_charge_wh;
 
@@ -240,7 +300,7 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         fx.cfg.tick_interval_ms = 1000;
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
-        ctx->vars.dc_present_current_a = -60.0f;
+        ctx->vars.evse_dc_present_current_a = -60.0f;
         ctx->vars.dc_present_voltage_v = 500.0f;
         const float initial_charge = ctx->vars.battery_charge_wh;
 
@@ -260,7 +320,7 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         fx.cfg.tick_interval_ms = 100;
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIsoD20);
-        ctx->vars.dc_present_current_a = -150.0f;
+        ctx->vars.evse_dc_present_current_a = -150.0f;
         ctx->vars.dc_present_voltage_v = 700.0f;
         const float initial_charge = ctx->vars.battery_charge_wh;
 
@@ -366,7 +426,7 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         fx.cfg.tick_interval_ms = 1000;
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
-        ctx->vars.dc_present_current_a = -125.0f;
+        ctx->vars.evse_dc_present_current_a = -125.0f;
         ctx->vars.dc_present_voltage_v = 400.0f;
         ctx->vars.battery_charge_wh = 5.0f; // far less than a single-tick discharge
 
@@ -387,7 +447,7 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         fx.cfg.tick_interval_ms = 1000;
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
-        ctx->vars.dc_present_current_a = -10.0f;
+        ctx->vars.evse_dc_present_current_a = -10.0f;
         ctx->vars.dc_present_voltage_v = 400.0f;
         ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh + 50.0f;
         const float starting_charge = ctx->vars.battery_charge_wh;
@@ -416,7 +476,7 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         fx.cfg.tick_interval_ms = 1000;
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
-        ctx->vars.dc_present_current_a = -125.0f;
+        ctx->vars.evse_dc_present_current_a = -125.0f;
         ctx->vars.dc_present_voltage_v = 400.0f;
         ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh + 5.0f;
         const float starting_charge = ctx->vars.battery_charge_wh;
@@ -440,7 +500,7 @@ TEST_CASE("SocIntegrator parity with EvManager simulate_soc", "[evsim][soc]") {
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
         // EvInfo passthrough delivers the full DC current this tick.
-        ctx->vars.dc_present_current_a = 125.0f;
+        ctx->vars.evse_dc_present_current_a = 125.0f;
         ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh - 10.0f; // 59990
 
         // delta = 50000 / 3600 ≈ 13.89 Wh -> would push past capacity.
@@ -660,7 +720,7 @@ TEST_CASE("SocIntegrator on_battery_full policy", "[evsim][soc]") {
         fx.cfg.on_battery_full = "idle_at_full";
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
-        ctx->vars.dc_present_current_a = -100.0f;
+        ctx->vars.evse_dc_present_current_a = -100.0f;
         ctx->vars.dc_present_voltage_v = 400.0f;
         ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh;
         ctx->vars.soc_pct = 100.0f;
@@ -682,7 +742,7 @@ TEST_CASE("SocIntegrator on_battery_full policy", "[evsim][soc]") {
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
         // EvInfo passthrough delivers the full DC current this tick.
-        ctx->vars.dc_present_current_a = 125.0f;
+        ctx->vars.evse_dc_present_current_a = 125.0f;
         // Start just below capacity so the integrator crosses the threshold
         // this tick: delta = 50000 * 1/3600 = 13.89 Wh > 10 Wh headroom.
         ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh - 10.0f;
@@ -720,7 +780,7 @@ TEST_CASE("SocIntegrator on_battery_full policy", "[evsim][soc]") {
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
         // EvInfo passthrough delivers the full DC current this tick.
-        ctx->vars.dc_present_current_a = 125.0f;
+        ctx->vars.evse_dc_present_current_a = 125.0f;
         ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh - 10.0f;
         ctx->vars.was_full = false;
 
@@ -760,7 +820,7 @@ TEST_CASE("SocIntegrator on_battery_full policy", "[evsim][soc]") {
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
         // EvInfo passthrough delivers the full DC current this tick.
-        ctx->vars.dc_present_current_a = 125.0f;
+        ctx->vars.evse_dc_present_current_a = 125.0f;
         // 79% start: 47400 Wh of 60000. Cross to 80% (48000) requires +600.
         // Per-tick delta at 50000 W * 1s = 13.89 Wh; need many ticks. Skip
         // by setting charge just below threshold so a single tick crosses.
@@ -787,7 +847,7 @@ TEST_CASE("SocIntegrator on_battery_full policy", "[evsim][soc]") {
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
         // EvInfo passthrough delivers the full DC current this tick.
-        ctx->vars.dc_present_current_a = 125.0f;
+        ctx->vars.evse_dc_present_current_a = 125.0f;
         ctx->vars.battery_charge_wh = 47990.0f;
         ctx->vars.soc_pct = 79.983f;
         ctx->vars.was_full = false;
@@ -815,7 +875,7 @@ TEST_CASE("SocIntegrator on_battery_full policy", "[evsim][soc]") {
         ctx->vars.was_full = true;
 
         // Switch to discharge to drop SoC below threshold this tick.
-        ctx->vars.dc_present_current_a = -125.0f;
+        ctx->vars.evse_dc_present_current_a = -125.0f;
         soc_step(*ctx);
 
         // Edge cleared.
@@ -823,7 +883,7 @@ TEST_CASE("SocIntegrator on_battery_full policy", "[evsim][soc]") {
         CHECK(fx.timer.enqueued_events.empty());
 
         // Now charge again — cross threshold from below.
-        ctx->vars.dc_present_current_a = 125.0f;
+        ctx->vars.evse_dc_present_current_a = 125.0f;
         ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh - 10.0f;
         ctx->vars.soc_pct = 99.983f;
         fx.timer.enqueued_events.clear();
@@ -847,7 +907,7 @@ TEST_CASE("SocIntegrator on_battery_full policy", "[evsim][soc]") {
         auto ctx = fx.make_ctx();
         set_mode(*ctx, api::ChargeMode::DcIso2);
         // EvInfo passthrough delivers the full DC current this tick.
-        ctx->vars.dc_present_current_a = 125.0f;
+        ctx->vars.evse_dc_present_current_a = 125.0f;
         // Session 1: start just below capacity and cross the threshold.
         ctx->vars.battery_charge_wh = ctx->vars.battery_capacity_wh - 10.0f;
         ctx->vars.was_full = false;
