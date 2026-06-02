@@ -26,8 +26,10 @@ MQTT controller:
   `set_charging_current` Rejected ack during the 5 s window — the test
   collects `command_ack` events and asserts none were rejections.
 
-Both tests load `config/config-sil-evsim-dc.yaml`, the same SIL config
-used by the DC ISO-2 smokes.
+`test_charging_curve_taper_end_to_end` loads `config/config-sil-evsim-dc.yaml`
+(the DC ISO-2 SIL config); `test_runtime_ramp_end_to_end` loads
+`config/config-sil-evsim.yaml` (the AC HLC SIL config), since it drives an
+AC ISO-2 ramp scenario the DC-only SECC cannot service.
 
 Runtime gating: as with the other EvSimulator smokes, re-run
 `ninja -C build install` before invoking pytest so the deployed manager
@@ -174,7 +176,7 @@ def test_charging_curve_taper_end_to_end(everest_core, evsim_test_controller):
     )
 
 
-@pytest.mark.everest_core_config("config-sil-evsim-dc.yaml")
+@pytest.mark.everest_core_config("config-sil-evsim.yaml")
 def test_runtime_ramp_end_to_end(everest_core, evsim_test_controller):
     """Start an AC ISO 15118-2 session, then ramp the commanded current.
 
