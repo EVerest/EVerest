@@ -1,0 +1,62 @@
+EVerest TSC Meeting - 28 May 2026
+======================================
+
+
+Attendance
+----------
+
+
+Voting Members
+~~~~~~~~~~~~~~
+
+- [ ] (Chair) Marco Möller [Pionix] ->  vote delgated to Robert
+- [ ] Cornelius Claussen [Pionix] -> vote delgated to Robert
+- [ ] Kai-Uwe Hermann [Pionix]
+- [ ] Piet Gömpel [Pionix]
+- [X] Moritz Barsnick [Chargebyte]
+- [x] Holger Rapp [Qwello]
+- [ ] S. Shankari [NREL]
+
+
+Other Attendees
+~~~~~~~~~~~~~~~
+- Martin Litre [Pionix]
+- Robert de Leeuw [Pionix] Hosting this months TSC
+- Serge Klapwijk
+- several others
+
+
+Agenda
+------
+
+- Highlights of the month
+- EVerest Development Updates
+    - Updates - from working groups
+- Community Proposals
+    - Start discussion for: Agentic @ EVerest: to be continued
+- What Else
+    - Recap CPO Forum
+    - open Energy Hackathon
+    - Upcoming Events
+    - Next TSC
+- Open discussion (not recorded)
+
+
+Action Items
+------------
+- Send out recording and slides to EVerest mailing list
+- update TSC roles and members in github
+
+
+Recording:
+----------
+- `https://youtu.be/mthxBIopqwU <https://youtu.be/mthxBIopqwU>`_
+
+
+Notes
+-----
+Votes:
+- 
+
+Other:
+- 
