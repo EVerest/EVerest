@@ -332,9 +332,9 @@ public:
 
     /// \brief Gets a composite schedule based on the given \p request
     /// \param request specifies different options for the request
-    /// \return GetCompositeScheduleResponse containing the status of the operation and the composite schedule if the
-    /// operation was successful
-    virtual GetCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) = 0;
+    /// \return EnhancedCompositeScheduleResponse containing the status of the operation and the composite schedule if
+    /// the operation was successful
+    virtual EnhancedCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) = 0;
 
     /// \brief Gets a composite schedule based on the given parameters.
     /// \note This will ignore TxDefaultProfiles and TxProfiles if no transaction is active on \p evse_id
@@ -342,8 +342,8 @@ public:
     /// \param duration How long the schedule should be
     /// \param unit ChargingRateUnit to thet the schedule for
     /// \return the composite schedule if the operation was successful, otherwise nullopt
-    virtual std::optional<CompositeSchedule> get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration,
-                                                                    ChargingRateUnitEnum unit) = 0;
+    virtual std::optional<EnhancedCompositeSchedule>
+    get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration, ChargingRateUnitEnum unit) = 0;
 
     /// \brief Gets composite schedules for all evse_ids (including 0) for the given \p duration and \p unit . If no
     /// valid profiles are given for an evse for the specified period, the composite schedule will be empty for this
@@ -351,8 +351,8 @@ public:
     /// \param duration of the request from. Composite schedules will be retrieved from now to (now + duration)
     /// \param unit of the period entries of the composite schedules
     /// \return vector of composite schedules, one for each evse_id including 0.
-    virtual std::vector<CompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
-                                                                       const ChargingRateUnitEnum& unit) = 0;
+    virtual std::vector<EnhancedCompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
+                                                                               const ChargingRateUnitEnum& unit) = 0;
 
     /// \brief Gets the configured NetworkConnectionProfile based on the given \p configuration_slot . The
     /// central system uri of the connection options will not contain ws:// or wss:// because this method removes it if
@@ -669,11 +669,11 @@ public:
                            const Component& component, const Variable& variable,
                            const VariableCharacteristics& characteristics, const VariableAttribute& attribute,
                            const std::string& value_previous, const std::string& value_current)>&& listener) override;
-    GetCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) override;
-    std::optional<CompositeSchedule> get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration,
-                                                            ChargingRateUnitEnum unit) override;
-    std::vector<CompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
-                                                               const ChargingRateUnitEnum& unit) override;
+    EnhancedCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) override;
+    std::optional<EnhancedCompositeSchedule> get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration,
+                                                                    ChargingRateUnitEnum unit) override;
+    std::vector<EnhancedCompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
+                                                                       const ChargingRateUnitEnum& unit) override;
 
     std::optional<NetworkConnectionProfile>
     get_network_connection_profile(const std::int32_t configuration_slot) const override;

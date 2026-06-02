@@ -1274,16 +1274,16 @@ void ChargePoint::register_variable_listener(
     device_model->register_variable_listener(std::move(listener));
 }
 
-GetCompositeScheduleResponse ChargePoint::get_composite_schedule(const GetCompositeScheduleRequest& request) {
+EnhancedCompositeScheduleResponse ChargePoint::get_composite_schedule(const GetCompositeScheduleRequest& request) {
     if (this->smart_charging == nullptr) {
-        GetCompositeScheduleResponse response;
+        EnhancedCompositeScheduleResponse response;
         response.status = GenericStatusEnum::Rejected;
         return response;
     }
     return this->smart_charging->get_composite_schedule(request);
 }
 
-std::optional<CompositeSchedule>
+std::optional<EnhancedCompositeSchedule>
 ChargePoint::get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration, ChargingRateUnitEnum unit) {
     if (this->smart_charging == nullptr) {
         return std::nullopt;
@@ -1291,8 +1291,8 @@ ChargePoint::get_composite_schedule(std::int32_t evse_id, std::chrono::seconds d
     return this->smart_charging->get_composite_schedule(evse_id, duration, unit);
 }
 
-std::vector<CompositeSchedule> ChargePoint::get_all_composite_schedules(const std::int32_t duration_s,
-                                                                        const ChargingRateUnitEnum& unit) {
+std::vector<EnhancedCompositeSchedule> ChargePoint::get_all_composite_schedules(const std::int32_t duration_s,
+                                                                                const ChargingRateUnitEnum& unit) {
     if (this->smart_charging == nullptr) {
         return {};
     }

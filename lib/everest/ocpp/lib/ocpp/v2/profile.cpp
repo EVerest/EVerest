@@ -450,15 +450,19 @@ IntermediateProfile generate_profile_from_periods(std::vector<period_entry_t>& p
                                                  NO_DISCHARGE_LIMIT_SPECIFIED};
             PeriodLimit current_setpoint = {NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED};
             PeriodLimit power_setpoint = {NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED};
+            std::int32_t stack_level_current = 0;
+            std::int32_t stack_level_power = 0;
 
             if (chosen->charging_rate_unit == ChargingRateUnitEnum::A) {
                 current_limit = chosen->limit;
                 current_setpoint = chosen->setpoint;
                 current_discharge_limit = chosen->discharge_limit;
+                stack_level_current = chosen->stack_level;
             } else {
                 power_limit = chosen->limit;
                 power_setpoint = chosen->setpoint;
                 power_discharge_limit = chosen->discharge_limit;
+                stack_level_power = chosen->stack_level;
             }
 
             IntermediatePeriod charging_schedule_period;
@@ -471,9 +475,11 @@ IntermediateProfile generate_profile_from_periods(std::vector<period_entry_t>& p
             charging_schedule_period.power_discharge_limit = power_discharge_limit;
             charging_schedule_period.numberPhases = chosen->number_phases;
             charging_schedule_period.operationMode = chosen->operationMode;
+            charging_schedule_period.stack_level_current = stack_level_current;
+            charging_schedule_period.stack_level_power = stack_level_power;
             charging_schedule_period.phaseToUse = std::nullopt;
 
-            // If the new ChargingSchedulePeriod.phaseToUse field is set, pass it on
+            // If the new EnhancedChargingSchedulePeriod.phaseToUse field is set, pass it on
             // Profile validation has already ensured that the values have been properly set.
             if (chosen->phase_to_use.has_value()) {
                 charging_schedule_period.phaseToUse = chosen->phase_to_use;
@@ -538,6 +544,8 @@ IntermediateProfile combine_list_of_profiles(const std::vector<IntermediateProfi
             (period.current_setpoint != combined.back().current_setpoint) ||
             (period.power_setpoint != combined.back().power_setpoint) ||
             (period.numberPhases != combined.back().numberPhases) ||
+            (period.stack_level_current != combined.back().stack_level_current) ||
+            (period.stack_level_power != combined.back().stack_level_power) ||
             (effective_mode(period.operationMode) != effective_mode(combined.back().operationMode))) {
             combined.push_back(period);
         }
@@ -589,6 +597,8 @@ IntermediateProfile merge_tx_profile_with_tx_default_profile(const IntermediateP
                                         NO_DISCHARGE_LIMIT_SPECIFIED};
         period.current_setpoint = {NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED};
         period.power_setpoint = {NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED};
+        period.stack_level_current = 0;
+        period.stack_level_power = 0;
 
         for (const auto& [it, end] : periods) {
             // A non-default operationMode is itself enough to "pick" this period:
@@ -609,6 +619,8 @@ IntermediateProfile merge_tx_profile_with_tx_default_profile(const IntermediateP
                 period.power_setpoint = it->power_setpoint;
                 period.numberPhases = it->numberPhases;
                 period.operationMode = it->operationMode;
+                period.stack_level_current = it->stack_level_current;
+                period.stack_level_power = it->stack_level_power;
                 break;
             }
         }
@@ -638,6 +650,8 @@ IntermediateProfile merge_profiles_by_lowest_limit(const std::vector<Intermediat
                                    std::numeric_limits<float>::max()};
         period.power_setpoint = {std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
                                  std::numeric_limits<float>::max()};
+        period.stack_level_current = 0;
+        period.stack_level_power = 0;
 
         bool three_phases_used = false;
         // Get number of phases for this period (the lowest of the number of phases).
@@ -660,6 +674,13 @@ IntermediateProfile merge_profiles_by_lowest_limit(const std::vector<Intermediat
                                                 NO_DISCHARGE_LIMIT_SPECIFIED, period.numberPhases, ocpp_version);
                 set_setpoint_limit_phase_values(new_period.current_setpoint, new_period.power_setpoint,
                                                 NO_SETPOINT_SPECIFIED, period.numberPhases, ocpp_version);
+            }
+
+            if (new_period.current_limit.limit >= 0.0F && new_period.current_limit.limit < period.current_limit.limit) {
+                period.stack_level_current = new_period.stack_level_current;
+            }
+            if (new_period.power_limit.limit >= 0.0F && new_period.power_limit.limit < period.power_limit.limit) {
+                period.stack_level_power = new_period.stack_level_power;
             }
 
             period.current_limit = get_min_limit(period.current_limit, new_period.current_limit);
@@ -705,6 +726,13 @@ IntermediateProfile merge_profiles_by_lowest_limit(const std::vector<Intermediat
             }
         };
 
+        if (period.current_limit.limit == std::numeric_limits<float>::max()) {
+            period.stack_level_current = 0;
+        }
+        if (period.power_limit.limit == std::numeric_limits<float>::max()) {
+            period.stack_level_power = 0;
+        }
+
         replace_max_with_no_limit(period.current_limit, std::numeric_limits<float>::max(), NO_LIMIT_SPECIFIED);
         replace_max_with_no_limit(period.power_limit, std::numeric_limits<float>::max(), NO_LIMIT_SPECIFIED);
         replace_max_with_no_limit(period.current_setpoint, std::numeric_limits<float>::max(), NO_SETPOINT_SPECIFIED);
@@ -729,6 +757,8 @@ IntermediateProfile merge_profiles_by_summing_limits(const std::vector<Intermedi
         // summing limits dont have a setpoint, so set to default values
         period.current_setpoint = {NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED};
         period.power_setpoint = {NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED};
+        period.stack_level_current = 0; // Stack level cant be determined when summing intermediate profiles
+        period.stack_level_power = 0;   // Stack level cant be determined when summing intermediate profiles
 
         bool three_phases_used = false;
         // Get number of phases for this period (the lowest of the number of phases).
@@ -786,14 +816,14 @@ IntermediateProfile merge_profiles_by_summing_limits(const std::vector<Intermedi
     return combine_list_of_profiles(convert_to_ref_vector(profiles), combinator);
 }
 
-std::vector<ChargingSchedulePeriod>
+std::vector<EnhancedChargingSchedulePeriod>
 convert_intermediate_into_schedule(const IntermediateProfile& profile, ChargingRateUnitEnum charging_rate_unit,
                                    float default_limit, std::int32_t default_number_phases, float supply_voltage) {
 
-    std::vector<ChargingSchedulePeriod> output{};
+    std::vector<EnhancedChargingSchedulePeriod> output{};
 
     for (const auto& period : profile) {
-        ChargingSchedulePeriod period_out{};
+        EnhancedChargingSchedulePeriod period_out{};
         period_out.startPeriod = period.startPeriod;
         period_out.numberPhases = period.numberPhases;
 
@@ -807,6 +837,9 @@ convert_intermediate_into_schedule(const IntermediateProfile& profile, ChargingR
         const std::int32_t number_phases = period_out.numberPhases.value_or(default_number_phases);
         const float transform_value = supply_voltage;
         if (charging_rate_unit == ChargingRateUnitEnum::A) {
+            if (period.current_limit.limit != NO_LIMIT_SPECIFIED) {
+                period_out.stackLevel = period.stack_level_current;
+            }
             store_limit_to_phase_limits(period.current_limit, NO_LIMIT_SPECIFIED, period_out.limit, period_out.limit_L2,
                                         period_out.limit_L3);
 
@@ -829,6 +862,9 @@ convert_intermediate_into_schedule(const IntermediateProfile& profile, ChargingR
                                                            transform_value, number_phases, period_out.setpoint,
                                                            period_out.setpoint_L2, period_out.setpoint_L3, true, true);
         } else {
+            if (period.power_limit.limit != NO_LIMIT_SPECIFIED) {
+                period_out.stackLevel = period.stack_level_power;
+            }
             store_limit_to_phase_limits(period.power_limit, NO_LIMIT_SPECIFIED, period_out.limit, period_out.limit_L2,
                                         period_out.limit_L3);
 

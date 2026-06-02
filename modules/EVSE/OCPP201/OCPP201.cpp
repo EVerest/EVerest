@@ -1734,12 +1734,12 @@ void OCPP201::process_reservation_end(const int32_t evse_id, const int32_t conne
     this->charge_point->on_reservation_cleared(evse_id, connector_id);
 }
 
-void OCPP201::publish_charging_schedules(const std::vector<ocpp::v2::CompositeSchedule>& composite_schedules) {
+void OCPP201::publish_charging_schedules(const std::vector<ocpp::v2::EnhancedCompositeSchedule>& composite_schedules) {
     const auto everest_schedules = conversions::to_everest_charging_schedules(composite_schedules);
     this->p_ocpp_generic->publish_charging_schedules(everest_schedules);
 }
 
-void OCPP201::set_external_limits(const std::vector<ocpp::v2::CompositeSchedule>& composite_schedules) {
+void OCPP201::set_external_limits(const std::vector<ocpp::v2::EnhancedCompositeSchedule>& composite_schedules) {
     const auto start_time = ocpp::DateTime();
 
     auto to_timestamp = [&](int seconds_offset) {
@@ -1756,7 +1756,7 @@ void OCPP201::set_external_limits(const std::vector<ocpp::v2::CompositeSchedule>
     }
 
     auto create_setpoint_entry =
-        [&](const std::string& timestamp, const ocpp::v2::ChargingSchedulePeriod& period,
+        [&](const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
             const ocpp::v2::ChargingRateUnitEnum& unit) -> std::optional<types::energy::ScheduleSetpointEntry> {
         const bool has_basic_setpoint = period.setpoint.has_value();
         const bool has_freq_table = period.v2xFreqWattCurve.has_value() && !period.v2xFreqWattCurve->empty();
@@ -1795,7 +1795,7 @@ void OCPP201::set_external_limits(const std::vector<ocpp::v2::CompositeSchedule>
     };
 
     auto create_limits_entry =
-        [&](const std::string& timestamp, const ocpp::v2::ChargingSchedulePeriod& period,
+        [&](const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
             const ocpp::v2::ChargingRateUnitEnum& unit) -> std::optional<types::energy::ScheduleReqEntry> {
         if (!period.limit.has_value()) {
             return std::nullopt;

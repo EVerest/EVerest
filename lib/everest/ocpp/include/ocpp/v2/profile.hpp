@@ -2,7 +2,7 @@
 // Copyright 2020 - 2024 Pionix GmbH and Contributors to EVerest
 
 #include <ocpp/common/constants.hpp>
-#include <ocpp/v2/ocpp_types.hpp>
+#include <ocpp/v2/types.hpp>
 
 namespace ocpp {
 namespace v2 {
@@ -23,6 +23,8 @@ struct IntermediatePeriod {
     PeriodLimit power_discharge_limit;
     PeriodLimit current_setpoint;
     PeriodLimit power_setpoint;
+    std::int32_t stack_level_current;
+    std::int32_t stack_level_power;
     std::optional<std::int32_t> numberPhases;
     std::optional<std::int32_t> phaseToUse;
     std::optional<OperationModeEnum> operationMode;
@@ -147,7 +149,7 @@ void fill_gaps_with_defaults(IntermediateProfile& schedule, float default_limit,
 /// \brief Convert an intermediate profile into a final charging schedule.
 /// This will fill in defaults and convert merge the current and power limits into the final \p charging_rate_unit based
 /// limit
-std::vector<ChargingSchedulePeriod>
+std::vector<EnhancedChargingSchedulePeriod>
 convert_intermediate_into_schedule(const IntermediateProfile& profile, ChargingRateUnitEnum charging_rate_unit,
                                    float default_limit, std::int32_t default_number_phases, float supply_voltage);
 

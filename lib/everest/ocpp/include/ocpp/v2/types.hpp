@@ -3,6 +3,7 @@
 #ifndef V2_TYPES_HPP
 #define V2_TYPES_HPP
 
+#include "ocpp/v2/messages/GetCompositeSchedule.hpp"
 #include <ocpp/v2/ocpp_types.hpp>
 
 #include <ostream>
@@ -206,6 +207,72 @@ struct ReportedChargingProfile {
     }
 };
 
+/// \brief This provides additional information alongside the ChargingSchedulePeriod.
+///        Similar to OCPP 1.6
+///
+/// - does not inherit ChargingSchedulePeriod to avoid automatic conversions
+/// - does not use the cast operator to avoid automatic conversions
+struct EnhancedChargingSchedulePeriod {
+    // elements from ChargingSchedulePeriod
+    std::int32_t startPeriod;
+    std::optional<float> limit;
+    std::optional<float> limit_L2;
+    std::optional<float> limit_L3;
+    std::optional<std::int32_t> numberPhases;
+    std::optional<std::int32_t> phaseToUse;
+    std::optional<float> dischargeLimit;
+    std::optional<float> dischargeLimit_L2;
+    std::optional<float> dischargeLimit_L3;
+    std::optional<float> setpoint;
+    std::optional<float> setpoint_L2;
+    std::optional<float> setpoint_L3;
+    std::optional<float> setpointReactive;
+    std::optional<float> setpointReactive_L2;
+    std::optional<float> setpointReactive_L3;
+    std::optional<bool> preconditioningRequest;
+    std::optional<bool> evseSleep;
+    std::optional<float> v2xBaseline;
+    std::optional<OperationModeEnum> operationMode;
+    std::optional<std::vector<V2XFreqWattPoint>> v2xFreqWattCurve;
+    std::optional<std::vector<V2XSignalWattPoint>> v2xSignalWattCurve;
+    std::optional<CustomData> customData;
+    // additional element
+    std::int32_t stackLevel{0};
+
+    ChargingSchedulePeriod get() const;
+};
+
+/// \brief This provides additional information alongside the ChargingSchedulePeriod.
+///        Similar to OCPP 1.6
+/// \note uses EnhancedChargingSchedulePeriod rather than ChargingSchedulePeriod
+///       for chargingSchedulePeriod
+struct EnhancedCompositeSchedule {
+    std::int32_t evseId;
+    std::int32_t duration;
+    ocpp::DateTime scheduleStart;
+    ChargingRateUnitEnum chargingRateUnit;
+    std::vector<EnhancedChargingSchedulePeriod> chargingSchedulePeriod;
+    std::optional<CustomData> customData;
+
+    CompositeSchedule get() const;
+};
+
+/// \brief stream outputter for unit test debugging
+std::ostream& operator<<(std::ostream& os, const EnhancedCompositeSchedule& k);
+
+/// \brief This provides additional information alongside the CompositeSchedule.
+///        Similar to OCPP 1.6
+/// \note uses EnhancedCompositeSchedule rather than CompositeSchedule
+///       for schedule
+struct EnhancedCompositeScheduleResponse {
+    GenericStatusEnum status;
+    std::optional<StatusInfo> statusInfo;
+    std::optional<EnhancedCompositeSchedule> schedule;
+    std::optional<CustomData> customData;
+
+    GetCompositeScheduleResponse get() const;
+};
+
 namespace conversions {
 /// \brief Converts the given MessageType \p m to std::string
 /// \returns a string representation of the MessageType
@@ -214,7 +281,6 @@ std::string messagetype_to_string(MessageType m);
 /// \brief Converts the given std::string \p s to MessageType
 /// \returns a MessageType from a string representation
 MessageType string_to_messagetype(const std::string& s);
-
 } // namespace conversions
 
 /// \brief Writes the string representation of the given \p message_type to the given output stream \p os
