@@ -43,6 +43,8 @@ TEST_CASE("kind_of maps every variant alternative to its EventKind", "[evsim][ev
     CHECK(kind_of(Event{IsoV2GFinishedEvt{}}) == EventKind::IsoV2GFinished);
     CHECK(kind_of(Event{IsoDcPowerOnEvt{}}) == EventKind::IsoDcPowerOn);
     CHECK(kind_of(Event{IsoPauseFromChargerEvt{}}) == EventKind::IsoPauseFromCharger);
+    CHECK(kind_of(Event{DcEvsePresentCurrentPayload{}}) == EventKind::DcEvsePresentCurrent);
+    CHECK(kind_of(Event{DcEvsePresentVoltagePayload{}}) == EventKind::DcEvsePresentVoltage);
     CHECK(kind_of(Event{StateDeadlineEvt{}}) == EventKind::StateDeadline);
     CHECK(kind_of(Event{ShutdownEvt{}}) == EventKind::Shutdown);
 }

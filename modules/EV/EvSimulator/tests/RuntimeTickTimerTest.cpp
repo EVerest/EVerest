@@ -59,7 +59,55 @@ void run_on_tick_body(FsmContext& ctx, std::chrono::steady_clock::time_point now
     soc_step(ctx);
 }
 
+// Replays the present-current / present-voltage arms of the
+// EvSimRuntime::apply_passthrough_vars switch (EvSimRuntime is not
+// constructible without a live framework EvSimulator&, the same constraint
+// that drives the body-replay style of the on_tick tests above). The two arms
+// are mechanical writes into ctx.vars, so the routing under test is: a
+// DcEvsePresentCurrentPayload populates the live-current optional and a
+// DcEvsePresentVoltagePayload writes dc_present_voltage_v.
+void run_apply_passthrough_vars_body(FsmContext& ctx, const Event& ev) {
+    using K = EventKind;
+    switch (kind_of(ev)) {
+    case K::DcEvsePresentCurrent:
+        if (auto* p = std::get_if<DcEvsePresentCurrentPayload>(&ev.payload)) {
+            ctx.vars.evse_dc_present_current_a = static_cast<float>(p->current_a);
+        }
+        break;
+    case K::DcEvsePresentVoltage:
+        if (auto* p = std::get_if<DcEvsePresentVoltagePayload>(&ev.payload)) {
+            ctx.vars.dc_present_voltage_v = static_cast<float>(p->voltage_v);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 } // namespace
+
+TEST_CASE("apply_passthrough_vars routes DC present current/voltage into vars", "[evsim][runtime][passthrough]") {
+    SECTION("DcEvsePresentCurrentPayload populates the live-current optional") {
+        TestFixture fx;
+        auto ctx = fx.make_ctx();
+        // Open-loop fallback until a present current is reported.
+        REQUIRE_FALSE(ctx->vars.evse_dc_present_current_a.has_value());
+
+        run_apply_passthrough_vars_body(*ctx, Event{DcEvsePresentCurrentPayload{75.0}});
+
+        REQUIRE(ctx->vars.evse_dc_present_current_a.has_value());
+        CHECK(*ctx->vars.evse_dc_present_current_a == 75.0f);
+    }
+
+    SECTION("DcEvsePresentVoltagePayload writes dc_present_voltage_v") {
+        TestFixture fx;
+        auto ctx = fx.make_ctx();
+
+        run_apply_passthrough_vars_body(*ctx, Event{DcEvsePresentVoltagePayload{550.0}});
+
+        CHECK(ctx->vars.dc_present_voltage_v == 550.0f);
+    }
+}
 
 TEST_CASE("on_tick composition advances ramp and integrates SoC in one fire", "[evsim][runtime][tick]") {
     using Catch::Matchers::WithinAbs;

@@ -377,6 +377,16 @@ void EvSimRuntime::apply_passthrough_vars(const Event& ev) {
             ctx->vars.pwm_duty_cycle = p->cp_pwm_duty_cycle;
         }
         break;
+    case K::DcEvsePresentCurrent:
+        if (auto* p = std::get_if<DcEvsePresentCurrentPayload>(&ev.payload)) {
+            ctx->vars.evse_dc_present_current_a = static_cast<float>(p->current_a);
+        }
+        break;
+    case K::DcEvsePresentVoltage:
+        if (auto* p = std::get_if<DcEvsePresentVoltagePayload>(&ev.payload)) {
+            ctx->vars.dc_present_voltage_v = static_cast<float>(p->voltage_v);
+        }
+        break;
     default:
         break;
     }

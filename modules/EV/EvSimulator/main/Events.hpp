@@ -55,6 +55,8 @@ enum class EventKind {
     IsoV2GFinished,
     IsoDcPowerOn,
     IsoPauseFromCharger,
+    DcEvsePresentCurrent,
+    DcEvsePresentVoltage,
     // Internal
     BeginSession, // Plugged::enter self-advance: consume latched config / default
     StateDeadline,
@@ -110,6 +112,18 @@ struct SlacStatePayload {
     std::string state;
 };
 
+// DC live present-current / present-voltage forwards from the SECC. A producer
+// publishing dc_evse_present_current / dc_evse_present_voltage on the
+// ISO15118_ev requirement routes these into vars so the SoC integrator
+// switches from open-loop fallback to closed-loop live current.
+struct DcEvsePresentCurrentPayload {
+    double current_a;
+};
+
+struct DcEvsePresentVoltagePayload {
+    double voltage_v;
+};
+
 // Parsed `raise_error` / `clear_error` command args. The MQTT-thread command
 // router decodes the payload and enqueues one of these so the actual
 // p_ev_manager error interaction happens on the loop thread, which owns all
@@ -134,12 +148,12 @@ using EventPayload =
                  ClearFaultCmd, API_types::ev_simulator::BcbToggleParams, API_types::ev_simulator::RunScenarioParams,
                  RaiseErrorCmd, ClearErrorCmd, QueryStateCmd, BspEventPayload, BspMeasurementPayload, EvInfoPayload,
                  SlacStatePayload, IsoPowerReadyEvt, IsoAcMaxCurrentEvt, IsoAcTargetPowerEvt, IsoStopFromChargerEvt,
-                 IsoV2GFinishedEvt, IsoDcPowerOnEvt, IsoPauseFromChargerEvt, BeginSessionEvt, StateDeadlineEvt,
-                 ShutdownEvt>;
+                 IsoV2GFinishedEvt, IsoDcPowerOnEvt, IsoPauseFromChargerEvt, DcEvsePresentCurrentPayload,
+                 DcEvsePresentVoltagePayload, BeginSessionEvt, StateDeadlineEvt, ShutdownEvt>;
 
 // One variant alternative per EventKind value. If a future alternative is
 // added without a matching EventKind (or vice versa) this fails to compile.
-static_assert(std::variant_size_v<EventPayload> == 31,
+static_assert(std::variant_size_v<EventPayload> == 33,
               "EventPayload alternatives and EventKind values must stay in lockstep");
 
 namespace detail {
