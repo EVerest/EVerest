@@ -51,6 +51,17 @@ void V2GNegotiating::enter() {
     // (SlacMatching -> V2GNegotiating) leaves the flag false and starts now.
     if (ctx.vars.resume_awaiting_pwm) {
         ctx.arm_timer(std::chrono::seconds(60));
+        // On a DC resume the SECC re-runs CableCheck and expects the EV
+        // contactor closed within its cable_check_relays_closed_timeout_s
+        // window. Closing it only reactively (on josev's re-emitted
+        // dc_power_on, handled below) races that timeout and trips an
+        // MREC11 CableCheckFault. Close it proactively here so the EV beats
+        // the SECC's resume CableCheck. AC resume needs no contactor command
+        // (the EVSE relays drive power), so this is gated on DC modes only.
+        const auto cm = ctx.vars.charge_mode();
+        if (cm && (*cm == api::ChargeMode::DcIso2 || *cm == api::ChargeMode::DcIsoD20)) {
+            ctx.allow_power_on(true);
+        }
         ctx.publish_e2m_state(api::FsmState::V2GNegotiating);
         return;
     }
