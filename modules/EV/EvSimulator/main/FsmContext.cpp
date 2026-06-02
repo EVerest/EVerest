@@ -81,12 +81,12 @@ FsmContext::FsmContext(PeerActions actions, Publisher pub, TimerArm timer_arm, T
     vars.departure_time_s = cfg.departure_time_s;
     vars.e_amount_wh = cfg.e_amount_wh;
     vars.force_payment_option = cfg.force_payment_option;
-    // DC present current stays 0 until a real EvInfo arrives
-    // (EvSimRuntime::apply_passthrough_vars). Seeding it from
-    // cfg.dc_target_current would make the SoC integrator deliver phantom
-    // energy on a zero-energy EVSE before any current is actually delivered.
-    // Voltage is seeded so a delivered current integrates against a sane bus
-    // voltage; with current at 0 the integrated power is 0 regardless.
+    // Seed the DC bus voltage so the open-loop fallback in
+    // effective_dc_current_a() integrates against a sane voltage before any
+    // live present voltage is reported. The present current optional
+    // (vars.evse_dc_present_current_a) default-constructs to nullopt, so until
+    // a peer EvInfo arrives the integrator uses the cfg.dc_target_current
+    // open-loop fallback.
     vars.dc_present_voltage_v = static_cast<float>(cfg.dc_target_voltage);
 }
 
@@ -152,6 +152,18 @@ void FsmContext::bsp_apply_ac_params_clamped(float desired_a, bool three_phases_
 
 float FsmContext::effective_ac_current_a() const {
     return clamp_ac_current(vars.charging_current_a, vars.evse_ac_max_current_a);
+}
+
+float FsmContext::effective_dc_current_a() const {
+    // Closed loop: a reported live present current is returned un-clamped so a
+    // negative value (BPT discharge) passes through as reverse-power flow.
+    if (vars.evse_dc_present_current_a.has_value()) {
+        return *vars.evse_dc_present_current_a;
+    }
+    // Open-loop fallback: no live measurement, so integrate the configured
+    // target current clamped to the EV's own max limit. The post-integration
+    // clamp in soc_step keeps battery_charge_wh within [0, capacity].
+    return std::clamp(static_cast<float>(cfg.dc_target_current), 0.0f, static_cast<float>(cfg.dc_max_current_limit));
 }
 
 void FsmContext::note_evse_ac_max_current(float max_current_a) {
