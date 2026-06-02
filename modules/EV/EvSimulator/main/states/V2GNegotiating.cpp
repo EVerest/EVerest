@@ -92,17 +92,13 @@ StateBase::Result V2GNegotiating::feed(EventType ev) {
             m.cp_pwm_duty_cycle < kPwmRunningHighPct) {
             ctx.vars.resume_awaiting_pwm = false;
             // The SECC has re-applied the charging PWM and is ready for the
-            // resume CableCheck. Now close the EV contactor by presenting CP=C
-            // (the EVSE BSP sim emits PowerOn, clearing contactor_open, only on
-            // the CP=C edge; allow_power_on is a no-op on the EV BSP), mirroring
-            // Charging::enter. Held until here so CP=B spans the SECC's PWM-off
-            // C1 timer window. AC resume needs no contactor command (the EVSE
-            // relays drive power), so this is gated on DC modes only.
-            const auto cm = ctx.vars.charge_mode();
-            if (cm && (*cm == api::ChargeMode::DcIso2 || *cm == api::ChargeMode::DcIsoD20)) {
-                ctx.set_cp(::types::ev_board_support::EvCpState::C);
-                ctx.allow_power_on(true);
-            }
+            // resume CableCheck. Re-issue the deferred start_charging now, but
+            // keep CP at B: the EV holds CP=B until ev_power_ready (handled in
+            // feed(IsoPowerReady)), mirroring EvManager which holds CP=B through
+            // the pause until pwr_ready and only then closes the contactor for
+            // the resume CableCheck. Asserting CP=C here, while the SECC's
+            // pause-window PWM-off C1 timer may still be running, risks a
+            // force-power-off under load.
             if (!start_iso_charging(ctx)) {
                 ctx.vars.last_fault = api::FaultReport{api::FaultType::Internal,
                                                        std::string{"iso_start_charging rejected"}, std::nullopt};
@@ -111,14 +107,39 @@ StateBase::Result V2GNegotiating::feed(EventType ev) {
         }
         return {false, nullptr};
     }
-    case EK::IsoPowerReady:
-        // Clear the resume gate on the way into the charge loop so an
-        // unconsumed flag can never leak into a later V2GNegotiating.
+    case EK::IsoPowerReady: {
+        // Clear the resume gate so an unconsumed flag can never leak into a
+        // later V2GNegotiating.
+        ctx.vars.resume_awaiting_pwm = false;
+        // DC ISO splits the charge-loop entry into two milestones, mirroring
+        // EvManager. PyEvJosev publishes ev_power_ready back in
+        // ChargeParameterDiscovery (before CableCheck) and dc_power_on later in
+        // PreCharge. EvManager gates on these separately: ev_power_ready ->
+        // ISO_POWER_READY asserts CP=C and HOLDS (it does NOT start drawing
+        // power yet), and only dc_power_on -> ISO_CHARGING_REGULATED enters the
+        // charge loop. So for DC, present CP=C here (mirroring Charging::enter,
+        // which closes the SECC contactor for CableCheck/PreCharge) and STAY in
+        // V2GNegotiating. Transitioning to Charging now is premature: it signals
+        // "Charging" while the SECC is still entering CableCheck, and a pause at
+        // that moment drops CP to B mid-CableCheck and kills the PSU.
+        const auto cm = ctx.vars.charge_mode();
+        if (cm && (*cm == api::ChargeMode::DcIso2 || *cm == api::ChargeMode::DcIsoD20)) {
+            ctx.set_cp(::types::ev_board_support::EvCpState::C);
+            ctx.allow_power_on(true);
+            return {false, nullptr};
+        }
+        // AC ISO has no dc_power_on milestone, so ev_power_ready is the
+        // charge-loop entry gate.
+        return {false, std::make_unique<Charging>(ctx)};
+    }
+    case EK::IsoDcPowerOn:
+        // dc_power_on (PreCharge complete) is the DC charging milestone.
+        // Published for both DcIso2 (iso15118_2_states.py PreCharge) and
+        // DcIsoD20 (iso15118_20_states.py DCPreCharge). Clear the resume gate
+        // defensively. CP=C was already asserted at IsoPowerReady; Charging::
+        // enter re-asserts it (harmless) and closes the contactor.
         ctx.vars.resume_awaiting_pwm = false;
         return {false, std::make_unique<Charging>(ctx)};
-    case EK::IsoDcPowerOn:
-        ctx.allow_power_on(true);
-        return {false, nullptr};
     case EK::IsoStopFromCharger:
         return {false, std::make_unique<Stopping>(ctx)};
     case EK::Unplug:
