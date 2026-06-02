@@ -90,8 +90,15 @@ void MockIso15118Ev::call_set_fault() {
     records.emplace_back("set_fault()");
 }
 
-void MockIso15118Ev::call_set_dc_params(const ::types::iso15118::DcEvParameters&) {
-    records.emplace_back("set_dc_params(...)");
+void MockIso15118Ev::call_set_dc_params(const ::types::iso15118::DcEvParameters& params) {
+    std::ostringstream os;
+    os << "set_dc_params(target_current=" << to_string(params.target_current.value_or(-1))
+       << ",target_voltage=" << to_string(params.target_voltage.value_or(-1))
+       << ",max_current_limit=" << to_string(params.max_current_limit.value_or(-1))
+       << ",max_power_limit=" << to_string(params.max_power_limit.value_or(-1))
+       << ",max_voltage_limit=" << to_string(params.max_voltage_limit.value_or(-1))
+       << ",energy_capacity=" << to_string(params.energy_capacity.value_or(-1)) << ")";
+    records.emplace_back(os.str());
 }
 
 void MockIso15118Ev::call_set_bpt_dc_params(const ::types::iso15118::DcEvBPTParameters&) {
