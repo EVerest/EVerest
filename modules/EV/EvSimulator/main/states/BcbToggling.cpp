@@ -3,6 +3,7 @@
 #include "BcbToggling.hpp"
 
 #include "../FsmContext.hpp"
+#include "SlacMatching.hpp"
 #include "Unplugged.hpp"
 #include "V2GNegotiating.hpp"
 
@@ -46,8 +47,22 @@ StateBase::Result BcbToggling::feed(EventType ev) {
             // SECC has just been woken by the CP wake-up edges and has not yet
             // re-applied the charging PWM. Tell V2GNegotiating to wait for the
             // PWM-is-running BspMeasurement before re-issuing start_charging
-            // (mirrors EvManager's iso_wait_pwm_is_running step).
+            // (mirrors EvManager's iso_wait_pwm_is_running step). This flag is
+            // set on both resume paths and carried through the SlacMatching
+            // detour below, so the deferred-start contract holds whichever way
+            // V2GNegotiating is finally entered.
             ctx.vars.resume_awaiting_pwm = true;
+            // On AC the pause tore the SLAC link down (D-LINK_TERMINATE ->
+            // UNMATCHED), so re-establish SLAC before re-negotiating: route
+            // through SlacMatching, whose enter re-triggers matching and whose
+            // MATCHED handler advances to V2GNegotiating. Mirrors EvManager's
+            // iso_wait_slac_matched reset + trigger_matching on UNMATCHED.
+            // On DC the link survives the pause (slac_unmatched stays false),
+            // so the direct V2GNegotiating path is kept -- a redundant re-match
+            // would race the SECC's resume CableCheck relays-closed timeout.
+            if (ctx.vars.slac_unmatched) {
+                return {false, std::make_unique<SlacMatching>(ctx)};
+            }
             return {false, std::make_unique<V2GNegotiating>(ctx)};
         }
         ctx.arm_timer(std::chrono::milliseconds(250));

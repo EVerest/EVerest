@@ -167,6 +167,15 @@ struct SimVars {
     // charge_mode / payment / bpt / mcs_enabled / pending_curve fields.
     std::optional<Session> session;
     std::string slac_state{"UNMATCHED"};
+    // True once a SLAC UNMATCHED (D-LINK_TERMINATE) is observed after a match,
+    // i.e. the SECC tore the SLAC link down. On AC this happens on pause; on DC
+    // the link survives a pause, so this stays false. The EV-initiated resume
+    // path (BcbToggling) consults it to decide whether SLAC must be re-matched
+    // before re-negotiating: AC must re-match (mirrors EvManager's
+    // iso_wait_slac_matched reset+trigger_matching on UNMATCHED), DC must not
+    // (a redundant re-match would race its resume CableCheck timing). Cleared
+    // when SlacMatching observes the new MATCHED.
+    bool slac_unmatched{false};
     int32_t bcb_remaining{0};
     // Set by BcbToggling before it hands control to V2GNegotiating on an
     // EV-initiated resume. It tells V2GNegotiating to defer iso_start_charging
