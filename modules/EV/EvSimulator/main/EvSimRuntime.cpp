@@ -363,6 +363,13 @@ void EvSimRuntime::apply_passthrough_vars(const Event& ev) {
     case K::SlacState:
         if (auto* p = std::get_if<SlacStatePayload>(&ev.payload)) {
             ctx->vars.slac_state = p->state;
+            // A SLAC UNMATCHED is the SECC's D-LINK_TERMINATE: the link was torn
+            // down (AC pause does this; DC keeps the link). Latch it so the
+            // EV-initiated resume path re-matches SLAC. Cleared by SlacMatching
+            // on the next MATCHED.
+            if (p->state == "UNMATCHED") {
+                ctx->vars.slac_unmatched = true;
+            }
         }
         break;
     case K::BspMeasurement:

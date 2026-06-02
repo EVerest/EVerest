@@ -39,6 +39,9 @@ StateBase::Result SlacMatching::feed(EventType ev) {
     case EK::SlacState: {
         const auto& p = std::get<SlacStatePayload>(ev.payload);
         if (p.state == "MATCHED") {
+            // The link is matched again; clear the torn-down flag so a later
+            // resume that did not tear SLAC down takes the direct path.
+            ctx.vars.slac_unmatched = false;
             return {false, std::make_unique<V2GNegotiating>(ctx)};
         }
         return {true, nullptr};

@@ -600,6 +600,16 @@ TEST_CASE("EvSimulator group1 transitions", "[evsim][group1]") {
         CHECK(decoded == api::FsmState::Unplugged);
     }
 
+    SECTION("Unplugged.enter clears slac_unmatched so it cannot leak across sessions") {
+        auto ctx = fx.make_ctx();
+        // A SLAC teardown latched in a prior session must not force a redundant
+        // re-match on the first resume of the next session.
+        ctx->vars.slac_unmatched = true;
+        Unplugged s{*ctx};
+        s.enter();
+        CHECK_FALSE(ctx->vars.slac_unmatched);
+    }
+
     SECTION("Unplugged: Plug -> Plugged") {
         auto ctx = fx.make_ctx();
         Unplugged s{*ctx};
