@@ -75,6 +75,8 @@ StateBase::Result SlacMatching::feed(EventType ev) {
     case EK::Enable:
     case EK::BspMeasurement:
     case EK::EvInfo:
+    case EK::DcEvsePresentCurrent:
+    case EK::DcEvsePresentVoltage:
     case EK::IsoPowerReady:
     case EK::IsoAcMaxCurrent:
     case EK::IsoAcTargetPower:

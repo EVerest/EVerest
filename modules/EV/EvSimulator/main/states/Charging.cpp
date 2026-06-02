@@ -143,6 +143,11 @@ StateBase::Result Charging::feed(EventType ev) {
     case EK::IsoV2GFinished:
     case EK::IsoDcPowerOn:
     case EK::StateDeadline:
+    // DC live present-current / present-voltage are var-only passthrough:
+    // EvSimRuntime::apply_passthrough_vars latches them into vars before the
+    // FSM feed, so the state itself ignores them (no ev.payload access).
+    case EK::DcEvsePresentCurrent:
+    case EK::DcEvsePresentVoltage:
     // RaiseError / ClearError are intercepted on the loop thread before the
     // FSM feed; listed only to keep the switch exhaustive (-Werror=switch).
     // ConfigureSession is intercepted pre-FSM (loop thread); BeginSession is

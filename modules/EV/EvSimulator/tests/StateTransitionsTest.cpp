@@ -1509,6 +1509,36 @@ TEST_CASE("EvSimulator group2 transitions", "[evsim][group2]") {
         CHECK(decoded == api::FsmState::Charging);
     }
 
+    SECTION("Charging: DC present-current / present-voltage are var-only no-ops, no Fault") {
+        // DC charging lives in Charging, and the SECC streams
+        // dc_evse_present_current / dc_evse_present_voltage straight through the
+        // dispatch loop (EvSimRuntime feeds them via feed_with_fault_isolation).
+        // These carry a DcEvsePresentCurrentPayload / DcEvsePresentVoltagePayload,
+        // not an IsoAcMaxCurrentEvt: the Charging handler must treat both as pure
+        // no-ops and never std::get the wrong variant alternative. A wrong-arm
+        // grouping throws std::bad_variant_access, which the loop converts into a
+        // forced internal Fault -- the regression this guards against.
+        auto ctx = fx.make_ctx();
+        set_mode(*ctx, api::ChargeMode::DcIso2);
+        std::unique_ptr<fsm::v2::FSM<StateBase>> fsm =
+            std::make_unique<fsm::v2::FSM<StateBase>>(std::make_unique<Charging>(*ctx));
+        REQUIRE(fsm->get_current_state_id() == api::FsmState::Charging);
+
+        Event present_current{DcEvsePresentCurrentPayload{125.0}};
+        REQUIRE_NOTHROW(feed_with_fault_isolation(fsm, *ctx, present_current));
+        CHECK(fsm->get_current_state_id() == api::FsmState::Charging);
+        CHECK(fsm->get_current_state_id() != api::FsmState::Faulted);
+
+        Event present_voltage{DcEvsePresentVoltagePayload{400.0}};
+        REQUIRE_NOTHROW(feed_with_fault_isolation(fsm, *ctx, present_voltage));
+        CHECK(fsm->get_current_state_id() == api::FsmState::Charging);
+        CHECK(fsm->get_current_state_id() != api::FsmState::Faulted);
+
+        // The no-op must not have touched the BSP AC-current rail (the wrong-arm
+        // body would have re-applied set_ac_max_current).
+        CHECK_FALSE(contains_substr(fx.mocks.bsp.records, "set_ac_max_current"));
+    }
+
     // ---- ChargingPwmPaused ---------------------------------------------
 
     SECTION("ChargingPwmPaused.enter sets CP=B, power off, publishes state") {

@@ -99,6 +99,12 @@ struct KindVisitor {
     EventKind operator()(const IsoPauseFromChargerEvt&) const {
         return EventKind::IsoPauseFromCharger;
     }
+    EventKind operator()(const DcEvsePresentCurrentPayload&) const {
+        return EventKind::DcEvsePresentCurrent;
+    }
+    EventKind operator()(const DcEvsePresentVoltagePayload&) const {
+        return EventKind::DcEvsePresentVoltage;
+    }
     EventKind operator()(const BeginSessionEvt&) const {
         return EventKind::BeginSession;
     }
@@ -172,6 +178,10 @@ EventPayload default_payload_for(EventKind kind) {
         return IsoDcPowerOnEvt{};
     case EventKind::IsoPauseFromCharger:
         return IsoPauseFromChargerEvt{};
+    case EventKind::DcEvsePresentCurrent:
+        return DcEvsePresentCurrentPayload{};
+    case EventKind::DcEvsePresentVoltage:
+        return DcEvsePresentVoltagePayload{};
     case EventKind::BeginSession:
         return BeginSessionEvt{};
     case EventKind::StateDeadline:
@@ -234,6 +244,8 @@ std::string_view command_verb(EventKind kind) {
     case EventKind::IsoV2GFinished:
     case EventKind::IsoDcPowerOn:
     case EventKind::IsoPauseFromCharger:
+    case EventKind::DcEvsePresentCurrent:
+    case EventKind::DcEvsePresentVoltage:
     case EventKind::BeginSession:
     case EventKind::StateDeadline:
     case EventKind::Shutdown:
