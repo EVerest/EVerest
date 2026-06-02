@@ -186,6 +186,22 @@ struct SimVars {
     // unstable resume. The first-session path (SlacMatching -> V2GNegotiating)
     // leaves this false and starts immediately.
     bool resume_awaiting_pwm{false};
+    // Tracks whether a Josev V2G comm session is live. Josev runs exactly one
+    // session per start_charging and publishes v2g_session_finished (->
+    // IsoV2GFinished) when each session's loop returns, including on a pause.
+    // Set when start_charging is issued (FsmContext::iso_start_charging),
+    // cleared on IsoV2GFinished (EvSimRuntime::apply_passthrough_vars) and reset
+    // on a fresh plug (Plugged::enter). The EV must not begin a resume (BCB
+    // wake-up + re-SLAC) while the paused session is still tearing down: the
+    // previous session's lagging SessionStop would otherwise reach the SECC
+    // after the link is re-established and clobber it (SECC drops to
+    // D-LINK_PAUSE + PWM off and never re-applies the charging PWM, so the
+    // resume hangs). Gated in Paused::feed(ResumeSession).
+    bool iso_session_active{false};
+    // Set when ResumeSession arrives in Paused while iso_session_active is still
+    // true; the resume (BcbToggling) is then deferred until IsoV2GFinished
+    // arrives. Reset on each Paused entry.
+    bool resume_pending{false};
     std::optional<API_types::ev_simulator::FaultReport> last_fault;
     float charging_current_a{16.0f};
     bool three_phases{true};
