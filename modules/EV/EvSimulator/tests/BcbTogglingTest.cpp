@@ -436,6 +436,66 @@ TEST_CASE("EvSimulator DC resume re-matches SLAC even with link intact", "[evsim
     CHECK_FALSE(contains_substr(fx.mocks.iso.records, "start_charging"));
 }
 
+// Josev runs exactly one V2G comm session per start_charging and publishes
+// v2g_session_finished (-> IsoV2GFinished) when each session's loop returns,
+// including on a pause. If the EV begins its resume (BCB wake-up + re-SLAC)
+// while the paused session is still tearing down, the previous session's
+// lagging SessionStop reaches the SECC after the link is re-established and
+// clobbers it: the SECC drops to D-LINK_PAUSE + PWM off and never re-applies
+// the charging PWM, so V2GNegotiating's PWM gate never fires start_charging and
+// the resume hangs. So a ResumeSession that arrives while the session is still
+// live must DEFER until IsoV2GFinished.
+TEST_CASE("EvSimulator resume defers BCB toggle until prior V2G session finished", "[evsim][group2]") {
+    TestFixture fx;
+    auto ctx = fx.make_ctx();
+    set_mode(*ctx, api::ChargeMode::DcIso2);
+    ensure_session(*ctx).payment = api::PaymentOption::ExternalPayment;
+    // A live Josev session is in progress (start_charging was issued, no
+    // IsoV2GFinished yet).
+    ctx->vars.iso_session_active = true;
+
+    Paused p{*ctx};
+
+    // Resume requested while the paused session is still tearing down: stay in
+    // Paused (deferred); do NOT start the BCB toggle yet.
+    auto deferred = p.feed(Event{EventKind::ResumeSession});
+    CHECK(deferred.new_state == nullptr);
+    CHECK(ctx->vars.resume_pending);
+    CHECK(ctx->vars.bcb_remaining == 0);
+
+    // The paused session finishes: EvSimRuntime::apply_passthrough_vars clears
+    // iso_session_active before the FSM feed (emulated here), then
+    // IsoV2GFinished releases the deferred resume into BcbToggling.
+    ctx->vars.iso_session_active = false;
+    auto resumed = p.feed(Event{EventKind::IsoV2GFinished});
+    REQUIRE(resumed.new_state);
+    CHECK(resumed.new_state->get_id() == api::FsmState::BcbToggling);
+    CHECK(ctx->vars.bcb_remaining == 6);
+    CHECK_FALSE(ctx->vars.resume_pending);
+}
+
+// IsoV2GFinished without a pending resume is a no-op: the common case where the
+// session finishes tearing down before the user ever asks to resume. A later
+// ResumeSession then takes the immediate path (iso_session_active is false).
+TEST_CASE("EvSimulator Paused IsoV2GFinished without pending resume is inert", "[evsim][group2]") {
+    TestFixture fx;
+    auto ctx = fx.make_ctx();
+    set_mode(*ctx, api::ChargeMode::DcIso2);
+    ensure_session(*ctx).payment = api::PaymentOption::ExternalPayment;
+    ctx->vars.iso_session_active = false; // already finished
+
+    Paused p{*ctx};
+    auto finished = p.feed(Event{EventKind::IsoV2GFinished});
+    CHECK(finished.new_state == nullptr);
+    CHECK_FALSE(ctx->vars.resume_pending);
+
+    // The subsequent resume proceeds immediately (no session to wait on).
+    auto resumed = p.feed(Event{EventKind::ResumeSession});
+    REQUIRE(resumed.new_state);
+    CHECK(resumed.new_state->get_id() == api::FsmState::BcbToggling);
+    CHECK(ctx->vars.bcb_remaining == 6);
+}
+
 // Companion to the resume test: if the SECC never re-applies PWM after the BCB
 // wake-up, the bounding deadline (armed on the deferred V2GNegotiating::enter)
 // must surface a V2GTimeout Faulted state rather than hang the resume forever.
