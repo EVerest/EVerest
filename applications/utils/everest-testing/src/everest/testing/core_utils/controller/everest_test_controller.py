@@ -304,7 +304,7 @@ class EverestTestController(TestController):
         drv.plug()
         threading.Thread(
             target=drv.play_dsl,
-            args=("sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 32,3;sleep 5;diode_fail;sleep 36000;unplug",),
+            args=("sleep 1;diode_fail;sleep 36000;unplug",),
             daemon=True, name=f"evsim-diodefail-{connector_id}").start()
 
     def raise_error(self, error_string="MREC6UnderVoltage", connector_id=1):
