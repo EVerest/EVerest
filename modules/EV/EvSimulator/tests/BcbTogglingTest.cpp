@@ -259,6 +259,43 @@ TEST_CASE("EvSimulator resume waits for PWM-running before iso_start_charging", 
     CHECK(contains_substr(fx.mocks.bsp.records, "allow_power_on(value=true)"));
 }
 
+// DC variant of the resume test: on a DC resume the SECC re-runs CableCheck and
+// waits for the EV contactor to close within its
+// cable_check_relays_closed_timeout_s (5 s) window. Reacting to josev's
+// re-emitted dc_power_on loses that race -> MREC11CableCheckFault. So on the DC
+// resume V2GNegotiating::enter the contactor must be closed proactively
+// (allow_power_on true) BEFORE any IsoDcPowerOn event is fed.
+TEST_CASE("EvSimulator DC resume closes contactor on V2GNegotiating entry", "[evsim][group2]") {
+    TestFixture fx;
+    auto ctx = fx.make_ctx();
+    set_mode(*ctx, api::ChargeMode::DcIso2);
+    ensure_session(*ctx).payment = api::PaymentOption::ExternalPayment;
+    ctx->vars.departure_time_s = 7200;
+    ctx->vars.e_amount_wh = 25000;
+
+    // Mid-session: root at Charging, pause, then resume into BcbToggling.
+    fsm::v2::FSM<StateBase> fsm{std::make_unique<Charging>(*ctx)};
+    REQUIRE(fsm.get_current_state_id() == api::FsmState::Charging);
+    fsm.feed(Event{EventKind::PauseSession});
+    REQUIRE(fsm.get_current_state_id() == api::FsmState::Paused);
+
+    fsm.feed(Event{EventKind::ResumeSession});
+    REQUIRE(fsm.get_current_state_id() == api::FsmState::BcbToggling);
+    fx.mocks.bsp.clear();
+    fx.timer.clear();
+
+    // Drive the six BCB edges; the last reaches V2GNegotiating.
+    for (int i = 0; i < 6; ++i) {
+        fsm.feed(Event{EventKind::StateDeadline});
+    }
+    REQUIRE(fsm.get_current_state_id() == api::FsmState::V2GNegotiating);
+
+    // The contactor is closed on the resume V2GNegotiating::enter -- before any
+    // IsoDcPowerOn is fed -- so the EV beats the SECC's resume CableCheck
+    // relays-closed timeout instead of reacting to josev's dc_power_on.
+    REQUIRE(index_of_substr(fx.mocks.bsp.records, "allow_power_on(value=true)") >= 0);
+}
+
 // Companion to the resume test: if the SECC never re-applies PWM after the BCB
 // wake-up, the bounding deadline (armed on the deferred V2GNegotiating::enter)
 // must surface a V2GTimeout Faulted state rather than hang the resume forever.
