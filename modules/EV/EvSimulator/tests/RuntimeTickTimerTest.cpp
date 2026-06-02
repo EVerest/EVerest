@@ -59,13 +59,14 @@ void run_on_tick_body(FsmContext& ctx, std::chrono::steady_clock::time_point now
     soc_step(ctx);
 }
 
-// Replays the present-current / present-voltage arms of the
-// EvSimRuntime::apply_passthrough_vars switch (EvSimRuntime is not
-// constructible without a live framework EvSimulator&, the same constraint
-// that drives the body-replay style of the on_tick tests above). The two arms
-// are mechanical writes into ctx.vars, so the routing under test is: a
-// DcEvsePresentCurrentPayload populates the live-current optional and a
-// DcEvsePresentVoltagePayload writes dc_present_voltage_v.
+// Replays the relevant arms of the EvSimRuntime::apply_passthrough_vars switch
+// (EvSimRuntime is not constructible without a live framework EvSimulator&, the
+// same constraint that drives the body-replay style of the on_tick tests
+// above). The arms are mechanical writes into ctx.vars, so the routing under
+// test is: a DcEvsePresentCurrentPayload populates the live-current optional, a
+// DcEvsePresentVoltagePayload writes dc_present_voltage_v, and an
+// IsoV2GFinished clears iso_session_active (the pre-feed clear that releases a
+// deferred resume in Paused). Keep this in lockstep with the production switch.
 void run_apply_passthrough_vars_body(FsmContext& ctx, const Event& ev) {
     using K = EventKind;
     switch (kind_of(ev)) {
@@ -78,6 +79,9 @@ void run_apply_passthrough_vars_body(FsmContext& ctx, const Event& ev) {
         if (auto* p = std::get_if<DcEvsePresentVoltagePayload>(&ev.payload)) {
             ctx.vars.dc_present_voltage_v = static_cast<float>(p->voltage_v);
         }
+        break;
+    case K::IsoV2GFinished:
+        ctx.vars.iso_session_active = false;
         break;
     default:
         break;
@@ -106,6 +110,18 @@ TEST_CASE("apply_passthrough_vars routes DC present current/voltage into vars", 
         run_apply_passthrough_vars_body(*ctx, Event{DcEvsePresentVoltagePayload{550.0}});
 
         CHECK(ctx->vars.dc_present_voltage_v == 550.0f);
+    }
+
+    SECTION("IsoV2GFinished clears iso_session_active before the FSM feed") {
+        TestFixture fx;
+        auto ctx = fx.make_ctx();
+        // A live session is in progress; the pre-feed pass must clear it so a
+        // deferred resume in Paused is released on the same on_wake iteration.
+        ctx->vars.iso_session_active = true;
+
+        run_apply_passthrough_vars_body(*ctx, Event{IsoV2GFinishedEvt{}});
+
+        CHECK_FALSE(ctx->vars.iso_session_active);
     }
 }
 
