@@ -8,6 +8,10 @@
 #include "ocpp/v2/ocpp_types.hpp"
 #include "ocpp/v2/profile.hpp"
 #include "ocpp/v2/utils.hpp"
+#include <ocpp/common/call_types.hpp>
+#include <ocpp/v2/ctrlr_component_variables.hpp>
+#include <ocpp/v2/database_handler.hpp>
+#include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/messages/ClearChargingProfile.hpp>
 #include <ocpp/v2/messages/GetChargingProfiles.hpp>
 #include <ocpp/v2/messages/GetCompositeSchedule.hpp>
@@ -27,16 +31,22 @@
 #include <gmock/gmock.h>
 #include <ocpp/v2/functional_blocks/functional_block_context.hpp>
 
+#include <atomic>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <chrono>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <openssl/evp.h>
 #include <openssl/md5.h>
 #include <openssl/sha.h>
+#include <sqlite3.h>
 #include <sstream>
+#include <string>
+#include <system_error>
+#include <unistd.h>
 #include <vector>
 
 using ::testing::MockFunction;
@@ -178,6 +188,85 @@ public:
 class CompositeScheduleTestFixtureV21 : public CompositeScheduleTestFixtureV2 {
 public:
     CompositeScheduleTestFixtureV21();
+};
+
+class SmartChargingTestV21 : public DatabaseTestingUtils {
+protected:
+    void SetUp() override {
+        const auto& charging_rate_unit_cv = ControllerComponentVariables::ChargingScheduleChargingRateUnit;
+        device_model->set_value(charging_rate_unit_cv.component, charging_rate_unit_cv.variable.value(),
+                                AttributeEnum::Actual, "A,W", "test", true);
+
+        const auto& ac_phase_switching_cv = ControllerComponentVariables::ACPhaseSwitchingSupported;
+        device_model->set_value(ac_phase_switching_cv.component, ac_phase_switching_cv.variable.value(),
+                                AttributeEnum::Actual, "true", "test", true);
+    }
+
+    void TearDown() override {
+        // Each test gets its own DB file (see create_smart_charging), so there is no shared state
+        // to reset. Unlink it; if a background K28 worker/timer still holds the connection the
+        // inode survives until that fd closes and the next test uses a fresh, distinct path.
+        std::error_code ec;
+        std::filesystem::remove(this->test_db_path, ec);
+    }
+
+    TestSmartCharging create_smart_charging() {
+        // Unique DB file per fixture instance. The shared /tmp/ocpp201/cp.db was raced by the
+        // DynamicScheduleManager timer/async-worker threads, corrupting migrations for the next
+        // test's fixture constructor; a distinct path per test removes the cross-test contention.
+        static std::atomic<unsigned> db_seq{0};
+        this->test_db_path = std::filesystem::temp_directory_path() /
+                             ("ocpp201_test_" + std::to_string(::getpid()) + "_" +
+                              std::to_string(db_seq.fetch_add(1, std::memory_order_relaxed)) + ".db");
+        std::unique_ptr<everest::db::sqlite::Connection> database_connection =
+            std::make_unique<everest::db::sqlite::Connection>(this->test_db_path);
+        database_handler =
+            std::make_shared<DatabaseHandler>(std::move(database_connection), MIGRATION_FILES_LOCATION_V2);
+        database_handler->open_connection();
+        device_model = device_model_test_helper.get_device_model();
+        this->functional_block_context = std::make_unique<FunctionalBlockContext>(
+            this->mock_dispatcher, *this->device_model, this->connectivity_manager, *this->evse_manager,
+            *this->database_handler, this->evse_security, this->component_state_manager, this->ocpp_version);
+        return TestSmartCharging(*functional_block_context, set_charging_profiles_callback_mock.AsStdFunction(),
+                                 stop_transaction_callback_mock.AsStdFunction());
+    }
+
+    template <class T> void call_to_json(json& j, const ocpp::Call<T>& call) {
+        j = json::array();
+        j.push_back(ocpp::MessageTypeId::CALL);
+        j.push_back(call.uniqueId.get());
+        j.push_back(call.msg.get_type());
+        j.push_back(json(call.msg));
+    }
+
+    template <class T, MessageType M> ocpp::EnhancedMessage<MessageType> request_to_enhanced_message(const T& req) {
+        auto message_id = ocpp::create_message_id();
+        ocpp::Call<T> call(req);
+        call.uniqueId = message_id;
+        ocpp::EnhancedMessage<MessageType> enhanced_message;
+        enhanced_message.uniqueId = message_id;
+        enhanced_message.messageType = M;
+        enhanced_message.messageTypeId = ocpp::MessageTypeId::CALL;
+        call_to_json(enhanced_message.message, call);
+        return enhanced_message;
+    }
+
+    // Default values used within the tests
+    DeviceModelTestHelper device_model_test_helper;
+    MockMessageDispatcher mock_dispatcher;
+    std::unique_ptr<EvseManagerFake> evse_manager = std::make_unique<EvseManagerFake>(NR_OF_TWO_EVSES);
+    std::shared_ptr<DatabaseHandler> database_handler;
+    DeviceModel* device_model;
+    ::testing::NiceMock<ConnectivityManagerMock> connectivity_manager;
+    ocpp::EvseSecurityMock evse_security;
+    ComponentStateManagerMock component_state_manager;
+    MockFunction<void()> set_charging_profiles_callback_mock;
+    MockFunction<RequestStartStopStatusEnum(const std::int32_t evse_id, const ReasonEnum& stop_reason)>
+        stop_transaction_callback_mock;
+    std::filesystem::path test_db_path;
+    std::unique_ptr<FunctionalBlockContext> functional_block_context;
+    TestSmartCharging smart_charging = create_smart_charging();
+    std::atomic<OcppProtocolVersion> ocpp_version = OcppProtocolVersion::v21;
 };
 
 } // namespace ocpp::v2
