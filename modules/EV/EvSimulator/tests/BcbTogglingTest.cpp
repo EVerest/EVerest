@@ -474,10 +474,10 @@ TEST_CASE("EvSimulator resume defers BCB toggle until prior V2G session finished
     CHECK_FALSE(ctx->vars.resume_pending);
 }
 
-// IsoV2GFinished without a pending resume is a no-op: the common case where the
-// session finishes tearing down before the user ever asks to resume. A later
+// IsoV2GFinished without a pending resume keeps the EV in Paused, and applies
+// the CP=B drop that enter() defers while a session is live. A later
 // ResumeSession then takes the immediate path (iso_session_active is false).
-TEST_CASE("EvSimulator Paused IsoV2GFinished without pending resume is inert", "[evsim][group2]") {
+TEST_CASE("EvSimulator Paused IsoV2GFinished without pending resume holds in Paused", "[evsim][group2]") {
     TestFixture fx;
     auto ctx = fx.make_ctx();
     set_mode(*ctx, api::ChargeMode::DcIso2);
@@ -488,12 +488,63 @@ TEST_CASE("EvSimulator Paused IsoV2GFinished without pending resume is inert", "
     auto finished = p.feed(Event{EventKind::IsoV2GFinished});
     CHECK(finished.new_state == nullptr);
     CHECK_FALSE(ctx->vars.resume_pending);
+    // The deferred paused CP state is applied once the session is gone.
+    CHECK(contains_substr(fx.mocks.bsp.records, "set_cp_state(cp_state=B)"));
 
     // The subsequent resume proceeds immediately (no session to wait on).
     auto resumed = p.feed(Event{EventKind::ResumeSession});
     REQUIRE(resumed.new_state);
     CHECK(resumed.new_state->get_id() == api::FsmState::BcbToggling);
     CHECK(ctx->vars.bcb_remaining == 6);
+}
+
+// An EV-initiated pause that begins while the HLC session is still live must NOT
+// drop CP to B yet. Presenting CP=B mid-teardown makes the SECC abort the link
+// with D-LINK_ERROR instead of a clean D-LINK_PAUSE; on D-LINK_ERROR the SECC
+// never runs current_demand_finished, so its over-voltage monitor stays armed
+// and the resume CableCheck (run at the EV's max voltage, which equals the OVM
+// error limit) trips MREC5OverVoltage and the resume never reaches Charging. The
+// EV therefore holds CP at C through the teardown and drops it only once the
+// session is gone (IsoV2GFinished). Power-off and the graceful pause still fire
+// immediately. This is the EvSimulator-side hardening of the EvManager pause.
+TEST_CASE("EvSimulator Paused holds CP at C until the live V2G session finishes", "[evsim][group2]") {
+    TestFixture fx;
+    auto ctx = fx.make_ctx();
+    set_mode(*ctx, api::ChargeMode::DcIso2);
+    ensure_session(*ctx).payment = api::PaymentOption::ExternalPayment;
+    ctx->vars.iso_session_active = true; // live Josev session in progress
+
+    Paused p{*ctx};
+    p.enter();
+
+    // The graceful teardown and contactor open fire immediately...
+    CHECK(contains_substr(fx.mocks.iso.records, "pause_charging()"));
+    CHECK(contains_substr(fx.mocks.bsp.records, "allow_power_on(value=false)"));
+    // ...but CP is held at C: dropping to B now would provoke D-LINK_ERROR.
+    CHECK_FALSE(contains_substr(fx.mocks.bsp.records, "set_cp_state(cp_state=B)"));
+
+    // The paused session finishes tearing down (apply_passthrough_vars clears
+    // iso_session_active before the FSM feed; emulated here). Now CP drops to B.
+    ctx->vars.iso_session_active = false;
+    fx.mocks.bsp.clear();
+    auto done = p.feed(Event{EventKind::IsoV2GFinished});
+    CHECK(done.new_state == nullptr); // no resume requested -> stay Paused
+    CHECK(contains_substr(fx.mocks.bsp.records, "set_cp_state(cp_state=B)"));
+}
+
+// With no live V2G session (AcIec, or a session that already finished before the
+// pause), there is nothing to tear down gracefully, so Paused.enter drops CP to
+// B immediately rather than waiting for an IsoV2GFinished that will never arrive.
+TEST_CASE("EvSimulator Paused drops CP immediately when no V2G session is live", "[evsim][group2]") {
+    TestFixture fx;
+    auto ctx = fx.make_ctx();
+    set_mode(*ctx, api::ChargeMode::DcIso2);
+    ctx->vars.iso_session_active = false;
+
+    Paused p{*ctx};
+    p.enter();
+    CHECK(contains_substr(fx.mocks.bsp.records, "set_cp_state(cp_state=B)"));
+    CHECK(contains_substr(fx.mocks.bsp.records, "allow_power_on(value=false)"));
 }
 
 // Companion to the resume test: if the SECC never re-applies PWM after the BCB
