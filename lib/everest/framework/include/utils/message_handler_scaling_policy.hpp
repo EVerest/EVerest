@@ -17,7 +17,7 @@ constexpr std::size_t MESSAGE_HANDLER_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD =
 
 using MessageHandlerLatencyScaling =
     everest::lib::util::LatencyScaling<MESSAGE_HANDLER_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS,
-                                        MESSAGE_HANDLER_THREAD_POOL_SCALING_LATENCY_TICK_MS>;
+                                       MESSAGE_HANDLER_THREAD_POOL_SCALING_LATENCY_TICK_MS>;
 using MessageHandlerFixedSizeScaling =
     everest::lib::util::FixedSizeScaling<MESSAGE_HANDLER_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD>;
 

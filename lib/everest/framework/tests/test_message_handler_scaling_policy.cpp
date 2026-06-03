@@ -26,10 +26,10 @@ TEST_CASE("MessageHandler scaling policy matches CMake configuration", "[message
     STATIC_REQUIRE(
         std::is_same_v<Everest::detail::MessageHandlerScalingPolicy, everest::lib::util::ConservativeScaling>);
 #elif EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY == EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_FIXED_SIZE
-    STATIC_REQUIRE(std::is_same_v<Everest::detail::MessageHandlerScalingPolicy,
-                                  Everest::detail::MessageHandlerFixedSizeScaling>);
+    STATIC_REQUIRE(
+        std::is_same_v<Everest::detail::MessageHandlerScalingPolicy, Everest::detail::MessageHandlerFixedSizeScaling>);
 #else
-    STATIC_REQUIRE(std::is_same_v<Everest::detail::MessageHandlerScalingPolicy,
-                                  Everest::detail::MessageHandlerLatencyScaling>);
+    STATIC_REQUIRE(
+        std::is_same_v<Everest::detail::MessageHandlerScalingPolicy, Everest::detail::MessageHandlerLatencyScaling>);
 #endif
 }

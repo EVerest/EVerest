@@ -110,9 +110,8 @@ private:
     // outside the lock, preventing concurrent join/assignment races on the raw std::thread.
     everest::lib::util::monitor<std::thread> ready;
 
-    using ThreadPool =
-        everest::lib::util::thread_pool_scaling<detail::MessageHandlerScalingPolicy,
-                                                everest::lib::util::RethrowExceptions>;
+    using ThreadPool = everest::lib::util::thread_pool_scaling<detail::MessageHandlerScalingPolicy,
+                                                               everest::lib::util::RethrowExceptions>;
     std::unique_ptr<ThreadPool> operation_thread_pool;
 
     using MessageQueue = everest::lib::util::thread_safe_queue<ParsedMessage>;
