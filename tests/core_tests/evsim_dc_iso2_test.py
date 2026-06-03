@@ -25,11 +25,14 @@ import pytest
 # core_config, evsim_test_controller, ...) into the test namespace.
 from everest.testing.core_utils.fixtures import *  # noqa: F401,F403
 
-# Share smoke_tests.py's "ISO15118" loadgroup so --dist=loadgroup keeps
-# every EvSimulator SIL test on one xdist worker. Concurrent SIL stacks
-# contend for CPU and flake pause/resume teardown; the group name must
-# match smoke_tests.py or the suites still race.
-pytestmark = pytest.mark.xdist_group(name="ISO15118")
+# Use smoke_tests.py's "ISO15118_SERIAL" loadgroup so --dist=loadgroup keeps
+# every EvSimulator SIL test on one xdist worker. This name is intentionally
+# NOT the "ISO15118" group that the network-isolation plugin strips, so the
+# pause/resume SIL tests stay serialized on a single worker even under network
+# isolation. Concurrent SIL stacks contend for CPU and flake pause/resume
+# teardown; the name must match the "ISO15118_SERIAL" markers in smoke_tests.py
+# or the suites still race.
+pytestmark = pytest.mark.xdist_group(name="ISO15118_SERIAL")
 
 
 # Generous timeouts: an ISO 15118-2 DC session involves SLAC, TLS
@@ -120,15 +123,12 @@ def test_iso15118_dc_session_stop_by_evse(everest_core, evsim_test_controller):
     )
 
 
-# The DC ISO pause teardown depends on the Josev EVCC completing
-# WeldingDetection -> SessionStop before the SECC's V2G read times out. Under
-# SIL load that ordering occasionally slips: the SECC tears the link down with
-# D-LINK_ERROR (leaving the over-voltage monitor armed), and the resume
-# CableCheck then trips it. This is the same SIL timing flake the reference
-# EvManager test guards against, so mirror its single rerun. The substantive
-# resume bug (the EV waking the SECC before the paused session finished) is
-# fixed in EvSimulator; this only covers the residual teardown-timing slip.
-@pytest.mark.flaky(reruns=1)
+# Pause/resume is deterministic: the EV resume goes through the gated
+# resume_session() path, which defers waking the SECC until the prior V2G
+# session has finished tearing down. The EvSimulator FSM adds a bounded
+# fallback so a lost IsoV2GFinished resumes best-effort instead of hanging.
+# The pause/resume SIL tests run in the serialized ISO15118_SERIAL xdist
+# group, so parallel CPU contention cannot corrupt the ISO teardown ordering.
 @pytest.mark.everest_core_config("config-sil-evsim-dc.yaml")
 def test_iso15118_dc_session_paused_by_ev(everest_core, evsim_test_controller):
     """DC ISO 15118-2 session paused by the EV, then resumed."""
