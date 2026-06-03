@@ -102,6 +102,7 @@ ocpp::v16::Reason to_ocpp_reason(const types::evse_manager::StopTransactionReaso
     case types::evse_manager::StopTransactionReason::Timeout:
     case types::evse_manager::StopTransactionReason::ReqEnergyTransferRejected:
     case types::evse_manager::StopTransactionReason::Other:
+    case types::evse_manager::StopTransactionReason::EVSEDisabled:
         return ocpp::v16::Reason::Other;
     }
     throw std::out_of_range("Could not convert types::evse_manager::StopTransactionReason to ocpp::v16::Reason");
