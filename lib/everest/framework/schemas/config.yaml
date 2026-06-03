@@ -18,8 +18,6 @@ $defs:
     default: {}
     additionalProperties: false
 type: object
-required:
-  - active_modules
 additionalProperties: false
 properties:
   settings:
