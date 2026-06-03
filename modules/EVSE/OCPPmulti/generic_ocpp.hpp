@@ -1,0 +1,341 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+
+#pragma once
+
+#include <generated/interfaces/auth/Interface.hpp>
+#include <generated/interfaces/auth_token_provider/Implementation.hpp>
+#include <generated/interfaces/auth_token_validator/Implementation.hpp>
+#include <generated/interfaces/charger_information/Interface.hpp>
+#include <generated/interfaces/display_message/Interface.hpp>
+#include <generated/interfaces/evse_manager/Interface.hpp>
+#include <generated/interfaces/evse_security/Interface.hpp>
+#include <generated/interfaces/external_energy_limits/Interface.hpp>
+#include <generated/interfaces/iso15118_extensions/Interface.hpp>
+#include <generated/interfaces/ocpp/Implementation.hpp>
+#include <generated/interfaces/ocpp_1_6_charge_point/Implementation.hpp>
+#include <generated/interfaces/ocpp_data_transfer/Implementation.hpp>
+#include <generated/interfaces/ocpp_data_transfer/Interface.hpp>
+#include <generated/interfaces/reservation/Interface.hpp>
+#include <generated/interfaces/session_cost/Implementation.hpp>
+#include <generated/interfaces/system/Interface.hpp>
+
+#include "generic_chargepoint.hpp"
+#include <device_model/everest_device_model_storage.hpp>
+#include <everest/util/async/monitor.hpp>
+#include <ocpp/common/connectivity_manager.hpp>
+#include <ocpp/v2/charge_point_callbacks.hpp>
+#include <ocpp/v2/messages/BootNotification.hpp>
+#include <ocpp/v2/messages/ClearDisplayMessage.hpp>
+#include <ocpp/v2/messages/DataTransfer.hpp>
+#include <ocpp/v2/messages/Get15118EVCertificate.hpp>
+#include <ocpp/v2/messages/GetDisplayMessages.hpp>
+#include <ocpp/v2/messages/GetLog.hpp>
+#include <ocpp/v2/messages/NotifyEVChargingNeeds.hpp>
+#include <ocpp/v2/messages/RequestStartTransaction.hpp>
+#include <ocpp/v2/messages/ReserveNow.hpp>
+#include <ocpp/v2/messages/SetDisplayMessage.hpp>
+#include <ocpp/v2/messages/TransactionEvent.hpp>
+#include <ocpp/v2/messages/UnlockConnector.hpp>
+#include <ocpp/v2/messages/UpdateFirmware.hpp>
+#include <ocpp/v2/ocpp_types.hpp>
+#include <ocpp/v2/types.hpp>
+#include <transaction_handler.hpp>
+
+#include <filesystem>
+#include <queue>
+#include <variant>
+
+namespace module {
+struct Conf;
+}
+
+namespace ocpp_multi {
+
+/// \brief Access module required and provided interfaces
+///
+/// Access to module interfaces is via this interface to aid unit testing
+struct GenericOcppInterface {
+    virtual ~GenericOcppInterface() = default;
+
+    struct provides_t {
+        ocpp_1_6_charge_pointImplBase& ocpp16;
+        auth_token_validatorImplBase& auth_validator;
+        auth_token_providerImplBase& auth_provider;
+        ocpp_data_transferImplBase& data_transfer;
+        ocppImplBase& ocpp_generic;
+        session_costImplBase& session_cost;
+    };
+
+    struct requires_t {
+        authIntf& auth;
+        const std::vector<std::unique_ptr<charger_informationIntf>>& charger_information;
+        const std::vector<std::unique_ptr<ocpp_data_transferIntf>>& data_transfer;
+        const std::vector<std::unique_ptr<display_messageIntf>>& display_message;
+        const std::vector<std::unique_ptr<external_energy_limitsIntf>>& evse_energy_sink;
+        const std::vector<std::unique_ptr<evse_managerIntf>>& evse_manager;
+        const std::vector<std::unique_ptr<iso15118_extensionsIntf>>& extensions_15118;
+        const std::vector<std::unique_ptr<reservationIntf>>& reservation;
+        evse_securityIntf& security;
+        systemIntf& system;
+    };
+
+    // auth_provider
+    // auth_validator
+    virtual types::authorization::ValidationResult
+    handle_validate_token(const types::authorization::ProvidedIdToken& provided_token) = 0;
+    // data_transfer
+    virtual types::ocpp::DataTransferResponse handle_data_transfer(const types::ocpp::DataTransferRequest& request) = 0;
+    // ocpp_generic
+    virtual bool handle_stop() = 0;
+    virtual bool handle_restart() = 0;
+    virtual void handle_security_event(types::ocpp::SecurityEvent& event) = 0;
+    virtual std::vector<types::ocpp::GetVariableResult>
+    handle_get_variables(std::vector<types::ocpp::GetVariableRequest>& requests) = 0;
+    virtual std::vector<types::ocpp::SetVariableResult>
+    handle_set_variables(std::vector<types::ocpp::SetVariableRequest>& requests, std::string& source) = 0;
+    virtual types::ocpp::ChangeAvailabilityResponse
+    handle_change_availability(types::ocpp::ChangeAvailabilityRequest& request) = 0;
+    virtual void handle_monitor_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) = 0;
+    // ocpp 1.6
+    // virtual bool handle_stop() = 0; // part of ocpp_generic
+    // virtual bool handle_restart() = 0; // part of ocpp_generic
+    virtual types::ocpp::GetConfigurationResponse handle_get_configuration_key(Array& keys) = 0;
+    virtual types::ocpp::ConfigurationStatus handle_set_configuration_key(std::string& key, std::string& value) = 0;
+    virtual void handle_monitor_configuration_keys(Array& keys) = 0;
+    virtual void handle_security_event(std::string& type, std::string& info) = 0;
+    // session cost
+};
+
+/// \brief Access configuration Interface
+///
+/// Access to configuration is via this interface to aid unit testing and also
+/// to support locking if any of the configuration items become read-write
+struct ConfigInterface {
+    virtual ~ConfigInterface() = default;
+
+    [[nodiscard]] virtual std::string getChargePointConfigPath() const = 0;
+    [[nodiscard]] virtual int getCompositeScheduleIntervalS() const = 0;
+    [[nodiscard]] virtual std::string getCoreDatabasePath() const = 0;
+    [[nodiscard]] virtual int getDelayOcppStart() const = 0;
+    [[nodiscard]] virtual std::string getDeviceModelConfigPath() const = 0;
+    [[nodiscard]] virtual std::string getDeviceModelDatabasePath() const = 0;
+    [[nodiscard]] virtual std::string getDeviceModelDatabaseMigrationPath() const = 0;
+    [[nodiscard]] virtual bool getEnableExternalWebsocketControl() const = 0;
+    [[nodiscard]] virtual std::string getEverestDeviceModelDatabasePath() const = 0;
+    [[nodiscard]] virtual std::string getMessageLogPath() const = 0;
+    [[nodiscard]] virtual int getMessageQueueResumeDelay() const = 0;
+    [[nodiscard]] virtual int getRequestCompositeScheduleDurationS() const = 0;
+    [[nodiscard]] virtual std::string getRequestCompositeScheduleUnit() const = 0;
+    [[nodiscard]] virtual int getResetStopDelay() const = 0;
+    [[nodiscard]] virtual std::string getUserConfigPath() const = 0;
+};
+
+class GenericOcpp : public GenericOcppInterface {
+private:
+    using EventQueue = std::map<
+        std::int32_t,
+        std::queue<std::variant<std::monostate, types::evse_manager::SessionEvent, Everest::error::Error,
+                                ocpp::v2::MeterValue, types::system::FirmwareUpdateStatus, types::system::LogStatus>>>;
+    using MonitorListEntry = std::pair<ocpp::v2::Component, ocpp::v2::Variable>;
+    using MonitorList = std::set<MonitorListEntry>;
+
+    std::shared_ptr<module::device_model::EverestDeviceModelStorage> m_everest_device_model_storage;
+    std::unique_ptr<module::TransactionHandler> m_transaction_handler;
+
+    const ModuleInfo& m_info;
+    ConfigInterface& m_config;
+    provides_t m_provides;
+    requires_t m_requires;
+    GenericChargePointInterface& m_charge_point;
+
+    everest::lib::util::monitor<std::map<std::int32_t, bool>> m_evse_ready_map;
+    everest::lib::util::monitor<std::map<std::int32_t, std::optional<float>>> m_evse_soc_map;
+    std::map<std::int32_t, types::evse_board_support::HardwareCapabilities> m_evse_hardware_capabilities_map;
+    std::map<std::int32_t, std::vector<types::iso15118::EnergyTransferMode>> m_evse_supported_energy_transfer_modes;
+    std::map<std::int32_t, bool> m_evse_service_renegotiation_supported;
+    everest::lib::util::monitor<std::map<std::int32_t, std::string>> m_evse_evcc_id;
+
+    std::atomic_bool m_started{false};
+    std::atomic<std::int32_t> m_event_id_counter{0};
+    std::atomic<ocpp::OcppProtocolVersion> m_ocpp_protocol_version{ocpp::OcppProtocolVersion::Unknown};
+
+    std::mutex m_chargepoint_state_mutex; // mutex used for start/stop operations
+    std::mutex m_monitor_list_mutex;
+    std::mutex m_session_event_mutex;
+    EventQueue m_event_queue;
+    MonitorList m_monitor_list;
+    MonitorList m_monitor_list_v16;
+    Everest::SteadyTimer m_charging_schedules_timer;
+
+public:
+    using ConfigServiceClient = std::shared_ptr<Everest::config::ConfigServiceClient>;
+
+    GenericOcpp(GenericChargePointInterface& charge_point, const ModuleInfo& info, ConfigInterface& config,
+                const provides_t& provides, const requires_t& requires) :
+        m_charge_point(charge_point), m_info(info), m_config(config), m_provides(provides), m_requires(requires) {
+    }
+
+    // ------------------------------------------------------------------------
+    // GenericOcppInterface
+
+    types::authorization::ValidationResult
+    handle_validate_token(const types::authorization::ProvidedIdToken& provided_token) override;
+    types::ocpp::DataTransferResponse handle_data_transfer(const types::ocpp::DataTransferRequest& request) override;
+    bool handle_stop() override;
+    bool handle_restart() override;
+    void handle_security_event(types::ocpp::SecurityEvent& event) override;
+    std::vector<types::ocpp::GetVariableResult>
+    handle_get_variables(std::vector<types::ocpp::GetVariableRequest>& requests) override;
+    std::vector<types::ocpp::SetVariableResult>
+    handle_set_variables(std::vector<types::ocpp::SetVariableRequest>& requests, std::string& source) override;
+    types::ocpp::ChangeAvailabilityResponse
+    handle_change_availability(types::ocpp::ChangeAvailabilityRequest& request) override;
+    void handle_monitor_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) override;
+    types::ocpp::GetConfigurationResponse handle_get_configuration_key(Array& keys) override;
+    types::ocpp::ConfigurationStatus handle_set_configuration_key(std::string& key, std::string& value) override;
+    void handle_monitor_configuration_keys(Array& keys) override;
+    void handle_security_event(std::string& type, std::string& info) override;
+
+    // ------------------------------------------------------------------------
+    // startup
+
+    void init();
+    void ready(const ConfigServiceClient& client);
+
+    void connect_websocket() {
+        m_charge_point.connect_websocket();
+    }
+
+    void disconnect_websocket() {
+        m_charge_point.disconnect_websocket();
+    }
+
+    // ------------------------------------------------------------------------
+    // public handlers/callbacks
+
+    void cb_error_cleared_handler(const Everest::error::Error& error);
+    void cb_error_handler(const Everest::error::Error& error);
+
+protected:
+    void init_check_energy_sink();
+    void init_error_handlers();
+    void init_evse_maps();
+    void init_subscribe();
+    void init_evse_subscribe();
+
+    void ready_event_queue();
+    void ready_module_configuration();
+    ocpp::v2::Callbacks ready_ocppv2_callbacks();
+    void ready_transaction_handler();
+
+    void cb_all_connectors_unavailable();
+    void cb_boot_notification(const ocpp::v2::BootNotificationResponse& boot_notification_response);
+    bool cb_cancel_reservation(std::int32_t reservation_id);
+    void cb_charging_needs(std::int32_t extensions_id, const types::iso15118::ChargingNeeds& charging_needs);
+    void cb_charging_schedules_timer();
+    ocpp::v2::ClearDisplayMessageResponse cb_clear_display_message(const ocpp::v2::ClearDisplayMessageRequest& request);
+    std::future<ocpp::ConfigNetworkResult> cb_configure_network_connection_profile();
+    void cb_connector_effective_operative_status(std::int32_t evse_id, std::int32_t connector_id,
+                                                 ocpp::v2::OperationalStatusEnum new_status);
+    void cb_connection_state_changed(bool is_connected, ocpp::OcppProtocolVersion protocol_version);
+    ocpp::v2::DataTransferResponse cb_data_transfer(const ocpp::v2::DataTransferRequest& request);
+    void cb_default_price(const std::vector<ocpp::DisplayMessageContent>& messages);
+    void cb_ev_info(std::int32_t evse_id, const types::evse_manager::EVInfo& ev_info);
+    void cb_fault_cleared_handler(std::int32_t evse_id, const Everest::error::Error& error);
+    void cb_fault_handler(std::int32_t evse_id, const Everest::error::Error& error);
+    void cb_firmware_update_status(types::system::FirmwareUpdateStatus status);
+    std::vector<ocpp::DisplayMessage> cb_get_display_message(const ocpp::v2::GetDisplayMessagesRequest& request);
+    ocpp::v2::GetLogResponse cb_get_log_request(const ocpp::v2::GetLogRequest& request);
+    void cb_hw_capabilities(std::int32_t evse_id,
+                            const types::evse_board_support::HardwareCapabilities& hw_capabilities);
+    ocpp::ReservationCheckStatus cb_is_reservation_for_token(std::int32_t evse_id, const ocpp::CiString<255>& idToken,
+                                                             const std::optional<ocpp::CiString<255>>& groupIdToken);
+    bool cb_is_reset_allowed(const std::optional<std::int32_t>& evse_id);
+    void cb_iso15118_certificate_request(std::int32_t extensions_id,
+                                         const types::iso15118::RequestExiStreamSchema& certificate_request);
+    void cb_log_status(types::system::LogStatus status);
+    void cb_ocpp_messages(const std::string& message, ocpp::MessageDirection direction);
+    void cb_pause_charging(std::int32_t evse_id);
+    void cb_powermeter(std::int32_t evse_id, const types::powermeter::Powermeter& power_meter);
+    void cb_ready(std::int32_t evse_id, bool ready);
+    ocpp::v2::RequestStartStopStatusEnum
+    cb_remote_start_transaction(const ocpp::v2::RequestStartTransactionRequest& request, bool authorize_remote_start);
+    void cb_reservation_update(types::reservation::ReservationUpdateStatus status);
+    ocpp::v2::ReserveNowStatusEnum cb_reserve_now(const ocpp::v2::ReserveNowRequest& request);
+    void cb_reset(const std::optional<const std::int32_t>& evse_id, ocpp::v2::ResetEnum type);
+    void cb_security_event(const ocpp::CiString<50>& event_type, const std::optional<ocpp::CiString<255>>& tech_info);
+    void cb_service_renegotiation_supported(std::int32_t extensions_id, bool service_renegotiation_supported);
+    void cb_session_event(std::int32_t evse_id, types::evse_manager::SessionEvent session_event);
+    ocpp::v2::SetDisplayMessageResponse cb_set_display_message(const std::vector<ocpp::DisplayMessage>& messages);
+    void cb_set_running_cost(const ocpp::RunningCost& running_cost, std::uint32_t number_of_decimals,
+                             const std::optional<std::string>& currency_code);
+    ocpp::v2::RequestStartStopStatusEnum cb_stop_transaction(std::int32_t evse_id, ocpp::v2::ReasonEnum stop_reason);
+    void cb_supported_energy_transfer_modes(
+        std::int32_t evse_id, const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes);
+    void cb_tariff_message(const ocpp::TariffMessage& message);
+    void cb_time_sync(const ocpp::DateTime& current_time);
+    void cb_transaction_event(const ocpp::v2::TransactionEventRequest& transaction_event);
+    void cb_transaction_event_response(const ocpp::v2::TransactionEventRequest& transaction_event,
+                                       const ocpp::v2::TransactionEventResponse& transaction_event_response);
+    ocpp::v2::UnlockConnectorResponse cb_unlock_connector(std::int32_t evse_id, std::int32_t connector_id);
+    bool cb_update_allowed_energy_transfer_modes(
+        const std::vector<ocpp::v2::EnergyTransferModeEnum>& allowed_energy_transfer_modes,
+        const ocpp::CiString<36>& transaction_id);
+    ocpp::v2::UpdateFirmwareResponse cb_update_firmware_request(const ocpp::v2::UpdateFirmwareRequest& request);
+    ocpp::v2::SetNetworkProfileStatusEnum
+    cb_validate_network_profile(const ocpp::v2::NetworkConnectionProfile& network_connection_profile);
+    void cb_variable_changed(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
+                             const std::string& value);
+    void cb_variable_changed(const ocpp::v2::SetVariableData& set_variable_data);
+    void cb_variable_changed_v16(const ocpp::v2::Variable& variable, const std::string& value);
+    void cb_waiting_for_external_ready(std::int32_t evse_id, bool ready);
+
+    void charging_schedules_timer_start();
+    void charging_schedules_timer_stop();
+    std::optional<types::energy::ScheduleReqEntry>
+    create_limits_entry(const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
+                        ocpp::v2::ChargingRateUnitEnum unit);
+    std::optional<types::energy::ScheduleSetpointEntry>
+    create_setpoint_entry(std::int32_t setpoint_priority, const std::string& timestamp,
+                          const ocpp::v2::EnhancedChargingSchedulePeriod& period, ocpp::v2::ChargingRateUnitEnum unit);
+    [[nodiscard]] std::filesystem::path device_model_config_path() const;
+    [[nodiscard]] std::filesystem::path device_model_database_path() const;
+    [[nodiscard]] std::filesystem::path device_model_database_migration_path() const;
+    [[nodiscard]] std::filesystem::path everest_device_model_database_path() const;
+    std::map<std::int32_t, std::int32_t> get_connector_structure();
+    void process_authorised(std::int32_t evse_id, std::int32_t connector_id,
+                            const types::evse_manager::SessionEvent& session_event);
+    void process_deauthorised(std::int32_t evse_id, std::int32_t connector_id,
+                              const types::evse_manager::SessionEvent& session_event);
+    void process_charging_paused_ev(std::int32_t evse_id, std::int32_t connector_id,
+                                    const types::evse_manager::SessionEvent& session_event);
+    void process_charging_paused_evse(std::int32_t evse_id, std::int32_t connector_id,
+                                      const types::evse_manager::SessionEvent& session_event);
+    void process_charging_started(std::int32_t evse_id, std::int32_t connector_id,
+                                  const types::evse_manager::SessionEvent& session_event);
+    void process_disabled(std::int32_t evse_id, std::int32_t connector_id,
+                          const types::evse_manager::SessionEvent& session_event);
+    void process_enabled(std::int32_t evse_id, std::int32_t connector_id,
+                         const types::evse_manager::SessionEvent& session_event);
+    void process_reservation_end(std::int32_t evse_id, std::int32_t connector_id);
+    void process_reserved(std::int32_t evse_id, std::int32_t connector_id);
+    void process_session_event(std::int32_t evse_id, const types::evse_manager::SessionEvent& session_event);
+    void process_session_finished(std::int32_t evse_id, std::int32_t connector_id,
+                                  const types::evse_manager::SessionEvent& session_event);
+    void process_session_resumed(std::int32_t evse_id, std::int32_t connector_id,
+                                 const types::evse_manager::SessionEvent& session_event);
+    void process_session_started(std::int32_t evse_id, std::int32_t connector_id,
+                                 const types::evse_manager::SessionEvent& session_event);
+    void process_transaction_finished(std::int32_t evse_id, std::int32_t connector_id,
+                                      const types::evse_manager::SessionEvent& session_event);
+    void process_transaction_started(std::int32_t evse_id, std::int32_t connector_id,
+                                     const types::evse_manager::SessionEvent& session_event);
+    void process_tx_event_effect(std::int32_t evse_id, module::TxEventEffect tx_event_effect,
+                                 const types::evse_manager::SessionEvent& session_event);
+    void publish_charging_schedules(const std::vector<ocpp::v2::EnhancedCompositeSchedule>& composite_schedules);
+    void set_external_limits(const std::vector<ocpp::v2::EnhancedCompositeSchedule>& composite_schedules);
+    void wait_all_ready();
+};
+
+} // namespace ocpp_multi

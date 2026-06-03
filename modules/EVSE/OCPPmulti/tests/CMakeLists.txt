@@ -1,0 +1,93 @@
+set(TEST_TARGET_NAME ${PROJECT_NAME}_OCPPmulti_tests)
+set(TESTS_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/tests/include")
+
+add_executable(${TEST_TARGET_NAME})
+
+add_dependencies(${TEST_TARGET_NAME} ${MODULE_NAME})
+get_target_property(GENERATED_INCLUDE_DIR generate_cpp_files EVEREST_GENERATED_INCLUDE_DIR)
+
+target_include_directories(${TEST_TARGET_NAME} PUBLIC
+    .
+    ..
+    ../common
+    ${TESTS_INCLUDE_DIR}
+    ${GENERATED_INCLUDE_DIR}
+    ${CMAKE_BINARY_DIR}/generated/modules/${MODULE_NAME}
+    "$<TARGET_PROPERTY:everest::framework,INCLUDE_DIRECTORIES>"
+)
+
+target_sources(${TEST_TARGET_NAME}
+    PRIVATE
+    auth_validator_tests.cpp
+    data_transfer_tests.cpp
+    generic_ocpp_tests.cpp
+
+    main.cpp
+
+    everest/logging.cpp
+    stubs/chargepoint_stub.cpp
+    stubs/interfaces_stub.cpp
+
+    ../generic_ocpp.cpp
+    ../common/device_model/composed_device_model_storage.cpp
+    ../common/device_model/definitions.cpp
+    ../common/device_model/everest_device_model_storage.cpp
+    ../common/conversions.cpp
+    ../common/transaction_handler.cpp
+)
+
+target_link_libraries(${TEST_TARGET_NAME}
+    PRIVATE
+    everest::external_energy_limits
+    everest::ocpp
+    everest::ocpp_conversions
+    everest::ocpp_evse_security
+    GTest::gmock
+    GTest::gtest
+)
+
+# add needed config for the unit tests
+set(TEST_FILES_SQL
+    1_up-initial.sql
+    2_down-variable_source.sql
+    2_up-variable_source.sql
+    3_down-variable_required.sql
+    3_up-variable_required.sql
+)
+set(TEST_FILES_JSON
+    default_store.json
+)
+
+set(TEST_FILES_SQL_DEST share/device_model_migrations)
+set(TEST_FILES_JSON_DEST ${CMAKE_CURRENT_BINARY_DIR})
+
+foreach(X ${TEST_FILES_SQL})
+    list(APPEND TEST_FILES_SQL_INPUT ${CMAKE_CURRENT_SOURCE_DIR}/config/${X})
+    list(APPEND TEST_FILES_SQL_OUTPUT ${TEST_FILES_SQL_DEST}/${X})
+endforeach()
+
+foreach(X ${TEST_FILES_JSON})
+    list(APPEND TEST_FILES_JSON_INPUT ${CMAKE_CURRENT_SOURCE_DIR}/config/${X})
+    list(APPEND TEST_FILES_JSON_OUTPUT ${X})
+endforeach()
+
+set(TEST_FILES_OUTPUT ${TEST_FILES_SQL_OUTPUT} ${TEST_FILES_JSON_OUTPUT})
+
+add_custom_command(
+    OUTPUT ${TEST_FILES_OUTPUT}
+    DEPENDS ${TEST_FILES_SQL_INPUT} ${TEST_FILES_JSON_INPUT}
+
+    COMMAND mkdir -p ${TEST_FILES_SQL_DEST}
+    COMMAND mkdir -p share/dm_config/standardized
+    COMMAND cp ${TEST_FILES_SQL_INPUT} ${TEST_FILES_SQL_DEST}/
+    COMMAND cp ${TEST_FILES_JSON_INPUT} ${TEST_FILES_JSON_DEST}/
+)
+
+add_custom_target(${TEST_TARGET_NAME}_CONFIG
+    DEPENDS ${TEST_FILES_OUTPUT}
+)
+
+add_dependencies(${TEST_TARGET_NAME} ${TEST_TARGET_NAME}_CONFIG)
+
+add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})
+ev_register_test_target(${TEST_TARGET_NAME})
