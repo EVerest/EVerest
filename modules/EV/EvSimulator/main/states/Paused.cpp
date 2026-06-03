@@ -8,6 +8,8 @@
 #include "Stopping.hpp"
 #include "Unplugged.hpp"
 
+#include <everest/logging.hpp>
+
 #include <chrono>
 
 namespace module {
@@ -56,6 +58,13 @@ StateBase::Result Paused::feed(EventType ev) {
         // session is gone. If the session already finished, fall through.
         if (ctx.vars.iso_session_active) {
             ctx.vars.resume_pending = true;
+            ctx.vars.bcb_pending = 6;
+            // Arm a short fallback timer: if Josev never publishes
+            // v2g_session_finished (abnormal teardown), IsoV2GFinished never
+            // arrives and the deferred resume would otherwise hang on the 1h
+            // pause timer. When this fires with resume_pending still set,
+            // feed(StateDeadline) does a best-effort resume instead.
+            ctx.arm_timer(std::chrono::seconds(15));
             return {false, nullptr};
         }
         // bcb_remaining is the edge count consumed by BcbToggling; see
@@ -81,6 +90,18 @@ StateBase::Result Paused::feed(EventType ev) {
             ctx.publish_e2m_command_ack("bcb_toggle", "count exceeds 1000");
             return {false, nullptr};
         }
+        // An explicit BcbToggle wakes the SECC the same way an implicit resume
+        // does, so it must honor the same gate: starting the BCB edges while the
+        // paused V2G session is still tearing down lets the previous session's
+        // lagging SessionStop clobber the freshly re-established link. Defer
+        // until IsoV2GFinished (or the bounded fallback), carrying the requested
+        // edge count in bcb_pending.
+        if (ctx.vars.iso_session_active) {
+            ctx.vars.bcb_pending = round_trips * 2;
+            ctx.vars.resume_pending = true;
+            ctx.arm_timer(std::chrono::seconds(15));
+            return {false, nullptr};
+        }
         ctx.vars.bcb_remaining = round_trips * 2;
         return {false, std::make_unique<BcbToggling>(ctx)};
     }
@@ -91,7 +112,11 @@ StateBase::Result Paused::feed(EventType ev) {
         // (BcbToggling drives CP from here on).
         if (ctx.vars.resume_pending) {
             ctx.vars.resume_pending = false;
-            ctx.vars.bcb_remaining = 6;
+            // Release the edge count the deferred resume carried. bcb_pending is
+            // 6 for an implicit ResumeSession and 2*count for an explicit
+            // BcbToggle; fall back to 6 if it was never seeded.
+            ctx.vars.bcb_remaining = ctx.vars.bcb_pending > 0 ? ctx.vars.bcb_pending : 6;
+            ctx.vars.bcb_pending = 0;
             return {false, std::make_unique<BcbToggling>(ctx)};
         }
         // No resume pending: the session is gone, so apply the paused CP state
@@ -101,6 +126,19 @@ StateBase::Result Paused::feed(EventType ev) {
     case EK::Unplug:
         return {false, std::make_unique<Stopping>(ctx)};
     case EK::StateDeadline:
+        // A deferred resume armed a short fallback timer. If it fires while the
+        // resume is still pending, IsoV2GFinished was never observed (abnormal
+        // Josev teardown): do a best-effort resume into BcbToggling rather than
+        // hanging to the test timeout. Release the carried edge count the same
+        // way IsoV2GFinished would have.
+        if (ctx.vars.resume_pending) {
+            EVLOG_warning << "EvSimulator: resume fallback fired (IsoV2GFinished "
+                             "not observed); resuming best-effort";
+            ctx.vars.resume_pending = false;
+            ctx.vars.bcb_remaining = ctx.vars.bcb_pending > 0 ? ctx.vars.bcb_pending : 6;
+            ctx.vars.bcb_pending = 0;
+            return {false, std::make_unique<BcbToggling>(ctx)};
+        }
         return {false, std::make_unique<Stopping>(ctx)};
     case EK::BspEvent:
         return handle_disconnect(ev);

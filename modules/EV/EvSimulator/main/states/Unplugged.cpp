@@ -27,6 +27,9 @@ void Unplugged::enter() {
     // Clear any pending resume PWM-wait so an aborted resume cannot leak into
     // the first V2GNegotiating of a fresh session (which must start immediately).
     ctx.vars.resume_awaiting_pwm = false;
+    // Clear the deferred-resume edge count so an unplugged-mid-defer cannot carry
+    // a stale BCB count into a fresh session's resume.
+    ctx.vars.bcb_pending = 0;
     // Clear the SLAC torn-down latch so a teardown observed in a prior session
     // cannot force a redundant re-match on the first resume of a fresh one.
     ctx.vars.slac_unmatched = false;
