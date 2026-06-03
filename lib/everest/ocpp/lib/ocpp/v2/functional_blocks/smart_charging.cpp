@@ -1198,24 +1198,13 @@ SetChargingProfileResponse SmartCharging::add_profile(ChargingProfile& profile, 
     } catch (const std::exception& e) {
         // The profile is persisted, so the response stays Accepted (responding Rejected would lie
         // to the CSMS about a stored profile). The tracking refresh that would (re)arm the adaptive
-        // timer was lost, so attempt a best-effort timer re-arm from current state; if that also
-        // throws the manager is already degraded and there is nothing further to do here.
-        try {
-            this->dynamic_schedule_manager.reschedule();
-        } catch (...) {
-            // Swallow: already degraded; the next profile change re-arms tracking.
-        }
+        // timer was lost; the next profile change re-arms tracking.
         EVLOG_error << "[K28-tracking] ChargingProfile " << profile.id << " stored but pull-tracking refresh failed ("
                     << e.what() << "); adaptive pull disabled for profile " << profile.id
                     << " until next profile change";
     }
 
     return response;
-}
-
-ClearChargingProfileResponse SmartCharging::clear_profiles(const ClearChargingProfileRequest& request) {
-    std::vector<std::int32_t> cleared_ids;
-    return this->clear_profiles(request, cleared_ids);
 }
 
 ClearChargingProfileResponse SmartCharging::clear_profiles(const ClearChargingProfileRequest& request,

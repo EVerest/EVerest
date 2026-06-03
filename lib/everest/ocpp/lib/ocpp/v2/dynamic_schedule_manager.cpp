@@ -117,10 +117,6 @@ void DynamicScheduleManager::erase_tracking(std::int32_t charging_profile_id) {
     }
 }
 
-void DynamicScheduleManager::reschedule() {
-    this->reschedule_timer();
-}
-
 void DynamicScheduleManager::handle_update_dynamic_schedule_request(const ocpp::EnhancedMessage<MessageType>& message) {
     const Call<v21::UpdateDynamicScheduleRequest> call = message.message;
 
@@ -188,10 +184,24 @@ DynamicScheduleManager::ApplyResult DynamicScheduleManager::apply_update(Chargin
                                                                          const ChargingScheduleUpdate& update,
                                                                          std::int32_t evse_id,
                                                                          const CiString<20>& charging_limit_source) {
-    const bool no_fields_set = !update.limit && !update.limit_L2 && !update.limit_L3 && !update.dischargeLimit &&
-                               !update.dischargeLimit_L2 && !update.dischargeLimit_L3 && !update.setpoint &&
-                               !update.setpoint_L2 && !update.setpoint_L3 && !update.setpointReactive &&
-                               !update.setpointReactive_L2 && !update.setpointReactive_L3;
+    static constexpr std::pair<std::optional<float> ChargingScheduleUpdate::*,
+                               std::optional<float> ChargingSchedulePeriod::*>
+        K28_UPDATE_FIELDS[] = {
+            {&ChargingScheduleUpdate::limit, &ChargingSchedulePeriod::limit},
+            {&ChargingScheduleUpdate::limit_L2, &ChargingSchedulePeriod::limit_L2},
+            {&ChargingScheduleUpdate::limit_L3, &ChargingSchedulePeriod::limit_L3},
+            {&ChargingScheduleUpdate::dischargeLimit, &ChargingSchedulePeriod::dischargeLimit},
+            {&ChargingScheduleUpdate::dischargeLimit_L2, &ChargingSchedulePeriod::dischargeLimit_L2},
+            {&ChargingScheduleUpdate::dischargeLimit_L3, &ChargingSchedulePeriod::dischargeLimit_L3},
+            {&ChargingScheduleUpdate::setpoint, &ChargingSchedulePeriod::setpoint},
+            {&ChargingScheduleUpdate::setpoint_L2, &ChargingSchedulePeriod::setpoint_L2},
+            {&ChargingScheduleUpdate::setpoint_L3, &ChargingSchedulePeriod::setpoint_L3},
+            {&ChargingScheduleUpdate::setpointReactive, &ChargingSchedulePeriod::setpointReactive},
+            {&ChargingScheduleUpdate::setpointReactive_L2, &ChargingSchedulePeriod::setpointReactive_L2},
+            {&ChargingScheduleUpdate::setpointReactive_L3, &ChargingSchedulePeriod::setpointReactive_L3},
+        };
+    const bool no_fields_set = std::none_of(std::begin(K28_UPDATE_FIELDS), std::end(K28_UPDATE_FIELDS),
+                                            [&](const auto& f) { return (update.*f.first).has_value(); });
 
     // Defensive invariant guard, unreachable by valid CSMS traffic: K28.FR.01 is enforced at
     // SetChargingProfile ingress and only validated profiles ever reach here, so an empty schedule
@@ -212,41 +222,10 @@ DynamicScheduleManager::ApplyResult DynamicScheduleManager::apply_update(Chargin
                     << ": empty update (FR.09 heartbeat refresh).";
     } else {
         auto& period = profile.chargingSchedule.at(0).chargingSchedulePeriod.at(0);
-        if (update.limit) {
-            period.limit = update.limit;
-        }
-        if (update.limit_L2) {
-            period.limit_L2 = update.limit_L2;
-        }
-        if (update.limit_L3) {
-            period.limit_L3 = update.limit_L3;
-        }
-        if (update.dischargeLimit) {
-            period.dischargeLimit = update.dischargeLimit;
-        }
-        if (update.dischargeLimit_L2) {
-            period.dischargeLimit_L2 = update.dischargeLimit_L2;
-        }
-        if (update.dischargeLimit_L3) {
-            period.dischargeLimit_L3 = update.dischargeLimit_L3;
-        }
-        if (update.setpoint) {
-            period.setpoint = update.setpoint;
-        }
-        if (update.setpoint_L2) {
-            period.setpoint_L2 = update.setpoint_L2;
-        }
-        if (update.setpoint_L3) {
-            period.setpoint_L3 = update.setpoint_L3;
-        }
-        if (update.setpointReactive) {
-            period.setpointReactive = update.setpointReactive;
-        }
-        if (update.setpointReactive_L2) {
-            period.setpointReactive_L2 = update.setpointReactive_L2;
-        }
-        if (update.setpointReactive_L3) {
-            period.setpointReactive_L3 = update.setpointReactive_L3;
+        for (const auto& [u, p] : K28_UPDATE_FIELDS) {
+            if ((update.*u).has_value()) {
+                period.*p = (update.*u).value();
+            }
         }
     }
 

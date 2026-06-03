@@ -78,10 +78,6 @@ public:
     /// or replaced profile cannot leave a stale deadline behind.
     void erase_tracking(std::int32_t charging_profile_id);
 
-    /// \brief Best-effort timer re-arm decoupled from deadline mutation: recovery shim for a
-    /// failed \ref update_tracking refresh on an already-persisted profile.
-    void reschedule();
-
     /// \brief Handle a K28 UpdateDynamicScheduleRequest from the CSMS.
     ///
     /// Resolves the target profile by id and rejects with reasonCode \c "InvalidProfile" if missing

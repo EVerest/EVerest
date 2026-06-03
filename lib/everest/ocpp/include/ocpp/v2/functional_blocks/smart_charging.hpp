@@ -304,11 +304,6 @@ protected:
     SetChargingProfileResponse add_profile(ChargingProfile& profile, std::int32_t evse_id,
                                            CiString<20> charging_limit_source = ChargingLimitSourceEnumStringType::CSO);
 
-    ///
-    /// \brief Clears profiles from the system using the given \p request
-    ///
-    ClearChargingProfileResponse clear_profiles(const ClearChargingProfileRequest& request);
-
     /// \brief Clears profiles using \p request and reports the ids actually deleted in
     /// \p cleared_ids (exactly the rows the DB removed; no mirrored filter).
     ClearChargingProfileResponse clear_profiles(const ClearChargingProfileRequest& request,
