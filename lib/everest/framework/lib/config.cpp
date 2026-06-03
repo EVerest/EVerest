@@ -1194,10 +1194,9 @@ void ManagerConfig::init_from_yaml() {
     try {
         init_schemas();
         const auto complete_config = this->apply_user_config_and_defaults();
-        if (!complete_config.contains("active_modules") &&
-            complete_config.items().begin() != complete_config.items().end()) {
-            EVLOG_AND_THROW(EverestConfigError("YAML config contains no active_modules section. "
-                                               "Provide active_modules in the config file."));
+        if (!complete_config.contains("active_modules") or complete_config.empty()) {
+            EVLOG_info << "YAML does not contain module configurations.";
+            return;
         }
         auto module_configs = parse_module_configs(complete_config.value("active_modules", json::object()));
         this->parse(module_configs);

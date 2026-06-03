@@ -257,10 +257,7 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
         }
         Everest::ManagerSettings ms(bin_dir + "empty_yaml_object/", bin_dir + "empty_yaml_object/config.yaml", db_path);
         auto bs = Everest::init_database_bootstrap(ms);
-        CHECK(bs.module_configs_initialized == false);
-        THEN("ManagerConfig should throw because there are no active_modules to initialize the database from") {
-            CHECK_THROWS_AS(Everest::ManagerConfig(ms), Everest::EverestConfigError);
-        }
+        CHECK(bs.module_configs_initialized == true);
     }
 }
 
