@@ -16,6 +16,7 @@ target_sources(${TEST_TARGET} PRIVATE
     AcLimitTest.cpp
     SocIntegratorTest.cpp
     BcbTogglingTest.cpp
+    PausedResumeGateTest.cpp
     ScenarioDispatcherTest.cpp
     RampInterpolatorTest.cpp
     TimerFdFlushTest.cpp

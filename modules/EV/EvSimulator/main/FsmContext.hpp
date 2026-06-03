@@ -202,6 +202,11 @@ struct SimVars {
     // true; the resume (BcbToggling) is then deferred until IsoV2GFinished
     // arrives. Reset on each Paused entry.
     bool resume_pending{false};
+    // The BCB edge count to apply when a deferred resume is released into
+    // bcb_remaining (6 for an implicit ResumeSession, 2*count for an explicit
+    // BcbToggle). Carried across the defer so the user-requested count survives
+    // until IsoV2GFinished (or the bounded fallback deadline) fires.
+    int32_t bcb_pending{0};
     std::optional<API_types::ev_simulator::FaultReport> last_fault;
     float charging_current_a{16.0f};
     bool three_phases{true};

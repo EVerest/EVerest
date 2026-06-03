@@ -28,6 +28,7 @@ void Plugged::enter() {
     // resume forever.
     ctx.vars.iso_session_active = false;
     ctx.vars.resume_pending = false;
+    ctx.vars.bcb_pending = 0;
     ctx.kvs_save();
     ctx.publish_e2m_state(api::FsmState::Plugged);
     // Self-advance: a plug consumes the latched session config (or an AcIec
