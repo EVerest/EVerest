@@ -316,11 +316,6 @@ LoadFromYamlResult ConfigServiceCore::internal_load_from_yaml(const std::string&
     const bool into_new_slot = not slot_manager_.exists(target_slot_id);
     try {
         const auto json_config = Everest::load_yaml_from_string(raw_yaml);
-        if (not json_config.contains("active_modules")) {
-            const char* err_msg = "YAML does not contain an 'active_modules' section";
-            EVLOG_warning << "Failed to load from YAML into slot " << target_slot_id << ": " << err_msg;
-            return {false, std::nullopt, err_msg};
-        }
 
         // Validate against manifests, interfaces and requirements; enriches configs with manifest metadata.
         const auto module_configs = Everest::validate_module_configs(parse_settings_, json_config);

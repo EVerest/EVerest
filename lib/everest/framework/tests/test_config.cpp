@@ -257,9 +257,14 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
         }
         Everest::ManagerSettings ms(bin_dir + "empty_yaml_object/", bin_dir + "empty_yaml_object/config.yaml", db_path);
         auto bs = Everest::init_database_bootstrap(ms);
-        CHECK(bs.module_configs_initialized == false);
-        THEN("ManagerConfig should throw because there are no active_modules to initialize the database from") {
-            CHECK_THROWS_AS(Everest::ManagerConfig(ms), Everest::EverestConfigError);
+        CHECK(bs.module_configs_initialized == true);
+        THEN("Reconstructing ManagerConfig from the (empty) database-backed module configs should not throw, "
+             "mirroring what Manager::reload_and_update_context does on restart") {
+            auto storage = std::make_unique<everest::config::SqliteStorage>(bs.db_connection);
+            auto get_mod_cfg_response = storage->get_module_configs();
+            CHECK(get_mod_cfg_response.status == everest::config::GenericResponseStatus::OK);
+            CHECK(get_mod_cfg_response.module_configs.empty());
+            CHECK_NOTHROW(Everest::ManagerConfig(ms, std::move(get_mod_cfg_response.module_configs)));
         }
     }
 }
