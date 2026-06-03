@@ -32,6 +32,11 @@ WORKER_INTERFACE_ENV = "EVEREST_TEST_NETWORK_INTERFACE"
 WORKER_PROXY_INTERFACE_ENV = "EVEREST_TEST_PROXY_NETWORK_INTERFACE"
 
 # The xdist_group name used by ISO 15118 tests
+#
+# Note: the "ISO15118_SERIAL" group is deliberately a DIFFERENT name, so it is
+# NOT stripped by _is_iso15118_xdist_marker below. CPU-timing-sensitive
+# pause/resume SIL tests use it to stay serialized on one worker even under
+# network isolation.
 ISO15118_XDIST_GROUP = "ISO15118"
 
 
