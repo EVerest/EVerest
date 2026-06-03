@@ -11,6 +11,10 @@
 namespace iso15118::message_20 {
 
 namespace datatypes {
+
+ParameterSet::ParameterSet(uint16_t _id) : id(_id), parameter({datatypes::Parameter{"", false}}) {
+}
+
 ParameterSet::ParameterSet(uint16_t _id, const AcParameterList& list) : id(_id) {
     parameter.push_back({"Connector", static_cast<int32_t>(list.connector)});
     parameter.push_back({"ControlMode", static_cast<int32_t>(list.control_mode)});
