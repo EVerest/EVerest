@@ -1,0 +1,10 @@
+[
+    {"component":"ISO15118Ctrlr", "variable":"CentralContractValidationAllowed", "attribute":"Actual", "value":true},
+    {"component":"ISO15118Ctrlr", "variable":"ContractCertificateInstallationEnabled", "attribute":"Actual", "value":true},
+    {"component":"ISO15118Ctrlr", "variable":"PnCEnabled", "attribute":"Actual", "value":true},
+    {"component":"TxCtrlr", "variable":"EVConnectionTimeOut", "attribute":"Actual", "value":60},
+    {"component":"AuthCtrlr", "variable":"MasterPassGroupId", "attribute":"Actual", "value":"Managers"},
+    {"component":"SmartChargingCtrlr", "variable":"SetpointPriority", "attribute":"Actual", "value":"CSMS"},
+    {"component":"TxCtrlr", "variable":"TxStartPoint", "attribute":"Actual", "value":"PowerPathClosed"},
+    {"component":"TxCtrlr", "variable":"TxStopPoint", "attribute":"Actual", "value":"EVConnected, Authorized"}
+]
