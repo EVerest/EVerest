@@ -6,7 +6,8 @@ Breaking Changes Definition
 
 This document defines what constitutes a breaking change versus a non-breaking change for the components of the
 :ref:`EVerest public API <project-release-and-versioning-public-api>`.
-Understanding these definitions is critical for both maintainers and integrators.
+Understanding these definitions is critical for both maintainers and integrators. For details on how planned
+breaking changes are managed through the deprecation process, see :ref:`project-deprecation-policy`.
 
 ********
 Overview
@@ -245,7 +246,8 @@ Behavioral Compatibility
 Additional Resources
 ********************
 
-For more information on EVerest's release and versioning strategy, see :ref:`project-release-and-versioning`.
+- :ref:`project-release-and-versioning`
+- :ref:`project-deprecation-policy`
 
 For questions about breaking changes or to report potential compatibility issues, please contact the EVerest
-maintainers or raise an issue in the GitHub repository.
+maintainers via Zulip.
