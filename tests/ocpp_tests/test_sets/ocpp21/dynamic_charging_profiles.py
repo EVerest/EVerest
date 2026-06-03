@@ -217,3 +217,70 @@ async def test_k28_push_setpoint_update_changes_evse_limit(
     assert after == pytest.approx(5000.0, abs=1.0), f"updated composite was {after}"
 
 
+# --------------------------------------------------------------------------- #
+# 2) Rapid back-to-back updates converge to the LAST pushed limit             #
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.1")
+@pytest.mark.everest_core_config(
+    get_everest_config_path_str("everest-config-ocpp201.yaml")
+)
+@pytest.mark.ocpp_config_adaptions(_DYNAMIC_PROFILES_CONFIG)
+@pytest.mark.use_temporary_persistent_store
+async def test_k28_rapid_updates_converge_to_last_limit(
+    central_system_v21: CentralSystem,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """K28: a rapid burst of UpdateDynamicSchedule messages converges on the LAST limit.
+
+    Sends several updates back-to-back with distinct limits and asserts the composite
+    schedule settles on the LAST pushed value, never an earlier (stale) one — an
+    end-to-end guard that a rapid update burst is processed in order and does not
+    strand an intermediate limit.
+
+    This asserts via GetCompositeSchedule, which reflects libocpp's profile store
+    (mutated synchronously by each UpdateDynamicSchedule) and is therefore independent
+    of the OCPP201 recompute callback. The single-flight + coalescing serialization of
+    that callback — which keeps a concurrent fire from applying a stale composite to the
+    energy sink — is an EVerest-internal change carried by the production logic; this
+    test guards the observable OCPP-level convergence, not the internal apply path.
+    """
+    test_controller.start()
+    charge_point_v21 = await central_system_v21.wait_for_chargepoint(
+        wait_for_bootnotification=True
+    )
+    assert await _wait_available(test_utility, charge_point_v21)
+
+    profile_id = 8002
+    profile = _build_dynamic_profile(profile_id, limit=10000.0)
+    set_resp: call_result21.SetChargingProfile = await charge_point_v21.set_charging_profile_req(
+        evse_id=1, charging_profile=profile
+    )
+    assert set_resp.status == ChargingProfileStatusEnumType.accepted
+
+    # Fire a burst of distinct limits back-to-back; 9000 is pushed LAST.
+    burst_limits = [6000.0, 7000.0, 8000.0, 9000.0]
+    for limit in burst_limits:
+        update = call21.UpdateDynamicSchedule(
+            charging_profile_id=profile_id,
+            schedule_update=ChargingScheduleUpdateType(limit=limit),
+        )
+        upd_resp: call_result21.UpdateDynamicSchedule = await charge_point_v21.call(update)
+        assert upd_resp.status == ChargingProfileStatusEnumType.accepted
+
+    final_limit = burst_limits[-1]
+    # Poll for convergence: the coalesced recompute must settle on the LAST limit and
+    # must never expose an intermediate/stale value as the final state.
+    converged = None
+    for _ in range(10):
+        await asyncio.sleep(0.5)
+        period, _schedule = await _composite_schedule_first_period(charge_point_v21)
+        converged = period.get("limit", period.get("setpoint"))
+        if converged == pytest.approx(final_limit, abs=1.0):
+            break
+    assert converged == pytest.approx(final_limit, abs=1.0), (
+        f"final composite was {converged}, expected last pushed limit {final_limit}"
+    )
+
+
