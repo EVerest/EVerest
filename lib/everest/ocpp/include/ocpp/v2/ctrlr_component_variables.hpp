@@ -451,6 +451,13 @@ void migrate_from_blob_if_needed(DeviceModelInterface& dm);
 void clear_slot_in_device_model(DeviceModelInterface& dm, int32_t slot);
 } // namespace NetworkConfigurationComponentVariables
 
+namespace DERComponentVariables {
+extern const Variable Available;
+extern const Variable ModesSupported;
+ComponentVariable get_dc_component_variable(const std::int32_t evse_id, const Variable& variable);
+ComponentVariable get_ac_component_variable(const std::int32_t evse_id, const Variable& variable);
+} // namespace DERComponentVariables
+
 } // namespace v2
 } // namespace ocpp
 
