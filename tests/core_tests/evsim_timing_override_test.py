@@ -28,6 +28,12 @@ import pytest
 # core_config, evsim_test_controller, ...) into the test namespace.
 from everest.testing.core_utils.fixtures import *  # noqa: F401,F403
 
+# Share smoke_tests.py's "ISO15118" loadgroup so --dist=loadgroup keeps
+# every EvSimulator SIL test on one xdist worker. Concurrent SIL stacks
+# contend for CPU and flake pause/resume teardown; the group name must
+# match smoke_tests.py or the suites still race.
+pytestmark = pytest.mark.xdist_group(name="ISO15118")
+
 
 # Compressed preset (ms) — strictly increasing, all positive.
 #
