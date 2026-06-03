@@ -756,12 +756,28 @@ int Manager::run() {
         reset_from_yaml ? std::make_optional<int>(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID)
                         : std::nullopt,
         [this, &mqtt_abstraction, &ms]() {
-            handle_initiate_graceful_shutdown(std::chrono::system_clock::now(), false, nullptr, *mqtt_abstraction, ms);
-            return Everest::config::StopModulesResult::Stopping; // TODO(CB): return the correct value here
+            Everest::config::StopModulesResult ret = Everest::config::StopModulesResult::Rejected;
+            if (is_idle()) {
+                ret = Everest::config::StopModulesResult::NoModulesToStop;
+            } else if (are_modules_started()) {
+                handle_initiate_graceful_shutdown(std::chrono::system_clock::now(), false, nullptr, *mqtt_abstraction,
+                                                  ms);
+                ret = Everest::config::StopModulesResult::Stopping;
+            }
+            return ret;
         },
-        [this, &runtime_ctx]() {
-            handle_restart_modules_after_shutdown(runtime_ctx);
-            return Everest::config::RestartModulesResult::Starting; // TODO(CB): return the correct value here
+        [this, &runtime_ctx, &mqtt_abstraction, &ms]() {
+            Everest::config::RestartModulesResult ret = Everest::config::RestartModulesResult::Rejected;
+            if (are_modules_started()) {
+                shutdown_cause_ = ShutdownCause::Restart;
+                ret = Everest::config::RestartModulesResult::Restarting;
+                handle_initiate_graceful_shutdown(std::chrono::system_clock::now(), false, nullptr, *mqtt_abstraction,
+                                                  ms);
+            } else if (is_idle()) {
+                ret = Everest::config::RestartModulesResult::Starting;
+                module_handles_ = handle_start_modules(runtime_ctx);
+            }
+            return ret;
         });
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core_);
