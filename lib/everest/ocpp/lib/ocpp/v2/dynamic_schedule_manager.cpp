@@ -290,112 +290,121 @@ void DynamicScheduleManager::reschedule_timer() {
     }
 }
 
+std::optional<ReportedChargingProfile>
+DynamicScheduleManager::lookup_dynamic_profile(std::int32_t charging_profile_id) const {
+    ChargingProfileCriterion criteria;
+    criteria.chargingProfileId = std::vector<std::int32_t>{charging_profile_id};
+    std::vector<ReportedChargingProfile> matches;
+    try {
+        matches = this->context.database_handler.get_charging_profiles_matching_criteria(std::nullopt, criteria);
+    } catch (const everest::db::QueryExecutionException& e) {
+        EVLOG_warning << "Could not look up profile " << charging_profile_id << ": " << e.what();
+        return std::nullopt;
+    }
+    if (matches.empty() || matches.front().profile.chargingProfileKind != ChargingProfileKindEnum::Dynamic) {
+        return std::nullopt;
+    }
+    return matches.front();
+}
+
+void DynamicScheduleManager::dispatch_due_pulls(date::utc_clock::time_point now) {
+    // Snapshot ids whose pull deadline has passed; release the handle before doing any work.
+    std::vector<std::int32_t> due_pull_ids;
+    {
+        auto handle = this->deadlines.handle();
+        for (const auto& [id, entry] : *handle) {
+            if (entry.pull.has_value() && entry.pull.value() <= now) {
+                due_pull_ids.push_back(id);
+            }
+        }
+    }
+
+    for (const auto id : due_pull_ids) {
+        // Re-read profile to get fresh dynUpdateInterval (may have been mutated since deadline was set).
+        const auto match = this->lookup_dynamic_profile(id);
+        if (!match.has_value() || !match->profile.dynUpdateInterval.has_value() ||
+            match->profile.dynUpdateInterval.value() <= 0) {
+            // Profile gone / non-Dynamic / no interval: drop tracking. Inlined (not
+            // erase_tracking) to avoid reschedule_timer re-arming mid-tick; on_deadline
+            // reschedules once at the end.
+            {
+                auto handle = this->deadlines.handle();
+                handle->erase(id);
+            }
+            continue;
+        }
+
+        const auto interval = std::chrono::seconds(match->profile.dynUpdateInterval.value());
+        const bool dispatch_succeeded = this->dispatch_pull_request(id);
+        if (!dispatch_succeeded) {
+            // Dispatch failed: 1s backoff so a past-due deadline doesn't busy-loop the timer.
+            auto handle = this->deadlines.handle();
+            auto it = handle->find(id);
+            if (it != handle->end() && it->second.pull.has_value() && it->second.pull.value() <= now) {
+                it->second.pull = now + std::chrono::seconds(1);
+            }
+            continue;
+        }
+        {
+            // Re-check before overwriting: a concurrent update_tracking may have written a
+            // fresh deadline we must not stomp.
+            auto handle = this->deadlines.handle();
+            auto it = handle->find(id);
+            if (it != handle->end() && it->second.pull.has_value() && it->second.pull.value() <= now) {
+                it->second.pull = now + interval;
+            }
+        }
+    }
+}
+
+void DynamicScheduleManager::commit_due_expiries(date::utc_clock::time_point now) {
+    // K28.FR.13 expiry: fire the composite recompute, then clear expire only if the callback
+    // succeeds (on throw, keep entries so the next tick retries). The deferred clear re-checks
+    // the deadline so a concurrent reactivation is not wiped.
+    std::vector<std::int32_t> expired_ids;
+    {
+        auto handle = this->deadlines.handle();
+        for (const auto& [id, entry] : *handle) {
+            if (entry.expire.has_value() && entry.expire.value() <= now) {
+                expired_ids.push_back(id);
+            }
+        }
+    }
+    if (expired_ids.empty()) {
+        return;
+    }
+    try {
+        this->set_charging_profiles_callback();
+    } catch (...) {
+        // Keep the expire entries so the next tick retries the recompute. Rethrow so the
+        // outer catch records the exception type; the entries are intentionally NOT cleared.
+        EVLOG_error << "K28-expiry: composite recompute callback threw for " << expired_ids.size()
+                    << " expired profile(s); entries kept, recompute retried next timer tick";
+        throw;
+    }
+    // Callback succeeded: clear the expire field, but only while it is still the past
+    // deadline (preserve a refreshed future deadline from a concurrent FR.14 reactivation).
+    // Erase the key when both deadlines become nullopt.
+    auto handle = this->deadlines.handle();
+    for (const auto id : expired_ids) {
+        auto it = handle->find(id);
+        if (it != handle->end() && it->second.expire.has_value() && it->second.expire.value() <= now) {
+            it->second.expire.reset();
+            if (!it->second.pull.has_value()) {
+                handle->erase(it);
+            }
+        }
+    }
+}
+
 void DynamicScheduleManager::on_deadline() {
     // Runs on the timer io_context thread; any uncaught exception would terminate the process.
     try {
         const auto now = date::utc_clock::now();
-
-        // Snapshot ids whose pull deadline has passed; release the handle before doing any work.
-        std::vector<std::int32_t> due_pull_ids;
-        {
-            auto handle = this->deadlines.handle();
-            for (const auto& [id, entry] : *handle) {
-                if (entry.pull.has_value() && entry.pull.value() <= now) {
-                    due_pull_ids.push_back(id);
-                }
-            }
-        }
-
-        for (const auto id : due_pull_ids) {
-            // Re-read profile to get fresh dynUpdateInterval (may have been mutated since deadline was set).
-            std::vector<ReportedChargingProfile> matches;
-            try {
-                ChargingProfileCriterion criteria;
-                criteria.chargingProfileId = std::vector<std::int32_t>{id};
-                matches =
-                    this->context.database_handler.get_charging_profiles_matching_criteria(std::nullopt, criteria);
-            } catch (const everest::db::QueryExecutionException& e) {
-                EVLOG_warning << "Could not look up profile " << id << " on timer fire: " << e.what();
-                continue;
-            }
-
-            if (matches.empty() || matches.front().profile.chargingProfileKind != ChargingProfileKindEnum::Dynamic ||
-                !matches.front().profile.dynUpdateInterval.has_value() ||
-                matches.front().profile.dynUpdateInterval.value() <= 0) {
-                // Profile is gone or no longer Dynamic / no interval, so drop tracking entirely
-                // (both pull and expire). Inlined rather than calling erase_tracking() because
-                // we're on the timer thread; erase_tracking() calls reschedule_timer() which would
-                // reentrantly arm the timer mid-tick. The final reschedule at the bottom of
-                // on_deadline picks up the shrunk map.
-                {
-                    auto handle = this->deadlines.handle();
-                    handle->erase(id);
-                }
-                continue;
-            }
-
-            const auto interval = std::chrono::seconds(matches.front().profile.dynUpdateInterval.value());
-            const bool dispatch_succeeded = this->dispatch_pull_request(id);
-            if (!dispatch_succeeded) {
-                // Prevent a busy-loop when dispatch keeps failing: defer the next attempt by a
-                // fixed 1s backoff rather than leaving the deadline past-due (which would re-arm
-                // the timer at a past time and fire immediately).
-                auto handle = this->deadlines.handle();
-                auto it = handle->find(id);
-                if (it != handle->end() && it->second.pull.has_value() && it->second.pull.value() <= now) {
-                    it->second.pull = now + std::chrono::seconds(1);
-                }
-                continue;
-            }
-            {
-                // Re-check the entry under the same handle before overwriting: a concurrent
-                // update_tracking (K28.FR.10 refresh) may have already written a fresh deadline we
-                // must not stomp.
-                auto handle = this->deadlines.handle();
-                auto it = handle->find(id);
-                if (it != handle->end() && it->second.pull.has_value() && it->second.pull.value() <= now) {
-                    it->second.pull = now + interval;
-                }
-            }
-        }
-
-        // K28.FR.13/.14/.15 expiry: fire-then-commit. Snapshot the expired ids, fire the composite
-        // recompute, and only clear the expire field after the callback succeeds (on throw the
-        // entries are kept so the next tick retries). The deferred clear re-checks the deadline so
-        // a concurrent FR.14 reactivation refreshing dynUpdateTime is not wiped.
-        std::vector<std::int32_t> expired_ids;
-        {
-            auto handle = this->deadlines.handle();
-            for (const auto& [id, entry] : *handle) {
-                if (entry.expire.has_value() && entry.expire.value() <= now) {
-                    expired_ids.push_back(id);
-                }
-            }
-        }
-        if (!expired_ids.empty()) {
-            try {
-                this->set_charging_profiles_callback();
-            } catch (...) {
-                // Keep the expire entries so the next tick retries the recompute. Rethrow so the
-                // outer catch records the exception type; the entries are intentionally NOT cleared.
-                EVLOG_error << "K28-expiry: composite recompute callback threw for " << expired_ids.size()
-                            << " expired profile(s); entries kept, recompute retried next timer tick";
-                throw;
-            }
-            // Callback succeeded: clear the expire field, but only while it is still the past
-            // deadline (preserve a refreshed future deadline from a concurrent FR.14 reactivation).
-            // Erase the key when both deadlines become nullopt.
-            auto handle = this->deadlines.handle();
-            for (const auto id : expired_ids) {
-                auto it = handle->find(id);
-                if (it != handle->end() && it->second.expire.has_value() && it->second.expire.value() <= now) {
-                    it->second.expire.reset();
-                    if (!it->second.pull.has_value()) {
-                        handle->erase(it);
-                    }
-                }
-            }
-        }
+        this->dispatch_due_pulls(now);
+        // commit_due_expiries rethrows on callback failure (entries already kept inside it); that
+        // propagates here so the outer catch records the type and keeps the timer thread alive.
+        this->commit_due_expiries(now);
     } catch (const std::exception& e) {
         EVLOG_error << "on_deadline: unhandled exception swallowed to keep timer thread alive: " << e.what();
     } catch (...) {
@@ -553,22 +562,13 @@ void DynamicScheduleManager::apply_pull_response(std::int32_t charging_profile_i
     }
 
     // Look up the profile fresh; it may have been cleared or replaced while in flight.
-    std::vector<ReportedChargingProfile> matches;
-    try {
-        ChargingProfileCriterion criteria;
-        criteria.chargingProfileId = std::vector<std::int32_t>{charging_profile_id};
-        matches = this->context.database_handler.get_charging_profiles_matching_criteria(std::nullopt, criteria);
-    } catch (const everest::db::QueryExecutionException& e) {
-        EVLOG_warning << "Could not look up profile " << charging_profile_id
-                      << " for pull-response apply: " << e.what();
-        return;
-    }
-    if (matches.empty() || matches.front().profile.chargingProfileKind != ChargingProfileKindEnum::Dynamic) {
+    auto match = this->lookup_dynamic_profile(charging_profile_id);
+    if (!match.has_value()) {
         EVLOG_debug << "Profile " << charging_profile_id << " missing or no longer Dynamic; ignoring pull response.";
         return;
     }
 
-    auto& matched = matches.front();
+    auto& matched = match.value();
     const auto apply_result =
         this->apply_update(matched.profile, response.scheduleUpdate.value(), matched.evse_id, matched.source);
     switch (apply_result) {

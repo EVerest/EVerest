@@ -19,6 +19,7 @@
 #include <ocpp/common/cistring.hpp>
 #include <ocpp/v2/message_handler.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
+#include <ocpp/v2/types.hpp>
 
 namespace ocpp::v2 {
 
@@ -126,6 +127,23 @@ private:
     ///   \c dynUpdateTime is not silently wiped between snapshot and erase (K28.FR.14
     ///   reactivation). A single \c set_charging_profiles_callback is fired after release.
     void on_deadline();
+
+    /// \brief Pull pass of \ref on_deadline: snapshot the ids whose pull deadline is due as of
+    /// \p now, then for each re-read the profile, drop tracking for ones that are gone / no longer
+    /// Dynamic / have no positive interval, dispatch a \c PullDynamicScheduleUpdateRequest, and
+    /// advance (or back off) the pull deadline. Runs on the timer's io_context thread.
+    void dispatch_due_pulls(date::utc_clock::time_point now);
+
+    /// \brief Expiry pass of \ref on_deadline: snapshot the ids whose expiry deadline is due as of
+    /// \p now, fire a single composite recompute, and clear the expire field only after the
+    /// callback succeeds (rethrowing on failure so the entries are kept for the next tick). Runs on
+    /// the timer's io_context thread.
+    void commit_due_expiries(date::utc_clock::time_point now);
+
+    /// \brief Look up a single Dynamic charging profile by id. Returns the matched profile only when
+    /// it exists AND its \c chargingProfileKind is \c Dynamic; returns \c std::nullopt when the id
+    /// is unknown, the profile is not Dynamic, or the database query throws (logged as a warning).
+    std::optional<ReportedChargingProfile> lookup_dynamic_profile(std::int32_t charging_profile_id) const;
 
     /// \brief Map mutation for \ref update_tracking and \ref rebuild_from_db: write/erase the pull
     /// and expiry deadlines for \p profile without rearming the timer. \return true if any deadline
