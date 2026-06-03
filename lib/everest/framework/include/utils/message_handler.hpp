@@ -16,6 +16,7 @@
 #include <everest/util/async/thread_pool_scaling.hpp>
 #include <everest/util/queue/thread_safe_queue.hpp>
 
+#include <utils/message_handler_scaling_policy.hpp>
 #include <utils/message_queue.hpp>
 #include <utils/types.hpp>
 
@@ -24,7 +25,8 @@ using CmdId = std::string;
 
 namespace Everest {
 
-constexpr std::size_t THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS = 50;
+constexpr std::size_t THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS =
+    detail::MESSAGE_HANDLER_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS;
 constexpr std::chrono::seconds THREAD_POOL_SCALING_IDLE_TIMEOUT{2};
 constexpr std::size_t THREAD_POOL_SCALING_MIN_THREAD_COUNT = 1;
 constexpr std::size_t MAX_PENDING_MESSAGES_PER_TOPIC = 100;
@@ -108,8 +110,9 @@ private:
     // outside the lock, preventing concurrent join/assignment races on the raw std::thread.
     everest::lib::util::monitor<std::thread> ready;
 
-    using LatencyScaling = everest::lib::util::LatencyScaling<THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS>;
-    using ThreadPool = everest::lib::util::thread_pool_scaling<LatencyScaling, everest::lib::util::RethrowExceptions>;
+    using ThreadPool =
+        everest::lib::util::thread_pool_scaling<detail::MessageHandlerScalingPolicy,
+                                                everest::lib::util::RethrowExceptions>;
     std::unique_ptr<ThreadPool> operation_thread_pool;
 
     using MessageQueue = everest::lib::util::thread_safe_queue<ParsedMessage>;
