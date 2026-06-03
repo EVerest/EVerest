@@ -5,8 +5,8 @@
 
 #include <boost/program_options/variables_map.hpp>
 #include <chrono>
-#include <functional>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
