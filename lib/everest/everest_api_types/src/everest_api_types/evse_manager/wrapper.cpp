@@ -84,6 +84,8 @@ StopTransactionReason_Internal to_internal_api(StopTransactionReason_External co
         return TarT::Timeout;
     case SrcT::ReqEnergyTransferRejected:
         return TarT::ReqEnergyTransferRejected;
+    case SrcT::EVSEDisabled:
+        return TarT::EVSEDisabled;
     }
     throw std::out_of_range(
         "Unexpected value for everest::lib::API::V1_0::types::evse_manager::StopTransactionReason_External");
@@ -138,6 +140,8 @@ StopTransactionReason_External to_external_api(StopTransactionReason_Internal co
         return TarT::Timeout;
     case SrcT::ReqEnergyTransferRejected:
         return TarT::ReqEnergyTransferRejected;
+    case SrcT::EVSEDisabled:
+        return TarT::EVSEDisabled;
     }
     throw std::out_of_range(
         "Unexpected value for everest::lib::API::V1_0::types::evse_manager::StopTransactionReason_Internal");
