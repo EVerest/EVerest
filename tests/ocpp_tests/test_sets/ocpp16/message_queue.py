@@ -106,7 +106,7 @@ async def wait_for_mock_called(mock, call=None, timeout=2):
 @pytest.mark.ocpp_version("ocpp1.6")
 @pytest.mark.everest_core_config("everest-config-sil-ocpp.yaml")
 @pytest.mark.inject_csms_mock
-@pytest.mark.probe_module(connections={"ocpp": [Requirement("ocpp", "main")]})
+@pytest.mark.probe_module(connections={"ocpp": [Requirement("ocpp", "ocpp_generic")]})
 @pytest.mark.asyncio
 async def test_security_event_delivery_after_reconnect(
     everest_core, test_controller, central_system: CentralSystem
@@ -129,8 +129,8 @@ async def test_security_event_delivery_after_reconnect(
     csms_mock.on_security_event_notification.reset_mock()
     # Since on boot we expect a count of security events
     await probe_module.call_command(
-        "ocpp", "security_event", {
-            "type": "SecurityLogWasCleared", "info": "test_info"}
+        "ocpp", "security_event", { "event": {
+            "type": "SecurityLogWasCleared", "info": "test_info"}}
     )
 
     # Verify: CSMS has not received any event (since offline), reconnect and verify event is received
