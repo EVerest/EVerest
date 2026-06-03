@@ -15,13 +15,23 @@ namespace module {
 namespace api = API_types::ev_simulator;
 
 void Paused::enter() {
-    ctx.set_cp(::types::ev_board_support::EvCpState::B);
     ctx.allow_power_on(false);
     ctx.iso_pause_charging();
     // A resume requested mid-teardown is deferred until IsoV2GFinished; start
     // each pause with a clean slate so a stale flag from an earlier cycle can
     // never auto-fire a resume.
     ctx.vars.resume_pending = false;
+    // Hold CP at C while the HLC session is still tearing down. Dropping CP to B
+    // mid-teardown makes the SECC see the EV leave the charge loop and abort the
+    // link with D-LINK_ERROR instead of a clean D-LINK_PAUSE; on D-LINK_ERROR the
+    // SECC never runs current_demand_finished, so its over-voltage monitor stays
+    // armed and the resume CableCheck (run at the EV's max voltage, which equals
+    // the OVM error limit) trips MREC5OverVoltage and the resume never reaches
+    // Charging. feed(IsoV2GFinished) drops CP once the session is gone. With no
+    // live session (AcIec, or one already finished) nothing follows, so drop now.
+    if (not ctx.vars.iso_session_active) {
+        ctx.set_cp(::types::ev_board_support::EvCpState::B);
+    }
     ctx.arm_timer(std::chrono::hours(1));
     ctx.publish_e2m_state(api::FsmState::Paused);
 }
@@ -77,12 +87,16 @@ StateBase::Result Paused::feed(EventType ev) {
     case EK::IsoV2GFinished:
         // The paused V2G session has finished tearing down (iso_session_active
         // was cleared pre-feed). If a resume was requested while it was still
-        // live, release it now: seed the BCB edge count and wake the SECC.
+        // live, release it now: seed the BCB edge count and wake the SECC
+        // (BcbToggling drives CP from here on).
         if (ctx.vars.resume_pending) {
             ctx.vars.resume_pending = false;
             ctx.vars.bcb_remaining = 6;
             return {false, std::make_unique<BcbToggling>(ctx)};
         }
+        // No resume pending: the session is gone, so apply the paused CP state
+        // that enter() deferred to keep the teardown a clean D-LINK_PAUSE.
+        ctx.set_cp(::types::ev_board_support::EvCpState::B);
         return {false, nullptr};
     case EK::Unplug:
         return {false, std::make_unique<Stopping>(ctx)};
