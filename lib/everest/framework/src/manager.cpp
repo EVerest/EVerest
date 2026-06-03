@@ -731,8 +731,6 @@ int Manager::run() {
     RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
                                ms,     status_fifo,       retain_topics};
     if (vm_.count("into-idle") == 0) {
-        // TODO(CB): handle_start_modules may need to update the db_storage + ctx.config before starting
-        // TODO(CB): it may of-course only do so if strictly required (slot_id changed)
         module_handles_ = handle_start_modules(runtime_ctx);
     } else {
         transition_to(ManagerState::Idle);
