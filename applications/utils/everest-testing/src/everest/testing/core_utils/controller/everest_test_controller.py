@@ -255,25 +255,13 @@ class EverestTestController(TestController):
         drv = self._ev_drv(connector_id)
         if drv is None:
             return
-        # Legacy: bcb toggle + reconfigure + wait + draw + wait
-        drv.bcb_toggle(3)
-        drv.configure_session("AcIso2", {"charging_current_a": 16.0, "three_phases": True,
-                                          "departure_time_s": 86400, "e_amount_wh": 0})
-        threading.Thread(
-            target=drv.play_dsl,
-            args=("iso_wait_pwm_is_running;iso_wait_pwr_ready;iso_draw_power_regulated 16,3;iso_wait_for_stop 60",),
-            daemon=True, name=f"evsim-resume-aciso-{connector_id}").start()
+        drv.resume_session()
 
     def resume_iso_session_dc(self, connector_id=1):
         drv = self._ev_drv(connector_id)
         if drv is None:
             return
-        drv.bcb_toggle(3)
-        drv.configure_session("DcIso2", {"departure_time_s": 86400, "e_amount_wh": 0})
-        threading.Thread(
-            target=drv.play_dsl,
-            args=("iso_wait_pwm_is_running;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 60",),
-            daemon=True, name=f"evsim-resume-dciso-{connector_id}").start()
+        drv.resume_session()
 
     def swipe(self, token, connectors=None):
         connectors = connectors if connectors is not None else [1]
