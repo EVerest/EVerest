@@ -978,6 +978,63 @@ TEST_F(SmartChargingTestV21, K28FR13_DynamicProfile_ExpiredByDuration_SkippedInC
     EXPECT_TRUE(valid.empty()) << "Expired Dynamic profile must be filtered from composite calc";
 }
 
+namespace {
+
+// True if any period of the composite schedule carries the given setpoint value.
+bool composite_contains_setpoint(const EnhancedCompositeSchedule& schedule, float setpoint) {
+    for (const auto& period : schedule.chargingSchedulePeriod) {
+        if (period.setpoint.has_value() && period.setpoint.value() == setpoint) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+// Expiry filtering must hold through the REAL composite path, not just the get_valid_profiles_for_evse
+// helper. Drive SmartCharging::get_composite_schedule(evse_id, duration, unit) directly: an expired
+// Dynamic profile's setpoint must not appear in the composite, while a fresh (non-expired) Dynamic
+// profile's setpoint does. The positive control proves the composite API is actually exercised here
+// (a non-expired Dynamic setpoint reaches the composite), so the negative assertion is not vacuous.
+TEST_F(SmartChargingTestV21, K28FR13_DynamicProfile_ExpiredByDuration_AbsentFromGetCompositeSchedule) {
+    enable_dynamic_profiles(device_model);
+
+    constexpr float dynamic_setpoint = 10000.0f;
+
+    // A CentralSetpoint TxDefaultProfile only contributes its setpoint to the composite while a
+    // transaction is active on the EVSE (see CompositeScheduleTestFixtureV21.setpoint_tx_profile).
+    evse_manager->open_transaction(DEFAULT_EVSE_ID, "f1522902-1170-416f-8e43-9e3bce28fde7");
+
+    // Positive control: a fresh Dynamic profile (dynUpdateTime = now) within its duration window
+    // contributes its setpoint to the real composite.
+    auto fresh = make_dynamic_profile_with_duration(DEFAULT_PROFILE_ID, /*duration=*/10, ocpp::DateTime());
+    ASSERT_THAT(smart_charging.conform_validate_and_add_profile(fresh, DEFAULT_EVSE_ID).status,
+                testing::Eq(ChargingProfileStatusEnum::Accepted));
+
+    auto fresh_composite =
+        smart_charging.get_composite_schedule(DEFAULT_EVSE_ID, std::chrono::seconds(60), ChargingRateUnitEnum::W);
+    ASSERT_TRUE(fresh_composite.has_value()) << "composite schedule API returned nullopt for a valid EVSE";
+    EXPECT_TRUE(composite_contains_setpoint(fresh_composite.value(), dynamic_setpoint))
+        << "non-expired Dynamic profile setpoint must reach the real composite (positive control)";
+
+    // Now expire it: backdate dynUpdateTime well past the 10s duration window so the profile is
+    // expired. The Set path overwrote dynUpdateTime to "now"; restore a past timestamp directly.
+    const auto past = ocpp::DateTime(date::utc_clock::now() - std::chrono::seconds(30));
+    auto stmt =
+        database_handler->new_statement("UPDATE CHARGING_PROFILES SET PROFILE = json_set(PROFILE, '$.dynUpdateTime', "
+                                        "?) WHERE ID = ?");
+    stmt->bind_text(1, past.to_rfc3339(), everest::db::sqlite::SQLiteString::Transient);
+    stmt->bind_int(2, DEFAULT_PROFILE_ID);
+    ASSERT_EQ(stmt->step(), SQLITE_DONE);
+
+    auto expired_composite =
+        smart_charging.get_composite_schedule(DEFAULT_EVSE_ID, std::chrono::seconds(60), ChargingRateUnitEnum::W);
+    ASSERT_TRUE(expired_composite.has_value()) << "composite schedule API returned nullopt for a valid EVSE";
+    EXPECT_FALSE(composite_contains_setpoint(expired_composite.value(), dynamic_setpoint))
+        << "expired Dynamic profile setpoint must be filtered from the real composite schedule";
+}
+
 TEST_F(SmartChargingTestV21, K28FR13_DynamicProfile_NoDuration_NeverExpires) {
     enable_dynamic_profiles(device_model);
 
