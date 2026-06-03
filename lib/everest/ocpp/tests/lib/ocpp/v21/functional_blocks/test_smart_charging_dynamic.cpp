@@ -1884,4 +1884,160 @@ TEST_F(SmartChargingTestV21, K28_ClearChargingProfile_ErasesDeadlineTrackingForD
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 }
 
+// Many simultaneously-due Dynamic profiles must all be serviced by the single reaper thread: every
+// Accepted pull response is applied (its setpoint lands in the DB). The mock returns the matching
+// Accepted response for each profile id; the test waits for every per-profile callback to fire,
+// which only happens after each profile's apply path runs on the reaper.
+TEST_F(SmartChargingTestV21, Reaper_SingleThread_HandlesManyDuePulls) {
+    enable_dynamic_profiles(device_model);
+
+    constexpr int profile_count = 8;
+    constexpr float applied_setpoint = 6543.0f;
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _))
+        .WillRepeatedly(
+            Invoke([applied_setpoint](const json& call, bool) -> std::future<ocpp::EnhancedMessage<MessageType>> {
+                const auto message_id = call.at(MESSAGE_ID).get<std::string>();
+                ChargingScheduleUpdate schedule_update;
+                schedule_update.setpoint = applied_setpoint;
+                auto enhanced =
+                    make_pull_response_enhanced(message_id, ChargingProfileStatusEnum::Accepted, schedule_update);
+                std::promise<ocpp::EnhancedMessage<MessageType>> resp;
+                resp.set_value(enhanced);
+                return resp.get_future();
+            }));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(testing::AnyNumber());
+
+    // Each profile's apply path fires the callback once it persists. Count distinct applies via the
+    // stored setpoints rather than the callback so re-pulls on later ticks do not skew the result.
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call).WillRepeatedly(Return());
+
+    for (int i = 0; i < profile_count; ++i) {
+        auto profile = make_dynamic_profile_with_interval(DEFAULT_PROFILE_ID + i, /*interval=*/1, ocpp::DateTime());
+        // Distinct stack levels so all profiles coexist on the same EVSE.
+        profile.stackLevel = DEFAULT_STACK_LEVEL + i;
+        ASSERT_THAT(smart_charging.conform_validate_and_add_profile(profile, DEFAULT_EVSE_ID).status,
+                    testing::Eq(ChargingProfileStatusEnum::Accepted));
+    }
+
+    // Wait until every profile has had the Accepted setpoint applied (all serviced by the reaper).
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    int applied = 0;
+    while (std::chrono::steady_clock::now() < deadline) {
+        applied = 0;
+        auto stored = database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID);
+        for (const auto& p : stored) {
+            if (!p.chargingSchedule.empty() && !p.chargingSchedule.at(0).chargingSchedulePeriod.empty()) {
+                const auto& period = p.chargingSchedule.at(0).chargingSchedulePeriod.at(0);
+                if (period.setpoint.has_value() && period.setpoint.value() == applied_setpoint) {
+                    ++applied;
+                }
+            }
+        }
+        if (applied == profile_count) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    EXPECT_EQ(applied, profile_count) << "not all due pulls were serviced by the reaper";
+}
+
+// Single-flight (intentional behavior change): while a profile's pull is still in flight (the
+// CSMS has not responded), the timer's next due-tick must NOT issue a second
+// PullDynamicScheduleUpdateRequest for the same id. The mock holds the response future open (never
+// satisfied) so the pull stays in flight across several 1s ticks; dispatch_call_async must be
+// invoked exactly once.
+TEST_F(SmartChargingTestV21, Reaper_SingleFlight_NoDuplicateDispatch) {
+    enable_dynamic_profiles(device_model);
+
+    std::mutex promises_mtx;
+    std::vector<std::shared_ptr<std::promise<ocpp::EnhancedMessage<MessageType>>>> in_flight;
+    std::atomic<int> dispatch_count{0};
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _))
+        .WillRepeatedly(Invoke([&](const json&, bool) -> std::future<ocpp::EnhancedMessage<MessageType>> {
+            auto p = std::make_shared<std::promise<ocpp::EnhancedMessage<MessageType>>>();
+            auto fut = p->get_future();
+            {
+                std::lock_guard<std::mutex> lk(promises_mtx);
+                in_flight.push_back(std::move(p)); // never satisfied: pull stays in flight
+            }
+            dispatch_count.fetch_add(1, std::memory_order_relaxed);
+            return fut;
+        }));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(testing::AnyNumber());
+
+    auto profile = make_dynamic_profile_with_interval(DEFAULT_PROFILE_ID, /*interval=*/1, ocpp::DateTime());
+    auto add_response = smart_charging.conform_validate_and_add_profile(profile, DEFAULT_EVSE_ID);
+    ASSERT_THAT(add_response.status, testing::Eq(ChargingProfileStatusEnum::Accepted));
+
+    // Wait for the first dispatch, then let several more 1s ticks elapse. With single-flight the
+    // count must stay at 1 because the first pull never completes.
+    const auto first_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (dispatch_count.load() == 0 && std::chrono::steady_clock::now() < first_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_GE(dispatch_count.load(), 1) << "no pull was dispatched";
+
+    // Span ~4 ticks at the 1s interval; a non-single-flight implementation would emit a fresh
+    // request each tick.
+    std::this_thread::sleep_for(std::chrono::seconds(4));
+    EXPECT_EQ(dispatch_count.load(), 1)
+        << "a second PullDynamicScheduleUpdateRequest was emitted while the first was still in flight";
+
+    // Release the held promises so the reaper drops the future cleanly on teardown.
+    {
+        std::lock_guard<std::mutex> lk(promises_mtx);
+        in_flight.clear();
+    }
+}
+
+// A single due profile's Accepted pull response is applied exactly as before the reaper rework: the
+// schedule update lands in the DB and the apply path fires the set-charging-profiles callback. The
+// callback runs after the database write, so the test reads the stored profile without a sleep.
+TEST_F(SmartChargingTestV21, Reaper_AppliesPullResponse_AsBefore) {
+    enable_dynamic_profiles(device_model);
+
+    std::atomic<int> dispatch_count{0};
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _))
+        .WillRepeatedly(
+            Invoke([&dispatch_count](const json& call, bool) -> std::future<ocpp::EnhancedMessage<MessageType>> {
+                std::promise<ocpp::EnhancedMessage<MessageType>> resp;
+                if (dispatch_count.fetch_add(1) == 0) {
+                    const auto message_id = call.at(MESSAGE_ID).get<std::string>();
+                    ChargingScheduleUpdate schedule_update;
+                    schedule_update.setpoint = 8888.0f;
+                    auto enhanced =
+                        make_pull_response_enhanced(message_id, ChargingProfileStatusEnum::Accepted, schedule_update);
+                    resp.set_value(enhanced);
+                } else {
+                    ocpp::EnhancedMessage<MessageType> offline;
+                    offline.offline = true;
+                    resp.set_value(offline);
+                }
+                return resp.get_future();
+            }));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(testing::AnyNumber());
+
+    std::promise<void> apply_done_promise;
+    auto apply_done_future = apply_done_promise.get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call)
+        .WillOnce(Invoke([&apply_done_promise]() { apply_done_promise.set_value(); }))
+        .WillRepeatedly(Return());
+
+    auto profile = make_dynamic_profile_with_interval(DEFAULT_PROFILE_ID, /*interval=*/1, ocpp::DateTime());
+    auto add_response = smart_charging.conform_validate_and_add_profile(profile, DEFAULT_EVSE_ID);
+    ASSERT_THAT(add_response.status, testing::Eq(ChargingProfileStatusEnum::Accepted));
+
+    ASSERT_EQ(apply_done_future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+
+    auto stored = database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID);
+    ASSERT_EQ(stored.size(), 1u);
+    ASSERT_FALSE(stored.front().chargingSchedule.empty());
+    ASSERT_FALSE(stored.front().chargingSchedule.at(0).chargingSchedulePeriod.empty());
+    const auto& period = stored.front().chargingSchedule.at(0).chargingSchedulePeriod.at(0);
+    ASSERT_TRUE(period.setpoint.has_value());
+    EXPECT_FLOAT_EQ(period.setpoint.value(), 8888.0f);
+}
+
 } // namespace ocpp::v2

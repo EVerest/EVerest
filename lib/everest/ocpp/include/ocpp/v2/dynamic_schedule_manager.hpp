@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <vector>
 
 #include <date/date.h>
@@ -40,7 +41,8 @@ struct ProfileDeadlines {
 };
 
 /// \brief Owns adaptive-pull and expiry deadline tracking for K28 Dynamic charging profiles plus
-/// the worker futures that consume CSMS pull responses. Composed inside \ref SmartCharging.
+/// the in-flight pull-response futures, multiplexed onto a single reaper thread. Composed inside
+/// \ref SmartCharging.
 ///
 /// Public methods are safe to call from the smart-charging message-handler threads; the internal
 /// timer fires on its own io_context thread and all state is guarded by monitors.
@@ -52,9 +54,9 @@ public:
     ///                                        changes (K28.FR.06 push apply, K28.FR.13 expiry).
     DynamicScheduleManager(const FunctionalBlockContext& context, std::function<void()> set_charging_profiles_callback);
 
-    /// Signals teardown so any in-flight pull-response worker blocked on a CSMS response
-    /// returns promptly instead of stalling for the full worker wait bound, then joins the
-    /// workers (each captures \c this, so it must not outlive this object).
+    /// Signals teardown so the reaper thread, possibly waiting on an in-flight CSMS response,
+    /// wakes within one poll slice instead of stalling for the full per-pull wait bound, then
+    /// joins the reaper (it captures \c this, so it must not outlive this object).
     ~DynamicScheduleManager();
 
     DynamicScheduleManager(const DynamicScheduleManager&) = delete;
@@ -99,6 +101,14 @@ private:
     struct TimerState {
         std::unique_ptr<Everest::SteadyTimer> timer;
         bool shutting_down{false};
+    };
+
+    /// \brief One in-flight PullDynamicScheduleUpdate: the profile id, the response future the
+    /// reaper polls, and the absolute steady-clock deadline past which the wait is abandoned.
+    struct PendingPull {
+        std::int32_t id;
+        std::future<ocpp::EnhancedMessage<MessageType>> future;
+        std::chrono::steady_clock::time_point deadline;
     };
 
     /// \brief Outcome of \ref apply_update.
@@ -158,27 +168,28 @@ private:
 
     /// \brief Dispatch a \c PullDynamicScheduleUpdateRequest for \p charging_profile_id.
     ///
-    /// The response handler runs on a worker thread (not the timer's io_context) so a slow CSMS
-    /// cannot block the timer or deadlock by re-entering \ref update_tracking on the timer thread.
-    /// Each handler's future is stored in \ref pending_pull_response_futures (compacted
-    /// opportunistically) and waited on in the destructor.
+    /// Single-flight: if a pull for this id is already in flight (present in \ref pending_pulls),
+    /// the dispatch is skipped without emitting a wire request and \c true is returned, so the
+    /// timer advances the deadline normally. Otherwise the response future is stored in
+    /// \ref pending_pulls and consumed by the single \ref reaper_loop thread (not the timer's
+    /// io_context) so a slow CSMS cannot block the timer or deadlock by re-entering
+    /// \ref update_tracking on the timer thread.
     ///
-    /// \return \c true on successful dispatch (worker queued); \c false when
-    /// \c dispatch_call_async or \c std::async throws synchronously (queue full, websocket down,
-    /// serialization failure, thread/resource exhaustion). On \c false, the timer-thread caller
-    /// must skip the deadline overwrite so the next tick retries promptly.
+    /// \return \c true on successful dispatch (or single-flight skip); \c false when
+    /// \c dispatch_call_async throws synchronously (queue full, websocket down, serialization
+    /// failure). On \c false, the timer-thread caller must skip the deadline overwrite so the next
+    /// tick retries promptly.
     bool dispatch_pull_request(std::int32_t charging_profile_id);
 
-    /// \brief Worker-thread step 1: block (bounded by \p worker_wait) on the
-    /// PullDynamicScheduleUpdate response future and validate the envelope. Consumes
-    /// \p fut. Returns the enhanced message only when actionable; logs and returns
-    /// \c std::nullopt on timeout, future-throw, offline response, or unexpected
-    /// message type.
-    std::optional<ocpp::EnhancedMessage<MessageType>>
-    wait_for_pull_response(std::future<ocpp::EnhancedMessage<MessageType>> fut, std::chrono::seconds worker_wait,
-                           std::int32_t charging_profile_id);
+    /// \brief Single reaper thread: poll every in-flight pull future in slices, applying each
+    /// response as it lands. One thread services all \ref pending_pulls regardless of count; the
+    /// per-pull deadline bounds each wait, and \ref teardown_requested is observed every slice so
+    /// the destructor join cannot hang on a silent CSMS. Reproduces the timeout / future-throw /
+    /// offline / unexpected-type validation the old per-pull worker performed before calling
+    /// \ref apply_pull_response.
+    void reaper_loop();
 
-    /// \brief Worker-thread step 2: parse the response, re-look-up the profile
+    /// \brief Parse the response, re-look-up the profile
     /// (it may have been cleared/replaced in flight), and apply the schedule update.
     /// On success the recompute callback is fired first and the pull deadline is
     /// advanced only afterwards, so a callback failure leaves the deadline unchanged
@@ -198,17 +209,24 @@ private:
     /// handle.
     everest::lib::util::monitor<std::map<std::int32_t, ProfileDeadlines>> deadlines;
 
-    /// \brief Futures from in-flight async pull-response handlers. Each
-    /// \ref dispatch_pull_request launches a worker task that captures \c this and consumes the
-    /// CSMS response; its future is stored here and waited on in the destructor so no in-flight
-    /// worker dereferences a destroyed object. Compacted opportunistically on dispatch to keep the
-    /// vector bounded.
-    everest::lib::util::monitor<std::vector<std::future<void>>> pending_pull_response_futures;
-
-    /// \brief Set by the destructor before joining the pull-response workers. A worker polls this
-    /// while waiting (in slices) on the CSMS response future and bails immediately once set, so
-    /// teardown is not stalled for the full worker wait bound on a silent CSMS.
+    /// \brief Set by the destructor before joining the reaper. The reaper observes this each poll
+    /// slice and on its monitor wait predicate, abandoning and dropping all in-flight futures so
+    /// teardown is not stalled for the full per-pull wait bound on a silent CSMS. Declared before
+    /// \ref pending_pulls and \ref reaper_thread so destruction tears down in the reverse order.
     std::atomic<bool> teardown_requested{false};
+
+    /// \brief In-flight PullDynamicScheduleUpdate responses, multiplexed onto \ref reaper_thread.
+    /// A vector (not a thread_safe_queue) because the reaper must scan all entries each tick and
+    /// erase arbitrary entries on completion/timeout, and \ref dispatch_pull_request scans it for
+    /// the single-flight check. The monitor's own condition variable wakes the reaper on a fresh
+    /// dispatch or on teardown. Pushed by the timer thread (the sole producer); entries are only
+    /// removed by the reaper, so the single-flight check-then-push is race-free.
+    everest::lib::util::monitor<std::vector<PendingPull>> pending_pulls;
+
+    /// \brief The single thread running \ref reaper_loop. Started in the constructor, joined in the
+    /// destructor body before its implicit std::thread destructor (which would std::terminate on a
+    /// still-joinable thread). Captures \c this, so it must not outlive this object.
+    std::thread reaper_thread;
 
     /// \brief Adaptive timer and its shutdown flag, mutated from \ref reschedule_timer
     /// (message-handler and timer threads) and from the destructor. Guarded as one unit by the

@@ -9,6 +9,7 @@
 #include <future>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include <everest/database/exceptions.hpp>
@@ -31,14 +32,21 @@ DynamicScheduleManager::DynamicScheduleManager(const FunctionalBlockContext& fun
     context(functional_block_context),
     set_charging_profiles_callback(std::move(set_charging_profiles_callback)),
     timer_state(TimerState{std::make_unique<Everest::SteadyTimer>()}) {
+    this->reaper_thread = std::thread(&DynamicScheduleManager::reaper_loop, this);
 }
 
 DynamicScheduleManager::~DynamicScheduleManager() {
-    // Signal teardown before anything else so a worker already blocked on a CSMS response
-    // wakes within one wait slice instead of holding the join for the full worker bound.
+    // Signal teardown before anything else so the reaper, possibly mid-wait on a silent CSMS,
+    // wakes within one poll slice instead of holding the join for the full per-pull bound.
     this->teardown_requested.store(true, std::memory_order_relaxed);
-    // Stop the timer next so no new pull workers enter pending_pull_response_futures, then
-    // flush in-flight workers.
+    // Wake the reaper if it is blocked on the monitor's condition variable, then join it (in the
+    // destructor body, before the implicit std::thread destructor would std::terminate on a
+    // still-joinable thread). On observing teardown the reaper drops all in-flight futures.
+    this->pending_pulls.notify_all();
+    if (this->reaper_thread.joinable()) {
+        this->reaper_thread.join();
+    }
+    // Retire the timer so a concurrent reschedule_timer bails instead of re-arming during teardown.
     std::unique_ptr<Everest::SteadyTimer> retired_timer;
     {
         auto state = this->timer_state.handle();
@@ -46,16 +54,6 @@ DynamicScheduleManager::~DynamicScheduleManager() {
         retired_timer = std::move(state->timer);
     }
     retired_timer.reset();
-    std::vector<std::future<void>> flush;
-    {
-        auto handle = this->pending_pull_response_futures.handle();
-        flush = std::move(*handle);
-    }
-    for (auto& fut : flush) {
-        if (fut.valid()) {
-            fut.wait();
-        }
-    }
 }
 
 void DynamicScheduleManager::rebuild_from_db() {
@@ -426,6 +424,20 @@ bool DynamicScheduleManager::dispatch_pull_request(std::int32_t charging_profile
     req.chargingProfileId = charging_profile_id;
 
     const ocpp::Call<v21::PullDynamicScheduleUpdateRequest> call(req);
+
+    // Single-flight: skip if a pull for this id is already in flight. Only the timer thread
+    // pushes here and the reaper only removes, so check-then-push is race-free. Return true so
+    // the timer advances the deadline, treating the suppressed pull as in flight.
+    {
+        auto handle = this->pending_pulls.handle();
+        if (std::any_of(handle->begin(), handle->end(),
+                        [charging_profile_id](const PendingPull& p) { return p.id == charging_profile_id; })) {
+            EVLOG_debug << "K28: PullDynamicScheduleUpdate for profile " << charging_profile_id
+                        << " already in flight; suppressing duplicate dispatch";
+            return true;
+        }
+    }
+
     // dispatch_call_async may sync-throw on queue-full / websocket-down / serialization failure.
     // Catch locally and report failure so the timer-thread caller skips advancing the pull deadline:
     // we want the next tick to retry promptly rather than wait a full interval.
@@ -438,110 +450,105 @@ bool DynamicScheduleManager::dispatch_pull_request(std::int32_t charging_profile
         return false;
     }
 
-    // Bound the worker's wait so the destructor join cannot hang on a silent CSMS. MessageTimeout
-    // (device-model, may exceed the 60s default) + 10s slack; fall back to the default backstop if
-    // the device-model read throws. Resolved on the timer thread; the io_context thread never
-    // blocks here.
-    std::chrono::seconds worker_wait{DEFAULT_WAIT_FOR_FUTURE_TIMEOUT};
+    // Bound the reaper's per-pull wait (MessageTimeout + 10s slack) so the destructor join
+    // can't hang on a silent CSMS; fall back to the default if the device-model read throws.
+    std::chrono::seconds pull_wait{DEFAULT_WAIT_FOR_FUTURE_TIMEOUT};
     try {
         const auto msg_timeout =
             this->context.device_model.get_value<int>(ControllerComponentVariables::MessageTimeout);
-        worker_wait = std::chrono::seconds(msg_timeout) + std::chrono::seconds(10);
+        pull_wait = std::chrono::seconds(msg_timeout) + std::chrono::seconds(10);
     } catch (const std::exception& e) {
         EVLOG_warning << "K28: MessageTimeout read failed, using " << DEFAULT_WAIT_FOR_FUTURE_TIMEOUT.count()
                       << "s worker bound: " << e.what();
     }
 
-    // Run the response handler on a worker thread so a slow CSMS response cannot block the timer's
-    // io_context (and so the response cannot deadlock by re-entering update_tracking on the timer
-    // thread). Each handler's future is tracked in pending_pull_response_futures and waited on in
-    // the destructor so no in-flight worker dereferences a destroyed object. std::async itself may
-    // sync-throw std::system_error on thread/resource exhaustion; same retry-promptly policy.
-    std::future<void> response_handler;
-    try {
-        response_handler =
-            std::async(std::launch::async, [this, charging_profile_id, worker_wait, fut = std::move(future)]() mutable {
-                try {
-                    auto msg = this->wait_for_pull_response(std::move(fut), worker_wait, charging_profile_id);
-                    if (!msg.has_value()) {
-                        return;
-                    }
-                    this->apply_pull_response(charging_profile_id, msg.value());
-                } catch (const std::exception& e) {
-                    EVLOG_error << "K28-worker: pull-response worker for profile " << charging_profile_id
-                                << " threw; result dropped, next attempt in one dynUpdateInterval: " << e.what();
-                } catch (...) {
-                    EVLOG_error << "K28-worker: pull-response worker for profile " << charging_profile_id
-                                << " threw unknown exception; result dropped, next attempt in one "
-                                   "dynUpdateInterval";
-                }
-            });
-    } catch (const std::exception& e) {
-        EVLOG_warning << "PullDynamicScheduleUpdate std::async threw for profile " << charging_profile_id << ": "
-                      << e.what();
-        return false;
+    // Hand the future to the reaper (not the timer thread) so a slow CSMS can't block the timer.
+    // Notify so the reaper wakes immediately instead of waiting a poll slice.
+    {
+        auto handle = this->pending_pulls.handle();
+        handle->push_back(
+            PendingPull{charging_profile_id, std::move(future), std::chrono::steady_clock::now() + pull_wait});
     }
-
-    auto handle = this->pending_pull_response_futures.handle();
-    // Compact: drop already-completed futures so the vector does not grow unbounded.
-    handle->erase(std::remove_if(handle->begin(), handle->end(),
-                                 [](std::future<void>& f) {
-                                     return f.valid() &&
-                                            f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
-                                 }),
-                  handle->end());
-    handle->push_back(std::move(response_handler));
+    this->pending_pulls.notify_one();
     return true;
 }
 
-std::optional<ocpp::EnhancedMessage<MessageType>>
-DynamicScheduleManager::wait_for_pull_response(std::future<ocpp::EnhancedMessage<MessageType>> fut,
-                                               std::chrono::seconds worker_wait, std::int32_t charging_profile_id) {
-    ocpp::EnhancedMessage<MessageType> enhanced_message;
-    // Wait in slices instead of one blocking wait_for(worker_wait) so the destructor can
-    // interrupt a worker stuck on a silent CSMS: teardown_requested is polled each slice.
-    constexpr auto wait_slice = std::chrono::milliseconds(200);
-    const auto wait_deadline = std::chrono::steady_clock::now() + worker_wait;
-    while (true) {
-        if (this->teardown_requested.load(std::memory_order_relaxed)) {
-            EVLOG_debug << "K28-worker: teardown requested, abandoning PullDynamicScheduleUpdate wait for profile "
-                        << charging_profile_id;
-            return std::nullopt;
+void DynamicScheduleManager::reaper_loop() {
+    constexpr auto poll_slice = std::chrono::milliseconds(200);
+    while (!this->teardown_requested.load(std::memory_order_relaxed)) {
+        std::vector<PendingPull> ready;
+        {
+            auto handle = this->pending_pulls.handle();
+            // Wait on teardown, else time out after poll_slice and re-scan. A ready future does
+            // NOT notify the monitor, so the timeout is load-bearing: it drives the periodic
+            // re-scan for ready/expired entries. A dispatch's notify only trims wake latency.
+            handle.wait_for([&] { return this->teardown_requested.load(std::memory_order_relaxed); }, poll_slice);
+            if (this->teardown_requested.load(std::memory_order_relaxed)) {
+                // Drop everything: let handle (and the futures it owns) destruct.
+                break;
+            }
+            // Still holding the lock: collect entries that are ready or past their deadline, moving
+            // their futures out, and erase them from the live vector.
+            const auto now = std::chrono::steady_clock::now();
+            auto& pulls = *handle;
+            const auto split = std::remove_if(pulls.begin(), pulls.end(), [&](PendingPull& p) {
+                const bool is_ready =
+                    p.future.valid() && p.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+                if (is_ready || now >= p.deadline) {
+                    ready.push_back(std::move(p));
+                    return true;
+                }
+                return false;
+            });
+            pulls.erase(split, pulls.end());
         }
-        const auto now = std::chrono::steady_clock::now();
-        if (now >= wait_deadline) {
-            EVLOG_warning << "K28: PullDynamicScheduleUpdate response timed out for profile " << charging_profile_id
-                          << "; pull skipped, retry next dynUpdateInterval";
-            return std::nullopt;
+
+        // Lock released: validate and apply each collected entry. Same five checks, in the same
+        // order, that the old per-pull worker performed; preserve the exact log wording so the K28
+        // error-path tests still match.
+        for (auto& entry : ready) {
+            if (this->teardown_requested.load(std::memory_order_relaxed)) {
+                EVLOG_debug << "K28-reaper: teardown requested, abandoning PullDynamicScheduleUpdate wait for profile "
+                            << entry.id;
+                break;
+            }
+            if (std::chrono::steady_clock::now() >= entry.deadline) {
+                EVLOG_warning << "K28: PullDynamicScheduleUpdate response timed out for profile " << entry.id
+                              << "; pull skipped, retry next dynUpdateInterval";
+                continue;
+            }
+            ocpp::EnhancedMessage<MessageType> enhanced_message;
+            try {
+                enhanced_message = entry.future.get();
+            } catch (const std::exception& e) {
+                // Transient failure (e.g. websocket drop): no deadline feedback, the profile stays
+                // one dynUpdateInterval stale until the next attempt.
+                EVLOG_error << "K28-reaper: PullDynamicScheduleUpdate future threw for profile " << entry.id
+                            << "; pull skipped, next attempt in one dynUpdateInterval: " << e.what();
+                continue;
+            }
+            if (enhanced_message.offline) {
+                // CSMS unreachable on response: no deadline feedback, profile stays stale.
+                EVLOG_error << "K28-reaper: PullDynamicScheduleUpdate response offline for profile " << entry.id
+                            << "; pull skipped, next attempt in one dynUpdateInterval";
+                continue;
+            }
+            if (enhanced_message.messageType != MessageType::PullDynamicScheduleUpdateResponse) {
+                EVLOG_warning << "Unexpected response type for PullDynamicScheduleUpdate: "
+                              << enhanced_message.messageType;
+                continue;
+            }
+            try {
+                this->apply_pull_response(entry.id, enhanced_message);
+            } catch (const std::exception& e) {
+                EVLOG_error << "K28-reaper: pull-response apply for profile " << entry.id
+                            << " threw; result dropped, next attempt in one dynUpdateInterval: " << e.what();
+            } catch (...) {
+                EVLOG_error << "K28-reaper: pull-response apply for profile " << entry.id
+                            << " threw unknown exception; result dropped, next attempt in one dynUpdateInterval";
+            }
         }
-        const auto slice = std::min<std::chrono::steady_clock::duration>(wait_slice, wait_deadline - now);
-        if (fut.wait_for(slice) != std::future_status::timeout) {
-            break;
-        }
     }
-    try {
-        enhanced_message = fut.get();
-    } catch (const std::exception& e) {
-        // Transient failure (e.g. websocket drop): no deadline feedback, the profile stays
-        // one dynUpdateInterval stale until the next attempt.
-        EVLOG_error << "K28-worker: PullDynamicScheduleUpdate future threw for profile " << charging_profile_id
-                    << "; pull skipped, next attempt in one dynUpdateInterval: " << e.what();
-        return std::nullopt;
-    }
-
-    if (enhanced_message.offline) {
-        // CSMS unreachable on response: no deadline feedback, profile stays stale.
-        EVLOG_error << "K28-worker: PullDynamicScheduleUpdate response offline for profile " << charging_profile_id
-                    << "; pull skipped, next attempt in one dynUpdateInterval";
-        return std::nullopt;
-    }
-
-    if (enhanced_message.messageType != MessageType::PullDynamicScheduleUpdateResponse) {
-        EVLOG_warning << "Unexpected response type for PullDynamicScheduleUpdate: " << enhanced_message.messageType;
-        return std::nullopt;
-    }
-
-    return enhanced_message;
 }
 
 void DynamicScheduleManager::apply_pull_response(std::int32_t charging_profile_id,
@@ -579,7 +586,7 @@ void DynamicScheduleManager::apply_pull_response(std::int32_t charging_profile_i
         try {
             this->set_charging_profiles_callback();
         } catch (const std::exception& e) {
-            EVLOG_error << "K28-worker: composite recompute callback threw for profile " << charging_profile_id
+            EVLOG_error << "K28-reaper: composite recompute callback threw for profile " << charging_profile_id
                         << "; pull tracking NOT advanced, next attempt in one dynUpdateInterval: " << e.what();
             break;
         }
