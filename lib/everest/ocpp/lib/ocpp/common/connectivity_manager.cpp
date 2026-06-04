@@ -24,7 +24,7 @@ using SetNetworkProfileRequest = ocpp::v2::SetNetworkProfileRequest;
 ConnectivityManager::ConnectivityManager(ocpp::ConnectivityManagerConfiguration& configuration,
                                          std::shared_ptr<EvseSecurity> evse_security, const fs::path& share_path) :
     configuration{configuration},
-    evse_security{evse_security},
+    evse_security{std::move(evse_security)},
     share_path{share_path},
     websocket{nullptr},
     message_callback([](const std::string& message) {
