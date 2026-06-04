@@ -220,13 +220,18 @@ TEST_CASE("EvSimulator resume waits for PWM-running before iso_start_charging", 
     fsm.feed(Event{EventKind::PauseSession});
     REQUIRE(fsm.get_current_state_id() == api::FsmState::Paused);
 
+    // An AC pause tears the SLAC link down (D-LINK_TERMINATE -> UNMATCHED), so
+    // the resume re-matches SLAC. apply_passthrough_vars sets slac_unmatched from
+    // that event in production; set it directly here.
+    ctx->vars.slac_unmatched = true;
+
     fsm.feed(Event{EventKind::ResumeSession});
     REQUIRE(fsm.get_current_state_id() == api::FsmState::BcbToggling);
     fx.mocks.iso.clear();
     fx.timer.clear();
 
-    // Drive the six BCB edges; the last routes into SlacMatching (every ISO
-    // resume re-matches SLAC). The SECC re-matches and the EV advances to
+    // Drive the six BCB edges; the last routes into SlacMatching because the AC
+    // pause tore the link down. The SECC re-matches and the EV advances to
     // V2GNegotiating, carrying the deferred-start contract through the detour.
     for (int i = 0; i < 6; ++i) {
         fsm.feed(Event{EventKind::StateDeadline});
@@ -293,16 +298,19 @@ TEST_CASE("EvSimulator DC resume closes contactor at IsoPowerReady, charges on I
     REQUIRE(fsm.get_current_state_id() == api::FsmState::BcbToggling);
     fx.timer.clear();
 
-    // Drive the six BCB edges; the last routes into SlacMatching (every ISO
-    // resume re-matches SLAC). On the SECC re-matching, the EV advances to
-    // V2GNegotiating.
-    for (int i = 0; i < 6; ++i) {
+    // A DC pause is a clean D-LINK_PAUSE: the SLAC link survives (slac_unmatched
+    // stays false), so the resume routes straight to V2GNegotiating without
+    // re-matching SLAC. Drive five BCB edges (still in BcbToggling), clear the
+    // mocks, then the sixth edge transitions to V2GNegotiating so the assertions
+    // below see only its enter().
+    REQUIRE_FALSE(ctx->vars.slac_unmatched);
+    for (int i = 0; i < 5; ++i) {
         fsm.feed(Event{EventKind::StateDeadline});
     }
-    REQUIRE(fsm.get_current_state_id() == api::FsmState::SlacMatching);
+    REQUIRE(fsm.get_current_state_id() == api::FsmState::BcbToggling);
     fx.mocks.bsp.clear();
     fx.mocks.iso.clear();
-    fsm.feed(Event{SlacStatePayload{"MATCHED"}});
+    fsm.feed(Event{EventKind::StateDeadline});
     REQUIRE(fsm.get_current_state_id() == api::FsmState::V2GNegotiating);
 
     // On entry the EV must hold CP=B, NOT CP=C: while the SECC's pause-window PWM
@@ -389,14 +397,14 @@ TEST_CASE("EvSimulator AC resume re-matches SLAC when link was torn down", "[evs
     CHECK_FALSE(ctx->vars.slac_unmatched);
 }
 
-// DC EV-initiated resume must also re-match SLAC, even though the DC pause does
-// not tear the EV-side SLAC link down (slac_unmatched stays false). The SECC's
-// BCB-toggle wake-up puts ITS SLAC back into MATCHING and waits for the EV to be
-// MATCHING too; the SlacSimulator co-match needs both sides MATCHING. If the EV
-// takes the direct V2GNegotiating path it never re-triggers, so the SECC never
-// reaches MATCHED / D-LINK_READY and its resume CableCheck times out. So on a DC
-// ISO resume the EV must route through SlacMatching the same as AC.
-TEST_CASE("EvSimulator DC resume re-matches SLAC even with link intact", "[evsim][group2]") {
+// A DC EV-initiated resume must NOT re-match SLAC. The DC pause is a clean
+// D-LINK_PAUSE that leaves both sides MATCHED (slac_unmatched stays false). If
+// the EV re-triggered matching it would go MATCHING while the SECC stays MATCHED,
+// and the SlacSimulator co-match -- which needs BOTH sides MATCHING -- would
+// deadlock until SlacTimeout. The SECC honors the resume on the surviving link
+// (Car Paused -> PrepareCharging on the BCB wake-up), so on a DC ISO resume with
+// an intact link the EV goes straight to V2GNegotiating.
+TEST_CASE("EvSimulator DC resume with intact SLAC goes straight to V2GNegotiating", "[evsim][group2]") {
     TestFixture fx;
     auto ctx = fx.make_ctx();
     set_mode(*ctx, api::ChargeMode::DcIso2);
@@ -416,23 +424,18 @@ TEST_CASE("EvSimulator DC resume re-matches SLAC even with link intact", "[evsim
     // slac_unmatched is false on the resume.
     REQUIRE_FALSE(ctx->vars.slac_unmatched);
     fx.mocks.slac.clear();
+    fx.mocks.iso.clear();
     fx.timer.clear();
 
-    // Drive the six BCB edges; the last must route into SlacMatching (not
-    // straight to V2GNegotiating) because the SECC re-enters MATCHING on the
-    // wake-up and waits for a fresh both-sides match before honoring the resume.
+    // Drive the six BCB edges; the last routes directly to V2GNegotiating (no
+    // SlacMatching detour) and never re-triggers SLAC.
     for (int i = 0; i < 6; ++i) {
         fsm.feed(Event{EventKind::StateDeadline});
     }
-    REQUIRE(fsm.get_current_state_id() == api::FsmState::SlacMatching);
-    REQUIRE(index_of_substr(fx.mocks.slac.records, "trigger_matching") >= 0);
-
-    // The resume_awaiting_pwm contract from the BcbToggling resume must survive
-    // the SlacMatching detour: on MATCHED the EV advances to V2GNegotiating with
-    // start_charging still deferred until PWM-running.
-    fx.mocks.iso.clear();
-    fsm.feed(Event{SlacStatePayload{"MATCHED"}});
     REQUIRE(fsm.get_current_state_id() == api::FsmState::V2GNegotiating);
+    CHECK_FALSE(contains_substr(fx.mocks.slac.records, "trigger_matching"));
+    // The resume_awaiting_pwm contract holds: start_charging is deferred until a
+    // PWM-running BspMeasurement.
     CHECK_FALSE(contains_substr(fx.mocks.iso.records, "start_charging"));
 }
 
@@ -559,13 +562,16 @@ TEST_CASE("EvSimulator resume faults with V2GTimeout if PWM never returns", "[ev
 
     fsm::v2::FSM<StateBase> fsm{std::make_unique<Charging>(*ctx)};
     fsm.feed(Event{EventKind::PauseSession});
+    // An AC pause tears the SLAC link down, so the resume re-matches SLAC.
+    ctx->vars.slac_unmatched = true;
     fsm.feed(Event{EventKind::ResumeSession});
     REQUIRE(fsm.get_current_state_id() == api::FsmState::BcbToggling);
     fx.mocks.iso.clear();
     for (int i = 0; i < 6; ++i) {
         fsm.feed(Event{EventKind::StateDeadline});
     }
-    // Every ISO resume re-matches SLAC first; advance through the detour.
+    // The AC pause tore the link down, so the resume re-matches SLAC first;
+    // advance through the detour.
     REQUIRE(fsm.get_current_state_id() == api::FsmState::SlacMatching);
     fsm.feed(Event{SlacStatePayload{"MATCHED"}});
     REQUIRE(fsm.get_current_state_id() == api::FsmState::V2GNegotiating);
