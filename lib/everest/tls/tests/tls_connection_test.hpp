@@ -21,7 +21,13 @@
 
 using namespace std::chrono_literals;
 
-namespace {
+// The shared fixture lives in a named namespace (not an anonymous one) so that
+// the TlsTest type has external linkage and a single identity across every
+// translation unit that includes this header. GoogleTest requires all TEST_F
+// cases in one test suite to use the exact same fixture class; an anonymous
+// namespace would give each TU its own distinct TlsTest type and abort the
+// suite at runtime once the cases are split across files.
+namespace tls_test {
 using tls::status_request::ClientStatusRequestV2;
 
 // ----------------------------------------------------------------------------
@@ -107,7 +113,7 @@ struct ClientTest : public tls::Client {
     }
 };
 
-void handler(tls::Server::ConnectionPtr&& con) {
+inline void handler(tls::Server::ConnectionPtr&& con) {
     if (con->accept() == tls::Connection::result_t::success) {
         std::uint32_t count{0};
         std::array<std::byte, 1024> buffer{};
@@ -144,7 +150,7 @@ void handler(tls::Server::ConnectionPtr&& con) {
     }
 }
 
-void run_server(tls::Server& server) {
+inline void run_server(tls::Server& server) {
     server.serve(&handler);
 }
 
@@ -319,5 +325,11 @@ protected:
     }
 };
 
-} // namespace
+} // namespace tls_test
+
+// Bring the fixture and helpers into scope so the test translation units can
+// keep referring to TlsTest / ClientTest / flags_t unqualified. This header is
+// only ever included by the TLS test executables.
+using namespace tls_test; // NOLINT(google-build-using-namespace)
+
 #endif // TLS_CONNECTION_TEST_HPP_
