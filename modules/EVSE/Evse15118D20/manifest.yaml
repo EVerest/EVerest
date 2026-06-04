@@ -20,7 +20,11 @@ config:
       - ENFORCE_NO_TLS
     default: ACCEPT_CLIENT_OFFER  
   enforce_tls_1_3:
-    description: Enforcing tls version 1.3. Only applies if tls_negotiation_strategy is ENFORCE_TLS.
+    description: >-
+      Enforcing tls version 1.3. Only applies if tls_negotiation_strategy is ENFORCE_TLS.
+      Multi-chain selection works on both TLS 1.2 (driven by the trusted_ca_keys extension)
+      and TLS 1.3 (driven by the native certificate_authorities extension), so multiple V2G
+      leaf chains can be installed concurrently regardless of this flag.
     type: boolean
     default: false
   enable_ssl_logging:
