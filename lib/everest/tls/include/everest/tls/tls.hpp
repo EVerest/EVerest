@@ -137,9 +137,17 @@ protected:
     std::string m_ip;                          //!< peer IP address
     std::string m_service;                     //!< peer port
     std::int32_t m_timeout_ms;                 //!< default operation timeout
+    std::string m_last_error; //!< OpenSSL error-queue text captured on the most recent failed operation
 
     // prevent standalone construction
     Connection(SslContext* ctx, int soc, const char* ip_in, const char* service_in, std::int32_t timeout_ms);
+
+    /**
+     * \brief capture the OpenSSL error queue when an operation closed/failed
+     * \param[in] outcome the converted public result of the operation
+     * \return outcome unchanged
+     */
+    result_t capture_and_convert(result_t outcome);
 
 public:
     Connection() = delete;
@@ -238,6 +246,14 @@ public:
      */
     [[nodiscard]] state_t state() const {
         return m_state;
+    }
+
+    /**
+     * \brief OpenSSL error-queue text captured on the most recent failed operation
+     * \return "; "-joined error strings; empty when no error has been captured
+     */
+    [[nodiscard]] const std::string& last_error() const {
+        return m_last_error;
     }
 
     /**

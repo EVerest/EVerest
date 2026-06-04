@@ -1216,4 +1216,59 @@ TEST_F(TlsTest, WrapAcceptedFdHandshake) {
     (void)::close(listen_fd);
 }
 
+TEST_F(TlsTest, LastErrorPopulatedOnFailedAccept) {
+    // TLS 1.3 server requires a client cert chained to client_root_cert.pem.
+    // The client presents an untrusted cert (alt_client_chain.pem), so the
+    // server-side accept() fails certificate verification at the SSL layer and
+    // last_error() must be populated with the queued OpenSSL error text.
+    //
+    // NOTE: this uses the fallback trigger from the task. The primary no-client-
+    // cert path failed the server accept() via SSL_ERROR_SYSCALL (peer reset the
+    // socket before the server could surface a clean alert), which leaves the
+    // OpenSSL error queue empty. An untrusted client cert makes verification fail
+    // during processing of the client's handshake flight, which deterministically
+    // queues a "certificate verify failed" SSL error regardless of socket timing.
+    server_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    server_config.enforce_tls_1_3 = true;
+    server_config.verify_client = true;
+    server_config.verify_locations_file = "client_root_cert.pem";
+
+    client_config.cipher_list = nullptr;
+    client_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    client_config.min_proto_version = TLS1_3_VERSION;
+    // Untrusted client certificate (not chained to client_root_cert.pem).
+    client_config.certificate_chain_file = "alt_client_chain.pem";
+    client_config.private_key_file = "alt_client_priv.pem";
+
+    std::mutex result_mutex;
+    std::condition_variable result_cv;
+    bool handler_done{false};
+    bool accept_failed{false};
+    std::string server_last_error;
+
+    auto server_handler = [&](tls::Server::ConnectionPtr&& con) {
+        if (con) {
+            const auto rc = con->accept();
+            accept_failed = (rc != tls::Connection::result_t::success);
+            server_last_error = con->last_error();
+            (void)con->shutdown();
+        }
+        {
+            std::lock_guard<std::mutex> lock(result_mutex);
+            handler_done = true;
+        }
+        result_cv.notify_all();
+    };
+
+    start(server_handler);
+    connect();
+    {
+        std::unique_lock<std::mutex> lock(result_mutex);
+        result_cv.wait_for(lock, 2s, [&] { return handler_done; });
+    }
+    ASSERT_TRUE(handler_done);
+    EXPECT_TRUE(accept_failed);
+    EXPECT_FALSE(server_last_error.empty());
+}
+
 } // namespace
