@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+
+#include <optional>
+
+#include <date/date.h>
 
 #include <ocpp/common/constants.hpp>
 #include <ocpp/v2/types.hpp>
@@ -63,6 +67,22 @@ std::int32_t elapsed_seconds(const ocpp::DateTime& to, const ocpp::DateTime& fro
 
 /// \brief Rounds down the \param dt to the nearest second
 ocpp::DateTime floor_seconds(const ocpp::DateTime& dt);
+
+/// \brief K28.FR.13 single source of the Dynamic-profile expiry invariant.
+/// \return \c dynUpdateTime + \c chargingSchedule[0].duration, or \c std::nullopt when the profile
+/// is not Dynamic, has no positive schedule duration, or has no \c dynUpdateTime.
+std::optional<date::utc_clock::time_point> dynamic_expiry_deadline(const ChargingProfile& profile);
+
+/// \brief K28.FR.10 single source of the Dynamic-profile adaptive-pull deadline.
+/// \return \c dynUpdateTime + \c dynUpdateInterval, "now" on bootstrap (Dynamic with a positive
+/// interval but no \c dynUpdateTime yet), or \c std::nullopt when the profile is not Dynamic or
+/// has no positive \c dynUpdateInterval.
+std::optional<date::utc_clock::time_point> dynamic_pull_deadline(const ChargingProfile& profile);
+
+/// \brief True when \p profile is a Dynamic profile past its expiry deadline at \p now.
+/// Boundary is inclusive (\c now \>= deadline) so the composite filter and the manager timer
+/// agree at the exact deadline instant.
+bool dynamic_profile_expired(const ChargingProfile& profile, date::utc_clock::time_point now);
 
 /// \brief Map an optional OperationMode to its effective value.
 ///
