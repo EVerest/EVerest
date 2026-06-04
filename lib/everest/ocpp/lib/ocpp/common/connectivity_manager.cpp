@@ -201,7 +201,7 @@ void ConnectivityManager::confirm_successful_connection() {
 
     if (network_connection_profile.has_value()) {
         this->configuration.set_active_security_profile(network_connection_profile.value().securityProfile,
-                                                  VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
+                                                        VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
     }
 
     this->remove_network_connection_profiles_below_actual_security_profile();
@@ -286,7 +286,7 @@ void ConnectivityManager::try_connect_websocket() {
                << " which is configurationSlot " << configuration_slot_to_set;
 
     this->configuration.set_active_network_profile_slot(configuration_slot_to_set,
-                                                   VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
+                                                        VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
 
     if (this->websocket == nullptr) {
         this->websocket = std::make_unique<Websocket>(connection_options.value(), this->evse_security, this->logging);
@@ -380,7 +380,6 @@ void ConnectivityManager::on_charging_station_certificate_changed() {
     }
 }
 
-
 std::optional<std::string> ConnectivityManager::read_everest_version() const {
     const fs::path version_file_path = this->share_path.parent_path().parent_path() / "version_information.txt";
     if (!fs::exists(version_file_path)) {
@@ -434,15 +433,15 @@ void ConnectivityManager::on_websocket_connected(OcppProtocolVersion protocol) {
         }
         if (!version_str.empty()) {
             this->configuration.set_per_slot_ocpp_version(actual_configuration_slot.value(), version_str,
-                                                     VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
+                                                          VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
         }
     }
     if (network_connection_profile.has_value()) {
         this->configuration.set_security_ctrl_security_profile(network_connection_profile->securityProfile,
-                                                         VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
+                                                               VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
         if (network_connection_profile->identity.has_value()) {
             this->configuration.set_security_ctrl_identity(network_connection_profile->identity.value(),
-                                                     VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
+                                                           VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
         }
     }
 

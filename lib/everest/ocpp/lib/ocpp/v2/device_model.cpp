@@ -1165,8 +1165,8 @@ std::optional<WebsocketConnectionOptions> DeviceModel::get_websocket_connection_
 void DeviceModel::set_active_security_profile(int32_t security_profile, const std::string& source) {
     const auto& cv = ControllerComponentVariables::SecurityProfile;
     if (cv.variable.has_value()) {
-        set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual,
-                            std::to_string(security_profile), source);
+        set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, std::to_string(security_profile),
+                            source);
     }
 }
 

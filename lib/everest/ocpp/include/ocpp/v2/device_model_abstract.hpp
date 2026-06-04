@@ -10,7 +10,9 @@
 namespace ocpp {
 namespace v2 {
 
-class DeviceModelAbstract : public DeviceModelBase, public DeviceModelInterface, public ocpp::ConnectivityManagerConfiguration {};
+class DeviceModelAbstract : public DeviceModelBase,
+                            public DeviceModelInterface,
+                            public ocpp::ConnectivityManagerConfiguration {};
 
 } // namespace v2
 } // namespace ocpp

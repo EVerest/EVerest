@@ -190,8 +190,8 @@ private:
     mutable everest::lib::util::monitor<NetworkProfileCacheState, std::recursive_mutex> m_state;
 
 public:
-    ConnectivityManager(ocpp::ConnectivityManagerConfiguration& configuration, std::shared_ptr<EvseSecurity> evse_security,
-                        const fs::path& share_path = {});
+    ConnectivityManager(ocpp::ConnectivityManagerConfiguration& configuration,
+                        std::shared_ptr<EvseSecurity> evse_security, const fs::path& share_path = {});
 
     void reload_network_profiles() override;
     bool set_network_profile(int32_t slot, const ocpp::v2::NetworkConnectionProfile& profile,
