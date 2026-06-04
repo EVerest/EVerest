@@ -558,6 +558,28 @@ bool configure_ssl_ctx(bool is_server, SSL_CTX*& ctx, const char* ciphersuites, 
     return result;
 }
 
+// Returns false only when the default-verify-paths fallback fails (init must abort);
+// a failed explicit load_verify_locations is logged but non-fatal, matching prior behavior.
+bool configure_verify_locations(SSL_CTX* ctx, const tls::Server::config_t& cfg) {
+    const bool have_explicit = static_cast<const char*>(cfg.verify_locations_file) != nullptr ||
+                               static_cast<const char*>(cfg.verify_locations_path) != nullptr;
+    if (have_explicit) {
+        // Loaded whenever configured, even with verify_client == false, so the anchors
+        // are available for the TLS 1.3 verify-mode upgrade in handle_tls_1_3_verify_upgrade.
+        if (SSL_CTX_load_verify_locations(ctx, cfg.verify_locations_file, cfg.verify_locations_path) != 1) {
+            log_error("SSL_CTX_load_verify_locations");
+        }
+        return true;
+    }
+    if (not cfg.verify_client) {
+        if (SSL_CTX_set_default_verify_paths(ctx) != 1) {
+            log_error("SSL_CTX_set_default_verify_paths");
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 namespace tls {
@@ -1085,31 +1107,12 @@ bool Server::init_ssl(const config_t& cfg) {
                 }
             }
 
-            int mode = SSL_VERIFY_NONE;
-
-            // 15118-2 mandates TLS 1.2 and no client certificate
-            // 15118-20 mandates TLS 1.3 and requires a client certificate
-            // The dispatcher upgrades verify mode to require a peer certificate
-            // for TLS 1.3 connections in handle_tls_1_3_verify_upgrade so that
-            // TLS 1.2 connections still honor cfg.verify_client below.
-
-            if (cfg.verify_client) {
-                mode = SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
-            }
-            // Load explicit verify locations whenever they are configured. This makes the
-            // anchors available for the TLS 1.3 verify-mode upgrade in handle_tls_1_3_verify_upgrade
-            // even when verify_client is false (15118 mixed-mode use).
-            if (static_cast<const char*>(cfg.verify_locations_file) != nullptr ||
-                static_cast<const char*>(cfg.verify_locations_path) != nullptr) {
-                if (SSL_CTX_load_verify_locations(ctx, cfg.verify_locations_file, cfg.verify_locations_path) != 1) {
-                    log_error("SSL_CTX_load_verify_locations");
-                }
-            } else if (!cfg.verify_client) {
-                if (SSL_CTX_set_default_verify_paths(ctx) != 1) {
-                    log_error("SSL_CTX_set_default_verify_paths");
-                    result = false;
-                }
-            }
+            // 15118-2 mandates TLS 1.2 and no client certificate; 15118-20 mandates TLS 1.3 and
+            // requires a client certificate. The dispatcher upgrades verify mode to require a peer
+            // certificate for TLS 1.3 connections in handle_tls_1_3_verify_upgrade so that TLS 1.2
+            // connections still honor cfg.verify_client below.
+            int mode = cfg.verify_client ? (SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT) : SSL_VERIFY_NONE;
+            result = result && configure_verify_locations(ctx, cfg);
             SSL_CTX_set_verify(ctx, mode, nullptr);
 
             result = result && m_status_request_v2.init_ssl(ctx);
