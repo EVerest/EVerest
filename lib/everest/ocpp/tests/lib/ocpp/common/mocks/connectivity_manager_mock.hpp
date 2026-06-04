@@ -7,7 +7,7 @@
 
 #include <ocpp/common/connectivity_manager.hpp>
 
-namespace ocpp::v2 {
+namespace ocpp {
 class ConnectivityManagerMock : public ocpp::ConnectivityManagerInterface {
 public:
     MOCK_METHOD(void, set_message_callback, (const std::function<void(const std::string& message)>& callback));
@@ -15,12 +15,13 @@ public:
     MOCK_METHOD(void, set_websocket_authorization_key, (const std::string& authorization_key));
     MOCK_METHOD(void, set_websocket_connection_options, (const WebsocketConnectionOptions& connection_options));
     MOCK_METHOD(void, set_websocket_connection_options_without_reconnect, ());
+    MOCK_METHOD(void, set_websocket_ping_interval, (std::int32_t ping_interval_s, std::int32_t pong_timeout_s));
     MOCK_METHOD(void, set_websocket_connected_callback, (WebsocketConnectionCallback callback));
     MOCK_METHOD(void, set_websocket_disconnected_callback, (WebsocketConnectionCallback callback));
     MOCK_METHOD(void, set_websocket_connection_failed_callback, (WebsocketConnectionFailedCallback callback));
     MOCK_METHOD(void, set_configure_network_connection_profile_callback,
                 (ConfigureNetworkConnectionProfileCallback callback));
-    MOCK_METHOD(std::optional<NetworkConnectionProfile>, get_network_connection_profile,
+    MOCK_METHOD(std::optional<ocpp::v2::NetworkConnectionProfile>, get_network_connection_profile,
                 (const std::int32_t configuration_slot), (const));
     MOCK_METHOD(std::optional<std::int32_t>, get_priority_from_configuration_slot, (const int configuration_slot),
                 (const));
@@ -30,11 +31,11 @@ public:
     MOCK_METHOD(void, connect, (std::optional<std::int32_t> network_profile_slot));
     MOCK_METHOD(void, disconnect, ());
     MOCK_METHOD(bool, send_to_websocket, (const std::string& message));
-    MOCK_METHOD(void, on_network_disconnected, (OCPPInterfaceEnum ocpp_interface));
+    MOCK_METHOD(void, on_network_disconnected, (ocpp::v2::OCPPInterfaceEnum ocpp_interface));
     MOCK_METHOD(void, on_charging_station_certificate_changed, ());
     MOCK_METHOD(void, confirm_successful_connection, ());
     MOCK_METHOD(void, reload_network_profiles, ());
     MOCK_METHOD(bool, set_network_profile,
-                (int32_t slot, const NetworkConnectionProfile& profile, const std::string& source));
+                (int32_t slot, const ocpp::v2::NetworkConnectionProfile& profile, const std::string& source));
 };
-} // namespace ocpp::v2
+} // namespace ocpp

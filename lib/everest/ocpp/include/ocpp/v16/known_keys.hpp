@@ -172,6 +172,7 @@ namespace ocpp::v16::keys {
     mapping(ReserveConnectorZeroSupported, ReserveConnectorZeroSupported) \
     mapping(AllowChargingProfileWithoutStartSchedule, AllowChargingProfileWithoutStartSchedule) \
     mapping(WaitForStopTransactionsOnResetTimeout, WaitForStopTransactionsOnResetTimeout) \
+    mapping(SwitchSecurityProfileConnectionTimeout, SwitchSecurityProfileConnectionTimeout) \
     mapping(StopTransactionIfUnlockNotSupported, StopTransactionIfUnlockNotSupported) \
     mapping(MeterPublicKeys, MeterPublicKeys) \
     mapping(DisableSecurityEventNotifications, DisableSecurityEventNotifications) \
@@ -288,6 +289,7 @@ namespace ocpp::v16::keys {
     key(Internal, SupportedChargingProfilePurposeTypes) \
     key(Internal, SupportedCiphers12) \
     key(Internal, SupportedCiphers13) \
+    key(Internal, SwitchSecurityProfileConnectionTimeout) \
     key(Internal, TLSKeylogFile) \
     key(Internal, UseSslDefaultVerifyPaths) \
     key(Internal, UseTPM) \

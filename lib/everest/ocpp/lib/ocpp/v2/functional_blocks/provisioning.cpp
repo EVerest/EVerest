@@ -607,6 +607,14 @@ void Provisioning::handle_variable_changed(const SetVariableData& set_variable_d
         this->context.connectivity_manager.set_websocket_connection_options_without_reconnect();
     }
 
+    if (component_variable == ControllerComponentVariables::WebSocketPingInterval) {
+        // Apply the new ping interval to the live connection directly
+        this->context.connectivity_manager.set_websocket_ping_interval(
+            this->context.device_model.get_value<int>(ControllerComponentVariables::WebSocketPingInterval),
+            this->context.device_model.get_optional_value<int>(ControllerComponentVariables::WebsocketPongTimeout)
+                .value_or(DEFAULT_WEBSOCKET_PONG_TIMEOUT_S));
+    }
+
     if (component_variable == ControllerComponentVariables::MessageAttemptInterval) {
         if (component_variable.variable.has_value()) {
             this->message_queue.update_transaction_message_retry_interval(
@@ -976,11 +984,12 @@ namespace {
 bool component_variable_change_requires_websocket_option_update_without_reconnect(
     const ComponentVariable& component_variable) {
 
+    // WebSocketPingInterval is handled separately: it is applied directly to the live connection via
+    // set_websocket_ping_interval() rather than only being stored for the next reconnect.
     return component_variable == ControllerComponentVariables::RetryBackOffRandomRange or
            component_variable == ControllerComponentVariables::RetryBackOffRepeatTimes or
            component_variable == ControllerComponentVariables::RetryBackOffWaitMinimum or
-           component_variable == ControllerComponentVariables::NetworkProfileConnectionAttempts or
-           component_variable == ControllerComponentVariables::WebSocketPingInterval;
+           component_variable == ControllerComponentVariables::NetworkProfileConnectionAttempts;
 }
 } // namespace
 } // namespace ocpp::v2

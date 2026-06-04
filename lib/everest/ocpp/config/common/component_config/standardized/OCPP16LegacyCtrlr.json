@@ -199,6 +199,23 @@
             "minimum": 0,
             "default": 60
         },
+        "SwitchSecurityProfileConnectionTimeout": {
+            "variable_name": "SwitchSecurityProfileConnectionTimeout",
+            "characteristics": {
+                "supportsMonitoring": true,
+                "dataType": "integer",
+                "unit": "s"
+            },
+            "attributes": [
+                {
+                    "type": "Actual",
+                    "mutability": "ReadWrite"
+                }
+            ],
+            "description": "Timeout in seconds for a security profile switch to establish a connection before reverting to the previous profile",
+            "type": "integer",
+            "minimum": 1
+        },
         "StopTransactionIfUnlockNotSupported": {
             "variable_name": "StopTransactionIfUnlockNotSupported",
             "characteristics": {

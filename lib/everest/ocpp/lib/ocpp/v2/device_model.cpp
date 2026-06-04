@@ -2,7 +2,9 @@
 // Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
 
 #include <everest/database/exceptions.hpp>
+#include <ocpp/common/constants.hpp>
 #include <ocpp/common/utils.hpp>
+#include <ocpp/common/websocket/websocket_uri.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
@@ -1044,6 +1046,156 @@ std::int32_t DeviceModel::clear_custom_monitors() {
     }
 
     return 0;
+}
+
+// ConnectivityManagerConfiguration implementations
+
+std::string DeviceModel::get_network_configuration_priority() {
+    return get_optional_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority).value_or("");
+}
+
+void DeviceModel::set_network_configuration_priority(const std::string& priority, const std::string& source) {
+    if (!ControllerComponentVariables::NetworkConfigurationPriority.variable.has_value()) {
+        EVLOG_warning << "NetworkConfigurationPriority variable is not defined in the device model, cannot set value";
+        return;
+    }
+    set_value(ControllerComponentVariables::NetworkConfigurationPriority.component,
+              ControllerComponentVariables::NetworkConfigurationPriority.variable.value(), AttributeEnum::Actual,
+              priority, source);
+}
+
+std::optional<ocpp::v2::NetworkConnectionProfile> DeviceModel::read_network_connection_profile(int32_t slot) {
+    return NetworkConfigurationComponentVariables::read_profile_from_device_model(*this, slot);
+}
+
+bool DeviceModel::write_network_connection_profile(int32_t slot, const ocpp::v2::NetworkConnectionProfile& profile,
+                                                   const std::string& source) {
+    return NetworkConfigurationComponentVariables::write_profile_to_device_model(*this, slot, profile, source);
+}
+
+void DeviceModel::clear_network_connection_profile(int32_t slot) {
+    NetworkConfigurationComponentVariables::clear_slot_in_device_model(*this, slot);
+}
+
+bool DeviceModel::get_allow_security_level_zero_connections() {
+    return get_optional_value<bool>(ControllerComponentVariables::AllowSecurityLevelZeroConnections).value_or(false);
+}
+
+int32_t DeviceModel::get_security_profile() {
+    return get_value<int>(ControllerComponentVariables::SecurityProfile);
+}
+
+std::optional<int32_t> DeviceModel::get_network_config_timeout() {
+    return get_optional_value<int>(ControllerComponentVariables::NetworkConfigTimeout);
+}
+
+std::string DeviceModel::resolve_identity(int32_t slot) {
+    std::string identity = get_value<std::string>(ControllerComponentVariables::SecurityCtrlrIdentity);
+    const auto slot_identity_cv = NetworkConfigurationComponentVariables::get_component_variable(
+        slot, NetworkConfigurationComponentVariables::Identity);
+    if (const auto slot_identity = get_optional_value<std::string>(slot_identity_cv);
+        slot_identity.has_value() && !slot_identity->empty()) {
+        identity = *slot_identity;
+        EVLOG_debug << "Using per-slot Identity for slot " << slot;
+    }
+    return identity;
+}
+
+std::optional<std::string> DeviceModel::resolve_basic_auth_password(int32_t slot) {
+    const auto slot_pwd_cv = NetworkConfigurationComponentVariables::get_component_variable(
+        slot, NetworkConfigurationComponentVariables::BasicAuthPassword);
+    if (const auto slot_pwd = get_optional_value<std::string>(slot_pwd_cv);
+        slot_pwd.has_value() && !slot_pwd->empty()) {
+        EVLOG_debug << "Using per-slot BasicAuthPassword for slot " << slot;
+        return *slot_pwd;
+    }
+    return get_optional_value<std::string>(ControllerComponentVariables::BasicAuthPassword);
+}
+
+std::optional<WebsocketConnectionOptions> DeviceModel::get_websocket_connection_options(int32_t slot) {
+    const auto charge_point_id = get_value<std::string>(ControllerComponentVariables::SecurityCtrlrIdentity);
+    if (charge_point_id.find(':') != std::string::npos) {
+        EVLOG_AND_THROW(std::runtime_error("ChargePointId must not contain ':'"));
+    }
+
+    const auto profile_opt = read_network_connection_profile(slot);
+    if (!profile_opt.has_value()) {
+        EVLOG_critical << "Could not retrieve NetworkProfile of configurationSlot: " << slot;
+        return std::nullopt;
+    }
+    const auto& profile = *profile_opt;
+
+    const std::string identity = resolve_identity(slot);
+    const std::optional<std::string> basic_auth_password = resolve_basic_auth_password(slot);
+
+    try {
+        auto uri = Uri::parse_and_validate(profile.ocppCsmsUrl.get(), identity, profile.securityProfile);
+        const auto ocpp_versions = utils::get_ocpp_protocol_versions(
+            get_value<std::string>(ControllerComponentVariables::SupportedOcppVersions));
+
+        WebsocketConnectionOptions opts{
+            ocpp_versions,
+            uri,
+            profile.securityProfile,
+            basic_auth_password,
+            std::chrono::seconds(std::max(profile.messageTimeout, 1)),
+            get_value<int>(ControllerComponentVariables::RetryBackOffRandomRange),
+            get_value<int>(ControllerComponentVariables::RetryBackOffRepeatTimes),
+            get_value<int>(ControllerComponentVariables::RetryBackOffWaitMinimum),
+            get_value<int>(ControllerComponentVariables::NetworkProfileConnectionAttempts),
+            get_value<std::string>(ControllerComponentVariables::SupportedCiphers12),
+            get_value<std::string>(ControllerComponentVariables::SupportedCiphers13),
+            get_value<int>(ControllerComponentVariables::WebSocketPingInterval),
+            get_optional_value<std::string>(ControllerComponentVariables::WebsocketPingPayload).value_or("payload"),
+            get_optional_value<int>(ControllerComponentVariables::WebsocketPongTimeout)
+                .value_or(DEFAULT_WEBSOCKET_PONG_TIMEOUT_S),
+            get_optional_value<bool>(ControllerComponentVariables::UseSslDefaultVerifyPaths).value_or(true),
+            get_optional_value<bool>(ControllerComponentVariables::AdditionalRootCertificateCheck).value_or(false),
+            std::nullopt, // hostName
+            get_optional_value<bool>(ControllerComponentVariables::VerifyCsmsCommonName).value_or(true),
+            get_optional_value<bool>(ControllerComponentVariables::UseTPM).value_or(false),
+            get_optional_value<bool>(ControllerComponentVariables::VerifyCsmsAllowWildcards).value_or(false),
+            get_optional_value<std::string>(ControllerComponentVariables::IFace),
+            get_optional_value<bool>(ControllerComponentVariables::EnableTLSKeylog).value_or(false),
+            get_optional_value<std::string>(ControllerComponentVariables::TLSKeylogFile)};
+        return opts;
+    } catch (const std::invalid_argument& e) {
+        EVLOG_error << "Could not configure the connection options for slot " << slot << ": " << e.what();
+        return std::nullopt;
+    }
+}
+
+void DeviceModel::set_active_security_profile(int32_t security_profile, const std::string& source) {
+    const auto& cv = ControllerComponentVariables::SecurityProfile;
+    if (cv.variable.has_value()) {
+        set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, std::to_string(security_profile),
+                            source);
+    }
+}
+
+void DeviceModel::set_active_network_profile_slot(int32_t slot, const std::string& source) {
+    const auto& cv = ControllerComponentVariables::ActiveNetworkProfile;
+    if (cv.variable.has_value()) {
+        set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, std::to_string(slot), source);
+    }
+}
+
+void DeviceModel::set_per_slot_ocpp_version(int32_t slot, const std::string& version, const std::string& source) {
+    const auto nc_cv = NetworkConfigurationComponentVariables::get_component_variable(
+        slot, NetworkConfigurationComponentVariables::OcppVersion);
+    if (nc_cv.variable.has_value()) {
+        set_value(nc_cv.component, nc_cv.variable.value(), AttributeEnum::Actual, version, source);
+    }
+}
+
+void DeviceModel::set_security_ctrl_security_profile(int32_t security_profile, const std::string& source) {
+    set_read_only_value(ControllerComponents::SecurityCtrlr, NetworkConfigurationComponentVariables::SecurityProfile,
+                        AttributeEnum::Actual, std::to_string(security_profile), source);
+}
+
+void DeviceModel::set_security_ctrl_identity(const std::string& identity, const std::string& source) {
+    set_read_only_value(ControllerComponents::SecurityCtrlr, NetworkConfigurationComponentVariables::Identity,
+                        AttributeEnum::Actual, identity, source);
 }
 
 } // namespace v2

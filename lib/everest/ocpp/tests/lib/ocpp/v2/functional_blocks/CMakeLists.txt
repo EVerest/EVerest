@@ -1,5 +1,6 @@
 target_include_directories(libocpp_unit_tests PUBLIC
         ../mocks
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
         ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_sources(libocpp_unit_tests PRIVATE
@@ -41,6 +42,7 @@ target_include_directories(libocpp_test_security PUBLIC
         ${LIBOCPP_3RDPARTY_PATH}
         ${CMAKE_CURRENT_SOURCE_DIR}/../stubs/timer
         ${CMAKE_CURRENT_SOURCE_DIR}/../mocks
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
         ${LIBOCPP_TESTS_V2_ROOT_DIR}
 )
 
@@ -65,6 +67,7 @@ target_include_directories(libocpp_test_authorization PUBLIC
         ${LIBOCPP_INCLUDE_PATH}
         ${LIBOCPP_3RDPARTY_PATH}
         ${CMAKE_CURRENT_SOURCE_DIR}/../mocks
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
         ${LIBOCPP_TESTS_V2_ROOT_DIR}
 )
 
@@ -87,6 +90,7 @@ target_include_directories(libocpp_test_availability PUBLIC
         ${LIBOCPP_INCLUDE_PATH}
         ${LIBOCPP_3RDPARTY_PATH}
         ${CMAKE_CURRENT_SOURCE_DIR}/../mocks
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
         ${LIBOCPP_TESTS_V2_ROOT_DIR}
 )
 
@@ -113,5 +117,6 @@ target_include_directories(libocpp_test_tariff_and_cost PUBLIC
         ${LIBOCPP_INCLUDE_PATH}
         ${LIBOCPP_3RDPARTY_PATH}
         ${CMAKE_CURRENT_SOURCE_DIR}/../mocks
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
         ${LIBOCPP_TESTS_V2_ROOT_DIR}
 )
