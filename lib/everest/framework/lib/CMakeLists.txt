@@ -38,7 +38,9 @@ target_sources(framework
         filesystem.cpp
         module_adapter.cpp
         module_config.cpp
-        mqtt_abstraction_impl.cpp
+        mqtt_framework_transport.cpp
+        shm_framework_transport.cpp
+        shm_manager_transport.cpp
         thread.cpp
         types.cpp
         serial.cpp
@@ -46,6 +48,7 @@ target_sources(framework
         date.cpp
         runtime.cpp
         message_handler.cpp
+        message_queue.cpp
 )
 
 # FIXME (aw): c++17 doesn't need necessarily to be public, but our

@@ -53,6 +53,9 @@ public:
     /// \brief Registers a \p handler for a specific \p topic
     void register_handler(const std::string& topic, std::shared_ptr<TypedHandler> handler);
 
+    /// \brief Unregisters the handler identified by \p token for a specific \p topic
+    void unregister_handler(const std::string& topic, const Token& token);
+
     using SharedTypedHandler = std::shared_ptr<TypedHandler>;
     using SingleHandlerMap = std::map<MqttTopic, SharedTypedHandler>;
     using MultiHandlerMap = std::map<MqttTopic, std::vector<SharedTypedHandler>>;

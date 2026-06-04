@@ -179,6 +179,8 @@ mod ffi {
             prefix: &str,
             mqtt_broker_socket_path: &str,
             mqtt_broker_host: &str,
+            framework_transport: &str,
+            shm_control_socket_path: &str,
             mqtt_broker_port: &u16,
             mqtt_everest_prefix: &str,
             mqtt_external_prefix: &str,
@@ -395,6 +397,14 @@ pub struct Args {
     /// MQTT broker hostname
     #[arg(long = "mqtt_broker_host")]
     pub mqtt_broker_host: String,
+
+    /// Framework-local transport: mqtt or shm
+    #[arg(long = "framework_transport", value_parser = ["mqtt", "shm"])]
+    pub framework_transport: Option<String>,
+
+    /// SHM transport control socket path
+    #[arg(long = "shm_control_socket_path")]
+    pub shm_control_socket_path: Option<PathBuf>,
 
     /// MQTT broker port
     #[arg(long = "mqtt_broker_port")]
@@ -678,6 +688,11 @@ impl Runtime {
                 .unwrap_or_default()
                 .to_string_lossy(),
             &args.mqtt_broker_host,
+            args.framework_transport.as_deref().unwrap_or_default(),
+            &args
+                .shm_control_socket_path
+                .unwrap_or_default()
+                .to_string_lossy(),
             &args.mqtt_broker_port,
             &args.mqtt_everest_prefix,
             &args.mqtt_external_prefix,

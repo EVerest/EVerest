@@ -5,11 +5,11 @@
 
 #include <nlohmann/json.hpp>
 
-#include <utils/mqtt_abstraction.hpp>
+#include <utils/framework_transport.hpp>
 
 namespace Everest {
 /// \brief get config from manager via mqtt
-nlohmann::json get_module_config(std::shared_ptr<MQTTAbstraction> mqtt, const std::string& module_id);
+nlohmann::json get_module_config(std::shared_ptr<FrameworkTransport> mqtt, const std::string& module_id);
 } // namespace Everest
 
 #endif // UTILS_MODULE_CONFIG_HPP

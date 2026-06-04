@@ -10,6 +10,7 @@
 #include <utils/error/error_manager_req.hpp>
 #include <utils/error/error_state_monitor.hpp>
 #include <utils/filesystem.hpp>
+#include <utils/shm_manager_transport.hpp>
 
 #include <algorithm>
 #include <cstdlib>
@@ -218,6 +219,7 @@ void ManagerSettings::init_settings(const everest::config::Settings& settings) {
     std::uint16_t mqtt_broker_port = 0;
     std::string mqtt_everest_prefix;
     std::string mqtt_external_prefix;
+    FrameworkTransportType framework_transport = FrameworkTransportType::MQTT;
 
     // Unix Domain Socket configuration MUST be set in the configuration,
     // doesn't have a default value if not provided thus it takes precedence
@@ -298,6 +300,24 @@ void ManagerSettings::init_settings(const everest::config::Settings& settings) {
     } else {
         populate_mqtt_settings(this->mqtt_settings, mqtt_broker_host, mqtt_broker_port, mqtt_everest_prefix,
                                mqtt_external_prefix);
+    }
+    if (settings.framework_transport.has_value() && !settings.framework_transport.value().empty()) {
+        framework_transport = framework_transport_from_string(settings.framework_transport.value());
+    }
+    this->mqtt_settings.framework_transport = framework_transport;
+    this->mqtt_settings.shm_control_socket_path = settings.shm_control_socket_path.value_or("");
+    this->mqtt_settings.shm_topic_slots = settings.shm_topic_slots.value_or(DEFAULT_SHM_TOPIC_SLOTS);
+    this->mqtt_settings.shm_topic_slot_size = settings.shm_topic_slot_size.value_or(DEFAULT_SHM_TOPIC_SLOT_SIZE);
+    this->mqtt_settings.shm_topic_registry_capacity =
+        settings.shm_topic_registry_capacity.value_or(DEFAULT_SHM_TOPIC_REGISTRY_CAPACITY);
+    this->mqtt_settings.shm_topic_registry_mode =
+        settings.shm_topic_registry_mode.has_value() && !settings.shm_topic_registry_mode.value().empty()
+            ? shm_topic_registry_mode_from_string(settings.shm_topic_registry_mode.value())
+            : ShmTopicRegistryMode::Static;
+    if (this->mqtt_settings.shm_topic_registry_mode == ShmTopicRegistryMode::Dynamic) {
+        throw BootException("shm_topic_registry_mode 'dynamic' is not implemented. The only supported SHM topic "
+                            "registry mode is 'static', where the Manager precomputes the framework-local topic "
+                            "registry during startup.");
     }
 
     run_as_user = settings.run_as_user.value_or("");
@@ -450,7 +470,7 @@ int ModuleLoader::initialize() {
 
     const auto start_time = std::chrono::steady_clock::now();
 
-    this->mqtt = std::shared_ptr<MQTTAbstraction>(make_mqtt_abstraction(this->mqtt_settings));
+    this->mqtt = std::shared_ptr<FrameworkTransport>(make_framework_transport(this->mqtt_settings));
     this->mqtt->connect();
     this->mqtt->spawn_main_loop_thread();
 
@@ -506,8 +526,12 @@ int ModuleLoader::initialize() {
         }
         Logging::update_process_name(module_identifier);
 
+        std::shared_ptr<FrameworkTransport> external_mqtt;
+        if (this->mqtt_settings.shared_mem()) {
+            external_mqtt = std::shared_ptr<FrameworkTransport>(make_mqtt_transport(this->mqtt_settings));
+        }
         auto everest = Everest(this->module_id, config, rs->validate_schema, this->mqtt, rs->telemetry_prefix,
-                               rs->telemetry_enabled, rs->forward_exceptions);
+                               rs->telemetry_enabled, rs->forward_exceptions, external_mqtt);
 
         // module import
         EVLOG_debug << fmt::format("Initializing module {}...", module_identifier);
@@ -651,6 +675,10 @@ bool ModuleLoader::parse_command_line(int argc, char* argv[]) {
     desc.add_options()("mqtt_broker_socket_path", po::value<std::string>(), "The MQTT broker socket path");
     desc.add_options()("mqtt_broker_host", po::value<std::string>(), "The MQTT broker hostname");
     desc.add_options()("mqtt_broker_port", po::value<int>(), "The MQTT broker port");
+    desc.add_options()("framework_transport", po::value<std::string>(), "The framework-local transport: mqtt or shm");
+    desc.add_options()("shm_control_socket_path", po::value<std::string>(), "The SHM transport control socket path");
+    desc.add_options()("shm_registered_topic", po::value<std::vector<std::string>>()->composing(),
+                       "A Manager-registered exact SHM topic");
     desc.add_options()("mqtt_everest_prefix", po::value<std::string>(), "The MQTT everest prefix");
     desc.add_options()("mqtt_external_prefix", po::value<std::string>(), "The external MQTT prefix");
 
@@ -685,13 +713,22 @@ bool ModuleLoader::parse_command_line(int argc, char* argv[]) {
             << "\n";
     }
 
+    FrameworkTransportType framework_transport = FrameworkTransportType::MQTT;
     std::string mqtt_broker_socket_path;
     if (vm.count("mqtt_broker_socket_path") != 0) {
         mqtt_broker_socket_path = vm["mqtt_broker_socket_path"].as<std::string>();
     }
 
+    if (vm.count("framework_transport") != 0) {
+        const auto framework_transport_value = vm["framework_transport"].as<std::string>();
+        if (!framework_transport_value.empty()) {
+            framework_transport = framework_transport_from_string(framework_transport_value);
+        }
+    }
+
     std::string mqtt_broker_host;
-    if (vm.count("mqtt_broker_host") != 0) {
+    const bool mqtt_broker_host_provided = vm.count("mqtt_broker_host") != 0;
+    if (mqtt_broker_host_provided) {
         mqtt_broker_host = vm["mqtt_broker_host"].as<std::string>();
         if (!mqtt_broker_socket_path.empty()) {
             // invalid configuration, can't have both UDS and IDS
@@ -763,6 +800,13 @@ bool ModuleLoader::parse_command_line(int argc, char* argv[]) {
     } else {
         populate_mqtt_settings(this->mqtt_settings, mqtt_broker_host, mqtt_broker_port, mqtt_everest_prefix,
                                mqtt_external_prefix);
+    }
+    this->mqtt_settings.framework_transport = framework_transport;
+    if (vm.count("shm_control_socket_path") != 0) {
+        this->mqtt_settings.shm_control_socket_path = vm["shm_control_socket_path"].as<std::string>();
+    }
+    if (vm.count("shm_registered_topic") != 0) {
+        this->mqtt_settings.shm_registered_topics = vm["shm_registered_topic"].as<std::vector<std::string>>();
     }
 
     if (vm.count("log_config") != 0) {

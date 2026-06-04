@@ -18,7 +18,7 @@ using json = nlohmann::json;
 namespace {
 // TODO: make this use the ConfigServiceClient as well?
 // TODO: needs changes in the bindings to support a new get_module_config call
-json get_definitions(std::shared_ptr<MQTTAbstraction> mqtt) {
+json get_definitions(std::shared_ptr<FrameworkTransport> mqtt) {
     const auto& everest_prefix = mqtt->get_everest_prefix();
 
     json result;
@@ -73,7 +73,7 @@ json get_definitions(std::shared_ptr<MQTTAbstraction> mqtt) {
 }
 } // namespace
 
-json get_module_config(std::shared_ptr<MQTTAbstraction> mqtt, const std::string& module_id) {
+json get_module_config(std::shared_ptr<FrameworkTransport> mqtt, const std::string& module_id) {
     const auto& everest_prefix = mqtt->get_everest_prefix();
 
     config::GetRequest get_request;

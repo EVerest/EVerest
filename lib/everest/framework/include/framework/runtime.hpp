@@ -41,6 +41,9 @@ inline constexpr auto EV_MQTT_EXTERNAL_PREFIX = "EV_MQTT_EXTERNAL_PREFIX";
 inline constexpr auto EV_MQTT_BROKER_SOCKET_PATH = "EV_MQTT_BROKER_SOCKET_PATH";
 inline constexpr auto EV_MQTT_BROKER_HOST = "EV_MQTT_BROKER_HOST";
 inline constexpr auto EV_MQTT_BROKER_PORT = "EV_MQTT_BROKER_PORT";
+inline constexpr auto EV_FRAMEWORK_TRANSPORT = "EV_FRAMEWORK_TRANSPORT";
+inline constexpr auto EV_SHM_CONTROL_SOCKET_PATH = "EV_SHM_CONTROL_SOCKET_PATH";
+inline constexpr auto EV_SHM_REGISTERED_TOPICS = "EV_SHM_REGISTERED_TOPICS";
 inline constexpr auto EV_VALIDATE_SCHEMA = "EV_VALIDATE_SCHEMA";
 inline constexpr auto VERSION_INFORMATION_FILE = "version_information.txt";
 
@@ -94,6 +97,7 @@ inline constexpr auto MQTT_BROKER_HOST = "localhost";
 inline constexpr std::uint16_t MQTT_BROKER_PORT = 1883;
 inline constexpr auto MQTT_EVEREST_PREFIX = "everest";
 inline constexpr auto MQTT_EXTERNAL_PREFIX = "";
+inline constexpr auto FRAMEWORK_TRANSPORT = "mqtt";
 inline constexpr auto TELEMETRY_PREFIX = "everest-telemetry";
 inline constexpr auto TELEMETRY_ENABLED = false;
 inline constexpr auto VALIDATE_SCHEMA = false;
@@ -137,7 +141,7 @@ class ModuleLoader {
 private:
     std::unique_ptr<RuntimeSettings> runtime_settings;
     MQTTSettings mqtt_settings;
-    std::shared_ptr<MQTTAbstraction> mqtt;
+    std::shared_ptr<FrameworkTransport> mqtt;
     std::string module_id;
     std::string original_process_name;
     std::string application_name;

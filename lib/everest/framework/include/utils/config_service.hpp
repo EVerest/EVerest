@@ -5,7 +5,7 @@
 #include <cstddef>
 
 #include <utils/config.hpp>
-#include <utils/mqtt_abstraction.hpp>
+#include <utils/framework_transport.hpp>
 namespace Everest {
 namespace config {
 
@@ -117,9 +117,9 @@ struct ModuleIdType {
 
 class ConfigServiceClient {
 public:
-    /// \brief ConfigService client using the provided \p mqtt_abstraction for the module identified by \p module_id
+    /// \brief ConfigService client using the provided \p framework_transport for the module identified by \p module_id
     /// \p module_names is a mapping of all module ids to module names/types for usage in get_module_configs()
-    ConfigServiceClient(std::shared_ptr<MQTTAbstraction> mqtt_abstraction, const std::string& module_id,
+    ConfigServiceClient(std::shared_ptr<FrameworkTransport> framework_transport, const std::string& module_id,
                         const std::map<std::string, std::string, std::less<>>& module_names);
 
     /// \brief Compiles and \returns all module configs that this module has access to
@@ -138,19 +138,19 @@ public:
     GetConfigResult get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier);
 
 private:
-    std::shared_ptr<MQTTAbstraction> mqtt_abstraction;
+    std::shared_ptr<FrameworkTransport> framework_transport;
     std::string origin;
     std::map<std::string, std::string, std::less<>> module_names;
 };
 
 class ConfigService {
 public:
-    /// \brief ConfigService using the provided \p mqtt_abstraction to distribute relevant parts of the given \p config
-    /// when another module requests them and has appropriate access rights to them
-    ConfigService(MQTTAbstraction& mqtt_abstraction, std::shared_ptr<ManagerConfig> config);
+    /// \brief ConfigService using the provided \p framework_transport to distribute relevant parts of the given \p
+    /// config when another module requests them and has appropriate access rights to them
+    ConfigService(FrameworkTransport& framework_transport, std::shared_ptr<ManagerConfig> config);
 
 private:
-    MQTTAbstraction& mqtt_abstraction;
+    FrameworkTransport& framework_transport;
     std::shared_ptr<TypedHandler> get_config_token;
     std::shared_ptr<ManagerConfig> config;
 };

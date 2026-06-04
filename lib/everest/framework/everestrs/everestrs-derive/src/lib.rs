@@ -377,6 +377,8 @@ fn test_impl(attr: &TestAttr, item_fn: ItemFn) -> Result<proc_macro2::TokenStrea
                 log_config: prefix.join("etc/everest/default_logging.cfg"),
                 mqtt_broker_socket_path: None,
                 mqtt_broker_host: "localhost".to_string(),
+                framework_transport: Some("mqtt".to_string()),
+                shm_control_socket_path: None,
                 mqtt_broker_port: 1883,
                 mqtt_everest_prefix: __mqtt_prefix,
                 mqtt_external_prefix: "".to_string(),
