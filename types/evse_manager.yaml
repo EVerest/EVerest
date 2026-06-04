@@ -41,6 +41,7 @@ types:
         TimeLimitReached: EV charging session reached a locally enforced time limit
         Timeout: EV not connected within timeout
         ReqEnergyTransferRejected: OCPP CSMS cannot accept the requested energy transfer type.
+        EVSEDisabled: The transaction was stopped because the EVSE was disabled.
     type: string
     enum:
       - EmergencyStop
@@ -65,6 +66,7 @@ types:
       - TimeLimitReached
       - Timeout
       - ReqEnergyTransferRejected
+      - EVSEDisabled
   StartSessionReason:
     description: >-
       Reason for session start
