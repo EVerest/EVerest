@@ -4,6 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <iso15118/config.hpp>
 #include <iso15118/d20/config.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/session/iso.hpp>
@@ -31,10 +32,20 @@ struct MockConnectionFactory {
     }
 };
 
+iso15118::config::SSLConfig make_ssl_config(const std::string& root) {
+    iso15118::config::SSLConfig cfg{};
+    iso15118::config::ChainConfig chain{};
+    chain.path_certificate_chain = root + "/chain.pem";
+    chain.path_certificate_key = root + "/key.pem";
+    chain.trust_anchor_pem = root + "/v2g_root.pem";
+    cfg.chains.push_back(std::move(chain));
+    cfg.path_certificate_v2g_root = root + "/v2g_root.pem";
+    return cfg;
+}
+
 iso15118::TbdController make_controller(const iso15118::session::feedback::Callbacks& callbacks,
-                                        MockConnectionFactory& factory) {
-    return iso15118::TbdController{iso15118::TbdConfig{{},
-                                                       "lo",
+                                        MockConnectionFactory& factory, iso15118::config::SSLConfig ssl = {}) {
+    return iso15118::TbdController{iso15118::TbdConfig{std::move(ssl), "lo",
                                                        iso15118::config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER,
                                                        /*enable_sdp_server=*/false},
                                    callbacks, iso15118::d20::EvseSetupConfig{}, factory.fn()};
@@ -181,6 +192,25 @@ SCENARIO("A terminate racing session creation wins over the fresh session") {
                     }
                 }
             }
+        }
+    }
+}
+
+SCENARIO("The rotation seam exposes the rotated SSL config") {
+    iso15118::session::feedback::Callbacks callbacks;
+    callbacks.signal = [](auto) {};
+
+    MockConnectionFactory factory;
+    const auto initial = make_ssl_config("/tmp/iso15118-test/a");
+    auto controller = make_controller(callbacks, factory, initial);
+
+    WHEN("set_ssl_config() rotates the config") {
+        const auto rotated = make_ssl_config("/tmp/iso15118-test/b");
+        controller.set_ssl_config(rotated);
+
+        THEN("connection_ssl_config() returns the rotated config, not the construction-time one") {
+            REQUIRE(controller.connection_ssl_config() == rotated);
+            REQUIRE_FALSE(controller.connection_ssl_config() == initial);
         }
     }
 }
