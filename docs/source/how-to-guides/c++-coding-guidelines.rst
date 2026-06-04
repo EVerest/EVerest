@@ -92,7 +92,7 @@ Example header file called ``ocpp/OcppDataModel.hpp``:
 
         /// \brief check if the object has been configured
         /// \returns true when there is at least one connector
-        bool isConfigured() const {
+        bool is_configured() const {
             return m_num_connectors > 0;
         }
 
@@ -130,7 +130,7 @@ Example source file called ``ocpp/OcppDataModel.cpp``:
 Header Files
 ============
 
-In general inline code should be avoid in header files however C++ templates will
+In general inline code should be avoided in header files however C++ templates will
 often require this and it may be needed for inlining.
 
 Member variable initialisers should be provided. The following links gives examples
