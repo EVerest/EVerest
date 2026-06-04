@@ -21,7 +21,8 @@ the FSM and the only mutable state. Four ``fd``\ s drive that loop:
 - ``wake_fd`` — external producers (MQTT commands, peer subscriptions, scenario
   steps) push ``Event``\ s onto a ``thread_safe_queue`` and poke this fd.
 - ``state_timer_fd`` — per-state deadline (SLAC 30 s, V2G 60 s, Paused 1 h
-  watchdog, Stopping 10 s fallback, BcbToggling 250 ms step).
+  watchdog + 15 s deferred-resume fallback, Stopping 10 s fallback,
+  BcbToggling 250 ms step).
 - ``tick_fd`` — periodic ``tick_interval_ms`` while ``Charging``; drives
   ``RampInterpolator`` and ``SocIntegrator``.
 - ``scenario_timer_fd`` — one-shot used by ``ScenarioDispatcher`` to advance
@@ -159,10 +160,21 @@ Configuration
     "charge to 80%".
 
 ``cfg_communication_check_to_s``
-    Communication check timeout in seconds. Default: ``5``.
+    Communication check timeout in seconds. Default: ``0`` (check disabled).
+    When ``0`` no external heartbeat is required. When ``> 0``, the test driver
+    must publish ``m2e/communication_check true`` faster than this timeout or
+    EvSimulator raises a ``CommunicationFault`` on its ``ev_manager`` interface
+    (surfaced by evse_manager as connector ``OtherError``). Disabled by default
+    to match historical EvManager behavior; opt in by setting ``> 0``.
 
 ``cfg_heartbeat_interval_ms``
     Heartbeat publish interval in milliseconds. Default: ``1000``.
+
+``enabled_at_startup``
+    Auto-enable the simulator at module startup (equivalent to publishing
+    ``m2e/enable true`` immediately after ready). Default: ``true``. Set
+    ``false`` for tests that need to observe the initial ``Disabled`` state
+    before driving enable.
 
 Interfaces
 ==========
@@ -281,7 +293,8 @@ Inbound suffixes (``m2e/*``):
      - ``BcbToggleParams``
    * - ``run_scenario``
      - ``RunScenario``
-     - ``RunScenarioParams`` (name)
+     - ``RunScenarioParams`` (name, optional ``timing`` —
+       ``ScenarioTimingOverrides``)
    * - ``query_state``
      - ``QueryStateCmd``
      - — (FSM handles via ``handle_query_state``, re-publishing
@@ -304,8 +317,10 @@ Outbound suffixes (``e2m/*``):
 - ``ev_info`` — synthesized ``EVInfo`` (SoC, etc.)
 - ``bsp_event`` — peer BSP events as a typed ``BspEventKind``
 - ``slac_state`` — SLAC peer state as a typed ``SlacStateKind``
-- ``iso_session_event`` — ISO session lifecycle events
-- ``fault`` — ``FaultReport`` (type + reason) on entry to ``Faulted``
+- ``iso_session_event`` — *reserved*; ISO lifecycle edges are currently
+  surfaced via ``e2m/state`` transitions, not on a dedicated topic (the
+  publisher exists but is unused).
+- ``fault`` — ``FaultReport`` (type + message) on entry to ``Faulted``
 - ``command_ack`` — ``{command, status, reason}``. Out-of-state commands are
   always acknowledged with ``status: "Rejected"`` and a human-readable
   ``reason``; never silently dropped. Accepted commands also publish
@@ -416,9 +431,11 @@ Per-state reference
      - —
      - CP=B, ``allow_power_on(false)`` (tick disarmed by ``Charging::leave``)
    * - ``Paused``
-     - 1 h watchdog
+     - 1 h watchdog; 15 s deferred-resume fallback
      - —
-     - CP=B, ``allow_power_on(false)``, ``iso_pause_charging``
+     - ``allow_power_on(false)``, ``iso_pause_charging``; CP is set to **B
+       only when no ISO session is still active** — during an ISO pause
+       teardown CP is **held at C** and lowered to B on ``IsoV2GFinished``
    * - ``Stopping``
      - 10 s fallback
      - —
@@ -443,6 +460,40 @@ The free helpers in ``FsmContext.cpp`` are reused across states:
   ``Disabled``.
 - ``handle_query_state(ctx, s)`` — re-publish ``e2m/state`` for late
   subscribers; do not transition.
+
+Pause / resume gating
+---------------------
+
+Pausing and resuming an ISO session is gated on whether the underlying V2G
+communication session is still live, so a resume never races a half-torn-down
+session.
+
+- **``iso_session_active`` gate** — set when ``iso_start_charging`` succeeds
+  (``FsmContext.cpp:277``) and cleared on ``IsoV2GFinished``
+  (``EvSimRuntime.cpp:394``). It distinguishes a live ISO session from one that
+  has already torn down.
+- **Deferred ISO resume** — in ``Paused``, a ``ResumeSession`` received while
+  ``iso_session_active`` does not resume immediately; it sets ``resume_pending``
+  and arms a 15 s fallback timer (``Paused.cpp:59-69``). The resume is released
+  on ``IsoV2GFinished`` (``Paused.cpp:108-125``); the 15 s timer is only a
+  best-effort backstop.
+- **``BcbToggle`` gating + bounds** — an explicit ``BcbToggle`` in ``Paused``
+  validates ``count`` (``> 0`` and ``<= 1000``) and, while
+  ``iso_session_active``, defers via ``bcb_pending`` (``Paused.cpp:74-107``);
+  ``BcbToggling::enter`` carries a reseed guard for a zero remaining count
+  (``BcbToggling.cpp:23-27``).
+- **DC resume skips SLAC re-match** — re-entry to ``SlacMatching`` happens only
+  when ``vars.slac_unmatched`` is set (on a SLAC ``UNMATCHED`` event,
+  ``EvSimRuntime.cpp:370-372``); a DC ``D-LINK_PAUSE`` keeps the data link and
+  goes straight to ``V2GNegotiating`` (``BcbToggling.cpp:67-70``).
+- **``V2GNegotiating`` resume path** — when ``resume_awaiting_pwm`` is set,
+  ``V2GNegotiating`` arms the 60 s timer, re-asserts CP=B, and defers
+  ``start_charging`` until a PWM-running BSP measurement arrives
+  (``V2GNegotiating.cpp:52-66``, feed ``:91-106``).
+- **DC ``dc_power_on`` → ``Charging``** — ``IsoDcPowerOn`` transitions to
+  ``Charging`` (``V2GNegotiating.cpp:135-142``); the prior ``IsoPowerReady`` for
+  DC asserts CP=C and power-on but stays in ``V2GNegotiating``
+  (``V2GNegotiating.cpp:125-133``).
 
 Drive mechanisms
 ================
@@ -862,7 +913,9 @@ SocIntegrator
 ``soc_step(ctx)`` integrates power into
 ``vars.battery_charge_wh`` once per tick while ``Charging``:
 
-- AC modes: ``power_w = charging_current_a * ac_nominal_voltage * (three_phases ? 3 : 1)``
+- AC modes: ``power_w = effective_ac_current_a * ac_nominal_voltage * (three_phases ? 3 : 1)``,
+  where ``effective_ac_current_a`` clamps the desired current to the
+  EVSE-advertised AC ceiling (``evse_ac_max_current_a``) when present.
 - DC modes: ``power_w = effective_dc_current_a() * vars.dc_present_voltage_v``,
   where ``effective_dc_current_a()`` returns the live measured
   ``vars.evse_dc_present_current_a`` (an ``optional``) when a present-current
@@ -881,7 +934,7 @@ underflow symmetrically to the overshoot clamp at ``battery_capacity_wh``.
 After integrating and clamping, SoC is derived from
 ``battery_charge_wh / battery_capacity_wh * 100``. ``e2m/ev_info`` and
 internal ``ev_info`` are published, and ``iso_update_soc(soc_pct)`` is called
-if the ISO peer is connected.
+every tick; the call is a no-op unless the ISO peer is connected.
 
 ``on_battery_full`` policy
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -899,9 +952,10 @@ fire exactly once per rising edge — including the crossing tick itself.
 ScenarioDispatcher
 ------------------
 
-Each ``ScenarioStep`` is ``{at: milliseconds, ev: Event}``. ``start(name, ctx)``
-resets the dispatcher, builds the step list, immediately fires any zero-offset
-steps, then arms ``scenario_timer_fd`` for the next pending step.
+Each ``ScenarioStep`` is ``{at: milliseconds, ev: Event}``.
+``start(name, timing, ctx)`` resets the dispatcher, builds the step list,
+immediately fires any zero-offset steps, then arms ``scenario_timer_fd`` for
+the next pending step.
 ``on_timer_fire`` enqueues the current step and re-arms. Looping curves
 rewind ``next_idx_`` to ``loop_start_idx_`` and rebase ``start_at_`` so the
 relative timing of looped segments stays consistent.
@@ -972,6 +1026,54 @@ binary; no MQTT broker is required.
      - ``FsmContext`` helpers + per-state transitions for ``Disabled``,
        ``Unplugged``, ``Plugged`` across all charge modes; BSP duty-cycle
        thresholding; SLAC-absent rejection.
+   * - ``AcLimitTest.cpp``
+     - ``[evsim][aclimit]``
+     - AC charging current clamped to the EVSE-advertised ceiling
+       (``effective_ac_current_a``).
+   * - ``CommandRouterTest.cpp``
+     - ``[evsim][command_router]``
+     - ``m2e/*`` decode contract: malformed payloads rejected;
+       ``ScenarioTimingOverrides`` codec round-trip.
+   * - ``CommCheckHandlerTeardownTest.cpp``
+     - ``[evsim][comm_check]``
+     - Heartbeat / communication-check teardown: ``stop_heartbeat`` joins the
+       thread, is idempotent and no-op-safe; destructor stops and joins an
+       active heartbeat.
+   * - ``ConfigureSessionTest.cpp``
+     - ``[evsim][configure_session]``
+     - ``configure_session`` interceptor latch / reject contract.
+   * - ``EventsTest.cpp``
+     - ``[evsim][events]``
+     - ``kind_of`` maps every ``Event`` variant alternative to its
+       ``EventKind`` and round-trips.
+   * - ``PausedResumeGateTest.cpp``
+     - ``[evsim][group2]``
+     - Pause / resume gating: ``BcbToggle`` and ``ResumeSession`` defer while a
+       V2G session is live and release on ``IsoV2GFinished``; deferred resume
+       falls back to ``BcbToggling`` on ``StateDeadline``; an idle ``Paused``
+       deadline still stops the session.
+   * - ``RuntimeTickTimerTest.cpp``
+     - ``[evsim][runtime][tick]``,
+       ``[evsim][runtime][passthrough]``,
+       ``[evsim][runtime][scenario-timer]``,
+       ``[evsim][runtime][state-timer]``
+     - ``EvSimRuntime`` fd compositions: passthrough-vars routing, ``on_tick``
+       ramp + SoC, scenario-timer dispatch, state-timer ``StateDeadline`` feed.
+   * - ``SilentFailureFixesTest.cpp``
+     - ``[evsim][kvs]``, ``[evsim][config]``,
+       ``[evsim][slac]``, ``[evsim][v2g]``,
+       ``[evsim][fault]``, ``[evsim][errors]``,
+       ``[evsim][peers]``
+     - Regression guards for the silent-failure fixes: ``kvs_load``
+       missing / empty / corrupt; enum and ``on_battery_full`` validation;
+       ``SlacMatching`` / ``V2GNegotiating`` fault routing;
+       ``transition_to_fault`` message precedence; ``raise_error`` /
+       ``clear_error`` loop-thread routing.
+   * - ``TimerFdFlushTest.cpp``
+     - ``[evsim][timer_fd]``,
+       ``[evsim][fd_event_handler]``
+     - ``timer_fd`` pending-fire / ``EAGAIN`` / stale-fire semantics;
+       ``fd_event_handler`` rejects duplicate fd registration.
 
 Test helpers under ``tests/`` (``TestFixture.hpp``, ``PeerMocks.{cpp,hpp}``,
 ``PublisherSink.{cpp,hpp}``, ``TimerSink.{cpp,hpp}``) wire mock
@@ -1036,6 +1138,11 @@ Python smoke tests (``tests/core_tests/``):
 - ``evsim_d20_test.py`` — ``DcIsoD20Basic`` end-to-end.
 - ``evsim_bpt_mcs_test.py`` — ``DcIsoBpt`` and ``DcIsoMcs`` smokes against
   ``config-sil-evsim-dc-bpt.yaml``.
+- ``evsim_ac_iec_test.py`` — AC IEC 61851 basic charge plus PWM pause/resume,
+  no SLAC / V2G negotiation.
+- ``evsim_timing_override_test.py`` — pause/resume driven by a compressed
+  ``run_scenario`` ``timing`` override, plus rejection of an inapplicable
+  timing override.
 
 SIL configurations
 ==================
