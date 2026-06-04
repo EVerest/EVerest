@@ -1,0 +1,15 @@
+description: Minimal interface for Manager-driven framework transport integration tests
+cmds:
+  roundtrip:
+    description: Returns a deterministic response for a deterministic request
+    arguments:
+      payload:
+        description: Request payload
+        type: string
+    result:
+      description: Deterministic response payload
+      type: string
+vars:
+  sample_value:
+    description: Deterministic value published by the provider
+    type: string

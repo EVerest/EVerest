@@ -1,0 +1,9 @@
+description: Test-only provider for Manager-driven framework transport integration tests
+provides:
+  main:
+    description: Publishes a deterministic variable and serves a deterministic command
+    interface: test_framework_transport
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Pionix GmbH and Contributors to EVerest

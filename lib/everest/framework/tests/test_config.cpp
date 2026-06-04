@@ -6,7 +6,71 @@
 #include <tests/helpers.hpp>
 #include <utils/config.hpp>
 
+#include <fstream>
+#include <system_error>
+#include <unistd.h>
+#include <utility>
+
 namespace fs = std::filesystem;
+using Catch::Matchers::ContainsSubstring;
+
+namespace {
+
+class TemporaryConfigDir {
+public:
+    explicit TemporaryConfigDir(fs::path path) : path_(std::move(path)) {
+    }
+
+    TemporaryConfigDir(const TemporaryConfigDir&) = delete;
+    TemporaryConfigDir& operator=(const TemporaryConfigDir&) = delete;
+
+    TemporaryConfigDir(TemporaryConfigDir&& other) noexcept : path_(std::exchange(other.path_, {})) {
+    }
+
+    TemporaryConfigDir& operator=(TemporaryConfigDir&& other) noexcept {
+        if (this != &other) {
+            cleanup();
+            path_ = std::exchange(other.path_, {});
+        }
+        return *this;
+    }
+
+    ~TemporaryConfigDir() {
+        cleanup();
+    }
+
+    std::string string() const {
+        return path_.string();
+    }
+
+    friend fs::path operator/(const TemporaryConfigDir& lhs, const fs::path& rhs) {
+        return lhs.path_ / rhs;
+    }
+
+private:
+    void cleanup() {
+        if (!path_.empty()) {
+            std::error_code ec;
+            fs::remove_all(path_, ec);
+            path_.clear();
+        }
+    }
+
+    fs::path path_;
+};
+
+TemporaryConfigDir make_config_with_setting(const fs::path& source_dir, const std::string& fixture_name,
+                                            const std::string& key, const std::string& value) {
+    const auto fixture_dir = fs::temp_directory_path() / (fixture_name + "-" + std::to_string(::getpid()));
+    fs::remove_all(fixture_dir);
+    fs::copy(source_dir, fixture_dir, fs::copy_options::recursive);
+
+    std::ofstream config(fixture_dir / "config.yaml", std::ios::app);
+    config << "  " << key << ": " << value << "\n";
+    return TemporaryConfigDir(fixture_dir);
+}
+
+} // namespace
 
 SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
     auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
@@ -26,6 +90,37 @@ SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
     GIVEN("A valid prefix and a valid config file") {
         THEN("It should not throw") {
             CHECK_NOTHROW(Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml"));
+        }
+    }
+    GIVEN("A valid prefix and config without SHM topic registry mode") {
+        THEN("It should default to static Manager-precomputed registry mode") {
+            auto ms = Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml");
+            CHECK(ms.mqtt_settings.shm_topic_registry_mode == Everest::ShmTopicRegistryMode::Static);
+        }
+    }
+    GIVEN("A valid prefix and config with explicit static SHM topic registry mode") {
+        THEN("It should not throw") {
+            const auto fixture_dir = make_config_with_setting(bin_dir + "valid_config", "everest-static-shm-registry",
+                                                              "shm_topic_registry_mode", "static");
+            auto ms = Everest::ManagerSettings(fixture_dir.string() + "/", (fixture_dir / "config.yaml").string());
+            CHECK(ms.mqtt_settings.shm_topic_registry_mode == Everest::ShmTopicRegistryMode::Static);
+        }
+    }
+    GIVEN("A valid prefix and config with explicit precomputed SHM topic registry mode") {
+        THEN("It should not throw") {
+            const auto fixture_dir = make_config_with_setting(
+                bin_dir + "valid_config", "everest-precomputed-shm-registry", "shm_topic_registry_mode", "precomputed");
+            auto ms = Everest::ManagerSettings(fixture_dir.string() + "/", (fixture_dir / "config.yaml").string());
+            CHECK(ms.mqtt_settings.shm_topic_registry_mode == Everest::ShmTopicRegistryMode::Static);
+        }
+    }
+    GIVEN("A valid prefix and config with dynamic SHM topic registry mode") {
+        THEN("It should fail early with a clear unsupported runtime error") {
+            const auto fixture_dir = make_config_with_setting(bin_dir + "valid_config", "everest-dynamic-shm-registry",
+                                                              "shm_topic_registry_mode", "dynamic");
+            REQUIRE_THROWS_WITH(
+                Everest::ManagerSettings(fixture_dir.string() + "/", (fixture_dir / "config.yaml").string()),
+                ContainsSubstring("shm_topic_registry_mode 'dynamic' is not implemented"));
         }
     }
     GIVEN("A valid prefix and a valid config file with a custom prefix") {

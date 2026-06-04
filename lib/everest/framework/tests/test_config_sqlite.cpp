@@ -176,6 +176,7 @@ TEST_CASE("Database operations", "[db_operation]") {
         auto response = storage.get_settings();
         REQUIRE(response.status == GenericResponseStatus::OK);
         REQUIRE(response.settings.has_value());
+        CHECK(response.settings->shm_topic_registry_mode == "static");
     }
     SECTION("Unknown module config can not be retrieved") {
         auto response = storage.get_module_config("unknown_module_id");
