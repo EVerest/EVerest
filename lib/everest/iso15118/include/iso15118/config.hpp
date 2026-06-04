@@ -31,6 +31,10 @@ struct ChainConfig {
     std::string path_certificate_key;                  //!< PEM file: private key for the leaf
     std::optional<std::string> private_key_password{}; //!< optional password for the private key
     std::vector<std::string> ocsp_response_files{};    //!< OCSP DER files in chain order
+    //!< inline PEM of the chain's self-signed root; drives TLS 1.3 chain selection
+    //!< (certificate_authorities) and TLS 1.2 trusted_ca_keys. Empty disables this chain
+    //!< from selection (it can still be the default chain when first in the list).
+    std::optional<std::string> trust_anchor_pem{};
 };
 
 /**

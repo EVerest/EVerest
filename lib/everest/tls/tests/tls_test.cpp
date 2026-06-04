@@ -6,6 +6,7 @@
 #include <everest/tls/tls.hpp>
 #include <gtest/gtest.h>
 #include <iterator>
+#include <openssl/x509.h>
 
 #include <cstring>
 #include <utility>
@@ -447,6 +448,66 @@ TEST(TrustedCaKeys, select) {
     auto result = select(keys, chains);
     EXPECT_NE(result, nullptr);
     EXPECT_EQ(result, &chains[2]);
+}
+
+namespace {
+
+// Build a STACK_OF(X509_NAME) from the subject names of the given certs.
+// Caller owns the returned stack and must release it with sk_X509_NAME_pop_free.
+STACK_OF(X509_NAME) * make_dn_stack(const std::vector<X509*>& certs) {
+    auto* stack = sk_X509_NAME_new_null();
+    for (auto* cert : certs) {
+        auto* name = X509_get_subject_name(cert);
+        sk_X509_NAME_push(stack, X509_NAME_dup(name));
+    }
+    return stack;
+}
+
+} // namespace
+
+TEST(TrustedCaKeys, selectByDnListEmpty) {
+    chain_list chains;
+    chains.emplace_back();
+    auto root = load_certificates("server_root_cert.pem");
+    chains[0].chain.trust_anchors.emplace_back(std::move(root[0]));
+
+    auto* stack = sk_X509_NAME_new_null();
+    EXPECT_EQ(select_by_dn_list(stack, chains), nullptr);
+    sk_X509_NAME_pop_free(stack, X509_NAME_free);
+}
+
+TEST(TrustedCaKeys, selectByDnListMatch) {
+    chain_list chains;
+    chains.emplace_back();
+    auto server_root = load_certificates("server_root_cert.pem");
+    chains[0].chain.trust_anchors.emplace_back(std::move(server_root[0]));
+
+    chains.emplace_back();
+    auto alt_root = load_certificates("alt_server_root_cert.pem");
+    chains[1].chain.trust_anchors.emplace_back(std::move(alt_root[0]));
+
+    // The DN list contains the alt root's subject; selection should return chains[1].
+    auto* stack = make_dn_stack({chains[1].chain.trust_anchors[0].get()});
+    auto* result = select_by_dn_list(stack, chains);
+    EXPECT_EQ(result, &chains[1]);
+    sk_X509_NAME_pop_free(stack, X509_NAME_free);
+}
+
+TEST(TrustedCaKeys, selectByDnListNoMatch) {
+    chain_list chains;
+    chains.emplace_back();
+    auto server_root = load_certificates("server_root_cert.pem");
+    chains[0].chain.trust_anchors.emplace_back(std::move(server_root[0]));
+
+    chains.emplace_back();
+    auto alt_root = load_certificates("alt_server_root_cert.pem");
+    chains[1].chain.trust_anchors.emplace_back(std::move(alt_root[0]));
+
+    // The DN list contains a name that matches no chain's trust anchor.
+    auto unrelated = load_certificates("client_root_cert.pem");
+    auto* stack = make_dn_stack({unrelated[0].get()});
+    EXPECT_EQ(select_by_dn_list(stack, chains), nullptr);
+    sk_X509_NAME_pop_free(stack, X509_NAME_free);
 }
 
 } // namespace

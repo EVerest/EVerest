@@ -67,6 +67,12 @@ public:
     void update_supported_der_functions(iec::DERControlName der_control, const iec::DERControlFunction& function);
     void update_unsupported_der_functions(iec::DERControlName der_control);
 
+    /// Replaces the current SSL config snapshot with a new one.
+    void set_ssl_config(config::SSLConfig new_config);
+
+    /// Returns a copy of the current SSL config snapshot.
+    [[nodiscard]] config::SSLConfig ssl_config_snapshot() const;
+
 private:
     io::PollManager poll_manager;
     std::unique_ptr<io::SdpServer> sdp_server;
@@ -95,6 +101,8 @@ private:
     std::optional<Timeout> communication_setup_timeout;
 
     ConnectionFactory connection_factory;
+
+    mutable everest::lib::util::monitor<config::SSLConfig> m_ssl_config;
 };
 
 } // namespace iso15118

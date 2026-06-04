@@ -24,6 +24,15 @@ catch_discover_tests(test_connection_plain
     PROPERTIES RESOURCE_LOCK iso15118_tls_port_50000
 )
 
+add_executable(ssl_config_builder_test ssl_config_builder_test.cpp)
+target_link_libraries(ssl_config_builder_test
+    PRIVATE
+        iso15118::iso15118
+        everest::tls
+        Catch2::Catch2WithMain
+)
+catch_discover_tests(ssl_config_builder_test)
+
 add_executable(connection_openssl_test)
 add_custom_command(
     TARGET connection_openssl_test POST_BUILD
