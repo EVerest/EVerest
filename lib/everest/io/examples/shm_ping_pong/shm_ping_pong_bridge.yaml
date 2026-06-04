@@ -1,0 +1,21 @@
+bridge:
+  name: shm-ping-pong-inspect
+
+shm:
+  client_id: shm-ping-pong-mqtt-bridge
+  control_socket: /tmp/everest-shm-ping-pong.sock
+  control_socket_abstract_namespace: false
+  topics:
+    - ping_pong/ping
+    - ping_pong/pong
+
+mqtt:
+  host: 127.0.0.1
+  port: 1883
+  client_id: shm-ping-pong-mqtt-bridge
+  topic_prefix: everest/shm_inspect
+  qos: 0
+  retain: false
+
+payload:
+  mode: raw
