@@ -19,6 +19,7 @@ target_sources(everest_io
         socket/socket.cpp
         utilities/generic_error_state.cpp
         event/fd_event_client.cpp
+        uds/uds_socket.cpp
         udp/udp_socket.cpp
         udp/udp_unconnected_socket.cpp
         udp/udp_dualstack_server_socket.cpp
@@ -28,6 +29,19 @@ target_sources(everest_io
         serial/serial.cpp
         serial/pty_handler.cpp
         serial/event_pty.cpp
+        shm/control_protocol.cpp
+        shm/control_client.cpp
+        shm/control_server.cpp
+        shm/coordinator.cpp
+        shm/structures.cpp
+        shm/shared_memory.cpp
+        shm/ring_buffer.cpp
+        shm/shm_client.cpp
+        shm/shm_server.cpp
+        shm/shm_types.cpp
+        shm/topic.cpp
+        shm/topic_filter.cpp
+        shm/topic_runtime.cpp
         mdns/mdns.cpp
         mdns/mdns_socket.cpp
         tun_tap/tap_handler.cpp
@@ -58,6 +72,8 @@ target_link_libraries(everest_io
     PUBLIC
         $<BUILD_INTERFACE:everest_util>
         $<INSTALL_INTERFACE:everest::util>
+        fmt::fmt
+        nlohmann_json::nlohmann_json
 )
 
 include(CheckIncludeFile)

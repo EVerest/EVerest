@@ -21,6 +21,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #include <everest/io/event/unique_fd.hpp>
@@ -65,6 +66,48 @@ std::string build_errno_string(std::string const& msg) {
     str << msg << ": " << strerror(errno) << " (" << errno << ")";
     return str.str();
 }
+
+namespace {
+constexpr int uds_datagram_buffer_size = 1024 * 1024;
+
+/**
+ * @brief Helper to securely populate a sockaddr_un and calculate its exact length.
+ */
+auto make_uds_address(const std::string& name, bool use_abstract) {
+    struct sockaddr_un addr {};
+    addr.sun_family = AF_UNIX;
+
+    // sun_path is typically 108 bytes. Leave 1 byte for null-terminator/abstract marker
+    const size_t max_path_len = sizeof(addr.sun_path) - 1;
+
+    if (name.length() > max_path_len) {
+        throw std::runtime_error("UDS name is too long: " + name);
+    }
+
+    socklen_t addr_len = 0;
+    const size_t family_offset = offsetof(struct sockaddr_un, sun_path);
+
+    if (use_abstract) {
+        // Abstract Namespace: First byte is \0, exact string length follows (no trailing \0)
+        addr.sun_path[0] = '\0';
+        std::memcpy(addr.sun_path + 1, name.data(), name.length());
+        addr_len = family_offset + 1 + name.length();
+    } else {
+        // Filesystem Namespace: Standard string copy, must include trailing \0
+        std::strncpy(addr.sun_path, name.c_str(), max_path_len);
+        addr.sun_path[max_path_len] = '\0'; // Guarantee null-termination
+        addr_len = family_offset + name.length() + 1;
+    }
+
+    return std::make_pair(addr, addr_len);
+}
+
+void configure_uds_datagram_buffers(int socket_fd) {
+    const int buffer_size = uds_datagram_buffer_size;
+    (void)::setsockopt(socket_fd, SOL_SOCKET, SO_SNDBUF, &buffer_size, sizeof(buffer_size));
+    (void)::setsockopt(socket_fd, SOL_SOCKET, SO_RCVBUF, &buffer_size, sizeof(buffer_size));
+}
+} // namespace
 
 } // namespace
 
@@ -413,6 +456,102 @@ event::unique_fd open_raw_promiscuous_socket(std::string const& if_name) {
     return event::unique_fd(socket_fd);
 }
 #endif
+
+event::unique_fd open_uds_client_socket(std::string const& server_name, bool server_is_abstract,
+                                        std::string const& client_bind_name, bool client_is_abstract) {
+    const int socket_fd = ::socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (socket_fd == -1) {
+        throw std::runtime_error("Failed to create UDS socket: " + std::string(strerror(errno)));
+    }
+    configure_uds_datagram_buffers(socket_fd);
+
+    if (!client_bind_name.empty()) {
+        auto [client_addr, client_len] = make_uds_address(client_bind_name, client_is_abstract);
+
+        if (-1 == ::bind(socket_fd, reinterpret_cast<struct sockaddr*>(&client_addr), client_len)) {
+            ::close(socket_fd);
+            throw std::runtime_error("Failed to bind UDS client: " + std::string(strerror(errno)));
+        }
+    }
+
+    auto [server_addr, server_len] = make_uds_address(server_name, server_is_abstract);
+
+    if (-1 == ::connect(socket_fd, reinterpret_cast<struct sockaddr*>(&server_addr), server_len)) {
+        ::close(socket_fd);
+        throw std::runtime_error("Could not connect to UDS server '" + server_name +
+                                 "': " + std::string(strerror(errno)));
+    }
+
+    return event::unique_fd{socket_fd};
+}
+
+event::unique_fd open_uds_server_socket(std::string const& server_name, bool is_abstract) {
+    const int socket_fd = ::socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (socket_fd == -1) {
+        throw std::runtime_error("Failed to create UDS server socket: " + std::string(strerror(errno)));
+    }
+    configure_uds_datagram_buffers(socket_fd);
+
+    if (!is_abstract) {
+        ::unlink(server_name.c_str());
+    }
+
+    auto [server_addr, server_len] = make_uds_address(server_name, is_abstract);
+
+    if (-1 == ::bind(socket_fd, reinterpret_cast<struct sockaddr*>(&server_addr), server_len)) {
+        ::close(socket_fd);
+        throw std::runtime_error("Failed to bind UDS server to '" + server_name + "': " + std::string(strerror(errno)));
+    }
+
+    return event::unique_fd{socket_fd};
+}
+
+event::unique_fd open_uds_seqpacket_server_socket(std::string const& server_name, bool is_abstract) {
+    constexpr int backlog = 64;
+    const int socket_fd = ::socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+    if (socket_fd == -1) {
+        throw std::runtime_error("Failed to create UDS SEQPACKET server socket: " + std::string(strerror(errno)));
+    }
+    configure_uds_datagram_buffers(socket_fd);
+
+    if (!is_abstract) {
+        ::unlink(server_name.c_str());
+    }
+
+    auto [server_addr, server_len] = make_uds_address(server_name, is_abstract);
+
+    if (-1 == ::bind(socket_fd, reinterpret_cast<struct sockaddr*>(&server_addr), server_len)) {
+        ::close(socket_fd);
+        throw std::runtime_error("Failed to bind UDS SEQPACKET server to '" + server_name +
+                                 "': " + std::string(strerror(errno)));
+    }
+
+    if (-1 == ::listen(socket_fd, backlog)) {
+        ::close(socket_fd);
+        throw std::runtime_error("Failed to listen on UDS SEQPACKET server '" + server_name +
+                                 "': " + std::string(strerror(errno)));
+    }
+
+    return event::unique_fd{socket_fd};
+}
+
+event::unique_fd open_uds_seqpacket_client_socket(std::string const& server_name, bool server_is_abstract) {
+    const int socket_fd = ::socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
+    if (socket_fd == -1) {
+        throw std::runtime_error("Failed to create UDS SEQPACKET socket: " + std::string(strerror(errno)));
+    }
+    configure_uds_datagram_buffers(socket_fd);
+
+    auto [server_addr, server_len] = make_uds_address(server_name, server_is_abstract);
+
+    if (-1 == ::connect(socket_fd, reinterpret_cast<struct sockaddr*>(&server_addr), server_len)) {
+        ::close(socket_fd);
+        throw std::runtime_error("Could not connect SEQPACKET UDS to server '" + server_name +
+                                 "': " + std::string(strerror(errno)));
+    }
+
+    return event::unique_fd{socket_fd};
+}
 
 void enable_tcp_no_delay(int fd) {
     socklen_t enable = 1;
