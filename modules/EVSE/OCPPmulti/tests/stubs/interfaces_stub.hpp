@@ -149,21 +149,6 @@ public:
     void publish(const Requirement& req, const std::string& fn, json args);
 };
 
-struct ocpp_1_6_charge_pointImplStub : public ocpp_1_6_charge_pointImplBase {
-    using ocpp_1_6_charge_pointImplBase::ocpp_1_6_charge_pointImplBase;
-
-    MOCK_METHOD(void, init, (), (override));
-    MOCK_METHOD(void, ready, (), (override));
-
-    MOCK_METHOD(bool, handle_stop, (), (override));
-    MOCK_METHOD(bool, handle_restart, (), (override));
-    MOCK_METHOD(types::ocpp::GetConfigurationResponse, handle_get_configuration_key, (Array & keys), (override));
-    MOCK_METHOD(types::ocpp::ConfigurationStatus, handle_set_configuration_key, (std::string & key, std::string& value),
-                (override));
-    MOCK_METHOD(void, handle_monitor_configuration_keys, (Array & keys), (override));
-    MOCK_METHOD(void, handle_security_event, (std::string & type, std::string& info), (override));
-};
-
 struct auth_token_validatorImplStub : public auth_token_validatorImplBase {
     using auth_token_validatorImplBase::auth_token_validatorImplBase;
 
@@ -228,7 +213,6 @@ public:
     using provides_t = ocpp_multi::GenericOcppInterface::provides_t;
     using requires_t = ocpp_multi::GenericOcppInterface::requires_t;
 
-    ocpp_1_6_charge_pointImplStub p_ocpp16{&m_adapter, "ocpp16"};
     auth_token_validatorImplStub p_auth_validator{&m_adapter, "auth_validator"};
     auth_token_providerImplStub p_auth_provider{&m_adapter, "auth_provider"};
     ocpp_data_transferImplStub p_data_transfer{&m_adapter, "data_transfer"};
@@ -325,7 +309,7 @@ public:
     }
 
 private:
-    provides_t m_provides{p_ocpp16, p_auth_validator, p_auth_provider, p_data_transfer, p_ocpp_generic, p_session_cost};
+    provides_t m_provides{p_auth_validator, p_auth_provider, p_data_transfer, p_ocpp_generic, p_session_cost};
     requires_t m_requires{r_auth,         r_charger_information, r_data_transfer, r_display_message, r_evse_energy_sink,
                           r_evse_manager, r_extensions_15118,    r_reservation,   r_security,        r_system};
 };

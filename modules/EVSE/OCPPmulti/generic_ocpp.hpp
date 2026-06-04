@@ -59,7 +59,6 @@ struct GenericOcppInterface {
     virtual ~GenericOcppInterface() = default;
 
     struct provides_t {
-        ocpp_1_6_charge_pointImplBase& ocpp16;
         auth_token_validatorImplBase& auth_validator;
         auth_token_providerImplBase& auth_provider;
         ocpp_data_transferImplBase& data_transfer;
@@ -89,21 +88,14 @@ struct GenericOcppInterface {
     // ocpp_generic
     virtual bool handle_stop() = 0;
     virtual bool handle_restart() = 0;
-    virtual void handle_security_event(types::ocpp::SecurityEvent& event) = 0;
+    virtual void handle_security_event(const types::ocpp::SecurityEvent& event) = 0;
     virtual std::vector<types::ocpp::GetVariableResult>
-    handle_get_variables(std::vector<types::ocpp::GetVariableRequest>& requests) = 0;
+    handle_get_variables(const std::vector<types::ocpp::GetVariableRequest>& requests) = 0;
     virtual std::vector<types::ocpp::SetVariableResult>
-    handle_set_variables(std::vector<types::ocpp::SetVariableRequest>& requests, std::string& source) = 0;
+    handle_set_variables(const std::vector<types::ocpp::SetVariableRequest>& requests, const std::string& source) = 0;
     virtual types::ocpp::ChangeAvailabilityResponse
-    handle_change_availability(types::ocpp::ChangeAvailabilityRequest& request) = 0;
-    virtual void handle_monitor_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) = 0;
-    // ocpp 1.6
-    // virtual bool handle_stop() = 0; // part of ocpp_generic
-    // virtual bool handle_restart() = 0; // part of ocpp_generic
-    virtual types::ocpp::GetConfigurationResponse handle_get_configuration_key(Array& keys) = 0;
-    virtual types::ocpp::ConfigurationStatus handle_set_configuration_key(std::string& key, std::string& value) = 0;
-    virtual void handle_monitor_configuration_keys(Array& keys) = 0;
-    virtual void handle_security_event(std::string& type, std::string& info) = 0;
+    handle_change_availability(const types::ocpp::ChangeAvailabilityRequest& request) = 0;
+    virtual void handle_monitor_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) = 0;
     // session cost
 };
 
@@ -132,13 +124,15 @@ struct ConfigInterface {
 };
 
 class GenericOcpp : public GenericOcppInterface {
+public:
+    using MonitorListEntry = std::pair<ocpp::v2::Component, ocpp::v2::Variable>;
+    using MonitorList = std::set<MonitorListEntry>;
+
 private:
     using EventQueue = std::map<
         std::int32_t,
         std::queue<std::variant<std::monostate, types::evse_manager::SessionEvent, Everest::error::Error,
                                 ocpp::v2::MeterValue, types::system::FirmwareUpdateStatus, types::system::LogStatus>>>;
-    using MonitorListEntry = std::pair<ocpp::v2::Component, ocpp::v2::Variable>;
-    using MonitorList = std::set<MonitorListEntry>;
 
     std::shared_ptr<module::device_model::EverestDeviceModelStorage> m_everest_device_model_storage;
     std::unique_ptr<module::TransactionHandler> m_transaction_handler;
@@ -165,7 +159,6 @@ private:
     std::mutex m_session_event_mutex;
     EventQueue m_event_queue;
     MonitorList m_monitor_list;
-    MonitorList m_monitor_list_v16;
     Everest::SteadyTimer m_charging_schedules_timer;
 
 public:
@@ -184,18 +177,15 @@ public:
     types::ocpp::DataTransferResponse handle_data_transfer(const types::ocpp::DataTransferRequest& request) override;
     bool handle_stop() override;
     bool handle_restart() override;
-    void handle_security_event(types::ocpp::SecurityEvent& event) override;
+    void handle_security_event(const types::ocpp::SecurityEvent& event) override;
     std::vector<types::ocpp::GetVariableResult>
-    handle_get_variables(std::vector<types::ocpp::GetVariableRequest>& requests) override;
+    handle_get_variables(const std::vector<types::ocpp::GetVariableRequest>& requests) override;
     std::vector<types::ocpp::SetVariableResult>
-    handle_set_variables(std::vector<types::ocpp::SetVariableRequest>& requests, std::string& source) override;
+    handle_set_variables(const std::vector<types::ocpp::SetVariableRequest>& requests,
+                         const std::string& source) override;
     types::ocpp::ChangeAvailabilityResponse
-    handle_change_availability(types::ocpp::ChangeAvailabilityRequest& request) override;
-    void handle_monitor_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) override;
-    types::ocpp::GetConfigurationResponse handle_get_configuration_key(Array& keys) override;
-    types::ocpp::ConfigurationStatus handle_set_configuration_key(std::string& key, std::string& value) override;
-    void handle_monitor_configuration_keys(Array& keys) override;
-    void handle_security_event(std::string& type, std::string& info) override;
+    handle_change_availability(const types::ocpp::ChangeAvailabilityRequest& request) override;
+    void handle_monitor_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) override;
 
     // ------------------------------------------------------------------------
     // startup
@@ -216,6 +206,13 @@ public:
 
     void cb_error_cleared_handler(const Everest::error::Error& error);
     void cb_error_handler(const Everest::error::Error& error);
+
+    // ------------------------------------------------------------------------
+    // general purpose
+
+    [[nodiscard]] const MonitorList& get_monitor_list() const {
+        return m_monitor_list;
+    }
 
 protected:
     void init_check_energy_sink();
@@ -288,11 +285,12 @@ protected:
     void cb_variable_changed(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
                              const std::string& value);
     void cb_variable_changed(const ocpp::v2::SetVariableData& set_variable_data);
-    void cb_variable_changed_v16(const ocpp::v2::Variable& variable, const std::string& value);
     void cb_waiting_for_external_ready(std::int32_t evse_id, bool ready);
 
+    bool charging_schedules_timer_running();
     void charging_schedules_timer_start();
     void charging_schedules_timer_stop();
+
     std::optional<types::energy::ScheduleReqEntry>
     create_limits_entry(const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
                         ocpp::v2::ChargingRateUnitEnum unit);

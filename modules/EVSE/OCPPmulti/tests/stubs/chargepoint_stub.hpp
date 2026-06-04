@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "ocpp/common/cistring.hpp"
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -69,8 +70,6 @@ struct ChargePointStub : public ocpp_multi::GenericChargePointInterface {
 
     MOCK_METHOD(std::vector<ocpp::v2::EnhancedCompositeSchedule>, get_all_composite_schedules,
                 (std::int32_t duration_s, const ocpp::v2::ChargingRateUnitEnum& unit), (override));
-    MOCK_METHOD(ocpp::v16::GetConfigurationResponse, get_configuration_key,
-                (const ocpp::v16::GetConfigurationRequest& request), (override));
     MOCK_METHOD(std::vector<ocpp::v2::GetVariableResult>, get_variables,
                 (const std::vector<ocpp::v2::GetVariableData>& get_variable_data_vector), (override));
 
@@ -121,8 +120,6 @@ struct ChargePointStub : public ocpp_multi::GenericChargePointInterface {
     MOCK_METHOD(void, on_unavailable, (std::int32_t evse_id, std::int32_t connector_id), (override));
 
     MOCK_METHOD(void, register_variable_listener, (listener_t && listener), (override));
-    MOCK_METHOD(ocpp::v16::ConfigurationStatus, set_configuration_key,
-                (const ocpp::CiString<50>& key, const ocpp::CiString<500>& value), (override));
     MOCK_METHOD((std::map<ocpp::v2::SetVariableData, ocpp::v2::SetVariableResult>), set_variables,
                 (const std::vector<ocpp::v2::SetVariableData>& set_variable_data_vector, const std::string& source),
                 (override));
@@ -135,11 +132,22 @@ struct ChargePointStub : public ocpp_multi::GenericChargePointInterface {
 
 } // namespace stubs
 
-namespace ocpp::v2 {
+namespace ocpp {
+template <std::size_t S> bool operator==(const std::string& lhs, const CiString<S>& rhs) {
+    return lhs == static_cast<std::string>(rhs);
+}
+template <std::size_t S> bool operator==(const CiString<S>& lhs, const std::string& rhs) {
+    return static_cast<std::string>(lhs) == rhs;
+}
+
+namespace v2 {
 bool operator==(const AdditionalInfo& lhs, const AdditionalInfo& rhs);
+bool operator==(const ChangeAvailabilityRequest& lhs, const ChangeAvailabilityRequest& rhs);
 bool operator==(const DataTransferRequest& lhs, const DataTransferRequest& rhs);
+bool operator==(const GetVariableData& lhs, const GetVariableData& rhs);
 bool operator==(const IdToken& lhs, const IdToken& rhs);
-} // namespace ocpp::v2
+} // namespace v2
+} // namespace ocpp
 
 namespace types::ocpp {
 std::ostream& operator<<(std::ostream& out, DataTransferStatus value);

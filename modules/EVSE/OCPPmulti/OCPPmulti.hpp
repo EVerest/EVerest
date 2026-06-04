@@ -14,7 +14,6 @@
 #include <generated/interfaces/auth_token_provider/Implementation.hpp>
 #include <generated/interfaces/auth_token_validator/Implementation.hpp>
 #include <generated/interfaces/ocpp/Implementation.hpp>
-#include <generated/interfaces/ocpp_1_6_charge_point/Implementation.hpp>
 #include <generated/interfaces/ocpp_data_transfer/Implementation.hpp>
 #include <generated/interfaces/session_cost/Implementation.hpp>
 
@@ -90,7 +89,6 @@ class OCPPmulti : public Everest::ModuleBase {
 public:
     OCPPmulti() = delete;
     OCPPmulti(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
-              std::unique_ptr<ocpp_1_6_charge_pointImplBase> p_ocpp16,
               std::unique_ptr<auth_token_validatorImplBase> p_auth_validator,
               std::unique_ptr<auth_token_providerImplBase> p_auth_provider,
               std::unique_ptr<ocpp_data_transferImplBase> p_data_transfer, std::unique_ptr<ocppImplBase> p_ocpp_generic,
@@ -105,7 +103,6 @@ public:
               std::unique_ptr<evse_securityIntf> r_security, std::unique_ptr<systemIntf> r_system, Conf& config) :
         ModuleBase(info),
         mqtt(mqtt_provider),
-        p_ocpp16(std::move(p_ocpp16)),
         p_auth_validator(std::move(p_auth_validator)),
         p_auth_provider(std::move(p_auth_provider)),
         p_data_transfer(std::move(p_data_transfer)),
@@ -124,7 +121,6 @@ public:
         config(config){};
 
     Everest::MqttProvider& mqtt;
-    const std::unique_ptr<ocpp_1_6_charge_pointImplBase> p_ocpp16;
     const std::unique_ptr<auth_token_validatorImplBase> p_auth_validator;
     const std::unique_ptr<auth_token_providerImplBase> p_auth_provider;
     const std::unique_ptr<ocpp_data_transferImplBase> p_data_transfer;
@@ -150,7 +146,7 @@ public:
         m_charge_point,
         info,
         m_config,
-        {*p_ocpp16, *p_auth_validator, *p_auth_provider, *p_data_transfer, *p_ocpp_generic, *p_session_cost},
+        {*p_auth_validator, *p_auth_provider, *p_data_transfer, *p_ocpp_generic, *p_session_cost},
         {*r_auth, r_charger_information, r_data_transfer, r_display_message, r_evse_energy_sink, r_evse_manager,
          r_extensions_15118, r_reservation, *r_security, *r_system}};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1

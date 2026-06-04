@@ -121,9 +121,10 @@ config:
     type: string
     default: user_config.json
 provides:
-  ocpp16:
-    description: This is a OCPP 1.6 charge point
-    interface: ocpp_1_6_charge_point
+  # probably not needed
+  # ocpp16:
+  #   description: This is a OCPP 1.6 charge point
+  #   interface: ocpp_1_6_charge_point
   auth_validator:
     description: Validates the provided token using CSMS, AuthorizationList or AuthorizationCache
     interface: auth_token_validator

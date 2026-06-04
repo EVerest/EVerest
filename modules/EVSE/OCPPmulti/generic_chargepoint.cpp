@@ -70,11 +70,6 @@ GenericChargePoint::get_all_composite_schedules(std::int32_t duration_s, const o
     return {};
 }
 
-ocpp::v16::GetConfigurationResponse
-GenericChargePoint::get_configuration_key(const ocpp::v16::GetConfigurationRequest& request) {
-    return {};
-}
-
 std::vector<ocpp::v2::GetVariableResult>
 GenericChargePoint::get_variables(const std::vector<ocpp::v2::GetVariableData>& get_variable_data_vector) {
     return {};
@@ -166,11 +161,6 @@ void GenericChargePoint::on_unavailable(std::int32_t evse_id, std::int32_t conne
 }
 
 void GenericChargePoint::register_variable_listener(listener_t&& listener) {
-}
-
-ocpp::v16::ConfigurationStatus GenericChargePoint::set_configuration_key(const ocpp::CiString<50>& key,
-                                                                         const ocpp::CiString<500>& value) {
-    return ocpp::v16::ConfigurationStatus::Rejected;
 }
 
 std::map<ocpp::v2::SetVariableData, ocpp::v2::SetVariableResult>

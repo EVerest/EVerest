@@ -59,8 +59,8 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::cb_update_firmware_request;
     using ocpp_multi::GenericOcpp::cb_validate_network_profile;
     using ocpp_multi::GenericOcpp::cb_variable_changed;
-    using ocpp_multi::GenericOcpp::cb_variable_changed_v16;
     using ocpp_multi::GenericOcpp::cb_waiting_for_external_ready;
+    using ocpp_multi::GenericOcpp::charging_schedules_timer_running;
     using ocpp_multi::GenericOcpp::charging_schedules_timer_start;
     using ocpp_multi::GenericOcpp::charging_schedules_timer_stop;
     using ocpp_multi::GenericOcpp::create_limits_entry;

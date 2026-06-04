@@ -44,6 +44,14 @@ public:
 
 } // namespace logging
 
+#undef EVLOG_level
+#undef EVLOG_critical
+#undef EVLOG_error
+#undef EVLOG_warning
+#undef EVLOG_info
+#undef EVLOG_debug
+#undef EVLOG_AND_THROW
+
 #define EVLOG_level(LEVEL) logging::UTestLogger::set_level(logging::UTestLogger::level_t::LEVEL)
 
 #define EVLOG_critical logging::UTestLogger(std::cerr, logging::UTestLogger::level_t::Critical, __FILE__, __LINE__)

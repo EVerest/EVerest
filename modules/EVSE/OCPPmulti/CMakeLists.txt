@@ -13,7 +13,6 @@ ev_setup_cpp_module()
 
 target_sources(${MODULE_NAME}
     PRIVATE
-        "ocpp16/ocpp_1_6_charge_pointImpl.cpp"
         "auth_validator/auth_token_validatorImpl.cpp"
         "auth_provider/auth_token_providerImpl.cpp"
         "data_transfer/ocpp_data_transferImpl.cpp"

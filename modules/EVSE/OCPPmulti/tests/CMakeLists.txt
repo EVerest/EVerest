@@ -21,6 +21,7 @@ target_sources(${TEST_TARGET_NAME}
     auth_validator_tests.cpp
     data_transfer_tests.cpp
     generic_ocpp_tests.cpp
+    ocpp_generic_tests.cpp
 
     main.cpp
 

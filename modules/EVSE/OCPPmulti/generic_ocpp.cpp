@@ -257,6 +257,7 @@ ocpp::v2::TriggerReasonEnum stop_reason_to_trigger_reason_enum(const ocpp::v2::R
     }
 }
 
+#if 0
 types::ocpp::KeyValue to_everest(const ocpp::v16::KeyValue& key_value) {
     types::ocpp::KeyValue _key_value;
     _key_value.key = key_value.key.get();
@@ -304,6 +305,7 @@ types::ocpp::GetConfigurationResponse to_everest(const ocpp::v16::GetConfigurati
     _response.unknown_keys = unknown_keys;
     return _response;
 }
+#endif
 
 void update_evcc_id_token(ocpp::v2::IdToken& id_token, const std::string& evcc_id,
                           const ocpp::OcppProtocolVersion ocpp_protocol_version) {
@@ -448,7 +450,7 @@ bool GenericOcpp::handle_restart() {
     return result;
 }
 
-void GenericOcpp::handle_security_event(types::ocpp::SecurityEvent& event) {
+void GenericOcpp::handle_security_event(const types::ocpp::SecurityEvent& event) {
     if (m_started) {
         std::optional<ocpp::DateTime> timestamp;
         if (event.timestamp.has_value()) {
@@ -461,7 +463,7 @@ void GenericOcpp::handle_security_event(types::ocpp::SecurityEvent& event) {
 }
 
 std::vector<types::ocpp::GetVariableResult>
-GenericOcpp::handle_get_variables(std::vector<types::ocpp::GetVariableRequest>& requests) {
+GenericOcpp::handle_get_variables(const std::vector<types::ocpp::GetVariableRequest>& requests) {
     using namespace module::conversions;
 
     std::vector<types::ocpp::GetVariableResult> results;
@@ -473,7 +475,7 @@ GenericOcpp::handle_get_variables(std::vector<types::ocpp::GetVariableRequest>& 
     } else {
         EVLOG_warning << "ChargePoint not yet initialized. Cannot handle get variables request.";
         for (const auto& req : requests) {
-            types::ocpp::GetVariableResult result;
+            types::ocpp::GetVariableResult result{};
             result.status = types::ocpp::GetVariableStatusEnumType::Rejected;
             result.component_variable.component = req.component_variable.component;
             result.component_variable.variable = req.component_variable.variable;
@@ -486,7 +488,8 @@ GenericOcpp::handle_get_variables(std::vector<types::ocpp::GetVariableRequest>& 
 }
 
 std::vector<types::ocpp::SetVariableResult>
-GenericOcpp::handle_set_variables(std::vector<types::ocpp::SetVariableRequest>& requests, std::string& source) {
+GenericOcpp::handle_set_variables(const std::vector<types::ocpp::SetVariableRequest>& requests,
+                                  const std::string& source) {
     using namespace module::conversions;
 
     std::vector<types::ocpp::SetVariableResult> results;
@@ -494,7 +497,8 @@ GenericOcpp::handle_set_variables(std::vector<types::ocpp::SetVariableRequest>& 
     if (m_started) {
         const auto _requests = to_ocpp_set_variable_data_vector(requests);
         const auto response_map = m_charge_point.set_variables(_requests, source);
-        std::vector<ocpp::v2::SetVariableResult> response(response_map.size());
+        std::vector<ocpp::v2::SetVariableResult> response;
+        response.reserve(response_map.size());
         for (const auto& [set_variable_data, set_variable_result] : response_map) {
             response.push_back(set_variable_result);
         }
@@ -515,7 +519,7 @@ GenericOcpp::handle_set_variables(std::vector<types::ocpp::SetVariableRequest>& 
 }
 
 types::ocpp::ChangeAvailabilityResponse
-GenericOcpp::handle_change_availability(types::ocpp::ChangeAvailabilityRequest& request) {
+GenericOcpp::handle_change_availability(const types::ocpp::ChangeAvailabilityRequest& request) {
     using namespace module::conversions;
     using ChangeAvailabilityStatusEnum = ocpp::v2::ChangeAvailabilityStatusEnum;
 
@@ -524,7 +528,7 @@ GenericOcpp::handle_change_availability(types::ocpp::ChangeAvailabilityRequest& 
 
     if (m_started) {
         const auto ocpp_request = to_ocpp_change_availability_request(request);
-        m_charge_point.on_change_availability(ocpp_request);
+        result = m_charge_point.on_change_availability(ocpp_request);
     } else {
         EVLOG_warning << "ChargePoint not initialized, cannot handle change availability command";
     }
@@ -532,7 +536,7 @@ GenericOcpp::handle_change_availability(types::ocpp::ChangeAvailabilityRequest& 
     return to_everest_change_availability_response(result);
 }
 
-void GenericOcpp::handle_monitor_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) {
+void GenericOcpp::handle_monitor_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) {
     using namespace module::conversions;
 
     if (m_started) {
@@ -554,69 +558,6 @@ void GenericOcpp::handle_monitor_variables(std::vector<types::ocpp::ComponentVar
     } else {
         EVLOG_warning << "ChargePoint not initialized, cannot handle monitor variables command";
     }
-}
-
-types::ocpp::GetConfigurationResponse GenericOcpp::handle_get_configuration_key(Array& keys) {
-    types::ocpp::GetConfigurationResponse response;
-
-    if (m_started) {
-        ocpp::v16::GetConfigurationRequest request;
-        request.key = std::vector<ocpp::CiString<50>>();
-        for (const auto& key : keys) {
-            request.key.value().push_back(key);
-        }
-        const auto ret = m_charge_point.get_configuration_key(request);
-        response = to_everest(ret);
-    } else {
-        EVLOG_warning << "ChargePoint not initialized, cannot handle get configuration key command";
-        types::ocpp::GetConfigurationResponse response;
-        for (const auto& key : keys) {
-            response.unknown_keys.push_back(key);
-        }
-    }
-
-    return response;
-}
-
-types::ocpp::ConfigurationStatus GenericOcpp::handle_set_configuration_key(std::string& key, std::string& value) {
-    auto result = types::ocpp::ConfigurationStatus::Rejected;
-    if (m_started) {
-        const auto ret = m_charge_point.set_configuration_key(key, value);
-        result = to_everest(ret);
-    } else {
-        EVLOG_warning << "ChargePoint not initialized, cannot handle set configuration key command";
-    }
-
-    return result;
-}
-
-void GenericOcpp::handle_monitor_configuration_keys(Array& keys) {
-    using namespace module::conversions;
-
-    if (m_started) {
-        std::lock_guard lock(m_monitor_list_mutex);
-
-        if (m_monitor_list_v16.empty()) {
-            // register a handler
-            m_charge_point.register_variable_listener(
-                [this](auto&, const auto&, const auto& variable, auto&, auto&, auto&, const std::string& value) {
-                    cb_variable_changed_v16(variable, value);
-                });
-        }
-
-        // add variables to monitor list
-        for (const auto& key : keys) {
-            // failures to insert are likely to be the same variable being
-            // requested again
-            (void)m_monitor_list_v16.emplace(ocpp::v2::Component{}, ocpp::v2::Variable{key});
-        }
-    } else {
-        EVLOG_warning << "ChargePoint not initialized, cannot handle monitor configuration keys command";
-    }
-}
-
-void GenericOcpp::handle_security_event(std::string& type, std::string& info) {
-    m_charge_point.on_security_event(type, info, std::nullopt, std::nullopt);
 }
 
 // ----------------------------------------------------------------------------
@@ -1637,24 +1578,6 @@ GenericOcpp::cb_validate_network_profile(const ocpp::v2::NetworkConnectionProfil
     // TODO(piet): Add further validation of the NetworkConnectionProfile
 }
 
-void GenericOcpp::cb_variable_changed_v16(const ocpp::v2::Variable& variable, const std::string& value) {
-    using namespace module::conversions;
-
-    MonitorListEntry entry{{}, variable};
-    bool publish;
-    {
-        std::lock_guard lock(m_monitor_list_mutex);
-        const auto it = m_monitor_list.find(entry);
-        publish = it != m_monitor_list.end();
-    }
-    if (publish) {
-        // monitor entry exists - publish
-        // TODO(james-ctc): need the read-only info
-        ocpp::v16::KeyValue key_value{variable.name, false, value};
-        m_provides.ocpp16.publish_configuration_key(to_everest(key_value));
-    }
-}
-
 void GenericOcpp::cb_variable_changed(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
                                       const std::string& value) {
     using namespace module::conversions;
@@ -1747,6 +1670,10 @@ void GenericOcpp::cb_waiting_for_external_ready(std::int32_t evse_id, bool ready
 
 // ----------------------------------------------------------------------------
 // general
+
+bool GenericOcpp::charging_schedules_timer_running() {
+    return m_charging_schedules_timer.is_running();
+}
 
 void GenericOcpp::charging_schedules_timer_start() {
     const auto interval = m_config.getCompositeScheduleIntervalS();

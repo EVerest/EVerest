@@ -170,9 +170,19 @@ bool operator==(const AdditionalInfo& lhs, const AdditionalInfo& rhs) {
            optional_equal(lhs.customData, rhs.customData);
 }
 
+bool operator==(const ChangeAvailabilityRequest& lhs, const ChangeAvailabilityRequest& rhs) {
+    return (lhs.operationalStatus == rhs.operationalStatus) && optional_equal(lhs.evse, rhs.evse) &&
+           optional_equal(lhs.customData, rhs.customData);
+}
+
 bool operator==(const DataTransferRequest& lhs, const DataTransferRequest& rhs) {
     return (lhs.vendorId == rhs.vendorId) && optional_equal(lhs.messageId, rhs.messageId) &&
            optional_equal(lhs.data, rhs.data) && optional_equal(lhs.customData, rhs.customData);
+}
+
+bool operator==(const GetVariableData& lhs, const GetVariableData& rhs) {
+    return (lhs.component == rhs.component) && (lhs.variable == rhs.variable) &&
+           optional_equal(lhs.attributeType, rhs.attributeType) && optional_equal(lhs.customData, rhs.customData);
 }
 
 bool operator==(const IdToken& lhs, const IdToken& rhs) {
