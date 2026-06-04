@@ -337,10 +337,17 @@ SCENARIO("ConnectionSSL exposes the peer certificate SHA-512 to callers") {
                 const auto observed = connection.get_vehicle_cert_hash();
                 REQUIRE(observed.has_value());
                 REQUIRE(*observed == expected);
+
+                AND_WHEN("the connection is closed") {
+                    connection.close();
+                    THEN("get_vehicle_cert_hash() still returns the cached SHA-512") {
+                        const auto after_close = connection.get_vehicle_cert_hash();
+                        REQUIRE(after_close.has_value());
+                        REQUIRE(*after_close == expected);
+                    }
+                }
             }
         }
-
-        connection.close();
     }
 }
 

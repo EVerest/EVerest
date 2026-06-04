@@ -190,11 +190,8 @@ Ipv6EndPoint ConnectionSSL::get_public_endpoint() const {
 }
 
 std::optional<sha512_hash_t> ConnectionSSL::get_vehicle_cert_hash() const {
-    if (ssl->connection != nullptr) {
-        if (auto hash = ssl->connection->peer_certificate_sha512(); hash.has_value()) {
-            return hash;
-        }
-    }
+    // Cached once on the OPEN event in handle_data(); the live tls::Connection
+    // is gone after close(), so the cache is the single source of truth.
     return ssl->vehicle_cert_hash;
 }
 
