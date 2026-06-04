@@ -771,6 +771,7 @@ void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message
         case MessageType::GetChargingProfiles:
         case MessageType::GetCompositeSchedule:
         case MessageType::NotifyEVChargingNeedsResponse:
+        case MessageType::UpdateDynamicSchedule:
             if (this->smart_charging != nullptr) {
                 this->smart_charging->handle_message(message);
             } else {
@@ -937,7 +938,6 @@ void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message
         case MessageType::ReportDERControl:
         case MessageType::ReportDERControlResponse:
         case MessageType::SetDERControlResponse:
-        case MessageType::UpdateDynamicSchedule:
         case MessageType::UpdateDynamicScheduleResponse:
         case MessageType::UsePriorityCharging:
         case MessageType::UsePriorityChargingResponse:

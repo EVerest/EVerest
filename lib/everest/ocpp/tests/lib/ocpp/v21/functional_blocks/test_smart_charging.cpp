@@ -6,9 +6,19 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <atomic>
+#include <chrono>
 #include <filesystem>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <sstream>
+#include <string>
+#include <system_error>
+#include <thread>
+
+#include <unistd.h>
 
 #include <date/tz.h>
 #include <sqlite3.h>
@@ -23,6 +33,8 @@
 #include <ocpp/v2/functional_blocks/functional_block_context.hpp>
 #include <ocpp/v2/ocpp_enums.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
+#include <ocpp/v21/messages/PullDynamicScheduleUpdate.hpp>
+#include <ocpp/v21/messages/UpdateDynamicSchedule.hpp>
 
 #include "component_state_manager_mock.hpp"
 #include "connectivity_manager_mock.hpp"
@@ -42,53 +54,6 @@ using ::testing::Return;
 using ::testing::ReturnRef;
 
 namespace ocpp::v2 {
-class SmartChargingTestV21 : public DatabaseTestingUtils {
-protected:
-    void SetUp() override {
-        const auto& charging_rate_unit_cv = ControllerComponentVariables::ChargingScheduleChargingRateUnit;
-        device_model->set_value(charging_rate_unit_cv.component, charging_rate_unit_cv.variable.value(),
-                                AttributeEnum::Actual, "A,W", "test", true);
-
-        const auto& ac_phase_switching_cv = ControllerComponentVariables::ACPhaseSwitchingSupported;
-        device_model->set_value(ac_phase_switching_cv.component, ac_phase_switching_cv.variable.value(),
-                                AttributeEnum::Actual, "true", "test", true);
-    }
-
-    void TearDown() override {
-        // TODO: use in-memory db so we don't need to reset the db between tests
-        this->database_handler->clear_charging_profiles();
-    }
-
-    TestSmartCharging create_smart_charging() {
-        std::unique_ptr<everest::db::sqlite::Connection> database_connection =
-            std::make_unique<everest::db::sqlite::Connection>(fs::path("/tmp/ocpp201") / "cp.db");
-        database_handler =
-            std::make_shared<DatabaseHandler>(std::move(database_connection), MIGRATION_FILES_LOCATION_V2);
-        database_handler->open_connection();
-        device_model = device_model_test_helper.get_device_model();
-        this->functional_block_context = std::make_unique<FunctionalBlockContext>(
-            this->mock_dispatcher, *this->device_model, this->connectivity_manager, *this->evse_manager,
-            *this->database_handler, this->evse_security, this->component_state_manager, this->ocpp_version);
-        return TestSmartCharging(*functional_block_context, set_charging_profiles_callback_mock.AsStdFunction(),
-                                 stop_transaction_callback_mock.AsStdFunction());
-    }
-
-    // Default values used within the tests
-    DeviceModelTestHelper device_model_test_helper;
-    MockMessageDispatcher mock_dispatcher;
-    std::unique_ptr<EvseManagerFake> evse_manager = std::make_unique<EvseManagerFake>(NR_OF_TWO_EVSES);
-    std::shared_ptr<DatabaseHandler> database_handler;
-    DeviceModel* device_model;
-    ::testing::NiceMock<ConnectivityManagerMock> connectivity_manager;
-    ocpp::EvseSecurityMock evse_security;
-    ComponentStateManagerMock component_state_manager;
-    MockFunction<void()> set_charging_profiles_callback_mock;
-    MockFunction<RequestStartStopStatusEnum(const std::int32_t evse_id, const ReasonEnum& stop_reason)>
-        stop_transaction_callback_mock;
-    std::unique_ptr<FunctionalBlockContext> functional_block_context;
-    TestSmartCharging smart_charging = create_smart_charging();
-    std::atomic<OcppProtocolVersion> ocpp_version = OcppProtocolVersion::v21;
-};
 
 TEST_F(SmartChargingTestV21,
        K01FR44_IfPhaseToUseProvidedForDCChargingStationAndDCInputPhaseControlFalse_ThenProfileIsInvalid) {
