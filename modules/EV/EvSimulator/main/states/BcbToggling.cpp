@@ -52,23 +52,19 @@ StateBase::Result BcbToggling::feed(EventType ev) {
             // detour below, so the deferred-start contract holds whichever way
             // V2GNegotiating is finally entered.
             ctx.vars.resume_awaiting_pwm = true;
-            // Every ISO mode must re-establish SLAC before re-negotiating: the
-            // SECC's BCB-toggle wake-up puts ITS SLAC back into MATCHING and will
-            // not honor the resume (its CableCheck needs a fresh D-LINK_READY)
-            // until the EV re-triggers matching too -- the SlacSimulator co-match
-            // fires only with BOTH sides MATCHING. So route through SlacMatching,
-            // whose enter re-triggers matching and whose MATCHED handler advances
-            // to V2GNegotiating, for AC and DC alike. Mirrors EvManager's
-            // iso_wait_slac_matched reset + trigger_matching (car_simulation.cpp
-            // iso_wait_slac_matched). The earlier "DC link survives the pause, so
-            // skip the re-match" premise was wrong: the SECC still waits for a
-            // both-sides MATCHING, so a DC resume that skips SlacMatching hangs.
-            // slac_unmatched alone (AC's UNMATCHED latch) is insufficient because
-            // DC never latches it; gate on the ISO mode directly (AcIec has no
-            // SLAC, so it is excluded and takes the direct path). charge_mode()
-            // is optional -- a resume without a session takes the direct path.
-            const auto cm = ctx.vars.charge_mode();
-            if (ctx.vars.slac_unmatched || (cm && is_iso_mode(*cm))) {
+            // Re-establish SLAC only when the EV-side link was actually torn
+            // down by the pause. A DC ISO pause is a clean D-LINK_PAUSE: the
+            // data link survives and both sides stay SLAC MATCHED, so the EV
+            // must NOT re-trigger matching -- the SECC SLAC is still MATCHED
+            // (never MATCHING), so the SlacSimulator co-match, which fires only
+            // with BOTH sides MATCHING, can never converge and the EV would
+            // stall in MATCHING until SlacTimeout. The SECC resumes on the
+            // surviving link (Car Paused -> PrepareCharging on the BCB wake-up),
+            // so go straight to V2GNegotiating. An AC pause is a D-LINK_TERMINATE
+            // that tears the EV link down and latches slac_unmatched; only then
+            // is a fresh match needed. (AcIec has no SLAC and never latches
+            // slac_unmatched, so it also takes the direct path.)
+            if (ctx.vars.slac_unmatched) {
                 return {false, std::make_unique<SlacMatching>(ctx)};
             }
             return {false, std::make_unique<V2GNegotiating>(ctx)};
