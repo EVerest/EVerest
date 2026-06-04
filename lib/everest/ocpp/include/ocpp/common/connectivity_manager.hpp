@@ -3,9 +3,9 @@
 
 #pragma once
 
+#include <ocpp/common/connectivity_manager_configuration.hpp>
 #include <ocpp/common/websocket/websocket.hpp>
 #include <ocpp/v2/messages/SetNetworkProfile.hpp>
-#include <ocpp/v2/ocpp_types.hpp>
 
 #include <everest/util/async/monitor.hpp>
 
@@ -16,9 +16,6 @@
 #include <optional>
 
 namespace ocpp {
-namespace v2 {
-class DeviceModelAbstract;
-} // namespace v2
 
 /// \brief The result of a configuration of a network profile.
 struct ConfigNetworkResult {
@@ -150,8 +147,8 @@ public:
 
 class ConnectivityManager : public ConnectivityManagerInterface {
 private:
-    /// \brief Reference to the device model
-    ocpp::v2::DeviceModelAbstract& device_model;
+    /// \brief Configuration interface used to persist and retrieve network configuration
+    ocpp::ConnectivityManagerConfiguration& configuration;
     /// \brief Pointer to the evse security class
     std::shared_ptr<EvseSecurity> evse_security;
     /// \brief Pointer to the logger
@@ -193,7 +190,7 @@ private:
     mutable everest::lib::util::monitor<NetworkProfileCacheState, std::recursive_mutex> m_state;
 
 public:
-    ConnectivityManager(ocpp::v2::DeviceModelAbstract& device_model, std::shared_ptr<EvseSecurity> evse_security,
+    ConnectivityManager(ocpp::ConnectivityManagerConfiguration& configuration, std::shared_ptr<EvseSecurity> evse_security,
                         const fs::path& share_path = {});
 
     void reload_network_profiles() override;
@@ -239,19 +236,11 @@ private:
     ///
     void try_connect_websocket();
 
-    /// \brief Get the current websocket connection options
-    /// \return the current websocket connection options
+    /// \brief Get the current websocket connection options for the given slot.
+    /// Delegates to configuration and appends the local everest version string.
+    /// \return the current websocket connection options, or nullopt on failure.
     ///
     std::optional<WebsocketConnectionOptions> get_ws_connection_options(const std::int32_t configuration_slot);
-
-    /// \brief Resolve the Identity to use for the given slot. Per-slot Identity overrides
-    ///        SecurityCtrlr.Identity (B09.FR.16-18) when present and non-empty.
-    std::string resolve_identity(std::int32_t configuration_slot) const;
-
-    /// \brief Resolve the BasicAuthPassword to use for the given slot. Per-slot BasicAuthPassword
-    ///        overrides the global SecurityCtrlr.BasicAuthPassword (B09.FR.26-28) when present
-    ///        and non-empty.
-    std::optional<std::string> resolve_basic_auth_password(std::int32_t configuration_slot) const;
 
     /// \brief Read the everest version string from the deployed version_information.txt,
     ///        next to the binary. Returns nullopt if the file is missing or contains no usable line.

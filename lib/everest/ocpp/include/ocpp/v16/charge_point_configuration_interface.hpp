@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <ocpp/common/cistring.hpp>
+#include <ocpp/common/connectivity_manager_configuration.hpp>
 #include <ocpp/v16/ocpp_enums.hpp>
 #include <ocpp/v16/types.hpp>
 
@@ -18,7 +19,7 @@ namespace ocpp::v16 {
 struct KeyValue;
 
 /// \brief contains the configuration of the charge point
-class ChargePointConfigurationInterface {
+class ChargePointConfigurationInterface : public ocpp::ConnectivityManagerConfiguration {
 public:
     virtual ~ChargePointConfigurationInterface() = default;
     // UserConfig and Internal
