@@ -19,6 +19,9 @@
 #include "grid_event.hpp"
 #include "utils.hpp"
 
+#include <generated/types/evse_security.hpp>
+
+#include <iso15118/config.hpp>
 #include <iso15118/d20/config.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/tbd_controller.hpp>
@@ -109,6 +112,22 @@ private:
     // EV-negotiated DER control functions from ServiceSelection; read at ChargeParameterDiscovery to
     // surface ev_supported_dercontrol. Reset at SETUP_FINISHED; touched only by the charger thread.
     std::bitset<12> ev_selected_der_control_functions;
+
+    /// Builds the base SSLConfig: backend, V2G/MO trust-anchor paths, and the module-level
+    /// TLS flags. Carries no certificate chains. Always available - independent of the
+    /// evse_security leaf-certificate state.
+    iso15118::config::SSLConfig build_base_ssl_config();
+
+    /// Builds the current SSLConfig: the base config plus the valid V2G certificate chains
+    /// queried from evse_security and mapped via map_valid_chains(). The chains vector is
+    /// empty when no usable chains are available.
+    iso15118::config::SSLConfig build_current_ssl_config();
+
+    /// Subscriber for evse_security::certificate_store_update. Receives the controller captured
+    /// at subscription time. Filters via is_relevant_certificate_store_update(), rebuilds the
+    /// SSLConfig, and either applies it or preserves the last-good config when the rebuild is empty.
+    void on_certificate_store_update(iso15118::TbdController* active_controller,
+                                     const types::evse_security::CertificateStoreUpdate& event);
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
