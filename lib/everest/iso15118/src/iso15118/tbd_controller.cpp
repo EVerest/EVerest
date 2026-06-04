@@ -19,8 +19,7 @@ TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks cal
     config(std::move(config_)),
     callbacks(std::move(callbacks_)),
     evse_setup(std::move(setup_)),
-    interface_name(config.interface_name),
-    m_ssl_config(config.ssl) {
+    interface_name(config.interface_name) {
 
     const auto result_interface_check = io::check_and_update_interface(interface_name);
     if (result_interface_check) {
@@ -192,7 +191,7 @@ void TbdController::handle_sdp_server_input() {
     auto connection = [this](bool secure_connection) -> std::unique_ptr<io::IConnection> {
         try {
             if (secure_connection) {
-                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, m_ssl_config);
+                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, config.ssl);
             }
             return std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
         } catch (const std::runtime_error& e) {

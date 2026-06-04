@@ -67,8 +67,6 @@ private:
 
     static constexpr uint32_t V2G_COMMUNICATION_SETUP_TIMEOUT_MS{18000};
     std::optional<Timeout> communication_setup_timeout;
-
-    config::SSLConfig m_ssl_config;
 };
 
 } // namespace iso15118
