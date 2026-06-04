@@ -14,8 +14,6 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <openssl/err.h>
-
 #include <everest/tls/tls.hpp>
 
 #include <iso15118/detail/helper.hpp>
@@ -50,23 +48,6 @@ std::string_view result_name(tls::Connection::result_t r) {
         return "want_write";
     }
     return "unknown";
-}
-
-// tls::Connection logs the SSL_get_error code internally but does not flush
-// the per-thread error queue, so the originating SSL alert / X509 verify
-// reason is still recoverable here.
-std::string consume_openssl_errors() {
-    std::string out;
-    unsigned long e{0};
-    char buf[256];
-    while ((e = ERR_get_error()) != 0) {
-        ERR_error_string_n(e, buf, sizeof(buf));
-        if (not out.empty()) {
-            out += "; ";
-        }
-        out += buf;
-    }
-    return out;
 }
 
 std::vector<tls::Server::certificate_config_t> build_chain_configs(const config::SSLConfig& cfg) {
@@ -207,7 +188,7 @@ void ConnectionSSL::write(const uint8_t* buf, size_t len) {
         std::string msg = "Failed to write on TLS connection: ";
         msg += result_name(result);
         msg += " (" + std::to_string(writebytes) + "/" + std::to_string(len) + " bytes)";
-        const auto ssl_err = consume_openssl_errors();
+        const auto ssl_err = ssl->connection->last_error();
         if (not ssl_err.empty()) {
             msg += " openssl=";
             msg += ssl_err;
@@ -238,7 +219,7 @@ ReadResult ConnectionSSL::read(uint8_t* buf, size_t len) {
 
     std::string msg = "Failed to read from TLS connection: ";
     msg += result_name(result);
-    const auto ssl_err = consume_openssl_errors();
+    const auto ssl_err = ssl->connection->last_error();
     if (not ssl_err.empty()) {
         msg += " openssl=";
         msg += ssl_err;
