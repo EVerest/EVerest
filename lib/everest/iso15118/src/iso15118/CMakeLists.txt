@@ -95,6 +95,7 @@ target_link_libraries(iso15118
 target_sources(iso15118
     PRIVATE
     io/connection_ssl.cpp
+    io/ssl_config_builder.cpp
 )
 
 # FIXME (aw): do we want to have this public here?
