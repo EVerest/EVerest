@@ -100,7 +100,8 @@
         }
       ],
       "description": "Per-slot identity override",
-      "type": "string"
+      "type": "string",
+      "default": ""
     },
     "BasicAuthPassword": {
       "variable_name": "BasicAuthPassword",
