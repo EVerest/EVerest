@@ -329,14 +329,16 @@ const char* operation_str(operation_t operation) {
 }
 
 /**
- * \brief most recent OpenSSL error-queue text captured on the current thread
+ * \brief OpenSSL error text drained at detection time for the owning Connection
  * \note process_result() drains the per-thread error queue when an operation
  *       fails and stores the text here. Draining at detection time is required
  *       because the log_error() path otherwise consumes the queue via
  *       ERR_print_errors_cb, so a drain performed later in the Connection member
  *       function would always see an empty queue. The drained text is folded
  *       back into the log message so logging is unaffected.
- *       Connection::capture_and_convert() copies this value into m_last_error.
+ *       Connection::capture_and_convert() moves this value into m_last_error and
+ *       then clears it, so the hand-off is single-use: a captured error cannot
+ *       bleed into a later operation or a later connection sharing the thread.
  */
 thread_local std::string t_last_openssl_error;
 
@@ -631,12 +633,19 @@ Connection::~Connection() = default;
 
 Connection::result_t Connection::capture_and_convert(result_t outcome) {
     if (outcome == result_t::closed) {
-        // result_t::closed is libtls's error/closed bucket. process_result()
-        // already drained the OpenSSL error queue into the thread-local when it
-        // detected the failure (the queue cannot be read here because the
-        // logging path consumes it), so copy the captured text out.
-        m_last_error = t_last_openssl_error;
+        // result_t::closed is libtls's error/closed bucket: it covers both a
+        // graceful EOF (no error queued) and a hard failure. process_result()
+        // drained the OpenSSL error queue into the thread-local at detection
+        // time (it cannot be read here because the logging path consumes it), so
+        // move the captured text out. On a graceful close the thread-local is
+        // empty, which correctly reports "no error".
+        m_last_error = std::move(t_last_openssl_error);
     }
+    // Consume the thread-local: an error captured by this operation must not
+    // bleed into a later graceful close on the same thread (e.g. the next
+    // sequential connection sharing the poll loop). Every populate maps to a
+    // closed outcome, so clearing here leaves a clean slate for the next op.
+    t_last_openssl_error.clear();
     return outcome;
 }
 

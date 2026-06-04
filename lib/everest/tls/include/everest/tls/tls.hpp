@@ -137,13 +137,15 @@ protected:
     std::string m_ip;                          //!< peer IP address
     std::string m_service;                     //!< peer port
     std::int32_t m_timeout_ms;                 //!< default operation timeout
-    std::string m_last_error; //!< OpenSSL error-queue text captured on the most recent failed operation
+    std::string
+        m_last_error; //!< OpenSSL error text from the operation that closed the connection; empty on graceful close
 
     // prevent standalone construction
     Connection(SslContext* ctx, int soc, const char* ip_in, const char* service_in, std::int32_t timeout_ms);
 
     /**
-     * \brief capture the OpenSSL error queue when an operation closed/failed
+     * \brief on a closed outcome, move the thread-local OpenSSL error into
+     *        m_last_error; always clear the thread-local so it is single-use
      * \param[in] outcome the converted public result of the operation
      * \return outcome unchanged
      */
@@ -249,8 +251,10 @@ public:
     }
 
     /**
-     * \brief OpenSSL error-queue text captured on the most recent failed operation
-     * \return "; "-joined error strings; empty when no error has been captured
+     * \brief OpenSSL error text from the operation that most recently closed the
+     *        connection
+     * \return "; "-joined error strings; empty when the close was graceful or no
+     *         error has been captured
      */
     [[nodiscard]] const std::string& last_error() const {
         return m_last_error;
