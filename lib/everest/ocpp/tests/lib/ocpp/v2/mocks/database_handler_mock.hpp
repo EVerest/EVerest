@@ -60,7 +60,7 @@ public:
     MOCK_METHOD(bool, delete_charging_profile, (const int profile_id));
     MOCK_METHOD(void, delete_charging_profile_by_transaction_id, (const std::string& transaction_id));
     MOCK_METHOD(bool, clear_charging_profiles, ());
-    MOCK_METHOD(bool, clear_charging_profiles_matching_criteria,
+    MOCK_METHOD(std::vector<std::int32_t>, clear_charging_profiles_matching_criteria,
                 (const std::optional<std::int32_t> profile_id, const std::optional<ClearChargingProfile>& criteria),
                 (override));
     MOCK_METHOD(std::vector<ReportedChargingProfile>, get_charging_profiles_matching_criteria,

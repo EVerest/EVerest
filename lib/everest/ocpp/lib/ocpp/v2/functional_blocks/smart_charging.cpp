@@ -1162,8 +1162,9 @@ ClearChargingProfileResponse SmartCharging::clear_profiles(const ClearChargingPr
     ClearChargingProfileResponse response;
     response.status = ClearChargingProfileStatusEnum::Unknown;
 
-    if (this->context.database_handler.clear_charging_profiles_matching_criteria(request.chargingProfileId,
-                                                                                 request.chargingProfileCriteria)) {
+    const auto cleared_ids = this->context.database_handler.clear_charging_profiles_matching_criteria(
+        request.chargingProfileId, request.chargingProfileCriteria);
+    if (!cleared_ids.empty()) {
         response.status = ClearChargingProfileStatusEnum::Accepted;
     }
 

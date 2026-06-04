@@ -816,62 +816,85 @@ bool DatabaseHandler::clear_charging_profiles() {
     return this->database->clear_table("CHARGING_PROFILES");
 }
 
-bool DatabaseHandler::clear_charging_profiles_matching_criteria(const std::optional<std::int32_t> profile_id,
-                                                                const std::optional<ClearChargingProfile>& criteria) {
-    // K10.FR.03, K10.FR.09
+std::vector<std::int32_t>
+DatabaseHandler::clear_charging_profiles_matching_criteria(const std::optional<std::int32_t> profile_id,
+                                                           const std::optional<ClearChargingProfile>& criteria) {
+    // K10.FR.03, K10.FR.09: explicit id.
     if (profile_id.has_value()) {
-        return this->delete_charging_profile(profile_id.value());
+        if (this->delete_charging_profile(profile_id.value())) {
+            return {profile_id.value()};
+        }
+        return {};
     }
 
-    // criteria has no value, so clear all
+    auto transaction = this->database->begin_transaction();
+
+    // No criteria means clear all. Snapshot the ids first so the caller can drop their deadline
+    // tracking for exactly the rows that were removed.
     if (!criteria.has_value()) {
-        return this->clear_charging_profiles();
+        std::vector<std::int32_t> ids;
+        auto select_all = this->database->new_statement("SELECT ID FROM CHARGING_PROFILES");
+        while (select_all->step() == SQLITE_ROW) {
+            ids.push_back(select_all->column_int(0));
+        }
+        if (!this->clear_charging_profiles()) {
+            return {};
+        }
+        transaction->commit();
+        return ids;
     }
 
     if (criteria->chargingProfilePurpose.has_value() || criteria->evseId.has_value() ||
         criteria->stackLevel.has_value()) {
-        std::string delete_query = "DELETE FROM CHARGING_PROFILES";
-        // Start with K10.FR.04, prevent deleting external constraints
+        // Shared criteria WHERE: the K10.FR.04 guard (never delete ChargingStationExternalConstraints)
+        // plus the optional purpose/stack/evse filters. The SAME clause and binds drive both the id
+        // SELECT and the DELETE, so the returned ids are exactly the deleted rows; callers never
+        // mirror this filter.
         std::vector<std::string> filters = {"CHARGING_PROFILE_PURPOSE != 'ChargingStationExternalConstraints'"};
-
         if (criteria->chargingProfilePurpose.has_value()) {
             filters.emplace_back("CHARGING_PROFILE_PURPOSE = @charging_profile_purpose");
         }
-
         if (criteria->stackLevel.has_value()) {
             filters.emplace_back("STACK_LEVEL = @stack_level");
         }
-
         if (criteria->evseId.has_value()) {
             filters.emplace_back("EVSE_ID = @evse_id");
         }
+        const std::string where = " WHERE " + boost::algorithm::join(filters, " AND ");
 
-        delete_query += " WHERE " + boost::algorithm::join(filters, " AND ");
+        const auto bind_criteria = [&criteria](everest::db::sqlite::StatementInterface& stmt) {
+            if (criteria->chargingProfilePurpose.has_value()) {
+                stmt.bind_text(
+                    "@charging_profile_purpose",
+                    conversions::charging_profile_purpose_enum_to_string(criteria->chargingProfilePurpose.value()),
+                    SQLiteString::Transient);
+            }
+            if (criteria->stackLevel.has_value()) {
+                stmt.bind_int("@stack_level", criteria->stackLevel.value());
+            }
+            if (criteria->evseId.has_value()) {
+                stmt.bind_int("@evse_id", criteria->evseId.value());
+            }
+        };
 
-        auto stmt = this->database->new_statement(delete_query);
-        if (criteria->chargingProfilePurpose.has_value()) {
-            stmt->bind_text(
-                "@charging_profile_purpose",
-                conversions::charging_profile_purpose_enum_to_string(criteria->chargingProfilePurpose.value()),
-                SQLiteString::Transient);
+        std::vector<std::int32_t> ids;
+        auto select_stmt = this->database->new_statement("SELECT ID FROM CHARGING_PROFILES" + where);
+        bind_criteria(*select_stmt);
+        while (select_stmt->step() == SQLITE_ROW) {
+            ids.push_back(select_stmt->column_int(0));
         }
 
-        if (criteria->stackLevel.has_value()) {
-            stmt->bind_int("@stack_level", criteria->stackLevel.value());
-        }
-
-        if (criteria->evseId.has_value()) {
-            stmt->bind_int("@evse_id", criteria->evseId.value());
-        }
-
-        if (stmt->step() != SQLITE_DONE) {
+        auto delete_stmt = this->database->new_statement("DELETE FROM CHARGING_PROFILES" + where);
+        bind_criteria(*delete_stmt);
+        if (delete_stmt->step() != SQLITE_DONE) {
             throw QueryExecutionException(this->database->get_error_message());
         }
 
-        return stmt->changes() > 0;
+        transaction->commit();
+        return ids;
     }
 
-    return false;
+    return {};
 }
 
 std::vector<ReportedChargingProfile>
