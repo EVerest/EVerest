@@ -8,6 +8,7 @@
 #include <everest/io/event/timer_fd.hpp>
 #include <everest/io/event/unique_fd.hpp>
 
+#include <array>
 #include <cstdio>
 #include <fcntl.h>
 #include <map>
@@ -35,24 +36,30 @@ uint32_t poll_event_to_bitmask(poll_events e) {
     return 0;
 }
 
-std::set<poll_events> bitmask_to_poll_events(uint32_t bitmask) {
-    std::set<poll_events> result;
-    if (bitmask & EPOLLIN) {
-        result.insert(poll_events::read);
+const fd_event_handler::event_list& bitmask_to_poll_events(uint32_t bitmask) {
+    constexpr std::array<uint32_t, 5> epoll_bits = {EPOLLIN, EPOLLPRI, EPOLLOUT, EPOLLERR, EPOLLHUP};
+    auto index = std::size_t{0};
+    for (auto i = std::size_t{0}; i < epoll_bits.size(); ++i) {
+        if (bitmask & epoll_bits[i]) {
+            index |= (std::size_t{1} << i);
+        }
     }
-    if (bitmask & EPOLLPRI) {
-        result.insert(poll_events::priority);
-    }
-    if (bitmask & EPOLLOUT) {
-        result.insert(poll_events::write);
-    }
-    if (bitmask & EPOLLERR) {
-        result.insert(poll_events::error);
-    }
-    if (bitmask & EPOLLHUP) {
-        result.insert(poll_events::hungup);
-    }
-    return result;
+
+    static const auto cached_events = [] {
+        constexpr std::array<poll_events, 5> cached_poll_event_values = {
+            poll_events::read, poll_events::priority, poll_events::write, poll_events::error, poll_events::hungup};
+        auto result = std::array<fd_event_handler::event_list, 32>{};
+        for (auto mask = std::size_t{0}; mask < result.size(); ++mask) {
+            for (auto i = std::size_t{0}; i < cached_poll_event_values.size(); ++i) {
+                if (mask & (std::size_t{1} << i)) {
+                    result[mask].insert(cached_poll_event_values[i]);
+                }
+            }
+        }
+        return result;
+    }();
+
+    return cached_events[index];
 }
 
 uint32_t sum_events(std::set<poll_events> const& events) {
@@ -133,8 +140,12 @@ public:
         return modify(fd, events, action);
     }
 
-    const auto& get(int fd) const {
-        return std::get<fd_event_handler::event_handler_type>(m_event_map.at(fd));
+    const fd_event_handler::event_handler_type* find(int fd) const {
+        auto it = m_event_map.find(fd);
+        if (it == m_event_map.end()) {
+            return nullptr;
+        }
+        return &std::get<fd_event_handler::event_handler_type>(it->second);
     }
 
     bool exists(int fd) const {
@@ -143,6 +154,10 @@ public:
 
     auto& get_pollfds() {
         return m_pollfds;
+    }
+
+    std::vector<epoll_event> snapshot_ready_events(int ready_count) const {
+        return std::vector<epoll_event>(m_pollfds.begin(), m_pollfds.begin() + ready_count);
     }
 
     int get_epoll_fd() {
@@ -190,7 +205,7 @@ bool fd_event_handler::register_event_handler(int fd, event_handler_type const& 
     return register_event_handler(fd, handler, event_list{event});
 }
 
-bool fd_event_handler::register_event_handler(event_fd* fd, event_handler_type const& handler) {
+bool fd_event_handler::register_event_handler(event_fd_base* fd, event_handler_type const& handler) {
     if (not fd) {
         return false;
     }
@@ -204,7 +219,7 @@ bool fd_event_handler::register_event_handler(event_fd* fd, event_handler_type c
         poll_events::read);
 }
 
-bool fd_event_handler::register_event_handler(event_fd* fd, event_handler_simple_type const& handler) {
+bool fd_event_handler::register_event_handler(event_fd_base* fd, event_handler_simple_type const& handler) {
     return register_event_handler(fd, [handler](event_list const&) { handler(); });
 }
 
@@ -277,7 +292,7 @@ bool fd_event_handler::unregister_event_handler(timer_fd* obj) {
     return remove_event_handler(obj->get_raw_fd());
 }
 
-bool fd_event_handler::unregister_event_handler(event_fd* obj) {
+bool fd_event_handler::unregister_event_handler(event_fd_base* obj) {
     if (not obj) {
         return false;
     }
@@ -325,11 +340,16 @@ void fd_event_handler::poll() {
 bool fd_event_handler::poll_impl(int timeout_ms) {
     auto& pollfds = m_handlers->get_pollfds();
     auto status = ::epoll_wait(m_handlers->get_epoll_fd(), pollfds.data(), pollfds.size(), timeout_ms);
+    m_last_ready_count = status > 0 ? static_cast<std::size_t>(status) : 0U;
 
     if (status > 0) {
-        for (int i = 0; i < status; ++i) {
-            auto& item = pollfds[i];
-            m_handlers->get(item.data.fd)(bitmask_to_poll_events(item.events));
+        // Dispatch from a stable snapshot so callbacks may register, unregister, or modify handlers.
+        const auto ready_events = m_handlers->snapshot_ready_events(status);
+        for (const auto& item : ready_events) {
+            if (auto handler = m_handlers->find(item.data.fd)) {
+                auto handler_copy = *handler;
+                handler_copy(bitmask_to_poll_events(item.events));
+            }
         }
         return true;
     }
@@ -338,6 +358,10 @@ bool fd_event_handler::poll_impl(int timeout_ms) {
 
 int fd_event_handler::get_poll_fd() {
     return m_handlers->get_epoll_fd();
+}
+
+std::size_t fd_event_handler::last_ready_count() const {
+    return m_last_ready_count;
 }
 
 void fd_event_handler::add_action(task&& item) {

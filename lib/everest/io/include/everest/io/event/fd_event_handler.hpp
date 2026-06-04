@@ -131,12 +131,12 @@ public:
      * @param[in] handler Callback for handling the events on \p obj
      * @return True on success, false otherwise
      */
-    bool register_event_handler(event_fd* obj, event_handler_type const& handler);
+    bool register_event_handler(event_fd_base* obj, event_handler_type const& handler);
     /**
      * @copydoc register_event_handler(event_fd*, event_handler_type const&)
      * @param[in] handler Simplified callback for handling events on \p obj
      */
-    bool register_event_handler(event_fd* obj, event_handler_simple_type const& handler);
+    bool register_event_handler(event_fd_base* obj, event_handler_simple_type const& handler);
     /**
      * @brief Register an \ref timer_fd for event handling
      * @details Reading from the event happens internally to acknowledge event handling.
@@ -205,7 +205,7 @@ public:
      * @param[in] obj The event to be removed
      * @return True on success, false otherwise
      */
-    bool unregister_event_handler(event_fd* obj);
+    bool unregister_event_handler(event_fd_base* obj);
 
     /**
      * @brief Unregister a file descriptor from event handling
@@ -271,6 +271,9 @@ public:
      */
     int get_poll_fd();
 
+    /// \brief Number of ready file descriptors returned by the most recent poll call.
+    std::size_t last_ready_count() const;
+
     /**
      * @brief Add a task to the task queue
      * @details Adds a task to the task queue
@@ -318,6 +321,7 @@ private:
     std::unique_ptr<EventHandlerMap> m_handlers{nullptr};
     util::thread_safe_queue<task> task_pool;
     event_fd m_action_event;
+    std::size_t m_last_ready_count{0};
 };
 
 } // namespace everest::lib::io::event

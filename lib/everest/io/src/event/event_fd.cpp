@@ -1,17 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
 
+#include <cerrno>
+#include <cstring>
 #include <everest/io/event/event_fd.hpp>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <sys/eventfd.h>
 
 namespace everest::lib::io::event {
 
-event_fd_base::event_fd_base(unsigned int initval, int flags) : m_fd(::eventfd(initval, flags)) {
+namespace {
+
+std::string eventfd_error_message() {
+    return std::string("failed to create an eventfd: ") + std::strerror(errno);
+}
+
+} // namespace
+
+event_fd_base::event_fd_base(unsigned int initval, int flags) : m_fd(::eventfd(initval, flags | EFD_CLOEXEC)) {
     if (m_fd == -1) {
-        throw std::runtime_error("failed to create an eventfd");
+        throw std::runtime_error(eventfd_error_message());
     }
+}
+
+event_fd_base::event_fd_base(unique_fd&& raw_event_fd) {
+    if (not raw_event_fd.is_fd()) {
+        throw std::runtime_error("failed to create an eventfd: Invalid raw eventfd");
+    }
+    m_fd = std::move(raw_event_fd);
 }
 
 event_fd_base::operator int() const {

@@ -146,6 +146,45 @@ event::unique_fd open_raw_promiscuous_socket(std::string const& if_name);
 #endif
 
 /**
+ * @brief Opens a UDS Datagram client socket and connects it to the server.
+ * * @param server_name The name of the server to connect to.
+ * @param server_is_abstract Whether the server uses the Linux abstract namespace.
+ * @param client_bind_name (Optional) Binds the client to this name so the server can reply.
+ * @param client_is_abstract Whether the client bind name uses the abstract namespace.
+ */
+event::unique_fd open_uds_client_socket(const std::string& server_name, bool server_is_abstract,
+                                        const std::string& client_bind_name = "", bool client_is_abstract = false);
+
+/**
+ * @brief Opens a UDS Datagram server socket and binds it to listen for clients.
+ * * @param server_name The name the server will bind to.
+ * @param is_abstract Whether the server uses the Linux abstract namespace.
+ * @return event::unique_fd Ownership of the bound socket descriptor.
+ */
+event::unique_fd open_uds_server_socket(const std::string& server_name, bool is_abstract);
+
+/**
+ * @brief Opens a UDS SOCK_SEQPACKET listening socket.
+ *
+ * SEQPACKET preserves message boundaries (so JSON control frames can be sent and received
+ * as discrete messages) and is a stream-oriented connection (so EOF/POLLHUP on the accepted
+ * peer FD is a reliable liveness signal).
+ *
+ * The returned listener is ready for ::accept(); callers manage the per-client accepted
+ * FDs and drive cleanup on disconnect.
+ */
+event::unique_fd open_uds_seqpacket_server_socket(const std::string& server_name, bool is_abstract);
+
+/**
+ * @brief Connects a UDS SOCK_SEQPACKET socket to the given server name.
+ *
+ * Counterpart to open_uds_seqpacket_server_socket. The connection FD is the persistent
+ * control channel: handshakes, list_topics requests, and SCM_RIGHTS-passed FDs all flow
+ * over the same socket, and the kernel signals POLLHUP when either side closes.
+ */
+event::unique_fd open_uds_seqpacket_client_socket(const std::string& server_name, bool server_is_abstract);
+
+/**
  * @brief Enable <a href="https://man7.org/linux/man-pages/man7/tcp.7.html">TCP_NODELAY</a> on a socket
  * @details   If set, disable the Nagle algorithm.  This means that
  *            segments are always sent as soon as possible, even if there
