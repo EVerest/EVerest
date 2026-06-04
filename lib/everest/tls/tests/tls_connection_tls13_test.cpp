@@ -377,4 +377,110 @@ TEST_F(TlsTest, LastErrorPopulatedOnFailedAccept) {
     EXPECT_FALSE(server_last_error.empty());
 }
 
+TEST_F(TlsTest, LastErrorDoesNotBleedIntoGracefulClose) {
+    // Two sequential server connections on this (the test) thread share the
+    // process-thread-local OpenSSL error buffer behind last_error(). Connection
+    // #1 fails certificate verification, seeding that buffer. Connection #2
+    // completes a handshake and is then closed gracefully by the peer. After
+    // the graceful close last_error() must be empty: the seed from #1 must not
+    // bleed across the close. Server-side ops (accept/read/last_error) all run
+    // here on the main thread, so the bleed (if present) is on this thread.
+    using state_t = tls::Server::state_t;
+
+    // Test-owned loopback listen socket on an ephemeral port (as in
+    // WrapAcceptedFdHandshake), passed to the Server via server_config.socket so
+    // init_socket() does not bind the fixture's fixed port.
+    const int listen_fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(listen_fd, 0);
+    int reuse = 1;
+    (void)::setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    sockaddr_in listen_addr{};
+    listen_addr.sin_family = AF_INET;
+    listen_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    listen_addr.sin_port = 0;
+    ASSERT_EQ(::bind(listen_fd, reinterpret_cast<sockaddr*>(&listen_addr), sizeof(listen_addr)), 0);
+    ASSERT_EQ(::listen(listen_fd, 1), 0);
+
+    // Server: TLS 1.3, require a client cert chained to client_root_cert.pem.
+    server_config.socket = listen_fd;
+    server_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    server_config.enforce_tls_1_3 = true;
+    server_config.verify_client = true;
+    server_config.verify_locations_file = "client_root_cert.pem";
+    const auto init_state = server.init(server_config, nullptr);
+    ASSERT_TRUE(init_state == state_t::init_complete || init_state == state_t::init_socket);
+
+    sockaddr_in bound_addr{};
+    socklen_t bound_len = sizeof(bound_addr);
+    ASSERT_EQ(::getsockname(listen_fd, reinterpret_cast<sockaddr*>(&bound_addr), &bound_len), 0);
+    const std::string bound_service = std::to_string(ntohs(bound_addr.sin_port));
+
+    // Spawn a TLS 1.3 client (on its own thread) presenting the given cert pair,
+    // then gracefully shut down so the server observes a clean close_notify.
+    auto spawn_client = [&](const char* chain, const char* key) {
+        return std::thread([&, chain, key]() {
+            ClientTest local_client;
+            tls::Client::config_t cc = client_config;
+            cc.cipher_list = nullptr;
+            cc.ciphersuites = "TLS_AES_256_GCM_SHA384";
+            cc.min_proto_version = TLS1_3_VERSION;
+            cc.certificate_chain_file = chain;
+            cc.private_key_file = key;
+            local_client.init(cc);
+            auto conn = local_client.connect("127.0.0.1", bound_service.c_str(), false, 1000);
+            if (conn) {
+                (void)conn->connect();
+                (void)conn->shutdown();
+            }
+        });
+    };
+
+    // Accept one pending TCP connection and wrap it as a server TLS connection.
+    auto accept_one = [&]() -> tls::Server::ConnectionPtr {
+        sockaddr_in peer_addr{};
+        socklen_t peer_len = sizeof(peer_addr);
+        const int accepted_fd = ::accept(listen_fd, reinterpret_cast<sockaddr*>(&peer_addr), &peer_len);
+        if (accepted_fd < 0) {
+            return nullptr;
+        }
+        char ip_buf[INET_ADDRSTRLEN]{};
+        char service_buf[NI_MAXSERV]{};
+        (void)::getnameinfo(reinterpret_cast<sockaddr*>(&peer_addr), peer_len, ip_buf, sizeof(ip_buf), service_buf,
+                            sizeof(service_buf), NI_NUMERICHOST | NI_NUMERICSERV);
+        return server.wrap_accepted_fd(accepted_fd, ip_buf, service_buf);
+    };
+
+    // Connection #1: untrusted client cert -> accept() fails verification and
+    // seeds the thread-local error buffer.
+    std::thread client1 = spawn_client("alt_client_chain.pem", "alt_client_priv.pem");
+    tls::Server::ConnectionPtr conn1 = accept_one();
+    ASSERT_TRUE(conn1);
+    EXPECT_NE(conn1->accept(1000), tls::Connection::result_t::success);
+    EXPECT_FALSE(conn1->last_error().empty()); // seed confirmed
+    if (client1.joinable()) {
+        client1.join();
+    }
+
+    // Connection #2: trusted client cert -> handshake succeeds, peer closes
+    // gracefully. The read must observe the graceful close, and last_error()
+    // must then be empty (no bleed from connection #1).
+    std::thread client2 = spawn_client("client_chain.pem", "client_priv.pem");
+    tls::Server::ConnectionPtr conn2 = accept_one();
+    ASSERT_TRUE(conn2);
+    ASSERT_EQ(conn2->accept(1000), tls::Connection::result_t::success);
+
+    std::byte buf[1]{};
+    std::size_t got{0};
+    const auto read_rc = conn2->read(buf, sizeof(buf), got, 1000);
+    // Guard: the assertion below is only meaningful if the read actually saw the
+    // graceful close. If it did not, fail loudly rather than silently passing.
+    ASSERT_EQ(read_rc, tls::Connection::result_t::closed);
+    EXPECT_TRUE(conn2->last_error().empty()) << "graceful close leaked a stale error: " << conn2->last_error();
+
+    if (client2.joinable()) {
+        client2.join();
+    }
+    (void)::close(listen_fd);
+}
+
 } // namespace
