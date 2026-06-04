@@ -6,6 +6,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 
 #include <cstdlib>
@@ -28,7 +29,8 @@
 #include <framework/everest.hpp>
 #include <framework/runtime.hpp>
 #include <utils/config.hpp>
-#include <utils/mqtt_abstraction.hpp>
+#include <utils/framework_transport.hpp>
+#include <utils/shm_manager_transport.hpp>
 #include <utils/status_fifo.hpp>
 
 #include "controller/ipc.hpp"
@@ -43,6 +45,20 @@ using namespace Everest;
 const auto PARENT_DIED_SIGNAL = SIGTERM;
 const int CONTROLLER_IPC_READ_TIMEOUT_MS = 50;
 const auto complete_start_time = std::chrono::steady_clock::now();
+volatile sig_atomic_t shutdown_signal = 0;
+
+void manager_signal_handler(int signal) {
+    shutdown_signal = signal;
+}
+
+void install_manager_signal_handlers() {
+    struct sigaction action {};
+    action.sa_handler = manager_signal_handler;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = 0;
+    sigaction(SIGINT, &action, nullptr);
+    sigaction(SIGTERM, &action, nullptr);
+}
 
 #ifdef ENABLE_ADMIN_PANEL
 class ControllerHandle {
@@ -99,16 +115,23 @@ namespace {
 /// \brief Setup common environment variables for everestjs and everestpy
 void setup_environment(const ModuleStartInfo& module_info, const RuntimeSettings& rs,
                        const MQTTSettings& mqtt_settings) {
+    const auto module_mqtt_settings = make_module_mqtt_settings(mqtt_settings);
     setenv(EV_MODULE, module_info.name.c_str(), 1);
     setenv(EV_PREFIX, rs.prefix.c_str(), 0);
     setenv(EV_LOG_CONF_FILE, rs.logging_config_file.c_str(), 0);
-    setenv(EV_MQTT_EVEREST_PREFIX, mqtt_settings.everest_prefix.c_str(), 0);
-    setenv(EV_MQTT_EXTERNAL_PREFIX, mqtt_settings.external_prefix.c_str(), 0);
-    if (mqtt_settings.uses_socket()) {
-        setenv(EV_MQTT_BROKER_SOCKET_PATH, mqtt_settings.broker_socket_path.c_str(), 0);
+    setenv(EV_MQTT_EVEREST_PREFIX, module_mqtt_settings.everest_prefix.c_str(), 0);
+    setenv(EV_MQTT_EXTERNAL_PREFIX, module_mqtt_settings.external_prefix.c_str(), 0);
+    setenv(EV_FRAMEWORK_TRANSPORT, framework_transport_to_string(module_mqtt_settings.framework_transport).c_str(), 1);
+    if (module_mqtt_settings.uses_socket()) {
+        setenv(EV_MQTT_BROKER_SOCKET_PATH, module_mqtt_settings.broker_socket_path.c_str(), 0);
     } else {
-        setenv(EV_MQTT_BROKER_HOST, mqtt_settings.broker_host.c_str(), 0);
-        setenv(EV_MQTT_BROKER_PORT, std::to_string(mqtt_settings.broker_port).c_str(), 0);
+        setenv(EV_MQTT_BROKER_HOST, module_mqtt_settings.broker_host.c_str(), 0);
+        setenv(EV_MQTT_BROKER_PORT, std::to_string(module_mqtt_settings.broker_port).c_str(), 0);
+    }
+    if (module_mqtt_settings.shared_mem()) {
+        setenv(EV_SHM_CONTROL_SOCKET_PATH, module_mqtt_settings.shm_control_socket_path.c_str(), 0);
+        const auto registered_topics = fmt::format("{}", fmt::join(module_mqtt_settings.shm_registered_topics, ","));
+        setenv(EV_SHM_REGISTERED_TOPICS, registered_topics.c_str(), 0);
     }
 
     if (rs.validate_schema) {
@@ -133,24 +156,32 @@ static void exec_module(const std::string& bin, std::vector<std::string>& argume
 
 void exec_cpp_module(system::SubProcess& proc_handle, const ModuleStartInfo& module_info, const RuntimeSettings& rs,
                      const MQTTSettings& mqtt_settings) {
-    std::vector<std::string> arguments = {
-        module_info.printable_name,
-        "--prefix",
-        rs.prefix.string(),
-        "--module",
-        module_info.name,
-        "--log_config",
-        rs.logging_config_file.string(),
-        "--mqtt_everest_prefix",
-        mqtt_settings.everest_prefix,
-        "--mqtt_external_prefix",
-        mqtt_settings.external_prefix}; // TODO: check if this is empty and do not append if needed?
+    const auto module_mqtt_settings = make_module_mqtt_settings(mqtt_settings);
+    std::vector<std::string> arguments = {module_info.printable_name,
+                                          "--prefix",
+                                          rs.prefix.string(),
+                                          "--module",
+                                          module_info.name,
+                                          "--log_config",
+                                          rs.logging_config_file.string(),
+                                          "--mqtt_everest_prefix",
+                                          module_mqtt_settings.everest_prefix,
+                                          "--mqtt_external_prefix",
+                                          module_mqtt_settings.external_prefix,
+                                          "--framework_transport",
+                                          framework_transport_to_string(module_mqtt_settings.framework_transport)};
 
-    if (mqtt_settings.uses_socket()) {
-        arguments.insert(arguments.end(), {"--mqtt_broker_socket_path", mqtt_settings.broker_socket_path});
+    if (module_mqtt_settings.uses_socket()) {
+        arguments.insert(arguments.end(), {"--mqtt_broker_socket_path", module_mqtt_settings.broker_socket_path});
     } else {
-        arguments.insert(arguments.end(), {"--mqtt_broker_host", mqtt_settings.broker_host, "--mqtt_broker_port",
-                                           std::to_string(mqtt_settings.broker_port)});
+        arguments.insert(arguments.end(), {"--mqtt_broker_host", module_mqtt_settings.broker_host, "--mqtt_broker_port",
+                                           std::to_string(module_mqtt_settings.broker_port)});
+    }
+    if (module_mqtt_settings.shared_mem()) {
+        arguments.insert(arguments.end(), {"--shm_control_socket_path", module_mqtt_settings.shm_control_socket_path});
+        for (const auto& topic : module_mqtt_settings.shm_registered_topics) {
+            arguments.insert(arguments.end(), {"--shm_registered_topic", topic});
+        }
     }
 
     exec_module(module_info.path.string(), arguments, proc_handle);
@@ -278,7 +309,7 @@ ModulesReadyType modules_ready; // NOLINT(cppcoreguidelines-avoid-non-const-glob
 // mutex is also held inside the `ready` handler which can deadlock.
 std::mutex modules_ready_mutex; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
-std::map<pid_t, std::string> start_modules(ManagerConfig& config, MQTTAbstraction& mqtt_abstraction,
+std::map<pid_t, std::string> start_modules(ManagerConfig& config, FrameworkTransport& mqtt_abstraction,
                                            const std::vector<std::string>& ignored_modules,
                                            const std::vector<std::string>& standalone_modules,
                                            const ManagerSettings& ms, StatusFifo& status_fifo, bool retain_topics) {
@@ -492,7 +523,7 @@ std::map<pid_t, std::string> start_modules(ManagerConfig& config, MQTTAbstractio
 }
 
 void shutdown_modules(const std::map<pid_t, std::string>& modules, ManagerConfig& config,
-                      MQTTAbstraction& mqtt_abstraction) {
+                      FrameworkTransport& mqtt_abstraction) {
 
     ModulesReadyType modules_ready_moved;
     {
@@ -528,6 +559,46 @@ void shutdown_modules(const std::map<pid_t, std::string>& modules, ManagerConfig
                                       fmt::format(TERMINAL_STYLE_OK, "succeeded"));
         }
     }
+}
+
+void wait_for_modules_to_exit(const std::map<pid_t, std::string>& modules, std::chrono::milliseconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    std::map<pid_t, std::string> remaining = modules;
+
+    while (!remaining.empty() && std::chrono::steady_clock::now() < deadline) {
+        for (auto iter = remaining.begin(); iter != remaining.end();) {
+            int status = 0;
+            const auto result = waitpid(iter->first, &status, WNOHANG);
+            if (result == iter->first) {
+                EVLOG_info << fmt::format("Module {} (pid: {}) exited during shutdown with status: {}.", iter->second,
+                                          iter->first, status);
+                iter = remaining.erase(iter);
+            } else if (result == -1 && errno == ECHILD) {
+                iter = remaining.erase(iter);
+            } else {
+                ++iter;
+            }
+        }
+        if (!remaining.empty()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+
+    for (const auto& module : remaining) {
+        EVLOG_warning << fmt::format("Module {} (pid: {}) did not exit before shutdown wait timeout.", module.second,
+                                     module.first);
+    }
+}
+
+int shutdown_manager(const std::map<pid_t, std::string>& modules, ManagerConfig& config,
+                     FrameworkTransport& mqtt_abstraction, int signal) {
+    EVLOG_info << fmt::format("Received signal {}, shutting down modules.", signal);
+    shutdown_modules(modules, config, mqtt_abstraction);
+    wait_for_modules_to_exit(modules, std::chrono::milliseconds(500));
+
+    mqtt_abstraction.clear_retained_topics();
+    mqtt_abstraction.disconnect();
+    return EXIT_SUCCESS;
 }
 
 #ifdef ENABLE_ADMIN_PANEL
@@ -639,6 +710,7 @@ int boot(const po::variables_map& vm) {
     }
 
     Logging::init(ms.runtime_settings.logging_config_file.string());
+    install_manager_signal_handlers();
 
     EVLOG_info << "  \033[0;1;35;95m_\033[0;1;31;91m__\033[0;1;33;93m__\033[0;1;32;92m__\033[0;1;36;96m_\033[0m      "
                   "\033[0;1;31;91m_\033[0;1;33;93m_\033[0m                \033[0;1;36;96m_\033[0m   ";
@@ -675,6 +747,8 @@ int boot(const po::variables_map& vm) {
     } else {
         EVLOG_info << "Using MQTT broker unix domain sockets:" << ms.mqtt_settings.broker_socket_path;
     }
+    EVLOG_info << "Using framework-local transport "
+               << framework_transport_to_string(ms.mqtt_settings.framework_transport);
     if (ms.runtime_settings.telemetry_enabled) {
         EVLOG_info << "Telemetry enabled";
     }
@@ -713,7 +787,7 @@ int boot(const po::variables_map& vm) {
 
     const bool retain_topics = (vm.count("retain-topics") != 0);
 
-    const auto start_time = std::chrono::steady_clock::now();
+    const auto start_time = std::chrono::system_clock::now();
     std::shared_ptr<ManagerConfig> config; // TODO: maybe this can stay unique when we re-work start_modules()
     try {
         config = std::make_shared<ManagerConfig>(ms);
@@ -729,7 +803,7 @@ int boot(const po::variables_map& vm) {
         EVLOG_critical << fmt::format("Caught top level std::exception:\n{}", boost::diagnostic_information(e, true));
         return EXIT_FAILURE;
     }
-    const auto end_time = std::chrono::steady_clock::now();
+    const auto end_time = std::chrono::system_clock::now();
     EVLOG_info << "Config loading completed in "
                << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms";
 
@@ -788,7 +862,23 @@ int boot(const po::variables_map& vm) {
     // create StatusFifo object
     auto status_fifo = StatusFifo::create_from_path(vm["status-fifo"].as<std::string>());
 
-    auto mqtt_abstraction = make_mqtt_abstraction(ms.mqtt_settings);
+    ShmManagerTransportServer shm_transport_server;
+    if (auto shm_options = make_shm_server_options(*config, ms.mqtt_settings, static_cast<int>(::getpid()))) {
+        ms.mqtt_settings.shm_control_socket_path = shm_options->control_socket_name;
+        ms.mqtt_settings.shm_registered_topics.clear();
+        ms.mqtt_settings.shm_registered_topics.reserve(shm_options->topics.size());
+        for (const auto& topic_config : shm_options->topics) {
+            ms.mqtt_settings.shm_registered_topics.push_back(topic_config.name);
+        }
+        EVLOG_info << "Using framework-local SHM transport control endpoint "
+                   << ms.mqtt_settings.shm_control_socket_path;
+        EVLOG_info << "Using framework-local SHM transport shared memory " << shm_options->shm_name;
+        if (!shm_transport_server.start(std::move(*shm_options))) {
+            return EXIT_FAILURE;
+        }
+    }
+
+    auto mqtt_abstraction = make_framework_transport(ms.mqtt_settings);
 
     if (!mqtt_abstraction->connect()) {
         if (not ms.mqtt_settings.uses_socket()) {
@@ -824,6 +914,10 @@ int boot(const po::variables_map& vm) {
     int wstatus; // NOLINT(cppcoreguidelines-init-variables): this is always initialized in the following waitpid call
 
     while (true) {
+        if (shutdown_signal != 0) {
+            return shutdown_manager(module_handles, *config, *mqtt_abstraction, shutdown_signal);
+        }
+
 // check if anyone died
 #ifdef ENABLE_ADMIN_PANEL
         // non-blocking if admin panel is enabled, as this main loop also processes controller RPC
@@ -836,6 +930,9 @@ int boot(const po::variables_map& vm) {
         if (pid == 0) {
             // nothing new from our child process
         } else if (pid == -1) {
+            if (errno == EINTR && shutdown_signal != 0) {
+                return shutdown_manager(module_handles, *config, *mqtt_abstraction, shutdown_signal);
+            }
             throw std::runtime_error(fmt::format("Syscall to waitpid() failed ({})", strerror(errno)));
         } else {
 
@@ -859,6 +956,7 @@ int boot(const po::variables_map& vm) {
                 EVLOG_critical << fmt::format("Module {} (pid: {}) exited with status: {}. Terminating all modules.",
                                               module_name, pid, wstatus);
                 shutdown_modules(module_handles, *config, *mqtt_abstraction);
+                wait_for_modules_to_exit(module_handles, std::chrono::milliseconds(500));
 
                 mqtt_abstraction->clear_retained_topics();
                 mqtt_abstraction->disconnect();

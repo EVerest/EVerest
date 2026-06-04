@@ -14,6 +14,7 @@ target_include_directories(manager
 target_link_libraries(manager
     PRIVATE
         everest::framework
+        everest::io
         Boost::program_options
         PkgConfig::libcap
 )

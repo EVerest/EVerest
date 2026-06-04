@@ -87,7 +87,7 @@ private:
     const RuntimeSession& session;
     const std::chrono::time_point<std::chrono::steady_clock> start_time;
     std::unique_ptr<Everest::RuntimeSettings> rs;
-    std::shared_ptr<Everest::MQTTAbstraction> mqtt_abstraction;
+    std::shared_ptr<Everest::FrameworkTransport> mqtt_abstraction;
     std::unique_ptr<Everest::Config> config_;
 
     std::unique_ptr<Everest::Everest> handle;
@@ -99,10 +99,9 @@ private:
     std::deque<std::function<void(json)>> err_susbcription_callbacks{};
     std::deque<std::function<void(json)>> err_cleared_susbcription_callbacks{};
 
-    static std::unique_ptr<Everest::Everest>
-    create_everest_instance(const std::string& module_id, const Everest::Config& config,
-                            const Everest::RuntimeSettings& rs,
-                            std::shared_ptr<Everest::MQTTAbstraction> mqtt_abstraction);
+    static std::unique_ptr<Everest::Everest> create_everest_instance(
+        const std::string& module_id, const Everest::Config& config, const Everest::RuntimeSettings& rs,
+        std::shared_ptr<Everest::FrameworkTransport> mqtt_abstraction, const Everest::MQTTSettings& mqtt_settings);
 
     ModuleInfo module_info{};
     std::map<std::string, Interface> requirements;

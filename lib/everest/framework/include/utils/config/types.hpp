@@ -152,9 +152,15 @@ struct Settings {
     std::optional<fs::path> logging_config_file;
     std::optional<int> controller_port;
     std::optional<int> controller_rpc_timeout_ms;
+    std::optional<std::string> framework_transport;
     std::optional<std::string> mqtt_broker_socket_path;
     std::optional<std::string> mqtt_broker_host;
     std::optional<std::uint16_t> mqtt_broker_port;
+    std::optional<std::string> shm_control_socket_path;
+    std::optional<std::uint32_t> shm_topic_slots;
+    std::optional<std::uint32_t> shm_topic_slot_size;
+    std::optional<std::uint32_t> shm_topic_registry_capacity;
+    std::optional<std::string> shm_topic_registry_mode;
     std::optional<std::string> mqtt_everest_prefix;
     std::optional<std::string> mqtt_external_prefix;
     std::optional<std::string> telemetry_prefix;

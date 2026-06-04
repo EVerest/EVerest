@@ -9,12 +9,16 @@
 #include <utils/error/error_manager_req.hpp>
 #include <utils/error/error_state_monitor.hpp>
 
-std::unique_ptr<Everest::Everest>
-Module::create_everest_instance(const std::string& module_id, const Everest::Config& config,
-                                const Everest::RuntimeSettings& rs,
-                                std::shared_ptr<Everest::MQTTAbstraction> mqtt_abstraction) {
+std::unique_ptr<Everest::Everest> Module::create_everest_instance(
+    const std::string& module_id, const Everest::Config& config, const Everest::RuntimeSettings& rs,
+    std::shared_ptr<Everest::FrameworkTransport> mqtt_abstraction, const Everest::MQTTSettings& mqtt_settings) {
+    std::shared_ptr<Everest::FrameworkTransport> external_mqtt;
+    if (mqtt_settings.shared_mem()) {
+        external_mqtt = std::shared_ptr<Everest::FrameworkTransport>(Everest::make_mqtt_transport(mqtt_settings));
+    }
     return std::make_unique<Everest::Everest>(module_id, config, rs.validate_schema, mqtt_abstraction,
-                                              rs.telemetry_prefix, rs.telemetry_enabled, rs.forward_exceptions);
+                                              rs.telemetry_prefix, rs.telemetry_enabled, rs.forward_exceptions,
+                                              external_mqtt);
 }
 
 Module::Module(const RuntimeSession& session) : Module(get_variable_from_env("EV_MODULE"), session) {
@@ -24,7 +28,7 @@ Module::Module(const std::string& module_id_, const RuntimeSession& session_) :
     module_id(module_id_), session(session_), start_time(std::chrono::steady_clock::now()) {
 
     this->mqtt_abstraction =
-        std::shared_ptr<Everest::MQTTAbstraction>(Everest::make_mqtt_abstraction(session.get_mqtt_settings()));
+        std::shared_ptr<Everest::FrameworkTransport>(Everest::make_framework_transport(session.get_mqtt_settings()));
     this->mqtt_abstraction->connect();
     this->mqtt_abstraction->spawn_main_loop_thread();
 
@@ -37,7 +41,8 @@ Module::Module(const std::string& module_id_, const RuntimeSession& session_) :
 
     const auto& config = get_config();
 
-    this->handle = create_everest_instance(module_id, config, *this->rs, this->mqtt_abstraction);
+    this->handle =
+        create_everest_instance(module_id, config, *this->rs, this->mqtt_abstraction, session.get_mqtt_settings());
 
     // determine the fulfillments for our requirements
     const auto& module_name = config.get_module_name(this->module_id);

@@ -48,6 +48,12 @@ enum class SettingColumnIndex : int {
     COL_VALIDATE_SCHEMA,
     COL_RUN_AS_USER,
     COL_FORWARD_EXCEPTIONS,
+    COL_FRAMEWORK_TRANSPORT,
+    COL_SHM_CONTROL_SOCKET_PATH,
+    COL_SHM_TOPIC_SLOTS,
+    COL_SHM_TOPIC_SLOT_SIZE,
+    COL_SHM_TOPIC_REGISTRY_CAPACITY,
+    COL_SHM_TOPIC_REGISTRY_MODE,
 };
 
 /// \brief Helper for accessing the column indices of the CONFIGURATION table
@@ -264,11 +270,18 @@ GetSettingsResponse SqliteStorage::get_settings() {
     settings.mqtt_external_prefix = stmt->column_text(to_int(SettingColumnIndex::COL_MQTT_EXTERNAL_PREFIX));
     settings.telemetry_prefix = stmt->column_text(to_int(SettingColumnIndex::COL_TELEMETRY_PREFIX));
     settings.run_as_user = stmt->column_text(to_int(SettingColumnIndex::COL_RUN_AS_USER));
+    settings.framework_transport = stmt->column_text(to_int(SettingColumnIndex::COL_FRAMEWORK_TRANSPORT));
+    settings.shm_control_socket_path = stmt->column_text(to_int(SettingColumnIndex::COL_SHM_CONTROL_SOCKET_PATH));
 
     // integer
     settings.controller_port = stmt->column_int(to_int(SettingColumnIndex::COL_CONTROLLER_PORT));
     settings.controller_rpc_timeout_ms = stmt->column_int(to_int(SettingColumnIndex::COL_CONTROLLER_RPC_TIMEOUT_MS));
     settings.mqtt_broker_port = stmt->column_int(to_int(SettingColumnIndex::COL_MQTT_BROKER_PORT));
+    settings.shm_topic_slots = stmt->column_int(to_int(SettingColumnIndex::COL_SHM_TOPIC_SLOTS));
+    settings.shm_topic_slot_size = stmt->column_int(to_int(SettingColumnIndex::COL_SHM_TOPIC_SLOT_SIZE));
+    settings.shm_topic_registry_capacity =
+        stmt->column_int(to_int(SettingColumnIndex::COL_SHM_TOPIC_REGISTRY_CAPACITY));
+    settings.shm_topic_registry_mode = stmt->column_text(to_int(SettingColumnIndex::COL_SHM_TOPIC_REGISTRY_MODE));
 
     // boolean
     settings.telemetry_enabled = stmt->column_int(to_int(SettingColumnIndex::COL_TELEMETRY_ENABLED)) != 0;
@@ -665,7 +678,13 @@ GenericResponseStatus SqliteStorage::write_settings(const Everest::ManagerSettin
                                      "TELEMETRY_ENABLED",
                                      "VALIDATE_SCHEMA",
                                      "RUN_AS_USER",
-                                     "FORWARD_EXCEPTIONS"};
+                                     "FORWARD_EXCEPTIONS",
+                                     "FRAMEWORK_TRANSPORT",
+                                     "SHM_CONTROL_SOCKET_PATH",
+                                     "SHM_TOPIC_SLOTS",
+                                     "SHM_TOPIC_SLOT_SIZE",
+                                     "SHM_TOPIC_REGISTRY_CAPACITY",
+                                     "SHM_TOPIC_REGISTRY_MODE"};
 
     std::string sql = "INSERT INTO SETTING (";
     for (size_t i = 0; i < keys.size(); ++i) {
@@ -751,6 +770,21 @@ GenericResponseStatus SqliteStorage::write_settings(const Everest::ManagerSettin
     bind_bool_opt(SettingColumnIndex::COL_VALIDATE_SCHEMA, 1, manager_settings.runtime_settings.validate_schema);
     bind_text_opt(SettingColumnIndex::COL_RUN_AS_USER, 1, manager_settings.run_as_user);
     bind_bool_opt(SettingColumnIndex::COL_FORWARD_EXCEPTIONS, 1, manager_settings.runtime_settings.forward_exceptions);
+    bind_text_opt(SettingColumnIndex::COL_FRAMEWORK_TRANSPORT, 1,
+                  Everest::framework_transport_to_string(manager_settings.mqtt_settings.framework_transport));
+    bind_text_opt(SettingColumnIndex::COL_SHM_CONTROL_SOCKET_PATH, 1,
+                  manager_settings.mqtt_settings.shm_control_socket_path);
+    // SHM tuning values are non-optional uint32 fields (the SETTING columns are NOT NULL DEFAULT ...). Bind them
+    // directly as integers; a value of 0 keeps the migration's DEFAULT semantic for downstream readers.
+    stmt->bind_int(to_int(SettingColumnIndex::COL_SHM_TOPIC_SLOTS) + 1,
+                   static_cast<int>(manager_settings.mqtt_settings.shm_topic_slots));
+    stmt->bind_int(to_int(SettingColumnIndex::COL_SHM_TOPIC_SLOT_SIZE) + 1,
+                   static_cast<int>(manager_settings.mqtt_settings.shm_topic_slot_size));
+    stmt->bind_int(to_int(SettingColumnIndex::COL_SHM_TOPIC_REGISTRY_CAPACITY) + 1,
+                   static_cast<int>(manager_settings.mqtt_settings.shm_topic_registry_capacity));
+    bind_text_opt(SettingColumnIndex::COL_SHM_TOPIC_REGISTRY_MODE, 1,
+                  std::optional<std::string>{Everest::shm_topic_registry_mode_to_string(
+                      manager_settings.mqtt_settings.shm_topic_registry_mode)});
 
     if (stmt->step() != SQLITE_DONE) {
         return GenericResponseStatus::Failed;
