@@ -11,6 +11,10 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+target_compile_definitions(${TEST_TARGET_NAME} PRIVATE
+    EVEREST_FRAMEWORK_TRANSPORT_TESTING
+)
+
 target_sources(${TEST_TARGET_NAME} PRIVATE
     test_config.cpp
     test_config_sqlite.cpp
@@ -19,6 +23,9 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     test_helpers.cpp
     test_message_handler.cpp
     test_message_handler_scaling_policy.cpp
+    test_message_queue.cpp
+    test_shm_framework_transport.cpp
+    test_shm_manager_transport.cpp
     helpers.cpp
 )
 
@@ -35,6 +42,7 @@ add_subdirectory(controller)
 target_link_libraries(${TEST_TARGET_NAME}
     PRIVATE
         everest::framework
+        everest::io
         everest::log
         everest::sqlite
         Catch2::Catch2WithMain

@@ -1,0 +1,11 @@
+settings:
+  telemetry_enabled: false
+active_modules:
+  transport_provider:
+    module: TestFrameworkTransportProvider
+  transport_consumer:
+    module: TestFrameworkTransportConsumer
+    connections:
+      provider:
+        - module_id: transport_provider
+          implementation_id: main

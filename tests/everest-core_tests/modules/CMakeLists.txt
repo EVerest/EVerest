@@ -1,1 +1,3 @@
 ev_add_module(TestErrorHandling SKIP_DOC_GENERATION)
+ev_add_module(TestFrameworkTransportProvider SKIP_DOC_GENERATION)
+ev_add_module(TestFrameworkTransportConsumer SKIP_DOC_GENERATION)
