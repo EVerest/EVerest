@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include <everest/util/async/monitor.hpp>
+
 #include "config.hpp"
 #include <iso15118/d20/config.hpp>
 #include <iso15118/d20/control_event.hpp>
@@ -47,6 +49,12 @@ public:
 
     void set_dlink_ready(bool ready);
 
+    /// Replaces the current SSL config snapshot with a new one.
+    void set_ssl_config(config::SSLConfig new_config);
+
+    /// Returns a copy of the current SSL config snapshot.
+    [[nodiscard]] config::SSLConfig ssl_config_snapshot() const;
+
 private:
     io::PollManager poll_manager;
     std::unique_ptr<io::SdpServer> sdp_server;
@@ -67,6 +75,8 @@ private:
 
     static constexpr uint32_t V2G_COMMUNICATION_SETUP_TIMEOUT_MS{18000};
     std::optional<Timeout> communication_setup_timeout;
+
+    mutable everest::lib::util::monitor<config::SSLConfig> m_ssl_config;
 };
 
 } // namespace iso15118

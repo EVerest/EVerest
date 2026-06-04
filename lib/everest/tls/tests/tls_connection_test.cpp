@@ -913,4 +913,61 @@ TEST_F(TlsTest, SuspendToRunning) {
     EXPECT_EQ(server.state(), state_t::running);
 }
 
+TEST_F(TlsTest, Tls13MultiChainCertificateAuthorities) {
+    // End-to-end test that the TLS 1.3 chain-selection path picks the chain
+    // whose trust anchor's subject DN appears in the client's
+    // certificate_authorities extension. Two chains are configured by the
+    // fixture: chains[0] (root CN 00000000) and chains[1] (alt root CN
+    // 11111111). The client publishes only the alt root's DN and the server
+    // must reply with the alt leaf certificate.
+    server_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    server_config.enforce_tls_1_3 = true;
+    server_config.verify_client = true;
+    server_config.verify_locations_file = "client_root_cert.pem";
+
+    client_config.cipher_list = nullptr;
+    client_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    client_config.min_proto_version = TLS1_3_VERSION;
+    client_config.certificate_chain_file = "client_chain.pem";
+    client_config.private_key_file = "client_priv.pem";
+    // Verify against the alt root because that is the chain we expect the
+    // server to send back.
+    client_config.verify_locations_file = "alt_server_root_cert.pem";
+
+    std::map<std::string, std::string> subject;
+    auto client_handler_fn = [this, &subject](tls::Client::ConnectionPtr& connection) {
+        if (!connection) {
+            return;
+        }
+        // Inject the alt root DN into the certificate_authorities extension on
+        // the client SSL handle before the handshake runs. This is the signal
+        // the server's TLS 1.3 chain dispatcher reads via
+        // SSL_get0_peer_CA_list to pick chains[1].
+        //
+        // Connection::ssl_context() is marked [[deprecated]] for callers
+        // outside the library (it is only kept for IsoMux); the surrounding
+        // pragmas suppress the deprecation warning here because the test
+        // legitimately needs the raw SSL* to drive SSL_add1_to_CA_list.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+        SSL* ssl = connection->ssl_context();
+#pragma GCC diagnostic pop
+        ASSERT_NE(ssl, nullptr);
+        auto alt_roots = openssl::load_certificates("alt_server_root_cert.pem");
+        ASSERT_FALSE(alt_roots.empty());
+        ASSERT_EQ(SSL_add1_to_CA_list(ssl, alt_roots.front().get()), 1);
+
+        if (connection->connect() == result_t::success) {
+            this->set(ClientTest::flags_t::connected);
+            subject = openssl::certificate_subject(connection->peer_certificate());
+            (void)connection->shutdown();
+        }
+    };
+
+    start();
+    connect(client_handler_fn);
+    EXPECT_TRUE(is_set(flags_t::connected));
+    EXPECT_EQ(subject["CN"], alt_server_root_CN);
+}
+
 } // namespace
