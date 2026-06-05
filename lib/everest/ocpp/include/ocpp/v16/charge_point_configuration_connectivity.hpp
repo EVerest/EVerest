@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
-#ifndef OCPP_V16_CHARGE_POINT_CONFIGURATION_CONNECTIVITY_HPP
-#define OCPP_V16_CHARGE_POINT_CONFIGURATION_CONNECTIVITY_HPP
+#pragma once
 
 #include <ocpp/v16/charge_point_configuration_interface.hpp>
 

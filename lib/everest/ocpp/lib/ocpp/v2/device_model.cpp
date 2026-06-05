@@ -1055,6 +1055,7 @@ std::string DeviceModel::get_network_configuration_priority() {
 
 void DeviceModel::set_network_configuration_priority(const std::string& priority, const std::string& source) {
     if (!ControllerComponentVariables::NetworkConfigurationPriority.variable.has_value()) {
+        EVLOG_warning << "NetworkConfigurationPriority variable is not defined in the device model, cannot set value";
         return;
     }
     set_value(ControllerComponentVariables::NetworkConfigurationPriority.component,
