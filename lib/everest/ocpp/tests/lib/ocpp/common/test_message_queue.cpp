@@ -834,9 +834,9 @@ TEST_F(MessageQueueTest, test_boot_notification_survives_when_only_message_in_no
     EXPECT_TRUE(boot_sent) << "BootNotification was dropped from the queue!";
 }
 
-// Mismatched-uid CallResult must emit a CallError(RpcFrameworkError) outbound and
-// resolve the in-flight waiter with offline=true so the caller does not stall on
-// the in-flight timeout timer.
+// A CallResult whose uid does not match the in-flight call is unsolicited: the queue must NACK it with a
+// CallError(RpcFrameworkError) and leave the in-flight call untouched, so the in-flight call still completes
+// when its own matching response arrives (its timeout timer keeps owning retry/expiry).
 TEST_F(MessageQueueTest, test_mismatching_uid_callresult_emits_rpc_framework_error) {
     EXPECT_CALL(send_callback_mock, Call(json{2, "0", "non_transactional", json{{"data", "x"}}}))
         .WillOnce(MarkAndReturn(true));
@@ -852,14 +852,21 @@ TEST_F(MessageQueueTest, test_mismatching_uid_callresult_emits_rpc_framework_err
 
     wait_for_calls(1);
 
+    // Stray CallResult for an unknown uid: NACKed outbound, in-flight call left in place.
     message_queue->receive(json::array({3, "bogus-uid", json::object()}).dump());
 
     wait_for_calls(2);
 
-    auto status = future.wait_for(std::chrono::seconds(1));
-    ASSERT_EQ(status, std::future_status::ready);
+    // The mismatch must not resolve the in-flight call.
+    EXPECT_EQ(future.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+
+    // The real response still completes the in-flight call.
+    message_queue->receive(json::array({3, "0", json::object()}).dump());
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     auto enhanced = future.get();
-    EXPECT_TRUE(enhanced.offline);
+    EXPECT_FALSE(enhanced.offline);
+    EXPECT_EQ(enhanced.uniqueId, "0");
 }
 
 // Unsolicited CallResult (no in-flight) must emit a CallError(RpcFrameworkError).
@@ -873,7 +880,8 @@ TEST_F(MessageQueueTest, test_unsolicited_callresult_emits_rpc_framework_error) 
     wait_for_calls(1);
 }
 
-// CallError variant of the mismatched-uid path: same outbound + immediate waiter resolve.
+// CallError variant of the mismatched-uid path: NACK the stray uid, leave the in-flight call untouched,
+// and confirm it still completes when its own response arrives.
 TEST_F(MessageQueueTest, test_mismatching_uid_callerror_emits_rpc_framework_error) {
     EXPECT_CALL(send_callback_mock, Call(json{2, "0", "non_transactional", json{{"data", "x"}}}))
         .WillOnce(MarkAndReturn(true));
@@ -889,13 +897,21 @@ TEST_F(MessageQueueTest, test_mismatching_uid_callerror_emits_rpc_framework_erro
 
     wait_for_calls(1);
 
+    // Stray CallError for an unknown uid: NACKed outbound, in-flight call left in place.
     message_queue->receive(json::array({4, "other-uid", "GenericError", "", json::object()}).dump());
 
     wait_for_calls(2);
 
-    auto status = future.wait_for(std::chrono::seconds(1));
-    ASSERT_EQ(status, std::future_status::ready);
-    EXPECT_TRUE(future.get().offline);
+    // The mismatch must not resolve the in-flight call.
+    EXPECT_EQ(future.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+
+    // The real response still completes the in-flight call.
+    message_queue->receive(json::array({3, "0", json::object()}).dump());
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    auto enhanced = future.get();
+    EXPECT_FALSE(enhanced.offline);
+    EXPECT_EQ(enhanced.uniqueId, "0");
 }
 
 } // namespace ocpp

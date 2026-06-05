@@ -865,13 +865,11 @@ public:
                 return enhanced_message;
             }
             if (this->in_flight->uniqueId() != enhanced_message.uniqueId) {
+                // The response is for a uid we are not waiting on: reply with a RpcFrameworkError and leave
+                // the in-flight call untouched. A mismatch must not be counted as a timeout for the in-flight
+                // call; its own timeout timer remains responsible for retry/expiry.
                 EVLOG_error << "Received a CALLRESULT OR CALLERROR with mismatching uid: "
                             << this->in_flight->uniqueId() << " != " << enhanced_message.uniqueId;
-                EnhancedMessage<M> stale;
-                stale.uniqueId = this->in_flight->uniqueId();
-                stale.offline = true;
-                this->in_flight->promise.set_value(stale);
-                this->reset_in_flight();
                 this->push_call_error(CallError{enhanced_message.uniqueId, "RpcFrameworkError",
                                                 "messageId does not match in-flight call", json::object()});
                 return enhanced_message;
