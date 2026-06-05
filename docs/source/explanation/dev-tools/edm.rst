@@ -237,6 +237,184 @@ The ``dependencies_modified.yaml`` file can contain something along these lines:
 	catch2:
 	  git_tag: v1.2.3 # select a different git tag for a build
 
+Selective library consumption
+#############################
+
+If your external project only needs specific everest-core libraries (e.g.
+``liblog``, ``everest-util``, ``everest-io``, ``libocpp``, ``libiso15118``)
+without building the full module framework, you can use the
+``EVEREST_LIBS_ONLY`` and ``EVEREST_INCLUDE_LIBS`` CMake options.
+
+**CMake options:**
+
+.. list-table::
+   :header-rows: 1
+
+   * - Option
+     - Default
+     - Description
+   * - ``EVEREST_LIBS_ONLY``
+     - OFF
+     - Skip modules, applications, config, and code generation. Only build
+       libraries under ``lib/everest/``.
+   * - ``EVEREST_INCLUDE_LIBS``
+     - (empty)
+     - Semicolon-separated allowlist of libraries to build. Transitive
+       internal dependencies are resolved automatically. When empty, all
+       libraries are built.
+   * - ``EVEREST_EXCLUDE_LIBS``
+     - (empty)
+     - Semicolon-separated blocklist of libraries to skip.
+
+**Example: building only liblog, everest-util, and everest-io**
+
+.. code-block:: bash
+
+  cmake -S . -B build \
+    -DEVEREST_LIBS_ONLY=ON \
+    -DEVEREST_INCLUDE_LIBS="log;util;io"
+  cmake --build build
+
+Transitive dependencies are resolved automatically. For example, requesting
+``io`` will automatically include ``util`` (since ``everest-io`` depends on
+``everest-util``).
+
+**Example: building only libocpp**
+
+.. code-block:: bash
+
+  cmake -S . -B build \
+    -DEVEREST_LIBS_ONLY=ON \
+    -DEVEREST_INCLUDE_LIBS="ocpp"
+  cmake --build build
+
+This resolves the full dependency chain: ``ocpp`` -> ``log``, ``timer``,
+``evse_security``, ``sqlite``, ``cbv2g``.
+
+**Using from an external project's dependencies.yaml:**
+
+.. code-block:: yaml
+
+  everest-core:
+    git: https://github.com/EVerest/everest-core.git
+    git_tag: 2026.02.0
+    options:
+      - "EVEREST_LIBS_ONLY ON"
+      - "EVEREST_INCLUDE_LIBS log;util;io"
+
+The internal dependency map is defined in ``cmake/ev-lib-dependencies.cmake``.
+
+.. note::
+
+  Libraries that depend on framework code generation (``tls``, ``helpers``,
+  ``conversions``, ``slac``, ``external_energy_limits``, ``everest_api_types``)
+  are **not available** in ``EVEREST_LIBS_ONLY`` mode. Use
+  ``EVEREST_EXCLUDE_MODULES`` instead if you need those libraries.
+
+Framework thread pool scaling policy
+####################################
+
+The framework message handler uses a dynamically scaling thread pool for
+operation messages such as variable updates, commands, errors, GetConfig and
+ModuleReady messages. Its scaling policy can be selected at CMake configure
+time.
+
+**CMake options:**
+
+.. list-table::
+   :header-rows: 1
+
+   * - Option
+     - Default
+     - Description
+   * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY``
+     - ``latency``
+     - Selects the policy. Supported values are ``latency``, ``greedy``,
+       ``conservative``, ``fixed_size`` and ``custom``.
+   * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS``
+     - ``50``
+     - Maximum queued task wait time, in milliseconds, before the ``latency``
+       policy adds another worker.
+   * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_TICK_MS``
+     - ``5``
+     - Supervisor tick, in milliseconds, for the ``latency`` policy.
+   * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD``
+     - ``3``
+     - Queue size threshold at which the ``fixed_size`` policy adds another
+       worker.
+   * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_HEADER``
+     - (empty)
+     - Header to include when the policy is ``custom``.
+   * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE``
+     - (empty)
+     - Fully-qualified C++ policy type to use when the policy is ``custom``.
+   * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_INCLUDE_DIR``
+     - (empty)
+     - Additional include directory for the custom policy header.
+
+The built-in policies are:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Policy
+     - Behavior
+   * - ``latency``
+     - Default. Adds workers when queued work has waited longer than the
+       framework latency threshold.
+   * - ``greedy``
+     - Adds workers as soon as backlog is detected.
+   * - ``conservative``
+     - Adds workers only when the queue depth significantly exceeds the current
+       worker count.
+   * - ``fixed_size``
+     - Adds workers once the queue size reaches the configured
+       ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD``.
+
+**Example: selecting a built-in policy for a full EVerest build**
+
+.. code-block:: bash
+
+  cmake -S . -B build \
+    -DEVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY=latency \
+    -DEVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS=50 \
+    -DEVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_TICK_MS=5
+  cmake --build build
+
+**Example: selecting fixed-size scaling**
+
+.. code-block:: bash
+
+  cmake -S . -B build \
+    -DEVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY=fixed_size \
+    -DEVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD=3
+  cmake --build build
+
+**Example: using a custom policy**
+
+.. code-block:: bash
+
+  cmake -S . -B build \
+    -DEVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY=custom \
+    -DEVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_HEADER=my_policy.hpp \
+    -DEVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE=my_project::MyPolicy \
+    -DEVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_INCLUDE_DIR=/path/to/include
+  cmake --build build
+
+A custom policy must provide the same interface as the built-in policies:
+
+.. code-block:: cpp
+
+  struct MyPolicy {
+      static constexpr std::optional<std::chrono::milliseconds> supervisor_tick =
+          std::nullopt;
+
+      static bool should_grow(
+          std::size_t current_workers,
+          std::size_t queue_size,
+          std::optional<std::chrono::steady_clock::time_point> oldest_arrival);
+  };
+
 Create a workspace config from an existing directory tree
 #########################################################
 
