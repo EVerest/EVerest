@@ -33,5 +33,3 @@ public:
 };
 
 } // namespace ocpp::v16
-
-#endif // OCPP_V16_CHARGE_POINT_CONFIGURATION_CONNECTIVITY_HPP
