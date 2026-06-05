@@ -31,7 +31,7 @@ void exampleImpl::ready() {
     publish_max_current(config.current);
     mod->r_kvs->call_store("test", "test");
 
-    while (true) {
+    while (!shutdown_requested) {
         EVLOG_info << "Config log \"actual [original value]\": log_interval=" << std::to_string(mod->rw_config.log_interval)
                    << " [" << std::to_string(mod->original_config.log_interval) << "]; enum_test=\""
                    << mod->rw_config.enum_test << "\" [\"" << mod->original_config.enum_test
@@ -39,11 +39,22 @@ void exampleImpl::ready() {
                    << std::to_string(original_config.current) << "]; example|enum_test=\"" << rw_config.enum_test
                    << "\" [\"" << original_config.enum_test << "\"]; example|enum_test2=\"" << rw_config.enum_test2
                    << "\" [\"" << original_config.enum_test2 << "\"]";
-        std::this_thread::sleep_for(std::chrono::seconds(mod->rw_config.log_interval));
+        std::unique_lock<std::mutex> lock(shutdown_mutex);
+        shutdown_cv.wait_for(lock, std::chrono::seconds(mod->rw_config.log_interval),
+                             [this]() { return shutdown_requested.load(); });
     }
+    ready_finished = true;
+    shutdown_cv.notify_one();
 }
 
 void exampleImpl::shutdown() {
+    EVLOG_info << "Shutdown command received via framework, exiting process.";
+    shutdown_requested = true;
+    shutdown_cv.notify_one();
+
+    // Wait for ready() to finish before exiting (with timeout as safety fallback)
+    std::unique_lock<std::mutex> lock(shutdown_mutex);
+    shutdown_cv.wait_for(lock, std::chrono::milliseconds(500), [this]() { return ready_finished.load(); });
 }
 
 bool exampleImpl::handle_uses_something(std::string& key) {
