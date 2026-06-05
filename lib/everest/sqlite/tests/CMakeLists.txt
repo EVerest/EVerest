@@ -4,6 +4,7 @@ set(GTEST_LIBRARIES GTest::gmock_main GTest::gtest_main)
 add_executable(${TEST_TARGET_NAME})
 
 target_sources(${TEST_TARGET_NAME} PRIVATE
+    test_connection.cpp
     test_database_schema_updater.cpp
     test_sqlite_statement.cpp
 )
