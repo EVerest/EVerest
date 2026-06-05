@@ -81,7 +81,7 @@ public:
     void allow_power_on(bool value, types::evse_board_support::Reason reason);
 
     void set_pp_ampacity(types::board_support_common::ProximityPilot const& pp);
-    double read_pp_ampacity();
+    std::optional<double> read_pp_ampacity();
     void switch_three_phases_while_charging(bool n);
     void setup(bool has_ventilation);
 

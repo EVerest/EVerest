@@ -274,6 +274,20 @@ void energyImpl::request_energy_from_energy_manager(bool priority_request) {
             e.limits_to_root.ac_number_of_active_phases = mod->ac_nr_phases_active;
         }
 
+        // Cap by PP cable rating so the EnergyManager cannot allocate more than the cable allows
+        if (mod->config.charge_mode == "AC") {
+            const auto pp_rating = mod->bsp->read_pp_ampacity();
+            if (pp_rating) {
+                const std::string source_pp = source_base + "/pp_ampacity";
+                for (auto& e : energy_flow_request.schedule_import) {
+                    if (e.limits_to_root.ac_max_current_A.has_value() &&
+                        e.limits_to_root.ac_max_current_A.value().value > pp_rating.value()) {
+                        e.limits_to_root.ac_max_current_A = {static_cast<float>(pp_rating.value()), source_pp};
+                    }
+                }
+            }
+        }
+
         if (mod->config.charge_mode == "DC") {
             // For DC mode remove amp limit on leave side if any
             for (auto& e : energy_flow_request.schedule_import) {
@@ -372,9 +386,6 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
     if (value.uuid == energy_flow_request.uuid) {
         // EVLOG_info << "Incoming enforce limits" << value;
 
-        // publish for e.g. OCPP module
-        mod->p_evse->publish_enforced_limits(value);
-
         //   set hardware limit
         float limit = 0.;
         int active_phasecount = mod->ac_nr_phases_active;
@@ -420,7 +431,7 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
             }
         }
 
-        auto enforced_limit = limit;
+        const auto enforced_limit = limit;
 
         // check if we need to add a random delay for UK smart charging regs
         if (mod->random_delay_enabled) {
@@ -477,6 +488,18 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
         }
 
         last_enforced_limit = enforced_limit;
+
+        // publish for e.g. OCPP module with the updated limit
+        if (value.limits_root_side.ac_max_current_A) {
+            // update based on the PP cable rating
+            const auto pp_rating = mod->bsp->read_pp_ampacity();
+            if (pp_rating) {
+                types::energy::NumberWithSource nws_updated{std::min(limit, static_cast<float>(pp_rating.value())),
+                                                            value.limits_root_side.ac_max_current_A.value().source};
+                value.limits_root_side.ac_max_current_A = std::move(nws_updated);
+            }
+        }
+        mod->p_evse->publish_enforced_limits(value);
 
         // update limit at the charger
         const auto valid_until = steady_clock::now() + seconds(value.valid_for);
