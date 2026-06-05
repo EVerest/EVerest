@@ -49,7 +49,7 @@ A deprecated public API component passes through three phases:
 Minimum Deprecation Period
 **************************
 
-A public API component **may not be removed without first being deprecated**.
+A public API component **must not be removed without first being deprecated**.
 Removal from one stable release to the next without a preceding deprecation
 period is not permitted.
 
@@ -58,7 +58,7 @@ release before it can be removed. For example, a component deprecated in
 ``2026.09.0`` cannot be removed before ``2027.03.0``.
 
 A component deprecated mid-cycle on ``main`` counts as deprecated in the next
-stable release and may therefore not be removed before the one after that.
+stable release and must therefore not be removed before the one after that.
 
 Longer deprecation periods may be applied for widely used or
 integration-critical components.
@@ -118,7 +118,7 @@ While a component is deprecated:
 - The deprecation itself is **not** considered a breaking change. It is a
   non-breaking annotation that signals intent.
 
-The actual removal of a deprecated component **is** a breaking change and may
+The actual removal of a deprecated component **is** a breaking change and must
 only occur in a new stable release (``yyyy.mm.0``), never in a patch release.
 
 **********
