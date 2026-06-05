@@ -151,4 +151,34 @@ TEST_F(ConfigurationTester, DefaultPriceText) {
     EXPECT_EQ(set_result, ConfigurationStatus::Accepted);
 }
 
+// Boolean ChangeConfiguration values must be validated rather than silently
+// coerced to false. See EVerest/EVerest#2182.
+TEST_F(ConfigurationTester, BooleanKeyAcceptsValidLiterals) {
+    const std::vector<std::string> accepted_values = {"true", "false", "True", "FALSE", "tRuE"};
+    for (const auto& v : accepted_values) {
+        auto result = config->set("AuthorizeRemoteTxRequests", v);
+        ASSERT_TRUE(result.has_value()) << "value=" << v;
+        EXPECT_EQ(result.value(), ConfigurationStatus::Accepted) << "value=" << v;
+    }
+}
+
+TEST_F(ConfigurationTester, BooleanKeyRejectsInvalidLiterals) {
+    auto initial = config->get("AuthorizeRemoteTxRequests");
+    ASSERT_TRUE(initial.has_value());
+    ASSERT_TRUE(initial.value().value.has_value());
+    const auto initial_value = initial.value().value.value();
+
+    const std::vector<std::string> rejected_values = {"maybe", "", "1", "0", "yes", "no", "tru", "falsey"};
+    for (const auto& v : rejected_values) {
+        auto result = config->set("AuthorizeRemoteTxRequests", v);
+        ASSERT_TRUE(result.has_value()) << "value=" << v;
+        EXPECT_EQ(result.value(), ConfigurationStatus::Rejected) << "value=" << v;
+
+        auto current = config->get("AuthorizeRemoteTxRequests");
+        ASSERT_TRUE(current.has_value());
+        ASSERT_TRUE(current.value().value.has_value()) << "value=" << v;
+        EXPECT_EQ(current.value().value.value(), initial_value) << "value=" << v;
+    }
+}
+
 } // namespace
