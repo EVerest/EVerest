@@ -261,14 +261,6 @@ void ConnectionSSL::handle_connect() {
     }
 
     poll_manager.register_fd(ssl->accept_fd, [this]() { this->handle_data(); });
-
-    // The accepted socket may already hold the ClientHello in its receive buffer
-    // by the time we register it with the poll manager. The poll loop only fires
-    // on edge-triggered readiness changes, so without a kick here we could sit
-    // idle until the peer sends more data. Drive one non-blocking handshake step
-    // now to consume any pending bytes; subsequent steps are driven by
-    // handle_data() from the poll loop.
-    handle_data();
 }
 
 void ConnectionSSL::handle_data() {
