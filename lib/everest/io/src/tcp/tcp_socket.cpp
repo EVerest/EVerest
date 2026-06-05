@@ -34,8 +34,9 @@ void tcp_socket::connect(std::function<void(bool, int)> const& setup_cb) {
     try {
         auto socket = socket::open_tcp_socket_with_timeout(m_remote, m_port, m_timeout_ms);
         socket::set_non_blocking(socket);
-        setup_cb(true, socket);
+        const auto fd = static_cast<int>(socket);
         m_fd = std::move(socket);
+        setup_cb(true, fd);
     } catch (...) {
         std::this_thread::sleep_for(std::chrono::milliseconds(m_timeout_ms));
         setup_cb(false, -1);
