@@ -12,19 +12,19 @@
 
 #include <nlohmann/json.hpp>
 
-#include <utils/mqtt_abstraction.hpp>
+#include <utils/framework_transport.hpp>
 
 namespace Everest {
 namespace tests {
 
-/// \brief A mock MQTTAbstraction for unit testing.
+/// \brief A mock FrameworkTransport for unit testing.
 ///
 /// Overrides get() to return a pre-configured JSON response and records
 /// all publish() and register_handler() calls for inspection in tests.
-class MockMQTTAbstraction : public MQTTAbstraction {
+class MockFrameworkTransport : public FrameworkTransport {
 public:
-    explicit MockMQTTAbstraction(std::string everest_prefix = "everest/") :
-        m_everest_prefix(std::move(everest_prefix)) {
+    explicit MockFrameworkTransport(std::string everest_prefix = "everest/", std::string external_prefix = "") :
+        m_everest_prefix(std::move(everest_prefix)), m_external_prefix(std::move(external_prefix)) {
     }
 
     // --- Configurable behaviour ---
@@ -51,7 +51,15 @@ public:
         return m_handlers;
     }
 
-    // --- MQTTAbstraction overrides ---
+    std::size_t connect_count() const {
+        return m_connect_count;
+    }
+
+    std::size_t spawn_main_loop_thread_count() const {
+        return m_spawn_main_loop_thread_count;
+    }
+
+    // --- FrameworkTransport overrides ---
 
     nlohmann::json get(const MQTTRequest& request, std::size_t /*retries*/ = 0) override {
         m_last_get_request = request;
@@ -90,6 +98,7 @@ public:
     }
 
     bool connect() override {
+        ++m_connect_count;
         return true;
     }
     void disconnect() override {
@@ -103,6 +112,7 @@ public:
     void clear_retained_topics() override {
     }
     std::shared_future<void> spawn_main_loop_thread() override {
+        ++m_spawn_main_loop_thread_count;
         return {};
     }
     std::shared_future<void> get_main_loop_future() override {
@@ -114,17 +124,21 @@ public:
     }
 
     const std::string& get_external_prefix() const override {
-        static const std::string empty;
-        return empty;
+        return m_external_prefix;
     }
 
 private:
     std::string m_everest_prefix;
+    std::string m_external_prefix;
     nlohmann::json m_get_response;
     std::optional<MQTTRequest> m_last_get_request;
     std::vector<std::pair<std::string, nlohmann::json>> m_published;
     std::unordered_map<std::string, std::shared_ptr<TypedHandler>> m_handlers;
+    std::size_t m_connect_count{0};
+    std::size_t m_spawn_main_loop_thread_count{0};
 };
+
+using MockMQTTAbstraction = MockFrameworkTransport;
 
 } // namespace tests
 } // namespace Everest

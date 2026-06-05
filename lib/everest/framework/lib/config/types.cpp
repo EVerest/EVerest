@@ -82,6 +82,9 @@ Settings parse_settings(const json& settings_json) {
     if (auto it = settings_json.find("controller_rpc_timeout_ms"); it != settings_json.end()) {
         settings.controller_rpc_timeout_ms = it->get<int>();
     }
+    if (auto it = settings_json.find("framework_transport"); it != settings_json.end()) {
+        settings.framework_transport = it->get<std::string>();
+    }
     if (auto it = settings_json.find("mqtt_broker_socket_path"); it != settings_json.end()) {
         settings.mqtt_broker_socket_path = it->get<std::string>();
     }
@@ -90,6 +93,21 @@ Settings parse_settings(const json& settings_json) {
     }
     if (auto it = settings_json.find("mqtt_broker_port"); it != settings_json.end()) {
         settings.mqtt_broker_port = it->get<int>();
+    }
+    if (auto it = settings_json.find("shm_control_socket_path"); it != settings_json.end()) {
+        settings.shm_control_socket_path = it->get<std::string>();
+    }
+    if (auto it = settings_json.find("shm_topic_slots"); it != settings_json.end()) {
+        settings.shm_topic_slots = it->get<std::uint32_t>();
+    }
+    if (auto it = settings_json.find("shm_topic_slot_size"); it != settings_json.end()) {
+        settings.shm_topic_slot_size = it->get<std::uint32_t>();
+    }
+    if (auto it = settings_json.find("shm_topic_registry_capacity"); it != settings_json.end()) {
+        settings.shm_topic_registry_capacity = it->get<std::uint32_t>();
+    }
+    if (auto it = settings_json.find("shm_topic_registry_mode"); it != settings_json.end()) {
+        settings.shm_topic_registry_mode = it->get<std::string>();
     }
     if (auto it = settings_json.find("mqtt_everest_prefix"); it != settings_json.end()) {
         settings.mqtt_everest_prefix = it->get<std::string>();

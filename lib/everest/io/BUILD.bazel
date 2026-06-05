@@ -44,6 +44,8 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//lib/everest/util",
+        "@com_github_fmtlib_fmt//:fmt",
+        "@com_github_nlohmann_json//:json",
         "@mosquitto",
     ],
 )

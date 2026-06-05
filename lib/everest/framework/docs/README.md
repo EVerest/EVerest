@@ -1,3 +1,5 @@
 # Additional documentation about the inner workings of EVerest Framework
 
-[MQTT Config distribution](MQTTConfigDistribution.md)
+[Inter-process communication](InterProcessCommunication.md)
+
+[Shared memory transport](SharedMemoryTransport.md)

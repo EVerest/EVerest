@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <stdexcept>
 
+#include <everest/exceptions.hpp>
 #include <utils/filesystem.hpp>
 
 const std::string get_variable_from_env(const std::string& variable) {
@@ -27,14 +28,37 @@ const std::string get_variable_from_env(const std::string& variable, const std::
 }
 
 namespace {
+void populate_shm_registered_topics_from_env(Everest::MQTTSettings& settings) {
+    const auto shm_registered_topics = std::getenv(Everest::EV_SHM_REGISTERED_TOPICS);
+    if (shm_registered_topics == nullptr) {
+        return;
+    }
+    settings.shm_registered_topics = Everest::parse_shm_registered_topics(shm_registered_topics);
+}
+
+void apply_framework_transport_from_env(Everest::MQTTSettings& settings, const char* framework_transport) {
+    const bool framework_transport_explicit = framework_transport != nullptr && framework_transport[0] != '\0';
+    if (framework_transport_explicit) {
+        try {
+            settings.framework_transport = Everest::framework_transport_from_string(framework_transport);
+        } catch (const std::invalid_argument& e) {
+            EVLOG_AND_THROW(Everest::EverestConfigError(std::string{"Invalid EV_FRAMEWORK_TRANSPORT value '"} +
+                                                        framework_transport + "': " + e.what()));
+        }
+        return;
+    }
+}
+
 Everest::MQTTSettings get_mqtt_settings_from_env() {
     const auto mqtt_everest_prefix =
         get_variable_from_env(Everest::EV_MQTT_EVEREST_PREFIX, Everest::defaults::MQTT_EVEREST_PREFIX);
     const auto mqtt_external_prefix =
         get_variable_from_env(Everest::EV_MQTT_EXTERNAL_PREFIX, Everest::defaults::MQTT_EXTERNAL_PREFIX);
-    const auto mqtt_broker_socket_path = std::getenv(Everest::EV_MQTT_BROKER_SOCKET_PATH);
+    auto mqtt_broker_socket_path = std::getenv(Everest::EV_MQTT_BROKER_SOCKET_PATH);
     const auto mqtt_broker_host = std::getenv(Everest::EV_MQTT_BROKER_HOST);
     const auto mqtt_broker_port = std::getenv(Everest::EV_MQTT_BROKER_PORT);
+    const auto framework_transport = std::getenv(Everest::EV_FRAMEWORK_TRANSPORT);
+    const auto shm_control_socket_path = std::getenv(Everest::EV_SHM_CONTROL_SOCKET_PATH);
 
     if (mqtt_broker_socket_path == nullptr) {
         if (mqtt_broker_host == nullptr or mqtt_broker_port == nullptr) {
@@ -47,10 +71,23 @@ Everest::MQTTSettings get_mqtt_settings_from_env() {
         } catch (...) {
             EVLOG_warning << "Could not parse MQTT broker port, using default: " << mqtt_broker_port_;
         }
-        return Everest::create_mqtt_settings(mqtt_broker_host, mqtt_broker_port_, mqtt_everest_prefix,
-                                             mqtt_external_prefix);
+        auto settings = Everest::create_mqtt_settings(mqtt_broker_host, mqtt_broker_port_, mqtt_everest_prefix,
+                                                      mqtt_external_prefix);
+        apply_framework_transport_from_env(settings, framework_transport);
+        if (shm_control_socket_path != nullptr) {
+            settings.shm_control_socket_path = shm_control_socket_path;
+        }
+        populate_shm_registered_topics_from_env(settings);
+        return settings;
     } else {
-        return Everest::create_mqtt_settings(mqtt_broker_socket_path, mqtt_everest_prefix, mqtt_external_prefix);
+        auto settings =
+            Everest::create_mqtt_settings(mqtt_broker_socket_path, mqtt_everest_prefix, mqtt_external_prefix);
+        apply_framework_transport_from_env(settings, framework_transport);
+        if (shm_control_socket_path != nullptr) {
+            settings.shm_control_socket_path = shm_control_socket_path;
+        }
+        populate_shm_registered_topics_from_env(settings);
+        return settings;
     }
 }
 } // namespace

@@ -1,0 +1,8 @@
+description: Test-only consumer for Manager-driven framework transport integration tests
+requires:
+  provider:
+    interface: test_framework_transport
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Pionix GmbH and Contributors to EVerest

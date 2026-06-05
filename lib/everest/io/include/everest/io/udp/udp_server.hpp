@@ -11,13 +11,6 @@
 namespace everest::lib::io::udp {
 
 /**
- * @var udp_client
- * @brief Client for UDP implemented in terms of \ref event::fd_event_client
- * and \ref udp::udp_client_socket
- */
-using udp_client = event::fd_event_client<udp_client_socket>::type;
-
-/**
  * @var udp_server
  * @brief Server for UDP implemented in terms of \ref event::fd_event_client
  * and \ref udp::udp_server_socket

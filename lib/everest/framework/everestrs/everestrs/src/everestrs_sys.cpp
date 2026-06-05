@@ -1,7 +1,9 @@
 #include "everestrs/src/everestrs_sys.hpp"
 #include "everestrs/src/lib.rs.h"
 
+#include <everest/exceptions.hpp>
 #include <everest/logging.hpp>
+#include <framework/runtime.hpp>
 #include <utils/conversions.hpp>
 #include <utils/error/error_manager_impl.hpp>
 #include <utils/error/error_manager_req.hpp>
@@ -65,9 +67,14 @@ inline ConfigField get_config_field(const std::string& _name, int _value) {
 } // namespace
 
 std::unique_ptr<Module> create_module(rust::Str module_id, rust::Str prefix, rust::Str mqtt_broker_socket_path,
-                                      rust::Str mqtt_broker_host, const std::uint16_t& mqtt_broker_port,
+                                      rust::Str mqtt_broker_host, rust::Str framework_transport,
+                                      rust::Str shm_control_socket_path, const std::uint16_t& mqtt_broker_port,
                                       rust::Str mqtt_everest_prefix, rust::Str mqtt_external_prefix) {
     auto socket_path = std::string(mqtt_broker_socket_path);
+    auto framework_transport_str = std::string(framework_transport);
+    if (framework_transport_str.empty()) {
+        framework_transport_str = "mqtt";
+    }
     Everest::MQTTSettings mqtt_settings;
     if (not socket_path.empty()) {
         Everest::populate_mqtt_settings(mqtt_settings, socket_path, std::string(mqtt_everest_prefix),
@@ -76,6 +83,21 @@ std::unique_ptr<Module> create_module(rust::Str module_id, rust::Str prefix, rus
         Everest::populate_mqtt_settings(mqtt_settings, std::string(mqtt_broker_host), mqtt_broker_port,
                                         std::string(mqtt_everest_prefix), std::string(mqtt_external_prefix));
     }
+    try {
+        mqtt_settings.framework_transport = Everest::framework_transport_from_string(framework_transport_str);
+    } catch (const std::invalid_argument& e) {
+        EVLOG_AND_THROW(Everest::EverestConfigError("Invalid framework_transport setting '" + framework_transport_str +
+                                                    "': " + e.what()));
+    }
+    const auto shm_socket_path_arg = std::string(shm_control_socket_path);
+    const auto* const shm_control_env = std::getenv(Everest::EV_SHM_CONTROL_SOCKET_PATH);
+    mqtt_settings.shm_control_socket_path = !shm_socket_path_arg.empty()
+                                                ? shm_socket_path_arg
+                                                : (shm_control_env != nullptr ? std::string(shm_control_env) : "");
+    if (const auto shm_registered_topics = std::getenv(Everest::EV_SHM_REGISTERED_TOPICS);
+        shm_registered_topics != nullptr) {
+        mqtt_settings.shm_registered_topics = Everest::parse_shm_registered_topics(shm_registered_topics);
+    }
     return std::make_unique<Module>(std::string(module_id), std::string(prefix), mqtt_settings);
 }
 
@@ -83,7 +105,7 @@ Module::Module(const std::string& module_id, const std::string& prefix, const Ev
     module_id_(module_id) {
 
     const auto mqtt_abstraction =
-        std::shared_ptr<Everest::MQTTAbstraction>(Everest::make_mqtt_abstraction(mqtt_settings));
+        std::shared_ptr<Everest::FrameworkTransport>(Everest::make_framework_transport(mqtt_settings));
     // TODO(ddo) what happens when this returns false?
     mqtt_abstraction->connect();
     mqtt_abstraction->spawn_main_loop_thread();
@@ -94,9 +116,13 @@ Module::Module(const std::string& module_id, const std::string& prefix, const Ev
 
     config_ = std::make_shared<Everest::Config>(mqtt_settings, result);
 
-    handle_ = std::make_unique<Everest::Everest>(this->module_id_, *this->config_, this->rs_->validate_schema,
-                                                 mqtt_abstraction, this->rs_->telemetry_prefix,
-                                                 this->rs_->telemetry_enabled, this->rs_->forward_exceptions);
+    std::shared_ptr<Everest::FrameworkTransport> external_mqtt;
+    if (mqtt_settings.shared_mem()) {
+        external_mqtt = std::shared_ptr<Everest::FrameworkTransport>(Everest::make_mqtt_transport(mqtt_settings));
+    }
+    handle_ = std::make_unique<Everest::Everest>(
+        this->module_id_, *this->config_, this->rs_->validate_schema, mqtt_abstraction, this->rs_->telemetry_prefix,
+        this->rs_->telemetry_enabled, this->rs_->forward_exceptions, external_mqtt);
 
     // Not needed but done to be congruent with the other bindings.
     handle_->spawn_main_loop_thread();

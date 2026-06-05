@@ -1,0 +1,31 @@
+bridge:
+  name: shm-inspect
+
+shm:
+  client_id: shm-mqtt-bridge
+  control_socket: /tmp/everest-shm-control.sock
+  control_socket_abstract_namespace: false
+  # Select SHM topics with any combination of the following selectors.
+  # The bridge combines them as a deduplicated union; at least one must be set.
+  # 'topics' takes exact SHM topic names only (no wildcards).
+  topics:
+    - ping_pong/ping
+    - ping_pong/pong
+  # 'topic_filters' takes MQTT-compatible wildcards ('+' and '#') and expands them
+  # against the Manager-owned SHM topic registry discovered through the control socket.
+  # topic_filters:
+  #   - everest/modules/connector_1/#
+  # 'subscribe_all: true' discovers and subscribes to every registered SHM topic.
+  # Each bridge process adds extra SHM subscribers and can affect SHM back-pressure.
+  # subscribe_all: true
+
+mqtt:
+  host: 127.0.0.1
+  port: 1883
+  client_id: shm-mqtt-bridge
+  topic_prefix: everest/shm_inspect
+  qos: 0
+  retain: false
+
+payload:
+  mode: raw

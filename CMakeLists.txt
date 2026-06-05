@@ -159,6 +159,9 @@ if(NOT DISABLE_EDM)
     # edm
     add_subdirectory(applications/dependency_manager)
 
+    # everest_io exposes nlohmann/json.hpp in public headers, so the vendored
+    # nlohmann_json target must be installable when EDM provides it.
+    set(JSON_Install ON CACHE BOOL "Install nlohmann_json CMake package files" FORCE)
     evc_setup_edm()
 
     if(EVEREST_DEPENDENCY_ENABLED_SDBUS_CPP AND NOT TARGET SDBusCpp::sdbus-c++)

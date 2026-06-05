@@ -25,6 +25,12 @@ public:
     event_fd_base(unsigned int initval, int flags);
 
     /**
+     * @brief Constructor
+     * @param[in] Take ownership of raw event_fd filedescriptor
+     */
+    explicit event_fd_base(unique_fd&& raw_event_fd);
+
+    /**
      * @brief Declared virtual to ensure proper cleanup via base class pointer,
      * but defaulted to use the compiler-generated implementation.
      */

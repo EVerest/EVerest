@@ -577,9 +577,12 @@ static Napi::Value boot_module(const Napi::CallbackInfo& info) {
         const auto& prefix = settings.Get("prefix").ToString().Utf8Value();
         const auto& mqtt_everest_prefix = settings.Get("mqtt_everest_prefix").ToString().Utf8Value();
         const auto& mqtt_external_prefix = settings.Get("mqtt_external_prefix").ToString().Utf8Value();
-        const auto& mqtt_broker_socket_path = settings.Get("mqtt_broker_socket_path").ToString().Utf8Value();
+        auto mqtt_broker_socket_path = settings.Get("mqtt_broker_socket_path").ToString().Utf8Value();
         const auto& mqtt_server_address = settings.Get("mqtt_server_address").ToString().Utf8Value();
         const auto& mqtt_server_port = settings.Get("mqtt_server_port").ToString().Utf8Value();
+        auto framework_transport = settings.Get("framework_transport").ToString().Utf8Value();
+        const auto& shm_control_socket_path = settings.Get("shm_control_socket_path").ToString().Utf8Value();
+        const auto& shm_registered_topics = settings.Get("shm_registered_topics").ToString().Utf8Value();
         const bool validate_schema = settings.Get("validate_schema").ToBoolean().Value();
 
         namespace fs = std::filesystem;
@@ -587,7 +590,12 @@ static Napi::Value boot_module(const Napi::CallbackInfo& info) {
             Everest::assert_file(settings.Get("logging_config_file").ToString().Utf8Value(), "Default logging config");
         // initialize logging as early as possible
         Everest::Logging::init(logging_config_file.string(), module_id);
-        std::shared_ptr<Everest::MQTTAbstraction> mqtt;
+
+        if (framework_transport.empty()) {
+            framework_transport = "mqtt";
+        }
+
+        std::shared_ptr<Everest::FrameworkTransport> mqtt;
         Everest::MQTTSettings mqtt_settings{};
         if (mqtt_broker_socket_path.empty()) {
             auto mqtt_broker_port = Everest::defaults::MQTT_BROKER_PORT;
@@ -603,8 +611,16 @@ static Napi::Value boot_module(const Napi::CallbackInfo& info) {
             Everest::populate_mqtt_settings(mqtt_settings, mqtt_broker_socket_path, mqtt_everest_prefix,
                                             mqtt_external_prefix);
         }
+        try {
+            mqtt_settings.framework_transport = Everest::framework_transport_from_string(framework_transport);
+        } catch (const std::invalid_argument& e) {
+            EVLOG_AND_THROW(Everest::EverestConfigError("Invalid framework_transport setting '" + framework_transport +
+                                                        "': " + e.what()));
+        }
+        mqtt_settings.shm_control_socket_path = shm_control_socket_path;
+        mqtt_settings.shm_registered_topics = Everest::parse_shm_registered_topics(shm_registered_topics);
 
-        mqtt = std::shared_ptr<Everest::MQTTAbstraction>(Everest::make_mqtt_abstraction(mqtt_settings));
+        mqtt = std::shared_ptr<Everest::FrameworkTransport>(Everest::make_framework_transport(mqtt_settings));
         mqtt->connect();
         mqtt->spawn_main_loop_thread();
 
@@ -929,9 +945,13 @@ static Napi::Value boot_module(const Napi::CallbackInfo& info) {
         module_this.DefineProperty(Napi::PropertyDescriptor::Value("info", module_info_prop, napi_enumerable));
 
         // connect to mqtt server and start mqtt mainloop thread
+        std::shared_ptr<Everest::FrameworkTransport> external_mqtt;
+        if (mqtt_settings.shared_mem()) {
+            external_mqtt = std::shared_ptr<Everest::FrameworkTransport>(Everest::make_mqtt_transport(mqtt_settings));
+        }
         auto everest_handle =
             std::make_unique<Everest::Everest>(module_id, *config, validate_schema, mqtt, rs->telemetry_prefix,
-                                               rs->telemetry_enabled, rs->forward_exceptions);
+                                               rs->telemetry_enabled, rs->forward_exceptions, external_mqtt);
 
         ctx = new EvModCtx(std::move(everest_handle), module_manifest, env);
 

@@ -49,12 +49,34 @@ properties:
         type: integer
       controller_rpc_timeout_ms:
         type: integer
+      framework_transport:
+        type: string
+        enum:
+          - mqtt
+          - shm
       mqtt_broker_socket_path:
         type: string
       mqtt_broker_host:
         type: string
       mqtt_broker_port:
         type: integer
+      shm_control_socket_path:
+        type: string
+      shm_topic_slots:
+        type: integer
+      shm_topic_slot_size:
+        type: integer
+      shm_topic_registry_capacity:
+        type: integer
+      shm_topic_registry_mode:
+        type: string
+        description: "SHM topic registry mode. Note: 'dynamic' is currently unimplemented."
+        default: "static"
+        enum:
+          - static
+          - precomputed
+          - static_precomputed
+          - dynamic
       mqtt_everest_prefix:
         type: string
       mqtt_external_prefix:

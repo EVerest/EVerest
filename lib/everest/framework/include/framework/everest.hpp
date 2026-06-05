@@ -8,6 +8,7 @@
 #include <functional>
 #include <future>
 #include <map>
+#include <mutex>
 #include <set>
 #include <thread>
 #include <variant>
@@ -18,7 +19,7 @@
 #include <utils/config_service.hpp>
 #include <utils/error.hpp>
 #include <utils/exceptions.hpp>
-#include <utils/mqtt_abstraction.hpp>
+#include <utils/framework_transport.hpp>
 #include <utils/types.hpp>
 
 namespace Everest {
@@ -56,8 +57,9 @@ struct ErrorFactory;
 class Everest {
 public:
     Everest(std::string module_id, const Config& config, bool validate_data_with_schema,
-            std::shared_ptr<MQTTAbstraction> mqtt_abstraction, const std::string& telemetry_prefix,
-            bool telemetry_enabled, bool forward_exceptions = false);
+            std::shared_ptr<FrameworkTransport> mqtt_abstraction, const std::string& telemetry_prefix,
+            bool telemetry_enabled, bool forward_exceptions = false,
+            std::shared_ptr<FrameworkTransport> external_mqtt_abstraction = nullptr);
 
     // forbid copy assignment and copy construction
     // NOTE (aw): move assignment and construction are also not supported because we're creating explicit references to
@@ -132,7 +134,7 @@ public:
     ///
     /// \brief publishes the given \p data on the given \p topic with the given \p retain
     ///
-    void external_mqtt_publish(const std::string& topic, const std::string& data, bool retain);
+    void external_mqtt_publish(const std::string& topic, const std::string& data, bool retain = false);
 
     ///
     /// \brief Allows a module to indicate that it provides a external mqtt \p handler at the given \p topic
@@ -170,17 +172,17 @@ public:
     void check_code();
 
     ///
-    /// \brief Calls the connect method of the MQTTAbstraction to connect to the MQTT broker
+    /// \brief Calls the connect method of the FrameworkTransport to connect to the framework-local transport
     ///
     bool connect();
 
     ///
-    /// \brief Calls the disconnect method of the MQTTAbstraction to disconnect from the MQTT broker
+    /// \brief Calls the disconnect method of the FrameworkTransport to disconnect from the framework-local transport
     ///
     void disconnect();
 
     ///
-    /// \brief Initiates spawning the MQTT main loop thread
+    /// \brief Initiates spawning the transport main loop thread
     ///
     void spawn_main_loop_thread();
 
@@ -205,7 +207,9 @@ public:
     void ensure_ready() const;
 
 private:
-    std::shared_ptr<MQTTAbstraction> mqtt_abstraction;
+    std::shared_ptr<FrameworkTransport> mqtt_abstraction;
+    // MQTT side channel used for traffic that must stay broker-backed even when framework-local messaging uses SHM.
+    std::shared_ptr<FrameworkTransport> external_mqtt_abstraction;
     Config config;
     std::string module_id;
     std::map<std::string, std::shared_ptr<error::ErrorManagerImpl>> impl_error_managers; // one per implementation
@@ -235,6 +239,8 @@ private:
     bool telemetry_enabled;
     std::optional<ModuleTierMappings> module_tier_mappings;
     bool forward_exceptions;
+    std::mutex external_mqtt_start_mutex;
+    std::atomic<bool> external_mqtt_started{false};
 
     void handle_ready(const nlohmann::json& data);
 
@@ -274,6 +280,7 @@ private:
     /// \brief Check that external MQTT is configured - raises exception on error
     ///
     void check_external_mqtt();
+    void ensure_mqtt_side_channel_connected();
 
     ///
     /// \brief Check that external MQTT is configured - raises exception on error

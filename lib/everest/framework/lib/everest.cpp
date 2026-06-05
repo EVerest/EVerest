@@ -8,13 +8,15 @@
 #include <string_view>
 
 #include <boost/any.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <everest/logging.hpp>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
 #include <date/date.h>
 #include <date/tz.h>
-#include <everest/helpers/helpers.hpp>
 #include <framework/everest.hpp>
 #include <utils/conversions.hpp>
 #include <utils/date.hpp>
@@ -40,9 +42,11 @@ const std::array<std::string_view, 3> TELEMETRY_RESERVED_KEYS = {{"connector_id"
 constexpr auto ensure_ready_timeout_ms = 100;
 
 Everest::Everest(std::string module_id_, const Config& config_, bool validate_data_with_schema,
-                 std::shared_ptr<MQTTAbstraction> mqtt_abstraction, const std::string& telemetry_prefix,
-                 bool telemetry_enabled, bool forward_exceptions) :
+                 std::shared_ptr<FrameworkTransport> mqtt_abstraction, const std::string& telemetry_prefix,
+                 bool telemetry_enabled, bool forward_exceptions,
+                 std::shared_ptr<FrameworkTransport> external_mqtt_abstraction) :
     mqtt_abstraction(mqtt_abstraction),
+    external_mqtt_abstraction(external_mqtt_abstraction ? external_mqtt_abstraction : mqtt_abstraction),
     config(config_),
     module_id(std::move(module_id_)),
     ready_received(false),
@@ -207,7 +211,7 @@ Everest::Everest(std::string module_id_, const Config& config_, bool validate_da
 
 void Everest::spawn_main_loop_thread() {
     BOOST_LOG_FUNCTION();
-    // TODO: since the MQTT main loop has already been started before constructing this object, this is a no-op now
+    // TODO: since the transport main loop has already been started before constructing this object, this is a no-op now
 
     this->main_loop_end = this->mqtt_abstraction->get_main_loop_future();
 }
@@ -308,6 +312,14 @@ bool Everest::connect() {
 void Everest::disconnect() {
     BOOST_LOG_FUNCTION();
 
+    {
+        std::lock_guard<std::mutex> lock(this->external_mqtt_start_mutex);
+        if (this->external_mqtt_started.load(std::memory_order_acquire) && this->external_mqtt_abstraction &&
+            this->external_mqtt_abstraction != this->mqtt_abstraction) {
+            this->external_mqtt_abstraction->disconnect();
+            this->external_mqtt_started.store(false, std::memory_order_release);
+        }
+    }
     this->mqtt_abstraction->disconnect();
 }
 
@@ -319,14 +331,14 @@ json Everest::call_cmd(const Requirement& req, const std::string& cmd_name, cons
     const auto& connection = connections.at(req.index);
 
     // extract manifest definition of this command
-    const json& cmd_definition = get_cmd_definition(connection.module_id, connection.implementation_id, cmd_name, true);
+    const json cmd_definition = get_cmd_definition(connection.module_id, connection.implementation_id, cmd_name, true);
 
-    const json& return_type = cmd_definition.at("result").at("type");
+    const json return_type = cmd_definition.at("result").at("type");
+
+    std::set<std::string, std::less<>> arg_names = Config::keys(json_args);
 
     // check args against manifest
     if (this->validate_data_with_schema) {
-        std::set<std::string, std::less<>> arg_names = Config::keys(json_args);
-
         if (cmd_definition.at("arguments").size() != json_args.size()) {
             EVLOG_AND_THROW(EverestApiError(
                 fmt::format("Call to {}->{}({}): Argument count does not match manifest!",
@@ -349,7 +361,9 @@ json Everest::call_cmd(const Requirement& req, const std::string& cmd_name, cons
                 this->config.printable_identifier(connection.module_id, connection.implementation_id), cmd_name,
                 fmt::join(arg_names, ","), fmt::join(arg_names, ","), fmt::join(cmd_arguments, ","))));
         }
+    }
 
+    if (this->validate_data_with_schema) {
         for (const auto& arg_name : arg_names) {
             try {
                 json_validator validator(
@@ -366,7 +380,7 @@ json Everest::call_cmd(const Requirement& req, const std::string& cmd_name, cons
         }
     }
 
-    const std::string call_id = everest::helpers::get_uuid();
+    const std::string call_id = boost::uuids::to_string(boost::uuids::random_generator()());
 
     std::promise<CmdResult> res_promise;
     std::future<CmdResult> res_future = res_promise.get_future();
@@ -490,7 +504,8 @@ void Everest::publish_var(const std::string& impl_id, const std::string& var_nam
 
     const auto var_topic = fmt::format("{}/var/{}", this->config.mqtt_prefix(this->module_id, impl_id), var_name);
 
-    MqttMessagePayload payload{MqttMessageType::Var, json{{"data", value}}};
+    const json var_publish_data = {{"data", value}};
+    MqttMessagePayload payload{MqttMessageType::Var, var_publish_data};
 
     // FIXME(kai): implement an efficient way of choosing qos for each variable
     this->mqtt_abstraction->publish(var_topic, payload, QOS::QOS2);
@@ -505,10 +520,10 @@ void Everest::subscribe_var(const Requirement& req, const std::string& var_name,
     const auto& connections = this->config.resolve_requirement(this->module_id, req.id);
     const auto& connection = connections.at(req.index);
 
-    const auto& requirement_module_id = connection.module_id;
-    const auto& module_name = this->config.get_module_name(requirement_module_id);
-    const auto& requirement_impl_id = connection.implementation_id;
-    const auto& requirement_impl_manifest = this->config.get_interface_definitions().at(
+    const auto requirement_module_id = connection.module_id;
+    const auto module_name = this->config.get_module_name(requirement_module_id);
+    const auto requirement_impl_id = connection.implementation_id;
+    const auto requirement_impl_manifest = this->config.get_interface_definitions().at(
         this->config.get_interfaces().at(module_name).at(requirement_impl_id));
 
     if (!requirement_impl_manifest.at("vars").contains(var_name)) {
@@ -517,7 +532,7 @@ void Everest::subscribe_var(const Requirement& req, const std::string& var_name,
                         this->config.printable_identifier(requirement_module_id, requirement_impl_id), var_name)));
     }
 
-    const auto& requirement_manifest_vardef = requirement_impl_manifest.at("vars").at(var_name);
+    const auto requirement_manifest_vardef = requirement_impl_manifest.at("vars").at(var_name);
 
     const auto handler = [this, requirement_module_id, requirement_impl_id, requirement_manifest_vardef, var_name,
                           callback](const std::string&, json const& data) {
@@ -740,7 +755,9 @@ void Everest::publish_cleared_error(const std::string& impl_id, const error::Err
 void Everest::external_mqtt_publish(const std::string& topic, const std::string& data, bool retain) {
     BOOST_LOG_FUNCTION();
     check_external_mqtt();
-    this->mqtt_abstraction->publish(fmt::format("{}{}", this->mqtt_external_prefix, topic), data, QOS::QOS2, retain);
+    ensure_mqtt_side_channel_connected();
+    this->external_mqtt_abstraction->publish(fmt::format("{}{}", this->mqtt_external_prefix, topic), data, QOS::QOS2,
+                                             retain);
 }
 
 UnsubscribeToken Everest::provide_external_mqtt_handler(const std::string& topic, const StringHandler& handler) {
@@ -770,7 +787,9 @@ UnsubscribeToken Everest::provide_external_mqtt_handler(const std::string& topic
 void Everest::telemetry_publish(const std::string& topic, const std::string& data) {
     BOOST_LOG_FUNCTION();
 
-    this->mqtt_abstraction->publish(fmt::format("{}{}", this->telemetry_prefix, topic), data);
+    MqttMessagePayload payload{MqttMessageType::ExternalMQTT, data};
+    ensure_mqtt_side_channel_connected();
+    this->external_mqtt_abstraction->publish(fmt::format("{}{}", this->telemetry_prefix, topic), payload);
 }
 
 void Everest::telemetry_publish(const std::string& category, const std::string& subcategory, const std::string& type,
@@ -1165,11 +1184,35 @@ bool Everest::check_arg(ArgumentType arg_types, json manifest_arg) {
 
 void Everest::check_external_mqtt() {
     // check if external mqtt is enabled
-    if (!module_manifest.contains("enable_external_mqtt") && !module_manifest["enable_external_mqtt"]) {
+    if (!module_manifest.value("enable_external_mqtt", false)) {
         EVLOG_AND_THROW(EverestApiError(fmt::format("Module {} tries to provide an external MQTT handler, but didn't "
                                                     "set 'enable_external_mqtt' to 'true' in its manifest",
                                                     config.printable_identifier(module_id))));
     }
+}
+
+void Everest::ensure_mqtt_side_channel_connected() {
+    if (!this->external_mqtt_abstraction) {
+        EVLOG_AND_THROW(EverestApiError("MQTT side channel transport is not configured"));
+    }
+
+    // Fast path: avoid acquiring the mutex on every publish once the side channel is up. The atomic load uses
+    // acquire ordering so any thread reaching `external_mqtt_started == true` also observes the connection state
+    // published by the thread that performed the initial connect.
+    if (this->external_mqtt_started.load(std::memory_order_acquire) ||
+        this->external_mqtt_abstraction == this->mqtt_abstraction) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(this->external_mqtt_start_mutex);
+    if (this->external_mqtt_started.load(std::memory_order_relaxed)) {
+        return;
+    }
+    if (!this->external_mqtt_abstraction->connect()) {
+        EVLOG_AND_THROW(EverestInternalError("Could not connect external MQTT side channel"));
+    }
+    this->external_mqtt_abstraction->spawn_main_loop_thread();
+    this->external_mqtt_started.store(true, std::memory_order_release);
 }
 
 std::string Everest::check_external_mqtt(const std::string& topic) {
@@ -1181,8 +1224,10 @@ UnsubscribeToken Everest::create_external_handler(const std::string& topic, cons
                                                   const StringPairHandler& handler) {
     const auto token =
         std::make_shared<TypedHandler>(topic, HandlerType::ExternalMQTT, std::make_shared<Handler>(handler));
-    mqtt_abstraction->register_handler(external_topic, token, QOS::QOS0);
-    return [this, external_topic, token]() { this->mqtt_abstraction->unregister_handler(external_topic, token); };
+    ensure_mqtt_side_channel_connected();
+    external_mqtt_abstraction->register_handler(external_topic, token, QOS::QOS0);
+    return
+        [this, external_topic, token]() { this->external_mqtt_abstraction->unregister_handler(external_topic, token); };
 }
 
 std::optional<Mapping> get_impl_mapping(std::optional<ModuleTierMappings> module_tier_mappings,
