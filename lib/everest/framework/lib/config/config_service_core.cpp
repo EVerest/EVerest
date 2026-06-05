@@ -57,7 +57,6 @@ ConfigServiceCore::ConfigServiceCore(const ConfigParseSettings& parse_settings,
 
 void ConfigServiceCore::reinitialize_from_db() {
     if (modules_running_) {
-        // TODO(CB): Or better even throw?
         return;
     }
     int new_active_slot_id = slot_manager_.get_next_boot_slot_id();
@@ -259,53 +258,6 @@ bool is_set_read_only_allowed(const everest::config::Access& access, const std::
     return it != config_access.modules.end() && it->second.allow_set_read_only;
 }
 
-// TODO(CB): remove from here, if access check remains on the mqtt_config_service level
-// // TODO(CB) move to anonymous namespace
-// // TODO(CB) is duplicate from mqtt_config_service_cpp
-// bool access_allowed(const everest::config::Access& access, const std::string& origin, const std::string& target,
-//                     bool write_access) {
-//     if (origin == target) {
-//         // a module can always read and write its own config
-//         return true;
-//     }
-//     if (not access.config.has_value()) {
-//         return false;
-//     }
-//     const auto& config_access = access.config.value();
-//     const auto& config_access_modules_it = config_access.modules.find(target);
-//     if (write_access) {
-//         if (config_access.allow_global_write) {
-//             return true;
-//         }
-//         if (config_access_modules_it != config_access.modules.end()) {
-//             if (config_access_modules_it->second.allow_write) {
-//                 return true;
-//             }
-//         }
-//     } else {
-//         if (config_access.allow_global_read) {
-//             return true;
-//         }
-//         if (config_access_modules_it != config_access.modules.end()) {
-//             if (config_access_modules_it->second.allow_read) {
-//                 return true;
-//             }
-//         }
-//     }
-
-//     return false;
-// }
-
-// bool write_access_allowed(const everest::config::Access& access, const std::string& origin, const std::string&
-// target) {
-//     return access_allowed(access, origin, target, true);
-// }
-
-// bool read_access_allowed(const everest::config::Access& access, const std::string& origin, const std::string& target)
-// {
-//     return access_allowed(access, origin, target, false);
-// }
-
 SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
                                                                   const std::vector<ConfigParameterUpdate>& updates,
                                                                   const Origin& origin) {
@@ -316,21 +268,6 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
 
     const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
 
-    // TODO(CB): remove from here, if access check remains on the mqtt_config_service level
-    // // initialized with std::nullopt and set to value only if applicable
-    // std::optional<everest::config::Access> access;
-
-    // // if the request is from an internal module: test if the origin exists
-    // if (!origin.external and origin.module_id.has_value()) {
-    //     const auto origin_it = module_configs_.find(origin.module_id.value());
-    //     if (origin_it == module_configs_.end()) {
-    //         result.status = SetConfigParameterStatus::Error;
-    //         result.status_info = fmt::format("Unknown origin module: {}", origin.module_id.value());
-    //         return result;
-    //     }
-
-    //     access = origin_it->second.access;
-    // }
     const std::string& origin_module_id = origin.module_id.value_or("<external>");
 
     result.parameter_results.emplace(
@@ -345,16 +282,6 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
             const auto& update = updates[i];
             SetConfigParameterResultEnum& result_enum = result.parameter_results.value()[i].status;
             std::string& status_info = result.parameter_results.value()[i].status_info;
-
-            // TODO(CB): remove from here, if access check remains on the mqtt_config_service level
-            // if (access.has_value() and
-            //     not write_access_allowed(access.value(), origin_module_id, update.identifier.module_id)) {
-            //     result_enum = SetConfigParameterResultEnum::AccessDenied;
-            //     result.parameter_results.value()[i].status_info = fmt::format(
-            //         "Access to config item denied: {} cannot access {}", origin_module_id,
-            //         update.identifier.module_id);
-            //     return result;
-            // }
 
             // does the parameter exist?
             auto parameter_lookup_result = get_parameter(update.identifier, module_configs_);
