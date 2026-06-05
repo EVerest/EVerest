@@ -834,8 +834,12 @@ DatabaseHandler::clear_charging_profiles_matching_criteria(const std::optional<s
     if (!criteria.has_value()) {
         std::vector<std::int32_t> ids;
         auto select_all = this->database->new_statement("SELECT ID FROM CHARGING_PROFILES");
-        while (select_all->step() == SQLITE_ROW) {
+        int status;
+        while ((status = select_all->step()) == SQLITE_ROW) {
             ids.push_back(select_all->column_int(0));
+        }
+        if (status != SQLITE_DONE) {
+            throw QueryExecutionException(this->database->get_error_message());
         }
         if (!this->clear_charging_profiles()) {
             return {};
@@ -880,8 +884,12 @@ DatabaseHandler::clear_charging_profiles_matching_criteria(const std::optional<s
         std::vector<std::int32_t> ids;
         auto select_stmt = this->database->new_statement("SELECT ID FROM CHARGING_PROFILES" + where);
         bind_criteria(*select_stmt);
-        while (select_stmt->step() == SQLITE_ROW) {
+        int status;
+        while ((status = select_stmt->step()) == SQLITE_ROW) {
             ids.push_back(select_stmt->column_int(0));
+        }
+        if (status != SQLITE_DONE) {
+            throw QueryExecutionException(this->database->get_error_message());
         }
 
         auto delete_stmt = this->database->new_statement("DELETE FROM CHARGING_PROFILES" + where);
