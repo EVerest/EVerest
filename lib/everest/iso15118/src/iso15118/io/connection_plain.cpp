@@ -91,6 +91,10 @@ ReadResult ConnectionPlain::read(uint8_t* buf, size_t len) {
     const auto read_result = ::read(fd, buf, len);
     const auto did_block = (len > 0) and (not cmp_equal(read_result, len));
 
+    if (read_result == 0 && len > 0) {
+        return {false, 0, true}; // peer closed (EOF)
+    }
+
     if (read_result >= 0) {
         return {did_block, static_cast<size_t>(read_result)};
     }

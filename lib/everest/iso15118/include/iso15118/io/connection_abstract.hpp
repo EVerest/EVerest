@@ -24,6 +24,7 @@ using ConnectionEventCallback = std::function<void(ConnectionEvent)>;
 struct ReadResult {
     bool would_block{true};
     size_t bytes_read{0};
+    bool connection_closed{false}; //!< peer closed the connection (EOF / TLS close_notify) during this read
 };
 
 struct IConnection {

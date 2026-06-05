@@ -302,6 +302,53 @@ SCENARIO("ConnectionSSL completes a TLS handshake against a real client") {
     }
 }
 
+SCENARIO("ConnectionSSL surfaces a peer close through read()") {
+
+    GIVEN("A ConnectionSSL configured with a single SECC chain") {
+        iso15118::io::set_logging_callback([](iso15118::LogLevel, const std::string&) {});
+
+        iso15118::io::PollManager poll_manager;
+        const auto ssl_cfg = make_ssl_config(false, "/tmp", false);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+
+        std::atomic<bool> handshake_open{false};
+        std::atomic<bool> peer_closed{false};
+        connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
+            if (event == iso15118::io::ConnectionEvent::OPEN) {
+                handshake_open.store(true);
+            } else if (event == iso15118::io::ConnectionEvent::NEW_DATA) {
+                std::array<uint8_t, 64> buf{};
+                const auto r = connection.read(buf.data(), buf.size());
+                if (r.connection_closed) {
+                    peer_closed.store(true);
+                }
+            }
+        });
+
+        WHEN("A synthetic TLS client completes the handshake then shuts down without sending data") {
+            auto client_future =
+                std::async(std::launch::async, [&]() { return run_tls_client({}, 0, false, false, true); });
+
+            const bool got_open = poll_until(
+                poll_manager, [&]() { return handshake_open.load(); }, 5s);
+
+            const bool got_close = poll_until(
+                poll_manager, [&]() { return peer_closed.load(); }, 2s);
+
+            const auto client_result = client_future.get();
+
+            THEN("read() reports connection_closed on the server side") {
+                REQUIRE(client_result.error.empty());
+                REQUIRE(client_result.handshake_ok);
+                REQUIRE(got_open);
+                REQUIRE(got_close);
+            }
+        }
+
+        connection.close();
+    }
+}
+
 SCENARIO("ConnectionSSL exposes the peer certificate SHA-512 to callers") {
 
     GIVEN("A ConnectionSSL configured with a single SECC chain and TLS 1.3 enforced") {

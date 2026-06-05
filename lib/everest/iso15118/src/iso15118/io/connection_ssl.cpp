@@ -213,7 +213,7 @@ ReadResult ConnectionSSL::read(uint8_t* buf, size_t len) {
     case tls::Connection::result_t::timeout:
         return {true, 0};
     case tls::Connection::result_t::closed:
-        return {false, 0};
+        return {false, 0, true};
     default:
         break;
     }
