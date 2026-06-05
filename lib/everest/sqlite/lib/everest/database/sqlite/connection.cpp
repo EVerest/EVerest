@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 
 #include <everest/database/exceptions.hpp>
@@ -64,10 +66,11 @@ bool Connection::open_connection() {
     }
 
     // Add special exception for databases in ram; we don't need to create a path
-    // for them
-    if (this->database_file_path.string().find(":memory:") == std::string::npos and
-        this->database_file_path.string().find("mode=memory") == std::string::npos and
-        !fs::exists(this->database_file_path.parent_path())) {
+    // for them and we must not attempt to enable WAL on them.
+    const bool in_memory = this->database_file_path.string().find(":memory:") != std::string::npos ||
+                           this->database_file_path.string().find("mode=memory") != std::string::npos;
+
+    if (!in_memory && !fs::exists(this->database_file_path.parent_path())) {
         fs::create_directories(this->database_file_path.parent_path());
     }
 
@@ -81,6 +84,28 @@ bool Connection::open_connection() {
     // transient SQLITE_BUSY to the caller.
     constexpr int busy_timeout_ms = 5000;
     sqlite3_busy_timeout(this->db, busy_timeout_ms);
+
+    // Enable WAL journal mode on file-based databases so concurrent readers and a single writer
+    // stop serializing. Best-effort: if WAL cannot be established (e.g. on a filesystem that does
+    // not support it) we log and continue with whatever journal mode SQLite reports rather than
+    // failing the open.
+    if (!in_memory) {
+        auto statement = this->new_statement("PRAGMA journal_mode=WAL");
+        if (statement->step() != SQLITE_ROW) {
+            EVLOG_warning << "Could not query journal mode while enabling WAL on " << this->database_file_path << ": "
+                          << this->get_error_message();
+        } else {
+            const std::string journal_mode = statement->column_text(0);
+            std::string lowered = journal_mode;
+            std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (lowered != "wal") {
+                EVLOG_warning << "Could not enable WAL journal mode on " << this->database_file_path
+                              << ", continuing with '" << journal_mode << "'";
+            }
+        }
+    }
+
     EVLOG_debug << "Established connection to database: " << this->database_file_path;
     return true;
 }
