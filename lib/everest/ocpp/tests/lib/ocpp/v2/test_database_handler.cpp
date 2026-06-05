@@ -1293,3 +1293,81 @@ TEST_F(DatabaseHandlerTest, GetChargingProfilesMatchingCriteria_OnlyEVSEIDSet_Re
     EXPECT_THAT(
         sut, testing::Contains(testing::FieldsAre(profile1, DEFAULT_EVSE_ID, ChargingLimitSourceEnumStringType::CSO)));
 }
+
+// Happy-path regression guard for the read-loop refactor: with the status-capturing loop and
+// the post-loop SQLITE_DONE check in place, a normal multi-row read must still return every
+// inserted profile across multiple EVSEs (no off-by-one at the loop boundary, no spurious
+// throw on the DONE path).
+TEST_F(DatabaseHandlerTest, GetAllChargingProfiles_ReturnsAllProfilesAcrossMultipleEvses) {
+    ChargingProfile p1;
+    p1.id = 10;
+    p1.stackLevel = 1;
+    p1.chargingProfilePurpose = ChargingProfilePurposeEnum::TxDefaultProfile;
+    p1.chargingProfileKind = ChargingProfileKindEnum::Absolute;
+
+    ChargingProfile p2;
+    p2.id = 11;
+    p2.stackLevel = 2;
+    p2.chargingProfilePurpose = ChargingProfilePurposeEnum::TxProfile;
+    p2.chargingProfileKind = ChargingProfileKindEnum::Absolute;
+
+    ChargingProfile p3;
+    p3.id = 12;
+    p3.stackLevel = 3;
+    p3.chargingProfilePurpose = ChargingProfilePurposeEnum::TxDefaultProfile;
+    p3.chargingProfileKind = ChargingProfileKindEnum::Absolute;
+
+    this->database_handler.insert_or_update_charging_profile(1, p1);
+    this->database_handler.insert_or_update_charging_profile(2, p2);
+    this->database_handler.insert_or_update_charging_profile(3, p3);
+
+    auto profiles = this->database_handler.get_all_charging_profiles();
+    EXPECT_EQ(profiles.size(), 3);
+    EXPECT_THAT(profiles, testing::Contains(p1));
+    EXPECT_THAT(profiles, testing::Contains(p2));
+    EXPECT_THAT(profiles, testing::Contains(p3));
+
+    auto by_evse = this->database_handler.get_all_charging_profiles_group_by_evse();
+    EXPECT_EQ(by_evse.size(), 3);
+    EXPECT_EQ(by_evse[1].size(), 1);
+    EXPECT_EQ(by_evse[2].size(), 1);
+    EXPECT_EQ(by_evse[3].size(), 1);
+}
+
+// Verify that reading charging profiles surfaces a typed exception (rather than silently
+// returning a truncated or empty result) when the database is locked by a concurrent writer
+// on the shared-cache in-memory database.
+//
+// Mechanism: a second Connection to the same "file::memory:?cache=shared" URI holds a
+// BEGIN EXCLUSIVE transaction. In SQLite shared-cache mode the conflict is reported as
+// SQLITE_LOCKED, which sqlite3_busy_timeout does not retry, so the read fails promptly rather
+// than blocking. With the lock held up front the conflict is detected while preparing the
+// statement (new_statement throws QueryExecutionException); the post-loop status guard added
+// alongside this change covers the symmetric case where the conflict appears mid-iteration.
+TEST_F(DatabaseHandlerTest, GetAllChargingProfiles_ThrowsOnLockedDatabase) {
+    ChargingProfile p1;
+    p1.id = 20;
+    p1.stackLevel = 1;
+    p1.chargingProfilePurpose = ChargingProfilePurposeEnum::TxDefaultProfile;
+    p1.chargingProfileKind = ChargingProfileKindEnum::Absolute;
+
+    ChargingProfile p2;
+    p2.id = 21;
+    p2.stackLevel = 2;
+    p2.chargingProfilePurpose = ChargingProfilePurposeEnum::TxProfile;
+    p2.chargingProfileKind = ChargingProfileKindEnum::Absolute;
+
+    this->database_handler.insert_or_update_charging_profile(1, p1);
+    this->database_handler.insert_or_update_charging_profile(2, p2);
+
+    // Take an exclusive write lock via a second connection on the same shared-cache DB.
+    everest::db::sqlite::Connection blocking_conn("file::memory:?cache=shared");
+    ASSERT_TRUE(blocking_conn.open_connection());
+    ASSERT_TRUE(blocking_conn.execute_statement("BEGIN EXCLUSIVE"));
+
+    EXPECT_THROW(this->database_handler.get_all_charging_profiles(), everest::db::Exception);
+
+    // Release the lock so subsequent tests are not affected.
+    blocking_conn.execute_statement("ROLLBACK");
+    blocking_conn.close_connection();
+}
