@@ -1,5 +1,6 @@
 target_include_directories(libocpp_unit_tests PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/mocks
 )
 
 target_sources(libocpp_unit_tests PRIVATE
