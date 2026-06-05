@@ -266,36 +266,43 @@ int wait_for_loop(int soc, bool forWrite, std::int32_t timeout_ms) {
  * \param[in] buf is where to place received data
  * \param[in] num is the size of buff (the maximum number of bytes to receive)
  * \param[out] readbytes number of bytes received
+ * \param[out] last_error drained OpenSSL error text on failure
  * \returns the result of the operation
  */
-[[nodiscard]] ssl_result_t ssl_read(SSL* ctx, std::byte* buf, std::size_t num, std::size_t& readbytes);
+[[nodiscard]] ssl_result_t ssl_read(SSL* ctx, std::byte* buf, std::size_t num, std::size_t& readbytes,
+                                    std::string& last_error);
 /**
  * \brief write user data to a SSL connection
  * \param[in] ctx is SSL connection data
  * \param[in] buf is the data to send
  * \param[in] num is the size of buff
  * \param[out] writebytes number of bytes sent
+ * \param[out] last_error drained OpenSSL error text on failure
  * \returns the result of the operation
  */
-[[nodiscard]] ssl_result_t ssl_write(SSL* ctx, const std::byte* buf, std::size_t num, std::size_t& writebytes);
+[[nodiscard]] ssl_result_t ssl_write(SSL* ctx, const std::byte* buf, std::size_t num, std::size_t& writebytes,
+                                     std::string& last_error);
 /**
  * \brief accept an incoming SSL connection, runs the TLS handshake (sever)
  * \param[in] ctx is SSL connection data
+ * \param[out] last_error drained OpenSSL error text on failure
  * \returns the result of the operation
  */
-[[nodiscard]] ssl_result_t ssl_accept(SSL* ctx);
+[[nodiscard]] ssl_result_t ssl_accept(SSL* ctx, std::string& last_error);
 /**
  * \brief start a SSL connection, runs the TLS handshake (client)
  * \param[in] ctx is SSL connection data
+ * \param[out] last_error drained OpenSSL error text on failure
  * \returns the result of the operation
  */
-[[nodiscard]] ssl_result_t ssl_connect(SSL* ctx);
+[[nodiscard]] ssl_result_t ssl_connect(SSL* ctx, std::string& last_error);
 /**
  * \brief close a SSL connection
  * \param[in] ctx is SSL connection data
+ * \param[out] last_error drained OpenSSL error text on failure
  * \returns the result of the operation
  */
-ssl_result_t ssl_shutdown(SSL* ctx);
+ssl_result_t ssl_shutdown(SSL* ctx, std::string& last_error);
 
 /// operation being performed
 enum class operation_t : std::uint8_t {
@@ -329,20 +336,6 @@ const char* operation_str(operation_t operation) {
 }
 
 /**
- * \brief OpenSSL error text drained at detection time for the owning Connection
- * \note process_result() drains the per-thread error queue when an operation
- *       fails and stores the text here. Draining at detection time is required
- *       because the log_error() path otherwise consumes the queue via
- *       ERR_print_errors_cb, so a drain performed later in the Connection member
- *       function would always see an empty queue. The drained text is folded
- *       back into the log message so logging is unaffected.
- *       Connection::capture_and_convert() moves this value into m_last_error and
- *       then clears it, so the hand-off is single-use: a captured error cannot
- *       bleed into a later operation or a later connection sharing the thread.
- */
-thread_local std::string t_last_openssl_error;
-
-/**
  * \brief drain the per-thread OpenSSL error queue into a string
  * \return "; "-joined error strings; empty when the queue was empty
  * \note consumes the queue (ERR_get_error). Callers that also want the errors
@@ -366,9 +359,10 @@ std::string drain_openssl_error_queue() {
  * \brief manage the result from a SSL operation
  * \param[in] ctx is SSL connection data
  * \param[in] res is the result of the SSL operation
+ * \param[out] last_error drained OpenSSL error text on failure
  * \return result is the simplified result mapped from res
  */
-ssl_result_t process_result(SSL* ctx, operation_t operation, const int res) {
+ssl_result_t process_result(SSL* ctx, operation_t operation, const int res, std::string& last_error) {
     ssl_error_t result{ssl_error_t::error};
 
     if (ctx != nullptr) {
@@ -386,19 +380,19 @@ ssl_result_t process_result(SSL* ctx, operation_t operation, const int res) {
                 // no further operation permitted on the connection
                 // Capture the queue before it is consumed; on a pure syscall
                 // failure the queue may be empty, so fall back to errno text.
-                t_last_openssl_error = drain_openssl_error_queue();
+                last_error = drain_openssl_error_queue();
                 if (errno != 0) {
-                    if (t_last_openssl_error.empty()) {
-                        t_last_openssl_error = "SSL_ERROR_SYSCALL " + std::to_string(errno);
+                    if (last_error.empty()) {
+                        last_error = "SSL_ERROR_SYSCALL " + std::to_string(errno);
                     }
                     log_error(operation_str(operation) + std::string("SSL_ERROR_SYSCALL ") + std::to_string(errno));
                 }
                 break;
             case ssl_error_t::error_ssl:
-                t_last_openssl_error = drain_openssl_error_queue();
+                last_error = drain_openssl_error_queue();
                 if (operation != operation_t::ssl_shutdown) {
                     log_error(operation_str(operation) + std::to_string(res) + " " + std::to_string(sslerr_raw) + " " +
-                              t_last_openssl_error);
+                              last_error);
                 }
                 break;
             case ssl_error_t::error:
@@ -409,9 +403,9 @@ ssl_result_t process_result(SSL* ctx, operation_t operation, const int res) {
             case ssl_error_t::want_hello_cb:
             case ssl_error_t::want_x509_lookup:
             default:
-                t_last_openssl_error = drain_openssl_error_queue();
+                last_error = drain_openssl_error_queue();
                 log_error(operation_str(operation) + std::to_string(res) + " " + std::to_string(sslerr_raw) + " " +
-                          t_last_openssl_error);
+                          last_error);
                 break;
             }
         }
@@ -420,33 +414,35 @@ ssl_result_t process_result(SSL* ctx, operation_t operation, const int res) {
     return convert(result);
 }
 
-ssl_result_t ssl_read(SSL* ctx, std::byte* buf, const std::size_t num, std::size_t& readbytes) {
+ssl_result_t ssl_read(SSL* ctx, std::byte* buf, const std::size_t num, std::size_t& readbytes,
+                      std::string& last_error) {
     const auto res = SSL_read_ex(ctx, buf, num, &readbytes);
-    return process_result(ctx, operation_t::ssl_read, res);
+    return process_result(ctx, operation_t::ssl_read, res, last_error);
 };
 
-ssl_result_t ssl_write(SSL* ctx, const std::byte* buf, const std::size_t num, std::size_t& writebytes) {
+ssl_result_t ssl_write(SSL* ctx, const std::byte* buf, const std::size_t num, std::size_t& writebytes,
+                       std::string& last_error) {
     const auto res = SSL_write_ex(ctx, buf, num, &writebytes);
-    return process_result(ctx, operation_t::ssl_read, res);
+    return process_result(ctx, operation_t::ssl_read, res, last_error);
 }
 
-ssl_result_t ssl_accept(SSL* ctx) {
+ssl_result_t ssl_accept(SSL* ctx, std::string& last_error) {
     const auto res = SSL_accept(ctx);
     // 0 is handshake not successful (ssl_error_t::zero_return -> ssl_result_t::closed)
     // < 0 is other error
-    return process_result(ctx, operation_t::ssl_read, res);
+    return process_result(ctx, operation_t::ssl_read, res, last_error);
 }
 
-ssl_result_t ssl_connect(SSL* ctx) {
+ssl_result_t ssl_connect(SSL* ctx, std::string& last_error) {
     const auto res = SSL_connect(ctx);
     // 0 is handshake not successful (ssl_error_t::zero_return -> ssl_result_t::closed)
     // < 0 is other error
-    return process_result(ctx, operation_t::ssl_read, res);
+    return process_result(ctx, operation_t::ssl_read, res, last_error);
 }
 
-ssl_result_t ssl_shutdown(SSL* ctx) {
+ssl_result_t ssl_shutdown(SSL* ctx, std::string& last_error) {
     const auto res = SSL_shutdown(ctx);
-    return process_result(ctx, operation_t::ssl_read, res);
+    return process_result(ctx, operation_t::ssl_read, res, last_error);
 }
 
 /**
@@ -631,26 +627,9 @@ Connection::Connection(SslContext* ctx, int soc, const char* ip_in, const char* 
 
 Connection::~Connection() = default;
 
-Connection::result_t Connection::capture_and_convert(result_t outcome) {
-    if (outcome == result_t::closed) {
-        // result_t::closed is libtls's error/closed bucket: it covers both a
-        // graceful EOF (no error queued) and a hard failure. process_result()
-        // drained the OpenSSL error queue into the thread-local at detection
-        // time (it cannot be read here because the logging path consumes it), so
-        // move the captured text out. On a graceful close the thread-local is
-        // empty, which correctly reports "no error".
-        m_last_error = std::move(t_last_openssl_error);
-    }
-    // Consume the thread-local: an error captured by this operation must not
-    // bleed into a later graceful close on the same thread (e.g. the next
-    // sequential connection sharing the poll loop). Every populate maps to a
-    // closed outcome, so clearing here leaves a clean slate for the next op.
-    t_last_openssl_error.clear();
-    return outcome;
-}
-
 Connection::result_t Connection::read(std::byte* buf, std::size_t num, std::size_t& readbytes, int timeout_ms) {
     assert(m_context != nullptr);
+    m_last_error.clear();
     ssl_result_t result{ssl_result_t::error};
 
     if (m_state == state_t::connected) {
@@ -658,7 +637,7 @@ Connection::result_t Connection::read(std::byte* buf, std::size_t num, std::size
         bool loop{true};
         while (loop) {
             loop = false;
-            result = ssl_read(ctx, buf, num, readbytes);
+            result = ssl_read(ctx, buf, num, readbytes, m_last_error);
             switch (result) {
             case ssl_result_t::success:
             case ssl_result_t::timeout:
@@ -674,22 +653,25 @@ Connection::result_t Connection::read(std::byte* buf, std::size_t num, std::size
             case ssl_result_t::error_syscall:
                 m_state = state_t::fault;
                 break;
-            case ssl_result_t::closed:
-                shutdown();
+            case ssl_result_t::closed: {
+                discard_shutdown();
                 break;
+            }
             case ssl_result_t::error:
-            default:
-                shutdown();
+            default: {
+                discard_shutdown();
                 m_state = state_t::fault;
                 break;
             }
+            }
         }
     }
-    return capture_and_convert(convert(result));
+    return convert(result);
 }
 
 Connection::result_t Connection::write(const std::byte* buf, std::size_t num, std::size_t& writebytes, int timeout_ms) {
     assert(m_context != nullptr);
+    m_last_error.clear();
     ssl_result_t result{ssl_result_t::error};
 
     if (m_state == state_t::connected) {
@@ -697,7 +679,7 @@ Connection::result_t Connection::write(const std::byte* buf, std::size_t num, st
         bool loop{true};
         while (loop) {
             loop = false;
-            result = ssl_write(ctx, buf, num, writebytes);
+            result = ssl_write(ctx, buf, num, writebytes, m_last_error);
             switch (result) {
             case ssl_result_t::success:
             case ssl_result_t::timeout:
@@ -713,21 +695,23 @@ Connection::result_t Connection::write(const std::byte* buf, std::size_t num, st
             case ssl_result_t::error_syscall:
                 m_state = state_t::fault;
                 break;
-            case ssl_result_t::closed:
-                shutdown();
+            case ssl_result_t::closed: {
+                discard_shutdown();
                 break;
+            }
             case ssl_result_t::error:
-            default:
-                shutdown();
+            default: {
+                discard_shutdown();
                 m_state = state_t::fault;
                 break;
             }
+            }
         }
     }
-    return capture_and_convert(convert(result));
+    return convert(result);
 }
 
-Connection::result_t Connection::shutdown(int timeout_ms) {
+Connection::result_t Connection::do_shutdown(int timeout_ms, std::string& last_error) {
     assert(m_context != nullptr);
     ssl_result_t result{ssl_result_t::error};
 
@@ -736,7 +720,7 @@ Connection::result_t Connection::shutdown(int timeout_ms) {
         bool loop{true};
         while (loop) {
             loop = false;
-            result = ssl_shutdown(ctx);
+            result = ssl_shutdown(ctx, last_error);
             switch (result) {
             case ssl_result_t::closed:
             case ssl_result_t::success:
@@ -759,7 +743,17 @@ Connection::result_t Connection::shutdown(int timeout_ms) {
             }
         }
     }
-    return capture_and_convert(convert(result));
+    return convert(result);
+}
+
+void Connection::discard_shutdown() {
+    std::string ignored;
+    do_shutdown(m_timeout_ms, ignored);
+}
+
+Connection::result_t Connection::shutdown(int timeout_ms) {
+    m_last_error.clear();
+    return do_shutdown(timeout_ms, m_last_error);
 }
 
 Connection::result_t Connection::wait_for(result_t action, int timeout_ms) {
@@ -874,6 +868,7 @@ ServerConnection::~ServerConnection() {
 
 Connection::result_t ServerConnection::accept(int timeout_ms) {
     assert(m_context != nullptr);
+    m_last_error.clear();
     ssl_result_t result{ssl_result_t::error};
 
     if (m_state == state_t::idle) {
@@ -881,7 +876,7 @@ Connection::result_t ServerConnection::accept(int timeout_ms) {
         bool loop{true};
         while (loop) {
             loop = false;
-            result = ssl_accept(ctx);
+            result = ssl_accept(ctx, m_last_error);
             switch (result) {
             case ssl_result_t::success:
                 m_state = state_t::connected;
@@ -897,18 +892,20 @@ Connection::result_t ServerConnection::accept(int timeout_ms) {
             case ssl_result_t::error_syscall:
                 m_state = state_t::fault;
                 break;
-            case ssl_result_t::closed:
-                shutdown();
+            case ssl_result_t::closed: {
+                discard_shutdown();
                 break;
+            }
             case ssl_result_t::error:
-            default:
-                shutdown();
+            default: {
+                discard_shutdown();
                 m_state = state_t::fault;
                 break;
             }
+            }
         }
     }
-    return capture_and_convert(convert(result));
+    return convert(result);
 }
 
 std::optional<std::array<std::uint8_t, 64>> ServerConnection::peer_certificate_sha512() const {
@@ -949,6 +946,7 @@ ClientConnection::~ClientConnection() = default;
 
 Connection::result_t ClientConnection::connect(int timeout_ms) {
     assert(m_context != nullptr);
+    m_last_error.clear();
     ssl_result_t result{ssl_result_t::error};
 
     if (m_state == state_t::idle) {
@@ -956,7 +954,7 @@ Connection::result_t ClientConnection::connect(int timeout_ms) {
         bool loop{true};
         while (loop) {
             loop = false;
-            result = ssl_connect(ctx);
+            result = ssl_connect(ctx, m_last_error);
             switch (result) {
             case ssl_result_t::success:
                 m_state = state_t::connected;
@@ -972,18 +970,20 @@ Connection::result_t ClientConnection::connect(int timeout_ms) {
             case ssl_result_t::error_syscall:
                 m_state = state_t::fault;
                 break;
-            case ssl_result_t::closed:
-                shutdown();
+            case ssl_result_t::closed: {
+                discard_shutdown();
                 break;
+            }
             case ssl_result_t::error:
-            default:
-                shutdown();
+            default: {
+                discard_shutdown();
                 m_state = state_t::fault;
                 break;
             }
+            }
         }
     }
-    return capture_and_convert(convert(result));
+    return convert(result);
 }
 
 // ----------------------------------------------------------------------------

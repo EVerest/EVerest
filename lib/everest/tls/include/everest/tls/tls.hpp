@@ -138,18 +138,23 @@ protected:
     std::string m_service;                     //!< peer port
     std::int32_t m_timeout_ms;                 //!< default operation timeout
     std::string
-        m_last_error; //!< OpenSSL error text from the operation that closed the connection; empty on graceful close
+        m_last_error; //!< OpenSSL error text from the operation that closed this connection; empty on graceful close
 
     // prevent standalone construction
     Connection(SslContext* ctx, int soc, const char* ip_in, const char* service_in, std::int32_t timeout_ms);
 
     /**
-     * \brief on a closed outcome, move the thread-local OpenSSL error into
-     *        m_last_error; always clear the thread-local so it is single-use
-     * \param[in] outcome the converted public result of the operation
-     * \return outcome unchanged
+     * \brief run the SSL shutdown loop without touching m_last_error
+     * \param[in] timeout_ms operation timeout
+     * \param[out] last_error drained OpenSSL error text on failure
+     * \return the result of the operation
+     * \note error/closed branches of read/write/accept/connect call this with a
+     *       throwaway string so the real read/write error already stored in
+     *       m_last_error is preserved.
      */
-    result_t capture_and_convert(result_t outcome);
+    result_t do_shutdown(int timeout_ms, std::string& last_error);
+
+    void discard_shutdown(); //!< best-effort shutdown on an error path; preserves m_last_error
 
 public:
     Connection() = delete;
