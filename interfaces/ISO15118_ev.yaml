@@ -80,3 +80,9 @@ vars:
   pause_from_charger:
     description: The charger wants to pause the session (only d20)
     type: 'null'
+  dc_evse_present_current:
+    description: EVSE-delivered present current during DC charging (A)
+    type: number
+  dc_evse_present_voltage:
+    description: EVSE-delivered present voltage during DC charging (V)
+    type: number

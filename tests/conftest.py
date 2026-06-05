@@ -27,7 +27,8 @@ def pytest_configure(config):
     if not everest_config_path.exists():
         return
     everest_configs = [path for path in everest_config_path.iterdir(
-    ) if path.name.startswith('config-') and path.name.endswith('.yaml')]
+    ) if path.name.startswith('config-') and path.name.endswith('.yaml')
+        and not path.name.endswith('.evsim-scenarios.yaml')]
     pytest.everest_configs = {}
     pytest.everest_configs['params'] = []
     pytest.everest_configs['ids'] = []

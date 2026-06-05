@@ -5,8 +5,8 @@ active_modules:
       device: auto
     connections:
       security:
-        - module_id: evse_security
-          implementation_id: main
+      - module_id: evse_security
+        implementation_id: main
   iso15118_car:
     module: PyEvJosev
     config_module:
@@ -43,49 +43,46 @@ active_modules:
       bpt_grid_code_island_method: Passive
     connections:
       bsp:
-        - module_id: connector_1_powerpath
-          implementation_id: board_support
+      - module_id: connector_1_powerpath
+        implementation_id: board_support
       hlc:
-        - module_id: iso15118_charger
-          implementation_id: charger
+      - module_id: iso15118_charger
+        implementation_id: charger
       powermeter_car_side:
-        - module_id: connector_1_powerpath
-          implementation_id: powermeter
+      - module_id: connector_1_powerpath
+        implementation_id: powermeter
       slac:
-        - module_id: slac
-          implementation_id: evse
+      - module_id: slac
+        implementation_id: evse
       ac_rcd:
-        - implementation_id: rcd
-          module_id: connector_1_powerpath
+      - implementation_id: rcd
+        module_id: connector_1_powerpath
       connector_lock:
-        - implementation_id: connector_lock
-          module_id: connector_1_powerpath
+      - implementation_id: connector_lock
+        module_id: connector_1_powerpath
   connector_1_powerpath:
     config_module:
       connector_id: 1
     connections: {}
     module: YetiSimulator
     telemetry:
-      id: 1  
+      id: 1
   slac:
     module: SlacSimulator
   ev_manager:
-    module: EvManager
+    module: EvSimulator
     config_module:
       connector_id: 1
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session AC;iso_wait_pwr_ready;iso_draw_power_regulated 16,3;iso_wait_for_stop 20;iso_wait_v2g_session_stopped;unplug
     connections:
       ev_board_support:
-        - module_id: connector_1_powerpath
-          implementation_id: ev_board_support
+      - module_id: connector_1_powerpath
+        implementation_id: ev_board_support
       ev:
-        - module_id: iso15118_car
-          implementation_id: ev
+      - module_id: iso15118_car
+        implementation_id: ev
       slac:
-        - module_id: slac
-          implementation_id: ev
+      - module_id: slac
+        implementation_id: ev
   auth:
     module: Auth
     config_module:
@@ -93,14 +90,14 @@ active_modules:
       selection_algorithm: FindFirst
     connections:
       token_provider:
-        - module_id: token_provider
-          implementation_id: main
+      - module_id: token_provider
+        implementation_id: main
       token_validator:
-        - module_id: token_validator
-          implementation_id: main
+      - module_id: token_validator
+        implementation_id: main
       evse_manager:
-        - module_id: evse_manager
-          implementation_id: evse
+      - module_id: evse_manager
+        implementation_id: evse
   token_provider:
     module: DummyTokenProvider
     config_implementation:
@@ -109,8 +106,8 @@ active_modules:
         token: DEADBEEF
     connections:
       evse:
-        - module_id: evse_manager
-          implementation_id: evse
+      - module_id: evse_manager
+        implementation_id: evse
   token_validator:
     module: DummyTokenValidator
     config_implementation:
@@ -130,8 +127,8 @@ active_modules:
       debug: false
     connections:
       energy_trunk:
-        - module_id: grid_connection_point
-          implementation_id: energy_grid
+      - module_id: grid_connection_point
+        implementation_id: energy_grid
   grid_connection_point:
     module: EnergyNode
     config_module:
@@ -140,11 +137,11 @@ active_modules:
     connections:
       price_information: []
       energy_consumer:
-        - module_id: api_sink
-          implementation_id: energy_grid
+      - module_id: api_sink
+        implementation_id: energy_grid
       powermeter:
-        - module_id: connector_1_powerpath
-          implementation_id: powermeter
+      - module_id: connector_1_powerpath
+        implementation_id: powermeter
   api_sink:
     module: EnergyNode
     mapping:
@@ -155,20 +152,20 @@ active_modules:
       phase_count: 3
     connections:
       energy_consumer:
-        - module_id: evse_manager
-          implementation_id: energy_grid
+      - module_id: evse_manager
+        implementation_id: energy_grid
   api:
     module: API
     connections:
       evse_manager:
-        - module_id: evse_manager
-          implementation_id: evse
+      - module_id: evse_manager
+        implementation_id: evse
       error_history:
-        - module_id: error_history
-          implementation_id: error_history
+      - module_id: error_history
+        implementation_id: error_history
       evse_energy_sink:
-        - module_id: api_sink
-          implementation_id: external_limits
+      - module_id: api_sink
+        implementation_id: external_limits
   error_history:
     module: ErrorHistory
     config_implementation:

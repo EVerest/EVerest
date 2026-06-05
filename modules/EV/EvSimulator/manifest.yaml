@@ -1,0 +1,135 @@
+description: >-
+  Simplified EV simulator with versioned MQTT API and an fsm::v2 state machine.
+  Coexists with EvManager; targeted as its replacement.
+config:
+  connector_id:
+    description: Connector id of the evse manager to which this simulator is connected to
+    type: integer
+  ac_nominal_voltage:
+    description: Nominal AC voltage between phase and neutral in Volt
+    type: number
+    default: 230
+  max_current_a:
+    description: AC max current in Ampere
+    type: number
+    default: 16
+  three_phases:
+    description: Support three phase
+    type: boolean
+    default: true
+  dc_max_current_limit:
+    description: Maximum current allowed by the EV
+    type: integer
+    default: 300
+  dc_max_power_limit:
+    description: Maximum power allowed by the EV
+    type: integer
+    default: 150000
+  dc_max_voltage_limit:
+    description: Maximum voltage allowed by the EV
+    type: integer
+    default: 900
+  dc_energy_capacity:
+    description: Energy capacity of the EV
+    type: integer
+    default: 60000
+  dc_target_current:
+    description: Target current requested by the EV
+    type: integer
+    default: 5
+  dc_target_voltage:
+    description: Target voltage requested by the EV
+    type: integer
+    default: 200
+  soc_initial_pct:
+    description: SoC at start of a simulated charging process
+    type: integer
+    default: 30
+  departure_time_s:
+    description: Departure time in seconds after the session starts
+    type: integer
+    default: 86400
+  e_amount_wh:
+    description: Energy amount in Wh that should be charged during the session
+    type: integer
+    default: 0
+  force_payment_option:
+    description: Force the use of the selected payment option
+    type: boolean
+    default: false
+  keep_cross_boot_plugin_state:
+    description: Keep plugin state across boot (use for simulation only).
+    type: boolean
+    default: false
+  publish_bsp_measurements:
+    description: Whether to publish synthetic BSP measurements
+    type: boolean
+    default: false
+  tick_interval_ms:
+    description: FSM tick interval in milliseconds
+    type: integer
+    default: 100
+  on_battery_full:
+    description: >-
+      Policy applied by SocIntegrator when SoC crosses
+      battery_full_threshold_pct. One of:
+      `clamp` (silently cap energy at battery_capacity_wh, current behavior);
+      `idle_at_full` (stay in session, zero charge power, discharge still works);
+      `stop_session` (rising-edge: enqueue StopSession, terminate FSM session);
+      `pause_if_iso` (rising-edge: if charge_mode is ISO, enqueue PauseSession to
+      transition to Paused; falls back to idle_at_full when in AcIec).
+    type: string
+    default: clamp
+  battery_full_threshold_pct:
+    description: >-
+      SoC percentage at which on_battery_full fires (edge-triggered). Default
+      100 mirrors physical full; lower values simulate strategies like
+      "charge to 80%".
+    type: number
+    default: 100
+  cfg_communication_check_to_s:
+    description: >-
+      Communication check timeout in seconds. 0 disables the check (no
+      external heartbeat required). When > 0, the test driver must
+      publish `m2e/communication_check true` periodically faster than
+      this timeout or EvSimulator raises a CommunicationFault on its
+      ev_manager interface, which evse_manager surfaces as connector
+      OtherError. Disabled by default to match historical EvManager
+      behavior; opt in by setting > 0.
+    type: integer
+    default: 0
+  cfg_heartbeat_interval_ms:
+    description: Heartbeat publish interval in milliseconds
+    type: integer
+    default: 1000
+  enabled_at_startup:
+    description: >-
+      Auto-enable the EV simulator at module startup (equivalent to publishing
+      `m2e/enable true` immediately after ready). Set to false for tests that
+      need to observe the initial Disabled state before driving enable.
+    type: boolean
+    default: true
+provides:
+  ev_manager:
+    interface: ev_manager
+    description: Republishes bsp_event and ev_info from the simulated EV
+requires:
+  ev_board_support:
+    interface: ev_board_support
+  ev:
+    interface: ISO15118_ev
+    min_connections: 0
+    max_connections: 1
+  slac:
+    interface: ev_slac
+    min_connections: 0
+    max_connections: 1
+  kvs:
+    interface: kvs
+    min_connections: 0
+    max_connections: 1
+enable_external_mqtt: true
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Pionix GmbH

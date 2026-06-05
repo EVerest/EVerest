@@ -5,8 +5,8 @@ active_modules:
       device: auto
     connections:
       security:
-        - module_id: evse_security
-          implementation_id: main
+      - module_id: evse_security
+        implementation_id: main
     mapping:
       module:
         evse: 1
@@ -34,26 +34,26 @@ active_modules:
       payment_enable_contract: false
     connections:
       bsp:
-        - module_id: yeti_driver
-          implementation_id: board_support
+      - module_id: yeti_driver
+        implementation_id: board_support
       powermeter_grid_side:
-        - module_id: yeti_driver
-          implementation_id: powermeter
+      - module_id: yeti_driver
+        implementation_id: powermeter
       powermeter_car_side:
-        - module_id: powersupply_dc
-          implementation_id: powermeter
+      - module_id: powersupply_dc
+        implementation_id: powermeter
       slac:
-        - module_id: slac
-          implementation_id: evse
+      - module_id: slac
+        implementation_id: evse
       hlc:
-        - module_id: iso15118_charger
-          implementation_id: charger
+      - module_id: iso15118_charger
+        implementation_id: charger
       powersupply_DC:
-        - module_id: powersupply_dc
-          implementation_id: main
+      - module_id: powersupply_dc
+        implementation_id: main
       imd:
-        - module_id: imd
-          implementation_id: main
+      - module_id: imd
+        implementation_id: main
   powersupply_dc:
     module: DCSupplySimulator
   yeti_driver:
@@ -71,52 +71,49 @@ active_modules:
         selftest_success: true
     module: IMDSimulator
   ev_manager:
-    module: EvManager
+    module: EvSimulator
     config_module:
       connector_id: 1
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 3;iso_wait_slac_matched;
       dc_target_current: 20
       dc_target_voltage: 400
     connections:
       ev_board_support:
-        - module_id: yeti_driver
-          implementation_id: ev_board_support
+      - module_id: yeti_driver
+        implementation_id: ev_board_support
       ev:
-        - module_id: iso15118_car
-          implementation_id: ev
+      - module_id: iso15118_car
+        implementation_id: ev
       slac:
-        - module_id: slac
-          implementation_id: ev
+      - module_id: slac
+        implementation_id: ev
   ocpp:
     module: OCPP201
     config_module:
       EnableExternalWebsocketControl: true
     connections:
       evse_manager:
-        - module_id: evse_manager
-          implementation_id: evse
+      - module_id: evse_manager
+        implementation_id: evse
       auth:
-        - module_id: auth
-          implementation_id: main
+      - module_id: auth
+        implementation_id: main
       system:
-        - module_id: system
-          implementation_id: main
+      - module_id: system
+        implementation_id: main
       security:
-        - module_id: evse_security
-          implementation_id: main
+      - module_id: evse_security
+        implementation_id: main
       reservation:
-        - module_id: auth
-          implementation_id: reservation
+      - module_id: auth
+        implementation_id: reservation
       evse_energy_sink:
-        - module_id: grid_connection_point
-          implementation_id: external_limits
-        - module_id: evse_manager_1_ocpp_sink
-          implementation_id: external_limits
+      - module_id: grid_connection_point
+        implementation_id: external_limits
+      - module_id: evse_manager_1_ocpp_sink
+        implementation_id: external_limits
       extensions_15118:
-        - module_id: iso15118_charger
-          implementation_id: extensions
+      - module_id: iso15118_charger
+        implementation_id: extensions
   evse_manager_1_ocpp_sink:
     module: EnergyNode
     mapping:
@@ -127,8 +124,8 @@ active_modules:
       phase_count: 3
     connections:
       energy_consumer:
-        - module_id: evse_manager
-          implementation_id: energy_grid
+      - module_id: evse_manager
+        implementation_id: energy_grid
   system:
     module: System
   token_provider:
@@ -143,16 +140,16 @@ active_modules:
       selection_algorithm: FindFirst
     connections:
       token_provider:
-        - module_id: token_provider
-          implementation_id: main
-        - module_id: ocpp
-          implementation_id: auth_provider
+      - module_id: token_provider
+        implementation_id: main
+      - module_id: ocpp
+        implementation_id: auth_provider
       token_validator:
-        - module_id: ocpp
-          implementation_id: auth_validator
+      - module_id: ocpp
+        implementation_id: auth_validator
       evse_manager:
-        - module_id: evse_manager
-          implementation_id: evse
+      - module_id: evse_manager
+        implementation_id: evse
   evse_security:
     module: EvseSecurity
     config_module:
@@ -165,8 +162,8 @@ active_modules:
       debug: false
     connections:
       energy_trunk:
-        - module_id: grid_connection_point
-          implementation_id: energy_grid
+      - module_id: grid_connection_point
+        implementation_id: energy_grid
   grid_connection_point:
     module: EnergyNode
     mapping:
@@ -178,20 +175,20 @@ active_modules:
     connections:
       price_information: []
       energy_consumer:
-        - module_id: evse_manager_1_ocpp_sink
-          implementation_id: energy_grid
+      - module_id: evse_manager_1_ocpp_sink
+        implementation_id: energy_grid
       powermeter:
-        - module_id: yeti_driver
-          implementation_id: powermeter
+      - module_id: yeti_driver
+        implementation_id: powermeter
   api:
     module: API
     connections:
       evse_manager:
-        - module_id: evse_manager
-          implementation_id: evse
+      - module_id: evse_manager
+        implementation_id: evse
       error_history:
-        - module_id: error_history
-          implementation_id: error_history
+      - module_id: error_history
+        implementation_id: error_history
   error_history:
     module: ErrorHistory
     config_implementation:
