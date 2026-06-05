@@ -1052,6 +1052,9 @@ int Server::handle_tls_1_3_verify_upgrade(SSL* ssl, int* /*alert*/) {
     // The verify upgrade only takes effect when the negotiated protocol will be
     // TLS 1.3. Both sides must allow it: the client must advertise TLS 1.3 in
     // supported_versions and the server must not have capped at TLS 1.2.
+    if (not m_verify_client_on_tls13) {
+        return SSL_CLIENT_HELLO_SUCCESS;
+    }
     auto* ctx = SSL_get_SSL_CTX(ssl);
     const auto server_max = (ctx != nullptr) ? SSL_CTX_get_max_proto_version(ctx) : 0;
     if (server_max != 0 && server_max < TLS1_3_VERSION) {
@@ -1115,6 +1118,8 @@ bool Server::init_ssl(const config_t& cfg) {
                     m_tls_key_interface = cfg.host;
                 }
             }
+
+            m_verify_client_on_tls13 = cfg.verify_client_on_tls13;
 
             // 15118-2 mandates TLS 1.2 and no client certificate; 15118-20 mandates TLS 1.3 and
             // requires a client certificate. The dispatcher upgrades verify mode to require a peer

@@ -44,6 +44,45 @@ TEST_F(TlsTest, EnforceTls13AcceptsTls13ClientWithAes256) {
     EXPECT_TRUE(is_set(flags_t::connected));
 }
 
+TEST_F(TlsTest, Tls13NoVerifyUpgradeAcceptsNoCert) {
+    // With verify_client_on_tls13 left at its default (false) the server must NOT
+    // upgrade verify mode for a TLS 1.3 connection. A client presenting no client
+    // certificate must therefore still complete the handshake, preserving legacy
+    // behavior for consumers that have not opted in to the upgrade.
+    //
+    // In TLS 1.3 a server's certificate_required alert arrives after the client's
+    // SSL_connect returns, so (as in Tls13ClientWithoutCertHandshakeFails) we probe
+    // the connection with a read: if the upgrade were active the read would observe
+    // the alert and the connection would not be in the connected state.
+    server_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    server_config.enforce_tls_1_3 = true;
+    // verify_client stays at the fixture default (false); verify_client_on_tls13
+    // stays at its new default (false).
+
+    client_config.cipher_list = nullptr;
+    client_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    client_config.min_proto_version = TLS1_3_VERSION;
+    // No client certificate: certificate_chain_file / private_key_file remain null.
+
+    start();
+    bool handshake_ok{false};
+    connect([&handshake_ok](tls::Client::ConnectionPtr& con) {
+        if (!con) {
+            return;
+        }
+        if (con->connect() != tls::Connection::result_t::success) {
+            return;
+        }
+        // Surface any pending fatal alert from the server.
+        std::byte buf[1]{};
+        std::size_t got{0};
+        const auto rc = con->read(buf, sizeof(buf), got, 200);
+        handshake_ok =
+            (rc != tls::Connection::result_t::closed) && (con->state() == tls::Connection::state_t::connected);
+    });
+    EXPECT_TRUE(handshake_ok);
+}
+
 TEST_F(TlsTest, NoEnforceTls13EmptyCiphersuitesRejectsTls13Client) {
     // Existing behavior: with enforce_tls_1_3 = false and empty ciphersuites,
     // the server caps at TLS 1.2 and a TLS-1.3-only client cannot connect.
@@ -91,6 +130,7 @@ TEST_F(TlsTest, Tls13ClientWithoutCertHandshakeFails) {
     // read to force the alert to surface and confirm the handshake failed.
     server_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
     server_config.enforce_tls_1_3 = true;
+    server_config.verify_client_on_tls13 = true;
 
     client_config.cipher_list = nullptr;
     client_config.ciphersuites = "TLS_AES_256_GCM_SHA384";

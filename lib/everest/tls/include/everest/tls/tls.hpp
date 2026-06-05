@@ -447,6 +447,8 @@ public:
 
         //!< when true the server requires TLS 1.3 minimum; ciphersuites must be non-empty
         bool enforce_tls_1_3{false};
+        bool verify_client_on_tls13{false}; //!< when true, require a peer certificate once TLS 1.3 is negotiated even
+                                            //!< if verify_client is false
     };
 
     using ConnectionPtr = std::unique_ptr<ServerConnection>;
@@ -477,6 +479,7 @@ private:
     ConfigurationCallback m_init_callback{nullptr};     //!< callback to retrieve SSL configuration
 
     ConfigItem m_tls_key_interface{nullptr};
+    bool m_verify_client_on_tls13{false};
     std::filesystem::path tls_key_log_file_path{};
 
     /**

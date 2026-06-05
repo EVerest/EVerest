@@ -82,7 +82,8 @@ tls::Server::config_t make_tls_server_config(const config::SSLConfig& cfg, const
     out.chains = std::move(chains);
     out.verify_locations_file = cfg.path_certificate_v2g_root;
     out.io_timeout_ms = -1;
-    out.verify_client = false; // SSL_VERIFY_NONE; client_hello_cb_dispatch upgrades for TLS 1.3
+    out.verify_client = false; // verify_client_on_tls13 upgrades to require a peer cert once TLS 1.3 is negotiated
+    out.verify_client_on_tls13 = true;
     out.socket = listen_fd;
     out.ipv6_only = true;
     out.tls_key_logging = cfg.enable_tls_key_logging;
