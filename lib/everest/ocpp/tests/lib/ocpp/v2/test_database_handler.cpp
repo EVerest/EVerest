@@ -558,7 +558,7 @@ TEST_F(DatabaseHandlerTest, ClearChargingProfilesMatchingCriteria_WhenGivenProfi
     EXPECT_EQ(profiles.size(), 1);
 
     auto sut = this->database_handler.clear_charging_profiles_matching_criteria(profile_id, clear_criteria);
-    EXPECT_TRUE(sut);
+    EXPECT_EQ(sut, (std::vector<std::int32_t>{profile_id}));
 
     profiles = this->database_handler.get_all_charging_profiles();
     EXPECT_EQ(profiles.size(), 0);
@@ -579,7 +579,7 @@ TEST_F(DatabaseHandlerTest, ClearChargingProfilesMatchingCriteria_WhenNotGivenPr
     EXPECT_EQ(profiles.size(), 1);
 
     auto sut = this->database_handler.clear_charging_profiles_matching_criteria({}, clear_criteria);
-    EXPECT_FALSE(sut);
+    EXPECT_TRUE(sut.empty());
 
     profiles = this->database_handler.get_all_charging_profiles();
     EXPECT_EQ(profiles.size(), 1);
@@ -605,7 +605,7 @@ TEST_F(DatabaseHandlerTest, ClearChargingProfilesMatchingCriteria_WhenNotGivenCr
     EXPECT_EQ(profiles.size(), 2);
 
     auto sut = this->database_handler.clear_charging_profiles_matching_criteria({}, {});
-    EXPECT_TRUE(sut);
+    EXPECT_THAT(sut, testing::UnorderedElementsAre(p1.id, p2.id));
 
     profiles = this->database_handler.get_all_charging_profiles();
     EXPECT_EQ(profiles.size(), 0);
@@ -631,7 +631,7 @@ TEST_F(DatabaseHandlerTest, ClearChargingProfilesMatchingCriteria_WhenAllCriteri
     EXPECT_EQ(profiles.size(), 1);
 
     auto sut = this->database_handler.clear_charging_profiles_matching_criteria({}, clear_criteria);
-    EXPECT_TRUE(sut);
+    EXPECT_EQ(sut, (std::vector<std::int32_t>{p1.id}));
 
     profiles = this->database_handler.get_all_charging_profiles();
     EXPECT_EQ(profiles.size(), 0);
@@ -658,7 +658,7 @@ TEST_F(DatabaseHandlerTest, ClearChargingProfilesMatchingCriteria_UnknownPurpose
     EXPECT_THAT(profiles, testing::Contains(p1));
 
     auto sut = this->database_handler.clear_charging_profiles_matching_criteria({}, clear_criteria);
-    EXPECT_FALSE(sut);
+    EXPECT_TRUE(sut.empty());
 
     profiles = this->database_handler.get_all_charging_profiles();
     EXPECT_EQ(profiles.size(), 1);
@@ -686,7 +686,7 @@ TEST_F(DatabaseHandlerTest, ClearChargingProfilesMatchingCriteria_UnknownStackLe
     EXPECT_THAT(profiles, testing::Contains(p1));
 
     auto sut = this->database_handler.clear_charging_profiles_matching_criteria({}, clear_criteria);
-    EXPECT_FALSE(sut);
+    EXPECT_TRUE(sut.empty());
 
     profiles = this->database_handler.get_all_charging_profiles();
     EXPECT_EQ(profiles.size(), 1);
@@ -715,7 +715,7 @@ TEST_F(DatabaseHandlerTest, ClearChargingProfilesMatchingCriteria_UnknownEvseId_
     EXPECT_THAT(profiles, testing::Contains(p1));
 
     auto sut = this->database_handler.clear_charging_profiles_matching_criteria({}, clear_criteria);
-    EXPECT_FALSE(sut);
+    EXPECT_TRUE(sut.empty());
 
     profiles = this->database_handler.get_all_charging_profiles();
     EXPECT_EQ(profiles.size(), 1);
@@ -742,7 +742,7 @@ TEST_F(DatabaseHandlerTest, ClearChargingProfilesMatchingCriteria_DoesNotDeleteE
     EXPECT_EQ(profiles.size(), 1);
 
     auto sut = this->database_handler.clear_charging_profiles_matching_criteria({}, clear_criteria);
-    EXPECT_FALSE(sut);
+    EXPECT_TRUE(sut.empty());
 
     profiles = this->database_handler.get_all_charging_profiles();
     EXPECT_EQ(profiles.size(), 1);

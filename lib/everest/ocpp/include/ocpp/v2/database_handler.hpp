@@ -179,9 +179,11 @@ public:
     /// \brief Deletes all profiles from table CHARGING_PROFILES
     virtual bool clear_charging_profiles() = 0;
 
-    /// \brief Deletes all profiles from table CHARGING_PROFILES matching \p profile_id or \p criteria
-    virtual bool clear_charging_profiles_matching_criteria(const std::optional<std::int32_t> profile_id,
-                                                           const std::optional<ClearChargingProfile>& criteria) = 0;
+    /// \brief Deletes all profiles from table CHARGING_PROFILES matching \p profile_id or \p criteria.
+    /// \return the ids of the rows actually deleted (empty when nothing matched).
+    virtual std::vector<std::int32_t>
+    clear_charging_profiles_matching_criteria(const std::optional<std::int32_t> profile_id,
+                                              const std::optional<ClearChargingProfile>& criteria) = 0;
 
     /// \brief Get all profiles from table CHARGING_PROFILES matching \p profile_id or \p criteria
     virtual std::vector<ReportedChargingProfile>
@@ -353,8 +355,9 @@ public:
     bool delete_charging_profile(const int profile_id) override;
     void delete_charging_profile_by_transaction_id(const std::string& transaction_id) override;
     bool clear_charging_profiles() override;
-    bool clear_charging_profiles_matching_criteria(const std::optional<std::int32_t> profile_id,
-                                                   const std::optional<ClearChargingProfile>& criteria) override;
+    std::vector<std::int32_t>
+    clear_charging_profiles_matching_criteria(const std::optional<std::int32_t> profile_id,
+                                              const std::optional<ClearChargingProfile>& criteria) override;
     std::vector<ReportedChargingProfile>
     get_charging_profiles_matching_criteria(const std::optional<std::int32_t> evse_id,
                                             const ChargingProfileCriterion& criteria) override;
