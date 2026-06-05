@@ -3574,7 +3574,11 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
         EVLOG_warning << "Attempt to change AuthorizationKey to value with < 8 characters";
         return ConfigurationStatus::Rejected;
     } else if (key == "AuthorizeRemoteTxRequests") {
-        this->setAuthorizeRemoteTxRequests(ocpp::conversions::string_to_bool(value.get()));
+        if (isBool(value.get())) {
+            this->setAuthorizeRemoteTxRequests(ocpp::conversions::string_to_bool(value.get()));
+        } else {
+            return ConfigurationStatus::Rejected;
+        }
     } else if (key == "BlinkRepeat") {
         if (this->getBlinkRepeat() == std::nullopt) {
             return ConfigurationStatus::NotSupported;
@@ -3625,7 +3629,11 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
         if (this->getCentralContractValidationAllowed() == std::nullopt) {
             return ConfigurationStatus::NotSupported;
         }
-        this->setCentralContractValidationAllowed(ocpp::conversions::string_to_bool(value.get()));
+        if (isBool(value.get())) {
+            this->setCentralContractValidationAllowed(ocpp::conversions::string_to_bool(value.get()));
+        } else {
+            return ConfigurationStatus::Rejected;
+        }
     } else if (key == "CertSigningWaitMinimum") {
         if (this->getCertSigningWaitMinimum() == std::nullopt) {
             return ConfigurationStatus::NotSupported;
@@ -3657,11 +3665,19 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
             return ConfigurationStatus::Rejected;
         }
     } else if (key == "ContractValidationOffline") {
-        this->setContractValidationOffline(ocpp::conversions::string_to_bool(value.get()));
+        if (isBool(value.get())) {
+            this->setContractValidationOffline(ocpp::conversions::string_to_bool(value.get()));
+        } else {
+            return ConfigurationStatus::Rejected;
+        }
     } else if (key == "CpoName") {
         this->setCpoName(value.get());
     } else if (key == "DisableSecurityEventNotifications") {
-        this->setDisableSecurityEventNotifications(ocpp::conversions::string_to_bool(value.get()));
+        if (isBool(value.get())) {
+            this->setDisableSecurityEventNotifications(ocpp::conversions::string_to_bool(value.get()));
+        } else {
+            return ConfigurationStatus::Rejected;
+        }
     } else if (key == "HeartbeatInterval") {
         try {
             auto [valid, interval] = is_positive_integer(value.get());
@@ -3675,9 +3691,17 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
             return ConfigurationStatus::Rejected;
         }
     } else if (key == "ISO15118CertificateManagementEnabled") {
-        this->setISO15118CertificateManagementEnabled(ocpp::conversions::string_to_bool(value.get()));
+        if (isBool(value.get())) {
+            this->setISO15118CertificateManagementEnabled(ocpp::conversions::string_to_bool(value.get()));
+        } else {
+            return ConfigurationStatus::Rejected;
+        }
     } else if (key == "ISO15118PnCEnabled") {
-        this->setISO15118PnCEnabled(ocpp::conversions::string_to_bool(value.get()));
+        if (isBool(value.get())) {
+            this->setISO15118PnCEnabled(ocpp::conversions::string_to_bool(value.get()));
+        } else {
+            return ConfigurationStatus::Rejected;
+        }
     } else if (key == "LightIntensity") {
         if (this->getLightIntensity() == std::nullopt) {
             return ConfigurationStatus::NotSupported;
@@ -3976,10 +4000,13 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
             return ConfigurationStatus::NotSupported;
         }
     } else if (key == "AllowChargingProfileWithoutStartSchedule") {
-        if (this->getAllowChargingProfileWithoutStartSchedule().has_value()) {
+        if (!this->getAllowChargingProfileWithoutStartSchedule().has_value()) {
+            return ConfigurationStatus::NotSupported;
+        }
+        if (isBool(value.get())) {
             this->setAllowChargingProfileWithoutStartSchedule(ocpp::conversions::string_to_bool(value.get()));
         } else {
-            return ConfigurationStatus::NotSupported;
+            return ConfigurationStatus::Rejected;
         }
     } else if (key.get().find("DefaultPriceText") == 0) {
         const ConfigurationStatus result = this->setDefaultPriceText(key, value);
@@ -4007,7 +4034,11 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
             return result;
         }
     } else if (key == "CustomIdleFeeAfterStop") {
-        this->setCustomIdleFeeAfterStop(ocpp::conversions::string_to_bool(value));
+        if (isBool(value.get())) {
+            this->setCustomIdleFeeAfterStop(ocpp::conversions::string_to_bool(value.get()));
+        } else {
+            return ConfigurationStatus::Rejected;
+        }
     } else if (key == "Language") {
         this->setLanguage(value);
     } else if (key == "WaitForSetUserPriceTimeout") {
