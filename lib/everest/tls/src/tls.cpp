@@ -911,14 +911,13 @@ Connection::result_t ServerConnection::accept(int timeout_ms) {
 std::optional<std::array<std::uint8_t, 64>> ServerConnection::peer_certificate_sha512() const {
     assert(m_context != nullptr);
     SSL* ssl = m_context->ctx.get();
-    X509* peer = SSL_get_peer_certificate(ssl);
+    X509* peer = SSL_get0_peer_certificate(ssl);
     if (peer == nullptr) {
         return std::nullopt;
     }
     std::array<std::uint8_t, 64> out{};
     unsigned int len{0};
     const auto rc = X509_digest(peer, EVP_sha512(), out.data(), &len);
-    X509_free(peer);
     if (rc == 0 || len != out.size()) {
         return std::nullopt;
     }
@@ -1066,6 +1065,8 @@ int Server::handle_tls_1_3_verify_upgrade(SSL* ssl, int* /*alert*/) {
 
     if (SSL_client_hello_get0_ext(ssl, TLSEXT_TYPE_supported_versions, &data, &datalen) == 1) {
         if (openssl::is_tls_1_3(data, datalen)) {
+            log_info("Client supports TLS1.3: Change verify mode to SSL_VERIFY_PEER and "
+                     "SSL_VERIFY_FAIL_IF_NO_PEER_CERT");
             SSL_set_verify(ssl, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, nullptr);
         }
     }

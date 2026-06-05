@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -133,19 +134,24 @@ ConnectionSSL::ConnectionSSL(PollManager& poll_manager_, const std::string& inte
     address.sin6_port = htons(end_point.port);
 
     int optval_tmp{1};
-    if (setsockopt(ssl->listen_fd, SOL_SOCKET, SO_REUSEADDR, &optval_tmp, sizeof(optval_tmp)) == -1) {
+    const auto set_reuseaddr = setsockopt(ssl->listen_fd, SOL_SOCKET, SO_REUSEADDR, &optval_tmp, sizeof(optval_tmp));
+    if (set_reuseaddr == -1) {
         log_and_throw("setsockopt(SO_REUSEADDR) failed");
     }
-    if (setsockopt(ssl->listen_fd, SOL_SOCKET, SO_REUSEPORT, &optval_tmp, sizeof(optval_tmp)) == -1) {
+
+    const auto set_reuseport = setsockopt(ssl->listen_fd, SOL_SOCKET, SO_REUSEPORT, &optval_tmp, sizeof(optval_tmp));
+    if (set_reuseport == -1) {
         log_and_throw("setsockopt(SO_REUSEPORT) failed");
     }
 
-    if (bind(ssl->listen_fd, reinterpret_cast<const struct sockaddr*>(&address), sizeof(address)) == -1) {
+    const auto bind_result = bind(ssl->listen_fd, reinterpret_cast<const struct sockaddr*>(&address), sizeof(address));
+    if (bind_result == -1) {
         const auto error = "Failed to bind ipv6 socket to interface " + interface_name_;
         log_and_throw(error.c_str());
     }
 
-    if (listen(ssl->listen_fd, DEFAULT_SOCKET_BACKLOG) == -1) {
+    const auto listen_result = listen(ssl->listen_fd, DEFAULT_SOCKET_BACKLOG);
+    if (listen_result == -1) {
         log_and_throw("Listen on socket failed");
     }
 

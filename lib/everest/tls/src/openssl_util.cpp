@@ -839,6 +839,11 @@ bool is_tls_1_3(const std::uint8_t* in, std::size_t inlen) {
     // supported_versions extension payload (RFC 8446 4.2.1):
     // first byte is the length of the version list, followed by
     // two-byte version IDs (e.g. TLS 1.3 = 0x0304).
+    //
+    // Byte 1   -> length
+    // Byte 2+3 -> first version  (e.g. 03 04)
+    // Byte 4+5 -> second version (e.g. 03 03)
+    // ...
     if (in == nullptr) {
         return false;
     }
