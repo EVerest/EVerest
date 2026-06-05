@@ -902,11 +902,15 @@ DatabaseHandler::get_charging_profiles_matching_criteria(const std::optional<std
             stmt->bind_int("@evse_id", evse_id.value());
         }
 
-        while (stmt->step() == SQLITE_ROW) {
+        int status = SQLITE_ERROR;
+        while ((status = stmt->step()) == SQLITE_ROW) {
             results.emplace_back(json::parse(stmt->column_text(1)), // profile
                                  stmt->column_int(0),               // EVSE ID
                                  CiString<20>(stmt->column_text(2)) // source
             );
+        }
+        if (status != SQLITE_DONE) {
+            throw QueryExecutionException(this->database->get_error_message());
         }
         return results;
     }
@@ -948,11 +952,15 @@ DatabaseHandler::get_charging_profiles_matching_criteria(const std::optional<std
         stmt->bind_int("@evse_id", evse_id.value());
     }
 
-    while (stmt->step() == SQLITE_ROW) {
+    int status = SQLITE_ERROR;
+    while ((status = stmt->step()) == SQLITE_ROW) {
         results.emplace_back(json::parse(stmt->column_text(1)), // profile
                              stmt->column_int(0),               // EVSE ID
                              CiString<20>(stmt->column_text(2)) // source
         );
+    }
+    if (status != SQLITE_DONE) {
+        throw QueryExecutionException(this->database->get_error_message());
     }
 
     return results;
@@ -967,9 +975,13 @@ std::vector<v2::ChargingProfile> DatabaseHandler::get_charging_profiles_for_evse
 
     stmt->bind_int("@evse_id", evse_id);
 
-    while (stmt->step() == SQLITE_ROW) {
+    int status = SQLITE_ERROR;
+    while ((status = stmt->step()) == SQLITE_ROW) {
         auto profile = json::parse(stmt->column_text(0));
         profiles.push_back(profile);
+    }
+    if (status != SQLITE_DONE) {
+        throw QueryExecutionException(this->database->get_error_message());
     }
 
     return profiles;
@@ -982,9 +994,13 @@ std::vector<v2::ChargingProfile> DatabaseHandler::get_all_charging_profiles() {
 
     auto stmt = this->database->new_statement(sql);
 
-    while (stmt->step() == SQLITE_ROW) {
+    int status = SQLITE_ERROR;
+    while ((status = stmt->step()) == SQLITE_ROW) {
         auto profile = json::parse(stmt->column_text(0));
         profiles.push_back(profile);
+    }
+    if (status != SQLITE_DONE) {
+        throw QueryExecutionException(this->database->get_error_message());
     }
 
     return profiles;
@@ -997,7 +1013,8 @@ std::map<std::int32_t, std::vector<v2::ChargingProfile>> DatabaseHandler::get_al
 
     auto stmt = this->database->new_statement(sql);
 
-    while (stmt->step() == SQLITE_ROW) {
+    int status = SQLITE_ERROR;
+    while ((status = stmt->step()) == SQLITE_ROW) {
         auto evse_id = stmt->column_int(0);
         auto profile = json::parse(stmt->column_text(1));
 
@@ -1005,6 +1022,9 @@ std::map<std::int32_t, std::vector<v2::ChargingProfile>> DatabaseHandler::get_al
         profiles.emplace_back(profile);
 
         map[evse_id] = profiles;
+    }
+    if (status != SQLITE_DONE) {
+        throw QueryExecutionException(this->database->get_error_message());
     }
 
     return map;
@@ -1137,8 +1157,12 @@ DatabaseHandler::get_der_controls_matching_criteria(const std::optional<bool>& i
         stmt->bind_text("@control_id", control_id.value(), SQLiteString::Transient);
     }
 
-    while (stmt->step() == SQLITE_ROW) {
+    int status = SQLITE_ERROR;
+    while ((status = stmt->step()) == SQLITE_ROW) {
         results.emplace_back(stmt->column_text(0));
+    }
+    if (status != SQLITE_DONE) {
+        throw QueryExecutionException(this->database->get_error_message());
     }
     return results;
 }

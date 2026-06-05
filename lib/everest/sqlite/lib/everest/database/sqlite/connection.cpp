@@ -76,10 +76,9 @@ bool Connection::open_connection() {
         EVLOG_error << "Error opening database at " << this->database_file_path << ": " << sqlite3_errmsg(db);
         return false;
     }
-    // Retry briefly on SQLITE_BUSY instead of failing immediately. Without this any concurrent
-    // writer (e.g. background workers that update charging profiles) racing with a reader on the
-    // same connection surfaces as SQLITE_BUSY, and callers that loop while(step()!=DONE) on a
-    // non-row state would touch invalid column data.
+    // Retry briefly on SQLITE_BUSY instead of failing immediately, so a reader that races with a
+    // concurrent writer on the same database waits for the lock to clear rather than surfacing a
+    // transient SQLITE_BUSY to the caller.
     constexpr int busy_timeout_ms = 5000;
     sqlite3_busy_timeout(this->db, busy_timeout_ms);
     EVLOG_debug << "Established connection to database: " << this->database_file_path;
