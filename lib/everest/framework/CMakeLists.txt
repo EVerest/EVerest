@@ -20,6 +20,73 @@ option(EVEREST_ENABLE_PY_SUPPORT "Enable everestpy for Python modules" ON)
 option(EVEREST_ENABLE_RS_SUPPORT "Enable everestrs for Rust modules" OFF)
 option(EVEREST_ENABLE_ADMIN_PANEL_BACKEND "Enable everest admin panel backend" OFF)
 option(EVEREST_INSTALL_ADMIN_PANEL "Download and install everest admin panel" OFF)
+set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY "latency" CACHE STRING
+    "Thread pool scaling policy for framework message handling: latency, greedy, conservative, fixed_size, custom")
+set_property(CACHE EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY PROPERTY STRINGS
+    latency greedy conservative fixed_size custom)
+set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS "50" CACHE STRING
+    "Maximum queued task wait time in milliseconds before latency scaling grows the framework message handler pool")
+set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_TICK_MS "5" CACHE STRING
+    "Supervisor tick in milliseconds for framework message handler latency scaling")
+set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD "3" CACHE STRING
+    "Queue size threshold for framework message handler fixed-size scaling")
+set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_HEADER "" CACHE STRING
+    "Header to include when EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY=custom")
+set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE "" CACHE STRING
+    "Fully-qualified scaling policy type when EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY=custom")
+set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_INCLUDE_DIR "" CACHE PATH
+    "Include directory for the custom thread pool scaling policy header")
+
+foreach(_scaling_option IN ITEMS
+        EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS
+        EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_TICK_MS
+        EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD)
+    if(NOT ${_scaling_option} MATCHES "^[1-9][0-9]*$")
+        message(FATAL_ERROR
+            "${_scaling_option} must be a positive integer, got '${${_scaling_option}}'")
+    endif()
+endforeach()
+
+if(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY STREQUAL "latency")
+    set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_ID 1)
+    set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_HEADER_CONFIG "everest/util/async/thread_pool_scaling.hpp")
+    set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE_CONFIG "void")
+elseif(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY STREQUAL "greedy")
+    set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_ID 2)
+    set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_HEADER_CONFIG "everest/util/async/thread_pool_scaling.hpp")
+    set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE_CONFIG "void")
+elseif(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY STREQUAL "conservative")
+    set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_ID 3)
+    set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_HEADER_CONFIG "everest/util/async/thread_pool_scaling.hpp")
+    set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE_CONFIG "void")
+elseif(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY STREQUAL "fixed_size")
+    set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_ID 4)
+    set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_HEADER_CONFIG "everest/util/async/thread_pool_scaling.hpp")
+    set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE_CONFIG "void")
+elseif(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY STREQUAL "custom")
+    set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_ID 5)
+
+    if(NOT EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_HEADER)
+        message(FATAL_ERROR
+            "EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_HEADER must be set when "
+            "EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY=custom")
+    endif()
+    if(NOT EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE)
+        message(FATAL_ERROR
+            "EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE must be set when "
+            "EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY=custom")
+    endif()
+
+    set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_HEADER_CONFIG
+        "${EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_HEADER}")
+    set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE_CONFIG
+        "${EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE}")
+else()
+    message(FATAL_ERROR
+        "Invalid EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY: "
+        "${EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY}. "
+        "Allowed values: latency, greedy, conservative, fixed_size, custom")
+endif()
 ev_setup_cmake_variables_python_wheel()
 option(${PROJECT_NAME}_USE_PYTHON_VENV "Use python venv for pip install targets" OFF)
 set(${PROJECT_NAME}_PYTHON_VENV_PATH "${CMAKE_BINARY_DIR}/venv" CACHE PATH "Path to python venv")
