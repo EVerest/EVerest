@@ -86,22 +86,23 @@ bool Connection::open_connection() {
     sqlite3_busy_timeout(this->db, busy_timeout_ms);
 
     // Enable WAL journal mode on file-based databases so concurrent readers and a single writer
-    // stop serializing. WAL-or-fail: if WAL cannot be established we refuse to open the connection.
+    // stop serializing. Best-effort: if WAL cannot be established (e.g. on a filesystem that does
+    // not support it) we log and continue with whatever journal mode SQLite reports rather than
+    // failing the open.
     if (!in_memory) {
         auto statement = this->new_statement("PRAGMA journal_mode=WAL");
         if (statement->step() != SQLITE_ROW) {
-            EVLOG_error << "Failed to enable WAL journal mode on " << this->database_file_path << ": "
-                        << this->get_error_message();
-            return false;
-        }
-        const std::string journal_mode = statement->column_text(0);
-        std::string lowered = journal_mode;
-        std::transform(lowered.begin(), lowered.end(), lowered.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (lowered != "wal") {
-            EVLOG_error << "Expected WAL journal mode on " << this->database_file_path << " but got '" << journal_mode
-                        << "'";
-            return false;
+            EVLOG_warning << "Could not query journal mode while enabling WAL on " << this->database_file_path << ": "
+                          << this->get_error_message();
+        } else {
+            const std::string journal_mode = statement->column_text(0);
+            std::string lowered = journal_mode;
+            std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (lowered != "wal") {
+                EVLOG_warning << "Could not enable WAL journal mode on " << this->database_file_path
+                              << ", continuing with '" << journal_mode << "'";
+            }
         }
     }
 
