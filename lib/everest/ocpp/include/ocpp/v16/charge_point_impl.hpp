@@ -18,6 +18,7 @@
 
 #include <ocpp/common/aligned_timer.hpp>
 #include <ocpp/common/charging_station_base.hpp>
+#include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/common/message_dispatcher.hpp>
 #include <ocpp/common/message_queue.hpp>
 #include <ocpp/common/schemas.hpp>
@@ -92,7 +93,6 @@ private:
     BootReasonEnum bootreason{BootReasonEnum::PowerUp};
     bool initialized{false};
     bool InvalidCSMSCertificate_logged{false};
-    bool wants_to_be_connected{false};
     ChargePointConnectionState connection_state{ChargePointConnectionState::Disconnected};
     std::atomic<RegistrationStatus> registration_status{RegistrationStatus::Pending};
     DiagnosticsStatus diagnostics_status{DiagnosticsStatus::Idle};
@@ -105,9 +105,9 @@ private:
     bool boot_notification_callerror;
     bool firmware_update_is_pending = false;
 
-    std::unique_ptr<Websocket> websocket;
+    std::shared_ptr<ocpp::ConnectivityManagerInterface> connectivity_manager;
     std::unique_ptr<ocpp::MessageDispatcherInterface<MessageType>> message_dispatcher;
-    Everest::SteadyTimer websocket_timer;
+    Everest::SteadyTimer security_profile_revert_timer;
     std::unique_ptr<MessageQueue<v16::MessageType>> message_queue;
     std::map<std::int32_t, std::shared_ptr<Connector>> connectors;
     std::unique_ptr<SmartChargingHandler> smart_charging_handler;
@@ -189,7 +189,6 @@ private:
                                     CiString<20> idTag, std::optional<CiString<20>> parent_id)>
         reserve_now_callback;
     std::function<bool(std::int32_t reservation_id)> cancel_reservation_callback;
-    std::function<void()> switch_security_profile_callback;
     std::function<GetLogResponse(GetLogRequest msg)> upload_logs_callback;
     std::function<void(std::int32_t connection_timeout)> set_connection_timeout_callback;
 
@@ -216,11 +215,14 @@ private:
     std::function<DataTransferResponse(const TariffMessage& message)> tariff_message_callback;
     std::function<void(const TariffMessage& message)> default_price_callback;
 
+    /// \brief Timeout after which a security profile switch that did not result in a successful
+    /// connection is reverted to the previous (fallback) security profile.
+    static constexpr std::chrono::seconds SECURITY_PROFILE_SWITCH_TIMEOUT{30};
+
     /// \brief This function is called after a successful connection to the Websocket
     void connected_callback();
-    void init_websocket();
+    void init_connectivity_manager();
     void init_state_machine(const std::map<int, ChargePointStatus>& connector_status_map);
-    WebsocketConnectionOptions get_ws_connection_options();
     std::unique_ptr<ocpp::MessageQueue<v16::MessageType>> create_message_queue();
     void message_callback(const std::string& message);
     void handle_message(const EnhancedMessage<v16::MessageType>& message);
@@ -348,7 +350,7 @@ private:
     void securityEventNotification(const CiString<50>& event_type, const std::optional<CiString<255>>& tech_info,
                                    const bool triggered_internally, const std::optional<bool>& critical = std::nullopt,
                                    const std::optional<DateTime>& timestamp = std::nullopt);
-    void switchSecurityProfile(std::int32_t new_security_profile, std::int32_t max_connection_attempts);
+    void switchSecurityProfile(std::int32_t new_security_profile, std::int32_t fallback_security_profile);
     // Local Authorization List profile
     void handleSendLocalListRequest(Call<SendLocalListRequest> call);
     void handleGetLocalListVersionRequest(Call<GetLocalListVersionRequest> call);
@@ -422,6 +424,17 @@ public:
         ChargePointConfigurationInterface& cfg, const fs::path& share_path, const fs::path& database_path,
         const fs::path& sql_init_path, const fs::path& message_log_path,
         const std::shared_ptr<EvseSecurity>& evse_security,
+        const std::optional<SecurityConfiguration>& security_configuration,
+        const std::function<void(const std::string& message, MessageDirection direction)>& message_callback);
+
+    /// \brief Injection constructor that allows providing a \p connectivity_manager . If \p connectivity_manager is
+    /// nullptr, an internal \ref ocpp::ConnectivityManager is constructed and wired up. This constructor is primarily
+    /// intended for unit testing with a mocked ConnectivityManager.
+    explicit ChargePointImpl(
+        ChargePointConfigurationInterface& cfg, const fs::path& share_path, const fs::path& database_path,
+        const fs::path& sql_init_path, const fs::path& message_log_path,
+        const std::shared_ptr<EvseSecurity>& evse_security,
+        std::shared_ptr<ocpp::ConnectivityManagerInterface> connectivity_manager,
         const std::optional<SecurityConfiguration>& security_configuration,
         const std::function<void(const std::string& message, MessageDirection direction)>& message_callback);
 

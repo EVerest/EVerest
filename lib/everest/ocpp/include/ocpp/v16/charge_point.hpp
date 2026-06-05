@@ -4,6 +4,7 @@
 #define OCPP_V16_CHARGE_POINT_HPP
 
 #include <ocpp/common/cistring.hpp>
+#include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/common/evse_security.hpp>
 #include <ocpp/common/evse_security_impl.hpp>
 #include <ocpp/common/support_older_cpp_versions.hpp>
@@ -74,6 +75,15 @@ public:
         ChargePointConfigurationInterface& cfg, const fs::path& share_path, const fs::path& database_path,
         const fs::path& sql_init_path, const fs::path& message_log_path,
         const std::shared_ptr<EvseSecurity> evse_security,
+        const std::optional<SecurityConfiguration> security_configuration = std::nullopt,
+        const std::function<void(const std::string& message, MessageDirection direction)>& message_callback = nullptr);
+
+    /// \brief Constructor that allows providing a \p connectivity_manager .
+    explicit ChargePoint(
+        ChargePointConfigurationInterface& cfg, const fs::path& share_path, const fs::path& database_path,
+        const fs::path& sql_init_path, const fs::path& message_log_path,
+        const std::shared_ptr<EvseSecurity> evse_security,
+        std::shared_ptr<ocpp::ConnectivityManagerInterface> connectivity_manager,
         const std::optional<SecurityConfiguration> security_configuration = std::nullopt,
         const std::function<void(const std::string& message, MessageDirection direction)>& message_callback = nullptr);
 
