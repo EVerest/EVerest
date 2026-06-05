@@ -14,6 +14,9 @@
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -94,6 +97,10 @@ private:
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here
     RwConf original_config{};
+    std::atomic<bool> shutdown_requested{false};
+    std::atomic<bool> ready_finished{false};
+    std::condition_variable shutdown_cv;
+    std::mutex shutdown_mutex;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
