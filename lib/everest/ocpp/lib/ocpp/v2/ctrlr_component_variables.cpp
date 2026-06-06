@@ -1316,6 +1316,12 @@ const ComponentVariable WaitForStopTransactionsOnResetTimeout = {
         "WaitForStopTransactionsOnResetTimeout",
     }),
 };
+const ComponentVariable SwitchSecurityProfileConnectionTimeout = {
+    ControllerComponents::OCPP16LegacyCtrlr,
+    std::optional<Variable>({
+        "SwitchSecurityProfileConnectionTimeout",
+    }),
+};
 const ComponentVariable StopTransactionIfUnlockNotSupported = {
     ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({

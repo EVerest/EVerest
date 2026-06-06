@@ -112,6 +112,9 @@ public:
     std::optional<std::int32_t> getSupplyVoltage() override;
     std::optional<KeyValue> getSupplyVoltageKeyValue() override;
     void setSupplyVoltage(std::int32_t supply_voltage) override;
+    std::optional<std::int32_t> getSwitchSecurityProfileConnectionTimeout() override;
+    std::optional<KeyValue> getSwitchSecurityProfileConnectionTimeoutKeyValue() override;
+    void setSwitchSecurityProfileConnectionTimeout(std::int32_t switch_security_profile_connection_timeout) override;
     std::string getSupportedCiphers12() override;
     KeyValue getSupportedCiphers12KeyValue() override;
     std::string getSupportedCiphers13() override;

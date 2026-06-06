@@ -105,6 +105,7 @@ public:
     virtual std::optional<std::int32_t> getCompositeScheduleDefaultLimitWatts() = 0;
     virtual std::optional<std::int32_t> getCompositeScheduleDefaultNumberPhases() = 0;
     virtual std::optional<std::int32_t> getSupplyVoltage() = 0;
+    virtual std::optional<std::int32_t> getSwitchSecurityProfileConnectionTimeout() = 0;
     virtual std::optional<std::vector<KeyValue>> getAllMeterPublicKeyKeyValues() = 0;
 
     virtual std::set<MessageType> getSupportedMessageTypesSending() = 0;
@@ -160,6 +161,7 @@ public:
     virtual std::optional<KeyValue> getSeccLeafSubjectCountryKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectOrganizationKeyValue() = 0;
     virtual std::optional<KeyValue> getSupplyVoltageKeyValue() = 0;
+    virtual std::optional<KeyValue> getSwitchSecurityProfileConnectionTimeoutKeyValue() = 0;
 
     virtual void setAllowChargingProfileWithoutStartSchedule(bool allow) = 0;
     virtual void setCentralSystemURI(const std::string& ocpp_uri) = 0;
@@ -178,6 +180,7 @@ public:
     virtual void setSeccLeafSubjectOrganization(const std::string& secc_leaf_subject_organization) = 0;
     virtual void setStopTransactionIfUnlockNotSupported(bool stop_transaction_if_unlock_not_supported) = 0;
     virtual void setSupplyVoltage(std::int32_t supply_voltage) = 0;
+    virtual void setSwitchSecurityProfileConnectionTimeout(std::int32_t switch_security_profile_connection_timeout) = 0;
     virtual void setVerifyCsmsAllowWildcards(bool verify_csms_allow_wildcards) = 0;
     virtual void setWaitForStopTransactionsOnResetTimeout(std::int32_t wait_for_stop_transactions_on_reset_timeout) = 0;
 

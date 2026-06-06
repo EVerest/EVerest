@@ -22,6 +22,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 #include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/v16/charge_point_configuration.hpp>
@@ -179,15 +180,23 @@ TEST_F(ChargePointConnectivityTest, OutgoingMessageObservesWebsocketConnected) {
 
 class ChargePointSecuritySwitchTest : public ChargePointConnectivityTestBase {
 protected:
+    static constexpr auto REVERT_TIMEOUT = std::chrono::seconds(1);
+
     void SetUp() override {
         ChargePointConnectivityTestBase::SetUp();
+
+        std::ifstream ifs(CONFIG_FILE_LOCATION_V16);
+        const std::string config_file((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
+        auto cfg = nlohmann::json::parse(config_file);
+        cfg["Internal"]["SwitchSecurityProfileConnectionTimeout"] = REVERT_TIMEOUT.count();
+        this->configuration =
+            std::make_unique<ChargePointConfiguration>(cfg.dump(), CONFIG_DIR_V16, USER_CONFIG_FILE_LOCATION_V16);
+
         // Security profile 1 only requires an authorization key (no certificates), making it the cheapest
         // accepted switch from the default profile 0.
         this->configuration->setAuthorizationKey("DEADBEEFDEADBEEFDEADBEEFDEADBEEF");
     }
 };
-
-static constexpr auto SECURITY_PROFILE_SWITCH_TIMEOUT = std::chrono::seconds(20);
 
 // A CSMS-driven, accepted SecurityProfile switch sets the new profile, reloads the network profiles and connects.
 // When the new profile yields a successful connection (connected callback), the revert timer is cancelled: the new
@@ -210,12 +219,12 @@ TEST_F(ChargePointSecuritySwitchTest, AcceptedSwitchKeptOnSuccessfulConnect) {
     charge_point->on_websocket_connected(0, ocpp::v2::NetworkConnectionProfile{}, ocpp::OcppProtocolVersion::v16);
 
     // Wait past the revert timeout to prove the revert does not fire
-    std::this_thread::sleep_for(SECURITY_PROFILE_SWITCH_TIMEOUT + std::chrono::seconds(1));
+    std::this_thread::sleep_for(REVERT_TIMEOUT + std::chrono::seconds(1));
     EXPECT_EQ(this->configuration->getSecurityProfile(), 1);
 }
 
 // A CSMS-driven, accepted SecurityProfile switch that never sees a successful connection (no connected callback)
-// must, after SECURITY_PROFILE_SWITCH_TIMEOUT, revert to the previous profile and reload/connect again.
+// must, after the configured revert timeout, revert to the previous profile and reload/connect again.
 TEST_F(ChargePointSecuritySwitchTest, AcceptedSwitchRevertedOnTimeout) {
     auto charge_point = make_charge_point();
 
@@ -246,8 +255,8 @@ TEST_F(ChargePointSecuritySwitchTest, AcceptedSwitchRevertedOnTimeout) {
     // No connected callback is delivered: wait for the revert timer to fire (return as soon as the 2nd connect lands).
     {
         std::unique_lock<std::mutex> lock(mtx);
-        const bool reverted = cv.wait_for(lock, SECURITY_PROFILE_SWITCH_TIMEOUT + std::chrono::seconds(5),
-                                          [&]() { return connect_count >= 2; });
+        const bool reverted =
+            cv.wait_for(lock, REVERT_TIMEOUT + std::chrono::seconds(2), [&]() { return connect_count >= 2; });
         EXPECT_TRUE(reverted) << "Revert timer did not fire within the timeout window";
     }
 

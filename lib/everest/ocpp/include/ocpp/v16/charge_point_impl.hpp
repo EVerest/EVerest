@@ -25,6 +25,7 @@
 #include <ocpp/common/types.hpp>
 #include <ocpp/common/websocket/websocket.hpp>
 #include <ocpp/v16/charge_point_configuration_interface.hpp>
+#include <ocpp/v16/charge_point_state_machine.hpp>
 #include <ocpp/v16/connector.hpp>
 #include <ocpp/v16/database_handler.hpp>
 #include <ocpp/v16/message_dispatcher.hpp>
@@ -217,8 +218,10 @@ private:
     std::function<DataTransferResponse(const TariffMessage& message)> tariff_message_callback;
     std::function<void(const TariffMessage& message)> default_price_callback;
 
-    /// \brief Timeout after which a security profile switch that did not result in a successful
-    /// connection is reverted to the previous (fallback) security profile.
+    /// \brief Fallback timeout after which a security profile switch that did not result in a successful
+    /// connection is reverted to the previous (fallback) security profile. Used only when the
+    /// SwitchSecurityProfileConnectionTimeout configuration key is not configured; otherwise the configured
+    /// value takes precedence.
     static constexpr std::chrono::seconds SECURITY_PROFILE_SWITCH_TIMEOUT{20};
 
     /// \brief This function is called after a successful connection to the Websocket

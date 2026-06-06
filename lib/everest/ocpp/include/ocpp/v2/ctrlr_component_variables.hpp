@@ -337,6 +337,7 @@ extern const ComponentVariable ReserveConnectorZeroSupported;
 extern const ComponentVariable HostName;
 extern const ComponentVariable AllowChargingProfileWithoutStartSchedule;
 extern const ComponentVariable WaitForStopTransactionsOnResetTimeout;
+extern const ComponentVariable SwitchSecurityProfileConnectionTimeout;
 extern const ComponentVariable StopTransactionIfUnlockNotSupported;
 extern const ComponentVariable MeterPublicKeys;
 extern const ComponentVariable DisableSecurityEventNotifications;

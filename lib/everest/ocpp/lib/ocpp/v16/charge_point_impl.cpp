@@ -2024,6 +2024,11 @@ void ChargePointImpl::switchSecurityProfile(std::int32_t new_security_profile, s
     this->connectivity_manager->reload_network_profiles();
     this->connectivity_manager->connect();
 
+    // Use the configured SwitchSecurityProfileConnectionTimeout (seconds) when present, falling back to the
+    // SECURITY_PROFILE_SWITCH_TIMEOUT default otherwise.
+    const std::chrono::seconds revert_timeout{this->configuration.getSwitchSecurityProfileConnectionTimeout().value_or(
+        SECURITY_PROFILE_SWITCH_TIMEOUT.count())};
+
     // Arm a revert timer: if the new security profile does not result in a successful connection within the timeout,
     // revert to the fallback security profile. A successful connection cancels this timer via connected_callback().
     this->security_profile_revert_timer.timeout(
@@ -2040,7 +2045,7 @@ void ChargePointImpl::switchSecurityProfile(std::int32_t new_security_profile, s
             this->connectivity_manager->reload_network_profiles();
             this->connectivity_manager->connect();
         },
-        SECURITY_PROFILE_SWITCH_TIMEOUT);
+        revert_timeout);
 }
 
 void ChargePointImpl::handleClearCacheRequest(ocpp::Call<ClearCacheRequest> call) {

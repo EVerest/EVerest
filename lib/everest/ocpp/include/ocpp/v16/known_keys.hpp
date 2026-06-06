@@ -175,6 +175,7 @@ namespace ocpp::v16::keys {
     mapping(HostName, HostName, Actual) \
     mapping(AllowChargingProfileWithoutStartSchedule, AllowChargingProfileWithoutStartSchedule, Actual) \
     mapping(WaitForStopTransactionsOnResetTimeout, WaitForStopTransactionsOnResetTimeout, Actual) \
+    mapping(SwitchSecurityProfileConnectionTimeout, SwitchSecurityProfileConnectionTimeout, Actual) \
     mapping(StopTransactionIfUnlockNotSupported, StopTransactionIfUnlockNotSupported, Actual) \
     mapping(MeterPublicKeys, MeterPublicKeys, Actual) \
     mapping(DisableSecurityEventNotifications, DisableSecurityEventNotifications, Actual) \
@@ -299,6 +300,7 @@ namespace ocpp::v16::keys {
     key(Internal, SupportedChargingProfilePurposeTypes) \
     key(Internal, SupportedCiphers12) \
     key(Internal, SupportedCiphers13) \
+    key(Internal, SwitchSecurityProfileConnectionTimeout) \
     key(Internal, TLSKeylogFile) \
     key(Internal, UseSslDefaultVerifyPaths) \
     key(Internal, UseTPM) \
