@@ -752,9 +752,6 @@ int Manager::run() {
 
     config_service_core_ = std::make_unique<config::ConfigServiceCore>(
         ms, db_connection_,
-        // TODO(CB): Don't provide the slot_id here, but simply assume DEFAULT_SLOT_ID in construtor if the db has none?
-        reset_from_yaml ? std::make_optional<int>(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID)
-                        : std::nullopt,
         [this, &mqtt_abstraction, &ms]() {
             Everest::config::StopModulesResult ret = Everest::config::StopModulesResult::Rejected;
             if (is_idle()) {
