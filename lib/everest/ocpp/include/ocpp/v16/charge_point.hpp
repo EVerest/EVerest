@@ -166,6 +166,22 @@ public:
     /// \brief Disconnects the the websocket connection to the CSMS if it is connected
     void disconnect_websocket();
 
+    /// \brief Notifies the charge point that the websocket is connected. This allows an external owner of an injected
+    /// ConnectivityManager to drive the charge point's websocket lifecycle (mirroring ocpp::v2::ChargePointInterface).
+    void on_websocket_connected(const int configuration_slot,
+                                const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
+                                const ocpp::OcppProtocolVersion ocpp_version);
+
+    /// \brief Notifies the charge point that the websocket is disconnected. This allows an external owner of an injected
+    /// ConnectivityManager to drive the charge point's websocket lifecycle (mirroring ocpp::v2::ChargePointInterface).
+    void on_websocket_disconnected(const int configuration_slot,
+                                   const ocpp::v2::NetworkConnectionProfile& network_connection_profile);
+
+    /// \brief Notifies the charge point that the websocket connection failed. This allows an external owner of an
+    /// injected ConnectivityManager to drive the charge point's websocket lifecycle (mirroring
+    /// ocpp::v2::ChargePointInterface).
+    void on_websocket_connection_failed(ocpp::ConnectionFailedReason reason);
+
     /// \brief Calls the set_connection_timeout_callback that can be registered. This function is used to notify an
     /// Authorization mechanism about a changed ConnectionTimeout configuration key.
     void call_set_connection_timeout();

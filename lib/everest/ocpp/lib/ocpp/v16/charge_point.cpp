@@ -76,6 +76,21 @@ void ChargePoint::disconnect_websocket() {
     this->charge_point->disconnect_websocket();
 }
 
+void ChargePoint::on_websocket_connected(const int configuration_slot,
+                                         const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
+                                         const ocpp::OcppProtocolVersion ocpp_version) {
+    this->charge_point->on_websocket_connected(configuration_slot, network_connection_profile, ocpp_version);
+}
+
+void ChargePoint::on_websocket_disconnected(const int configuration_slot,
+                                            const ocpp::v2::NetworkConnectionProfile& network_connection_profile) {
+    this->charge_point->on_websocket_disconnected(configuration_slot, network_connection_profile);
+}
+
+void ChargePoint::on_websocket_connection_failed(ocpp::ConnectionFailedReason reason) {
+    this->charge_point->on_websocket_connection_failed(reason);
+}
+
 void ChargePoint::call_set_connection_timeout() {
     this->charge_point->call_set_connection_timeout();
 }
