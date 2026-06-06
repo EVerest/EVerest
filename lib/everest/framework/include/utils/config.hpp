@@ -141,7 +141,7 @@ public:
     ///
     /// \brief turns the given \p module_id and \p impl_id into a mqtt prefix
     ///
-    std::string mqtt_prefix(std::string_view module_id, std::string_view impl_id);
+    std::string mqtt_prefix(std::string_view module_id, std::string_view impl_id) const;
 
     ///
     /// \brief turns the given \p module_id into a mqtt prefix
@@ -313,11 +313,8 @@ public:
     /// \brief Create a ManagerConfig from ConfigParseSettings only
     explicit ManagerConfig(const ConfigParseSettings& ps);
 
-    everest::config::SetConfigStatus update_config_value(const everest::config::ConfigurationParameterIdentifier& identifier,
-                                                         const everest::config::ConfigEntry& value);
-
     everest::config::GetConfigurationParameterResponse
-    get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier);
+    get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier) const;
 };
 
 ///

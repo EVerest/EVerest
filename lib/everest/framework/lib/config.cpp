@@ -464,7 +464,7 @@ std::string ConfigBase::get_module_name(std::string_view module_id) const {
     return it->second;
 }
 
-std::string ConfigBase::mqtt_prefix(std::string_view module_id, std::string_view impl_id) {
+std::string ConfigBase::mqtt_prefix(std::string_view module_id, std::string_view impl_id) const {
     BOOST_LOG_FUNCTION();
     const auto& prefix = this->mqtt_settings.everest_prefix;
     std::string result;
