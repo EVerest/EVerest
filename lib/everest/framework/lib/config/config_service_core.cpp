@@ -29,7 +29,7 @@ ConfigServiceCore::ConfigServiceCore(const ConfigParseSettings& parse_settings,
     db_(std::move(db_connection)),
     stop_fn_(std::move(stop_fn)),
     restart_fn_(std::move(restart_fn)) {
-    int active_slot_id_ = slot_manager_.get_next_boot_slot_id();
+    active_slot_id_ = slot_manager_.get_next_boot_slot_id();
     // TODO(CB): Do not check is_valid, as this get removed
     if (slot_manager_.is_valid(active_slot_id_)) {
         active_storage_ = make_storage(active_slot_id_);

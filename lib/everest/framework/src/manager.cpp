@@ -352,7 +352,7 @@ void Manager::publish_startup_metadata(const RuntimeContext& ctx) const {
 }
 
 /// \brief Unregister all module ready handlers and clear tracked ready state.
-void Manager::unregister_module_ready_handlers(ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
+void Manager::unregister_module_ready_handlers(const ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
     ModulesReadyType modules_ready_moved;
     {
         const std::lock_guard<std::mutex> lck(modules_ready_mutex_);
@@ -373,13 +373,13 @@ void Manager::unregister_module_ready_handlers(ManagerConfig& config, MQTTAbstra
     }
 }
 
-void Manager::cleanup_modules_state(ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
+void Manager::cleanup_modules_state(const ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
     unregister_module_ready_handlers(config, mqtt_abstraction);
     mqtt_abstraction.clear_retained_topics();
 }
 
 /// \brief Stop all remaining module processes, escalating SIGTERM to SIGKILL.
-void Manager::shutdown_modules(const std::map<pid_t, std::string>& modules, ManagerConfig& config,
+void Manager::shutdown_modules(const std::map<pid_t, std::string>& modules, const ManagerConfig& config,
                                MQTTAbstraction& mqtt_abstraction) {
 
     unregister_module_ready_handlers(config, mqtt_abstraction);
@@ -602,7 +602,7 @@ void Manager::reload_and_update_context(RuntimeContext& ctx) {
     auto slot_id = config_service_core_->get_active_slot_id();
     auto db_storage = std::make_unique<everest::config::SqliteStorage>(db_connection_, slot_id);
 
-    std::shared_ptr<ManagerConfig> config;
+    std::shared_ptr<const ManagerConfig> config;
     try {
         config = load_and_validate_config(ctx.ms, db_storage, true, module_cfg);
     } catch (...) {
@@ -709,7 +709,7 @@ int Manager::run() {
     // - ManagerConfig
     // - standalone/ignored_modules
     // - RuntimeContext
-    std::shared_ptr<ManagerConfig> config; // TODO: maybe this can stay unique when we re-work start_modules()
+    std::shared_ptr<const ManagerConfig> config; // TODO: maybe this can stay unique when we re-work start_modules()
 
     try {
         config = load_and_validate_config(ms, db_storage, db_storage_has_module_configs, preloaded_module_configs);
@@ -845,17 +845,20 @@ std::string_view Manager::state_to_string(ManagerState state) const {
     }
 }
 
-std::shared_ptr<ManagerConfig> Manager::load_and_validate_config(
+// TODO(CB): this parameters list is a bit long(?)
+// TODO(CB)_REFACTOR: split this up into two (one using the given cfg (does this even need to be function?) and another writing to the db)
+// TODO(CB): Throw a special exception for invalid configs
+std::shared_ptr<const ManagerConfig> Manager::load_and_validate_config(
     const ManagerSettings& ms, const std::unique_ptr<everest::config::SqliteStorage>& db_storage,
     bool db_storage_has_module_configs,
     const std::optional<everest::config::ModuleConfigurations>& preloaded_module_configs) const {
     const auto start_time = std::chrono::steady_clock::now();
-    std::shared_ptr<ManagerConfig> config;
+    std::shared_ptr<const ManagerConfig> config;
     try {
         if (db_storage_has_module_configs) {
-            config = std::make_shared<ManagerConfig>(ms, std::move(*preloaded_module_configs));
+            config = std::make_shared<const ManagerConfig>(ms, std::move(*preloaded_module_configs));
         } else {
-            config = std::make_shared<ManagerConfig>(ms);
+            config = std::make_shared<const ManagerConfig>(ms);
             // Seed the database: parse() enriched module_configs with manifest metadata needed for storage writes.
             const auto& mc = config->get_module_configurations();
             if (db_storage->write_module_configs(mc) != everest::config::GenericResponseStatus::Failed) {
