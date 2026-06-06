@@ -753,32 +753,7 @@ int Manager::run() {
     RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
                                ms,     status_fifo,       retain_topics};
 
-    config_service_core_ = std::make_unique<config::ConfigServiceCore>(
-        ms, db_connection_,
-        [this, &mqtt_abstraction, &ms]() {
-            Everest::config::StopModulesResult ret = Everest::config::StopModulesResult::Rejected;
-            if (is_idle()) {
-                ret = Everest::config::StopModulesResult::NoModulesToStop;
-            } else if (are_modules_started()) {
-                handle_initiate_graceful_shutdown(std::chrono::system_clock::now(), false, nullptr, *mqtt_abstraction,
-                                                  ms);
-                ret = Everest::config::StopModulesResult::Stopping;
-            }
-            return ret;
-        },
-        [this, &runtime_ctx, &mqtt_abstraction, &ms]() {
-            Everest::config::RestartModulesResult ret = Everest::config::RestartModulesResult::Rejected;
-            if (are_modules_started()) {
-                shutdown_cause_ = ShutdownCause::Restart;
-                ret = Everest::config::RestartModulesResult::Restarting;
-                handle_initiate_graceful_shutdown(std::chrono::system_clock::now(), false, nullptr, *mqtt_abstraction,
-                                                  ms);
-            } else if (is_idle()) {
-                ret = Everest::config::RestartModulesResult::Starting;
-                module_handles_ = handle_start_modules(runtime_ctx);
-            }
-            return ret;
-        });
+    config_service_core_ = std::make_unique<config::ConfigServiceCore>(ms, db_connection_);
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core_);
 
@@ -837,7 +812,33 @@ int Manager::run() {
             configuration_api ? (cfg_api_read_only ? Everest::api::lifecycle::ConfigurationApiStatus::AvailableRO
                                                    : Everest::api::lifecycle::ConfigurationApiStatus::AvailableRW)
                               : Everest::api::lifecycle::ConfigurationApiStatus::NotAvailable,
-            lc_api_read_only);
+            lc_api_read_only,
+            [this, &mqtt_abstraction, &ms]() {
+                Everest::api::lifecycle::StopModulesResult ret = Everest::api::lifecycle::StopModulesResult::Rejected;
+                if (is_idle()) {
+                    ret = Everest::api::lifecycle::StopModulesResult::NoModulesToStop;
+                } else if (are_modules_started()) {
+                    handle_initiate_graceful_shutdown(std::chrono::system_clock::now(), false, nullptr,
+                                                      *mqtt_abstraction, ms);
+                    ret = Everest::api::lifecycle::StopModulesResult::Stopping;
+                }
+                return ret;
+            },
+            [this, &runtime_ctx, &mqtt_abstraction, &ms]() {
+                Everest::api::lifecycle::RestartModulesResult ret =
+                    Everest::api::lifecycle::RestartModulesResult::Rejected;
+                if (are_modules_started()) {
+                    shutdown_cause_ = ShutdownCause::Restart;
+                    ret = Everest::api::lifecycle::RestartModulesResult::Restarting;
+                    handle_initiate_graceful_shutdown(std::chrono::system_clock::now(), false, nullptr,
+                                                      *mqtt_abstraction, ms);
+                } else if (is_idle()) {
+                    ret = Everest::api::lifecycle::RestartModulesResult::Starting;
+                    reload_and_update_context(runtime_ctx);
+                    module_handles_ = handle_start_modules(runtime_ctx);
+                }
+                return ret;
+            });
 
         register_state_transition_handler([this, &lifecycle_api](ManagerState from, ManagerState to) {
             // TODO(CB): Might want to interprete some more to-states as "running"
@@ -921,7 +922,8 @@ std::string_view Manager::state_to_string(ManagerState state) const {
 }
 
 // TODO(CB): this parameters list is a bit long(?)
-// TODO(CB)_REFACTOR: split this up into two (one using the given cfg (does this even need to be function?) and another writing to the db)
+// TODO(CB)_REFACTOR: split this up into two (one using the given cfg (does this even need to be function?) and another
+// writing to the db)
 // TODO(CB): Throw a special exception for invalid configs
 std::shared_ptr<const ManagerConfig> Manager::load_and_validate_config(
     const ManagerSettings& ms, std::unique_ptr<everest::config::SqliteStorage>& db_storage,

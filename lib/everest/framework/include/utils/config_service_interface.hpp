@@ -37,19 +37,6 @@ enum class DeleteSlotStatus {
     Rejected
 };
 
-enum class StopModulesResult {
-    Stopping,
-    NoModulesToStop,
-    Rejected
-};
-
-enum class RestartModulesResult {
-    Starting,
-    Restarting,
-    NoConfigToStart,
-    Rejected
-};
-
 enum class SetConfigParameterResultEnum {
     Applied,
     WillApplyOnRestart,
@@ -170,10 +157,6 @@ public:
     virtual GetConfigurationResult get_configuration(int slot_id) = 0;
     virtual SetConfigParameterResult
     set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates, const Origin& origin) = 0;
-
-    // --- Module lifecycle (stubs for now) ---
-    virtual StopModulesResult stop_modules() = 0;
-    virtual RestartModulesResult restart_modules() = 0;
 
     // --- Push-event subscriptions ---
     virtual void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) = 0;
