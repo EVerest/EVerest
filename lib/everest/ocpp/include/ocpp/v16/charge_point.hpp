@@ -172,14 +172,13 @@ public:
                                 const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
                                 const ocpp::OcppProtocolVersion ocpp_version);
 
-    /// \brief Notifies the charge point that the websocket is disconnected. This allows an external owner of an injected
-    /// ConnectivityManager to drive the charge point's websocket lifecycle (mirroring ocpp::v2::ChargePointInterface).
+    /// \brief Notifies the charge point that the websocket is disconnected. This allows an external owner of an
+    /// injected ConnectivityManager to drive the charge point's websocket lifecycle
     void on_websocket_disconnected(const int configuration_slot,
                                    const ocpp::v2::NetworkConnectionProfile& network_connection_profile);
 
     /// \brief Notifies the charge point that the websocket connection failed. This allows an external owner of an
-    /// injected ConnectivityManager to drive the charge point's websocket lifecycle (mirroring
-    /// ocpp::v2::ChargePointInterface).
+    /// injected ConnectivityManager to drive the charge point's websocket lifecycle
     void on_websocket_connection_failed(ocpp::ConnectionFailedReason reason);
 
     /// \brief Calls the set_connection_timeout_callback that can be registered. This function is used to notify an

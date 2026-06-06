@@ -1300,7 +1300,10 @@ bool ChargePointImpl::stop() {
 }
 
 void ChargePointImpl::connected_callback() {
-    this->security_profile_revert_timer.stop();
+    {
+        std::lock_guard<std::mutex> lock(this->security_profile_switch_mutex);
+        this->security_profile_revert_timer.stop();
+    }
     switch (this->connection_state) {
     case ChargePointConnectionState::Disconnected: {
         this->connection_state = ChargePointConnectionState::Connected;
@@ -2025,6 +2028,11 @@ void ChargePointImpl::switchSecurityProfile(std::int32_t new_security_profile, s
     // revert to the fallback security profile. A successful connection cancels this timer via connected_callback().
     this->security_profile_revert_timer.timeout(
         [this, fallback_security_profile]() {
+            std::lock_guard<std::mutex> lock(this->security_profile_switch_mutex);
+            if (this->connectivity_manager->is_websocket_connected()) {
+                EVLOG_info << "Security profile switch connected within the revert timeout window; not reverting.";
+                return;
+            }
             EVLOG_warning << "Security profile switch did not connect within timeout; reverting.";
             this->connectivity_manager
                 ->disconnect(); // ensures that connectivity_manager does not initiate a reconnect on its own

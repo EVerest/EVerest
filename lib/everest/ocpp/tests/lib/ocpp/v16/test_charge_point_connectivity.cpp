@@ -25,8 +25,8 @@
 
 #include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/v16/charge_point_configuration.hpp>
-#include <ocpp/v16/charge_point_state_machine.hpp>
 #include <ocpp/v16/charge_point_impl.hpp>
+#include <ocpp/v16/charge_point_state_machine.hpp>
 
 #include "connectivity_manager_mock.hpp"
 #include "evse_security_mock.hpp"

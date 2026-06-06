@@ -108,6 +108,8 @@ private:
     std::shared_ptr<ocpp::ConnectivityManagerInterface> connectivity_manager;
     std::unique_ptr<ocpp::MessageDispatcherInterface<MessageType>> message_dispatcher;
     Everest::SteadyTimer security_profile_revert_timer;
+    /// \brief Serializes the revert decision (timer thread) against \ref connected_callback
+    std::mutex security_profile_switch_mutex;
     std::unique_ptr<MessageQueue<v16::MessageType>> message_queue;
     std::map<std::int32_t, std::shared_ptr<Connector>> connectors;
     std::unique_ptr<SmartChargingHandler> smart_charging_handler;
@@ -217,7 +219,7 @@ private:
 
     /// \brief Timeout after which a security profile switch that did not result in a successful
     /// connection is reverted to the previous (fallback) security profile.
-    static constexpr std::chrono::seconds SECURITY_PROFILE_SWITCH_TIMEOUT{30};
+    static constexpr std::chrono::seconds SECURITY_PROFILE_SWITCH_TIMEOUT{20};
 
     /// \brief This function is called after a successful connection to the Websocket
     void connected_callback();
