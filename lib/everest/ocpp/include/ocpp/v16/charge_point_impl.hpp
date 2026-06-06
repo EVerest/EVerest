@@ -406,6 +406,15 @@ private:
     set_configuration_key_internal(CiString<50> key, CiString<500> value, std::optional<MessageId> uniqueId);
 
 public:
+    /// \brief Websocket lifecycle handlers invoked by the \ref ConnectivityManager callbacks (or, for an injected
+    /// manager, by the external owner).
+    void on_websocket_connected(const int configuration_slot,
+                                const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
+                                const ocpp::OcppProtocolVersion ocpp_version);
+    void on_websocket_disconnected(const int configuration_slot,
+                                   const ocpp::v2::NetworkConnectionProfile& network_connection_profile);
+    void on_websocket_connection_failed(ocpp::ConnectionFailedReason reason);
+
     /// \brief The main entrypoint for libOCPP for OCPP 1.6
     /// \param cfg a reference to the configuration provider
     /// \param database_path this points to the location of the sqlite database that libocpp uses to keep track of
@@ -428,8 +437,7 @@ public:
         const std::function<void(const std::string& message, MessageDirection direction)>& message_callback);
 
     /// \brief Injection constructor that allows providing a \p connectivity_manager . If \p connectivity_manager is
-    /// nullptr, an internal \ref ocpp::ConnectivityManager is constructed and wired up. This constructor is primarily
-    /// intended for unit testing with a mocked ConnectivityManager.
+    /// nullptr, an internal \ref ocpp::ConnectivityManager is constructed and wired up.
     explicit ChargePointImpl(
         ChargePointConfigurationInterface& cfg, const fs::path& share_path, const fs::path& database_path,
         const fs::path& sql_init_path, const fs::path& message_log_path,

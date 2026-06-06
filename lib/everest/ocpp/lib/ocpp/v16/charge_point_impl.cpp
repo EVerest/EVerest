@@ -249,8 +249,9 @@ ChargePointImpl::ChargePointImpl(
     if (this->connectivity_manager == nullptr) {
         this->connectivity_manager =
             std::make_shared<ocpp::ConnectivityManager>(this->configuration, this->evse_security, this->share_path);
+        this->init_connectivity_manager();
     }
-    this->init_connectivity_manager();
+    this->connectivity_manager->set_logging(this->logging);
 }
 
 std::unique_ptr<ocpp::MessageQueue<v16::MessageType>> ChargePointImpl::create_message_queue() {
@@ -303,75 +304,81 @@ std::unique_ptr<ocpp::MessageQueue<v16::MessageType>> ChargePointImpl::create_me
         this->external_notify, this->database_handler, start_transaction_message_retry_callback);
 }
 
+void ChargePointImpl::on_websocket_connected(const int /*configuration_slot*/,
+                                             const ocpp::v2::NetworkConnectionProfile& /*network_connection_profile*/,
+                                             const ocpp::OcppProtocolVersion /*ocpp_version*/) {
+    if (this->connection_state_changed_callback != nullptr) {
+        this->connection_state_changed_callback(true);
+    }
+    this->publish_default_price(false);
+    this->message_queue->resume(this->message_queue_resume_delay);
+    this->connected_callback();
+
+    // There has been a successful connection so a subsequent
+    // InvalidCSMSCertificate should be logged
+    InvalidCSMSCertificate_logged = false;
+
+    // signal_set_charging_profiles_callback since composite schedule could have changed if
+    // IgnoredProfilePurposesOffline are configured when becoming online
+    if (this->signal_set_charging_profiles_callback != nullptr and
+        not this->configuration.getIgnoredProfilePurposesOffline().empty()) {
+        this->signal_set_charging_profiles_callback();
+    }
+}
+
+void ChargePointImpl::on_websocket_disconnected(
+    const int /*configuration_slot*/, const ocpp::v2::NetworkConnectionProfile& /*network_connection_profile*/) {
+    if (this->connection_state_changed_callback != nullptr) {
+        this->connection_state_changed_callback(false);
+    }
+    this->publish_default_price(true);
+    this->message_queue->pause();
+    if (this->ocsp_request_timer != nullptr) {
+        this->ocsp_request_timer->stop();
+    }
+    if (this->client_certificate_timer != nullptr) {
+        this->client_certificate_timer->stop();
+    }
+    if (this->v2g_certificate_timer != nullptr) {
+        this->v2g_certificate_timer->stop();
+    }
+    // signal_set_charging_profiles_callback since composite schedule could have changed if
+    // IgnoredProfilePurposesOffline are configured when becoming offline
+    if (this->signal_set_charging_profiles_callback != nullptr and
+        not this->configuration.getIgnoredProfilePurposesOffline().empty()) {
+        this->signal_set_charging_profiles_callback();
+    }
+}
+
+void ChargePointImpl::on_websocket_connection_failed(ocpp::ConnectionFailedReason reason) {
+    if (reason == ocpp::ConnectionFailedReason::FailedToAuthenticateAtCsms) {
+        this->securityEventNotification(CiString<50>(ocpp::security_events::FAILEDTOAUTHENTICATEATCSMS), std::nullopt,
+                                        true);
+    }
+    if (reason == ocpp::ConnectionFailedReason::InvalidCSMSCertificate) {
+        if (InvalidCSMSCertificate_logged) {
+            EVLOG_warning << "Connection failed: InvalidCSMSCertificate";
+        } else {
+            // This event is forced to accommodate TC_078_CS despite this event being not critical
+            this->securityEventNotification(CiString<50>(ocpp::security_events::INVALIDCENTRALSYSTEMCERTIFICATE),
+                                            std::nullopt, true, true);
+            InvalidCSMSCertificate_logged = true;
+        }
+    }
+}
+
 void ChargePointImpl::init_connectivity_manager() {
-    this->connectivity_manager->set_message_callback(
-        [this](const std::string& message) { this->message_callback(message); });
-
     this->connectivity_manager->set_websocket_connected_callback(
-        [this](int /*configuration_slot*/, const ocpp::v2::NetworkConnectionProfile& /*network_connection_profile*/,
-               ocpp::OcppProtocolVersion /*version*/) {
-            if (this->connection_state_changed_callback != nullptr) {
-                this->connection_state_changed_callback(true);
-            }
-            this->publish_default_price(false);
-            this->message_queue->resume(this->message_queue_resume_delay);
-            this->connected_callback();
-
-            // There has been a successful connection so a subsequent
-            // InvalidCSMSCertificate should be logged
-            InvalidCSMSCertificate_logged = false;
-
-            // signal_set_charging_profiles_callback since composite schedule could have changed if
-            // IgnoredProfilePurposesOffline are configured when becoming online
-            if (this->signal_set_charging_profiles_callback != nullptr and
-                not this->configuration.getIgnoredProfilePurposesOffline().empty()) {
-                this->signal_set_charging_profiles_callback();
-            }
+        [this](int configuration_slot, const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
+               ocpp::OcppProtocolVersion version) {
+            this->on_websocket_connected(configuration_slot, network_connection_profile, version);
         });
-
     this->connectivity_manager->set_websocket_disconnected_callback(
-        [this](int /*configuration_slot*/, const ocpp::v2::NetworkConnectionProfile& /*network_connection_profile*/,
-               ocpp::OcppProtocolVersion /*version*/) {
-            if (this->connection_state_changed_callback != nullptr) {
-                this->connection_state_changed_callback(false);
-            }
-            this->publish_default_price(true);
-            this->message_queue->pause();
-            if (this->ocsp_request_timer != nullptr) {
-                this->ocsp_request_timer->stop();
-            }
-            if (this->client_certificate_timer != nullptr) {
-                this->client_certificate_timer->stop();
-            }
-            if (this->v2g_certificate_timer != nullptr) {
-                this->v2g_certificate_timer->stop();
-            }
-            // signal_set_charging_profiles_callback since composite schedule could have changed if
-            // IgnoredProfilePurposesOffline are configured when becoming offline
-            if (this->signal_set_charging_profiles_callback != nullptr and
-                not this->configuration.getIgnoredProfilePurposesOffline().empty()) {
-                this->signal_set_charging_profiles_callback();
-            }
+        [this](int configuration_slot, const ocpp::v2::NetworkConnectionProfile& network_connection_profile, auto) {
+            this->on_websocket_disconnected(configuration_slot, network_connection_profile);
         });
-
-    this->connectivity_manager->set_websocket_connection_failed_callback([this](ocpp::ConnectionFailedReason reason) {
-        if (reason == ocpp::ConnectionFailedReason::FailedToAuthenticateAtCsms) {
-            this->securityEventNotification(CiString<50>(ocpp::security_events::FAILEDTOAUTHENTICATEATCSMS),
-                                            std::nullopt, true);
-        }
-        if (reason == ocpp::ConnectionFailedReason::InvalidCSMSCertificate) {
-            if (InvalidCSMSCertificate_logged) {
-                EVLOG_warning << "Connection failed: InvalidCSMSCertificate";
-            } else {
-                // This event is forced to accommodate TC_078_CS despite this event being not critical
-                this->securityEventNotification(CiString<50>(ocpp::security_events::INVALIDCENTRALSYSTEMCERTIFICATE),
-                                                std::nullopt, true, true);
-                InvalidCSMSCertificate_logged = true;
-            }
-        }
-    });
-
-    this->connectivity_manager->set_logging(this->logging);
+    this->connectivity_manager->set_websocket_connection_failed_callback(
+        [this](ocpp::ConnectionFailedReason reason) { this->on_websocket_connection_failed(reason); });
 }
 
 void ChargePointImpl::init_state_machine(const std::map<int, ChargePointStatus>& connector_status_map) {
@@ -1140,6 +1147,8 @@ bool ChargePointImpl::start(const std::map<int, ChargePointStatus>& connector_st
     this->bootreason = bootreason;
     // Publish the initial default price before connecting (offline state at startup).
     this->publish_default_price(true);
+    this->connectivity_manager->set_message_callback(
+        [this](const std::string& message) { this->message_callback(message); });
     this->connectivity_manager->connect();
     this->boot_notification();
     this->call_set_connection_timeout();
