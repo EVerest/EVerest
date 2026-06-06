@@ -470,6 +470,7 @@ void Manager::handle_restart_modules_after_shutdown(RuntimeContext& ctx) {
     // called from advance_lifecycle_state_if_ready() (crash-with-restart path) which does not go
     // through handle_finish_* finalize functions.
     cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
+    // TODO(CB): evaluate if that succeeded, and if not, cleanup, don't start the modules and go to idle
     reload_and_update_context(ctx);
 
     module_handles_ = handle_start_modules(ctx);
@@ -545,6 +546,7 @@ void Manager::handle_finish_crash_recovery(RuntimeContext& ctx) {
     }
 
     cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
+    // TODO(CB): If doesn't succeed, log sth. (this goes to idle anyways...)
     reload_and_update_context(ctx);
     shutdown_info_.clear();
     shutdown_start_time_ = std::nullopt;
@@ -696,7 +698,7 @@ int Manager::run() {
 
     const bool retain_topics = (vm_.count("retain-topics") != 0);
 
-    // TODO(CB): These steps are also done in reload_and_update_context (more or less) - should be reused here
+    // TODO(CB)_REFACTOR: These steps are also done in reload_and_update_context (more or less) - should be reused here
     // - ManagerConfig
     // - standalone/ignored_modules
     // - RuntimeContext
@@ -705,6 +707,7 @@ int Manager::run() {
     try {
         config = load_and_validate_config(ms, db_storage, db_storage_has_module_configs, preloaded_module_configs);
     } catch (...) {
+        // TODO(CB): Don't EXIT here, but change into idle?
         return EXIT_FAILURE;
     }
 
@@ -917,6 +920,8 @@ std::string_view Manager::state_to_string(ManagerState state) const {
 }
 
 // TODO(CB): this parameters list is a bit long(?)
+// TODO(CB)_REFACTOR: split this up into two (one using the given cfg (does this even need to be function?) and another writing to the db)
+// TODO(CB): Throw a special exception for invalid configs
 std::shared_ptr<ManagerConfig> Manager::load_and_validate_config(
     const ManagerSettings& ms, std::unique_ptr<everest::config::SqliteStorage>& db_storage,
     bool db_storage_has_module_configs,
