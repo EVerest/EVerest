@@ -22,34 +22,21 @@ std::string now_rfc3339() {
 
 ConfigServiceCore::ConfigServiceCore(const ConfigParseSettings& parse_settings,
                                      std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection,
-                                     std::optional<int> active_slot_id, std::function<StopModulesResult()> stop_fn,
+                                     std::function<StopModulesResult()> stop_fn,
                                      std::function<RestartModulesResult()> restart_fn) :
     parse_settings_(parse_settings),
     slot_manager_(db_connection),
     db_(std::move(db_connection)),
     stop_fn_(std::move(stop_fn)),
     restart_fn_(std::move(restart_fn)) {
-    int active_slot_id_from_db = slot_manager_.get_next_boot_slot_id();
-    // use the next_boot_slot_id from the db as active_slot_id if none was provided
-    if (active_slot_id.has_value()) {
-        // Booting with provided active_slot_id
-        active_slot_id_ = active_slot_id.value();
-    } else {
-        // No active_slot_id provided, using stored id from db
-        active_slot_id_ = active_slot_id_from_db;
-    }
+    int active_slot_id_ = slot_manager_.get_next_boot_slot_id();
+    // TODO(CB): Do not check is_valid, as this get removed
     if (slot_manager_.is_valid(active_slot_id_)) {
-        // TODO(CB): This is arguable - this is usually the reset-from-yaml scenario
-        // should the config be stored in the currently active slot, or always the default slot?
-        if (active_slot_id_ != active_slot_id_from_db) {
-            slot_manager_.set_next_boot_slot_id(active_slot_id_);
-        }
         active_storage_ = make_storage(active_slot_id_);
         reload_from_storage();
     } else {
-        // TODO(CB): What do we do now? (in the end it should end up in a confiuration_API-only mode, IF this API is
-        // active, otherwise the manager should quit)
-        // TODO(CB): Maybe add query function for is_valid and set the underlying state here?
+        // ConfigServiceCore requires a pre-configured database
+        throw;
     }
 }
 
