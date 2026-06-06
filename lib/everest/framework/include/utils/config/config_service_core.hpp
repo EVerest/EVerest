@@ -22,12 +22,11 @@ class ConfigServiceCore : public ConfigServiceInterface {
 public:
     /// \param parse_settings Parse settings used to validate incoming YAML configs (paths to schemas, modules, etc.).
     /// \param db_connection  Shared, already-migrated SQLite connection (from open_config_database()).
-    /// \param active_slot_id Slot ID that is currently booted.
     /// \param stop_fn        Callback to stop running modules (optional stub).
     /// \param restart_fn     Callback to restart modules (optional stub).
     ConfigServiceCore(const ConfigParseSettings& parse_settings,
                       std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection,
-                      std::optional<int> active_slot_id, std::function<StopModulesResult()> stop_fn = {},
+                      std::function<StopModulesResult()> stop_fn = {},
                       std::function<RestartModulesResult()> restart_fn = {});
 
     // --- Re-initialize configuration ---

@@ -758,11 +758,7 @@ int Manager::run() {
 
     const auto migrations_dir = ms.runtime_settings.data_dir / "migrations";
 
-    auto config_service_core = std::make_unique<config::ConfigServiceCore>(
-        ms, db_connection_,
-        // TODO(CB): Don't provide the slot_id here, but simply assume DEFAULT_SLOT_ID in construtor if the db has none?
-        reset_from_yaml ? std::make_optional<int>(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID)
-                        : std::nullopt);
+    auto config_service_core = std::make_unique<config::ConfigServiceCore>(ms, db_connection_);
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core_);
 
