@@ -170,7 +170,7 @@ private:
     // while keeping runtime data explicit (instead of hidden mutable members).
     /// \brief Aggregates runtime dependencies used across handlers for one run.
     struct RuntimeContext {
-        std::shared_ptr<Everest::ManagerConfig>& config;
+        std::shared_ptr<const Everest::ManagerConfig>& config;
         Everest::MQTTAbstraction& mqtt_abstraction;
         std::vector<std::string>& ignored_modules;
         std::vector<std::string>& standalone_modules;
@@ -197,7 +197,7 @@ private:
     /// \brief Load and validate manager configuration from current boot source.
     /// \param ms Fully resolved manager settings for this run.
     /// \return Shared validated configuration object.
-    std::shared_ptr<Everest::ManagerConfig>
+    std::shared_ptr<const Everest::ManagerConfig>
     load_and_validate_config(const Everest::ManagerSettings& ms,
                              std::unique_ptr<everest::config::SqliteStorage>& db_storage,
                              bool db_storage_has_module_configs,
@@ -222,15 +222,15 @@ private:
     void publish_startup_metadata(const RuntimeContext& ctx) const;
 
     /// \brief Unregister all module ready handlers and clear ready-tracking state.
-    void unregister_module_ready_handlers(Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
+    void unregister_module_ready_handlers(const Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
 
     /// \brief Unregister module ready handlers and clear retained MQTT topics.
     /// \note Must be called with the config that was used to register handlers (before any reload).
     /// \note MQTT must still be connected; call before any disconnect.
-    void cleanup_modules_state(Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
+    void cleanup_modules_state(const Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
 
     /// \brief Terminate remaining module processes (SIGTERM, then SIGKILL fallback).
-    void shutdown_modules(const std::map<pid_t, std::string>& modules, Everest::ManagerConfig& config,
+    void shutdown_modules(const std::map<pid_t, std::string>& modules, const Everest::ManagerConfig& config,
                           Everest::MQTTAbstraction& mqtt_abstraction);
 
     /// \brief Convert ManagerState enum to a readable string for logs.
