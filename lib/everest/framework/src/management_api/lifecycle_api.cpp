@@ -123,6 +123,7 @@ void LifecycleAPI::module_runtime_status_changed(bool running) {
 
     API_types_ext::ExecutionStatusUpdateNotice exec_status_update{};
     exec_status_update.configuration_api_available = to_configuration_api_availability(m_config_api_availability);
+    exec_status_update.lifecycle_api_ro = m_readonly;
     exec_status_update.tstamp = Everest::Date::to_rfc3339(date::utc_clock::now());
     if (running) {
         exec_status_update.status = API_types_ext::ModuleExecutionStatusEnum::Running;
