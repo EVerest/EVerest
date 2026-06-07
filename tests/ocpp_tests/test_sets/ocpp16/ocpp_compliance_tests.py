@@ -6497,6 +6497,7 @@ async def test_chargepoint_update_security_profile(
         [
             ("Internal", "RetryBackoffRandomRange", 1),
             ("Internal", "RetryBackoffWaitMinimum", 2),
+            ("Internal", "SwitchSecurityProfileConnectionTimeout", 5)
         ]
     )
 )

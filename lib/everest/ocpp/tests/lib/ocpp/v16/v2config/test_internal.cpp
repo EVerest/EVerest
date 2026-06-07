@@ -816,6 +816,43 @@ TEST_P(Configuration, SupplyVoltage) {
     EXPECT_FALSE(kv.value().readonly);
 }
 
+TEST_P(Configuration, SwitchSecurityProfileConnectionTimeoutAbsent) {
+    ASSERT_NE(get(), nullptr);
+
+    EXPECT_FALSE(get()->getSwitchSecurityProfileConnectionTimeout().has_value());
+    EXPECT_FALSE(get()->getSwitchSecurityProfileConnectionTimeoutKeyValue().has_value());
+    EXPECT_EQ(get()->set("SwitchSecurityProfileConnectionTimeout", "15"), ocpp::v16::ConfigurationStatus::NotSupported);
+}
+
+TEST_P(ConfigurationFull, SwitchSecurityProfileConnectionTimeout) {
+    ASSERT_NE(get(), nullptr);
+    // initial values are from the JSON unit test config files
+
+    EXPECT_TRUE(get()->getSwitchSecurityProfileConnectionTimeout().has_value());
+    EXPECT_EQ(get()->getSwitchSecurityProfileConnectionTimeout(), 30);
+    auto kv = get()->getSwitchSecurityProfileConnectionTimeoutKeyValue();
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv.value().key, "SwitchSecurityProfileConnectionTimeout");
+    EXPECT_EQ(kv.value().value, "30");
+    EXPECT_FALSE(kv.value().readonly);
+
+    get()->setSwitchSecurityProfileConnectionTimeout(45);
+    EXPECT_TRUE(get()->getSwitchSecurityProfileConnectionTimeout().has_value());
+    EXPECT_EQ(get()->getSwitchSecurityProfileConnectionTimeout(), 45);
+    kv = get()->getSwitchSecurityProfileConnectionTimeoutKeyValue();
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv.value().key, "SwitchSecurityProfileConnectionTimeout");
+    EXPECT_EQ(kv.value().value, "45");
+    EXPECT_FALSE(kv.value().readonly);
+
+    EXPECT_EQ(get()->set("SwitchSecurityProfileConnectionTimeout", "-1"), ocpp::v16::ConfigurationStatus::Rejected);
+    EXPECT_EQ(get()->getSwitchSecurityProfileConnectionTimeout(), 45);
+
+    // The schema declares minimum 1; a 0 s window would revert immediately, so 0 must be rejected at runtime too.
+    EXPECT_EQ(get()->set("SwitchSecurityProfileConnectionTimeout", "0"), ocpp::v16::ConfigurationStatus::Rejected);
+    EXPECT_EQ(get()->getSwitchSecurityProfileConnectionTimeout(), 45);
+}
+
 TEST_P(Configuration, AllMeterPublicKeys) {
     ASSERT_NE(get(), nullptr);
     EXPECT_EQ(get()->getAllMeterPublicKeyKeyValues(), std::nullopt);

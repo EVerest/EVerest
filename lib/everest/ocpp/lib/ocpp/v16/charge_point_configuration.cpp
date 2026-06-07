@@ -457,6 +457,34 @@ void ChargePointConfiguration::setSupplyVoltage(std::int32_t supply_voltage) {
     }
 }
 
+std::optional<std::int32_t> ChargePointConfiguration::getSwitchSecurityProfileConnectionTimeout() {
+    if (this->config["Internal"].contains("SwitchSecurityProfileConnectionTimeout")) {
+        return this->config["Internal"]["SwitchSecurityProfileConnectionTimeout"];
+    }
+    return std::nullopt;
+}
+
+std::optional<KeyValue> ChargePointConfiguration::getSwitchSecurityProfileConnectionTimeoutKeyValue() {
+    const auto opt_value = this->getSwitchSecurityProfileConnectionTimeout();
+    if (opt_value.has_value()) {
+        KeyValue kv;
+        kv.key = "SwitchSecurityProfileConnectionTimeout";
+        kv.readonly = false;
+        kv.value = std::to_string(opt_value.value());
+        return kv;
+    }
+    return std::nullopt;
+}
+
+void ChargePointConfiguration::setSwitchSecurityProfileConnectionTimeout(
+    std::int32_t switch_security_profile_connection_timeout) {
+    if (this->getSwitchSecurityProfileConnectionTimeout().has_value()) {
+        this->config["Internal"]["SwitchSecurityProfileConnectionTimeout"] = switch_security_profile_connection_timeout;
+        this->setInUserConfig("Internal", "SwitchSecurityProfileConnectionTimeout",
+                              switch_security_profile_connection_timeout);
+    }
+}
+
 std::string ChargePointConfiguration::getSupportedCiphers12() {
     const std::vector<std::string> supported_ciphers = this->config["Internal"]["SupportedCiphers12"];
     return boost::algorithm::join(supported_ciphers, ":");
@@ -3171,6 +3199,9 @@ std::optional<KeyValue> ChargePointConfiguration::get(const CiString<50>& key) {
     if (key == "SupplyVoltage") {
         return this->getSupplyVoltageKeyValue();
     }
+    if (key == "SwitchSecurityProfileConnectionTimeout") {
+        return this->getSwitchSecurityProfileConnectionTimeoutKeyValue();
+    }
     if (key == "WebsocketPingPayload") {
         return this->getWebsocketPingPayloadKeyValue();
     }
@@ -3923,6 +3954,22 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
                 return ConfigurationStatus::Rejected;
             }
             this->setSupplyVoltage(_value);
+        } catch (const std::invalid_argument& e) {
+            return ConfigurationStatus::Rejected;
+        } catch (const std::out_of_range& e) {
+            return ConfigurationStatus::Rejected;
+        }
+    } else if (key == "SwitchSecurityProfileConnectionTimeout") {
+        if (not this->getSwitchSecurityProfileConnectionTimeout().has_value()) {
+            return ConfigurationStatus::NotSupported;
+        }
+        try {
+            const auto [valid, _value] = is_positive_integer(value.get());
+            // The schema declares minimum 1
+            if (not valid or _value < 1) {
+                return ConfigurationStatus::Rejected;
+            }
+            this->setSwitchSecurityProfileConnectionTimeout(_value);
         } catch (const std::invalid_argument& e) {
             return ConfigurationStatus::Rejected;
         } catch (const std::out_of_range& e) {

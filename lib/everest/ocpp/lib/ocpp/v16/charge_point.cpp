@@ -19,6 +19,17 @@ ChargePoint::ChargePoint(
                                           evse_security, security_configuration, message_callback);
 }
 
+ChargePoint::ChargePoint(
+    ChargePointConfigurationInterface& cfg, const fs::path& share_path, const fs::path& database_path,
+    const fs::path& sql_init_path, const fs::path& message_log_path, const std::shared_ptr<EvseSecurity> evse_security,
+    std::shared_ptr<ocpp::ConnectivityManagerInterface> connectivity_manager,
+    const std::optional<SecurityConfiguration> security_configuration,
+    const std::function<void(const std::string& message, MessageDirection direction)>& message_callback) {
+    this->charge_point = std::make_unique<ChargePointImpl>(cfg, share_path, database_path, sql_init_path,
+                                                           message_log_path, evse_security, connectivity_manager,
+                                                           security_configuration, message_callback);
+}
+
 ChargePoint::~ChargePoint() = default;
 
 void ChargePoint::update_chargepoint_information(const std::string& vendor, const std::string& model,
@@ -63,6 +74,21 @@ void ChargePoint::connect_websocket() {
 
 void ChargePoint::disconnect_websocket() {
     this->charge_point->disconnect_websocket();
+}
+
+void ChargePoint::on_websocket_connected(const int configuration_slot,
+                                         const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
+                                         const ocpp::OcppProtocolVersion ocpp_version) {
+    this->charge_point->on_websocket_connected(configuration_slot, network_connection_profile, ocpp_version);
+}
+
+void ChargePoint::on_websocket_disconnected(const int configuration_slot,
+                                            const ocpp::v2::NetworkConnectionProfile& network_connection_profile) {
+    this->charge_point->on_websocket_disconnected(configuration_slot, network_connection_profile);
+}
+
+void ChargePoint::on_websocket_connection_failed(ocpp::ConnectionFailedReason reason) {
+    this->charge_point->on_websocket_connection_failed(reason);
 }
 
 void ChargePoint::call_set_connection_timeout() {
