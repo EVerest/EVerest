@@ -2,25 +2,15 @@ name: Bug Report
 description: Thanks for taking the time to fill out this bug report!
 
 body:
-<<<<<<< HEAD
-
-=======
->>>>>>> blank
   - type: textarea
     id: description
     attributes:
       label: Describe the bug
-<<<<<<< HEAD
-      description: A clear and concise description of what the bug is. If applicable, add screenshots or logfiles to help explain your problem.
-=======
       description: A clear and concise description of what the bug is. If applicable, add screenshots or log files to help explain your problem.
->>>>>>> blank
     validations:
       required: true
 
   - type: textarea
-<<<<<<< HEAD
-=======
     id: expected
     attributes:
       label: Expected behavior
@@ -73,17 +63,12 @@ body:
       placeholder: e.g. 2026.02.0
 
   - type: textarea
->>>>>>> blank
     id: reproduction
     attributes:
       label: To Reproduce
       description: |
-<<<<<<< HEAD
-        If applicable describe the steps to and additional information to reproduce the behavior. This could include information about the usage with OCPP, ISO15118 and/or a TPM module.
-=======
         Describe the steps and any additional information needed to reproduce the behavior:
         EVerest configuration files, compile options, and system information.
->>>>>>> blank
 
   - type: textarea
     id: other
