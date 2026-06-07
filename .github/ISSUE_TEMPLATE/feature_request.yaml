@@ -7,13 +7,6 @@ body:
     attributes:
       label: Describe the problem
       description: What problem is your feature request targeting and why is it a problem? Please describe.
-<<<<<<< HEAD
-      placeholder: |
-        A clear and concise description of what the problem is.
-    validations:
-      required: true
-
-=======
       placeholder: A clear and concise description of what the problem is.
     validations:
       required: true
@@ -57,16 +50,10 @@ body:
         Examples: a module (e.g. `modules/EnergyManagement`), a library (e.g. `lib/ocpp`, `lib/iso15118`),
         or an application (e.g. `applications/everest_dev_tool`). Leave empty if unsure.
 
->>>>>>> blank
   - type: textarea
     id: solution
     attributes:
       label: Describe your solution
-<<<<<<< HEAD
-      description: Describe the solution you'd like
-      placeholder: |
-        A clear and concise description of what you want to happen.
-=======
       description: Describe the solution you'd like.
       placeholder: A clear and concise description of what you want to happen.
 
@@ -75,7 +62,6 @@ body:
     attributes:
       label: Alternatives considered
       description: Have you considered alternative solutions or workarounds? If so, describe them here.
->>>>>>> blank
 
   - type: textarea
     id: other

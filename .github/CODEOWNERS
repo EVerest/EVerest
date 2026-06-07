@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-* @pietfried @hikinggrass @AssemblyJohn
-
-/.github/ @pietfried @hikinggrass
-=======
 # default option unless later match takes precedence
 * @pietfried @hikinggrass @corneliusclaussen @SebaLukas @andistorm @mlitre @djchhp @james-ctc @cburandt @florinmihut
 
@@ -77,4 +72,3 @@
 
 # yocto
 /yocto/ @hikinggrass @corneliusclaussen @james-ctc @andistorm @barsnick
->>>>>>> blank

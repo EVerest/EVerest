@@ -1,8 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG BASE_IMAGE_TAG=latest
 FROM ghcr.io/everest/everest-ci/build-kit-base:${BASE_IMAGE_TAG}
-<<<<<<< HEAD
-=======
 
 # Can be used to use an other version of everest-cmake
 # ENV EVEREST_CMAKE_PATH=/usr/lib/cmake/everest-cmake
@@ -15,4 +13,3 @@ FROM ghcr.io/everest/everest-ci/build-kit-base:${BASE_IMAGE_TAG}
 
 # FIXME(kai): Install libsystemd-dev as a dependency of sdbus-c++
 RUN apt-get update && apt-get -y install libsystemd-dev
->>>>>>> blank
