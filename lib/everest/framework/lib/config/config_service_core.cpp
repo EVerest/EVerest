@@ -24,9 +24,7 @@ std::string now_rfc3339() {
 
 ConfigServiceCore::ConfigServiceCore(const ConfigParseSettings& parse_settings,
                                      std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection) :
-    parse_settings_(parse_settings),
-    slot_manager_(db_connection),
-    db_(std::move(db_connection)) {
+    parse_settings_(parse_settings), slot_manager_(db_connection), db_(std::move(db_connection)) {
     active_slot_id_ = slot_manager_.get_next_boot_slot_id();
     // TODO(CB): Do not check is_valid, as this get removed
     if (slot_manager_.is_valid(active_slot_id_)) {
@@ -39,7 +37,7 @@ ConfigServiceCore::ConfigServiceCore(const ConfigParseSettings& parse_settings,
 }
 
 void ConfigServiceCore::reinitialize_from_db() {
-    if (modules_running_) {
+    if (module_status_ != ActiveSlotStatus::Stopped) {
         return;
     }
     int new_active_slot_id = slot_manager_.get_next_boot_slot_id();
@@ -47,10 +45,7 @@ void ConfigServiceCore::reinitialize_from_db() {
         active_slot_id_ = new_active_slot_id;
         active_storage_ = make_storage(active_slot_id_);
         reload_from_storage();
-        // TODO(CB): This was just a config reload, but nothing is running yet ...
-        // TODO(CB): Better simply send active_slot_id + next_reboot_slot_id and leave this to the lifecycle API
-        publish_active_slot_update(
-            {now_rfc3339(), active_slot_id_, slot_manager_.get_next_boot_slot_id(), ActiveSlotStatus::Running});
+        publish_active_slot_update();
     }
 }
 
@@ -58,7 +53,9 @@ std::unique_ptr<everest::config::SqliteStorage> ConfigServiceCore::make_storage(
     return std::make_unique<everest::config::SqliteStorage>(db_, slot_id);
 }
 
-void ConfigServiceCore::publish_active_slot_update(const ActiveSlotUpdate& update) {
+void ConfigServiceCore::publish_active_slot_update() {
+    const ActiveSlotUpdate update{now_rfc3339(), active_slot_id_, slot_manager_.get_next_boot_slot_id(),
+                                  module_status_};
     for (const auto& handler : active_slot_handlers_) {
         handler(update);
     }
@@ -107,7 +104,7 @@ SetActiveSlotStatus ConfigServiceCore::mark_active_slot(int slot_id) {
     if (status != everest::config::GenericResponseStatus::OK) {
         return SetActiveSlotStatus::DoesNotExist;
     }
-    publish_active_slot_update({now_rfc3339(), active_slot_id_, slot_id, ActiveSlotStatus::RestartTriggered});
+    publish_active_slot_update();
     return SetActiveSlotStatus::Success;
 }
 
@@ -248,9 +245,12 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
     SetConfigParameterResult result;
     result.status = SetConfigParameterStatus::Ok;
     // TODO(CB): Good idea? for multiple parameters they should all be treated the same
-    bool modules_are_running = modules_running_;
+    const bool modules_are_running = module_status_ == ActiveSlotStatus::Running;
+    const bool modules_in_transient =
+        (module_status_ != ActiveSlotStatus::Running and module_status_ != ActiveSlotStatus::Stopped);
 
     const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
+    const bool modifies_active_slot = resolved_slot_id == active_slot_id_;
 
     const std::string& origin_module_id = origin.module_id.value_or("<external>");
 
@@ -261,7 +261,11 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
     event.timestamp = now_rfc3339();
     event.slot_id = resolved_slot_id;
 
-    if (resolved_slot_id == active_slot_id_) {
+    if (modifies_active_slot and modules_in_transient) {
+        result.status = SetConfigParameterStatus::ModulesInTransientState;
+        result.parameter_results.emplace(
+            updates.size(), Everest::config::SetConfigPerParameterResult{SetConfigParameterResultEnum::RetryLater, ""});
+    } else if (modifies_active_slot and not modules_in_transient) {
         for (size_t i = 0; i < updates.size(); ++i) {
             const auto& update = updates[i];
             SetConfigParameterResultEnum& result_enum = result.parameter_results.value()[i].status;
@@ -384,20 +388,6 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
     return result;
 }
 
-// --- Module lifecycle ---
-
-void ConfigServiceCore::set_modules_running() {
-    publish_active_slot_update(
-        {now_rfc3339(), active_slot_id_, slot_manager_.get_next_boot_slot_id(), ActiveSlotStatus::Running});
-    modules_running_ = true;
-}
-
-void ConfigServiceCore::set_modules_stopped() {
-    publish_active_slot_update(
-        {now_rfc3339(), active_slot_id_, slot_manager_.get_next_boot_slot_id(), ActiveSlotStatus::Stopped});
-    modules_running_ = false;
-}
-
 // --- Push-event subscriptions ---
 
 void ConfigServiceCore::register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) {
@@ -410,6 +400,27 @@ void ConfigServiceCore::register_config_update_handler(std::function<void(const 
 
 void ConfigServiceCore::register_set_runtime_parameter_handler(const SetParamCallback& callback) {
     set_parameter_callback_ = callback;
+}
+
+// --- Module state ---
+void ConfigServiceCore::set_modules_running() {
+    module_status_ = ActiveSlotStatus::Running;
+    publish_active_slot_update();
+}
+
+void ConfigServiceCore::set_modules_stopped() {
+    module_status_ = ActiveSlotStatus::Stopped;
+    publish_active_slot_update();
+}
+
+void ConfigServiceCore::set_modules_starting() {
+    module_status_ = ActiveSlotStatus::Starting;
+    publish_active_slot_update();
+}
+
+void ConfigServiceCore::set_modules_stopping() {
+    module_status_ = ActiveSlotStatus::Stopping;
+    publish_active_slot_update();
 }
 
 } // namespace Everest::config
