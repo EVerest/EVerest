@@ -8,8 +8,8 @@
 #include <algorithm>
 #include <iterator>
 
-#include <everest_api_types/configuration/API.hpp>
 #include <configuration_type_wrapper.hpp>
+#include <everest_api_types/configuration/API.hpp>
 #include <everest_api_types/configuration/codec.hpp>
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/utilities/codec.hpp>
@@ -206,6 +206,10 @@ void ConfigurationAPI::generate_api_cmd_set_config_parameters() {
                         response.results = srcToTarVec(int_res.parameter_results.value(), [](const auto& result) {
                             return API_wrapper::to_external_api(result.status);
                         });
+                        if (int_res.status == Everest::config::SetConfigParameterStatus::ModulesInTransientState) {
+                            EVLOG_warning << "Cannot process set_config_parameters request on the active slot while "
+                                             "modules are in a transient state.";
+                        }
                     } else {
                         EVLOG_warning << "Internal config service failed to process the set_config_parameters request.";
                         return false;
