@@ -105,6 +105,9 @@ void to_json(json& j, ConfigurationParameterUpdateResultEnum const& k) noexcept 
     case ConfigurationParameterUpdateResultEnum::WillApplyOnRestart:
         j = "WillApplyOnRestart";
         return;
+    case ConfigurationParameterUpdateResultEnum::RetryLater:
+        j = "RetryLater";
+        return;
     case ConfigurationParameterUpdateResultEnum::DoesNotExist:
         j = "DoesNotExist";
         return;
@@ -127,6 +130,10 @@ void from_json(const json& j, ConfigurationParameterUpdateResultEnum& k) {
     }
     if (s == "WillApplyOnRestart") {
         k = ConfigurationParameterUpdateResultEnum::WillApplyOnRestart;
+        return;
+    }
+    if (s == "RetryLater") {
+        k = ConfigurationParameterUpdateResultEnum::RetryLater;
         return;
     }
     if (s == "DoesNotExist") {
@@ -155,6 +162,12 @@ void to_json(json& j, ActiveSlotStatusEnum const& k) noexcept {
     case ActiveSlotStatusEnum::Stopped:
         j = "Stopped";
         return;
+    case ActiveSlotStatusEnum::Starting:
+        j = "Starting";
+        return;
+    case ActiveSlotStatusEnum::Stopping:
+        j = "Stopping";
+        return;
     case ActiveSlotStatusEnum::FailedToStart:
         j = "FailedToStart";
         return;
@@ -174,6 +187,14 @@ void from_json(const json& j, ActiveSlotStatusEnum& k) {
     }
     if (s == "Stopped") {
         k = ActiveSlotStatusEnum::Stopped;
+        return;
+    }
+    if (s == "Starting") {
+        k = ActiveSlotStatusEnum::Starting;
+        return;
+    }
+    if (s == "Stopping") {
+        k = ActiveSlotStatusEnum::Stopping;
         return;
     }
     if (s == "FailedToStart") {
