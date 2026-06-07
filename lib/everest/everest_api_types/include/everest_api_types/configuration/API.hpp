@@ -28,6 +28,7 @@ enum class ConfigurationParameterUpdateResultEnum {
     Applied,
     WillApplyOnRestart,
     DoesNotExist,
+    RetryLater,
     AccessDenied,
     Rejected,
 };
@@ -35,6 +36,8 @@ enum class ConfigurationParameterUpdateResultEnum {
 enum class ActiveSlotStatusEnum {
     Running,
     Stopped,
+    Starting,
+    Stopping,
     FailedToStart,
     RestartTriggered,
 };
