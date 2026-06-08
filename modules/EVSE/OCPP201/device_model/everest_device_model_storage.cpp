@@ -417,7 +417,7 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
     }
 
     ocpp::v2::InitDeviceModelDb init_device_model_db(db_path, migration_files_path);
-    init_device_model_db.initialize_database(component_configs, false);
+    init_device_model_db.initialize_database(component_configs, false, false);
     init_device_model_db.close_connection();
     this->device_model_storage = std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(db_path);
 

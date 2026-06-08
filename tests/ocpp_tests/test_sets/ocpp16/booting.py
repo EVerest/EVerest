@@ -21,8 +21,23 @@ from everest.testing.ocpp_utils.fixtures import charge_point_v16
 from everest.testing.ocpp_utils.charge_point_v16 import ChargePoint16
 from everest.testing.ocpp_utils.central_system import CentralSystem
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP16ConfigAdjustment
+from everest.testing.core_utils import EverestConfigAdjustmentStrategy
 from everest_test_utils import *
 # fmt: on
+
+from copy import deepcopy
+from typing import Dict
+
+
+class _DeviceModelMigrationConfigAdjustment(EverestConfigAdjustmentStrategy):
+    """Sets ConfigBackend=device_model_with_migration on the ocpp module."""
+
+    def adjust_everest_configuration(self, everest_config: Dict) -> Dict:
+        adjusted = deepcopy(everest_config)
+        adjusted["active_modules"]["ocpp"]["config_module"]["ConfigBackend"] = (
+            "device_model_with_migration"
+        )
+        return adjusted
 
 
 @pytest.mark.asyncio
@@ -594,4 +609,109 @@ async def test_boot_notification_rejected_and_call_by_csms(
 
     assert await wait_for_and_validate(
         test_utility, charge_point_v16, "BootNotification", {}
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_config_adaptions(_DeviceModelMigrationConfigAdjustment())
+async def test_migration_boot_notification(
+    test_config: OcppTestConfiguration,
+    central_system_v16: CentralSystem,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """Migration: BootNotification carries charge point info migrated from the legacy JSON config."""
+    logging.info("######### test_migration_boot_notification #########")
+
+    test_controller.start()
+    charge_point_v16 = await central_system_v16.wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+    charge_point_v16.pipe = True
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "BootNotification",
+        call.BootNotification(
+            test_config.charge_point_info.charge_point_model,
+            charge_box_serial_number=test_config.charge_point_info.charge_point_id,
+            charge_point_vendor=test_config.charge_point_info.charge_point_vendor,
+            firmware_version=test_config.charge_point_info.firmware_version,
+        ),
+        validate_boot_notification,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_config_adaptions(_DeviceModelMigrationConfigAdjustment())
+async def test_migration_get_configuration_key(
+    central_system_v16: CentralSystem,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """Migration: GetConfiguration returns the value migrated from the legacy JSON config."""
+    logging.info("######### test_migration_get_configuration_key #########")
+
+    test_controller.start()
+    charge_point_v16 = await central_system_v16.wait_for_chargepoint(
+        wait_for_bootnotification=True
+    )
+
+    await charge_point_v16.get_configuration_req(key=["ConnectionTimeOut"])
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "GetConfiguration",
+        call_result.GetConfiguration(
+            [{"key": "ConnectionTimeOut", "readonly": False, "value": "10"}]
+        ),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_config_adaptions(_DeviceModelMigrationConfigAdjustment())
+async def test_migration_change_configuration_persists_after_restart(
+    central_system_v16: CentralSystem,
+    test_utility: TestUtility,
+    test_controller: TestController,
+):
+    """Migration: a value changed via ChangeConfiguration persists across a restart, confirming
+    the device model DB (not the legacy JSON) is used on subsequent boots."""
+    logging.info(
+        "######### test_migration_change_configuration_persists_after_restart #########"
+    )
+
+    test_controller.start()
+    charge_point_v16 = await central_system_v16.wait_for_chargepoint(
+        wait_for_bootnotification=True
+    )
+
+    await charge_point_v16.change_configuration_req(
+        key="ConnectionTimeOut", value="20"
+    )
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "ChangeConfiguration",
+        call_result.ChangeConfiguration(ConfigurationStatus.accepted),
+    )
+
+    test_controller.stop()
+    await asyncio.sleep(2)
+    test_controller.start()
+    charge_point_v16 = await central_system_v16.wait_for_chargepoint(
+        wait_for_bootnotification=True
+    )
+
+    await charge_point_v16.get_configuration_req(key=["ConnectionTimeOut"])
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "GetConfiguration",
+        call_result.GetConfiguration(
+            [{"key": "ConnectionTimeOut", "readonly": False, "value": "20"}]
+        ),
     )

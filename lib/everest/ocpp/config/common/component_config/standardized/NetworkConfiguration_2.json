@@ -439,6 +439,21 @@
       ],
       "description": "Serial number of the CSMS root certificate",
       "type": "string"
+    },
+    "HostName": {
+      "variable_name": "HostName",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "string"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadOnly"
+        }
+      ],
+      "description": "Value sent as the User-Host HTTP header during WebSocket connection to the CSMS",
+      "type": "string"
     }
   },
   "required": [

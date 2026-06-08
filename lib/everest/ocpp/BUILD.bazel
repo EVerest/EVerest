@@ -26,6 +26,27 @@ PYEOF
     visibility = ["//visibility:private"],
 )
 
+genrule(
+    name = "ocpp16_legacy_ctrlr_default_schema_cpp",
+    srcs = [
+        "lib/ocpp/v2/ocpp16_legacy_ctrlr_default_schema.cpp.in",
+        "config/common/component_config/standardized/OCPP16LegacyCtrlr.json",
+    ],
+    outs = ["generated/ocpp16_legacy_ctrlr_default_schema.cpp"],
+    cmd = """python3 - "$(location lib/ocpp/v2/ocpp16_legacy_ctrlr_default_schema.cpp.in)" "$(location config/common/component_config/standardized/OCPP16LegacyCtrlr.json)" "$@" <<'PYEOF'
+import sys
+tpl_path, json_path, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(tpl_path) as f:
+    tpl = f.read()
+with open(json_path) as f:
+    js = f.read()
+with open(out_path, 'w') as f:
+    f.write(tpl.replace('@OCPP16_LEGACY_CTRLR_DEFAULT_SCHEMA_JSON@', js))
+PYEOF
+""",
+    visibility = ["//visibility:private"],
+)
+
 cc_library(
     name = "websocketpp_utils",
     hdrs = glob([
@@ -48,7 +69,10 @@ cc_library(
         "lib/ocpp/v16/messages/*.cpp",
         "lib/ocpp/v2/messages/*.cpp",
         "lib/ocpp/v21/messages/*.cpp",
-    ]) + [":network_configuration_default_schema_cpp"],
+    ]) + [
+        ":network_configuration_default_schema_cpp",
+        ":ocpp16_legacy_ctrlr_default_schema_cpp",
+    ],
     hdrs = glob([
         "include/**/*.hpp",
     ]),

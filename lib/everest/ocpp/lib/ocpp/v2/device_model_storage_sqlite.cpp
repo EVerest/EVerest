@@ -25,7 +25,7 @@ DeviceModelStorageSqlite::DeviceModelStorageSqlite(const fs::path& db_path, cons
     }
     const auto component_configs = get_all_component_configs(config_path);
     InitDeviceModelDb init_device_model_db(db_path, migration_files_path);
-    init_device_model_db.initialize_database(component_configs, false);
+    init_device_model_db.initialize_database(component_configs, false, false);
 
     initialize_connection(db_path);
 }

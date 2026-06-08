@@ -114,7 +114,6 @@ public:
     virtual KeyValue getChargePointIdKeyValue() = 0;
     virtual KeyValue getChargePointModelKeyValue() = 0;
     virtual KeyValue getChargePointVendorKeyValue() = 0;
-    virtual KeyValue getEnableTLSKeylogKeyValue() = 0;
     virtual KeyValue getLogMessagesFormatKeyValue() = 0;
     virtual KeyValue getLogMessagesKeyValue() = 0;
     virtual KeyValue getLogMessagesRawKeyValue() = 0;
@@ -133,15 +132,16 @@ public:
     virtual KeyValue getSupportedCiphers12KeyValue() = 0;
     virtual KeyValue getSupportedCiphers13KeyValue() = 0;
     virtual KeyValue getSupportedMeasurandsKeyValue() = 0;
-    virtual KeyValue getTLSKeylogFileKeyValue() = 0;
     virtual KeyValue getUseSslDefaultVerifyPathsKeyValue() = 0;
-    virtual KeyValue getUseTPMKeyValue() = 0;
-    virtual KeyValue getUseTPMSeccLeafCertificateKeyValue() = 0;
     virtual KeyValue getVerifyCsmsAllowWildcardsKeyValue() = 0;
     virtual KeyValue getVerifyCsmsCommonNameKeyValue() = 0;
     virtual KeyValue getWaitForStopTransactionsOnResetTimeoutKeyValue() = 0;
     virtual KeyValue getWebsocketPingPayloadKeyValue() = 0;
     virtual KeyValue getWebsocketPongTimeoutKeyValue() = 0;
+    virtual KeyValue getEnableTLSKeylogKeyValue() = 0;
+    virtual KeyValue getTLSKeylogFileKeyValue() = 0;
+    virtual KeyValue getUseTPMKeyValue() = 0;
+    virtual KeyValue getUseTPMSeccLeafCertificateKeyValue() = 0;
 
     virtual std::optional<KeyValue> getAllowChargingProfileWithoutStartScheduleKeyValue() = 0;
     virtual std::optional<KeyValue> getCompositeScheduleDefaultLimitAmpsKeyValue() = 0;
@@ -412,12 +412,26 @@ public:
     // Signed Meter Values
 
     // Custom
-    virtual std::optional<KeyValue> getCustomKeyValue(const CiString<50>& key) = 0;
     virtual std::optional<KeyValue> get(const CiString<50>& key) = 0;
     virtual std::vector<KeyValue> get_all_key_value() = 0;
 
-    virtual ConfigurationStatus setCustomKey(const CiString<50>& key, const CiString<500>& value, bool force) = 0;
     virtual std::optional<ConfigurationStatus> set(const CiString<50>& key, const CiString<500>& value) = 0;
+
+    /// \brief Verify that all required OCPP 1.6 configuration keys are present and consistent.
+    ///
+    /// Checks a hardcoded set of required Core and Internal profile keys. For the device model
+    /// backend this also validates that \c NumberOfConnectors matches \p expected_number_of_connectors.
+    ///
+    /// Profile-conditional keys (LocalAuthListManagement, SmartCharging, PnC, CostAndPrice) are only
+    /// checked when the relevant profile appears in \c SupportedFeatureProfiles. Missing profile-
+    /// conditional keys are logged as warnings and the offending profile is stripped rather than
+    /// causing a failure.
+    ///
+    /// Missing or misconfigured core keys are logged with EVLOG_error and cause a throw so the process
+    /// aborts cleanly before the ChargePoint is initialized.
+    ///
+    /// The default implementation is a no-op (the JSON-backed class validates at construction time).
+    virtual void check_integrity(int32_t expected_number_of_connectors){};
 };
 
 } // namespace ocpp::v16

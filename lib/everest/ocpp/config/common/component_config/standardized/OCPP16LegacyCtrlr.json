@@ -4,22 +4,6 @@
     "name": "OCPP16LegacyCtrlr",
     "type": "object",
     "properties": {
-        "CentralSystemURI": {
-            "variable_name": "CentralSystemURI",
-            "characteristics": {
-                "supportsMonitoring": true,
-                "dataType": "string"
-            },
-            "attributes": [
-                {
-                    "type": "Actual",
-                    "mutability": "ReadWrite"
-                }
-            ],
-            "description": "URL endpoint of the central system",
-            "type": "string",
-            "minLength": 1
-        },
         "BlinkRepeat": {
             "variable_name": "BlinkRepeat",
             "characteristics": {
@@ -61,13 +45,13 @@
             "attributes": [
                 {
                     "type": "Actual",
-                    "mutability": "ReadOnly",
-                    "value": 256
+                    "mutability": "ReadOnly"
                 }
             ],
             "description": "Maximum number of configuration keys that can be requested in a GetConfiguration request",
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "default": 1000
         },
         "LightIntensity": {
             "variable_name": "LightIntensity",
@@ -132,7 +116,8 @@
                 }
             ],
             "description": "Comma-separated list of supported OCPP feature profiles",
-            "type": "string"
+            "type": "string",
+            "default": "Core"
         },
         "SupportedFeatureProfilesMaxLength": {
             "variable_name": "SupportedFeatureProfilesMaxLength",
@@ -163,7 +148,8 @@
                 }
             ],
             "description": "Whether to unlock connector when cable is unplugged on EV side",
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
         },
         "ReserveConnectorZeroSupported": {
             "variable_name": "ReserveConnectorZeroSupported",
@@ -179,22 +165,6 @@
             ],
             "description": "Whether reserving connector 0 is supported",
             "type": "boolean"
-        },
-        "HostName": {
-            "variable_name": "HostName",
-            "characteristics": {
-                "supportsMonitoring": true,
-                "dataType": "string"
-            },
-            "attributes": [
-                {
-                    "type": "Actual",
-                    "mutability": "ReadOnly"
-                }
-            ],
-            "description": "Host name of the charge point",
-            "type": "string",
-            "minLength": 1
         },
         "AllowChargingProfileWithoutStartSchedule": {
             "variable_name": "AllowChargingProfileWithoutStartSchedule",
@@ -433,10 +403,11 @@
             ],
             "description": "Number of connectors of the charging station",
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "default": 1
         },
-        "AuthorizationKey": {
-            "variable_name": "AuthorizationKey",
+        "ConnectorEvseIds": {
+            "variable_name": "ConnectorEvseIds",
             "characteristics": {
                 "supportsMonitoring": true,
                 "dataType": "string"
@@ -444,17 +415,17 @@
             "attributes": [
                 {
                     "type": "Actual",
-                    "mutability": "WriteOnly"
+                    "mutability": "ReadWrite"
                 }
             ],
-            "description": "The OCPP 1.6 authorization key (BasicAuth password) used for the CSMS connection",
+            "description": "Comma-separated list of ISO 15118 EVSE IDs, one per connector",
             "type": "string"
         },
-        "SecurityProfile": {
-            "variable_name": "SecurityProfile",
+        "ConnectorPhaseRotation": {
+            "variable_name": "ConnectorPhaseRotation",
             "characteristics": {
                 "supportsMonitoring": true,
-                "dataType": "integer"
+                "dataType": "string"
             },
             "attributes": [
                 {
@@ -462,10 +433,9 @@
                     "mutability": "ReadWrite"
                 }
             ],
-            "description": "The OCPP 1.6 security profile used for the CSMS connection",
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 3
+            "description": "The phase rotation per connector in respect to the connector's electrical meter (or if absent, the grid connection). Possible values per connector are NotApplicable, Unknown, RST, RTS, SRT, STR, TRS, TSR. If known If known, the Charge Point MAY also report the phase rotation between the grid connection and the main energymeter by using index number Zero (0). Values are reported in CSL, formatted: 0.RST, 1.RST, 2.RTS",
+            "type": "string",
+            "default": "Unknown"
         },
         "ExampleConfigurationKey": {
             "variable_name": "ExampleConfigurationKey",
@@ -486,6 +456,7 @@
     "required": [
         "GetConfigurationMaxKeys",
         "NumberOfConnectors",
-        "UnlockConnectorOnEVSideDisconnect"
+        "UnlockConnectorOnEVSideDisconnect",
+        "ConnectorPhaseRotation"
     ]
 }
