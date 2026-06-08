@@ -1,3 +1,4 @@
+generate_config_run_script(CONFIG blank)
 generate_config_run_script(CONFIG empty)
 generate_config_run_script(CONFIG sil)
 generate_config_run_script(CONFIG sil-rpcapi)
