@@ -136,6 +136,7 @@ ReservationHandler::make_reservation(const std::optional<uint32_t> evse_id,
                 EVLOG_info << "Created reservation for evse id " << evse_id.value() << ", connector type "
                            << types::evse_manager::connector_type_enum_to_string(
                                   reservation.connector_type.value_or(types::evse_manager::ConnectorTypeEnum::Unknown));
+                store_reservations();
                 return types::reservation::ReservationResult::Accepted;
             }
 
@@ -155,6 +156,7 @@ ReservationHandler::make_reservation(const std::optional<uint32_t> evse_id,
             EVLOG_info << "Created reservation for evse id " << evse_id.value() << ", connector type "
                        << types::evse_manager::connector_type_enum_to_string(
                               reservation.connector_type.value_or(types::evse_manager::ConnectorTypeEnum::Unknown));
+            store_reservations();
         }
     } else {
         if (reservation.connector_type.has_value() &&
