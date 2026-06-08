@@ -64,9 +64,6 @@ struct StubConfigService : Everest::config::ConfigServiceInterface {
     const everest::config::ModuleConfigurations& get_active_module_configurations() const override {
         return module_configurations;
     }
-    const everest::config::ModuleConfigurations& reload_from_storage() override {
-        return module_configurations;
-    }
 };
 
 // ─── JSON helpers ─────────────────────────────────────────────────────────────
