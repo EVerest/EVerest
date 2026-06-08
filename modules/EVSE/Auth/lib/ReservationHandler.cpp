@@ -781,9 +781,10 @@ void ReservationHandler::store_reservations() {
         reservations.push_back(r);
     }
 
-    if (!reservations.empty()) {
-        this->store->call_store(this->kvs_store_key_id, reservations);
-    }
+    // Always persist, even an empty array: cancelling or expiring the last
+    // reservation must clear the stored state. Otherwise the stale entry is
+    // reloaded on the next boot and the cancelled reservation "resurrects".
+    this->store->call_store(this->kvs_store_key_id, reservations);
 }
 
 ReservationEvseStatus ReservationHandler::get_evse_global_reserved_status_and_set_new_status(
