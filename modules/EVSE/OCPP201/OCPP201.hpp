@@ -35,6 +35,7 @@
 #include <variant>
 
 #include <device_model/everest_device_model_storage.hpp>
+#include <error_handling.hpp>
 #include <everest/util/async/monitor.hpp>
 #include <generated/types/evse_board_support.hpp>
 #include <ocpp/v2/charge_point.hpp>
@@ -62,6 +63,7 @@ struct Conf {
     std::string RequestCompositeScheduleUnit;
     int DelayOcppStart;
     int ResetStopDelay;
+    std::string CustomMrecErrorMapPath;
 };
 
 class OCPP201 : public Everest::ModuleBase {
@@ -154,6 +156,7 @@ private:
     std::mutex session_event_mutex;
     std::atomic_bool started{false};
     EventQueue event_queue;
+    MREC_ERROR_MAP_TYPE mrec_error_map;
     void init_evse_maps();
     void init_evse_subscriptions();
     void init_module_configuration();

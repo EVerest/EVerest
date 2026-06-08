@@ -71,6 +71,12 @@ config:
       to the charge point's last messages before resetting.
     type: integer
     default: 0
+  CustomMrecErrorMapPath:
+    description: >-
+      Optional path to a JSON file mapping EVerest error types to OCPP techCodes. Entries overwrite the
+      built-in defaults. Leave empty to use only the defaults.
+    type: string
+    default: ''
 provides:
   auth_validator:
     description: Validates the provided token using CSMS, AuthorizationList or AuthorizationCache
