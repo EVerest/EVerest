@@ -85,7 +85,7 @@ TEST(IECStateMachine, init) {
     module::stub::ModuleAdapterStub module_adapter = module::stub::ModuleAdapterStub();
     std::unique_ptr<evse_board_supportIntf> bsp_if =
         std::make_unique<module::stub::evse_board_supportIntfStub>(module_adapter);
-    module::IECStateMachine state_machine(std::move(bsp_if), true);
+    module::IECStateMachine state_machine(std::move(bsp_if), true, false);
 }
 
 #if 0
@@ -215,7 +215,7 @@ TEST(IECStateMachine, deadlock_test) {
 
     BspStubDeadlock bsp;
     std::unique_ptr<evse_board_supportIntf> bsp_if = std::make_unique<module::stub::evse_board_supportIntfStub>(bsp);
-    module::IECStateMachine state_machine(std::move(bsp_if), true);
+    module::IECStateMachine state_machine(std::move(bsp_if), true, false);
 
     std::uint8_t signal_lock_count = 0;
 
@@ -281,7 +281,7 @@ TEST(IECStateMachine, deadlock_fix) {
 
     BspStubDeadlock bsp;
     std::unique_ptr<evse_board_supportIntf> bsp_if = std::make_unique<module::stub::evse_board_supportIntfStub>(bsp);
-    module::IECStateMachine state_machine(std::move(bsp_if), true);
+    module::IECStateMachine state_machine(std::move(bsp_if), true, false);
 
     std::uint8_t signal_lock_count = 0;
 
@@ -354,7 +354,7 @@ struct ConnectorLockTest : public testing::Test {
 
     std::unique_ptr<module::IECStateMachine> create_state_machine(bool use_authorized) {
         bsp_if = std::make_unique<module::stub::evse_board_supportIntfStub>(bsp);
-        auto sm = std::make_unique<module::IECStateMachine>(bsp_if, use_authorized);
+        auto sm = std::make_unique<module::IECStateMachine>(bsp_if, true, use_authorized);
         sm->signal_lock.connect([this]() { lock_count++; });
         sm->signal_unlock.connect([this]() { unlock_count++; });
         sm->enable(true);

@@ -74,7 +74,8 @@ enum class AcPhases {
 class IECStateMachine {
 public:
     // We need the r_bsp reference to be able to talk to the bsp driver module
-    IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& r_bsp_, bool use_authorized_);
+    IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& r_bsp_, bool lock_connector_in_state_b_,
+                    bool use_authorized_);
     // Call when new events from BSP requirement come in. Will signal internal events
     void process_bsp_event(const types::board_support_common::BspEvent bsp_event);
     // Allow power on from Charger state machine
@@ -115,6 +116,7 @@ private:
     void connector_unlock();
     void check_connector_lock();
     const std::unique_ptr<evse_board_supportIntf>& r_bsp;
+    bool lock_connector_in_state_b{true};
 
     bool pwm_running{false};
     bool last_pwm_running{false};
