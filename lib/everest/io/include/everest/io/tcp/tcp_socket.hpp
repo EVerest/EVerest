@@ -109,6 +109,15 @@ public:
     void close();
 
     /**
+     * @brief Surrender ownership of the file descriptor without closing it.
+     * @details After this the socket holds no fd; close()/destruction become no-ops.
+     *          Used when another owner (e.g. a TLS BIO created with BIO_CLOSE) takes
+     *          over the fd's lifetime.
+     * @return The previously owned file descriptor (NO_DESCRIPTOR_SENTINEL if none).
+     */
+    int release();
+
+    /**
      * @brief Enable KEEPALIVE for the connection
      * @param[in] count  The maximum number of keepalive probes TCP should send
      *                   before dropping the connection.
