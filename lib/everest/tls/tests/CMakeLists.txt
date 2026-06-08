@@ -8,10 +8,16 @@ set(TLS_TEST_FILES
         pki-tpm.sh
 )
 
+set(TLS_TEST_FILE_SOURCES "")
+foreach(_tls_test_file ${TLS_TEST_FILES})
+    list(APPEND TLS_TEST_FILE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/pki/${_tls_test_file})
+endforeach()
+
 add_custom_command(
     OUTPUT ${TLS_TEST_FILES}
     COMMAND mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/pki
     COMMAND cd pki && cp ${TLS_TEST_FILES} ${CMAKE_CURRENT_BINARY_DIR}/
+    DEPENDS ${TLS_TEST_FILE_SOURCES}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
@@ -40,6 +46,7 @@ target_sources(${TLS_GTEST_NAME} PRIVATE
     tls_test.cpp
     tls_connection_test.cpp
     tls_connection_tls13_test.cpp
+    tls_client_wrap_test.cpp
     ../extensions/helpers.cpp
     ../extensions/status_request.cpp
     ../extensions/trusted_ca_keys.cpp
