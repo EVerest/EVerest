@@ -3,6 +3,7 @@
 
 #include "chargepoint_stub.hpp"
 #include "ocpp/v2/messages/DataTransfer.hpp"
+#include "ocpp/v2/ocpp_types.hpp"
 #include <everest/logging.hpp>
 
 #include <exception>
@@ -163,7 +164,8 @@ template <typename T, typename = void> bool optional_equal(const std::optional<T
 
 } // namespace
 
-namespace ocpp::v2 {
+namespace ocpp {
+namespace v2 {
 
 bool operator==(const AdditionalInfo& lhs, const AdditionalInfo& rhs) {
     return (lhs.additionalIdToken == rhs.additionalIdToken) && (lhs.type == rhs.type) &&
@@ -189,7 +191,40 @@ bool operator==(const IdToken& lhs, const IdToken& rhs) {
     return (lhs.idToken == rhs.idToken) && (lhs.type == rhs.type) &&
            optional_equal(lhs.additionalInfo, rhs.additionalInfo) && optional_equal(lhs.customData, rhs.customData);
 }
-} // namespace ocpp::v2
+
+bool operator==(const MeterValue& lhs, const MeterValue& rhs) {
+    return (lhs.sampledValue == rhs.sampledValue) && (lhs.timestamp == rhs.timestamp) &&
+           optional_equal(lhs.customData, rhs.customData);
+}
+bool operator==(const SampledValue& lhs, const SampledValue& rhs) {
+    return (lhs.value == rhs.value) && optional_equal(lhs.measurand, rhs.measurand) &&
+           optional_equal(lhs.context, rhs.context) && optional_equal(lhs.phase, rhs.phase) &&
+           optional_equal(lhs.location, rhs.location) && optional_equal(lhs.signedMeterValue, rhs.signedMeterValue) &&
+           optional_equal(lhs.unitOfMeasure, rhs.unitOfMeasure) && optional_equal(lhs.customData, rhs.customData);
+}
+bool operator==(const SignedMeterValue& lhs, const SignedMeterValue& rhs) {
+    return (lhs.signedMeterData == rhs.signedMeterData) && (lhs.encodingMethod == rhs.encodingMethod) &&
+           optional_equal(lhs.signingMethod, rhs.signingMethod) && optional_equal(lhs.publicKey, rhs.publicKey) &&
+           optional_equal(lhs.customData, rhs.customData);
+}
+bool operator==(const UnitOfMeasure& lhs, const UnitOfMeasure& rhs) {
+    return optional_equal(lhs.unit, rhs.unit) && optional_equal(lhs.multiplier, rhs.multiplier) &&
+           optional_equal(lhs.customData, rhs.customData);
+}
+} // namespace v2
+bool operator==(const DisplayMessage& lhs, const DisplayMessage& rhs) {
+    return optional_equal(lhs.id, rhs.id) && optional_equal(lhs.priority, rhs.priority) &&
+           optional_equal(lhs.state, rhs.state) && optional_equal(lhs.timestamp_from, rhs.timestamp_from) &&
+           optional_equal(lhs.timestamp_to, rhs.timestamp_to) && optional_equal(lhs.identifier_id, rhs.identifier_id) &&
+           optional_equal(lhs.identifier_type, rhs.identifier_type) && (lhs.message == rhs.message) &&
+           optional_equal(lhs.qr_code, rhs.qr_code);
+}
+
+bool operator==(const DisplayMessageContent& lhs, const DisplayMessageContent& rhs) {
+    return (lhs.message == rhs.message) && optional_equal(lhs.language, rhs.language) &&
+           optional_equal(lhs.message_format, rhs.message_format);
+}
+} // namespace ocpp
 
 namespace types::ocpp {
 std::ostream& operator<<(std::ostream& out, DataTransferStatus value) {

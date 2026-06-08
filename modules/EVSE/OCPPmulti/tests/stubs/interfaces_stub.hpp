@@ -8,6 +8,7 @@
 
 #include <ModuleAdapterStub.hpp>
 #include <OCPPmulti.hpp>
+#include <string_view>
 #include <utils/error/error_manager_req_global.hpp>
 #include <utils/mqtt_abstraction.hpp>
 #include <utils/types.hpp>
@@ -73,12 +74,17 @@ struct MqttStub : public Everest::MQTTAbstraction {
 };
 
 class ModuleAdapter : public module::stub::ModuleAdapterStub {
+public:
+    using var_cb_t =
+        std::function<void(const std::string_view& interface, const std::string_view& variable, const json& data)>;
+
 private:
+    using var_cb_list_t = std::list<std::pair<std::string, var_cb_t>>;
     using call_function_t = std::optional<json> (ModuleAdapter::*)(const Requirement&, const json& args);
 
     std::list<Everest::error::ErrorType> m_supported_errors;
     std::shared_ptr<Everest::error::ErrorTypeMap> m_error_type_map;
-    std::map<std::string, ValueCallback> m_callbacks;
+    std::list<std::pair<std::string, ValueCallback>> m_callbacks; // there can be multiple subscribes to a topic
     std::shared_ptr<Everest::error::ErrorDatabaseMap> m_error_database;
     std::shared_ptr<Everest::error::ErrorManagerImpl> m_error_manager;
     std::shared_ptr<Everest::error::ErrorManagerReq> m_error_manager_req;
@@ -88,7 +94,7 @@ private:
     std::shared_ptr<Everest::config::ConfigServiceClient> m_config_client;
     std::map<std::string, std::string, std::less<>> m_module_names;
 
-    std::string to_topic(const Requirement& req, const std::string& fn) {
+    static std::string to_topic(const Requirement& req, const std::string& fn) {
         std::string result = req.id;
         result.push_back('/');
         result += std::to_string(req.index);
@@ -97,17 +103,48 @@ private:
         return result;
     }
 
+    static std::string to_key(const std::string_view& interface, const std::string_view& variable, int instance) {
+        std::string result{interface};
+        result.push_back('/');
+        if (instance >= 0) {
+            result += std::to_string(instance);
+            result.push_back('/');
+        }
+        result += variable;
+        return result;
+    }
+
+    std::optional<json> get_cmd_response(const std::optional<json>& default_response);
+    void publish_fn(const std::string& interface, const std::string& variable, int instance, const json& value);
+
+    var_cb_list_t m_subscribe_var_callbacks;
+    std::list<json> m_cmd_response_list;
+
 protected:
     // ------------------------------------------------------------------------
     // supported interface calls
 
     virtual std::optional<json> auth_call_set_connection_timeout(const Requirement& req, const json& args);
     virtual std::optional<json> auth_call_set_master_pass_group_id(const Requirement& req, const json& args);
+    virtual std::optional<json> display_message_call_clear_display_message(const Requirement& req, const json& args);
+    virtual std::optional<json> display_message_call_get_display_messages(const Requirement& req, const json& args);
+    virtual std::optional<json> display_message_call_set_display_message(const Requirement& req, const json& args);
+    virtual std::optional<json> evse_manager_call_enable_disable(const Requirement& req, const json& args);
     virtual std::optional<json> evse_manager_call_external_ready_to_start_charging(const Requirement& req,
                                                                                    const json& args);
+    virtual std::optional<json> evse_manager_call_force_unlock(const Requirement& req, const json& args);
     virtual std::optional<json> evse_manager_call_get_evse(const Requirement& req, const json& args);
+    virtual std::optional<json> evse_manager_call_pause_charging(const Requirement& req, const json& args);
     virtual std::optional<json> evse_manager_call_set_plug_and_charge_configuration(const Requirement& req,
                                                                                     const json& args);
+    virtual std::optional<json> evse_manager_call_stop_transaction(const Requirement& req, const json& args);
+    virtual std::optional<json> evse_manager_call_update_allowed_energy_transfer_modes(const Requirement& req,
+                                                                                       const json& args);
+    virtual std::optional<json> external_energy_limits_call_set_external_limits(const Requirement& req,
+                                                                                const json& args);
+    virtual std::optional<json> iso15118_extensions_call_set_get_certificate_response(const Requirement& req,
+                                                                                      const json& args);
+    virtual std::optional<json> ocpp_data_transfer_call_data_transfer(const Requirement& req, const json& args);
     virtual std::optional<json> system_call_get_boot_reason(const Requirement& req, const json& args);
 
     // ------------------------------------------------------------------------
@@ -146,7 +183,14 @@ public:
     // ------------------------------------------------------------------------
     // helper functions
 
+    // publish to OCPP module required interfaces
     void publish(const Requirement& req, const std::string& fn, json args);
+
+    // add to list of cmd responses
+    void add_cmd_result(const json& data);
+
+    // subscribe to variables published on the interface (see publish_fn)
+    void subscribe_var(const std::string_view& interface, const std::string_view& variable, int instance, var_cb_t cb);
 };
 
 struct auth_token_validatorImplStub : public auth_token_validatorImplBase {
@@ -212,6 +256,7 @@ private:
 public:
     using provides_t = ocpp_multi::GenericOcppInterface::provides_t;
     using requires_t = ocpp_multi::GenericOcppInterface::requires_t;
+    using var_cb_t = ModuleAdapter::var_cb_t;
 
     auth_token_validatorImplStub p_auth_validator{&m_adapter, "auth_validator"};
     auth_token_providerImplStub p_auth_provider{&m_adapter, "auth_provider"};
@@ -292,20 +337,52 @@ public:
         return m_adapter.get_config_service_client();
     }
 
-    void publish(const Requirement& req, std::string& fn, const json& args) {
-        m_adapter.publish(m_requirement, fn, args);
-    }
+    // ------------------------------------------------------------------------
+    // helpers
 
-    void publish_ready(size_t index, bool value) {
-        auto req = m_requirement;
-        req.index = index;
-        json::value_type args = value;
-        m_adapter.publish(req, "ready", args);
+    void add_cmd_result(const json& data) {
+        m_adapter.add_cmd_result(data);
     }
 
     void subscribe_global_all_errors(const Everest::error::ErrorCallback& callback,
                                      const Everest::error::ErrorCallback& clear_callback) {
         m_adapter.get_global_error_manager()->subscribe_global_all_errors(callback, clear_callback);
+    }
+
+    // ------------------------------------------------------------------------
+    // Subscribe to variables published by the OCPP module
+
+    // subscribe for all interfaces and variables
+    void subscribe_var(var_cb_t cb) {
+        m_adapter.subscribe_var("", "", -1, std::move(cb));
+    }
+
+    // subscribe for specific interface and variable
+    void subscribe_var(const std::string_view& interface, const std::string_view& variable, var_cb_t cb) {
+        m_adapter.subscribe_var(interface, variable, -1, std::move(cb));
+    }
+
+    // subscribe for specific interface and variable and instance
+    void subscribe_var(const std::string_view& interface, const std::string_view& variable, int instance, var_cb_t cb) {
+        m_adapter.subscribe_var(interface, variable, instance, std::move(cb));
+    }
+
+    // ------------------------------------------------------------------------
+    // Publish to interfaces used by the OCPP module
+
+    void publish(const Requirement& req, const std::string_view& fn, const json& args) {
+        m_adapter.publish(m_requirement, std::string{fn}, args);
+    }
+
+    void publish(std::size_t index, const std::string_view& fn, const json& args) {
+        auto req = m_requirement;
+        req.index = index;
+        m_adapter.publish(req, std::string{fn}, args);
+    }
+
+    void publish_ready(std::size_t index, bool value) {
+        json::value_type arg = value;
+        publish(index, "ready", arg);
     }
 
 private:

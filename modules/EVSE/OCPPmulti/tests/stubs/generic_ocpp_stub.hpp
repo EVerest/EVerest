@@ -99,6 +99,12 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::ready_transaction_handler;
     using ocpp_multi::GenericOcpp::set_external_limits;
     using ocpp_multi::GenericOcpp::wait_all_ready;
+
+    // access to variables
+    using ocpp_multi::GenericOcpp::evse_evcc_id;
+    using ocpp_multi::GenericOcpp::evse_hardware_capabilities_map;
+    using ocpp_multi::GenericOcpp::evse_soc_map;
+    using ocpp_multi::GenericOcpp::evse_supported_energy_transfer_modes;
 };
 
 // creates the OCPP object and performs initialisation before every test
@@ -118,6 +124,7 @@ protected:
         interfaces.add_display_message("display");
         interfaces.add_evse_energy_sink("energy_node", 1);
         interfaces.add_evse_manager("evse_manager_1");
+        interfaces.add_evse_manager("evse_manager_2");
         interfaces.add_extensions_15118("evsev2g");
         interfaces.add_reservation("reservation");
         chargepoint.load_store("default_store.json");
@@ -130,6 +137,7 @@ protected:
         ocpp.init();
         // ocpp.ready() waits for the EVSE managers to be ready
         interfaces.publish_ready(0, true);
+        interfaces.publish_ready(1, true);
         ocpp.ready(interfaces.get_config_service_client());
     }
 
@@ -137,5 +145,7 @@ protected:
         // consider removing generated/updated files/databases etc.
     }
 };
+
+struct GenericOcppRequiresTester : public GenericOcppProvidesTester {};
 
 } // namespace stubs

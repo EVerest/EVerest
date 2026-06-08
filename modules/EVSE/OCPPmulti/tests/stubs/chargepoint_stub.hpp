@@ -4,6 +4,8 @@
 #pragma once
 
 #include "ocpp/common/cistring.hpp"
+#include "ocpp/common/types.hpp"
+#include "ocpp/v2/ocpp_types.hpp"
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -146,7 +148,13 @@ bool operator==(const ChangeAvailabilityRequest& lhs, const ChangeAvailabilityRe
 bool operator==(const DataTransferRequest& lhs, const DataTransferRequest& rhs);
 bool operator==(const GetVariableData& lhs, const GetVariableData& rhs);
 bool operator==(const IdToken& lhs, const IdToken& rhs);
+bool operator==(const MeterValue& lhs, const MeterValue& rhs);
+bool operator==(const SampledValue& lhs, const SampledValue& rhs);
+bool operator==(const SignedMeterValue& lhs, const SignedMeterValue& rhs);
+bool operator==(const UnitOfMeasure& lhs, const UnitOfMeasure& rhs);
 } // namespace v2
+bool operator==(const DisplayMessage& lhs, const DisplayMessage& rhs);
+bool operator==(const DisplayMessageContent& lhs, const DisplayMessageContent& rhs);
 } // namespace ocpp
 
 namespace types::ocpp {

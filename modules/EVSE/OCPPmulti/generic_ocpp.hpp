@@ -215,6 +215,19 @@ public:
     }
 
 protected:
+    [[nodiscard]] auto& evse_evcc_id() {
+        return m_evse_evcc_id;
+    }
+    [[nodiscard]] auto& evse_hardware_capabilities_map() {
+        return m_evse_hardware_capabilities_map;
+    }
+    [[nodiscard]] auto& evse_soc_map() {
+        return m_evse_soc_map;
+    }
+    [[nodiscard]] auto& evse_supported_energy_transfer_modes() {
+        return m_evse_supported_energy_transfer_modes;
+    }
+
     void init_check_energy_sink();
     void init_error_handlers();
     void init_evse_maps();

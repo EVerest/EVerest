@@ -7,7 +7,6 @@
 #include <generic_ocpp.hpp>
 
 #include "stubs/generic_ocpp_stub.hpp"
-#include <ocpp/v2/messages/DataTransfer.hpp>
 
 namespace {
 using namespace stubs;
@@ -17,19 +16,6 @@ using ::testing::Return;
 using types::ocpp::DataTransferRequest;
 using types::ocpp::DataTransferResponse;
 using types::ocpp::DataTransferStatus;
-
-// DataTransferResponse handle_data_transfer(types::ocpp::DataTransferRequest& request)
-
-// struct DataTransferRequest
-// std::string vendor_id; ///< Identifies the vendor
-// std::optional<std::string> message_id; ///< Identifies the message
-// std::optional<std::string> data; ///< Data provided by this data transfer
-// std::optional<types::ocpp::CustomData> custom_data; ///< Custom data extension
-
-// struct DataTransferResponse
-// types::ocpp::DataTransferStatus status; ///< Status of the data transfer
-// std::optional<std::string> data; ///< Data provided by this data transfer
-// std::optional<types::ocpp::CustomData> custom_data; ///< Custom data extension
 
 TEST_F(GenericOcppProvidesTester, dataTransferAccepted) {
     DataTransferRequest request{"Pionix", "12345678", "{}"};

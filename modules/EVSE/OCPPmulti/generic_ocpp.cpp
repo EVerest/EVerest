@@ -601,6 +601,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     auto composed_device_model_storage = std::make_unique<module::device_model::ComposedDeviceModelStorage>();
 
     // register both device model storages
+    // note - this processing causes a slight delay, scope for performance tuning
     composed_device_model_storage->register_device_model_storage("OCPP", std::move(libocpp_device_model_storage));
     composed_device_model_storage->register_device_model_storage("EVEREST", m_everest_device_model_storage);
 

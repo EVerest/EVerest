@@ -8,9 +8,6 @@
 #include <generic_ocpp.hpp>
 #include <optional>
 
-#include "generated/types/ocpp.hpp"
-#include "ocpp/v2/ocpp_enums.hpp"
-#include "ocpp/v2/ocpp_types.hpp"
 #include "stubs/generic_ocpp_stub.hpp"
 
 namespace {
@@ -18,6 +15,9 @@ using namespace stubs;
 using ::testing::_;
 using ::testing::InSequence;
 using ::testing::Return;
+
+// ----------------------------------------------------------------------------
+// Calls
 
 TEST_F(GenericOcppProvidesTester, stopRestart) {
     InSequence seq;
@@ -455,6 +455,290 @@ TEST_F(GenericOcppProvidesTester, monitorVariables) {
     EXPECT_EQ(ocpp.get_monitor_list().size(), 2);
     EXPECT_TRUE(contains(ocpp.get_monitor_list(), "Component1", "Variable1"));
     EXPECT_TRUE(contains(ocpp.get_monitor_list(), "Component2", "Variable2"));
+}
+
+// ----------------------------------------------------------------------------
+// Vars
+
+TEST_F(GenericOcppProvidesTester, publishOcppTransactionEvent) {
+    // publish_ocpp_transaction_event() called from cb_transaction_event
+
+    using ocpp::DateTime;
+    using ocpp::v2::Transaction;
+    using ocpp::v2::TransactionEventEnum;
+    using ocpp::v2::TransactionEventRequest;
+    using ocpp::v2::TriggerReasonEnum;
+
+    TransactionEventRequest request;
+    request.eventType = TransactionEventEnum::Updated;
+    request.timestamp = DateTime{};
+    request.triggerReason = TriggerReasonEnum::ChargingRateChanged;
+    request.seqNo = 99587;
+    request.transactionInfo = Transaction{"TransactionId"};
+    // std::optional<CostDetails> costDetails;
+    // std::optional<std::vector<MeterValue>> meterValue;
+    // std::optional<bool> offline;
+    // std::optional<std::int32_t> numberOfPhasesUsed;
+    // std::optional<std::int32_t> cableMaxCurrent;
+    // std::optional<std::int32_t> reservationId;
+    // std::optional<PreconditioningStatusEnum> preconditioningStatus;
+    // std::optional<bool> evseSleep;
+    // std::optional<EVSE> evse;
+    // std::optional<IdToken> idToken;
+    // std::optional<CustomData> customData;
+
+    std::vector<json> received;
+    interfaces.subscribe_var("ocpp_generic", "ocpp_transaction_event",
+                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    ocpp.cb_transaction_event(request);
+    ASSERT_EQ(received.size(), 1);
+    EXPECT_EQ(received[0],
+              R"({"session_id":"TransactionId","transaction_event":"Updated","transaction_id":"TransactionId"})"_json);
+}
+
+TEST_F(GenericOcppProvidesTester, publishOcppTransactionEventRespose) {
+    // publish_ocpp_transaction_event_response() called from cb_transaction_event_response
+
+    using ocpp::DateTime;
+    using ocpp::v2::AuthorizationStatusEnum;
+    using ocpp::v2::EVSE;
+    using ocpp::v2::IdTokenInfo;
+    using ocpp::v2::Transaction;
+    using ocpp::v2::TransactionEventEnum;
+    using ocpp::v2::TransactionEventRequest;
+    using ocpp::v2::TransactionEventResponse;
+    using ocpp::v2::TriggerReasonEnum;
+
+    TransactionEventRequest transaction_event;
+    transaction_event.eventType = TransactionEventEnum::Started;
+    transaction_event.timestamp = DateTime();
+    transaction_event.triggerReason = TriggerReasonEnum::CablePluggedIn;
+    transaction_event.seqNo = 10;
+    transaction_event.transactionInfo = Transaction{"transactionId"};
+    // std::optional<CostDetails> costDetails;
+    // std::optional<std::vector<MeterValue>> meterValue;
+    // std::optional<bool> offline;
+    // std::optional<std::int32_t> numberOfPhasesUsed;
+    // std::optional<std::int32_t> cableMaxCurrent;
+    // std::optional<std::int32_t> reservationId;
+    // std::optional<PreconditioningStatusEnum> preconditioningStatus;
+    // std::optional<bool> evseSleep;
+    // std::optional<EVSE> evse;
+    // std::optional<IdToken> idToken;
+    // std::optional<CustomData> customData;
+
+    TransactionEventResponse transaction_event_response{};
+    // std::optional<float> totalCost;
+    // std::optional<std::int32_t> chargingPriority;
+    // std::optional<IdTokenInfo> idTokenInfo;
+    // std::optional<TransactionLimit> transactionLimit;
+    // std::optional<MessageContent> updatedPersonalMessage;
+    // std::optional<std::vector<MessageContent>> updatedPersonalMessageExtra;
+    // std::optional<CustomData> customData;
+
+    std::vector<json> received;
+    interfaces.subscribe_var("ocpp_generic", "ocpp_transaction_event_response",
+                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    ocpp.cb_transaction_event_response(transaction_event, transaction_event_response);
+
+    transaction_event.eventType = TransactionEventEnum::Updated;
+    transaction_event.triggerReason = TriggerReasonEnum::ChargingStateChanged;
+    transaction_event.evse = EVSE{1, 0};
+    transaction_event_response.idTokenInfo = IdTokenInfo{AuthorizationStatusEnum::Accepted};
+    ocpp.cb_transaction_event_response(transaction_event, transaction_event_response);
+
+    EXPECT_EQ(received.size(), 2);
+    EXPECT_EQ(
+        received[0],
+        R"({"original_transaction_event":{"session_id":"transactionId","transaction_event":"Started","transaction_id":"transactionId"}})"_json);
+    EXPECT_EQ(
+        received[1],
+        R"({"original_transaction_event":{"evse":{"connector_id":0,"id":1},"session_id":"transactionId","transaction_event":"Updated","transaction_id":"transactionId"}})"_json);
+}
+
+TEST_F(GenericOcppProvidesTester, publishChargingSchedules) {
+    // publish_charging_schedules() called from publish_charging_schedules
+    // and cb_charging_schedules_timer
+
+    using ocpp::DateTime;
+    using ocpp::v2::ChargingRateUnitEnum;
+    using ocpp::v2::EnhancedChargingSchedulePeriod;
+    using ocpp::v2::EnhancedCompositeSchedule;
+
+    std::vector<json> received;
+    interfaces.subscribe_var("ocpp_generic", "charging_schedules",
+                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    std::vector<EnhancedCompositeSchedule> composite_schedules;
+    EnhancedCompositeSchedule schedule;
+    schedule.evseId = 1;
+    schedule.duration = 1500;
+    schedule.scheduleStart = DateTime{"2026-06-05T13:37:36.409Z"};
+    schedule.chargingRateUnit = ChargingRateUnitEnum::A;
+
+    EnhancedChargingSchedulePeriod period;
+    period.startPeriod = 0;
+    period.limit = 16.;
+    // std::optional<float> limit_L2;
+    // std::optional<float> limit_L3;
+    // std::optional<std::int32_t> numberPhases;
+    // std::optional<std::int32_t> phaseToUse;
+    // std::optional<float> dischargeLimit;
+    // std::optional<float> dischargeLimit_L2;
+    // std::optional<float> dischargeLimit_L3;
+    // std::optional<float> setpoint;
+    // std::optional<float> setpoint_L2;
+    // std::optional<float> setpoint_L3;
+    // std::optional<float> setpointReactive;
+    // std::optional<float> setpointReactive_L2;
+    // std::optional<float> setpointReactive_L3;
+    // std::optional<bool> preconditioningRequest;
+    // std::optional<bool> evseSleep;
+    // std::optional<float> v2xBaseline;
+    // std::optional<OperationModeEnum> operationMode;
+    // std::optional<std::vector<V2XFreqWattPoint>> v2xFreqWattCurve;
+    // std::optional<std::vector<V2XSignalWattPoint>> v2xSignalWattCurve;
+    // std::optional<CustomData> customData;
+    period.stackLevel = 8;
+
+    schedule.chargingSchedulePeriod.push_back(period);
+    period.startPeriod = 120;
+    period.limit = 24.;
+    schedule.chargingSchedulePeriod.push_back(period);
+
+    composite_schedules.push_back(schedule);
+
+    ocpp.publish_charging_schedules(composite_schedules);
+    ASSERT_EQ(received.size(), 1);
+    EXPECT_EQ(received[0],
+              R"({"schedules":[
+        {"charging_rate_unit":"A","charging_schedule_period":[
+        {"limit":16.0,"stack_level":8,"start_period":0},{"limit":24.0,"stack_level":8,"start_period":120}],
+        "duration":1500,"evse":1,"start_schedule":"2026-06-05T13:37:36.409Z"}]})"_json);
+
+    ASSERT_EQ(config.RequestCompositeScheduleUnit, "A");
+    composite_schedules[0].duration = config.RequestCompositeScheduleDurationS;
+    composite_schedules[0].chargingSchedulePeriod[0].stackLevel = 16;
+    composite_schedules[0].chargingSchedulePeriod[1].stackLevel = 20;
+    EXPECT_CALL(chargepoint,
+                get_all_composite_schedules(config.RequestCompositeScheduleDurationS, ChargingRateUnitEnum::A))
+        .WillOnce(Return(composite_schedules));
+
+    received.clear();
+    ocpp.cb_charging_schedules_timer();
+    ASSERT_EQ(received.size(), 1);
+    EXPECT_EQ(received[0],
+              R"({"schedules":[
+        {"charging_rate_unit":"A","charging_schedule_period":[
+        {"limit":16.0,"stack_level":16,"start_period":0},{"limit":24.0,"stack_level":20,"start_period":120}],
+        "duration":600,"evse":1,"start_schedule":"2026-06-05T13:37:36.409Z"}]})"_json);
+}
+
+TEST_F(GenericOcppProvidesTester, publishIsConnected) {
+    // publish_is_connected() called from cb_connection_state_changed
+
+    using ocpp::OcppProtocolVersion;
+
+    std::vector<json> received;
+    interfaces.subscribe_var("ocpp_generic", "is_connected",
+                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    ocpp.cb_connection_state_changed(true, OcppProtocolVersion::v201);
+    ocpp.cb_connection_state_changed(false, OcppProtocolVersion::v16);
+
+    ASSERT_EQ(received.size(), 2);
+    EXPECT_EQ(received[0], R"(true)"_json);
+    EXPECT_EQ(received[1], R"(false)"_json);
+}
+
+TEST_F(GenericOcppProvidesTester, publishSecurityEvent) {
+    // publish_security_event() called from cb_security_event
+
+    std::vector<json> received;
+    interfaces.subscribe_var("ocpp_generic", "security_event",
+                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    ocpp.cb_security_event("Bad Actor", std::nullopt);
+    ocpp.cb_security_event("Strange Actor", "Fuzzy");
+
+    ASSERT_EQ(received.size(), 2);
+    EXPECT_EQ(received[0], R"({"type":"Bad Actor"})"_json);
+    EXPECT_EQ(received[1], R"({"info":"Fuzzy","type":"Strange Actor"})"_json);
+}
+
+TEST_F(GenericOcppProvidesTester, publishEventData) {
+    // publish_event_data() called from cb_variable_changed
+
+    using ocpp::v2::Component;
+    using ocpp::v2::Variable;
+    using types::ocpp::ComponentVariable;
+
+    std::vector<json> received;
+    interfaces.subscribe_var("ocpp_generic", "event_data",
+                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    ocpp.cb_variable_changed(Component{"component"}, Variable{"variable"}, "value");
+    EXPECT_TRUE(received.empty());
+
+    // add monitor
+    EXPECT_CALL(chargepoint, register_variable_listener(_)).Times(1);
+    std::vector<ComponentVariable> req{{{"Component"}, {"Variable"}}};
+    ocpp.handle_monitor_variables(req);
+    ocpp.cb_variable_changed(Component{"Component"}, Variable{"Variable"}, "value");
+
+    ASSERT_EQ(received.size(), 1);
+    // adjust the date and time
+    json expected =
+        R"({"actual_value":"value","component_variable":{"component":{"name":"Component"},"variable":{"name":"Variable"}},"event_id":0,"event_notification_type":"CustomMonitor","timestamp":"2026-06-05T14:38:58.511Z","trigger":"Delta"})"_json;
+    expected["timestamp"] = received[0]["timestamp"];
+    EXPECT_EQ(received[0], expected);
+}
+
+TEST_F(GenericOcppProvidesTester, publishBootNotificationResponse) {
+    // publish_boot_notification_response() called from cb_boot_notification
+
+    using ocpp::DateTime;
+    using ocpp::v2::BootNotificationResponse;
+    using ocpp::v2::RegistrationStatusEnum;
+
+    std::vector<json> received;
+    interfaces.subscribe_var("ocpp_generic", "boot_notification_response",
+                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    BootNotificationResponse response;
+    response.currentTime = DateTime{"2026-06-05T14:51:48.876Z"};
+    response.interval = 520;
+    response.status = RegistrationStatusEnum::Pending;
+    // std::optional<StatusInfo> statusInfo;
+    // std::optional<CustomData> customData;
+
+    ocpp.cb_boot_notification(response);
+
+    ASSERT_EQ(received.size(), 1);
+    EXPECT_EQ(received[0], R"({"current_time":"2026-06-05T14:51:48.876Z","interval":520,"status":"Pending"})"_json);
+}
+
+TEST_F(GenericOcppProvidesTester, publishOcppMessage) {
+    // publish_ocpp_message() called from cb_ocpp_messages
+
+    using ocpp::MessageDirection;
+    using ocpp::OcppProtocolVersion;
+
+    std::vector<json> received;
+    interfaces.subscribe_var("ocpp_generic", "ocpp_message",
+                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    ocpp.cb_connection_state_changed(true, OcppProtocolVersion::v16);
+    ocpp.cb_ocpp_messages(R"({"message": 1})", MessageDirection::ChargingStationToCSMS);
+    ocpp.cb_ocpp_messages(R"({"message": 2})", MessageDirection::CSMSToChargingStation);
+
+    ASSERT_EQ(received.size(), 2);
+    EXPECT_EQ(received[0],
+              R"({"direction":"ChargingStationToCSMS","message":"{\"message\": 1}","version":"1.6"})"_json);
+    EXPECT_EQ(received[1],
+              R"({"direction":"CSMSToChargingStation","message":"{\"message\": 2}","version":"1.6"})"_json);
 }
 
 } // namespace

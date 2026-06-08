@@ -18,11 +18,25 @@ target_include_directories(${TEST_TARGET_NAME} PUBLIC
 
 target_sources(${TEST_TARGET_NAME}
     PRIVATE
+
+    # provided interfaces tests
+    auth_provider_tests.cpp
     auth_validator_tests.cpp
     data_transfer_tests.cpp
-    generic_ocpp_tests.cpp
     ocpp_generic_tests.cpp
+    session_cost_tests.cpp
 
+    # required interfaces tests
+    authIntf_tests.cpp
+    charger_informationIntf_tests.cpp
+    display_messageIntf_tests.cpp
+    evse_managerIntf_tests.cpp
+    external_energy_limitsIntf_tests.cpp
+    iso15118_extensionsIntf_tests.cpp
+    ocpp_data_transferIntf_tests.cpp
+
+    # general
+    generic_ocpp_tests.cpp
     main.cpp
 
     everest/logging.cpp
@@ -35,6 +49,11 @@ target_sources(${TEST_TARGET_NAME}
     ../common/device_model/everest_device_model_storage.cpp
     ../common/conversions.cpp
     ../common/transaction_handler.cpp
+)
+
+target_compile_definitions(${TEST_TARGET_NAME}
+    PRIVATE
+    UNIT_TESTS
 )
 
 target_link_libraries(${TEST_TARGET_NAME}

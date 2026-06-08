@@ -11,7 +11,7 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     std::string ChargePointConfigPath{"config"};
     int CompositeScheduleIntervalS{500};
     std::string CoreDatabasePath{"core.db"};
-    int DelayOcppStart{};
+    int DelayOcppStart{1};
     std::string DeviceModelConfigPath{"dm_config"};
     std::string DeviceModelDatabasePath{"dm.db"};
     std::string DeviceModelDatabaseMigrationPath{"device_model_migrations"};

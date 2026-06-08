@@ -23,6 +23,10 @@ TEST(GenericOcppTester, init) {
     stubs::ConfigStub config;
     stubs::ModuleInterfaces interfaces;
 
+    std::vector<json> received;
+    interfaces.subscribe_var("evse_manager", "call_external_ready_to_start_charging",
+                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
     // connect required interfaces
     interfaces.add_charger_information("info");
     interfaces.add_data_transfer("data_transfer");
@@ -58,6 +62,10 @@ TEST(GenericOcppTester, init) {
     interfaces.publish_ready(1, true);
 
     ocpp.ready(interfaces.get_config_service_client());
+
+    ASSERT_EQ(received.size(), 2);
+    EXPECT_EQ(received[0], json{});
+    EXPECT_EQ(received[1], json{});
 }
 
 } // namespace

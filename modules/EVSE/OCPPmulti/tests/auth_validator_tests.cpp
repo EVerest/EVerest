@@ -19,18 +19,6 @@ using types::authorization::IdTokenType;
 using types::authorization::ProvidedIdToken;
 using types::authorization::ValidationResult;
 
-// ValidationResult handle_validate_token(types::authorization::ProvidedIdToken& provided_token)
-
-// types::authorization::IdToken id_token; ///< IdToken of the provided token
-// types::authorization::AuthorizationType authorization_type; ///< Authorization type of the token.
-// std::optional<int32_t> request_id; ///< Id of the authorization request of this token. Could be used to put
-// remoteStartId of OCPP2.0.1 std::optional<types::authorization::IdToken> parent_id_token; ///< Parent IdToken of
-// the provided token std::optional<std::vector<int32_t>> connectors; ///< A list of connector ids to which the
-// authorization can be assigned std::optional<bool> prevalidated; ///< Indicates that the id token is already
-// validated by the provider std::optional<std::string> certificate; ///< The X.509 certificated presented by EV and
-// encoded in PEM format std::optional<std::vector<types::iso15118::CertificateHashDataInfo>>
-// iso15118CertificateHashData; ///< Contains the information needed to verify the EV Contract Certificate via OCSP
-
 TEST_F(GenericOcppProvidesTester, authValidatorAccepted) {
     ProvidedIdToken token{{
                               "MyToken",
@@ -61,6 +49,66 @@ TEST_F(GenericOcppProvidesTester, authValidatorInvalid) {
 
     const auto result = ocpp.handle_validate_token(token);
     EXPECT_EQ(result.authorization_status, AuthorizationStatus::Invalid);
+}
+
+TEST_F(GenericOcppProvidesTester, publishValidateResultUpdate) {
+    // publish_validate_result_update() called from cb_transaction_event_response
+    // when
+    // - transaction_event.evse.has_value()
+    // - transaction_event_response.idTokenInfo.has_value()
+
+    using ocpp::DateTime;
+    using ocpp::v2::AuthorizationStatusEnum;
+    using ocpp::v2::EVSE;
+    using ocpp::v2::IdTokenInfo;
+    using ocpp::v2::Transaction;
+    using ocpp::v2::TransactionEventEnum;
+    using ocpp::v2::TransactionEventRequest;
+    using ocpp::v2::TransactionEventResponse;
+    using ocpp::v2::TriggerReasonEnum;
+
+    TransactionEventRequest transaction_event;
+    transaction_event.eventType = TransactionEventEnum::Started;
+    transaction_event.timestamp = DateTime();
+    transaction_event.triggerReason = TriggerReasonEnum::CablePluggedIn;
+    transaction_event.seqNo = 10;
+    transaction_event.transactionInfo = Transaction{"transactionId"};
+    // std::optional<CostDetails> costDetails;
+    // std::optional<std::vector<MeterValue>> meterValue;
+    // std::optional<bool> offline;
+    // std::optional<std::int32_t> numberOfPhasesUsed;
+    // std::optional<std::int32_t> cableMaxCurrent;
+    // std::optional<std::int32_t> reservationId;
+    // std::optional<PreconditioningStatusEnum> preconditioningStatus;
+    // std::optional<bool> evseSleep;
+    // std::optional<EVSE> evse;
+    // std::optional<IdToken> idToken;
+    // std::optional<CustomData> customData;
+
+    TransactionEventResponse transaction_event_response{};
+    // std::optional<float> totalCost;
+    // std::optional<std::int32_t> chargingPriority;
+    // std::optional<IdTokenInfo> idTokenInfo;
+    // std::optional<TransactionLimit> transactionLimit;
+    // std::optional<MessageContent> updatedPersonalMessage;
+    // std::optional<std::vector<MessageContent>> updatedPersonalMessageExtra;
+    // std::optional<CustomData> customData;
+
+    std::vector<json> received;
+    interfaces.subscribe_var("auth_validator", "validate_result_update",
+                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    ocpp.cb_transaction_event_response(transaction_event, transaction_event_response);
+    EXPECT_TRUE(received.empty());
+
+    transaction_event.evse = EVSE{1, 0};
+    transaction_event_response.idTokenInfo = IdTokenInfo{AuthorizationStatusEnum::Accepted};
+    ocpp.cb_transaction_event_response(transaction_event, transaction_event_response);
+
+    ASSERT_EQ(received.size(), 1);
+    EXPECT_EQ(
+        received[0],
+        R"({"connector_id":1,"validation_result":{"authorization_status":"Accepted","tariff_messages":[]}})"_json);
 }
 
 } // namespace
