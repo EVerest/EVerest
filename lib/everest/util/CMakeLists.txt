@@ -34,7 +34,7 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/everest
 )
 
 if(DISABLE_EDM)
-    ev_packaging(
+    evc_setup_package_no_export(
         NAME everest-util
         LIBRARY_NAME util
         NAMESPACE everest

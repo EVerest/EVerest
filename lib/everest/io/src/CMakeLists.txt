@@ -136,7 +136,7 @@ else()
 endif()
 
 if(DISABLE_EDM)
-    ev_packaging(
+    evc_setup_package_no_export(
         NAME everest-io
         LIBRARY_NAME io
         IMPORTED_LOCATION_FILENAME libeverest_io.so

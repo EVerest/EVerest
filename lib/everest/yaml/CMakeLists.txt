@@ -46,7 +46,7 @@ if (DISABLE_EDM)
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
     )
 
-    ev_packaging(
+    evc_setup_package_no_export(
         NAME everest-yaml
         LIBRARY_NAME yaml
         IMPORTED_LOCATION_FILENAME libeverest_yaml.a

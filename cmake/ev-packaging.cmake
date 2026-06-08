@@ -1,4 +1,4 @@
-function(ev_packaging)
+function(evc_setup_package_no_export)
     #
     # handle passed arguments
     #
