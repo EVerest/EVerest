@@ -151,7 +151,6 @@ public:
 
     // --- Active-slot in-memory access ---
     virtual const everest::config::ModuleConfigurations& get_active_module_configurations() const = 0;
-    virtual const everest::config::ModuleConfigurations& reload_from_storage() = 0;
 
     // --- Slot-scoped configuration ---
     virtual GetConfigurationResult get_configuration(int slot_id) = 0;
