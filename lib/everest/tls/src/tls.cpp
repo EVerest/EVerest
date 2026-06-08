@@ -35,6 +35,7 @@
 #include <openssl/ssl.h>
 #include <openssl/tls1.h>
 #include <openssl/types.h>
+#include <openssl/x509_vfy.h>
 #include <utility>
 
 #ifdef UNIT_TEST
@@ -800,6 +801,10 @@ int Connection::socket() const {
     return m_context->soc;
 }
 
+std::size_t Connection::pending() const {
+    return (m_context && m_context->ctx) ? static_cast<std::size_t>(SSL_pending(m_context->ctx.get())) : 0;
+}
+
 const Certificate* Connection::peer_certificate() const {
     assert(m_context != nullptr);
     return SSL_get0_peer_certificate(m_context->ctx.get());
@@ -913,11 +918,49 @@ void ServerConnection::wait_all_closed() {
 // ----------------------------------------------------------------------------
 // ClientConnection represents a TLS client connection
 
+namespace {
+// RFC 6066 §3 forbids literal IPv4/IPv6 addresses in the SNI extension, and
+// SSL_set1_host() expects a DNS name (IP SANs are matched via the verify param).
+// Detect a literal so SNI and DNS pinning apply only to real hostnames.
+bool is_ip_literal(const std::string& host) {
+    unsigned char buf[sizeof(struct in6_addr)];
+    return ::inet_pton(AF_INET, host.c_str(), buf) == 1 || ::inet_pton(AF_INET6, host.c_str(), buf) == 1;
+}
+} // namespace
+
 ClientConnection::ClientConnection(SslContext* ctx, int soc, const char* ip_in, const char* service_in,
-                                   std::int32_t timeout_ms) :
+                                   std::int32_t timeout_ms, bool verify_subject_name) :
     Connection(ctx, soc, ip_in, service_in, timeout_ms) {
-    if (m_context->soc_bio != nullptr) {
-        SSL_set_connect_state(m_context->ctx.get());
+    if (m_context->soc_bio == nullptr) {
+        return;
+    }
+    SSL_set_connect_state(m_context->ctx.get());
+    if (m_ip.empty()) {
+        return;
+    }
+
+    auto* const ssl = m_context->ctx.get();
+    const bool ip_literal = is_ip_literal(m_ip);
+
+    // RFC 6066 §3: the SNI extension carries DNS hostnames only, never IP literals.
+    if (!ip_literal) {
+        SSL_set_tlsext_host_name(ssl, m_ip.c_str());
+    }
+
+    if (verify_subject_name) {
+        // Pin certificate verification to the host: a DNS name via RFC-6125
+        // hostname matching, an IP literal via IP-SAN matching. If the pin cannot
+        // be installed, fault the connection so the handshake fails closed rather
+        // than silently downgrading to chain-of-trust only.
+        const int pinned = ip_literal ? X509_VERIFY_PARAM_set1_ip_asc(SSL_get0_param(ssl), m_ip.c_str())
+                                      : SSL_set1_host(ssl, m_ip.c_str());
+        if (pinned != 1) {
+            log_error(ip_literal ? "X509_VERIFY_PARAM_set1_ip_asc" : "SSL_set1_host");
+            m_state = state_t::fault;
+            return;
+        }
+        // disallow partial wildcards (e.g. "f*.example.com") in the certificate
+        SSL_set_hostflags(ssl, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
     }
 }
 
@@ -1446,6 +1489,11 @@ bool Client::init(const config_t& cfg, const override_t& override) {
     assert(override.trusted_ca_keys_free != nullptr);
 
     m_timeout_ms = cfg.io_timeout_ms;
+    m_verify_subject_name = cfg.verify_subject_name;
+    if (cfg.verify_subject_name && !cfg.verify_server) {
+        log_warning("hostname verification (verify_subject_name) requires verify_server=true to be enforced; "
+                    "it will not reject a mismatched host otherwise");
+    }
     m_trusted_ca_keys = cfg.trusted_ca_keys_data;
     SSL_CTX* ctx = nullptr;
     Server::certificate_config_t cert_config{};
@@ -1573,12 +1621,21 @@ std::unique_ptr<ClientConnection> Client::connect(const char* host, const char* 
             }
 
             if (connected) {
-                result = std::make_unique<ClientConnection>(m_context->ctx.get(), socket, host, service, m_timeout_ms);
+                result = std::make_unique<ClientConnection>(m_context->ctx.get(), socket, host, service, m_timeout_ms,
+                                                            m_verify_subject_name);
             }
         }
     }
 
     return result;
+}
+
+Client::ConnectionPtr Client::wrap_connecting_fd(int fd, const char* host_for_sni) {
+    if (m_context == nullptr) {
+        return nullptr;
+    }
+    return std::make_unique<ClientConnection>(m_context->ctx.get(), fd, (host_for_sni != nullptr) ? host_for_sni : "",
+                                              "", m_timeout_ms, m_verify_subject_name);
 }
 
 Client::override_t Client::default_overrides() {
