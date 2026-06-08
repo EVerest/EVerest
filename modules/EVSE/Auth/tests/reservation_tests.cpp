@@ -1254,6 +1254,40 @@ TEST_F(ReservationHandlerTest, store_load_evse_specific_reservation_without_glob
     EXPECT_EQ(r.reservation_id_to_reservation_timeout_timer_map.size(), 1);
 }
 
+TEST_F(ReservationHandlerTest, cancelled_reservation_not_resurrected_after_reload) {
+    // Regression test: cancelling the last reservation must clear the stored
+    // state. Previously store_reservations() skipped writing when the set was
+    // empty, leaving the stale entry on disk so the cancelled reservation was
+    // resurrected on the next load_reservations().
+    add_connector(0, 0, types::evse_manager::ConnectorTypeEnum::cCCS2, this->evses);
+    add_connector(0, 1, types::evse_manager::ConnectorTypeEnum::cType2, this->evses);
+    add_connector(1, 0, types::evse_manager::ConnectorTypeEnum::cCCS2, this->evses);
+    add_connector(1, 1, types::evse_manager::ConnectorTypeEnum::cType2, this->evses);
+
+    r.load_reservations();
+    EXPECT_TRUE(r.evse_reservations.empty());
+
+    // Reservation id 0 (create_reservation starts numbering at 0).
+    EXPECT_EQ(r.make_reservation(1, create_reservation(types::evse_manager::ConnectorTypeEnum::cCCS2)),
+              ReservationResult::Accepted);
+    EXPECT_EQ(r.evse_reservations.size(), 1);
+
+    // Cancel the only reservation.
+    r.cancel_reservation(0, false, ReservationEndReason::Cancelled);
+    EXPECT_TRUE(r.evse_reservations.empty());
+
+    // Simulate a restart: drop in-memory state and reload from storage.
+    r.evse_reservations.clear();
+    r.global_reservations.clear();
+    r.reservation_id_to_reservation_timeout_timer_map.clear();
+
+    r.load_reservations();
+
+    // The cancelled reservation must NOT come back.
+    EXPECT_TRUE(r.evse_reservations.empty());
+    EXPECT_TRUE(r.global_reservations.empty());
+}
+
 TEST_F(ReservationHandlerTest, store_load_reservations_connector_unavailable) {
     add_connector(0, 0, types::evse_manager::ConnectorTypeEnum::cCCS2, this->evses);
     add_connector(0, 1, types::evse_manager::ConnectorTypeEnum::cType2, this->evses);
