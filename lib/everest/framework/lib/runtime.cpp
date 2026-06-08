@@ -49,18 +49,16 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
     everest::config::SqliteConfigSlotManager slot_mgr(db_conn);
 
     auto boot_slot_id = slot_mgr.get_next_boot_slot_id();
-    EVLOG_critical << "Boot slot id: " << std::to_string(boot_slot_id);
+    auto db_storage = std::make_unique<everest::config::SqliteStorage>(db_conn, boot_slot_id);
 
     const bool db_valid = slot_mgr.is_valid(boot_slot_id);
     if (db_valid && !reset_from_yaml) {
         EVLOG_info << "Booting and parsing configuration from database: " << ms.db_dir;
-        bs.storage = std::make_unique<everest::config::SqliteStorage>(db_conn, boot_slot_id);
-        bs.module_configs_initialized = true;
-        const auto resp = bs.storage->get_module_configs();
+        const auto resp = db_storage->get_module_configs();
         if (resp.status == everest::config::GenericResponseStatus::Failed) {
             EVLOG_AND_THROW(EverestConfigError("Failed to pre-load module configs from database"));
         }
-        bs.module_configs = resp.module_configs;
+        bs.module_configs_initialized = true;
     } else {
         if (reset_from_yaml && db_valid) {
             EVLOG_info << "--reset-from-yaml requested, discarding existing database slot and re-seeding from YAML: "
@@ -71,8 +69,37 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
         // Delete the slot (no-op if it doesn't exist)
         slot_mgr.delete_slot(boot_slot_id);
         slot_mgr.write_config_slot(boot_slot_id);
-        bs.storage = std::make_unique<everest::config::SqliteStorage>(db_conn, boot_slot_id);
-        bs.module_configs_initialized = false;
+
+        std::shared_ptr<const ManagerConfig> mgr_config;
+        bool valid_config = false;
+        try {
+            mgr_config = std::make_shared<const ManagerConfig>(ms);
+            valid_config = true;
+        } catch (EverestInternalError& e) {
+            EVLOG_error << fmt::format("Failed to load and validate config!\n{}",
+                                       boost::diagnostic_information(e, true));
+        } catch (boost::exception& e) {
+            EVLOG_error << "Failed to load and validate config!";
+            EVLOG_critical << fmt::format("Caught top level boost::exception:\n{}",
+                                          boost::diagnostic_information(e, true));
+        } catch (std::exception& e) {
+            EVLOG_error << "Failed to load and validate config!";
+            EVLOG_critical << fmt::format("Caught top level std::exception:\n{}",
+                                          boost::diagnostic_information(e, true));
+        }
+
+        if (valid_config) {
+            // Seed the database: parse() enriched module_configs with manifest metadata needed for storage writes.
+            const auto& module_config = mgr_config->get_module_configurations();
+            if (db_storage->write_module_configs(module_config) != everest::config::GenericResponseStatus::Failed) {
+                EVLOG_info << "Module configs written to database successfully, marking config as valid";
+                db_storage->mark_valid(true, nlohmann::json(module_config).dump(), ms.config_file, std::nullopt);
+                bs.module_configs_initialized = true;
+            } else {
+                EVLOG_warning << "Failed to write module configs to database, marking config as invalid";
+                db_storage->mark_valid(false, nlohmann::json(module_config).dump(), ms.config_file, std::nullopt);
+            }
+        }
     }
 
     return bs;

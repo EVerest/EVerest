@@ -595,30 +595,31 @@ void Manager::handle_initiate_graceful_shutdown(const std::chrono::steady_clock:
     }
 }
 
-void Manager::reload_and_update_context(RuntimeContext& ctx) {
+bool Manager::reload_and_update_context(RuntimeContext& ctx) {
     config_service_core_->reinitialize_from_db();
-    auto module_cfg = std::make_optional<everest::config::ModuleConfigurations>(
-        config_service_core_->get_active_module_configurations());
-    auto slot_id = config_service_core_->get_active_slot_id();
-    auto db_storage = std::make_unique<everest::config::SqliteStorage>(db_connection_, slot_id);
+    auto module_cfg = config_service_core_->get_active_module_configurations();
 
     std::shared_ptr<const ManagerConfig> config;
     try {
-        config = load_and_validate_config(ctx.ms, db_storage, true, module_cfg);
+        config = load_and_validate_config(ctx.ms, module_cfg);
     } catch (...) {
-        // TODO(CB): What should we do here? Can this be recovered?
-        return;
+        return false;
     }
 
     ctx.standalone_modules = collect_standalone_modules(*config);
     ctx.ignored_modules = collect_ignored_modules();
     ctx.config = config;
+
+    return true;
 }
 
 // ---- Core run loop ----------------------------------------------------------
 
 int Manager::run() {
     const bool check = (vm_.count("check") != 0);
+    const bool boot_into_idle = vm_.count("into-idle") != 0;
+    const bool cfg_api_active = vm_.count("configuration-api") != 0;
+    const bool lfc_api_active = vm_.count("lifecycle-api") != 0;
     sigint_received_ = false;
     shutdown_cause_ = ShutdownCause::None;
     transition_to(ManagerState::Initializing);
@@ -667,18 +668,6 @@ int Manager::run() {
         EVLOG_info << "Catching and forwarding command exceptions to callers";
     }
 
-    std::unique_ptr<everest::config::SqliteStorage> db_storage;
-    bool db_storage_has_module_configs = false;
-    std::optional<everest::config::ModuleConfigurations> preloaded_module_configs;
-
-    {
-        auto bs = init_database_bootstrap(ms, reset_from_yaml);
-        db_storage = std::move(bs.storage);
-        db_connection_ = std::move(bs.db_connection);
-        db_storage_has_module_configs = bs.module_configs_initialized;
-        preloaded_module_configs = std::move(bs.module_configs);
-    }
-
     auto admin_panel = ManagerAdminPanel::create(ms);
 
     EVLOG_verbose << fmt::format("EVerest prefix was set to {}", ms.runtime_settings.prefix.string());
@@ -703,21 +692,39 @@ int Manager::run() {
         return EXIT_SUCCESS;
     }
 
-    const bool retain_topics = (vm_.count("retain-topics") != 0);
+    {
+        auto bs = init_database_bootstrap(ms, reset_from_yaml);
+        db_connection_ = std::move(bs.db_connection);
+        if (not bs.module_configs_initialized) {
+            // no valid database entry AND it's impossible to write one
+            // it would be brave to continue here
+            EVLOG_critical << "Couldn't initialize the configuration database!";
+            return EXIT_FAILURE;
+        }
+    }
 
-    // TODO(CB): These steps are also done in reload_and_update_context (more or less) - should be reused here
-    // - ManagerConfig
-    // - standalone/ignored_modules
-    // - RuntimeContext
-    std::shared_ptr<const ManagerConfig> config; // TODO: maybe this can stay unique when we re-work start_modules()
+    config_service_core_ = std::make_unique<config::ConfigServiceCore>(ms, db_connection_);
 
-    try {
-        config = load_and_validate_config(ms, db_storage, db_storage_has_module_configs, preloaded_module_configs);
-    } catch (...) {
+    // create StatusFifo object
+    auto status_fifo = StatusFifo::create_from_path(vm_["status-fifo"].as<std::string>());
+
+    auto mqtt_abstraction = create_and_connect_mqtt(ms);
+    if (!mqtt_abstraction) {
         return EXIT_FAILURE;
     }
 
-    // dump config if requested
+    const bool retain_topics = (vm_.count("retain-topics") != 0);
+
+    std::shared_ptr<const Everest::ManagerConfig> config;
+    std::vector<std::string> standalone_modules;
+    std::vector<std::string> ignored_modules;
+
+    RuntimeContext runtime_ctx{
+        config, *mqtt_abstraction, standalone_modules, ignored_modules, ms, status_fifo, retain_topics,
+    };
+
+    bool runtime_ctx_has_valid_config = reload_and_update_context(runtime_ctx);
+
     if (vm_.count("dump")) {
         const auto dump_path = fs::path(vm_["dump"].as<std::string>());
         EVLOG_debug << fmt::format("Dumping validated config and manifests into '{}'", dump_path.string());
@@ -726,9 +733,9 @@ int Manager::run() {
 
         std::ofstream output_config_stream(config_dump_path);
 
-        output_config_stream << json(config->get_module_configurations()).dump(DUMP_INDENT);
+        output_config_stream << json(runtime_ctx.config->get_module_configurations()).dump(DUMP_INDENT);
 
-        const auto manifests = config->get_manifests();
+        const auto manifests = runtime_ctx.config->get_manifests();
 
         for (const auto& module : manifests.items()) {
             const std::string filename = module.key() + ".json";
@@ -741,24 +748,9 @@ int Manager::run() {
 
     // only config check (and or config dumping) was requested, log check result and exit
     if (check) {
-        EVLOG_debug << "Config is valid, terminating as requested";
+        EVLOG_debug << "Checked config, terminating as requested";
         return EXIT_SUCCESS;
     }
-
-    std::vector<std::string> standalone_modules = collect_standalone_modules(*config);
-    std::vector<std::string> ignored_modules = collect_ignored_modules();
-
-    // create StatusFifo object
-    auto status_fifo = StatusFifo::create_from_path(vm_["status-fifo"].as<std::string>());
-
-    auto mqtt_abstraction = create_and_connect_mqtt(ms);
-    if (!mqtt_abstraction) {
-        return EXIT_FAILURE;
-    }
-
-    const auto migrations_dir = ms.runtime_settings.data_dir / "migrations";
-
-    config_service_core_ = std::make_unique<config::ConfigServiceCore>(ms, db_connection_);
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core_);
 
@@ -779,10 +771,86 @@ int Manager::run() {
         }
     });
 
-    if (vm_.count("into-idle") == 0) {
+    bool cfg_api_rw = false;
+    std::unique_ptr<Everest::api::configuration::ConfigurationAPI> configuration_api;
+    if (cfg_api_active) {
+        cfg_api_rw = vm_["configuration-api"].as<std::string>() == "rw";
+        if (cfg_api_rw) {
+            EVLOG_info << "Starting ConfigurationAPI in read-write mode";
+        } else {
+            EVLOG_info << "Starting ConfigurationAPI in read-only mode";
+        }
+        configuration_api = std::make_unique<Everest::api::configuration::ConfigurationAPI>(
+            *mqtt_abstraction, *config_service_core_, not cfg_api_rw);
+    }
+
+    bool lfc_api_rw = false;
+    std::unique_ptr<Everest::api::lifecycle::LifecycleAPI> lifecycle_api;
+    if (lfc_api_active) {
+        lfc_api_rw = vm_["lifecycle-api"].as<std::string>() == "rw";
+        if (lfc_api_rw) {
+            EVLOG_info << "Starting LifecycleAPI in read-write mode";
+        } else {
+            EVLOG_info << "Starting LifecycleAPI in read-only mode";
+        }
+        lifecycle_api = std::make_unique<Everest::api::lifecycle::LifecycleAPI>(
+            *mqtt_abstraction, *config_service_core_,
+            configuration_api ? (cfg_api_rw ? Everest::api::lifecycle::ConfigurationApiStatus::AvailableRW
+                                            : Everest::api::lifecycle::ConfigurationApiStatus::AvailableRO)
+                              : Everest::api::lifecycle::ConfigurationApiStatus::NotAvailable,
+            not lfc_api_rw,
+            [this, &mqtt_abstraction, &ms]() {
+                Everest::api::lifecycle::StopModulesResult ret = Everest::api::lifecycle::StopModulesResult::Rejected;
+                if (is_idle()) {
+                    ret = Everest::api::lifecycle::StopModulesResult::NoModulesToStop;
+                } else if (are_modules_started()) {
+                    handle_initiate_graceful_shutdown(std::chrono::system_clock::now(), false, nullptr,
+                                                      *mqtt_abstraction, ms);
+                    ret = Everest::api::lifecycle::StopModulesResult::Stopping;
+                }
+                return ret;
+            },
+            [this, &runtime_ctx, &mqtt_abstraction, &ms]() {
+                Everest::api::lifecycle::RestartModulesResult ret =
+                    Everest::api::lifecycle::RestartModulesResult::Rejected;
+                if (are_modules_started()) {
+                    shutdown_cause_ = ShutdownCause::Restart;
+                    ret = Everest::api::lifecycle::RestartModulesResult::Restarting;
+                    handle_initiate_graceful_shutdown(std::chrono::system_clock::now(), false, nullptr,
+                                                      *mqtt_abstraction, ms);
+                } else if (is_idle()) {
+                    ret = Everest::api::lifecycle::RestartModulesResult::Starting;
+                    reload_and_update_context(runtime_ctx);
+                    module_handles_ = handle_start_modules(runtime_ctx);
+                }
+                return ret;
+            });
+
+        register_state_transition_handler([this, &lifecycle_api](ManagerState from, ManagerState to) {
+            // TODO(CB): Might want to interprete some more to-states as "running"
+            if (to == ManagerState::Running) {
+                lifecycle_api->modules_started_running();
+            } else if (from == ManagerState::Running) {
+                lifecycle_api->modules_stopped_running();
+            }
+        });
+    }
+
+    if (not boot_into_idle and runtime_ctx_has_valid_config) {
         module_handles_ = handle_start_modules(runtime_ctx);
     } else {
-        transition_to(ManagerState::Idle);
+        if (boot_into_idle) {
+            EVLOG_info << "Requested by command-line-parameter -> entering Idle";
+        } else if (not runtime_ctx_has_valid_config) {
+            EVLOG_error << "No valid module configuration found -> entering Idle";
+        }
+        // only enter idle if configuration and lifecycle APIs are available rw
+        if (lfc_api_rw and cfg_api_rw) {
+            transition_to(ManagerState::Idle);
+        } else {
+            EVLOG_error << "Can only go into idle, if the lifecycle and configuration APIs are active";
+            return EXIT_FAILURE;
+        }
     }
 
     if (const auto err_set_user = ManagerAdminPanel::switch_manager_user_if_needed(runtime_ctx.ms)) {
@@ -848,31 +916,13 @@ std::string_view Manager::state_to_string(ManagerState state) const {
     }
 }
 
-// TODO(CB): this parameters list is a bit long(?)
-// TODO(CB)_REFACTOR: split this up into two (one using the given cfg (does this even need to be function?) and another
-// writing to the db)
-// TODO(CB): Throw a special exception for invalid configs
-std::shared_ptr<const ManagerConfig> Manager::load_and_validate_config(
-    const ManagerSettings& ms, const std::unique_ptr<everest::config::SqliteStorage>& db_storage,
-    bool db_storage_has_module_configs,
-    const std::optional<everest::config::ModuleConfigurations>& preloaded_module_configs) const {
-    const auto start_time = std::chrono::steady_clock::now();
+std::shared_ptr<const ManagerConfig>
+Manager::load_and_validate_config(const ManagerSettings& ms,
+                                  everest::config::ModuleConfigurations& preloaded_module_configs) const {
+    const auto start_time = std::chrono::system_clock::now();
     std::shared_ptr<const ManagerConfig> config;
     try {
-        if (db_storage_has_module_configs) {
-            config = std::make_shared<const ManagerConfig>(ms, std::move(*preloaded_module_configs));
-        } else {
-            config = std::make_shared<const ManagerConfig>(ms);
-            // Seed the database: parse() enriched module_configs with manifest metadata needed for storage writes.
-            const auto& mc = config->get_module_configurations();
-            if (db_storage->write_module_configs(mc) != everest::config::GenericResponseStatus::Failed) {
-                EVLOG_info << "Module configs written to database successfully, marking config as valid";
-                db_storage->mark_valid(true, nlohmann::json(mc).dump(), ms.config_file, std::nullopt);
-            } else {
-                EVLOG_warning << "Failed to write module configs to database, marking config as invalid";
-                db_storage->mark_valid(false, nlohmann::json(mc).dump(), ms.config_file, std::nullopt);
-            }
-        }
+        config = std::make_shared<const ManagerConfig>(ms, std::move(preloaded_module_configs));
     } catch (EverestInternalError& e) {
         EVLOG_error << fmt::format("Failed to load and validate config!\n{}", boost::diagnostic_information(e, true));
         throw;

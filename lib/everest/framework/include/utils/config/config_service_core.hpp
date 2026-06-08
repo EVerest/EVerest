@@ -29,11 +29,11 @@ public:
 
     // --- Re-initialize configuration ---
     // \brief Reloads the active_slot_id from the db and reloads the modules accordingly
-    void reinitialize_from_db();
+    /// \param force_reload Forces a reload even when the active slot did not change
+    void reinitialize_from_db(bool force_reload = false);
 
     // --- Active-slot in-memory access (zero-copy) ---
     const everest::config::ModuleConfigurations& get_active_module_configurations() const override;
-    const everest::config::ModuleConfigurations& reload_from_storage() override;
 
     // --- Slot management ---
     std::vector<SlotInfo> list_all_slots() override;
@@ -75,6 +75,8 @@ private:
 
     std::vector<std::function<void(const ActiveSlotUpdate&)>> active_slot_handlers_;
     std::vector<std::function<void(const ConfigurationUpdate&)>> config_update_handlers_;
+
+    void reload_from_storage();
 
     std::unique_ptr<everest::config::SqliteStorage> make_storage(int slot_id);
     void publish_active_slot_update();

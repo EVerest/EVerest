@@ -125,12 +125,11 @@ private:
 
     /// \brief Load and validate manager configuration from current boot source.
     /// \param ms Fully resolved manager settings for this run.
+    /// \param preloaded_module_configs Full module configuration, but maybe not validated yet
     /// \return Shared validated configuration object.
     std::shared_ptr<const Everest::ManagerConfig>
     load_and_validate_config(const Everest::ManagerSettings& ms,
-                             const std::unique_ptr<everest::config::SqliteStorage>& db_storage,
-                             bool db_storage_has_module_configs,
-                             std::optional<everest::config::ModuleConfigurations>& preloaded_module_configs) const;
+                             everest::config::ModuleConfigurations& preloaded_module_configs) const;
 
     /// \brief Create MQTT abstraction, connect, and spawn its main loop thread.
     /// \param ms Fully resolved manager settings for this run.
@@ -151,7 +150,8 @@ private:
     void publish_startup_metadata(const RuntimeContext& ctx) const;
 
     /// \brief Unregister all module ready handlers and clear ready-tracking state.
-    void unregister_module_ready_handlers(const Everest::ManagerConfig& config, Everest::MQTTAbstraction& mqtt_abstraction);
+    void unregister_module_ready_handlers(const Everest::ManagerConfig& config,
+                                          Everest::MQTTAbstraction& mqtt_abstraction);
 
     /// \brief Unregister module ready handlers and clear retained MQTT topics.
     /// \note Must be called with the config that was used to register handlers (before any reload).
@@ -169,7 +169,8 @@ private:
     void transition_to(ManagerState new_state);
 
     /// \brief Reload the configuration from the config_service_core class and update relevant fields in the context
-    void reload_and_update_context(RuntimeContext& ctx);
+    /// \return Updated context to a valid configuration
+    bool reload_and_update_context(RuntimeContext& ctx);
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // State predicates

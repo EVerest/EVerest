@@ -23,23 +23,17 @@ std::string now_rfc3339() {
 ConfigServiceCore::ConfigServiceCore(const ConfigParseSettings& parse_settings,
                                      std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection) :
     parse_settings_(parse_settings), slot_manager_(db_connection), db_(std::move(db_connection)) {
-    active_slot_id_ = slot_manager_.get_next_boot_slot_id();
-    // TODO(CB): Do not check is_valid, as this get removed
-    if (slot_manager_.is_valid(active_slot_id_)) {
-        active_storage_ = make_storage(active_slot_id_);
-        reload_from_storage();
-    } else {
-        // ConfigServiceCore requires a pre-configured database
-        throw;
-    }
+    active_slot_id_ = everest::config::SqliteStorage::DEFAULT_CONFIG_ID;
+
+    reinitialize_from_db(true);
 }
 
-void ConfigServiceCore::reinitialize_from_db() {
+void ConfigServiceCore::reinitialize_from_db(bool force_reload) {
     if (module_status_ != ActiveSlotStatus::Stopped) {
         return;
     }
     int new_active_slot_id = slot_manager_.get_next_boot_slot_id();
-    if (new_active_slot_id != active_slot_id_) {
+    if ((new_active_slot_id != active_slot_id_) or force_reload) {
         active_slot_id_ = new_active_slot_id;
         active_storage_ = make_storage(active_slot_id_);
         reload_from_storage();
@@ -71,12 +65,13 @@ const everest::config::ModuleConfigurations& ConfigServiceCore::get_active_modul
     return module_configs_;
 }
 
-const everest::config::ModuleConfigurations& ConfigServiceCore::reload_from_storage() {
-    const auto resp = active_storage_->get_module_configs();
-    if (resp.status == everest::config::GenericResponseStatus::OK) {
-        module_configs_ = resp.module_configs;
+void ConfigServiceCore::reload_from_storage() {
+    if (slot_manager_.is_valid(active_slot_id_)) {
+        const auto resp = active_storage_->get_module_configs();
+        if (resp.status == everest::config::GenericResponseStatus::OK) {
+            module_configs_ = resp.module_configs;
+        }
     }
-    return module_configs_;
 }
 
 // --- Slot management ---
