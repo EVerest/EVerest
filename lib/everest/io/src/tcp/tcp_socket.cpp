@@ -97,6 +97,10 @@ void tcp_socket::close() {
     m_fd.close();
 }
 
+int tcp_socket::release() {
+    return m_fd.release();
+}
+
 bool tcp_socket::set_keep_alive(uint32_t count, uint32_t idle_s, uint32_t intval_s) {
     if (not is_open()) {
         return false;
