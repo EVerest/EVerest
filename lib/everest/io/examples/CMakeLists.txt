@@ -99,6 +99,22 @@ target_compile_features(test_udp_unconnected_client PUBLIC cxx_std_17)
 target_compile_options(test_udp_unconnected_client PRIVATE -fsanitize=address -g)
 target_link_options(test_udp_unconnected_client PRIVATE -static-libasan -fsanitize=address)
 
+###
+
+if(EVEREST_IO_ENABLE_TLS)
+    add_executable(test_tls_server test_tls_server.cpp)
+    target_link_libraries(test_tls_server PRIVATE everest::io)
+    target_compile_features(test_tls_server PUBLIC cxx_std_17)
+    target_compile_options(test_tls_server PRIVATE -fsanitize=address -g)
+    target_link_options(test_tls_server PRIVATE -static-libasan -fsanitize=address)
+
+    add_executable(test_tls_client test_tls_client.cpp)
+    target_link_libraries(test_tls_client PRIVATE everest::io)
+    target_compile_features(test_tls_client PUBLIC cxx_std_17)
+    target_compile_options(test_tls_client PRIVATE -fsanitize=address -g)
+    target_link_options(test_tls_client PRIVATE -static-libasan -fsanitize=address)
+endif()
+
 
 
 
