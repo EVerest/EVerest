@@ -61,6 +61,8 @@ struct StubConfigService : Everest::config::ConfigServiceInterface {
     }
     void set_modules_stopping() override {
     }
+    void notice_cfg_validation_failed() override {
+    }
     const everest::config::ModuleConfigurations& get_active_module_configurations() const override {
         return module_configurations;
     }
