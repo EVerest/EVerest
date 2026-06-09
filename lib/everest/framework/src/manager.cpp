@@ -500,6 +500,7 @@ void Manager::handle_restart_modules_after_shutdown(RuntimeContext& ctx) {
         EVLOG_info << "Modules restart initiated with reloaded configuration.";
     } else {
         EVLOG_error << "Failed to reload the configuration.";
+        config_service_core_->notice_cfg_validation_failed();
         transition_to(ManagerState::Idle);
     }
 }
@@ -828,6 +829,7 @@ int Manager::run() {
                         module_handles_ = handle_start_modules(runtime_ctx);
                         EVLOG_info << "Modules restart initiated with reloaded configuration.";
                     } else {
+                        config_service_core_->notice_cfg_validation_failed();
                         EVLOG_error << "Failed to reload the configuration, staying in Idle.";
                     }
                 }
