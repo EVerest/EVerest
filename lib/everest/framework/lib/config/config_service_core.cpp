@@ -36,7 +36,10 @@ void ConfigServiceCore::reinitialize_from_db(bool force_reload) {
     if ((new_active_slot_id != active_slot_id_) or force_reload) {
         active_slot_id_ = new_active_slot_id;
         active_storage_ = make_storage(active_slot_id_);
-        reload_from_storage();
+    }
+    // always reload module configuration in order to include possible WillApplyOnRestart changes
+    reload_from_storage();
+    if (new_active_slot_id != active_slot_id_) {
         publish_active_slot_update();
     }
 }
