@@ -328,9 +328,12 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
                 }
             } else {
                 // ReadOnly and WriteOnly don't go to the module at runtime
-                // TODO(CB): What does WriteOnly mean !?
+                // ReadWrite also if no modules are running:
                 result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
-                // TODO(CB): Again, why not forward to the module?
+                // mutate the in-memory state
+                const auto parsed_value =
+                    everest::config::parse_config_value(parameter->characteristics.datatype, update.value);
+                parameter->value = parsed_value;
             }
 
             if (result_enum == SetConfigParameterResultEnum::Applied or
