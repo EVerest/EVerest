@@ -70,7 +70,7 @@ Naming
 
 Example header file called ``ocpp/OcppDataModel.hpp``:
 
-  .. code-block:: cpp
+.. code-block:: cpp
 
   // SPDX-License-Identifier: Apache-2.0
   // Copyright 2026 Pionix GmbH and Contributors to EVerest
@@ -109,7 +109,7 @@ Example header file called ``ocpp/OcppDataModel.hpp``:
 
 Example source file called ``ocpp/OcppDataModel.cpp``:
 
-  .. code-block:: cpp
+.. code-block:: cpp
 
   // SPDX-License-Identifier: Apache-2.0
   // Copyright 2026 Pionix GmbH and Contributors to EVerest
