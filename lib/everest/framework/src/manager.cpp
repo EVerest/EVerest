@@ -470,16 +470,18 @@ void Manager::handle_restart_modules_after_shutdown(RuntimeContext& ctx) {
     // called from advance_lifecycle_state_if_ready() (crash-with-restart path) which does not go
     // through handle_finish_* finalize functions.
     cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
-    // TODO(CB): evaluate if that succeeded, and if not, cleanup, don't start the modules and go to idle
-    reload_and_update_context(ctx);
-
-    module_handles_ = handle_start_modules(ctx);
-    shutdown_cause_ = ShutdownCause::None;
-    shutdown_start_time_ = std::nullopt;
-    force_terminate_start_time_ = std::nullopt;
-    force_kill_sent_ = false;
-    shutdown_info_.clear();
-    EVLOG_info << "Modules restart initiated with reloaded configuration.";
+    if (reload_and_update_context(ctx)) {
+        module_handles_ = handle_start_modules(ctx);
+        shutdown_cause_ = ShutdownCause::None;
+        shutdown_start_time_ = std::nullopt;
+        force_terminate_start_time_ = std::nullopt;
+        force_kill_sent_ = false;
+        shutdown_info_.clear();
+        EVLOG_info << "Modules restart initiated with reloaded configuration.";
+    } else {
+        EVLOG_error << "Failed to reload the configuration.";
+        transition_to(ManagerState::Idle);
+    }
 }
 
 std::optional<int> Manager::handle_finish_normal_shutdown(RuntimeContext& ctx, ManagerAdminPanel& admin_panel) {
@@ -507,8 +509,6 @@ std::optional<int> Manager::handle_finish_normal_shutdown(RuntimeContext& ctx, M
         force_kill_sent_ = false;
         transition_to(ManagerState::Exiting);
         return EXIT_SUCCESS;
-    } else {
-        reload_and_update_context(ctx);
     }
 
     if (!bad_modules.empty()) {
@@ -546,8 +546,6 @@ void Manager::handle_finish_crash_recovery(RuntimeContext& ctx) {
     }
 
     cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
-    // TODO(CB): If doesn't succeed, log sth. (this goes to idle anyways...)
-    reload_and_update_context(ctx);
     shutdown_info_.clear();
     shutdown_start_time_ = std::nullopt;
     shutdown_cause_ = ShutdownCause::None;
@@ -827,8 +825,12 @@ int Manager::run() {
                                                       *mqtt_abstraction, ms);
                 } else if (is_idle()) {
                     ret = Everest::api::lifecycle::RestartModulesResult::Starting;
-                    reload_and_update_context(runtime_ctx);
-                    module_handles_ = handle_start_modules(runtime_ctx);
+                    if (reload_and_update_context(runtime_ctx)) {
+                        module_handles_ = handle_start_modules(runtime_ctx);
+                        EVLOG_info << "Modules restart initiated with reloaded configuration.";
+                    } else {
+                        EVLOG_error << "Failed to reload the configuration, staying in Idle.";
+                    }
                 }
                 return ret;
             });
