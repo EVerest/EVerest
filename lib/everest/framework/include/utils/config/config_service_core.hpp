@@ -63,6 +63,7 @@ public:
     void set_modules_running() override;
     void set_modules_starting() override;
     void set_modules_stopping() override;
+    void notice_cfg_validation_failed() override;
 
 private:
     everest::config::ModuleConfigurations module_configs_;

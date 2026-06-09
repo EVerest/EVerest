@@ -355,4 +355,10 @@ void ConfigServiceCore::set_modules_stopping() {
     publish_active_slot_update();
 }
 
+void ConfigServiceCore::notice_cfg_validation_failed() {
+    module_status_ = ActiveSlotStatus::FailedToStart;
+    publish_active_slot_update();
+
+}
+
 } // namespace Everest::config
