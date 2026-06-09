@@ -2417,6 +2417,10 @@ void EvseManager::powersupply_DC_off() {
         session_log.evse(false, "DC power supply OFF");
         r_powersupply_DC[0]->call_setMode(types::power_supply_DC::Mode::Off, power_supply_DC_charging_phase);
         powersupply_dc_is_on = false;
+        // Invalidate the powersupply_DC_set() cache: the power supply resets its
+        // internal targets on the Off transition, so the cached values are stale now.
+        last_power_supply_voltage = 0.;
+        last_power_supply_current = 0.;
     }
     power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Other;
 }
