@@ -72,60 +72,60 @@ Example header file called ``ocpp/OcppDataModel.hpp``:
 
   .. code-block:: cpp
 
-    // SPDX-License-Identifier: Apache-2.0
-    // Copyright 2026 Pionix GmbH and Contributors to EVerest
+  // SPDX-License-Identifier: Apache-2.0
+  // Copyright 2026 Pionix GmbH and Contributors to EVerest
 
-    /// \file Object to manage the OCPP data model
+  /// \file Object to manage the OCPP data model
 
-    #pragma once
+  #pragma once
 
-    namespace ocpp {
+  namespace ocpp {
 
-    class OcppDataModel : public OcppDataModelBase {
-    private:
-        int m_num_connectors{-1};
+  class OcppDataModel : public OcppDataModelBase {
+  private:
+      int m_num_connectors{-1};
 
-    public:
-        OcppDataModel() = default;
-        OcppDataModel(int num_connectors) : m_num_connectors(num_connectors) {
-        }
+  public:
+      OcppDataModel() = default;
+      OcppDataModel(int num_connectors) : m_num_connectors(num_connectors) {
+      }
 
-        /// \brief check if the object has been configured
-        /// \returns true when there is at least one connector
-        bool is_configured() const {
-            return m_num_connectors > 0;
-        }
+      /// \brief check if the object has been configured
+      /// \returns true when there is at least one connector
+      bool is_configured() const {
+          return m_num_connectors > 0;
+      }
 
-        /// \brief initialise with the count of connectors
-        /// \param[in] count - the number of detected connectors
-        void initialise(int count);
+      /// \brief initialise with the count of connectors
+      /// \param[in] count - the number of detected connectors
+      void initialise(int count);
 
-        operator const OcppDataModelBase&() const {
-            return *this;
-        }
-    };
+      operator const OcppDataModelBase&() const {
+          return *this;
+      }
+  };
 
-    } // namespace ocpp
+  } // namespace ocpp
 
 Example source file called ``ocpp/OcppDataModel.cpp``:
 
   .. code-block:: cpp
 
-    // SPDX-License-Identifier: Apache-2.0
-    // Copyright 2026 Pionix GmbH and Contributors to EVerest
+  // SPDX-License-Identifier: Apache-2.0
+  // Copyright 2026 Pionix GmbH and Contributors to EVerest
 
-    namespace {
-    int internal_function(int parameter) {
-        return parameter * 4 + 1;
-    }
+  namespace {
+  int internal_function(int parameter) {
+      return parameter * 4 + 1;
+  }
 
-    namespace ocpp {
+  namespace ocpp {
 
-    void OcppDataModel::initialise(int count) {
-        m_num_connectors = internal_function(count);
-    }
+  void OcppDataModel::initialise(int count) {
+      m_num_connectors = internal_function(count);
+  }
 
-    } // namespace ocpp
+  } // namespace ocpp
 
 Header Files
 ============
@@ -143,11 +143,11 @@ e.g.
 
 .. code-block:: cpp
 
-    struct s {
-        std::string s3 = "hello";    // 1. copy-initialization
-        std::string s4 = {"hello"};  // 2. list-initialization (since C++11)
-        std::string s5{'a'};         // 3. list-initialization (since C++11)
-    };
+  struct s {
+      std::string s3 = "hello";    // 1. copy-initialization
+      std::string s4 = {"hello"};  // 2. list-initialization (since C++11)
+      std::string s5{'a'};         // 3. list-initialization (since C++11)
+  };
 
 List initialisation is preferred. Be consistent with usage and avoid mixing
 initialisation types (especially 2. and 3.).
