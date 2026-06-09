@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <memory>
+#include <set>
 
 using namespace fusion_charger::modbus_driver::raw_registers;
 using namespace fusion_charger::modbus_driver;
@@ -108,7 +109,7 @@ void Dispenser::goose_receiver_thread_run() {
                 continue;
             }
 
-            std::optional<std::uint16_t> hmac_verified_connector_number;
+            std::set<std::uint16_t> hmac_verified_connector_numbers;
 
             // Verify secure GOOSE HMAC before parsing application payload.
             if (dispenser_config.verify_secure_goose_hmac) {
@@ -117,10 +118,9 @@ void Dispenser::goose_receiver_thread_run() {
                     try {
                         goose::frame::SecureGooseFrame secure_frame(packet, c->get_hmac_key());
                         pdu = secure_frame.pdu;
-                        hmac_verified_connector_number =
-                            static_cast<std::uint16_t>(c->connector_config.global_connector_number);
                         hmac_verified = true;
-                        break;
+                        hmac_verified_connector_numbers.insert(
+                            static_cast<std::uint16_t>(c->connector_config.global_connector_number));
                     } catch (const std::exception&) {
                         // Try remaining connector keys.
                     }
@@ -130,21 +130,22 @@ void Dispenser::goose_receiver_thread_run() {
                     log.error << "Received secure goose frame, but HMAC verification failed";
                     continue;
                 }
-
-                log.verbose << "HMAC verified for secure goose frame";
             }
 
             fusion_charger::goose::PowerRequirementResponse response;
             response.from_pdu(pdu);
 
             // Bind frame authenticity to the connector identity carried in the payload.
-            if (hmac_verified_connector_number.has_value() &&
-                hmac_verified_connector_number.value() != response.charging_connector_no) {
-                log.error << "Dropping secure goose frame: payload connector " +
-                                 std::to_string(response.charging_connector_no) +
-                                 " does not match HMAC-verified connector " +
-                                 std::to_string(hmac_verified_connector_number.value());
-                continue;
+            if (dispenser_config.verify_secure_goose_hmac) {
+                if (hmac_verified_connector_numbers.find(response.charging_connector_no) ==
+                    hmac_verified_connector_numbers.end()) {
+                    log.error << "Dropping secure goose frame: payload connector " +
+                                     std::to_string(response.charging_connector_no) +
+                                     " is not in the list of HMAC-verified connectors";
+                    continue;
+                }
+
+                log.verbose << "HMAC verified for secure goose frame";
             }
 
             bool corresponding_connector_found = false;
