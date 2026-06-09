@@ -847,7 +847,7 @@ int Manager::run() {
         module_handles_ = handle_start_modules(runtime_ctx);
     } else {
         if (boot_into_idle) {
-            EVLOG_error << "Requested by command-line-parameter -> entering Idle";
+            EVLOG_info << "Requested by command-line-parameter -> entering Idle";
         } else if (not runtime_ctx_has_valid_config) {
             EVLOG_error << "No valid module configuration found -> entering Idle";
         }
