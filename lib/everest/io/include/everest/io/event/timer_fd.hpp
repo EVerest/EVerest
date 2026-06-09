@@ -57,6 +57,19 @@ public:
     bool reset();
 
     /**
+     * @brief Select one-shot or periodic mode for subsequent \ref set_timeout_ns calls.
+     * @details One-shot: \c it_value is the delay, \c it_interval is zero. Periodic (default):
+     * both \c it_value and \c it_interval use the configured timeout.
+     */
+    void set_single_shot(bool on);
+
+    /**
+     * @brief Stop the timer (no pending expiry until armed again).
+     * @return True on success, false otherwise
+     */
+    bool disarm();
+
+    /**
      * @name Configuring the notification timeout
      * This set of functions allows to set the time after which the timer file fire
      * @{
@@ -96,6 +109,7 @@ public:
 private:
     unique_fd m_fd;
     long long m_to_ns{0};
+    bool m_single_shot{false};
 };
 
 } // namespace everest::lib::io::event
