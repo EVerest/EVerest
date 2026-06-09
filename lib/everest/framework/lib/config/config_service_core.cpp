@@ -38,7 +38,10 @@ void ConfigServiceCore::reinitialize_from_db(bool force_reload) {
     if ((new_active_slot_id != active_slot_id_) or force_reload) {
         active_slot_id_ = new_active_slot_id;
         active_storage_ = make_storage(active_slot_id_);
-        reload_from_storage();
+    }
+    // always reload module configuration in order to include possible WillApplyOnRestart changes
+    reload_from_storage();
+    if (new_active_slot_id != active_slot_id_) {
         publish_active_slot_update();
     }
 }
@@ -315,9 +318,12 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
                 }
             } else {
                 // ReadOnly and WriteOnly don't go to the module at runtime
-                // TODO(CB): What does WriteOnly mean !?
+                // ReadWrite also if no modules are running:
                 result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
-                // TODO(CB): Again, why not forward to the module?
+                // mutate the in-memory state
+                const auto parsed_value =
+                    everest::config::parse_config_value(parameter->characteristics.datatype, update.value);
+                parameter->value = parsed_value;
             }
 
             if (result_enum == SetConfigParameterResultEnum::Applied or
