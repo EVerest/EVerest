@@ -98,8 +98,8 @@ int start_nonblocking_connect(uint16_t port) {
 }
 
 /// True if the pending connect on fd completed cleanly within wait_ms (POLLOUT
-/// without POLLERR/POLLHUP). A connect whose SYN was dropped stays in SYN_SENT
-/// (first retransmit is ~1 s out) and reports nothing within the window.
+/// without POLLERR/POLLHUP). A connect the kernel never completes reports
+/// nothing within the window.
 bool connect_completed(int fd, int wait_ms) {
     pollfd pfd{fd, POLLOUT, 0};
     return ::poll(&pfd, 1, wait_ms) == 1 && (pfd.revents & POLLOUT) != 0 &&
@@ -108,12 +108,12 @@ bool connect_completed(int fd, int wait_ms) {
 
 /// A 127.0.0.1 listen socket whose accept queue is deliberately saturated:
 /// listen(fd, 1), never accept, and raw pre-connects issued until one no
-/// longer completes. Once the queue is full the kernel drops further SYNs
-/// (tcp_abort_on_overflow=0 default), so any later connect to port() stalls
-/// in TCP SYN retry — a deterministic loopback stand-in for an unreachable
-/// host. The stalled final pre-connect doubles as the saturation probe. All
-/// fds (listener + pre-connect sockets) stay open until destruction so the
-/// block holds for the object's whole lifetime.
+/// longer completes. With the queue full (and default syncookies) the kernel
+/// no longer completes new handshakes, so any later connect to port() stays
+/// pending until the caller's timeout — a deterministic loopback stand-in for
+/// an unreachable host. The stalled final pre-connect doubles as the
+/// saturation probe. All fds (listener + pre-connect sockets) stay open until
+/// destruction so the block holds for the object's whole lifetime.
 class saturated_loopback_port {
 public:
     saturated_loopback_port() {
@@ -156,6 +156,7 @@ public:
     }
 
 private:
+    // ~3 connects saturate in practice on Linux; 8 is headroom, not a tuned value.
     static constexpr int max_pre_connects = 8;
     int m_listen_fd{-1};
     uint16_t m_port{0};
@@ -320,16 +321,17 @@ TEST(TlsClient, HandshakeAndExchange) {
 
 // Teardown while the TCP connect is still pending. The client targets a
 // loopback port whose accept queue is saturated (saturated_loopback_port), so
-// its SYNs are dropped and the connect worker is still blocked inside
-// m_socket.connect() when the client is unregistered and destroyed. Teardown
-// (stop()/dtor) must join the worker before tearing down m_socket, so the
-// worker cannot touch a freed socket (no use-after-free) and cannot outlive
-// *this. Under ThreadSanitizer the prior detached-worker race would be flagged
-// directly; without tsan the test pins that teardown completes cleanly with
-// the connect deterministically pending: it returns true, the on-ready action
-// never fired (the connect never completed — the canary that the saturation
-// held), and the whole sequence finishes promptly (bounded by the connect
-// timeout, asserted well below 5 s) with the loop healthy afterward.
+// the kernel never completes the handshake and the connect worker is still
+// blocked inside m_socket.connect() when the client is unregistered and
+// destroyed. Teardown (stop()/dtor) must join the worker before tearing down
+// m_socket, so the worker cannot touch a freed socket (no use-after-free) and
+// cannot outlive *this. That joined-worker/no-UAF invariant is enforced only
+// under ThreadSanitizer, which flags the detached-worker race directly; the
+// asserts below would all also pass with a detached worker. Without tsan this
+// is a teardown smoke/liveness test on a deterministically pending connect:
+// teardown returns true, the on-ready action never fired (the connect never
+// completed — the canary that the saturation held), and the whole sequence
+// finishes promptly with the loop healthy afterward.
 TEST(TlsClient, teardown_during_pending_connect_is_clean) {
     saturated_loopback_port blocked;
     ASSERT_TRUE(blocked.saturated()) << "could not saturate the loopback accept queue";
@@ -344,8 +346,8 @@ TEST(TlsClient, teardown_during_pending_connect_is_clean) {
                                                  connect_timeout_ms);
         client.set_on_ready_action([&ready_fired]() { ready_fired = true; });
         ASSERT_TRUE(ev.register_event_handler(&client));
-        // Pump the loop so the connect worker is mid-flight (blocked in TCP
-        // SYN retry against the saturated port) before teardown.
+        // Pump the loop so the connect worker is mid-flight (blocked on the
+        // never-completing connect to the saturated port) before teardown.
         for (int i = 0; i < 3; ++i) {
             ev.poll(50ms);
             ev.run_actions();
