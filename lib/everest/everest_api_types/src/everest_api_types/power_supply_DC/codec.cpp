@@ -6,65 +6,67 @@
 #include "power_supply_DC/API.hpp"
 #include "power_supply_DC/json_codec.hpp"
 #include "utilities/constants.hpp"
+#include "utilities/json_codec_helpers.hpp"
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace everest::lib::API::V1_0::types::power_supply_DC {
 
 std::string serialize(Capabilities const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(Mode val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(ChargingPhase val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(ModeRequest val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(VoltageCurrent const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(ErrorEnum val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(Error const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
-template <> Capabilities deserialize(std::string const& val) {
-    return json::parse(val);
+template <> Capabilities deserialize(std::string_view val) {
+    return utilities::parse_json<Capabilities>(val);
 }
 
-template <> Mode deserialize(std::string const& val) {
-    return json::parse(val);
+template <> Mode deserialize(std::string_view val) {
+    return utilities::parse_json<Mode>(val);
 }
 
-template <> ChargingPhase deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ChargingPhase deserialize(std::string_view val) {
+    return utilities::parse_json<ChargingPhase>(val);
 }
 
-template <> ModeRequest deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ModeRequest deserialize(std::string_view val) {
+    return utilities::parse_json<ModeRequest>(val);
 }
 
-template <> VoltageCurrent deserialize(std::string const& val) {
-    return json::parse(val);
+template <> VoltageCurrent deserialize(std::string_view val) {
+    return utilities::parse_json<VoltageCurrent>(val);
 }
 
-template <> ErrorEnum deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ErrorEnum deserialize(std::string_view val) {
+    return utilities::parse_json<ErrorEnum>(val);
 }
 
-template <> Error deserialize(std::string const& val) {
-    return json::parse(val);
+template <> Error deserialize(std::string_view val) {
+    return utilities::parse_json<Error>(val);
 }
 
 std::ostream& operator<<(std::ostream& os, const Capabilities& k) {

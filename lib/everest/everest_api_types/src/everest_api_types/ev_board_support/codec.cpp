@@ -6,16 +6,18 @@
 #include "ev_board_support/json_codec.hpp"
 #include "nlohmann/json.hpp"
 #include "utilities/constants.hpp"
+#include "utilities/json_codec_helpers.hpp"
 #include <string>
+#include <string_view>
 
 namespace everest::lib::API::V1_0::types::ev_board_support {
 
 std::string serialize(EvCpState val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(BspMeasurement const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::ostream& operator<<(std::ostream& os, EvCpState const& val) {
@@ -28,12 +30,12 @@ std::ostream& operator<<(std::ostream& os, const BspMeasurement& val) {
     return os;
 }
 
-template <> EvCpState deserialize(std::string const& val) {
-    return json::parse(val);
+template <> EvCpState deserialize(std::string_view val) {
+    return utilities::parse_json<EvCpState>(val);
 }
 
-template <> BspMeasurement deserialize(std::string const& val) {
-    return json::parse(val);
+template <> BspMeasurement deserialize(std::string_view val) {
+    return utilities::parse_json<BspMeasurement>(val);
 }
 
 } // namespace everest::lib::API::V1_0::types::ev_board_support
