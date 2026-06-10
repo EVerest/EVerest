@@ -2,6 +2,8 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <optional>
+
 #include "../states.hpp"
 
 namespace iso15118::d20::state {
@@ -16,7 +18,7 @@ struct DC_CableCheck : public StateBase {
 
 private:
     bool cable_check_initiated{false};
-    bool cable_check_done{false};
+    std::optional<bool> cable_check_success;
 };
 
 } // namespace iso15118::d20::state
