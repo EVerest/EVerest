@@ -26,7 +26,6 @@ struct SSLContext {
     std::unique_ptr<tls::Server> server;
     tls::Server::ConnectionPtr connection;
     int listen_fd{-1};
-    int accept_fd{-1};
     std::optional<sha512_hash_t> vehicle_cert_hash{std::nullopt};
 };
 
@@ -239,8 +238,8 @@ void ConnectionSSL::handle_connect() {
 
     sockaddr_in6 peer_addr{};
     socklen_t peer_len = sizeof(peer_addr);
-    ssl->accept_fd = ::accept(ssl->listen_fd, reinterpret_cast<sockaddr*>(&peer_addr), &peer_len);
-    if (ssl->accept_fd < 0) {
+    const int accepted_fd = ::accept(ssl->listen_fd, reinterpret_cast<sockaddr*>(&peer_addr), &peer_len);
+    if (accepted_fd < 0) {
         log_and_throw("Failed to accept incoming TLS connection");
     }
 
@@ -260,14 +259,14 @@ void ConnectionSSL::handle_connect() {
 
     call_if_available(event_callback, ConnectionEvent::ACCEPTED);
 
-    ssl->connection = ssl->server->wrap_accepted_fd(ssl->accept_fd, host, service);
+    ssl->connection = ssl->server->wrap_accepted_fd(accepted_fd, host, service);
     if (ssl->connection == nullptr) {
-        ::close(ssl->accept_fd);
-        ssl->accept_fd = -1;
+        ::close(accepted_fd);
         log_and_throw("Failed to wrap accepted TLS socket");
     }
 
-    poll_manager.register_fd(ssl->accept_fd, [this]() { this->handle_data(); });
+    // The ServerConnection owns the fd from here on; key the poll callback on it.
+    poll_manager.register_fd(ssl->connection->socket(), [this]() { this->handle_data(); });
 }
 
 void ConnectionSSL::handle_data() {
@@ -285,8 +284,11 @@ void ConnectionSSL::handle_data() {
         case tls::Connection::result_t::timeout:
             return;
         case tls::Connection::result_t::closed:
+            // convert() folds all fatal handshake outcomes (peer close, alert,
+            // protocol error) into closed, so this teardown handles every
+            // non-success, non-blocking handshake result.
             logf_error("TLS handshake failed: connection closed");
-            call_if_available(event_callback, ConnectionEvent::CLOSED);
+            this->close();
             return;
         default:
             log_and_throw("Failed to complete TLS handshake");
@@ -303,21 +305,25 @@ void ConnectionSSL::handle_data() {
 }
 
 void ConnectionSSL::close() {
-    logf_info("Closing TLS connection");
-
-    if (ssl->connection != nullptr) {
-        const auto result = ssl->connection->shutdown(/*timeout_ms=*/0);
-        if (result != tls::Connection::result_t::success && result != tls::Connection::result_t::closed) {
-            logf_error("TLS shutdown returned non-success result");
-        }
+    // Idempotency / re-entry guard: the connection is reset before CLOSED is
+    // delivered below, so a re-entrant or repeated close() is a no-op.
+    if (ssl->connection == nullptr) {
+        return;
     }
 
-    if (ssl->accept_fd != -1) {
-        poll_manager.unregister_fd(ssl->accept_fd);
-        // Drop our cached fd value before destroying the ServerConnection so that
-        // we cannot accidentally ::close() it from anywhere else; the actual close
-        // happens below when ssl->connection.reset() destroys the ServerConnection.
-        ssl->accept_fd = -1;
+    logf_info("Closing TLS connection");
+
+    const auto result = ssl->connection->shutdown(/*timeout_ms=*/0);
+    if (result != tls::Connection::result_t::success && result != tls::Connection::result_t::closed) {
+        logf_error("TLS shutdown returned non-success result");
+    }
+
+    // Unregistering from within the accept fd's own poll callback is safe: it is
+    // the only non-event fd registered at this point (listen_fd was dropped in
+    // handle_connect), so PollManager::poll has no further entries to visit.
+    const int fd = ssl->connection->socket();
+    if (fd != -1) {
+        poll_manager.unregister_fd(fd);
     }
 
     // Destroying the ServerConnection tears down the SSL state and closes the
@@ -326,7 +332,7 @@ void ConnectionSSL::close() {
     // point relative to the CLOSED event we deliver below.
     ssl->connection.reset();
 
-    logf_info("TLS connection closed gracefully");
+    logf_info("TLS connection closed");
 
     call_if_available(event_callback, ConnectionEvent::CLOSED);
 }

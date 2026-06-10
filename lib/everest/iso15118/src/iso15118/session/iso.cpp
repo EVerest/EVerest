@@ -338,6 +338,9 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
 
     case Event::CLOSED:
         state.connected = false;
+        // Terminal: trip is_finished() so the controller reaps this session.
+        // Re-entry from Session::close() (which already set the flag) is a no-op.
+        ctx.session_stopped = true;
         logf_info("Connection is closed");
         return;
     }

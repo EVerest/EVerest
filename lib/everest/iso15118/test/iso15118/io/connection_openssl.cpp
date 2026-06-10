@@ -398,6 +398,72 @@ SCENARIO("ConnectionSSL exposes the peer certificate SHA-512 to callers") {
     }
 }
 
+SCENARIO("ConnectionSSL tears down when the peer closes during the handshake") {
+
+    GIVEN("A ConnectionSSL configured with a single SECC chain") {
+        iso15118::io::set_logging_callback([](iso15118::LogLevel, const std::string&) {});
+
+        iso15118::io::PollManager poll_manager;
+        const auto ssl_cfg = make_ssl_config(false, "/tmp", false);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+
+        std::atomic<int> closed_count{0};
+        connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
+            if (event == iso15118::io::ConnectionEvent::CLOSED) {
+                closed_count.fetch_add(1);
+            }
+        });
+
+        WHEN("A client opens a TCP connection and closes it without starting the TLS handshake") {
+            auto client_future = std::async(std::launch::async, []() {
+                sockaddr_in6 addr{};
+                addr.sin6_family = AF_INET6;
+                addr.sin6_port = htons(SERVER_PORT);
+                if (inet_pton(AF_INET6, "::1", &addr.sin6_addr) != 1) {
+                    return false;
+                }
+                const int fd = ::socket(AF_INET6, SOCK_STREAM, 0);
+                if (fd < 0) {
+                    return false;
+                }
+                int connected = -1;
+                for (int i = 0; i < 50; ++i) {
+                    connected = ::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+                    if (connected == 0) {
+                        break;
+                    }
+                    std::this_thread::sleep_for(20ms);
+                }
+                ::close(fd);
+                return connected == 0;
+            });
+
+            const bool got_closed = poll_until(
+                poll_manager, [&]() { return closed_count.load() >= 1; }, 5s);
+
+            // A torn-down connection must not re-emit CLOSED on subsequent poll iterations.
+            for (int i = 0; i < 10; ++i) {
+                poll_manager.poll(50);
+            }
+
+            const auto client_connected = client_future.get();
+
+            THEN("Exactly one CLOSED event fires across all poll iterations") {
+                REQUIRE(client_connected);
+                REQUIRE(got_closed);
+                REQUIRE(closed_count.load() == 1);
+
+                AND_WHEN("close() is called again on the already-closed connection") {
+                    connection.close();
+                    THEN("No additional CLOSED event is emitted") {
+                        REQUIRE(closed_count.load() == 1);
+                    }
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("ConnectionSSL writes an SSLKEYLOGFILE-format keylog when enabled") {
 
     GIVEN("A ConnectionSSL configured with key logging enabled and a writable keylog dir") {
