@@ -32,7 +32,7 @@ public:
     bool register_events(everest::lib::io::event::fd_event_handler& handler) override;
     bool unregister_events(everest::lib::io::event::fd_event_handler& handler) override;
     bool available() const;
-
+    void set_cb_connection_status(bool connected);
 private:
     void handle_heartbeat_timer();
     void handle_ready();
@@ -47,6 +47,7 @@ private:
     bool m_can_ready{false};
     everest::lib::util::observable<bool> m_ready{false};
     everest::lib::io::event::event_fd& m_ready_notify;
+    everest::lib::util::observable<bool> m_cb_is_connected{false};
 };
 
 } // namespace charge_bridge

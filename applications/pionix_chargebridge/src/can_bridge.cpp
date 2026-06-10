@@ -110,6 +110,12 @@ can_bridge::can_bridge(can_bridge_config const& config, everest::lib::io::event:
 
     m_heartbeat_timer.set_timeout(10s);
     m_ready.setCallback([this](auto&, auto&) { m_ready_notify.notify(); });
+    m_cb_is_connected.setCallback([this](bool last, bool current) {
+        if (not last and current) {
+            m_udp.reset();
+        }
+        handle_ready();
+    });
 }
 
 can_bridge::~can_bridge() {
@@ -166,11 +172,15 @@ void can_bridge::handle_heartbeat_timer() {
 }
 
 void can_bridge::handle_ready() {
-    m_ready.set(m_udp_ready and m_can_ready);
+    m_ready.set(m_udp_ready and m_can_ready and m_cb_is_connected);
 }
 
 bool can_bridge::available() const {
     return m_ready;
+}
+
+void can_bridge::set_cb_connection_status(bool connected) {
+    m_cb_is_connected.set(connected);
 }
 
 } // namespace charge_bridge

@@ -150,6 +150,9 @@ void charge_bridge::init() {
                 if(m_gpio){
                     m_gpio->set_cb_connection_status(connected);
                 }
+                if(m_can_0_client){
+                    m_can_0_client->set_cb_connection_status(connected);
+                }
 
                 m_cb_status.notify_one();
             },
@@ -343,7 +346,6 @@ void charge_bridge::handle_tick() {
 }
 
 bool charge_bridge::register_events(everest::lib::io::event::fd_event_handler& handler) {
-    std::cout << "register Events" << std::endl;
     auto result = true;
     result = register_internal_events(handler) && result;
     result = register_manage_events(handler) && result;
@@ -351,7 +353,6 @@ bool charge_bridge::register_events(everest::lib::io::event::fd_event_handler& h
     return result;
 }
 bool charge_bridge::unregister_events(everest::lib::io::event::fd_event_handler& handler) {
-    std::cout << "UNregister Events" << std::endl;
     auto result = true;
     result = unregister_internal_events(handler) && result;
     result = unregister_manage_events(handler) && result;
@@ -359,7 +360,6 @@ bool charge_bridge::unregister_events(everest::lib::io::event::fd_event_handler&
     return result;
 }
 bool charge_bridge::register_manage_events(everest::lib::io::event::fd_event_handler& handler) {
-    std::cout << "register manage Events" << std::endl;
     auto result = true;
     result =
         handler.register_event_handler(&m_1s_tick, everest::lib::util::bind_obj(&charge_bridge::handle_tick, this)) &&
@@ -375,7 +375,6 @@ bool charge_bridge::register_manage_events(everest::lib::io::event::fd_event_han
     return result;
 }
 bool charge_bridge::unregister_manage_events(everest::lib::io::event::fd_event_handler& handler) {
-    std::cout << "UNregister manage Events" << std::endl;
     auto result = true;
     result = handler.unregister_event_handler(&m_1s_tick) && result;
     if (m_mqtt) {
@@ -387,7 +386,6 @@ bool charge_bridge::unregister_manage_events(everest::lib::io::event::fd_event_h
 }
 
 bool charge_bridge::register_internal_events(everest::lib::io::event::fd_event_handler& handler) {
-    std::cout << "register INTERNAL Events" << std::endl;
     auto result = true;
     if (m_can_0_client) {
         result = handler.register_event_handler(m_can_0_client.get()) && result;
@@ -421,7 +419,6 @@ bool charge_bridge::register_internal_events(everest::lib::io::event::fd_event_h
 }
 bool charge_bridge::unregister_internal_events(everest::lib::io::event::fd_event_handler& handler) {
     auto result = true;
-    std::cout << "UNregister INTERNAL Events" << std::endl;
 
     if (m_can_0_client) {
         result = handler.unregister_event_handler(m_can_0_client.get()) && result;
