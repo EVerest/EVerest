@@ -4,7 +4,9 @@
 
 `connection_openssl` is a Catch2 test binary that exercises `ConnectionSSL`,
 which delegates to `tls::Server` for TLS termination. Scenarios cover the TLS
-handshake against a real client, the peer-certificate SHA-512 accessor, and
+handshake against a real client, peer close surfaced through `read()`,
+teardown on a peer close during the handshake, the peer-certificate SHA-512
+accessor, acceptance of a TLS 1.3 client chained to the MO root, and
 SSLKEYLOGFILE keylog output.
 
 - Run `pki.sh` to build the test certificates and keys

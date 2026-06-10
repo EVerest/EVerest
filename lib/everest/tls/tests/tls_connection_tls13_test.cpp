@@ -19,6 +19,60 @@ using namespace std::chrono_literals;
 
 namespace {
 
+// Test-owned loopback listen socket on an ephemeral port, for tests that
+// bypass init_socket()'s fixed-port bind by passing the fd to the Server via
+// server_config.socket. fd is -1 on failure; ASSERT_* requires a void return
+// type, so callers assert validity at the call site.
+struct LoopbackListener {
+    int fd{-1};
+    std::string service; // bound port, as a service string for Client::connect()
+};
+
+LoopbackListener make_loopback_listener() {
+    LoopbackListener listener;
+    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return listener;
+    }
+    int reuse = 1;
+    (void)::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    sockaddr_in listen_addr{};
+    listen_addr.sin_family = AF_INET;
+    listen_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    listen_addr.sin_port = 0;
+    if ((::bind(fd, reinterpret_cast<sockaddr*>(&listen_addr), sizeof(listen_addr)) != 0) || (::listen(fd, 1) != 0)) {
+        (void)::close(fd);
+        return listener;
+    }
+    sockaddr_in bound_addr{};
+    socklen_t bound_len = sizeof(bound_addr);
+    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&bound_addr), &bound_len) != 0) {
+        (void)::close(fd);
+        return listener;
+    }
+    listener.fd = fd;
+    listener.service = std::to_string(ntohs(bound_addr.sin_port));
+    return listener;
+}
+
+// Returns nullptr on failure; callers assert.
+tls::Server::ConnectionPtr accept_and_wrap(tls::Server& server, int listen_fd) {
+    sockaddr_in peer_addr{};
+    socklen_t peer_len = sizeof(peer_addr);
+    const int accepted_fd = ::accept(listen_fd, reinterpret_cast<sockaddr*>(&peer_addr), &peer_len);
+    if (accepted_fd < 0) {
+        return nullptr;
+    }
+    char ip_buf[INET_ADDRSTRLEN]{};
+    char service_buf[NI_MAXSERV]{};
+    if (::getnameinfo(reinterpret_cast<sockaddr*>(&peer_addr), peer_len, ip_buf, sizeof(ip_buf), service_buf,
+                      sizeof(service_buf), NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
+        (void)::close(accepted_fd);
+        return nullptr;
+    }
+    return server.wrap_accepted_fd(accepted_fd, ip_buf, service_buf);
+}
+
 TEST_F(TlsTest, EnforceTls13RejectsTls12Client) {
     // Server enforces TLS 1.3; a TLS-1.2-only client must be rejected.
     server_config.ciphersuites = "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384";
@@ -395,55 +449,27 @@ TEST_F(TlsTest, WrapAcceptedFdHandshake) {
     // Local listen socket on an ephemeral port. Created before init() so it
     // can be passed via server_config.socket; otherwise init_socket() would
     // bind the fixture's fixed port and leak that listener until process exit.
-    const int listen_fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    ASSERT_GE(listen_fd, 0);
-    int reuse = 1;
-    (void)::setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-
-    sockaddr_in listen_addr{};
-    listen_addr.sin_family = AF_INET;
-    listen_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    listen_addr.sin_port = 0;
-    ASSERT_EQ(::bind(listen_fd, reinterpret_cast<sockaddr*>(&listen_addr), sizeof(listen_addr)), 0);
-    ASSERT_EQ(::listen(listen_fd, 1), 0);
+    const auto listener = make_loopback_listener();
+    ASSERT_GE(listener.fd, 0);
 
     // Bypass init_socket() by handing our test-owned listen fd to the Server.
     // This test never calls serve(); we only need init() to set up the SSL_CTX.
-    server_config.socket = listen_fd;
+    server_config.socket = listener.fd;
     const auto init_state = server.init(server_config, nullptr);
     ASSERT_TRUE(init_state == state_t::init_complete || init_state == state_t::init_socket);
-
-    sockaddr_in bound_addr{};
-    socklen_t bound_len = sizeof(bound_addr);
-    ASSERT_EQ(::getsockname(listen_fd, reinterpret_cast<sockaddr*>(&bound_addr), &bound_len), 0);
-    const std::uint16_t bound_port = ntohs(bound_addr.sin_port);
-    const std::string bound_service = std::to_string(bound_port);
 
     // Client thread: open a TLS 1.2 connection to our listen socket.
     std::thread client_thread([&]() {
         ClientTest local_client;
         local_client.init(client_config);
-        auto conn = local_client.connect("127.0.0.1", bound_service.c_str(), false, 1000);
+        auto conn = local_client.connect("127.0.0.1", listener.service.c_str(), false, 1000);
         if (conn) {
             (void)conn->connect();
             (void)conn->shutdown();
         }
     });
 
-    // Accept the incoming TCP connection on the test-owned socket.
-    sockaddr_in peer_addr{};
-    socklen_t peer_len = sizeof(peer_addr);
-    const int accepted_fd = ::accept(listen_fd, reinterpret_cast<sockaddr*>(&peer_addr), &peer_len);
-    ASSERT_GE(accepted_fd, 0);
-
-    char ip_buf[INET_ADDRSTRLEN]{};
-    char service_buf[NI_MAXSERV]{};
-    ASSERT_EQ(::getnameinfo(reinterpret_cast<sockaddr*>(&peer_addr), peer_len, ip_buf, sizeof(ip_buf), service_buf,
-                            sizeof(service_buf), NI_NUMERICHOST | NI_NUMERICSERV),
-              0);
-
-    // Hand the accepted fd to the factory under test.
-    tls::Server::ConnectionPtr server_conn = server.wrap_accepted_fd(accepted_fd, ip_buf, service_buf);
+    tls::Server::ConnectionPtr server_conn = accept_and_wrap(server, listener.fd);
     ASSERT_TRUE(server_conn);
 
     // Drive the SSL handshake.
@@ -454,7 +480,7 @@ TEST_F(TlsTest, WrapAcceptedFdHandshake) {
     if (client_thread.joinable()) {
         client_thread.join();
     }
-    (void)::close(listen_fd);
+    (void)::close(listener.fd);
 }
 
 TEST_F(TlsTest, LastErrorPopulatedOnFailedAccept) {
@@ -522,33 +548,17 @@ TEST_F(TlsTest, LastErrorDoesNotBleedIntoGracefulClose) {
     // here on the main thread, so the bleed (if present) is on this thread.
     using state_t = tls::Server::state_t;
 
-    // Test-owned loopback listen socket on an ephemeral port (as in
-    // WrapAcceptedFdHandshake), passed to the Server via server_config.socket so
-    // init_socket() does not bind the fixture's fixed port.
-    const int listen_fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    ASSERT_GE(listen_fd, 0);
-    int reuse = 1;
-    (void)::setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-    sockaddr_in listen_addr{};
-    listen_addr.sin_family = AF_INET;
-    listen_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    listen_addr.sin_port = 0;
-    ASSERT_EQ(::bind(listen_fd, reinterpret_cast<sockaddr*>(&listen_addr), sizeof(listen_addr)), 0);
-    ASSERT_EQ(::listen(listen_fd, 1), 0);
+    const auto listener = make_loopback_listener();
+    ASSERT_GE(listener.fd, 0);
 
     // Server: TLS 1.3, require a client cert chained to client_root_cert.pem.
-    server_config.socket = listen_fd;
+    server_config.socket = listener.fd;
     server_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
     server_config.enforce_tls_1_3 = true;
     server_config.verify_client = true;
     server_config.verify_locations_file = "client_root_cert.pem";
     const auto init_state = server.init(server_config, nullptr);
     ASSERT_TRUE(init_state == state_t::init_complete || init_state == state_t::init_socket);
-
-    sockaddr_in bound_addr{};
-    socklen_t bound_len = sizeof(bound_addr);
-    ASSERT_EQ(::getsockname(listen_fd, reinterpret_cast<sockaddr*>(&bound_addr), &bound_len), 0);
-    const std::string bound_service = std::to_string(ntohs(bound_addr.sin_port));
 
     // Spawn a TLS 1.3 client (on its own thread) presenting the given cert pair,
     // then gracefully shut down so the server observes a clean close_notify.
@@ -562,7 +572,7 @@ TEST_F(TlsTest, LastErrorDoesNotBleedIntoGracefulClose) {
             cc.certificate_chain_file = chain;
             cc.private_key_file = key;
             local_client.init(cc);
-            auto conn = local_client.connect("127.0.0.1", bound_service.c_str(), false, 1000);
+            auto conn = local_client.connect("127.0.0.1", listener.service.c_str(), false, 1000);
             if (conn) {
                 (void)conn->connect();
                 (void)conn->shutdown();
@@ -570,25 +580,10 @@ TEST_F(TlsTest, LastErrorDoesNotBleedIntoGracefulClose) {
         });
     };
 
-    // Accept one pending TCP connection and wrap it as a server TLS connection.
-    auto accept_one = [&]() -> tls::Server::ConnectionPtr {
-        sockaddr_in peer_addr{};
-        socklen_t peer_len = sizeof(peer_addr);
-        const int accepted_fd = ::accept(listen_fd, reinterpret_cast<sockaddr*>(&peer_addr), &peer_len);
-        if (accepted_fd < 0) {
-            return nullptr;
-        }
-        char ip_buf[INET_ADDRSTRLEN]{};
-        char service_buf[NI_MAXSERV]{};
-        (void)::getnameinfo(reinterpret_cast<sockaddr*>(&peer_addr), peer_len, ip_buf, sizeof(ip_buf), service_buf,
-                            sizeof(service_buf), NI_NUMERICHOST | NI_NUMERICSERV);
-        return server.wrap_accepted_fd(accepted_fd, ip_buf, service_buf);
-    };
-
     // Connection #1: untrusted client cert -> accept() fails verification and
     // seeds the thread-local error buffer.
     std::thread client1 = spawn_client("alt_client_chain.pem", "alt_client_priv.pem");
-    tls::Server::ConnectionPtr conn1 = accept_one();
+    tls::Server::ConnectionPtr conn1 = accept_and_wrap(server, listener.fd);
     ASSERT_TRUE(conn1);
     EXPECT_NE(conn1->accept(1000), tls::Connection::result_t::success);
     EXPECT_FALSE(conn1->last_error().empty()); // seed confirmed
@@ -600,7 +595,7 @@ TEST_F(TlsTest, LastErrorDoesNotBleedIntoGracefulClose) {
     // gracefully. The read must observe the graceful close, and last_error()
     // must then be empty (no bleed from connection #1).
     std::thread client2 = spawn_client("client_chain.pem", "client_priv.pem");
-    tls::Server::ConnectionPtr conn2 = accept_one();
+    tls::Server::ConnectionPtr conn2 = accept_and_wrap(server, listener.fd);
     ASSERT_TRUE(conn2);
     ASSERT_EQ(conn2->accept(1000), tls::Connection::result_t::success);
 
@@ -615,7 +610,7 @@ TEST_F(TlsTest, LastErrorDoesNotBleedIntoGracefulClose) {
     if (client2.joinable()) {
         client2.join();
     }
-    (void)::close(listen_fd);
+    (void)::close(listener.fd);
 }
 
 } // namespace

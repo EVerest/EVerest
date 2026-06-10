@@ -218,8 +218,7 @@ constexpr tls::Connection::result_t convert(ssl_result_t err) {
     }
 }
 
-/// result of a single SSL operation: the simplified result plus any drained
-/// OpenSSL error text (empty when there was no error)
+/// error holds the drained OpenSSL error text; empty when there was no error
 struct ssl_op_result {
     ssl_result_t rc;
     std::string error;
@@ -1042,8 +1041,8 @@ bool Server::init_ssl(const config_t& cfg) {
 
     bool result = (cfg.chains.size() > 0);
     if (cfg.enforce_tls_1_3 && (static_cast<const char*>(cfg.ciphersuites) == nullptr || cfg.ciphersuites[0] == '\0')) {
-        // A TLS-1.3-minimum server with no TLS 1.3 ciphersuites would fail every
-        // handshake; fail init fast instead.
+        // An enforce-TLS-1.3 server must pin its ciphersuites explicitly: "" would
+        // fail every handshake and nullptr would silently rely on OpenSSL defaults.
         log_error("enforce_tls_1_3 requires a non-empty ciphersuites list");
         result = false;
     }

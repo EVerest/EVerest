@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <future>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -106,6 +107,22 @@ struct ClientResult {
     std::string read_payload;
 };
 
+struct FdGuard {
+    explicit FdGuard(int fd_in) : fd(fd_in) {
+    }
+    FdGuard(const FdGuard&) = delete;
+    FdGuard& operator=(const FdGuard&) = delete;
+    ~FdGuard() {
+        if (fd >= 0) {
+            ::close(fd);
+        }
+    }
+    const int fd;
+};
+
+using SslCtxPtr = std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)>;
+using SslPtr = std::unique_ptr<SSL, decltype(&SSL_free)>;
+
 // Drive a synthetic OpenSSL client over TCP/IPv6 loopback. Optionally present a client cert.
 ClientResult run_tls_client(const std::string& send_payload, std::size_t expect_recv, bool present_client_cert,
                             bool enforce_tls_1_3, bool force_tls_1_2 = false, const char* client_chain = VEHICLE_CHAIN,
@@ -121,7 +138,8 @@ ClientResult run_tls_client(const std::string& send_payload, std::size_t expect_
         return result;
     }
 
-    int fd = ::socket(AF_INET6, SOCK_STREAM, 0);
+    const FdGuard fd_guard{::socket(AF_INET6, SOCK_STREAM, 0)};
+    const int fd = fd_guard.fd;
     if (fd < 0) {
         result.error = "socket() failed";
         return result;
@@ -137,79 +155,67 @@ ClientResult run_tls_client(const std::string& send_payload, std::size_t expect_
         std::this_thread::sleep_for(20ms);
     }
     if (connected != 0) {
-        ::close(fd);
         result.error = "connect() failed";
         return result;
     }
 
-    auto* method = TLS_client_method();
-    auto* ctx = SSL_CTX_new(method);
+    const SslCtxPtr ctx{SSL_CTX_new(TLS_client_method()), &SSL_CTX_free};
     if (ctx == nullptr) {
-        ::close(fd);
         result.error = "SSL_CTX_new failed";
         return result;
     }
     if (enforce_tls_1_3) {
-        SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION);
+        SSL_CTX_set_min_proto_version(ctx.get(), TLS1_3_VERSION);
     } else if (force_tls_1_2) {
-        SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
-        SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION);
+        SSL_CTX_set_min_proto_version(ctx.get(), TLS1_2_VERSION);
+        SSL_CTX_set_max_proto_version(ctx.get(), TLS1_2_VERSION);
     } else {
-        SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+        SSL_CTX_set_min_proto_version(ctx.get(), TLS1_2_VERSION);
     }
-    SSL_CTX_set_ciphersuites(ctx, "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256");
-    SSL_CTX_set_cipher_list(ctx, "ECDHE-ECDSA-AES128-SHA256");
-    SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, nullptr);
+    SSL_CTX_set_ciphersuites(ctx.get(), "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256");
+    SSL_CTX_set_cipher_list(ctx.get(), "ECDHE-ECDSA-AES128-SHA256");
+    SSL_CTX_set_verify(ctx.get(), SSL_VERIFY_NONE, nullptr);
 
     if (present_client_cert) {
-        if (SSL_CTX_use_certificate_chain_file(ctx, client_chain) != 1) {
-            SSL_CTX_free(ctx);
-            ::close(fd);
+        if (SSL_CTX_use_certificate_chain_file(ctx.get(), client_chain) != 1) {
             result.error = "client use_certificate_chain_file failed";
             return result;
         }
         // client keys in the test pki are encrypted with DEFAULT_PW
-        SSL_CTX_set_default_passwd_cb_userdata(ctx, const_cast<char*>(DEFAULT_PW));
-        SSL_CTX_set_default_passwd_cb(ctx, [](char* buf, int size, int, void* ud) -> int {
+        SSL_CTX_set_default_passwd_cb_userdata(ctx.get(), const_cast<char*>(DEFAULT_PW));
+        SSL_CTX_set_default_passwd_cb(ctx.get(), [](char* buf, int size, int, void* ud) -> int {
             const auto* pw = static_cast<const char*>(ud);
             const auto len = static_cast<int>(strlen(pw));
             const auto cp = (len < size) ? len : size;
             memcpy(buf, pw, cp);
             return cp;
         });
-        if (SSL_CTX_use_PrivateKey_file(ctx, client_key, SSL_FILETYPE_PEM) != 1) {
-            SSL_CTX_free(ctx);
-            ::close(fd);
+        if (SSL_CTX_use_PrivateKey_file(ctx.get(), client_key, SSL_FILETYPE_PEM) != 1) {
             result.error = "client use_PrivateKey_file failed";
             return result;
         }
     }
 
-    auto* ssl = SSL_new(ctx);
+    const SslPtr ssl{SSL_new(ctx.get()), &SSL_free};
     if (ssl == nullptr) {
-        SSL_CTX_free(ctx);
-        ::close(fd);
         result.error = "SSL_new failed";
         return result;
     }
-    SSL_set_fd(ssl, fd);
+    SSL_set_fd(ssl.get(), fd);
 
-    const auto handshake = SSL_connect(ssl);
+    const auto handshake = SSL_connect(ssl.get());
     if (handshake != 1) {
-        const auto err = SSL_get_error(ssl, handshake);
+        const auto err = SSL_get_error(ssl.get(), handshake);
         result.error = "SSL_connect failed: " + std::to_string(err);
-        SSL_free(ssl);
-        SSL_CTX_free(ctx);
-        ::close(fd);
         return result;
     }
 
     result.handshake_ok = true;
-    result.tls_1_3 = (SSL_version(ssl) == TLS1_3_VERSION);
+    result.tls_1_3 = (SSL_version(ssl.get()) == TLS1_3_VERSION);
 
     // Send a payload
     if (not send_payload.empty()) {
-        const auto written = SSL_write(ssl, send_payload.data(), static_cast<int>(send_payload.size()));
+        const auto written = SSL_write(ssl.get(), send_payload.data(), static_cast<int>(send_payload.size()));
         if (written <= 0) {
             result.error = "SSL_write failed";
         }
@@ -220,7 +226,7 @@ ClientResult run_tls_client(const std::string& send_payload, std::size_t expect_
         std::vector<char> buf(expect_recv);
         std::size_t total = 0;
         while (total < expect_recv) {
-            const auto n = SSL_read(ssl, buf.data() + total, static_cast<int>(expect_recv - total));
+            const auto n = SSL_read(ssl.get(), buf.data() + total, static_cast<int>(expect_recv - total));
             if (n <= 0) {
                 break;
             }
@@ -229,10 +235,7 @@ ClientResult run_tls_client(const std::string& send_payload, std::size_t expect_
         result.read_payload.assign(buf.data(), total);
     }
 
-    SSL_shutdown(ssl);
-    SSL_free(ssl);
-    SSL_CTX_free(ctx);
-    ::close(fd);
+    SSL_shutdown(ssl.get());
     return result;
 }
 
