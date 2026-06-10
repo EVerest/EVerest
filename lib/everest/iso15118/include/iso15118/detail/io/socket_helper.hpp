@@ -2,6 +2,7 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -9,9 +10,15 @@
 
 namespace iso15118::io {
 
+constexpr auto DEFAULT_SOCKET_BACKLOG = 4;
+
 bool check_and_update_interface(std::string& interface_name);
 
 bool get_first_sockaddr_in6_for_interface(const std::string& interface_name, sockaddr_in6& address);
+
+// creates a listening ipv6 TCP socket; throws on failure.
+// interface_name names the interface address belongs to, for the bind failure message.
+int create_tcp_listen_socket(sockaddr_in6 address, uint16_t port, int backlog, const std::string& interface_name);
 
 std::unique_ptr<char[]> sockaddr_in6_to_name(const sockaddr_in6&);
 
