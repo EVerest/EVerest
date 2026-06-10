@@ -37,7 +37,9 @@ public:
         m_rx = std::move(handler);
     }
 
-    // Enqueue a payload and arm POLLOUT. Rejected once the endpoint has errored.
+    // Enqueue a payload and arm POLLOUT. Payloads enqueued before the handshake
+    // completes are held in the queue and flushed once it does; tx() only
+    // rejects after the endpoint has errored.
     bool tx(PayloadT const& payload) {
         if (m_errored) {
             return false;
@@ -127,6 +129,12 @@ protected:
         if (m_socket.handshake_complete()) {
             maybe_fire_ready();
             arm_for(fd, event::poll_events::read);
+            // Payloads queued before the handshake completed consumed their
+            // one-shot tx-notify while the fd was not armed for write. Re-fire
+            // the notify so its handler re-arms POLLOUT through the usual path.
+            if (not m_tx_buffer.empty()) {
+                m_tx_notify.notify();
+            }
             return;
         }
         arm_for(fd, m_socket.desired_events());

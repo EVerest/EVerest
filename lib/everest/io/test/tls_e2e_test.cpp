@@ -331,6 +331,59 @@ TEST(TlsE2E, ServerCloseTearsDownClientWithoutCrash) {
     }
 }
 
+// A payload enqueued via tx() right after register_event_handler() returns —
+// before the TCP connect has yielded a connection fd, let alone before the
+// handshake completed — must be held and flushed once the handshake finishes.
+// The eventfd tx-notify fired while m_fd was still -1, so the flush depends on
+// the handshake-completion path re-arming POLLOUT for the queued payload.
+TEST(TlsE2E, tx_queued_before_handshake_is_flushed_after_ready) {
+    io::tls::tls_listener listener(make_listener_config());
+    const auto port = listener.listen_port();
+    ASSERT_GT(port, 0u) << "listener bound to port 0 unexpectedly";
+
+    io::event::fd_event_handler ev;
+
+    std::unique_ptr<io::tls::tls_server> server_conn;
+    listener.set_accept_callback(
+        [&](std::unique_ptr<io::tls::tls_server> srv, std::string /*ip*/, std::uint16_t /*peer_port*/) {
+            srv->set_rx_handler([](io::tls::tls_server_socket::PayloadT const& payload, auto& self) {
+                self.tx(payload); // echo
+            });
+            ev.register_event_handler(srv.get());
+            server_conn = std::move(srv);
+        });
+    ASSERT_TRUE(ev.register_event_handler(&listener));
+
+    io::tls::tls_client client(make_client_config(), std::string("127.0.0.1"), port, 2000);
+
+    std::atomic<bool> running{true};
+    const std::vector<std::uint8_t> ping = {'p', 'i', 'n', 'g'};
+    std::vector<std::uint8_t> echo;
+
+    client.set_rx_handler([&echo, &ping, &running](tls_payload const& payload, auto&) {
+        echo.insert(echo.end(), payload.begin(), payload.end());
+        if (echo.size() >= ping.size()) {
+            running = false;
+        }
+    });
+    ev.register_event_handler(&client);
+
+    // Send BEFORE the handshake (or even the TCP connect) has completed: no
+    // on-ready action involved. The payload must be queued and flushed later.
+    tls_payload msg(ping.begin(), ping.end());
+    ASSERT_TRUE(client.tx(msg)) << "tx() rejected a payload queued before the handshake";
+
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (running && std::chrono::steady_clock::now() < deadline) {
+        ev.poll(50ms);
+        ev.run_actions();
+    }
+    running = false;
+
+    ASSERT_EQ(echo.size(), ping.size()) << "payload queued before the handshake was never flushed within 5 seconds";
+    EXPECT_EQ(echo, ping) << "echoed payload differs from sent payload";
+}
+
 // Explicit unregister of a tls_client must run the client stop() hook so the
 // m_connected event it registered in start() is torn down alongside the base
 // connection fd / tx-notify. Regression guard for the register/unregister
