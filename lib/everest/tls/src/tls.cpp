@@ -829,18 +829,23 @@ int ssl_keylog_server_index{-1};
 
 void keylog_callback(const SSL* ssl, const char* line) {
 
+    // The callback is registered CTX-wide, so it also fires for connections
+    // that skipped the per-connection key-log server (e.g. when the service
+    // string was not a valid port number) and carry no ex_data.
     auto keylog_server = static_cast<TlsKeyLoggingServer*>(SSL_get_ex_data(ssl, ssl_keylog_server_index));
 
-    std::string key_log_msg = "TLS Handshake keys on port ";
-    key_log_msg += std::to_string(keylog_server->get_port()) + ": ";
-    key_log_msg += std::string(line);
+    if (keylog_server != nullptr) {
+        std::string key_log_msg = "TLS Handshake keys on port ";
+        key_log_msg += std::to_string(keylog_server->get_port()) + ": ";
+        key_log_msg += std::string(line);
 
-    log_info(key_log_msg);
+        log_info(key_log_msg);
 
-    if (keylog_server->get_fd() != -1) {
-        const auto result = keylog_server->send(line);
-        if (result not_eq strlen(line)) {
-            log_error("key_logging_server send() failed!");
+        if (keylog_server->get_fd() != -1) {
+            const auto result = keylog_server->send(line);
+            if (result not_eq strlen(line)) {
+                log_error("key_logging_server send() failed!");
+            }
         }
     }
 

@@ -177,10 +177,14 @@ TEST_F(TlsClientWrapTest, WrapConnectingFdRejectsWrongHostname) {
 // With TLS key logging enabled the server resolves the key-log port from the
 // service string passed to wrap_accepted_fd. A non-numeric service string
 // (empty or garbage) must not throw out of the ServerConnection constructor;
-// the connection stays usable and only the key logging is skipped.
+// the connection stays usable and only the key logging is skipped. The CTX-wide
+// keylog callback still fires during the handshake even though such a
+// connection carries no per-connection key-log server, so the handshake is
+// driven to completion to prove the skip path is safe end to end.
 
 TEST_F(TlsClientWrapTest, WrapAcceptedFdToleratesNonNumericService) {
     using state_t = tls::Server::state_t;
+    using result_t = tls::Connection::result_t;
 
     const auto listener = make_loopback_listener();
     ASSERT_GE(listener.fd, 0);
@@ -191,7 +195,9 @@ TEST_F(TlsClientWrapTest, WrapAcceptedFdToleratesNonNumericService) {
     const auto init_state = server.init(server_config, nullptr);
     ASSERT_TRUE(init_state == state_t::init_complete || init_state == state_t::init_socket);
 
-    for (const char* service : {"", "not-a-port"}) {
+    // Empty service string: wrap must not throw, and the connection must stay
+    // usable - the handshake completes on both ends with key logging skipped.
+    {
         const int client_fd = connect_loopback_nonblocking(listener.port);
         ASSERT_GE(client_fd, 0);
 
@@ -199,9 +205,42 @@ TEST_F(TlsClientWrapTest, WrapAcceptedFdToleratesNonNumericService) {
         ASSERT_GE(accepted_fd, 0);
 
         tls::Server::ConnectionPtr conn;
-        ASSERT_NO_THROW(conn = server.wrap_accepted_fd(accepted_fd, "::1", service))
-            << "service string: \"" << service << "\"";
-        EXPECT_TRUE(conn) << "service string: \"" << service << "\"";
+        ASSERT_NO_THROW(conn = server.wrap_accepted_fd(accepted_fd, "::1", ""));
+        ASSERT_TRUE(conn);
+
+        auto server_result = result_t::timeout;
+        std::thread server_side([&]() {
+            server_result = conn->accept(1000);
+            (void)conn->shutdown(1000);
+        });
+
+        client.init(client_config);
+        auto client_conn = client.wrap_connecting_fd(client_fd, "localhost");
+        ASSERT_TRUE(client_conn);
+
+        const auto drive = drive_client_handshake(*client_conn, client_fd);
+        EXPECT_EQ(drive.result, result_t::success);
+
+        (void)client_conn->shutdown(1000);
+
+        if (server_side.joinable()) {
+            server_side.join();
+        }
+        EXPECT_EQ(server_result, result_t::success);
+    }
+
+    // Garbage service string: the wrap itself must not throw and must yield a
+    // usable, non-null connection.
+    {
+        const int client_fd = connect_loopback_nonblocking(listener.port);
+        ASSERT_GE(client_fd, 0);
+
+        const int accepted_fd = ::accept(listener.fd, nullptr, nullptr);
+        ASSERT_GE(accepted_fd, 0);
+
+        tls::Server::ConnectionPtr conn;
+        ASSERT_NO_THROW(conn = server.wrap_accepted_fd(accepted_fd, "::1", "not-a-port"));
+        EXPECT_TRUE(conn);
 
         // The wrapped connection owns accepted_fd; only the client fd needs
         // explicit cleanup.
