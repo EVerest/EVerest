@@ -838,15 +838,6 @@ int Manager::run() {
                 }
                 return ret;
             });
-
-        register_state_transition_handler([this, &lifecycle_api](ManagerState from, ManagerState to) {
-            // TODO(CB): Might want to interprete some more to-states as "running"
-            if (to == ManagerState::Running) {
-                lifecycle_api->modules_started_running();
-            } else if (from == ManagerState::Running) {
-                lifecycle_api->modules_stopped_running();
-            }
-        });
     }
 
     if (not boot_into_idle and runtime_ctx_has_valid_config) {
