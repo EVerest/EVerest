@@ -821,6 +821,7 @@ int Manager::run() {
                 if (are_modules_started()) {
                     shutdown_cause_ = ShutdownCause::Restart;
                     ret = Everest::api::lifecycle::RestartModulesResult::Restarting;
+                    config_service_core_->notice_module_restart_triggered();
                     handle_initiate_graceful_shutdown(std::chrono::system_clock::now(), false, nullptr,
                                                       *mqtt_abstraction, ms);
                 } else if (is_idle()) {
