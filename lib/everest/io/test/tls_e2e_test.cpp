@@ -8,6 +8,8 @@
 // driven on the one loop (nested fd_event_sync_interface model). This exercises
 // the full > 4096-byte drain path and RFC-6125 hostname verification.
 
+#include "tls_test_common.hpp"
+
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/tls/tls_client.hpp>
 #include <everest/io/tls/tls_listener.hpp>
@@ -28,6 +30,7 @@ using namespace std::chrono_literals;
 namespace {
 
 namespace io = everest::lib::io;
+namespace test = everest::lib::io::test;
 
 using tls_payload = io::tls::tls_client_socket::PayloadT;
 
@@ -44,37 +47,6 @@ std::vector<std::uint8_t> make_large_payload() {
     return payload;
 }
 
-/// Populate a tls_listener::Config with the test PKI and an ephemeral bind on
-/// 127.0.0.1. Mirrors the listener config used in tls_listener_test.cpp.
-io::tls::tls_listener::Config make_listener_config() {
-    io::tls::tls_listener::Config lcfg;
-    lcfg.tls.cipher_list = "ECDHE-ECDSA-AES128-SHA256";
-    lcfg.tls.ciphersuites = "";
-    auto& chain = lcfg.tls.chains.emplace_back();
-    chain.certificate_chain_file = "server_chain.pem";
-    chain.private_key_file = "server_priv.pem";
-    chain.trust_anchor_file = "server_root_cert.pem";
-    chain.ocsp_response_files = {"ocsp_response.der", "ocsp_response.der"};
-    lcfg.tls.verify_client = false;
-    lcfg.tls.io_timeout_ms = 1000;
-    lcfg.bind_addr = "127.0.0.1";
-    lcfg.bind_port = 0;
-    lcfg.ipv6_only = false;
-    return lcfg;
-}
-
-/// Base client config that trusts the test server root so chain validation
-/// passes. Hostname verification is left off by default (opt in per test).
-io::tls::tls_client_socket::Config make_client_config() {
-    io::tls::tls_client_socket::Config cfg;
-    cfg.tls.cipher_list = "ECDHE-ECDSA-AES128-SHA256";
-    cfg.tls.ciphersuites = "";
-    cfg.tls.verify_locations_file = "server_root_cert.pem";
-    cfg.tls.io_timeout_ms = 2000;
-    cfg.tls.verify_server = true;
-    return cfg;
-}
-
 } // namespace
 
 // A tls_listener (server) and a tls_client (the alias) share one
@@ -82,28 +54,15 @@ io::tls::tls_client_socket::Config make_client_config() {
 // server echoes it, and the loop drives both TLS handshakes plus the round-trip.
 // Asserts the FULL payload round-trips intact (size + byte content).
 TEST(TlsE2E, RoundTripLargePayloadSingleLoop) {
-    io::tls::tls_listener listener(make_listener_config());
-    const auto port = listener.listen_port();
-    ASSERT_GT(port, 0u) << "listener bound to port 0 unexpectedly";
-
     io::event::fd_event_handler ev;
-
-    // The yielded tls_server must outlive the accept callback; the loop drives
-    // its handshake/rx/tx after register_event_handler().
-    std::unique_ptr<io::tls::tls_server> server_conn;
-    listener.set_accept_callback(
-        [&](std::unique_ptr<io::tls::tls_server> srv, std::string /*ip*/, std::uint16_t /*peer_port*/) {
-            srv->set_rx_handler([](io::tls::tls_server_socket::PayloadT const& payload, auto& self) {
-                self.tx(payload); // echo
-            });
-            ev.register_event_handler(srv.get());
-            server_conn = std::move(srv);
-        });
-    ASSERT_TRUE(ev.register_event_handler(&listener));
+    auto rig = test::make_echo_listener(ev);
+    const auto port = rig.port();
+    ASSERT_GT(port, 0u) << "listener bound to port 0 unexpectedly";
+    ASSERT_TRUE(rig.registered);
 
     const auto expected = make_large_payload();
 
-    io::tls::tls_client client(make_client_config(), std::string("127.0.0.1"), port, 2000);
+    io::tls::tls_client client(test::client_test_config(), std::string("127.0.0.1"), port, 2000);
 
     std::atomic<bool> running{true};
     std::vector<std::uint8_t> echo;
@@ -121,14 +80,8 @@ TEST(TlsE2E, RoundTripLargePayloadSingleLoop) {
     });
     ev.register_event_handler(&client);
 
-    // Timed poll so the deadline is checked every tick even with no events; a
-    // stall fails the test deterministically rather than hanging.
-    const auto deadline = std::chrono::steady_clock::now() + 5s;
-    while (running && std::chrono::steady_clock::now() < deadline) {
-        ev.poll(50ms);
-        ev.run_actions();
-    }
-    running = false;
+    test::pump_until(
+        ev, [&] { return !running; }, 5s);
 
     ASSERT_EQ(echo.size(), kLargePayload) << "round-trip did not complete within 5 seconds (drain or echo failed)";
     EXPECT_EQ(echo, expected) << "echoed payload differs from sent payload";
@@ -140,26 +93,14 @@ TEST(TlsE2E, RoundTripLargePayloadSingleLoop) {
 // literal (SNI is the matched name, not the connect target). Round-trip
 // completes.
 TEST(TlsE2E, HostnameVerificationSucceeds) {
-    io::tls::tls_listener listener(make_listener_config());
-    const auto port = listener.listen_port();
-    ASSERT_GT(port, 0u) << "listener bound to port 0 unexpectedly";
-
     io::event::fd_event_handler ev;
+    auto rig = test::make_echo_listener(ev);
+    const auto port = rig.port();
+    ASSERT_GT(port, 0u) << "listener bound to port 0 unexpectedly";
+    ASSERT_TRUE(rig.registered);
 
-    std::unique_ptr<io::tls::tls_server> server_conn;
-    listener.set_accept_callback(
-        [&](std::unique_ptr<io::tls::tls_server> srv, std::string /*ip*/, std::uint16_t /*peer_port*/) {
-            srv->set_rx_handler([](io::tls::tls_server_socket::PayloadT const& payload, auto& self) {
-                self.tx(payload); // echo
-            });
-            ev.register_event_handler(srv.get());
-            server_conn = std::move(srv);
-        });
-    ASSERT_TRUE(ev.register_event_handler(&listener));
-
-    auto cfg = make_client_config();
+    auto cfg = test::client_test_config(2000, "localhost");
     cfg.tls.verify_subject_name = true;
-    cfg.host_for_sni = "localhost";
 
     io::tls::tls_client client(cfg, std::string("127.0.0.1"), port, 2000);
 
@@ -181,12 +122,8 @@ TEST(TlsE2E, HostnameVerificationSucceeds) {
     });
     ev.register_event_handler(&client);
 
-    const auto deadline = std::chrono::steady_clock::now() + 5s;
-    while (running && std::chrono::steady_clock::now() < deadline) {
-        ev.poll(50ms);
-        ev.run_actions();
-    }
-    running = false;
+    test::pump_until(
+        ev, [&] { return !running; }, 5s);
 
     EXPECT_TRUE(got_echo) << "round-trip did not complete with verify_subject_name + correct SNI within 5 seconds";
     EXPECT_EQ(echo, ping) << "echoed payload differs from sent payload";
@@ -197,26 +134,14 @@ TEST(TlsE2E, HostnameVerificationSucceeds) {
 // fail verification; success here is observing the client error (no hang). The
 // round-trip must NOT complete.
 TEST(TlsE2E, WrongHostnameVerificationFails) {
-    io::tls::tls_listener listener(make_listener_config());
-    const auto port = listener.listen_port();
-    ASSERT_GT(port, 0u) << "listener bound to port 0 unexpectedly";
-
     io::event::fd_event_handler ev;
+    auto rig = test::make_echo_listener(ev);
+    const auto port = rig.port();
+    ASSERT_GT(port, 0u) << "listener bound to port 0 unexpectedly";
+    ASSERT_TRUE(rig.registered);
 
-    std::unique_ptr<io::tls::tls_server> server_conn;
-    listener.set_accept_callback(
-        [&](std::unique_ptr<io::tls::tls_server> srv, std::string /*ip*/, std::uint16_t /*peer_port*/) {
-            srv->set_rx_handler([](io::tls::tls_server_socket::PayloadT const& payload, auto& self) {
-                self.tx(payload); // echo
-            });
-            ev.register_event_handler(srv.get());
-            server_conn = std::move(srv);
-        });
-    ASSERT_TRUE(ev.register_event_handler(&listener));
-
-    auto cfg = make_client_config();
+    auto cfg = test::client_test_config(2000, "wrong.example");
     cfg.tls.verify_subject_name = true;
-    cfg.host_for_sni = "wrong.example";
 
     io::tls::tls_client client(cfg, std::string("127.0.0.1"), port, 2000);
 
@@ -248,12 +173,8 @@ TEST(TlsE2E, WrongHostnameVerificationFails) {
 
     // Short deadline: a hostname mismatch must surface as an error promptly, not
     // hang. Success = error observed (or, at minimum, no round-trip completes).
-    const auto deadline = std::chrono::steady_clock::now() + 3s;
-    while (running && std::chrono::steady_clock::now() < deadline) {
-        ev.poll(50ms);
-        ev.run_actions();
-    }
-    running = false;
+    test::pump_until(
+        ev, [&] { return !running; }, 3s);
 
     EXPECT_FALSE(got_echo) << "round-trip completed despite a hostname mismatch";
     EXPECT_TRUE(got_error) << "client error handler did not fire on a hostname mismatch within 3 seconds";
@@ -268,26 +189,14 @@ TEST(TlsE2E, WrongHostnameVerificationFails) {
 // Removal is deferred to run_actions(). Success = the error handler fires and
 // the loop keeps running without crashing after teardown.
 TEST(TlsE2E, ServerCloseTearsDownClientWithoutCrash) {
-    io::tls::tls_listener listener(make_listener_config());
-    const auto port = listener.listen_port();
-    ASSERT_GT(port, 0u) << "listener bound to port 0 unexpectedly";
-
     io::event::fd_event_handler ev;
+    auto rig = test::make_echo_listener(ev);
+    const auto port = rig.port();
+    ASSERT_GT(port, 0u) << "listener bound to port 0 unexpectedly";
+    ASSERT_TRUE(rig.registered);
 
-    std::unique_ptr<io::tls::tls_server> server_conn;
-    listener.set_accept_callback(
-        [&](std::unique_ptr<io::tls::tls_server> srv, std::string /*ip*/, std::uint16_t /*peer_port*/) {
-            srv->set_rx_handler([](io::tls::tls_server_socket::PayloadT const& payload, auto& self) {
-                self.tx(payload); // echo, then the test drops the server below
-            });
-            ev.register_event_handler(srv.get());
-            server_conn = std::move(srv);
-        });
-    ASSERT_TRUE(ev.register_event_handler(&listener));
+    io::tls::tls_client client(test::client_test_config(), std::string("127.0.0.1"), port, 2000);
 
-    io::tls::tls_client client(make_client_config(), std::string("127.0.0.1"), port, 2000);
-
-    std::atomic<bool> running{true};
     std::atomic<bool> got_error{false};
     std::atomic<bool> got_echo{false};
     const std::vector<std::uint8_t> ping = {'p', 'i', 'n', 'g'};
@@ -306,23 +215,20 @@ TEST(TlsE2E, ServerCloseTearsDownClientWithoutCrash) {
 
     // Phase 1: drive the handshake + round-trip, then tear down the server so the
     // client observes a peer close on its next rx.
-    const auto deadline = std::chrono::steady_clock::now() + 5s;
     bool dropped = false;
-    while (running && std::chrono::steady_clock::now() < deadline) {
-        ev.poll(50ms);
-        ev.run_actions();
-        if (got_echo && not dropped) {
-            // Drop the server connection: closes the peer fd so the client rx
-            // fails and routes through fail() on its next loop wakeup.
-            ev.unregister_event_handler(server_conn.get());
-            server_conn.reset();
-            dropped = true;
-        }
-        if (got_error) {
-            running = false;
-        }
-    }
-    running = false;
+    test::pump_until(
+        ev,
+        [&] {
+            if (got_echo && not dropped) {
+                // Drop the server connection: closes the peer fd so the client rx
+                // fails and routes through fail() on its next loop wakeup.
+                ev.unregister_event_handler(rig.server_conn.get());
+                rig.server_conn.reset();
+                dropped = true;
+            }
+            return got_error.load();
+        },
+        5s);
 
     EXPECT_TRUE(got_echo) << "round-trip did not complete before the server was dropped";
     EXPECT_TRUE(got_error) << "client error handler did not fire after the server closed within 5 seconds";
@@ -342,24 +248,13 @@ TEST(TlsE2E, ServerCloseTearsDownClientWithoutCrash) {
 // The eventfd tx-notify fired while m_fd was still -1, so the flush depends on
 // the handshake-completion path re-arming POLLOUT for the queued payload.
 TEST(TlsE2E, tx_queued_before_handshake_is_flushed_after_ready) {
-    io::tls::tls_listener listener(make_listener_config());
-    const auto port = listener.listen_port();
-    ASSERT_GT(port, 0u) << "listener bound to port 0 unexpectedly";
-
     io::event::fd_event_handler ev;
+    auto rig = test::make_echo_listener(ev);
+    const auto port = rig.port();
+    ASSERT_GT(port, 0u) << "listener bound to port 0 unexpectedly";
+    ASSERT_TRUE(rig.registered);
 
-    std::unique_ptr<io::tls::tls_server> server_conn;
-    listener.set_accept_callback(
-        [&](std::unique_ptr<io::tls::tls_server> srv, std::string /*ip*/, std::uint16_t /*peer_port*/) {
-            srv->set_rx_handler([](io::tls::tls_server_socket::PayloadT const& payload, auto& self) {
-                self.tx(payload); // echo
-            });
-            ev.register_event_handler(srv.get());
-            server_conn = std::move(srv);
-        });
-    ASSERT_TRUE(ev.register_event_handler(&listener));
-
-    io::tls::tls_client client(make_client_config(), std::string("127.0.0.1"), port, 2000);
+    io::tls::tls_client client(test::client_test_config(), std::string("127.0.0.1"), port, 2000);
 
     std::atomic<bool> running{true};
     const std::vector<std::uint8_t> ping = {'p', 'i', 'n', 'g'};
@@ -378,12 +273,8 @@ TEST(TlsE2E, tx_queued_before_handshake_is_flushed_after_ready) {
     tls_payload msg(ping.begin(), ping.end());
     ASSERT_TRUE(client.tx(msg)) << "tx() rejected a payload queued before the handshake";
 
-    const auto deadline = std::chrono::steady_clock::now() + 5s;
-    while (running && std::chrono::steady_clock::now() < deadline) {
-        ev.poll(50ms);
-        ev.run_actions();
-    }
-    running = false;
+    test::pump_until(
+        ev, [&] { return !running; }, 5s);
 
     ASSERT_EQ(echo.size(), ping.size()) << "payload queued before the handshake was never flushed within 5 seconds";
     EXPECT_EQ(echo, ping) << "echoed payload differs from sent payload";
@@ -396,36 +287,22 @@ TEST(TlsE2E, tx_queued_before_handshake_is_flushed_after_ready) {
 // and the handler is left to poll on. A clean unregister return plus a healthy
 // post-teardown loop is the assertion.
 TEST(TlsE2E, UnregisterClientRunsStopHook) {
-    io::tls::tls_listener listener(make_listener_config());
-    const auto port = listener.listen_port();
-    ASSERT_GT(port, 0u) << "listener bound to port 0 unexpectedly";
-
     io::event::fd_event_handler ev;
-
-    std::unique_ptr<io::tls::tls_server> server_conn;
-    listener.set_accept_callback(
-        [&](std::unique_ptr<io::tls::tls_server> srv, std::string /*ip*/, std::uint16_t /*peer_port*/) {
-            srv->set_rx_handler([](io::tls::tls_server_socket::PayloadT const& payload, auto& self) {
-                self.tx(payload); // echo
-            });
-            ev.register_event_handler(srv.get());
-            server_conn = std::move(srv);
-        });
-    ASSERT_TRUE(ev.register_event_handler(&listener));
+    auto rig = test::make_echo_listener(ev);
+    const auto port = rig.port();
+    ASSERT_GT(port, 0u) << "listener bound to port 0 unexpectedly";
+    ASSERT_TRUE(rig.registered);
 
     {
-        io::tls::tls_client client(make_client_config(), std::string("127.0.0.1"), port, 2000);
+        io::tls::tls_client client(test::client_test_config(), std::string("127.0.0.1"), port, 2000);
 
         std::atomic<bool> ready{false};
         client.set_on_ready_action([&ready]() { ready = true; });
         ASSERT_TRUE(ev.register_event_handler(&client));
 
         // Drive until the client's handshake completes (its on-ready fires).
-        const auto deadline = std::chrono::steady_clock::now() + 5s;
-        while (not ready && std::chrono::steady_clock::now() < deadline) {
-            ev.poll(50ms);
-            ev.run_actions();
-        }
+        test::pump_until(
+            ev, [&] { return ready.load(); }, 5s);
         ASSERT_TRUE(ready) << "client handshake did not complete within 5 seconds";
 
         // Explicit teardown: must remove the connection fd, tx-notify, AND the
