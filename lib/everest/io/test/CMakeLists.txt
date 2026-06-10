@@ -61,3 +61,8 @@ add_test(
     COMMAND everest_io_tls_test
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/lib/everest/tls/tests
 )
+
+# Both this binary and libtls's tls_test regenerate the PKI fixture via
+# ./pki.sh in the same working directory; serialize them under ctest so one
+# does not regenerate certs mid-handshake of the other.
+set_tests_properties(everest_io_tls_test PROPERTIES RESOURCE_LOCK tls_pki)
