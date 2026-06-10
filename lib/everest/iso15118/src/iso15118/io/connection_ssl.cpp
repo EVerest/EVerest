@@ -81,6 +81,11 @@ tls::Server::config_t make_tls_server_config(const config::SSLConfig& cfg, const
     out.ciphersuites = "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256";
     out.chains = std::move(chains);
     out.verify_locations_file = cfg.path_certificate_v2g_root;
+    if (not cfg.path_certificate_mo_root.empty()) {
+        // The vehicle TLS leaf normally chains to the V2G root; the MO root is an
+        // additional anchor for deployments where it chains to the MO PKI instead.
+        out.verify_locations_additional_files = {tls::ConfigItem{cfg.path_certificate_mo_root}};
+    }
     out.io_timeout_ms = -1;
     out.verify_client = false; // verify_client_on_tls13 upgrades to require a peer cert once TLS 1.3 is negotiated
     out.verify_client_on_tls13 = true;

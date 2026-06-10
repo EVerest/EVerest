@@ -122,6 +122,101 @@ TEST_F(TlsTest, NoEnforceTls13NonEmptyCiphersuitesAcceptsBothVersions) {
     EXPECT_TRUE(is_set(flags_t::connected));
 }
 
+TEST_F(TlsTest, EnforceTls13EmptyCiphersuitesFailsInit) {
+    // enforce_tls_1_3 with an empty ciphersuites list would produce a server
+    // that fails every handshake (TLS 1.3 minimum with no TLS 1.3 ciphersuite
+    // available). init() must fail fast instead of reaching init_complete.
+    using state_t = tls::Server::state_t;
+
+    server_config.ciphersuites = "";
+    server_config.enforce_tls_1_3 = true;
+
+    // Hand a test-owned socket to the Server so init_socket() does not bind the
+    // fixture's fixed port; this test never serves connections.
+    const int test_socket = ::socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(test_socket, 0);
+    server_config.socket = test_socket;
+
+    const auto init_state = server.init(server_config, nullptr);
+    EXPECT_NE(init_state, state_t::init_complete);
+    (void)::close(test_socket);
+}
+
+TEST_F(TlsTest, AdditionalVerifyAnchorVerifiesClientChainedToIt) {
+    // A client certificate chained to an anchor listed only in
+    // verify_locations_additional_files must verify. Without the additional
+    // anchors being loaded this client is rejected: LastErrorPopulatedOnFailedAccept
+    // proves alt_client_chain fails against client_root_cert.pem alone.
+    //
+    // In TLS 1.3 the server's verification failure alert arrives after the
+    // client's SSL_connect has returned, so probe the connection with a read
+    // (as in Tls13ClientWithoutCertHandshakeFails) to surface any alert.
+    server_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    server_config.enforce_tls_1_3 = true;
+    server_config.verify_client = true;
+    server_config.verify_locations_file = "client_root_cert.pem";
+    server_config.verify_locations_additional_files = {tls::ConfigItem{"alt_client_root_cert.pem"}};
+
+    client_config.cipher_list = nullptr;
+    client_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    client_config.min_proto_version = TLS1_3_VERSION;
+    client_config.certificate_chain_file = "alt_client_chain.pem";
+    client_config.private_key_file = "alt_client_priv.pem";
+
+    start();
+    bool handshake_ok{false};
+    connect([&handshake_ok](tls::Client::ConnectionPtr& con) {
+        if (!con) {
+            return;
+        }
+        if (con->connect() != tls::Connection::result_t::success) {
+            return;
+        }
+        // Surface any pending fatal alert from the server.
+        std::byte buf[1]{};
+        std::size_t got{0};
+        const auto rc = con->read(buf, sizeof(buf), got, 200);
+        handshake_ok =
+            (rc != tls::Connection::result_t::closed) && (con->state() == tls::Connection::state_t::connected);
+    });
+    EXPECT_TRUE(handshake_ok);
+}
+
+TEST_F(TlsTest, AdditionalVerifyAnchorKeepsPrimaryAnchor) {
+    // Additional anchors are loaded in addition to, not instead of, the primary
+    // verify_locations_file: a client chained to the primary anchor must still
+    // verify when additional anchors are configured.
+    server_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    server_config.enforce_tls_1_3 = true;
+    server_config.verify_client = true;
+    server_config.verify_locations_file = "client_root_cert.pem";
+    server_config.verify_locations_additional_files = {tls::ConfigItem{"alt_client_root_cert.pem"}};
+
+    client_config.cipher_list = nullptr;
+    client_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    client_config.min_proto_version = TLS1_3_VERSION;
+    client_config.certificate_chain_file = "client_chain.pem";
+    client_config.private_key_file = "client_priv.pem";
+
+    start();
+    bool handshake_ok{false};
+    connect([&handshake_ok](tls::Client::ConnectionPtr& con) {
+        if (!con) {
+            return;
+        }
+        if (con->connect() != tls::Connection::result_t::success) {
+            return;
+        }
+        // Surface any pending fatal alert from the server.
+        std::byte buf[1]{};
+        std::size_t got{0};
+        const auto rc = con->read(buf, sizeof(buf), got, 200);
+        handshake_ok =
+            (rc != tls::Connection::result_t::closed) && (con->state() == tls::Connection::state_t::connected);
+    });
+    EXPECT_TRUE(handshake_ok);
+}
+
 TEST_F(TlsTest, Tls13ClientWithoutCertHandshakeFails) {
     // A TLS 1.3 client that presents no client certificate must be rejected
     // because the dispatcher upgrades verify mode to require a peer cert. In

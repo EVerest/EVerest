@@ -23,6 +23,7 @@
 #include <pthread.h>
 #include <string>
 #include <unistd.h>
+#include <vector>
 
 namespace tls {
 
@@ -428,8 +429,11 @@ public:
         //!< one or more trust anchor PEM certificates for client certificate verification
         ConfigItem verify_locations_file{nullptr};
         ConfigItem verify_locations_path{nullptr}; //!< for client certificate
-        std::int32_t io_timeout_ms{-1};            //!< socket timeout in milliseconds (recommend > 1 sec)
-        bool verify_client{true};                  //!< client certificate required
+        //!< extra CA trust-anchor PEM files loaded in addition to verify_locations_file,
+        //!< e.g. the MO root for ISO 15118-20
+        std::vector<ConfigItem> verify_locations_additional_files;
+        std::int32_t io_timeout_ms{-1}; //!< socket timeout in milliseconds (recommend > 1 sec)
+        bool verify_client{true};       //!< client certificate required
 
         // config not used on update()
         ConfigItem host{nullptr};    //!< see BIO_lookup_ex()

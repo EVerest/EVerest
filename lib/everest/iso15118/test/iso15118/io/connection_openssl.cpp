@@ -45,6 +45,10 @@ constexpr auto OEM_ROOT = "pki/certs/ca/oem/OEM_ROOT_CA.pem";
 constexpr auto VEHICLE_LEAF_PEM = "pki/certs/client/vehicle/VEHICLE_LEAF.pem";
 constexpr auto VEHICLE_LEAF_KEY = "pki/certs/client/vehicle/VEHICLE_LEAF.key";
 constexpr auto VEHICLE_CHAIN = "pki/certs/ca/vehicle/VEHICLE_CERT_CHAIN.pem";
+// OEM provisioning chain: trusts up to OEM_ROOT only, NOT the V2G root. Used to
+// exercise the MO root acting as an additional TLS verify anchor on the server.
+constexpr auto OEM_CHAIN = "pki/certs/ca/oem/OEM_CERT_CHAIN.pem";
+constexpr auto OEM_LEAF_KEY = "pki/certs/client/oem/OEM_LEAF.key";
 
 // Without this the server thread can be killed by SIGPIPE when the synthetic client
 // closes first and the server still has a NewSessionTicket queued.
@@ -104,7 +108,8 @@ struct ClientResult {
 
 // Drive a synthetic OpenSSL client over TCP/IPv6 loopback. Optionally present a client cert.
 ClientResult run_tls_client(const std::string& send_payload, std::size_t expect_recv, bool present_client_cert,
-                            bool enforce_tls_1_3, bool force_tls_1_2 = false) {
+                            bool enforce_tls_1_3, bool force_tls_1_2 = false, const char* client_chain = VEHICLE_CHAIN,
+                            const char* client_key = VEHICLE_LEAF_KEY) {
     ClientResult result;
 
     // Resolve [::1] manually
@@ -157,16 +162,13 @@ ClientResult run_tls_client(const std::string& send_payload, std::size_t expect_
     SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, nullptr);
 
     if (present_client_cert) {
-        // Use vehicle leaf as the client cert. SECC server side has SSL_VERIFY_NONE so
-        // any cert (or none) is accepted — we only need the cert presented to drive the
-        // SHA-512 path on the server.
-        if (SSL_CTX_use_certificate_chain_file(ctx, VEHICLE_CHAIN) != 1) {
+        if (SSL_CTX_use_certificate_chain_file(ctx, client_chain) != 1) {
             SSL_CTX_free(ctx);
             ::close(fd);
             result.error = "client use_certificate_chain_file failed";
             return result;
         }
-        // VEHICLE_LEAF.key is encrypted with DEFAULT_PW
+        // client keys in the test pki are encrypted with DEFAULT_PW
         SSL_CTX_set_default_passwd_cb_userdata(ctx, const_cast<char*>(DEFAULT_PW));
         SSL_CTX_set_default_passwd_cb(ctx, [](char* buf, int size, int, void* ud) -> int {
             const auto* pw = static_cast<const char*>(ud);
@@ -175,7 +177,7 @@ ClientResult run_tls_client(const std::string& send_payload, std::size_t expect_
             memcpy(buf, pw, cp);
             return cp;
         });
-        if (SSL_CTX_use_PrivateKey_file(ctx, VEHICLE_LEAF_KEY, SSL_FILETYPE_PEM) != 1) {
+        if (SSL_CTX_use_PrivateKey_file(ctx, client_key, SSL_FILETYPE_PEM) != 1) {
             SSL_CTX_free(ctx);
             ::close(fd);
             result.error = "client use_PrivateKey_file failed";
@@ -395,6 +397,48 @@ SCENARIO("ConnectionSSL exposes the peer certificate SHA-512 to callers") {
                 }
             }
         }
+    }
+}
+
+SCENARIO("ConnectionSSL accepts a TLS 1.3 client chained to the MO root") {
+
+    GIVEN("A ConnectionSSL with TLS 1.3 enforced and an MO root configured") {
+        iso15118::io::set_logging_callback([](iso15118::LogLevel, const std::string&) {});
+
+        iso15118::io::PollManager poll_manager;
+        // make_ssl_config passes OEM_ROOT as path_certificate_mo_root; the client below
+        // presents the OEM provisioning chain, which does NOT verify against the V2G root.
+        const auto ssl_cfg = make_ssl_config(false, "/tmp", true);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+
+        std::atomic<bool> handshake_open{false};
+        connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
+            if (event == iso15118::io::ConnectionEvent::OPEN) {
+                handshake_open.store(true);
+            }
+        });
+
+        WHEN("A TLS 1.3 client presents a certificate chained to the MO/OEM PKI") {
+            auto client_future = std::async(std::launch::async, [&]() {
+                return run_tls_client({}, 0, true, true, false, OEM_CHAIN, OEM_LEAF_KEY);
+            });
+
+            const bool got_open = poll_until(
+                poll_manager, [&]() { return handshake_open.load(); }, 5s);
+
+            poll_manager.poll(100);
+
+            const auto client_result = client_future.get();
+
+            THEN("The handshake completes on both sides") {
+                REQUIRE(client_result.error.empty());
+                REQUIRE(client_result.handshake_ok);
+                REQUIRE(client_result.tls_1_3);
+                REQUIRE(got_open);
+            }
+        }
+
+        connection.close();
     }
 }
 

@@ -551,26 +551,27 @@ tls::Connection::result_t drive_ssl_op(SSL* ctx, const std::function<ssl_op_resu
     return convert(result.rc);
 }
 
+/// options controlling how configure_ssl_ctx builds an SSL context
+struct ssl_ctx_params {
+    bool is_server{false};             //!< a server context is needed
+    const char* ciphersuites{nullptr}; //!< TLS 1.3 cipher suites, nullptr means use default, "" disables TLS 1.3
+    const char* cipher_list{nullptr};  //!< TLS 1.2 ciphers, nullptr means use default
+    bool required{false};              //!< when true, fail when cert_config is missing (true for a TLS server)
+    bool enforce_tls_1_3{false};       //!< when true the context requires TLS 1.3 minimum and skips the
+                                       //!< TLS 1.2 cap; ignored for client contexts
+};
+
 /**
  * \brief configure SSL context with certificates and keys
- * \param[in] is_server a server context is needed
  * \param[inout] ctx is SSL context data
- * \param[in] ciphersuites are the TLS 1.3 cipher suites,
- *            nullptr means use default, "" disables TSL 1.3
- * \param[in] cipher_list are the TLS 1.2 ciphers, nullptr means use default
  * \param[in] cert_config are one of more sets of key and certificates
- * \param[in] required when true, fail when cert_config is missing
- * \param[in] enforce_tls_1_3 when true the context requires TLS 1.3 minimum
- *            and skips the TLS 1.2 cap; ignored for client contexts
+ * \param[in] p options, see ssl_ctx_params
  * \return true when successful
- * \note required will be true for a TLS server and can be false for a TLS client
  */
-bool configure_ssl_ctx(bool is_server, SSL_CTX*& ctx, const char* ciphersuites, const char* cipher_list,
-                       const tls::Server::certificate_config_t& cert_config, bool required,
-                       bool enforce_tls_1_3 = false) {
+bool configure_ssl_ctx(SSL_CTX*& ctx, const tls::Server::certificate_config_t& cert_config, const ssl_ctx_params& p) {
     bool result{true};
 
-    if (is_server) {
+    if (p.is_server) {
         OpenSSLProvider provider;
 
         const SSL_METHOD* method = TLS_server_method();
@@ -584,12 +585,12 @@ bool configure_ssl_ctx(bool is_server, SSL_CTX*& ctx, const char* ciphersuites, 
         log_error("server_init::SSL_CTX_new");
         result = false;
     } else {
-        const auto min_version = (is_server && enforce_tls_1_3) ? TLS1_3_VERSION : TLS1_2_VERSION;
+        const auto min_version = (p.is_server && p.enforce_tls_1_3) ? TLS1_3_VERSION : TLS1_2_VERSION;
         if (SSL_CTX_set_min_proto_version(ctx, min_version) == 0) {
             log_error("SSL_CTX_set_min_proto_version");
             result = false;
         }
-        if (is_server && enforce_tls_1_3) {
+        if (p.is_server && p.enforce_tls_1_3) {
             // Server is configured for TLS 1.3 only. We have already pinned
             // SSL_CTX_set_min_proto_version to TLS1_3_VERSION above, so we do
             // not also need to cap the max version. We do, however, want to
@@ -599,7 +600,7 @@ bool configure_ssl_ctx(bool is_server, SSL_CTX*& ctx, const char* ciphersuites, 
             // workaround is unnecessary in the SECC use-case and would only
             // confuse a strict 15118 EVCC.
             SSL_CTX_clear_options(ctx, SSL_OP_ENABLE_MIDDLEBOX_COMPAT);
-        } else if ((ciphersuites != nullptr) && (ciphersuites[0] == '\0')) {
+        } else if ((p.ciphersuites != nullptr) && (p.ciphersuites[0] == '\0')) {
             // Caller explicitly cleared the TLS 1.3 ciphersuite list, signalling
             // "no TLS 1.3 ciphersuites configured". Cap the max protocol version
             // at TLS 1.2 so the handshake cannot fall through to TLS 1.3 with no
@@ -610,14 +611,14 @@ bool configure_ssl_ctx(bool is_server, SSL_CTX*& ctx, const char* ciphersuites, 
                 result = false;
             }
         }
-        if (cipher_list != nullptr) {
-            if (SSL_CTX_set_cipher_list(ctx, cipher_list) == 0) {
+        if (p.cipher_list != nullptr) {
+            if (SSL_CTX_set_cipher_list(ctx, p.cipher_list) == 0) {
                 log_error("SSL_CTX_set_cipher_list");
                 result = false;
             }
         }
-        if (ciphersuites != nullptr) {
-            if (SSL_CTX_set_ciphersuites(ctx, ciphersuites) == 0) {
+        if (p.ciphersuites != nullptr) {
+            if (SSL_CTX_set_ciphersuites(ctx, p.ciphersuites) == 0) {
                 log_error("SSL_CTX_set_ciphersuites");
                 result = false;
             }
@@ -629,7 +630,7 @@ bool configure_ssl_ctx(bool is_server, SSL_CTX*& ctx, const char* ciphersuites, 
                 result = false;
             }
         } else {
-            if (required) {
+            if (p.required) {
                 result = false;
             }
         }
@@ -653,7 +654,7 @@ bool configure_ssl_ctx(bool is_server, SSL_CTX*& ctx, const char* ciphersuites, 
                 result = false;
             }
         } else {
-            if (required) {
+            if (p.required) {
                 result = false;
             }
         }
@@ -665,13 +666,23 @@ bool configure_ssl_ctx(bool is_server, SSL_CTX*& ctx, const char* ciphersuites, 
 // Returns false only when the default-verify-paths fallback fails (init must abort);
 // a failed explicit load_verify_locations is logged but non-fatal, matching prior behavior.
 bool configure_verify_locations(SSL_CTX* ctx, const tls::Server::config_t& cfg) {
-    const bool have_explicit = static_cast<const char*>(cfg.verify_locations_file) != nullptr ||
-                               static_cast<const char*>(cfg.verify_locations_path) != nullptr;
+    const bool have_primary = static_cast<const char*>(cfg.verify_locations_file) != nullptr ||
+                              static_cast<const char*>(cfg.verify_locations_path) != nullptr;
+    const bool have_explicit = have_primary || not cfg.verify_locations_additional_files.empty();
     if (have_explicit) {
         // Loaded whenever configured, even with verify_client == false, so the anchors
         // are available for the TLS 1.3 verify-mode upgrade in handle_tls_1_3_verify_upgrade.
-        if (SSL_CTX_load_verify_locations(ctx, cfg.verify_locations_file, cfg.verify_locations_path) != 1) {
-            log_error("SSL_CTX_load_verify_locations");
+        if (have_primary) {
+            if (SSL_CTX_load_verify_locations(ctx, cfg.verify_locations_file, cfg.verify_locations_path) != 1) {
+                log_error("SSL_CTX_load_verify_locations");
+            }
+        }
+        for (const auto& file : cfg.verify_locations_additional_files) {
+            if (static_cast<const char*>(file) != nullptr) {
+                if (SSL_CTX_load_verify_locations(ctx, file, nullptr) != 1) {
+                    log_error("SSL_CTX_load_verify_locations additional file");
+                }
+            }
         }
         return true;
     }
@@ -1030,12 +1041,18 @@ bool Server::init_ssl(const config_t& cfg) {
     assert(m_context != nullptr);
 
     bool result = (cfg.chains.size() > 0);
+    if (cfg.enforce_tls_1_3 && (static_cast<const char*>(cfg.ciphersuites) == nullptr || cfg.ciphersuites[0] == '\0')) {
+        // A TLS-1.3-minimum server with no TLS 1.3 ciphersuites would fail every
+        // handshake; fail init fast instead.
+        log_error("enforce_tls_1_3 requires a non-empty ciphersuites list");
+        result = false;
+    }
     SSL_CTX* ctx = nullptr;
 
     if (result) {
         // use the first server chain
-        result =
-            configure_ssl_ctx(true, ctx, cfg.ciphersuites, cfg.cipher_list, cfg.chains[0], true, cfg.enforce_tls_1_3);
+        const ssl_ctx_params params{true, cfg.ciphersuites, cfg.cipher_list, true, cfg.enforce_tls_1_3};
+        result = configure_ssl_ctx(ctx, cfg.chains[0], params);
         if (result) {
 
             if (cfg.tls_key_logging) {
@@ -1434,7 +1451,8 @@ bool Client::init(const config_t& cfg, const override_t& override) {
     cert_config.certificate_chain_file = cfg.certificate_chain_file;
     cert_config.private_key_file = cfg.private_key_file;
     cert_config.private_key_password = cfg.private_key_password;
-    auto result = configure_ssl_ctx(false, ctx, cfg.ciphersuites, cfg.cipher_list, cert_config, false);
+    const ssl_ctx_params params{false, cfg.ciphersuites, cfg.cipher_list, false};
+    auto result = configure_ssl_ctx(ctx, cert_config, params);
     if (result && cfg.min_proto_version != 0) {
         if (SSL_CTX_set_min_proto_version(ctx, cfg.min_proto_version) == 0) {
             log_error("SSL_CTX_set_min_proto_version");
