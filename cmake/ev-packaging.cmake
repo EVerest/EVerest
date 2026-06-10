@@ -7,8 +7,6 @@ function(evc_setup_package_no_export)
         NAME
         LIBRARY_NAME
         NAMESPACE
-        VERSION
-        COMPATIBILITY
         IMPORTED_LOCATION_FILENAME
         TYPE
     )
@@ -39,16 +37,6 @@ function(evc_setup_package_no_export)
     set(LIBRARY_PACKAGE_CMAKE_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/${LIBRARY_PACKAGE_NAME})
     set(LIBRARY_NAME "${OPTNS_LIBRARY_NAME}")
     set(LIBRARY_TYPE "${OPTNS_TYPE}")
-
-    set(LIBRARY_PACKAGE_VERSION ${PROJECT_VERSION})
-    if (OPTNS_VERSION)
-        set(LIBRARY_PACKAGE_VERSION ${OPTNS_VERSION})
-    endif()
-
-    set(LIBRARY_PACKAGE_VERSION_COMPATIBILITY ExactVersion)
-    if (OPTNS_COMPATIBILITY)
-        set(LIBRARY_PACKAGE_VERSION_COMPATIBILITY ${OPTNS_COMPATIBILITY})
-    endif()
 
     if (OPTNS_PATH_VARS)
         _parse_path_vars(OPTNS_PATH_VARS PATH_VARS_ARG INLINE_CONTENT PARSE_ERROR)
