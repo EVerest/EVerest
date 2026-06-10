@@ -1565,12 +1565,16 @@ bool SmartCharging::is_overlapping_validity_period(const ChargingProfile& candid
     overlap_stmt->bind_text(
         "@purpose", conversions::charging_profile_purpose_enum_to_string(candidate_profile.chargingProfilePurpose),
         everest::db::sqlite::SQLiteString::Transient);
-    while (overlap_stmt->step() == SQLITE_ROW) {
+    int status;
+    while ((status = overlap_stmt->step()) == SQLITE_ROW) {
         const ChargingProfile existing_profile = json::parse(overlap_stmt->column_text(0));
         if (candidate_profile.validFrom <= existing_profile.validTo &&
             candidate_profile.validTo >= existing_profile.validFrom) {
             return true;
         }
+    }
+    if (status != SQLITE_DONE) {
+        EVLOG_error << "Error while checking is_overlapping_validity_period, db error: " << status;
     }
 
     return false;
@@ -1582,9 +1586,13 @@ std::vector<ChargingProfile> SmartCharging::get_evse_specific_tx_default_profile
     auto stmt =
         this->context.database_handler.new_statement("SELECT PROFILE FROM CHARGING_PROFILES WHERE "
                                                      "EVSE_ID != 0 AND CHARGING_PROFILE_PURPOSE = 'TxDefaultProfile'");
-    while (stmt->step() == SQLITE_ROW) {
+    int status;
+    while ((status = stmt->step()) == SQLITE_ROW) {
         const ChargingProfile profile = json::parse(stmt->column_text(0));
         evse_specific_tx_default_profiles.push_back(profile);
+    }
+    if (status != SQLITE_DONE) {
+        EVLOG_error << "Error during get_evse_specific_tx_default_profiles, db error: " << status;
     }
 
     return evse_specific_tx_default_profiles;
@@ -1595,9 +1603,13 @@ std::vector<ChargingProfile> SmartCharging::get_station_wide_tx_default_profiles
 
     auto stmt = this->context.database_handler.new_statement(
         "SELECT PROFILE FROM CHARGING_PROFILES WHERE EVSE_ID = 0 AND CHARGING_PROFILE_PURPOSE = 'TxDefaultProfile'");
-    while (stmt->step() == SQLITE_ROW) {
+    int status;
+    while ((status = stmt->step()) == SQLITE_ROW) {
         const ChargingProfile profile = json::parse(stmt->column_text(0));
         station_wide_tx_default_profiles.push_back(profile);
+    }
+    if (status != SQLITE_DONE) {
+        EVLOG_error << "Error during get_station_wide_tx_default_profiles, db error: " << status;
     }
 
     return station_wide_tx_default_profiles;
@@ -1608,9 +1620,13 @@ std::vector<ChargingProfile> SmartCharging::get_charging_station_max_profiles() 
     auto stmt =
         this->context.database_handler.new_statement("SELECT PROFILE FROM CHARGING_PROFILES WHERE EVSE_ID = 0 AND "
                                                      "CHARGING_PROFILE_PURPOSE = 'ChargingStationMaxProfile'");
-    while (stmt->step() == SQLITE_ROW) {
+    int status;
+    while ((status = stmt->step()) == SQLITE_ROW) {
         const ChargingProfile profile = json::parse(stmt->column_text(0));
         charging_station_max_profiles.push_back(profile);
+    }
+    if (status != SQLITE_DONE) {
+        EVLOG_error << "Error during get_charging_station_max_profiles, db error: " << status;
     }
 
     return charging_station_max_profiles;
