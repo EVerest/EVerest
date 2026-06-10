@@ -62,13 +62,13 @@ struct ChargePointStub : public ocpp_multi::GenericChargePointInterface {
                 (const ocpp::v2::DataTransferRequest& request), (override));
 
     std::optional<bool> get_bool(const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
-                                 const ocpp::v2::AttributeEnum& attribute_enum) override;
+                                 ocpp::v2::AttributeEnum attribute_enum) override;
     std::optional<std::int32_t> get_int32(const ocpp::v2::Component& component_id,
                                           const ocpp::v2::Variable& variable_id,
-                                          const ocpp::v2::AttributeEnum& attribute_enum) override;
+                                          ocpp::v2::AttributeEnum attribute_enum) override;
     std::optional<std::string> get_string(const ocpp::v2::Component& component_id,
                                           const ocpp::v2::Variable& variable_id,
-                                          const ocpp::v2::AttributeEnum& attribute_enum) override;
+                                          ocpp::v2::AttributeEnum attribute_enum) override;
 
     MOCK_METHOD(std::vector<ocpp::v2::EnhancedCompositeSchedule>, get_all_composite_schedules,
                 (std::int32_t duration_s, const ocpp::v2::ChargingRateUnitEnum& unit), (override));

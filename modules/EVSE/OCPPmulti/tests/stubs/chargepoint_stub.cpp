@@ -100,19 +100,19 @@ void ChargePointStub::load_store(const std::string_view& filename) {
 
 std::optional<bool> ChargePointStub::get_bool(const ocpp::v2::Component& component_id,
                                               const ocpp::v2::Variable& variable_id,
-                                              const ocpp::v2::AttributeEnum& attribute_enum) {
+                                              ocpp::v2::AttributeEnum attribute_enum) {
     return store_get<bool>(simple_store, component_id, variable_id, attribute_enum);
 }
 
 std::optional<std::int32_t> ChargePointStub::get_int32(const ocpp::v2::Component& component_id,
                                                        const ocpp::v2::Variable& variable_id,
-                                                       const ocpp::v2::AttributeEnum& attribute_enum) {
+                                                       ocpp::v2::AttributeEnum attribute_enum) {
     return store_get<std::int32_t>(simple_store, component_id, variable_id, attribute_enum);
 }
 
 std::optional<std::string> ChargePointStub::get_string(const ocpp::v2::Component& component_id,
                                                        const ocpp::v2::Variable& variable_id,
-                                                       const ocpp::v2::AttributeEnum& attribute_enum) {
+                                                       ocpp::v2::AttributeEnum attribute_enum) {
     return store_get<std::string>(simple_store, component_id, variable_id, attribute_enum);
 }
 
@@ -122,17 +122,6 @@ namespace {
 
 template <typename T> struct is_vector : std::false_type {};
 template <typename... Ts> struct is_vector<std::vector<Ts...>> : std::true_type {};
-
-// template <typename T, is_vector<T>> bool optional_equal(const std::optional<T>& lhs, const std::optional<T>& rhs) {
-//     bool result{false};
-//     if (lhs.has_value() && rhs.has_value()) {
-//         // result = lhs.value() == rhs.value();
-//     } else if (!lhs.has_value() && !rhs.has_value()) {
-//         // neither have a value
-//         result = true;
-//     }
-//     return result;
-// }
 
 template <typename T, typename = void> bool optional_equal(const std::optional<T>& lhs, const std::optional<T>& rhs) {
     bool result{false};

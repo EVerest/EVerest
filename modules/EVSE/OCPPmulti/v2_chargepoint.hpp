@@ -7,42 +7,18 @@
 
 namespace ocpp_multi {
 
-class GenericChargePoint : public GenericChargePointInterface {
-public:
-    enum class state_t : std::uint8_t {
-        v2_active,
-        v16_active,
-        idle,
-    };
-
+class ChargePointV2 : public GenericChargePointInterface {
 private:
     std::shared_ptr<EvseSecurity> m_evse_security;
-    std::shared_ptr<ocpp::v2::DeviceModelAbstract> m_device_model;
-
-    std::map<std::int32_t, std::int32_t> m_evse_connector_structure;
-    std::unique_ptr<ocpp::v2::DeviceModelStorageInterface> m_device_model_storage_interface;
-    std::string m_ocpp_share_path;
-    std::string m_core_database_path;
-    std::string m_sql_init_path;
-    std::string m_message_log_path;
-    ocpp::v2::Callbacks m_callbacks;
-
-    state_t m_state{state_t::idle};
+    std::unique_ptr<ocpp::v2::ChargePoint> m_charge_point;
 
 public:
-    using listener_t = std::function<void(
-        const std::unordered_map<std::int64_t, ocpp::v2::VariableMonitoringMeta>& monitors,
-        const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
-        const ocpp::v2::VariableCharacteristics& characteristics, const ocpp::v2::VariableAttribute& attribute,
-        const std::string& value_previous, const std::string& value_current)>;
-
-    explicit GenericChargePoint(evse_securityIntf& security) :
-        m_evse_security(std::make_unique<EvseSecurity>(security)) {
+    explicit ChargePointV2(evse_securityIntf& security) : m_evse_security(std::make_unique<EvseSecurity>(security)) {
     }
 
     void init(std::map<std::int32_t, std::int32_t>&& evse_connector_structure,
               std::unique_ptr<ocpp::v2::DeviceModelStorageInterface>&& device_model_storage_interface,
-              const std::string& ocpp_share_path, const std::string& core_database_path,
+              const std::string& ocpp_main_path, const std::string& core_database_path,
               const std::string& sql_init_path, const std::string& message_log_path,
               ocpp::v2::Callbacks&& callbacks) override;
 
@@ -55,24 +31,14 @@ public:
     std::optional<ocpp::v2::DataTransferResponse>
     data_transfer_req(const ocpp::v2::DataTransferRequest& request) override;
 
-    template <typename T>
-    std::optional<T> get(const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
-                         const ocpp::v2::AttributeEnum& attribute_enum);
-
     std::optional<bool> get_bool(const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
-                                 ocpp::v2::AttributeEnum attribute_enum) override {
-        return get<bool>(component_id, variable_id, attribute_enum);
-    }
+                                 ocpp::v2::AttributeEnum attribute_enum) override;
     std::optional<std::int32_t> get_int32(const ocpp::v2::Component& component_id,
                                           const ocpp::v2::Variable& variable_id,
-                                          ocpp::v2::AttributeEnum attribute_enum) override {
-        return get<std::int32_t>(component_id, variable_id, attribute_enum);
-    }
+                                          ocpp::v2::AttributeEnum attribute_enum) override;
     std::optional<std::string> get_string(const ocpp::v2::Component& component_id,
                                           const ocpp::v2::Variable& variable_id,
-                                          ocpp::v2::AttributeEnum attribute_enum) override {
-        return get<std::string>(component_id, variable_id, attribute_enum);
-    }
+                                          ocpp::v2::AttributeEnum attribute_enum) override;
 
     std::vector<ocpp::v2::EnhancedCompositeSchedule>
     get_all_composite_schedules(std::int32_t duration_s, const ocpp::v2::ChargingRateUnitEnum& unit) override;
