@@ -191,6 +191,10 @@ config::SSLConfig TbdController::ssl_config_snapshot() const {
     return *handle;
 }
 
+config::SSLConfig TbdController::connection_ssl_config() const {
+    return ssl_config_snapshot();
+}
+
 void TbdController::set_dlink_ready(bool ready) {
     if (sdp_server) {
         sdp_server->set_dlink_ready(ready);
@@ -242,7 +246,7 @@ void TbdController::handle_sdp_server_input() {
     auto connection = [this](bool secure_connection) -> std::unique_ptr<io::IConnection> {
         try {
             if (secure_connection) {
-                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, ssl_config_snapshot());
+                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, connection_ssl_config());
             }
             return std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
         } catch (const std::runtime_error& e) {

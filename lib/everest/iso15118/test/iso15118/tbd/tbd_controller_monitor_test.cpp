@@ -96,6 +96,27 @@ SCENARIO("TbdController SSL config monitor: second write does not mutate earlier
     }
 }
 
+// Value-level pin of the rotation seam: connection_ssl_config() must expose the
+// rotated config, not the construction-time TbdConfig::ssl. The factory lambda's
+// choice of accessor is not observable here (connection construction needs a live
+// SDP/TLS stack); the named seam and its doc comment guard that wiring.
+SCENARIO("TbdController SSL config monitor: the rotation seam exposes the rotated config") {
+    GIVEN("a controller constructed with cfg_a") {
+        const auto cfg_a = make_cfg_a();
+        auto controller = make_controller(cfg_a);
+
+        WHEN("set_ssl_config(cfg_b) rotates the config") {
+            const auto cfg_b = make_cfg_b();
+            controller.set_ssl_config(cfg_b);
+
+            THEN("connection_ssl_config() returns cfg_b, not the construction-time cfg_a") {
+                REQUIRE(controller.connection_ssl_config() == cfg_b);
+                REQUIRE_FALSE(controller.connection_ssl_config() == cfg_a);
+            }
+        }
+    }
+}
+
 SCENARIO("TbdController SSL config monitor: concurrent snapshots always observe a complete config") {
     GIVEN("a controller, a writer alternating cfg_a/cfg_b, and a reader taking snapshots") {
         auto controller = make_controller(SSLConfig{});
