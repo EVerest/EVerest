@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace everest::lib::io::tls {
@@ -40,6 +41,9 @@ public:
             return true;
         default:
             m_last_error = errno_from_result(res);
+            // reset_connection() destroys the Connection; capture its OpenSSL
+            // error text first.
+            m_last_error_text = c->last_error();
             self().reset_connection();
             return false;
         }
@@ -78,6 +82,7 @@ public:
             return false;
         default:
             m_last_error = errno_from_result(res);
+            m_last_error_text = c->last_error();
             self().reset_connection();
             return false;
         }
@@ -118,6 +123,7 @@ public:
             return false;
         default:
             m_last_error = errno_from_result(res);
+            m_last_error_text = c->last_error();
             self().reset_connection();
             return false;
         }
@@ -136,6 +142,12 @@ public:
         return m_last_error;
     }
 
+    // OpenSSL error text captured from the Connection that the last failure
+    // destroyed; empty when no error text was reported.
+    const std::string& get_error_string() const {
+        return m_last_error_text;
+    }
+
     void close() {
         if (auto* c = self().connection()) {
             c->shutdown(0);
@@ -143,6 +155,7 @@ public:
         self().reset_connection();
         m_desired = event::poll_events::read;
         m_handshake_done = false;
+        m_last_error_text.clear();
     }
 
     event::poll_events desired_events() const {
@@ -159,8 +172,14 @@ protected:
         return static_cast<Derived const&>(*this);
     }
 
+    void reset_error_state() {
+        m_last_error = 0;
+        m_last_error_text.clear();
+    }
+
     event::poll_events m_desired{event::poll_events::read};
     int m_last_error{0};
+    std::string m_last_error_text;
     bool m_handshake_done{false};
 };
 

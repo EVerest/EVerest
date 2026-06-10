@@ -11,7 +11,7 @@ bool tls_server_socket::open(std::unique_ptr<::tls::ServerConnection> conn) {
     m_conn = std::move(conn);
     m_handshake_done = false;
     m_desired = event::poll_events::read;
-    m_last_error = 0;
+    reset_error_state();
     return static_cast<bool>(m_conn);
 }
 

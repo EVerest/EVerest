@@ -191,7 +191,9 @@ protected:
         }
         m_errored = true;
         if (m_error) {
-            m_error(error_code, std::string{});
+            // The socket's close() below clears the error text, so the handler
+            // must fire first.
+            m_error(error_code, m_socket.get_error_string());
         }
         m_socket.close();
         if (m_fd >= 0 && m_handler != nullptr) {
