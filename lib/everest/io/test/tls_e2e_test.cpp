@@ -224,10 +224,14 @@ TEST(TlsE2E, WrongHostnameVerificationFails) {
     std::atomic<bool> got_error{false};
     std::atomic<bool> got_echo{false};
     const std::vector<std::uint8_t> ping = {'p', 'i', 'n', 'g'};
+    // The handler runs on the loop thread, same thread as the assertions below,
+    // so a plain string capture is safe.
+    std::string error_text;
 
-    client.set_error_handler([&got_error, &running](int err, std::string const& /*msg*/) {
+    client.set_error_handler([&got_error, &running, &error_text](int err, std::string const& msg) {
         if (err != 0) {
             got_error = true;
+            error_text = msg;
             running = false;
         }
     });
@@ -253,6 +257,7 @@ TEST(TlsE2E, WrongHostnameVerificationFails) {
 
     EXPECT_FALSE(got_echo) << "round-trip completed despite a hostname mismatch";
     EXPECT_TRUE(got_error) << "client error handler did not fire on a hostname mismatch within 3 seconds";
+    EXPECT_FALSE(error_text.empty()) << "error handler received an empty string instead of the OpenSSL error text";
 }
 
 // Steady-state teardown: after a successful handshake and round-trip the server
