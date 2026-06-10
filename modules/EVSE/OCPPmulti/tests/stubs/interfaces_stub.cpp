@@ -498,6 +498,103 @@ std::optional<json> ModuleAdapter::ocpp_data_transfer_call_data_transfer(const R
     return result;
 }
 
+std::optional<json> ModuleAdapter::reservation_call_cancel_reservation(const Requirement& req, const json& args) {
+    // reservation interface
+    // cancel_reservation:
+    //   description: Cancels the reservation with the given reservation_id
+    //   arguments:
+    //     reservation_id:
+    //       description: Id of the reservation
+    //       type: integer
+    //   result:
+    //     description: >-
+    //       Returns true if reservation was cancelled. Returns false if there
+    //       was no reservation to cancel.
+    //     type: boolean
+
+    EVLOG_debug << "Call cancel_reservation: " << args.dump();
+    publish_fn("reservation", "call_cancel_reservation", args);
+    auto result = get_cmd_response(R"(false)"_json);
+    if (result) {
+        EVLOG_debug << "result:           " << result.value().dump();
+    }
+    return result;
+}
+
+std::optional<json> ModuleAdapter::reservation_call_exists_reservation(const Requirement& req, const json& args) {
+    // reservation interface
+    // exists_reservation:
+    //   description: >-
+    //     Checks if there is a reservation made for the given connector and token. Will also return true if there
+    //     is a reservation with this token for evse id 0.
+    //   arguments:
+    //     request:
+    //       type: object
+    //       $ref: /reservation#/ReservationCheck
+    //       description: >-
+    //         The information to send for the check if there is a reservation on the given connector for the given
+    //         token.
+    //   result:
+    //     description: >-
+    //       Returns an enum which indicates the reservation status of the given id / id token / group id token
+    //       combination.
+    //     type: string
+    //     $ref: /reservation#/ReservationCheckStatus
+
+    // NotReserved
+    // ReservedForToken
+    // ReservedForOtherToken
+    // ReservedForOtherTokenAndHasParentToken
+
+    EVLOG_debug << "Call exists_reservation: " << args.dump();
+    publish_fn("reservation", "call_exists_reservation", args);
+    auto result = get_cmd_response(R"("ReservedForOtherTokenAndHasParentToken")"_json);
+    if (result) {
+        EVLOG_debug << "result:                  " << result.value().dump();
+    }
+    return result;
+}
+
+std::optional<json> ModuleAdapter::reservation_call_reserve_now(const Requirement& req, const json& args) {
+    // reservation interface
+    // reserve_now:
+    //   description: Reserves an evse.
+    //   arguments:
+    //     request:
+    //       type: object
+    //       $ref: /reservation#/Reservation
+    //       description: Requests to make a reservation
+    //   result:
+    //     description: >-
+    //       Returns Accepted if reservation was successful or specifies error code.
+    //     type: string
+    //     $ref: /reservation#/ReservationResult
+
+    // - Accepted
+    // - Faulted
+    // - Occupied
+    // - Rejected
+    // - Unavailable
+
+    EVLOG_debug << "Call reserve_now: " << args.dump();
+    publish_fn("reservation", "call_reserve_now", args);
+    auto result = get_cmd_response(R"("Faulted")"_json);
+    if (result) {
+        EVLOG_debug << "result:           " << result.value().dump();
+    }
+    return result;
+}
+
+std::optional<json> ModuleAdapter::system_call_allow_firmware_installation(const Requirement& req, const json& args) {
+    // system interface
+    // allow_firmware_installation:
+    //   description: Call to allow a firmware installation to proceed
+
+    EVLOG_debug << "Call allow_firmware_installation: " << args.dump();
+    publish_fn("system", "call_allow_firmware_installation", args);
+    return {};
+}
+
 std::optional<json> ModuleAdapter::system_call_get_boot_reason(const Requirement& req, const json& args) {
     // system interface
     // get_boot_reason:
@@ -526,6 +623,162 @@ std::optional<json> ModuleAdapter::system_call_get_boot_reason(const Requirement
     auto result = get_cmd_response(R"("PowerUp")"_json);
     if (result) {
         EVLOG_debug << "result:               " << result.value().dump();
+    }
+    return result;
+}
+
+std::optional<json> ModuleAdapter::system_call_is_reset_allowed(const Requirement& req, const json& args) {
+    // system interface
+    // is_reset_allowed:
+    //   description: Call to determine if a reset of the system is allowed
+    //   arguments:
+    //     type:
+    //       description: Type of the reset (Soft or Hard)
+    //       type: string
+    //       $ref: /system#/ResetType
+    //   result:
+    //     description: >-
+    //       Indicates if the system can be reset
+    //     type: boolean
+
+    EVLOG_debug << "Call is_reset_allowed: " << args.dump();
+    publish_fn("system", "call_is_reset_allowed", args);
+    auto result = get_cmd_response(R"(false)"_json);
+    if (result) {
+        EVLOG_debug << "result:                " << result.value().dump();
+    }
+    return result;
+}
+
+std::optional<json> ModuleAdapter::system_call_reset(const Requirement& req, const json& args) {
+    // system interface
+    // reset:
+    //   description: Call to reset the system immediately
+    //   arguments:
+    //     type:
+    //       description: Type of the reset (Soft or Hard)
+    //       type: string
+    //       $ref: /system#/ResetType
+    //     scheduled:
+    //       description: >-
+    //         Indicates if this reset command was scheduled or immediately executed. A scheduled reset means that the
+    //         system was waiting for all transactions to finish before this command was executed. This value is only
+    //         informational.
+    //       type: boolean
+
+    EVLOG_debug << "Call reset: " << args.dump();
+    publish_fn("system", "call_reset", args);
+    return {};
+}
+
+std::optional<json> ModuleAdapter::system_call_set_system_time(const Requirement& req, const json& args) {
+    // system interface
+    // set_system_time:
+    //   description: Call to set the system time of EVerest
+    //   arguments:
+    //     timestamp:
+    //       description: The new system time in RFC3339 format
+    //       type: string
+    //       format: date-time
+    //   result:
+    //     description: >-
+    //       Returns true if the system time could be set successfully, else
+    //       false
+    //     type: boolean
+
+    EVLOG_debug << "Call set_system_time: " << args.dump();
+    publish_fn("system", "call_set_system_time", args);
+    auto result = get_cmd_response(R"(false)"_json);
+    if (result) {
+        EVLOG_debug << "result:               " << result.value().dump();
+    }
+    return result;
+}
+
+std::optional<json> ModuleAdapter::system_call_update_firmware(const Requirement& req, const json& args) {
+    // system interface
+    // update_firmware:
+    //   description: Call to start a firmware update
+    //   arguments:
+    //     firmware_update_request:
+    //       description: Meta data containing information about the firmware request
+    //       type: object
+    //       $ref: /system#/FirmwareUpdateRequest
+    //   result:
+    //     description: Returns the result of the attempt to update the firmware
+    //     type: string
+    //     $ref: /system#/UpdateFirmwareResponse
+    //
+    // UpdateFirmwareResponse:
+    //   description: >-
+    //     Enum for the response of an update_firmware command
+    //       Accepted: Accepted this firmware update request. This does not mean the firmware update is successful, the
+    //       system will now start the firmware update process Rejected: Firmware update request rejected
+    //       AcceptedCanceled: Accepted this firmware update request, but in doing this has cancelled an ongoing
+    //       firmware update InvalidCertificate: The certificate is invalid RevokedCertificate: Failure end state. The
+    //       Firmware Signing certificate has been revoked
+    //   type: string
+    //   enum:
+    //     - Accepted
+    //     - Rejected
+    //     - AcceptedCanceled
+    //     - InvalidCertificate
+    //     - RevokedCertificate
+
+    EVLOG_debug << "Call update_firmware: " << args.dump();
+    publish_fn("system", "call_update_firmware", args);
+    auto result = get_cmd_response(R"("RevokedCertificate")"_json);
+    if (result) {
+        EVLOG_debug << "result:               " << result.value().dump();
+    }
+    return result;
+}
+
+std::optional<json> ModuleAdapter::system_call_upload_logs(const Requirement& req, const json& args) {
+    // upload_logs:
+    //   description: Call to start a log upload
+    //   arguments:
+    //     upload_logs_request:
+    //       description: Meta data containing information about the log request request
+    //       type: object
+    //       $ref: /system#/UploadLogsRequest
+    //   result:
+    //     description: Returns the result of the attempt to upload the logs
+    //     type: object
+    //     $ref: /system#/UploadLogsResponse
+    //
+    // UploadLogsResponse:
+    //   description: Response to a upload logs request
+    //   type: object
+    //   additionalProperties: false
+    //   required:
+    //     - upload_logs_status
+    //   properties:
+    //     file_name:
+    //       description: This contains the name of the log file that will be uploaded.
+    //       type: string
+    //     upload_logs_status:
+    //       description: The log status enum
+    //       type: string
+    //       $ref: /system#/UploadLogsStatus
+    //
+    // UploadLogsStatus:
+    //   description: >-
+    //     Enum for the upload logs status response
+    //       Accepted: Request to upload logs has been accepted
+    //       Rejected: Request to upload logs has been rejected
+    //       AcceptedCanceled: Accepted this log upload, but in doing this has cancelled an ongoing log file upload
+    //   type: string
+    //   enum:
+    //     - Accepted
+    //     - Rejected
+    //     - AcceptedCanceled
+
+    EVLOG_debug << "Call upload_logs: " << args.dump();
+    publish_fn("system", "call_upload_logs", args);
+    auto result = get_cmd_response(R"({"upload_logs_status":"Rejected"})"_json);
+    if (result) {
+        EVLOG_debug << "result:           " << result.value().dump();
     }
     return result;
 }
@@ -567,19 +820,24 @@ ModuleAdapter::ModuleAdapter() : m_error_type_map(std::make_shared<Everest::erro
         std::make_shared<Everest::config::ConfigServiceClient>(m_mqtt_abstraction, "ocpp", m_module_names);
 
     m_call_implementations.insert(
+        {"allow_firmware_installation", &ModuleAdapter::system_call_allow_firmware_installation});
+    m_call_implementations.insert({"cancel_reservation", &ModuleAdapter::reservation_call_cancel_reservation});
+    m_call_implementations.insert(
         {"clear_display_message", &ModuleAdapter::display_message_call_clear_display_message});
     m_call_implementations.insert({"data_transfer", &ModuleAdapter::ocpp_data_transfer_call_data_transfer});
     m_call_implementations.insert({"enable_disable", &ModuleAdapter::evse_manager_call_enable_disable});
+    m_call_implementations.insert({"exists_reservation", &ModuleAdapter::reservation_call_exists_reservation});
     m_call_implementations.insert(
         {"external_ready_to_start_charging", &ModuleAdapter::evse_manager_call_external_ready_to_start_charging});
     m_call_implementations.insert({"force_unlock", &ModuleAdapter::evse_manager_call_force_unlock});
     m_call_implementations.insert({"get_boot_reason", &ModuleAdapter::system_call_get_boot_reason});
     m_call_implementations.insert({"get_display_messages", &ModuleAdapter::display_message_call_get_display_messages});
     m_call_implementations.insert({"get_evse", &ModuleAdapter::evse_manager_call_get_evse});
+    m_call_implementations.insert({"is_reset_allowed", &ModuleAdapter::system_call_is_reset_allowed});
     m_call_implementations.insert({"pause_charging", &ModuleAdapter::evse_manager_call_pause_charging});
+    m_call_implementations.insert({"reserve_now", &ModuleAdapter::reservation_call_reserve_now});
+    m_call_implementations.insert({"reset", &ModuleAdapter::system_call_reset});
     m_call_implementations.insert({"set_connection_timeout", &ModuleAdapter::auth_call_set_connection_timeout});
-    m_call_implementations.insert({"update_allowed_energy_transfer_modes",
-                                   &ModuleAdapter::evse_manager_call_update_allowed_energy_transfer_modes});
     m_call_implementations.insert({"set_display_message", &ModuleAdapter::display_message_call_set_display_message});
     m_call_implementations.insert(
         {"set_external_limits", &ModuleAdapter::external_energy_limits_call_set_external_limits});
@@ -588,7 +846,12 @@ ModuleAdapter::ModuleAdapter() : m_error_type_map(std::make_shared<Everest::erro
     m_call_implementations.insert({"set_master_pass_group_id", &ModuleAdapter::auth_call_set_master_pass_group_id});
     m_call_implementations.insert(
         {"set_plug_and_charge_configuration", &ModuleAdapter::evse_manager_call_set_plug_and_charge_configuration});
+    m_call_implementations.insert({"set_system_time", &ModuleAdapter::system_call_set_system_time});
     m_call_implementations.insert({"stop_transaction", &ModuleAdapter::evse_manager_call_stop_transaction});
+    m_call_implementations.insert({"update_allowed_energy_transfer_modes",
+                                   &ModuleAdapter::evse_manager_call_update_allowed_energy_transfer_modes});
+    m_call_implementations.insert({"update_firmware", &ModuleAdapter::system_call_update_firmware});
+    m_call_implementations.insert({"upload_logs", &ModuleAdapter::system_call_upload_logs});
 }
 
 Result ModuleAdapter::call_fn(const Requirement& req, const std::string& fn, Parameters args) {

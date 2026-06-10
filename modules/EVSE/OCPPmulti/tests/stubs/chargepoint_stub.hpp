@@ -146,12 +146,15 @@ namespace v2 {
 bool operator==(const AdditionalInfo& lhs, const AdditionalInfo& rhs);
 bool operator==(const ChangeAvailabilityRequest& lhs, const ChangeAvailabilityRequest& rhs);
 bool operator==(const DataTransferRequest& lhs, const DataTransferRequest& rhs);
+bool operator==(const GetLogResponse& lhs, const GetLogResponse& rhs);
 bool operator==(const GetVariableData& lhs, const GetVariableData& rhs);
 bool operator==(const IdToken& lhs, const IdToken& rhs);
 bool operator==(const MeterValue& lhs, const MeterValue& rhs);
 bool operator==(const SampledValue& lhs, const SampledValue& rhs);
 bool operator==(const SignedMeterValue& lhs, const SignedMeterValue& rhs);
+bool operator==(const StatusInfo& lhs, const StatusInfo& rhs);
 bool operator==(const UnitOfMeasure& lhs, const UnitOfMeasure& rhs);
+bool operator==(const UpdateFirmwareResponse& lhs, const UpdateFirmwareResponse& rhs);
 } // namespace v2
 bool operator==(const DisplayMessage& lhs, const DisplayMessage& rhs);
 bool operator==(const DisplayMessageContent& lhs, const DisplayMessageContent& rhs);

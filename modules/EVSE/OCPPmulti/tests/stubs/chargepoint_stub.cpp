@@ -182,6 +182,11 @@ bool operator==(const DataTransferRequest& lhs, const DataTransferRequest& rhs) 
            optional_equal(lhs.data, rhs.data) && optional_equal(lhs.customData, rhs.customData);
 }
 
+bool operator==(const GetLogResponse& lhs, const GetLogResponse& rhs) {
+    return (lhs.status == rhs.status) && optional_equal(lhs.statusInfo, rhs.statusInfo) &&
+           optional_equal(lhs.filename, rhs.filename) && optional_equal(lhs.customData, rhs.customData);
+}
+
 bool operator==(const GetVariableData& lhs, const GetVariableData& rhs) {
     return (lhs.component == rhs.component) && (lhs.variable == rhs.variable) &&
            optional_equal(lhs.attributeType, rhs.attributeType) && optional_equal(lhs.customData, rhs.customData);
@@ -207,8 +212,16 @@ bool operator==(const SignedMeterValue& lhs, const SignedMeterValue& rhs) {
            optional_equal(lhs.signingMethod, rhs.signingMethod) && optional_equal(lhs.publicKey, rhs.publicKey) &&
            optional_equal(lhs.customData, rhs.customData);
 }
+bool operator==(const StatusInfo& lhs, const StatusInfo& rhs) {
+    return (lhs.reasonCode == rhs.reasonCode) && optional_equal(lhs.additionalInfo, rhs.additionalInfo) &&
+           optional_equal(lhs.customData, rhs.customData);
+}
 bool operator==(const UnitOfMeasure& lhs, const UnitOfMeasure& rhs) {
     return optional_equal(lhs.unit, rhs.unit) && optional_equal(lhs.multiplier, rhs.multiplier) &&
+           optional_equal(lhs.customData, rhs.customData);
+}
+bool operator==(const UpdateFirmwareResponse& lhs, const UpdateFirmwareResponse& rhs) {
+    return (lhs.status == rhs.status) && optional_equal(lhs.statusInfo, rhs.statusInfo) &&
            optional_equal(lhs.customData, rhs.customData);
 }
 } // namespace v2

@@ -21,7 +21,7 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     int MessageQueueResumeDelay{120};
     int RequestCompositeScheduleDurationS{600};
     std::string RequestCompositeScheduleUnit{"A"};
-    int ResetStopDelay{60};
+    int ResetStopDelay{1};
     std::string UserConfigPath{"user_config"};
 
     [[nodiscard]] std::string getChargePointConfigPath() const override {

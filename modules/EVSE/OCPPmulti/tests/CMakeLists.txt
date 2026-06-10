@@ -31,9 +31,12 @@ target_sources(${TEST_TARGET_NAME}
     charger_informationIntf_tests.cpp
     display_messageIntf_tests.cpp
     evse_managerIntf_tests.cpp
+    # evse_securityIntf_tests.cpp
     external_energy_limitsIntf_tests.cpp
     iso15118_extensionsIntf_tests.cpp
     ocpp_data_transferIntf_tests.cpp
+    reservationIntf_tests.cpp
+    systemIntf_tests.cpp
 
     # general
     generic_ocpp_tests.cpp
