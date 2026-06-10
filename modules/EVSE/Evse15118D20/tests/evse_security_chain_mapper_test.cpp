@@ -1,31 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-// Unit tests for the pure helpers in evse_security_chain_mapper (module::charger):
-//
-//  - map_valid_chains: maps the multi-chain result of
-//    evse_security::get_all_valid_certificates_info into a
-//    std::vector<iso15118::config::ChainConfig> (one ChainConfig per accepted
-//    CertificateInfo), including propagation of certificate_root into the
-//    trust_anchor_pem field.
-//  - is_relevant_certificate_store_update: the cheap relevance predicate that
-//    gates whether a certificate_store_update event affects the V2G SSL config.
-//  - decide_certificate_store_update: the apply/preserve decision applied to a
-//    freshly rebuilt SSL config.
-//
-// Trust-anchor roots and module-level TLS flags are assembled elsewhere; these
-// helpers are concerned only with the per-chain mapping and the store-update
-// gating/decision. The end-to-end TLS handshake assertions (peer-CA-driven chain
-// selection, OCSP staple delivery) are covered at the libeverest-tls layer in
+// The end-to-end TLS handshake assertions (peer-CA-driven chain selection,
+// OCSP staple delivery) are covered at the libeverest-tls layer in
 // lib/everest/tls/tests; here we only verify the helper shapes.
 
 #include <gtest/gtest.h>
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <generated/types/evse_security.hpp>
+#include <utils/exceptions.hpp>
 
 #include <iso15118/config.hpp>
 
@@ -217,4 +205,90 @@ TEST(CertUpdateDecision, PreserveWhenChainsEmpty) {
     iso15118::config::SSLConfig cfg{};
     EXPECT_EQ(module::charger::decide_certificate_store_update(cfg),
               module::charger::CertUpdateAction::PreserveLastGood);
+}
+
+namespace {
+
+types::evse_security::CertificateStoreUpdate make_relevant_event() {
+    types::evse_security::CertificateStoreUpdate event{};
+    event.leaf_certificate_type = types::evse_security::LeafCertificateType::V2G;
+    return event;
+}
+
+iso15118::config::SSLConfig make_single_chain_config() {
+    iso15118::config::SSLConfig cfg{};
+    iso15118::config::ChainConfig chain{};
+    chain.path_certificate_chain = "/tmp/iso/a/chain.pem";
+    chain.path_certificate_key = "/tmp/iso/a/key.pem";
+    cfg.chains.push_back(std::move(chain));
+    return cfg;
+}
+
+} // namespace
+
+TEST(HandleCertStoreUpdate, IrrelevantEventCallsNeitherRebuildNorApply) {
+    const types::evse_security::CertificateStoreUpdate irrelevant{};
+    bool rebuild_called = false;
+    bool apply_called = false;
+
+    module::charger::handle_certificate_store_update(
+        irrelevant,
+        [&]() -> iso15118::config::SSLConfig {
+            rebuild_called = true;
+            return {};
+        },
+        [&](iso15118::config::SSLConfig) { apply_called = true; });
+
+    EXPECT_FALSE(rebuild_called);
+    EXPECT_FALSE(apply_called);
+}
+
+TEST(HandleCertStoreUpdate, RelevantEventWithChainsAppliesRebuiltConfigOnce) {
+    const auto rebuilt = make_single_chain_config();
+    int apply_count = 0;
+    iso15118::config::SSLConfig applied{};
+
+    module::charger::handle_certificate_store_update(
+        make_relevant_event(), [&]() { return rebuilt; },
+        [&](iso15118::config::SSLConfig cfg) {
+            ++apply_count;
+            applied = std::move(cfg);
+        });
+
+    EXPECT_EQ(apply_count, 1);
+    EXPECT_EQ(applied, rebuilt);
+}
+
+TEST(HandleCertStoreUpdate, RelevantEventWithEmptyRebuildPreservesLastGood) {
+    bool apply_called = false;
+
+    module::charger::handle_certificate_store_update(
+        make_relevant_event(), [&]() -> iso15118::config::SSLConfig { return {}; },
+        [&](iso15118::config::SSLConfig) { apply_called = true; });
+
+    EXPECT_FALSE(apply_called);
+}
+
+TEST(HandleCertStoreUpdate, CmdTimeoutFromRebuildIsSwallowedAndApplyNotCalled) {
+    bool apply_called = false;
+
+    EXPECT_NO_THROW(module::charger::handle_certificate_store_update(
+        make_relevant_event(),
+        [&]() -> iso15118::config::SSLConfig { throw Everest::CmdTimeout("evse_security RPC timed out"); },
+        [&](iso15118::config::SSLConfig) { apply_called = true; }));
+
+    EXPECT_FALSE(apply_called);
+}
+
+TEST(StartupEmptyChains, EnforceTlsThrows) {
+    EXPECT_EQ(module::charger::decide_startup_empty_chains(iso15118::config::TlsNegotiationStrategy::ENFORCE_TLS),
+              module::charger::StartupChainPolicy::Throw);
+}
+
+TEST(StartupEmptyChains, NonEnforcingStrategiesWarnAndContinue) {
+    EXPECT_EQ(
+        module::charger::decide_startup_empty_chains(iso15118::config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER),
+        module::charger::StartupChainPolicy::WarnAndContinue);
+    EXPECT_EQ(module::charger::decide_startup_empty_chains(iso15118::config::TlsNegotiationStrategy::ENFORCE_NO_TLS),
+              module::charger::StartupChainPolicy::WarnAndContinue);
 }

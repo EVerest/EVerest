@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <string>
 
@@ -46,5 +47,25 @@ enum class CertUpdateAction {
 
 /// \brief Decide whether to apply a rebuilt SSL config or preserve the last-good one.
 CertUpdateAction decide_certificate_store_update(const iso15118::config::SSLConfig& refreshed);
+
+/// \brief Handles a certificate_store_update event: gates on
+/// is_relevant_certificate_store_update(), rebuilds the SSLConfig via \p rebuild, then either
+/// forwards it via \p apply or preserves the last-good config when the rebuild yields no chains.
+/// All exceptions thrown by \p rebuild (incl. Everest::CmdTimeout from the evse_security RPC)
+/// are caught and logged; nothing escapes, so the framework subscriber thread survives RPC
+/// failures.
+void handle_certificate_store_update(const types::evse_security::CertificateStoreUpdate& event,
+                                     const std::function<iso15118::config::SSLConfig()>& rebuild,
+                                     const std::function<void(iso15118::config::SSLConfig)>& apply);
+
+/// \brief What ready() must do when the initial SSL config carries no usable chains.
+enum class StartupChainPolicy {
+    Throw,           //!< refuse to start: TLS is mandatory but cannot be served
+    WarnAndContinue, //!< start anyway; TLS connection attempts fail until certificates arrive
+};
+
+/// \brief Startup policy for an empty chain list: ENFORCE_TLS demands a usable chain (Throw);
+/// every other negotiation strategy can operate without TLS (WarnAndContinue).
+StartupChainPolicy decide_startup_empty_chains(iso15118::config::TlsNegotiationStrategy strategy);
 
 } // namespace module::charger
