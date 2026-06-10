@@ -138,9 +138,10 @@ public:
 protected:
     std::unique_ptr<connection_ctx> m_context; //!< opaque connection data
     state_t m_state{state_t::idle};            //!< connection state
-    std::string m_ip;                          //!< peer IP address
-    std::string m_service;                     //!< peer port
-    std::int32_t m_timeout_ms;                 //!< default operation timeout
+    std::string m_peer_host;                   //!< peer host, a DNS hostname or IP literal (server accept: peer IP;
+                             //!< Client::connect: connect target; Client::wrap_connecting_fd: host_for_sni)
+    std::string m_service;     //!< peer port
+    std::int32_t m_timeout_ms; //!< default operation timeout
     std::string
         m_last_error; //!< OpenSSL error text from the operation that closed this connection; empty on graceful close
 
@@ -225,10 +226,11 @@ public:
     }
 
     /**
-     * IP address of the connection's peer
+     * Host of the connection's peer: a DNS hostname or IP literal, depending
+     * on how the connection was created. The name is kept for API stability.
      */
     [[nodiscard]] const std::string& ip_address() const {
-        return m_ip;
+        return m_peer_host;
     }
 
     /**
@@ -261,6 +263,13 @@ public:
      * \returns the underlying socket or INVALID_SOCKET on error
      */
     [[nodiscard]] int socket() const;
+
+    /**
+     * \brief number of decrypted bytes buffered in the TLS record layer
+     * \returns bytes available to read() without a socket read, or 0 when
+     *          there is no active SSL context
+     */
+    [[nodiscard]] std::size_t pending() const;
 
     /**
      * \brief obtain the peer certificate
@@ -353,7 +362,8 @@ public:
  */
 class ClientConnection : public Connection {
 public:
-    ClientConnection(SslContext* ctx, int soc, const char* ip_in, const char* service_in, std::int32_t timeout_ms);
+    ClientConnection(SslContext* ctx, int soc, const char* ip_in, const char* service_in, std::int32_t timeout_ms,
+                     bool verify_subject_name);
     ClientConnection() = delete;
     ClientConnection(const ClientConnection&) = delete;
     ClientConnection(ClientConnection&&) = delete;
@@ -699,7 +709,10 @@ public:
         std::int32_t io_timeout_ms{-1};              //!< default socket timeout in milliseconds (recommend > 1 sec)
         //!< minimum TLS protocol version, e.g. TLS1_2_VERSION or TLS1_3_VERSION; 0 means use default
         int min_proto_version{0};
-        bool verify_server{true};      //!< verify the server certificate
+        bool verify_server{true}; //!< verify the server certificate
+        //!< when true, the peer certificate subject/SAN is matched against the SNI host via SSL_set1_host.
+        //!< Only enforced when verify_server is also true (peer verification must be active); ignored otherwise.
+        bool verify_subject_name{false};
         bool status_request{false};    //!< include a status request extension in the client hello
         bool status_request_v2{false}; //!< include a status request v2 extension in the client hello
         bool trusted_ca_keys{false};   //!< include a trusted ca keys extension in the client hello
@@ -710,6 +723,7 @@ public:
 private:
     std::unique_ptr<client_ctx> m_context;                      //!< opaque object data
     std::int32_t m_timeout_ms{-1};                              //!< default operation timeout
+    bool m_verify_subject_name{false};                          //!< pin SNI hostname verification on new connections
     trusted_ca_keys_t m_trusted_ca_keys;                        //!< trusted CA keys configuration data
     std::unique_ptr<ClientStatusRequestV2> m_status_request_v2; //!< status request extension handler
 
@@ -749,6 +763,24 @@ public:
     [[nodiscard]] inline ConnectionPtr connect(const char* host, const char* service, bool ipv6_only) {
         return connect(host, service, ipv6_only, m_timeout_ms);
     }
+
+    /**
+     * \brief wrap an already-connecting TCP socket as a TLS client connection
+     * \param[in] fd connected (or in-progress) TCP socket file descriptor
+     * \param[in] host_for_sni hostname used for the peer-id / SNI slot (may be nullptr)
+     * \return ConnectionPtr that owns \p fd on success; nullptr if SSL_CTX is not initialised
+     * \note Lets callers own the TCP connect path and hand the resulting fd to a
+     *       configured Client (mirror of Server::wrap_accepted_fd).
+     * \note A DNS \p host_for_sni is sent in the SNI extension; an IP literal is
+     *       not (RFC 6066 §3). When config_t::verify_subject_name is set the peer
+     *       certificate is pinned to \p host_for_sni (DNS name or IP SAN) and a
+     *       pin-install failure fails the handshake closed; otherwise verify_server
+     *       remains chain-of-trust only.
+     * \note Ownership: on success the returned ClientConnection owns \p fd and
+     *       will close it. On a nullptr return the caller still owns \p fd and
+     *       must close it; this factory does not close \p fd on failure.
+     */
+    [[nodiscard]] ConnectionPtr wrap_connecting_fd(int fd, const char* host_for_sni);
 
     /**
      * \brief the default SSL callbacks

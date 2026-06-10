@@ -367,6 +367,66 @@ event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, co
     throw std::runtime_error(std::string("Could not open a socket for ") + host + ":" + std::to_string(port));
 }
 
+event::unique_fd open_tcp_server_socket(std::string const& bind_addr, std::uint16_t port, bool ipv6_only) {
+    const bool is_ipv6 = ipv6_only || (bind_addr.find(':') != std::string::npos);
+    const int family = is_ipv6 ? AF_INET6 : AF_INET;
+
+    const int raw_fd = ::socket(family, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    if (raw_fd < 0) {
+        throw std::runtime_error(std::string("open_tcp_server_socket socket(): ") + std::strerror(errno));
+    }
+    // Own the fd immediately so any throw below auto-closes it.
+    event::unique_fd fd(raw_fd);
+
+    const int opt = 1;
+    if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) != 0) {
+        throw std::runtime_error(std::string("open_tcp_server_socket setsockopt(SO_REUSEADDR): ") +
+                                 std::strerror(errno));
+    }
+    if (::setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) != 0) {
+        throw std::runtime_error(std::string("open_tcp_server_socket setsockopt(SO_REUSEPORT): ") +
+                                 std::strerror(errno));
+    }
+
+    if (is_ipv6) {
+        const int v6only = ipv6_only ? 1 : 0;
+        if (::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only)) != 0) {
+            throw std::runtime_error(std::string("open_tcp_server_socket setsockopt(IPV6_V6ONLY): ") +
+                                     std::strerror(errno));
+        }
+    }
+
+    sockaddr_storage sa{};
+    socklen_t sa_len = 0;
+    if (is_ipv6) {
+        auto* sa6 = reinterpret_cast<sockaddr_in6*>(&sa);
+        sa6->sin6_family = AF_INET6;
+        sa6->sin6_port = htons(port);
+        if (::inet_pton(AF_INET6, bind_addr.c_str(), &sa6->sin6_addr) != 1) {
+            throw std::runtime_error(std::string("open_tcp_server_socket inet_pton IPv6: ") + bind_addr);
+        }
+        sa_len = sizeof(sockaddr_in6);
+    } else {
+        auto* sa4 = reinterpret_cast<sockaddr_in*>(&sa);
+        sa4->sin_family = AF_INET;
+        sa4->sin_port = htons(port);
+        if (::inet_pton(AF_INET, bind_addr.c_str(), &sa4->sin_addr) != 1) {
+            throw std::runtime_error(std::string("open_tcp_server_socket inet_pton IPv4: ") + bind_addr);
+        }
+        sa_len = sizeof(sockaddr_in);
+    }
+
+    if (::bind(fd, reinterpret_cast<sockaddr*>(&sa), sa_len) != 0) {
+        throw std::runtime_error(std::string("open_tcp_server_socket bind(): ") + std::strerror(errno));
+    }
+
+    if (::listen(fd, SOMAXCONN) != 0) {
+        throw std::runtime_error(std::string("open_tcp_server_socket listen(): ") + std::strerror(errno));
+    }
+
+    return fd;
+}
+
 #ifndef EVEREST_NO_PACKET_IGNORE_OUTGOING
 event::unique_fd open_raw_promiscuous_socket(std::string const& if_name) {
     auto const socket_fd = ::socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));

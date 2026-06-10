@@ -121,6 +121,22 @@ event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint
                                               const std::string& device = {});
 
 /**
+ * @brief Open a TCP socket in server mode (bound and listening).
+ * @details Creates a non-blocking, close-on-exec stream socket and binds it to
+ * @p bind_addr : @p port. The address family is AF_INET6 when @p ipv6_only is set
+ * or when @p bind_addr contains a ':' (a literal IPv6 address); otherwise AF_INET.
+ * SO_REUSEADDR and SO_REUSEPORT are set; for IPv6 sockets IPV6_V6ONLY reflects
+ * @p ipv6_only. Each setsockopt return is checked. @p port == 0 picks an
+ * ephemeral port. The socket is then put into the listening state.
+ * @param[in] bind_addr Numeric bind address (e.g. "0.0.0.0", "127.0.0.1", "::", "::1").
+ * @param[in] port The port to listen on (0 for an ephemeral port).
+ * @param[in] ipv6_only When true, force an IPv6 socket and set IPV6_V6ONLY.
+ * @return The managed file descriptor of the listening socket.
+ * @throws std::runtime_error if any step (socket, setsockopt, inet_pton, bind, listen) fails.
+ */
+event::unique_fd open_tcp_server_socket(std::string const& bind_addr, std::uint16_t port, bool ipv6_only);
+
+/**
  * @brief Bind a socket to a specific network interface.
  * @details Tries SO_BINDTODEVICE first (needs CAP_NET_RAW). On EPERM/EACCES, falls back to:
  *   - IP_UNICAST_IF (AF_INET) or IPV6_UNICAST_IF (AF_INET6) to restrict the outgoing
