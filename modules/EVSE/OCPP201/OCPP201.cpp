@@ -1156,13 +1156,17 @@ void OCPP201::charging_schedules_timer_callback() {
             return;
         }
         {
-            std::lock_guard<std::mutex> guard(recompute_mutex, std::adopt_lock);
-            while (recompute_pending.exchange(false)) {
-                const auto composite_schedule_unit = get_unit_or_default(config.RequestCompositeScheduleUnit);
-                const auto composite_schedules = charge_point->get_all_composite_schedules(
-                    config.RequestCompositeScheduleDurationS, composite_schedule_unit);
-                publish_charging_schedules(composite_schedules);
-                set_external_limits(composite_schedules);
+            try {
+                std::lock_guard<std::mutex> guard(recompute_mutex, std::adopt_lock);
+                while (recompute_pending.exchange(false)) {
+                    const auto composite_schedule_unit = get_unit_or_default(config.RequestCompositeScheduleUnit);
+                    const auto composite_schedules = charge_point->get_all_composite_schedules(
+                        config.RequestCompositeScheduleDurationS, composite_schedule_unit);
+                    publish_charging_schedules(composite_schedules);
+                    set_external_limits(composite_schedules);
+                }
+            } catch (const std::exception& error) {
+                EVLOG_warning << "Composite calculation failed, unable to send external_limits";
             }
         }
     }
