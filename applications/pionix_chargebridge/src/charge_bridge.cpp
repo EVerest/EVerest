@@ -114,6 +114,8 @@ void charge_bridge::handle_discovery(std::string const& ip) {
 }
 
 void charge_bridge::init() {
+    m_1s_tick.set_timeout(std::chrono::seconds(1));
+
     if (m_config.can0.has_value()) {
         m_can_0_client = std::make_unique<can_bridge>(m_config.can0.value(), m_ready_notify);
     }
@@ -315,8 +317,15 @@ void charge_bridge::handle_ready() {
     publish("chargebridge", status);
 }
 
+void charge_bridge::handle_tick() {
+    std::cout << "1s tick" << std::endl;
+}
+
 bool charge_bridge::register_events(everest::lib::io::event::fd_event_handler& handler) {
     auto result = true;
+    result =
+        handler.register_event_handler(&m_1s_tick, everest::lib::util::bind_obj(&charge_bridge::handle_tick, this)) &&
+        result;
     if (m_can_0_client) {
         result = handler.register_event_handler(m_can_0_client.get()) && result;
     }
@@ -355,6 +364,7 @@ bool charge_bridge::register_events(everest::lib::io::event::fd_event_handler& h
 }
 bool charge_bridge::unregister_events(everest::lib::io::event::fd_event_handler& handler) {
     auto result = true;
+    result = handler.unregister_event_handler(&m_1s_tick) && result;
     if (m_can_0_client) {
         result = handler.unregister_event_handler(m_can_0_client.get()) && result;
     }

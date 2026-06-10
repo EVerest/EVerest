@@ -2,6 +2,7 @@
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include "everest/io/event/timer_fd.hpp"
 #include <atomic>
 #include <charge_bridge/bsp_bridge.hpp>
 #include <charge_bridge/can_bridge.hpp>
@@ -79,6 +80,7 @@ private:
     void init_discovery(discovery_device_type type, std::set<std::string> const& interfaces, bool excluding);
     void handle_discovery(std::string const& ip);
     void handle_ready();
+    void handle_tick();
 
 private:
     std::unique_ptr<can_bridge> m_can_0_client;
@@ -93,6 +95,7 @@ private:
 
     everest::lib::io::event::fd_event_handler* m_event_handler{nullptr};
     everest::lib::io::event::event_fd m_ready_notify;
+    everest::lib::io::event::timer_fd m_1s_tick;
     bool m_force_firmware_update{false};
     everest::lib::util::monitor<charge_bridge_status> m_cb_status;
     bool m_was_connected{false};
