@@ -27,6 +27,11 @@ bsp_bridge::bsp_bridge(bsp_bridge_config const& config, everest::lib::io::event:
         m_udp.tx(pl);
     });
 
+    m_api.set_error_handler([this](bool good) {
+        m_api_good = good;
+        handle_status();
+    });
+
     m_udp.set_rx_handler([this](auto const& data, auto&) {
         evse_bsp_cb_to_host msg;
         std::memcpy(&msg, data.buffer.data(), data.size());
@@ -37,7 +42,7 @@ bsp_bridge::bsp_bridge(bsp_bridge_config const& config, everest::lib::io::event:
     m_udp.set_error_handler([this, identifier](auto id, auto const& msg) {
         utilities::print_error(identifier, "BSP/UDP", id) << msg << std::endl;
         m_udp_on_error = id not_eq 0;
-        m_ready.set(id == 0);
+        handle_status();
     });
 
     m_ready.setCallback([this](auto&, auto&) { m_ready_notify.notify(); });
@@ -47,6 +52,11 @@ void bsp_bridge::handle_timer_event() {
     if (m_udp_on_error) {
         m_udp.reset();
     }
+}
+
+void bsp_bridge::handle_status() {
+    auto status = m_api_good && not m_udp_on_error;
+    m_ready.set(status);
 }
 
 bool bsp_bridge::available() const {

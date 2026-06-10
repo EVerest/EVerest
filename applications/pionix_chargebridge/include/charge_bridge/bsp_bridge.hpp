@@ -29,7 +29,9 @@ public:
 
 private:
     void handle_timer_event();
-
+    void handle_status();
+    bool m_api_good{false};
+    
     evse_bsp::api_connector m_api;
     everest::lib::io::udp::udp_client m_udp;
     everest::lib::io::event::timer_fd m_timer;
