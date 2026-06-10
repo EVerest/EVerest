@@ -147,7 +147,7 @@ struct server_trusted_ca_keys_t {
  *
  * Despite the name, this handler drives chain selection for BOTH legs:
  *  - TLS 1.2 and below: the legacy custom trusted_ca_keys extension
- *    (cert/key SHA-1 hashes), via select()/select_by_*().
+ *    (cert/key SHA-1 hashes and x509 DNs), via select().
  *  - TLS 1.3: the standard certificate_authorities extension exposed by
  *    OpenSSL as the peer CA list, via select_by_dn_list().
  * handle_certificate_cb() branches on SSL_version() and both legs converge
@@ -163,13 +163,15 @@ private:
     /**
      * \brief apply a selected chain, falling back to the default chain
      * \param[in] ssl the connection context
+     * \param[in] lock witness that the caller holds m_mux
      * \param[in] selected chain chosen by the per-version selector, or nullptr
      * \param[in] context_label feature name used in the abort log line
      * \return 1 to continue the handshake, 0 to abort it
      * \note m_mux MUST be held by the caller: select + apply must be atomic
      *       with respect to update() swapping m_chains.
      */
-    int apply_selection_locked(SSL* ssl, const chain_t* selected, const char* context_label);
+    int apply_selection_locked(SSL* ssl, const std::lock_guard<std::mutex>& lock, const chain_t* selected,
+                               const char* context_label);
 
 public:
     ServerTrustedCaKeys();

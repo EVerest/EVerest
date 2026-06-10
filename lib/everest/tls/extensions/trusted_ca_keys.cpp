@@ -6,6 +6,7 @@
 #include <boost/smart_ptr/shared_ptr.hpp>
 #include <everest/tls/openssl_util.hpp>
 
+#include <array>
 #include <cassert>
 #include <limits>
 
@@ -424,8 +425,32 @@ int ServerTrustedCaKeys::trusted_ca_keys_cb(SSL* ctx, unsigned int ext_type, uns
     return 1;
 }
 
-int ServerTrustedCaKeys::apply_selection_locked(SSL* ssl, const chain_t* selected, const char* context_label) {
-    // m_mux is held by the caller.
+namespace {
+
+/**
+ * \brief name a chain by its leaf certificate subject for log messages
+ * \param[in] chain the chain to name
+ * \return the leaf subject as a one-line string, or a placeholder when the
+ *         chain has no leaf or the subject cannot be rendered
+ */
+std::string leaf_subject_name(const chain_t& chain) {
+    const auto* leaf = chain.chain.leaf.get();
+    if (leaf == nullptr) {
+        return "<no leaf>";
+    }
+    std::array<char, 256> buf{};
+    // X509_NAME_oneline renders a null/empty subject as an empty string, not an error
+    if ((X509_NAME_oneline(X509_get_subject_name(leaf), buf.data(), static_cast<int>(buf.size())) == nullptr) ||
+        (buf[0] == '\0')) {
+        return "<unknown subject>";
+    }
+    return std::string(buf.data());
+}
+
+} // namespace
+
+int ServerTrustedCaKeys::apply_selection_locked(SSL* ssl, const std::lock_guard<std::mutex>& /* m_mux witness */,
+                                                const chain_t* selected, const char* context_label) {
     if (selected == nullptr) {
         // No specific chain matched; keep the default certificate already
         // configured on the SSL_CTX.
@@ -436,6 +461,13 @@ int ServerTrustedCaKeys::apply_selection_locked(SSL* ssl, const chain_t* selecte
     }
     // The selected chain failed to apply; fall back to the default chain.
     const auto* fallback = select_default();
+    if (fallback == selected) {
+        log_warning(std::string("terminating TLS handshake: ") + context_label +
+                    ": selected chain failed to apply and is the only/default chain");
+        return 0;
+    }
+    log_warning(std::string(context_label) + ": selected chain (" + leaf_subject_name(*selected) +
+                ") failed to apply; serving default chain");
     if (fallback != nullptr && not use_certificate_and_key(ssl, *fallback)) {
         log_warning(std::string("terminating TLS handshake: ") + context_label);
         return 0;
@@ -473,7 +505,13 @@ int ServerTrustedCaKeys::handle_certificate_cb(SSL* ssl, void* arg) {
         if (names != nullptr && sk_X509_NAME_num(names) > 0) {
             std::lock_guard lock(tck_p->m_mux);
             const auto* selected = select_by_dn_list(names, tck_p->m_chains);
-            result = tck_p->apply_selection_locked(ssl, selected, "certificate_authorities");
+            if (selected == nullptr) {
+                log_warning("certificate_authorities: no configured chain matched the peer's advertised CA names; "
+                            "serving default chain");
+            }
+            result = tck_p->apply_selection_locked(ssl, lock, selected, "certificate_authorities");
+        } else {
+            log_debug("certificate_authorities: peer sent no certificate_authorities; serving default chain");
         }
         return result;
     }
@@ -483,7 +521,11 @@ int ServerTrustedCaKeys::handle_certificate_cb(SSL* ssl, void* arg) {
     if ((keys_p != nullptr) && (keys_p->flags.has_trusted_ca_keys())) {
         std::lock_guard lock(tck_p->m_mux);
         const auto* selected = tck_p->select(keys_p->tck);
-        result = tck_p->apply_selection_locked(ssl, selected, "trusted_ca_keys");
+        if (selected == nullptr) {
+            log_warning("trusted_ca_keys: no configured chain matched the peer's trusted_ca_keys; "
+                        "serving default chain");
+        }
+        result = tck_p->apply_selection_locked(ssl, lock, selected, "trusted_ca_keys");
     }
     return result;
 }
