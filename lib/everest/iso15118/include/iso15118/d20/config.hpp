@@ -40,6 +40,7 @@ struct EvseSetupConfig {
     std::optional<AcSetupConfig> ac_setup_config{std::nullopt};
     std::optional<BptSetupConfig> bpt_setup_config{std::nullopt};
     d20::DcTransferLimits powersupply_limits;
+    bool selecting_sap_based_on_energy_service{false};
 };
 
 // This should only have EVSE information
@@ -73,6 +74,7 @@ struct SessionConfig {
     std::vector<ControlMobilityNeedsModes> supported_control_mobility_modes;
 
     std::optional<std::string> custom_protocol{std::nullopt};
+    bool selecting_sap_based_on_energy_service{false};
 };
 
 } // namespace iso15118::d20

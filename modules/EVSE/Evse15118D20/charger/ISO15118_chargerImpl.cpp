@@ -233,6 +233,8 @@ void ISO15118_chargerImpl::ready() {
         setup_config.custom_protocol.emplace(mod->config.custom_protocol_namespace);
     }
 
+    setup_config.selecting_sap_based_on_energy_service = mod->config.selecting_sap_based_on_energy_service;
+
     controller = std::make_unique<iso15118::TbdController>(tbd_config, callbacks, setup_config);
 
     // if the vas providers report their supported vas services before the controller exists,

@@ -29,7 +29,8 @@ SCENARIO("ISO15118-20 supported app protocol state transitions") {
 
     const d20::EvseSetupConfig evse_setup{
         evse_id,   supported_energy_services, auth_services,    vas_services, cert_install, dc_limits,
-        ac_limits, control_mobility_modes,    custom_namespace, std::nullopt, std::nullopt, powersupply_limits};
+        ac_limits, control_mobility_modes,    custom_namespace, std::nullopt, std::nullopt, powersupply_limits,
+        false};
 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
 
@@ -181,6 +182,44 @@ SCENARIO("ISO15118-20 supported app protocol state transitions") {
 
             REQUIRE(supported_app_res.response_code ==
                     message_20::SupportedAppProtocolResponse::ResponseCode::Failed_NoNegotiation);
+        }
+    }
+
+    GIVEN("Good case - Selecting namespace based on supported energy services") {
+        ctx.session_config.selecting_sap_based_on_energy_service = true;
+
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::SupportedAppProtocol>()};
+
+        message_20::SupportedAppProtocolRequest req;
+        auto& ap_dc = req.app_protocol.emplace_back();
+        ap_dc.priority = 2;
+        ap_dc.protocol_namespace = "urn:iso:std:iso:15118:-20:DC";
+        ap_dc.schema_id = 2;
+        ap_dc.version_number_major = 1;
+        ap_dc.version_number_minor = 0;
+
+        auto& ap_ac = req.app_protocol.emplace_back();
+        ap_ac.priority = 1;
+        ap_ac.protocol_namespace = "urn:iso:std:iso:15118:-20:AC";
+        ap_ac.schema_id = 1;
+        ap_ac.version_number_major = 1;
+        ap_ac.version_number_minor = 0;
+
+        state_helper.handle_request(req);
+        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+        THEN("Check state transition") {
+            REQUIRE(result.transitioned() == true);
+            REQUIRE(fsm.get_current_state_id() == d20::StateID::SessionSetup);
+
+            const auto response_message = ctx.get_response<message_20::SupportedAppProtocolResponse>();
+            REQUIRE(response_message.has_value());
+
+            const auto& supported_app_res = response_message.value();
+
+            REQUIRE(supported_app_res.response_code ==
+                    message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation);
+            REQUIRE(supported_app_res.schema_id.value_or(0) == 2);
         }
     }
 }
