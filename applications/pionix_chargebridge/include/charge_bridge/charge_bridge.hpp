@@ -81,6 +81,10 @@ private:
     void handle_discovery(std::string const& ip);
     void handle_ready();
     void handle_tick();
+    bool register_internal_events(everest::lib::io::event::fd_event_handler& handler);
+    bool unregister_internal_events(everest::lib::io::event::fd_event_handler& handler);
+    bool register_manage_events(everest::lib::io::event::fd_event_handler& handler);
+    bool unregister_manage_events(everest::lib::io::event::fd_event_handler& handler);
 
 private:
     std::unique_ptr<can_bridge> m_can_0_client;
