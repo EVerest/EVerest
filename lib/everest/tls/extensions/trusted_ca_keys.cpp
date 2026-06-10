@@ -312,38 +312,61 @@ const chain_t* select(const trusted_ca_keys_t& extension, const chain_list& chai
     return result;
 }
 
+namespace {
+
+/**
+ * \brief check a chain's trust anchors against a list of distinguished names
+ * \param[in] chain contains the list of trust anchors
+ * \param[in] names is the list of distinguished names advertised by the peer
+ * \param[in] name_count is the number of entries in names
+ * \param[inout] warned_malformed caps the malformed-DN warning at one line per
+ *               selection; the peer controls names, so per-comparison logging
+ *               could emit name_count x trust-anchor lines per handshake
+ * \return true on the first (trust anchor subject, name) match
+ */
+bool chain_matches_dn_list(const chain_t& chain, const STACK_OF(X509_NAME) * names, int name_count,
+                           bool& warned_malformed) {
+    for (const auto& ta : chain.chain.trust_anchors) {
+        auto* subject = X509_get_subject_name(ta.get());
+        if (subject == nullptr) {
+            continue;
+        }
+        for (int i = 0; i < name_count; ++i) {
+            const auto* candidate = sk_X509_NAME_value(names, i);
+            if (candidate == nullptr) {
+                continue;
+            }
+            const int cmp = X509_NAME_cmp(subject, candidate);
+            if (cmp == 0) {
+                return true;
+            }
+            if ((cmp == -2) && not warned_malformed) {
+                log_warning("select_by_dn_list: malformed DN skipped in comparison");
+                warned_malformed = true;
+            }
+        }
+    }
+    return false;
+}
+
+} // namespace
+
 const chain_t* select_by_dn_list(const STACK_OF(X509_NAME) * names, const chain_list& chains) {
-    const chain_t* result{nullptr};
     if (names == nullptr) {
-        return result;
+        return nullptr;
     }
     const int name_count = sk_X509_NAME_num(names);
     if (name_count <= 0) {
-        return result;
+        return nullptr;
     }
 
+    bool warned_malformed{false};
     for (const auto& chain : chains) {
-        for (const auto& ta : chain.chain.trust_anchors) {
-            auto* subject = X509_get_subject_name(ta.get());
-            if (subject == nullptr) {
-                continue;
-            }
-            for (int i = 0; i < name_count; ++i) {
-                const auto* candidate = sk_X509_NAME_value(names, i);
-                if (candidate != nullptr && X509_NAME_cmp(subject, candidate) == 0) {
-                    result = &chain;
-                    break;
-                }
-            }
-            if (result != nullptr) {
-                break;
-            }
-        }
-        if (result != nullptr) {
-            break;
+        if (chain_matches_dn_list(chain, names, name_count, warned_malformed)) {
+            return &chain;
         }
     }
-    return result;
+    return nullptr;
 }
 
 int ServerTrustedCaKeys::s_index{-1};

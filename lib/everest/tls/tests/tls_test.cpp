@@ -471,9 +471,26 @@ TEST(TrustedCaKeys, selectByDnListEmpty) {
     auto root = load_certificates("server_root_cert.pem");
     chains[0].chain.trust_anchors.emplace_back(std::move(root[0]));
 
+    chains.emplace_back();
+    auto alt_root = load_certificates("alt_server_root_cert.pem");
+    chains[1].chain.trust_anchors.emplace_back(std::move(alt_root[0]));
+
     auto* stack = sk_X509_NAME_new_null();
     EXPECT_EQ(select_by_dn_list(stack, chains), nullptr);
     sk_X509_NAME_pop_free(stack, X509_NAME_free);
+}
+
+TEST(TrustedCaKeys, selectByDnListNullNames) {
+    chain_list chains;
+    chains.emplace_back();
+    auto root = load_certificates("server_root_cert.pem");
+    chains[0].chain.trust_anchors.emplace_back(std::move(root[0]));
+
+    chains.emplace_back();
+    auto alt_root = load_certificates("alt_server_root_cert.pem");
+    chains[1].chain.trust_anchors.emplace_back(std::move(alt_root[0]));
+
+    EXPECT_EQ(select_by_dn_list(nullptr, chains), nullptr);
 }
 
 TEST(TrustedCaKeys, selectByDnListMatch) {
@@ -507,6 +524,58 @@ TEST(TrustedCaKeys, selectByDnListNoMatch) {
     auto unrelated = load_certificates("client_root_cert.pem");
     auto* stack = make_dn_stack({unrelated[0].get()});
     EXPECT_EQ(select_by_dn_list(stack, chains), nullptr);
+    sk_X509_NAME_pop_free(stack, X509_NAME_free);
+}
+
+TEST(TrustedCaKeys, selectByDnListMatchFirstChain) {
+    chain_list chains;
+    chains.emplace_back();
+    auto server_root = load_certificates("server_root_cert.pem");
+    chains[0].chain.trust_anchors.emplace_back(std::move(server_root[0]));
+
+    chains.emplace_back();
+    auto alt_root = load_certificates("alt_server_root_cert.pem");
+    chains[1].chain.trust_anchors.emplace_back(std::move(alt_root[0]));
+
+    // The DN list contains the server root's subject; selection should return chains[0].
+    auto* stack = make_dn_stack({chains[0].chain.trust_anchors[0].get()});
+    EXPECT_EQ(select_by_dn_list(stack, chains), &chains[0]);
+    sk_X509_NAME_pop_free(stack, X509_NAME_free);
+}
+
+TEST(TrustedCaKeys, selectByDnListFirstChainWins) {
+    chain_list chains;
+    chains.emplace_back();
+    auto server_root = load_certificates("server_root_cert.pem");
+    chains[0].chain.trust_anchors.emplace_back(std::move(server_root[0]));
+
+    chains.emplace_back();
+    auto alt_root = load_certificates("alt_server_root_cert.pem");
+    chains[1].chain.trust_anchors.emplace_back(std::move(alt_root[0]));
+
+    // Both chains' DNs are advertised (alt root first in the stack); chain
+    // iteration order wins, not DN stack order.
+    auto* stack = make_dn_stack({chains[1].chain.trust_anchors[0].get(), chains[0].chain.trust_anchors[0].get()});
+    EXPECT_EQ(select_by_dn_list(stack, chains), &chains[0]);
+    sk_X509_NAME_pop_free(stack, X509_NAME_free);
+}
+
+TEST(TrustedCaKeys, selectByDnListSecondAnchorMatch) {
+    chain_list chains;
+    chains.emplace_back();
+    auto server_root = load_certificates("server_root_cert.pem");
+    chains[0].chain.trust_anchors.emplace_back(std::move(server_root[0]));
+
+    // A chain with two trust anchors where only the second matches the
+    // advertised DN.
+    chains.emplace_back();
+    auto client_root = load_certificates("client_root_cert.pem");
+    auto alt_root = load_certificates("alt_server_root_cert.pem");
+    chains[1].chain.trust_anchors.emplace_back(std::move(client_root[0]));
+    chains[1].chain.trust_anchors.emplace_back(std::move(alt_root[0]));
+
+    auto* stack = make_dn_stack({chains[1].chain.trust_anchors[1].get()});
+    EXPECT_EQ(select_by_dn_list(stack, chains), &chains[1]);
     sk_X509_NAME_pop_free(stack, X509_NAME_free);
 }
 
