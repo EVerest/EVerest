@@ -45,7 +45,6 @@ LifecycleAPI::LifecycleAPI(MQTTAbstraction& mqtt_abstraction, ::Everest::config:
                            std::function<StopModulesResult()> stop_fn,
                            std::function<RestartModulesResult()> restart_fn) :
     m_mqtt_abstraction(mqtt_abstraction),
-    // TODO(CB): If we don't need m_config_service anymore, remove it (but maybe we want to publish the active_slot id?)
     m_config_service(config_service),
     m_config_api_availability(config_api_availability),
     m_readonly(readonly),
@@ -56,6 +55,8 @@ LifecycleAPI::LifecycleAPI(MQTTAbstraction& mqtt_abstraction, ::Everest::config:
 
     generate_api_cmd_stop_modules();
     generate_api_cmd_start_modules();
+
+    generate_api_var_status();
 }
 
 StopModulesResult LifecycleAPI::stop_modules() {
@@ -70,14 +71,6 @@ RestartModulesResult LifecycleAPI::restart_modules() {
         return restart_fn_();
     }
     return RestartModulesResult::Rejected;
-}
-
-void LifecycleAPI::modules_started_running() {
-    module_runtime_status_changed(true);
-}
-
-void LifecycleAPI::modules_stopped_running() {
-    module_runtime_status_changed(false);
 }
 
 void LifecycleAPI::generate_api_cmd_stop_modules() {
@@ -118,18 +111,57 @@ void LifecycleAPI::generate_api_cmd_start_modules() {
     });
 }
 
-void LifecycleAPI::module_runtime_status_changed(bool running) {
+void LifecycleAPI::generate_api_var_status() {
+    using SrcT = ::Everest::config::ActiveSlotStatus;
+    using TarT = ::everest::lib::API::V1_0::types::lifecycle::ModuleExecutionStatusEnum;
+    // indicate on the API that EVerest is alive
+    publish_execution_status(Everest::Date::to_rfc3339(date::utc_clock::now()), TarT::NotRunning);
+
+    // setup updates
+    m_config_service.register_active_slot_update_handler([this](const Everest::config::ActiveSlotUpdate& update) {
+        TarT module_status;
+
+        switch (update.status) {
+        case SrcT::Running:
+            module_status = TarT::Running;
+            break;
+        case SrcT::Stopped:
+            module_status = TarT::NotRunning;
+            break;
+        case SrcT::Starting:
+            module_status = TarT::Starting;
+            break;
+        case SrcT::Stopping:
+            module_status = TarT::Stopping;
+            break;
+        case SrcT::RestartTriggered:
+            module_status = TarT::RestartTriggered;
+            break;
+        default:
+            // don't publish for other types of updates
+            return;
+        }
+        if (update.status == m_last_module_status) {
+            return;
+        }
+        m_last_module_status = update.status;
+
+        publish_execution_status(update.timestamp, module_status);
+    });
+}
+
+void LifecycleAPI::publish_execution_status(const std::string& tstamp,
+                                            API_types_ext::ModuleExecutionStatusEnum module_status) {
     static const auto topic = m_topics.nonmodule_to_extern("status");
+    static const auto cfg_api_availability = to_configuration_api_availability(m_config_api_availability);
 
     API_types_ext::ExecutionStatusUpdateNotice exec_status_update{};
-    exec_status_update.configuration_api_available = to_configuration_api_availability(m_config_api_availability);
+    exec_status_update.tstamp = tstamp;
+    exec_status_update.everest_running = true;
+    exec_status_update.configuration_api_available = cfg_api_availability;
     exec_status_update.lifecycle_api_ro = m_readonly;
-    exec_status_update.tstamp = Everest::Date::to_rfc3339(date::utc_clock::now());
-    if (running) {
-        exec_status_update.status = API_types_ext::ModuleExecutionStatusEnum::Running;
-    } else {
-        exec_status_update.status = API_types_ext::ModuleExecutionStatusEnum::NotRunning;
-    }
+
+    exec_status_update.module_status = module_status;
 
     m_mqtt_abstraction.publish(topic, serialize(exec_status_update), QOS::QOS2, false);
 }
