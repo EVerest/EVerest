@@ -2,7 +2,7 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <list>
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <string>
@@ -31,8 +31,11 @@ struct TbdConfig {
 class TbdController {
 public:
     TbdController(TbdConfig, session::feedback::Callbacks, d20::EvseSetupConfig);
+    ~TbdController();
 
     void loop();
+
+    void shutdown();
 
     void send_control_event(const d20::ControlEvent&);
 
@@ -52,6 +55,8 @@ private:
     std::unique_ptr<io::SdpServer> sdp_server;
 
     std::unique_ptr<Session> session;
+
+    std::atomic_bool shutdown_active{false};
 
     // callbacks for sdp server
     void handle_sdp_server_input();
