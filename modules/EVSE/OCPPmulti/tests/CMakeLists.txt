@@ -51,6 +51,7 @@ target_sources(${TEST_TARGET_NAME}
     ../common/device_model/definitions.cpp
     ../common/device_model/everest_device_model_storage.cpp
     ../common/conversions.cpp
+    ../common/error_handling.cpp
     ../common/transaction_handler.cpp
 )
 

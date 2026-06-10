@@ -23,6 +23,12 @@ config:
       about the database and its structure.
     type: string
     default: /tmp/ocpp201
+  CustomMrecErrorMapPath:
+    description: >-
+      Optional path to a JSON file mapping EVerest error types to OCPP techCodes. Entries overwrite the
+      built-in defaults. Leave empty to use only the defaults.
+    type: string
+    default: ''
   DelayOcppStart:
     description: >-
       OCPP 1.6

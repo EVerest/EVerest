@@ -29,6 +29,7 @@ target_sources(${MODULE_NAME}
     common/device_model/everest_device_model_storage.cpp
 
     common/conversions.cpp
+    common/error_handling.cpp
     common/transaction_handler.cpp
 
     generic_chargepoint.cpp

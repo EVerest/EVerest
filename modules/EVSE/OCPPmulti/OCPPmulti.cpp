@@ -17,6 +17,9 @@ int ConfigAccess::getCompositeScheduleIntervalS() const {
 std::string ConfigAccess::getCoreDatabasePath() const {
     return m_config.CoreDatabasePath;
 }
+std::string ConfigAccess::getCustomMrecErrorMapPath() const {
+    return m_config.CustomMrecErrorMapPath;
+}
 int ConfigAccess::getDelayOcppStart() const {
     return m_config.DelayOcppStart;
 }

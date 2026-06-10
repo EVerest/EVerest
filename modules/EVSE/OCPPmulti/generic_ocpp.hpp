@@ -22,6 +22,7 @@
 
 #include "generic_chargepoint.hpp"
 #include <device_model/everest_device_model_storage.hpp>
+#include <error_handling.hpp>
 #include <everest/util/async/monitor.hpp>
 #include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/v2/charge_point_callbacks.hpp>
@@ -109,6 +110,7 @@ struct ConfigInterface {
     [[nodiscard]] virtual std::string getChargePointConfigPath() const = 0;
     [[nodiscard]] virtual int getCompositeScheduleIntervalS() const = 0;
     [[nodiscard]] virtual std::string getCoreDatabasePath() const = 0;
+    [[nodiscard]] virtual std::string getCustomMrecErrorMapPath() const = 0;
     [[nodiscard]] virtual int getDelayOcppStart() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelConfigPath() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelDatabasePath() const = 0;
@@ -160,6 +162,8 @@ private:
     EventQueue m_event_queue;
     MonitorList m_monitor_list;
     Everest::SteadyTimer m_charging_schedules_timer;
+
+    module::MREC_ERROR_MAP_TYPE m_mrec_error_map;
 
 public:
     using ConfigServiceClient = std::shared_ptr<Everest::config::ConfigServiceClient>;

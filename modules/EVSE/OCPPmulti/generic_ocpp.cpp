@@ -574,6 +574,9 @@ void GenericOcpp::init() {
         }
     }
 
+    const auto map_path = m_config.getCustomMrecErrorMapPath();
+    m_mrec_error_map = (map_path.empty()) ? module::MREC_ERROR_MAP : module::load_mrec_error_map_overrides(map_path);
+
     init_check_energy_sink();
     init_evse_maps();
     init_subscribe();
@@ -749,7 +752,7 @@ void GenericOcpp::ready_event_queue() {
                 const auto& error = std::get<Everest::error::Error>(queued_event);
                 EVLOG_info << "Processing queued error event for evse_id: " << evse_id << ": " << error.type;
                 bool is_active = error.state == Everest::error::State::Active;
-                const auto event_data = get_event_data(error, !is_active, m_event_id_counter++);
+                const auto event_data = get_event_data(error, !is_active, m_event_id_counter++, m_mrec_error_map);
                 m_charge_point.on_event({event_data});
 
                 // We do only report inoperative errors as faults
@@ -1073,7 +1076,7 @@ void GenericOcpp::cb_error_cleared_handler(const Everest::error::Error& error) {
     // handled by specific evse_manager error handler
     if (error.type != EVSE_MANAGER_INOPERATIVE_ERROR) {
         if (m_started) {
-            const auto event_data = get_event_data(error, true, m_event_id_counter++);
+            const auto event_data = get_event_data(error, true, m_event_id_counter++, m_mrec_error_map);
             m_charge_point.on_event({event_data});
         } else {
             std::scoped_lock lock(m_session_event_mutex);
@@ -1088,7 +1091,7 @@ void GenericOcpp::cb_error_handler(const Everest::error::Error& error) {
     // handled by specific evse_manager error handler
     if (error.type != EVSE_MANAGER_INOPERATIVE_ERROR) {
         if (m_started) {
-            const auto event_data = get_event_data(error, false, m_event_id_counter++);
+            const auto event_data = get_event_data(error, false, m_event_id_counter++, m_mrec_error_map);
             m_charge_point.on_event({event_data});
         } else {
             std::scoped_lock lock(m_session_event_mutex);
@@ -1116,7 +1119,7 @@ void GenericOcpp::cb_fault_cleared_handler(std::int32_t evse_id, const Everest::
     using namespace module;
 
     if (m_started) {
-        const auto event_data = get_event_data(error, true, m_event_id_counter++);
+        const auto event_data = get_event_data(error, true, m_event_id_counter++, m_mrec_error_map);
         m_charge_point.on_event({event_data});
         m_charge_point.on_fault_cleared(evse_id, get_connector_id_from_error(error));
     } else {
@@ -1129,7 +1132,7 @@ void GenericOcpp::cb_fault_handler(std::int32_t evse_id, const Everest::error::E
     using namespace module;
 
     if (m_started) {
-        const auto event_data = get_event_data(error, false, m_event_id_counter++);
+        const auto event_data = get_event_data(error, false, m_event_id_counter++, m_mrec_error_map);
         m_charge_point.on_event({event_data});
         m_charge_point.on_faulted(evse_id, get_connector_id_from_error(error));
     } else {
