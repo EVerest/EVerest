@@ -9,6 +9,7 @@
 #include <net/if.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <sys/socket.h>
 
 #include <iso15118/detail/helper.hpp>
 
@@ -106,6 +107,35 @@ bool get_first_sockaddr_in6_for_interface(const std::string& interface_name, soc
 
     // Todo(sl): What to do if interface was not found?
     return found_interface;
+}
+
+int create_tcp_listen_socket(sockaddr_in6& address, uint16_t port, int backlog) {
+    const auto fd = socket(AF_INET6, SOCK_STREAM, 0);
+    if (fd == -1) {
+        log_and_throw("Failed to create an ipv6 socket");
+    }
+
+    // before bind, set the port
+    address.sin6_port = htons(port);
+
+    int optval_tmp{1};
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval_tmp, sizeof(optval_tmp)) == -1) {
+        log_and_throw("setsockopt(SO_REUSEADDR) failed");
+    }
+
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &optval_tmp, sizeof(optval_tmp)) == -1) {
+        log_and_throw("setsockopt(SO_REUSEPORT) failed");
+    }
+
+    if (bind(fd, reinterpret_cast<const struct sockaddr*>(&address), sizeof(address)) == -1) {
+        log_and_throw("Failed to bind ipv6 socket");
+    }
+
+    if (listen(fd, backlog) == -1) {
+        log_and_throw("Listen on socket failed");
+    }
+
+    return fd;
 }
 
 std::unique_ptr<char[]> sockaddr_in6_to_name(const sockaddr_in6& address) {
