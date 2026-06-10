@@ -29,7 +29,7 @@ namespace module {
 Charger::Charger(const std::unique_ptr<IECStateMachine>& bsp, const std::unique_ptr<ErrorHandling>& error_handling,
                  const std::vector<std::unique_ptr<powermeterIntf>>& r_powermeter_billing,
                  const std::unique_ptr<PersistentStore>& _store,
-                 const types::evse_board_support::Connector_type& connector_type, const std::string& evse_id) :
+                 const types::evse_manager::ConnectorTypeEnum& connector_type, const std::string& evse_id) :
     bsp(bsp),
     error_handling(error_handling),
     r_powermeter_billing(r_powermeter_billing),
@@ -43,7 +43,7 @@ Charger::Charger(const std::unique_ptr<IECStateMachine>& bsp, const std::unique_
 
     shared_context.connector_enabled = true;
     shared_context.max_current = 6.0;
-    if (connector_type == types::evse_board_support::Connector_type::IEC62196Type2Socket) {
+    if (connector_type == types::evse_manager::ConnectorTypeEnum::sType2) {
         shared_context.max_current_cable = bsp->read_pp_ampacity();
     }
     shared_context.flag_authorized = false;
@@ -324,7 +324,7 @@ void Charger::run_state_machine() {
             }
 
             // Read PP value in case of AC socket
-            if (connector_type == types::evse_board_support::Connector_type::IEC62196Type2Socket and
+            if (connector_type == types::evse_manager::ConnectorTypeEnum::sType2 and
                 not shared_context.max_current_cable.has_value()) {
                 // retry if the value is not yet available. Some BSPs may take some time to measure the PP.
                 shared_context.max_current_cable = bsp->read_pp_ampacity();
@@ -1878,8 +1878,8 @@ float Charger::get_max_current_internal() {
     auto maxc = shared_context.max_current;
     const auto max_current_cable = shared_context.max_current_cable.value_or(0.0);
 
-    if (connector_type == types::evse_board_support::Connector_type::IEC62196Type2Socket and
-        max_current_cable < maxc and shared_context.current_state not_eq EvseState::Idle) {
+    if (connector_type == types::evse_manager::ConnectorTypeEnum::sType2 and max_current_cable < maxc and
+        shared_context.current_state not_eq EvseState::Idle) {
         maxc = max_current_cable;
     }
 

@@ -932,8 +932,7 @@ void OCPP201::ready() {
             reservation.parent_id_token = request.groupIdToken.value().idToken;
         }
         if (request.connectorType.has_value()) {
-            reservation.connector_type =
-                types::evse_manager::string_to_connector_type_enum(request.connectorType.value());
+            reservation.connector_type = conversions::to_everest_connector_type(request.connectorType.value());
         }
 
         types::reservation::ReservationResult result = this->r_reservation.at(0)->call_reserve_now(reservation);

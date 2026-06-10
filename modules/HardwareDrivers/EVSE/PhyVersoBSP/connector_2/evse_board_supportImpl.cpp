@@ -23,9 +23,9 @@ void evse_board_supportImpl::init() {
         caps.max_phase_count_export = mod->config.conn2_max_phase_count_export;
 
         if (mod->config.conn2_has_socket) {
-            caps.connector_type = types::evse_board_support::Connector_type::IEC62196Type2Socket;
+            caps.connector_type = types::evse_manager::ConnectorTypeEnum::sType2;
         } else {
-            caps.connector_type = types::evse_board_support::Connector_type::IEC62196Type2Cable;
+            caps.connector_type = types::evse_manager::ConnectorTypeEnum::cType2;
         }
     }
 

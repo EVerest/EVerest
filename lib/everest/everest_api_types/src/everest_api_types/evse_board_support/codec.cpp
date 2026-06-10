@@ -28,10 +28,6 @@ std::string serialize(Error const& val) noexcept {
     return utilities::dump_json(val);
 }
 
-std::string serialize(Connector_type val) noexcept {
-    return utilities::dump_json(val);
-}
-
 std::string serialize(HardwareCapabilities const& val) noexcept {
     return utilities::dump_json(val);
 }
@@ -68,11 +64,6 @@ std::ostream& operator<<(std::ostream& os, const ErrorEnum& val) {
 }
 
 std::ostream& operator<<(std::ostream& os, const Error& val) {
-    os << serialize(val);
-    return os;
-}
-
-std::ostream& operator<<(std::ostream& os, const Connector_type& val) {
     os << serialize(val);
     return os;
 }
@@ -116,10 +107,6 @@ template <> ErrorEnum deserialize(std::string_view val) {
 
 template <> Error deserialize(std::string_view val) {
     return utilities::parse_json<Error>(val);
-}
-
-template <> Connector_type deserialize(std::string_view val) {
-    return utilities::parse_json<Connector_type>(val);
 }
 
 template <> HardwareCapabilities deserialize(std::string_view val) {
