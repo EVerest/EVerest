@@ -22,13 +22,11 @@ namespace {
 SSLConfig make_cfg_a() {
     SSLConfig cfg{};
     cfg.backend = CertificateBackend::EVEREST_LAYOUT;
-    cfg.chains.push_back(iso15118::config::ChainConfig{
-        "/tmp/iso15118-test/a/chain.pem",
-        "/tmp/iso15118-test/a/key.pem",
-        std::nullopt,
-        {},
-        "/tmp/iso15118-test/a/v2g_root.pem", // trust_anchor_pem
-    });
+    iso15118::config::ChainConfig chain{};
+    chain.path_certificate_chain = "/tmp/iso15118-test/a/chain.pem";
+    chain.path_certificate_key = "/tmp/iso15118-test/a/key.pem";
+    chain.trust_anchor_pem = "/tmp/iso15118-test/a/v2g_root.pem";
+    cfg.chains.push_back(std::move(chain));
     cfg.path_certificate_v2g_root = "/tmp/iso15118-test/a/v2g_root.pem";
     cfg.path_certificate_mo_root = "/tmp/iso15118-test/a/mo_root.pem";
     cfg.enforce_tls_1_3 = false;
@@ -38,41 +36,15 @@ SSLConfig make_cfg_a() {
 SSLConfig make_cfg_b() {
     SSLConfig cfg{};
     cfg.backend = CertificateBackend::EVEREST_LAYOUT;
-    cfg.chains.push_back(iso15118::config::ChainConfig{
-        "/tmp/iso15118-test/b/chain.pem",
-        "/tmp/iso15118-test/b/key.pem",
-        std::nullopt,
-        {},
-        "/tmp/iso15118-test/b/v2g_root.pem", // trust_anchor_pem
-    });
+    iso15118::config::ChainConfig chain{};
+    chain.path_certificate_chain = "/tmp/iso15118-test/b/chain.pem";
+    chain.path_certificate_key = "/tmp/iso15118-test/b/key.pem";
+    chain.trust_anchor_pem = "/tmp/iso15118-test/b/v2g_root.pem";
+    cfg.chains.push_back(std::move(chain));
     cfg.path_certificate_v2g_root = "/tmp/iso15118-test/b/v2g_root.pem";
     cfg.path_certificate_mo_root = "/tmp/iso15118-test/b/mo_root.pem";
     cfg.enforce_tls_1_3 = true;
     return cfg;
-}
-
-bool chain_config_equal(const iso15118::config::ChainConfig& lhs, const iso15118::config::ChainConfig& rhs) {
-    return lhs.path_certificate_chain == rhs.path_certificate_chain &&
-           lhs.path_certificate_key == rhs.path_certificate_key &&
-           lhs.private_key_password == rhs.private_key_password && lhs.ocsp_response_files == rhs.ocsp_response_files &&
-           lhs.trust_anchor_pem == rhs.trust_anchor_pem;
-}
-
-bool ssl_config_equal(const SSLConfig& lhs, const SSLConfig& rhs) {
-    if (lhs.chains.size() != rhs.chains.size()) {
-        return false;
-    }
-    for (std::size_t i = 0; i < lhs.chains.size(); ++i) {
-        if (!chain_config_equal(lhs.chains[i], rhs.chains[i])) {
-            return false;
-        }
-    }
-    return lhs.backend == rhs.backend && lhs.config_string == rhs.config_string &&
-           lhs.path_certificate_v2g_root == rhs.path_certificate_v2g_root &&
-           lhs.path_certificate_mo_root == rhs.path_certificate_mo_root &&
-           lhs.enable_ssl_logging == rhs.enable_ssl_logging &&
-           lhs.enable_tls_key_logging == rhs.enable_tls_key_logging && lhs.enforce_tls_1_3 == rhs.enforce_tls_1_3 &&
-           lhs.tls_key_logging_path == rhs.tls_key_logging_path;
 }
 
 TbdController make_controller(SSLConfig initial) {
@@ -97,7 +69,7 @@ SCENARIO("TbdController SSL config monitor: set then snapshot returns the new va
             const SSLConfig snap = controller.ssl_config_snapshot();
 
             THEN("the snapshot exposes cfg_a") {
-                REQUIRE(ssl_config_equal(snap, cfg_a));
+                REQUIRE(snap == cfg_a);
             }
         }
     }
@@ -117,14 +89,14 @@ SCENARIO("TbdController SSL config monitor: second write does not mutate earlier
             const SSLConfig snap_b = controller.ssl_config_snapshot();
 
             THEN("snap_a still observes cfg_a and snap_b observes cfg_b") {
-                REQUIRE(ssl_config_equal(snap_a, cfg_a));
-                REQUIRE(ssl_config_equal(snap_b, cfg_b));
+                REQUIRE(snap_a == cfg_a);
+                REQUIRE(snap_b == cfg_b);
             }
         }
     }
 }
 
-SCENARIO("TbdController SSL config monitor: concurrent reader and writer never tear") {
+SCENARIO("TbdController SSL config monitor: concurrent snapshots always observe a complete config") {
     GIVEN("a controller, a writer alternating cfg_a/cfg_b, and a reader taking snapshots") {
         auto controller = make_controller(SSLConfig{});
         const auto cfg_a = make_cfg_a();
@@ -145,7 +117,7 @@ SCENARIO("TbdController SSL config monitor: concurrent reader and writer never t
             std::thread reader([&]() {
                 for (int i = 0; i < iterations; ++i) {
                     const SSLConfig snap = controller.ssl_config_snapshot();
-                    if (!ssl_config_equal(snap, cfg_a) && !ssl_config_equal(snap, cfg_b)) {
+                    if (!(snap == cfg_a) && !(snap == cfg_b)) {
                         torn.store(true);
                         return;
                     }
