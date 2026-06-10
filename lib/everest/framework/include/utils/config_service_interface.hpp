@@ -167,6 +167,7 @@ public:
     virtual void set_modules_starting() = 0;
     virtual void set_modules_stopping() = 0;
     virtual void notice_cfg_validation_failed() = 0;
+    virtual void notice_module_restart_triggered() = 0;
 };
 
 } // namespace Everest::config
