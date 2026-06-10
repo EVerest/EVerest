@@ -78,8 +78,6 @@ event::sync_status tls_listener::sync() {
 
     const std::uint16_t peer_port = port_from_storage(peer);
 
-    // wrap_accepted_fd's key-logging path runs std::stoul(service); an empty string would throw
-    // std::invalid_argument and kill the accept loop, so always pass a numeric service string.
     const std::string svc = std::to_string(peer_port);
     auto raw_conn = m_server.wrap_accepted_fd(accepted, ip_buf, svc.c_str());
     if (!raw_conn) {
