@@ -11,6 +11,10 @@
 
 namespace ev_API = everest::lib::API;
 
+namespace everest::lib::API::V1_0::types::lifecycle {
+enum class ModuleExecutionStatusEnum;
+}
+
 namespace Everest::api::lifecycle {
 
 enum class ConfigurationApiStatus {
@@ -49,6 +53,7 @@ private:
     ev_API::Topics m_topics;
     ConfigurationApiStatus m_config_api_availability;
     const bool m_readonly;
+    ::Everest::config::ActiveSlotStatus m_last_module_status{::Everest::config::ActiveSlotStatus::Stopped};
 
     std::function<StopModulesResult()> stop_fn_;
     std::function<RestartModulesResult()> restart_fn_;
@@ -59,7 +64,10 @@ private:
     void generate_api_cmd_stop_modules();
     void generate_api_cmd_start_modules();
 
-    void module_runtime_status_changed(bool running);
+    void generate_api_var_status();
+
+    void publish_execution_status(const std::string& tstamp,
+                                  everest::lib::API::V1_0::types::lifecycle::ModuleExecutionStatusEnum module_status);
 
     using ParseAndPublishFtor = std::function<bool(std::string const&)>;
     void subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish);
