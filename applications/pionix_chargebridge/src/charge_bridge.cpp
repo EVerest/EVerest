@@ -133,6 +133,9 @@ void charge_bridge::init() {
     if (m_config.bsp.has_value()) {
         m_bsp = std::make_unique<bsp_bridge>(m_config.bsp.value(), m_ready_notify);
     }
+    if (m_config.gpio.has_value()) {
+        m_gpio = std::make_unique<gpio_bridge>(m_config.gpio.value(), m_ready_notify);
+    }
     if (m_config.heartbeat.has_value()) {
         m_heartbeat = std::make_unique<heartbeat_service>(
             m_config.heartbeat.value(),
@@ -141,12 +144,16 @@ void charge_bridge::init() {
                     auto handle = m_cb_status.handle();
                     handle->is_connected = connected;
                 }
+                if(m_plc){
+                    m_plc->set_cb_connection_status(connected);
+                }
+                if(m_gpio){
+                    m_gpio->set_cb_connection_status(connected);
+                }
+
                 m_cb_status.notify_one();
             },
             m_ready_notify);
-    }
-    if (m_config.gpio.has_value()) {
-        m_gpio = std::make_unique<gpio_bridge>(m_config.gpio.value(), m_ready_notify);
     }
 }
 

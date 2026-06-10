@@ -68,6 +68,12 @@ gpio_bridge::gpio_bridge(gpio_config const& config, everest::lib::io::event::eve
     std::memset(m_message.data.gpio_values, 0, sizeof(m_message.data.gpio_values));
 
     m_ready.setCallback([this](auto&, auto&) { m_ready_notify.notify(); });
+    m_cb_is_connected.setCallback([this](bool last, bool current){
+        if(not last and current){
+            m_udp.reset();
+        }
+        handle_ready();
+    });
 }
 
 gpio_bridge::~gpio_bridge() {
@@ -161,11 +167,15 @@ void gpio_bridge::handle_udp_rx(everest::lib::io::udp::udp_payload const& payloa
 }
 
 void gpio_bridge::handle_ready() {
-    m_ready.set(m_udp_ready and m_mqtt_ready);
+    m_ready.set(m_udp_ready and m_mqtt_ready and m_cb_is_connected);
 }
 
 bool gpio_bridge::available() const {
     return m_ready;
+}
+
+void gpio_bridge::set_cb_connection_status(bool connected) {
+    m_cb_is_connected.set(connected);
 }
 
 } // namespace charge_bridge

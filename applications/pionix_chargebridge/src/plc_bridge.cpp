@@ -43,6 +43,12 @@ plc_bridge::plc_bridge(plc_bridge_config const& config, everest::lib::io::event:
         handle_ready();
     });
     m_ready.setCallback([this](auto&, auto&) { m_ready_notify.notify(); });
+    m_cb_is_connected.setCallback([this](bool last, bool current) {
+        if (not last and current) {
+            m_udp.reset();
+        }
+        handle_ready();
+    });
 }
 
 void plc_bridge::handle_timer_event() {
@@ -55,11 +61,15 @@ void plc_bridge::handle_timer_event() {
 }
 
 void plc_bridge::handle_ready() {
-    m_ready.set(m_udp_ready and m_tap_ready);
+    m_ready.set(m_udp_ready and m_tap_ready and m_cb_is_connected);
 }
 
 bool plc_bridge::available() const {
     return m_ready;
+}
+
+void plc_bridge::set_cb_connection_status(bool connected) {
+    m_cb_is_connected.set(connected);
 }
 
 bool plc_bridge::register_events(everest::lib::io::event::fd_event_handler& handler) {
