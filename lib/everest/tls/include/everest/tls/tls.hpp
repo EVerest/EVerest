@@ -138,10 +138,10 @@ public:
 protected:
     std::unique_ptr<connection_ctx> m_context; //!< opaque connection data
     state_t m_state{state_t::idle};            //!< connection state
-    std::string m_peer_host; //!< peer host, a DNS hostname or IP literal (server accept: peer IP;
+    std::string m_peer_host;                   //!< peer host, a DNS hostname or IP literal (server accept: peer IP;
                              //!< Client::connect: connect target; Client::wrap_connecting_fd: host_for_sni)
-    std::string m_service;                     //!< peer port
-    std::int32_t m_timeout_ms;                 //!< default operation timeout
+    std::string m_service;     //!< peer port
+    std::int32_t m_timeout_ms; //!< default operation timeout
     std::string
         m_last_error; //!< OpenSSL error text from the operation that closed this connection; empty on graceful close
 

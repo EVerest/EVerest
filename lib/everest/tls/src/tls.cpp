@@ -726,8 +726,7 @@ struct client_ctx {
 // Connection represents a TLS connection (client and server)
 
 Connection::Connection(SslContext* ctx, int soc, const char* ip_in, const char* service_in, std::int32_t timeout_ms) :
-    m_context(std::make_unique<connection_ctx>()), m_peer_host(ip_in), m_service(service_in),
-    m_timeout_ms(timeout_ms) {
+    m_context(std::make_unique<connection_ctx>()), m_peer_host(ip_in), m_service(service_in), m_timeout_ms(timeout_ms) {
     m_context->ctx = SSL_ptr(SSL_new(ctx));
     m_context->soc = soc;
 
@@ -890,9 +889,8 @@ ServerConnection::ServerConnection(SslContext* ctx, int soc, const char* ip_in, 
                 m_keylog_server = std::make_unique<TlsKeyLoggingServer>(std::string(tls_key_interface), port);
                 SSL_set_ex_data(m_context->ctx.get(), ssl_keylog_server_index, m_keylog_server.get());
             } else {
-                log_warning(
-                    "ServerConnection: service string is not a port number; TLS key logging disabled for this "
-                    "connection");
+                log_warning("ServerConnection: service string is not a port number; TLS key logging disabled for this "
+                            "connection");
             }
         }
     }
