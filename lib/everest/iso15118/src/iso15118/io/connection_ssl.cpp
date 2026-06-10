@@ -19,6 +19,7 @@
 
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/detail/io/socket_helper.hpp>
+#include <iso15118/detail/io/ssl_config_builder.hpp>
 
 namespace iso15118::io {
 
@@ -48,30 +49,6 @@ std::string_view result_name(tls::Connection::result_t r) {
         return "want_write";
     }
     return "unknown";
-}
-
-std::vector<tls::Server::certificate_config_t> build_chain_configs(const config::SSLConfig& cfg) {
-    std::vector<tls::Server::certificate_config_t> chains;
-    chains.reserve(cfg.chains.size());
-
-    for (const auto& src : cfg.chains) {
-        std::vector<tls::ConfigItem> ocsp_items;
-        ocsp_items.reserve(src.ocsp_response_files.size());
-        for (const auto& f : src.ocsp_response_files) {
-            ocsp_items.emplace_back(f);
-        }
-
-        tls::Server::certificate_config_t chain_cfg{};
-        chain_cfg.certificate_chain_file = src.path_certificate_chain;
-        chain_cfg.private_key_file = src.path_certificate_key;
-        if (src.private_key_password.has_value()) {
-            chain_cfg.private_key_password = src.private_key_password.value();
-        }
-        chain_cfg.ocsp_response_files = std::move(ocsp_items);
-        chains.push_back(std::move(chain_cfg));
-    }
-
-    return chains;
 }
 
 tls::Server::config_t make_tls_server_config(const config::SSLConfig& cfg, const std::string& interface_name,
