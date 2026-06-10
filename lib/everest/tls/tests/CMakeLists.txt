@@ -165,4 +165,7 @@ target_link_libraries(${TLS_PATCH_NAME}
 )
 
 add_test(${TLS_GTEST_NAME} ${TLS_GTEST_NAME})
+# Serialize with everest_io_tls_test: both regenerate the PKI fixture via
+# ./pki.sh in this directory at startup.
+set_tests_properties(${TLS_GTEST_NAME} PROPERTIES RESOURCE_LOCK tls_pki)
 ev_register_test_target(${TLS_GTEST_NAME})
