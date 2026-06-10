@@ -136,6 +136,54 @@ TEST(MapValidChains, PropagatesCertificateRootToTrustAnchorPem) {
     EXPECT_EQ(chains[0].trust_anchor_pem.value(), "----ROOT A PEM----");
 }
 
+TEST(MapValidChains, OcspEntriesPreserveChainOrderIncludingNullopt) {
+    using types::evse_security::CertificateOCSP;
+    using types::evse_security::HashAlgorithm;
+
+    GetCertificateFullInfoResult certs{};
+    certs.status = GetCertificateInfoStatus::Accepted;
+
+    auto info = make_cert_info("/tmp/iso/a/chain.pem", "/tmp/iso/a/key.pem");
+
+    types::evse_security::CertificateHashData hash{};
+    hash.hash_algorithm = HashAlgorithm::SHA256;
+
+    CertificateOCSP ocsp0{};
+    ocsp0.hash = hash;
+    ocsp0.ocsp_path = "/p0";
+    CertificateOCSP ocsp1{};
+    ocsp1.hash = hash;
+    ocsp1.ocsp_path = std::nullopt;
+    CertificateOCSP ocsp2{};
+    ocsp2.hash = hash;
+    ocsp2.ocsp_path = "/p2";
+    info.ocsp = std::vector<CertificateOCSP>{ocsp0, ocsp1, ocsp2};
+
+    certs.info.push_back(std::move(info));
+
+    const auto chains = module::charger::map_valid_chains(certs);
+
+    ASSERT_EQ(chains.size(), 1u);
+    const std::vector<std::optional<std::string>> expected{"/p0", std::nullopt, "/p2"};
+    EXPECT_EQ(chains[0].ocsp_response_files, expected);
+}
+
+TEST(MapValidChains, RootlessChainIsStillMapped) {
+    GetCertificateFullInfoResult certs{};
+    certs.status = GetCertificateInfoStatus::Accepted;
+    auto info = make_cert_info("/tmp/iso/a/chain.pem", "/tmp/iso/a/key.pem");
+    // certificate_root intentionally left nullopt: the chain cannot participate in
+    // TLS 1.3 certificate_authorities / trusted_ca_keys selection but is still
+    // usable as the default chain, so it must remain mapped (a warning is logged).
+    certs.info.push_back(std::move(info));
+
+    const auto chains = module::charger::map_valid_chains(certs);
+
+    ASSERT_EQ(chains.size(), 1u);
+    EXPECT_EQ(chains[0].path_certificate_chain, "/tmp/iso/a/chain.pem");
+    EXPECT_FALSE(chains[0].trust_anchor_pem.has_value());
+}
+
 TEST(CertStoreUpdateFilter, RelevantForV2gLeaf) {
     types::evse_security::CertificateStoreUpdate ev{};
     ev.leaf_certificate_type = types::evse_security::LeafCertificateType::V2G;

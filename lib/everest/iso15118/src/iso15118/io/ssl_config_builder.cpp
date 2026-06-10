@@ -19,7 +19,7 @@ std::vector<tls::Server::certificate_config_t> build_chain_configs(const config:
         std::vector<tls::ConfigItem> ocsp_items;
         ocsp_items.reserve(src.ocsp_response_files.size());
         for (const auto& f : src.ocsp_response_files) {
-            ocsp_items.emplace_back(f);
+            ocsp_items.emplace_back(f.has_value() ? tls::ConfigItem(f.value()) : tls::ConfigItem(nullptr));
         }
 
         tls::Server::certificate_config_t chain_cfg{};
