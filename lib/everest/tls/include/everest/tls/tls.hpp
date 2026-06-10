@@ -125,7 +125,10 @@ public:
 
     enum class result_t : std::uint8_t {
         success,    //!< operation completed successfully
-        closed,     //!< connection closed (possibly due to error)
+        closed,     //!< connection closed: covers a graceful peer close, a TLS
+                    //!< protocol error, and a syscall error; last_error() is
+                    //!< non-empty when the close was caused by an error rather
+                    //!< than a graceful close
         timeout,    //!< operation timed out
         want_read,  //!< non-blocking - operation waiting for read available on socket
         want_write, //!< non-blocking - operation waiting for write available on socket
@@ -142,19 +145,6 @@ protected:
 
     // prevent standalone construction
     Connection(SslContext* ctx, int soc, const char* ip_in, const char* service_in, std::int32_t timeout_ms);
-
-    /**
-     * \brief run the SSL shutdown loop without touching m_last_error
-     * \param[in] timeout_ms operation timeout
-     * \param[out] last_error drained OpenSSL error text on failure
-     * \return the result of the operation
-     * \note error/closed branches of read/write/accept/connect call this with a
-     *       throwaway string so the real read/write error already stored in
-     *       m_last_error is preserved.
-     */
-    result_t do_shutdown(int timeout_ms, std::string& last_error);
-
-    void discard_shutdown(); //!< best-effort shutdown on an error path; preserves m_last_error
 
 public:
     Connection() = delete;
