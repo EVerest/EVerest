@@ -3,76 +3,18 @@
 
 #include "tls_connection_test.hpp"
 
-#include <arpa/inet.h>
 #include <array>
 #include <condition_variable>
 #include <cstring>
 #include <fcntl.h>
 #include <mutex>
-#include <netdb.h>
-#include <netinet/in.h>
 #include <openssl/x509.h>
 #include <optional>
-#include <sys/socket.h>
 #include <thread>
 
 using namespace std::chrono_literals;
 
 namespace {
-
-// Test-owned loopback listen socket on an ephemeral port, for tests that
-// bypass init_socket()'s fixed-port bind by passing the fd to the Server via
-// server_config.socket. fd is -1 on failure; ASSERT_* requires a void return
-// type, so callers assert validity at the call site.
-struct LoopbackListener {
-    int fd{-1};
-    std::string service; // bound port, as a service string for Client::connect()
-};
-
-LoopbackListener make_loopback_listener() {
-    LoopbackListener listener;
-    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        return listener;
-    }
-    int reuse = 1;
-    (void)::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-    sockaddr_in listen_addr{};
-    listen_addr.sin_family = AF_INET;
-    listen_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    listen_addr.sin_port = 0;
-    if ((::bind(fd, reinterpret_cast<sockaddr*>(&listen_addr), sizeof(listen_addr)) != 0) || (::listen(fd, 1) != 0)) {
-        (void)::close(fd);
-        return listener;
-    }
-    sockaddr_in bound_addr{};
-    socklen_t bound_len = sizeof(bound_addr);
-    if (::getsockname(fd, reinterpret_cast<sockaddr*>(&bound_addr), &bound_len) != 0) {
-        (void)::close(fd);
-        return listener;
-    }
-    listener.fd = fd;
-    listener.service = std::to_string(ntohs(bound_addr.sin_port));
-    return listener;
-}
-
-// Returns nullptr on failure; callers assert.
-tls::Server::ConnectionPtr accept_and_wrap(tls::Server& server, int listen_fd) {
-    sockaddr_in peer_addr{};
-    socklen_t peer_len = sizeof(peer_addr);
-    const int accepted_fd = ::accept(listen_fd, reinterpret_cast<sockaddr*>(&peer_addr), &peer_len);
-    if (accepted_fd < 0) {
-        return nullptr;
-    }
-    char ip_buf[INET_ADDRSTRLEN]{};
-    char service_buf[NI_MAXSERV]{};
-    if (::getnameinfo(reinterpret_cast<sockaddr*>(&peer_addr), peer_len, ip_buf, sizeof(ip_buf), service_buf,
-                      sizeof(service_buf), NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
-        (void)::close(accepted_fd);
-        return nullptr;
-    }
-    return server.wrap_accepted_fd(accepted_fd, ip_buf, service_buf);
-}
 
 TEST_F(TlsTest, EnforceTls13RejectsTls12Client) {
     // Server enforces TLS 1.3; a TLS-1.2-only client must be rejected.
@@ -459,17 +401,21 @@ TEST_F(TlsTest, WrapAcceptedFdHandshake) {
     const auto init_state = server.init(server_config, nullptr);
     ASSERT_TRUE(init_state == state_t::init_complete || init_state == state_t::init_socket);
 
+    const std::string bound_service = std::to_string(listener.port);
+
     // Client thread: open a TLS 1.2 connection to our listen socket.
     std::thread client_thread([&]() {
         ClientTest local_client;
         local_client.init(client_config);
-        auto conn = local_client.connect("127.0.0.1", listener.service.c_str(), false, 1000);
+        auto conn = local_client.connect("127.0.0.1", bound_service.c_str(), false, 1000);
         if (conn) {
             (void)conn->connect();
             (void)conn->shutdown();
         }
     });
 
+    // Accept the incoming TCP connection on the test-owned socket and hand
+    // the accepted fd to the factory under test.
     tls::Server::ConnectionPtr server_conn = accept_and_wrap(server, listener.fd);
     ASSERT_TRUE(server_conn);
 
@@ -570,6 +516,9 @@ TEST_F(TlsTest, LastErrorDoesNotBleedIntoGracefulClose) {
     // here on the main thread, so the bleed (if present) is on this thread.
     using state_t = tls::Server::state_t;
 
+    // Test-owned loopback listen socket on an ephemeral port (as in
+    // WrapAcceptedFdHandshake), passed to the Server via server_config.socket so
+    // init_socket() does not bind the fixture's fixed port.
     const auto listener = make_loopback_listener();
     ASSERT_GE(listener.fd, 0);
 
@@ -581,6 +530,8 @@ TEST_F(TlsTest, LastErrorDoesNotBleedIntoGracefulClose) {
     server_config.verify_locations_file = "client_root_cert.pem";
     const auto init_state = server.init(server_config, nullptr);
     ASSERT_TRUE(init_state == state_t::init_complete || init_state == state_t::init_socket);
+
+    const std::string bound_service = std::to_string(listener.port);
 
     // Spawn a TLS 1.3 client (on its own thread) presenting the given cert pair,
     // then gracefully shut down so the server observes a clean close_notify.
@@ -594,7 +545,7 @@ TEST_F(TlsTest, LastErrorDoesNotBleedIntoGracefulClose) {
             cc.certificate_chain_file = chain;
             cc.private_key_file = key;
             local_client.init(cc);
-            auto conn = local_client.connect("127.0.0.1", listener.service.c_str(), false, 1000);
+            auto conn = local_client.connect("127.0.0.1", bound_service.c_str(), false, 1000);
             if (conn) {
                 (void)conn->connect();
                 (void)conn->shutdown();
