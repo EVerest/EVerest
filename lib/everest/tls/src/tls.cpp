@@ -11,6 +11,7 @@
 #include <arpa/inet.h>
 #include <array>
 #include <cassert>
+#include <charconv>
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
@@ -869,9 +870,24 @@ ServerConnection::ServerConnection(SslContext* ctx, int soc, const char* ip_in, 
         ServerTrustedCaKeys::set_data(m_context->ctx.get(), &m_tck_data);
 
         if (tls_key_interface != nullptr) {
-            const auto port = std::stoul(service_in);
-            m_keylog_server = std::make_unique<TlsKeyLoggingServer>(std::string(tls_key_interface), port);
-            SSL_set_ex_data(m_context->ctx.get(), ssl_keylog_server_index, m_keylog_server.get());
+            // The service string comes from the accept path and may be empty or
+            // non-numeric; parse it without throwing and only enable key logging
+            // when it is a valid port number.
+            std::uint16_t port{0};
+            bool port_valid{false};
+            if (service_in != nullptr) {
+                const char* end = service_in + std::strlen(service_in);
+                const auto [ptr, ec] = std::from_chars(service_in, end, port);
+                port_valid = (ec == std::errc{}) && (ptr == end) && (end != service_in);
+            }
+            if (port_valid) {
+                m_keylog_server = std::make_unique<TlsKeyLoggingServer>(std::string(tls_key_interface), port);
+                SSL_set_ex_data(m_context->ctx.get(), ssl_keylog_server_index, m_keylog_server.get());
+            } else {
+                log_warning(
+                    "ServerConnection: service string is not a port number; TLS key logging disabled for this "
+                    "connection");
+            }
         }
     }
 }

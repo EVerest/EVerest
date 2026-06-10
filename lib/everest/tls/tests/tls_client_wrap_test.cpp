@@ -172,6 +172,46 @@ TEST_F(TlsClientWrapTest, WrapConnectingFdRejectsWrongHostname) {
 }
 
 // ---------------------------------------------------------------------------
+// WrapAcceptedFdToleratesNonNumericService
+//
+// With TLS key logging enabled the server resolves the key-log port from the
+// service string passed to wrap_accepted_fd. A non-numeric service string
+// (empty or garbage) must not throw out of the ServerConnection constructor;
+// the connection stays usable and only the key logging is skipped.
+
+TEST_F(TlsClientWrapTest, WrapAcceptedFdToleratesNonNumericService) {
+    using state_t = tls::Server::state_t;
+
+    const auto listener = make_loopback_listener();
+    ASSERT_GE(listener.fd, 0);
+
+    server_config.socket = listener.fd;
+    server_config.tls_key_logging = true;
+    server_config.tls_key_logging_path = ::testing::TempDir();
+    const auto init_state = server.init(server_config, nullptr);
+    ASSERT_TRUE(init_state == state_t::init_complete || init_state == state_t::init_socket);
+
+    for (const char* service : {"", "not-a-port"}) {
+        const int client_fd = connect_loopback_nonblocking(listener.port);
+        ASSERT_GE(client_fd, 0);
+
+        const int accepted_fd = ::accept(listener.fd, nullptr, nullptr);
+        ASSERT_GE(accepted_fd, 0);
+
+        tls::Server::ConnectionPtr conn;
+        ASSERT_NO_THROW(conn = server.wrap_accepted_fd(accepted_fd, "::1", service))
+            << "service string: \"" << service << "\"";
+        EXPECT_TRUE(conn) << "service string: \"" << service << "\"";
+
+        // The wrapped connection owns accepted_fd; only the client fd needs
+        // explicit cleanup.
+        (void)::close(client_fd);
+    }
+
+    (void)::close(listener.fd);
+}
+
+// ---------------------------------------------------------------------------
 // WrapConnectingFdNonBlocking
 //
 // Verifies non-blocking behaviour: drives the handshake with timeout_ms=0,
