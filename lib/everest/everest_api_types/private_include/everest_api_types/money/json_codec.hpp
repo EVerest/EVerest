@@ -3,12 +3,8 @@
 
 #pragma once
 
+#include "nlohmann/json_fwd.hpp"
 #include <everest_api_types/money/API.hpp>
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wignored-qualifiers"
-#pragma GCC diagnostic ignored "-Wunused-function"
-#include "generated/types/money.hpp"
-#pragma GCC diagnostic pop
 
 namespace everest::lib::API::V1_0::types::money {
 

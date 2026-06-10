@@ -6,27 +6,27 @@
 
 namespace everest::lib::API {
 
-template <> bool deserialize(std::string const& data, bool& obj) {
+template <> bool deserialize(std::string_view data, bool& obj) {
     return everest::lib::API::V1_0::types::generic::adl_deserialize(data, obj);
 }
 
-template <> bool deserialize(std::string const& data, int& obj) {
+template <> bool deserialize(std::string_view data, int& obj) {
     return everest::lib::API::V1_0::types::generic::adl_deserialize(data, obj);
 }
 
-template <> bool deserialize(std::string const& data, size_t& obj) {
+template <> bool deserialize(std::string_view data, size_t& obj) {
     return everest::lib::API::V1_0::types::generic::adl_deserialize(data, obj);
 }
 
-template <> bool deserialize(std::string const& data, double& obj) {
+template <> bool deserialize(std::string_view data, double& obj) {
     return everest::lib::API::V1_0::types::generic::adl_deserialize(data, obj);
 }
 
-template <> bool deserialize(std::string const& data, float& obj) {
+template <> bool deserialize(std::string_view data, float& obj) {
     return everest::lib::API::V1_0::types::generic::adl_deserialize(data, obj);
 }
 
-template <> bool deserialize(std::string const& data, std::string& obj) {
+template <> bool deserialize(std::string_view data, std::string& obj) {
     return everest::lib::API::V1_0::types::generic::adl_deserialize(data, obj);
 }
 

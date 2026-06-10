@@ -5,6 +5,7 @@
 #include "API.hpp"
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace everest::lib::API::V1_0::types::iso15118_charger {
 
@@ -26,22 +27,6 @@ std::ostream& operator<<(std::ostream& os, ResponseExiStreamStatus const& val);
 std::ostream& operator<<(std::ostream& os, CertificateHashDataInfo const& val);
 std::ostream& operator<<(std::ostream& os, EnergyTransferModeList const& val);
 
-template <class T> T deserialize(std::string const& val);
-template <class T> std::optional<T> try_deserialize(std::string const& val) noexcept {
-    try {
-        return deserialize<T>(val);
-    } catch (...) {
-        return std::nullopt;
-    }
-}
-
-template <class T> bool adl_deserialize(std::string const& json_data, T& obj) {
-    auto opt = try_deserialize<T>(json_data);
-    if (opt) {
-        obj = opt.value();
-        return true;
-    }
-    return false;
-}
+#include <everest_api_types/utilities/deserialize_templates.inc>
 
 } // namespace everest::lib::API::V1_0::types::iso15118_charger

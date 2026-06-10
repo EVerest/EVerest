@@ -6,18 +6,20 @@
 #include "ocpp/API.hpp"
 #include "ocpp/json_codec.hpp"
 #include "utilities/constants.hpp"
+#include "utilities/json_codec_helpers.hpp"
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace everest::lib::API::V1_0::types::ocpp {
 
 #define create_serialize_impl(A)                                                                                       \
-    std::string serialize(A const& val) noexcept { return nlohmann::json(val).dump(json_indent); }                     \
+    std::string serialize(A const& val) noexcept { return utilities::dump_json(val); }                                 \
     std::ostream& operator<<(std::ostream& os, A const& val) {                                                         \
         os << serialize(val);                                                                                          \
         return os;                                                                                                     \
     }                                                                                                                  \
-    template <> A deserialize(std::string const& val) { return json::parse(val); }
+    template <> A deserialize(std::string_view val) { return utilities::parse_json<A>(val); }
 
 create_serialize_impl(AttributeEnum);
 create_serialize_impl(GetVariableStatusEnumType);

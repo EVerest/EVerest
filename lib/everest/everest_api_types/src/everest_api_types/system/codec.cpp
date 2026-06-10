@@ -6,58 +6,60 @@
 #include "system/API.hpp"
 #include "system/json_codec.hpp"
 #include "utilities/constants.hpp"
+#include "utilities/json_codec_helpers.hpp"
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace everest::lib::API::V1_0::types::system {
 
 std::string serialize(UpdateFirmwareResponse val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(UploadLogsStatus val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(LogStatusEnum val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(FirmwareUpdateStatusEnum val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(ResetType val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(BootReason val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(FirmwareUpdateRequest const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(UploadLogsRequest const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(UploadLogsResponse const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(LogStatus const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(FirmwareUpdateStatus const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(ResetRequest const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::ostream& operator<<(std::ostream& os, UpdateFirmwareResponse const& val) {
@@ -120,52 +122,52 @@ std::ostream& operator<<(std::ostream& os, ResetRequest const& val) {
     return os;
 }
 
-template <> UpdateFirmwareResponse deserialize(std::string const& val) {
-    return json::parse(val);
+template <> UpdateFirmwareResponse deserialize(std::string_view val) {
+    return utilities::parse_json<UpdateFirmwareResponse>(val);
 }
 
-template <> UploadLogsStatus deserialize(std::string const& val) {
-    return json::parse(val);
+template <> UploadLogsStatus deserialize(std::string_view val) {
+    return utilities::parse_json<UploadLogsStatus>(val);
 }
 
-template <> LogStatusEnum deserialize(std::string const& val) {
-    return json::parse(val);
+template <> LogStatusEnum deserialize(std::string_view val) {
+    return utilities::parse_json<LogStatusEnum>(val);
 }
 
-template <> FirmwareUpdateStatusEnum deserialize(std::string const& val) {
-    return json::parse(val);
+template <> FirmwareUpdateStatusEnum deserialize(std::string_view val) {
+    return utilities::parse_json<FirmwareUpdateStatusEnum>(val);
 }
 
-template <> ResetType deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ResetType deserialize(std::string_view val) {
+    return utilities::parse_json<ResetType>(val);
 }
 
-template <> BootReason deserialize(std::string const& val) {
-    return json::parse(val);
+template <> BootReason deserialize(std::string_view val) {
+    return utilities::parse_json<BootReason>(val);
 }
 
-template <> FirmwareUpdateRequest deserialize(std::string const& val) {
-    return json::parse(val);
+template <> FirmwareUpdateRequest deserialize(std::string_view val) {
+    return utilities::parse_json<FirmwareUpdateRequest>(val);
 }
 
-template <> UploadLogsRequest deserialize(std::string const& val) {
-    return json::parse(val);
+template <> UploadLogsRequest deserialize(std::string_view val) {
+    return utilities::parse_json<UploadLogsRequest>(val);
 }
 
-template <> UploadLogsResponse deserialize(std::string const& val) {
-    return json::parse(val);
+template <> UploadLogsResponse deserialize(std::string_view val) {
+    return utilities::parse_json<UploadLogsResponse>(val);
 }
 
-template <> LogStatus deserialize(std::string const& val) {
-    return json::parse(val);
+template <> LogStatus deserialize(std::string_view val) {
+    return utilities::parse_json<LogStatus>(val);
 }
 
-template <> FirmwareUpdateStatus deserialize(std::string const& val) {
-    return json::parse(val);
+template <> FirmwareUpdateStatus deserialize(std::string_view val) {
+    return utilities::parse_json<FirmwareUpdateStatus>(val);
 }
 
-template <> ResetRequest deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ResetRequest deserialize(std::string_view val) {
+    return utilities::parse_json<ResetRequest>(val);
 }
 
 } // namespace everest::lib::API::V1_0::types::system

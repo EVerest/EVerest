@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
+#pragma once
+
 namespace everest::lib::API {
 #ifndef EVEREST_API_JSON_INDENT
 #define EVEREST_API_JSON_INDENT 4
