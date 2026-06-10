@@ -26,6 +26,9 @@
 namespace iso15118 {
 
 struct TbdConfig {
+    /// `ssl` here is the INITIAL value only; the live config is owned by `m_ssl_config` after construction —
+    /// read it via `ssl_config_snapshot()`, never `config.ssl`. A future refactor moves `ssl` out of
+    /// `TbdConfig` entirely — see plans/2026-06-10-tls-multichain-structural-followup.md.
     config::SSLConfig ssl{};
     std::string interface_name;
     config::TlsNegotiationStrategy tls_negotiation_strategy{config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER};
@@ -67,11 +70,16 @@ public:
     void update_supported_der_functions(iec::DERControlName der_control, const iec::DERControlFunction& function);
     void update_unsupported_der_functions(iec::DERControlName der_control);
 
-    /// Replaces the current SSL config snapshot with a new one.
+    /// Replaces the stored SSL config (thread-safe). Takes effect for the next incoming secure connection;
+    /// established connections are unaffected.
     void set_ssl_config(config::SSLConfig new_config);
 
-    /// Returns a copy of the current SSL config snapshot.
+    /// Returns a copy of the stored SSL config (thread-safe).
     [[nodiscard]] config::SSLConfig ssl_config_snapshot() const;
+
+    /// The single seam every new secure connection reads its SSL config from, so a rotation via
+    /// `set_ssl_config()` is picked up by the next connection.
+    [[nodiscard]] config::SSLConfig connection_ssl_config() const;
 
 private:
     io::PollManager poll_manager;
