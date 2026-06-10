@@ -917,9 +917,10 @@ TEST_F(TlsTest, Tls13MultiChainCertificateAuthorities) {
     // End-to-end test that the TLS 1.3 chain-selection path picks the chain
     // whose trust anchor's subject DN appears in the client's
     // certificate_authorities extension. Two chains are configured by the
-    // fixture: chains[0] (root CN 00000000) and chains[1] (alt root CN
-    // 11111111). The client publishes only the alt root's DN and the server
-    // must reply with the alt leaf certificate.
+    // fixture: chains[0] (leaf CN 00000000, root 'Root Trust Anchor') and
+    // chains[1] (alt leaf CN 11111111, root 'Alternate Root Trust Anchor').
+    // The client publishes only the alt root's DN; the server must reply with
+    // the alt leaf (CN 11111111).
     server_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
     server_config.enforce_tls_1_3 = true;
     server_config.verify_client = true;
@@ -967,6 +968,130 @@ TEST_F(TlsTest, Tls13MultiChainCertificateAuthorities) {
     start();
     connect(client_handler_fn);
     EXPECT_TRUE(is_set(flags_t::connected));
+    EXPECT_EQ(subject["CN"], alt_server_root_CN);
+}
+
+TEST_F(TlsTest, Tls13NoMatchServesDefault) {
+    // End-to-end test of the TLS 1.3 no-match path: the client advertises a
+    // certificate_authorities DN the server holds no chain for (the client
+    // root, C=DE/L=Frankfurt/CN=Root Trust Anchor). select_by_dn_list returns
+    // no chain and the server must keep the default chain already configured
+    // on the SSL_CTX - chains[0], leaf CN 00000000 - instead of aborting the
+    // handshake.
+    server_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    server_config.enforce_tls_1_3 = true;
+    server_config.verify_client = true;
+    server_config.verify_locations_file = "client_root_cert.pem";
+
+    client_config.cipher_list = nullptr;
+    client_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    client_config.min_proto_version = TLS1_3_VERSION;
+    client_config.certificate_chain_file = "client_chain.pem";
+    client_config.private_key_file = "client_priv.pem";
+    // Verify against chains[0]'s root because the default chain is expected.
+    client_config.verify_locations_file = "server_root_cert.pem";
+
+    std::map<std::string, std::string> subject;
+    auto client_handler_fn = [this, &subject](tls::Client::ConnectionPtr& connection) {
+        if (!connection) {
+            return;
+        }
+        // Inject a DN matching neither server chain's trust anchor. See
+        // Tls13MultiChainCertificateAuthorities for the ssl_context() pragma
+        // rationale.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+        SSL* ssl = connection->ssl_context();
+#pragma GCC diagnostic pop
+        ASSERT_NE(ssl, nullptr);
+        auto foreign_roots = openssl::load_certificates("client_root_cert.pem");
+        ASSERT_FALSE(foreign_roots.empty());
+        ASSERT_EQ(SSL_add1_to_CA_list(ssl, foreign_roots.front().get()), 1);
+
+        if (connection->connect() == result_t::success) {
+            this->set(ClientTest::flags_t::connected);
+            subject = openssl::certificate_subject(connection->peer_certificate());
+            (void)connection->shutdown();
+        }
+    };
+
+    start();
+    connect(client_handler_fn);
+    EXPECT_TRUE(is_set(flags_t::connected));
+    EXPECT_EQ(subject["CN"], server_root_CN);
+}
+
+TEST_F(TlsTest, MixedVersionServerSelectsAltChain) {
+    // One server offering both TLS 1.2 (cipher_list) and TLS 1.3
+    // (ciphersuites). The SSL_version dispatch in the certificate callback
+    // must route a TLS 1.2 trusted_ca_keys client and a TLS 1.3
+    // certificate_authorities client to the same alt chain (leaf CN 11111111).
+    server_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+
+    std::map<std::string, std::string> subject;
+    int negotiated_version{0};
+
+    // TLS 1.2 leg: trusted_ca_keys advertising the alt root; an empty
+    // ciphersuites string caps the client at TLS 1.2.
+    client_config.ciphersuites = "";
+    client_config.trusted_ca_keys = true;
+    client_config.verify_locations_file = "alt_server_root_cert.pem";
+    add_ta_cert_hash("alt_server_root_cert.pem");
+
+    auto tls12_handler_fn = [this, &subject, &negotiated_version](tls::Client::ConnectionPtr& connection) {
+        if (!connection) {
+            return;
+        }
+        if (connection->connect() == result_t::success) {
+            this->set(ClientTest::flags_t::connected);
+            subject = openssl::certificate_subject(connection->peer_certificate());
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+            negotiated_version = SSL_version(connection->ssl_context());
+#pragma GCC diagnostic pop
+            (void)connection->shutdown();
+        }
+    };
+
+    start();
+    connect(tls12_handler_fn);
+    EXPECT_TRUE(is_set(flags_t::connected));
+    EXPECT_EQ(negotiated_version, TLS1_2_VERSION);
+    EXPECT_EQ(subject["CN"], alt_server_root_CN);
+
+    // TLS 1.3 leg against the same running server: certificate_authorities
+    // advertising the alt root's DN.
+    subject.clear();
+    negotiated_version = 0;
+    client_config.trusted_ca_keys = false;
+    client_config.cipher_list = nullptr;
+    client_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    client_config.min_proto_version = TLS1_3_VERSION;
+
+    auto tls13_handler_fn = [this, &subject, &negotiated_version](tls::Client::ConnectionPtr& connection) {
+        if (!connection) {
+            return;
+        }
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+        SSL* ssl = connection->ssl_context();
+#pragma GCC diagnostic pop
+        ASSERT_NE(ssl, nullptr);
+        auto alt_roots = openssl::load_certificates("alt_server_root_cert.pem");
+        ASSERT_FALSE(alt_roots.empty());
+        ASSERT_EQ(SSL_add1_to_CA_list(ssl, alt_roots.front().get()), 1);
+
+        if (connection->connect() == result_t::success) {
+            this->set(ClientTest::flags_t::connected);
+            subject = openssl::certificate_subject(connection->peer_certificate());
+            negotiated_version = SSL_version(ssl);
+            (void)connection->shutdown();
+        }
+    };
+
+    connect(tls13_handler_fn);
+    EXPECT_TRUE(is_set(flags_t::connected));
+    EXPECT_EQ(negotiated_version, TLS1_3_VERSION);
     EXPECT_EQ(subject["CN"], alt_server_root_CN);
 }
 
