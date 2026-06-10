@@ -1141,13 +1141,35 @@ void OCPP201::ready() {
 }
 
 void OCPP201::charging_schedules_timer_callback() {
-    // this callback publishes the schedules within EVerest and applies the schedules for the individual
-    // r_evse_energy_sink
-    const auto composite_schedule_unit = get_unit_or_default(config.RequestCompositeScheduleUnit);
-    const auto composite_schedules =
-        charge_point->get_all_composite_schedules(config.RequestCompositeScheduleDurationS, composite_schedule_unit);
-    publish_charging_schedules(composite_schedules);
-    set_external_limits(composite_schedules);
+    // Single-flight + coalesce: the recompute body publishes schedules within EVerest and applies the
+    // external limits. It now fires concurrently from the interval timer, the libocpp message thread,
+    // and the K28 on_deadline/reaper callbacks, so serialize it here (the convergence point) — concurrent
+    // fires must not apply a stale composite over a fresh one, and a burst collapses into one recompute.
+    recompute_pending.store(true);
+    // Acquire / run / release / re-check: a fire whose store(true) lands after the holder's final
+    // exchange(false) but before it releases the mutex would fail try_lock and otherwise be dropped
+    // until the next trigger. Re-checking the flag after the lock is released runs that pending
+    // request instead of losing it.
+    while (recompute_pending.load()) {
+        if (!recompute_mutex.try_lock()) {
+            // Another thread holds the recompute; it will observe recompute_pending and run our update.
+            return;
+        }
+        {
+            try {
+                std::lock_guard<std::mutex> guard(recompute_mutex, std::adopt_lock);
+                while (recompute_pending.exchange(false)) {
+                    const auto composite_schedule_unit = get_unit_or_default(config.RequestCompositeScheduleUnit);
+                    const auto composite_schedules = charge_point->get_all_composite_schedules(
+                        config.RequestCompositeScheduleDurationS, composite_schedule_unit);
+                    publish_charging_schedules(composite_schedules);
+                    set_external_limits(composite_schedules);
+                }
+            } catch (const std::exception& error) {
+                EVLOG_warning << "Composite calculation failed, unable to send external_limits";
+            }
+        }
+    }
 }
 
 void OCPP201::charging_schedules_timer_start() {

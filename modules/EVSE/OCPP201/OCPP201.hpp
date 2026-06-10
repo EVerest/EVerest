@@ -155,6 +155,10 @@ private:
     int32_t event_id_counter{0};
     std::mutex session_event_mutex;
     std::atomic_bool started{false};
+    // Serialize + coalesce the charging-schedule recompute: it fires concurrently from the interval timer,
+    // the libocpp message thread, and the K28 on_deadline/reaper callbacks.
+    std::mutex recompute_mutex;
+    std::atomic<bool> recompute_pending{false};
     EventQueue event_queue;
     MREC_ERROR_MAP_TYPE mrec_error_map;
     void init_evse_maps();

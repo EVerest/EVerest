@@ -2032,18 +2032,21 @@ This document contains the status of which OCPP 2.0.1 and OCPP2.1 numbered funct
 
 | ID        | Status | Remark |
 | --------- | ------ | ------ |
-| K28.FR.01 |        |        |
-| K28.FR.02 |        |        |
-| K28.FR.03 |        |        |
-| K28.FR.04 |        |        |
-| K28.FR.05 |        |        |
-| K28.FR.06 |        |        |
-| K28.FR.07 |        |        |
-| K28.FR.08 |        |        |
-| K28.FR.09 |        |        |
-| K28.FR.10 |        |        |
-| K28.FR.11 |        |        |
-| K28.FR.12 |        |        |
+| K28.FR.01 | ✅     |        |
+| K28.FR.02 | ✅     |        |
+| K28.FR.03 | ✅     |        |
+| K28.FR.04 | ✅     | covered by K01.FR.122 |
+| K28.FR.05 | ✅     |        |
+| K28.FR.06 | ✅     |        |
+| K28.FR.07 | 🌐     |        |
+| K28.FR.08 | ✅     |        |
+| K28.FR.09 | ✅     | push and pull apply |
+| K28.FR.10 | ✅     | adaptive pull-dispatch timer |
+| K28.FR.11 | ✅     |        |
+| K28.FR.12 | 🌐     |        |
+| K28.FR.13 | ✅     | expiry filter + timer |
+| K28.FR.14 | ✅     | refreshes dynUpdateTime |
+| K28.FR.15 | ✅     | duration semantics |
 
 ## SmartCharging - Dynamic charging profiles by external system (New in OCPP 2.1)
 
