@@ -726,7 +726,8 @@ struct client_ctx {
 // Connection represents a TLS connection (client and server)
 
 Connection::Connection(SslContext* ctx, int soc, const char* ip_in, const char* service_in, std::int32_t timeout_ms) :
-    m_context(std::make_unique<connection_ctx>()), m_ip(ip_in), m_service(service_in), m_timeout_ms(timeout_ms) {
+    m_context(std::make_unique<connection_ctx>()), m_peer_host(ip_in), m_service(service_in),
+    m_timeout_ms(timeout_ms) {
     m_context->ctx = SSL_ptr(SSL_new(ctx));
     m_context->soc = soc;
 
@@ -956,16 +957,16 @@ ClientConnection::ClientConnection(SslContext* ctx, int soc, const char* ip_in, 
         return;
     }
     SSL_set_connect_state(m_context->ctx.get());
-    if (m_ip.empty()) {
+    if (m_peer_host.empty()) {
         return;
     }
 
     auto* const ssl = m_context->ctx.get();
-    const bool ip_literal = is_ip_literal(m_ip);
+    const bool ip_literal = is_ip_literal(m_peer_host);
 
     // RFC 6066 §3: the SNI extension carries DNS hostnames only, never IP literals.
     if (!ip_literal) {
-        SSL_set_tlsext_host_name(ssl, m_ip.c_str());
+        SSL_set_tlsext_host_name(ssl, m_peer_host.c_str());
     }
 
     if (verify_subject_name) {
@@ -973,8 +974,8 @@ ClientConnection::ClientConnection(SslContext* ctx, int soc, const char* ip_in, 
         // hostname matching, an IP literal via IP-SAN matching. If the pin cannot
         // be installed, fault the connection so the handshake fails closed rather
         // than silently downgrading to chain-of-trust only.
-        const int pinned = ip_literal ? X509_VERIFY_PARAM_set1_ip_asc(SSL_get0_param(ssl), m_ip.c_str())
-                                      : SSL_set1_host(ssl, m_ip.c_str());
+        const int pinned = ip_literal ? X509_VERIFY_PARAM_set1_ip_asc(SSL_get0_param(ssl), m_peer_host.c_str())
+                                      : SSL_set1_host(ssl, m_peer_host.c_str());
         if (pinned != 1) {
             log_error(ip_literal ? "X509_VERIFY_PARAM_set1_ip_asc" : "SSL_set1_host");
             m_state = state_t::fault;

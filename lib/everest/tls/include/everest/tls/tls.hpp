@@ -138,7 +138,8 @@ public:
 protected:
     std::unique_ptr<connection_ctx> m_context; //!< opaque connection data
     state_t m_state{state_t::idle};            //!< connection state
-    std::string m_ip;                          //!< peer IP address
+    std::string m_peer_host; //!< peer host: DNS hostname or IP literal, as provided by the caller (server accept path
+                             //!< passes the peer IP; Client::wrap_connecting_fd passes host_for_sni)
     std::string m_service;                     //!< peer port
     std::int32_t m_timeout_ms;                 //!< default operation timeout
     std::string
@@ -225,10 +226,13 @@ public:
     }
 
     /**
-     * IP address of the connection's peer
+     * Host of the connection's peer, as provided by the caller: the peer IP
+     * address on the server accept path, or host_for_sni (which may be a DNS
+     * hostname) for Client::wrap_connecting_fd. The name is kept for API
+     * stability; the value is not always an IP address.
      */
     [[nodiscard]] const std::string& ip_address() const {
-        return m_ip;
+        return m_peer_host;
     }
 
     /**
