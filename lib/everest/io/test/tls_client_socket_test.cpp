@@ -13,10 +13,12 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <cstring>
 #include <string>
@@ -75,6 +77,91 @@ tls::Server::config_t make_server_config(int listen_fd, std::string const& port_
 everest::lib::io::tls::tls_client_socket::Config make_client_config() {
     return test::client_test_config(1000, "localhost");
 }
+
+/// Open a raw non-blocking IPv4 socket and start a connect to 127.0.0.1:port.
+/// Returns the fd with the connect completed or in flight, or -1 on a hard
+/// socket()/connect() failure.
+int start_nonblocking_connect(uint16_t port) {
+    int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = ::inet_addr("127.0.0.1");
+    addr.sin_port = htons(port);
+    if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 && errno != EINPROGRESS) {
+        ::close(fd);
+        return -1;
+    }
+    return fd;
+}
+
+/// True if the pending connect on fd completed cleanly within wait_ms (POLLOUT
+/// without POLLERR/POLLHUP). A connect whose SYN was dropped stays in SYN_SENT
+/// (first retransmit is ~1 s out) and reports nothing within the window.
+bool connect_completed(int fd, int wait_ms) {
+    pollfd pfd{fd, POLLOUT, 0};
+    return ::poll(&pfd, 1, wait_ms) == 1 && (pfd.revents & POLLOUT) != 0 &&
+           (pfd.revents & (POLLERR | POLLHUP)) == 0;
+}
+
+/// A 127.0.0.1 listen socket whose accept queue is deliberately saturated:
+/// listen(fd, 1), never accept, and raw pre-connects issued until one no
+/// longer completes. Once the queue is full the kernel drops further SYNs
+/// (tcp_abort_on_overflow=0 default), so any later connect to port() stalls
+/// in TCP SYN retry — a deterministic loopback stand-in for an unreachable
+/// host. The stalled final pre-connect doubles as the saturation probe. All
+/// fds (listener + pre-connect sockets) stay open until destruction so the
+/// block holds for the object's whole lifetime.
+class saturated_loopback_port {
+public:
+    saturated_loopback_port() {
+        m_listen_fd = make_listen_socket(m_port);
+        if (m_listen_fd < 0) {
+            return;
+        }
+        // Linux admits roughly backlog+1 queued connections for listen(fd, 1);
+        // keep connecting until one stalls (capped as a safety margin).
+        for (int i = 0; i < max_pre_connects; ++i) {
+            const int fd = start_nonblocking_connect(m_port);
+            if (fd < 0) {
+                return;
+            }
+            m_fds.push_back(fd);
+            if (!connect_completed(fd, 200)) {
+                m_saturated = true;
+                return;
+            }
+        }
+    }
+
+    saturated_loopback_port(saturated_loopback_port const&) = delete;
+    saturated_loopback_port& operator=(saturated_loopback_port const&) = delete;
+
+    ~saturated_loopback_port() {
+        for (int fd : m_fds) {
+            ::close(fd);
+        }
+        if (m_listen_fd >= 0) {
+            ::close(m_listen_fd);
+        }
+    }
+
+    bool saturated() const {
+        return m_saturated;
+    }
+    uint16_t port() const {
+        return m_port;
+    }
+
+private:
+    static constexpr int max_pre_connects = 8;
+    int m_listen_fd{-1};
+    uint16_t m_port{0};
+    std::vector<int> m_fds;
+    bool m_saturated{false};
+};
 
 } // namespace
 
@@ -232,49 +319,46 @@ TEST(TlsClient, HandshakeAndExchange) {
 }
 
 // Teardown while the TCP connect is still pending. The client targets a
-// non-routable TEST-NET-2 address so the connect never resolves within the
-// test window; the connect worker is still blocked inside m_socket.connect()
-// when the client is unregistered and destroyed. Destruction must join the
-// worker before tearing down m_socket, so the worker cannot touch a freed
-// socket (no use-after-free) and cannot outlive *this. Under ThreadSanitizer
-// this would flag the prior detached-worker race directly; without tsan the
-// test pins the deterministic invariant that destruction blocks until the
-// worker has joined: with the connect still pending (bounded by the connect
-// timeout), tearing down must not return before the worker stops touching the
-// socket. The old detached-worker path returned immediately while the worker
-// kept running; the joined path returns only after the worker is done.
+// loopback port whose accept queue is saturated (saturated_loopback_port), so
+// its SYNs are dropped and the connect worker is still blocked inside
+// m_socket.connect() when the client is unregistered and destroyed. Teardown
+// (stop()/dtor) must join the worker before tearing down m_socket, so the
+// worker cannot touch a freed socket (no use-after-free) and cannot outlive
+// *this. Under ThreadSanitizer the prior detached-worker race would be flagged
+// directly; without tsan the test pins that teardown completes cleanly with
+// the connect deterministically pending: it returns true, the on-ready action
+// never fired (the connect never completed — the canary that the saturation
+// held), and the whole sequence finishes promptly (bounded by the connect
+// timeout, asserted well below 5 s) with the loop healthy afterward.
 TEST(TlsClient, teardown_during_pending_connect_is_clean) {
+    saturated_loopback_port blocked;
+    ASSERT_TRUE(blocked.saturated()) << "could not saturate the loopback accept queue";
+
     everest::lib::io::event::fd_event_handler ev;
-    constexpr int connect_timeout_ms = 500;
-    std::chrono::steady_clock::time_point teardown_start{};
+    constexpr int connect_timeout_ms = 300;
+    std::atomic<bool> ready_fired{false};
+    bool unregistered = false;
+    const auto start = std::chrono::steady_clock::now();
     {
-        everest::lib::io::tls::tls_client client(make_client_config(), std::string("198.51.100.1"), 4433,
+        everest::lib::io::tls::tls_client client(make_client_config(), std::string("127.0.0.1"), blocked.port(),
                                                  connect_timeout_ms);
+        client.set_on_ready_action([&ready_fired]() { ready_fired = true; });
         ASSERT_TRUE(ev.register_event_handler(&client));
-        // Pump the loop so the connect worker is mid-flight (blocked inside
-        // m_socket.connect() on the unreachable host) before teardown.
+        // Pump the loop so the connect worker is mid-flight (blocked in TCP
+        // SYN retry against the saturated port) before teardown.
         for (int i = 0; i < 3; ++i) {
             ev.poll(50ms);
             ev.run_actions();
         }
-        // Start the clock just before teardown begins: unregister runs stop()
-        // and the closing brace runs the destructor — both must wait for the
-        // worker to join while the connect is still pending.
-        teardown_start = std::chrono::steady_clock::now();
-        ev.unregister_event_handler(&client);
+        unregistered = ev.unregister_event_handler(&client);
         // client destroyed at the closing brace below, connect still pending —
         // teardown must join the worker, not return into a UAF window.
     }
-    const auto teardown_elapsed = std::chrono::steady_clock::now() - teardown_start;
+    const auto elapsed = std::chrono::steady_clock::now() - start;
 
-    // The connect worker is blocked inside m_socket.connect() on the unreachable
-    // host for ~connect_timeout_ms; a joined teardown cannot return until that
-    // blocking connect finishes. The old detached-worker path returned at once
-    // (the worker raced on free'd state). Assert teardown actually waited for the
-    // worker, i.e. it blocked for a meaningful fraction of the connect timeout.
-    EXPECT_GE(teardown_elapsed, std::chrono::milliseconds(connect_timeout_ms / 2))
-        << "teardown returned before the pending connect worker joined "
-           "(detached/non-joined worker can outlive the client and touch freed state)";
+    EXPECT_TRUE(unregistered) << "unregister of the pending-connect client failed";
+    EXPECT_FALSE(ready_fired) << "on-ready fired — the connect completed, so the backlog saturation did not hold";
+    EXPECT_LT(elapsed, 5s) << "teardown of a pending connect must be bounded by the connect timeout";
 
     // Loop stays healthy after teardown; no crash/hang.
     for (int i = 0; i < 3; ++i) {
@@ -291,8 +375,11 @@ TEST(TlsClient, teardown_during_pending_connect_is_clean) {
 // still-joinable connect worker -> std::terminate. The register_events() guard
 // makes the second register a clean no-op returning false.
 TEST(TlsClient, double_register_is_rejected_not_fatal) {
+    saturated_loopback_port blocked;
+    ASSERT_TRUE(blocked.saturated()) << "could not saturate the loopback accept queue";
+
     everest::lib::io::event::fd_event_handler ev;
-    everest::lib::io::tls::tls_client client(make_client_config(), std::string("198.51.100.1"), 4433, 500);
+    everest::lib::io::tls::tls_client client(make_client_config(), std::string("127.0.0.1"), blocked.port(), 300);
 
     ASSERT_TRUE(ev.register_event_handler(&client)) << "first register should succeed and start the worker";
     // Second register without an intervening unregister: must return false and
