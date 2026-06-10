@@ -174,9 +174,9 @@ struct testable_client_socket : tls_client_socket {
 };
 } // namespace everest::lib::io::tls
 
-// After the async TCP connect + fd wrap, connect() releases m_tcp once it
-// returns; the connection owns the fd, m_tcp must have surrendered it. This
-// exercises the UNCHANGED synchronous tls_client_socket::connect() wrap path.
+// After connect() wraps the connected TCP fd, the connection's BIO is the
+// fd's sole owner: m_tcp must have surrendered it (outcome, not timing), or
+// teardown double-closes.
 TEST(tls_client_socket, fd_ownership_released_after_async_wrap) {
     uint16_t bound_port = 0;
     int listen_fd = make_listen_socket(bound_port);
@@ -201,7 +201,7 @@ TEST(tls_client_socket, fd_ownership_released_after_async_wrap) {
     });
 
     bool ok = false;
-    sock.connect([&](bool o, int /*fd*/) { ok = o; }); // synchronous; returns AFTER release
+    sock.connect([&](bool o, int /*fd*/) { ok = o; }); // synchronous
     const int tcp_fd_after = sock.m_tcp.get_fd();
 
     // Join before asserting so a fatal ASSERT cannot return with the thread
