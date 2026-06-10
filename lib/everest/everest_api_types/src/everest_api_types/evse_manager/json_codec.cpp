@@ -1171,6 +1171,17 @@ void from_json(json const& j, ConnectorTypeEnum& k) {
         k = ConnectorTypeEnum::Unknown;
         return;
     }
+    // Deprecated wire values of the former evse_board_support Connector_type enum.
+    // Still accepted on input so that existing external API clients keep working;
+    // scheduled for removal following the EVerest deprecation policy.
+    if (s == "IEC62196Type2Cable") {
+        k = ConnectorTypeEnum::cType2;
+        return;
+    }
+    if (s == "IEC62196Type2Socket") {
+        k = ConnectorTypeEnum::sType2;
+        return;
+    }
     throw std::out_of_range("Provided string " + s +
                             " could not be converted to enum of type API_V1_0_TYPES_EVSE_MANAGER_ConnectorTypeEnum");
 }
