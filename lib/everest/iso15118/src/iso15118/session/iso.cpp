@@ -146,6 +146,12 @@ TimePoint const& Session::poll() {
 
     if (not state.connected) {
         // nothing happened so far, just return
+        if (ctx.shutdown_requested()) {
+            logf_info("Shutdown requested before an EV connected");
+            ctx.session_stopped = true;
+            connection->close();
+            ctx.feedback.signal(session::feedback::Signal::DLINK_TERMINATE);
+        }
         return next_session_event;
     }
 
@@ -323,6 +329,10 @@ void Session::close() {
     connection->close();
     ctx.feedback.signal(session::feedback::Signal::DLINK_TERMINATE);
     ctx.session_stopped = true;
+}
+
+void Session::request_shutdown() {
+    ctx.request_shutdown();
 }
 
 } // namespace iso15118

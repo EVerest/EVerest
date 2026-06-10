@@ -99,7 +99,18 @@ SdpServer::~SdpServer() {
     // FIXME (aw): rather use some RAII class for this!
     logf_info("Shutting down SDP server!");
     if (fd != -1) {
-        close(fd);
+        ::close(fd);
+    }
+}
+
+void SdpServer::close() {
+    logf_info("Closing Sdp Server");
+
+    const auto close_sdp = ::close(fd);
+    if (close_sdp == -1) {
+        logf_error("Sdp server close() failed");
+    } else {
+        logf_info("Sdp server closed gracefully");
     }
 }
 

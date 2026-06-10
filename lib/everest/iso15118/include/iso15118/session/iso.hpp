@@ -46,6 +46,8 @@ public:
 
     void close();
 
+    void request_shutdown();
+
 private:
     std::unique_ptr<io::IConnection> connection;
     session::SessionLogger log;
