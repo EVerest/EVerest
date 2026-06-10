@@ -17,7 +17,8 @@ namespace module::charger {
 ///  - path_certificate_chain: chain.certificate when set, else chain.certificate_single
 ///  - path_certificate_key: chain.key
 ///  - private_key_password: chain.password
-///  - ocsp_response_files: collected from chain.ocsp[].ocsp_path (entries without ocsp_path are skipped)
+///  - ocsp_response_files: one entry per chain.ocsp[] entry in chain order, forwarding ocsp_path
+///    verbatim (std::nullopt is preserved, marking "no OCSP staple for this position")
 ///  - trust_anchor_pem: chain.certificate_root (the self-signed V2G root PEM that issued this leaf;
 ///    drives TLS 1.3 / trusted_ca_keys chain selection)
 ///
