@@ -102,8 +102,7 @@ int start_nonblocking_connect(uint16_t port) {
 /// nothing within the window.
 bool connect_completed(int fd, int wait_ms) {
     pollfd pfd{fd, POLLOUT, 0};
-    return ::poll(&pfd, 1, wait_ms) == 1 && (pfd.revents & POLLOUT) != 0 &&
-           (pfd.revents & (POLLERR | POLLHUP)) == 0;
+    return ::poll(&pfd, 1, wait_ms) == 1 && (pfd.revents & POLLOUT) != 0 && (pfd.revents & (POLLERR | POLLHUP)) == 0;
 }
 
 /// A 127.0.0.1 listen socket whose accept queue is deliberately saturated:
