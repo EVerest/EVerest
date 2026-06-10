@@ -122,8 +122,8 @@ private:
     void apply_active_der_directives();
 
     /// Builds the base SSLConfig: backend, V2G/MO trust-anchor paths, and the module-level
-    /// TLS flags. Carries no certificate chains. Always available - independent of the
-    /// evse_security leaf-certificate state.
+    /// TLS flags. Carries no certificate chains. Does not depend on leaf-certificate
+    /// availability (still queries evse_security for the V2G/MO verify files).
     iso15118::config::SSLConfig build_base_ssl_config();
 
     /// Builds the current SSLConfig: the base config plus the valid V2G certificate chains
@@ -131,11 +131,12 @@ private:
     /// empty when no usable chains are available.
     iso15118::config::SSLConfig build_current_ssl_config();
 
-    /// Subscriber for evse_security::certificate_store_update. Receives the controller captured
-    /// at subscription time. Filters via is_relevant_certificate_store_update(), rebuilds the
-    /// SSLConfig, and either applies it or preserves the last-good config when the rebuild is empty.
-    void on_certificate_store_update(iso15118::TbdController* active_controller,
-                                     const types::evse_security::CertificateStoreUpdate& event);
+    /// Subscriber for evse_security::certificate_store_update. Reads this->controller under a
+    /// null guard; the controller is created once in ready() and never reset. Delegates to
+    /// charger::handle_certificate_store_update(), which gates on relevance, rebuilds the
+    /// SSLConfig, and applies it or preserves the last-good config; rebuild exceptions are
+    /// caught there so the subscriber thread survives RPC failures.
+    void on_certificate_store_update(const types::evse_security::CertificateStoreUpdate& event);
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

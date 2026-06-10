@@ -247,12 +247,15 @@ void ISO15118_chargerImpl::ready() {
 
     auto ssl_for_controller = build_current_ssl_config();
     if (ssl_for_controller.chains.empty()) {
-        if (negotiation_strategy == iso15118::config::TlsNegotiationStrategy::ENFORCE_TLS) {
+        switch (decide_startup_empty_chains(negotiation_strategy)) {
+        case StartupChainPolicy::Throw:
             EVLOG_AND_THROW(Everest::EverestConfigError(
                 "No usable V2G certificate chains available and tls_negotiation_strategy is ENFORCE_TLS"));
+        case StartupChainPolicy::WarnAndContinue:
+            EVLOG_warning << "No usable V2G certificate chains available; continuing with empty chain list. "
+                             "TLS connection attempts will fail until certificates are provisioned.";
+            break;
         }
-        EVLOG_warning << "No usable V2G certificate chains available; continuing with empty chain list. "
-                         "TLS connection attempts will fail until certificates are provisioned.";
     }
 
     iso15118::TbdConfig tbd_config = {
@@ -282,11 +285,8 @@ void ISO15118_chargerImpl::ready() {
 
     controller = std::make_unique<iso15118::TbdController>(std::move(tbd_config), std::move(callbacks), setup_config);
 
-    auto* active_controller = controller.get();
     mod->r_security->subscribe_certificate_store_update(
-        [this, active_controller](const types::evse_security::CertificateStoreUpdate& event) {
-            this->on_certificate_store_update(active_controller, event);
-        });
+        [this](const types::evse_security::CertificateStoreUpdate& event) { on_certificate_store_update(event); });
 
     // if the vas providers report their supported vas services before the controller exists,
     // we need to update the controller with the supported vas services after instantiation
@@ -324,23 +324,14 @@ iso15118::config::SSLConfig ISO15118_chargerImpl::build_current_ssl_config() {
     return cfg;
 }
 
-void ISO15118_chargerImpl::on_certificate_store_update(iso15118::TbdController* active_controller,
-                                                       const types::evse_security::CertificateStoreUpdate& event) {
-    if (not is_relevant_certificate_store_update(event)) {
+void ISO15118_chargerImpl::on_certificate_store_update(const types::evse_security::CertificateStoreUpdate& event) {
+    if (controller == nullptr) {
+        EVLOG_warning << "certificate_store_update received before controller ready; ignoring";
         return;
     }
-
-    auto refreshed = build_current_ssl_config();
-    switch (decide_certificate_store_update(refreshed)) {
-    case CertUpdateAction::PreserveLastGood:
-        EVLOG_error << "certificate_store_update produced no usable V2G certificate chains; "
-                       "preserving last-good SSL config";
-        return;
-    case CertUpdateAction::Apply:
-        EVLOG_info << "certificate_store_update: refreshing SSL config with " << refreshed.chains.size() << " chain(s)";
-        active_controller->set_ssl_config(std::move(refreshed));
-        return;
-    }
+    module::charger::handle_certificate_store_update(
+        event, [this] { return build_current_ssl_config(); },
+        [this](iso15118::config::SSLConfig cfg) { controller->set_ssl_config(std::move(cfg)); });
 }
 
 void ISO15118_chargerImpl::update_supported_vas_services() {
