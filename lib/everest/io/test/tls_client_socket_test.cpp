@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 
+#include "tls_test_common.hpp"
+
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/tls/tls_client.hpp>
 #include <everest/io/tls/tls_client_socket.hpp>
@@ -24,6 +26,8 @@
 using namespace std::chrono_literals;
 
 namespace {
+
+namespace test = everest::lib::io::test;
 
 /// Payload size that exceeds a single 4096-byte TLS-record read so the
 /// client-side rx() must drain SSL_pending() records in one call.
@@ -59,33 +63,17 @@ int make_listen_socket(uint16_t& bound_port) {
 
 /// Configure a tls::Server matching the test PKI on an already-listening socket.
 tls::Server::config_t make_server_config(int listen_fd, std::string const& port_str) {
-    tls::Server::config_t scfg;
-    scfg.cipher_list = "ECDHE-ECDSA-AES128-SHA256";
-    scfg.ciphersuites = "";
-    auto& chain = scfg.chains.emplace_back();
-    chain.certificate_chain_file = "server_chain.pem";
-    chain.private_key_file = "server_priv.pem";
-    chain.trust_anchor_file = "server_root_cert.pem";
-    chain.ocsp_response_files = {"ocsp_response.der", "ocsp_response.der"};
+    auto scfg = test::server_test_config();
     scfg.host = "127.0.0.1";
     scfg.service = port_str.c_str();
     scfg.ipv6_only = false;
-    scfg.verify_client = false;
-    scfg.io_timeout_ms = 1000;
     scfg.socket = listen_fd; // bypass init_socket()
     return scfg;
 }
 
 /// Build the client Config shared by the tests.
 everest::lib::io::tls::tls_client_socket::Config make_client_config() {
-    everest::lib::io::tls::tls_client_socket::Config cfg;
-    cfg.tls.cipher_list = "ECDHE-ECDSA-AES128-SHA256";
-    cfg.tls.ciphersuites = "";
-    cfg.tls.verify_locations_file = "server_root_cert.pem";
-    cfg.tls.io_timeout_ms = 1000;
-    cfg.tls.verify_server = true;
-    cfg.host_for_sni = "localhost";
-    return cfg;
+    return test::client_test_config(1000, "localhost");
 }
 
 } // namespace
@@ -229,12 +217,8 @@ TEST(TlsClient, HandshakeAndExchange) {
         });
     ASSERT_TRUE(ev.register_event_handler(&client));
 
-    const auto deadline = std::chrono::steady_clock::now() + 5s;
-    while (running && std::chrono::steady_clock::now() < deadline) {
-        ev.poll(50ms);
-        ev.run_actions();
-    }
-    running = false;
+    test::pump_until(
+        ev, [&] { return !running; }, 5s);
 
     server_thread.join();
     ::close(listen_fd);

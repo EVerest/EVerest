@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 
+#include "tls_test_common.hpp"
+
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/tls/tls_server.hpp>
 #include <everest/io/tls/tls_server_socket.hpp>
@@ -25,6 +27,8 @@
 using namespace std::chrono_literals;
 
 namespace {
+
+namespace test = everest::lib::io::test;
 
 /// Payload size that exceeds a single 4096-byte TLS-record read so the
 /// server-side rx() must drain SSL_pending() records in one call.
@@ -62,19 +66,10 @@ TEST(TlsServer, HandshakeAndExchange) {
     // -----------------------------------------------------------------------
     // 2. Configure tls::Server and initialise TLS (socket provided externally)
     // -----------------------------------------------------------------------
-    tls::Server::config_t cfg;
-    cfg.cipher_list = "ECDHE-ECDSA-AES128-SHA256";
-    cfg.ciphersuites = "";
-    auto& chain = cfg.chains.emplace_back();
-    chain.certificate_chain_file = "server_chain.pem";
-    chain.private_key_file = "server_priv.pem";
-    chain.trust_anchor_file = "server_root_cert.pem";
-    chain.ocsp_response_files = {"ocsp_response.der", "ocsp_response.der"};
+    auto cfg = test::server_test_config();
     cfg.host = "127.0.0.1";
     cfg.service = port_str.c_str();
     cfg.ipv6_only = false;
-    cfg.verify_client = false;
-    cfg.io_timeout_ms = 1000;
     cfg.socket = listen_fd; // bypass init_socket()
 
     tls::Server server;
@@ -86,57 +81,14 @@ TEST(TlsServer, HandshakeAndExchange) {
     // -----------------------------------------------------------------------
     // 3. Background TLS client: connect, write large payload, read echo back
     // -----------------------------------------------------------------------
+    std::vector<uint8_t> msg(kLargePayload);
+    for (std::size_t i = 0; i < msg.size(); ++i) {
+        msg[i] = static_cast<uint8_t>(i & 0xFF);
+    }
     std::atomic<bool> client_ok{false};
     std::string client_error;
-    std::thread client_thread([&]() {
-        tls::Client client;
-        tls::Client::config_t ccfg;
-        ccfg.cipher_list = "ECDHE-ECDSA-AES128-SHA256";
-        ccfg.verify_locations_file = "server_root_cert.pem";
-        ccfg.io_timeout_ms = 2000;
-        ccfg.verify_server = true;
-        if (!client.init(ccfg)) {
-            client_error = "client.init failed";
-            return;
-        }
-        auto conn = client.connect("127.0.0.1", port_str.c_str(), false, 2000);
-        if (!conn) {
-            client_error = "client.connect returned nullptr";
-            return;
-        }
-        if (conn->connect() != tls::Connection::result_t::success) {
-            client_error = "TLS handshake failed on client side";
-            return;
-        }
-        std::vector<uint8_t> msg(kLargePayload);
-        for (std::size_t i = 0; i < msg.size(); ++i) {
-            msg[i] = static_cast<uint8_t>(i & 0xFF);
-        }
-        std::size_t written = 0;
-        if (conn->write(reinterpret_cast<const std::byte*>(msg.data()), msg.size(), written, 2000) !=
-                tls::Connection::result_t::success ||
-            written != msg.size()) {
-            client_error = "client write failed";
-            return;
-        }
-        std::vector<uint8_t> echo;
-        echo.reserve(msg.size());
-        while (echo.size() < msg.size()) {
-            std::byte buf[8192]{};
-            std::size_t nread = 0;
-            if (conn->read(buf, sizeof buf, nread, 2000) != tls::Connection::result_t::success) {
-                client_error = "client read failed";
-                return;
-            }
-            echo.insert(echo.end(), reinterpret_cast<uint8_t*>(buf), reinterpret_cast<uint8_t*>(buf) + nread);
-        }
-        if (echo != msg) {
-            client_error = "client echo mismatch";
-            return;
-        }
-        conn->shutdown();
-        client_ok = true;
-    });
+    std::thread client_thread(
+        [&]() { test::run_blocking_echo_client("127.0.0.1", port, msg, client_ok, client_error); });
 
     // -----------------------------------------------------------------------
     // 4. Server side: accept raw TCP fd, wrap, construct tls_server.
@@ -174,11 +126,8 @@ TEST(TlsServer, HandshakeAndExchange) {
     // Drive the loop until the client confirms the full echo round-trip (it
     // verifies the payload itself), or the deadline expires. Stopping when the
     // server merely RECEIVES would race the not-yet-drained echo write.
-    const auto deadline = std::chrono::steady_clock::now() + 5s;
-    while (not client_ok && std::chrono::steady_clock::now() < deadline) {
-        ev.poll(50ms);
-        ev.run_actions();
-    }
+    test::pump_until(
+        ev, [&] { return client_ok.load(); }, 5s);
 
     client_thread.join();
     ::close(listen_fd);
