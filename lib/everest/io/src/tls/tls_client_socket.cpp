@@ -28,8 +28,7 @@ bool tls_client_socket::setup(Config cfg, std::string const& remote_host, std::u
 }
 
 void tls_client_socket::connect(std::function<void(bool, int)> const& cb) {
-    bool wrapped = false;
-    m_tcp.connect([this, cb, &wrapped](bool ok, int fd) {
+    m_tcp.connect([this, cb](bool ok, int fd) {
         if (!ok) {
             cb(false, -1);
             return;
@@ -42,14 +41,11 @@ void tls_client_socket::connect(std::function<void(bool, int)> const& cb) {
             cb(false, -1);
             return;
         }
-        wrapped = true;
+        // After a successful wrap the connection's BIO (BIO_CLOSE) is the sole
+        // owner of the fd, so m_tcp surrenders its claim.
+        m_tcp.release();
         cb(true, m_conn->socket());
     });
-    if (wrapped) {
-        // m_tcp now owns the connected fd (assigned after the callback); the
-        // connection's BIO (BIO_CLOSE) owns it too. Drop our second owner.
-        m_tcp.release();
-    }
 }
 
 ::tls::Connection* tls_client_socket::connection() const {
