@@ -37,20 +37,30 @@ map_valid_chains(const types::evse_security::GetCertificateFullInfoResult& resul
             continue;
         }
 
-        std::vector<std::string> ocsp_response_files;
+        std::vector<std::optional<std::string>> ocsp_response_files;
         if (chain.ocsp.has_value()) {
             ocsp_response_files.reserve(chain.ocsp->size());
             for (const auto& entry : *chain.ocsp) {
-                if (entry.ocsp_path.has_value()) {
-                    ocsp_response_files.push_back(*entry.ocsp_path);
-                }
+                // one entry per chain certificate, in chain order; nullopt means
+                // "no OCSP staple for this position" and must be preserved so the
+                // TLS layer can pair staples with certificates positionally
+                ocsp_response_files.push_back(entry.ocsp_path);
             }
         }
 
-        chains.push_back(iso15118::config::ChainConfig{
-            std::move(path_chain), chain.key, chain.password, std::move(ocsp_response_files),
-            chain.certificate_root, // trust_anchor_pem (inline PEM of the chain's V2G root)
-        });
+        if (not chain.certificate_root.has_value()) {
+            EVLOG_warning << "Certificate chain (key: " << chain.key
+                          << ") has no certificate_root; it will be excluded from TLS 1.3 certificate_authorities / "
+                             "trusted_ca_keys selection";
+        }
+
+        iso15118::config::ChainConfig chain_config{};
+        chain_config.path_certificate_chain = std::move(path_chain);
+        chain_config.path_certificate_key = chain.key;
+        chain_config.private_key_password = chain.password;
+        chain_config.ocsp_response_files = std::move(ocsp_response_files);
+        chain_config.trust_anchor_pem = chain.certificate_root; // inline PEM of the chain's V2G root
+        chains.push_back(std::move(chain_config));
     }
 
     if (chains.empty()) {
