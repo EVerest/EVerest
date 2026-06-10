@@ -68,9 +68,7 @@ types:
       connector_type:
         description: Type of charging connector available at this EVSE
         type: string
-        enum:
-          - IEC62196Type2Cable
-          - IEC62196Type2Socket
+        $ref: /evse_manager#/ConnectorTypeEnum
   Telemetry:
     description: Other telemetry
     type: object

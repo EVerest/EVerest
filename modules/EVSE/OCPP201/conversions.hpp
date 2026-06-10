@@ -138,6 +138,10 @@ to_ocpp_reservation_update_status_enum(const types::reservation::Reservation_sta
 /// \brief Converts a given ocpp::v2::ReasonEnum \p stop_reason to a types::evse_manager::StopTransactionReason.
 types::evse_manager::StopTransactionReason to_everest_stop_transaction_reason(const ocpp::v2::ReasonEnum& stop_reason);
 
+/// \brief Converts a given OCPP connector type string \p connector_type to a types::evse_manager::ConnectorTypeEnum.
+/// Unknown values are converted to ConnectorTypeEnum::Unknown.
+types::evse_manager::ConnectorTypeEnum to_everest_connector_type(const ocpp::CiString<20>& connector_type);
+
 /// \brief Converts a given ocpp::v2::GetLogRequest \p request to a types::system::UploadLogsRequest.
 types::system::UploadLogsRequest to_everest_upload_logs_request(const ocpp::v2::GetLogRequest& request);
 

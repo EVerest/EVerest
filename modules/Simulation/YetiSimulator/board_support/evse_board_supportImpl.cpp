@@ -8,18 +8,18 @@ namespace module::board_support {
 
 namespace {
 types::evse_board_support::HardwareCapabilities set_default_capabilities() {
-    return {32.0,                                                          // max_current_A_import
-            6.0,                                                           // min_current_A_import
-            3,                                                             // max_phase_count_import
-            1,                                                             // min_phase_count_import
-            16.0,                                                          // max_current_A_export
-            0.0,                                                           // min_current_A_export
-            3,                                                             // max_phase_count_export
-            1,                                                             // min_phase_count_export
-            true,                                                          // supports_changing_phases_during_charging
-            false,                                                         // supports_cp_state_E
-            types::evse_board_support::Connector_type::IEC62196Type2Cable, // connector_type
-            std::nullopt};                                                 // max_plug_temperature_C
+    return {32.0,                                           // max_current_A_import
+            6.0,                                            // min_current_A_import
+            3,                                              // max_phase_count_import
+            1,                                              // min_phase_count_import
+            16.0,                                           // max_current_A_export
+            0.0,                                            // min_current_A_export
+            3,                                              // max_phase_count_export
+            1,                                              // min_phase_count_export
+            true,                                           // supports_changing_phases_during_charging
+            false,                                          // supports_cp_state_E
+            types::evse_manager::ConnectorTypeEnum::cType2, // connector_type
+            std::nullopt};                                  // max_plug_temperature_C
 }
 } // namespace
 

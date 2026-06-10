@@ -636,16 +636,28 @@ ConnectorTypeEnum_Internal to_internal_api(ConnectorTypeEnum_External const& val
         return TarT::cCCS1;
     case SrcT::cCCS2:
         return TarT::cCCS2;
+    case SrcT::cChaoJi:
+        return TarT::cChaoJi;
     case SrcT::cG105:
         return TarT::cG105;
+    case SrcT::cGBT_DC:
+        return TarT::cGBT_DC;
+    case SrcT::cLECCS:
+        return TarT::cLECCS;
     case SrcT::cMCS:
         return TarT::cMCS;
+    case SrcT::cNACS:
+        return TarT::cNACS;
+    case SrcT::cNACS_CCS1:
+        return TarT::cNACS_CCS1;
     case SrcT::cTesla:
         return TarT::cTesla;
     case SrcT::cType1:
         return TarT::cType1;
     case SrcT::cType2:
         return TarT::cType2;
+    case SrcT::cUltraChaoJi:
+        return TarT::cUltraChaoJi;
     case SrcT::s309_1P_16A:
         return TarT::s309_1P_16A;
     case SrcT::s309_1P_32A:
@@ -692,16 +704,28 @@ ConnectorTypeEnum_External to_external_api(ConnectorTypeEnum_Internal const& val
         return TarT::cCCS1;
     case SrcT::cCCS2:
         return TarT::cCCS2;
+    case SrcT::cChaoJi:
+        return TarT::cChaoJi;
     case SrcT::cG105:
         return TarT::cG105;
+    case SrcT::cGBT_DC:
+        return TarT::cGBT_DC;
+    case SrcT::cLECCS:
+        return TarT::cLECCS;
     case SrcT::cMCS:
         return TarT::cMCS;
+    case SrcT::cNACS:
+        return TarT::cNACS;
+    case SrcT::cNACS_CCS1:
+        return TarT::cNACS_CCS1;
     case SrcT::cTesla:
         return TarT::cTesla;
     case SrcT::cType1:
         return TarT::cType1;
     case SrcT::cType2:
         return TarT::cType2;
+    case SrcT::cUltraChaoJi:
+        return TarT::cUltraChaoJi;
     case SrcT::s309_1P_16A:
         return TarT::s309_1P_16A;
     case SrcT::s309_1P_32A:

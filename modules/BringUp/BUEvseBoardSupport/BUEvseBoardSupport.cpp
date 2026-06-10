@@ -19,7 +19,7 @@ static std::vector<std::vector<std::string>> to_string(types::evse_board_support
     hw_caps.push_back({"Max/Min Phase Count",
                        fmt::format("Imp: {}ph/{}ph Exp: {}ph/{}ph", c.max_phase_count_import, c.min_phase_count_import,
                                    c.max_phase_count_export, c.min_phase_count_export)});
-    hw_caps.push_back({"Connector Type", types::evse_board_support::connector_type_to_string(c.connector_type)});
+    hw_caps.push_back({"Connector Type", types::evse_manager::connector_type_enum_to_string(c.connector_type)});
     hw_caps.push_back({"CP State E Support", c.supports_cp_state_E ? "Yes" : "No"});
     if (c.max_plug_temperature_C.has_value()) {
         hw_caps.push_back({"Max plug temperature", fmt::format("{}C", c.max_plug_temperature_C.value())});
@@ -387,7 +387,7 @@ void BUEvseBoardSupport::ready() {
     // ---------------------------------------------------------------------------
 
     types::evse_board_support::HardwareCapabilities dummy_caps;
-    dummy_caps.connector_type = types::evse_board_support::Connector_type::IEC62196Type2Cable;
+    dummy_caps.connector_type = types::evse_manager::ConnectorTypeEnum::Undetermined;
     hw_caps = to_string(dummy_caps);
 
     auto caps_renderer = Renderer([&] {

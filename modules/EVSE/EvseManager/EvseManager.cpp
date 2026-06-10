@@ -182,7 +182,7 @@ void EvseManager::init() {
         hw_capabilities_handle->min_phase_count_export = 0;
         hw_capabilities_handle->supports_changing_phases_during_charging = false;
         hw_capabilities_handle->supports_cp_state_E = false;
-        hw_capabilities_handle->connector_type = types::evse_board_support::Connector_type::IEC62196Type2Cable;
+        hw_capabilities_handle->connector_type = types::evse_manager::ConnectorTypeEnum::Undetermined;
     }
 
     invoke_init(*p_evse);
@@ -300,6 +300,12 @@ void EvseManager::init() {
 
         bsp->set_max_phases(get_max_phases(c.max_phase_count_import));
         charger->set_connector_type(c.connector_type);
+
+        // If no connector type is configured, use the one announced by the BSP
+        if (not connector_type.has_value() and
+            c.connector_type not_eq types::evse_manager::ConnectorTypeEnum::Undetermined) {
+            connector_type = c.connector_type;
+        }
         p_evse->publish_hw_capabilities(c);
         if (config.charge_mode == "AC" and hlc_enabled) {
             EVLOG_debug << fmt::format("Max AC hardware capabilities: {}A/{}ph", c.max_current_A_import,

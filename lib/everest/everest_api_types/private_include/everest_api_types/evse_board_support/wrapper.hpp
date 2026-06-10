@@ -23,12 +23,6 @@ using BspEvent_External = BspEvent;
 BspEvent_Internal to_internal_api(BspEvent_External const& val);
 BspEvent_External to_external_api(BspEvent_Internal const& val);
 
-using Connector_type_Internal = ::types::evse_board_support::Connector_type;
-using Connector_type_External = Connector_type;
-
-Connector_type_Internal to_internal_api(Connector_type_External const& val);
-Connector_type_External to_external_api(Connector_type_Internal const& val);
-
 using HardwareCapabilities_Internal = ::types::evse_board_support::HardwareCapabilities;
 using HardwareCapabilities_External = HardwareCapabilities;
 

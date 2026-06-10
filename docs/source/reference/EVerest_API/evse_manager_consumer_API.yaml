@@ -1057,17 +1057,23 @@ components:
         Type of a physical connector
         - cCCS1: Combined Charging System 1 a.k.a. Combo 1
         - cCCS2: Combined Charging System 2 a.k.a. Combo 2
+        - cChaoJi: ChaoJi (captive cabled) a.k.a. CHAdeMO 3.0
         - cG105: JARI G105-1993 a.k.a. CHAdeMO
+        - cGBT_DC: GB/T 20234.3 DC connector (captive cabled)
+        - cLECCS: Light Equipment Combined Charging System IS17017 (captive cabled)
         - cMCS: Megawatt Charging System (captive cabled) (IEC 63379 Configuration HH)
-        - cTesla: Tesla Connector
+        - cNACS: North American Charging Standard a.k.a. SAE J3400 (captive cabled)
+        - cNACS_CCS1: Tesla MagicDock with built-in NACS to CCS1 adapter
+        - cTesla: Tesla Connector (legacy proprietary, pre-J3400)
         - cType1: IEC62196-2 Type 1 connector a.k.a. J1772
         - cType2: IEC62196-2 Type 2 connector a.k.a. Mennekes connector
+        - cUltraChaoJi: Ultra-ChaoJi for megawatt charging
         - s309_1P_16A: 16A 1 phase IEC60309 socket
         - s309_1P_32A: 32A 1 phase IEC60309 socket
         - s309_3P_16A: 16A 3 phase IEC60309 socket
         - s309_3P_32A: 32A 3 phase IEC60309 socket
         - sBS1361: UK domestic socket a.k.a. 13Amp
-        - sCEE-7_7: CEE 7/7 16A socket a.k.a Schuko
+        - sCEE_7_7: CEE 7/7 16A socket a.k.a Schuko
         - sType2: IEC62196-2 Type 2 socket a.k.a. Mennekes connector
         - sType3: IEC62196-2 Type 2 socket a.k.a. Scame
         - Other1PhMax16A: Other single phase (domestic) sockets not mentioned above, rated at no more than 16A. CEE7/17, AS3112, NEMA 5-15, NEMA 5-20, JISC8303, TIS166, SI 32, CPCS-CCC, SEV1011, etc
@@ -1082,11 +1088,17 @@ components:
       enum:
         - cCCS1
         - cCCS2
+        - cChaoJi
         - cG105
+        - cGBT_DC
+        - cLECCS
         - cMCS
+        - cNACS
+        - cNACS_CCS1
         - cTesla
         - cType1
         - cType2
+        - cUltraChaoJi
         - s309_1P_16A
         - s309_1P_32A
         - s309_3P_16A

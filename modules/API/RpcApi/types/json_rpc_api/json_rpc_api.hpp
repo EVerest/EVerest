@@ -287,10 +287,17 @@ namespace json_rpc_api {
 enum class ConnectorTypeEnum {
     cCCS1,
     cCCS2,
+    cChaoJi,
     cG105,
+    cGBT_DC,
+    cLECCS,
+    cMCS,
+    cNACS,
+    cNACS_CCS1,
     cTesla,
     cType1,
     cType2,
+    cUltraChaoJi,
     s309_1P_16A,
     s309_1P_32A,
     s309_3P_16A,
@@ -317,14 +324,28 @@ inline std::string connector_type_enum_to_string(ConnectorTypeEnum e) {
         return "cCCS1";
     case ConnectorTypeEnum::cCCS2:
         return "cCCS2";
+    case ConnectorTypeEnum::cChaoJi:
+        return "cChaoJi";
     case ConnectorTypeEnum::cG105:
         return "cG105";
+    case ConnectorTypeEnum::cGBT_DC:
+        return "cGBT_DC";
+    case ConnectorTypeEnum::cLECCS:
+        return "cLECCS";
+    case ConnectorTypeEnum::cMCS:
+        return "cMCS";
+    case ConnectorTypeEnum::cNACS:
+        return "cNACS";
+    case ConnectorTypeEnum::cNACS_CCS1:
+        return "cNACS_CCS1";
     case ConnectorTypeEnum::cTesla:
         return "cTesla";
     case ConnectorTypeEnum::cType1:
         return "cType1";
     case ConnectorTypeEnum::cType2:
         return "cType2";
+    case ConnectorTypeEnum::cUltraChaoJi:
+        return "cUltraChaoJi";
     case ConnectorTypeEnum::s309_1P_16A:
         return "s309_1P_16A";
     case ConnectorTypeEnum::s309_1P_32A:
@@ -371,8 +392,26 @@ inline ConnectorTypeEnum string_to_connector_type_enum(const std::string& s) {
     if (s == "cCCS2") {
         return ConnectorTypeEnum::cCCS2;
     }
+    if (s == "cChaoJi") {
+        return ConnectorTypeEnum::cChaoJi;
+    }
     if (s == "cG105") {
         return ConnectorTypeEnum::cG105;
+    }
+    if (s == "cGBT_DC") {
+        return ConnectorTypeEnum::cGBT_DC;
+    }
+    if (s == "cLECCS") {
+        return ConnectorTypeEnum::cLECCS;
+    }
+    if (s == "cMCS") {
+        return ConnectorTypeEnum::cMCS;
+    }
+    if (s == "cNACS") {
+        return ConnectorTypeEnum::cNACS;
+    }
+    if (s == "cNACS_CCS1") {
+        return ConnectorTypeEnum::cNACS_CCS1;
     }
     if (s == "cTesla") {
         return ConnectorTypeEnum::cTesla;
@@ -382,6 +421,9 @@ inline ConnectorTypeEnum string_to_connector_type_enum(const std::string& s) {
     }
     if (s == "cType2") {
         return ConnectorTypeEnum::cType2;
+    }
+    if (s == "cUltraChaoJi") {
+        return ConnectorTypeEnum::cUltraChaoJi;
     }
     if (s == "s309_1P_16A") {
         return ConnectorTypeEnum::s309_1P_16A;
