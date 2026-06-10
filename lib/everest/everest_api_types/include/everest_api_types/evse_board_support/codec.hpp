@@ -3,6 +3,7 @@
 #pragma once
 
 #include "API.hpp"
+#include <everest_api_types/evse_manager/codec.hpp>
 #include <optional>
 #include <string>
 
