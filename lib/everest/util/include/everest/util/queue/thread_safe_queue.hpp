@@ -34,7 +34,7 @@ public:
     /**
      * @brief Push new data into the queue
      * @param[in] value data
-     * @return The size of the queue after push
+     * @return The size of the queue after push. Returns 0 if the queue is stopped.
      */
     size_type push(const value_type& value) {
         return emplace(value);
@@ -42,7 +42,7 @@ public:
     /**
      * @brief Push new data into the queue
      * @param[in] value data
-     * @return The size of the queue after push
+     * @return The size of the queue after push. Returns 0 if the queue is stopped.
      */
     size_type push(value_type&& value) {
         return emplace(std::move(value));
@@ -51,10 +51,15 @@ public:
     /**
      * @brief Construct a new element in-place at the end of the queue.
      * @param[in] args Arguments forwarded to construct the data element.
-     * @return The size of the queue after emplace
+     * @return The size of the queue after emplace. Returns 0 if the queue is stopped.
      */
     template <class... Args> size_type emplace(Args&&... args) {
         std::unique_lock lock(m_mtx);
+
+        if (m_stop) {
+            return 0;
+        }
+
         m_queue.emplace(std::forward<Args>(args)...);
         auto result = m_queue.size();
         lock.unlock();
