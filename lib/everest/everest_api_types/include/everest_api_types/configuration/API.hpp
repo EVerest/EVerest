@@ -64,7 +64,6 @@ enum class GetConfigurationStatusEnum {
 struct ConfigMetadata {
     int32_t slot_id;
     std::string last_updated;
-    bool is_valid;
     std::optional<std::string> description;
     std::optional<std::string> config_file_path;
 };

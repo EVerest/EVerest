@@ -327,7 +327,7 @@ void from_json(const json& j, GetConfigurationStatusEnum& k) {
 }
 
 void to_json(json& j, ConfigMetadata const& k) noexcept {
-    j = json{{"slot_id", k.slot_id}, {"last_updated", k.last_updated}, {"is_valid", k.is_valid}};
+    j = json{{"slot_id", k.slot_id}, {"last_updated", k.last_updated}};
     if (k.description) {
         j["description"] = *k.description;
     }
@@ -339,7 +339,6 @@ void to_json(json& j, ConfigMetadata const& k) noexcept {
 void from_json(const json& j, ConfigMetadata& k) {
     k.slot_id = j.at("slot_id");
     k.last_updated = j.at("last_updated");
-    k.is_valid = j.at("is_valid");
     if (j.contains("description")) {
         k.description = j.at("description");
     }
