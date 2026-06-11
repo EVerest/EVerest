@@ -160,11 +160,8 @@ LoadFromYamlResult ConfigServiceCore::load_from_yaml(const std::string& raw_yaml
                 return {false, std::nullopt, "Failed to write module configs to new slot"};
             }
         } else {
-            if (slot_manager_.delete_slot(target_slot_id) != everest::config::GenericResponseStatus::OK) {
-                return {false, std::nullopt, "Failed to replace config slot"};
-            }
-            if (slot_manager_.write_config_slot(target_slot_id, nlohmann::json(module_configs).dump(), std::nullopt,
-                                                description) != everest::config::GenericResponseStatus::OK) {
+            if (slot_manager_.update_config_slot(target_slot_id, nlohmann::json(module_configs).dump(), std::nullopt,
+                                                 description) != everest::config::GenericResponseStatus::OK) {
                 return {false, std::nullopt, "Failed to replace config slot"};
             }
             // If the slot exists, overwrite its config with the new one
