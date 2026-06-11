@@ -40,11 +40,7 @@ public:
         m_evse_security(std::make_unique<EvseSecurity>(security)) {
     }
 
-    void init(std::map<std::int32_t, std::int32_t>&& evse_connector_structure,
-              std::unique_ptr<ocpp::v2::DeviceModelStorageInterface>&& device_model_storage_interface,
-              const std::string& ocpp_share_path, const std::string& core_database_path,
-              const std::string& sql_init_path, const std::string& message_log_path,
-              ocpp::v2::Callbacks&& callbacks) override;
+    void init(init_args_t& args) override;
 
     void connect_websocket() override;
     void disconnect_websocket() override;

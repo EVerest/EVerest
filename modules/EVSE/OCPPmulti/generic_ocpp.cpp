@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "generic_ocpp.hpp"
+#include "generic_chargepoint_interface.hpp"
 #include <conversions.hpp>
 #include <device_model/composed_device_model_storage.hpp>
 #include <error_handling.hpp>
@@ -587,7 +588,6 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     using namespace module::conversions;
 
     wait_all_ready();
-    auto v2callbacks = ready_ocppv2_callbacks();
     std::map<std::int32_t, std::int32_t> evse_connector_structure = get_connector_structure();
 
     // initialise libocpp device model
@@ -611,9 +611,17 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     const auto sql_init_path = (m_info.paths.share / SQL_CORE_MIGRATIONS).string();
     const auto ocpp_share_path = m_info.paths.share.string();
 
-    m_charge_point.init(std::move(evse_connector_structure), std::move(composed_device_model_storage), ocpp_share_path,
-                        m_config.getCoreDatabasePath(), sql_init_path, m_config.getMessageLogPath(),
-                        std::move(v2callbacks));
+    ocpp_multi::GenericChargePointInterface::init_args_t args{
+        ocpp_share_path,
+        m_config.getCoreDatabasePath(),
+        sql_init_path,
+        m_config.getMessageLogPath(),
+        m_config.getChargePointConfigPath(),
+        m_config.getUserConfigPath(),
+        std::move(evse_connector_structure),
+        std::move(composed_device_model_storage),
+    };
+    m_charge_point.init(args);
 
     // publish charging schedules at least once on startup
     cb_charging_schedules_timer();
@@ -824,92 +832,6 @@ void GenericOcpp::ready_module_configuration() {
     }
 }
 
-ocpp::v2::Callbacks GenericOcpp::ready_ocppv2_callbacks() {
-    ocpp::v2::Callbacks callbacks;
-    callbacks.is_reset_allowed_callback = [this](const auto& evse_id, auto) { return cb_is_reset_allowed(evse_id); };
-    callbacks.reset_callback = [this](const auto& evse_id, auto type) { cb_reset(evse_id, type); };
-    callbacks.connector_effective_operative_status_changed_callback = [this](auto evse_id, auto connector_id,
-                                                                             auto new_status) {
-        cb_connector_effective_operative_status(evse_id, connector_id, new_status);
-    };
-    callbacks.remote_start_transaction_callback = [this](const auto& request, const bool authorize_remote_start) {
-        return cb_remote_start_transaction(request, authorize_remote_start);
-    };
-    callbacks.stop_transaction_callback = [this](auto evse_id, auto stop_reason) {
-        return cb_stop_transaction(evse_id, stop_reason);
-    };
-    callbacks.pause_charging_callback = [this](auto evse_id) { cb_pause_charging(evse_id); };
-    callbacks.unlock_connector_callback = [this](auto evse_id, auto connector_id) {
-        return cb_unlock_connector(evse_id, connector_id);
-    };
-    callbacks.get_log_request_callback = [this](const auto& request) { return cb_get_log_request(request); };
-    callbacks.is_reservation_for_token_callback = [this](auto evse_id, const auto& idToken, const auto& groupIdToken) {
-        return cb_is_reservation_for_token(evse_id, idToken, groupIdToken);
-    };
-    callbacks.update_firmware_request_callback = [this](const auto& request) {
-        return cb_update_firmware_request(request);
-    };
-    callbacks.variable_changed_callback = [this](const auto& set_variable_data) {
-        cb_variable_changed(set_variable_data);
-    };
-    callbacks.validate_network_profile_callback = [this](auto /* configuration_slot */,
-                                                         const auto& network_connection_profile) {
-        return cb_validate_network_profile(network_connection_profile);
-    };
-    callbacks.configure_network_connection_profile_callback = [this](auto /* configuration_slot */,
-                                                                     const auto& /* network_connection_profile */) {
-        return cb_configure_network_connection_profile();
-    };
-    callbacks.all_connectors_unavailable_callback = [this]() { cb_all_connectors_unavailable(); };
-    callbacks.transaction_event_callback = [this](const auto& transaction_event) {
-        cb_transaction_event(transaction_event);
-    };
-    callbacks.transaction_event_response_callback = [this](const auto& transaction_event,
-                                                           const auto& transaction_event_response) {
-        cb_transaction_event_response(transaction_event, transaction_event_response);
-    };
-    callbacks.boot_notification_callback = [this](const auto& boot_notification_response) {
-        cb_boot_notification(boot_notification_response);
-    };
-    callbacks.set_display_message_callback = [this](const auto& messages) { return cb_set_display_message(messages); };
-    callbacks.get_display_message_callback = [this](const auto& request) { return cb_get_display_message(request); };
-    callbacks.clear_display_message_callback = [this](const auto& request) {
-        return cb_clear_display_message(request);
-    };
-    callbacks.set_running_cost_callback = [this](const auto& running_cost, auto number_of_decimals,
-                                                 const auto& currency_code) {
-        cb_set_running_cost(running_cost, number_of_decimals, currency_code);
-    };
-    callbacks.tariff_message_callback = [this](const auto& message) { cb_tariff_message(message); };
-    callbacks.default_price_callback = [this](const auto& messages) { cb_default_price(messages); };
-    if (!m_requires.data_transfer.empty()) {
-        callbacks.data_transfer_callback = [this](const auto& request) { return cb_data_transfer(request); };
-    }
-    callbacks.connection_state_changed_callback =
-        [this](auto is_connected, auto /*configuration_slot*/, const auto& /*network_connection_profile*/,
-               auto protocol_version) { cb_connection_state_changed(is_connected, protocol_version); };
-    callbacks.security_event_callback = [this](const auto& event_type, const auto& tech_info) {
-        cb_security_event(event_type, tech_info);
-    };
-
-    // this callback publishes the schedules within EVerest and applies the schedules for the individual
-    // evse_energy_sink
-    callbacks.set_charging_profiles_callback = [this]() { cb_charging_schedules_timer(); };
-    callbacks.time_sync_callback = [this](const auto& current_time) { cb_time_sync(current_time); };
-    callbacks.reserve_now_callback = [this](const auto& request) { return cb_reserve_now(request); };
-    callbacks.cancel_reservation_callback = [this](auto reservation_id) {
-        return cb_cancel_reservation(reservation_id);
-    };
-    callbacks.update_allowed_energy_transfer_modes_callback = [this](const auto& allowed_energy_transfer_modes,
-                                                                     const auto& transaction_id) {
-        return cb_update_allowed_energy_transfer_modes(allowed_energy_transfer_modes, transaction_id);
-    };
-    callbacks.ocpp_messages_callback = [this](const auto& message, auto direction) {
-        cb_ocpp_messages(message, direction);
-    };
-    return callbacks;
-}
-
 void GenericOcpp::ready_transaction_handler() {
     std::set<module::TxStartStopPoint> tx_start_points;
     std::set<module::TxStartStopPoint> tx_stop_points;
@@ -1029,21 +951,32 @@ std::future<ocpp::ConfigNetworkResult> GenericOcpp::cb_configure_network_connect
     return future;
 }
 
-void GenericOcpp::cb_connector_effective_operative_status(std::int32_t evse_id, std::int32_t connector_id,
+bool GenericOcpp::cb_connector_effective_operative_status(std::int32_t evse_id, std::int32_t connector_id,
                                                           ocpp::v2::OperationalStatusEnum new_status) {
+    bool result{false};
+
+    if (evse_id == -1) {
+        // v1.6
+        evse_id = connector_id;
+    }
+
     auto& evse = m_requires.evse_manager.at(evse_id - 1);
 
     if (new_status == ocpp::v2::OperationalStatusEnum::Operative) {
         if (evse->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS,
                                                      types::evse_manager::Enable_state::Enable, 5000})) {
             m_charge_point.on_enabled(evse_id, connector_id);
+            result = true;
         }
     } else {
         if (evse->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS,
                                                      types::evse_manager::Enable_state::Disable, 5000})) {
             m_charge_point.on_unavailable(evse_id, connector_id);
+            result = true;
         }
     }
+
+    return result;
 }
 
 void GenericOcpp::cb_connection_state_changed(bool is_connected, ocpp::OcppProtocolVersion protocol_version) {
@@ -1056,12 +989,17 @@ void GenericOcpp::cb_connection_state_changed(bool is_connected, ocpp::OcppProto
 }
 
 ocpp::v2::DataTransferResponse GenericOcpp::cb_data_transfer(const ocpp::v2::DataTransferRequest& request) {
-    using namespace module::conversions;
+    ocpp::v2::DataTransferResponse response{};
+    if (m_requires.data_transfer.empty()) {
+        EVLOG_error << "data_transfer called with no configured connections";
+    } else {
+        using namespace module::conversions;
 
-    types::ocpp::DataTransferRequest data_transfer_request = to_everest_data_transfer_request(request);
-    types::ocpp::DataTransferResponse data_transfer_response =
-        m_requires.data_transfer.at(0)->call_data_transfer(data_transfer_request);
-    ocpp::v2::DataTransferResponse response = to_ocpp_data_transfer_response(data_transfer_response);
+        types::ocpp::DataTransferRequest data_transfer_request = to_everest_data_transfer_request(request);
+        types::ocpp::DataTransferResponse data_transfer_response =
+            m_requires.data_transfer.at(0)->call_data_transfer(data_transfer_request);
+        response = to_ocpp_data_transfer_response(data_transfer_response);
+    }
     return response;
 }
 
@@ -1386,19 +1324,36 @@ ocpp::v2::ReserveNowStatusEnum GenericOcpp::cb_reserve_now(const ocpp::v2::Reser
     return result;
 }
 
-void GenericOcpp::cb_reset(const std::optional<const std::int32_t>& evse_id, ocpp::v2::ResetEnum type) {
+void GenericOcpp::cb_reset(const std::optional<const std::int32_t>& evse_id, ResetType type) {
     if (evse_id.has_value()) {
         EVLOG_warning << "Reset of EVSE is currently not supported";
     } else {
-        bool scheduled = type == ocpp::v2::ResetEnum::OnIdle;
+        bool scheduled = type == ResetType::OnIdle;
+        auto r_type{types::system::ResetType::NotSpecified};
+        bool do_reset{true};
 
-        // small delay before stopping the charge point to make sure all responses are received
-        std::this_thread::sleep_for(std::chrono::seconds(m_config.getResetStopDelay()));
-        try {
-            m_requires.system.call_reset(types::system::ResetType::NotSpecified, scheduled);
-        } catch (std::out_of_range& e) {
+        switch (type) {
+        case ResetType::Hard:
+            r_type = types::system::ResetType::Hard;
+            break;
+        case ResetType::Soft:
+            r_type = types::system::ResetType::Soft;
+            break;
+        case ResetType::Immediate:
+        case ResetType::ImmediateAndResume:
+        case ResetType::OnIdle:
+            break;
+        default:
             EVLOG_warning << "Could not convert OCPP ResetEnum to EVerest ResetType while executing reset_callack. No "
                              "reset will be executed.";
+            do_reset = false;
+            break;
+        }
+
+        if (do_reset) {
+            // small delay before stopping the charge point to make sure all responses are received
+            std::this_thread::sleep_for(std::chrono::seconds(m_config.getResetStopDelay()));
+            m_requires.system.call_reset(r_type, scheduled);
         }
     }
 }

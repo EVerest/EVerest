@@ -95,7 +95,6 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::publish_charging_schedules;
     using ocpp_multi::GenericOcpp::ready_event_queue;
     using ocpp_multi::GenericOcpp::ready_module_configuration;
-    using ocpp_multi::GenericOcpp::ready_ocppv2_callbacks;
     using ocpp_multi::GenericOcpp::ready_transaction_handler;
     using ocpp_multi::GenericOcpp::set_external_limits;
     using ocpp_multi::GenericOcpp::wait_all_ready;
@@ -128,7 +127,7 @@ protected:
         interfaces.add_extensions_15118("evsev2g");
         interfaces.add_reservation("reservation");
         chargepoint.load_store("default_store.json");
-        EXPECT_CALL(chargepoint, init(_, _, _, _, _, _, _)).Times(1);
+        EXPECT_CALL(chargepoint, init(_)).Times(1);
         EXPECT_CALL(chargepoint, get_all_composite_schedules(600, _)).Times(1);
         EXPECT_CALL(chargepoint, set_message_queue_resume_delay(std::chrono::seconds(config.MessageQueueResumeDelay)))
             .Times(1);

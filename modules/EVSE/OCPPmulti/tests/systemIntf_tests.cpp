@@ -20,6 +20,7 @@
 #include <generic_ocpp.hpp>
 
 #include "generated/types/system.hpp"
+#include "generic_chargepoint_interface.hpp"
 #include "ocpp/common/types.hpp"
 #include "ocpp/v2/messages/GetLog.hpp"
 #include "ocpp/v2/messages/UpdateFirmware.hpp"
@@ -160,19 +161,25 @@ TEST_F(GenericOcppRequiresTester, callIsResetAllowed) {
 TEST_F(GenericOcppRequiresTester, callReset) {
     // call_reset() used in cb_is_reset_allowed()
 
-    using ocpp::v2::ResetEnum;
+    using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
 
     std::vector<json> received;
     interfaces.subscribe_var("system", "call_reset",
                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     interfaces.add_cmd_result(R"(true)"_json);
+    interfaces.add_cmd_result(R"(true)"_json);
+    interfaces.add_cmd_result(R"(true)"_json);
 
-    ocpp.cb_reset(1, ResetEnum::OnIdle);
-    ocpp.cb_reset(std::nullopt, ResetEnum::Immediate);
+    ocpp.cb_reset(1, ResetType::OnIdle);               // no MQTT message sent
+    ocpp.cb_reset(std::nullopt, ResetType::Immediate); // v2
+    ocpp.cb_reset(std::nullopt, ResetType::Hard);      // v1.6
+    ocpp.cb_reset(std::nullopt, ResetType::Soft);      // v1.6
 
-    ASSERT_EQ(received.size(), 1);
+    ASSERT_EQ(received.size(), 3);
     EXPECT_EQ(received[0], R"({"scheduled":false,"type":"NotSpecified"})"_json);
+    EXPECT_EQ(received[1], R"({"scheduled":false,"type":"Hard"})"_json);
+    EXPECT_EQ(received[2], R"({"scheduled":false,"type":"Soft"})"_json);
 }
 
 TEST_F(GenericOcppRequiresTester, callSetSystemTime) {

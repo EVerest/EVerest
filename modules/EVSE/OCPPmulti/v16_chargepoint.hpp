@@ -5,22 +5,75 @@
 
 #include "generic_chargepoint_interface.hpp"
 
+#include <ocpp/v16/charge_point_configuration.hpp>
+
 namespace ocpp_multi {
 
 class ChargePointV16 : public GenericChargePointInterface {
 private:
     std::shared_ptr<EvseSecurity> m_evse_security;
+    std::unique_ptr<ocpp::v16::ChargePointConfiguration> m_charge_point_configuration;
     std::unique_ptr<ocpp::v16::ChargePoint> m_charge_point;
+    ocpp_multi::GenericChargePointCallbacks* m_callbacks_ptr{nullptr};
+
+    struct config_info_t {
+        const std::string& chargepoint_config_path;
+        const std::string& message_log_path;
+        const std::string& ocpp_share_path;
+        const std::string& sql_init_path;
+        const std::string& user_config_path;
+        std::uint32_t numnber_of_connectors; // r_evse_manager.size();
+    };
+
+    void check_configured(const std::string_view& fn);
+    void configure_callbacks();
+    void configure_data_model(const config_info_t& config);
+
+    void cb_boot_notification_response(const ocpp::v16::BootNotificationResponse& boot_notification_response);
+    void cb_connection_state_changed(bool is_connected);
+    ocpp::v16::DataTransferResponse cb_data_transfer(const ocpp::v16::DataTransferRequest& request);
+    bool cb_disable_evse(std::int32_t connector);
+    bool cb_enable_evse(std::int32_t connector);
+    void cb_generic_configuration_key_changed(const ocpp::v16::KeyValue& key_value);
+    void cb_get_15118_ev_certificate_response(const std::int32_t connector,
+                                              const ocpp::v2::Get15118EVCertificateResponse& certificate_response,
+                                              const ocpp::v2::CertificateActionEnum& certificate_action);
+    bool cb_is_reset_allowed(const ocpp::v16::ResetType& reset_type);
+    ocpp::ReservationCheckStatus cb_is_token_reserved_for_connector(const std::int32_t connector,
+                                                                    const std::string& id_token);
+    bool cb_pause_charging(std::int32_t connector);
+    void cb_provide_token(const std::string& id_token, std::vector<std::int32_t> referenced_connectors,
+                          bool prevalidated);
+    ocpp::v16::ReservationStatus cb_reserve_now(std::int32_t reservation_id, std::int32_t connector,
+                                                ocpp::DateTime expiryDate, ocpp::CiString<20> idTag,
+                                                std::optional<ocpp::CiString<20>> parent_id);
+    void cb_reset(const ocpp::v16::ResetType& reset_type);
+    bool cb_resume_charging(std::int32_t connector);
+    ocpp::v16::DataTransferResponse cb_session_cost(const ocpp::RunningCost& running_cost,
+                                                    const std::uint32_t number_of_decimals);
+    void cb_set_connection_timeout(std::int32_t connection_timeout);
+    ocpp::v16::DataTransferResponse cb_set_display_message(const std::vector<ocpp::DisplayMessage>& messages);
+    void cb_set_system_time(const std::string& system_time);
+    void cb_signal_set_charging_profiles();
+    ocpp::v16::UpdateFirmwareStatusEnumType cb_signed_update_firmware(const ocpp::v16::SignedUpdateFirmwareRequest msg);
+    bool cb_stop_transaction(std::int32_t connector, ocpp::v16::Reason reason);
+    ocpp::v16::DataTransferResponse cb_tariff_message(const ocpp::TariffMessage& message);
+    void cb_transaction_started(const std::int32_t connector, const std::string& session_id);
+    void cb_transaction_stopped(const std::int32_t connector, const std::string& session_id,
+                                const std::int32_t transaction_id);
+    void cb_transaction_updated(const std::int32_t connector, const std::string& session_id,
+                                const std::int32_t transaction_id, const ocpp::v16::IdTagInfo& id_tag_info);
+    ocpp::v16::UnlockStatus cb_unlock_connector(std::int32_t connector);
+    void cb_update_firmware(const ocpp::v16::UpdateFirmwareRequest msg);
+    ocpp::v16::GetLogResponse cb_upload_diagnostics(const ocpp::v16::GetDiagnosticsRequest& request);
+    ocpp::v16::GetLogResponse cb_upload_logs(ocpp::v16::GetLogRequest req);
 
 public:
-    explicit ChargePointV16(evse_securityIntf& security) : m_evse_security(std::make_unique<EvseSecurity>(security)) {
+    explicit ChargePointV16(ocpp_multi::GenericChargePointCallbacks& callbacks, evse_securityIntf& security) :
+        m_evse_security(std::make_unique<EvseSecurity>(security)), m_callbacks_ptr(&callbacks) {
     }
 
-    void init(std::map<std::int32_t, std::int32_t>&& evse_connector_structure,
-              std::unique_ptr<ocpp::v2::DeviceModelStorageInterface>&& device_model_storage_interface,
-              const std::string& ocpp_main_path, const std::string& core_database_path,
-              const std::string& sql_init_path, const std::string& message_log_path,
-              ocpp::v2::Callbacks&& callbacks) override;
+    void init(init_args_t& args) override;
 
     void connect_websocket() override;
     void disconnect_websocket() override;

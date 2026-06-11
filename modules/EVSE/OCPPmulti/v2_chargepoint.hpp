@@ -4,23 +4,29 @@
 #pragma once
 
 #include "generic_chargepoint_interface.hpp"
+#include <string_view>
 
 namespace ocpp_multi {
 
 class ChargePointV2 : public GenericChargePointInterface {
 private:
+    using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
+
     std::shared_ptr<EvseSecurity> m_evse_security;
     std::unique_ptr<ocpp::v2::ChargePoint> m_charge_point;
+    ocpp_multi::GenericChargePointCallbacks* m_callbacks_ptr{nullptr};
+
+    void check_configured(const std::string_view& fn);
+    ocpp::v2::Callbacks configure_callbacks();
+
+    void cb_reset(const std::optional<const std::int32_t>& evse_id, const ocpp::v2::ResetEnum& type);
 
 public:
-    explicit ChargePointV2(evse_securityIntf& security) : m_evse_security(std::make_unique<EvseSecurity>(security)) {
+    explicit ChargePointV2(ocpp_multi::GenericChargePointCallbacks& callbacks, evse_securityIntf& security) :
+        m_evse_security(std::make_unique<EvseSecurity>(security)), m_callbacks_ptr(&callbacks) {
     }
 
-    void init(std::map<std::int32_t, std::int32_t>&& evse_connector_structure,
-              std::unique_ptr<ocpp::v2::DeviceModelStorageInterface>&& device_model_storage_interface,
-              const std::string& ocpp_main_path, const std::string& core_database_path,
-              const std::string& sql_init_path, const std::string& message_log_path,
-              ocpp::v2::Callbacks&& callbacks) override;
+    void init(init_args_t& args) override;
 
     void connect_websocket() override;
     void disconnect_websocket() override;

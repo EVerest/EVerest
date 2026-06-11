@@ -8,18 +8,13 @@ namespace ocpp_multi {
 // ----------------------------------------------------------------------------
 // GenericChargePoint
 
-void GenericChargePoint::init(std::map<std::int32_t, std::int32_t>&& evse_connector_structure,
-                              std::unique_ptr<ocpp::v2::DeviceModelStorageInterface>&& device_model_storage_interface,
-                              const std::string& ocpp_share_path, const std::string& core_database_path,
-                              const std::string& sql_init_path, const std::string& message_log_path,
-                              ocpp::v2::Callbacks&& callbacks) {
-    m_evse_connector_structure = std::move(evse_connector_structure);
-    m_device_model_storage_interface = std::move(device_model_storage_interface);
-    m_ocpp_share_path = ocpp_share_path;
-    m_core_database_path = core_database_path;
-    m_sql_init_path = sql_init_path;
-    m_message_log_path = message_log_path;
-    m_callbacks = std::move(callbacks);
+void GenericChargePoint::init(init_args_t& args) {
+    m_evse_connector_structure = std::move(args.evse_connector_structure);
+    m_device_model_storage_interface = std::move(args.device_model_storage_interface);
+    m_ocpp_share_path = args.ocpp_share_path;
+    m_core_database_path = args.core_database_path;
+    m_sql_init_path = args.sql_init_path;
+    m_message_log_path = args.message_log_path;
 
     // TODO(james-ctc): how to share the database
 

@@ -34,6 +34,7 @@ target_sources(${MODULE_NAME}
 
     generic_chargepoint.cpp
     generic_ocpp.cpp
+    v2_chargepoint.cpp
 )
 target_link_libraries(${MODULE_NAME}
     PRIVATE

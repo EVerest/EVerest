@@ -64,7 +64,7 @@ TEST_F(GenericOcppRequiresTester, callDataTransfer) {
     // data is a string
     const json cmd_response = R"({"status": "Accepted", "data": "{\"extraStatus\":\"Starting\"}" })"_json;
     // data is a JSON object
-    const json expected_response = R"({"status": "Accepted", "data": { "extraStatus": "Starting"} })"_json;
+    const json expected_response = R"({"status": "Accepted", "data":{"extraStatus": "Starting"}})"_json;
 
     interfaces.add_cmd_result(cmd_response);
     const auto response = ocpp.cb_data_transfer(request);
