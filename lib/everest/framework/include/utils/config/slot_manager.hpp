@@ -53,12 +53,15 @@ public:
     GenericResponseStatus write_config_slot(int slot_id, const std::string& config_dump,
                                             const std::optional<std::filesystem::path>& config_file_path,
                                             const std::optional<std::string>& description);
-    /// \brief Updates the additional fields of a slot to the given values
-    /// \param slot_id Id of the slot to be modified; must exist
+    /// \brief Updates an existing configuration slot
+    /// Optionals without a value will set the corresponding value to NULL in the DB
+    /// \param slot_id Id of the slot; must not exist yet
     /// \param config_dump JSON dump of the config file that was used to create the configuration
     /// \param config_file_path Path to the config file that was used to create the configuration
     /// \param description Arbitrary text
-    GenericResponseStatus set_config_slot_description(int slot_id, std::string& description);
+    GenericResponseStatus update_config_slot(int slot_id, const std::string& config_dump,
+                                             const std::optional<std::filesystem::path>& config_file_path,
+                                             const std::optional<std::string>& description);
 
     std::vector<SlotInfo> list_slots();
     GenericResponseStatus delete_slot(int slot_id);
