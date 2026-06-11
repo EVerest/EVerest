@@ -112,6 +112,7 @@ void SdpServer::close() {
     } else {
         logf_info("Sdp server closed gracefully");
     }
+    fd = -1;
 }
 
 PeerRequestContext SdpServer::get_peer_request() {
