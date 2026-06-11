@@ -37,9 +37,15 @@ target_link_libraries(everest_helpers
 set_target_properties(everest_helpers
     PROPERTIES
         POSITION_INDEPENDENT_CODE ON
+        EXPORT_NAME helpers
 )
 
 add_dependencies(everest_helpers generate_cpp_files)
+
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
+    FILES_MATCHING PATTERN "*.hpp"
+)
 
 if (BUILD_TESTING)
     add_subdirectory(tests)

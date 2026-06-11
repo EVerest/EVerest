@@ -29,9 +29,14 @@ target_link_libraries(everest_yaml
         everest::log
 )
 
-if (DISABLE_EDM)
-    include(GNUInstallDirs)
+include(GNUInstallDirs)
 
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
+    FILES_MATCHING PATTERN "*.hpp"
+)
+
+if (DISABLE_EDM)
     install(
         TARGETS everest_yaml
         EXPORT everest-core-targets
@@ -41,8 +46,11 @@ if (DISABLE_EDM)
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
     )
 
-    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
-        FILES_MATCHING PATTERN "*.hpp"
+    evc_setup_package_no_export(
+        NAME everest-yaml
+        LIBRARY_NAME yaml
+        IMPORTED_LOCATION_FILENAME libeverest_yaml.a
+        NAMESPACE everest
+        TYPE STATIC
     )
 endif()
