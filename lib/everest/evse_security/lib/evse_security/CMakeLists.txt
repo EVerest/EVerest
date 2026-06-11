@@ -12,6 +12,8 @@ target_sources(evse_security
         certificate/x509_wrapper.cpp
 
         utils/evse_filesystem.cpp
+        utils/enforce_certificate_rules.cpp
+
 
         crypto/interface/crypto_supplier.cpp
         crypto/interface/crypto_types.cpp
@@ -19,7 +21,7 @@ target_sources(evse_security
 
 if (LIBEVSE_CRYPTO_SUPPLIER_OPENSSL)
     target_sources(evse_security
-        PRIVATE
+        PRIVATE                 
             crypto/openssl/openssl_crypto_supplier.cpp
             crypto/openssl/openssl_provider.cpp
     )
@@ -30,11 +32,6 @@ target_include_directories(evse_security
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/3rd_party>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
-
-set_target_properties(evse_security
-    PROPERTIES
-        POSITION_INDEPENDENT_CODE ON
 )
 
 #############
@@ -85,7 +82,7 @@ target_link_libraries(evse_security
 
 if(LIBEVSE_SECURITY_BUILD_TESTING)
     target_compile_definitions(evse_security PRIVATE
-        DEBUG_MODE_EVSE_SECURITY
+        DEBUG_MODE_EVSE_SECURITY       
     )
 endif()
 
@@ -94,10 +91,6 @@ if(LIBEVSE_SECURITY_USE_BOOST_FILESYSTEM)
     target_link_libraries(evse_security
         PRIVATE
             Boost::filesystem
-    )
-    target_compile_definitions(evse_security
-        PRIVATE
-            LIBEVSE_SECURITY_USE_BOOST_FILESYSTEM
     )
 endif()
 
