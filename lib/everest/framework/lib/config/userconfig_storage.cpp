@@ -27,11 +27,6 @@ GenericResponseStatus UserConfigStorage::write_module_configs(const ModuleConfig
 GenericResponseStatus UserConfigStorage::replace_module_configs(const ModuleConfigurations& /*module_configs*/) {
     return GenericResponseStatus::Failed;
 }
-void UserConfigStorage::mark_valid(bool /*is_valid*/, const std::string& /*config_dump*/,
-                                   const std::optional<std::filesystem::path>& /*config_file_path*/,
-                                   const std::optional<std::string>& /*description*/) {
-    // UserConfigStorage does not support marking configs as valid
-}
 GetModuleConfigsResponse UserConfigStorage::get_module_configs() {
     GetModuleConfigsResponse response;
     response.status = GenericResponseStatus::Failed;
