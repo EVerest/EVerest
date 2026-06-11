@@ -12,9 +12,11 @@ const int default_udp_timeout_ms = 1000;
 
 namespace charge_bridge {
 
-plc_bridge::plc_bridge(plc_bridge_config const& config) :
+plc_bridge::plc_bridge(plc_bridge_config const& config, everest::lib::io::event::event_fd& ready_notify) :
     m_tap(config.plc_tap, config.plc_ip, config.plc_netmaks, config.plc_mtu),
-    m_udp(config.cb_remote, config.cb_port, default_udp_timeout_ms) {
+    m_udp(config.cb_remote, config.cb_port, default_udp_timeout_ms),
+    m_ready_notify(ready_notify) {
+
     using namespace std::chrono_literals;
     m_timer.set_timeout(5s);
 
@@ -30,11 +32,22 @@ plc_bridge::plc_bridge(plc_bridge_config const& config) :
     m_tap.set_error_handler([this, identifier](auto id, auto const& msg) {
         utilities::print_error(identifier, "PLC/TAP", id) << msg << std::endl;
         m_tap_on_error = id not_eq 0;
+        m_tap_ready = id == 0;
+        handle_ready();
     });
 
     m_udp.set_error_handler([this, identifier](auto id, auto const& msg) {
         utilities::print_error(identifier, "PLC/UDP", id) << msg << std::endl;
         m_udp_on_error = id not_eq 0;
+        m_udp_ready = id == 0;
+        handle_ready();
+    });
+    m_ready.setCallback([this](auto&, auto&) { m_ready_notify.notify(); });
+    m_cb_is_connected.setCallback([this](bool last, bool current) {
+        if (not last and current) {
+            m_udp.reset();
+        }
+        handle_ready();
     });
 }
 
@@ -45,6 +58,18 @@ void plc_bridge::handle_timer_event() {
     if (m_tap_on_error) {
         m_tap.reset();
     }
+}
+
+void plc_bridge::handle_ready() {
+    m_ready.set(m_udp_ready and m_tap_ready and m_cb_is_connected);
+}
+
+bool plc_bridge::available() const {
+    return m_ready;
+}
+
+void plc_bridge::set_cb_connection_status(bool connected) {
+    m_cb_is_connected.set(connected);
 }
 
 bool plc_bridge::register_events(everest::lib::io::event::fd_event_handler& handler) {

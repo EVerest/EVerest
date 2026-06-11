@@ -14,8 +14,10 @@ const int default_udp_timeout_ms = 1000;
 
 namespace charge_bridge {
 
-bsp_bridge::bsp_bridge(bsp_bridge_config const& config) :
-    m_api(config.api, config.cb + "/" + config.item), m_udp(config.cb_remote, config.cb_port, default_udp_timeout_ms) {
+bsp_bridge::bsp_bridge(bsp_bridge_config const& config, everest::lib::io::event::event_fd& ready_notify) :
+    m_api(config.api, config.cb + "/" + config.item),
+    m_udp(config.cb_remote, config.cb_port, default_udp_timeout_ms),
+    m_ready_notify(ready_notify) {
     using namespace std::chrono_literals;
     m_timer.set_timeout(5s);
 
@@ -23,6 +25,11 @@ bsp_bridge::bsp_bridge(bsp_bridge_config const& config) :
         everest::lib::io::udp::udp_payload pl;
         pl.set_message(&data, sizeof(data));
         m_udp.tx(pl);
+    });
+
+    m_api.set_error_handler([this](bool good) {
+        m_api_good = good;
+        handle_status();
     });
 
     m_udp.set_rx_handler([this](auto const& data, auto&) {
@@ -35,13 +42,25 @@ bsp_bridge::bsp_bridge(bsp_bridge_config const& config) :
     m_udp.set_error_handler([this, identifier](auto id, auto const& msg) {
         utilities::print_error(identifier, "BSP/UDP", id) << msg << std::endl;
         m_udp_on_error = id not_eq 0;
+        handle_status();
     });
+
+    m_ready.setCallback([this](auto&, auto&) { m_ready_notify.notify(); });
 }
 
 void bsp_bridge::handle_timer_event() {
     if (m_udp_on_error) {
         m_udp.reset();
     }
+}
+
+void bsp_bridge::handle_status() {
+    auto status = m_api_good && not m_udp_on_error;
+    m_ready.set(status);
+}
+
+bool bsp_bridge::available() const {
+    return m_ready;
 }
 
 bool bsp_bridge::register_events(everest::lib::io::event::fd_event_handler& handler) {

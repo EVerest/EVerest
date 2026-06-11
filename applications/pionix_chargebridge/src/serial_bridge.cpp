@@ -14,8 +14,8 @@ const std::uint32_t tcp_user_timeout_ms = 4000;
 
 namespace charge_bridge {
 
-serial_bridge::serial_bridge(serial_bridge_config const& config) :
-    m_pty(), m_tcp(config.cb_remote, config.cb_port, default_udp_timeout_ms) {
+serial_bridge::serial_bridge(serial_bridge_config const& config, everest::lib::io::event::event_fd& ready_notify) :
+    m_pty(), m_tcp(config.cb_remote, config.cb_port, default_udp_timeout_ms), m_ready_notify(ready_notify) {
     using namespace std::chrono_literals;
 
     auto link_ok = m_symlink.set_link(m_pty.get_slave_path(), config.serial_device);
@@ -35,9 +35,11 @@ serial_bridge::serial_bridge(serial_bridge_config const& config) :
     auto identifier = config.cb + "/" + config.item;
     m_pty.set_error_handler([this, identifier](auto id, auto const& msg) {
         utilities::print_error(identifier, "SERIAL/PTY", id) << msg << std::endl;
-        if (id not_eq 0) {
+        m_pty_ready = id == 0;
+        if (not m_pty_ready) {
             m_pty.reset();
         }
+        handle_ready();
     });
 
     m_tcp.set_error_handler([this, identifier](auto id, auto const& msg) {
@@ -45,10 +47,13 @@ serial_bridge::serial_bridge(serial_bridge_config const& config) :
             utilities::print_error(identifier, "SERIAL/TCP", id) << msg << std::endl;
             m_tcp_last_error_id = id;
         }
-        if (id not_eq 0) {
+        m_tcp_ready = id == 0;
+        if (not m_tcp_ready) {
             m_tcp.reset();
         }
+        handle_ready();
     });
+    m_ready.setCallback([this](auto&, auto&) { m_ready_notify.notify(); });
 }
 
 void serial_bridge::reset_tcp() {
@@ -71,6 +76,14 @@ bool serial_bridge::unregister_events(everest::lib::io::event::fd_event_handler&
     result = handler.unregister_event_handler(&m_pty) && result;
     result = handler.unregister_event_handler(&m_tcp) && result;
     return result;
+}
+
+void serial_bridge::handle_ready() {
+    m_ready.set(m_tcp_ready and m_pty_ready);
+}
+
+bool serial_bridge::available() const {
+    return m_ready;
 }
 
 } // namespace charge_bridge

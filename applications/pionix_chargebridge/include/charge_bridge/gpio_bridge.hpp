@@ -9,6 +9,7 @@
 #include <everest/io/event/timer_fd.hpp>
 #include <everest/io/mqtt/mqtt_client.hpp>
 #include <everest/io/udp/udp_client.hpp>
+#include <everest/util/misc/observable.hpp>
 #include <protocol/cb_management.h>
 
 namespace charge_bridge {
@@ -27,15 +28,17 @@ struct gpio_config {
 
 class gpio_bridge : public everest::lib::io::event::fd_event_register_interface {
 public:
-    gpio_bridge(gpio_config const& config);
+    gpio_bridge(gpio_config const& config, everest::lib::io::event::event_fd& ready_notify);
     ~gpio_bridge();
 
     bool register_events(everest::lib::io::event::fd_event_handler& handler) override;
     bool unregister_events(everest::lib::io::event::fd_event_handler& handler) override;
-
+    bool available() const;
+    void set_cb_connection_status(bool connected);
 private:
     void handle_error_timer();
     void handle_heartbeat_timer();
+    void handle_ready();
     void handle_udp_rx(everest::lib::io::udp::udp_payload const& payload);
     void dispatch(everest::lib::io::mqtt::mqtt_client::message const& data);
     void send_mqtt(std::string const& topic, std::string const& message);
@@ -43,14 +46,19 @@ private:
 
     everest::lib::io::udp::udp_client m_udp;
     bool m_udp_on_error{false};
+    bool m_udp_ready{false};
     everest::lib::io::event::timer_fd m_heartbeat_timer;
     std::chrono::steady_clock::time_point last_heartbeat;
     CbManagementPacket<CbGpioPacket> m_message;
     std::string m_identifier;
     bool m_mqtt_on_error{false};
+    bool m_mqtt_ready{false};
     everest::lib::io::mqtt::mqtt_client m_mqtt;
     std::string m_receive_topic;
     std::string m_send_topic;
+    everest::lib::util::observable<bool> m_ready{false};
+    everest::lib::util::observable<bool> m_cb_is_connected{false};
+    everest::lib::io::event::event_fd& m_ready_notify;
 };
 
 } // namespace charge_bridge

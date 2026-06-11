@@ -2,6 +2,7 @@
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include "everest/io/event/timer_fd.hpp"
 #include <atomic>
 #include <charge_bridge/bsp_bridge.hpp>
 #include <charge_bridge/can_bridge.hpp>
@@ -13,6 +14,7 @@
 #include <charge_bridge/serial_bridge.hpp>
 #include <charge_bridge/utilities/symlink.hpp>
 #include <everest/io/event/fd_event_handler.hpp>
+#include <everest/io/mqtt/mosquitto_cpp.hpp>
 #include <everest/io/serial/event_pty.hpp>
 #include <everest/io/tun_tap/tap_client.hpp>
 #include <everest/util/async/monitor.hpp>
@@ -27,10 +29,21 @@ struct charge_bridge_status {
     bool discovery_pending{false};
 };
 
+struct telemetry_config {
+    std::string cb;
+    std::string item;
+    std::string mqtt_remote;
+    std::string mqtt_bind;
+    std::uint32_t mqtt_ping_interval_ms;
+    std::uint16_t mqtt_port;
+    std::string telemetry_topic;
+};
+
 struct charge_bridge_config {
     std::string cb_name;
     std::uint16_t cb_port;
     std::string cb_remote;
+    std::optional<telemetry_config> telemetry;
     std::optional<can_bridge_config> can0;
     std::optional<serial_bridge_config> serial1;
     std::optional<serial_bridge_config> serial2;
@@ -66,6 +79,12 @@ private:
     void init();
     void init_discovery(discovery_device_type type, std::set<std::string> const& interfaces, bool excluding);
     void handle_discovery(std::string const& ip);
+    void handle_ready();
+    void handle_tick();
+    bool register_internal_events(everest::lib::io::event::fd_event_handler& handler);
+    bool unregister_internal_events(everest::lib::io::event::fd_event_handler& handler);
+    bool register_manage_events(everest::lib::io::event::fd_event_handler& handler);
+    bool unregister_manage_events(everest::lib::io::event::fd_event_handler& handler);
 
 private:
     std::unique_ptr<can_bridge> m_can_0_client;
@@ -79,12 +98,15 @@ private:
     std::unique_ptr<discovery> m_discovery;
 
     everest::lib::io::event::fd_event_handler* m_event_handler{nullptr};
+    everest::lib::io::event::event_fd m_ready_notify;
+    everest::lib::io::event::timer_fd m_1s_tick;
     bool m_force_firmware_update{false};
     everest::lib::util::monitor<charge_bridge_status> m_cb_status;
     bool m_was_connected{false};
     bool m_discovery_active{false};
 
     charge_bridge_config m_config;
+    std::unique_ptr<everest::lib::io::mqtt::mqtt_client> m_mqtt;
 };
 
 } // namespace charge_bridge
