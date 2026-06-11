@@ -79,6 +79,9 @@ public:
 
 private:
     std::shared_ptr<everest::db::sqlite::ConnectionInterface> db;
+
+    // a conservative maximum slot_id value, compatible with sqlite but more than big enough for practical usage
+    const int max_slot_id{(2<<16) - 1};
 };
 
 } // namespace everest::config

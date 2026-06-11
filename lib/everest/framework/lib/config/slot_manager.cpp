@@ -50,8 +50,9 @@ SqliteConfigSlotManager::~SqliteConfigSlotManager() {
 }
 
 int SqliteConfigSlotManager::next_slot_id() {
-    const std::string sql = "SELECT COALESCE(MAX(ID) + 1, 0) FROM CONFIG";
+    const std::string sql = "SELECT MIN(?, COALESCE(MAX(ID) + 1, 0)) FROM CONFIG";
     auto stmt = this->db->new_statement(sql);
+    stmt->bind_int(1, max_slot_id);
     if (stmt->step() == SQLITE_ROW) {
         return stmt->column_int(0);
     }
@@ -69,6 +70,9 @@ GenericResponseStatus
 SqliteConfigSlotManager::write_config_slot(int slot_id, const std::string& config_dump,
                                            const std::optional<std::filesystem::path>& config_file_path,
                                            const std::optional<std::string>& description) {
+    if (slot_id > max_slot_id) {
+        return GenericResponseStatus::Failed;
+    }
     auto transaction = this->db->begin_transaction();
 
     auto id_stmt = this->db->new_statement("INSERT INTO CONFIG (ID) VALUES (?) ON CONFLICT(ID) DO NOTHING;");
@@ -107,24 +111,42 @@ SqliteConfigSlotManager::write_config_slot(int slot_id, const std::string& confi
     return GenericResponseStatus::OK;
 }
 
-GenericResponseStatus SqliteConfigSlotManager::set_config_slot_description(int slot_id, std::string& description) {
+GenericResponseStatus
+SqliteConfigSlotManager::update_config_slot(int slot_id, const std::string& config_dump,
+                                            const std::optional<std::filesystem::path>& config_file_path,
+                                            const std::optional<std::string>& description) {
     GenericResponseStatus ret = GenericResponseStatus::Failed;
     if (exists(slot_id)) {
         auto transaction = this->db->begin_transaction();
-        auto desc_stmt = this->db->new_statement("UPDATE CONFIG_META SET DESCRIPTION = @description;");
-        desc_stmt->bind_text("@description", description, SQLiteString::Transient);
+        auto meta_stmt =
+            this->db->new_statement("UPDATE CONFIG_META SET CONFIG_DUMP = @config_dump, CONFIG_FILE_PATH "
+                                    "= @config_file_path, DESCRIPTION = @description WHERE ID = @config_id");
 
-        transaction->commit();
-        ret = GenericResponseStatus::OK;
+        meta_stmt->bind_int("@config_id", slot_id);
+        meta_stmt->bind_text("@config_dump", config_dump, SQLiteString::Transient);
+        if (config_file_path.has_value()) {
+            meta_stmt->bind_text("@config_file_path", config_file_path.value().string(), SQLiteString::Transient);
+        } else {
+            meta_stmt->bind_null("@config_file_path");
+        }
+        if (description.has_value()) {
+            meta_stmt->bind_text("@description", description.value(), SQLiteString::Transient);
+        } else {
+            meta_stmt->bind_null("@description");
+        }
+
+        if (meta_stmt->step() == SQLITE_DONE) {
+            transaction->commit();
+            ret = GenericResponseStatus::OK;
+        }
     }
     return ret;
 }
 
 std::vector<SlotInfo> SqliteConfigSlotManager::list_slots() {
-    const std::string sql =
-        "SELECT c.ID, COALESCE(cm.LAST_UPDATED, ''), cm.CONFIG_FILE_PATH, cm.DESCRIPTION "
-        "FROM CONFIG c LEFT JOIN CONFIG_META cm ON cm.ID = c.ID "
-        "ORDER BY c.ID";
+    const std::string sql = "SELECT c.ID, COALESCE(cm.LAST_UPDATED, ''), cm.CONFIG_FILE_PATH, cm.DESCRIPTION "
+                            "FROM CONFIG c LEFT JOIN CONFIG_META cm ON cm.ID = c.ID "
+                            "ORDER BY c.ID";
     auto stmt = this->db->new_statement(sql);
 
     std::vector<SlotInfo> result;
@@ -145,13 +167,8 @@ DuplicateSlotResult SqliteConfigSlotManager::duplicate_slot(int source_slot_id,
         this->db->execute_statement("PRAGMA foreign_keys = ON;");
         auto transaction = this->db->begin_transaction();
 
-        // Verify source exists
-        {
-            auto check = this->db->new_statement("SELECT 1 FROM CONFIG WHERE ID = ?;");
-            check->bind_int(1, source_slot_id);
-            if (check->step() != SQLITE_ROW) {
-                return {false, std::nullopt};
-            }
+        if (not exists(source_slot_id)) {
+            return {false, std::nullopt};
         }
 
         const int new_id = next_slot_id();
@@ -266,18 +283,13 @@ int SqliteConfigSlotManager::get_next_boot_slot_id() {
 }
 
 GenericResponseStatus SqliteConfigSlotManager::set_next_boot_slot_id(int slot_id) {
-    // Verify the target slot exists
-    {
-        auto check = this->db->new_statement("SELECT 1 FROM CONFIG WHERE ID = ?;");
-        check->bind_int(1, slot_id);
-        if (check->step() != SQLITE_ROW) {
-            return GenericResponseStatus::Failed;
-        }
+    if (exists(slot_id)) {
+        auto stmt = this->db->new_statement("UPDATE BOOT_CONFIG SET NEXT_BOOT_SLOT_ID = ?;");
+        stmt->bind_int(1, slot_id);
+        stmt->step();
+        return GenericResponseStatus::OK;
     }
-    auto stmt = this->db->new_statement("UPDATE BOOT_CONFIG SET NEXT_BOOT_SLOT_ID = ?;");
-    stmt->bind_int(1, slot_id);
-    stmt->step();
-    return GenericResponseStatus::OK;
+    return GenericResponseStatus::Failed;
 }
 
 GenericResponseStatus SqliteConfigSlotManager::delete_slot(int slot_id) {
