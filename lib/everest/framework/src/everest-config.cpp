@@ -49,23 +49,23 @@ static int cmd_add(const std::string& prefix, const std::string& config_file, co
     SqliteConfigSlotManager slot_mgr(ms.db_dir, migrations_dir);
     const int slot_id = slot_mgr.next_slot_id();
 
-    if (slot_mgr.write_config_slot(slot_id) != GenericResponseStatus::OK) {
+    fmt::print("Storing as slot {} in '{}'...\n", slot_id, db_path);
+    ManagerConfig cfg(ms);
+
+    const auto& module_configs = cfg.get_module_configurations();
+
+    if (slot_mgr.write_config_slot(slot_id, nlohmann::json(module_configs).dump(), ms.config_file, std::nullopt) !=
+        GenericResponseStatus::OK) {
         fmt::print(stderr, "Error: Failed to write config slot {}.\n", slot_id);
         return 1;
     }
 
     auto storage = std::make_unique<SqliteStorage>(ms.db_dir, migrations_dir, slot_id);
-
-    fmt::print("Storing as slot {} in '{}'...\n", slot_id, db_path);
-    ManagerConfig cfg(ms);
-
-    const auto& module_configs = cfg.get_module_configurations();
     if (storage->write_module_configs(module_configs) != GenericResponseStatus::OK) {
         fmt::print(stderr, "Error: Failed to write module configs to slot {}.\n", slot_id);
         slot_mgr.delete_slot(slot_id);
         return 1;
     }
-    storage->mark_valid(true, nlohmann::json(module_configs).dump(), ms.config_file, std::nullopt);
 
     fmt::print("Done. Config stored as slot {}.\n", slot_id);
     return 0;
@@ -100,11 +100,11 @@ static int cmd_list(const std::string& prefix, const std::string& db_path) {
         return 0;
     }
 
-    fmt::print("{:<6} {:<32} {:<7} {}\n", "SLOT", "LAST UPDATED", "VALID", "CONFIG FILE");
+    fmt::print("{:<6} {:<32} {:<7} {}\n", "SLOT", "LAST UPDATED", "CONFIG FILE");
     fmt::print("{}\n", std::string(80, '-'));
     for (const auto& slot : slots) {
         fmt::print("{:<6} {:<32} {:<7} {}\n", slot.id, slot.last_updated.empty() ? "-" : slot.last_updated,
-                   slot.is_valid ? "yes" : "no", slot.config_file_path.value_or("-"));
+                   slot.config_file_path.value_or("-"));
     }
     return 0;
 }

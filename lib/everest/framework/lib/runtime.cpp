@@ -50,8 +50,8 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
     auto boot_slot_id = slot_mgr.get_next_boot_slot_id();
     auto db_storage = std::make_unique<everest::config::SqliteStorage>(db_conn, boot_slot_id);
 
-    const bool db_valid = slot_mgr.is_valid(boot_slot_id);
-    if (db_valid && !reset_from_yaml) {
+    const bool slot_exists = slot_mgr.exists(boot_slot_id);
+    if (slot_exists && !reset_from_yaml) {
         EVLOG_info << "Booting and parsing configuration from database: " << ms.db_dir;
         const auto resp = db_storage->get_module_configs();
         if (resp.status == everest::config::GenericResponseStatus::Failed) {
@@ -59,15 +59,12 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
         }
         bs.module_configs_initialized = true;
     } else {
-        if (reset_from_yaml && db_valid) {
+        if (reset_from_yaml && slot_exists) {
             EVLOG_info << "--reset-from-yaml requested, discarding existing database slot and re-seeding from YAML: "
                        << ms.config_file;
         } else {
             EVLOG_info << "Database not initialized or not valid, seeding from YAML config file: " << ms.config_file;
         }
-        // Delete the slot (no-op if it doesn't exist)
-        slot_mgr.delete_slot(boot_slot_id);
-        slot_mgr.write_config_slot(boot_slot_id);
 
         std::shared_ptr<const ManagerConfig> mgr_config;
         bool valid_config = false;
@@ -88,15 +85,18 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
         }
 
         if (valid_config) {
+            // Delete the slot (no-op if it doesn't exist)
+            slot_mgr.delete_slot(boot_slot_id);
             // Seed the database: parse() enriched module_configs with manifest metadata needed for storage writes.
             const auto& module_config = mgr_config->get_module_configurations();
+            slot_mgr.write_config_slot(boot_slot_id, nlohmann::json(module_config).dump(), ms.config_file,
+                                       std::nullopt);
             if (db_storage->write_module_configs(module_config) != everest::config::GenericResponseStatus::Failed) {
-                EVLOG_info << "Module configs written to database successfully, marking config as valid";
-                db_storage->mark_valid(true, nlohmann::json(module_config).dump(), ms.config_file, std::nullopt);
+                EVLOG_info << "Module configs written to database successfully";
                 bs.module_configs_initialized = true;
             } else {
-                EVLOG_warning << "Failed to write module configs to database, marking config as invalid";
-                db_storage->mark_valid(false, nlohmann::json(module_config).dump(), ms.config_file, std::nullopt);
+                EVLOG_warning << "Failed to write module configs to database";
+                slot_mgr.delete_slot(boot_slot_id);
             }
         }
     }
