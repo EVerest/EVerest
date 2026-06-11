@@ -37,4 +37,12 @@ if (DISABLE_EDM)
     install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/everest
         TYPE INCLUDE
     )
+
+    evc_setup_package_no_export(
+        NAME everest-run-application
+        LIBRARY_NAME run_application
+        IMPORTED_LOCATION_FILENAME libeverest_run_application.a
+        NAMESPACE everest
+        TYPE STATIC
+    )
 endif()
