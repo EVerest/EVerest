@@ -169,7 +169,6 @@ void CommandHandlers::show_slot_metadata(int slot_id) {
               << "  Slot ID      : " << it->slot_id << "\n"
               << "  Description  : " << it->description.value_or("<no description>") << "\n"
               << "  Last Updated : " << it->last_updated << "\n"
-              << "  Is Valid     : " << (it->is_valid ? "Yes" : "No") << "\n"
               << "  Config File  : " << it->config_file_path.value_or("<no config file>") << "\n";
 }
 
