@@ -69,7 +69,7 @@ const everest::config::ModuleConfigurations& ConfigServiceCore::get_active_modul
 }
 
 void ConfigServiceCore::reload_from_storage() {
-    if (slot_manager_.is_valid(active_slot_id_)) {
+    if (slot_manager_.exists(active_slot_id_)) {
         const auto resp = active_storage_->get_module_configs();
         if (resp.status == everest::config::GenericResponseStatus::OK) {
             module_configs_ = resp.module_configs;
@@ -148,7 +148,8 @@ LoadFromYamlResult ConfigServiceCore::load_from_yaml(const std::string& raw_yaml
 
         // If the slot doesn't exist, create it and write the config
         if (into_new_slot) {
-            if (slot_manager_.write_config_slot(target_slot_id) != everest::config::GenericResponseStatus::OK) {
+            if (slot_manager_.write_config_slot(target_slot_id, nlohmann::json(module_configs).dump(), std::nullopt,
+                                                description) != everest::config::GenericResponseStatus::OK) {
                 return {false, std::nullopt, "Failed to create new config slot"};
             }
 
@@ -158,16 +159,22 @@ LoadFromYamlResult ConfigServiceCore::load_from_yaml(const std::string& raw_yaml
                 slot_manager_.delete_slot(target_slot_id);
                 return {false, std::nullopt, "Failed to write module configs to new slot"};
             }
-            storage->mark_valid(true, nlohmann::json(module_configs).dump(), std::nullopt, description);
         } else {
+            if (slot_manager_.delete_slot(target_slot_id) != everest::config::GenericResponseStatus::OK) {
+                return {false, std::nullopt, "Failed to replace config slot"};
+            }
+            if (slot_manager_.write_config_slot(target_slot_id, nlohmann::json(module_configs).dump(), std::nullopt,
+                                                description) != everest::config::GenericResponseStatus::OK) {
+                return {false, std::nullopt, "Failed to replace config slot"};
+            }
             // If the slot exists, overwrite its config with the new one
             auto storage = make_storage(target_slot_id);
 
             if (storage->replace_module_configs(module_configs) != everest::config::GenericResponseStatus::OK) {
+                slot_manager_.delete_slot(target_slot_id);
                 // Do nothing - if writing to an existing slot failed, we don't want to delete it;
                 return {false, std::nullopt, "Failed to write module configs to existing slot"};
             }
-            storage->mark_valid(true, nlohmann::json(module_configs).dump(), std::nullopt, description);
         }
 
         return {true, target_slot_id, ""};

@@ -122,7 +122,8 @@ TEST_CASE("Database operations", "[db_operation]") {
     const auto module_configs = get_example_module_configs();
 
     // config slot must be written via slot manager first so the CONFIG row exists before module data is written
-    REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == GenericResponseStatus::OK);
+    REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID, "Test", std::nullopt, std::nullopt) ==
+            GenericResponseStatus::OK);
     REQUIRE(storage.write_module_configs(module_configs) == GenericResponseStatus::OK);
 
     SECTION("Module configurations can be written and correctly retrieved") {
@@ -197,20 +198,6 @@ TEST_CASE("Database operations", "[db_operation]") {
         auto get_response = storage.get_configuration_parameter(id);
         REQUIRE(get_response.status == GetSetResponseStatus::Failed);
     }
-    SECTION("Config is not valid if not marked as valid") {
-        REQUIRE(slot_mgr.is_valid() == false);
-        storage.mark_valid(false, "Test", std::nullopt, std::nullopt);
-        REQUIRE(slot_mgr.is_valid() == false);
-    }
-    SECTION("Config is valid if marked as valid") {
-        storage.mark_valid(true, "Test", "Test", std::nullopt);
-        REQUIRE(slot_mgr.is_valid() == true);
-    }
-    SECTION("is_valid is specific to the given slot ID") {
-        storage.mark_valid(true, "Test", std::nullopt, std::nullopt);
-        REQUIRE(slot_mgr.is_valid(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == true);
-        REQUIRE(slot_mgr.is_valid(99) == false);
-    }
     SECTION("Slot can be deleted from the database") {
         REQUIRE(slot_mgr.delete_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == GenericResponseStatus::OK);
     }
@@ -218,7 +205,6 @@ TEST_CASE("Database operations", "[db_operation]") {
         auto slots = slot_mgr.list_slots();
         REQUIRE(slots.size() == 1);
         REQUIRE(slots.at(0).id == SqliteConfigSlotManager::DEFAULT_SLOT_ID);
-        REQUIRE(slots.at(0).is_valid == false); // not yet marked valid
     }
     SECTION("delete_slot removes the slot and its module data") {
         REQUIRE(slot_mgr.delete_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == GenericResponseStatus::OK);
@@ -234,22 +220,13 @@ TEST_CASE("write_config_slot manages CONFIG identity row", "[db_operation]") {
     SqliteConfigSlotManager slot_mgr("file::memory:?cache=shared", migrations_dir);
     SqliteStorage storage("file::memory:?cache=shared", migrations_dir, SqliteStorage::DEFAULT_CONFIG_ID);
 
-    REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == GenericResponseStatus::OK);
+    REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID, "dump", std::nullopt, std::nullopt) ==
+            GenericResponseStatus::OK);
 
-    SECTION("is_valid is false before mark_valid, true after") {
-        REQUIRE(slot_mgr.is_valid(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == false);
-        storage.mark_valid(true, "dump", std::nullopt, std::nullopt);
-        REQUIRE(slot_mgr.is_valid(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == true);
-    }
-    SECTION("A second storage instance scoped to the same slot is usable after mark_valid") {
-        storage.mark_valid(true, "dump", std::nullopt, std::nullopt);
-        REQUIRE(slot_mgr.is_valid(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == true);
-        SqliteStorage storage2("file::memory:?cache=shared", migrations_dir, SqliteStorage::DEFAULT_CONFIG_ID);
-        REQUIRE(storage2.get_module_configs().status == GenericResponseStatus::OK);
-    }
     SECTION("delete_slot allows re-initializing the slot via write_config_slot") {
         slot_mgr.delete_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID);
-        REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID) == GenericResponseStatus::OK);
+        REQUIRE(slot_mgr.write_config_slot(SqliteConfigSlotManager::DEFAULT_SLOT_ID, "dump", std::nullopt,
+                                           std::nullopt) == GenericResponseStatus::OK);
         REQUIRE(slot_mgr.list_slots().size() == 1);
     }
 }
