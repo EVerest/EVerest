@@ -186,7 +186,7 @@ void ISO15118_chargerImpl::handle_set_charging_parameters(types::iso15118::Setup
 
 void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::PaymentOption>& payment_options,
                                                 bool& supported_certificate_service,
-                                                bool& central_contract_validation_allowed) {
+                                                bool& central_contract_validation_allowed, bool& fake_dc_enabled) {
     if (not v2g_ctx->hlc_pause_active) {
         v2g_ctx->evse_v2g_data.payment_option_list.clear();
         if (not payment_options.empty()) {
@@ -250,6 +250,7 @@ void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::Pay
     v2g_ctx->evse_v2g_data.evse_processing[PHASE_AUTH] = (uint8_t)iso2_EVSEProcessingType_Ongoing;
 
     v2g_ctx->evse_v2g_data.central_contract_validation_allowed = central_contract_validation_allowed;
+    v2g_ctx->is_fake_dc = fake_dc_enabled;
 }
 
 void ISO15118_chargerImpl::handle_bpt_setup(types::iso15118::BptSetup& bpt_config) {
@@ -490,7 +491,7 @@ void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
         }
     }
 
-    if (mod->config.supported_DIN70121 and not v2g_ctx->is_dc_charger) {
+    if (mod->config.supported_DIN70121 and not v2g_ctx->is_dc_charger and not v2g_ctx->is_fake_dc) {
         v2g_ctx->supported_protocols &= ~(1 << V2G_PROTO_DIN70121);
         dlog(DLOG_LEVEL_WARNING, "Removed DIN70121 from the list of supported protocols as AC is enabled");
     }
