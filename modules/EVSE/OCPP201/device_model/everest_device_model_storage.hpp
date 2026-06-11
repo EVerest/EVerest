@@ -33,6 +33,14 @@ public:
     virtual std::vector<ocpp::v2::VariableAttribute>
     get_variable_attributes(const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
                             const std::optional<ocpp::v2::AttributeEnum>& attribute_enum) override;
+
+    /// \brief Get the device model component representing the EVerest module identified by \p module_id and
+    /// \p implementation_id . Component.name is the module type, Component.instance is the module id and the
+    /// evse/connector information is derived from the mapping of the implementation, falling back to the mapping of
+    /// the module.
+    /// \returns std::nullopt if no module config is available for \p module_id
+    std::optional<ocpp::v2::Component> get_component_for_module(const std::string& module_id,
+                                                                const std::string& implementation_id) const;
     virtual ocpp::v2::SetVariableStatusEnum set_variable_attribute_value(const ocpp::v2::Component& component_id,
                                                                          const ocpp::v2::Variable& variable_id,
                                                                          const ocpp::v2::AttributeEnum& attribute_enum,
