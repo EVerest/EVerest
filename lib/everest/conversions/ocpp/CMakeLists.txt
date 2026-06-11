@@ -38,7 +38,7 @@ if (DISABLE_EDM)
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
     )
-    ev_packaging(
+    evc_setup_package_no_export(
         NAME everest-ocpp-evse-security
         LIBRARY_NAME ocpp_evse_security
         NAMESPACE everest
