@@ -65,19 +65,41 @@ bool SqliteConfigSlotManager::exists(int slot_id) {
     return stmt->step() == SQLITE_ROW;
 }
 
-bool SqliteConfigSlotManager::is_valid(int slot_id) {
-    const std::string sql = "SELECT 1 FROM CONFIG_META WHERE ID = @config_id AND VALID = 1";
-    auto stmt = this->db->new_statement(sql);
-    stmt->bind_int("@config_id", slot_id);
-    return stmt->step() == SQLITE_ROW;
-}
-
-GenericResponseStatus SqliteConfigSlotManager::write_config_slot(int slot_id) {
+GenericResponseStatus
+SqliteConfigSlotManager::write_config_slot(int slot_id, const std::string& config_dump,
+                                           const std::optional<std::filesystem::path>& config_file_path,
+                                           const std::optional<std::string>& description) {
     auto transaction = this->db->begin_transaction();
 
-    auto config_stmt = this->db->new_statement("INSERT INTO CONFIG (ID) VALUES (?) ON CONFLICT(ID) DO NOTHING;");
-    config_stmt->bind_int(1, slot_id);
-    if (config_stmt->step() != SQLITE_DONE) {
+    auto id_stmt = this->db->new_statement("INSERT INTO CONFIG (ID) VALUES (?) ON CONFLICT(ID) DO NOTHING;");
+    id_stmt->bind_int(1, slot_id);
+    if (id_stmt->step() != SQLITE_DONE) {
+        return GenericResponseStatus::Failed;
+    }
+
+    const std::string sql =
+        "INSERT INTO CONFIG_META (ID, LAST_UPDATED, CONFIG_DUMP, CONFIG_FILE_PATH, DESCRIPTION) VALUES "
+        "(@config_id, @last_updated, @config_dump, @config_file_path, @description) "
+        "ON CONFLICT(ID) DO UPDATE SET "
+        "LAST_UPDATED=excluded.LAST_UPDATED, CONFIG_DUMP=excluded.CONFIG_DUMP, "
+        "CONFIG_FILE_PATH=excluded.CONFIG_FILE_PATH, DESCRIPTION=excluded.DESCRIPTION;";
+    auto meta_stmt = this->db->new_statement(sql);
+
+    meta_stmt->bind_int("@config_id", slot_id);
+    const auto last_updated = Everest::Date::to_rfc3339(date::utc_clock::now());
+    meta_stmt->bind_text("@last_updated", last_updated);
+    meta_stmt->bind_text("@config_dump", config_dump, SQLiteString::Transient);
+    if (config_file_path.has_value()) {
+        meta_stmt->bind_text("@config_file_path", config_file_path.value().string(), SQLiteString::Transient);
+    } else {
+        meta_stmt->bind_null("@config_file_path");
+    }
+    if (description.has_value()) {
+        meta_stmt->bind_text("@description", description.value(), SQLiteString::Transient);
+    } else {
+        meta_stmt->bind_null("@description");
+    }
+    if (meta_stmt->step() != SQLITE_DONE) {
         return GenericResponseStatus::Failed;
     }
 
@@ -85,9 +107,22 @@ GenericResponseStatus SqliteConfigSlotManager::write_config_slot(int slot_id) {
     return GenericResponseStatus::OK;
 }
 
+GenericResponseStatus SqliteConfigSlotManager::set_config_slot_description(int slot_id, std::string& description) {
+    GenericResponseStatus ret = GenericResponseStatus::Failed;
+    if (exists(slot_id)) {
+        auto transaction = this->db->begin_transaction();
+        auto desc_stmt = this->db->new_statement("UPDATE CONFIG_META SET DESCRIPTION = @description;");
+        desc_stmt->bind_text("@description", description, SQLiteString::Transient);
+
+        transaction->commit();
+        ret = GenericResponseStatus::OK;
+    }
+    return ret;
+}
+
 std::vector<SlotInfo> SqliteConfigSlotManager::list_slots() {
     const std::string sql =
-        "SELECT c.ID, COALESCE(cm.LAST_UPDATED, ''), COALESCE(cm.VALID, 0), cm.CONFIG_FILE_PATH, cm.DESCRIPTION "
+        "SELECT c.ID, COALESCE(cm.LAST_UPDATED, ''), cm.CONFIG_FILE_PATH, cm.DESCRIPTION "
         "FROM CONFIG c LEFT JOIN CONFIG_META cm ON cm.ID = c.ID "
         "ORDER BY c.ID";
     auto stmt = this->db->new_statement(sql);
@@ -97,9 +132,8 @@ std::vector<SlotInfo> SqliteConfigSlotManager::list_slots() {
         SlotInfo info;
         info.id = stmt->column_int(0);
         info.last_updated = stmt->column_text(1);
-        info.is_valid = stmt->column_int(2) != 0;
-        info.config_file_path = stmt->column_text_nullable(3);
-        info.description = stmt->column_text_nullable(4);
+        info.config_file_path = stmt->column_text_nullable(2);
+        info.description = stmt->column_text_nullable(3);
         result.push_back(std::move(info));
     }
     return result;
@@ -132,8 +166,8 @@ DuplicateSlotResult SqliteConfigSlotManager::duplicate_slot(int source_slot_id,
         // Copy CONFIG_META (override DESCRIPTION if provided)
         {
             auto s = this->db->new_statement(
-                "INSERT INTO CONFIG_META (ID, LAST_UPDATED, VALID, CONFIG_DUMP, CONFIG_FILE_PATH, DESCRIPTION) "
-                "SELECT ?, LAST_UPDATED, VALID, CONFIG_DUMP, CONFIG_FILE_PATH, ? FROM CONFIG_META WHERE ID = ?;");
+                "INSERT INTO CONFIG_META (ID, LAST_UPDATED, CONFIG_DUMP, CONFIG_FILE_PATH, DESCRIPTION) "
+                "SELECT ?, LAST_UPDATED, CONFIG_DUMP, CONFIG_FILE_PATH, ? FROM CONFIG_META WHERE ID = ?;");
             s->bind_int(1, new_id);
             if (description.has_value()) {
                 s->bind_text(2, description.value());
