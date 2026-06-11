@@ -115,7 +115,6 @@ ConfigMetadata_Internal to_internal_api(ConfigMetadata_External const& val) {
     ConfigMetadata_Internal result;
     result.id = val.slot_id;
     result.last_updated = val.last_updated;
-    result.is_valid = val.is_valid;
     result.config_file_path = val.config_file_path;
     result.description = val.description;
     return result;
@@ -125,7 +124,6 @@ ConfigMetadata_External to_external_api(ConfigMetadata_Internal const& val) {
     ConfigMetadata_External result;
     result.slot_id = val.id;
     result.last_updated = val.last_updated;
-    result.is_valid = val.is_valid;
     result.config_file_path = val.config_file_path;
     result.description = val.description;
     return result;
