@@ -10,7 +10,7 @@ target_sources(everest_yaml
 target_include_directories(everest_yaml
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/everest>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 target_compile_features(everest_yaml PUBLIC cxx_std_17)
@@ -31,8 +31,8 @@ target_link_libraries(everest_yaml
 
 include(GNUInstallDirs)
 
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/everest
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING PATTERN "*.hpp"
 )
 
