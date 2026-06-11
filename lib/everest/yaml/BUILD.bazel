@@ -3,7 +3,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 cc_library(
     name = "everest_yaml",
     srcs = ["lib/yaml_loader.cpp"],
-    hdrs = ["include/utils/yaml_loader.hpp"],
+    hdrs = ["include/everest/utils/yaml_loader.hpp"],
     strip_include_prefix = "include",
     cxxopts = ["-std=c++17"],
     visibility = ["//visibility:public"],
