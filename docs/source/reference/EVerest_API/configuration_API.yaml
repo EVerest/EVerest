@@ -318,12 +318,10 @@ components:
             slots:
               - slot_id: 1
                 last_updated: "2026-04-08T16:00:00Z"
-                is_valid: true
                 description: "Production_AC_v1"
                 config_file_path: "/var/opt/everest/slots/slot_1.yaml"
               - slot_id: 2
                 last_updated: "2026-03-15T09:30:00Z"
-                is_valid: false
                 description: "Testing_DC_Fast"
 
     send_request_get_active_slot:
@@ -716,8 +714,6 @@ components:
         last_updated:
           type: string
           description: 'Timestamp of the last update.'
-        is_valid:
-          type: boolean
         description:
           type: string
         config_file_path:
@@ -725,7 +721,6 @@ components:
       required:
         - slot_id
         - last_updated
-        - is_valid
     ListSlotIdsResult:
       description: A list of Metadata for all configuration slots stored in the database.
       type: object
