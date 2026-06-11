@@ -62,7 +62,7 @@ public:
     };
 
 private:
-    using flags_underlying_t = std::uint8_t;
+    typedef std::uint8_t flags_underlying_t;
     enum class flags_t : flags_underlying_t {
         initialised,
         custom_provider_available,
@@ -100,7 +100,7 @@ private:
     /// @param val - whether to set or reset the flag
     /// @return true when the flag was changed
     static inline bool update(flags_t f, bool val) {
-        const bool result = (val != is_set(f));
+        bool result = (val != is_set(f));
         if (val) {
             set(f);
         } else {
@@ -123,7 +123,7 @@ private:
 
 public:
     OpenSSLProvider();
-    ~OpenSSLProvider(); // NOLINT(performance-trivially-destructible): dtor impl dependent on ifdef
+    ~OpenSSLProvider();
 
     inline void set_global_mode(mode_t mode) {
         set_mode(nullptr, mode);
@@ -147,12 +147,6 @@ public:
     }
     inline const char* propquery_tls_str() const {
         return propquery(propquery_tls());
-    }
-    inline const char* propquery_default() const {
-        return propquery(mode_t::default_provider);
-    }
-    inline const char* propquery_custom() const {
-        return propquery(mode_t::custom_provider);
     }
 
     /// @brief return the TLS OSSL library context
