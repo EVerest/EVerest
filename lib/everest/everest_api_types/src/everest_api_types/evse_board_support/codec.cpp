@@ -26,10 +26,6 @@ std::string serialize(Error const& val) noexcept {
     return nlohmann::json(val).dump(json_indent);
 }
 
-std::string serialize(Connector_type val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
-}
-
 std::string serialize(HardwareCapabilities const& val) noexcept {
     return nlohmann::json(val).dump(json_indent);
 }
@@ -66,11 +62,6 @@ std::ostream& operator<<(std::ostream& os, const ErrorEnum& val) {
 }
 
 std::ostream& operator<<(std::ostream& os, const Error& val) {
-    os << serialize(val);
-    return os;
-}
-
-std::ostream& operator<<(std::ostream& os, const Connector_type& val) {
     os << serialize(val);
     return os;
 }
@@ -113,10 +104,6 @@ template <> ErrorEnum deserialize(std::string const& val) {
 }
 
 template <> Error deserialize(std::string const& val) {
-    return json::parse(val);
-}
-
-template <> Connector_type deserialize(std::string const& val) {
     return json::parse(val);
 }
 

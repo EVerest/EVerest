@@ -27,6 +27,7 @@ namespace module {
 struct Conf {
     int connector_id;
     bool reset_powermeter_on_session_start;
+    std::string connector_type;
 };
 
 class YetiSimulator : public Everest::ModuleBase {

@@ -22,9 +22,6 @@ void from_json(const json& j, ErrorEnum& k);
 void to_json(json& j, const Error& k) noexcept;
 void from_json(const json& j, Error& k);
 
-void to_json(json& j, Connector_type const& k) noexcept;
-void from_json(const json& j, Connector_type& k);
-
 void to_json(json& j, HardwareCapabilities const& k) noexcept;
 void from_json(const json& j, HardwareCapabilities& k);
 

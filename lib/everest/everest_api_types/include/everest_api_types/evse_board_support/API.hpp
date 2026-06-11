@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <everest_api_types/evse_manager/API.hpp>
 #include <optional>
 #include <stdint.h>
 #include <string>
@@ -71,10 +72,8 @@ struct Error {
     std::optional<std::string> message;
 };
 
-enum class Connector_type {
-    IEC62196Type2Cable,
-    IEC62196Type2Socket,
-};
+// Unified with evse_manager::ConnectorTypeEnum; alias kept for source compatibility
+using Connector_type = evse_manager::ConnectorTypeEnum;
 
 struct HardwareCapabilities {
     float max_current_A_import;
@@ -87,7 +86,7 @@ struct HardwareCapabilities {
     int32_t min_phase_count_export;
     bool supports_changing_phases_during_charging;
     bool supports_cp_state_E;
-    Connector_type connector_type;
+    evse_manager::ConnectorTypeEnum connector_type;
     std::optional<float> max_plug_temperature_C;
 };
 
