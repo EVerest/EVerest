@@ -105,7 +105,7 @@ SetActiveSlotStatus ConfigServiceCore::mark_active_slot(int slot_id) {
 }
 
 DeleteSlotStatus ConfigServiceCore::delete_slot(int slot_id) {
-    if (slot_id == active_slot_id_) {
+    if (slot_id == active_slot_id_ or slot_id == slot_manager_.get_next_boot_slot_id()) {
         return DeleteSlotStatus::CannotDeleteActiveSlot;
     }
     // Verify slot exists first
