@@ -128,15 +128,12 @@ DuplicateSlotResult ConfigServiceCore::duplicate_slot(int slot_id, std::optional
 LoadFromYamlResult ConfigServiceCore::load_from_yaml(const std::string& raw_yaml,
                                                      std::optional<std::string> description,
                                                      std::optional<int> slot_id) {
-    bool into_new_slot = not slot_id.has_value();
-    int target_slot_id = into_new_slot ? slot_manager_.next_slot_id() : slot_id.value();
+    int target_slot_id = slot_id.value_or(slot_manager_.next_slot_id());
 
     if (target_slot_id == active_slot_id_) {
         return {false, std::nullopt, "Cannot load YAML into the active slot"};
     }
-    if (!into_new_slot && !slot_manager_.exists(target_slot_id)) {
-        return {false, std::nullopt, "The given slot ID does not exist"};
-    }
+    bool into_new_slot = not slot_manager_.exists(target_slot_id);
     try {
         const auto json_config = Everest::load_yaml_from_string(raw_yaml);
         if (!json_config.contains("active_modules")) {
