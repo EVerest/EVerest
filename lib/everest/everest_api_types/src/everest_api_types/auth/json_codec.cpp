@@ -547,10 +547,10 @@ void to_json(json& j, TokenValidationStatusMessage const& k) noexcept {
         {"token", k.token},
         {"status", k.status},
     };
-    if (k.messages) {
-        j["messages"] = json::array();
-        for (auto val : k.messages.value()) {
-            j["messages"].push_back(val);
+    if (k.validation_results) {
+        j["validation_results"] = json::array();
+        for (auto val : k.validation_results.value()) {
+            j["validation_results"].push_back(val);
         }
     }
 }
@@ -558,13 +558,13 @@ void to_json(json& j, TokenValidationStatusMessage const& k) noexcept {
 void from_json(const json& j, TokenValidationStatusMessage& k) {
     k.token = j.at("token");
     k.status = j.at("status");
-    if (j.contains("messages")) {
-        json arr = j.at("messages");
-        std::vector<types::text_message::MessageContent> vec;
+    if (j.contains("validation_results")) {
+        json arr = j.at("validation_results");
+        std::vector<ValidationResult> vec;
         for (auto val : arr) {
             vec.push_back(val);
         }
-        k.messages.emplace(vec);
+        k.validation_results.emplace(vec);
     }
 }
 
