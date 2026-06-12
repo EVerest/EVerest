@@ -669,7 +669,7 @@ TEST_F(GenericOcppProvidesTester, publishSecurityEvent) {
 }
 
 TEST_F(GenericOcppProvidesTester, publishEventData) {
-    // publish_event_data() called from cb_variable_changed
+    // publish_event_data() called from cb_variable_monitor
 
     using ocpp::v2::Component;
     using ocpp::v2::Variable;
@@ -679,14 +679,14 @@ TEST_F(GenericOcppProvidesTester, publishEventData) {
     interfaces.subscribe_var("ocpp_generic", "event_data",
                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp.cb_variable_changed(Component{"component"}, Variable{"variable"}, "value");
+    ocpp.cb_variable_monitor(Component{"component"}, Variable{"variable"}, "value");
     EXPECT_TRUE(received.empty());
 
     // add monitor
     EXPECT_CALL(chargepoint, register_variable_listener(_)).Times(1);
     std::vector<ComponentVariable> req{{{"Component"}, {"Variable"}}};
     ocpp.handle_monitor_variables(req);
-    ocpp.cb_variable_changed(Component{"Component"}, Variable{"Variable"}, "value");
+    ocpp.cb_variable_monitor(Component{"Component"}, Variable{"Variable"}, "value");
 
     ASSERT_EQ(received.size(), 1);
     // adjust the date and time

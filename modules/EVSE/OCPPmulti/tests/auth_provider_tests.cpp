@@ -6,6 +6,7 @@
 
 #include <generic_ocpp.hpp>
 
+#include "generic_chargepoint_interface.hpp"
 #include "stubs/generic_ocpp_stub.hpp"
 
 namespace {
@@ -15,23 +16,23 @@ using ocpp::v2::RequestStartTransactionRequest;
 using types::authorization::IdTokenType;
 
 TEST_F(GenericOcppProvidesTester, publishProvidedToken) {
-    // publish_provided_token() called from cb_remote_start_transaction
+    // publish_provided_token() called from cb_provide_token
 
-    const IdToken token{"TokenID", "Local"};
-    RequestStartTransactionRequest req;
-    req.idToken = token;
-    req.remoteStartId = 1234;
-    // std::optional<IdToken> groupIdToken;
-    // std::optional<ChargingProfile> chargingProfile;
-    // std::optional<CustomData> customData;
+    using IdToken = ocpp_multi::GenericChargePointCallbacks::IdToken;
+
+    IdToken token;
+    token.token = {"TokenID", "Local"};
+    token.request_id = 1234;
+    token.prevalidated = true;
 
     std::vector<json> received;
     interfaces.subscribe_var("auth_provider", "provided_token",
                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp.cb_remote_start_transaction(req, false);
-    req.remoteStartId = 4321;
-    ocpp.cb_remote_start_transaction(req, true);
+    ocpp.cb_provide_token(token);
+    token.request_id = 4321;
+    token.prevalidated = false;
+    ocpp.cb_provide_token(token);
 
     ASSERT_EQ(received.size(), 2);
     EXPECT_EQ(

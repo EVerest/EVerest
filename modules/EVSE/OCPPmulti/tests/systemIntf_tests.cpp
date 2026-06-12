@@ -143,19 +143,25 @@ TEST_F(GenericOcppRequiresTester, callUploadLogs) {
 TEST_F(GenericOcppRequiresTester, callIsResetAllowed) {
     // call_is_reset_allowed() used in cb_is_reset_allowed()
 
+    using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
+
     std::vector<json> received;
     interfaces.subscribe_var("system", "call_is_reset_allowed",
                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     interfaces.add_cmd_result(R"(true)"_json);
+    interfaces.add_cmd_result(R"(true)"_json);
 
-    auto result = ocpp.cb_is_reset_allowed(1);
+    auto result = ocpp.cb_is_reset_allowed(1, ResetType::Immediate);
     EXPECT_FALSE(result);
-    result = ocpp.cb_is_reset_allowed(std::nullopt);
+    result = ocpp.cb_is_reset_allowed(std::nullopt, ResetType::Immediate);
+    EXPECT_TRUE(result);
+    result = ocpp.cb_is_reset_allowed(std::nullopt, ResetType::Soft);
     EXPECT_TRUE(result);
 
-    ASSERT_EQ(received.size(), 1);
+    ASSERT_EQ(received.size(), 2);
     EXPECT_EQ(received[0], R"({"type":"NotSpecified"})"_json);
+    EXPECT_EQ(received[1], R"({"type":"Soft"})"_json);
 }
 
 TEST_F(GenericOcppRequiresTester, callReset) {

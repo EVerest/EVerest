@@ -185,7 +185,7 @@ TEST_F(GenericOcppRequiresTester, callPauseCharging) {
 TEST_F(GenericOcppRequiresTester, callSetPlugAndChargeConfiguration) {
     // call_set_plug_and_charge_configuration() used in
     // - ready_module_configuration()
-    // - cb_variable_changed(ocpp::v2::SetVariableData)
+    // - cb_variable_set(ocpp::v2::SetVariableData)
     //
     // ISO15118Ctrlr:
     // - PnCEnabled
@@ -219,20 +219,20 @@ TEST_F(GenericOcppRequiresTester, callSetPlugAndChargeConfiguration) {
     data.attributeValue = "false";
 
     data.variable.name = "PnCEnabled";
-    ocpp.cb_variable_changed(data);
+    ocpp.cb_variable_set(data);
     data.variable.name = "CentralContractValidationAllowed";
-    ocpp.cb_variable_changed(data);
+    ocpp.cb_variable_set(data);
     data.variable.name = "ContractCertificateInstallationEnabled";
-    ocpp.cb_variable_changed(data);
+    ocpp.cb_variable_set(data);
 
     data.attributeValue = "true";
 
     data.variable.name = "PnCEnabled";
-    ocpp.cb_variable_changed(data);
+    ocpp.cb_variable_set(data);
     data.variable.name = "CentralContractValidationAllowed";
-    ocpp.cb_variable_changed(data);
+    ocpp.cb_variable_set(data);
     data.variable.name = "ContractCertificateInstallationEnabled";
-    ocpp.cb_variable_changed(data);
+    ocpp.cb_variable_set(data);
 
     const std::vector<json> expected{
         R"({"plug_and_charge_configuration":{"central_contract_validation_allowed":true,"contract_certificate_installation_enabled":true,"pnc_enabled":true}})"_json,

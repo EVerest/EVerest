@@ -20,7 +20,7 @@ using namespace stubs;
 
 TEST_F(GenericOcppRequiresTester, callSetConnectionTimeout) {
     // call_set_connection_timeout() used in
-    // cb_variable_changed
+    // cb_variable_set
     // ready_module_configuration
 
     using ocpp::v2::AttributeEnum;
@@ -37,7 +37,7 @@ TEST_F(GenericOcppRequiresTester, callSetConnectionTimeout) {
     // std::optional<CustomData> customData;
 
     ocpp.ready_module_configuration();
-    ocpp.cb_variable_changed(set_data);
+    ocpp.cb_variable_set(set_data);
 
     ASSERT_EQ(received.size(), 2);
     ASSERT_EQ(chargepoint.get_int32(set_data.component, set_data.variable, AttributeEnum::Actual), 60);
@@ -47,7 +47,7 @@ TEST_F(GenericOcppRequiresTester, callSetConnectionTimeout) {
 
 TEST_F(GenericOcppRequiresTester, callSetMasterPassGroupId) {
     // call_set_master_pass_group_id() used in
-    // cb_variable_changed
+    // cb_variable_set
     // ready_module_configuration
 
     using ocpp::v2::AttributeEnum;
@@ -64,7 +64,7 @@ TEST_F(GenericOcppRequiresTester, callSetMasterPassGroupId) {
     // std::optional<CustomData> customData;
 
     ocpp.ready_module_configuration();
-    ocpp.cb_variable_changed(set_data);
+    ocpp.cb_variable_set(set_data);
 
     ASSERT_EQ(received.size(), 2);
     ASSERT_EQ(chargepoint.get_string(set_data.component, set_data.variable, AttributeEnum::Actual), "Managers");

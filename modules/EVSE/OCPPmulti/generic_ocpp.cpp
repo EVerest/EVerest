@@ -547,7 +547,7 @@ void GenericOcpp::handle_monitor_variables(const std::vector<types::ocpp::Compon
             // register a handler
             m_charge_point.register_variable_listener(
                 [this](auto&, const auto& component, const auto& variable, auto&, auto&, auto&,
-                       const std::string& value) { cb_variable_changed(component, variable, value); });
+                       const std::string& value) { cb_variable_monitor(component, variable, value); });
         }
 
         // add variables to monitor list
@@ -1131,6 +1131,9 @@ void GenericOcpp::cb_hw_capabilities(std::int32_t evse_id,
 ocpp::ReservationCheckStatus
 GenericOcpp::cb_is_reservation_for_token(std::int32_t evse_id, const ocpp::CiString<255>& idToken,
                                          const std::optional<ocpp::CiString<255>>& groupIdToken) {
+
+    // TODO(james-ctc): for v1.6 should evse_id be the connector or not specified?
+
     auto reservation_status = types::reservation::ReservationCheckStatus::NotReserved;
 
     if (!m_requires.reservation.empty() && m_requires.reservation.at(0) != nullptr) {
@@ -1146,19 +1149,37 @@ GenericOcpp::cb_is_reservation_for_token(std::int32_t evse_id, const ocpp::CiStr
     return ocpp_conversions::to_ocpp_reservation_check_status(reservation_status);
 }
 
-bool GenericOcpp::cb_is_reset_allowed(const std::optional<std::int32_t>& evse_id) {
-    // Reset of EVSE is currently not supported
-
+bool GenericOcpp::cb_is_reset_allowed(const std::optional<std::int32_t>& evse_id, ResetType type) {
     bool result{false};
-    if (!evse_id.has_value()) {
-        // not EVSE reset
-        try {
-            result = m_requires.system.call_is_reset_allowed(types::system::ResetType::NotSpecified);
-        } catch (std::out_of_range& e) {
+    if (evse_id.has_value()) {
+        EVLOG_debug << "Reset of EVSE is currently not supported";
+    } else {
+        auto r_type{types::system::ResetType::NotSpecified};
+        bool do_reset{true};
+
+        switch (type) {
+        case ResetType::Hard:
+            r_type = types::system::ResetType::Hard;
+            break;
+        case ResetType::Soft:
+            r_type = types::system::ResetType::Soft;
+            break;
+        case ResetType::Immediate:
+        case ResetType::ImmediateAndResume:
+        case ResetType::OnIdle:
+            break;
+        default:
             EVLOG_warning << "Could not convert OCPP ResetEnum to EVerest ResetType while executing "
                              "is_reset_allowed_callback.";
+            do_reset = false;
+            break;
+        }
+
+        if (do_reset) {
+            result = m_requires.system.call_is_reset_allowed(r_type);
         }
     }
+
     return result;
 }
 
@@ -1260,26 +1281,25 @@ void GenericOcpp::cb_ready(std::int32_t evse_id, bool ready) {
     }
 }
 
-ocpp::v2::RequestStartStopStatusEnum
-GenericOcpp::cb_remote_start_transaction(const ocpp::v2::RequestStartTransactionRequest& request,
-                                         bool authorize_remote_start) {
+void GenericOcpp::cb_provide_token(const IdToken& id_token) {
     using namespace module::conversions;
 
     types::authorization::ProvidedIdToken provided_token;
-    provided_token.id_token = to_everest_id_token(request.idToken);
+    provided_token.id_token = to_everest_id_token(id_token.token);
     provided_token.authorization_type = types::authorization::AuthorizationType::OCPP;
-    provided_token.prevalidated = !authorize_remote_start;
-    provided_token.request_id = request.remoteStartId;
+    provided_token.prevalidated = id_token.prevalidated;
+    provided_token.request_id = id_token.request_id;
 
-    if (request.groupIdToken.has_value()) {
-        provided_token.parent_id_token = to_everest_id_token(request.groupIdToken.value());
+    if (id_token.group_id_token.has_value()) {
+        provided_token.parent_id_token = to_everest_id_token(id_token.group_id_token.value());
     }
 
-    if (request.evseId.has_value()) {
-        provided_token.connectors = std::vector<std::int32_t>{request.evseId.value()};
+    if (id_token.evse_id.has_value()) {
+        provided_token.connectors = std::vector<std::int32_t>{id_token.evse_id.value()};
+    } else if (!id_token.connectors.empty()) {
+        provided_token.connectors = id_token.connectors;
     }
     m_provides.auth_provider.publish_provided_token(provided_token);
-    return ocpp::v2::RequestStartStopStatusEnum::Accepted;
 }
 
 void GenericOcpp::cb_reservation_update(types::reservation::ReservationUpdateStatus status) {
@@ -1537,7 +1557,7 @@ GenericOcpp::cb_validate_network_profile(const ocpp::v2::NetworkConnectionProfil
     // TODO(piet): Add further validation of the NetworkConnectionProfile
 }
 
-void GenericOcpp::cb_variable_changed(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
+void GenericOcpp::cb_variable_monitor(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
                                       const std::string& value) {
     using namespace module::conversions;
 
@@ -1562,7 +1582,7 @@ void GenericOcpp::cb_variable_changed(const ocpp::v2::Component& component, cons
     }
 }
 
-void GenericOcpp::cb_variable_changed(const ocpp::v2::SetVariableData& set_variable_data) {
+void GenericOcpp::cb_variable_set(const ocpp::v2::SetVariableData& set_variable_data) {
     using namespace ocpp::v2;
     const auto& component = set_variable_data.component;
     const auto& name = set_variable_data.variable.name.get();

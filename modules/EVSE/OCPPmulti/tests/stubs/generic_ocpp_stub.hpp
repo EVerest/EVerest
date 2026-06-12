@@ -38,8 +38,8 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::cb_ocpp_messages;
     using ocpp_multi::GenericOcpp::cb_pause_charging;
     using ocpp_multi::GenericOcpp::cb_powermeter;
+    using ocpp_multi::GenericOcpp::cb_provide_token;
     using ocpp_multi::GenericOcpp::cb_ready;
-    using ocpp_multi::GenericOcpp::cb_remote_start_transaction;
     using ocpp_multi::GenericOcpp::cb_reservation_update;
     using ocpp_multi::GenericOcpp::cb_reserve_now;
     using ocpp_multi::GenericOcpp::cb_reset;
@@ -58,7 +58,8 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::cb_update_allowed_energy_transfer_modes;
     using ocpp_multi::GenericOcpp::cb_update_firmware_request;
     using ocpp_multi::GenericOcpp::cb_validate_network_profile;
-    using ocpp_multi::GenericOcpp::cb_variable_changed;
+    using ocpp_multi::GenericOcpp::cb_variable_monitor;
+    using ocpp_multi::GenericOcpp::cb_variable_set;
     using ocpp_multi::GenericOcpp::cb_waiting_for_external_ready;
     using ocpp_multi::GenericOcpp::charging_schedules_timer_running;
     using ocpp_multi::GenericOcpp::charging_schedules_timer_start;

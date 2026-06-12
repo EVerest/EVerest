@@ -242,6 +242,9 @@ protected:
     void ready_module_configuration();
     void ready_transaction_handler();
 
+    // ------------------------------------------------------------------------
+    // GenericChargePointCallbacks
+
     void cb_all_connectors_unavailable() override;
     void cb_boot_notification(const ocpp::v2::BootNotificationResponse& boot_notification_response) override;
     bool cb_cancel_reservation(std::int32_t reservation_id) override;
@@ -267,17 +270,15 @@ protected:
     ocpp::ReservationCheckStatus
     cb_is_reservation_for_token(std::int32_t evse_id, const ocpp::CiString<255>& idToken,
                                 const std::optional<ocpp::CiString<255>>& groupIdToken) override;
-    bool cb_is_reset_allowed(const std::optional<std::int32_t>& evse_id) override;
+    bool cb_is_reset_allowed(const std::optional<std::int32_t>& evse_id, ResetType type) override;
     void cb_iso15118_certificate_request(std::int32_t extensions_id,
                                          const types::iso15118::RequestExiStreamSchema& certificate_request) override;
     void cb_log_status(types::system::LogStatus status) override;
     void cb_ocpp_messages(const std::string& message, ocpp::MessageDirection direction) override;
     void cb_pause_charging(std::int32_t evse_id) override;
     void cb_powermeter(std::int32_t evse_id, const types::powermeter::Powermeter& power_meter) override;
+    void cb_provide_token(const IdToken& id_token) override;
     void cb_ready(std::int32_t evse_id, bool ready) override;
-    ocpp::v2::RequestStartStopStatusEnum
-    cb_remote_start_transaction(const ocpp::v2::RequestStartTransactionRequest& request,
-                                bool authorize_remote_start) override;
     void cb_reservation_update(types::reservation::ReservationUpdateStatus status) override;
     ocpp::v2::ReserveNowStatusEnum cb_reserve_now(const ocpp::v2::ReserveNowRequest& request) override;
     void cb_reset(const std::optional<const std::int32_t>& evse_id, ResetType type) override;
@@ -307,10 +308,14 @@ protected:
     cb_update_firmware_request(const ocpp::v2::UpdateFirmwareRequest& request) override;
     ocpp::v2::SetNetworkProfileStatusEnum
     cb_validate_network_profile(const ocpp::v2::NetworkConnectionProfile& network_connection_profile) override;
-    void cb_variable_changed(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
-                             const std::string& value) override;
-    void cb_variable_changed(const ocpp::v2::SetVariableData& set_variable_data) override;
+    void cb_variable_set(const ocpp::v2::SetVariableData& set_variable_data) override;
     void cb_waiting_for_external_ready(std::int32_t evse_id, bool ready) override;
+
+    // ------------------------------------------------------------------------
+    // other callbacks
+
+    void cb_variable_monitor(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
+                             const std::string& value);
 
     bool charging_schedules_timer_running();
     void charging_schedules_timer_start();

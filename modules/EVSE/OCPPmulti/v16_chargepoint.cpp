@@ -6,8 +6,20 @@
 #include "ocpp/v16/ocpp_enums.hpp"
 #include "ocpp/v2/messages/UpdateFirmware.hpp"
 #include "ocpp/v2/ocpp_enums.hpp"
+#include "ocpp/v2/ocpp_types.hpp"
 
 namespace {
+
+// mapping between v1.6 and v2.x configuration keys
+constexpr const auto CENTRAL_CONTRACT_VALIDATION_ALLOWED_CONFIG_KEY = "CentralContractValidationAllowed";
+constexpr const auto CENTRAL_CONTRACT_VALIDATION_ALLOWED_COMPONENT = "ISO15118Ctrlr";
+constexpr const auto CENTRAL_CONTRACT_VALIDATION_ALLOWED_VARIABLE = "CentralContractValidationAllowed";
+constexpr const auto CONNECTION_TIMEOUT_CONFIG_KEY = "ConnectionTimeout";
+constexpr const auto CONNECTION_TIMEOUT_COMPONENT = "TxCtrlr";
+constexpr const auto CONNECTION_TIMEOUT_VARIABLE = "EVConnectionTimeOut";
+constexpr const auto ISO15118_PNC_ENABLED_CONFIG_KEY = "ISO15118PnCEnabled";
+constexpr const auto ISO15118_PNC_ENABLED_COMPONENT = "ISO15118Ctrlr";
+constexpr const auto ISO15118_PNC_ENABLED_VARIABLE = "PnCEnabled";
 
 void create_empty_user_config(const fs::path& user_config_path) {
     if (fs::exists(user_config_path.parent_path())) {
@@ -110,6 +122,9 @@ void ChargePointV16::check_configured(const std::string_view& fn) {
     }
 }
 
+// ----------------------------------------------------------------------------
+// callbacks from libocpp
+
 void ChargePointV16::cb_boot_notification_response(
     const ocpp::v16::BootNotificationResponse& boot_notification_response) {
     const auto response = convert(boot_notification_response);
@@ -120,8 +135,7 @@ void ChargePointV16::cb_connection_state_changed(bool is_connected) {
     m_callbacks_ptr->cb_connection_state_changed(is_connected, ocpp::OcppProtocolVersion::v16);
 }
 
-ocpp::v16::DataTransferResponse
-ChargePointV16::cb_data_transferconst ocpp::v16::DataTransferRequest& request) {
+ocpp::v16::DataTransferResponse ChargePointV16::cb_data_transfer(const ocpp::v16::DataTransferRequest& request) {
     const auto req = convert(request);
     return convert(m_callbacks_ptr->cb_data_transfer(req));
 }
@@ -145,6 +159,29 @@ bool ChargePointV16::cb_enable_evse(std::int32_t connector) {
 }
 
 void ChargePointV16::cb_generic_configuration_key_changed(const ocpp::v16::KeyValue& key_value) {
+    // convert to 2.x component/variable
+    if (key_value.value) {
+        ocpp::v2::SetVariableData data;
+        bool send{false};
+        if (key_value.key == CONNECTION_TIMEOUT_CONFIG_KEY) {
+            data.component = {CONNECTION_TIMEOUT_COMPONENT};
+            data.variable = {CONNECTION_TIMEOUT_VARIABLE};
+            send = true;
+        } else if (key_value.key == ISO15118_PNC_ENABLED_CONFIG_KEY) {
+            data.component = {ISO15118_PNC_ENABLED_COMPONENT};
+            data.variable = {ISO15118_PNC_ENABLED_VARIABLE};
+            send = true;
+        } else if (key_value.key == CENTRAL_CONTRACT_VALIDATION_ALLOWED_CONFIG_KEY) {
+            data.component = {CENTRAL_CONTRACT_VALIDATION_ALLOWED_COMPONENT};
+            data.variable = {CENTRAL_CONTRACT_VALIDATION_ALLOWED_VARIABLE};
+            send = true;
+        }
+
+        if (send) {
+            data.attributeValue = static_cast<std::string>(key_value.value.value());
+            m_callbacks_ptr->cb_variable_set(data);
+        }
+    }
 }
 
 void ChargePointV16::cb_get_15118_ev_certificate_response(
@@ -152,11 +189,14 @@ void ChargePointV16::cb_get_15118_ev_certificate_response(
     const ocpp::v2::CertificateActionEnum& certificate_action) {
 }
 
-bool cb_is_reset_allowed(const ocpp::v16::ResetType& reset_type) {
+bool ChargePointV16::cb_is_reset_allowed(const ocpp::v16::ResetType& reset_type) {
+    return m_callbacks_ptr->cb_is_reset_allowed(std::nullopt, convert(reset_type));
 }
 
 ocpp::ReservationCheckStatus ChargePointV16::cb_is_token_reserved_for_connector(const std::int32_t connector,
                                                                                 const std::string& id_token) {
+    const ocpp::CiString<255> token{id_token};
+    return m_callbacks_ptr->cb_is_reservation_for_token(connector, token, std::nullopt);
 }
 
 bool ChargePointV16::cb_pause_charging(std::int32_t connector) {
@@ -166,6 +206,11 @@ bool ChargePointV16::cb_pause_charging(std::int32_t connector) {
 
 void ChargePointV16::cb_provide_token(const std::string& id_token, std::vector<std::int32_t> referenced_connectors,
                                       bool prevalidated) {
+    ocpp_multi::GenericChargePointCallbacks::IdToken token;
+    token.token = {id_token, "Central"};
+    token.prevalidated = prevalidated;
+    token.connectors = std::move(referenced_connectors);
+    m_callbacks_ptr->cb_provide_token(token);
 }
 
 ocpp::v16::ReservationStatus ChargePointV16::cb_reserve_now(std::int32_t reservation_id, std::int32_t connector,
@@ -235,6 +280,9 @@ ocpp::v16::GetLogResponse ChargePointV16::cb_upload_diagnostics(const ocpp::v16:
 ocpp::v16::GetLogResponse ChargePointV16::cb_upload_logs(ocpp::v16::GetLogRequest req) {
 }
 
+// ----------------------------------------------------------------------------
+// setup/configuration
+
 void ChargePointV16::configure_callbacks() {
     // directly supported
     m_charge_point->register_all_connectors_unavailable_callback(
@@ -283,8 +331,10 @@ void ChargePointV16::configure_callbacks() {
     m_charge_point->register_session_cost_callback([this](auto&&... args) { return cb_session_cost(args...); });
     m_charge_point->register_tariff_message_callback([this](auto&&... args) { return cb_tariff_message(args...); });
     m_charge_point->register_set_display_message_callback(
-        [this](auto&&... args) { return cb_set_display_message_callback(args...); });
-    m_charge_point->register_data_transfer_callback([this](auto&&... args) { return cb_data_transferargs...); });
+        [this](auto&&... args) { return cb_set_display_message(args...); });
+    m_charge_point->register_data_transfer_callback([this](auto&&... args) { return cb_data_transfer(args...); });
+    m_charge_point->register_generic_configuration_key_changed_callback(
+        [this](auto&&... args) { cb_generic_configuration_key_changed(args...); });
 }
 
 void ChargePointV16::configure_data_model(const config_info_t& config) {
@@ -375,6 +425,9 @@ void ChargePointV16::init(init_args_t& args) {
 
     configure_callbacks();
 }
+
+// ----------------------------------------------------------------------------
+// calls from the OCPP module
 
 void ChargePointV16::connect_websocket() {
     check_configured("connect_websocket");

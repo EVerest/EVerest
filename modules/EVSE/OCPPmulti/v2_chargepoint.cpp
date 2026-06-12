@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "v2_chargepoint.hpp"
+#include "generic_chargepoint_interface.hpp"
 #include "ocpp/v2/ocpp_enums.hpp"
 
 namespace {
@@ -34,6 +35,11 @@ void ChargePointV2::cb_reset(const std::optional<const std::int32_t>& evse_id, c
     m_callbacks_ptr->cb_reset(evse_id, convert(type));
 }
 
+bool ChargePointV2::cb_is_reset_allowed(const std::optional<const std::int32_t>& evse_id,
+                                        const ocpp::v2::ResetEnum& type) {
+    return m_callbacks_ptr->cb_is_reset_allowed(evse_id, convert(type));
+}
+
 void ChargePointV2::check_configured(const std::string_view& fn) {
     if (m_charge_point == nullptr) {
         std::string msg{"ChargePointV2 not configured: "};
@@ -42,21 +48,31 @@ void ChargePointV2::check_configured(const std::string_view& fn) {
     }
 }
 
+ocpp::v2::RequestStartStopStatusEnum
+ChargePointV2::cb_remote_start_transaction(const ocpp::v2::RequestStartTransactionRequest& request,
+                                           bool authorize_remote_start) {
+    ocpp_multi::GenericChargePointCallbacks::IdToken token;
+    token.token = request.idToken;
+    token.prevalidated = !authorize_remote_start;
+    token.evse_id = request.evseId;
+    token.request_id = request.remoteStartId;
+    m_callbacks_ptr->cb_provide_token(token);
+    return ocpp::v2::RequestStartStopStatusEnum::Accepted;
+}
+
 ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
     ocpp::v2::Callbacks callbacks;
 
     // indirectly supported
     callbacks.reset_callback = [this](auto&&... args) { cb_reset(args...); };
+    callbacks.is_reset_allowed_callback = [this](auto&&... args) { return cb_is_reset_allowed(args...); };
+    callbacks.remote_start_transaction_callback = [this](auto&&... args) {
+        return cb_remote_start_transaction(args...);
+    };
 
     // directly supported
-    callbacks.is_reset_allowed_callback = [this](const auto& evse_id, auto) {
-        return m_callbacks_ptr->cb_is_reset_allowed(evse_id);
-    };
     callbacks.connector_effective_operative_status_changed_callback = [this](auto&&... args) {
         m_callbacks_ptr->cb_connector_effective_operative_status(args...);
-    };
-    callbacks.remote_start_transaction_callback = [this](auto&&... args) {
-        return m_callbacks_ptr->cb_remote_start_transaction(args...);
     };
     callbacks.stop_transaction_callback = [this](auto&&... args) {
         return m_callbacks_ptr->cb_stop_transaction(args...);
@@ -75,7 +91,7 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
         return m_callbacks_ptr->cb_update_firmware_request(args...);
     };
     callbacks.variable_changed_callback = [this](const auto& set_variable_data) {
-        m_callbacks_ptr->cb_variable_changed(set_variable_data);
+        m_callbacks_ptr->cb_variable_set(set_variable_data);
     };
     callbacks.validate_network_profile_callback = [this](auto /* configuration_slot */,
                                                          const auto& network_connection_profile) {
