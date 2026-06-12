@@ -46,14 +46,14 @@ public:
     void modules_started_running();
     void modules_stopped_running();
 
-    void modules_started_running();
-    void modules_stopped_running();
+    static std::string get_lwt_data();
+    static std::string get_lwt_topic();
 
 private:
     MQTTAbstraction& m_mqtt_abstraction;
     ::Everest::config::ConfigServiceInterface& m_config_service;
 
-    ev_API::Topics m_topics;
+    static const ev_API::Topics m_topics;
     ConfigurationApiStatus m_config_api_availability;
     const bool m_readonly;
     ::Everest::config::ActiveSlotStatus m_last_module_status{::Everest::config::ActiveSlotStatus::Stopped};
