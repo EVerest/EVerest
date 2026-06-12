@@ -77,6 +77,14 @@ public:
     void unsubscribe(const std::string& topic) override {
         std::printf("unsubscribe(%s)\n", topic.c_str());
     }
+    bool set_lwt(const std::string& topic, const json& json, QOS qos = QOS::QOS2, bool retain = true) override {
+        auto data = json.dump();
+        return set_lwt(topic, data, qos, retain);
+    }
+    bool set_lwt(const std::string& topic, const std::string& data, QOS qos = QOS::QOS2, bool retain = true) override {
+        std::printf("set_lwt(%s) %s\n", topic.c_str(), data.c_str());
+        return true;
+    }
     void clear_retained_topics() override {
     }
     json get(const std::string& topic, QOS qos, std::size_t retries = 0) override {
