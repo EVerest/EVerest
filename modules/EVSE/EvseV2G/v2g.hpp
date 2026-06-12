@@ -229,10 +229,6 @@ struct v2g_context {
     } tls_socket;
     tls::Server* tls_server;
 
-    // Raw pointer to the V2G telemetry publisher (owned by EvseV2G module).
-    // Set in EvseV2G::init after publisher construction. May be nullptr if
-    // telemetry is disabled. v2g_context is calloc()-ed so a raw pointer
-    // is the only safe option here.
     module::V2gTelemetryPublisher* telemetry_publisher;
 
     bool tls_key_logging;

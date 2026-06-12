@@ -329,8 +329,8 @@ static enum v2g_event v2g_handle_apphandshake(struct v2g_connection* conn) {
         conn->ctx->p_charger->publish_selected_protocol(selected_protocol_str);
     }
     if (conn->ctx->telemetry_publisher) {
-        conn->ctx->telemetry_publisher->charger_status.selected_protocol = selected_protocol_str;
-        conn->ctx->telemetry_publisher->publish_charger_status();
+        conn->ctx->telemetry_publisher->update_charger_status(
+            [&](auto& charger_status) { charger_status.selected_protocol = selected_protocol_str; });
     }
 
     if (conn->ctx->is_connection_terminated == true) {
@@ -368,6 +368,9 @@ int v2g_handle_connection(struct v2g_connection* conn) {
     int64_t start_time = 0; // in ms
 
     enum v2g_protocol selected_protocol = V2G_UNKNOWN_PROTOCOL;
+    if (conn->ctx->telemetry_publisher) {
+        conn->ctx->telemetry_publisher->reset_session_state();
+    }
     v2g_ctx_init_charging_state(conn->ctx, false);
     conn->buffer = static_cast<uint8_t*>(malloc(DEFAULT_BUFFER_SIZE));
     if (!conn->buffer)
@@ -531,9 +534,10 @@ int v2g_handle_connection(struct v2g_connection* conn) {
         }
 
         if (conn->ctx->telemetry_publisher) {
-            conn->ctx->telemetry_publisher->transport.comm_state = conn->ctx->state;
-            conn->ctx->telemetry_publisher->transport.message_state = conn->ctx->current_v2g_msg;
-            conn->ctx->telemetry_publisher->publish_transport();
+            conn->ctx->telemetry_publisher->update_transport([&](auto& transport) {
+                transport.comm_state = conn->ctx->state;
+                transport.message_state = conn->ctx->current_v2g_msg;
+            });
         }
 
         /* form the content of V2G_Message type and publish the request*/

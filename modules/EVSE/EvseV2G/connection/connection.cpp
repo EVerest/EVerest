@@ -194,12 +194,12 @@ int connection_init(struct v2g_context* v2g_ctx) {
                      v2g_ctx->if_name, buffer, v2g_ctx->local_tcp_addr->sin6_scope_id,
                      ntohs(v2g_ctx->local_tcp_addr->sin6_port));
                 if (v2g_ctx->telemetry_publisher) {
-                    v2g_ctx->telemetry_publisher->transport.tcp_listener_status = 1;
-                    v2g_ctx->telemetry_publisher->transport.tcp_discovery_enable = true;
-                    v2g_ctx->telemetry_publisher->transport.tcp_security_required = false;
-                    v2g_ctx->telemetry_publisher->transport.tcp_port_number =
-                        ntohs(v2g_ctx->local_tcp_addr->sin6_port);
-                    v2g_ctx->telemetry_publisher->publish_transport();
+                    v2g_ctx->telemetry_publisher->update_transport([&](auto& transport) {
+                        transport.tcp_listener_status = 1;
+                        transport.tcp_discovery_enable = true;
+                        transport.tcp_security_required = false;
+                        transport.tcp_port_number = ntohs(v2g_ctx->local_tcp_addr->sin6_port);
+                    });
                 }
             } else {
                 dlog(DLOG_LEVEL_ERROR, "TCP server on %s is listening, but inet_ntop failed: %s", v2g_ctx->if_name,
@@ -230,15 +230,14 @@ int connection_init(struct v2g_context* v2g_ctx) {
                      v2g_ctx->if_name, buffer, v2g_ctx->local_tls_addr->sin6_scope_id,
                      ntohs(v2g_ctx->local_tls_addr->sin6_port));
                 if (v2g_ctx->telemetry_publisher) {
-                    v2g_ctx->telemetry_publisher->transport.tcp_security_enable = true;
-                    v2g_ctx->telemetry_publisher->transport.tcp_security_required =
-                        v2g_ctx->tls_security == TLS_SECURITY_FORCE;
-                    if (!v2g_ctx->local_tcp_addr) {
-                        v2g_ctx->telemetry_publisher->transport.tcp_listener_status = 1;
-                        v2g_ctx->telemetry_publisher->transport.tcp_port_number =
-                            ntohs(v2g_ctx->local_tls_addr->sin6_port);
-                    }
-                    v2g_ctx->telemetry_publisher->publish_transport();
+                    v2g_ctx->telemetry_publisher->update_transport([&](auto& transport) {
+                        transport.tcp_security_enable = true;
+                        transport.tcp_security_required = v2g_ctx->tls_security == TLS_SECURITY_FORCE;
+                        if (!v2g_ctx->local_tcp_addr) {
+                            transport.tcp_listener_status = 1;
+                            transport.tcp_port_number = ntohs(v2g_ctx->local_tls_addr->sin6_port);
+                        }
+                    });
                 }
             } else {
                 dlog(DLOG_LEVEL_INFO, "TLS server on %s is listening, but inet_ntop failed: %s", v2g_ctx->if_name,
@@ -438,6 +437,9 @@ void connection_teardown(struct v2g_connection* conn) {
 
     /* init charging session */
     v2g_ctx_init_charging_session(conn->ctx, true);
+    if (conn->ctx->telemetry_publisher) {
+        conn->ctx->telemetry_publisher->reset_session_state();
+    }
 
     if (!evse_initiated_stop && (conn->d_link_action == dLinkAction::D_LINK_ACTION_TERMINATE ||
                                  conn->d_link_action == dLinkAction::D_LINK_ACTION_ERROR)) {
@@ -529,9 +531,10 @@ static void* connection_handle_tcp(void* data) {
 
     conn->ctx->connection_initiated = false;
     if (conn->ctx->telemetry_publisher) {
-        conn->ctx->telemetry_publisher->transport.tcp_connection_established = false;
-        conn->ctx->telemetry_publisher->transport.tcp_server_status = 0;
-        conn->ctx->telemetry_publisher->publish_transport();
+        conn->ctx->telemetry_publisher->update_transport([&](auto& transport) {
+            transport.tcp_connection_established = false;
+            transport.tcp_server_status = 0;
+        });
     }
 
     if (rv != ERROR_SESSION_ALREADY_STARTED) {
@@ -607,18 +610,20 @@ static void* connection_server(void* data) {
         }
         ctx->connection_initiated = true;
         if (ctx->telemetry_publisher) {
-            ctx->telemetry_publisher->transport.tcp_connection_established = true;
-            ctx->telemetry_publisher->transport.tcp_server_status = 1;
-            ctx->telemetry_publisher->publish_transport();
+            ctx->telemetry_publisher->update_transport([&](auto& transport) {
+                transport.tcp_connection_established = true;
+                transport.tcp_server_status = 1;
+            });
         }
 
         if (pthread_create(&conn->thread_id, &attr, connection_handle_tcp, conn) != 0) {
             dlog(DLOG_LEVEL_ERROR, "pthread_create() failed: %s", strerror(errno));
             ctx->connection_initiated = false;
             if (ctx->telemetry_publisher) {
-                ctx->telemetry_publisher->transport.tcp_connection_established = false;
-                ctx->telemetry_publisher->transport.tcp_server_status = 0;
-                ctx->telemetry_publisher->publish_transport();
+                ctx->telemetry_publisher->update_transport([&](auto& transport) {
+                    transport.tcp_connection_established = false;
+                    transport.tcp_server_status = 0;
+                });
             }
             continue;
         }

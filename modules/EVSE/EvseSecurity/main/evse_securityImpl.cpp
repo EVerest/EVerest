@@ -2,8 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "evse_securityImpl.hpp"
-#include <everest_api_types/telemetry/json_codec.hpp>
 #include <everest/conversions/evse_security/conversions.hpp>
+#include <everest_api_types/telemetry/json_codec.hpp>
 
 namespace module {
 namespace main {
@@ -298,15 +298,15 @@ void evse_securityImpl::publish_cert_telemetry() {
 
     everest::lib::API::V1_0::types::telemetry::CertTelemetry payload;
 
-    const int secc_count = this->evse_security->get_count_of_installed_certificates(
-        {evse_security::CertificateType::V2GCertificateChain});
+    const int secc_count =
+        this->evse_security->get_count_of_installed_certificates({evse_security::CertificateType::V2GCertificateChain});
     payload.secc_chain.num_files = secc_count;
     payload.secc_chain.num_useful_files = secc_count;
     payload.secc_chain.configured = secc_count > 0;
     payload.secc_chain.synced = secc_count > 0;
 
-    const int mo_count = this->evse_security->get_count_of_installed_certificates(
-        {evse_security::CertificateType::MORootCertificate});
+    const int mo_count =
+        this->evse_security->get_count_of_installed_certificates({evse_security::CertificateType::MORootCertificate});
     payload.mo_root.num_files = mo_count;
     payload.mo_root.num_useful_files = mo_count;
     payload.mo_root.configured = mo_count > 0;

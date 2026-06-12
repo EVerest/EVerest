@@ -209,9 +209,10 @@ static void check_iso2_charging_profile_values(iso2_PowerDeliveryReqType* req, i
 
 static void publish_DcEvStatus(struct v2g_context* ctx, const struct iso2_DC_EVStatusType& iso2_ev_status) {
     if (ctx->telemetry_publisher) {
-        ctx->telemetry_publisher->ev_electrical.error_code = iso2_ev_status.EVErrorCode;
-        ctx->telemetry_publisher->ev_electrical.battery_soc_percent = iso2_ev_status.EVRESSSOC;
-        ctx->telemetry_publisher->publish_ev_electrical();
+        ctx->telemetry_publisher->update_ev_electrical([&](auto& telemetry) {
+            telemetry.error_code = iso2_ev_status.EVErrorCode;
+            telemetry.battery_soc_percent = iso2_ev_status.EVRESSSOC;
+        });
     }
 
     if ((ctx->ev_v2g_data.iso2_dc_ev_status.EVErrorCode != iso2_ev_status.EVErrorCode) ||
@@ -236,7 +237,8 @@ static auto get_emergency_status_code(const struct v2g_context* ctx, uint8_t pha
         return static_cast<iso2_DC_EVSEStatusCodeType>(ctx->evse_v2g_data.evse_status_code[phase_type]);
 }
 
-static everest::lib::API::V1_0::types::telemetry::ChargeProgress to_telemetry_charge_progress(iso2_chargeProgressType progress) {
+static everest::lib::API::V1_0::types::telemetry::ChargeProgress
+to_telemetry_charge_progress(iso2_chargeProgressType progress) {
     switch (progress) {
     case iso2_chargeProgressType_Start:
         return everest::lib::API::V1_0::types::telemetry::ChargeProgress::Start;
@@ -280,23 +282,23 @@ static void publish_iso_payment_service_selection_req(
     // V2G values that can be published: selected_payment_option, SelectedServiceList
 }
 
-static void publish_iso_payment_service_selection_req(
-    struct v2g_context* ctx, struct iso2_PaymentServiceSelectionReqType const* const req) {
+static void publish_iso_payment_service_selection_req(struct v2g_context* ctx,
+                                                      struct iso2_PaymentServiceSelectionReqType const* const req) {
     publish_iso_payment_service_selection_req(req);
 
     if (!ctx->telemetry_publisher) {
         return;
     }
 
-    auto& payment = ctx->telemetry_publisher->payment_service;
-    payment.external_payment_requested = req->SelectedPaymentOption == iso2_paymentOptionType_ExternalPayment;
-    payment.contract_payment_requested = req->SelectedPaymentOption == iso2_paymentOptionType_Contract;
-    for (uint16_t idx = 0; idx < req->SelectedServiceList.SelectedService.arrayLen; idx++) {
-        if (req->SelectedServiceList.SelectedService.array[idx].ServiceID == V2G_SERVICE_ID_CHARGING) {
-            payment.charging_service_requested = true;
+    ctx->telemetry_publisher->update_payment_service([&](auto& payment) {
+        payment.external_payment_requested = req->SelectedPaymentOption == iso2_paymentOptionType_ExternalPayment;
+        payment.contract_payment_requested = req->SelectedPaymentOption == iso2_paymentOptionType_Contract;
+        for (uint16_t idx = 0; idx < req->SelectedServiceList.SelectedService.arrayLen; idx++) {
+            if (req->SelectedServiceList.SelectedService.array[idx].ServiceID == V2G_SERVICE_ID_CHARGING) {
+                payment.charging_service_requested = true;
+            }
         }
-    }
-    ctx->telemetry_publisher->publish_payment_service();
+    });
 }
 
 /*!
@@ -307,13 +309,11 @@ static void publish_iso_authorization_req(struct iso2_AuthorizationReqType const
     // V2G values that can be published: Id, Id_isUsed, GenChallenge, GenChallenge_isUsed
 }
 
-static void publish_iso_authorization_req(struct v2g_context* ctx,
-                                          struct iso2_AuthorizationReqType const* const req) {
+static void publish_iso_authorization_req(struct v2g_context* ctx, struct iso2_AuthorizationReqType const* const req) {
     publish_iso_authorization_req(req);
 
     if (ctx->telemetry_publisher) {
-        ctx->telemetry_publisher->transport.authorization_requested = true;
-        ctx->telemetry_publisher->publish_transport();
+        ctx->telemetry_publisher->update_transport([&](auto& transport) { transport.authorization_requested = true; });
     }
 }
 
@@ -447,27 +447,29 @@ static void publish_iso_charge_parameter_discovery_req(
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumVoltageLimit.Multiplier);
 
         if (ctx->telemetry_publisher) {
-            auto& telemetry = ctx->telemetry_publisher->ev_electrical;
-            telemetry.maximum_current_A = evMaximumCurrentLimit;
-            telemetry.maximum_power_W = evMaximumPowerLimit;
-            telemetry.maximum_voltage_V = evMaximumVoltageLimit;
-            telemetry.maximum_rated_current_A = evMaximumCurrentLimit;
-            telemetry.maximum_rated_power_W = evMaximumPowerLimit;
-            telemetry.maximum_rated_voltage_V = evMaximumVoltageLimit;
-            if (v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyCapacity_isUsed == (unsigned int)1) {
-                telemetry.energy_capacity_Wh = calc_physical_value(
-                    v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyCapacity.Value,
-                    v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyCapacity.Multiplier);
-            }
-            if (v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyRequest_isUsed == (unsigned int)1) {
-                telemetry.energy_request_Wh = calc_physical_value(
-                    v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyRequest.Value,
-                    v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyRequest.Multiplier);
-            }
-            telemetry.error_code = v2g_charge_parameter_discovery_req->DC_EVChargeParameter.DC_EVStatus.EVErrorCode;
-            telemetry.battery_soc_percent =
-                v2g_charge_parameter_discovery_req->DC_EVChargeParameter.DC_EVStatus.EVRESSSOC;
-            ctx->telemetry_publisher->publish_ev_electrical();
+            ctx->telemetry_publisher->update_ev_electrical([&](auto& telemetry) {
+                telemetry.maximum_current_A = evMaximumCurrentLimit;
+                telemetry.maximum_power_W = evMaximumPowerLimit;
+                telemetry.maximum_voltage_V = evMaximumVoltageLimit;
+                telemetry.maximum_rated_current_A = evMaximumCurrentLimit;
+                telemetry.maximum_rated_power_W = evMaximumPowerLimit;
+                telemetry.maximum_rated_voltage_V = evMaximumVoltageLimit;
+                if (v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyCapacity_isUsed ==
+                    (unsigned int)1) {
+                    telemetry.energy_capacity_Wh = calc_physical_value(
+                        v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyCapacity.Value,
+                        v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyCapacity.Multiplier);
+                }
+                if (v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyRequest_isUsed ==
+                    (unsigned int)1) {
+                    telemetry.energy_request_Wh = calc_physical_value(
+                        v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyRequest.Value,
+                        v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyRequest.Multiplier);
+                }
+                telemetry.error_code = v2g_charge_parameter_discovery_req->DC_EVChargeParameter.DC_EVStatus.EVErrorCode;
+                telemetry.battery_soc_percent =
+                    v2g_charge_parameter_discovery_req->DC_EVChargeParameter.DC_EVStatus.EVRESSSOC;
+            });
         }
 
         publish_dc_ev_maximum_limits(
@@ -501,11 +503,12 @@ static void publish_iso_pre_charge_req(struct v2g_context* ctx,
         calc_physical_value(v2g_precharge_req->EVTargetCurrent.Value, v2g_precharge_req->EVTargetCurrent.Multiplier);
 
     if (ctx->telemetry_publisher) {
-        ctx->telemetry_publisher->ev_electrical.target_voltage_V = target_voltage;
-        ctx->telemetry_publisher->ev_electrical.target_current_A = target_current;
-        ctx->telemetry_publisher->ev_electrical.error_code = v2g_precharge_req->DC_EVStatus.EVErrorCode;
-        ctx->telemetry_publisher->ev_electrical.battery_soc_percent = v2g_precharge_req->DC_EVStatus.EVRESSSOC;
-        ctx->telemetry_publisher->publish_ev_electrical();
+        ctx->telemetry_publisher->update_ev_electrical([&](auto& telemetry) {
+            telemetry.target_voltage_V = target_voltage;
+            telemetry.target_current_A = target_current;
+            telemetry.error_code = v2g_precharge_req->DC_EVStatus.EVErrorCode;
+            telemetry.battery_soc_percent = v2g_precharge_req->DC_EVStatus.EVRESSSOC;
+        });
     }
 
     publish_dc_ev_target_voltage_current(ctx, target_voltage, target_current);
@@ -520,9 +523,9 @@ static void publish_iso_power_delivery_req(struct v2g_context* ctx,
                                            struct iso2_PowerDeliveryReqType const* const v2g_power_delivery_req) {
     // V2G values that can be published: ChargeProgress, SAScheduleTupleID
     if (ctx->telemetry_publisher) {
-        ctx->telemetry_publisher->ev_electrical.charge_progress =
-            to_telemetry_charge_progress(v2g_power_delivery_req->ChargeProgress);
-        ctx->telemetry_publisher->publish_ev_electrical();
+        ctx->telemetry_publisher->update_ev_electrical([&](auto& telemetry) {
+            telemetry.charge_progress = to_telemetry_charge_progress(v2g_power_delivery_req->ChargeProgress);
+        });
     }
 
     if (v2g_power_delivery_req->DC_EVPowerDeliveryParameter_isUsed == (unsigned int)1) {
@@ -583,27 +586,27 @@ static void publish_iso_current_demand_req(struct v2g_context* ctx,
         v2g_dc_ev_remaining_time_to_bulk_soc, v2g_current_demand_req->RemainingTimeToBulkSoC_isUsed);
 
     if (ctx->telemetry_publisher) {
-        auto& telemetry = ctx->telemetry_publisher->ev_electrical;
-        telemetry.target_voltage_V = target_voltage;
-        telemetry.target_current_A = target_current;
-        if (v2g_current_demand_req->EVMaximumCurrentLimit_isUsed == (unsigned int)1) {
-            telemetry.maximum_current_A = evMaximumCurrentLimit;
-        }
-        if (v2g_current_demand_req->EVMaximumPowerLimit_isUsed == (unsigned int)1) {
-            telemetry.maximum_power_W = evMaximumPowerLimit;
-        }
-        if (v2g_current_demand_req->EVMaximumVoltageLimit_isUsed == (unsigned int)1) {
-            telemetry.maximum_voltage_V = evMaximumVoltageLimit;
-        }
-        if (v2g_current_demand_req->RemainingTimeToFullSoC_isUsed == (unsigned int)1) {
-            telemetry.remaining_time_full_min = static_cast<int>(v2g_dc_ev_remaining_time_to_full_soc);
-        }
-        if (v2g_current_demand_req->RemainingTimeToBulkSoC_isUsed == (unsigned int)1) {
-            telemetry.remaining_time_bulk_min = static_cast<int>(v2g_dc_ev_remaining_time_to_bulk_soc);
-        }
-        telemetry.error_code = v2g_current_demand_req->DC_EVStatus.EVErrorCode;
-        telemetry.battery_soc_percent = v2g_current_demand_req->DC_EVStatus.EVRESSSOC;
-        ctx->telemetry_publisher->publish_ev_electrical();
+        ctx->telemetry_publisher->update_ev_electrical([&](auto& telemetry) {
+            telemetry.target_voltage_V = target_voltage;
+            telemetry.target_current_A = target_current;
+            if (v2g_current_demand_req->EVMaximumCurrentLimit_isUsed == (unsigned int)1) {
+                telemetry.maximum_current_A = evMaximumCurrentLimit;
+            }
+            if (v2g_current_demand_req->EVMaximumPowerLimit_isUsed == (unsigned int)1) {
+                telemetry.maximum_power_W = evMaximumPowerLimit;
+            }
+            if (v2g_current_demand_req->EVMaximumVoltageLimit_isUsed == (unsigned int)1) {
+                telemetry.maximum_voltage_V = evMaximumVoltageLimit;
+            }
+            if (v2g_current_demand_req->RemainingTimeToFullSoC_isUsed == (unsigned int)1) {
+                telemetry.remaining_time_full_min = static_cast<int>(v2g_dc_ev_remaining_time_to_full_soc);
+            }
+            if (v2g_current_demand_req->RemainingTimeToBulkSoC_isUsed == (unsigned int)1) {
+                telemetry.remaining_time_bulk_min = static_cast<int>(v2g_dc_ev_remaining_time_to_bulk_soc);
+            }
+            telemetry.error_code = v2g_current_demand_req->DC_EVStatus.EVErrorCode;
+            telemetry.battery_soc_percent = v2g_current_demand_req->DC_EVStatus.EVRESSSOC;
+        });
     }
 }
 /*!
@@ -672,11 +675,12 @@ static enum v2g_event handle_iso_session_setup(struct v2g_connection* conn) {
 
     conn->ctx->p_charger->publish_evcc_id(mac_addr); // publish EVCC ID
     if (conn->ctx->telemetry_publisher) {
-        conn->ctx->telemetry_publisher->transport.session_setup_requested = true;
-        conn->ctx->telemetry_publisher->charger_status.evcc_id = mac_addr;
-        conn->ctx->telemetry_publisher->charger_status.param_discovery_finished = false;
-        conn->ctx->telemetry_publisher->publish_transport();
-        conn->ctx->telemetry_publisher->publish_charger_status();
+        conn->ctx->telemetry_publisher->update_transport(
+            [&](auto& transport) { transport.session_setup_requested = true; });
+        conn->ctx->telemetry_publisher->update_charger_status([&](auto& charger_status) {
+            charger_status.evcc_id = mac_addr;
+            charger_status.param_discovery_finished = false;
+        });
     }
 
     dlog(DLOG_LEVEL_INFO, "SessionSetupReq.EVCCID: %s",
@@ -1256,11 +1260,10 @@ static enum v2g_event handle_iso_payment_details(struct v2g_connection* conn) {
 error_out:
 
     if (conn->ctx->telemetry_publisher) {
-        conn->ctx->telemetry_publisher->payment_service.contract_payment_approved =
-            res->ResponseCode == iso2_responseCodeType_OK;
-        conn->ctx->telemetry_publisher->payment_service.contract_payment_error =
-            res->ResponseCode >= iso2_responseCodeType_FAILED;
-        conn->ctx->telemetry_publisher->publish_payment_service();
+        conn->ctx->telemetry_publisher->update_payment_service([&](auto& payment_service) {
+            payment_service.contract_payment_approved = res->ResponseCode == iso2_responseCodeType_OK;
+            payment_service.contract_payment_error = res->ResponseCode >= iso2_responseCodeType_FAILED;
+        });
     }
 
     /* Check the current response code and check if no external error has occurred */
@@ -1382,8 +1385,8 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
     enum v2g_event next_event = V2G_EVENT_NO_EVENT;
 
     if (conn->ctx->telemetry_publisher) {
-        conn->ctx->telemetry_publisher->transport.charge_parameter_discovery_requested = true;
-        conn->ctx->telemetry_publisher->publish_transport();
+        conn->ctx->telemetry_publisher->update_transport(
+            [&](auto& transport) { transport.charge_parameter_discovery_requested = true; });
     }
 
     /* At first, publish the received ev request message to the MQTT interface */
@@ -1644,9 +1647,9 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
     }
 
     if (conn->ctx->telemetry_publisher) {
-        conn->ctx->telemetry_publisher->charger_status.param_discovery_finished =
-            res->EVSEProcessing == iso2_EVSEProcessingType_Finished;
-        conn->ctx->telemetry_publisher->publish_charger_status();
+        conn->ctx->telemetry_publisher->update_charger_status([&](auto& charger_status) {
+            charger_status.param_discovery_finished = res->EVSEProcessing == iso2_EVSEProcessingType_Finished;
+        });
     }
 
     return next_event;
@@ -1958,8 +1961,8 @@ static enum v2g_event handle_iso_metering_receipt(struct v2g_connection* conn) {
 static enum v2g_event handle_iso_certificate_update(struct v2g_connection* conn) {
     // TODO: implement CertificateUpdate handling
     if (conn->ctx->telemetry_publisher) {
-        conn->ctx->telemetry_publisher->payment_service.certificate_update_requested = true;
-        conn->ctx->telemetry_publisher->publish_payment_service();
+        conn->ctx->telemetry_publisher->update_payment_service(
+            [&](auto& payment_service) { payment_service.certificate_update_requested = true; });
     }
 
     return V2G_EVENT_NO_EVENT;
@@ -1980,8 +1983,8 @@ static enum v2g_event handle_iso_certificate_installation(struct v2g_connection*
     int rv = 0;
 
     if (conn->ctx->telemetry_publisher) {
-        conn->ctx->telemetry_publisher->payment_service.certificate_install_requested = true;
-        conn->ctx->telemetry_publisher->publish_payment_service();
+        conn->ctx->telemetry_publisher->update_payment_service(
+            [&](auto& payment_service) { payment_service.certificate_install_requested = true; });
     }
 
     /* At first, publish the received EV request message to the customer MQTT interface */
@@ -2057,8 +2060,8 @@ static enum v2g_event handle_iso_cable_check(struct v2g_connection* conn) {
     enum v2g_event next_event = V2G_EVENT_NO_EVENT;
 
     if (conn->ctx->telemetry_publisher) {
-        conn->ctx->telemetry_publisher->transport.cable_check_requested = true;
-        conn->ctx->telemetry_publisher->publish_transport();
+        conn->ctx->telemetry_publisher->update_transport(
+            [&](auto& transport) { transport.cable_check_requested = true; });
     }
 
     /* At first, publish the received EV request message to the MQTT interface */
@@ -2111,8 +2114,8 @@ static enum v2g_event handle_iso_pre_charge(struct v2g_connection* conn) {
     enum v2g_event next_event = V2G_EVENT_NO_EVENT;
 
     if (conn->ctx->telemetry_publisher) {
-        conn->ctx->telemetry_publisher->transport.pre_charge_requested = true;
-        conn->ctx->telemetry_publisher->publish_transport();
+        conn->ctx->telemetry_publisher->update_transport(
+            [&](auto& transport) { transport.pre_charge_requested = true; });
     }
 
     /* At first, publish the received EV request message to the MQTT interface */
@@ -2154,8 +2157,8 @@ static enum v2g_event handle_iso_current_demand(struct v2g_connection* conn) {
     enum v2g_event next_event = V2G_EVENT_NO_EVENT;
 
     if (conn->ctx->telemetry_publisher) {
-        conn->ctx->telemetry_publisher->transport.current_demand_requested = true;
-        conn->ctx->telemetry_publisher->publish_transport();
+        conn->ctx->telemetry_publisher->update_transport(
+            [&](auto& transport) { transport.current_demand_requested = true; });
     }
 
     /* At first, publish the received EV request message to the MQTT interface */
@@ -2305,8 +2308,8 @@ static enum v2g_event handle_iso_welding_detection(struct v2g_connection* conn) 
     enum v2g_event next_event = V2G_EVENT_NO_EVENT;
 
     if (conn->ctx->telemetry_publisher) {
-        conn->ctx->telemetry_publisher->transport.welding_detection_requested = true;
-        conn->ctx->telemetry_publisher->publish_transport();
+        conn->ctx->telemetry_publisher->update_transport(
+            [&](auto& transport) { transport.welding_detection_requested = true; });
     }
 
     /* At first, publish the received EV request message to the MQTT interface */
