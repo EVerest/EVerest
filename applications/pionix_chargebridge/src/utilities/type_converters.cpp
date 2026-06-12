@@ -369,6 +369,8 @@ bool decode_SafetyConfig(c4::yml::ConstNodeRef const& node, SafetyConfig& rhs) {
     rhs.temperature_limit_pt1000_C =
         decode<decltype(rhs.temperature_limit_pt1000_C)>(node, "temperature_limit_pt1000_C", 0);
     rhs.inverted_emergency_input = decode<decltype(rhs.inverted_emergency_input)>(node, "inverted_emergency_input", 0);
+    rhs.enable_stop_charging_input =
+        decode<decltype(rhs.enable_stop_charging_input)>(node, "enable_stop_charging_input", 1);
 
     rhs.relays[0] = decode<RelayConfig>(node, "relay_1");
     rhs.relays[1] = decode<RelayConfig>(node, "relay_2");

@@ -233,6 +233,7 @@ private:
     take_signed_meter_data(std::optional<types::units_signed::SignedMeterValue>& data);
 
     bool stop_charging_on_fatal_error_internal();
+    std::string stop_reason_flags(bool fatal_error = false);
     float get_max_current_internal();
     float get_max_current_signalled_to_ev_internal();
     bool deauthorize_internal();
