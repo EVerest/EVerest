@@ -83,6 +83,69 @@ TYPED_TEST(ThreadSafeQueueTest, MultiplePushAndPopOrder) {
     ASSERT_FALSE(this->queue.try_pop().has_value());
 }
 
+TYPED_TEST(ThreadSafeQueueTest, EmplaceInPlaceAndReturnSize) {
+    TypeParam expected_value;
+
+    if constexpr (std::is_same_v<TypeParam, int>) {
+        // Construct an int and verify size_type return path
+        typename thread_safe_queue<TypeParam>::size_type new_size = this->queue.emplace(555);
+        ASSERT_EQ(new_size, 1);
+        expected_value = 555;
+    } else if constexpr (std::is_same_v<TypeParam, std::string>) {
+        // Construct a string in-place: 4 'B's -> "BBBB"
+        typename thread_safe_queue<TypeParam>::size_type new_size = this->queue.emplace(4, 'B');
+        ASSERT_EQ(new_size, 1);
+        expected_value = "BBBB";
+    } else {
+        return;
+    }
+
+    std::optional<TypeParam> result = this->queue.try_pop();
+    ASSERT_TRUE(result.has_value());
+    ASSERT_EQ(result.value(), expected_value);
+    ASSERT_FALSE(this->queue.try_pop().has_value());
+}
+
+// Emplace concurrency check using the Int test suite
+TEST_F(ThreadSafeQueueIntTest, ConcurrentEmplaceConsistency) {
+    const int num_producers = 4;
+    const int items_per_producer = 1000;
+    const int total_items = num_producers * items_per_producer;
+
+    std::vector<std::thread> producers;
+    std::atomic<int> running_total_size{0};
+
+    // Spin up concurrent emplace operations
+    for (int i = 0; i < num_producers; ++i) {
+        producers.emplace_back([this, i, items_per_producer, &running_total_size] {
+            int base_val = i * items_per_producer;
+            for (int j = 0; j < items_per_producer; ++j) {
+                // Pass constructor arguments perfectly across threads
+                auto post_emplace_size = this->queue.emplace(base_val + j);
+
+                // Track max reported size across threads to ensure size_type returns correctly
+                if (static_cast<int>(post_emplace_size) > running_total_size.load()) {
+                    running_total_size.store(post_emplace_size);
+                }
+            }
+        });
+    }
+
+    for (auto& t : producers) {
+        t.join();
+    }
+
+    // Verify queue stability post-emplace burst
+    ASSERT_GE(running_total_size.load(), items_per_producer);
+
+    std::set<int> retrieved_values;
+    while (auto val = this->queue.try_pop()) {
+        retrieved_values.insert(*val);
+    }
+
+    ASSERT_EQ(retrieved_values.size(), total_items);
+}
+
 // =================================================================
 // 3. Time-Based Functionality Tests
 // =================================================================
@@ -308,4 +371,61 @@ TEST_F(ThreadSafeQueueMoveOnlyTest, HandlesConcurrentMoveOnlyTypes) {
     ASSERT_EQ(pop_count.load(), total_expected) << "Total items popped does not match total pushed.";
     ASSERT_EQ(retrieved_values.size(), total_expected)
         << "Duplicate pointers/values were retrieved, indicating a race condition failure or a failed move.";
+}
+
+// =================================================================
+// 7. Move Semantics Verification Test
+// =================================================================
+
+// A mock type that increments counters on copy or move operations
+struct CopyMoveTracker {
+    int id;
+    int* copy_count;
+    int* move_count;
+
+    CopyMoveTracker(int id, int* cc, int* mc) : id(id), copy_count(cc), move_count(mc) {
+    }
+
+    // Copy constructor
+    CopyMoveTracker(const CopyMoveTracker& other) :
+        id(other.id), copy_count(other.copy_count), move_count(other.move_count) {
+        if (copy_count)
+            (*copy_count)++;
+    }
+
+    // Move constructor
+    CopyMoveTracker(CopyMoveTracker&& other) noexcept :
+        id(other.id), copy_count(other.copy_count), move_count(other.move_count) {
+        if (move_count)
+            (*move_count)++;
+    }
+
+    // Rule of 5 boilerplate (not strictly needed for this test, but good practice)
+    CopyMoveTracker& operator=(const CopyMoveTracker&) = default;
+    CopyMoveTracker& operator=(CopyMoveTracker&&) noexcept = default;
+    ~CopyMoveTracker() = default;
+};
+
+TEST(ThreadSafeQueueMoveSemanticsTest, PopStrictlyMovesAndNeverCopies) {
+    thread_safe_queue<CopyMoveTracker> move_proving_queue;
+
+    int total_copies = 0;
+    int total_moves = 0;
+
+    // 1. Emplace an item directly into the queue.
+    // This bypasses any copies/moves during insertion.
+    move_proving_queue.emplace(1337, &total_copies, &total_moves);
+
+    // Reset counters just in case the underlying std::queue container
+    // internal reallocations triggered a setup move.
+    total_copies = 0;
+    total_moves = 0;
+
+    // 2. Execute the updated pop() method
+    CopyMoveTracker retrieved = move_proving_queue.pop();
+
+    // 3. Assertions proving a copy never took place during the pop process
+    EXPECT_EQ(retrieved.id, 1337);
+    EXPECT_EQ(total_copies, 0) << "Failure: The queue copied the object during pop()!";
+    EXPECT_GE(total_moves, 1) << "Failure: The object was not moved out of the queue.";
 }
