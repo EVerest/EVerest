@@ -1,0 +1,130 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+
+#include "telemetry/codec.hpp"
+#include "telemetry/API.hpp"
+#include "telemetry/json_codec.hpp"
+#include "utilities/json_codec_helpers.hpp"
+#include <ostream>
+#include <string_view>
+
+namespace everest::lib::API::V1_0::types::telemetry {
+
+std::string serialize(ChargeProgress val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(CertChainState const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(CertTelemetry const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(EvseControlStatus const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(V2gTransport const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(V2gEvElectrical const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(V2gPaymentService const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(V2gChargerStatus const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(V2gEvseElectrical const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
+template <> ChargeProgress deserialize(std::string_view val) {
+    return utilities::parse_json<ChargeProgress>(val);
+}
+
+template <> CertChainState deserialize(std::string_view val) {
+    return utilities::parse_json<CertChainState>(val);
+}
+
+template <> CertTelemetry deserialize(std::string_view val) {
+    return utilities::parse_json<CertTelemetry>(val);
+}
+
+template <> EvseControlStatus deserialize(std::string_view val) {
+    return utilities::parse_json<EvseControlStatus>(val);
+}
+
+template <> V2gTransport deserialize(std::string_view val) {
+    return utilities::parse_json<V2gTransport>(val);
+}
+
+template <> V2gEvElectrical deserialize(std::string_view val) {
+    return utilities::parse_json<V2gEvElectrical>(val);
+}
+
+template <> V2gPaymentService deserialize(std::string_view val) {
+    return utilities::parse_json<V2gPaymentService>(val);
+}
+
+template <> V2gChargerStatus deserialize(std::string_view val) {
+    return utilities::parse_json<V2gChargerStatus>(val);
+}
+
+template <> V2gEvseElectrical deserialize(std::string_view val) {
+    return utilities::parse_json<V2gEvseElectrical>(val);
+}
+
+std::ostream& operator<<(std::ostream& os, ChargeProgress const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, CertChainState const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, CertTelemetry const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, EvseControlStatus const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, V2gTransport const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, V2gEvElectrical const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, V2gPaymentService const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, V2gChargerStatus const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, V2gEvseElectrical const& val) {
+    os << serialize(val);
+    return os;
+}
+
+} // namespace everest::lib::API::V1_0::types::telemetry

@@ -34,9 +34,11 @@ struct Conf {
 class EvseSecurity : public Everest::ModuleBase {
 public:
     EvseSecurity() = delete;
-    EvseSecurity(const ModuleInfo& info, std::unique_ptr<evse_securityImplBase> p_main, Conf& config) :
-        ModuleBase(info), p_main(std::move(p_main)), config(config){};
+    EvseSecurity(const ModuleInfo& info, Everest::TelemetryProvider& telemetry,
+                 std::unique_ptr<evse_securityImplBase> p_main, Conf& config) :
+        ModuleBase(info), telemetry(telemetry), p_main(std::move(p_main)), config(config){};
 
+    Everest::TelemetryProvider& telemetry;
     const std::unique_ptr<evse_securityImplBase> p_main;
     const Conf& config;
 

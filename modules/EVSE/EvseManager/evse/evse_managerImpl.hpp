@@ -14,6 +14,7 @@
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
+#include <everest_api_types/telemetry/API.hpp>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -54,6 +55,7 @@ protected:
 
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
     // insert your protected definitions here
+    void publish_control_telemetry();
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
 
 private:
@@ -67,6 +69,7 @@ private:
     // insert your private definitions here
     std::atomic_bool connector_status_changed{false};
     types::evse_manager::Limits limits;
+    everest::lib::API::V1_0::types::telemetry::EvseControlStatus control_status;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

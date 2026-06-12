@@ -3,6 +3,7 @@
 // Copyright (C) 2022-2023 Contributors to EVerest
 #include "sdp.hpp"
 #include "log.hpp"
+#include "telemetry_publisher.hpp"
 #include "tools.hpp"
 
 #include <arpa/inet.h>
@@ -258,6 +259,10 @@ int sdp_init(struct v2g_context* v2g_ctx) {
 
     dlog(DLOG_LEVEL_TRACE, "joined multicast group");
 
+    if (v2g_ctx->telemetry_publisher) {
+        v2g_ctx->telemetry_publisher->update_transport([&](auto& transport) { transport.udp_server_status = 1; });
+    }
+
     return 0;
 }
 
@@ -335,6 +340,13 @@ int sdp_listen(struct v2g_context* v2g_ctx) {
             sdp_query.security_requested = (sdp_security)buffer[SDP_HEADER_LEN + 0];
             sdp_query.proto_requested = (sdp_transport_protocol)buffer[SDP_HEADER_LEN + 1];
 
+            if (v2g_ctx->telemetry_publisher) {
+                v2g_ctx->telemetry_publisher->update_transport([&](auto& transport) {
+                    transport.tcp_discovery_enable = sdp_query.proto_requested == SDP_TRANSPORT_PROTOCOL_TCP;
+                    transport.tcp_security_enable = sdp_query.security_requested == SDP_SECURITY_TLS;
+                });
+            }
+
             dlog(DLOG_LEVEL_INFO, "Received packet from [%s]:%" PRIu16 " with security 0x%02x and protocol 0x%02x",
                  addr, ntohs(sdp_query.remote_addr.sin6_port), sdp_query.security_requested, sdp_query.proto_requested);
 
@@ -349,6 +361,9 @@ int sdp_listen(struct v2g_context* v2g_ctx) {
 
     if (close(v2g_ctx->sdp_socket) == -1) {
         dlog(DLOG_LEVEL_ERROR, "close() failed: %s", strerror(errno));
+    }
+    if (v2g_ctx->telemetry_publisher) {
+        v2g_ctx->telemetry_publisher->update_transport([&](auto& transport) { transport.udp_server_status = 0; });
     }
 
     return 0;

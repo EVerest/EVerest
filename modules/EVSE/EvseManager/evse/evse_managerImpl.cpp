@@ -7,6 +7,7 @@
 #include <date/tz.h>
 #include <utils/date.hpp>
 
+#include <everest_api_types/telemetry/json_codec.hpp>
 #include <fmt/core.h>
 
 #include "SessionLog.hpp"
@@ -20,6 +21,18 @@ bool str_to_bool(const std::string& data) {
         return true;
     }
     return false;
+}
+
+void evse_managerImpl::publish_control_telemetry() {
+    if (!this->mod->info.telemetry_enabled) {
+        return;
+    }
+    const nlohmann::json payload = control_status;
+    Everest::TelemetryMap telemetry;
+    for (const auto& [key, value] : payload.items()) {
+        telemetry.emplace(key, value);
+    }
+    this->mod->telemetry.publish("Evse", "control", telemetry);
 }
 
 void evse_managerImpl::init() {
@@ -77,6 +90,17 @@ void evse_managerImpl::ready() {
 
     // publish evse id at least once
     publish_evse_id(mod->config.evse_id);
+
+    control_status.contract_payment_enabled = mod->config.payment_enable_contract;
+    control_status.free_charging_enabled = mod->config.disable_authentication;
+    publish_control_telemetry();
+
+    mod->error_handling->signal_error.connect([this](ErrorHandlingEvents event) {
+        if (event == ErrorHandlingEvents::ForceErrorShutdown) {
+            control_status.error_stop = true;
+            publish_control_telemetry();
+        }
+    });
 
     mod->r_bsp->subscribe_telemetry([this](types::evse_board_support::Telemetry telemetry) {
         // external Nodered interface
@@ -188,6 +212,12 @@ void evse_managerImpl::ready() {
         se.transaction_started.emplace(transaction_started);
         se.uuid = session_uuid;
         publish_session_event(se);
+
+        control_status.authorisation_finished = true;
+        control_status.normal_stop = false;
+        control_status.error_stop = false;
+        control_status.emergency_stop = false;
+        publish_control_telemetry();
     });
 
     mod->charger->signal_transaction_finished_event.connect(
@@ -232,6 +262,23 @@ void evse_managerImpl::ready() {
             se.uuid = session_uuid;
 
             publish_session_event(se);
+
+            switch (finished_reason) {
+            case types::evse_manager::StopTransactionReason::EmergencyStop:
+                control_status.emergency_stop = true;
+                break;
+            case types::evse_manager::StopTransactionReason::GroundFault:
+            case types::evse_manager::StopTransactionReason::OvercurrentFault:
+            case types::evse_manager::StopTransactionReason::PowerQuality:
+            case types::evse_manager::StopTransactionReason::Timeout:
+            case types::evse_manager::StopTransactionReason::PowerLoss:
+                control_status.error_stop = true;
+                break;
+            default:
+                control_status.normal_stop = true;
+                break;
+            }
+            publish_control_telemetry();
         });
 
     mod->charger->signal_charging_paused_evse_event.connect(
@@ -295,6 +342,15 @@ void evse_managerImpl::ready() {
         se.uuid = session_uuid;
 
         publish_session_event(se);
+
+        if (e == types::evse_manager::SessionEventEnum::Authorized) {
+            control_status.authorisation_finished = true;
+            publish_control_telemetry();
+        } else if (e == types::evse_manager::SessionEventEnum::Deauthorized ||
+                   e == types::evse_manager::SessionEventEnum::AuthRequired) {
+            control_status.authorisation_finished = false;
+            publish_control_telemetry();
+        }
 
         if (e == types::evse_manager::SessionEventEnum::SessionFinished) {
             this->mod->selected_protocol = "Unknown";
