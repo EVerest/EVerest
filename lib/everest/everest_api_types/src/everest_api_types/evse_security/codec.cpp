@@ -6,8 +6,10 @@
 #include "evse_security/json_codec.hpp"
 #include "nlohmann/json.hpp"
 #include "utilities/constants.hpp"
+#include "utilities/json_codec_helpers.hpp"
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace everest::lib::API::V1_0::types::evse_security {
 
@@ -93,62 +95,62 @@ std::ostream& operator<<(std::ostream& os, GetCertificateInfoResult const& val) 
     return os;
 }
 
-template <> CaCertificateType deserialize(std::string const& val) {
-    auto data = json::parse(val);
+template <> CaCertificateType deserialize(std::string_view val) {
+    auto data = json::parse(val.begin(), val.end());
     CaCertificateType obj = data;
     return obj;
 }
 
-template <> LeafCertificateType deserialize(std::string const& val) {
-    auto data = json::parse(val);
+template <> LeafCertificateType deserialize(std::string_view val) {
+    auto data = json::parse(val.begin(), val.end());
     LeafCertificateType obj = data;
     return obj;
 }
 
-template <> EncodingFormat deserialize(std::string const& val) {
-    auto data = json::parse(val);
+template <> EncodingFormat deserialize(std::string_view val) {
+    auto data = json::parse(val.begin(), val.end());
     EncodingFormat obj = data;
     return obj;
 }
 
-template <> GetLeafCertificateInfoRequest deserialize(std::string const& val) {
-    auto data = json::parse(val);
+template <> GetLeafCertificateInfoRequest deserialize(std::string_view val) {
+    auto data = json::parse(val.begin(), val.end());
     GetLeafCertificateInfoRequest obj = data;
     return obj;
 }
 
-template <> GetCertificateInfoStatus deserialize(std::string const& val) {
-    auto data = json::parse(val);
+template <> GetCertificateInfoStatus deserialize(std::string_view val) {
+    auto data = json::parse(val.begin(), val.end());
     GetCertificateInfoStatus obj = data;
     return obj;
 }
 
-template <> HashAlgorithm deserialize(std::string const& val) {
-    auto data = json::parse(val);
+template <> HashAlgorithm deserialize(std::string_view val) {
+    auto data = json::parse(val.begin(), val.end());
     HashAlgorithm obj = data;
     return obj;
 }
 
-template <> CertificateHashData deserialize(std::string const& val) {
-    auto data = json::parse(val);
+template <> CertificateHashData deserialize(std::string_view val) {
+    auto data = json::parse(val.begin(), val.end());
     CertificateHashData obj = data;
     return obj;
 }
 
-template <> CertificateOCSP deserialize(std::string const& val) {
-    auto data = json::parse(val);
+template <> CertificateOCSP deserialize(std::string_view val) {
+    auto data = json::parse(val.begin(), val.end());
     CertificateOCSP obj = data;
     return obj;
 }
 
-template <> CertificateInfo deserialize(std::string const& val) {
-    auto data = json::parse(val);
+template <> CertificateInfo deserialize(std::string_view val) {
+    auto data = json::parse(val.begin(), val.end());
     CertificateInfo obj = data;
     return obj;
 }
 
-template <> GetCertificateInfoResult deserialize(std::string const& val) {
-    auto data = json::parse(val);
+template <> GetCertificateInfoResult deserialize(std::string_view val) {
+    auto data = json::parse(val.begin(), val.end());
     GetCertificateInfoResult obj = data;
     return obj;
 }
