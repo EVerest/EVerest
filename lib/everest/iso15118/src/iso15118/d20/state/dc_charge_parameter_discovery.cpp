@@ -245,12 +245,11 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
             return {};
         }
         res = handle_request(*req, m_ctx.session, checked_limits);
-        m_ctx.respond(res);
+        const auto response_code = m_ctx.respond_and_publish_response_code(res);
 
         m_ctx.feedback.dc_max_limits(dc_max_limits);
-        m_ctx.feedback.response_code(res.response_code);
 
-        if (res.response_code >= dt::ResponseCode::FAILED) {
+        if (response_code >= dt::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
             return {};
         }
@@ -265,9 +264,8 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
     } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
-        m_ctx.respond(res);
+        m_ctx.respond_and_publish_response_code(res);
         m_ctx.session_stopped = true;
-        m_ctx.feedback.response_code(res.response_code);
 
         return {};
     } else {

@@ -52,10 +52,9 @@ Result DC_WeldingDetection::feed(Event ev) {
     if (const auto req = variant->get_if<message_20::DC_WeldingDetectionRequest>()) {
         const auto res = handle_request(*req, m_ctx.session, present_voltage);
 
-        m_ctx.respond(res);
-        m_ctx.feedback.response_code(res.response_code);
+        const auto response_code = m_ctx.respond_and_publish_response_code(res);
 
-        if (res.response_code >= dt::ResponseCode::FAILED) {
+        if (response_code >= dt::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
             return {};
         }
@@ -76,8 +75,7 @@ Result DC_WeldingDetection::feed(Event ev) {
             logf_info("EV Termination explanation: %s", req->ev_termination_explanation.value().c_str());
         }
 
-        m_ctx.respond(res);
-        m_ctx.feedback.response_code(res.response_code);
+        m_ctx.respond_and_publish_response_code(res);
 
         // Todo(sl): Tell the reason why the charger is stopping. Shutdown, Error, etc.
         if (req->charging_session == message_20::datatypes::ChargingSession::Pause) {

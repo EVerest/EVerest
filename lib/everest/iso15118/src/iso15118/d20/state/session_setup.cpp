@@ -136,8 +136,7 @@ Result SessionSetup::feed(Event ev) {
 
         const auto res = handle_request(*req, m_ctx.session, evse_id, new_session);
 
-        m_ctx.respond(res);
-        m_ctx.feedback.response_code(res.response_code);
+        m_ctx.respond_and_publish_response_code(res);
 
         if (not new_session) {
             const auto& selected_services = m_ctx.session.get_selected_services();
