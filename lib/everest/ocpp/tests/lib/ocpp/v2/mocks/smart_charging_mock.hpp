@@ -20,5 +20,10 @@ public:
                  AddChargingProfileSource source_of_request));
     MOCK_METHOD(ProfileValidationResultEnum, conform_and_validate_profile,
                 (ChargingProfile & profile, std::int32_t evse_id, AddChargingProfileSource source_of_request));
+    MOCK_METHOD(EnhancedCompositeScheduleResponse, get_composite_schedule,
+                (const GetCompositeScheduleRequest& request));
+    MOCK_METHOD(std::optional<EnhancedCompositeSchedule>, get_composite_schedule,
+                (std::int32_t evse_id, std::chrono::seconds duration, ChargingRateUnitEnum unit));
+    MOCK_METHOD(void, notify_ev_charging_needs_req, (const NotifyEVChargingNeedsRequest& req));
 };
 } // namespace ocpp::v2
