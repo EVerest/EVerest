@@ -15,8 +15,8 @@
 #include <generated/interfaces/iso15118_extensions/Implementation.hpp>
 
 // headers for required interface implementations
-#include <generated/interfaces/evse_security/Interface.hpp>
 #include <generated/interfaces/ISO15118_vas/Interface.hpp>
+#include <generated/interfaces/evse_security/Interface.hpp>
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
@@ -45,23 +45,17 @@ struct Conf {
 class EvseV2G : public Everest::ModuleBase {
 public:
     EvseV2G() = delete;
-    EvseV2G(
-        const ModuleInfo& info,
-        Everest::TelemetryProvider& telemetry,
-        std::unique_ptr<ISO15118_chargerImplBase> p_charger,
-        std::unique_ptr<iso15118_extensionsImplBase> p_extensions,
-        std::unique_ptr<evse_securityIntf> r_security,
-        std::vector<std::unique_ptr<ISO15118_vasIntf>> r_iso15118_vas,
-        Conf& config
-    ) :
+    EvseV2G(const ModuleInfo& info, Everest::TelemetryProvider& telemetry,
+            std::unique_ptr<ISO15118_chargerImplBase> p_charger,
+            std::unique_ptr<iso15118_extensionsImplBase> p_extensions, std::unique_ptr<evse_securityIntf> r_security,
+            std::vector<std::unique_ptr<ISO15118_vasIntf>> r_iso15118_vas, Conf& config) :
         ModuleBase(info),
         telemetry(telemetry),
         p_charger(std::move(p_charger)),
         p_extensions(std::move(p_extensions)),
         r_security(std::move(r_security)),
         r_iso15118_vas(std::move(r_iso15118_vas)),
-        config(config)
-    {};
+        config(config){};
 
     Everest::TelemetryProvider& telemetry;
     const std::unique_ptr<ISO15118_chargerImplBase> p_charger;
@@ -89,7 +83,6 @@ private:
     tls::Server tls_server;
     std::unique_ptr<V2gTelemetryPublisher> telemetry_publisher;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
-
 };
 
 // ev@087e516b-124c-48df-94fb-109508c7cda9:v1

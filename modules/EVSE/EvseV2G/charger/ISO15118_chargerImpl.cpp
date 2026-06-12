@@ -322,8 +322,8 @@ void ISO15118_chargerImpl::handle_cable_check_finished(bool& status) {
     }
 
     if (v2g_ctx->telemetry_publisher) {
-        v2g_ctx->telemetry_publisher->charger_status.cable_check_status = status;
-        v2g_ctx->telemetry_publisher->publish_charger_status();
+        v2g_ctx->telemetry_publisher->update_charger_status(
+            [&](auto& charger_status) { charger_status.cable_check_status = status; });
     }
 }
 
@@ -566,10 +566,11 @@ void ISO15118_chargerImpl::handle_update_dc_maximum_limits(types::iso15118::DcEv
     v2g_ctx->evse_v2g_data.evse_maximum_voltage_limit_is_used = 1;
 
     if (v2g_ctx->telemetry_publisher) {
-        v2g_ctx->telemetry_publisher->charger_status.dynamic_max_current_A = maximum_limits.evse_maximum_current_limit;
-        v2g_ctx->telemetry_publisher->charger_status.dynamic_max_power_W = maximum_limits.evse_maximum_power_limit;
-        v2g_ctx->telemetry_publisher->charger_status.dynamic_max_voltage_V = maximum_limits.evse_maximum_voltage_limit;
-        v2g_ctx->telemetry_publisher->publish_charger_status();
+        v2g_ctx->telemetry_publisher->update_charger_status([&](auto& charger_status) {
+            charger_status.dynamic_max_current_A = maximum_limits.evse_maximum_current_limit;
+            charger_status.dynamic_max_power_W = maximum_limits.evse_maximum_power_limit;
+            charger_status.dynamic_max_voltage_V = maximum_limits.evse_maximum_voltage_limit;
+        });
     }
 }
 
@@ -588,9 +589,9 @@ void ISO15118_chargerImpl::handle_update_isolation_status(types::iso15118::Isola
     v2g_ctx->evse_v2g_data.evse_isolation_status_is_used = 1;
 
     if (v2g_ctx->telemetry_publisher) {
-        v2g_ctx->telemetry_publisher->charger_status.isolation_status =
-            types::iso15118::isolation_status_to_string(isolation_status);
-        v2g_ctx->telemetry_publisher->publish_charger_status();
+        v2g_ctx->telemetry_publisher->update_charger_status([&](auto& charger_status) {
+            charger_status.isolation_status = types::iso15118::isolation_status_to_string(isolation_status);
+        });
     }
 }
 

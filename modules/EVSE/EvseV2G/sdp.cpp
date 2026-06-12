@@ -260,8 +260,9 @@ int sdp_init(struct v2g_context* v2g_ctx) {
     dlog(DLOG_LEVEL_TRACE, "joined multicast group");
 
     if (v2g_ctx->telemetry_publisher) {
-        v2g_ctx->telemetry_publisher->transport.udp_server_status = 1;
-        v2g_ctx->telemetry_publisher->publish_transport();
+        v2g_ctx->telemetry_publisher->update_transport([&](auto& transport) {
+            transport.udp_server_status = everest::lib::API::V1_0::types::telemetry::V2gServerStatus::Active;
+        });
     }
 
     return 0;
@@ -342,11 +343,10 @@ int sdp_listen(struct v2g_context* v2g_ctx) {
             sdp_query.proto_requested = (sdp_transport_protocol)buffer[SDP_HEADER_LEN + 1];
 
             if (v2g_ctx->telemetry_publisher) {
-                v2g_ctx->telemetry_publisher->transport.tcp_discovery_enable =
-                    sdp_query.proto_requested == SDP_TRANSPORT_PROTOCOL_TCP;
-                v2g_ctx->telemetry_publisher->transport.tcp_security_enable =
-                    sdp_query.security_requested == SDP_SECURITY_TLS;
-                v2g_ctx->telemetry_publisher->publish_transport();
+                v2g_ctx->telemetry_publisher->update_transport([&](auto& transport) {
+                    transport.tcp_discovery_enable = sdp_query.proto_requested == SDP_TRANSPORT_PROTOCOL_TCP;
+                    transport.tcp_security_enable = sdp_query.security_requested == SDP_SECURITY_TLS;
+                });
             }
 
             dlog(DLOG_LEVEL_INFO, "Received packet from [%s]:%" PRIu16 " with security 0x%02x and protocol 0x%02x",
@@ -365,8 +365,9 @@ int sdp_listen(struct v2g_context* v2g_ctx) {
         dlog(DLOG_LEVEL_ERROR, "close() failed: %s", strerror(errno));
     }
     if (v2g_ctx->telemetry_publisher) {
-        v2g_ctx->telemetry_publisher->transport.udp_server_status = 0;
-        v2g_ctx->telemetry_publisher->publish_transport();
+        v2g_ctx->telemetry_publisher->update_transport([&](auto& transport) {
+            transport.udp_server_status = everest::lib::API::V1_0::types::telemetry::V2gServerStatus::Inactive;
+        });
     }
 
     return 0;
