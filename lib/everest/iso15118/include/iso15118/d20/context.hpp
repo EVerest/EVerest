@@ -95,6 +95,18 @@ public:
         message_exchange.set_response(response);
     }
 
+    template <typename MessageType> auto respond_and_publish_response_code(const MessageType& msg) {
+        respond(msg);
+        const auto sent_response = get_response<MessageType>();
+        if (sent_response.has_value()) {
+            feedback.response_code(sent_response->response_code);
+            return sent_response->response_code;
+        }
+
+        feedback.response_code(msg.response_code);
+        return msg.response_code;
+    }
+
     template <typename Msg> std::optional<Msg> get_response() {
         return message_exchange.get_response<Msg>();
     }
