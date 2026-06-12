@@ -2,8 +2,8 @@
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include "API.hpp"
 #include <everest/external_energy_limits/external_energy_limits.hpp>
+#include <everest/utils/yaml_loader.hpp>
 #include <utils/date.hpp>
-#include <utils/yaml_loader.hpp>
 
 namespace module {
 

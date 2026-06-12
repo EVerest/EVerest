@@ -14,10 +14,10 @@
 #include <framework/ModuleAdapter.hpp>
 #include <utils/config/settings.hpp>
 #include <utils/module_config.hpp>
-#include <utils/yaml_loader.hpp>
 
 #include <everest/compile_time_settings.hpp>
 #include <everest/logging.hpp>
+#include <everest/utils/yaml_loader.hpp>
 
 namespace boost::program_options {
 class variables_map; // forward declaration

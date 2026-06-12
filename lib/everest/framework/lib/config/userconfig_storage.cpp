@@ -3,11 +3,11 @@
 #include <exception>
 
 #include <everest/logging.hpp>
+#include <everest/utils/yaml_loader.hpp>
 
 #include <utils/config/storage.hpp>
 #include <utils/config/storage_userconfig.hpp>
 #include <utils/conversions.hpp>
-#include <utils/yaml_loader.hpp>
 
 namespace everest::config {
 
