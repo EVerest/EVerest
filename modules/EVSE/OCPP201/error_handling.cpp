@@ -71,35 +71,8 @@ MREC_ERROR_MAP_TYPE load_mrec_error_map_overrides(const std::filesystem::path& f
     return merged;
 }
 
-ocpp::v2::Component get_component_from_error(const Everest::error::Error& error) {
-    ocpp::v2::Component component;
-
-    if (!error.origin.mapping.has_value()) {
-        component.name = CHARGING_STATION_COMPONENT_NAME;
-        return component;
-    }
-
-    const auto& mapping = error.origin.mapping.value();
-    const auto evse_id = mapping.evse;
-
-    if (!mapping.connector.has_value()) {
-        ocpp::v2::EVSE evse;
-        evse.id = evse_id;
-        component.name = EVSE_COMPONENT_NAME;
-        component.evse = evse;
-        return component;
-    }
-
-    ocpp::v2::EVSE evse;
-    evse.id = evse_id;
-    evse.connectorId = mapping.connector.value();
-    component.name = EVSE_COMPONENT_NAME;
-    component.evse = evse;
-    return component;
-}
-
 ocpp::v2::EventData get_event_data(const Everest::error::Error& error, const bool cleared, const int32_t event_id,
-                                   const MREC_ERROR_MAP_TYPE& error_map) {
+                                   const MREC_ERROR_MAP_TYPE& error_map, const ocpp::v2::Component& component) {
     ocpp::v2::EventData event_data;
     event_data.eventId = event_id; // This can theoretically conflict with eventIds generated in libocpp (e.g.
                                    // for monitoring events), but the spec does not strictly forbid that
@@ -120,7 +93,7 @@ ocpp::v2::EventData get_event_data(const Everest::error::Error& error, const boo
     event_data.variableMonitoringId = std::nullopt; // We dont need to set this for HardwiredNotification
     event_data.eventNotificationType = ocpp::v2::EventNotificationEnum::HardWiredNotification;
 
-    event_data.component = get_component_from_error(error);
+    event_data.component = component;
     event_data.variable = {PROBLEM_VARIABLE_NAME}; // TODO: use type of error for mapping to variable?
     return event_data;
 }
