@@ -51,6 +51,11 @@ public:
         return m_handlers;
     }
 
+    /// \brief Returns the (topic, payload) of the last last-will-testament set via set_lwt(), if any.
+    const std::optional<std::pair<std::string, nlohmann::json>>& last_lwt() const {
+        return m_lwt;
+    }
+
     // --- MQTTAbstraction overrides ---
 
     nlohmann::json get(const MQTTRequest& request, std::size_t /*retries*/ = 0) override {
@@ -100,6 +105,16 @@ public:
     }
     void unsubscribe(const std::string& /*topic*/) override {
     }
+    bool set_lwt(const std::string& topic, const nlohmann::json& json, QOS /*qos*/ = QOS::QOS2,
+                 bool /*retain*/ = true) override {
+        m_lwt = std::make_pair(topic, json);
+        return true;
+    }
+    bool set_lwt(const std::string& topic, const std::string& data, QOS /*qos*/ = QOS::QOS2,
+                 bool /*retain*/ = true) override {
+        m_lwt = std::make_pair(topic, nlohmann::json(data));
+        return true;
+    }
     void clear_retained_topics() override {
     }
     std::shared_future<void> spawn_main_loop_thread() override {
@@ -124,6 +139,7 @@ private:
     std::optional<MQTTRequest> m_last_get_request;
     std::vector<std::pair<std::string, nlohmann::json>> m_published;
     std::unordered_map<std::string, std::shared_ptr<TypedHandler>> m_handlers;
+    std::optional<std::pair<std::string, nlohmann::json>> m_lwt;
 };
 
 } // namespace tests

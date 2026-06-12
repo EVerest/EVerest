@@ -52,6 +52,20 @@ public:
     /// \brief unsubscribes from the given \p topic
     virtual void unsubscribe(const std::string& topic) = 0;
 
+    /// \brief sets a last-will-testament publishing \p json on the given \p topic
+    ///
+    /// MQTT allows exactly one last-will-testament per connection, and it must be set before connect().
+    /// \returns true if the last-will-testament was set, false otherwise (already set, called after connect,
+    ///          empty topic, or an underlying error)
+    virtual bool set_lwt(const std::string& topic, const nlohmann::json& json, QOS qos = QOS::QOS2,
+                         bool retain = true) = 0;
+
+    /// \brief sets a last-will-testament publishing \p data on the given \p topic
+    ///
+    /// \see set_lwt(const std::string&, const nlohmann::json&, QOS, bool)
+    virtual bool set_lwt(const std::string& topic, const std::string& data, QOS qos = QOS::QOS2,
+                         bool retain = true) = 0;
+
     /// \brief clears any previously published topics that had the retain flag set
     virtual void clear_retained_topics() = 0;
 

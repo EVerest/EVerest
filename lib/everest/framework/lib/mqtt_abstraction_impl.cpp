@@ -186,6 +186,44 @@ void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& d
                                  static_cast<int>(qos), static_cast<int>(retain));
 }
 
+bool MQTTAbstractionImpl::set_lwt(const std::string& topic, const json& json, QOS qos, bool retain) {
+    BOOST_LOG_FUNCTION();
+
+    return set_lwt(topic, json.dump(), qos, retain);
+}
+
+bool MQTTAbstractionImpl::set_lwt(const std::string& topic, const std::string& data, QOS qos, bool retain) {
+    BOOST_LOG_FUNCTION();
+
+    if (topic.empty()) {
+        EVLOG_warning << "Ignoring last-will-testament with empty topic";
+        return false;
+    }
+
+    // An MQTT connection allows only a single last-will-testament, and it must be registered before connect().
+    if (this->mqtt_is_connected) {
+        EVLOG_error << "Cannot set last-will-testament after the MQTT connection has been established";
+        return false;
+    }
+    if (this->lwt_set) {
+        EVLOG_error << "A last-will-testament has already been set; it can only be set once";
+        return false;
+    }
+
+    const auto mqtt_qos = to_io_qos(qos, everest::lib::io::mqtt::mqtt_client::QoS::at_most_once);
+    const auto error = this->mqtt_client->set_will(topic, data, mqtt_qos, retain, {});
+    if (error != everest::lib::io::mqtt::ErrorCode::Success) {
+        EVLOG_error << "MQTT error while setting last-will-testament";
+        // leave lwt_set false so a corrected call may retry
+        return false;
+    }
+
+    this->lwt_set = true;
+    EVLOG_verbose << fmt::format("set last-will-testament on topic: {} with payload: {} and qos: {} and retain: {}",
+                                 topic, data, static_cast<int>(qos), static_cast<int>(retain));
+    return true;
+}
+
 void MQTTAbstractionImpl::subscribe(const std::string& topic) {
     BOOST_LOG_FUNCTION();
 
