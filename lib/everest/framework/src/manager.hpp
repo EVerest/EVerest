@@ -42,6 +42,12 @@ struct ModuleShutdownInfo {
     int wstatus;
 };
 
+// Data structure to keep MQTT Last-Will-and-Testament related items together
+struct LwtCfg {
+    std::string topic;
+    std::string data;
+};
+
 /// @file manager.hpp
 ///
 /// **Diagram (PlantUML — same notation family as OCPP `.puml` diagrams in this repo):**
@@ -204,8 +210,9 @@ private:
 
     /// \brief Create MQTT abstraction, connect, and spawn its main loop thread.
     /// \param ms Fully resolved manager settings for this run.
+    /// \param lwt_cfg Optional Last-Will-and-Testament
     /// \return Connected MQTT abstraction, or nullptr on connection failure.
-    std::unique_ptr<Everest::MQTTAbstraction> create_and_connect_mqtt(const Everest::ManagerSettings& ms) const;
+    std::unique_ptr<Everest::MQTTAbstraction> create_and_connect_mqtt(const Everest::ManagerSettings& ms, std::optional<LwtCfg> lwt_cfg) const;
 
     /// \brief Collect standalone module ids from config plus CLI overrides.
     /// \param config Validated manager configuration for this run.
