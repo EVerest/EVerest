@@ -162,8 +162,12 @@ struct EvseSlacConfig {
     // flag for using 5% PWM in AC mode
     bool ac_mode_five_percent{true};
 
-    // timeout for CM_SET_KEY.REQ
+    // timeout for CM_SET_KEY.REQ; also used as the interval between retries
     int set_key_timeout_ms = 500;
+
+    // maximum number of CM_SET_KEY.REQ attempts before giving up (a new attempt is made every
+    // set_key_timeout_ms if the previous one timed out or was rejected by the modem)
+    int set_key_max_attempts = 10;
 
     // timeout for CM_SLAC_PARM.REQ
     int slac_init_timeout_ms = slac::defs::TT_EVSE_SLAC_INIT_MS;

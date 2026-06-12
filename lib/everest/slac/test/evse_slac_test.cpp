@@ -13,6 +13,7 @@
 static auto create_cm_set_key_cnf() {
     // FIXME (aw): needs to be fully implemented!
     slac::messages::cm_set_key_cnf set_key_cnf;
+    set_key_cnf.result = slac::defs::CM_SET_KEY_CNF_RESULT_SUCCESS;
     slac::messages::HomeplugMessage hp_message;
     hp_message.setup_payload(&set_key_cnf, sizeof(set_key_cnf),
                              (slac::defs::MMTYPE_CM_SET_KEY | slac::defs::MMTYPE_MODE_CNF), slac::defs::MMV::AV_1_1);

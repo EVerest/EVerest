@@ -20,9 +20,19 @@ provides:
         type: boolean
         default: true
       set_key_timeout_ms:
-        description: Timeout for CM_SET_KEY.REQ. Default works for QCA7000/QCA7005/CG5317.
+        description: >-
+          Timeout for CM_SET_KEY.REQ. Also used as the interval between retries.
+          Default works for QCA7000/QCA7005/CG5317.
         type: integer
         default: 1000
+      set_key_max_attempts:
+        description: >-
+          Maximum number of CM_SET_KEY.REQ attempts before giving up. A new attempt is made every
+          set_key_timeout_ms if the previous one timed out or was rejected by the modem (a
+          CM_SET_KEY.CNF with a non-success result).
+        type: integer
+        minimum: 1
+        default: 10
       sounding_attenuation_adjustment:
         description: Offset in dB that should be added to the calculated sounding attenuation
         type: integer
