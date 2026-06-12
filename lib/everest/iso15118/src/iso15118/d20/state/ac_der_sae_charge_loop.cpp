@@ -305,9 +305,9 @@ Result AC_DER_SAE_ChargeLoop::feed(Event ev) {
 
         const auto res = handle_request(*req, m_ctx.session, false, shutdown_requested);
 
-        m_ctx.respond(res);
+        const auto response_code = m_ctx.respond_and_publish_response_code(res);
 
-        if (res.response_code >= dt::ResponseCode::FAILED) {
+        if (response_code >= dt::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
             return {};
         }
@@ -336,9 +336,9 @@ Result AC_DER_SAE_ChargeLoop::feed(Event ev) {
                                         dynamic_parameters, m_ctx.session_config.ac_limits,
                                         m_ctx.session_config.der_sae_limits, der_config, changed_since_cpd, log_state);
 
-        m_ctx.respond(res);
+        const auto response_code = m_ctx.respond_and_publish_response_code(res);
 
-        if (res.response_code >= dt::ResponseCode::FAILED) {
+        if (response_code >= dt::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
             return {};
         }

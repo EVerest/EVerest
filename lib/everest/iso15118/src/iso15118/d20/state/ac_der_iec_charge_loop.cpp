@@ -242,9 +242,9 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
             }
 
             const auto& res = handle_request(previous_req.value(), m_ctx.session, false, false);
-            m_ctx.respond(res);
+            const auto response_code = m_ctx.respond_and_publish_response_code(res);
 
-            if (res.response_code >= dt::ResponseCode::FAILED) {
+            if (response_code >= dt::ResponseCode::FAILED) {
                 m_ctx.session_stopped = true;
                 return {};
             }
@@ -263,7 +263,7 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
                        AC_OPEN_CONTACTOR_TIMEOUT);
             const auto& res =
                 handle_request(previous_req.value_or(message_20::PowerDeliveryRequest{}), m_ctx.session, true, false);
-            m_ctx.respond(res);
+            m_ctx.respond_and_publish_response_code(res);
             m_ctx.session_stopped = true;
         }
         return {};
@@ -294,9 +294,9 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
         // The contactor is already opened
         const auto res = handle_request(*req, m_ctx.session, false, shutdown_requested);
 
-        m_ctx.respond(res);
+        const auto response_code = m_ctx.respond_and_publish_response_code(res);
 
-        if (res.response_code >= dt::ResponseCode::FAILED) {
+        if (response_code >= dt::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
             return {};
         }
@@ -346,9 +346,9 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
                                         present_powers, dynamic_parameters, m_ctx.session_config.ac_limits,
                                         m_ctx.session_config.der_iec_limits, dso_q_setpoint, dso_cos_phi_setpoint);
 
-        m_ctx.respond(res);
+        const auto response_code = m_ctx.respond_and_publish_response_code(res);
 
-        if (res.response_code >= dt::ResponseCode::FAILED) {
+        if (response_code >= dt::ResponseCode::FAILED) {
             m_ctx.session_stopped = true;
             return {};
         }
