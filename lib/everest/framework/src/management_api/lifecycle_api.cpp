@@ -40,6 +40,23 @@ to_configuration_api_availability(const ::Everest::api::lifecycle::Configuration
 namespace Everest::api::lifecycle {
 using ev_API::deserialize;
 
+// Initialized during static initialization, before any LifecycleAPI instance exists.
+const ev_API::Topics LifecycleAPI::m_topics = [] {
+    ev_API::Topics topics;
+    topics.setup("_unused_", "lifecycle", 0);
+    return topics;
+}();
+
+std::string LifecycleAPI::get_lwt_data() {
+    API_types_ext::ExecutionStatusUpdateNotice lwt_status_update{};
+    lwt_status_update.everest_running = false;
+    return serialize(lwt_status_update);
+}
+
+std::string LifecycleAPI::get_lwt_topic()  {
+    return m_topics.nonmodule_to_extern("status");
+}
+
 LifecycleAPI::LifecycleAPI(MQTTAbstraction& mqtt_abstraction, ::Everest::config::ConfigServiceInterface& config_service,
                            ConfigurationApiStatus config_api_availability, bool readonly,
                            std::function<StopModulesResult()> stop_fn,
@@ -50,8 +67,6 @@ LifecycleAPI::LifecycleAPI(MQTTAbstraction& mqtt_abstraction, ::Everest::config:
     m_readonly(readonly),
     stop_fn_(std::move(stop_fn)),
     restart_fn_(std::move(restart_fn)) {
-
-    m_topics.setup("_unused_", "lifecycle", 0);
 
     generate_api_cmd_stop_modules();
     generate_api_cmd_start_modules();
@@ -163,7 +178,7 @@ void LifecycleAPI::publish_execution_status(const std::string& tstamp,
 
     exec_status_update.module_status = module_status;
 
-    m_mqtt_abstraction.publish(topic, serialize(exec_status_update), QOS::QOS2, false);
+    m_mqtt_abstraction.publish(topic, serialize(exec_status_update), QOS::QOS2, true);
 }
 
 void LifecycleAPI::subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish) {
