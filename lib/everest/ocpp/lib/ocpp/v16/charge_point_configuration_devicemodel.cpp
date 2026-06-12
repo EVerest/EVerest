@@ -4,6 +4,7 @@
 #include <everest/logging.hpp>
 #include <ocpp/common/cistring.hpp>
 #include <ocpp/common/utils.hpp>
+#include <ocpp/common/websocket/websocket_uri.hpp>
 #include <ocpp/v16/charge_point_configuration_devicemodel.hpp>
 #include <ocpp/v16/known_keys.hpp>
 #include <ocpp/v16/ocpp_types.hpp>

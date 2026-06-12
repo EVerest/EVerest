@@ -71,6 +71,7 @@ set(LIBOCPP_TEST_INCLUDE_COMMON_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/common/types.cp
 # If the test is not linked against the ocpp library, those default sources for ocpp v2.0.1 can be linked against, they
 # will often be needed to link against.
 set(LIBOCPP_TEST_INCLUDE_V2_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/v16/ocpp_enums.cpp   # This is currently still needed but might be removed in the future.
+                                      ${LIBOCPP_LIB_PATH}/ocpp/common/websocket/websocket_uri.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/types.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/ocpp_types.cpp

@@ -5,7 +5,7 @@
 #define OCPP_V16_CHARGE_POINT_CONFIGURATION_DEVICEMODEL_HPP
 
 #include <ocpp/v16/charge_point_configuration_base.hpp>
-#include <ocpp/v16/charge_point_configuration_interface.hpp>
+#include <ocpp/v16/charge_point_configuration_connectivity.hpp>
 #include <ocpp/v16/types.hpp>
 
 #include <set>
@@ -19,7 +19,7 @@ namespace v16 {
 
 /// \brief contains the configuration of the charge point
 class ChargePointConfigurationDeviceModel : private ChargePointConfigurationBase,
-                                            public ChargePointConfigurationInterface {
+                                            public ChargePointConfigurationConnectivity {
 public:
     using SetResult = v2::SetVariableStatusEnum;
 

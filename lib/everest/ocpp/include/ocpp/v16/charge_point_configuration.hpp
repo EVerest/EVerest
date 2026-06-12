@@ -10,7 +10,7 @@
 
 #include <ocpp/common/support_older_cpp_versions.hpp>
 #include <ocpp/v16/charge_point_configuration_base.hpp>
-#include <ocpp/v16/charge_point_configuration_interface.hpp>
+#include <ocpp/v16/charge_point_configuration_connectivity.hpp>
 #include <ocpp/v16/ocpp_types.hpp>
 #include <ocpp/v16/types.hpp>
 
@@ -18,7 +18,7 @@ namespace ocpp {
 namespace v16 {
 
 /// \brief contains the configuration of the charge point
-class ChargePointConfiguration : private ChargePointConfigurationBase, public ChargePointConfigurationInterface {
+class ChargePointConfiguration : private ChargePointConfigurationBase, public ChargePointConfigurationConnectivity {
 private:
     json config;
     json custom_schema;

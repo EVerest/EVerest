@@ -11,6 +11,7 @@
 
 #include <ocpp/common/schemas.hpp>
 #include <ocpp/common/utils.hpp>
+#include <ocpp/common/websocket/websocket_uri.hpp>
 #include <ocpp/v16/charge_point_configuration.hpp>
 #include <ocpp/v16/types.hpp>
 #include <ocpp/v16/utils.hpp>
