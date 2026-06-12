@@ -2,10 +2,9 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <everest_api_types/telemetry/v2g.hpp>
+#include <everest_api_types/telemetry/json_codec.hpp>
 #include <framework/everest.hpp>
 #include <mutex>
-#include <nlohmann/json.hpp>
 
 namespace module {
 
@@ -40,13 +39,13 @@ private:
         if (!m_enabled) {
             return;
         }
-        nlohmann::json const j = payload;
-        Everest::TelemetryMap tm;
-        for (auto it = j.begin(); it != j.end(); ++it) {
-            tm[it.key()] = it.value();
-        }
         std::lock_guard<std::mutex> lock(m_publish_mutex);
-        m_telemetry.publish("V2G", block, tm);
+        const nlohmann::json json_payload = payload;
+        Everest::TelemetryMap telemetry;
+        for (const auto& [key, value] : json_payload.items()) {
+            telemetry.emplace(key, value);
+        }
+        m_telemetry.publish("V2G", block, telemetry);
     }
 
     Everest::TelemetryProvider& m_telemetry;

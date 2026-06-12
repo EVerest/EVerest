@@ -8,7 +8,7 @@
 #include <utils/date.hpp>
 
 #include <fmt/core.h>
-#include <nlohmann/json.hpp>
+#include <everest_api_types/telemetry/json_codec.hpp>
 
 #include "SessionLog.hpp"
 
@@ -27,12 +27,12 @@ void evse_managerImpl::publish_control_telemetry() {
     if (!this->mod->info.telemetry_enabled) {
         return;
     }
-    nlohmann::json const j = control_status;
-    Everest::TelemetryMap tm;
-    for (auto it = j.begin(); it != j.end(); ++it) {
-        tm[it.key()] = it.value();
+    const nlohmann::json payload = control_status;
+    Everest::TelemetryMap telemetry;
+    for (const auto& [key, value] : payload.items()) {
+        telemetry.emplace(key, value);
     }
-    this->mod->telemetry.publish("Evse", "control", tm);
+    this->mod->telemetry.publish("Evse", "control", telemetry);
 }
 
 void evse_managerImpl::init() {

@@ -14,7 +14,7 @@
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
-#include <everest_api_types/telemetry/evse_control.hpp>
+#include <everest_api_types/telemetry/API.hpp>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {

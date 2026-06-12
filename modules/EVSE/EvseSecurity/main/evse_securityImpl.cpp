@@ -2,9 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "evse_securityImpl.hpp"
-#include <everest_api_types/telemetry/cert.hpp>
+#include <everest_api_types/telemetry/json_codec.hpp>
 #include <everest/conversions/evse_security/conversions.hpp>
-#include <nlohmann/json.hpp>
 
 namespace module {
 namespace main {
@@ -316,12 +315,12 @@ void evse_securityImpl::publish_cert_telemetry() {
     payload.config_complete = payload.secc_chain.configured && payload.mo_root.configured;
     payload.sync_complete = payload.secc_chain.synced && payload.mo_root.synced;
 
-    nlohmann::json const j = payload;
-    Everest::TelemetryMap tm;
-    for (auto it = j.begin(); it != j.end(); ++it) {
-        tm[it.key()] = it.value();
+    const nlohmann::json json_payload = payload;
+    Everest::TelemetryMap telemetry;
+    for (const auto& [key, value] : json_payload.items()) {
+        telemetry.emplace(key, value);
     }
-    this->mod->telemetry.publish("Cert", "status", tm);
+    this->mod->telemetry.publish("Cert", "status", telemetry);
 }
 
 } // namespace main
