@@ -55,7 +55,6 @@ struct GenericChargePointCallbacks {
     virtual bool cb_cancel_reservation(std::int32_t reservation_id) = 0;
     virtual void cb_charging_needs(std::int32_t extensions_id,
                                    const types::iso15118::ChargingNeeds& charging_needs) = 0;
-    virtual void cb_charging_schedules_timer() = 0;
     virtual ocpp::v2::ClearDisplayMessageResponse
     cb_clear_display_message(const ocpp::v2::ClearDisplayMessageRequest& request) = 0;
     virtual std::future<ocpp::ConfigNetworkResult> cb_configure_network_connection_profile() = 0;
@@ -82,18 +81,20 @@ struct GenericChargePointCallbacks {
                                     const types::iso15118::RequestExiStreamSchema& certificate_request) = 0;
     virtual void cb_log_status(types::system::LogStatus status) = 0;
     virtual void cb_ocpp_messages(const std::string& message, ocpp::MessageDirection direction) = 0;
-    virtual void cb_pause_charging(std::int32_t evse_id) = 0;
+    virtual bool cb_pause_charging(std::int32_t evse_id) = 0;
     virtual void cb_powermeter(std::int32_t evse_id, const types::powermeter::Powermeter& power_meter) = 0;
     virtual void cb_provide_token(const IdToken& id_token) = 0;
     virtual void cb_ready(std::int32_t evse_id, bool ready) = 0;
     virtual void cb_reservation_update(types::reservation::ReservationUpdateStatus status) = 0;
     virtual ocpp::v2::ReserveNowStatusEnum cb_reserve_now(const ocpp::v2::ReserveNowRequest& request) = 0;
     virtual void cb_reset(const std::optional<const std::int32_t>& evse_id, ResetType type) = 0;
+    virtual bool cb_resume_charging(std::int32_t evse_id) = 0;
     virtual void cb_security_event(const ocpp::CiString<50>& event_type,
                                    const std::optional<ocpp::CiString<255>>& tech_info) = 0;
     virtual void cb_service_renegotiation_supported(std::int32_t extensions_id,
                                                     bool service_renegotiation_supported) = 0;
     virtual void cb_session_event(std::int32_t evse_id, types::evse_manager::SessionEvent session_event) = 0;
+    virtual void cb_set_charging_profiles() = 0;
     virtual ocpp::v2::SetDisplayMessageResponse
     cb_set_display_message(const std::vector<ocpp::DisplayMessage>& messages) = 0;
     virtual void cb_set_running_cost(const ocpp::RunningCost& running_cost, std::uint32_t number_of_decimals,

@@ -624,7 +624,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     m_charge_point.init(args);
 
     // publish charging schedules at least once on startup
-    cb_charging_schedules_timer();
+    cb_set_charging_profiles();
     charging_schedules_timer_start();
 
     ready_module_configuration();
@@ -912,16 +912,6 @@ void GenericOcpp::cb_charging_needs(std::int32_t extensions_id, const types::iso
     } else {
         EVLOG_info << "ISO15118 charging_needs received before OCPP was initialised, ignoring";
     }
-}
-
-void GenericOcpp::cb_charging_schedules_timer() {
-    // this callback publishes the schedules within EVerest and applies the schedules for the individual
-    // evse_energy_sink
-    const auto composite_schedule_unit = get_unit_or_default(m_config.getRequestCompositeScheduleUnit());
-    const auto composite_schedules = m_charge_point.get_all_composite_schedules(
-        m_config.getRequestCompositeScheduleDurationS(), composite_schedule_unit);
-    publish_charging_schedules(composite_schedules);
-    set_external_limits(composite_schedules);
 }
 
 ocpp::v2::ClearDisplayMessageResponse
@@ -1242,10 +1232,12 @@ void GenericOcpp::cb_ocpp_messages(const std::string& message, ocpp::MessageDire
     }
 }
 
-void GenericOcpp::cb_pause_charging(std::int32_t evse_id) {
+bool GenericOcpp::cb_pause_charging(std::int32_t evse_id) {
+    bool result{false};
     if (evse_id > 0 && evse_id <= m_requires.evse_manager.size()) {
-        m_requires.evse_manager.at(evse_id - 1)->call_pause_charging();
+        result = m_requires.evse_manager.at(evse_id - 1)->call_pause_charging();
     }
+    return result;
 }
 
 void GenericOcpp::cb_powermeter(std::int32_t evse_id, const types::powermeter::Powermeter& power_meter) {
@@ -1378,6 +1370,14 @@ void GenericOcpp::cb_reset(const std::optional<const std::int32_t>& evse_id, Res
     }
 }
 
+bool GenericOcpp::cb_resume_charging(std::int32_t evse_id) {
+    bool result{false};
+    if (evse_id > 0 && evse_id <= m_requires.evse_manager.size()) {
+        result = m_requires.evse_manager.at(evse_id - 1)->call_resume_charging();
+    }
+    return result;
+}
+
 void GenericOcpp::cb_security_event(const ocpp::CiString<50>& event_type,
                                     const std::optional<ocpp::CiString<255>>& tech_info) {
     types::ocpp::SecurityEvent event;
@@ -1408,6 +1408,16 @@ void GenericOcpp::cb_session_event(std::int32_t evse_id, types::evse_manager::Se
         std::scoped_lock lock(m_session_event_mutex);
         m_event_queue[evse_id].emplace(session_event);
     }
+}
+
+void GenericOcpp::cb_set_charging_profiles() {
+    // this callback publishes the schedules within EVerest and applies the schedules for the individual
+    // evse_energy_sink
+    const auto composite_schedule_unit = get_unit_or_default(m_config.getRequestCompositeScheduleUnit());
+    const auto composite_schedules = m_charge_point.get_all_composite_schedules(
+        m_config.getRequestCompositeScheduleDurationS(), composite_schedule_unit);
+    publish_charging_schedules(composite_schedules);
+    set_external_limits(composite_schedules);
 }
 
 ocpp::v2::SetDisplayMessageResponse
@@ -1657,8 +1667,7 @@ bool GenericOcpp::charging_schedules_timer_running() {
 void GenericOcpp::charging_schedules_timer_start() {
     const auto interval = m_config.getCompositeScheduleIntervalS();
     if (interval > 0) {
-        m_charging_schedules_timer.interval([this]() { cb_charging_schedules_timer(); },
-                                            std::chrono::seconds(interval));
+        m_charging_schedules_timer.interval([this]() { cb_set_charging_profiles(); }, std::chrono::seconds(interval));
     }
 }
 

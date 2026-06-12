@@ -249,7 +249,6 @@ protected:
     void cb_boot_notification(const ocpp::v2::BootNotificationResponse& boot_notification_response) override;
     bool cb_cancel_reservation(std::int32_t reservation_id) override;
     void cb_charging_needs(std::int32_t extensions_id, const types::iso15118::ChargingNeeds& charging_needs) override;
-    void cb_charging_schedules_timer() override;
     ocpp::v2::ClearDisplayMessageResponse
     cb_clear_display_message(const ocpp::v2::ClearDisplayMessageRequest& request) override;
     std::future<ocpp::ConfigNetworkResult> cb_configure_network_connection_profile() override;
@@ -275,17 +274,19 @@ protected:
                                          const types::iso15118::RequestExiStreamSchema& certificate_request) override;
     void cb_log_status(types::system::LogStatus status) override;
     void cb_ocpp_messages(const std::string& message, ocpp::MessageDirection direction) override;
-    void cb_pause_charging(std::int32_t evse_id) override;
+    bool cb_pause_charging(std::int32_t evse_id) override;
     void cb_powermeter(std::int32_t evse_id, const types::powermeter::Powermeter& power_meter) override;
     void cb_provide_token(const IdToken& id_token) override;
     void cb_ready(std::int32_t evse_id, bool ready) override;
     void cb_reservation_update(types::reservation::ReservationUpdateStatus status) override;
     ocpp::v2::ReserveNowStatusEnum cb_reserve_now(const ocpp::v2::ReserveNowRequest& request) override;
     void cb_reset(const std::optional<const std::int32_t>& evse_id, ResetType type) override;
+    bool cb_resume_charging(std::int32_t evse_id) override;
     void cb_security_event(const ocpp::CiString<50>& event_type,
                            const std::optional<ocpp::CiString<255>>& tech_info) override;
     void cb_service_renegotiation_supported(std::int32_t extensions_id, bool service_renegotiation_supported) override;
     void cb_session_event(std::int32_t evse_id, types::evse_manager::SessionEvent session_event) override;
+    void cb_set_charging_profiles() override;
     ocpp::v2::SetDisplayMessageResponse
     cb_set_display_message(const std::vector<ocpp::DisplayMessage>& messages) override;
     void cb_set_running_cost(const ocpp::RunningCost& running_cost, std::uint32_t number_of_decimals,

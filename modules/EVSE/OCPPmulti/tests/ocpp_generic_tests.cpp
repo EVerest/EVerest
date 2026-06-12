@@ -627,7 +627,7 @@ TEST_F(GenericOcppProvidesTester, publishChargingSchedules) {
         .WillOnce(Return(composite_schedules));
 
     received.clear();
-    ocpp.cb_charging_schedules_timer();
+    ocpp.cb_set_charging_profiles();
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(received[0],
               R"({"schedules":[

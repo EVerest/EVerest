@@ -17,7 +17,6 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::cb_boot_notification;
     using ocpp_multi::GenericOcpp::cb_cancel_reservation;
     using ocpp_multi::GenericOcpp::cb_charging_needs;
-    using ocpp_multi::GenericOcpp::cb_charging_schedules_timer;
     using ocpp_multi::GenericOcpp::cb_clear_display_message;
     using ocpp_multi::GenericOcpp::cb_configure_network_connection_profile;
     using ocpp_multi::GenericOcpp::cb_connection_state_changed;
@@ -43,9 +42,11 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::cb_reservation_update;
     using ocpp_multi::GenericOcpp::cb_reserve_now;
     using ocpp_multi::GenericOcpp::cb_reset;
+    using ocpp_multi::GenericOcpp::cb_resume_charging;
     using ocpp_multi::GenericOcpp::cb_security_event;
     using ocpp_multi::GenericOcpp::cb_service_renegotiation_supported;
     using ocpp_multi::GenericOcpp::cb_session_event;
+    using ocpp_multi::GenericOcpp::cb_set_charging_profiles;
     using ocpp_multi::GenericOcpp::cb_set_display_message;
     using ocpp_multi::GenericOcpp::cb_set_running_cost;
     using ocpp_multi::GenericOcpp::cb_stop_transaction;

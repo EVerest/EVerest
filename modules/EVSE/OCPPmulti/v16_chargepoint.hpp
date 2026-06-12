@@ -41,20 +41,16 @@ private:
     bool cb_is_reset_allowed(const ocpp::v16::ResetType& reset_type);
     ocpp::ReservationCheckStatus cb_is_token_reserved_for_connector(const std::int32_t connector,
                                                                     const std::string& id_token);
-    bool cb_pause_charging(std::int32_t connector);
     void cb_provide_token(const std::string& id_token, std::vector<std::int32_t> referenced_connectors,
                           bool prevalidated);
     ocpp::v16::ReservationStatus cb_reserve_now(std::int32_t reservation_id, std::int32_t connector,
                                                 ocpp::DateTime expiryDate, ocpp::CiString<20> idTag,
                                                 std::optional<ocpp::CiString<20>> parent_id);
     void cb_reset(const ocpp::v16::ResetType& reset_type);
-    bool cb_resume_charging(std::int32_t connector);
     ocpp::v16::DataTransferResponse cb_session_cost(const ocpp::RunningCost& running_cost,
                                                     const std::uint32_t number_of_decimals);
-    void cb_set_connection_timeout(std::int32_t connection_timeout);
     ocpp::v16::DataTransferResponse cb_set_display_message(const std::vector<ocpp::DisplayMessage>& messages);
     void cb_set_system_time(const std::string& system_time);
-    void cb_signal_set_charging_profiles();
     ocpp::v16::UpdateFirmwareStatusEnumType cb_signed_update_firmware(const ocpp::v16::SignedUpdateFirmwareRequest msg);
     bool cb_stop_transaction(std::int32_t connector, ocpp::v16::Reason reason);
     ocpp::v16::DataTransferResponse cb_tariff_message(const ocpp::TariffMessage& message);
@@ -66,7 +62,7 @@ private:
     ocpp::v16::UnlockStatus cb_unlock_connector(std::int32_t connector);
     void cb_update_firmware(const ocpp::v16::UpdateFirmwareRequest msg);
     ocpp::v16::GetLogResponse cb_upload_diagnostics(const ocpp::v16::GetDiagnosticsRequest& request);
-    ocpp::v16::GetLogResponse cb_upload_logs(ocpp::v16::GetLogRequest req);
+    ocpp::v16::GetLogResponse cb_upload_logs(ocpp::v16::GetLogRequest request);
 
 public:
     explicit ChargePointV16(ocpp_multi::GenericChargePointCallbacks& callbacks, evse_securityIntf& security) :

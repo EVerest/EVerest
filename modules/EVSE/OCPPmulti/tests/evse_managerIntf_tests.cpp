@@ -182,6 +182,31 @@ TEST_F(GenericOcppRequiresTester, callPauseCharging) {
     EXPECT_EQ(received_1[0], json{});
 }
 
+TEST_F(GenericOcppRequiresTester, callResumeCharging) {
+    // call_resume_charging() used in cb_resume_charging()
+
+    // there are 2 EVSE Managers - check routing to the correct manager
+    std::vector<json> received_0;
+    std::vector<json> received_1;
+    interfaces.subscribe_var("evse_manager", "call_resume_charging", 0,
+                             [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
+    interfaces.subscribe_var("evse_manager", "call_resume_charging", 1,
+                             [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
+
+    // cb_pause_charging ignores the result
+    interfaces.add_cmd_result(R"(false)"_json);
+    interfaces.add_cmd_result(R"(true)"_json);
+
+    ocpp.cb_resume_charging(1);
+    ocpp.cb_resume_charging(2);
+
+    ASSERT_EQ(received_0.size(), 1);
+    EXPECT_EQ(received_0[0], json{});
+
+    ASSERT_EQ(received_1.size(), 1);
+    EXPECT_EQ(received_1[0], json{});
+}
+
 TEST_F(GenericOcppRequiresTester, callSetPlugAndChargeConfiguration) {
     // call_set_plug_and_charge_configuration() used in
     // - ready_module_configuration()

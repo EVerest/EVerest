@@ -129,7 +129,7 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
 
     // this callback publishes the schedules within EVerest and applies the schedules for the individual
     // evse_energy_sink
-    callbacks.set_charging_profiles_callback = [this]() { m_callbacks_ptr->cb_charging_schedules_timer(); };
+    callbacks.set_charging_profiles_callback = [this]() { m_callbacks_ptr->cb_set_charging_profiles(); };
     callbacks.time_sync_callback = [this](auto&&... args) { m_callbacks_ptr->cb_time_sync(args...); };
     callbacks.reserve_now_callback = [this](auto&&... args) { return m_callbacks_ptr->cb_reserve_now(args...); };
     callbacks.cancel_reservation_callback = [this](auto&&... args) {
