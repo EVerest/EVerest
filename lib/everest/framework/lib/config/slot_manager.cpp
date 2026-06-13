@@ -143,6 +143,29 @@ SqliteConfigSlotManager::update_config_slot(int slot_id, const std::string& conf
     return ret;
 }
 
+GenericResponseStatus SqliteConfigSlotManager::update_description(int slot_id,
+                                                                  const std::optional<std::string>& description) {
+    GenericResponseStatus ret = GenericResponseStatus::Failed;
+    if (exists(slot_id)) {
+        auto transaction = this->db->begin_transaction();
+        auto meta_stmt =
+            this->db->new_statement("UPDATE CONFIG_META SET DESCRIPTION = @description WHERE ID = @config_id");
+
+        meta_stmt->bind_int("@config_id", slot_id);
+        if (description.has_value()) {
+            meta_stmt->bind_text("@description", description.value(), SQLiteString::Transient);
+        } else {
+            meta_stmt->bind_null("@description");
+        }
+
+        if (meta_stmt->step() == SQLITE_DONE) {
+            transaction->commit();
+            ret = GenericResponseStatus::OK;
+        }
+    }
+    return ret;
+}
+
 std::vector<SlotInfo> SqliteConfigSlotManager::list_slots() {
     const std::string sql = "SELECT c.ID, COALESCE(cm.LAST_UPDATED, ''), cm.CONFIG_FILE_PATH, cm.DESCRIPTION "
                             "FROM CONFIG c LEFT JOIN CONFIG_META cm ON cm.ID = c.ID "

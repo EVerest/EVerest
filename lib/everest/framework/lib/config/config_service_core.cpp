@@ -177,6 +177,17 @@ LoadFromYamlResult ConfigServiceCore::load_from_yaml(const std::string& raw_yaml
     }
 }
 
+bool ConfigServiceCore::set_description(int slot_id, const std::string& description) {
+    if (slot_manager_.exists(slot_id)) {
+        auto slots = slot_manager_.list_slots();
+
+        slot_manager_.update_description(slot_id, {description});
+        return true;
+    } else {
+        return false;
+    }
+}
+
 // --- Slot-scoped configuration ---
 
 GetConfigurationResult ConfigServiceCore::get_configuration(int slot_id) {
@@ -319,6 +330,33 @@ ConfigServiceCore::set_config_parameters(int slot_id, const std::vector<ConfigPa
     }
 
     return results;
+}
+
+GetConfigParametersResult ConfigServiceCore::get_config_parameters(
+    int slot_id, const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters) {
+    GetConfigurationResult get_cfg_result = get_configuration(slot_id);
+
+    GetConfigParametersResult result;
+    result.status = GetConfigurationStatus::SlotDoesNotExist;
+
+    if (get_cfg_result.status == GetConfigurationStatus::Success) {
+        result.status = GetConfigurationStatus::Success;
+
+        auto& module_cfgs = get_cfg_result.module_configurations;
+
+        for (const auto& requested_param : parameters) {
+            auto param = get_parameter(requested_param, module_cfgs);
+
+            if (param.has_value()) {
+                auto [parameter, parameter_access] = param.value();
+                result.parameters.push_back(*parameter);
+            } else {
+                result.parameters.push_back(std::nullopt);
+            }
+        }
+    }
+
+    return result;
 }
 
 // --- Push-event subscriptions ---
