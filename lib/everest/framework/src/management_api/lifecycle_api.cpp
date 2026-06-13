@@ -5,14 +5,13 @@
 #include <everest/logging.hpp>
 #include <utils/date.hpp>
 
-#include <algorithm>
-#include <iterator>
-
 #include "include/lifecycle_type_wrapper.hpp"
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/lifecycle/API.hpp>
 #include <everest_api_types/lifecycle/codec.hpp>
 #include <everest_api_types/utilities/codec.hpp>
+
+#include <generated/version_information.hpp>
 
 namespace API_types = ev_API::V1_0::types;
 namespace API_types_ext = API_types::lifecycle;
@@ -53,7 +52,7 @@ std::string LifecycleAPI::get_lwt_data() {
     return serialize(lwt_status_update);
 }
 
-std::string LifecycleAPI::get_lwt_topic()  {
+std::string LifecycleAPI::get_lwt_topic() {
     return m_topics.nonmodule_to_extern("status");
 }
 
@@ -70,6 +69,7 @@ LifecycleAPI::LifecycleAPI(MQTTAbstraction& mqtt_abstraction, ::Everest::config:
 
     generate_api_cmd_stop_modules();
     generate_api_cmd_start_modules();
+    generate_api_cmd_get_everest_version();
 
     generate_api_var_status();
 }
@@ -122,6 +122,27 @@ void LifecycleAPI::generate_api_cmd_start_modules() {
             return true;
         }
         EVLOG_warning << "Failed to deserialize start_modules request.";
+        return false;
+    });
+}
+
+void LifecycleAPI::generate_api_cmd_get_everest_version() {
+
+    subscribe_api_topic("get_everest_version", [this](std::string const& data) {
+        static everest::lib::API::V1_0::types::lifecycle::EVerestVersion everest_version;
+
+        everest_version.name = PROJECT_NAME;
+        everest_version.version = PROJECT_VERSION;
+        everest_version.git_version = GIT_VERSION;
+
+        API_generic::RequestReply msg;
+        if (deserialize(data, msg)) {
+
+            m_mqtt_abstraction.publish(msg.replyTo, serialize(everest_version));
+
+            return true;
+        }
+        EVLOG_warning << "Failed to deserialize get_everest_version request.";
         return false;
     });
 }

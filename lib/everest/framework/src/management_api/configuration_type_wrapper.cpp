@@ -731,4 +731,19 @@ GetConfigurationResult_External to_external_api(GetConfigurationResult_Internal 
     return result;
 }
 
+ConfigurationParameterGetValueResult_External
+to_external_api(ConfigurationParameterGetValueResult_Internal const& val) {
+    ConfigurationParameterGetValueResult_External result;
+
+    if (val.has_value()) {
+        result.status = ::everest::lib::API::V1_0::types::configuration::ConfigurationParameterGetRequestEnum::OK;
+        result.parameter = {to_external_api(val.value())};
+    } else {
+        result.status =
+            ::everest::lib::API::V1_0::types::configuration::ConfigurationParameterGetRequestEnum::DoesNotExist;
+        result.parameter = std::nullopt;
+    }
+    return result;
+}
+
 } // namespace Everest::api::types::configuration
