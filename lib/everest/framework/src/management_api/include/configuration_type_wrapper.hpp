@@ -194,4 +194,10 @@ using GetConfigurationResult_External = ::everest::lib::API::V1_0::types::config
 GetConfigurationResult_Internal to_internal_api(GetConfigurationResult_External const& val);
 GetConfigurationResult_External to_external_api(GetConfigurationResult_Internal const& val);
 
+using ConfigurationParameterGetValueResult_Internal = std::optional<everest::config::ConfigurationParameter>;
+using ConfigurationParameterGetValueResult_External =
+    ::everest::lib::API::V1_0::types::configuration::ConfigurationParameterGetValueResult;
+
+ConfigurationParameterGetValueResult_External to_external_api(ConfigurationParameterGetValueResult_Internal const& val);
+
 } // namespace Everest::api::types::configuration

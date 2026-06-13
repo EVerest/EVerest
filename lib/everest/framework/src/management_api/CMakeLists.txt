@@ -5,6 +5,7 @@ target_compile_options(management_api
   PRIVATE  -Wall -Wextra -pedantic -Werror=switch)
 
 target_include_directories(management_api
+  PRIVATE ${CMAKE_BINARY_DIR}/generated/include
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 

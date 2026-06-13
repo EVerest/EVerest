@@ -47,7 +47,9 @@ ConfigurationAPI::ConfigurationAPI(MQTTAbstraction& mqtt_abstraction,
     generate_api_cmd_delete_slot();
     generate_api_cmd_duplicate_slot();
     generate_api_cmd_load_from_yaml();
+    generate_api_cmd_set_description();
     generate_api_cmd_set_config_parameters();
+    generate_api_cmd_get_config_parameters();
     generate_api_cmd_get_configuration();
 
     generate_api_var_active_slot();
@@ -180,6 +182,31 @@ void ConfigurationAPI::generate_api_cmd_load_from_yaml() {
     });
 }
 
+void ConfigurationAPI::generate_api_cmd_set_description() {
+    subscribe_api_topic("set_description", [this](std::string const& data) {
+        API_generic::RequestReply msg;
+        if (deserialize(data, msg)) {
+            API_types_ext::SetDescriptionRequest payload;
+            if (deserialize(msg.payload, payload)) {
+                if (m_readonly) {
+                    API_types_ext::LoadFromYamlResult response{false, "Not Allowed", std::nullopt};
+                    m_mqtt_abstraction.publish(msg.replyTo, serialize(response));
+                } else {
+                    bool success = m_config_service.set_description(payload.slot_id, payload.description);
+
+                    API_types_ext::SetDescriptionResult ext_res;
+                    ext_res.success = success;
+
+                    m_mqtt_abstraction.publish(msg.replyTo, serialize(ext_res));
+                }
+                return true;
+            }
+        }
+        EVLOG_warning << "Failed to deserialize set_description request.";
+        return false;
+    });
+}
+
 void ConfigurationAPI::generate_api_cmd_set_config_parameters() {
     subscribe_api_topic("set_config_parameters", [this](std::string const& data) {
         API_generic::RequestReply msg;
@@ -216,6 +243,38 @@ void ConfigurationAPI::generate_api_cmd_set_config_parameters() {
                     }
                     m_mqtt_abstraction.publish(msg.replyTo, serialize(response));
                 }
+                return true;
+            }
+        }
+        EVLOG_warning << "Failed to deserialize set_config_parameters request.";
+        return false;
+    });
+}
+
+void ConfigurationAPI::generate_api_cmd_get_config_parameters() {
+    subscribe_api_topic("get_config_parameters", [this](std::string const& data) {
+        API_generic::RequestReply msg;
+        if (deserialize(data, msg)) {
+            API_types_ext::GetConfigurationParameterRequest payload;
+            if (deserialize(msg.payload, payload)) {
+                std::vector<everest::config::ConfigurationParameterIdentifier> requested_parameters = srcToTarVec(
+                    payload.parameters, [](const API_types_ext::ConfigurationParameterIdentifier& parameter_ext) {
+                        return API_wrapper::to_internal_api(parameter_ext);
+                    });
+
+                auto int_res = m_config_service.get_config_parameters(payload.slot_id, requested_parameters);
+
+                API_types_ext::GetConfigurationParameterResult response{};
+                if (int_res.status == Everest::config::GetConfigurationStatus::SlotDoesNotExist) {
+                    response.status = API_types_ext::GetConfigurationStatusEnum::SlotDoesNotExist;
+                } else {
+                    response.status = API_types_ext::GetConfigurationStatusEnum::Success;
+
+                    response.parameter_values = srcToTarVec(
+                        int_res.parameters, [](const auto& result) { return API_wrapper::to_external_api(result); });
+                }
+                m_mqtt_abstraction.publish(msg.replyTo, serialize(response));
+
                 return true;
             }
         }

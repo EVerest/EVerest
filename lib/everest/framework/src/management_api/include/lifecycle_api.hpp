@@ -63,6 +63,7 @@ private:
 
     void generate_api_cmd_stop_modules();
     void generate_api_cmd_start_modules();
+    void generate_api_cmd_get_everest_version();
 
     void generate_api_var_status();
 
