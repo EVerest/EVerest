@@ -42,12 +42,17 @@ public:
     SetActiveSlotStatus mark_active_slot(int slot_id) override;
     DeleteSlotStatus delete_slot(int slot_id) override;
     DuplicateSlotResult duplicate_slot(int slot_id, std::optional<std::string> description) override;
-    LoadFromYamlResult load_from_yaml(const std::string& raw_yaml, std::optional<std::string> description, std::optional<int> slot_id) override;
+    LoadFromYamlResult load_from_yaml(const std::string& raw_yaml, std::optional<std::string> description,
+                                      std::optional<int> slot_id) override;
+    bool set_description(int slot_id, const std::string& description) override;
 
     // --- Slot-scoped configuration ---
     GetConfigurationResult get_configuration(int slot_id) override;
-    std::vector<SetConfigParameterResult>
-    set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates) override;
+    SetConfigParameterResult set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates,
+                                                   const Origin& origin) override;
+    GetConfigParametersResult
+    get_config_parameters(int slot_id,
+                          const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters) override;
 
     // --- Push-event subscriptions ---
     void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) override;
