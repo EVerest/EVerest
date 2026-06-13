@@ -129,6 +129,11 @@ struct GetConfigurationResult {
     everest::config::ModuleConfigurations module_configurations;
 };
 
+struct GetConfigParametersResult {
+    GetConfigurationStatus status = GetConfigurationStatus::SlotDoesNotExist;
+    std::vector<std::optional<everest::config::ConfigurationParameter>> parameters;
+};
+
 // ---------------------------------------------------------------------------
 // ConfigServiceInterface
 // ---------------------------------------------------------------------------
@@ -147,15 +152,20 @@ public:
     virtual SetActiveSlotStatus mark_active_slot(int slot_id) = 0;
     virtual DeleteSlotStatus delete_slot(int slot_id) = 0;
     virtual DuplicateSlotResult duplicate_slot(int slot_id, std::optional<std::string> description) = 0;
-    virtual LoadFromYamlResult load_from_yaml(const std::string& raw_yaml, std::optional<std::string> description, std::optional<int> slot_id) = 0;
+    virtual LoadFromYamlResult load_from_yaml(const std::string& raw_yaml, std::optional<std::string> description,
+                                              std::optional<int> slot_id) = 0;
+    virtual bool set_description(int slot_id, const std::string& description) = 0;
 
     // --- Active-slot in-memory access ---
     virtual const everest::config::ModuleConfigurations& get_active_module_configurations() const = 0;
 
     // --- Slot-scoped configuration ---
     virtual GetConfigurationResult get_configuration(int slot_id) = 0;
-    virtual std::vector<SetConfigParameterResult>
-    set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates) = 0;
+    virtual SetConfigParameterResult
+    set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates, const Origin& origin) = 0;
+    virtual GetConfigParametersResult
+    get_config_parameters(int slot_id,
+                          const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters) = 0;
 
     // --- Push-event subscriptions ---
     virtual void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) = 0;
