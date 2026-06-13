@@ -51,6 +51,9 @@ struct StubConfigService : Everest::config::ConfigServiceInterface {
                                       std::optional<int> slot_id) override {
         return {};
     }
+    bool set_description(int, const std::string&) {
+        return true;
+    }
     GetConfigurationResult get_configuration(int) override {
         return {GetConfigurationStatus::Success, module_configurations};
     }
@@ -67,6 +70,11 @@ struct StubConfigService : Everest::config::ConfigServiceInterface {
         }
         last_set_results.parameter_results = {set_result};
         return last_set_results;
+    }
+    GetConfigParametersResult
+    get_config_parameters(int slot_id,
+                          const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters) override {
+        return GetConfigParametersResult{};
     }
     void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)>) override {
     }
