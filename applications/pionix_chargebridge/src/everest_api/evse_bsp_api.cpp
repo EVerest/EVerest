@@ -84,21 +84,39 @@ void evse_bsp_api::set_cb_message(evse_bsp_cb_to_host const& msg) {
     if (cb_status.reset_reason not_eq msg.reset_reason) {
     }
     if (cb_status.cp_state not_eq msg.cp_state) {
+        // Diagnostic: cp_state transition. CpState_A triggers a DiodeFault clear.
+        utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 0)
+            << "cp_state changed " << static_cast<unsigned>(cb_status.cp_state) << " -> "
+            << static_cast<unsigned>(msg.cp_state) << std::endl;
         handle_event_cp(msg.cp_state);
     }
     if (cb_status.relay_state != msg.relay_state) {
         handle_event_relay(msg.relay_state);
     }
     if (cb_status.error_flags not_eq msg.error_flags) {
+        // Diagnostic: error flag transition.
+        utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 0)
+            << "error_flags changed 0x" << std::hex << cb_status.error_flags.raw << " -> 0x" << msg.error_flags.raw
+            << std::dec << std::endl;
         handle_error(msg.error_flags);
     }
     if (cb_status.pp_state_type1 not_eq msg.pp_state_type1) {
+        utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 0)
+            << "pp_state_type1 changed " << static_cast<unsigned>(cb_status.pp_state_type1) << " -> "
+            << static_cast<unsigned>(msg.pp_state_type1) << std::endl;
         handle_pp_type1(msg.pp_state_type1);
     }
     if (cb_status.pp_state_type2 not_eq msg.pp_state_type2) {
+        utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 0)
+            << "pp_state_type2 changed " << static_cast<unsigned>(cb_status.pp_state_type2) << " -> "
+            << static_cast<unsigned>(msg.pp_state_type2) << std::endl;
         handle_pp_type2(msg.pp_state_type2);
     }
     if (cb_status.stop_charging not_eq msg.stop_charging) {
+        // Diagnostic: stop_charging transition. A non-zero value triggers a Local stop.
+        utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 0)
+            << "stop_charging changed " << static_cast<unsigned>(cb_status.stop_charging) << " -> "
+            << static_cast<unsigned>(msg.stop_charging) << std::endl;
         handle_stop_button(msg.stop_charging);
     }
     // cb_status.lock_state is not checked here as it cannot be reported to EVerest.
@@ -455,6 +473,8 @@ void evse_bsp_api::send_ac_pp_amapcity(API_BSP::Ampacity data) {
 void evse_bsp_api::send_request_stop_transaction(API_EVM::StopTransactionReason data) {
     API_EVM::StopTransactionRequest request;
     request.reason = data;
+    utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 0)
+        << "Sending request_stop_transaction, reason " << serialize(data) << std::endl;
     send_mqtt("request_stop_transaction", serialize(request));
 }
 
@@ -466,6 +486,8 @@ void evse_bsp_api::send_raise_error(API_BSP::ErrorEnum error, std::string const&
     error_msg.type = error;
     error_msg.sub_type = subtype;
     error_msg.message = msg;
+    utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 0)
+        << "Sending raise_error " << serialize(error) << " (subtype '" << subtype << "')" << std::endl;
     send_mqtt("raise_error", serialize(error_msg));
 }
 
@@ -474,6 +496,8 @@ void evse_bsp_api::send_clear_error(API_BSP::ErrorEnum error, std::string const&
     error_msg.type = error;
     error_msg.sub_type = subtype;
     error_msg.message = msg;
+    utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 0)
+        << "Sending clear_error " << serialize(error) << " (subtype '" << subtype << "')" << std::endl;
     send_mqtt("clear_error", serialize(error_msg));
 }
 

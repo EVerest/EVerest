@@ -4,9 +4,11 @@
 #include <charge_bridge/utilities/logging.hpp>
 #include <cstring>
 #include <everest/io/udp/udp_payload.hpp>
+#include <iomanip>
 #include <iostream>
 #include <protocol/evse_bsp_cb_to_host.h>
 #include <protocol/evse_bsp_host_to_cb.h>
+#include <sstream>
 
 namespace {
 const int default_udp_timeout_ms = 1000;
@@ -19,13 +21,34 @@ bsp_bridge::bsp_bridge(bsp_bridge_config const& config) :
     using namespace std::chrono_literals;
     m_timer.set_timeout(5s);
 
+    auto rx_identifier = config.cb + "/" + config.item;
+
     m_api.set_cb_tx([this](auto& data) {
         everest::lib::io::udp::udp_payload pl;
         pl.set_message(&data, sizeof(data));
         m_udp.tx(pl);
     });
 
-    m_udp.set_rx_handler([this](auto const& data, auto&) {
+    m_udp.set_rx_handler([this, rx_identifier](auto const& data, auto&) {
+        // Diagnostic: trace the raw packet from the hardware module. The struct is
+        // memcpy'd below without a size check, so a short/oversized frame would leave
+        // trailing fields (e.g. stop_charging, cp_duty_cycle) as stack garbage.
+        const auto received = data.size();
+        const auto expected = sizeof(evse_bsp_cb_to_host);
+        std::ostringstream hex;
+        hex << std::hex << std::setfill('0');
+        for (std::size_t i = 0; i < received; ++i) {
+            hex << std::setw(2) << static_cast<unsigned>(data.buffer[i]) << ' ';
+        }
+        if (received != expected) {
+            utilities::print_error(rx_identifier, "BSP/UDP", -1)
+                << "RX size mismatch: received " << received << " bytes, expected " << expected
+                << " bytes. Raw: " << hex.str() << std::endl;
+        } else {
+            utilities::print_error(rx_identifier, "BSP/UDP", 0)
+                << "RX " << received << " bytes: " << hex.str() << std::endl;
+        }
+
         evse_bsp_cb_to_host msg;
         std::memcpy(&msg, data.buffer.data(), data.size());
         m_api.set_cb_message(msg);
