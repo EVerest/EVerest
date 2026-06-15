@@ -12,7 +12,6 @@ namespace iso15118::message_20 {
 
 namespace datatypes {
 
-// EVApparentPower struct based on EVApparentPowerType from XSD
 struct EVApparentPower {
     RationalNumber maximum_apparent_power_during_charging_and_var_absorption;
     std::optional<RationalNumber> maximum_apparent_power_during_charging_and_var_absorption_L2;
@@ -28,7 +27,6 @@ struct EVApparentPower {
     std::optional<RationalNumber> maximum_apparent_power_during_discharging_and_var_injection_L3;
 };
 
-// EVReactivePower struct based on EVReactivePowerType from XSD
 struct EVReactivePower {
     RationalNumber maximum_var_absorption_during_charging;
     std::optional<RationalNumber> maximum_var_absorption_during_charging_L2;
@@ -56,7 +54,6 @@ struct EVReactivePower {
     std::optional<RationalNumber> minimum_var_injection_during_discharging_L3;
 };
 
-// EVExcitation struct based on EVExcitationType from XSD
 struct EVExcitation {
     std::optional<RationalNumber> specified_over_excited_power_factor;
     std::optional<RationalNumber> specified_over_excited_power_factor_L2;
@@ -119,7 +116,6 @@ struct DER_Dynamic_AC_CLReqControlMode : Dynamic_AC_CLReqControlMode {
     uint32_t enabled_modes;
 };
 
-// EnterServiceCLRes is the CL (Charge Loop) variant - all fields optional except permit_service
 struct EnterServiceCLRes {
     bool permit_service;
     std::optional<RationalNumber> enter_service_voltage_high;
@@ -131,7 +127,6 @@ struct EnterServiceCLRes {
     std::optional<RationalNumber> enter_service_ramp_time;
 };
 
-// ReactivePowerSupportCLRes is the CL variant - all fields optional
 struct ReactivePowerSupportCLRes {
     std::optional<ConstantPowerFactor> constant_power_factor;
     std::optional<VoltVar> volt_var;
@@ -139,7 +134,6 @@ struct ReactivePowerSupportCLRes {
     std::optional<ConstantVar> constant_var;
 };
 
-// ActivePowerSupportCLRes is the CL variant - all fields optional
 struct ActivePowerSupportCLRes {
     std::optional<FrequencyDroop> frequency_droop;
     std::optional<VoltWatt> volt_watt;
@@ -147,7 +141,6 @@ struct ActivePowerSupportCLRes {
     std::optional<LimitMaxDischargePower> limit_max_discharge_power;
 };
 
-// DERControlCLRes - CL (Charge Loop) variant with optional fields
 struct DERControlCLRes {
     std::optional<VoltageTrip> voltage_trip;
     std::optional<FrequencyTrip> frequency_trip;
@@ -210,4 +203,3 @@ struct DER_SAE_AC_ChargeLoopResponse {
 };
 
 } // namespace iso15118::message_20
-
