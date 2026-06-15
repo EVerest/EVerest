@@ -91,6 +91,15 @@ void InfyCanDevice::rx_handler(uint32_t can_id, const std::vector<uint8_t>& payl
     const uint8_t source_address = can_packet_acdc::source_address_from_can_id(can_id);
     const uint8_t command_number = can_packet_acdc::command_number_from_can_id(can_id);
 
+    // Ignore messages from unknown sources in FIXED_ADDRESS mode, only consider those that are explicitly configured.
+    // This prevents interference with other Infy devices on the same CAN bus that are not part of this system.
+    if (operating_mode == OperatingMode::FIXED_ADDRESS &&
+        std::find(module_addresses.begin(), module_addresses.end(), source_address) == module_addresses.end()) {
+        EVLOG_debug << "Infy: Received message from unknown module address 0x" << std::hex << std::uppercase
+                    << static_cast<int>(source_address) << ". Ignoring.";
+        return;
+    }
+
     switch (command_number) {
     case can_packet_acdc::ReadModuleCount::CMD_ID: {
         handle_module_count_packet(payload);
