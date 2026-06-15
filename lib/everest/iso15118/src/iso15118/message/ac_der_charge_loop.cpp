@@ -2,8 +2,6 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/message/ac_der_iec_charge_loop.hpp>
 
-#include <type_traits>
-
 #include <iso15118/detail/variant_access.hpp>
 
 #include <cbv2g/iso_20/iso20_AC_DER_IEC_Decoder.h>
@@ -11,7 +9,6 @@
 
 namespace iso15118::message_20 {
 
-// Request
 template <> void convert(const struct iso20_ac_der_iec_DisplayParametersType& in, datatypes::DisplayParameters& out) {
     CB2CPP_ASSIGN_IF_USED(in.PresentSOC, out.present_soc);
     CB2CPP_ASSIGN_IF_USED(in.MinimumSOC, out.min_soc);
