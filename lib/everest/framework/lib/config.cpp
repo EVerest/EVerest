@@ -13,13 +13,13 @@
 
 #include <everest/exceptions.hpp>
 #include <everest/logging.hpp>
+#include <everest/utils/yaml_loader.hpp>
 
 #include <framework/runtime.hpp>
 #include <utils/config.hpp>
 #include <utils/config/storage.hpp>
 #include <utils/config/types.hpp>
 #include <utils/formatter.hpp>
-#include <utils/yaml_loader.hpp>
 
 using namespace everest::config;
 

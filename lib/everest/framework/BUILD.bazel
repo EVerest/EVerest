@@ -20,6 +20,16 @@ genrule(
     echo "#define EVEREST_INSTALL_PREFIX \\"/usr\\"" > $@
     echo "#define EVEREST_INSTALL_LIBDIR \\"/lib\\"" >> $@
     echo "#define EVEREST_NAMESPACE (\\"everest\\")" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_LATENCY 1" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_GREEDY 2" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CONSERVATIVE 3" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_FIXED_SIZE 4" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM 5" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_LATENCY" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS 50" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_TICK_MS 5" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD 3" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE void" >> $@
     $(location :collect_migration_files) --migration-files $(locations //lib/everest/framework/schemas/migrations) --output $@
   """,
     tools = [":collect_migration_files"],

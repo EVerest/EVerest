@@ -1,6 +1,9 @@
 active_modules:
   iso15118_charger:
     module: EvseV2G
+    mapping:
+      module:
+        evse: 1
     config_module:
       device: auto
       tls_security: allow

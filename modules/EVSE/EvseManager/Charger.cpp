@@ -13,6 +13,7 @@
 #include <chrono>
 #include <generated/types/powermeter.hpp>
 #include <math.h>
+#include <optional>
 #include <string.h>
 #include <thread>
 #include <type_traits>
@@ -63,6 +64,8 @@ Charger::Charger(const std::unique_ptr<IECStateMachine>& bsp, const std::unique_
 
     shared_context.flag_transaction_active = false;
     shared_context.session_active = false;
+
+    internal_context.last_state_detect_state_change = EvseState::Idle;
 
     hlc_use_5percent_current_session = false;
 
@@ -196,8 +199,12 @@ void Charger::run_state_machine() {
         switch (shared_context.current_state) {
         case EvseState::Disabled:
             if (initialize_state) {
-                signal_simple_event(types::evse_manager::SessionEventEnum::Disabled);
                 cp_state_F();
+                bsp->enable(false);
+                signal_simple_event(types::evse_manager::SessionEventEnum::Disabled);
+            }
+            if (not shared_context.flag_disable_requested) {
+                set_state(EvseState::Idle);
             }
             break;
 
@@ -215,7 +222,7 @@ void Charger::run_state_machine() {
                     shared_context.hlc_charging_active = true;
                 }
                 shared_context.hlc_allow_close_contactor = false;
-                shared_context.max_current_cable = 0;
+                shared_context.max_current_cable.reset();
                 shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Unknown;
                 shared_context.legacy_wakeup_done = false;
                 shared_context.hlc_d20_active = false;
@@ -224,6 +231,11 @@ void Charger::run_state_machine() {
                 shared_context.flag_transaction_active = false;
                 clear_errors_on_unplug();
                 internal_context.dc_statistics_printed = false;
+            }
+
+            if (shared_context.flag_disable_requested) {
+                set_state(EvseState::Disabled);
+                break;
             }
 
             if (shared_context.shutdown_type != ShutdownType::None) {
@@ -303,12 +315,20 @@ void Charger::run_state_machine() {
                 break;
             }
 
+            if (shared_context.flag_disable_requested) {
+                // Disable requested before transaction started
+                // go straight to Finished which will detect flag_disable_requested
+                // and transition to Disabled.
+                set_state(EvseState::Finished);
+                break;
+            }
+
             // Read PP value in case of AC socket
             if (connector_type == types::evse_board_support::Connector_type::IEC62196Type2Socket and
-                shared_context.max_current_cable == 0) {
-                shared_context.max_current_cable = bsp->read_pp_ampacity();
+                not shared_context.max_current_cable.has_value()) {
                 // retry if the value is not yet available. Some BSPs may take some time to measure the PP.
-                if (shared_context.max_current_cable == 0) {
+                shared_context.max_current_cable = bsp->read_pp_ampacity();
+                if (not shared_context.max_current_cable.has_value()) {
                     if (not internal_context.pp_warning_printed) {
                         EVLOG_warning << "PP ampacity is zero, still waiting for BSP to report it...";
                         internal_context.pp_warning_printed = true;
@@ -630,7 +650,8 @@ void Charger::run_state_machine() {
             }
 
             if (stop_charging_on_fatal_error_internal() or not shared_context.flag_authorized or
-                not shared_context.flag_transaction_active or not shared_context.flag_ev_plugged_in) {
+                not shared_context.flag_transaction_active or not shared_context.flag_ev_plugged_in or
+                shared_context.flag_disable_requested) {
                 // We started to initialize charging already, so we need to stop via StoppingCharging
                 set_state(EvseState::StoppingCharging);
                 break;
@@ -715,10 +736,11 @@ void Charger::run_state_machine() {
                 }
             }
 
-            // Stop charging on errors, user stops or pause requests
+            // Stop charging on errors, user stops, pause requests, or disable
             if (stop_charging_on_fatal_error_internal() or not shared_context.flag_authorized or
                 not shared_context.flag_transaction_active or not shared_context.flag_ev_plugged_in or
-                shared_context.flag_paused_by_evse or not shared_context.iec_allow_close_contactor) {
+                shared_context.flag_paused_by_evse or not shared_context.iec_allow_close_contactor or
+                shared_context.flag_disable_requested) {
                 set_state(EvseState::StoppingCharging);
                 break;
             }
@@ -807,7 +829,7 @@ void Charger::run_state_machine() {
             }
 
             if (not shared_context.flag_transaction_active or not shared_context.flag_authorized or
-                not shared_context.flag_ev_plugged_in) {
+                not shared_context.flag_ev_plugged_in or shared_context.flag_disable_requested) {
                 set_state(EvseState::StoppingCharging);
                 break;
             }
@@ -868,7 +890,7 @@ void Charger::run_state_machine() {
             }
 
             if (not shared_context.flag_transaction_active or not shared_context.flag_authorized or
-                not shared_context.flag_ev_plugged_in) {
+                not shared_context.flag_ev_plugged_in or shared_context.flag_disable_requested) {
                 set_state(EvseState::StoppingCharging);
                 break;
             }
@@ -966,7 +988,7 @@ void Charger::run_state_machine() {
 
             // Those are fatal, so we can not recover without replugging.
             if (not shared_context.flag_transaction_active or not shared_context.flag_ev_plugged_in or
-                not shared_context.flag_authorized) {
+                not shared_context.flag_authorized or shared_context.flag_disable_requested) {
                 set_state(EvseState::Finished);
                 break;
             }
@@ -1001,10 +1023,12 @@ void Charger::run_state_machine() {
                 bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
             }
 
-            // If unplugged, stop session and proceed to Idle, otherwise wait here and do nothing
-            if (not shared_context.flag_ev_plugged_in) {
+            // If unplugged or a disable is pending, end the session.
+            // When disabled, do not wait for unplug. cp_state_F (set in the Disabled
+            // state handler) is signaled to the EV.
+            if (not shared_context.flag_ev_plugged_in or shared_context.flag_disable_requested) {
                 stop_session();
-                shared_context.current_state = EvseState::Idle;
+                set_state(shared_context.flag_disable_requested ? EvseState::Disabled : EvseState::Idle);
             }
             break;
         }
@@ -1298,6 +1322,7 @@ void Charger::start_session(bool authfirst) {
     shared_context.session_active = true;
     shared_context.flag_authorized = false;
     shared_context.authorized_pnc = false;
+    shared_context.flag_externally_cancelled = false;
     shared_context.session_uuid = utils::generate_session_id(config_context.session_id_type);
     std::optional<types::authorization::ProvidedIdToken> provided_id_token;
     if (authfirst) {
@@ -1545,10 +1570,10 @@ void Charger::authorize(bool a, const types::authorization::ProvidedIdToken& tok
                         const types::authorization::ValidationResult& result) {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_authorize);
     if (a) {
-        if (shared_context.flag_externally_cancelled) {
+        if (shared_context.flag_externally_cancelled || shared_context.flag_disable_requested) {
             EVLOG_warning
                 << "Received an authorization after the session was externally cancelled. Ignoring this authorization.";
-            // Ignore (delayed) authorization responses after an external cancellation
+            // Ignore (delayed) authorization responses after an external cancellation or while EVSE is disabled.
             // Without this guard, a delayed auth could restore flag_authorized and prevent the state machine
             // from routing to EvseState::Finished
             return;
@@ -1623,6 +1648,10 @@ void Charger::enable_disable_initial_state_publish() {
 bool Charger::enable_disable(int connector_id, const types::evse_manager::EnableDisableSource& source) {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_disable);
 
+    EVLOG_info << "Received enable/disable request for connector " << connector_id << " with source "
+               << enable_source_to_string(source.enable_source) << " and state "
+               << enable_state_to_string(source.enable_state);
+
     const auto last = active_enable_disable_source;
 
     // add/update enable_disable_source_table with new source information
@@ -1639,8 +1668,10 @@ bool Charger::enable_disable(int connector_id, const types::evse_manager::Enable
     }
 
     if (shared_context.current_state == EvseState::Disabled && shared_context.connector_enabled) {
-        // note this can change state when connector_id = 0 when the previous
-        // state is enabled
+        // When re-enabling, clear the disable flag and re-enable the BSP before
+        // the state machine sees Idle for the first time.
+        shared_context.flag_disable_requested = false;
+        bsp->enable(true);
         shared_context.current_state = EvseState::Idle;
     }
 
@@ -1669,11 +1700,19 @@ bool Charger::enable_disable(int connector_id, const types::evse_manager::Enable
         if (is_enabled) {
             signal_simple_event(types::evse_manager::SessionEventEnum::Enabled);
         } else {
-            shared_context.current_state = EvseState::Disabled;
-            signal_simple_event(types::evse_manager::SessionEventEnum::Disabled);
+            // Arm the state machine to tear down any active session and transition
+            // to Disabled. Each active charging state (Charging, ChargingPausedEV/EVSE,
+            // PrepareCharging) checks flag_disable_requested and routes to StoppingCharging
+            // or Finished. The Idle state transitions directly to Disabled.
+            // cp_state_F() and bsp->enable(false) are called from the Disabled state
+            // handler to guarantee correct ordering.
+            shared_context.flag_disable_requested = true;
+            shared_context.last_stop_transaction_reason = StopTransactionReason::EVSEDisabled;
         }
+        // Drive the state machine synchronously so callers see the resulting
+        // state (Disabled / Idle) before enable_disable() returns.
+        run_state_machine();
     }
-    bsp->enable(is_enabled);
 
     return is_enabled;
 }
@@ -1817,10 +1856,11 @@ std::string Charger::evse_state_to_string(EvseState s) {
 
 float Charger::get_max_current_internal() {
     auto maxc = shared_context.max_current;
+    const auto max_current_cable = shared_context.max_current_cable.value_or(0.0);
 
     if (connector_type == types::evse_board_support::Connector_type::IEC62196Type2Socket and
-        shared_context.max_current_cable < maxc and shared_context.current_state not_eq EvseState::Idle) {
-        maxc = shared_context.max_current_cable;
+        max_current_cable < maxc and shared_context.current_state not_eq EvseState::Idle) {
+        maxc = max_current_cable;
     }
 
     return maxc;

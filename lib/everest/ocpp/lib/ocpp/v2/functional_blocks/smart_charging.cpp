@@ -1162,9 +1162,14 @@ ClearChargingProfileResponse SmartCharging::clear_profiles(const ClearChargingPr
     ClearChargingProfileResponse response;
     response.status = ClearChargingProfileStatusEnum::Unknown;
 
-    if (this->context.database_handler.clear_charging_profiles_matching_criteria(request.chargingProfileId,
-                                                                                 request.chargingProfileCriteria)) {
-        response.status = ClearChargingProfileStatusEnum::Accepted;
+    try {
+        const auto cleared_ids = this->context.database_handler.clear_charging_profiles_matching_criteria(
+            request.chargingProfileId, request.chargingProfileCriteria);
+        if (!cleared_ids.empty()) {
+            response.status = ClearChargingProfileStatusEnum::Accepted;
+        }
+    } catch (const everest::db::QueryExecutionException& e) {
+        EVLOG_error << "Could not clear ChargingProfiles from the database: " << e.what();
     }
 
     return response;

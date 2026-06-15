@@ -1,4 +1,5 @@
-name: Build, Lint and Test
+name: On Main - Build CMake with GCC, Build Docs, and Deploy Docs
+
 on:
   push:
     branches:
@@ -8,25 +9,25 @@ jobs:
 
 
   setup-env:
-    name: Setup Environment
+    name: Call Setup Environment workflow
     uses: ./.github/workflows/job_setup-env.yml
     with:
-      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      runner: ubuntu-24.04
       ref_everest_ci: v1.5.5
 
 
   build-build-kit:
-    name: Build the build-kit
+    name: Call Build the build-kit workflow
     uses: ./.github/workflows/job_build-build-kit.yml
     needs:
       - setup-env
     with:
-      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      runner: ubuntu-24.04
       base_image_tag_everest_ci: ${{ needs.setup-env.outputs.closest_tag_everest_ci }}
 
 
   build-cmake-gcc:
-    name: Build with CMake and GCC
+    name: Call Build with CMake and GCC workflow
     uses: ./.github/workflows/job_build-cmake-gcc.yml
     needs:
       - setup-env
@@ -34,7 +35,7 @@ jobs:
     secrets:
       coverage_deploy_token: "abcd"
     with:
-      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      runner: ubuntu-24.04
       ref_everest_ci: ${{ needs.setup-env.outputs.ref_everest_ci }}
       is_fork: ${{ needs.setup-env.outputs.is_fork }}
       build-kit-artifact-name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
@@ -50,7 +51,7 @@ jobs:
   #   secrets:
   #     coverage_deploy_token: ${{ secrets.coverage_deploy_token }}
   #   with:
-  #     runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+  #     runner: ubuntu-24.04
   #     ref_everest_ci: ${{ needs.setup-env.outputs.ref_everest_ci }}
   #     is_fork: ${{ needs.setup-env.outputs.is_fork }}
   #     artifact_deploy_target_repo: ${{ github.repository_owner }}/everest.github.io
@@ -59,7 +60,7 @@ jobs:
 
 
   build-docs:
-    name: Build and Deploy Documentation
+    name: Call Build and Deploy Documentation workflow
     needs:
       - setup-env
       - build-build-kit
@@ -67,8 +68,12 @@ jobs:
     secrets:
       SA_GITHUB_SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
     with:
-      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      runner: ubuntu-24.04
       is_fork: ${{ needs.setup-env.outputs.is_fork == 'true' }}
       build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
       build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
       deploy_docs: true
+      instance_name: "nightly"
+      display_name: "nightly (main)"
+      is_release: false
+      overwrite_existing_instance: true

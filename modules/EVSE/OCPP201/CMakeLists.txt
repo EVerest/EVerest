@@ -43,6 +43,7 @@ target_sources(${MODULE_NAME}
 target_sources(${MODULE_NAME}
     PRIVATE
         "conversions.cpp"
+        "error_handling.cpp"
         "transaction_handler.cpp"
         "device_model/everest_device_model_storage.cpp"
         "device_model/composed_device_model_storage.cpp"

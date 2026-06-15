@@ -1,4 +1,6 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
 load("//modules:module.bzl", "cc_everest_module")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
 
 IMPLS = [
     "auth_validator",
@@ -11,6 +13,9 @@ IMPLS = [
 # Copy libocpp configuration files to the expected runtime structure
 genrule(
     name = "ocpp201_config_files",
+    srcs = [
+        "//lib/everest/ocpp:config",
+    ],
     outs = [
         # Component configuration files
         "share/everest/modules/OCPP201/component_config/standardized/AlignedDataCtrlr.json",
@@ -68,9 +73,6 @@ genrule(
         cp $$LIBOCPP_CONFIG_PATH/logging.ini $(RULEDIR)/share/everest/modules/OCPP201/logging.ini
         touch $(RULEDIR)/share/everest/modules/OCPP201/component_config/custom/.gitkeep
     """,
-    srcs = [
-        "//lib/everest/ocpp:config",
-    ],
     visibility = ["//visibility:public"],
 )
 
@@ -80,26 +82,63 @@ cc_everest_module(
     srcs = [
         "conversions.cpp",
         "conversions.hpp",
-        "transaction_handler.cpp",
-        "transaction_handler.hpp",
-        "error_handling.hpp",
-        "device_model/everest_device_model_storage.cpp",
-        "device_model/everest_device_model_storage.hpp",
         "device_model/composed_device_model_storage.cpp",
         "device_model/composed_device_model_storage.hpp",
         "device_model/definitions.cpp",
         "device_model/definitions.hpp",
+        "device_model/everest_device_model_storage.cpp",
+        "device_model/everest_device_model_storage.hpp",
+        "error_handling.cpp",
+        "error_handling.hpp",
+        "transaction_handler.cpp",
+        "transaction_handler.hpp",
     ],
+    data = [":ocpp201_config_files"],
+    impls = IMPLS,
     deps = [
-        "//third-party/bazel/openssl:ssl",
         "//third-party/bazel/openssl:crypto",
-        "@libcap//:libcap",
+        "//third-party/bazel/openssl:ssl",
+        "@everest-core//lib:external_energy_limits",
+        "@everest-core//lib:ocpp",
+        "@everest-core//lib:ocpp_conversions",
+        "@everest-core//lib:ocpp_evse_security",
         "@everest-core//lib:util",
+        "@libcap",
+    ],
+)
+
+cc_test(
+    name = "OCPP201_tests",
+    srcs = glob([
+        "*.hpp",
+        "device_model/*.hpp",
+        "ocpp_generic/*.hpp",
+    ]) + [
+        "error_handling.cpp",
+        "generated/modules/OCPP201/ld-ev.hpp",
+        "tests/error_handling_tests.cpp",
+        "tests/ocpp_conversions_test.cpp",
+        "tests/transaction_handler_tests.cpp",
+        "transaction_handler.cpp",
+    ],
+    data = glob(["tests/data/*.json"]),
+    includes = [
+        ".",
+        "generated/modules/OCPP201",
+    ],
+    linkstatic = True,
+    local_defines = [
+        'TEST_DATA_DIR=\\"modules/EVSE/OCPP201/tests/data\\"',
+    ],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        "//lib/everest/framework",
+        "@com_github_nlohmann_json//:json",
+        "@everest-core//interfaces:interfaces_lib",
+        "@everest-core//lib:external_energy_limits",
         "@everest-core//lib:ocpp",
         "@everest-core//lib:ocpp_evse_security",
-        "@everest-core//lib:ocpp_conversions",
-        "@everest-core//lib:external_energy_limits",
+        "@everest-core//lib:util",
+        "@googletest//:gtest_main",
     ],
-    impls = IMPLS,
-    data = [":ocpp201_config_files"],
 )

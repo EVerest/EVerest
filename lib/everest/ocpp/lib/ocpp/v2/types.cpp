@@ -344,6 +344,10 @@ std::string messagetype_to_string(MessageType m) {
         return "PullDynamicScheduleUpdate";
     case MessageType::PullDynamicScheduleUpdateResponse:
         return "PullDynamicScheduleUpdateResponse";
+    case MessageType::ReportDERControl:
+        return "ReportDERControl";
+    case MessageType::ReportDERControlResponse:
+        return "ReportDERControlResponse";
     case MessageType::RequestBatterySwap:
         return "RequestBatterySwap";
     case MessageType::RequestBatterySwapResponse:
@@ -875,6 +879,12 @@ MessageType string_to_messagetype(const std::string& s) {
     }
     if (s == "PullDynamicScheduleUpdateResponse") {
         return MessageType::PullDynamicScheduleUpdateResponse;
+    }
+    if (s == "ReportDERControl") {
+        return MessageType::ReportDERControl;
+    }
+    if (s == "ReportDERControlResponse") {
+        return MessageType::ReportDERControlResponse;
     }
     if (s == "RequestBatterySwap") {
         return MessageType::RequestBatterySwap;

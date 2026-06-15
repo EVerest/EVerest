@@ -38,6 +38,7 @@ struct Conf {
     bool supported_scheduled_mode;
     std::string custom_protocol_namespace;
     bool negative_bidirectional_limits;
+    bool selecting_sap_based_on_energy_service;
 };
 
 class Evse15118D20 : public Everest::ModuleBase {

@@ -7,7 +7,8 @@
 #include <optional>
 #include <thread>
 #include <utils/date.hpp>
-#include <utils/yaml_loader.hpp>
+
+#include <everest/utils/yaml_loader.hpp>
 
 const std::string MODELS_SUB_DIR = "models";
 

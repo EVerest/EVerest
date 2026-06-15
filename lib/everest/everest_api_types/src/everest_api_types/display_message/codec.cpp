@@ -5,55 +5,56 @@
 #include "display_message/json_codec.hpp"
 #include "nlohmann/json.hpp"
 #include "utilities/constants.hpp"
+#include "utilities/json_codec_helpers.hpp"
 
 namespace everest::lib::API::V1_0::types::display_message {
 
 std::string serialize(MessagePriorityEnum val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(MessageStateEnum val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(DisplayMessageStatusEnum val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(ClearMessageResponseEnum val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(Identifier_type val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(DisplayMessage const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(SetDisplayMessageRequest const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(SetDisplayMessageResponse const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(GetDisplayMessageRequest const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(GetDisplayMessageResponse const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(ClearDisplayMessageRequest const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(ClearDisplayMessageResponse const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::ostream& operator<<(std::ostream& os, MessagePriorityEnum const& val) {
@@ -116,52 +117,52 @@ std::ostream& operator<<(std::ostream& os, ClearDisplayMessageResponse const& va
     return os;
 }
 
-template <> MessagePriorityEnum deserialize(std::string const& val) {
-    return json::parse(val);
+template <> MessagePriorityEnum deserialize(std::string_view val) {
+    return utilities::parse_json<MessagePriorityEnum>(val);
 }
 
-template <> MessageStateEnum deserialize(std::string const& val) {
-    return json::parse(val);
+template <> MessageStateEnum deserialize(std::string_view val) {
+    return utilities::parse_json<MessageStateEnum>(val);
 }
 
-template <> DisplayMessageStatusEnum deserialize(std::string const& val) {
-    return json::parse(val);
+template <> DisplayMessageStatusEnum deserialize(std::string_view val) {
+    return utilities::parse_json<DisplayMessageStatusEnum>(val);
 }
 
-template <> ClearMessageResponseEnum deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ClearMessageResponseEnum deserialize(std::string_view val) {
+    return utilities::parse_json<ClearMessageResponseEnum>(val);
 }
 
-template <> Identifier_type deserialize(std::string const& val) {
-    return json::parse(val);
+template <> Identifier_type deserialize(std::string_view val) {
+    return utilities::parse_json<Identifier_type>(val);
 }
 
-template <> DisplayMessage deserialize(std::string const& val) {
-    return json::parse(val);
+template <> DisplayMessage deserialize(std::string_view val) {
+    return utilities::parse_json<DisplayMessage>(val);
 }
 
-template <> SetDisplayMessageRequest deserialize(std::string const& val) {
-    return json::parse(val);
+template <> SetDisplayMessageRequest deserialize(std::string_view val) {
+    return utilities::parse_json<SetDisplayMessageRequest>(val);
 }
 
-template <> SetDisplayMessageResponse deserialize(std::string const& val) {
-    return json::parse(val);
+template <> SetDisplayMessageResponse deserialize(std::string_view val) {
+    return utilities::parse_json<SetDisplayMessageResponse>(val);
 }
 
-template <> GetDisplayMessageRequest deserialize(std::string const& val) {
-    return json::parse(val);
+template <> GetDisplayMessageRequest deserialize(std::string_view val) {
+    return utilities::parse_json<GetDisplayMessageRequest>(val);
 }
 
-template <> GetDisplayMessageResponse deserialize(std::string const& val) {
-    return json::parse(val);
+template <> GetDisplayMessageResponse deserialize(std::string_view val) {
+    return utilities::parse_json<GetDisplayMessageResponse>(val);
 }
 
-template <> ClearDisplayMessageRequest deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ClearDisplayMessageRequest deserialize(std::string_view val) {
+    return utilities::parse_json<ClearDisplayMessageRequest>(val);
 }
 
-template <> ClearDisplayMessageResponse deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ClearDisplayMessageResponse deserialize(std::string_view val) {
+    return utilities::parse_json<ClearDisplayMessageResponse>(val);
 }
 
 } // namespace everest::lib::API::V1_0::types::display_message

@@ -6,59 +6,60 @@
 #include "energy/json_codec.hpp"
 #include "nlohmann/json.hpp"
 #include "utilities/constants.hpp"
+#include "utilities/json_codec_helpers.hpp"
 
 namespace everest::lib::API::V1_0::types::energy {
 
 std::string serialize(NumberWithSource const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(IntegerWithSource const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(FrequencyWattPoint const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(SetpointType const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(PricePerkWh const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(LimitsReq const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(LimitsRes const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(ScheduleReqEntry const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(ScheduleResEntry const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(ScheduleSetpointEntry const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(ExternalLimits const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(EnforcedLimits const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(CapabilityLimits const& val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::ostream& operator<<(std::ostream& os, NumberWithSource const& val) {
@@ -126,56 +127,56 @@ std::ostream& operator<<(std::ostream& os, CapabilityLimits const& val) {
     return os;
 }
 
-template <> NumberWithSource deserialize(std::string const& val) {
-    return json::parse(val);
+template <> NumberWithSource deserialize(std::string_view val) {
+    return utilities::parse_json<NumberWithSource>(val);
 }
 
-template <> IntegerWithSource deserialize(std::string const& val) {
-    return json::parse(val);
+template <> IntegerWithSource deserialize(std::string_view val) {
+    return utilities::parse_json<IntegerWithSource>(val);
 }
 
-template <> FrequencyWattPoint deserialize(std::string const& val) {
-    return json::parse(val);
+template <> FrequencyWattPoint deserialize(std::string_view val) {
+    return utilities::parse_json<FrequencyWattPoint>(val);
 }
 
-template <> SetpointType deserialize(std::string const& val) {
-    return json::parse(val);
+template <> SetpointType deserialize(std::string_view val) {
+    return utilities::parse_json<SetpointType>(val);
 }
 
-template <> PricePerkWh deserialize(std::string const& val) {
-    return json::parse(val);
+template <> PricePerkWh deserialize(std::string_view val) {
+    return utilities::parse_json<PricePerkWh>(val);
 }
 
-template <> LimitsReq deserialize(std::string const& val) {
-    return json::parse(val);
+template <> LimitsReq deserialize(std::string_view val) {
+    return utilities::parse_json<LimitsReq>(val);
 }
 
-template <> LimitsRes deserialize(std::string const& val) {
-    return json::parse(val);
+template <> LimitsRes deserialize(std::string_view val) {
+    return utilities::parse_json<LimitsRes>(val);
 }
 
-template <> ScheduleReqEntry deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ScheduleReqEntry deserialize(std::string_view val) {
+    return utilities::parse_json<ScheduleReqEntry>(val);
 }
 
-template <> ScheduleResEntry deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ScheduleResEntry deserialize(std::string_view val) {
+    return utilities::parse_json<ScheduleResEntry>(val);
 }
 
-template <> ScheduleSetpointEntry deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ScheduleSetpointEntry deserialize(std::string_view val) {
+    return utilities::parse_json<ScheduleSetpointEntry>(val);
 }
 
-template <> ExternalLimits deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ExternalLimits deserialize(std::string_view val) {
+    return utilities::parse_json<ExternalLimits>(val);
 }
 
-template <> EnforcedLimits deserialize(std::string const& val) {
-    return json::parse(val);
+template <> EnforcedLimits deserialize(std::string_view val) {
+    return utilities::parse_json<EnforcedLimits>(val);
 }
 
-template <> CapabilityLimits deserialize(std::string const& val) {
-    return json::parse(val);
+template <> CapabilityLimits deserialize(std::string_view val) {
+    return utilities::parse_json<CapabilityLimits>(val);
 }
 
 } // namespace everest::lib::API::V1_0::types::energy

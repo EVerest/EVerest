@@ -60,7 +60,7 @@ public:
     MOCK_METHOD(bool, delete_charging_profile, (const int profile_id));
     MOCK_METHOD(void, delete_charging_profile_by_transaction_id, (const std::string& transaction_id));
     MOCK_METHOD(bool, clear_charging_profiles, ());
-    MOCK_METHOD(bool, clear_charging_profiles_matching_criteria,
+    MOCK_METHOD(std::vector<std::int32_t>, clear_charging_profiles_matching_criteria,
                 (const std::optional<std::int32_t> profile_id, const std::optional<ClearChargingProfile>& criteria),
                 (override));
     MOCK_METHOD(std::vector<ReportedChargingProfile>, get_charging_profiles_matching_criteria,
@@ -70,6 +70,37 @@ public:
     typedef std::map<std::int32_t, std::vector<ChargingProfile>> charging_profiles_grouped_by_evse;
     MOCK_METHOD(charging_profiles_grouped_by_evse, get_all_charging_profiles_group_by_evse, ());
     MOCK_METHOD(CiString<20>, get_charging_limit_source_for_profile, (const int profile_id));
+
+    // DER Control persistence
+    MOCK_METHOD(void, insert_or_update_der_control,
+                (const std::string& control_id, bool is_default, const std::string& control_type, bool is_superseded,
+                 int32_t priority, const std::optional<std::string>& start_time, const std::optional<float>& duration,
+                 const std::string& control_json),
+                (override));
+    MOCK_METHOD(std::optional<std::string>, get_der_control, (const std::string& control_id), (override));
+    MOCK_METHOD(std::size_t, count_der_controls, (), (override));
+    MOCK_METHOD(std::vector<std::string>, get_der_controls_matching_criteria,
+                (const std::optional<bool>& is_default, const std::optional<std::string>& control_type,
+                 const std::optional<std::string>& control_id),
+                (override));
+    MOCK_METHOD(bool, delete_der_control, (const std::string& control_id), (override));
+    MOCK_METHOD(bool, delete_der_control_by_id_and_default, (const std::string& control_id, bool is_default),
+                (override));
+    MOCK_METHOD(int, delete_der_controls_matching_criteria,
+                (bool is_default, const std::optional<std::string>& control_type), (override));
+    MOCK_METHOD(void, update_der_control_superseded, (const std::string& control_id, bool is_superseded), (override));
+    MOCK_METHOD(void, append_der_control_displaced_id, (const std::string& control_id, const std::string& displaced_id),
+                (override));
+    MOCK_METHOD(void, set_der_control_pending_supersede,
+                (const std::string& new_control_id, const std::string& existing_control_id), (override));
+    MOCK_METHOD(void, clear_der_control_pending_supersede, (const std::string& control_id), (override));
+    MOCK_METHOD(std::vector<DatabaseHandlerInterface::PendingSupersedeActivation>,
+                get_der_control_pending_supersede_activations, (const DateTime& now), (override));
+    MOCK_METHOD(std::vector<std::string>, get_der_controls_needing_start_notify, (const DateTime& now), (override));
+    MOCK_METHOD(void, mark_der_control_started_notified, (const std::string& control_id), (override));
+
     MOCK_METHOD(std::unique_ptr<everest::db::sqlite::StatementInterface>, new_statement, (const std::string& sql));
+
+    MOCK_METHOD(std::unique_ptr<everest::db::sqlite::TransactionInterface>, begin_transaction, (), (override));
 };
 } // namespace ocpp::v2

@@ -6,6 +6,7 @@
 
 #include <Charger.hpp>
 #include <memory>
+#include <optional>
 
 namespace {
 using namespace module;
@@ -19,6 +20,7 @@ struct ChargerDerived : public Charger {
     using Charger::Charger;
     using Charger::get_enable_disable_source_table;
     using Charger::get_shared_context;
+    using Charger::run_state_machine;
 
     // updated when a non-zero connector is used to enable_disable()
     constexpr const auto& connector_enabled() {
@@ -31,6 +33,10 @@ struct ChargerDerived : public Charger {
 
     constexpr void current_state(EvseState state) {
         get_shared_context().current_state = state;
+    }
+
+    constexpr const auto& flag_disable_requested() {
+        return get_shared_context().flag_disable_requested;
     }
 };
 
@@ -675,6 +681,85 @@ TEST_F(ChargerTest, DelayedAuthorizeAfterCancelTransactionIsIgnored) {
     EXPECT_TRUE(ctx.flag_externally_cancelled);
 }
 
+// Test that disabling while a transaction is active goes through the proper
+// StoppingCharging->Finished->Disabled sequence instead of jumping directly.
+TEST_F(ChargerTest, DisableDuringActiveTransaction) {
+    constexpr EnableDisableSource disable_source{Enable_source::CSMS, Enable_state::Disable, 100};
+
+    auto& ctx = charger->get_shared_context();
+
+    // Simulate an active charging session with contactors closed
+    ctx.current_state = Charger::EvseState::Charging;
+    ctx.flag_transaction_active = true;
+    ctx.session_active = true;
+    ctx.flag_authorized = true;
+    ctx.contactor_open = false;
+
+    reset_last_event();
+    EXPECT_FALSE(charger->enable_disable(1, disable_source));
+
+    // enable_disable calls run_state_machine synchronously: Charging->StoppingCharging.
+    // Must NOT immediately jump to Disabled — session needs proper teardown.
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::StoppingCharging);
+    EXPECT_TRUE(charger->flag_disable_requested());
+    EXPECT_EQ(ctx.last_stop_transaction_reason, StopTransactionReason::EVSEDisabled);
+
+    // Simulate relay opening and transaction already stopped
+    ctx.contactor_open = true;
+    ctx.flag_transaction_active = false;
+
+    // State machine: StoppingCharging->Finished->Disabled (all in one loop)
+    reset_last_event();
+    charger->run_state_machine();
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Disabled);
+    EXPECT_EQ(last_event, SessionEventEnum::Disabled);
+}
+
+// Test that disabling while in WaitingForAuthentication (no transaction yet)
+// ends the session and transitions to Disabled without going through StoppingCharging.
+TEST_F(ChargerTest, DisableDuringWaitingForAuthentication) {
+    constexpr EnableDisableSource disable_source{Enable_source::CSMS, Enable_state::Disable, 100};
+
+    auto& ctx = charger->get_shared_context();
+
+    // Simulate EV plugged in, waiting for auth — no transaction started yet
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    ctx.session_active = true;
+    ctx.flag_ev_plugged_in = true;
+    ctx.flag_transaction_active = false;
+    ctx.flag_authorized = false;
+
+    reset_last_event();
+    EXPECT_FALSE(charger->enable_disable(1, disable_source));
+
+    // run_state_machine is called synchronously inside enable_disable, so by
+    // the time enable_disable returns the state machine has already driven
+    // WaitingForAuthentication -> Finished -> Disabled.
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Disabled);
+    EXPECT_EQ(last_event, SessionEventEnum::Disabled);
+}
+
+// Test that disabling while in Idle (no session) immediately transitions to Disabled
+TEST_F(ChargerTest, DisableDuringIdle) {
+    constexpr EnableDisableSource disable_source{Enable_source::CSMS, Enable_state::Disable, 100};
+
+    auto& ctx = charger->get_shared_context();
+
+    // Simulate EV plugged in, no session active
+    ctx.current_state = Charger::EvseState::Idle;
+    ctx.session_active = false;
+    ctx.flag_ev_plugged_in = true;
+    ctx.flag_transaction_active = false;
+    ctx.flag_authorized = false;
+
+    reset_last_event();
+    EXPECT_FALSE(charger->enable_disable(1, disable_source));
+
+    // Must immediately transition to Disabled
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Disabled);
+    EXPECT_EQ(last_event, SessionEventEnum::Disabled);
+}
+
 } // namespace
 
 // ----------------------------------------------------------------------------
@@ -705,8 +790,8 @@ void IECStateMachine::process_bsp_event(const types::board_support_common::BspEv
 void IECStateMachine::allow_power_on(bool value, types::evse_board_support::Reason reason) {
 }
 
-double IECStateMachine::read_pp_ampacity() {
-    return 0.0;
+std::optional<double> IECStateMachine::read_pp_ampacity() {
+    return std::nullopt;
 }
 void IECStateMachine::switch_three_phases_while_charging(bool n) {
 }

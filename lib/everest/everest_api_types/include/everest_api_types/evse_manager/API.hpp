@@ -32,7 +32,8 @@ enum class StopTransactionReason {
     StoppedByEV,
     TimeLimitReached,
     Timeout,
-    ReqEnergyTransferRejected
+    ReqEnergyTransferRejected,
+    EVSEDisabled
 };
 
 struct StopTransactionRequest {

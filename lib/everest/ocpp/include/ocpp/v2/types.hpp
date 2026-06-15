@@ -180,6 +180,8 @@ enum class MessageType {
     OpenPeriodicEventStreamResponse,
     PullDynamicScheduleUpdate,
     PullDynamicScheduleUpdateResponse,
+    ReportDERControl,
+    ReportDERControlResponse,
     RequestBatterySwap,
     RequestBatterySwapResponse,
     SetDefaultTariff,

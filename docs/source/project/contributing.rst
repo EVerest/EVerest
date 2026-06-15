@@ -129,6 +129,8 @@ Coding Style
 Each contribution must meet the `Javascript <https://github.com/EVerest/EVerest/blob/main/.eslintrc.json>`_ or
 `C++ <https://github.com/EVerest/EVerest/blob/main/.clang-format>`_ *coding style* (part of every repository).
 
+There are additional guidelines here: :doc:`C++ Coding Guidelines </how-to-guides/c++-coding-guidelines>`.
+
 License
 -------
 

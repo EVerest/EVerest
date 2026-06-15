@@ -141,7 +141,17 @@ SqliteVariant Statement::column_variant(const std::string& name) {
 }
 
 std::string Statement::column_text(const int idx) {
-    return reinterpret_cast<const char*>(sqlite3_column_text(this->stmt, idx));
+    const auto* p = sqlite3_column_text(this->stmt, idx);
+    if (p == nullptr) {
+        // sqlite3_column_text returns NULL for a NULL column value, or when the statement
+        // is not positioned on a row (e.g. step() returned SQLITE_BUSY/ERROR/MISUSE and a
+        // caller misuses the result). Constructing std::string from nullptr is undefined
+        // and aborts the process; surface as a typed exception instead so callers can log
+        // and recover.
+        throw QueryExecutionException("column_text(" + std::to_string(idx) +
+                                      ") returned NULL; use column_text_nullable for nullable columns");
+    }
+    return reinterpret_cast<const char*>(p);
 }
 
 std::optional<std::string> Statement::column_text_nullable(const int idx) {
