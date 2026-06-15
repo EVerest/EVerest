@@ -97,6 +97,7 @@ if(LIBOCPP_ENABLE_V2)
             ocpp/v2/functional_blocks/authorization.cpp
             ocpp/v2/functional_blocks/availability.cpp
             ocpp/v2/functional_blocks/security.cpp
+            ocpp/v2/dynamic_schedule_manager.cpp
             ocpp/v2/functional_blocks/smart_charging.cpp
             ocpp/v2/functional_blocks/data_transfer.cpp
             ocpp/v2/functional_blocks/firmware_update.cpp

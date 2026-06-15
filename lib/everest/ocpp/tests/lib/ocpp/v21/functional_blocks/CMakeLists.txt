@@ -4,4 +4,5 @@ target_include_directories(libocpp_unit_tests PUBLIC
 
 target_sources(libocpp_unit_tests PRIVATE
     test_smart_charging.cpp
-    test_der_control.cpp)
+    test_der_control.cpp
+    test_smart_charging_dynamic.cpp)
