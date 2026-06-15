@@ -45,6 +45,7 @@ jobs:
           merge_commits: "skip"
           add_author_as_assignee: true
           copy_requested_reviewers: true
+          add_labels: 'backport'
           experimental: >-
             {
               "conflict_resolution": "draft_commit_conflicts"
