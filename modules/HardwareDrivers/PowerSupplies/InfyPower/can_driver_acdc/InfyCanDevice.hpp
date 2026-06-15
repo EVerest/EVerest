@@ -92,6 +92,10 @@ private:
     int device_connection_timeout_s{0};
     OperatingMode operating_mode{OperatingMode::FIXED_ADDRESS};
 
+    /// In OperatingMode::FIXED_ADDRESS, this contains the configured module addresses.
+    std::vector<uint8_t> module_addresses;
+
+    /// List of currently active module addresses based on received telemetry. Updated dynamically as modules go offline/online.
     std::vector<uint8_t> active_module_addresses;
     std::mutex active_modules_mutex;
 
