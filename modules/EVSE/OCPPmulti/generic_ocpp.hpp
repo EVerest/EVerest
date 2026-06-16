@@ -161,6 +161,11 @@ private:
     std::mutex m_chargepoint_state_mutex; // mutex used for start/stop operations
     std::mutex m_monitor_list_mutex;
     std::mutex m_session_event_mutex;
+    // Serialize + coalesce the charging-schedule recompute: it fires concurrently from the interval timer,
+    // the libocpp message thread, and the K28 on_deadline/reaper callbacks.
+    std::mutex recompute_mutex;
+    std::atomic_bool recompute_pending{false};
+
     EventQueue m_event_queue;
     MonitorList m_monitor_list;
     Everest::SteadyTimer m_charging_schedules_timer;
