@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 - 2023 Pionix GmbH and Contributors to EVerest
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <optional>
@@ -102,6 +104,104 @@ static void test_set_key_retries() {
     }
 
     printf("test_set_key_retries passed: gave up after %d attempts and moved to Idle\n", set_key_req_count);
+}
+
+// Verifies that the NMK advertised to the EV (session_nmk, sent in CM_SLAC_MATCH_CNF) is only
+// updated once the modem confirms the key with a successful CM_SET_KEY.CNF. A failed key set must
+// leave the previously confirmed key in place, otherwise we would hand the EV a key the modem is
+// not actually running -> "Link could not be established".
+static void test_nmk_only_committed_on_confirmed_key() {
+    printf("== test_nmk_only_committed_on_confirmed_key ==\n");
+
+    constexpr int max_attempts = 3;
+    constexpr int timeout_ms = 20;
+    // our implementation treats only 0x01 as success, so 0x00 is interpreted as a failure
+    constexpr uint8_t failure_result = 0x00;
+
+    std::array<uint8_t, slac::defs::NMK_LEN> last_req_nmk{};
+    bool got_set_key_req = false;
+
+    slac::fsm::evse::ContextCallbacks callbacks;
+    const auto slac_log = [](const std::string& text) { fmt::print("SLAC LOG: {}\n", text); };
+    callbacks.log_debug = slac_log;
+    callbacks.log_info = slac_log;
+    callbacks.log_warn = slac_log;
+    callbacks.log_error = slac_log;
+    callbacks.send_raw_slac = [&](slac::messages::HomeplugMessage& hp_message) {
+        if (hp_message.get_mmtype() == (slac::defs::MMTYPE_CM_SET_KEY | slac::defs::MMTYPE_MODE_REQ)) {
+            const auto req = hp_message.get_payload<slac::messages::cm_set_key_req>();
+            std::copy(std::begin(req.new_key), std::end(req.new_key), last_req_nmk.begin());
+            got_set_key_req = true;
+        }
+    };
+
+    auto ctx = slac::fsm::evse::Context(callbacks);
+    ctx.slac_config.set_key_timeout_ms = timeout_ms;
+    ctx.slac_config.set_key_max_attempts = max_attempts;
+    ctx.slac_config.chip_reset.enabled = false;
+
+    auto machine = slac::fsm::evse::FSM();
+
+    // --- cycle 1: a successful key set commits the new key as the active session key ---
+    machine.reset<slac::fsm::evse::ResetState>(ctx);
+    machine.feed();
+    if (!got_set_key_req) {
+        printf("Expected a CM_SET_KEY.REQ to be sent on reset\n");
+        exit(EXIT_FAILURE);
+    }
+    const auto confirmed_nmk = last_req_nmk;
+
+    ctx.slac_message_payload = create_cm_set_key_cnf();
+    machine.handle_event(slac::fsm::evse::Event::SLAC_MESSAGE);
+    machine.feed();
+
+    // after a successful CM_SET_KEY.CNF the advertised session key must equal the key we
+    // programmed into the modem
+    if (!std::equal(confirmed_nmk.begin(), confirmed_nmk.end(), ctx.slac_config.session_nmk)) {
+        printf("session_nmk was not updated to the confirmed key after CM_SET_KEY.CNF success\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // --- cycle 2: a failing key set must NOT change the advertised key ---
+    got_set_key_req = false;
+    machine.handle_event(slac::fsm::evse::Event::RESET);
+    auto fr = machine.feed();
+    if (!got_set_key_req) {
+        printf("Expected a CM_SET_KEY.REQ to be sent on the second reset\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // a fresh candidate key should have been generated, distinct from the confirmed one
+    const auto candidate_nmk = last_req_nmk;
+    if (std::equal(candidate_nmk.begin(), candidate_nmk.end(), confirmed_nmk.begin())) {
+        printf("Expected a freshly generated candidate NMK on reset\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // reject every CM_SET_KEY.CNF until the FSM gives up
+    using namespace std::chrono;
+    while (fr.has_value()) {
+        const auto timeout = *fr;
+        if (timeout > 0) {
+            std::this_thread::sleep_for(milliseconds(timeout) + milliseconds(5));
+        }
+        ctx.slac_message_payload = create_cm_set_key_cnf(failure_result);
+        machine.handle_event(slac::fsm::evse::Event::SLAC_MESSAGE);
+        fr = machine.feed();
+    }
+
+    // the key set failed, so the advertised key must still be the previously confirmed one and
+    // must NOT have changed to the unconfirmed candidate
+    if (!std::equal(confirmed_nmk.begin(), confirmed_nmk.end(), ctx.slac_config.session_nmk)) {
+        printf("session_nmk changed after a FAILED CM_SET_KEY - regression!\n");
+        exit(EXIT_FAILURE);
+    }
+    if (std::equal(candidate_nmk.begin(), candidate_nmk.end(), ctx.slac_config.session_nmk)) {
+        printf("session_nmk was set to the unconfirmed candidate key after a FAILED CM_SET_KEY - regression!\n");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("test_nmk_only_committed_on_confirmed_key passed: NMK only updated on confirmed key set\n");
 }
 
 static auto create_cm_validate_req() {
@@ -261,6 +361,7 @@ int main(int argc, char* argv[]) {
     printf("Hi from SLAC!\n");
 
     test_set_key_retries();
+    test_nmk_only_committed_on_confirmed_key();
 
     std::optional<slac::messages::HomeplugMessage> msg_in;
 
