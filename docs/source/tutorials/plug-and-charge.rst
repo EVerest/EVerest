@@ -88,9 +88,12 @@ Let's get started step by step
    https://github.com/EVerest/ocpp-csms
 
 3. Run EVerest with either OCPP1.6, OCPP2.x using the prepared run-scripts.
-   Make sure the the endpoint ``localhost:9000/<id>`` is specified in the respective 
+   Make sure the the endpoint ``localhost:9000/<id>`` is specified in the respective
    ocpp configuration file (OCPP2.x config defaults to this address, while for
-   OCPP1.6 the default is different).
+   OCPP1.6 the default is different). The recommended OCPPmulti module
+   covers OCPP 1.6 and OCPP 2.x; see the
+   :ref:`combined module tutorial <tutorial-ocpp-combined>` for setup and
+   :ref:`enabling Plug&Charge <tutorial-ocpp-combined-enable-pnc>`.
 
 .. code-block:: bash
 

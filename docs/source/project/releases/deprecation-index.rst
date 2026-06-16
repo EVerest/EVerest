@@ -20,7 +20,13 @@ to the corresponding migration guide.
      - Deprecated in
      - Earliest removal
      - Migration guide
-   * - *(no active deprecations)*
-     -
-     -
-     -
+   * - :ref:`OCPP module <everest_modules_OCPP>` (OCPP 1.6), superseded by
+       :ref:`OCPPmulti <everest_modules_OCPPmulti>`
+     - 2026.10.0
+     - 2027.04.0
+     - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`
+   * - :ref:`OCPP201 module <everest_modules_OCPP201>` (OCPP 2.0.1 / 2.1), superseded by
+       :ref:`OCPPmulti <everest_modules_OCPPmulti>`
+     - 2026.10.0
+     - 2027.04.0
+     - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`

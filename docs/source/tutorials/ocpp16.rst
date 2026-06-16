@@ -4,6 +4,14 @@
 OCPP 1.6 in EVerest
 ###################
 
+.. warning::
+
+  **Deprecated:** The OCPP module used in this tutorial is deprecated in favor
+  of the combined OCPP module OCPPmulti, which supports OCPP 1.6, 2.0.1
+  and 2.1 in one module. New integrations should use it — see the
+  :ref:`combined module tutorial <tutorial-ocpp-combined>` and the
+  :ref:`module documentation <everest_modules_OCPPmulti>`.
+
 .. note::
 
   EVerest has an implementation of OCPP 1.6J and 2.0.1 and 2.1. This tutorial is about

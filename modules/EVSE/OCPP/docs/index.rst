@@ -4,6 +4,14 @@
 .. OCPP1.6 Module
 .. **************
 
+.. warning::
+
+   **Deprecated:** This module is deprecated in favor of the combined OCPP module
+   :ref:`OCPPmulti <everest_modules_OCPPmulti>`, which supports OCPP 1.6, 2.0.1 and 2.1
+   in one module. New integrations should use it — see the
+   :ref:`combined module tutorial <tutorial-ocpp-combined>` and the
+   :ref:`migration guide <howto-ocpp-storage-migration>`.
+
 This module implements and integrates OCPP1.6 within EVerest, including all feature profiles defined by the specification. A connection  
 to a Charging Station Management System (CSMS) can be established by loading this module as part of the EVerest configuration. This module  
 leverages `libocpp <https://github.com/EVerest/libocpp>`_, EVerest's OCPP library.
@@ -403,11 +411,13 @@ OCPP 1.6 device model storage backends
 
 .. note::
 
-   The separate OCPP and OCPP201 modules are planned to be merged into a single combined module. That new
-   module will use the device model as its only configuration storage backend. New integrations should
-   therefore use **ConfigBackend = "device_model"** from the start: the same database can then be reused
-   directly when switching to OCPP201 or adopting the new combined module without a further migration step.
-   Existing deployments using the legacy JSON backend should migrate using **"device_model_with_migration"**.
+   The separate OCPP and OCPP201 modules have been merged into the combined
+   :ref:`OCPPmulti <everest_modules_OCPPmulti>` module, which uses the device model as its only
+   configuration storage backend. New integrations should therefore use
+   **ConfigBackend = "device_model"** from the start: the same database can then be reused
+   directly when switching to OCPP201 or OCPPmulti without a further migration step.
+   Existing deployments using the legacy JSON backend should migrate using
+   **"device_model_with_migration"** — see the :ref:`migration guide <howto-ocpp-storage-migration>`.
 
 The OCPP module supports three configuration storage backends, selected by the **ConfigBackend** parameter:
 
