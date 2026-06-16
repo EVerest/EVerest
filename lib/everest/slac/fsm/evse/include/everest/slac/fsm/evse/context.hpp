@@ -156,7 +156,6 @@ struct EvseSlacConfig {
     uint8_t plc_peer_mac[ETH_ALEN] = {0x00, 0xB0, 0x52, 0x00, 0x00, 0x01};
 
     // FIXME (aw): we probably want to use std::array here
-    void generate_nmk();
     uint8_t session_nmk[slac::defs::NMK_LEN]{};
 
     // flag for using 5% PWM in AC mode

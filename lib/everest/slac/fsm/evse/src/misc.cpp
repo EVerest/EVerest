@@ -3,6 +3,7 @@
 #include "misc.hpp"
 
 #include <net/ethernet.h>
+#include <random>
 
 #include <slac/slac.hpp>
 
@@ -32,4 +33,16 @@ std::string format_mmtype(const uint16_t mmtype) {
     char string_buffer[2 + 2 * 2 + 1];
     snprintf(string_buffer, sizeof(string_buffer), "0x%04hX", mmtype);
     return string_buffer;
+}
+
+void generate_nmk(uint8_t* out) {
+    const std::string CHARACTERS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    std::random_device random_device;
+    std::mt19937 generator(random_device());
+    std::uniform_int_distribution<> distribution(0, CHARACTERS.size() - 1);
+
+    for (std::size_t i = 0; i < slac::defs::NMK_LEN; ++i) {
+        out[i] = (uint8_t)CHARACTERS[distribution(generator)];
+    }
 }

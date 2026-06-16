@@ -32,7 +32,10 @@ static auto create_cm_set_key_req(uint8_t const* session_nmk) {
 void ResetState::enter() {
     ctx.log_info("Entered Reset state");
     if (ctx.slac_config.regenerate_key_on_reset) {
-        ctx.slac_config.generate_nmk();
+        generate_nmk(pending_nmk);
+    } else {
+        // We don't want to regenerate the key, just use the current key as the pending one
+        memcpy(pending_nmk, ctx.slac_config.session_nmk, sizeof(pending_nmk));
     }
 }
 
@@ -88,10 +91,10 @@ FSMSimpleState::CallbackReturnType ResetState::callback() {
         ctx.log_warn("CM_SET_KEY.REQ not confirmed, retrying (attempt " + std::to_string(set_key_attempts + 1) + "/" +
                      std::to_string(cfg.set_key_max_attempts) + ")");
     } else {
-        ctx.log_info("New NMK key: " + format_nmk(cfg.session_nmk));
+        ctx.log_info("New NMK key: " + format_nmk(pending_nmk));
     }
 
-    ctx.send_slac_message(cfg.plc_peer_mac, create_cm_set_key_req(cfg.session_nmk));
+    ctx.send_slac_message(cfg.plc_peer_mac, create_cm_set_key_req(pending_nmk));
 
     set_key_attempts++;
     last_attempt_time = now;
@@ -116,6 +119,10 @@ bool ResetState::handle_slac_message(slac::messages::HomeplugMessage& message) {
     }
 
     ctx.log_info("Received CM_SET_KEY.CNF");
+
+    // CM_SET_KEY.CNF succeeded! Use it for the next session (and CM_SLAC_MATCH.CNF)
+    memcpy(ctx.slac_config.session_nmk, pending_nmk, sizeof(ctx.slac_config.session_nmk));
+
     return true;
 }
 
@@ -348,6 +355,12 @@ bool WaitForLinkState::handle_slac_message(slac::messages::HomeplugMessage& mess
         return false;
     }
     return false;
+}
+
+void InitState::enter() {
+    // Seed an initial NMK once at startup
+    // This is the stable key that is used when regenerate_key_on_reset is disabled
+    generate_nmk(ctx.slac_config.session_nmk);
 }
 
 FSMSimpleState::HandleEventReturnType InitState::handle_event(AllocatorType& sa, Event ev) {

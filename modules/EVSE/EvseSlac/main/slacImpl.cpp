@@ -108,8 +108,6 @@ void slacImpl::run() {
 
     fsm_ctx.slac_config.regenerate_key_on_reset = !config.hack_disable_regenerate_key_on_reset;
 
-    fsm_ctx.slac_config.generate_nmk();
-
     memcpy(fsm_ctx.evse_mac, slac_io.get_mac_addr(), ETH_ALEN);
 
     fsm_ctrl = std::make_unique<FSMController>(fsm_ctx);
