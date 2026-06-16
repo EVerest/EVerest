@@ -4062,8 +4062,8 @@ static int decode_iso20_ac_der_sae_CurveDataPointsListType(exi_bitstream_t* stre
         switch (grammar_id)
         {
         case 67:
-            // Grammar: ID=67; read/write bits=2; START (CurveDataPoint), END Element
-            error = exi_basetypes_decoder_nbit_uint(stream, 2, &eventCode);
+            // Grammar: ID=67; read/write bits=1; START (CurveDataPoint)
+            error = exi_basetypes_decoder_nbit_uint(stream, 1, &eventCode);
             if (error == 0)
             {
                 switch (eventCode)
@@ -4080,12 +4080,11 @@ static int decode_iso20_ac_der_sae_CurveDataPointsListType(exi_bitstream_t* stre
                         // static array not large enough, only iso20_ac_der_sae_DataTupleType_10_ARRAY_SIZE elements
                         error = EXI_ERROR__ARRAY_OUT_OF_BOUNDS;
                     }
-                    grammar_id = 68;
-                    break;
-                case 1:
-                    // Event: END Element; next=3
-                    done = 1;
-                    grammar_id = 3;
+
+                    if (CurveDataPointsListType->CurveDataPoint.arrayLen >= 2)
+                    {
+                        grammar_id = 68;
+                    }
                     break;
                 default:
                     error = EXI_ERROR__UNKNOWN_EVENT_CODE;
@@ -4094,8 +4093,8 @@ static int decode_iso20_ac_der_sae_CurveDataPointsListType(exi_bitstream_t* stre
             }
             break;
         case 68:
-            // Grammar: ID=68; read/write bits=1; LOOP (CurveDataPoint)
-            error = exi_basetypes_decoder_nbit_uint(stream, 1, &eventCode);
+            // Grammar: ID=68; read/write bits=2; LOOP (CurveDataPoint), END Element
+            error = exi_basetypes_decoder_nbit_uint(stream, 2, &eventCode);
             if (error == 0)
             {
                 switch (eventCode)
@@ -4119,8 +4118,13 @@ static int decode_iso20_ac_der_sae_CurveDataPointsListType(exi_bitstream_t* stre
                     }
                     else
                     {
-                        grammar_id = -1;
+                        grammar_id = 2;
                     }
+                    break;
+                case 1:
+                    // Event: END Element; next=3
+                    done = 1;
+                    grammar_id = 3;
                     break;
                 default:
                     error = EXI_ERROR__UNKNOWN_EVENT_CODE;
