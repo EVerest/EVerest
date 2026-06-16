@@ -126,6 +126,11 @@ void generic_fd_event_client_impl::error_handler() {
 void generic_fd_event_client_impl::prepare_io_event_handler() {
     m_event_handler->register_event_handler(&m_connected_event_fd, [this](auto) {
         auto client_status = m_client_status.handle();
+        auto generation = m_connected_generation.load();
+        if (client_status->generation != generation) {
+            return sync_status::ok;
+        }
+
         if (client_status->ok) {
             auto error_code = m_get_error();
             set_error_status_and_notify(error_code);
@@ -142,15 +147,26 @@ void generic_fd_event_client_impl::prepare_io_event_handler() {
     });
 }
 
-void generic_fd_event_client_impl::on_client_ready(bool ok, int fd) {
+void generic_fd_event_client_impl::on_client_ready(std::uint64_t generation, bool ok, int fd) {
     auto client_status = m_client_status.handle();
+    client_status->generation = generation;
     client_status->ok = ok;
     client_status->fd = fd;
+    set_connected_generation(generation);
     m_connected_event_fd.notify();
+}
+
+void generic_fd_event_client_impl::set_connected_generation(std::uint64_t generation) {
+    m_connected_generation.store(generation);
 }
 
 void generic_fd_event_client_impl::add_action(fd_event_handler::task&& item) {
     m_event_handler->add_action(std::forward<fd_event_handler::task>(item));
+}
+
+void generic_fd_event_client_impl::register_async_connect_event_handler(event_fd* event_fd,
+                                                                        std::function<void()> handler) {
+    m_event_handler->register_event_handler(event_fd, [handler = std::move(handler)](auto) mutable { handler(); });
 }
 
 void generic_fd_event_client_impl::set_on_ready_action(ready_action&& item) {
