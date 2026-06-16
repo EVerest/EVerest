@@ -5,7 +5,9 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <everest/io/event/event_fd.hpp>
 #include <everest/io/event/fd_event_sync_interface.hpp>
 #include <everest/io/event/unique_fd.hpp>
@@ -13,7 +15,9 @@
 #include <everest/io/utilities/event_client_async_policy.hpp>
 #include <everest/io/utilities/generic_error_state.hpp>
 #include <everest/util/async/monitor.hpp>
+#include <everest/util/queue/thread_safe_queue.hpp>
 #include <future>
+#include <memory>
 #include <queue>
 #include <thread>
 #include <type_traits>
@@ -40,6 +44,8 @@ struct client_status_internal {
     int fd{-1};
     /** status */
     bool ok{false};
+    /** generation */
+    std::uint64_t generation{0};
 };
 
 /**
@@ -199,10 +205,17 @@ protected:
     /**
      * @brief To be called on client ready (internally)
      * @details This set's the client_status and notifies the internal event
+     * @param[in] generation The connection generation used for stale-result suppression.
      * @param[in] ok Client status. 'true' on ready/success, 'false' otherwise
      * @param[in] fd The filedescriptor of the client's socket
      */
-    void on_client_ready(bool ok, int fd);
+    void on_client_ready(std::uint64_t generation, bool ok, int fd);
+
+    /**
+     * @brief Set the generation accepted by m_connected_event_fd.
+     * @param[in] generation Current valid connection generation.
+     */
+    void set_connected_generation(std::uint64_t generation);
 
     /**
      * @brief Add an action to the action queue of the event handler
@@ -212,6 +225,12 @@ protected:
      * @param[in] item
      */
     void add_action(std::function<void()>&& item);
+
+    /**
+     * @brief Register an action-only callback for an event descriptor owned by this class.
+     * @param[in] handler The callback to invoke when the event descriptor notifies.
+     */
+    void register_async_connect_event_handler(event::event_fd* event_fd, std::function<void()> handler);
 
     /// @cond
     std::unique_ptr<event::fd_event_handler> m_event_handler;
@@ -226,6 +245,7 @@ protected:
     error_status m_get_error;
     util::monitor<client_status_internal> m_client_status;
     ready_action m_on_ready_action;
+    std::atomic_uint64_t m_connected_generation{0};
     /// @endcond
 };
 
@@ -264,11 +284,17 @@ public:
     template <class... ArgsT>
     generic_fd_event_client(ArgsT... args) :
         generic_fd_event_client_impl([this]() { return send_one(); }, [this]() { return receive_one(); },
-                                     [this]() { return reset_client(); }, [this]() { return m_handle->get_error(); }) {
+                                     [this]() { return reset_client(); },
+                                     [this]() { return m_handle ? m_handle->get_error() : 0; }) {
+        m_async_connect_state = std::make_shared<async_connect_state>();
+        register_async_connect_event_handler(&m_async_connect_state->ready_event,
+                                             [this]() { process_async_connect_results(); });
         init<ClientPolicy>(args...);
     }
 
-    ~generic_fd_event_client() = default;
+    ~generic_fd_event_client() override {
+        invalidate_async_connect_state();
+    }
 
     /**
      * @brief Register a callback for RX.
@@ -302,6 +328,8 @@ public:
      * @return True if the client could be successfully created. False otherwise
      */
     bool reset() {
+        auto generation = ++m_connect_generation;
+        set_connected_generation(generation);
         add_action([this]() { reset_impl(); });
         return true;
     }
@@ -329,10 +357,35 @@ private:
         m_open_device = [this, args...]() {
             auto setup_ok = m_handle->setup(args...);
             if (setup_ok) {
-                std::thread t([this]() { m_handle->connect([this](bool ok, int fd) { on_client_ready(ok, fd); }); });
-                t.detach();
+                auto connect_generation = m_connect_generation.load();
+                auto state = m_async_connect_state;
+                auto handle = std::move(m_handle);
+                std::thread([state = std::move(state), handle = std::move(handle), connect_generation]() mutable {
+                    bool ok = false;
+                    int fd = -1;
+                    try {
+                        handle->connect([&](bool result_ok, int result_fd) {
+                            ok = result_ok;
+                            fd = result_fd;
+                        });
+                    } catch (...) {
+                        ok = false;
+                        fd = -1;
+                    }
+
+                    if (not state or not state->active.load(std::memory_order_acquire)) {
+                        return;
+                    }
+
+                    auto inserted = state->connect_results.emplace(
+                        async_connect_result{connect_generation, ok, fd, std::move(handle)});
+                    if (inserted != 0) {
+                        state->ready_event.notify();
+                    }
+                }).detach();
             } else {
-                on_client_ready(false, -1);
+                auto generation = m_connect_generation.load();
+                on_client_ready(generation, false, -1);
             }
         };
         reset();
@@ -342,13 +395,14 @@ private:
     std::enable_if_t<not utilities::event_client_async_policy_v<T>> init(ArgsT... args) {
         m_open_device = [this, args...]() {
             auto result = m_handle->open(args...);
-            on_client_ready(result, m_handle->get_fd());
+            auto generation = m_connect_generation.load();
+            on_client_ready(generation, result, m_handle->get_fd());
         };
         reset_impl();
     }
 
     void reset_impl() {
-        m_client_status.handle()->fd = false;
+        reset_client();
         setup_error_event_handler();
         init_device();
         m_tx_buffer = {};
@@ -378,12 +432,47 @@ private:
     }
 
     action_status reset_client() {
-        auto client_status = m_client_status.handle();
-        unregister_source(client_status->fd);
+        auto generation = ++m_connect_generation;
+        set_connected_generation(generation);
+        int fd = -1;
+        {
+            auto client_status = m_client_status.handle();
+            fd = client_status->fd;
+            client_status->ok = false;
+            client_status->fd = -1;
+        }
+        unregister_source(fd);
         unregister_source(m_io_event_fd.get_raw_fd());
+        {
+            auto client_status = m_client_status.handle();
+            client_status->ok = false;
+            client_status->fd = -1;
+        }
         m_handle.reset();
-        client_status->fd = -1;
         return action_status::success;
+    }
+
+    void process_async_connect_results() {
+        if (not m_async_connect_state) {
+            return;
+        }
+        auto current_generation = m_connect_generation.load();
+        while (auto result = m_async_connect_state->connect_results.try_pop()) {
+            if (result->generation != current_generation) {
+                continue;
+            }
+            m_handle = std::move(result->handle);
+            on_client_ready(result->generation, result->ok, result->fd);
+        }
+    }
+
+    void invalidate_async_connect_state() {
+        ++m_connect_generation;
+        if (m_async_connect_state) {
+            m_async_connect_state->active.store(false, std::memory_order_release);
+            m_async_connect_state->connect_results.stop();
+            m_async_connect_state.reset();
+        }
     }
 
     bool init_device() {
@@ -392,11 +481,26 @@ private:
         return true;
     }
 
+    struct async_connect_result {
+        std::uint64_t generation;
+        bool ok;
+        int fd;
+        std::unique_ptr<ClientPolicy> handle;
+    };
+
+    struct async_connect_state {
+        util::thread_safe_queue<async_connect_result> connect_results;
+        event::event_fd ready_event;
+        std::atomic_bool active{true};
+    };
+
     std::unique_ptr<ClientPolicy> m_handle{nullptr};
+    std::shared_ptr<async_connect_state> m_async_connect_state;
     cb_rx m_rx;
     std::function<void()> m_open_device;
     std::queue<ClientPayloadT> m_tx_buffer;
     ClientPayloadT m_data;
+    std::atomic_uint64_t m_connect_generation{0};
 };
 
 /**
