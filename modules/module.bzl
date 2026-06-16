@@ -105,11 +105,34 @@ def cc_everest_module(
               "cp $(location {}) $(RULEDIR)/{}/".format(manifest, name),
     )
 
+    # `data` entries given as plain (package-relative) paths -- e.g.
+    # `glob(["models/**"])` -- are runtime files that the framework loads from
+    # the module's share directory at runtime (`share/everest/modules/<name>/`,
+    # see everest_env.bzl and runtime.cpp). We stage them into the module
+    # subdir next to the manifest, preserving their relative path, so the env
+    # rule can place them deterministically. Entries that are targets
+    # (`:foo`, `//pkg`, `@repo//...`) are left untouched.
+    data_targets = [d for d in data if d.startswith((":", "//", "@"))]
+    data_files = [d for d in data if d not in data_targets]
+    data_subdir = []
+    if data_files:
+        data_subdir = ["{}/{}".format(name, f) for f in data_files]
+        native.genrule(
+            name = "copy_data_to_subdir",
+            srcs = data_files,
+            outs = data_subdir,
+            cmd = " && ".join([
+                ("mkdir -p $$(dirname $(RULEDIR)/{name}/{f}) && " +
+                 "cp $(location {f}) $(RULEDIR)/{name}/{f}").format(name = name, f = f)
+                for f in data_files
+            ]),
+        )
+
     native.filegroup(
         name = name,
         srcs = [
             ":copy_to_subdir",
-        ] + data,  # Include data files in the filegroup
+        ] + data_subdir + data_targets,  # Stage runtime files into the module subdir
         data = [":" + binary],  # Include the binary to get its runfiles
         visibility = ["//visibility:public"],
     )
