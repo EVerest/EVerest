@@ -12,6 +12,7 @@
 namespace iso15118::message_20 {
 
 namespace datatypes {
+namespace sae {
 
 // Type aliases for string-based XSD types
 using InverterSwVersion = std::string;
@@ -196,17 +197,18 @@ struct DER_SAE_AC_CPDResEnergyTransferMode : AC_CPDResEnergyTransferMode {
     uint64_t update_time;
 };
 
+} // namespace sae
 } // namespace datatypes
 
 struct DER_SAE_AC_ChargeParameterDiscoveryRequest {
     Header header;
-    datatypes::DER_SAE_AC_CPDReqEnergyTransferMode transfer_mode;
+    datatypes::sae::DER_SAE_AC_CPDReqEnergyTransferMode transfer_mode;
 };
 
 struct DER_SAE_AC_ChargeParameterDiscoveryResponse {
     Header header;
     datatypes::ResponseCode response_code{};
-    datatypes::DER_SAE_AC_CPDResEnergyTransferMode transfer_mode;
+    datatypes::sae::DER_SAE_AC_CPDResEnergyTransferMode transfer_mode;
 };
 
 } // namespace iso15118::message_20
