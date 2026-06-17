@@ -536,3 +536,436 @@ SCENARIO("Se/Deserialize ac der sae charge loop response messages") {
         }
     }
 }
+
+SCENARIO("Se/Deserialize ac der sae charge loop request messages") {
+
+    GIVEN("cl_req_scheduled_min") {
+
+        std::vector<uint8_t> bytes = {0x80, 0x08, 0x04, 0x1e, 0xa6, 0x5f, 0xc9, 0x9b, 0xa7, 0x6c, 0x4d, 0x8c, 0x3b,
+                                      0xfe, 0x1b, 0x60, 0x62, 0x89, 0x24, 0x18, 0x04, 0x94, 0x80, 0x0e, 0x60, 0x10,
+                                      0x40, 0x01, 0xe1, 0x81, 0x36, 0x1d, 0xff, 0x0d, 0xb0, 0x31, 0x80, 0x00, 0x18};
+
+        const io::StreamInputView stream_view{bytes.data(), bytes.size()};
+
+        message_20::Variant variant(io::v2gtp::PayloadType::Part20DerSae, stream_view);
+
+        THEN("It should be deserialized successfully") {
+            REQUIRE(variant.get_type() == message_20::Type::DER_SAE_AC_ChargeLoopReq);
+
+            const auto& msg = variant.get<message_20::DER_SAE_AC_ChargeLoopRequest>();
+            const auto& header = msg.header;
+
+            REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
+            REQUIRE(header.timestamp == 1725456323);
+            REQUIRE(msg.meter_info_requested == false);
+
+            REQUIRE(std::holds_alternative<dtsae::DER_Scheduled_AC_CLReqControlMode>(msg.control_mode));
+            const auto& mode = std::get<dtsae::DER_Scheduled_AC_CLReqControlMode>(msg.control_mode);
+
+            REQUIRE(dt::from_RationalNumber(mode.present_active_power) == 9000);
+            REQUIRE(dt::from_RationalNumber(mode.present_voltage) == 230);
+            REQUIRE(dt::from_RationalNumber(mode.present_frequency) == 60);
+            REQUIRE(mode.der_operational_state == dtsae::DEROperationalState::On);
+            REQUIRE(mode.der_connection_status == dtsae::DERConnectionStatus::Connected);
+            REQUIRE(mode.update_time == 1725456323);
+            REQUIRE(mode.der_alarm_status == 0);
+            REQUIRE(mode.enabled_modes == 3);
+
+            // absent optionals
+            REQUIRE_FALSE(msg.display_parameters.has_value());
+            REQUIRE_FALSE(mode.target_energy_request.has_value());
+            REQUIRE_FALSE(mode.max_charge_power.has_value());
+            REQUIRE_FALSE(mode.present_active_power_L2.has_value());
+            REQUIRE_FALSE(mode.maximum_discharge_power.has_value());
+            REQUIRE_FALSE(mode.apparent_power.has_value());
+            REQUIRE_FALSE(mode.reactive_power.has_value());
+            REQUIRE_FALSE(mode.excitation.has_value());
+            REQUIRE_FALSE(mode.minimum_charging_duration.has_value());
+            REQUIRE_FALSE(mode.duration_maximum_charge_rate.has_value());
+            REQUIRE_FALSE(mode.duration_maximum_discharge_rate.has_value());
+        }
+
+        THEN("It should serialize back to the same bytes") {
+            message_20::DER_SAE_AC_ChargeLoopRequest req;
+            req.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456323};
+            req.meter_info_requested = false;
+
+            dtsae::DER_Scheduled_AC_CLReqControlMode mode;
+            mode.present_active_power = {9, 3};
+            mode.present_voltage = {230, 0};
+            mode.present_frequency = {60, 0};
+            mode.der_operational_state = dtsae::DEROperationalState::On;
+            mode.der_connection_status = dtsae::DERConnectionStatus::Connected;
+            mode.update_time = 1725456323;
+            mode.der_alarm_status = 0;
+            mode.enabled_modes = 3;
+            req.control_mode = mode;
+
+            REQUIRE(serialize_helper(req) == bytes);
+        }
+    }
+
+    GIVEN("cl_req_dynamic_min") {
+
+        std::vector<uint8_t> bytes = {
+            0x80, 0x08, 0x04, 0x1e, 0xa6, 0x5f, 0xc9, 0x9b, 0xa7, 0x6c, 0x4d, 0x8c, 0x3b, 0xfe, 0x1b, 0x60, 0x62, 0x86,
+            0x90, 0x60, 0x50, 0x08, 0x30, 0x3c, 0x04, 0x18, 0x05, 0x02, 0x0c, 0x02, 0xc8, 0x80, 0x06, 0x42, 0x20, 0xc0,
+            0x24, 0x88, 0x00, 0x00, 0x22, 0x0c, 0x02, 0xc8, 0x80, 0x06, 0x42, 0x20, 0x03, 0x98, 0x04, 0x10, 0x00, 0x78,
+            0x60, 0x46, 0x1d, 0xff, 0x0d, 0xb0, 0x30, 0xd8, 0x04, 0x11, 0x01, 0xc2, 0x20, 0x38, 0x00, 0x00, 0x30};
+
+        const io::StreamInputView stream_view{bytes.data(), bytes.size()};
+
+        message_20::Variant variant(io::v2gtp::PayloadType::Part20DerSae, stream_view);
+
+        THEN("It should be deserialized successfully") {
+            REQUIRE(variant.get_type() == message_20::Type::DER_SAE_AC_ChargeLoopReq);
+
+            const auto& msg = variant.get<message_20::DER_SAE_AC_ChargeLoopRequest>();
+            const auto& header = msg.header;
+
+            REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
+            REQUIRE(header.timestamp == 1725456323);
+            REQUIRE(msg.meter_info_requested == false);
+
+            REQUIRE(std::holds_alternative<dtsae::DER_Dynamic_AC_CLReqControlMode>(msg.control_mode));
+            const auto& mode = std::get<dtsae::DER_Dynamic_AC_CLReqControlMode>(msg.control_mode);
+
+            // Dynamic mode mandatory (1,1) fields
+            REQUIRE(dt::from_RationalNumber(mode.target_energy_request) == 40000);
+            REQUIRE(dt::from_RationalNumber(mode.max_energy_request) == 60000);
+            REQUIRE(dt::from_RationalNumber(mode.min_energy_request) == 10000);
+            REQUIRE(dt::from_RationalNumber(mode.max_charge_power) == 11000);
+            REQUIRE(dt::from_RationalNumber(mode.min_charge_power) == 100);
+            REQUIRE(dt::from_RationalNumber(mode.present_active_power) == 9000);
+            REQUIRE(dt::from_RationalNumber(mode.present_reactive_power) == 0);
+            REQUIRE(dt::from_RationalNumber(mode.maximum_discharge_power) == 11000);
+            REQUIRE(dt::from_RationalNumber(mode.minimum_discharge_power) == 100);
+            REQUIRE(dt::from_RationalNumber(mode.present_voltage) == 230);
+            REQUIRE(dt::from_RationalNumber(mode.present_frequency) == 60);
+            REQUIRE(mode.der_operational_state == dtsae::DEROperationalState::On);
+            REQUIRE(mode.der_connection_status == dtsae::DERConnectionStatus::Connected);
+            REQUIRE(mode.update_time == 1725456323);
+            REQUIRE(mode.minimum_charging_duration == 600);
+            REQUIRE(mode.duration_maximum_charge_rate == 1800);
+            REQUIRE(mode.duration_maximum_discharge_rate == 1800);
+            REQUIRE(mode.der_alarm_status == 0);
+            REQUIRE(mode.enabled_modes == 3);
+
+            // absent optionals
+            REQUIRE_FALSE(msg.display_parameters.has_value());
+            REQUIRE_FALSE(mode.departure_time.has_value());
+            REQUIRE_FALSE(mode.max_charge_power_L2.has_value());
+            REQUIRE_FALSE(mode.session_total_discharge_energy_available.has_value());
+            REQUIRE_FALSE(mode.apparent_power.has_value());
+            REQUIRE_FALSE(mode.reactive_power.has_value());
+            REQUIRE_FALSE(mode.excitation.has_value());
+            REQUIRE_FALSE(mode.maximum_v2x_energy_request.has_value());
+            REQUIRE_FALSE(mode.minimum_v2x_energy_request.has_value());
+        }
+
+        THEN("It should serialize back to the same bytes") {
+            message_20::DER_SAE_AC_ChargeLoopRequest req;
+            req.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456323};
+            req.meter_info_requested = false;
+
+            dtsae::DER_Dynamic_AC_CLReqControlMode mode;
+            mode.target_energy_request = {40, 3};
+            mode.max_energy_request = {60, 3};
+            mode.min_energy_request = {10, 3};
+            mode.max_charge_power = {11, 3};
+            mode.min_charge_power = {100, 0};
+            mode.present_active_power = {9, 3};
+            mode.present_reactive_power = {0, 0};
+            mode.maximum_discharge_power = {11, 3};
+            mode.minimum_discharge_power = {100, 0};
+            mode.present_voltage = {230, 0};
+            mode.present_frequency = {60, 0};
+            mode.der_operational_state = dtsae::DEROperationalState::On;
+            mode.der_connection_status = dtsae::DERConnectionStatus::Connected;
+            mode.update_time = 1725456323;
+            mode.minimum_charging_duration = 600;
+            mode.duration_maximum_charge_rate = 1800;
+            mode.duration_maximum_discharge_rate = 1800;
+            mode.der_alarm_status = 0;
+            mode.enabled_modes = 3;
+            req.control_mode = mode;
+
+            REQUIRE(serialize_helper(req) == bytes);
+        }
+    }
+
+    GIVEN("cl_req_scheduled_optionals") {
+
+        std::vector<uint8_t> bytes = {
+            0x80, 0x08, 0x04, 0x1e, 0xa6, 0x5f, 0xc9, 0x9b, 0xa7, 0x6c, 0x4d, 0x8c, 0x3b, 0xfe, 0x1b, 0x60,
+            0x62, 0x01, 0xb8, 0x07, 0x80, 0xa0, 0x41, 0x14, 0x02, 0x0c, 0x0a, 0x00, 0x20, 0xc0, 0xf0, 0x02,
+            0x0c, 0x02, 0x80, 0x41, 0x80, 0x58, 0x08, 0x30, 0x0b, 0x01, 0x06, 0x01, 0x60, 0x20, 0x01, 0x90,
+            0x88, 0x30, 0x09, 0x01, 0x06, 0x01, 0x20, 0x20, 0xc0, 0x24, 0x04, 0x00, 0x00, 0x11, 0x00, 0x1c,
+            0xc0, 0x20, 0x80, 0x03, 0xc0, 0x10, 0x60, 0x16, 0x22, 0x00, 0x19, 0x08, 0x10, 0x10, 0x60, 0x18,
+            0x44, 0x18, 0x06, 0x11, 0x06, 0x01, 0x84, 0x41, 0x80, 0x61, 0x02, 0x0c, 0x01, 0x4a, 0x41, 0x80,
+            0x29, 0x48, 0x30, 0x05, 0x29, 0x06, 0x00, 0xa5, 0x19, 0x06, 0x01, 0x05, 0x20, 0xc0, 0x20, 0x8c,
+            0x3b, 0xfe, 0x1b, 0x60, 0x60, 0x6c, 0x02, 0x04, 0x40, 0x70, 0x44, 0x07, 0x00, 0x00, 0x06, 0x00};
+
+        const io::StreamInputView stream_view{bytes.data(), bytes.size()};
+
+        message_20::Variant variant(io::v2gtp::PayloadType::Part20DerSae, stream_view);
+
+        THEN("It should be deserialized successfully") {
+            REQUIRE(variant.get_type() == message_20::Type::DER_SAE_AC_ChargeLoopReq);
+
+            const auto& msg = variant.get<message_20::DER_SAE_AC_ChargeLoopRequest>();
+            const auto& header = msg.header;
+
+            REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
+            REQUIRE(header.timestamp == 1725456323);
+            REQUIRE(msg.meter_info_requested == true);
+
+            REQUIRE(msg.display_parameters.has_value());
+            REQUIRE(msg.display_parameters.value().present_soc.value() == 55);
+            REQUIRE(msg.display_parameters.value().min_soc.value() == 30);
+            REQUIRE(msg.display_parameters.value().target_soc.value() == 80);
+            REQUIRE(msg.display_parameters.value().charging_complete.value() == false);
+
+            REQUIRE(std::holds_alternative<dtsae::DER_Scheduled_AC_CLReqControlMode>(msg.control_mode));
+            const auto& mode = std::get<dtsae::DER_Scheduled_AC_CLReqControlMode>(msg.control_mode);
+
+            REQUIRE(dt::from_RationalNumber(mode.target_energy_request.value()) == 40000);
+            REQUIRE(dt::from_RationalNumber(mode.max_energy_request.value()) == 60000);
+            REQUIRE(dt::from_RationalNumber(mode.min_energy_request.value()) == 10000);
+            REQUIRE(dt::from_RationalNumber(mode.max_charge_power.value()) == 11000);
+            REQUIRE(dt::from_RationalNumber(mode.max_charge_power_L2.value()) == 11000);
+            REQUIRE(dt::from_RationalNumber(mode.max_charge_power_L3.value()) == 11000);
+            REQUIRE(dt::from_RationalNumber(mode.min_charge_power.value()) == 100);
+            REQUIRE(dt::from_RationalNumber(mode.present_active_power) == 9000);
+            REQUIRE(dt::from_RationalNumber(mode.present_active_power_L2.value()) == 9000);
+            REQUIRE(dt::from_RationalNumber(mode.present_active_power_L3.value()) == 9000);
+            REQUIRE(dt::from_RationalNumber(mode.present_reactive_power.value()) == 0);
+            REQUIRE(dt::from_RationalNumber(mode.present_voltage) == 230);
+            REQUIRE(dt::from_RationalNumber(mode.present_frequency) == 60);
+            REQUIRE(dt::from_RationalNumber(mode.maximum_discharge_power.value()) == 11000);
+            REQUIRE(dt::from_RationalNumber(mode.minimum_discharge_power.value()) == 100);
+            REQUIRE(mode.der_operational_state == dtsae::DEROperationalState::On);
+            REQUIRE(mode.der_connection_status == dtsae::DERConnectionStatus::Connected);
+
+            REQUIRE(mode.apparent_power.has_value());
+            const auto& ap = mode.apparent_power.value();
+            REQUIRE(dt::from_RationalNumber(ap.maximum_apparent_power_during_charging_and_var_absorption) == 12000);
+            REQUIRE(dt::from_RationalNumber(ap.maximum_apparent_power_during_charging_and_var_injection) == 12000);
+            REQUIRE(dt::from_RationalNumber(ap.maximum_apparent_power_during_discharging_and_var_absorption) == 12000);
+            REQUIRE(dt::from_RationalNumber(ap.maximum_apparent_power_during_discharging_and_var_injection) == 12000);
+            REQUIRE_FALSE(ap.maximum_apparent_power_during_charging_and_var_absorption_L2.has_value());
+
+            REQUIRE(mode.reactive_power.has_value());
+            const auto& rp = mode.reactive_power.value();
+            REQUIRE(dt::from_RationalNumber(rp.maximum_var_absorption_during_charging) == 5000);
+            REQUIRE(dt::from_RationalNumber(rp.maximum_var_injection_during_charging) == 5000);
+            REQUIRE(dt::from_RationalNumber(rp.maximum_var_absorption_during_discharging) == 5000);
+            REQUIRE(dt::from_RationalNumber(rp.maximum_var_injection_during_discharging) == 5000);
+            REQUIRE_FALSE(rp.minimum_var_absorption_during_charging.has_value());
+
+            REQUIRE(mode.excitation.has_value());
+            const auto& ex = mode.excitation.value();
+            REQUIRE(dt::from_RationalNumber(ex.specified_over_excited_discharge_power) == 8000);
+            REQUIRE(dt::from_RationalNumber(ex.specified_under_excited_discharge_power) == 8000);
+            REQUIRE_FALSE(ex.specified_over_excited_power_factor.has_value());
+
+            REQUIRE(mode.update_time == 1725456323);
+            REQUIRE(mode.minimum_charging_duration == 600);
+            REQUIRE(mode.duration_maximum_charge_rate == 1800);
+            REQUIRE(mode.duration_maximum_discharge_rate == 1800);
+            REQUIRE(mode.der_alarm_status == 0);
+            REQUIRE(mode.enabled_modes == 3);
+        }
+
+        THEN("It should serialize back to the same bytes") {
+            message_20::DER_SAE_AC_ChargeLoopRequest req;
+            req.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456323};
+            req.meter_info_requested = true;
+
+            dt::DisplayParameters display_parameters;
+            display_parameters.present_soc = 55;
+            display_parameters.min_soc = 30;
+            display_parameters.target_soc = 80;
+            display_parameters.charging_complete = false;
+            req.display_parameters = display_parameters;
+
+            dtsae::DER_Scheduled_AC_CLReqControlMode mode;
+            mode.target_energy_request = dt::RationalNumber{40, 3};
+            mode.max_energy_request = dt::RationalNumber{60, 3};
+            mode.min_energy_request = dt::RationalNumber{10, 3};
+            mode.max_charge_power = dt::RationalNumber{11, 3};
+            mode.max_charge_power_L2 = dt::RationalNumber{11, 3};
+            mode.max_charge_power_L3 = dt::RationalNumber{11, 3};
+            mode.min_charge_power = dt::RationalNumber{100, 0};
+            mode.present_active_power = {9, 3};
+            mode.present_active_power_L2 = dt::RationalNumber{9, 3};
+            mode.present_active_power_L3 = dt::RationalNumber{9, 3};
+            mode.present_reactive_power = dt::RationalNumber{0, 0};
+            mode.present_voltage = {230, 0};
+            mode.present_frequency = {60, 0};
+            mode.maximum_discharge_power = dt::RationalNumber{11, 3};
+            mode.minimum_discharge_power = dt::RationalNumber{100, 0};
+            mode.der_operational_state = dtsae::DEROperationalState::On;
+            mode.der_connection_status = dtsae::DERConnectionStatus::Connected;
+
+            dtsae::EVApparentPower apparent_power;
+            apparent_power.maximum_apparent_power_during_charging_and_var_absorption = {12, 3};
+            apparent_power.maximum_apparent_power_during_charging_and_var_injection = {12, 3};
+            apparent_power.maximum_apparent_power_during_discharging_and_var_absorption = {12, 3};
+            apparent_power.maximum_apparent_power_during_discharging_and_var_injection = {12, 3};
+            mode.apparent_power = apparent_power;
+
+            dtsae::EVReactivePower reactive_power;
+            reactive_power.maximum_var_absorption_during_charging = {5, 3};
+            reactive_power.maximum_var_injection_during_charging = {5, 3};
+            reactive_power.maximum_var_absorption_during_discharging = {5, 3};
+            reactive_power.maximum_var_injection_during_discharging = {5, 3};
+            mode.reactive_power = reactive_power;
+
+            dtsae::EVExcitation excitation;
+            excitation.specified_over_excited_discharge_power = {8, 3};
+            excitation.specified_under_excited_discharge_power = {8, 3};
+            mode.excitation = excitation;
+
+            mode.update_time = 1725456323;
+            mode.minimum_charging_duration = 600;
+            mode.duration_maximum_charge_rate = 1800;
+            mode.duration_maximum_discharge_rate = 1800;
+            mode.der_alarm_status = 0;
+            mode.enabled_modes = 3;
+            req.control_mode = mode;
+
+            REQUIRE(serialize_helper(req) == bytes);
+        }
+    }
+
+    GIVEN("cl_req_dynamic_optionals") {
+
+        std::vector<uint8_t> bytes = {
+            0x80, 0x08, 0x04, 0x1e, 0xa6, 0x5f, 0xc9, 0x9b, 0xa7, 0x6c, 0x4d, 0x8c, 0x3b, 0xfe, 0x1b, 0x60, 0x62,
+            0x01, 0xb8, 0x54, 0x0e, 0x4c, 0x50, 0x1c, 0x04, 0x18, 0x14, 0x02, 0x0c, 0x0f, 0x01, 0x06, 0x01, 0x40,
+            0x83, 0x00, 0xb0, 0x20, 0xc0, 0x2c, 0x08, 0x30, 0x0b, 0x04, 0x00, 0x32, 0x11, 0x06, 0x01, 0x24, 0x40,
+            0x00, 0x01, 0x10, 0x60, 0x16, 0x44, 0x00, 0x32, 0x11, 0x00, 0x1c, 0xc0, 0x20, 0x80, 0x03, 0xc0, 0x10,
+            0x60, 0x3c, 0x01, 0x06, 0x01, 0x84, 0x41, 0x80, 0x61, 0x10, 0x60, 0x18, 0x44, 0x18, 0x06, 0x11, 0x64,
+            0x18, 0x04, 0x14, 0x83, 0x00, 0x82, 0x08, 0x30, 0x14, 0x02, 0x0c, 0x01, 0x40, 0x23, 0x0e, 0xff, 0x86,
+            0xd8, 0x18, 0x6c, 0x02, 0x08, 0x80, 0xe1, 0x10, 0x1c, 0x00, 0x00, 0x18};
+
+        const io::StreamInputView stream_view{bytes.data(), bytes.size()};
+
+        message_20::Variant variant(io::v2gtp::PayloadType::Part20DerSae, stream_view);
+
+        THEN("It should be deserialized successfully") {
+            REQUIRE(variant.get_type() == message_20::Type::DER_SAE_AC_ChargeLoopReq);
+
+            const auto& msg = variant.get<message_20::DER_SAE_AC_ChargeLoopRequest>();
+            const auto& header = msg.header;
+
+            REQUIRE(header.session_id == std::array<uint8_t, 8>{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B});
+            REQUIRE(header.timestamp == 1725456323);
+            REQUIRE(msg.meter_info_requested == true);
+
+            REQUIRE(msg.display_parameters.has_value());
+            REQUIRE(msg.display_parameters.value().present_soc.value() == 55);
+            REQUIRE(msg.display_parameters.value().target_soc.value() == 80);
+            REQUIRE_FALSE(msg.display_parameters.value().min_soc.has_value());
+
+            REQUIRE(std::holds_alternative<dtsae::DER_Dynamic_AC_CLReqControlMode>(msg.control_mode));
+            const auto& mode = std::get<dtsae::DER_Dynamic_AC_CLReqControlMode>(msg.control_mode);
+
+            REQUIRE(mode.departure_time.value() == 7200);
+            REQUIRE(dt::from_RationalNumber(mode.target_energy_request) == 40000);
+            REQUIRE(dt::from_RationalNumber(mode.max_energy_request) == 60000);
+            REQUIRE(dt::from_RationalNumber(mode.min_energy_request) == 10000);
+            REQUIRE(dt::from_RationalNumber(mode.max_charge_power) == 11000);
+            REQUIRE(dt::from_RationalNumber(mode.max_charge_power_L2.value()) == 11000);
+            REQUIRE(dt::from_RationalNumber(mode.max_charge_power_L3.value()) == 11000);
+            REQUIRE(dt::from_RationalNumber(mode.min_charge_power) == 100);
+            REQUIRE(dt::from_RationalNumber(mode.present_active_power) == 9000);
+            REQUIRE(dt::from_RationalNumber(mode.present_reactive_power) == 0);
+            REQUIRE(dt::from_RationalNumber(mode.maximum_discharge_power) == 11000);
+            REQUIRE(dt::from_RationalNumber(mode.minimum_discharge_power) == 100);
+            REQUIRE(dt::from_RationalNumber(mode.present_voltage) == 230);
+            REQUIRE(dt::from_RationalNumber(mode.present_frequency) == 60);
+            REQUIRE(dt::from_RationalNumber(mode.session_total_discharge_energy_available.value()) == 30000);
+
+            REQUIRE(mode.apparent_power.has_value());
+            const auto& ap = mode.apparent_power.value();
+            REQUIRE(dt::from_RationalNumber(ap.maximum_apparent_power_during_charging_and_var_absorption) == 12000);
+            REQUIRE(dt::from_RationalNumber(ap.maximum_apparent_power_during_discharging_and_var_injection) == 12000);
+
+            REQUIRE_FALSE(mode.reactive_power.has_value());
+
+            REQUIRE(mode.excitation.has_value());
+            const auto& ex = mode.excitation.value();
+            REQUIRE(dt::from_RationalNumber(ex.specified_over_excited_discharge_power) == 8000);
+            REQUIRE(dt::from_RationalNumber(ex.specified_under_excited_discharge_power) == 8000);
+
+            REQUIRE(dt::from_RationalNumber(mode.maximum_v2x_energy_request.value()) == 20000);
+            REQUIRE(dt::from_RationalNumber(mode.minimum_v2x_energy_request.value()) == 5000);
+
+            REQUIRE(mode.der_operational_state == dtsae::DEROperationalState::On);
+            REQUIRE(mode.der_connection_status == dtsae::DERConnectionStatus::Connected);
+            REQUIRE(mode.update_time == 1725456323);
+            REQUIRE(mode.minimum_charging_duration == 600);
+            REQUIRE(mode.duration_maximum_charge_rate == 1800);
+            REQUIRE(mode.duration_maximum_discharge_rate == 1800);
+            REQUIRE(mode.der_alarm_status == 0);
+            REQUIRE(mode.enabled_modes == 3);
+        }
+
+        THEN("It should serialize back to the same bytes") {
+            message_20::DER_SAE_AC_ChargeLoopRequest req;
+            req.header = message_20::Header{{0x3D, 0x4C, 0xBF, 0x93, 0x37, 0x4E, 0xD8, 0x9B}, 1725456323};
+            req.meter_info_requested = true;
+
+            dt::DisplayParameters display_parameters;
+            display_parameters.present_soc = 55;
+            display_parameters.target_soc = 80;
+            req.display_parameters = display_parameters;
+
+            dtsae::DER_Dynamic_AC_CLReqControlMode mode;
+            mode.departure_time = 7200;
+            mode.target_energy_request = {40, 3};
+            mode.max_energy_request = {60, 3};
+            mode.min_energy_request = {10, 3};
+            mode.max_charge_power = {11, 3};
+            mode.max_charge_power_L2 = dt::RationalNumber{11, 3};
+            mode.max_charge_power_L3 = dt::RationalNumber{11, 3};
+            mode.min_charge_power = {100, 0};
+            mode.present_active_power = {9, 3};
+            mode.present_reactive_power = {0, 0};
+            mode.maximum_discharge_power = {11, 3};
+            mode.minimum_discharge_power = {100, 0};
+            mode.present_voltage = {230, 0};
+            mode.present_frequency = {60, 0};
+            mode.session_total_discharge_energy_available = dt::RationalNumber{30, 3};
+
+            dtsae::EVApparentPower apparent_power;
+            apparent_power.maximum_apparent_power_during_charging_and_var_absorption = {12, 3};
+            apparent_power.maximum_apparent_power_during_charging_and_var_injection = {12, 3};
+            apparent_power.maximum_apparent_power_during_discharging_and_var_absorption = {12, 3};
+            apparent_power.maximum_apparent_power_during_discharging_and_var_injection = {12, 3};
+            mode.apparent_power = apparent_power;
+
+            dtsae::EVExcitation excitation;
+            excitation.specified_over_excited_discharge_power = {8, 3};
+            excitation.specified_under_excited_discharge_power = {8, 3};
+            mode.excitation = excitation;
+
+            mode.maximum_v2x_energy_request = dt::RationalNumber{20, 3};
+            mode.minimum_v2x_energy_request = dt::RationalNumber{5, 3};
+
+            mode.der_operational_state = dtsae::DEROperationalState::On;
+            mode.der_connection_status = dtsae::DERConnectionStatus::Connected;
+            mode.update_time = 1725456323;
+            mode.minimum_charging_duration = 600;
+            mode.duration_maximum_charge_rate = 1800;
+            mode.duration_maximum_discharge_rate = 1800;
+            mode.der_alarm_status = 0;
+            mode.enabled_modes = 3;
+            req.control_mode = mode;
+
+            REQUIRE(serialize_helper(req) == bytes);
+        }
+    }
+}
