@@ -14,9 +14,9 @@
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
-#include <functional>
-#include <everest_api_types/telemetry/API.hpp>
 #include <everest/util/async/monitor.hpp>
+#include <everest_api_types/telemetry/API.hpp>
+#include <functional>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {

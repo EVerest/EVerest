@@ -65,11 +65,9 @@ static_assert(static_cast<int>(telemetry_types::V2gMessageState::CertificateInst
 static_assert(static_cast<int>(telemetry_types::V2gMessageState::ChargingStatus) ==
                   static_cast<int>(V2G_CHARGING_STATUS_MSG),
               "telemetry: ChargingStatus should match protocol enum value");
-static_assert(static_cast<int>(telemetry_types::V2gMessageState::CableCheck) ==
-                  static_cast<int>(V2G_CABLE_CHECK_MSG),
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::CableCheck) == static_cast<int>(V2G_CABLE_CHECK_MSG),
               "telemetry: CableCheck should match protocol enum value");
-static_assert(static_cast<int>(telemetry_types::V2gMessageState::PreCharge) ==
-                  static_cast<int>(V2G_PRE_CHARGE_MSG),
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::PreCharge) == static_cast<int>(V2G_PRE_CHARGE_MSG),
               "telemetry: PreCharge should match protocol enum value");
 static_assert(static_cast<int>(telemetry_types::V2gMessageState::PowerDelivery) ==
                   static_cast<int>(V2G_POWER_DELIVERY_MSG),
@@ -80,8 +78,7 @@ static_assert(static_cast<int>(telemetry_types::V2gMessageState::CurrentDemand) 
 static_assert(static_cast<int>(telemetry_types::V2gMessageState::WeldingDetection) ==
                   static_cast<int>(V2G_WELDING_DETECTION_MSG),
               "telemetry: WeldingDetection should match protocol enum value");
-static_assert(static_cast<int>(telemetry_types::V2gMessageState::SessionStop) ==
-                  static_cast<int>(V2G_SESSION_STOP_MSG),
+static_assert(static_cast<int>(telemetry_types::V2gMessageState::SessionStop) == static_cast<int>(V2G_SESSION_STOP_MSG),
               "telemetry: SessionStop should match protocol enum value");
 static_assert(static_cast<int>(telemetry_types::V2gMessageState::Unknown) == static_cast<int>(V2G_UNKNOWN_MSG),
               "telemetry: Unknown should match protocol enum value");
@@ -680,11 +677,10 @@ int v2g_handle_connection(struct v2g_connection* conn) {
 
         if (conn->ctx->telemetry_publisher) {
             conn->ctx->telemetry_publisher->update_transport([&](auto& transport) {
-                transport.comm_state = static_cast<everest::lib::API::V1_0::types::telemetry::V2gCommunicationState>(
-                    conn->ctx->state);
+                transport.comm_state =
+                    static_cast<everest::lib::API::V1_0::types::telemetry::V2gCommunicationState>(conn->ctx->state);
                 transport.message_state =
-                    static_cast<everest::lib::API::V1_0::types::telemetry::V2gMessageState>(
-                        conn->ctx->current_v2g_msg);
+                    static_cast<everest::lib::API::V1_0::types::telemetry::V2gMessageState>(conn->ctx->current_v2g_msg);
             });
         }
 

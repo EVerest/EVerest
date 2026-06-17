@@ -210,8 +210,8 @@ static void check_iso2_charging_profile_values(iso2_PowerDeliveryReqType* req, i
 static void publish_DcEvStatus(struct v2g_context* ctx, const struct iso2_DC_EVStatusType& iso2_ev_status) {
     if (ctx->telemetry_publisher) {
         ctx->telemetry_publisher->update_ev_electrical([&](auto& telemetry) {
-            telemetry.error_code = static_cast<everest::lib::API::V1_0::types::telemetry::V2gEvErrorCode>(
-                iso2_ev_status.EVErrorCode);
+            telemetry.error_code =
+                static_cast<everest::lib::API::V1_0::types::telemetry::V2gEvErrorCode>(iso2_ev_status.EVErrorCode);
             telemetry.battery_soc_percent = iso2_ev_status.EVRESSSOC;
         });
     }
@@ -465,9 +465,8 @@ static void publish_iso_charge_parameter_discovery_req(
                         v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyRequest.Value,
                         v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyRequest.Multiplier);
                 }
-                telemetry.error_code =
-                    static_cast<everest::lib::API::V1_0::types::telemetry::V2gEvErrorCode>(
-                        v2g_charge_parameter_discovery_req->DC_EVChargeParameter.DC_EVStatus.EVErrorCode);
+                telemetry.error_code = static_cast<everest::lib::API::V1_0::types::telemetry::V2gEvErrorCode>(
+                    v2g_charge_parameter_discovery_req->DC_EVChargeParameter.DC_EVStatus.EVErrorCode);
                 telemetry.battery_soc_percent =
                     v2g_charge_parameter_discovery_req->DC_EVChargeParameter.DC_EVStatus.EVRESSSOC;
             });
@@ -507,9 +506,8 @@ static void publish_iso_pre_charge_req(struct v2g_context* ctx,
         ctx->telemetry_publisher->update_ev_electrical([&](auto& telemetry) {
             telemetry.target_voltage_V = target_voltage;
             telemetry.target_current_A = target_current;
-            telemetry.error_code =
-                static_cast<everest::lib::API::V1_0::types::telemetry::V2gEvErrorCode>(
-                    v2g_precharge_req->DC_EVStatus.EVErrorCode);
+            telemetry.error_code = static_cast<everest::lib::API::V1_0::types::telemetry::V2gEvErrorCode>(
+                v2g_precharge_req->DC_EVStatus.EVErrorCode);
             telemetry.battery_soc_percent = v2g_precharge_req->DC_EVStatus.EVRESSSOC;
         });
     }
@@ -607,9 +605,8 @@ static void publish_iso_current_demand_req(struct v2g_context* ctx,
             if (v2g_current_demand_req->RemainingTimeToBulkSoC_isUsed == 1) {
                 telemetry.remaining_time_bulk_min = static_cast<int>(v2g_dc_ev_remaining_time_to_bulk_soc);
             }
-            telemetry.error_code =
-                static_cast<everest::lib::API::V1_0::types::telemetry::V2gEvErrorCode>(
-                    v2g_current_demand_req->DC_EVStatus.EVErrorCode);
+            telemetry.error_code = static_cast<everest::lib::API::V1_0::types::telemetry::V2gEvErrorCode>(
+                v2g_current_demand_req->DC_EVStatus.EVErrorCode);
             telemetry.battery_soc_percent = v2g_current_demand_req->DC_EVStatus.EVRESSSOC;
         });
     }
