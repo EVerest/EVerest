@@ -189,6 +189,14 @@ types:
       - InstallVerificationFailed
       - InvalidSignature
       - SignatureVerified
+  FirmwareUpdateMetadata:
+    description: Type carrying metadata about a firmware update
+    type: object
+    properties:
+      disable_connectors_during_install:
+        description: Whether all connectors should be made unavailable (disabled) for the duration of the firmware install
+        type: boolean
+        default: true
   FirmwareUpdateStatus:
     description: Type defining the status of a firmware update
     type: object
@@ -205,6 +213,10 @@ types:
       request_id:
         description: Id of the request
         type: integer
+      firmware_update_metadata:
+        description: Metadata about the firmware update
+        type: object
+        $ref: /system#/FirmwareUpdateMetadata
   ResetType:
     description: Enum defining the type of a reset
     type: string

@@ -131,8 +131,11 @@ public:
     ///        called during a Firmware Update to indicate the current firmware_update_status.
     /// \param request_id   The request_id. When it is -1, it will not be included in the request.
     /// \param firmware_update_status The firmware_update_status
+    /// \param disable_connectors_during_install By default, all connectors will be disabled before installing the
+    /// firmware update. Setting this parameter to false will keep the connectors available during the update.
     virtual void on_firmware_update_status_notification(std::int32_t request_id,
-                                                        const FirmwareStatusEnum& firmware_update_status) = 0;
+                                                        const FirmwareStatusEnum& firmware_update_status,
+                                                        const bool disable_connectors_during_install = true) = 0;
 
     /// \brief Event handler that should be called when a session has started
     /// \param evse_id
@@ -592,7 +595,8 @@ public:
     void on_network_disconnected(OCPPInterfaceEnum ocpp_interface) override;
 
     void on_firmware_update_status_notification(std::int32_t request_id,
-                                                const FirmwareStatusEnum& firmware_update_status) override;
+                                                const FirmwareStatusEnum& firmware_update_status,
+                                                bool disable_connectors_during_install = true) override;
 
     void on_session_started(const std::int32_t evse_id, const std::int32_t connector_id) override;
 

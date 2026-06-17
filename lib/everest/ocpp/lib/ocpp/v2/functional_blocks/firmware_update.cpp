@@ -43,7 +43,8 @@ void FirmwareUpdate::handle_message(const ocpp::EnhancedMessage<MessageType>& me
 }
 
 void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request_id,
-                                                            const FirmwareStatusEnum& firmware_update_status) {
+                                                            const FirmwareStatusEnum& firmware_update_status,
+                                                            bool disable_connectors_during_install) {
     if (this->firmware_status == firmware_update_status) {
         if (request_id == -1 or
             (this->firmware_status_id.has_value() and this->firmware_status_id.value() == request_id)) {
@@ -96,7 +97,9 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
             const ocpp::Call<FirmwareStatusNotificationRequest> call(req);
             this->context.message_dispatcher.dispatch_call_async(call);
         }
-        this->change_all_connectors_to_unavailable_for_firmware_update();
+        if (disable_connectors_during_install) {
+            this->change_all_connectors_to_unavailable_for_firmware_update();
+        }
     }
 }
 

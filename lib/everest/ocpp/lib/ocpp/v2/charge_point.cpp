@@ -177,8 +177,10 @@ void ChargePoint::on_network_disconnected(OCPPInterfaceEnum ocpp_interface) {
 }
 
 void ChargePoint::on_firmware_update_status_notification(std::int32_t request_id,
-                                                         const FirmwareStatusEnum& firmware_update_status) {
-    this->firmware_update->on_firmware_update_status_notification(request_id, firmware_update_status);
+                                                         const FirmwareStatusEnum& firmware_update_status,
+                                                         const bool disable_connectors_during_install) {
+    this->firmware_update->on_firmware_update_status_notification(request_id, firmware_update_status,
+                                                                  disable_connectors_during_install);
 }
 
 void ChargePoint::connect_websocket(std::optional<std::int32_t> network_profile_slot) {
