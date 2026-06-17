@@ -439,6 +439,16 @@ def load_test_config() -> OcppTestConfiguration:
         Path(__file__).parent /
         ocpp_test_config.firmware_info.update_file_signature
     )
+    if ocpp_test_config.firmware_info.update_file_keep_connectors_available is not None:
+        ocpp_test_config.firmware_info.update_file_keep_connectors_available = (
+            Path(__file__).parent /
+            ocpp_test_config.firmware_info.update_file_keep_connectors_available
+        )
+    if ocpp_test_config.firmware_info.update_file_keep_connectors_available_signature is not None:
+        ocpp_test_config.firmware_info.update_file_keep_connectors_available_signature = (
+            Path(__file__).parent /
+            ocpp_test_config.firmware_info.update_file_keep_connectors_available_signature
+        )
 
     return ocpp_test_config
 
