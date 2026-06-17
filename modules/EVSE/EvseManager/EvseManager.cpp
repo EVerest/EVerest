@@ -2197,9 +2197,11 @@ void EvseManager::cable_check() {
 
         // CC 4.1.3: Now relais are closed, voltage is up. We need to perform a self test of the IMD device
         if (config.cable_check_enable_imd_self_test) {
-            selftest_result.clear();
-            r_imd[0]->call_start_self_test(cable_check_voltage);
-            EVLOG_info << "CableCheck: IMD self test started.";
+            if (not config.cable_check_enable_imd_self_test_relays_open) {
+                selftest_result.clear();
+                r_imd[0]->call_start_self_test(cable_check_voltage);
+                EVLOG_info << "CableCheck: IMD self test started.";
+            }
 
             // Wait for the result of the self test
             bool result{false};
