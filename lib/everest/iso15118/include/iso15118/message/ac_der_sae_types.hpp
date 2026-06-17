@@ -9,7 +9,7 @@
 
 #include "common_types.hpp"
 
-namespace iso15118::message_20::datatypes {
+namespace iso15118::message_20::datatypes::sae {
 
 enum class PowerFactorExcitation : std::uint8_t {
     OverExcited,
@@ -200,4 +200,4 @@ struct FrequencyTrip {
     std::optional<DERCurve> under_frequency_may_trip_curve;
 };
 
-} // namespace iso15118::message_20::datatypes
+} // namespace iso15118::message_20::datatypes::sae

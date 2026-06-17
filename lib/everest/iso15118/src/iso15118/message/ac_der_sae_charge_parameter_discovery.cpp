@@ -9,11 +9,11 @@
 
 namespace iso15118::message_20 {
 
-using DER_AC_ModeReq = datatypes::DER_SAE_AC_CPDReqEnergyTransferMode;
-using DER_AC_ModeRes = datatypes::DER_SAE_AC_CPDResEnergyTransferMode;
+using DER_AC_ModeReq = datatypes::sae::DER_SAE_AC_CPDReqEnergyTransferMode;
+using DER_AC_ModeRes = datatypes::sae::DER_SAE_AC_CPDResEnergyTransferMode;
 
 template <>
-void convert(const struct iso20_ac_der_sae_EVApparentPowerLimitsType& in, datatypes::EVApparentPowerLimits& out) {
+void convert(const struct iso20_ac_der_sae_EVApparentPowerLimitsType& in, datatypes::sae::EVApparentPowerLimits& out) {
     convert(in.EVMaximumApparentPowerDuringChargingAndVarAbsorption,
             out.maximum_apparent_power_during_charging_and_var_absorption);
     CB2CPP_CONVERT_IF_USED(in.EVMaximumApparentPowerDuringChargingAndVarAbsorption_L2,
@@ -41,7 +41,7 @@ void convert(const struct iso20_ac_der_sae_EVApparentPowerLimitsType& in, dataty
 }
 
 template <>
-void convert(const datatypes::EVApparentPowerLimits& in, struct iso20_ac_der_sae_EVApparentPowerLimitsType& out) {
+void convert(const datatypes::sae::EVApparentPowerLimits& in, struct iso20_ac_der_sae_EVApparentPowerLimitsType& out) {
     init_iso20_ac_der_sae_EVApparentPowerLimitsType(&out);
     convert(in.maximum_apparent_power_during_charging_and_var_absorption,
             out.EVMaximumApparentPowerDuringChargingAndVarAbsorption);
@@ -70,7 +70,7 @@ void convert(const datatypes::EVApparentPowerLimits& in, struct iso20_ac_der_sae
 }
 
 template <>
-void convert(const struct iso20_ac_der_sae_EVReactivePowerLimitsType& in, datatypes::EVReactivePowerLimits& out) {
+void convert(const struct iso20_ac_der_sae_EVReactivePowerLimitsType& in, datatypes::sae::EVReactivePowerLimits& out) {
     convert(in.EVMaximumVarAbsorptionDuringCharging, out.maximum_var_absorption_during_charging);
     CB2CPP_CONVERT_IF_USED(in.EVMaximumVarAbsorptionDuringCharging_L2, out.maximum_var_absorption_during_charging_L2);
     CB2CPP_CONVERT_IF_USED(in.EVMaximumVarAbsorptionDuringCharging_L3, out.maximum_var_absorption_during_charging_L3);
@@ -109,7 +109,7 @@ void convert(const struct iso20_ac_der_sae_EVReactivePowerLimitsType& in, dataty
 }
 
 template <>
-void convert(const datatypes::EVReactivePowerLimits& in, struct iso20_ac_der_sae_EVReactivePowerLimitsType& out) {
+void convert(const datatypes::sae::EVReactivePowerLimits& in, struct iso20_ac_der_sae_EVReactivePowerLimitsType& out) {
     init_iso20_ac_der_sae_EVReactivePowerLimitsType(&out);
     convert(in.maximum_var_absorption_during_charging, out.EVMaximumVarAbsorptionDuringCharging);
     CPP2CB_CONVERT_IF_USED(in.maximum_var_absorption_during_charging_L2, out.EVMaximumVarAbsorptionDuringCharging_L2);
@@ -148,7 +148,8 @@ void convert(const datatypes::EVReactivePowerLimits& in, struct iso20_ac_der_sae
     CPP2CB_CONVERT_IF_USED(in.reactive_susceptance_L3, out.EVReactiveSusceptance_L3);
 }
 
-template <> void convert(const struct iso20_ac_der_sae_EVExcitationLimitsType& in, datatypes::EVExcitationLimits& out) {
+template <>
+void convert(const struct iso20_ac_der_sae_EVExcitationLimitsType& in, datatypes::sae::EVExcitationLimits& out) {
     convert(in.EVSpecifiedOverExcitedPowerFactor, out.specified_over_excited_power_factor);
     CB2CPP_CONVERT_IF_USED(in.EVSpecifiedOverExcitedPowerFactor_L2, out.specified_over_excited_power_factor_L2);
     CB2CPP_CONVERT_IF_USED(in.EVSpecifiedOverExcitedPowerFactor_L3, out.specified_over_excited_power_factor_L3);
@@ -163,7 +164,8 @@ template <> void convert(const struct iso20_ac_der_sae_EVExcitationLimitsType& i
     CB2CPP_CONVERT_IF_USED(in.EVSpecifiedUnderExcitedDischargePower_L3, out.specified_under_excited_discharge_power_L3);
 }
 
-template <> void convert(const datatypes::EVExcitationLimits& in, struct iso20_ac_der_sae_EVExcitationLimitsType& out) {
+template <>
+void convert(const datatypes::sae::EVExcitationLimits& in, struct iso20_ac_der_sae_EVExcitationLimitsType& out) {
     init_iso20_ac_der_sae_EVExcitationLimitsType(&out);
     convert(in.specified_over_excited_power_factor, out.EVSpecifiedOverExcitedPowerFactor);
     CPP2CB_CONVERT_IF_USED(in.specified_over_excited_power_factor_L2, out.EVSpecifiedOverExcitedPowerFactor_L2);
@@ -179,7 +181,8 @@ template <> void convert(const datatypes::EVExcitationLimits& in, struct iso20_a
     CPP2CB_CONVERT_IF_USED(in.specified_under_excited_discharge_power_L3, out.EVSpecifiedUnderExcitedDischargePower_L3);
 }
 
-template <> void convert(const struct iso20_ac_der_sae_EVInverterDetailsType& in, datatypes::EVInverterDetails& out) {
+template <>
+void convert(const struct iso20_ac_der_sae_EVInverterDetailsType& in, datatypes::sae::EVInverterDetails& out) {
     out.inverter_sw_version = CB2CPP_STRING(in.EVInverterSwVersion);
     CB2CPP_STRING_IF_USED(in.EVInverterHwVersion, out.inverter_hw_version);
     out.inverter_manufacturer = CB2CPP_STRING(in.EVInverterManufacturer);
@@ -187,7 +190,8 @@ template <> void convert(const struct iso20_ac_der_sae_EVInverterDetailsType& in
     out.inverter_serial_number = CB2CPP_STRING(in.EVInverterSerialNumber);
 }
 
-template <> void convert(const datatypes::EVInverterDetails& in, struct iso20_ac_der_sae_EVInverterDetailsType& out) {
+template <>
+void convert(const datatypes::sae::EVInverterDetails& in, struct iso20_ac_der_sae_EVInverterDetailsType& out) {
     init_iso20_ac_der_sae_EVInverterDetailsType(&out);
     CPP2CB_STRING(in.inverter_sw_version, out.EVInverterSwVersion);
     CPP2CB_STRING_IF_USED(in.inverter_hw_version, out.EVInverterHwVersion);
@@ -249,7 +253,7 @@ template <> void insert_type(VariantAccess& va, const struct iso20_ac_der_sae_AC
 }
 
 template <>
-void convert(const datatypes::DER_SAE_AC_CPDReqEnergyTransferMode& in,
+void convert(const datatypes::sae::DER_SAE_AC_CPDReqEnergyTransferMode& in,
              struct iso20_ac_der_sae_DER_AC_CPDReqEnergyTransferModeType& out) {
     init_iso20_ac_der_sae_DER_AC_CPDReqEnergyTransferModeType(&out);
 
@@ -312,7 +316,8 @@ template <> size_t serialize(const DER_SAE_AC_ChargeParameterDiscoveryRequest& i
 }
 
 template <>
-void convert(const struct iso20_ac_der_sae_ActivePowerSupportCPDResType& in, datatypes::ActivePowerSupportCPDRes& out) {
+void convert(const struct iso20_ac_der_sae_ActivePowerSupportCPDResType& in,
+             datatypes::sae::ActivePowerSupportCPDRes& out) {
     convert(in.FrequencyDroop, out.frequency_droop);
     convert(in.VoltWatt, out.volt_watt);
     convert(in.ConstantWatt, out.constant_watt);
@@ -320,7 +325,8 @@ void convert(const struct iso20_ac_der_sae_ActivePowerSupportCPDResType& in, dat
 }
 
 template <>
-void convert(const datatypes::ActivePowerSupportCPDRes& in, struct iso20_ac_der_sae_ActivePowerSupportCPDResType& out) {
+void convert(const datatypes::sae::ActivePowerSupportCPDRes& in,
+             struct iso20_ac_der_sae_ActivePowerSupportCPDResType& out) {
     init_iso20_ac_der_sae_ActivePowerSupportCPDResType(&out);
     convert(in.frequency_droop, out.FrequencyDroop);
     convert(in.volt_watt, out.VoltWatt);
@@ -330,7 +336,7 @@ void convert(const datatypes::ActivePowerSupportCPDRes& in, struct iso20_ac_der_
 
 template <>
 void convert(const struct iso20_ac_der_sae_ReactivePowerSupportCPDResType& in,
-             datatypes::ReactivePowerSupportCPDRes& out) {
+             datatypes::sae::ReactivePowerSupportCPDRes& out) {
     convert(in.ConstantPowerFactor, out.constant_power_factor);
     convert(in.VoltVar, out.volt_var);
     convert(in.WattVar, out.watt_var);
@@ -338,7 +344,7 @@ void convert(const struct iso20_ac_der_sae_ReactivePowerSupportCPDResType& in,
 }
 
 template <>
-void convert(const datatypes::ReactivePowerSupportCPDRes& in,
+void convert(const datatypes::sae::ReactivePowerSupportCPDRes& in,
              struct iso20_ac_der_sae_ReactivePowerSupportCPDResType& out) {
     init_iso20_ac_der_sae_ReactivePowerSupportCPDResType(&out);
     convert(in.constant_power_factor, out.ConstantPowerFactor);
@@ -347,7 +353,8 @@ void convert(const datatypes::ReactivePowerSupportCPDRes& in,
     convert(in.constant_var, out.ConstantVar);
 }
 
-template <> void convert(const struct iso20_ac_der_sae_EnterServiceCPDResType& in, datatypes::EnterServiceCPDRes& out) {
+template <>
+void convert(const struct iso20_ac_der_sae_EnterServiceCPDResType& in, datatypes::sae::EnterServiceCPDRes& out) {
     out.permit_service = in.PermitService;
     convert(in.EnterServiceVoltageHigh, out.enter_service_voltage_high);
     convert(in.EnterServiceVoltageLow, out.enter_service_voltage_low);
@@ -358,7 +365,8 @@ template <> void convert(const struct iso20_ac_der_sae_EnterServiceCPDResType& i
     CB2CPP_CONVERT_IF_USED(in.EnterServiceRampTime, out.enter_service_ramp_time);
 }
 
-template <> void convert(const datatypes::EnterServiceCPDRes& in, struct iso20_ac_der_sae_EnterServiceCPDResType& out) {
+template <>
+void convert(const datatypes::sae::EnterServiceCPDRes& in, struct iso20_ac_der_sae_EnterServiceCPDResType& out) {
     init_iso20_ac_der_sae_EnterServiceCPDResType(&out);
     out.PermitService = in.permit_service;
     convert(in.enter_service_voltage_high, out.EnterServiceVoltageHigh);
@@ -370,7 +378,8 @@ template <> void convert(const datatypes::EnterServiceCPDRes& in, struct iso20_a
     CPP2CB_CONVERT_IF_USED(in.enter_service_ramp_time, out.EnterServiceRampTime);
 }
 
-template <> void convert(const struct iso20_ac_der_sae_DERControlCPDResType& in, datatypes::DERControlCPDRes& out) {
+template <>
+void convert(const struct iso20_ac_der_sae_DERControlCPDResType& in, datatypes::sae::DERControlCPDRes& out) {
     convert(in.VoltageTrip, out.voltage_trip);
     convert(in.FrequencyTrip, out.frequency_trip);
     convert(in.EnterServiceCPDRes, out.enter_service_cpd_res);
@@ -378,7 +387,8 @@ template <> void convert(const struct iso20_ac_der_sae_DERControlCPDResType& in,
     convert(in.ActivePowerSupportCPDRes, out.active_power_support_cpd_res);
 }
 
-template <> void convert(const datatypes::DERControlCPDRes& in, struct iso20_ac_der_sae_DERControlCPDResType& out) {
+template <>
+void convert(const datatypes::sae::DERControlCPDRes& in, struct iso20_ac_der_sae_DERControlCPDResType& out) {
     init_iso20_ac_der_sae_DERControlCPDResType(&out);
     convert(in.voltage_trip, out.VoltageTrip);
     convert(in.frequency_trip, out.FrequencyTrip);
@@ -388,7 +398,8 @@ template <> void convert(const datatypes::DERControlCPDRes& in, struct iso20_ac_
 }
 
 template <>
-void convert(const struct iso20_ac_der_sae_EVSEReactivePowerLimitsType& in, datatypes::EVSEReactivePowerLimits& out) {
+void convert(const struct iso20_ac_der_sae_EVSEReactivePowerLimitsType& in,
+             datatypes::sae::EVSEReactivePowerLimits& out) {
     convert(in.EVSEMaximumVarAbsorptionDuringCharging, out.maximum_var_absorption_during_charging);
     CB2CPP_CONVERT_IF_USED(in.EVSEMaximumVarAbsorptionDuringCharging_L2, out.maximum_var_absorption_during_charging_L2);
     CB2CPP_CONVERT_IF_USED(in.EVSEMaximumVarAbsorptionDuringCharging_L3, out.maximum_var_absorption_during_charging_L3);
@@ -408,7 +419,8 @@ void convert(const struct iso20_ac_der_sae_EVSEReactivePowerLimitsType& in, data
 }
 
 template <>
-void convert(const datatypes::EVSEReactivePowerLimits& in, struct iso20_ac_der_sae_EVSEReactivePowerLimitsType& out) {
+void convert(const datatypes::sae::EVSEReactivePowerLimits& in,
+             struct iso20_ac_der_sae_EVSEReactivePowerLimitsType& out) {
     init_iso20_ac_der_sae_EVSEReactivePowerLimitsType(&out);
     convert(in.maximum_var_absorption_during_charging, out.EVSEMaximumVarAbsorptionDuringCharging);
     CPP2CB_CONVERT_IF_USED(in.maximum_var_absorption_during_charging_L2, out.EVSEMaximumVarAbsorptionDuringCharging_L2);
@@ -428,7 +440,7 @@ void convert(const datatypes::EVSEReactivePowerLimits& in, struct iso20_ac_der_s
                            out.EVSEMaximumVarInjectionDuringDischarging_L3);
 }
 
-template <> void convert(const struct iso20_ac_der_sae_GridLimitsType& in, datatypes::GridLimits& out) {
+template <> void convert(const struct iso20_ac_der_sae_GridLimitsType& in, datatypes::sae::GridLimits& out) {
     convert(in.GridNominalFrequency, out.nominal_frequency);
     convert(in.GridNominalVoltage, out.nominal_voltage);
     convert(in.GridNominalVoltageOffset, out.nominal_voltage_offset);
@@ -438,7 +450,7 @@ template <> void convert(const struct iso20_ac_der_sae_GridLimitsType& in, datat
     convert(in.GridMinimumVoltage, out.minimum_voltage);
 }
 
-template <> void convert(const datatypes::GridLimits& in, struct iso20_ac_der_sae_GridLimitsType& out) {
+template <> void convert(const datatypes::sae::GridLimits& in, struct iso20_ac_der_sae_GridLimitsType& out) {
     init_iso20_ac_der_sae_GridLimitsType(&out);
     convert(in.nominal_frequency, out.GridNominalFrequency);
     convert(in.nominal_voltage, out.GridNominalVoltage);

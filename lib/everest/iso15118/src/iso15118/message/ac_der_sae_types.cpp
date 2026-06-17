@@ -10,28 +10,28 @@
 
 namespace iso15118::message_20 {
 
-template <> void convert(const struct iso20_ac_der_sae_DataTupleType& in, datatypes::DataTuple& out) {
+template <> void convert(const struct iso20_ac_der_sae_DataTupleType& in, datatypes::sae::DataTuple& out) {
     convert(in.xValue, out.x_value);
     convert(in.yValue, out.y_value);
 }
 
-template <> void convert(const datatypes::DataTuple& in, struct iso20_ac_der_sae_DataTupleType& out) {
+template <> void convert(const datatypes::sae::DataTuple& in, struct iso20_ac_der_sae_DataTupleType& out) {
     convert(in.x_value, out.xValue);
     convert(in.y_value, out.yValue);
 }
 
 template <>
-void convert(const struct iso20_ac_der_sae_CurveDataPointsListType& in, datatypes::CurveDataPointsList& out) {
+void convert(const struct iso20_ac_der_sae_CurveDataPointsListType& in, datatypes::sae::CurveDataPointsList& out) {
     out.clear();
     for (size_t i = 0; i < in.CurveDataPoint.arrayLen; ++i) {
-        datatypes::DataTuple tuple;
+        datatypes::sae::DataTuple tuple;
         convert(in.CurveDataPoint.array[i], tuple);
         out.push_back(tuple);
     }
 }
 
 template <>
-void convert(const datatypes::CurveDataPointsList& in, struct iso20_ac_der_sae_CurveDataPointsListType& out) {
+void convert(const datatypes::sae::CurveDataPointsList& in, struct iso20_ac_der_sae_CurveDataPointsListType& out) {
     init_iso20_ac_der_sae_CurveDataPointsListType(&out);
     out.CurveDataPoint.arrayLen = in.size();
     for (size_t i = 0; i < in.size(); i++) {
@@ -39,7 +39,7 @@ void convert(const datatypes::CurveDataPointsList& in, struct iso20_ac_der_sae_C
     }
 }
 
-template <> void convert(const struct iso20_ac_der_sae_DERCurveType& in, datatypes::DERCurve& out) {
+template <> void convert(const struct iso20_ac_der_sae_DERCurveType& in, datatypes::sae::DERCurve& out) {
     out.enable = static_cast<bool>(in.Enable);
     CB2CPP_ASSIGN_IF_USED(in.Priority, out.priority);
     cb_convert_enum(in.xUnit, out.x_unit);
@@ -49,7 +49,7 @@ template <> void convert(const struct iso20_ac_der_sae_DERCurveType& in, datatyp
     CB2CPP_CONVERT_IF_USED(in.CurveDataPoints_L3, out.curve_data_points_L3);
 }
 
-template <> void convert(const datatypes::DERCurve& in, struct iso20_ac_der_sae_DERCurveType& out) {
+template <> void convert(const datatypes::sae::DERCurve& in, struct iso20_ac_der_sae_DERCurveType& out) {
     init_iso20_ac_der_sae_DERCurveType(&out);
     out.Enable = in.enable;
     CPP2CB_ASSIGN_IF_USED(in.priority, out.Priority);
@@ -61,7 +61,8 @@ template <> void convert(const datatypes::DERCurve& in, struct iso20_ac_der_sae_
 }
 
 template <>
-void convert(const struct iso20_ac_der_sae_FrequencyDroopSettingsType& in, datatypes::FrequencyDroopSettings& out) {
+void convert(const struct iso20_ac_der_sae_FrequencyDroopSettingsType& in,
+             datatypes::sae::FrequencyDroopSettings& out) {
     convert(in.db, out.db);
     convert(in.DroopFactor, out.droop_factor);
     CB2CPP_CONVERT_IF_USED(in.DroopFactor_L2, out.droop_factor_L2);
@@ -77,7 +78,8 @@ void convert(const struct iso20_ac_der_sae_FrequencyDroopSettingsType& in, datat
 }
 
 template <>
-void convert(const datatypes::FrequencyDroopSettings& in, struct iso20_ac_der_sae_FrequencyDroopSettingsType& out) {
+void convert(const datatypes::sae::FrequencyDroopSettings& in,
+             struct iso20_ac_der_sae_FrequencyDroopSettingsType& out) {
     init_iso20_ac_der_sae_FrequencyDroopSettingsType(&out);
     convert(in.db, out.db);
     convert(in.droop_factor, out.DroopFactor);
@@ -95,14 +97,14 @@ void convert(const datatypes::FrequencyDroopSettings& in, struct iso20_ac_der_sa
     convert(in.open_loop_response_time, out.OpenLoopResponseTime);
 }
 
-template <> void convert(const struct iso20_ac_der_sae_FrequencyDroopType& in, datatypes::FrequencyDroop& out) {
+template <> void convert(const struct iso20_ac_der_sae_FrequencyDroopType& in, datatypes::sae::FrequencyDroop& out) {
     out.enable = static_cast<bool>(in.Enable);
     CB2CPP_ASSIGN_IF_USED(in.Priority, out.priority);
     CB2CPP_CONVERT_IF_USED(in.OverFrequencyDroop, out.over_frequency_droop);
     CB2CPP_CONVERT_IF_USED(in.UnderFrequencyDroop, out.under_frequency_droop);
 }
 
-template <> void convert(const datatypes::FrequencyDroop& in, struct iso20_ac_der_sae_FrequencyDroopType& out) {
+template <> void convert(const datatypes::sae::FrequencyDroop& in, struct iso20_ac_der_sae_FrequencyDroopType& out) {
     init_iso20_ac_der_sae_FrequencyDroopType(&out);
     out.Enable = in.enable;
     CPP2CB_ASSIGN_IF_USED(in.priority, out.Priority);
@@ -110,7 +112,7 @@ template <> void convert(const datatypes::FrequencyDroop& in, struct iso20_ac_de
     CPP2CB_CONVERT_IF_USED(in.under_frequency_droop, out.UnderFrequencyDroop);
 }
 
-template <> void convert(const struct iso20_ac_der_sae_VoltWattType& in, datatypes::VoltWatt& out) {
+template <> void convert(const struct iso20_ac_der_sae_VoltWattType& in, datatypes::sae::VoltWatt& out) {
     out.enable = static_cast<bool>(in.Enable);
     CB2CPP_ASSIGN_IF_USED(in.Priority, out.priority);
     cb_convert_enum(in.xUnit, out.x_unit);
@@ -122,7 +124,7 @@ template <> void convert(const struct iso20_ac_der_sae_VoltWattType& in, datatyp
     CB2CPP_ASSIGN_IF_USED(in.TimeConstantPT1, out.time_constant_pt1);
 }
 
-template <> void convert(const datatypes::VoltWatt& in, struct iso20_ac_der_sae_VoltWattType& out) {
+template <> void convert(const datatypes::sae::VoltWatt& in, struct iso20_ac_der_sae_VoltWattType& out) {
     init_iso20_ac_der_sae_VoltWattType(&out);
     out.Enable = in.enable;
     CPP2CB_ASSIGN_IF_USED(in.priority, out.Priority);
@@ -135,7 +137,7 @@ template <> void convert(const datatypes::VoltWatt& in, struct iso20_ac_der_sae_
     CPP2CB_ASSIGN_IF_USED(in.time_constant_pt1, out.TimeConstantPT1);
 }
 
-template <> void convert(const struct iso20_ac_der_sae_ConstantWattType& in, datatypes::ConstantWatt& out) {
+template <> void convert(const struct iso20_ac_der_sae_ConstantWattType& in, datatypes::sae::ConstantWatt& out) {
     out.enable = static_cast<bool>(in.Enable);
     CB2CPP_ASSIGN_IF_USED(in.Priority, out.priority);
     convert(in.WattSetpoint, out.watt_setpoint);
@@ -144,7 +146,7 @@ template <> void convert(const struct iso20_ac_der_sae_ConstantWattType& in, dat
     cb_convert_enum(in.Unit, out.unit);
 }
 
-template <> void convert(const datatypes::ConstantWatt& in, struct iso20_ac_der_sae_ConstantWattType& out) {
+template <> void convert(const datatypes::sae::ConstantWatt& in, struct iso20_ac_der_sae_ConstantWattType& out) {
     init_iso20_ac_der_sae_ConstantWattType(&out);
     out.Enable = in.enable;
     CPP2CB_ASSIGN_IF_USED(in.priority, out.Priority);
@@ -155,7 +157,8 @@ template <> void convert(const datatypes::ConstantWatt& in, struct iso20_ac_der_
 }
 
 template <>
-void convert(const struct iso20_ac_der_sae_LimitMaxDischargePowerType& in, datatypes::LimitMaxDischargePower& out) {
+void convert(const struct iso20_ac_der_sae_LimitMaxDischargePowerType& in,
+             datatypes::sae::LimitMaxDischargePower& out) {
     out.enable = static_cast<bool>(in.Enable);
     CB2CPP_ASSIGN_IF_USED(in.Priority, out.priority);
     out.percentage_value = in.PercentageValue;
@@ -165,7 +168,8 @@ void convert(const struct iso20_ac_der_sae_LimitMaxDischargePowerType& in, datat
 }
 
 template <>
-void convert(const datatypes::LimitMaxDischargePower& in, struct iso20_ac_der_sae_LimitMaxDischargePowerType& out) {
+void convert(const datatypes::sae::LimitMaxDischargePower& in,
+             struct iso20_ac_der_sae_LimitMaxDischargePowerType& out) {
     init_iso20_ac_der_sae_LimitMaxDischargePowerType(&out);
     out.Enable = in.enable;
     CPP2CB_ASSIGN_IF_USED(in.priority, out.Priority);
@@ -176,7 +180,7 @@ void convert(const datatypes::LimitMaxDischargePower& in, struct iso20_ac_der_sa
 }
 
 template <>
-void convert(const struct iso20_ac_der_sae_ConstantPowerFactorType& in, datatypes::ConstantPowerFactor& out) {
+void convert(const struct iso20_ac_der_sae_ConstantPowerFactorType& in, datatypes::sae::ConstantPowerFactor& out) {
     out.enable = static_cast<bool>(in.Enable);
     CB2CPP_ASSIGN_IF_USED(in.Priority, out.priority);
     convert(in.PowerFactorValue, out.power_factor_value);
@@ -192,7 +196,7 @@ void convert(const struct iso20_ac_der_sae_ConstantPowerFactorType& in, datatype
 }
 
 template <>
-void convert(const datatypes::ConstantPowerFactor& in, struct iso20_ac_der_sae_ConstantPowerFactorType& out) {
+void convert(const datatypes::sae::ConstantPowerFactor& in, struct iso20_ac_der_sae_ConstantPowerFactorType& out) {
     init_iso20_ac_der_sae_ConstantPowerFactorType(&out);
     out.Enable = in.enable;
     CPP2CB_ASSIGN_IF_USED(in.priority, out.Priority);
@@ -210,7 +214,7 @@ void convert(const datatypes::ConstantPowerFactor& in, struct iso20_ac_der_sae_C
     }
 }
 
-template <> void convert(const struct iso20_ac_der_sae_WattVarType& in, datatypes::WattVar& out) {
+template <> void convert(const struct iso20_ac_der_sae_WattVarType& in, datatypes::sae::WattVar& out) {
     out.enable = in.Enable;
     CB2CPP_ASSIGN_IF_USED(in.Priority, out.priority);
     cb_convert_enum(in.xUnit, out.x_unit);
@@ -222,7 +226,7 @@ template <> void convert(const struct iso20_ac_der_sae_WattVarType& in, datatype
     CB2CPP_ASSIGN_IF_USED(in.TimeConstantPT1, out.time_constant_pt1);
 }
 
-template <> void convert(const datatypes::WattVar& in, struct iso20_ac_der_sae_WattVarType& out) {
+template <> void convert(const datatypes::sae::WattVar& in, struct iso20_ac_der_sae_WattVarType& out) {
     init_iso20_ac_der_sae_WattVarType(&out);
     out.Enable = in.enable;
     CPP2CB_ASSIGN_IF_USED(in.priority, out.Priority);
@@ -235,7 +239,7 @@ template <> void convert(const datatypes::WattVar& in, struct iso20_ac_der_sae_W
     CPP2CB_ASSIGN_IF_USED(in.time_constant_pt1, out.TimeConstantPT1);
 }
 
-template <> void convert(const struct iso20_ac_der_sae_VoltVarType& in, datatypes::VoltVar& out) {
+template <> void convert(const struct iso20_ac_der_sae_VoltVarType& in, datatypes::sae::VoltVar& out) {
     out.enable = in.Enable;
     CB2CPP_ASSIGN_IF_USED(in.Priority, out.priority);
     cb_convert_enum(in.xUnit, out.x_unit);
@@ -250,7 +254,7 @@ template <> void convert(const struct iso20_ac_der_sae_VoltVarType& in, datatype
     out.reference_voltage_adjustment_time_constant = in.ReferenceVoltageAdjustmentTimeConstant;
 }
 
-template <> void convert(const datatypes::VoltVar& in, struct iso20_ac_der_sae_VoltVarType& out) {
+template <> void convert(const datatypes::sae::VoltVar& in, struct iso20_ac_der_sae_VoltVarType& out) {
     init_iso20_ac_der_sae_VoltVarType(&out);
     out.Enable = in.enable;
     CPP2CB_ASSIGN_IF_USED(in.priority, out.Priority);
@@ -266,7 +270,7 @@ template <> void convert(const datatypes::VoltVar& in, struct iso20_ac_der_sae_V
     out.ReferenceVoltageAdjustmentTimeConstant = in.reference_voltage_adjustment_time_constant;
 }
 
-template <> void convert(const struct iso20_ac_der_sae_ConstantVarType& in, datatypes::ConstantVar& out) {
+template <> void convert(const struct iso20_ac_der_sae_ConstantVarType& in, datatypes::sae::ConstantVar& out) {
     out.enable = in.Enable;
     CB2CPP_ASSIGN_IF_USED(in.Priority, out.priority);
     convert(in.VarSetpoint, out.var_setpoint);
@@ -275,7 +279,7 @@ template <> void convert(const struct iso20_ac_der_sae_ConstantVarType& in, data
     cb_convert_enum(in.Unit, out.unit);
 }
 
-template <> void convert(const datatypes::ConstantVar& in, struct iso20_ac_der_sae_ConstantVarType& out) {
+template <> void convert(const datatypes::sae::ConstantVar& in, struct iso20_ac_der_sae_ConstantVarType& out) {
     init_iso20_ac_der_sae_ConstantVarType(&out);
     out.Enable = in.enable;
     CPP2CB_ASSIGN_IF_USED(in.priority, out.Priority);
@@ -285,7 +289,7 @@ template <> void convert(const datatypes::ConstantVar& in, struct iso20_ac_der_s
     cb_convert_enum(in.unit, out.Unit);
 }
 
-template <> void convert(const struct iso20_ac_der_sae_VoltageTripType& in, datatypes::VoltageTrip& out) {
+template <> void convert(const struct iso20_ac_der_sae_VoltageTripType& in, datatypes::sae::VoltageTrip& out) {
     convert(in.OverVoltageMustTripCurve, out.over_voltage_must_trip_curve);
     convert(in.UnderVoltageMustTripCurve, out.under_voltage_must_trip_curve);
     CB2CPP_CONVERT_IF_USED(in.OverVoltageMomentaryCessationTripCurve, out.over_voltage_momentary_cessation_trip_curve);
@@ -295,7 +299,7 @@ template <> void convert(const struct iso20_ac_der_sae_VoltageTripType& in, data
     CB2CPP_CONVERT_IF_USED(in.UnderVoltageMayTripCurve, out.under_voltage_may_trip_curve);
 }
 
-template <> void convert(const datatypes::VoltageTrip& in, struct iso20_ac_der_sae_VoltageTripType& out) {
+template <> void convert(const datatypes::sae::VoltageTrip& in, struct iso20_ac_der_sae_VoltageTripType& out) {
     init_iso20_ac_der_sae_VoltageTripType(&out);
     convert(in.over_voltage_must_trip_curve, out.OverVoltageMustTripCurve);
     convert(in.under_voltage_must_trip_curve, out.UnderVoltageMustTripCurve);
@@ -306,14 +310,14 @@ template <> void convert(const datatypes::VoltageTrip& in, struct iso20_ac_der_s
     CPP2CB_CONVERT_IF_USED(in.under_voltage_may_trip_curve, out.UnderVoltageMayTripCurve);
 }
 
-template <> void convert(const struct iso20_ac_der_sae_FrequencyTripType& in, datatypes::FrequencyTrip& out) {
+template <> void convert(const struct iso20_ac_der_sae_FrequencyTripType& in, datatypes::sae::FrequencyTrip& out) {
     convert(in.OverFrequencyMustTripCurve, out.over_frequency_must_trip_curve);
     convert(in.UnderFrequencyMustTripCurve, out.under_frequency_must_trip_curve);
     CB2CPP_CONVERT_IF_USED(in.OverFrequencyMayTripCurve, out.over_frequency_may_trip_curve);
     CB2CPP_CONVERT_IF_USED(in.UnderFrequencyMayTripCurve, out.under_frequency_may_trip_curve);
 }
 
-template <> void convert(const datatypes::FrequencyTrip& in, struct iso20_ac_der_sae_FrequencyTripType& out) {
+template <> void convert(const datatypes::sae::FrequencyTrip& in, struct iso20_ac_der_sae_FrequencyTripType& out) {
     init_iso20_ac_der_sae_FrequencyTripType(&out);
     convert(in.over_frequency_must_trip_curve, out.OverFrequencyMustTripCurve);
     convert(in.under_frequency_must_trip_curve, out.UnderFrequencyMustTripCurve);
