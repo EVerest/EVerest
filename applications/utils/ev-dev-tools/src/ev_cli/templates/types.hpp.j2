@@ -83,6 +83,16 @@ inline std::ostream& operator<<(std::ostream& os, const types::{{ info.interface
     return os;
 }
 
+/// \brief Conversion from a given {{ enum.enum_type }} \p e to a given json object \p j
+inline void to_json(json& j, const {{ enum.enum_type }}& e) {
+    j = types::{{ info.interface_name }}::{{ enum.enum_type | snake_case }}_to_string_view(e);
+}
+
+/// \brief Conversion from a given json object \p j to a given {{ enum.enum_type }} \p e
+inline void from_json(const json& j, {{ enum.enum_type }}& e) {
+    e = types::{{ info.interface_name }}::string_to_{{ enum.enum_type | snake_case }}(j.get<std::string>());
+}
+
 {% for namespace in info.namespace|reverse %}
 } // namespace {{namespace}}
 {% endfor %}
