@@ -13,9 +13,16 @@ target_include_directories(${TEST_TARGET_NAME} PUBLIC
 target_sources(${TEST_TARGET_NAME}
     PRIVATE
     error_handling_tests.cpp
+    everest_device_model_storage_test.cpp
+    grid_support_conversions_test.cpp
+    grid_support_state_test.cpp
     ocpp_conversions_test.cpp
     transaction_handler_tests.cpp
+    ../conversions.cpp
+    ../device_model/definitions.cpp
+    ../device_model/everest_device_model_storage.cpp
     ../error_handling.cpp
+    ../grid_support/grid_support_state.cpp
     ../transaction_handler.cpp
 )
 
@@ -27,6 +34,7 @@ target_compile_definitions(${TEST_TARGET_NAME}
 target_link_libraries(${TEST_TARGET_NAME}
     PRIVATE
     everest::ocpp
+    everest::ocpp_conversions
     everest::framework
     nlohmann_json::nlohmann_json
     GTest::gtest_main

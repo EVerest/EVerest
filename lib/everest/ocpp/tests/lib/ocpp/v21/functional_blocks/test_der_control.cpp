@@ -6,6 +6,8 @@
 
 #include <ocpp/v21/functional_blocks/der_control.hpp>
 
+#include <ocpp/v21/messages/NotifyDERAlarm.hpp>
+
 #include <ocpp/common/call_types.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
@@ -2238,4 +2240,439 @@ TEST_F(DERControlTest, CheckScheduledControls_FR07_AppendsDisplacedIdOnActivatio
     EXPECT_CALL(mock_dispatcher, dispatch_call(_, _));
 
     der_control.check_scheduled_controls();
+}
+
+// =============================================================================
+// DER active-directives callback + notify_der_alarm hooks (provider notifications)
+// =============================================================================
+
+// Building the block emits the current active set once. With an empty DER_CONTROLS table the initial
+// emit carries an empty set, so the provider learns the standing state immediately at startup.
+TEST_F(DERControlTest, BuildingBlock_EmptyTable_EmitsEmptyActiveSetOnce) {
+    int emit_count = 0;
+    std::vector<SetDERControlRequest> captured;
+
+    // The construction-time emit recomputes from the whole table (no filters) and finds it empty.
+    EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(std::optional<bool>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt)))
+        .WillOnce(Return(std::vector<std::string>{}));
+
+    DERControl der_control(functional_block_context, [&](const std::vector<SetDERControlRequest>& active) {
+        emit_count++;
+        captured = active;
+    });
+
+    EXPECT_EQ(emit_count, 1);
+    EXPECT_TRUE(captured.empty());
+}
+
+// Building the block over a DER_CONTROLS table that already holds a standing (persisted-across-boot)
+// default control emits that control in the initial active set.
+TEST_F(DERControlTest, BuildingBlock_StandingControl_EmitsItInInitialActiveSet) {
+    std::vector<SetDERControlRequest> captured;
+
+    std::string standing_row =
+        R"({"isSuperseded":false,"priority":0,"request":{"controlId":"ctrl-standing","controlType":"FreqDroop","isDefault":true}})";
+    EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(std::optional<bool>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt)))
+        .WillOnce(Return(std::vector<std::string>{standing_row}));
+
+    DERControl der_control(functional_block_context,
+                           [&captured](const std::vector<SetDERControlRequest>& active) { captured = active; });
+
+    ASSERT_EQ(captured.size(), 1u);
+    EXPECT_EQ(captured[0].controlId.get(), "ctrl-standing");
+    EXPECT_EQ(captured[0].controlType, DERControlEnum::FreqDroop);
+}
+
+// republish_active_directives re-runs the existing emit path on demand: it recomputes the current
+// active set from the table and invokes the callback again, without any transition having occurred. The
+// provider uses this to learn the standing set when a newly-enabled EVSE joins an already-built block.
+TEST_F(DERControlTest, RepublishActiveDirectives_ReEmitsCurrentActiveSet) {
+    int emit_count = 0;
+    std::vector<SetDERControlRequest> captured;
+
+    // Construction-time emit over an empty table.
+    EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(std::optional<bool>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt)))
+        .WillOnce(Return(std::vector<std::string>{}));
+
+    DERControl der_control(functional_block_context, [&](const std::vector<SetDERControlRequest>& active) {
+        emit_count++;
+        captured = active;
+    });
+    ASSERT_EQ(emit_count, 1);
+
+    // On-demand re-emit: the table now holds a standing default; the callback fires again carrying it.
+    std::string standing_row =
+        R"({"isSuperseded":false,"priority":0,"request":{"controlId":"ctrl-standing","controlType":"FreqDroop","isDefault":true}})";
+    EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(std::optional<bool>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt)))
+        .WillOnce(Return(std::vector<std::string>{standing_row}));
+
+    der_control.republish_active_directives();
+
+    EXPECT_EQ(emit_count, 2);
+    ASSERT_EQ(captured.size(), 1u);
+    EXPECT_EQ(captured[0].controlId.get(), "ctrl-standing");
+}
+
+// Default Set, then a higher-priority same-type Set, then a Clear: the active-directives callback fires
+// each time carrying the effective set — first the default, then only the winner, then empty.
+TEST_F(DERControlTest, ActiveDirectivesEmittedOnTransitions) {
+    std::vector<SetDERControlRequest> captured;
+    DERControl der_control(functional_block_context,
+                           [&captured](const std::vector<SetDERControlRequest>& active) { captured = active; });
+
+    // CONTROL_JSON for a default FreqDroop control as it would be persisted.
+    auto default_row = [](const std::string& id, int32_t priority) {
+        json stored;
+        stored["isSuperseded"] = false;
+        stored["priority"] = priority;
+        json request;
+        request["isDefault"] = true;
+        request["controlId"] = id;
+        request["controlType"] = "FreqDroop";
+        json fd;
+        fd["priority"] = priority;
+        fd["overFreq"] = 61.0;
+        fd["underFreq"] = 59.0;
+        fd["overDroop"] = 5.0;
+        fd["underDroop"] = 5.0;
+        fd["responseTime"] = 3.0;
+        request["freqDroop"] = fd;
+        stored["request"] = request;
+        return stored.dump();
+    };
+
+    // --- Transition 1: accept a new default FreqDroop control (priority 5). ---
+    {
+        auto req = make_freq_droop_request("ctrl-default", true, 5);
+        auto msg = make_set_der_control_msg(req);
+
+        // Supersede analysis (same type / isDefault) — no existing controls.
+        EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(std::optional<bool>(true),
+                                                                              std::optional<std::string>("FreqDroop"),
+                                                                              std::optional<std::string>(std::nullopt)))
+            .WillOnce(Return(std::vector<std::string>{}));
+        EXPECT_CALL(database_handler_mock,
+                    insert_or_update_der_control("ctrl-default", true, "FreqDroop", false, 5, _, _, _));
+        // emit_active_directives queries the whole table (no filters) post-commit.
+        EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(std::optional<bool>(std::nullopt),
+                                                                              std::optional<std::string>(std::nullopt),
+                                                                              std::optional<std::string>(std::nullopt)))
+            .WillOnce(Return(std::vector<std::string>{default_row("ctrl-default", 5)}));
+        EXPECT_CALL(mock_dispatcher, dispatch_call_result(_));
+
+        der_control.handle_message(msg);
+
+        ASSERT_EQ(captured.size(), 1u);
+        EXPECT_EQ(captured[0].controlId.get(), "ctrl-default");
+        EXPECT_EQ(captured[0].controlType, DERControlEnum::FreqDroop);
+
+        ::testing::Mock::VerifyAndClearExpectations(&database_handler_mock);
+        ::testing::Mock::VerifyAndClearExpectations(&mock_dispatcher);
+    }
+
+    // --- Transition 2: a higher-priority (lower value) default supersedes it. ---
+    {
+        auto req = make_freq_droop_request("ctrl-winner", true, 0);
+        auto msg = make_set_der_control_msg(req);
+
+        // Supersede analysis returns the existing lower-priority default.
+        EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(std::optional<bool>(true),
+                                                                              std::optional<std::string>("FreqDroop"),
+                                                                              std::optional<std::string>(std::nullopt)))
+            .WillOnce(Return(std::vector<std::string>{default_row("ctrl-default", 5)}));
+        EXPECT_CALL(database_handler_mock, update_der_control_superseded("ctrl-default", true));
+        EXPECT_CALL(database_handler_mock,
+                    insert_or_update_der_control("ctrl-winner", true, "FreqDroop", false, 0, _, _, _));
+        // Post-commit the table holds the winner active and the old one superseded;
+        // emit must surface only the winner.
+        std::string superseded_old =
+            R"({"isSuperseded":true,"priority":5,"request":{"controlId":"ctrl-default","controlType":"FreqDroop","isDefault":true}})";
+        EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(std::optional<bool>(std::nullopt),
+                                                                              std::optional<std::string>(std::nullopt),
+                                                                              std::optional<std::string>(std::nullopt)))
+            .WillOnce(Return(std::vector<std::string>{default_row("ctrl-winner", 0), superseded_old}));
+        EXPECT_CALL(mock_dispatcher, dispatch_call_result(_));
+
+        der_control.handle_message(msg);
+
+        ASSERT_EQ(captured.size(), 1u);
+        EXPECT_EQ(captured[0].controlId.get(), "ctrl-winner");
+
+        ::testing::Mock::VerifyAndClearExpectations(&database_handler_mock);
+        ::testing::Mock::VerifyAndClearExpectations(&mock_dispatcher);
+    }
+
+    // --- Transition 3: clear the winner; active set becomes empty. ---
+    {
+        ClearDERControlRequest req;
+        req.isDefault = true;
+        req.controlId = "ctrl-winner";
+        auto msg = make_clear_der_control_msg(req);
+
+        EXPECT_CALL(database_handler_mock, delete_der_control_by_id_and_default("ctrl-winner", true))
+            .WillOnce(Return(true));
+        // Post-clear the table is empty.
+        EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(std::optional<bool>(std::nullopt),
+                                                                              std::optional<std::string>(std::nullopt),
+                                                                              std::optional<std::string>(std::nullopt)))
+            .WillOnce(Return(std::vector<std::string>{}));
+        EXPECT_CALL(mock_dispatcher, dispatch_call_result(_));
+
+        der_control.handle_message(msg);
+
+        EXPECT_TRUE(captured.empty());
+    }
+}
+
+// Timer path: when check_scheduled_controls deletes an expired control, the post-commit emit recomputes
+// from the now-empty table and the captured set is empty.
+TEST_F(DERControlTest, ActiveDirectives_ScheduledExpiry_EmitsEmptyActiveSet) {
+    bool emitted = false;
+    std::vector<SetDERControlRequest> captured;
+    DERControl der_control(functional_block_context, [&](const std::vector<SetDERControlRequest>& active) {
+        emitted = true;
+        captured = active;
+    });
+
+    EXPECT_CALL(database_handler_mock, get_der_control_pending_supersede_activations(_))
+        .WillOnce(Return(std::vector<DatabaseHandlerInterface::PendingSupersedeActivation>{}));
+    EXPECT_CALL(database_handler_mock, get_der_controls_needing_start_notify(_))
+        .WillOnce(Return(std::vector<std::string>{}));
+    // Scheduled scan returns one expired control; the post-emit recompute (no
+    // filters) sees the now-empty table.
+    EXPECT_CALL(database_handler_mock,
+                get_der_controls_matching_criteria(std::optional<bool>(false), std::optional<std::string>(std::nullopt),
+                                                   std::optional<std::string>(std::nullopt)))
+        .WillOnce(Return(std::vector<std::string>{make_expired_scheduled_control_json("ctrl-expired")}));
+    EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(std::optional<bool>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt)))
+        .WillOnce(Return(std::vector<std::string>{}));
+    EXPECT_CALL(database_handler_mock, delete_der_control("ctrl-expired"));
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)); // NotifyDERStartStop(started=false)
+
+    der_control.check_scheduled_controls();
+
+    EXPECT_TRUE(emitted);
+    EXPECT_TRUE(captured.empty());
+}
+
+// Timer path: when a pending supersede's startTime arrives, check_scheduled_controls flips the displaced
+// control and the post-commit emit surfaces only the winner.
+TEST_F(DERControlTest, ActiveDirectives_DeferredSupersedeActivation_EmitsWinner) {
+    std::vector<SetDERControlRequest> captured;
+    DERControl der_control(functional_block_context,
+                           [&captured](const std::vector<SetDERControlRequest>& active) { captured = active; });
+
+    DatabaseHandlerInterface::PendingSupersedeActivation activation;
+    activation.new_id = "ctrl-winner";
+    activation.existing_id = "ctrl-displaced";
+    EXPECT_CALL(database_handler_mock, get_der_control_pending_supersede_activations(_))
+        .WillOnce(Return(std::vector<DatabaseHandlerInterface::PendingSupersedeActivation>{activation}));
+    EXPECT_CALL(database_handler_mock, get_der_controls_needing_start_notify(_))
+        .WillOnce(Return(std::vector<std::string>{}));
+
+    // CONTROL_JSON for the just-activated winner: a default FreqDroop so it is
+    // unconditionally effective in compute_active_directives.
+    std::string winner_row =
+        R"({"isSuperseded":false,"priority":0,"request":{"controlId":"ctrl-winner","controlType":"FreqDroop","isDefault":true}})";
+    std::string displaced_row =
+        R"({"isSuperseded":true,"priority":5,"request":{"controlId":"ctrl-displaced","controlType":"FreqDroop","isDefault":true}})";
+
+    // Scheduled scan (isDefault=false) finds nothing to expire; the post-emit
+    // recompute (no filters) sees the winner active and the displaced one
+    // superseded.
+    EXPECT_CALL(database_handler_mock,
+                get_der_controls_matching_criteria(std::optional<bool>(false), std::optional<std::string>(std::nullopt),
+                                                   std::optional<std::string>(std::nullopt)))
+        .WillOnce(Return(std::vector<std::string>{}));
+    EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(std::optional<bool>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt)))
+        .WillOnce(Return(std::vector<std::string>{winner_row, displaced_row}));
+
+    EXPECT_CALL(database_handler_mock, update_der_control_superseded("ctrl-displaced", true));
+    EXPECT_CALL(database_handler_mock, clear_der_control_pending_supersede("ctrl-winner"));
+    EXPECT_CALL(database_handler_mock, append_der_control_displaced_id("ctrl-winner", "ctrl-displaced"));
+    EXPECT_CALL(database_handler_mock, mark_der_control_started_notified("ctrl-winner"));
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)); // NotifyDERStartStop(started=true)
+
+    der_control.check_scheduled_controls();
+
+    ASSERT_EQ(captured.size(), 1u);
+    EXPECT_EQ(captured[0].controlId.get(), "ctrl-winner");
+}
+
+// compute_active_directives predicate (exercised via a synchronous Clear's post-commit emit): of four
+// rows — future-start, expired, superseded, current default — only the current default stays effective.
+TEST_F(DERControlTest, ComputeActiveDirectives_FiltersByEffectiveness) {
+    std::vector<SetDERControlRequest> captured;
+    DERControl der_control(functional_block_context,
+                           [&captured](const std::vector<SetDERControlRequest>& active) { captured = active; });
+
+    // Future-start: startTime far ahead → not yet effective.
+    json future;
+    future["isSuperseded"] = false;
+    future["priority"] = 1;
+    future["startTime"] = "2999-01-01T00:00:00Z";
+    future["duration"] = 3600.0F;
+    future["request"] = {{"controlId", "ctrl-future"}, {"controlType", "FreqDroop"}, {"isDefault", false}};
+
+    // Expired: startTime well in the past + short duration → already elapsed.
+    json expired;
+    expired["isSuperseded"] = false;
+    expired["priority"] = 2;
+    expired["startTime"] = "2020-01-01T00:00:00Z";
+    expired["duration"] = 60.0F;
+    expired["request"] = {{"controlId", "ctrl-expired"}, {"controlType", "FreqDroop"}, {"isDefault", false}};
+
+    // Superseded: flagged out of play.
+    json superseded;
+    superseded["isSuperseded"] = true;
+    superseded["priority"] = 3;
+    superseded["request"] = {{"controlId", "ctrl-superseded"}, {"controlType", "FreqDroop"}, {"isDefault", true}};
+
+    // Current default: no startTime → unconditionally effective.
+    json current;
+    current["isSuperseded"] = false;
+    current["priority"] = 0;
+    current["request"] = {{"controlId", "ctrl-current"}, {"controlType", "FreqDroop"}, {"isDefault", true}};
+
+    ClearDERControlRequest req;
+    req.isDefault = false;
+    req.controlId = "ctrl-expired";
+    auto msg = make_clear_der_control_msg(req);
+
+    EXPECT_CALL(database_handler_mock, delete_der_control_by_id_and_default("ctrl-expired", false))
+        .WillOnce(Return(true));
+    // Post-commit recompute observes all four rows.
+    EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(std::optional<bool>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt)))
+        .WillOnce(Return(std::vector<std::string>{future.dump(), expired.dump(), superseded.dump(), current.dump()}));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_));
+
+    der_control.handle_message(msg);
+
+    ASSERT_EQ(captured.size(), 1u);
+    EXPECT_EQ(captured[0].controlId.get(), "ctrl-current");
+}
+
+// A DB read failure on the emit path is a database fault, not a callback fault: it must neither invoke
+// the provider callback nor propagate out of the timer-callback path (else io_context.run() → terminate).
+TEST_F(DERControlTest, ActiveDirectives_DbReadThrowsOnEmit_DoesNotInvokeCallback) {
+    bool callback_invoked = false;
+    DERControl der_control(functional_block_context,
+                           [&callback_invoked](const std::vector<SetDERControlRequest>&) { callback_invoked = true; });
+
+    // Disregard the construction-time initial emit; this test is about the timer-path emit.
+    callback_invoked = false;
+
+    EXPECT_CALL(database_handler_mock, get_der_control_pending_supersede_activations(_))
+        .WillOnce(Return(std::vector<DatabaseHandlerInterface::PendingSupersedeActivation>{}));
+    EXPECT_CALL(database_handler_mock, get_der_controls_needing_start_notify(_))
+        .WillOnce(Return(std::vector<std::string>{}));
+    // Scheduled scan finds one expired control → a transition occurs → emit runs.
+    EXPECT_CALL(database_handler_mock,
+                get_der_controls_matching_criteria(std::optional<bool>(false), std::optional<std::string>(std::nullopt),
+                                                   std::optional<std::string>(std::nullopt)))
+        .WillOnce(Return(std::vector<std::string>{make_expired_scheduled_control_json("ctrl-expired")}));
+    // The post-commit recompute read throws a DB fault.
+    EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(std::optional<bool>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt),
+                                                                          std::optional<std::string>(std::nullopt)))
+        .WillOnce(::testing::Throw(everest::db::QueryExecutionException("simulated DB read failure")));
+    EXPECT_CALL(database_handler_mock, delete_der_control("ctrl-expired"));
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)); // NotifyDERStartStop(started=false)
+
+    EXPECT_NO_THROW(der_control.check_scheduled_controls());
+
+    EXPECT_FALSE(callback_invoked) << "DB read failure must not be surfaced to the provider callback";
+}
+
+// notify_der_alarm dispatches a Call<NotifyDERAlarmRequest> via the message dispatcher.
+TEST_F(DERControlTest, NotifyDerAlarm_DispatchesNotifyDERAlarmRequest) {
+    DERControl der_control(functional_block_context);
+
+    NotifyDERAlarmRequest req;
+    req.controlType = DERControlEnum::FreqDroop;
+    req.timestamp = ocpp::DateTime("2020-01-01T00:00:00Z");
+    req.gridEventFault = GridEventFaultEnum::OverFrequency;
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, false)).WillOnce(Invoke([](const json& call, bool /*t*/) {
+        auto action = call[ocpp::CALL_ACTION].get<std::string>();
+        EXPECT_EQ(action, "NotifyDERAlarm");
+        auto payload = call[ocpp::CALL_PAYLOAD];
+        EXPECT_EQ(payload["controlType"], "FreqDroop");
+        EXPECT_EQ(payload["gridEventFault"], "OverFrequency");
+    }));
+
+    der_control.notify_der_alarm(req);
+}
+
+// =============================================================================
+// Provider-callback fault isolation: a throwing provider callback on the timer
+// thread must not escape to io_context.run() → std::terminate().
+// =============================================================================
+
+// A throwing active-directives callback must not propagate out of check_scheduled_controls.
+TEST_F(DERControlTest, ActiveDirectives_ThrowingOnTimerPath_DoesNotTerminate) {
+    DERControl der_control(functional_block_context, [](const std::vector<SetDERControlRequest>& /*active*/) {
+        throw std::runtime_error("provider blew up");
+    });
+
+    EXPECT_CALL(database_handler_mock, get_der_control_pending_supersede_activations(_))
+        .WillOnce(Return(std::vector<DatabaseHandlerInterface::PendingSupersedeActivation>{}));
+    EXPECT_CALL(database_handler_mock, get_der_controls_needing_start_notify(_))
+        .WillOnce(Return(std::vector<std::string>{}));
+    // One expired control drives a transition, so emit_active_directives runs.
+    EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(_, _, _))
+        .WillRepeatedly(Return(std::vector<std::string>{make_expired_scheduled_control_json("ctrl-expired")}));
+    EXPECT_CALL(database_handler_mock, delete_der_control("ctrl-expired"));
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)); // NotifyDERStartStop(started=false)
+
+    EXPECT_NO_THROW(der_control.check_scheduled_controls());
+}
+
+// No callback registered: ClearDERControl by id does zero extra reads (no get_der_control, no recompute).
+TEST_F(DERControlTest, NoCallback_ClearById_DoesNotReadForReconstruction) {
+    DERControl der_control(functional_block_context); // no callback
+
+    ClearDERControlRequest req;
+    req.isDefault = false;
+    req.controlId = "ctrl-x";
+    auto msg = make_clear_der_control_msg(req);
+
+    EXPECT_CALL(database_handler_mock, get_der_control(_)).Times(0);
+    EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(_, _, _)).Times(0);
+    EXPECT_CALL(database_handler_mock, delete_der_control_by_id_and_default("ctrl-x", false)).WillOnce(Return(true));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_));
+
+    der_control.handle_message(msg);
+}
+
+// No callback registered: ClearDERControl by criteria does not recompute the active set.
+TEST_F(DERControlTest, NoCallback_ClearByCriteria_DoesNotPreReadForReconstruction) {
+    DERControl der_control(functional_block_context); // no callback
+
+    ClearDERControlRequest req;
+    req.isDefault = false;
+    req.controlType = DERControlEnum::FreqDroop;
+    auto msg = make_clear_der_control_msg(req);
+
+    EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(_, _, _)).Times(0);
+    EXPECT_CALL(database_handler_mock,
+                delete_der_controls_matching_criteria(false, std::optional<std::string>("FreqDroop")))
+        .WillOnce(Return(1));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_));
+
+    der_control.handle_message(msg);
 }

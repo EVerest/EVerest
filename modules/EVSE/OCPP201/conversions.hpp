@@ -3,6 +3,10 @@
 #ifndef OCPP_V2_CONVERSIONS_HPP
 #define OCPP_V2_CONVERSIONS_HPP
 
+#include <functional>
+#include <string>
+#include <vector>
+
 #include "ocpp/v2/messages/ChangeAvailability.hpp"
 #include "ocpp/v2/ocpp_enums.hpp"
 #include "ocpp/v2/types.hpp"
@@ -26,6 +30,8 @@
 #include <ocpp/v2/messages/SetDisplayMessage.hpp>
 #include <ocpp/v2/messages/TransactionEvent.hpp>
 #include <ocpp/v2/messages/UpdateFirmware.hpp>
+#include <ocpp/v21/messages/NotifyDERAlarm.hpp>
+#include <ocpp/v21/messages/SetDERControl.hpp>
 
 namespace module {
 namespace conversions {
@@ -300,6 +306,31 @@ ocpp::v2::ChangeAvailabilityRequest
 to_ocpp_change_availability_request(const types::ocpp::ChangeAvailabilityRequest& request);
 types::ocpp::ChangeAvailabilityResponse
 to_everest_change_availability_response(const ocpp::v2::ChangeAvailabilityResponse& response);
+
+/// \brief Converts a given ocpp::v2::DERControlEnum \p control_type to a types::grid_support::DirectiveType.
+/// \details Total over the 22 OCPP DERControlEnum values; the 6 ISO-only DirectiveType values have no OCPP producer.
+types::grid_support::DirectiveType to_grid_support_directive_type(const ocpp::v2::DERControlEnum control_type);
+
+/// \brief Converts a given types::grid_support::GridEventFault \p fault to an ocpp::v2::GridEventFaultEnum.
+ocpp::v2::GridEventFaultEnum to_ocpp_grid_event_fault(const types::grid_support::GridEventFault fault);
+
+/// \brief Converts a given ocpp::v21::SetDERControlRequest \p request to a types::grid_support::Directive.
+/// \param source Origin of the directive (e.g. the producing protocol).
+/// \param received_at Time the directive was received (date-time string).
+types::grid_support::Directive to_grid_support_directive(const ocpp::v21::SetDERControlRequest& request,
+                                                         const std::string& source, const std::string& received_at);
+
+/// \brief Translates each control in \p controls via \p translate, skipping (and logging) any whose
+/// translation throws std::out_of_range (an unmapped DERControlEnum), so one bad control never discards
+/// the rest of the batch. Surviving controls are returned in order.
+std::vector<types::grid_support::Directive> translate_active_controls(
+    const std::vector<ocpp::v21::SetDERControlRequest>& controls,
+    const std::function<types::grid_support::Directive(const ocpp::v21::SetDERControlRequest&)>& translate);
+
+/// \brief Converts a given types::grid_support::GridAlarm \p alarm to an ocpp::v21::NotifyDERAlarmRequest.
+/// \warning Throws std::invalid_argument when alarm.directive_type is unset (OCPP mandates controlType) or carries an
+///          ISO-only value, and when alarm.timestamp cannot be parsed as an RFC3339 date-time.
+ocpp::v21::NotifyDERAlarmRequest to_ocpp_notify_der_alarm(const types::grid_support::GridAlarm& alarm);
 
 } // namespace conversions
 } // namespace module

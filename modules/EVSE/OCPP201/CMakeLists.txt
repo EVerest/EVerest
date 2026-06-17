@@ -45,6 +45,7 @@ target_sources(${MODULE_NAME}
         "conversions.cpp"
         "error_handling.cpp"
         "transaction_handler.cpp"
+        "grid_support/grid_support_state.cpp"
         "device_model/everest_device_model_storage.cpp"
         "device_model/composed_device_model_storage.cpp"
         "device_model/definitions.cpp"

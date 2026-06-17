@@ -8,13 +8,37 @@
 #include <generated/interfaces/evse_manager/Interface.hpp>
 #include <generated/interfaces/iso15118_extensions/Interface.hpp>
 #include <generated/types/evse_board_support.hpp>
+#include <generated/types/grid_support.hpp>
+#include <generated/types/iso15118.hpp>
 #include <generated/types/powermeter.hpp>
 
 #include <ocpp/v2/device_model_storage_interface.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
+#include <ocpp/v2/init_device_model_db.hpp>
 #include <utils/config_service.hpp>
 
 namespace module::device_model {
+
+/// \brief Builds the DER controller component config for a single EVSE from its supported energy transfer modes.
+///
+/// DER-capable iff it advertises a DER/bidirectional mode: AC_DER/AC_BPT_DER for AC, DC_BPT/DC_ACDP_BPT
+/// for DC. AC vs DC is chosen from the presence of any DC_* mode. The component is provisioned disabled
+/// (Available "false", ReadWrite) with empty ModesSupported, for the consumer to enable at runtime.
+///
+/// \returns The (ComponentKey, variables) pair for a DCDERCtrlr/ACDERCtrlr component, or std::nullopt if
+///          the EVSE is not DER-capable.
+std::optional<std::pair<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>>
+build_der_ctrlr_component_config(
+    int32_t evse_id, const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes);
+
+/// \brief Builds the device-model SetVariableData vector that enables and configures the DER controller for a
+///        given DER \p capability on EVSE \p evse_id.
+/// \details DC path (capability.dc set): DCDERCtrlr Available=true, ModesSupported, plus best-effort
+///          nameplate scalars. AC path: ACDERCtrlr Available=true and ModesSupported only (no ACDERCtrlr
+///          nameplate variables exist).
+std::vector<ocpp::v2::SetVariableData> to_der_ctrlr_set_variables(int32_t evse_id,
+                                                                  const types::grid_support::DERCapability& capability);
+
 class EverestDeviceModelStorage : public ocpp::v2::DeviceModelStorageInterface {
 public:
     EverestDeviceModelStorage(
