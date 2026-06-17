@@ -26,8 +26,8 @@ TEST_F(GenericOcppProvidesTester, callSetExternalLimits) {
     using ocpp::v2::EnhancedCompositeSchedule;
 
     std::vector<json> received;
-    interfaces.subscribe_var("external_energy_limits", "call_set_external_limits",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("external_energy_limits", "call_set_external_limits",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     std::vector<EnhancedCompositeSchedule> composite_schedules;
     EnhancedCompositeSchedule schedule;
@@ -68,7 +68,7 @@ TEST_F(GenericOcppProvidesTester, callSetExternalLimits) {
 
     composite_schedules.push_back(schedule);
 
-    ocpp.set_external_limits(composite_schedules);
+    ocpp->set_external_limits(composite_schedules);
 
     ASSERT_EQ(received.size(), 1);
 

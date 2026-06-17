@@ -5,7 +5,9 @@
 #include "generic_chargepoint_interface.hpp"
 #include "ocpp/v2/ctrlr_component_variables.hpp"
 #include "ocpp/v2/ocpp_enums.hpp"
+#include "ocpp/v2/ocpp_types.hpp"
 #include <conversions.hpp>
+#include <device_model/composed_device_model_storage.hpp>
 
 namespace {
 
@@ -201,16 +203,30 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
 
 void ChargePointV2::init(init_args_t& args) {
 
-    // TODO(james-ctc): how to share the database
+    // initialise libocpp device model
+    auto libocpp_device_model_storage = std::make_shared<ocpp::v2::DeviceModelStorageSqlite>(
+        args.v2_device_model_database_path, args.v2_device_model_database_migration_path,
+        args.v2_device_model_config_path);
+
+    // initialise composed device model, this will be provided to the ChargePoint constructor
+    auto composed_device_model_storage = std::make_unique<module::device_model::ComposedDeviceModelStorage>();
+
+    // register both device model storages
+    // note - this processing causes a slight delay, scope for performance tuning
+    composed_device_model_storage->register_device_model_storage("OCPP", std::move(libocpp_device_model_storage));
+    composed_device_model_storage->register_device_model_storage("EVEREST", args.everest_device_model);
+
+    const auto ocpp_share_path = args.share_path / "OCPP201";
+    const auto sql_init_path = ocpp_share_path / SQL_CORE_MIGRATIONS;
 
     // clang-format off
     m_charge_point =
         std::make_unique<ocpp::v2::ChargePoint>(
             args.evse_connector_structure,
-            std::move(args.device_model_storage_interface), // move is problematic
-            args.ocpp_share_path,
-            args.core_database_path,
-            args.sql_init_path,
+            std::move(composed_device_model_storage),
+            ocpp_share_path,
+            args.v2_core_database_path,
+            sql_init_path,
             args.message_log_path,
             m_evse_security,
             configure_callbacks()
@@ -421,12 +437,33 @@ ChargePointV2::set_variables(const std::vector<ocpp::v2::SetVariableData>& set_v
     return m_charge_point->set_variables(set_variable_data_vector, source);
 }
 
-ocpp::v2::AuthorizeResponse
-ChargePointV2::validate_token(const ocpp::v2::IdToken& id_token,
-                              const std::optional<ocpp::CiString<10000>>& certificate,
-                              const std::optional<std::vector<ocpp::v2::OCSPRequestData>>& ocsp_request_data) {
+ocpp::v2::AuthorizeResponse ChargePointV2::validate_token(const types::authorization::ProvidedIdToken& provided_token) {
     check_configured("validate_token");
-    return m_charge_point->validate_token(id_token, certificate, ocsp_request_data);
+    using namespace module::conversions;
+
+    ocpp::v2::AuthorizeResponse validation_result;
+
+    try {
+        const auto id_token = to_ocpp_id_token(provided_token.id_token);
+        std::optional<ocpp::CiString<10000>> certificate_opt;
+        if (provided_token.certificate.has_value()) {
+            certificate_opt.emplace(provided_token.certificate.value());
+        }
+        std::optional<std::vector<ocpp::v2::OCSPRequestData>> ocsp_request_data_opt;
+        if (provided_token.iso15118CertificateHashData.has_value()) {
+            ocsp_request_data_opt =
+                to_ocpp_ocsp_request_data_vector(provided_token.iso15118CertificateHashData.value());
+        }
+        validation_result = m_charge_point->validate_token(id_token, certificate_opt, ocsp_request_data_opt);
+    } catch (const ocpp::StringConversionException& e) {
+        EVLOG_warning << "Error converting id token to validate: " << e.what();
+        validation_result.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Unknown;
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Unknown error during validation of id token: " << e.what();
+        validation_result.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Unknown;
+    }
+
+    return validation_result;
 }
 
 } // namespace ocpp_multi

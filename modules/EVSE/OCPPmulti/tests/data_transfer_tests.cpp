@@ -29,7 +29,7 @@ TEST_F(GenericOcppProvidesTester, dataTransferAccepted) {
     set_return.data = R"({"emergencyACLimit": 32})"_json;
     EXPECT_CALL(chargepoint, data_transfer_req(expected_request)).WillOnce(Return(set_return));
 
-    const auto result = ocpp.handle_data_transfer(request);
+    const auto result = ocpp->handle_data_transfer(request);
     EXPECT_EQ(result.status, DataTransferStatus::Accepted);
     ASSERT_TRUE(result.data.has_value());
     EXPECT_EQ(result.data.value(), "{\"emergencyACLimit\":32}");
@@ -47,7 +47,7 @@ TEST_F(GenericOcppProvidesTester, dataTransferRejected) {
     set_return.data = R"({"emergencyACLimit": 32})"_json;
     EXPECT_CALL(chargepoint, data_transfer_req(expected_request)).WillOnce(Return(set_return));
 
-    const auto result = ocpp.handle_data_transfer(request);
+    const auto result = ocpp->handle_data_transfer(request);
     EXPECT_EQ(result.status, DataTransferStatus::Rejected);
     ASSERT_TRUE(result.data.has_value());
     EXPECT_EQ(result.data.value(), "{\"emergencyACLimit\":32}");
@@ -62,7 +62,7 @@ TEST_F(GenericOcppProvidesTester, dataTransferOfflineNoResponse) {
     expected_request.data = "{}"_json;
     EXPECT_CALL(chargepoint, data_transfer_req(expected_request)).WillOnce(Return(std::nullopt));
 
-    const auto result = ocpp.handle_data_transfer(request);
+    const auto result = ocpp->handle_data_transfer(request);
     EXPECT_EQ(result.status, DataTransferStatus::Offline);
     EXPECT_FALSE(result.data.has_value());
 }

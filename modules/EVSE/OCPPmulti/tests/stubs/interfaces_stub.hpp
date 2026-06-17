@@ -260,7 +260,7 @@ class ModuleInterfaces {
 private:
     ModuleAdapter m_adapter;
     Requirement m_requirement{"ocpp", 0};
-    ModuleInfo m_module_info{"name", {/*authors*/}, "Apache-2.0", "ocpp", {"./etc", "./libexec", "./share"},
+    ModuleInfo m_module_info{"name", {/*authors*/}, "Apache-2.0", "ocpp", {"./etc", "./libexec", "./OCPP201"},
                              false,  false,         std::nullopt};
 
 public:

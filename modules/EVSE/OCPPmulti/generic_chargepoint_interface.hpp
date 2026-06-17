@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <device_model/everest_device_model_storage.hpp>
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
 #include <generated/interfaces/evse_manager/Interface.hpp>
 #include <generated/interfaces/iso15118_extensions/Interface.hpp>
@@ -27,6 +28,8 @@
 #include <string>
 
 namespace ocpp_multi {
+
+constexpr const auto SQL_CORE_MIGRATIONS = "core_migrations";
 
 struct GenericChargePointCallbacks {
     virtual ~GenericChargePointCallbacks() = default;
@@ -129,6 +132,13 @@ struct GenericChargePointInterface {
         using std::runtime_error::runtime_error;
     };
 
+    enum class modes_t : std::uint8_t {
+        ocpp_1_6_only,
+        ocpp_2_only,
+        prefer_ocpp_1_6,
+        prefer_ocpp_2,
+    };
+
     // ------------------------------------------------------------------------
     // GenericChargePointConfiguration
     virtual std::optional<bool> get_central_contract_validation_allowed() = 0;
@@ -140,21 +150,28 @@ struct GenericChargePointInterface {
     virtual std::optional<std::string> get_tx_start_point() = 0;
     virtual std::optional<std::string> get_tx_stop_point() = 0;
 
+    // share_path is the shared directory without the module name
+    // e.g. /usr/share/everest/modules
+    // the implementation can then add /OCPP or /OCPP201 as required
+
     struct init_args_t {
-        const std::string& ocpp_share_path;
-        const std::string& core_database_path;
-        const std::string& sql_init_path;
-        const std::string& message_log_path;
-        const std::string& v16_chargepoint_config_path;
-        const std::string& v16_user_config_path;
-        std::map<std::int32_t, std::int32_t>&& evse_connector_structure;
-        std::unique_ptr<ocpp::v2::DeviceModelStorageInterface>&& device_model_storage_interface;
+        fs::path message_log_path;
+        fs::path share_path;
+        fs::path v16_chargepoint_config_path;
+        fs::path v16_user_config_path;
+        fs::path v2_core_database_path;
+        fs::path v2_device_model_config_path;
+        fs::path v2_device_model_database_migration_path;
+        fs::path v2_device_model_database_path;
+        std::map<std::int32_t, std::int32_t> evse_connector_structure;
+        std::shared_ptr<module::device_model::EverestDeviceModelStorage> everest_device_model;
     };
 
     using listener_t = std::function<void(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
                                           const std::string& value_current)>;
 
     virtual void init(init_args_t& args) = 0;
+    virtual void set_mode(modes_t new_mode) = 0;
 
     virtual void connect_websocket() = 0;
     virtual void disconnect_websocket() = 0;
@@ -220,9 +237,7 @@ struct GenericChargePointInterface {
     set_variables(const std::vector<ocpp::v2::SetVariableData>& set_variable_data_vector,
                   const std::string& source) = 0;
 
-    virtual ocpp::v2::AuthorizeResponse
-    validate_token(const ocpp::v2::IdToken& id_token, const std::optional<ocpp::CiString<10000>>& certificate,
-                   const std::optional<std::vector<ocpp::v2::OCSPRequestData>>& ocsp_request_data) = 0;
+    virtual ocpp::v2::AuthorizeResponse validate_token(const types::authorization::ProvidedIdToken& provided_token) = 0;
 };
 
 } // namespace ocpp_multi

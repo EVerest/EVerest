@@ -28,8 +28,8 @@ TEST_F(GenericOcppRequiresTester, callReserveNow) {
     using ocpp::v2::ReserveNowStatusEnum;
 
     std::vector<json> received;
-    interfaces.subscribe_var("reservation", "call_reserve_now",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("reservation", "call_reserve_now",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     IdToken token;
     token.idToken = "12345678";
@@ -49,14 +49,14 @@ TEST_F(GenericOcppRequiresTester, callReserveNow) {
     // std::optional<IdToken> groupIdToken;
     // std::optional<CustomData> customData;
 
-    interfaces.add_cmd_result(R"("Occupied")"_json);
+    interfaces->add_cmd_result(R"("Occupied")"_json);
     // - Accepted
     // - Faulted
     // - Occupied
     // - Rejected
     // - Unavailable
 
-    const auto result = ocpp.cb_reserve_now(request);
+    const auto result = ocpp->cb_reserve_now(request);
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(
@@ -70,12 +70,12 @@ TEST_F(GenericOcppRequiresTester, callCancelReservation) {
     // call_cancel_reservation() used in cb_cancel_reservation()
 
     std::vector<json> received;
-    interfaces.subscribe_var("reservation", "call_cancel_reservation",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("reservation", "call_cancel_reservation",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    interfaces.add_cmd_result(R"(true)"_json);
+    interfaces->add_cmd_result(R"(true)"_json);
 
-    const auto result = ocpp.cb_cancel_reservation(1845);
+    const auto result = ocpp->cb_cancel_reservation(1845);
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(received[0], R"({"reservation_id":1845})"_json);
@@ -89,16 +89,16 @@ TEST_F(GenericOcppRequiresTester, callExistsReservation) {
     using ocpp::ReservationCheckStatus;
 
     std::vector<json> received;
-    interfaces.subscribe_var("reservation", "call_exists_reservation",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("reservation", "call_exists_reservation",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    interfaces.add_cmd_result(R"("ReservedForToken")"_json);
+    interfaces->add_cmd_result(R"("ReservedForToken")"_json);
     // NotReserved
     // ReservedForToken
     // ReservedForOtherToken
     // ReservedForOtherTokenAndHasParentToken
 
-    const auto result = ocpp.cb_is_reservation_for_token(1, "12345678", std::nullopt);
+    const auto result = ocpp->cb_is_reservation_for_token(1, "12345678", std::nullopt);
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(received[0], R"({"request":{"evse_id":1,"id_token":"12345678"}})"_json);
@@ -120,7 +120,7 @@ TEST_F(GenericOcppRequiresTester, subscribeSupportedEnergyTransferModes) {
     EXPECT_CALL(chargepoint, on_reservation_status(status.reservation_id, ReservationUpdateStatusEnum::Expired))
         .Times(1);
 
-    interfaces.publish(0, "reservation_update", status);
+    interfaces->publish(0, "reservation_update", status);
 }
 
 } // namespace

@@ -34,8 +34,8 @@ TEST_F(GenericOcppRequiresTester, callSetGetCertificateResponse) {
     using types::iso15118::CertificateActionEnum;
 
     std::vector<json> received;
-    interfaces.subscribe_var("iso15118_extensions", "call_set_get_certificate_response",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("iso15118_extensions", "call_set_get_certificate_response",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     types::iso15118::RequestExiStreamSchema certificate_request;
     certificate_request.exi_request = "1234567890";
@@ -51,7 +51,7 @@ TEST_F(GenericOcppRequiresTester, callSetGetCertificateResponse) {
 
     EXPECT_CALL(chargepoint, on_get_15118_ev_certificate_request(0, _)).WillOnce(Return(response));
 
-    ocpp.cb_iso15118_certificate_request(0, certificate_request);
+    ocpp->cb_iso15118_certificate_request(0, certificate_request);
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(

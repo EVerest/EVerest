@@ -26,13 +26,13 @@ TEST_F(GenericOcppProvidesTester, publishProvidedToken) {
     token.prevalidated = true;
 
     std::vector<json> received;
-    interfaces.subscribe_var("auth_provider", "provided_token",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("auth_provider", "provided_token",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp.cb_provide_token(token);
+    ocpp->cb_provide_token(token);
     token.request_id = 4321;
     token.prevalidated = false;
-    ocpp.cb_provide_token(token);
+    ocpp->cb_provide_token(token);
 
     ASSERT_EQ(received.size(), 2);
     EXPECT_EQ(

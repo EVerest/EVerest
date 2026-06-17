@@ -19,8 +19,8 @@ TEST_F(GenericOcppRequiresTester, subscribeGetChargerInformation) {
     // OCPP ready()
 
     std::vector<json> received;
-    interfaces.subscribe_var("auth", "call_set_connection_timeout",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("auth", "call_set_connection_timeout",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     // TODO(james-ctc): write test once get_charger_information() is used
 }

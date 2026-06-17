@@ -45,6 +45,7 @@ struct ChargePointStub : public ocpp_multi::GenericChargePointInterface {
     void load_store(const std::string_view& file);
 
     MOCK_METHOD(void, init, (init_args_t & args), (override));
+    MOCK_METHOD(void, set_mode, (modes_t args), (override));
 
     MOCK_METHOD(void, connect_websocket, (), (override));
     MOCK_METHOD(void, disconnect_websocket, (), (override));
@@ -142,9 +143,7 @@ struct ChargePointStub : public ocpp_multi::GenericChargePointInterface {
                 (override));
 
     MOCK_METHOD(ocpp::v2::AuthorizeResponse, validate_token,
-                (const ocpp::v2::IdToken& id_token, const std::optional<ocpp::CiString<10000>>& certificate,
-                 const std::optional<std::vector<ocpp::v2::OCSPRequestData>>& ocsp_request_data),
-                (override));
+                (const types::authorization::ProvidedIdToken& provided_token), (override));
 };
 
 } // namespace stubs

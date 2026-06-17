@@ -26,8 +26,8 @@ TEST_F(GenericOcppRequiresTester, callSetConnectionTimeout) {
     using ocpp::v2::AttributeEnum;
 
     std::vector<json> received;
-    interfaces.subscribe_var("auth", "call_set_connection_timeout",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("auth", "call_set_connection_timeout",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     ocpp::v2::SetVariableData set_data{"800", {"TxCtrlr"}, {"EVConnectionTimeOut"}};
     // CiString<2500> attributeValue;
@@ -36,8 +36,8 @@ TEST_F(GenericOcppRequiresTester, callSetConnectionTimeout) {
     // std::optional<AttributeEnum> attributeType;
     // std::optional<CustomData> customData;
 
-    ocpp.ready_module_configuration();
-    ocpp.cb_variable_set(set_data);
+    ocpp->ready_module_configuration();
+    ocpp->cb_variable_set(set_data);
 
     ASSERT_EQ(received.size(), 2);
     ASSERT_EQ(chargepoint.get_int32(set_data.component, set_data.variable, AttributeEnum::Actual), 60);
@@ -53,8 +53,8 @@ TEST_F(GenericOcppRequiresTester, callSetMasterPassGroupId) {
     using ocpp::v2::AttributeEnum;
 
     std::vector<json> received;
-    interfaces.subscribe_var("auth", "call_set_master_pass_group_id",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("auth", "call_set_master_pass_group_id",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     ocpp::v2::SetVariableData set_data{"Students", {"AuthCtrlr"}, {"MasterPassGroupId"}};
     // CiString<2500> attributeValue;
@@ -63,8 +63,8 @@ TEST_F(GenericOcppRequiresTester, callSetMasterPassGroupId) {
     // std::optional<AttributeEnum> attributeType;
     // std::optional<CustomData> customData;
 
-    ocpp.ready_module_configuration();
-    ocpp.cb_variable_set(set_data);
+    ocpp->ready_module_configuration();
+    ocpp->cb_variable_set(set_data);
 
     ASSERT_EQ(received.size(), 2);
     ASSERT_EQ(chargepoint.get_string(set_data.component, set_data.variable, AttributeEnum::Actual), "Managers");

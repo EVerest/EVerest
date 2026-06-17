@@ -14,7 +14,9 @@
 #include "ocpp/v2/ocpp_enums.hpp"
 #include "ocpp/v2/ocpp_types.hpp"
 #include "ocpp/v2/types.hpp"
+#include <conversions.hpp>
 #include <conversions_v16.hpp>
+#include <optional>
 
 namespace {
 
@@ -226,8 +228,9 @@ auto convert(const ocpp::v16::EnhancedChargingSchedulePeriod& value) {
     return result;
 }
 
-auto convert(const ocpp::v16::EnhancedChargingSchedule& value) {
+auto convert(std::int32_t evse_id, const ocpp::v16::EnhancedChargingSchedule& value) {
     ocpp::v2::EnhancedCompositeSchedule result;
+    result.evseId = evse_id;
     result.chargingRateUnit = convert(value.chargingRateUnit);
     for (const auto& item : value.chargingSchedulePeriod) {
         result.chargingSchedulePeriod.push_back(convert(item));
@@ -764,6 +767,53 @@ void ChargePointV16::cb_variable_listener(const ocpp::v16::KeyValue& key_value) 
     }
 }
 
+ocpp::v2::AuthorizeResponse ChargePointV16::validate_pnc(const types::authorization::ProvidedIdToken& provided_token) {
+    std::string emaid = provided_token.id_token.value;
+    std::optional<std::string> opt_certificate = provided_token.certificate;
+
+    std::optional<std::vector<ocpp::v2::OCSPRequestData>> ocsp_request_data_opt;
+    if (provided_token.iso15118CertificateHashData.has_value()) {
+        ocsp_request_data_opt =
+            module::conversions::to_ocpp_ocsp_request_data_vector(provided_token.iso15118CertificateHashData.value());
+    }
+
+    return m_charge_point->data_transfer_pnc_authorize(emaid, opt_certificate, ocsp_request_data_opt);
+}
+
+ocpp::v2::AuthorizeResponse
+ChargePointV16::validate_standard(const types::authorization::ProvidedIdToken& provided_token) {
+    ocpp::v2::AuthorizeResponse validation_result;
+
+    const auto enhanced_id_tag_info =
+        m_charge_point->authorize_id_token(ocpp::CiString<20>(provided_token.id_token.value));
+    validation_result.idTokenInfo.status = convert(enhanced_id_tag_info.id_tag_info.status);
+    validation_result.idTokenInfo.cacheExpiryDateTime = enhanced_id_tag_info.id_tag_info.expiryDate;
+
+    if (enhanced_id_tag_info.id_tag_info.parentIdTag) {
+        ocpp::v2::IdToken parent;
+        parent.idToken = static_cast<std::string>(enhanced_id_tag_info.id_tag_info.parentIdTag.value());
+        parent.type = "Central";
+        validation_result.idTokenInfo.groupIdToken = std::move(parent);
+    }
+
+    if (enhanced_id_tag_info.tariff_message) {
+        // this can be used as the TT field of the OCMF.
+        const auto& messages = enhanced_id_tag_info.tariff_message.value().message;
+        if (!messages.empty()) {
+            std::vector<ocpp::v2::MessageContent> vec;
+            vec.reserve(messages.size());
+            for (const auto& message : messages) {
+                vec.push_back({ocpp::v2::MessageFormatEnum::ASCII, message.message, std::nullopt, std::nullopt});
+            }
+            ocpp::v2::Tariff tariff;
+            tariff.description = std::move(vec);
+            validation_result.tariff = std::move(tariff);
+        }
+    }
+
+    return validation_result;
+}
+
 // ----------------------------------------------------------------------------
 // setup/configuration
 
@@ -885,11 +935,14 @@ void ChargePointV16::configure_data_model(const config_info_t& config) {
 
 void ChargePointV16::init(init_args_t& args) {
 
+    const auto ocpp_share_path = args.share_path / "OCPP";
+    const auto sql_init_path = ocpp_share_path / SQL_CORE_MIGRATIONS;
+
     config_info_t config{
         args.v16_chargepoint_config_path,
         args.message_log_path,
-        args.ocpp_share_path,
-        args.sql_init_path,
+        ocpp_share_path,
+        sql_init_path,
         args.v16_user_config_path,
         static_cast<std::uint32_t>(args.evse_connector_structure.size()) // numnber_of_connectors;
     };
@@ -899,9 +952,9 @@ void ChargePointV16::init(init_args_t& args) {
     // clang-format off
     m_charge_point = std::make_unique<ocpp::v16::ChargePoint>(
         *m_charge_point_configuration,
-        args.ocpp_share_path,
-        args.core_database_path,
-        args.sql_init_path,
+        ocpp_share_path,
+        args.v2_core_database_path,
+        sql_init_path,
         args.message_log_path,
         m_evse_security,
         std::nullopt,
@@ -946,7 +999,9 @@ ChargePointV16::data_transfer_req(const ocpp::v2::DataTransferRequest& request) 
         ocpp::v2::DataTransferResponse response;
         response.status = convert(res.value().status);
         response.data = res.value().data;
+        result = std::move(response);
     }
+    return result;
 }
 
 std::optional<bool> ChargePointV16::get_central_contract_validation_allowed() {
@@ -991,7 +1046,7 @@ ChargePointV16::get_all_composite_schedules(std::int32_t duration_s, ocpp::v2::C
     std::vector<ocpp::v2::EnhancedCompositeSchedule> result;
     result.reserve(res.size());
     for (const auto& entry : res) {
-        result.push_back(convert(entry.second));
+        result.push_back(convert(entry.first, entry.second));
     }
     return result;
 }
@@ -1000,6 +1055,7 @@ std::vector<ocpp::v2::GetVariableResult>
 ChargePointV16::get_variables(const std::vector<ocpp::v2::GetVariableData>& get_variable_data_vector) {
     check_configured("get_variables");
     // TODO(james-ctc): problematic
+    return {};
 }
 
 void ChargePointV16::on_authorized(std::int32_t evse_id, std::int32_t connector_id, const ocpp::v2::IdToken& id_token) {
@@ -1242,14 +1298,26 @@ ChargePointV16::set_variables(const std::vector<ocpp::v2::SetVariableData>& set_
 }
 
 ocpp::v2::AuthorizeResponse
-ChargePointV16::validate_token(const ocpp::v2::IdToken& id_token,
-                               const std::optional<ocpp::CiString<10000>>& certificate,
-                               const std::optional<std::vector<ocpp::v2::OCSPRequestData>>& ocsp_request_data) {
+ChargePointV16::validate_token(const types::authorization::ProvidedIdToken& provided_token) {
     check_configured("validate_token");
-    std::string emaid = id_token.idToken;
-    std::optional<std::string> opt_certificate = certificate;
 
-    return m_charge_point->data_transfer_pnc_authorize(emaid, opt_certificate, ocsp_request_data);
+    ocpp::v2::AuthorizeResponse validation_result;
+
+    try {
+        if (provided_token.authorization_type == types::authorization::AuthorizationType::PlugAndCharge) {
+            validation_result = validate_pnc(provided_token);
+        } else {
+            validation_result = validate_standard(provided_token);
+        }
+    } catch (const ocpp::StringConversionException& e) {
+        EVLOG_warning << "Error converting id token to validate: " << e.what();
+        validation_result.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Unknown;
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Unknown error during validation of id token: " << e.what();
+        validation_result.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Unknown;
+    }
+
+    return validation_result;
 }
 
 } // namespace ocpp_multi

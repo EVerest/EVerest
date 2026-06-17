@@ -8,6 +8,7 @@
 #include <generic_ocpp.hpp>
 #include <optional>
 
+#include "everest/logging.hpp"
 #include "stubs/generic_ocpp_stub.hpp"
 
 namespace {
@@ -16,21 +17,61 @@ using ::testing::_;
 using ::testing::InSequence;
 using ::testing::Return;
 
+TEST(SteadyTimer, StartStop) {
+    // currently unreliable
+    Everest::SteadyTimer timer;
+    EXPECT_FALSE(timer.is_running());
+    timer.interval([]() { EVLOG_error << "timer expired"; }, std::chrono::seconds(500));
+    EXPECT_TRUE(timer.is_running());
+    timer.stop();
+    EXPECT_FALSE(timer.is_running());
+    timer.interval([]() { EVLOG_error << "timer expired"; }, std::chrono::seconds(500));
+    EXPECT_TRUE(timer.is_running());
+    timer.stop();
+    EXPECT_FALSE(timer.is_running());
+    timer.interval([]() { EVLOG_error << "timer expired"; }, std::chrono::seconds(500));
+    EXPECT_TRUE(timer.is_running());
+    timer.interval([]() { EVLOG_error << "timer expired"; }, std::chrono::seconds(500));
+    EXPECT_TRUE(timer.is_running());
+    timer.interval([]() { EVLOG_error << "timer expired"; }, std::chrono::seconds(500));
+    EXPECT_TRUE(timer.is_running());
+    timer.interval([]() { EVLOG_error << "timer expired"; }, std::chrono::seconds(500));
+    EXPECT_TRUE(timer.is_running());
+    timer.interval([]() { EVLOG_error << "timer expired"; }, std::chrono::seconds(500));
+    EXPECT_TRUE(timer.is_running());
+    timer.interval([]() { EVLOG_error << "timer expired"; }, std::chrono::seconds(500));
+    EXPECT_TRUE(timer.is_running());
+    timer.interval([]() { EVLOG_error << "timer expired"; }, std::chrono::seconds(500));
+    EXPECT_TRUE(timer.is_running());
+    timer.interval([]() { EVLOG_error << "timer expired"; }, std::chrono::seconds(500));
+    EXPECT_TRUE(timer.is_running());
+    timer.interval([]() { EVLOG_error << "timer expired"; }, std::chrono::seconds(500));
+    EXPECT_TRUE(timer.is_running());
+    timer.interval([]() { EVLOG_error << "timer expired"; }, std::chrono::seconds(500));
+    EXPECT_TRUE(timer.is_running());
+}
+
 // ----------------------------------------------------------------------------
 // Calls
 
 TEST_F(GenericOcppProvidesTester, stopRestart) {
+    // currently unreliable (see SteadyTimer.StartStop)
+
     InSequence seq;
-    EXPECT_TRUE(ocpp.charging_schedules_timer_running());
+    EXPECT_TRUE(ocpp->charging_schedules_timer_running());
     EXPECT_CALL(chargepoint, stop());
-    auto result = ocpp.handle_stop();
+    auto result = ocpp->handle_stop();
     EXPECT_TRUE(result);
-    EXPECT_FALSE(ocpp.charging_schedules_timer_running());
+    EXPECT_FALSE(ocpp->charging_schedules_timer_running());
 
     EXPECT_CALL(chargepoint, start(ocpp::v2::BootReasonEnum::ApplicationReset, true));
-    result = ocpp.handle_restart();
+    result = ocpp->handle_restart();
     EXPECT_TRUE(result);
-    EXPECT_TRUE(ocpp.charging_schedules_timer_running());
+    EXPECT_TRUE(ocpp->charging_schedules_timer_running());
+    EXPECT_TRUE(ocpp->charging_schedules_timer_running());
+    EXPECT_TRUE(ocpp->charging_schedules_timer_running());
+    EXPECT_TRUE(ocpp->charging_schedules_timer_running());
+    EXPECT_TRUE(ocpp->charging_schedules_timer_running());
 }
 
 TEST(GenericOcppProvides, stopRestartOffline) {
@@ -75,7 +116,7 @@ TEST_F(GenericOcppProvidesTester, securityEvent) {
     std::optional<ocpp::CiString<255>> info{event.info};
     EXPECT_CALL(chargepoint, on_security_event(type, info, event.critical, _));
 
-    ocpp.handle_security_event(event);
+    ocpp->handle_security_event(event);
 }
 
 TEST_F(GenericOcppProvidesTester, getVariablesNone) {
@@ -90,7 +131,7 @@ TEST_F(GenericOcppProvidesTester, getVariablesNone) {
     const std::vector<ocpp::v2::GetVariableResult> request_output;
     EXPECT_CALL(chargepoint, get_variables(request_input)).WillOnce(Return(request_output));
 
-    const auto result = ocpp.handle_get_variables(request);
+    const auto result = ocpp->handle_get_variables(request);
     EXPECT_TRUE(result.empty());
 }
 
@@ -116,7 +157,7 @@ TEST_F(GenericOcppProvidesTester, getVariablesOne) {
     request_output.push_back(res);
     EXPECT_CALL(chargepoint, get_variables(request_input)).WillOnce(Return(request_output));
 
-    const auto result = ocpp.handle_get_variables(request);
+    const auto result = ocpp->handle_get_variables(request);
     EXPECT_FALSE(result.empty());
     ASSERT_EQ(result.size(), 1);
     const auto& entry = result[0];
@@ -154,7 +195,7 @@ TEST_F(GenericOcppProvidesTester, getVariablesMany) {
     request_output.push_back(res2);
     EXPECT_CALL(chargepoint, get_variables(request_input)).WillOnce(Return(request_output));
 
-    const auto result = ocpp.handle_get_variables(request);
+    const auto result = ocpp->handle_get_variables(request);
     EXPECT_FALSE(result.empty());
     ASSERT_EQ(result.size(), 2);
     const auto& entry1 = result[0];
@@ -246,7 +287,7 @@ TEST_F(GenericOcppProvidesTester, setVariablesNone) {
     const std::map<ocpp::v2::SetVariableData, ocpp::v2::SetVariableResult> request_output;
     EXPECT_CALL(chargepoint, set_variables(request_input, source)).WillOnce(Return(request_output));
 
-    const auto result = ocpp.handle_set_variables(request, source);
+    const auto result = ocpp->handle_set_variables(request, source);
     EXPECT_TRUE(result.empty());
 }
 
@@ -273,7 +314,7 @@ TEST_F(GenericOcppProvidesTester, setVariablesOne) {
     ASSERT_EQ(request_output.size(), 1);
     EXPECT_CALL(chargepoint, set_variables(request_input, source)).WillOnce(Return(request_output));
 
-    const auto result = ocpp.handle_set_variables(request, source);
+    const auto result = ocpp->handle_set_variables(request, source);
     EXPECT_FALSE(result.empty());
     ASSERT_EQ(result.size(), 1);
     const auto& entry = result[0];
@@ -312,7 +353,7 @@ TEST_F(GenericOcppProvidesTester, setVariablesMany) {
     ASSERT_EQ(request_output.size(), 2);
     EXPECT_CALL(chargepoint, set_variables(request_input, source)).WillOnce(Return(request_output));
 
-    const auto result = ocpp.handle_set_variables(request, source);
+    const auto result = ocpp->handle_set_variables(request, source);
     EXPECT_FALSE(result.empty());
     ASSERT_EQ(result.size(), 2);
     const auto& entry1 = result[0];
@@ -402,7 +443,7 @@ TEST_F(GenericOcppProvidesTester, changeAvailabilityInoperative) {
     request_output.status = ocpp::v2::ChangeAvailabilityStatusEnum::Accepted;
     EXPECT_CALL(chargepoint, on_change_availability(request_input)).WillOnce(Return(request_output));
 
-    const auto result = ocpp.handle_change_availability(request);
+    const auto result = ocpp->handle_change_availability(request);
     EXPECT_EQ(result.status, ChangeAvailabilityStatusEnumType::Accepted);
 }
 
@@ -423,7 +464,7 @@ TEST_F(GenericOcppProvidesTester, changeAvailabilityRejected) {
     request_output.status = ocpp::v2::ChangeAvailabilityStatusEnum::Rejected;
     EXPECT_CALL(chargepoint, on_change_availability(request_input)).WillOnce(Return(request_output));
 
-    const auto result = ocpp.handle_change_availability(request);
+    const auto result = ocpp->handle_change_availability(request);
     EXPECT_EQ(result.status, ChangeAvailabilityStatusEnumType::Rejected);
 }
 
@@ -444,18 +485,18 @@ TEST_F(GenericOcppProvidesTester, monitorVariables) {
     EXPECT_CALL(chargepoint, register_variable_listener("Variable1", _)).Times(1);
     EXPECT_CALL(chargepoint, register_variable_listener("Variable2", _)).Times(1);
 
-    EXPECT_TRUE(ocpp.get_monitor_list().empty());
-    ocpp.handle_monitor_variables(req1);
-    EXPECT_FALSE(ocpp.get_monitor_list().empty());
-    EXPECT_EQ(ocpp.get_monitor_list().size(), 1);
-    EXPECT_TRUE(contains(ocpp.get_monitor_list(), "Component1", "Variable1"));
-    EXPECT_FALSE(contains(ocpp.get_monitor_list(), "Component2", "Variable2"));
+    EXPECT_TRUE(ocpp->get_monitor_list().empty());
+    ocpp->handle_monitor_variables(req1);
+    EXPECT_FALSE(ocpp->get_monitor_list().empty());
+    EXPECT_EQ(ocpp->get_monitor_list().size(), 1);
+    EXPECT_TRUE(contains(ocpp->get_monitor_list(), "Component1", "Variable1"));
+    EXPECT_FALSE(contains(ocpp->get_monitor_list(), "Component2", "Variable2"));
 
-    ocpp.handle_monitor_variables(req2);
-    EXPECT_FALSE(ocpp.get_monitor_list().empty());
-    EXPECT_EQ(ocpp.get_monitor_list().size(), 2);
-    EXPECT_TRUE(contains(ocpp.get_monitor_list(), "Component1", "Variable1"));
-    EXPECT_TRUE(contains(ocpp.get_monitor_list(), "Component2", "Variable2"));
+    ocpp->handle_monitor_variables(req2);
+    EXPECT_FALSE(ocpp->get_monitor_list().empty());
+    EXPECT_EQ(ocpp->get_monitor_list().size(), 2);
+    EXPECT_TRUE(contains(ocpp->get_monitor_list(), "Component1", "Variable1"));
+    EXPECT_TRUE(contains(ocpp->get_monitor_list(), "Component2", "Variable2"));
 }
 
 // ----------------------------------------------------------------------------
@@ -489,10 +530,10 @@ TEST_F(GenericOcppProvidesTester, publishOcppTransactionEvent) {
     // std::optional<CustomData> customData;
 
     std::vector<json> received;
-    interfaces.subscribe_var("ocpp_generic", "ocpp_transaction_event",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("ocpp_generic", "ocpp_transaction_event",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp.cb_transaction_event(request);
+    ocpp->cb_transaction_event(request);
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(received[0],
               R"({"session_id":"TransactionId","transaction_event":"Updated","transaction_id":"TransactionId"})"_json);
@@ -539,16 +580,16 @@ TEST_F(GenericOcppProvidesTester, publishOcppTransactionEventRespose) {
     // std::optional<CustomData> customData;
 
     std::vector<json> received;
-    interfaces.subscribe_var("ocpp_generic", "ocpp_transaction_event_response",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("ocpp_generic", "ocpp_transaction_event_response",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp.cb_transaction_event_response(transaction_event, transaction_event_response);
+    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response);
 
     transaction_event.eventType = TransactionEventEnum::Updated;
     transaction_event.triggerReason = TriggerReasonEnum::ChargingStateChanged;
     transaction_event.evse = EVSE{1, 0};
     transaction_event_response.idTokenInfo = IdTokenInfo{AuthorizationStatusEnum::Accepted};
-    ocpp.cb_transaction_event_response(transaction_event, transaction_event_response);
+    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response);
 
     EXPECT_EQ(received.size(), 2);
     EXPECT_EQ(
@@ -569,8 +610,8 @@ TEST_F(GenericOcppProvidesTester, publishChargingSchedules) {
     using ocpp::v2::EnhancedCompositeSchedule;
 
     std::vector<json> received;
-    interfaces.subscribe_var("ocpp_generic", "charging_schedules",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("ocpp_generic", "charging_schedules",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     std::vector<EnhancedCompositeSchedule> composite_schedules;
     EnhancedCompositeSchedule schedule;
@@ -611,7 +652,7 @@ TEST_F(GenericOcppProvidesTester, publishChargingSchedules) {
 
     composite_schedules.push_back(schedule);
 
-    ocpp.publish_charging_schedules(composite_schedules);
+    ocpp->publish_charging_schedules(composite_schedules);
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(received[0],
               R"({"schedules":[
@@ -628,7 +669,7 @@ TEST_F(GenericOcppProvidesTester, publishChargingSchedules) {
         .WillOnce(Return(composite_schedules));
 
     received.clear();
-    ocpp.cb_set_charging_profiles();
+    ocpp->cb_set_charging_profiles();
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(received[0],
               R"({"schedules":[
@@ -643,11 +684,11 @@ TEST_F(GenericOcppProvidesTester, publishIsConnected) {
     using ocpp::OcppProtocolVersion;
 
     std::vector<json> received;
-    interfaces.subscribe_var("ocpp_generic", "is_connected",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("ocpp_generic", "is_connected",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp.cb_connection_state_changed(true, OcppProtocolVersion::v201);
-    ocpp.cb_connection_state_changed(false, OcppProtocolVersion::v16);
+    ocpp->cb_connection_state_changed(true, OcppProtocolVersion::v201);
+    ocpp->cb_connection_state_changed(false, OcppProtocolVersion::v16);
 
     ASSERT_EQ(received.size(), 2);
     EXPECT_EQ(received[0], R"(true)"_json);
@@ -658,11 +699,11 @@ TEST_F(GenericOcppProvidesTester, publishSecurityEvent) {
     // publish_security_event() called from cb_security_event
 
     std::vector<json> received;
-    interfaces.subscribe_var("ocpp_generic", "security_event",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("ocpp_generic", "security_event",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp.cb_security_event("Bad Actor", std::nullopt);
-    ocpp.cb_security_event("Strange Actor", "Fuzzy");
+    ocpp->cb_security_event("Bad Actor", std::nullopt);
+    ocpp->cb_security_event("Strange Actor", "Fuzzy");
 
     ASSERT_EQ(received.size(), 2);
     EXPECT_EQ(received[0], R"({"type":"Bad Actor"})"_json);
@@ -677,17 +718,17 @@ TEST_F(GenericOcppProvidesTester, publishEventData) {
     using types::ocpp::ComponentVariable;
 
     std::vector<json> received;
-    interfaces.subscribe_var("ocpp_generic", "event_data",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("ocpp_generic", "event_data",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp.cb_variable_monitor(Component{"component"}, Variable{"variable"}, "value");
+    ocpp->cb_variable_monitor(Component{"component"}, Variable{"variable"}, "value");
     EXPECT_TRUE(received.empty());
 
     // add monitor
     EXPECT_CALL(chargepoint, register_variable_listener("Variable", _)).Times(1);
     std::vector<ComponentVariable> req{{{"Component"}, {"Variable"}}};
-    ocpp.handle_monitor_variables(req);
-    ocpp.cb_variable_monitor(Component{"Component"}, Variable{"Variable"}, "value");
+    ocpp->handle_monitor_variables(req);
+    ocpp->cb_variable_monitor(Component{"Component"}, Variable{"Variable"}, "value");
 
     ASSERT_EQ(received.size(), 1);
     // adjust the date and time
@@ -705,8 +746,8 @@ TEST_F(GenericOcppProvidesTester, publishBootNotificationResponse) {
     using ocpp::v2::RegistrationStatusEnum;
 
     std::vector<json> received;
-    interfaces.subscribe_var("ocpp_generic", "boot_notification_response",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("ocpp_generic", "boot_notification_response",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     BootNotificationResponse response;
     response.currentTime = DateTime{"2026-06-05T14:51:48.876Z"};
@@ -715,7 +756,7 @@ TEST_F(GenericOcppProvidesTester, publishBootNotificationResponse) {
     // std::optional<StatusInfo> statusInfo;
     // std::optional<CustomData> customData;
 
-    ocpp.cb_boot_notification(response);
+    ocpp->cb_boot_notification(response);
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(received[0], R"({"current_time":"2026-06-05T14:51:48.876Z","interval":520,"status":"Pending"})"_json);
@@ -728,12 +769,12 @@ TEST_F(GenericOcppProvidesTester, publishOcppMessage) {
     using ocpp::OcppProtocolVersion;
 
     std::vector<json> received;
-    interfaces.subscribe_var("ocpp_generic", "ocpp_message",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("ocpp_generic", "ocpp_message",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp.cb_connection_state_changed(true, OcppProtocolVersion::v16);
-    ocpp.cb_ocpp_messages(R"({"message": 1})", MessageDirection::ChargingStationToCSMS);
-    ocpp.cb_ocpp_messages(R"({"message": 2})", MessageDirection::CSMSToChargingStation);
+    ocpp->cb_connection_state_changed(true, OcppProtocolVersion::v16);
+    ocpp->cb_ocpp_messages(R"({"message": 1})", MessageDirection::ChargingStationToCSMS);
+    ocpp->cb_ocpp_messages(R"({"message": 2})", MessageDirection::CSMSToChargingStation);
 
     ASSERT_EQ(received.size(), 2);
     EXPECT_EQ(received[0],

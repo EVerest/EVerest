@@ -66,6 +66,9 @@ private:
     ocpp::v16::GetLogResponse cb_upload_logs(ocpp::v16::GetLogRequest request);
     void cb_variable_listener(const ocpp::v16::KeyValue& key_value);
 
+    ocpp::v2::AuthorizeResponse validate_pnc(const types::authorization::ProvidedIdToken& provided_token);
+    ocpp::v2::AuthorizeResponse validate_standard(const types::authorization::ProvidedIdToken& provided_token);
+
 public:
     explicit ChargePointV16(ocpp_multi::GenericChargePointCallbacks& callbacks, evse_securityIntf& security) :
         m_evse_security(std::make_unique<EvseSecurity>(security)), m_callbacks_ptr(&callbacks) {
@@ -84,6 +87,8 @@ public:
     std::optional<std::string> get_tx_stop_point() override;
 
     void init(init_args_t& args) override;
+    void set_mode(modes_t new_mode) override {
+    }
 
     void connect_websocket() override;
     void disconnect_websocket() override;
@@ -148,9 +153,7 @@ public:
     set_variables(const std::vector<ocpp::v2::SetVariableData>& set_variable_data_vector,
                   const std::string& source) override;
 
-    ocpp::v2::AuthorizeResponse
-    validate_token(const ocpp::v2::IdToken& id_token, const std::optional<ocpp::CiString<10000>>& certificate,
-                   const std::optional<std::vector<ocpp::v2::OCSPRequestData>>& ocsp_request_data) override;
+    ocpp::v2::AuthorizeResponse validate_token(const types::authorization::ProvidedIdToken& provided_token) override;
 };
 
 } // namespace ocpp_multi

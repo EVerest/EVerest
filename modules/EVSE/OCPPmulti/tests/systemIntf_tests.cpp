@@ -40,8 +40,8 @@ TEST_F(GenericOcppRequiresTester, callUpdateFirmware) {
     using ocpp::v2::UpdateFirmwareStatusEnum;
 
     std::vector<json> received;
-    interfaces.subscribe_var("system", "call_update_firmware",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("system", "call_update_firmware",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     Firmware firmware;
     firmware.location = "https://127.0.0.1:8445/bundle.ota";
@@ -65,14 +65,14 @@ TEST_F(GenericOcppRequiresTester, callUpdateFirmware) {
     // - InvalidCertificate,
     // - RevokedCertificate,
 
-    interfaces.add_cmd_result(R"("InvalidCertificate")"_json);
+    interfaces->add_cmd_result(R"("InvalidCertificate")"_json);
 
     UpdateFirmwareResponse expected;
     expected.status = UpdateFirmwareStatusEnum::InvalidCertificate;
     // std::optional<StatusInfo> statusInfo;
     // std::optional<CustomData> customData;
 
-    const auto result = ocpp.cb_update_firmware_request(request);
+    const auto result = ocpp->cb_update_firmware_request(request);
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(
@@ -86,10 +86,10 @@ TEST_F(GenericOcppRequiresTester, callAllowFirmwareInstallation) {
     // call_allow_firmware_installation() used in cb_all_connectors_unavailable()
 
     std::vector<json> received;
-    interfaces.subscribe_var("system", "call_allow_firmware_installation",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("system", "call_allow_firmware_installation",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp.cb_all_connectors_unavailable();
+    ocpp->cb_all_connectors_unavailable();
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(received[0], json{});
@@ -105,8 +105,8 @@ TEST_F(GenericOcppRequiresTester, callUploadLogs) {
     using ocpp::v2::LogStatusEnum;
 
     std::vector<json> received;
-    interfaces.subscribe_var("system", "call_upload_logs",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("system", "call_upload_logs",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     LogParameters param;
     param.remoteLocation = "sftp://127.0.0.1:9957/diagnostics.log";
@@ -122,9 +122,9 @@ TEST_F(GenericOcppRequiresTester, callUploadLogs) {
     // std::optional<std::int32_t> retryInterval;
     // std::optional<CustomData> customData;
 
-    interfaces.add_cmd_result(R"({"upload_logs_status":"Accepted"})"_json);
+    interfaces->add_cmd_result(R"({"upload_logs_status":"Accepted"})"_json);
 
-    const auto result = ocpp.cb_get_log_request(request);
+    const auto result = ocpp->cb_get_log_request(request);
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(
@@ -146,17 +146,17 @@ TEST_F(GenericOcppRequiresTester, callIsResetAllowed) {
     using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
 
     std::vector<json> received;
-    interfaces.subscribe_var("system", "call_is_reset_allowed",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("system", "call_is_reset_allowed",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    interfaces.add_cmd_result(R"(true)"_json);
-    interfaces.add_cmd_result(R"(true)"_json);
+    interfaces->add_cmd_result(R"(true)"_json);
+    interfaces->add_cmd_result(R"(true)"_json);
 
-    auto result = ocpp.cb_is_reset_allowed(1, ResetType::Immediate);
+    auto result = ocpp->cb_is_reset_allowed(1, ResetType::Immediate);
     EXPECT_FALSE(result);
-    result = ocpp.cb_is_reset_allowed(std::nullopt, ResetType::Immediate);
+    result = ocpp->cb_is_reset_allowed(std::nullopt, ResetType::Immediate);
     EXPECT_TRUE(result);
-    result = ocpp.cb_is_reset_allowed(std::nullopt, ResetType::Soft);
+    result = ocpp->cb_is_reset_allowed(std::nullopt, ResetType::Soft);
     EXPECT_TRUE(result);
 
     ASSERT_EQ(received.size(), 2);
@@ -170,17 +170,17 @@ TEST_F(GenericOcppRequiresTester, callReset) {
     using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
 
     std::vector<json> received;
-    interfaces.subscribe_var("system", "call_reset",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("system", "call_reset",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    interfaces.add_cmd_result(R"(true)"_json);
-    interfaces.add_cmd_result(R"(true)"_json);
-    interfaces.add_cmd_result(R"(true)"_json);
+    interfaces->add_cmd_result(R"(true)"_json);
+    interfaces->add_cmd_result(R"(true)"_json);
+    interfaces->add_cmd_result(R"(true)"_json);
 
-    ocpp.cb_reset(1, ResetType::OnIdle);               // no MQTT message sent
-    ocpp.cb_reset(std::nullopt, ResetType::Immediate); // v2
-    ocpp.cb_reset(std::nullopt, ResetType::Hard);      // v1.6
-    ocpp.cb_reset(std::nullopt, ResetType::Soft);      // v1.6
+    ocpp->cb_reset(1, ResetType::OnIdle);               // no MQTT message sent
+    ocpp->cb_reset(std::nullopt, ResetType::Immediate); // v2
+    ocpp->cb_reset(std::nullopt, ResetType::Hard);      // v1.6
+    ocpp->cb_reset(std::nullopt, ResetType::Soft);      // v1.6
 
     ASSERT_EQ(received.size(), 3);
     EXPECT_EQ(received[0], R"({"scheduled":false,"type":"NotSpecified"})"_json);
@@ -194,12 +194,12 @@ TEST_F(GenericOcppRequiresTester, callSetSystemTime) {
     using ocpp::DateTime;
 
     std::vector<json> received;
-    interfaces.subscribe_var("system", "call_set_system_time",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("system", "call_set_system_time",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    interfaces.add_cmd_result(R"(true)"_json);
+    interfaces->add_cmd_result(R"(true)"_json);
 
-    ocpp.cb_time_sync(DateTime{"2026-01-01T12:25:30Z"});
+    ocpp->cb_time_sync(DateTime{"2026-01-01T12:25:30Z"});
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(received[0], R"({"timestamp":"2026-01-01T12:25:30.000Z"})"_json);
@@ -221,9 +221,9 @@ TEST_F(GenericOcppRequiresTester, subscribeSupportedEnergyTransferModes) {
     EXPECT_CALL(chargepoint, on_firmware_update_status_notification(update.request_id, FirmwareStatusEnum::Downloaded))
         .Times(1);
 
-    interfaces.publish(0, "firmware_update_status", update);
+    interfaces->publish(0, "firmware_update_status", update);
     update.firmware_update_status = FirmwareUpdateStatusEnum::Downloaded;
-    interfaces.publish(0, "firmware_update_status", update);
+    interfaces->publish(0, "firmware_update_status", update);
 }
 
 TEST_F(GenericOcppRequiresTester, subscribeLogStatus) {
@@ -240,9 +240,9 @@ TEST_F(GenericOcppRequiresTester, subscribeLogStatus) {
     EXPECT_CALL(chargepoint, on_log_status_notification(UploadLogStatusEnum::Uploaded, update.request_id)).Times(1);
     EXPECT_CALL(chargepoint, on_log_status_notification(UploadLogStatusEnum::Idle, update.request_id)).Times(1);
 
-    interfaces.publish(0, "log_status", update);
+    interfaces->publish(0, "log_status", update);
     update.log_status = LogStatusEnum::Idle;
-    interfaces.publish(0, "log_status", update);
+    interfaces->publish(0, "log_status", update);
 }
 
 } // namespace

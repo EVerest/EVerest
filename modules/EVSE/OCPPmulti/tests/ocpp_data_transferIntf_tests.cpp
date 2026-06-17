@@ -21,8 +21,8 @@ TEST_F(GenericOcppRequiresTester, callDataTransfer) {
     using ocpp::v2::DataTransferResponse;
 
     std::vector<json> received;
-    interfaces.subscribe_var("ocpp_data_transfer", "call_data_transfer",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("ocpp_data_transfer", "call_data_transfer",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     DataTransferRequest request;
     request.vendorId = "Pionix";
@@ -66,8 +66,8 @@ TEST_F(GenericOcppRequiresTester, callDataTransfer) {
     // data is a JSON object
     const json expected_response = R"({"status": "Accepted", "data":{"extraStatus": "Starting"}})"_json;
 
-    interfaces.add_cmd_result(cmd_response);
-    const auto response = ocpp.cb_data_transfer(request);
+    interfaces->add_cmd_result(cmd_response);
+    const auto response = ocpp->cb_data_transfer(request);
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(

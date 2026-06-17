@@ -26,12 +26,11 @@ TEST_F(GenericOcppProvidesTester, authValidatorAccepted) {
                           },
                           AuthorizationType::RFID};
 
-    ocpp::v2::IdToken expected_token{"MyToken", "Local"};
     ocpp::v2::AuthorizeResponse set_return;
     set_return.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Accepted;
-    EXPECT_CALL(chargepoint, validate_token(expected_token, _, _)).WillOnce(Return(set_return));
+    EXPECT_CALL(chargepoint, validate_token(token)).WillOnce(Return(set_return));
 
-    const auto result = ocpp.handle_validate_token(token);
+    const auto result = ocpp->handle_validate_token(token);
     EXPECT_EQ(result.authorization_status, AuthorizationStatus::Accepted);
 }
 
@@ -42,12 +41,11 @@ TEST_F(GenericOcppProvidesTester, authValidatorInvalid) {
                           },
                           AuthorizationType::RFID};
 
-    ocpp::v2::IdToken expected_token{"MyToken", "KeyCode"};
     ocpp::v2::AuthorizeResponse set_return;
     set_return.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Invalid;
-    EXPECT_CALL(chargepoint, validate_token(expected_token, _, _)).WillOnce(Return(set_return));
+    EXPECT_CALL(chargepoint, validate_token(token)).WillOnce(Return(set_return));
 
-    const auto result = ocpp.handle_validate_token(token);
+    const auto result = ocpp->handle_validate_token(token);
     EXPECT_EQ(result.authorization_status, AuthorizationStatus::Invalid);
 }
 
@@ -95,15 +93,15 @@ TEST_F(GenericOcppProvidesTester, publishValidateResultUpdate) {
     // std::optional<CustomData> customData;
 
     std::vector<json> received;
-    interfaces.subscribe_var("auth_validator", "validate_result_update",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("auth_validator", "validate_result_update",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp.cb_transaction_event_response(transaction_event, transaction_event_response);
+    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response);
     EXPECT_TRUE(received.empty());
 
     transaction_event.evse = EVSE{1, 0};
     transaction_event_response.idTokenInfo = IdTokenInfo{AuthorizationStatusEnum::Accepted};
-    ocpp.cb_transaction_event_response(transaction_event, transaction_event_response);
+    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response);
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(

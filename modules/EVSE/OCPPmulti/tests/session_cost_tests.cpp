@@ -17,8 +17,8 @@ TEST_F(GenericOcppProvidesTester, publishDefaultPrice) {
     using ocpp::DisplayMessageContent;
 
     std::vector<json> received;
-    interfaces.subscribe_var("session_cost", "default_price",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("session_cost", "default_price",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     std::vector<DisplayMessageContent> messages;
     DisplayMessageContent message;
@@ -29,7 +29,7 @@ TEST_F(GenericOcppProvidesTester, publishDefaultPrice) {
 
     messages.push_back(message);
 
-    ocpp.cb_default_price(messages);
+    ocpp->cb_default_price(messages);
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(received[0], R"({"messages":[{"content":"My Message"}]})"_json);
@@ -53,8 +53,8 @@ TEST_F(GenericOcppProvidesTester, publishTariffMessage) {
     using types::authorization::ProvidedIdToken;
 
     std::vector<json> received;
-    interfaces.subscribe_var("session_cost", "tariff_message",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("session_cost", "tariff_message",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     TariffMessage message;
     message.ocpp_transaction_id = "TransactionID";
@@ -70,7 +70,7 @@ TEST_F(GenericOcppProvidesTester, publishTariffMessage) {
 
     message.message.push_back(content);
 
-    ocpp.cb_tariff_message(message);
+    ocpp->cb_tariff_message(message);
 
     ProvidedIdToken token;
     // types::authorization::IdToken id_token;
@@ -93,8 +93,6 @@ TEST_F(GenericOcppProvidesTester, publishTariffMessage) {
     token.request_id = 127;
     token.prevalidated = true;
 
-    ocpp::v2::IdToken expected_input{"ID Token", "MacAddress"};
-
     ocpp::v2::AuthorizeResponse expected_output;
     expected_output.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Accepted;
     MessageContent msg_content;
@@ -102,9 +100,9 @@ TEST_F(GenericOcppProvidesTester, publishTariffMessage) {
     msg_content.content = content.message;
     expected_output.idTokenInfo.personalMessage = msg_content;
 
-    EXPECT_CALL(chargepoint, validate_token(expected_input, _, _)).WillOnce(Return(expected_output));
+    EXPECT_CALL(chargepoint, validate_token(token)).WillOnce(Return(expected_output));
 
-    ocpp.handle_validate_token(token);
+    ocpp->handle_validate_token(token);
 
     ASSERT_EQ(received.size(), 2);
     EXPECT_EQ(
@@ -120,8 +118,8 @@ TEST_F(GenericOcppProvidesTester, publishSessionCost) {
     // publish_session_cost() called from cb_set_running_cost
 
     std::vector<json> received;
-    interfaces.subscribe_var("session_cost", "session_cost",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("session_cost", "session_cost",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     ocpp::RunningCost running_cost;
     running_cost.transaction_id = "TransactionID";
@@ -140,7 +138,7 @@ TEST_F(GenericOcppProvidesTester, publishSessionCost) {
     std::uint32_t number_of_decimals{3};
     std::string currency_code{"GBP"};
 
-    ocpp.cb_set_running_cost(running_cost, number_of_decimals, currency_code);
+    ocpp->cb_set_running_cost(running_cost, number_of_decimals, currency_code);
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(

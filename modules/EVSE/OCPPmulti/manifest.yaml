@@ -126,6 +126,18 @@ config:
       written to the user config file.
     type: string
     default: user_config.json
+  Mode:
+    description: >-
+      OCPP 1.6
+      OCPP 2.0.1
+      The operational mode of the module
+    type: string
+    enum:
+      - Prefer1.6
+      - Prefer2
+      - Only1.6
+      - Only2
+    default: Only2
 provides:
   # probably not needed
   # ocpp16:

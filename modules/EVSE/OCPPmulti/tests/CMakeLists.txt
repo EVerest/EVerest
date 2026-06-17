@@ -83,7 +83,7 @@ set(TEST_FILES_JSON
     default_store.json
 )
 
-set(TEST_FILES_SQL_DEST share/device_model_migrations)
+set(TEST_FILES_SQL_DEST OCPP201/device_model_migrations)
 set(TEST_FILES_JSON_DEST ${CMAKE_CURRENT_BINARY_DIR})
 
 foreach(X ${TEST_FILES_SQL})
@@ -102,8 +102,8 @@ add_custom_command(
     OUTPUT ${TEST_FILES_OUTPUT}
     DEPENDS ${TEST_FILES_SQL_INPUT} ${TEST_FILES_JSON_INPUT}
 
-    COMMAND mkdir -p ${TEST_FILES_SQL_DEST}
-    COMMAND mkdir -p share/dm_config/standardized
+    COMMAND mkdir -p ${TEST_FILES_SQL_DEST} OCPP
+    COMMAND mkdir -p OCPP201/dm_config/standardized
     COMMAND cp ${TEST_FILES_SQL_INPUT} ${TEST_FILES_SQL_DEST}/
     COMMAND cp ${TEST_FILES_JSON_INPUT} ${TEST_FILES_JSON_DEST}/
 )

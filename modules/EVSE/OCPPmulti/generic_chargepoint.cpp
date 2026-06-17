@@ -19,19 +19,30 @@ void GenericChargePoint::check_configured(const std::string_view& fn) {
 }
 
 void GenericChargePoint::init(init_args_t& args) {
-    m_evse_connector_structure = std::move(args.evse_connector_structure);
-    m_device_model_storage_interface = std::move(args.device_model_storage_interface);
-    m_ocpp_share_path = args.ocpp_share_path;
-    m_core_database_path = args.core_database_path;
-    m_sql_init_path = args.sql_init_path;
-    m_message_log_path = args.message_log_path;
+    // m_evse_connector_structure = std::move(args.evse_connector_structure);
+    // m_device_model_storage_interface = std::move(args.device_model_storage_interface);
+    // m_ocpp_share_path = args.ocpp_share_path;
+    // m_core_database_path = args.core_database_path;
+    // m_sql_init_path = args.sql_init_path;
+    // m_message_log_path = args.message_log_path;
 
     // TODO(james-ctc): how to share the database
 
     m_state = state_t::v16_active;
     m_charge_point_v16 = std::make_unique<ChargePointV16>(m_charge_point_callbacks, m_evse_security_interface);
     m_charge_point_v2 = std::make_unique<ChargePointV2>(m_charge_point_callbacks, m_evse_security_interface);
-    m_active_ptr = m_charge_point_v16.get();
+
+    switch (m_mode) {
+    case modes_t::ocpp_1_6_only:
+    case modes_t::prefer_ocpp_1_6:
+        m_active_ptr = m_charge_point_v16.get();
+        break;
+    case modes_t::ocpp_2_only:
+    case modes_t::prefer_ocpp_2:
+        m_active_ptr = m_charge_point_v2.get();
+    default:
+        break;
+    }
 
     m_active_ptr->init(args);
 }
@@ -262,11 +273,9 @@ GenericChargePoint::set_variables(const std::vector<ocpp::v2::SetVariableData>& 
 }
 
 ocpp::v2::AuthorizeResponse
-GenericChargePoint::validate_token(const ocpp::v2::IdToken& id_token,
-                                   const std::optional<ocpp::CiString<10000>>& certificate,
-                                   const std::optional<std::vector<ocpp::v2::OCSPRequestData>>& ocsp_request_data) {
+GenericChargePoint::validate_token(const types::authorization::ProvidedIdToken& provided_token) {
     check_configured("validate_token");
-    return m_active_ptr->validate_token(id_token, certificate, ocsp_request_data);
+    return m_active_ptr->validate_token(provided_token);
 }
 
 } // namespace ocpp_multi

@@ -9,18 +9,18 @@
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/external_energy_limits/external_energy_limits.hpp>
 #include <everest/logging.hpp>
+#include <filesystem>
 #include <generated/types/ocpp.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 #include <ocpp/v2/utils.hpp>
 
 #include <ld-ev.hpp>
 #include <optional>
+#include <string>
 
 namespace fs = std::filesystem;
 
 namespace {
-
-constexpr const auto SQL_CORE_MIGRATIONS = "core_migrations";
 
 // OCPP 2.0.1 specific configuration variable names
 constexpr const auto CENTRAL_CONTRACT_VALIDATION_ALLOWED_VAR_NAME = "CentralContractValidationAllowed";
@@ -294,6 +294,43 @@ void update_evcc_id_token(ocpp::v2::IdToken& id_token, const std::string& evcc_i
     }
 }
 
+inline std::filesystem::path update_path(const std::string_view dir, const std::filesystem::path& share,
+                                         const std::filesystem::path& path) {
+    std::filesystem::path result;
+
+    if (path.is_relative()) {
+        result = share / dir / path;
+    } else {
+        result = path;
+    }
+
+    return std::filesystem::absolute(result);
+}
+
+std::filesystem::path update_path_multi(const std::filesystem::path& share, const std::filesystem::path& path) {
+    return update_path("OCPPmulti", share, path);
+}
+
+std::filesystem::path update_path_v16(const std::filesystem::path& share, const std::filesystem::path& path) {
+    return update_path("OCPP", share, path);
+}
+
+std::filesystem::path update_path_v2(const std::filesystem::path& share, const std::filesystem::path& path) {
+    return update_path("OCPP201", share, path);
+}
+
+std::filesystem::path remove_dir(std::filesystem::path path) {
+    std::filesystem::path result = path;
+    if (!path.empty()) {
+        auto tmp = path.string();
+        if (auto pos = tmp.rfind('/'); pos != std::string::npos) {
+            tmp.erase(pos);
+            result = tmp;
+        }
+    }
+    return result;
+}
+
 } // namespace
 
 namespace ocpp_multi {
@@ -303,41 +340,19 @@ namespace ocpp_multi {
 
 types::authorization::ValidationResult
 GenericOcpp::handle_validate_token(const types::authorization::ProvidedIdToken& provided_token) {
-    using namespace module::conversions;
-
     types::authorization::ValidationResult validation_result;
 
     if (m_started) {
-        try {
-            const auto id_token = to_ocpp_id_token(provided_token.id_token);
-            std::optional<ocpp::CiString<10000>> certificate_opt;
-            if (provided_token.certificate.has_value()) {
-                certificate_opt.emplace(provided_token.certificate.value());
-            }
-            std::optional<std::vector<ocpp::v2::OCSPRequestData>> ocsp_request_data_opt;
-            if (provided_token.iso15118CertificateHashData.has_value()) {
-                ocsp_request_data_opt =
-                    to_ocpp_ocsp_request_data_vector(provided_token.iso15118CertificateHashData.value());
-            }
+        const auto response = m_charge_point.validate_token(provided_token);
+        validation_result = module::conversions::to_everest_validation_result(response);
 
-            // request response
-            const auto response = m_charge_point.validate_token(id_token, certificate_opt, ocsp_request_data_opt);
-            validation_result = to_everest_validation_result(response);
-
-            // Publish tariff message on the session_cost interface
-            if (!validation_result.tariff_messages.empty()) {
-                types::session_cost::TariffMessage tariff_message;
-                tariff_message.messages = validation_result.tariff_messages;
-                tariff_message.identifier_id = provided_token.id_token.value;
-                tariff_message.identifier_type = types::display_message::IdentifierType::IdToken;
-                m_provides.session_cost.publish_tariff_message(tariff_message);
-            }
-        } catch (const ocpp::StringConversionException& e) {
-            EVLOG_warning << "Error converting id token to validate: " << e.what();
-            validation_result.authorization_status = types::authorization::AuthorizationStatus::Unknown;
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Unknown error during validation of id token: " << e.what();
-            validation_result.authorization_status = types::authorization::AuthorizationStatus::Unknown;
+        // Publish tariff message on the session_cost interface
+        if (!validation_result.tariff_messages.empty()) {
+            types::session_cost::TariffMessage tariff_message;
+            tariff_message.messages = validation_result.tariff_messages;
+            tariff_message.identifier_id = provided_token.id_token.value;
+            tariff_message.identifier_type = types::display_message::IdentifierType::IdToken;
+            m_provides.session_cost.publish_tariff_message(tariff_message);
         }
     } else {
         EVLOG_warning << "ChargePoint not initialized, cannot handle validate token command";
@@ -540,37 +555,49 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     wait_all_ready();
     std::map<std::int32_t, std::int32_t> evse_connector_structure = get_connector_structure();
 
-    // initialise libocpp device model
-    auto libocpp_device_model_storage = std::make_shared<ocpp::v2::DeviceModelStorageSqlite>(
-        device_model_database_path(), device_model_database_migration_path(), device_model_config_path());
+    const auto share_path = remove_dir(m_info.paths.share);
+
+    const auto charge_point_config_path = update_path_v16(share_path, m_config.getChargePointConfigPath());
+    const auto user_config_path = update_path_v16(share_path, m_config.getUserConfigPath());
+
+    const auto core_database_path = update_path_v2(share_path, m_config.getCoreDatabasePath());
+    const auto device_model_config_path = update_path_v2(share_path, m_config.getDeviceModelConfigPath());
+    const auto device_model_database_migration_path =
+        update_path_v2(share_path, m_config.getDeviceModelDatabaseMigrationPath());
+    const auto device_model_database_path = update_path_v2(share_path, m_config.getDeviceModelDatabasePath());
+    const auto everest_device_model_database_path =
+        update_path_v2(share_path, m_config.getEverestDeviceModelDatabasePath());
+
+    EVLOG_info << "Configuration";
+    EVLOG_info << "Share path:                         " << share_path;
+    EVLOG_info << "v16 config path:                    " << charge_point_config_path;
+    EVLOG_info << "v16 user config path:               " << user_config_path;
+    EVLOG_info << "v2 core database path:              " << core_database_path;
+    EVLOG_info << "v2 device model config path:        " << device_model_config_path;
+    EVLOG_info << "v2 device model migration path:     " << device_model_database_migration_path;
+    EVLOG_info << "v2 device model database path:      " << device_model_database_path;
+    EVLOG_info << "EVerest device model database path: " << everest_device_model_database_path;
 
     // initialise everest device model
     m_everest_device_model_storage = std::make_shared<module::device_model::EverestDeviceModelStorage>(
         m_requires.evse_manager, m_requires.extensions_15118, m_evse_hardware_capabilities_map,
         m_evse_supported_energy_transfer_modes, m_evse_service_renegotiation_supported,
-        everest_device_model_database_path(), device_model_database_migration_path(), client);
+        everest_device_model_database_path, device_model_database_migration_path, client);
 
-    // initialise composed device model, this will be provided to the ChargePoint constructor
-    auto composed_device_model_storage = std::make_unique<module::device_model::ComposedDeviceModelStorage>();
-
-    // register both device model storages
-    // note - this processing causes a slight delay, scope for performance tuning
-    composed_device_model_storage->register_device_model_storage("OCPP", std::move(libocpp_device_model_storage));
-    composed_device_model_storage->register_device_model_storage("EVEREST", m_everest_device_model_storage);
-
-    const auto sql_init_path = (m_info.paths.share / SQL_CORE_MIGRATIONS).string();
-    const auto ocpp_share_path = m_info.paths.share.string();
-
+    // clang-format off
     ocpp_multi::GenericChargePointInterface::init_args_t args{
-        ocpp_share_path,
-        m_config.getCoreDatabasePath(),
-        sql_init_path,
         m_config.getMessageLogPath(),
-        m_config.getChargePointConfigPath(),
-        m_config.getUserConfigPath(),
+        share_path,
+        charge_point_config_path,
+        user_config_path,
+        core_database_path,
+        device_model_config_path,
+        device_model_database_migration_path,
+        device_model_database_path,
         std::move(evse_connector_structure),
-        std::move(composed_device_model_storage),
+        m_everest_device_model_storage,
     };
+    // clang-format on
     m_charge_point.init(args);
 
     // publish charging schedules at least once on startup
@@ -1608,6 +1635,7 @@ void GenericOcpp::charging_schedules_timer_start() {
     const auto interval = m_config.getCompositeScheduleIntervalS();
     if (interval > 0) {
         m_charging_schedules_timer.interval([this]() { cb_set_charging_profiles(); }, std::chrono::seconds(interval));
+        EVLOG_error << "T: " << m_charging_schedules_timer.is_running();
     }
 }
 
@@ -1682,38 +1710,6 @@ GenericOcpp::create_setpoint_entry(std::int32_t setpoint_priority, const std::st
     }
 
     return result;
-}
-
-std::filesystem::path GenericOcpp::device_model_config_path() const {
-    auto path = fs::path(m_config.getDeviceModelConfigPath());
-    if (path.is_relative()) {
-        path = m_info.paths.share / path;
-    }
-    return path;
-}
-
-std::filesystem::path GenericOcpp::device_model_database_path() const {
-    auto path = fs::path(m_config.getDeviceModelDatabasePath());
-    if (path.is_relative()) {
-        path = m_info.paths.share / path;
-    }
-    return path;
-}
-
-std::filesystem::path GenericOcpp::device_model_database_migration_path() const {
-    auto path = fs::path(m_config.getDeviceModelDatabaseMigrationPath());
-    if (path.is_relative()) {
-        path = m_info.paths.share / path;
-    }
-    return path;
-}
-
-std::filesystem::path GenericOcpp::everest_device_model_database_path() const {
-    auto path = fs::path(m_config.getEverestDeviceModelDatabasePath());
-    if (path.is_relative()) {
-        path = m_info.paths.share / path;
-    }
-    return path;
 }
 
 std::map<std::int32_t, std::int32_t> GenericOcpp::get_connector_structure() {

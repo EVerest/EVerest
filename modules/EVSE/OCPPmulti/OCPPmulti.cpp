@@ -74,6 +74,22 @@ void OCPPmulti::init() {
 
     subscribe_global_all_errors([this](const auto& arg) { m_ocpp.cb_error_handler(arg); },
                                 [this](const auto& arg) { m_ocpp.cb_error_cleared_handler(arg); });
+
+    auto mode = ocpp_multi::GenericChargePointInterface::modes_t::prefer_ocpp_2;
+    // - Prefer1.6
+    // - Prefer2
+    // - Only1.6
+    // - Only2
+
+    if (config.Mode == "Prefer1.6") {
+        mode = ocpp_multi::GenericChargePointInterface::modes_t::prefer_ocpp_1_6;
+    } else if (config.Mode == "Only1.6") {
+        mode = ocpp_multi::GenericChargePointInterface::modes_t::ocpp_1_6_only;
+    } else if (config.Mode == "Only2") {
+        mode = ocpp_multi::GenericChargePointInterface::modes_t::ocpp_2_only;
+    }
+
+    m_ocpp.set_mode(mode);
     m_ocpp.init();
 }
 

@@ -9,6 +9,7 @@
 #include "config_stub.hpp"
 #include "interfaces_stub.hpp"
 #include <generic_ocpp.hpp>
+#include <memory>
 
 namespace stubs {
 
@@ -67,10 +68,6 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::charging_schedules_timer_stop;
     using ocpp_multi::GenericOcpp::create_limits_entry;
     using ocpp_multi::GenericOcpp::create_setpoint_entry;
-    using ocpp_multi::GenericOcpp::device_model_config_path;
-    using ocpp_multi::GenericOcpp::device_model_database_migration_path;
-    using ocpp_multi::GenericOcpp::device_model_database_path;
-    using ocpp_multi::GenericOcpp::everest_device_model_database_path;
     using ocpp_multi::GenericOcpp::GenericOcpp;
     using ocpp_multi::GenericOcpp::get_connector_structure;
     using ocpp_multi::GenericOcpp::init_check_energy_sink;
@@ -113,21 +110,23 @@ class GenericOcppProvidesTester : public testing::Test {
 protected:
     stubs::ChargePointStub chargepoint;
     stubs::ConfigStub config;
-    stubs::ModuleInterfaces interfaces;
-    stubs::GenericOcppTester ocpp{chargepoint, interfaces.get_module_info(), config, interfaces.get_provides(),
-                                  interfaces.get_requires()};
+    std::unique_ptr<stubs::ModuleInterfaces> interfaces;
+    std::unique_ptr<stubs::GenericOcppTester> ocpp;
 
     void SetUp() override {
         using ::testing::_;
+        interfaces = std::make_unique<stubs::ModuleInterfaces>();
+        ocpp = std::make_unique<stubs::GenericOcppTester>(chargepoint, interfaces->get_module_info(), config,
+                                                          interfaces->get_provides(), interfaces->get_requires());
         // connect required interfaces
-        interfaces.add_charger_information("info");
-        interfaces.add_data_transfer("data_transfer");
-        interfaces.add_display_message("display");
-        interfaces.add_evse_energy_sink("energy_node", 1);
-        interfaces.add_evse_manager("evse_manager_1");
-        interfaces.add_evse_manager("evse_manager_2");
-        interfaces.add_extensions_15118("evsev2g");
-        interfaces.add_reservation("reservation");
+        interfaces->add_charger_information("info");
+        interfaces->add_data_transfer("data_transfer");
+        interfaces->add_display_message("display");
+        interfaces->add_evse_energy_sink("energy_node", 1);
+        interfaces->add_evse_manager("evse_manager_1");
+        interfaces->add_evse_manager("evse_manager_2");
+        interfaces->add_extensions_15118("evsev2g");
+        interfaces->add_reservation("reservation");
         chargepoint.load_store("default_store.json");
         EXPECT_CALL(chargepoint, init(_)).Times(1);
         EXPECT_CALL(chargepoint, get_all_composite_schedules(600, _)).Times(1);
@@ -135,15 +134,17 @@ protected:
             .Times(1);
         EXPECT_CALL(chargepoint, start(_, false)).Times(1);
         EXPECT_CALL(chargepoint, connect_websocket()).Times(1);
-        ocpp.init();
+        ocpp->init();
         // ocpp.ready() waits for the EVSE managers to be ready
-        interfaces.publish_ready(0, true);
-        interfaces.publish_ready(1, true);
-        ocpp.ready(interfaces.get_config_service_client());
+        interfaces->publish_ready(0, true);
+        interfaces->publish_ready(1, true);
+        ocpp->ready(interfaces->get_config_service_client());
     }
 
     void TearDown() override {
         // consider removing generated/updated files/databases etc.
+        interfaces.reset();
+        ocpp.reset();
     }
 };
 

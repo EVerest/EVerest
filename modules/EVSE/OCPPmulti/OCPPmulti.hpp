@@ -85,6 +85,7 @@ struct Conf {
     std::string RequestCompositeScheduleUnit;
     int ResetStopDelay;
     std::string UserConfigPath;
+    std::string Mode;
 };
 
 class OCPPmulti : public Everest::ModuleBase {
@@ -120,7 +121,7 @@ public:
         r_reservation(std::move(r_reservation)),
         r_security(std::move(r_security)),
         r_system(std::move(r_system)),
-        config(config){};
+        config(config) {};
 
     Everest::MqttProvider& mqtt;
     const std::unique_ptr<auth_token_validatorImplBase> p_auth_validator;

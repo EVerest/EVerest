@@ -179,6 +179,10 @@ public:
         m_charge_point(charge_point), m_info(info), m_config(config), m_provides(provides), m_requires(requires) {
     }
 
+    void set_mode(GenericChargePointInterface::modes_t new_mode) {
+        m_charge_point.set_mode(new_mode);
+    }
+
     // ------------------------------------------------------------------------
     // GenericOcppInterface
 
@@ -334,10 +338,6 @@ protected:
     std::optional<types::energy::ScheduleSetpointEntry>
     create_setpoint_entry(std::int32_t setpoint_priority, const std::string& timestamp,
                           const ocpp::v2::EnhancedChargingSchedulePeriod& period, ocpp::v2::ChargingRateUnitEnum unit);
-    [[nodiscard]] std::filesystem::path device_model_config_path() const;
-    [[nodiscard]] std::filesystem::path device_model_database_path() const;
-    [[nodiscard]] std::filesystem::path device_model_database_migration_path() const;
-    [[nodiscard]] std::filesystem::path everest_device_model_database_path() const;
     std::map<std::int32_t, std::int32_t> get_connector_structure();
     void process_authorised(std::int32_t evse_id, std::int32_t connector_id,
                             const types::evse_manager::SessionEvent& session_event);

@@ -28,8 +28,8 @@ TEST_F(GenericOcppRequiresTester, callSetDisplayMessage) {
     using ocpp::v2::SetDisplayMessageResponse;
 
     std::vector<json> received;
-    interfaces.subscribe_var("display_message", "call_set_display_message",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("display_message", "call_set_display_message",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     DisplayMessageContent content;
     content.message = "Available";
@@ -52,9 +52,9 @@ TEST_F(GenericOcppRequiresTester, callSetDisplayMessage) {
 
     const json expected_response = R"({"status": "Accepted"})"_json;
 
-    interfaces.add_cmd_result(expected_response);
+    interfaces->add_cmd_result(expected_response);
 
-    const auto response = ocpp.cb_set_display_message(request);
+    const auto response = ocpp->cb_set_display_message(request);
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(
@@ -74,8 +74,8 @@ TEST_F(GenericOcppRequiresTester, callGetDisplayMessages) {
     using ocpp::v2::MessageStateEnum;
 
     std::vector<json> received;
-    interfaces.subscribe_var("display_message", "call_get_display_messages",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("display_message", "call_get_display_messages",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     GetDisplayMessagesRequest request;
     // std::optional<std::vector<int32_t>> id;
@@ -194,9 +194,9 @@ TEST_F(GenericOcppRequiresTester, callGetDisplayMessages) {
             "message": {"content": "MyMessage", "language": "en.gb", "format": "ASCII"}
         }
     ]})"_json;
-    interfaces.add_cmd_result(cmd_response);
+    interfaces->add_cmd_result(cmd_response);
 
-    const auto response = ocpp.cb_get_display_message(request);
+    const auto response = ocpp->cb_get_display_message(request);
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(received[0], R"({"request":{"id":[],"priority":"AlwaysFront","state":"Charging"}})"_json);
@@ -225,17 +225,17 @@ TEST_F(GenericOcppRequiresTester, callClearDisplayMessage) {
     using ocpp::v2::ClearMessageStatusEnum;
 
     std::vector<json> received;
-    interfaces.subscribe_var("display_message", "call_clear_display_message",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("display_message", "call_clear_display_message",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
     const json cmd_response = R"({"status": "Accepted"})"_json;
-    interfaces.add_cmd_result(cmd_response);
+    interfaces->add_cmd_result(cmd_response);
 
     ClearDisplayMessageRequest request;
     request.id = 15874;
     // std::optional<CustomData> customData;
 
-    const auto response = ocpp.cb_clear_display_message(request);
+    const auto response = ocpp->cb_clear_display_message(request);
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(received[0], R"({"request":{"id":15874}})"_json);

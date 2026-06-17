@@ -61,10 +61,10 @@ TEST_F(GenericOcppRequiresTester, callEnableDisable) {
     using ocpp::v2::OperationalStatusEnum;
 
     std::vector<json> received;
-    interfaces.subscribe_var("evse_manager", "call_enable_disable",
-                             [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+    interfaces->subscribe_var("evse_manager", "call_enable_disable",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    interfaces.add_cmd_result("true"_json);
+    interfaces->add_cmd_result("true"_json);
 
     std::int32_t evse_id = 1;
     std::int32_t connector_id = 2;
@@ -73,12 +73,12 @@ TEST_F(GenericOcppRequiresTester, callEnableDisable) {
     EXPECT_CALL(chargepoint, on_enabled(_, _)).Times(0);
     EXPECT_CALL(chargepoint, on_unavailable(evse_id, connector_id)).Times(1);
 
-    ocpp.cb_connector_effective_operative_status(evse_id, connector_id, new_status);
+    ocpp->cb_connector_effective_operative_status(evse_id, connector_id, new_status);
 
-    interfaces.add_cmd_result("false"_json);
+    interfaces->add_cmd_result("false"_json);
     EXPECT_CALL(chargepoint, on_unavailable(evse_id, connector_id)).Times(0);
 
-    ocpp.cb_connector_effective_operative_status(evse_id, connector_id, OperationalStatusEnum::Operative);
+    ocpp->cb_connector_effective_operative_status(evse_id, connector_id, OperationalStatusEnum::Operative);
 
     ASSERT_EQ(received.size(), 2);
     EXPECT_EQ(
@@ -98,28 +98,30 @@ TEST_F(GenericOcppRequiresTester, callForceUnlock) {
     // there are 2 EVSE Managers - check routing to the correct manager
     std::vector<json> received_0;
     std::vector<json> received_1;
-    interfaces.subscribe_var("evse_manager", "call_force_unlock", 0,
-                             [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
-    interfaces.subscribe_var("evse_manager", "call_force_unlock", 1,
-                             [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
+    interfaces->subscribe_var(
+        "evse_manager", "call_force_unlock", 0,
+        [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
+    interfaces->subscribe_var(
+        "evse_manager", "call_force_unlock", 1,
+        [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
 
-    interfaces.add_cmd_result("true"_json);
-    auto result = ocpp.cb_unlock_connector(1, 1);
+    interfaces->add_cmd_result("true"_json);
+    auto result = ocpp->cb_unlock_connector(1, 1);
     // UnlockStatusEnum status;
     // std::optional<StatusInfo> statusInfo;
     // std::optional<CustomData> customData;
     EXPECT_EQ(result.status, UnlockStatusEnum::Unlocked);
 
-    interfaces.add_cmd_result("false"_json);
-    result = ocpp.cb_unlock_connector(1, 1);
+    interfaces->add_cmd_result("false"_json);
+    result = ocpp->cb_unlock_connector(1, 1);
     EXPECT_EQ(result.status, UnlockStatusEnum::UnlockFailed);
 
-    interfaces.add_cmd_result("true"_json);
-    result = ocpp.cb_unlock_connector(2, 1);
+    interfaces->add_cmd_result("true"_json);
+    result = ocpp->cb_unlock_connector(2, 1);
     EXPECT_EQ(result.status, UnlockStatusEnum::Unlocked);
 
-    // interfaces.add_cmd_result("true"_json);
-    result = ocpp.cb_unlock_connector(3, 1);
+    // interfaces->add_cmd_result("true"_json);
+    result = ocpp->cb_unlock_connector(3, 1);
     EXPECT_EQ(result.status, UnlockStatusEnum::UnknownConnector);
 
     ASSERT_EQ(received_0.size(), 2);
@@ -136,15 +138,17 @@ TEST_F(GenericOcppRequiresTester, callGetEvse) {
     // there are 2 EVSE Managers - check routing to the correct manager
     std::vector<json> received_0;
     std::vector<json> received_1;
-    interfaces.subscribe_var("evse_manager", "call_get_evse", 0,
-                             [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
-    interfaces.subscribe_var("evse_manager", "call_get_evse", 1,
-                             [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
+    interfaces->subscribe_var(
+        "evse_manager", "call_get_evse", 0,
+        [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
+    interfaces->subscribe_var(
+        "evse_manager", "call_get_evse", 1,
+        [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
 
-    interfaces.add_cmd_result(R"({"id":1,"connectors":[{"id":1}]})"_json);
-    interfaces.add_cmd_result(R"({"id":2,"connectors":[{"id":1},{"id":2},{"id":3}]})"_json);
+    interfaces->add_cmd_result(R"({"id":1,"connectors":[{"id":1}]})"_json);
+    interfaces->add_cmd_result(R"({"id":2,"connectors":[{"id":1},{"id":2},{"id":3}]})"_json);
 
-    const auto result = ocpp.get_connector_structure();
+    const auto result = ocpp->get_connector_structure();
 
     ASSERT_EQ(received_0.size(), 1);
     EXPECT_EQ(received_0[0], json{});
@@ -163,17 +167,19 @@ TEST_F(GenericOcppRequiresTester, callPauseCharging) {
     // there are 2 EVSE Managers - check routing to the correct manager
     std::vector<json> received_0;
     std::vector<json> received_1;
-    interfaces.subscribe_var("evse_manager", "call_pause_charging", 0,
-                             [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
-    interfaces.subscribe_var("evse_manager", "call_pause_charging", 1,
-                             [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
+    interfaces->subscribe_var(
+        "evse_manager", "call_pause_charging", 0,
+        [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
+    interfaces->subscribe_var(
+        "evse_manager", "call_pause_charging", 1,
+        [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
 
     // cb_pause_charging ignores the result
-    interfaces.add_cmd_result(R"(false)"_json);
-    interfaces.add_cmd_result(R"(true)"_json);
+    interfaces->add_cmd_result(R"(false)"_json);
+    interfaces->add_cmd_result(R"(true)"_json);
 
-    ocpp.cb_pause_charging(1);
-    ocpp.cb_pause_charging(2);
+    ocpp->cb_pause_charging(1);
+    ocpp->cb_pause_charging(2);
 
     ASSERT_EQ(received_0.size(), 1);
     EXPECT_EQ(received_0[0], json{});
@@ -188,17 +194,19 @@ TEST_F(GenericOcppRequiresTester, callResumeCharging) {
     // there are 2 EVSE Managers - check routing to the correct manager
     std::vector<json> received_0;
     std::vector<json> received_1;
-    interfaces.subscribe_var("evse_manager", "call_resume_charging", 0,
-                             [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
-    interfaces.subscribe_var("evse_manager", "call_resume_charging", 1,
-                             [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
+    interfaces->subscribe_var(
+        "evse_manager", "call_resume_charging", 0,
+        [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
+    interfaces->subscribe_var(
+        "evse_manager", "call_resume_charging", 1,
+        [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
 
     // cb_pause_charging ignores the result
-    interfaces.add_cmd_result(R"(false)"_json);
-    interfaces.add_cmd_result(R"(true)"_json);
+    interfaces->add_cmd_result(R"(false)"_json);
+    interfaces->add_cmd_result(R"(true)"_json);
 
-    ocpp.cb_resume_charging(1);
-    ocpp.cb_resume_charging(2);
+    ocpp->cb_resume_charging(1);
+    ocpp->cb_resume_charging(2);
 
     ASSERT_EQ(received_0.size(), 1);
     EXPECT_EQ(received_0[0], json{});
@@ -224,16 +232,18 @@ TEST_F(GenericOcppRequiresTester, callSetPlugAndChargeConfiguration) {
     // there are 2 EVSE Managers - check routing to the correct manager
     std::vector<json> received_0;
     std::vector<json> received_1;
-    interfaces.subscribe_var("evse_manager", "call_set_plug_and_charge_configuration", 0,
-                             [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
-    interfaces.subscribe_var("evse_manager", "call_set_plug_and_charge_configuration", 1,
-                             [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
+    interfaces->subscribe_var(
+        "evse_manager", "call_set_plug_and_charge_configuration", 0,
+        [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
+    interfaces->subscribe_var(
+        "evse_manager", "call_set_plug_and_charge_configuration", 1,
+        [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
 
     // cb_pause_charging ignores the result
-    // interfaces.add_cmd_result(R"(false)"_json);
-    // interfaces.add_cmd_result(R"(true)"_json);
+    // interfaces->add_cmd_result(R"(false)"_json);
+    // interfaces->add_cmd_result(R"(true)"_json);
 
-    ocpp.ready_module_configuration();
+    ocpp->ready_module_configuration();
     SetVariableData data{"true", {{"ISO15118Ctrlr"}}, {{"PnCEnabled"}}};
     // CiString<2500> attributeValue;
     // Component component;
@@ -244,20 +254,20 @@ TEST_F(GenericOcppRequiresTester, callSetPlugAndChargeConfiguration) {
     data.attributeValue = "false";
 
     data.variable.name = "PnCEnabled";
-    ocpp.cb_variable_set(data);
+    ocpp->cb_variable_set(data);
     data.variable.name = "CentralContractValidationAllowed";
-    ocpp.cb_variable_set(data);
+    ocpp->cb_variable_set(data);
     data.variable.name = "ContractCertificateInstallationEnabled";
-    ocpp.cb_variable_set(data);
+    ocpp->cb_variable_set(data);
 
     data.attributeValue = "true";
 
     data.variable.name = "PnCEnabled";
-    ocpp.cb_variable_set(data);
+    ocpp->cb_variable_set(data);
     data.variable.name = "CentralContractValidationAllowed";
-    ocpp.cb_variable_set(data);
+    ocpp->cb_variable_set(data);
     data.variable.name = "ContractCertificateInstallationEnabled";
-    ocpp.cb_variable_set(data);
+    ocpp->cb_variable_set(data);
 
     const std::vector<json> expected{
         R"({"plug_and_charge_configuration":{"central_contract_validation_allowed":true,"contract_certificate_installation_enabled":true,"pnc_enabled":true}})"_json,
@@ -288,16 +298,18 @@ TEST_F(GenericOcppRequiresTester, callStopTransaction) {
     // there are 2 EVSE Managers - check routing to the correct manager
     std::vector<json> received_0;
     std::vector<json> received_1;
-    interfaces.subscribe_var("evse_manager", "call_stop_transaction", 0,
-                             [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
-    interfaces.subscribe_var("evse_manager", "call_stop_transaction", 1,
-                             [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
+    interfaces->subscribe_var(
+        "evse_manager", "call_stop_transaction", 0,
+        [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
+    interfaces->subscribe_var(
+        "evse_manager", "call_stop_transaction", 1,
+        [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
 
-    interfaces.add_cmd_result(R"(true)"_json);
-    interfaces.add_cmd_result(R"(false)"_json);
+    interfaces->add_cmd_result(R"(true)"_json);
+    interfaces->add_cmd_result(R"(false)"_json);
 
-    const auto result_0 = ocpp.cb_stop_transaction(1, ReasonEnum::DeAuthorized);
-    const auto result_1 = ocpp.cb_stop_transaction(2, ReasonEnum::StoppedByEV);
+    const auto result_0 = ocpp->cb_stop_transaction(1, ReasonEnum::DeAuthorized);
+    const auto result_1 = ocpp->cb_stop_transaction(2, ReasonEnum::StoppedByEV);
 
     ASSERT_EQ(received_0.size(), 1);
     EXPECT_EQ(received_0[0], R"({"request":{"reason":"DeAuthorized"}})"_json);
@@ -326,10 +338,12 @@ TEST_F(GenericOcppRequiresTester, callUpdateAllowedEnergyTransferModes) {
     // there are 2 EVSE Managers - check routing to the correct manager
     std::vector<json> received_0;
     std::vector<json> received_1;
-    interfaces.subscribe_var("evse_manager", "call_update_allowed_energy_transfer_modes", 0,
-                             [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
-    interfaces.subscribe_var("evse_manager", "call_update_allowed_energy_transfer_modes", 1,
-                             [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
+    interfaces->subscribe_var(
+        "evse_manager", "call_update_allowed_energy_transfer_modes", 0,
+        [&received_0](const auto&, const auto&, const auto& data) { received_0.push_back(data); });
+    interfaces->subscribe_var(
+        "evse_manager", "call_update_allowed_energy_transfer_modes", 1,
+        [&received_1](const auto&, const auto&, const auto& data) { received_1.push_back(data); });
 
     const std::vector<EnergyTransferModeEnum> allowed_energy_transfer_modes{EnergyTransferModeEnum::AC_single_phase,
                                                                             EnergyTransferModeEnum::AC_three_phase};
@@ -366,13 +380,13 @@ TEST_F(GenericOcppRequiresTester, callUpdateAllowedEnergyTransferModes) {
     // - IncompatibleEnergyTransfer
     // - ServiceRenegotiationFailed
     // - NoHlc
-    interfaces.add_cmd_result(R"("Accepted")"_json);
+    interfaces->add_cmd_result(R"("Accepted")"_json);
 
-    ocpp.process_session_event(1, session_event);
+    ocpp->process_session_event(1, session_event);
 
-    const auto result_A = ocpp.cb_update_allowed_energy_transfer_modes(allowed_energy_transfer_modes, transaction_id);
+    const auto result_A = ocpp->cb_update_allowed_energy_transfer_modes(allowed_energy_transfer_modes, transaction_id);
     transaction_id = "0123456789"; // no transaction
-    const auto result_B = ocpp.cb_update_allowed_energy_transfer_modes(allowed_energy_transfer_modes, transaction_id);
+    const auto result_B = ocpp->cb_update_allowed_energy_transfer_modes(allowed_energy_transfer_modes, transaction_id);
 
     ASSERT_EQ(received_0.size(), 1);
     EXPECT_EQ(received_0[0],
@@ -398,19 +412,19 @@ TEST_F(GenericOcppRequiresTester, subscribeEvInfo) {
     // std::optional<float> soc;
     // std::optional<std::string> evcc_id;
 
-    interfaces.publish(0, "ev_info", ev_info);
+    interfaces->publish(0, "ev_info", ev_info);
 
-    EXPECT_EQ(ocpp.evse_evcc_id().handle()->at(1), ev_info.evcc_id);
-    EXPECT_EQ(ocpp.evse_soc_map().handle()->at(1), ev_info.soc);
+    EXPECT_EQ(ocpp->evse_evcc_id().handle()->at(1), ev_info.evcc_id);
+    EXPECT_EQ(ocpp->evse_soc_map().handle()->at(1), ev_info.soc);
 
     ev_info.soc = 12.48;
     ev_info.evcc_id = "AA223344556677ZZ";
-    interfaces.publish(1, "ev_info", ev_info);
+    interfaces->publish(1, "ev_info", ev_info);
 
     // note evse_id is index + 1
     // - publish uses index
-    EXPECT_EQ(ocpp.evse_evcc_id().handle()->at(2), ev_info.evcc_id);
-    EXPECT_EQ(ocpp.evse_soc_map().handle()->at(2), ev_info.soc);
+    EXPECT_EQ(ocpp->evse_evcc_id().handle()->at(2), ev_info.evcc_id);
+    EXPECT_EQ(ocpp->evse_soc_map().handle()->at(2), ev_info.soc);
 }
 
 TEST_F(GenericOcppRequiresTester, subscribeHwCapabilities) {
@@ -430,9 +444,9 @@ TEST_F(GenericOcppRequiresTester, subscribeHwCapabilities) {
     hw_capabilities.connector_type = types::evse_board_support::Connector_type::IEC62196Type2Socket;
     hw_capabilities.max_plug_temperature_C = 60;
 
-    interfaces.publish(0, "hw_capabilities", hw_capabilities);
+    interfaces->publish(0, "hw_capabilities", hw_capabilities);
 
-    const auto& evse_hardware_capabilities_map = ocpp.evse_hardware_capabilities_map();
+    const auto& evse_hardware_capabilities_map = ocpp->evse_hardware_capabilities_map();
 
     ASSERT_FALSE(evse_hardware_capabilities_map.empty());
     EXPECT_EQ(evse_hardware_capabilities_map.at(1), hw_capabilities);
@@ -443,11 +457,11 @@ TEST_F(GenericOcppRequiresTester, subscribeHwCapabilities) {
     hw_capabilities.min_phase_count_export = 3;
     hw_capabilities.supports_changing_phases_during_charging = false;
     hw_capabilities.supports_cp_state_E = false;
-    interfaces.publish(1, "hw_capabilities", hw_capabilities);
+    interfaces->publish(1, "hw_capabilities", hw_capabilities);
 
     // note evse_id is index + 1
     // - publish uses index
-    EXPECT_EQ(ocpp.evse_hardware_capabilities_map().at(2), hw_capabilities);
+    EXPECT_EQ(ocpp->evse_hardware_capabilities_map().at(2), hw_capabilities);
 }
 
 TEST_F(GenericOcppRequiresTester, subscribePowermeter) {
@@ -491,8 +505,8 @@ TEST_F(GenericOcppRequiresTester, subscribePowermeter) {
     EXPECT_CALL(chargepoint, on_meter_value(1, _, power_meter_0)).Times(1);
     EXPECT_CALL(chargepoint, on_meter_value(1, _, power_meter_1)).Times(1);
 
-    interfaces.publish(0, "powermeter", power_meter_0);
-    interfaces.publish(0, "powermeter", power_meter_1);
+    interfaces->publish(0, "powermeter", power_meter_0);
+    interfaces->publish(0, "powermeter", power_meter_1);
 }
 
 TEST_F(GenericOcppRequiresTester, subscribeSessionEvent) {
@@ -535,7 +549,7 @@ TEST_F(GenericOcppRequiresTester, subscribeSessionEvent) {
 
     EXPECT_CALL(chargepoint, on_authorized(1, 1, id_token)).Times(1);
 
-    interfaces.publish(0, "session_event", session_event);
+    interfaces->publish(0, "session_event", session_event);
 }
 
 TEST_F(GenericOcppRequiresTester, subscribeSupportedEnergyTransferModes) {
@@ -551,10 +565,10 @@ TEST_F(GenericOcppRequiresTester, subscribeSupportedEnergyTransferModes) {
     const auto modes_json_0 = R"(["DC","DC_BPT"])"_json;
     const auto modes_json_1 = R"(["AC_three_phase_core","AC_single_phase_core"])"_json;
 
-    interfaces.publish(0, "supported_energy_transfer_modes", modes_json_0);
-    interfaces.publish(1, "supported_energy_transfer_modes", modes_json_1);
+    interfaces->publish(0, "supported_energy_transfer_modes", modes_json_0);
+    interfaces->publish(1, "supported_energy_transfer_modes", modes_json_1);
 
-    const auto& energy_transfer_modes = ocpp.evse_supported_energy_transfer_modes();
+    const auto& energy_transfer_modes = ocpp->evse_supported_energy_transfer_modes();
     EXPECT_EQ(energy_transfer_modes.at(1), modes_0);
     EXPECT_EQ(energy_transfer_modes.at(2), modes_1);
 }

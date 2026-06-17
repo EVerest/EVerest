@@ -32,6 +32,7 @@ private:
     ocpp::v2::Callbacks m_callbacks;
 
     state_t m_state{state_t::idle};
+    modes_t m_mode{modes_t::prefer_ocpp_2};
     std::unique_ptr<ChargePointV16> m_charge_point_v16;
     std::unique_ptr<ChargePointV2> m_charge_point_v2;
     GenericChargePointInterface* m_active_ptr{nullptr};
@@ -44,6 +45,9 @@ public:
     }
 
     void init(init_args_t& args) override;
+    void set_mode(modes_t new_mode) override {
+        m_mode = new_mode;
+    }
 
     void connect_websocket() override;
     void disconnect_websocket() override;
@@ -119,9 +123,7 @@ public:
     set_variables(const std::vector<ocpp::v2::SetVariableData>& set_variable_data_vector,
                   const std::string& source) override;
 
-    ocpp::v2::AuthorizeResponse
-    validate_token(const ocpp::v2::IdToken& id_token, const std::optional<ocpp::CiString<10000>>& certificate,
-                   const std::optional<std::vector<ocpp::v2::OCSPRequestData>>& ocsp_request_data) override;
+    ocpp::v2::AuthorizeResponse validate_token(const types::authorization::ProvidedIdToken& provided_token) override;
 };
 
 } // namespace ocpp_multi
