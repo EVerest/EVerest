@@ -3690,13 +3690,36 @@ static int encode_iso20_ac_der_sae_CurveDataPointsListType(exi_bitstream_t* stre
         switch (grammar_id)
         {
         case 67:
-            // Grammar: ID=67; read/write bits=2; START (CurveDataPoint), END Element
+            // Grammar: ID=67; read/write bits=1; START (CurveDataPoint)
+            if (CurveDataPoint_currentIndex < CurveDataPointsListType->CurveDataPoint.arrayLen)
+            {
+                error = exi_basetypes_encoder_nbit_uint(stream, 1, 0);
+                if (error == EXI_ERROR__NO_ERROR)
+                {
+                    // Event: START (DataTupleType); next=67, 68
+                    error = encode_iso20_ac_der_sae_DataTupleType(stream, &CurveDataPointsListType->CurveDataPoint.array[CurveDataPoint_currentIndex++]);
+                    if (error == EXI_ERROR__NO_ERROR)
+                    {
+                        if (CurveDataPoint_currentIndex >= 2)
+                        {
+                            grammar_id = 68;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                error = EXI_ERROR__UNKNOWN_EVENT_CODE;
+            }
+            break;
+        case 68:
+            // Grammar: ID=68; read/write bits=2; LOOP (CurveDataPoint), END Element
             if (CurveDataPoint_currentIndex < CurveDataPointsListType->CurveDataPoint.arrayLen)
             {
                 error = exi_basetypes_encoder_nbit_uint(stream, 2, 0);
                 if (error == EXI_ERROR__NO_ERROR)
                 {
-                    // Event: START (DataTupleType); next=68
+                    // Event: LOOP (DataTupleType); next=68
                     error = encode_iso20_ac_der_sae_DataTupleType(stream, &CurveDataPointsListType->CurveDataPoint.array[CurveDataPoint_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
@@ -3713,26 +3736,6 @@ static int encode_iso20_ac_der_sae_CurveDataPointsListType(exi_bitstream_t* stre
                     done = 1;
                     grammar_id = 3;
                 }
-            }
-            break;
-        case 68:
-            // Grammar: ID=68; read/write bits=1; LOOP (CurveDataPoint)
-            if (CurveDataPoint_currentIndex < CurveDataPointsListType->CurveDataPoint.arrayLen)
-            {
-                error = exi_basetypes_encoder_nbit_uint(stream, 1, 0);
-                if (error == EXI_ERROR__NO_ERROR)
-                {
-                    // Event: LOOP (DataTupleType); next=68
-                    error = encode_iso20_ac_der_sae_DataTupleType(stream, &CurveDataPointsListType->CurveDataPoint.array[CurveDataPoint_currentIndex++]);
-                    if (error == EXI_ERROR__NO_ERROR)
-                    {
-                        grammar_id = 68;
-                    }
-                }
-            }
-            else
-            {
-                error = EXI_ERROR__UNKNOWN_EVENT_CODE;
             }
             break;
         case 2:
