@@ -9,22 +9,21 @@ ev_setup_cpp_module()
 
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
 # insert your custom targets and additional config variables here
-# ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
-
 target_sources(${MODULE_NAME}
     PRIVATE
-        "main/powermeterImpl.cpp"
-        "temperature_sensor/temperature_sensorImpl.cpp"
+        "derating/derating_curve.cpp"
 )
+
+target_link_libraries(${MODULE_NAME}
+    PRIVATE
+        everest::timer
+)
+
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
+# ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
 
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1
 # insert other things like install cmds etc here
-target_sources(${MODULE_NAME}
-    PRIVATE
-        "main/transport.cpp"
-)
-
-if(EVEREST_CORE_BUILD_TESTING)
-        add_subdirectory(tests)
-endif()
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1

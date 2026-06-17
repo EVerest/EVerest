@@ -1,0 +1,12 @@
+description: >-
+  Generic temperature sensor reporting interface. Providers publish one or more
+  temperature readings that can be consumed independently of powermeter data.
+vars:
+  temperatures:
+    description: >-
+      Temperature readings in degree Celsius. The meaning of each entry is product
+      specific and may be identified via the identification or location fields.
+    type: array
+    items:
+      type: object
+      $ref: /temperature#/Temperature

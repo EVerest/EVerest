@@ -130,6 +130,7 @@ All parameters are defined in `modules/HardwareDrivers/PowerMeters/CarloGavazzi_
 ### Provides
 
 - `main`: `powermeter`
+- `temperature_sensor`: `temperature_sensor` (body temperature from register 300776, published as identification `"Powermeter"`, location `"Body"`)
 
 ### Requires
 

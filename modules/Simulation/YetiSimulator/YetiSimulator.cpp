@@ -10,6 +10,13 @@ namespace module {
 
 namespace {
 
+std::vector<types::temperature::Temperature>
+temperatures_from_powermeter(const state::PowermeterData& powermeter_data) {
+    return {{.temperature = static_cast<float>(powermeter_data.tempL1),
+             .identification = "Powermeter",
+             .location = "Powermeter"}};
+}
+
 types::powermeter::Powermeter power_meter_external(const state::PowermeterData& powermeter_data) {
     const auto current_iso_time_string = util::get_current_iso_time_string();
     const auto& [time_stamp, import_totalWattHr, export_totalWattHr, wattL1, vrmsL1, irmsL1, import_wattHrL1,
@@ -17,8 +24,7 @@ types::powermeter::Powermeter power_meter_external(const state::PowermeterData& 
                  freqL2, wattL3, vrmsL3, irmsL3, import_wattHrL3, export_wattHrL3, tempL3, freqL3, irmsN] =
         powermeter_data;
 
-    const std::vector<types::temperature::Temperature> temperatures = {
-        {static_cast<float>(powermeter_data.tempL1), std::nullopt, "Body"}};
+    const auto temperatures = temperatures_from_powermeter(powermeter_data);
 
     return {current_iso_time_string, // timestamp
             {
@@ -134,6 +140,7 @@ types::board_support_common::BspEvent event_to_enum(state::State event) {
 
 void YetiSimulator::init() {
     invoke_init(*p_powermeter);
+    invoke_init(*p_temperature_sensor);
     invoke_init(*p_board_support);
     invoke_init(*p_ev_board_support);
     invoke_init(*p_rcd);
@@ -175,6 +182,7 @@ void YetiSimulator::init() {
 
 void YetiSimulator::ready() {
     invoke_ready(*p_powermeter);
+    invoke_ready(*p_temperature_sensor);
     invoke_ready(*p_board_support);
     invoke_ready(*p_ev_board_support);
     invoke_ready(*p_rcd);
@@ -621,6 +629,7 @@ void YetiSimulator::publish_ev_board_support() const {
 
 void YetiSimulator::publish_powermeter() {
     p_powermeter->publish_powermeter(power_meter_external(module_state->powermeter_data));
+    p_temperature_sensor->publish_temperatures(temperatures_from_powermeter(module_state->powermeter_data));
 
     // Deprecated external stuff
     const auto totalKWattHr =
