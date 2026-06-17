@@ -86,11 +86,13 @@ SCENARIO("Se/Deserialize ac der iec charge loop messages") {
 
             REQUIRE(dt::from_RationalNumber(control_mode.max_discharge_power) == 32);
             REQUIRE(dt::from_RationalNumber(control_mode.min_discharge_power) == 20);
-            REQUIRE(dt::from_RationalNumber(control_mode.max_charge_reactive_power.value_or({})) == 32);
-            REQUIRE(dt::from_RationalNumber(control_mode.max_discharge_reactive_power.value_or({})) == 32);
+            REQUIRE(dt::from_RationalNumber(control_mode.max_charge_reactive_power.value_or(dt::RationalNumber{})) ==
+                    32);
+            REQUIRE(dt::from_RationalNumber(control_mode.max_discharge_reactive_power.value_or(dt::RationalNumber{})) ==
+                    32);
             REQUIRE(control_mode.grid_event_condition == 0);
-            REQUIRE(dt::from_RationalNumber(control_mode.session_total_discharge_energy_available.value_or({})) ==
-                    20000);
+            REQUIRE(dt::from_RationalNumber(
+                        control_mode.session_total_discharge_energy_available.value_or(dt::RationalNumber{})) == 20000);
         }
     }
 
@@ -149,16 +151,19 @@ SCENARIO("Se/Deserialize ac der iec charge loop messages") {
 
             REQUIRE(std::holds_alternative<ScheduledMode>(msg.control_mode));
             const auto& control_mode = std::get<ScheduledMode>(msg.control_mode);
-            REQUIRE(dt::from_RationalNumber(control_mode.target_energy_request.value_or({})) == 25000);
-            REQUIRE(dt::from_RationalNumber(control_mode.max_energy_request.value_or({})) == 30000);
-            REQUIRE(dt::from_RationalNumber(control_mode.max_charge_power.value_or({})) == 32);
-            REQUIRE(dt::from_RationalNumber(control_mode.min_charge_power.value_or({})) == 20);
-            REQUIRE(dt::from_RationalNumber(control_mode.present_reactive_power.value_or({})) == 0);
+            REQUIRE(dt::from_RationalNumber(control_mode.target_energy_request.value_or(dt::RationalNumber{})) ==
+                    25000);
+            REQUIRE(dt::from_RationalNumber(control_mode.max_energy_request.value_or(dt::RationalNumber{})) == 30000);
+            REQUIRE(dt::from_RationalNumber(control_mode.max_charge_power.value_or(dt::RationalNumber{})) == 32);
+            REQUIRE(dt::from_RationalNumber(control_mode.min_charge_power.value_or(dt::RationalNumber{})) == 20);
+            REQUIRE(dt::from_RationalNumber(control_mode.present_reactive_power.value_or(dt::RationalNumber{})) == 0);
             REQUIRE(dt::from_RationalNumber(control_mode.present_active_power) == 15);
             REQUIRE(dt::from_RationalNumber(control_mode.max_discharge_power) == 32);
             REQUIRE(dt::from_RationalNumber(control_mode.min_discharge_power) == 20);
-            REQUIRE(dt::from_RationalNumber(control_mode.max_charge_reactive_power.value_or({})) == 32);
-            REQUIRE(dt::from_RationalNumber(control_mode.max_discharge_reactive_power.value_or({})) == 32);
+            REQUIRE(dt::from_RationalNumber(control_mode.max_charge_reactive_power.value_or(dt::RationalNumber{})) ==
+                    32);
+            REQUIRE(dt::from_RationalNumber(control_mode.max_discharge_reactive_power.value_or(dt::RationalNumber{})) ==
+                    32);
             REQUIRE(control_mode.grid_event_condition == 0);
         }
     }
@@ -284,11 +289,12 @@ SCENARIO("Se/Deserialize ac der iec charge loop messages") {
             REQUIRE(control_mode.departure_time.value_or(0) == 1725470000);
             REQUIRE(control_mode.target_soc.value_or(0) == 80);
             REQUIRE(dt::from_RationalNumber(control_mode.target_active_power) == 32);
-            REQUIRE(dt::from_RationalNumber(control_mode.target_reactive_power.value_or({1, 0})) == 0);
-            REQUIRE(dt::from_RationalNumber(control_mode.present_active_power.value_or({})) == 15);
+            REQUIRE(dt::from_RationalNumber(control_mode.target_reactive_power.value_or(dt::RationalNumber{1, 0})) ==
+                    0);
+            REQUIRE(dt::from_RationalNumber(control_mode.present_active_power.value_or(dt::RationalNumber{})) == 15);
             REQUIRE(dt::from_RationalNumber(control_mode.max_charge_power) == 32);
             REQUIRE(dt::from_RationalNumber(control_mode.max_discharge_power) == 32);
-            REQUIRE(dt::from_RationalNumber(control_mode.dso_discharge_power.value_or({})) == 32);
+            REQUIRE(dt::from_RationalNumber(control_mode.dso_discharge_power.value_or(dt::RationalNumber{})) == 32);
 
             REQUIRE(control_mode.dso_q_setpoint.has_value());
             const auto& dsoq = control_mode.dso_q_setpoint.value();
@@ -347,12 +353,13 @@ SCENARIO("Se/Deserialize ac der iec charge loop messages") {
 
             REQUIRE(std::holds_alternative<ScheduledMode>(msg.control_mode));
             const auto& control_mode = std::get<ScheduledMode>(msg.control_mode);
-            REQUIRE(dt::from_RationalNumber(control_mode.target_active_power.value_or({})) == 32);
-            REQUIRE(dt::from_RationalNumber(control_mode.target_reactive_power.value_or({1, 0})) == 0);
-            REQUIRE(dt::from_RationalNumber(control_mode.present_active_power.value_or({})) == 15);
+            REQUIRE(dt::from_RationalNumber(control_mode.target_active_power.value_or(dt::RationalNumber{})) == 32);
+            REQUIRE(dt::from_RationalNumber(control_mode.target_reactive_power.value_or(dt::RationalNumber{1, 0})) ==
+                    0);
+            REQUIRE(dt::from_RationalNumber(control_mode.present_active_power.value_or(dt::RationalNumber{})) == 15);
             REQUIRE(dt::from_RationalNumber(control_mode.max_charge_power) == 32);
             REQUIRE(dt::from_RationalNumber(control_mode.max_discharge_power) == 32);
-            REQUIRE(dt::from_RationalNumber(control_mode.dso_discharge_power.value_or({})) == 20);
+            REQUIRE(dt::from_RationalNumber(control_mode.dso_discharge_power.value_or(dt::RationalNumber{})) == 20);
 
             REQUIRE(control_mode.dso_cos_phi_setpoint.has_value());
             const auto& dso_cos_phi = control_mode.dso_cos_phi_setpoint.value();

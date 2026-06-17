@@ -34,14 +34,14 @@ SCENARIO("Se/Deserialize ac der iec charge parameter discovery messages") {
 
             REQUIRE(message_20::datatypes::from_RationalNumber(msg.transfer_mode.max_charge_power) == 32);
             REQUIRE(message_20::datatypes::from_RationalNumber(
-                        msg.transfer_mode.max_charge_power_L2.value_or({1, 0})) == 0.0f);
+                        msg.transfer_mode.max_charge_power_L2.value_or(dt::RationalNumber{1, 0})) == 0.0f);
             REQUIRE(message_20::datatypes::from_RationalNumber(
-                        msg.transfer_mode.max_charge_power_L3.value_or({1, 0})) == 0.0f);
+                        msg.transfer_mode.max_charge_power_L3.value_or(dt::RationalNumber{1, 0})) == 0.0f);
             REQUIRE(message_20::datatypes::from_RationalNumber(msg.transfer_mode.min_charge_power) == 20);
             REQUIRE(message_20::datatypes::from_RationalNumber(
-                        msg.transfer_mode.min_charge_power_L2.value_or({1, 0})) == 0.0f);
+                        msg.transfer_mode.min_charge_power_L2.value_or(dt::RationalNumber{1, 0})) == 0.0f);
             REQUIRE(message_20::datatypes::from_RationalNumber(
-                        msg.transfer_mode.min_charge_power_L3.value_or({1, 0})) == 0.0f);
+                        msg.transfer_mode.min_charge_power_L3.value_or(dt::RationalNumber{1, 0})) == 0.0f);
             REQUIRE(message_20::datatypes::from_RationalNumber(msg.transfer_mode.max_discharge_power) == 32);
             REQUIRE(message_20::datatypes::from_RationalNumber(msg.transfer_mode.min_discharge_power) == 20);
         }
