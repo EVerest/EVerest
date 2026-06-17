@@ -208,7 +208,7 @@ struct ReqControlModeVisitor {
     using DER_ScheduledCM = datatypes::DER_Scheduled_AC_CLReqControlMode;
     using DER_DynamicCM = datatypes::DER_Dynamic_AC_CLReqControlMode;
 
-    ReqControlModeVisitor(iso20_ac_der_iec_AC_ChargeLoopReqType& req_) : req(req_) {};
+    ReqControlModeVisitor(iso20_ac_der_iec_AC_ChargeLoopReqType& req_) : req(req_){};
 
     void operator()(const DER_ScheduledCM& in) {
         auto& out = req.DER_Scheduled_AC_CLReqControlMode;
@@ -503,7 +503,7 @@ struct ControlModeVisitor {
     using DER_ScheduledCM = datatypes::DER_Scheduled_AC_CLResControlMode;
     using DER_DynamicCM = datatypes::DER_Dynamic_AC_CLResControlMode;
 
-    ControlModeVisitor(iso20_ac_der_iec_AC_ChargeLoopResType& res_) : res(res_) {};
+    ControlModeVisitor(iso20_ac_der_iec_AC_ChargeLoopResType& res_) : res(res_){};
 
     void operator()(const DER_ScheduledCM& in) {
         auto& out = res.DER_Scheduled_AC_CLResControlMode;

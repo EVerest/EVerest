@@ -184,8 +184,8 @@ static void handle_ac_sae_der(VariantAccess& va) {
         insert_type(va, doc.AC_ChargeParameterDiscoveryRes);
     } else if (doc.AC_ChargeLoopReq_isUsed) {
         insert_type(va, doc.AC_ChargeLoopReq);
-    // } else if (doc.AC_ChargeLoopRes_isUsed) {
-    //     insert_type(va, doc.AC_ChargeLoopRes);
+    } else if (doc.AC_ChargeLoopRes_isUsed) {
+        insert_type(va, doc.AC_ChargeLoopRes);
     } else {
         va.error = "chosen message type unhandled";
     }

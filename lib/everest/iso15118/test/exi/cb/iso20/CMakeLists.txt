@@ -29,4 +29,5 @@ create_exi_test_target(ac_charge_loop)
 create_exi_test_target(ac_der_iec_charge_parameter_discovery)
 create_exi_test_target(ac_der_sae_charge_parameter_discovery)
 create_exi_test_target(ac_der_iec_charge_loop)
+create_exi_test_target(ac_der_sae_charge_loop)
 
