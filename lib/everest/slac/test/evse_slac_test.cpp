@@ -38,7 +38,7 @@ struct EVSession {
 
     // FIXME (aw): all these create_cm_* need to be fully implemented!
     auto create_cm_slac_parm_req() {
-        slac::messages::cm_slac_parm_req parm_req;
+        slac::messages::cm_slac_parm_req parm_req{};
         std::copy(run_id.begin(), run_id.end(), parm_req.run_id);
 
         slac::messages::HomeplugMessage hp_message;
@@ -51,7 +51,10 @@ struct EVSession {
     }
 
     auto create_cm_start_atten_char_ind() {
-        slac::messages::cm_start_atten_char_ind atten_char_ind;
+        slac::messages::cm_start_atten_char_ind atten_char_ind{};
+        atten_char_ind.num_sounds = slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS;
+        atten_char_ind.timeout = slac::defs::CM_SLAC_PARM_CNF_TIMEOUT;
+        atten_char_ind.resp_type = slac::defs::CM_SLAC_PARM_CNF_RESP_TYPE;
         std::copy(run_id.begin(), run_id.end(), atten_char_ind.run_id);
 
         slac::messages::HomeplugMessage hp_message;
@@ -64,7 +67,7 @@ struct EVSession {
     }
 
     auto create_cm_mnbc_sound_ind() {
-        slac::messages::cm_mnbc_sound_ind sound_ind;
+        slac::messages::cm_mnbc_sound_ind sound_ind{};
         std::copy(run_id.begin(), run_id.end(), sound_ind.run_id);
 
         slac::messages::HomeplugMessage hp_message;
@@ -95,7 +98,8 @@ struct EVSession {
     }
 
     auto create_cm_atten_char_rsp() {
-        slac::messages::cm_atten_char_rsp atten_char;
+        slac::messages::cm_atten_char_rsp atten_char{};
+        std::copy(mac.begin(), mac.end(), atten_char.source_address);
         std::copy(run_id.begin(), run_id.end(), atten_char.run_id);
 
         slac::messages::HomeplugMessage hp_message;
@@ -108,7 +112,9 @@ struct EVSession {
     }
 
     auto create_cm_slac_match_req() {
-        slac::messages::cm_slac_match_req match_req;
+        slac::messages::cm_slac_match_req match_req{};
+        match_req.mvf_length = slac::defs::CM_SLAC_MATCH_REQ_MVF_LENGTH;
+        std::copy(mac.begin(), mac.end(), match_req.pev_mac);
         std::copy(run_id.begin(), run_id.end(), match_req.run_id);
 
         slac::messages::HomeplugMessage hp_message;
@@ -173,13 +179,18 @@ int main(int argc, char* argv[]) {
     std::optional<slac::messages::HomeplugMessage> msg_in;
 
     slac::fsm::evse::ContextCallbacks callbacks;
-    callbacks.log = [](const std::string& text) { fmt::print("SLAC LOG: {}\n", text); };
+    const auto slac_log = [](const std::string& text) { fmt::print("SLAC LOG: {}\n", text); };
+    callbacks.log_debug = slac_log;
+    callbacks.log_info = slac_log;
+    callbacks.log_warn = slac_log;
+    callbacks.log_error = slac_log;
 
     callbacks.send_raw_slac = [&msg_in](slac::messages::HomeplugMessage& hp_message) { msg_in = hp_message; };
 
     auto ctx = slac::fsm::evse::Context(callbacks);
     ctx.slac_config.sounding_atten_adjustment = ATTENUATION_ADJUSTMENT;
     ctx.slac_config.chip_reset.enabled = false;
+    memset(ctx.evse_mac, 0, sizeof(ctx.evse_mac));
 
     auto machine = slac::fsm::evse::FSM();
 
