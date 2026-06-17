@@ -11,6 +11,7 @@
 namespace iso15118::message_20 {
 
 namespace datatypes {
+namespace sae {
 
 struct EVApparentPower {
     RationalNumber maximum_apparent_power_during_charging_and_var_absorption;
@@ -173,6 +174,7 @@ struct DER_Dynamic_AC_CLResControlMode : Dynamic_AC_CLResControlMode {
     std::optional<GridConnectionMode> grid_connection_mode;
 };
 
+} // namespace sae
 } // namespace datatypes
 
 struct DER_SAE_AC_ChargeLoopRequest {
@@ -183,7 +185,8 @@ struct DER_SAE_AC_ChargeLoopRequest {
     std::optional<datatypes::DisplayParameters> display_parameters;
     bool meter_info_requested;
 
-    std::variant<datatypes::DER_Scheduled_AC_CLReqControlMode, datatypes::DER_Dynamic_AC_CLReqControlMode> control_mode;
+    std::variant<datatypes::sae::DER_Scheduled_AC_CLReqControlMode, datatypes::sae::DER_Dynamic_AC_CLReqControlMode>
+        control_mode;
 };
 
 struct DER_SAE_AC_ChargeLoopResponse {
@@ -198,8 +201,8 @@ struct DER_SAE_AC_ChargeLoopResponse {
 
     std::optional<datatypes::RationalNumber> target_frequency;
 
-    std::variant<datatypes::DER_Scheduled_AC_CLResControlMode, datatypes::DER_Dynamic_AC_CLResControlMode> control_mode{
-        datatypes::DER_Scheduled_AC_CLResControlMode()};
+    std::variant<datatypes::sae::DER_Scheduled_AC_CLResControlMode, datatypes::sae::DER_Dynamic_AC_CLResControlMode>
+        control_mode{datatypes::sae::DER_Scheduled_AC_CLResControlMode()};
 };
 
 } // namespace iso15118::message_20
