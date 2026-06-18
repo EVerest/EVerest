@@ -72,6 +72,21 @@ SCENARIO("ISO15118-20 DC charge loop holds PowerDeliveryRes(Stop) until the powe
             }
         }
 
+        WHEN("An error shutdown is reported while the response waits for the power path") {
+            ctx.request_forced_failed_response();
+            state_helper.set_active_control_event(d20::ClosedContactor{false});
+            const auto off_result = fsm.feed(d20::Event::CONTROL_MESSAGE);
+
+            THEN("the failed response ends the session without entering welding detection") {
+                REQUIRE_FALSE(off_result.transitioned());
+                REQUIRE(fsm.get_current_state_id() == d20::StateID::DC_ChargeLoop);
+                const auto res = ctx.get_response<message_20::PowerDeliveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED);
+                REQUIRE(ctx.session_stopped);
+            }
+        }
+
         WHEN("A contactor-closed report arrives") {
             state_helper.set_active_control_event(d20::ClosedContactor{true});
             const auto closed_result = fsm.feed(d20::Event::CONTROL_MESSAGE);
