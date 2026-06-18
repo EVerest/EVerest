@@ -239,7 +239,7 @@ class TestOcpp201CostAndPrice:
         received_data['cost_chunks'][0] = {
             'cost': {'value': 5510000}, 'metervalue_to': 0, 'timestamp_to': ANY}
         received_data['status'] = 'Finished'
-        probe_module_mock_fn.call_count = 0
+        probe_module_mock_fn.reset_mock()
 
         assert await wait_for_and_validate(test_utility, chargepoint_with_pm, "TransactionEvent",
                                            {"eventType": "Ended"})
@@ -336,7 +336,7 @@ class TestOcpp201CostAndPrice:
         # Clear cache
         r: call_result201.ClearCache = await chargepoint_with_pm.clear_cache_req()
         assert r.status == ClearCacheStatusEnumType.accepted
-        session_cost_mock.call_count = 0
+        session_cost_mock.reset_mock()
 
         await chargepoint_with_pm.cost_update_req(total_cost=1.345, transaction_id=transaction_id,
                                                   custom_data=self.cost_updated_custom_data)
@@ -348,7 +348,7 @@ class TestOcpp201CostAndPrice:
         # Clear cache
         r: call_result201.ClearCache = await chargepoint_with_pm.clear_cache_req()
         assert r.status == ClearCacheStatusEnumType.accepted
-        session_cost_mock.call_count = 0
+        session_cost_mock.reset_mock()
 
         # Set transaction id to a not existing transaction id.
         await chargepoint_with_pm.cost_update_req(total_cost=1.345, transaction_id="12345",
