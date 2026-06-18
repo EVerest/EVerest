@@ -4,7 +4,6 @@
 #define EVSE_SLAC_FSM_CONTROLLER_HPP
 
 #include "everest/slac/slac_fsm.hpp"
-#include <everest/slac/fsm/evse/fsm.hpp>
 
 #include <condition_variable>
 #include <mutex>
@@ -41,13 +40,11 @@ private:
     void handle_leave_bcd();
 
     slac::fsm::evse::Context& ctx;
-    //    slac::fsm::evse::FSM fsm;
     slac::slac_fsm fsm;
 
     event_fd m_reset;
     event_fd m_enter_bcd;
     event_fd m_leave_bcd;
-    //    event_fd m_feed;
     timer_fd m_retrigger;
 };
 
