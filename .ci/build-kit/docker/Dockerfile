@@ -13,3 +13,10 @@ FROM ghcr.io/everest/everest-ci/build-kit-base:${BASE_IMAGE_TAG}
 
 # FIXME(kai): Install libsystemd-dev as a dependency of sdbus-c++
 RUN apt-get update && apt-get -y install libsystemd-dev
+
+# FIXME: move this snippet to everest-ci Dockerfiles
+# Make sure we use a recent enough npm
+RUN npm install -g corepack@0.33.0 \
+    && apt-get -y remove npm \
+    && corepack enable npm --install-directory /usr/bin \
+    && corepack prepare npm@10.9.8 --activate
