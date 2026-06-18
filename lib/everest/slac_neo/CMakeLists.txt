@@ -19,12 +19,8 @@ target_sources(slac_neo
     src/EvseSlacConfig.cpp
     src/MatchingSessionData.cpp
     src/telemetry.cpp
-    #fsm
     src/fsm/misc.cpp
     src/fsm/context.cpp
-    src/fsm/states/others.cpp
-    src/fsm/states/matching.cpp
-    src/fsm/states/matching_handle_slac.cpp
 
     #utils
     src/timer.cpp
@@ -34,7 +30,6 @@ target_link_libraries(slac_neo
     PUBLIC
         everest::io
         everest::tls
-        fsm::fsm
         Boost::boost
     PRIVATE
         everest::everest_api_types
