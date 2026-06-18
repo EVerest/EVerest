@@ -3,6 +3,7 @@
 
 #include "slacImpl.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <future>
@@ -123,6 +124,17 @@ void slacImpl::run() {
 
     auto fsm_ctx = slac::fsm::evse::Context(callbacks);
     fsm_ctx.slac_config.set_key_timeout_ms = config.set_key_timeout_ms;
+    fsm_ctx.slac_config.set_key_max_attempts = std::max(1, config.set_key_max_attempts);
+    if (config.set_key_handling_mode == "retry_confirmed") {
+        fsm_ctx.slac_config.set_key_handling_mode = everest::lib::slac::fsm::evse::SetKeyHandlingMode::retry_confirmed;
+    } else if (config.set_key_handling_mode.empty() || config.set_key_handling_mode == "legacy_single_attempt") {
+        fsm_ctx.slac_config.set_key_handling_mode = everest::lib::slac::fsm::evse::SetKeyHandlingMode::legacy_single_attempt;
+    } else {
+        EVLOG_warning << "Invalid set_key_handling_mode '" << config.set_key_handling_mode
+                    << "'. Expected 'legacy_single_attempt' or 'retry_confirmed'. Falling back to "
+                    << "legacy_single_attempt";
+        fsm_ctx.slac_config.set_key_handling_mode = everest::lib::slac::fsm::evse::SetKeyHandlingMode::legacy_single_attempt;
+    }
     fsm_ctx.slac_config.slac_init_timeout_ms = config.slac_init_timeout_ms;
     fsm_ctx.slac_config.ac_mode_five_percent = config.ac_mode_five_percent;
     fsm_ctx.slac_config.sounding_atten_adjustment = config.sounding_attenuation_adjustment;

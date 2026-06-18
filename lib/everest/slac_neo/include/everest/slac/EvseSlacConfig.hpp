@@ -9,6 +9,11 @@
 
 namespace everest::lib::slac::fsm::evse {
 
+enum class SetKeyHandlingMode {
+    legacy_single_attempt,
+    retry_confirmed,
+};
+
 struct EvseSlacConfig {
     // MAC address of our (EVSE) PLC modem
     // FIXME (aw): is that used somehow?
@@ -16,13 +21,19 @@ struct EvseSlacConfig {
 
     // FIXME (aw): we probably want to use std::array here
     void generate_nmk();
+    void generate_nmk(std::uint8_t* target_nmk);
     uint8_t session_nmk[defs::NMK_LEN]{};
+
+    SetKeyHandlingMode set_key_handling_mode = SetKeyHandlingMode::legacy_single_attempt;
 
     // flag for using 5% PWM in AC mode
     bool ac_mode_five_percent{true};
 
     // timeout for CM_SET_KEY.REQ
     int set_key_timeout_ms = 500;
+
+    // maximum amount of attempts to send CM_SET_KEY.REQ
+    int set_key_max_attempts = 10;
 
     // timeout for CM_SLAC_PARM.REQ
     int slac_init_timeout_ms = defs::TT_EVSE_SLAC_INIT_MS;

@@ -21,6 +21,7 @@
 #include <everest/slac/fsm/evse/context.hpp>
 #include <everest/slac/timer.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <sstream>
@@ -470,6 +471,52 @@ struct Reset_def       : public state_machine_def<Reset_def> {
 
     // Guards
     struct msg_expected : public is_message_of_type<defs::MMTYPE_CM_SET_KEY | defs::MMTYPE_MODE_CNF>{ };
+    struct is_retry_confirmed_set_key {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+            return fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed;
+        }
+    };
+    struct is_legacy_single_attempt_set_key {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+            return fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::legacy_single_attempt;
+        }
+    };
+    struct set_key_timeout {
+        template <class Evt, class Fsm, class SrcT, class TarT>
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+            return fsm.set_key_timeout();
+        }
+    };
+    struct has_set_key_attempts_left {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+            return fsm.set_key_attempts < fsm.ctx->slac_config.set_key_max_attempts;
+        }
+    };
+    struct has_no_set_key_attempts_left {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+            return fsm.set_key_attempts >= fsm.ctx->slac_config.set_key_max_attempts;
+        }
+    };
+    struct is_set_key_cnf_success {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        bool operator()(Evt const& e, Fsm&, SrcT&, TarT& ) {
+            const auto msg = e.payload.template get_payload<messages::cm_set_key_cnf>();
+            return msg.result == defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS or
+                   msg.result == defs::CM_SET_KEY_CNF_RESULT_SUCCESS;
+        }
+    };
+    struct is_set_key_cnf_failed {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        bool operator()(Evt const& e, Fsm&, SrcT&, TarT& ) {
+            const auto msg = e.payload.template get_payload<messages::cm_set_key_cnf>();
+            return msg.result not_eq defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS and
+                   msg.result not_eq defs::CM_SET_KEY_CNF_RESULT_SUCCESS;
+        }
+    };
     struct is_reset_chip_on {
         template <class Fsm, class Evt, class SrcT, class TarT>
         bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
@@ -478,24 +525,93 @@ struct Reset_def       : public state_machine_def<Reset_def> {
     };
     //Actions
     struct send_set_key_req {
-        template <class Fsm, class SrcT, class TarT>
-        void operator()(none const& e, Fsm& fsm, SrcT&, TarT&) {
-            auto msg = everest::lib::slac::fsm::evse::MatchingSessionData::create_cm_set_key_req(fsm.ctx->slac_config.session_nmk);
+        template <class Fsm>
+        static void send(Fsm& fsm) {
+            const auto* nmk = (fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed)
+                                  ? fsm.pending_nmk
+                                  : fsm.ctx->slac_config.session_nmk;
+            auto msg = everest::lib::slac::fsm::evse::MatchingSessionData::create_cm_set_key_req(nmk);
+            fsm.set_key_timer.setDurationMilliSeconds(fsm.ctx->slac_config.set_key_timeout_ms);
+            fsm.set_key_timer.reset();
             fsm.ctx->send_slac_message(fsm.ctx->slac_config.plc_peer_mac, msg);
+        }
+
+        template <class Evt, class Fsm, class SrcT, class TarT>
+        void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            send(fsm);
+        }
+    };
+    struct retry_send_set_key_req {
+        template <class Fsm, class SrcT, class TarT>
+        void operator()(none const&, Fsm& fsm, SrcT&, TarT&) {
+            fsm.set_key_attempts++;
+            fsm.ctx->log_warn("Retrying CM_SET_KEY.REQ due to timeout. Attempt " +
+                              std::to_string(fsm.set_key_attempts) + " of " +
+                              std::to_string(fsm.ctx->slac_config.set_key_max_attempts));
+            send_set_key_req::send(fsm);
+        }
+    };
+    struct fail_send_set_key_req {
+        template <class Fsm, class SrcT, class TarT>
+        void operator()(none const&, Fsm& fsm, SrcT&, TarT&) {
+            fsm.ctx->log_error("CM_SET_KEY timeout without valid CM_SET_KEY.CNF after " +
+                               std::to_string(fsm.ctx->slac_config.set_key_max_attempts) +
+                               " attempts; continuing to reset/idle path");
+        }
+    };
+    struct note_set_key_failed {
+        template <class Evt, class Fsm, class SrcT, class TarT>
+        void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT&) {
+            const auto reply = e.payload.template get_payload<messages::cm_set_key_cnf>();
+            fsm.ctx->log_warn("CM_SET_KEY.CNF indicates failure with result=" +
+                              std::to_string(reply.result) +
+                              " on attempt " + std::to_string(fsm.set_key_attempts) +
+                              "; retrying after timeout (max " +
+                              std::to_string(fsm.ctx->slac_config.set_key_max_attempts) + ")");
+        }
+    };
+    struct give_up_set_key_failed {
+        template <class Evt, class Fsm, class SrcT, class TarT>
+        void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT&) {
+            const auto reply = e.payload.template get_payload<messages::cm_set_key_cnf>();
+            fsm.ctx->log_error("CM_SET_KEY.CNF indicates failure with result=" +
+                               std::to_string(reply.result) +
+                               " after maximum attempts; continuing to reset/idle path");
+        }
+    };
+    struct apply_set_key_cnf {
+        template <class Evt, class Fsm, class SrcT, class TarT>
+        void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            std::copy(std::begin(fsm.pending_nmk), std::end(fsm.pending_nmk), std::begin(fsm.ctx->slac_config.session_nmk));
+            fsm.ctx->log_info("CM_SET_KEY.CNF success, NMK set on modem");
+            fsm.ctx->status.modem_NMK = true;
         }
     };
 
+    // Transition guards
+    using timeout_retry            = And_<set_key_timeout, And_<is_retry_confirmed_set_key, has_set_key_attempts_left>>;
+    using timeout_give_up          = And_<set_key_timeout, And_<is_retry_confirmed_set_key, has_no_set_key_attempts_left>>;
+    using set_key_ok               = And_<msg_expected, And_<is_set_key_cnf_success, is_retry_confirmed_set_key>>;
+    using set_key_failed           = And_<msg_expected, And_<is_set_key_cnf_failed, is_retry_confirmed_set_key>>;
+    using set_key_accepted         = And_<msg_expected, is_legacy_single_attempt_set_key>;
+    using set_key_failed_retry     = And_<set_key_failed, has_set_key_attempts_left>;
+    using set_key_failed_give_up   = And_<set_key_failed, has_no_set_key_attempts_left>;
 
     // Transitions
     using initial_state = Init;
     struct transition_table : boost::mpl::vector<
-        //   Source         + Event             -> Target           / Action            [Guard]
-        //  +---------------+--------------------+------------------+------------------+--------------------------+
-        Row < Init          , none               , MsgSent          , send_set_key_req , none                    >,
-        Row < MsgSent       , message            , MsgValid         , trigger_update   , msg_expected            >,
-        Row < MsgValid      , update             , ResetChip        , none             , is_reset_chip_on        >,
-        Row < MsgValid      , update             , Idle             , none             , Not_<is_reset_chip_on>  >
-        //  +---------------+--------------------+------------------+------------------+--------------------------+
+        //   Source    + Event   -> Target    / Action                    [Guard]
+        //  +----------+---------+------------+---------------------------+---------------------------+
+        Row < Init     , none    , MsgSent    , send_set_key_req          , none                      >,
+        Row < MsgSent  , update  , MsgSent    , retry_send_set_key_req    , timeout_retry             >,
+        Row < MsgSent  , update  , MsgValid   , fail_send_set_key_req     , timeout_give_up           >,
+        Row < MsgSent  , message , MsgValid   , trigger_update            , set_key_accepted          >,
+        Row < MsgSent  , message , MsgValid   , apply_set_key_cnf         , set_key_ok                >,
+        Row < MsgSent  , message , MsgSent    , note_set_key_failed       , set_key_failed_retry      >,
+        Row < MsgSent  , message , MsgValid   , give_up_set_key_failed    , set_key_failed_give_up    >,
+        Row < MsgValid , update  , ResetChip  , none                      , is_reset_chip_on          >,
+        Row < MsgValid , update  , Idle       , none                      , Not_<is_reset_chip_on>    >
+        //  +----------+---------+------------+---------------------------+---------------------------+
         > {};
     template <class FSM,class Event>
     void no_transition(Event const& e, FSM&,int state) { }
@@ -505,19 +621,35 @@ struct Reset_def       : public state_machine_def<Reset_def> {
     void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
         if (fsm.ctx->slac_config.regenerate_key_on_reset){
-            fsm.ctx->slac_config.generate_nmk();
+            if (fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed) {
+                fsm.ctx->slac_config.generate_nmk(this->pending_nmk);
+            } else {
+                fsm.ctx->slac_config.generate_nmk(fsm.ctx->slac_config.session_nmk);
+            }
+        } else {
+            std::copy(std::begin(fsm.ctx->slac_config.session_nmk), std::end(fsm.ctx->slac_config.session_nmk),
+                      std::begin(this->pending_nmk));
         }
-        to.setDurationMilliSeconds(fsm.ctx->slac_config.set_key_timeout_ms);
-        to.reset();
+        if (fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::legacy_single_attempt) {
+            std::copy(std::begin(fsm.ctx->slac_config.session_nmk), std::end(fsm.ctx->slac_config.session_nmk),
+                      std::begin(this->pending_nmk));
+        }
+        this->set_key_attempts = 1;
         ctx->status.match_state = SlacState::Reset;
         ctx->status.d3_state = D3State::Unmatched;
         ctx->status.modem_NMK = false;
     }
 
     fsm::evse::Context* ctx;
-    timer to;
+    std::uint8_t pending_nmk[defs::NMK_LEN]{};
+    int set_key_attempts{0};
+    timer set_key_timer;
+
+    bool set_key_timeout() {
+        return set_key_timer.timeout();
+    }
     bool state_timeout() {
-        return to.timeout();
+        return set_key_timeout();
     }
 };
 struct ResetChip_def   : public state_machine_def<ResetChip_def> {
@@ -851,6 +983,12 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
             return fsm.ctx->slac_config.link_status.do_detect;
         }
     };
+    struct is_legacy_set_key_handling_mode {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+            return fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::legacy_single_attempt;
+        }
+    };
 
     // Actions
     struct on_matched_fail {
@@ -870,7 +1008,7 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
         Row < Init_Done        , update             , Reset            , none             , none                    >,
         //  +------------------+--------------------+------------------+------------------+--------------------------+
         Row < Reset            , reset              , Reset            , none             , none                    >,
-        Row < Reset            , update             , Failed           , none             , timeout                 >,
+        Row < Reset            , update             , Failed           , none             , And_<timeout, is_legacy_set_key_handling_mode> >,
         Row < Reset_ResetChip  , update             , ResetChip        , none             , none                    >,
         Row < Reset_Idle       , update             , Idle             , none             , none                    >,
         //  +------------------+--------------------+------------------+------------------+--------------------------+
@@ -901,8 +1039,8 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
     void no_transition(Event const& e, FSM& fsm,int state) {
     }
 
-    // Members
     fsm::evse::Context* ctx;
+
     SlacFSM_def(fsm::evse::Context& ctx_) : ctx(&ctx_) {
     }
 };

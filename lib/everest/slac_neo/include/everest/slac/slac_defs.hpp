@@ -119,7 +119,9 @@ const std::uint8_t CM_SET_KEY_REQ_PMN_UNUSED = 0x00;
 const std::uint8_t CM_SET_KEY_REQ_CCO_CAP_NONE = 0x00; // Level-0 CCo Capable, neither QoS nor TDMA
 const std::uint8_t CM_SET_KEY_REQ_PEKS_NMK_KNOWN_TO_STA = 0x01;
 
-const std::uint8_t CM_SET_KEY_CNF_RESULT_SUCCESS = 0x0;
+const std::uint8_t CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS = 0x00;
+// HomePlug GP 1.1/2.0 defines 0x00 but some modems return 0x01 on success
+const std::uint8_t CM_SET_KEY_CNF_RESULT_SUCCESS = 0x01;
 
 const std::uint8_t CM_ATTEN_CHAR_RSP_RESULT = 0x00;
 

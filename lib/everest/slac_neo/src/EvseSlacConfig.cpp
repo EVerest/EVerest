@@ -7,6 +7,10 @@
 namespace everest::lib::slac::fsm::evse {
 
 void EvseSlacConfig::generate_nmk() {
+    generate_nmk(session_nmk);
+}
+
+void EvseSlacConfig::generate_nmk(std::uint8_t* target_nmk) {
     const std::string CHARACTERS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
     std::random_device random_device;
@@ -14,7 +18,7 @@ void EvseSlacConfig::generate_nmk() {
     std::uniform_int_distribution<> distribution(0, CHARACTERS.size() - 1);
 
     for (std::size_t i = 0; i < slac::defs::NMK_LEN; ++i) {
-        session_nmk[i] = (uint8_t)CHARACTERS[distribution(generator)];
+        target_nmk[i] = (uint8_t)CHARACTERS[distribution(generator)];
     }
 }
 
