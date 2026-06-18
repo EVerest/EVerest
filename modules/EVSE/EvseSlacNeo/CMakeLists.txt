@@ -12,7 +12,6 @@ ev_setup_cpp_module()
 target_sources(${MODULE_NAME}
     PRIVATE
     main/fsm_controller_neo.cpp
-#    main/fsm_controller.cpp
 )
 
 target_link_libraries(${MODULE_NAME}
