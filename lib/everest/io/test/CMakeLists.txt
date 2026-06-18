@@ -3,6 +3,7 @@ add_executable(everest_io_tests
   udp_client_v6_test.cpp
   udp_unconnected_socket_test.cpp
   udp_dualstack_server_socket_test.cpp
+  fd_event_client_async_test.cpp
 )
 
 target_link_libraries(everest_io_tests
