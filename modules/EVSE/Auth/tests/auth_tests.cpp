@@ -557,10 +557,37 @@ TEST_F(AuthTest, test_two_plugins) {
     ASSERT_TRUE(this->auth_receiver->get_authorization(1));
 }
 
+/// \brief Test that when two EVSEs are plugged in at different times and a single token references both, the most
+/// recently plugged in EVSE receives the authorization (PlugEvents selection algorithm).
+TEST_F(AuthTest, test_latest_plugin_is_selected) {
+
+    SessionEvent session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+
+    // evse#2 is plugged in first, evse#1 afterwards. evse#1 is therefore the latest plug in and must be selected.
+    // Plug in sequentially so the order is deterministic.
+    this->auth_handler->handle_session_event(2, session_event);
+    this->auth_handler->handle_session_event(1, session_event);
+
+    std::vector<int32_t> connectors{1, 2};
+    ProvidedIdToken provided_token = get_provided_token(VALID_TOKEN_1, connectors);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStart));
+
+    const auto result = this->auth_handler->on_token(provided_token);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    // evse#1 (evse_index 0) is the latest plug in and must receive the authorization, not evse#2 (evse_index 1)
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+    ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+}
+
 /// \brief Test if a connector receives authorization after subsequent plug-in and plug-out events
 TEST_F(AuthTest, test_authorization_after_plug_in_and_plug_out) {
     TokenHandlingResult result1;
-    TokenHandlingResult result2;
     std::vector<int32_t> connectors{1, 2};
     ProvidedIdToken provided_token_1 = get_provided_token(VALID_TOKEN_1, connectors);
 
@@ -601,8 +628,10 @@ TEST_F(AuthTest, test_two_plugins_with_invalid_rfid) {
 
     SessionEvent session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
 
-    std::thread t1([this, session_event]() { this->auth_handler->handle_session_event(1, session_event); });
-    std::thread t2([this, session_event]() { this->auth_handler->handle_session_event(2, session_event); });
+    // Plug in evse#1 first, then evse#2. evse#2 is therefore the latest plug in and must be selected for the valid
+    // token (PlugEvents selection algorithm). Plug in sequentially so the order is deterministic.
+    this->auth_handler->handle_session_event(1, session_event);
+    this->auth_handler->handle_session_event(2, session_event);
 
     std::vector<int32_t> connectors{1, 2};
     ProvidedIdToken provided_token_1 = get_provided_token(VALID_TOKEN_1, connectors);
@@ -619,19 +648,17 @@ TEST_F(AuthTest, test_two_plugins_with_invalid_rfid) {
                 Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::UsedToStart));
     EXPECT_CALL(mock_publish_token_validation_status_callback,
                 Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::Rejected));
-    t1.join();
-    t2.join();
     std::thread t3([this, provided_token_1, &result1]() { result1 = this->auth_handler->on_token(provided_token_1); });
     t3.join();
 
     ASSERT_TRUE(result1 == TokenHandlingResult::USED_TO_START_TRANSACTION);
-    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+    ASSERT_TRUE(this->auth_receiver->get_authorization(1));
 
     std::thread t4([this, provided_token_2, &result2]() { result2 = this->auth_handler->on_token(provided_token_2); });
     t4.join();
 
     ASSERT_TRUE(result2 == TokenHandlingResult::REJECTED);
-    ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
 }
 
 /// \brief Test if state permanent fault leads to not provide authorization

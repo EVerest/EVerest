@@ -524,9 +524,10 @@ bool AuthHandler::equals_master_pass_group_id(const std::optional<types::authori
 }
 
 int AuthHandler::get_latest_plugin(const std::vector<int>& evse_ids) {
-    for (const auto evse_id : this->plug_in_queue) {
-        if (std::find(evse_ids.begin(), evse_ids.end(), evse_id) != evse_ids.end()) {
-            return evse_id;
+    // plug ins are appended to the back of the queue, so we iterate from the back to find the most recent plug in
+    for (auto it = this->plug_in_queue.rbegin(); it != this->plug_in_queue.rend(); ++it) {
+        if (std::find(evse_ids.begin(), evse_ids.end(), *it) != evse_ids.end()) {
+            return *it;
         }
     }
     return -1;
