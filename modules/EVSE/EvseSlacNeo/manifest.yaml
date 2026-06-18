@@ -20,9 +20,24 @@ provides:
         type: boolean
         default: true
       set_key_timeout_ms:
-        description: Timeout for CM_SET_KEY.REQ. Default works for QCA7000/QCA7005/CG5317.
+        description: Timeout and retry interval for CM_SET_KEY.REQ. Default works for QCA7000/QCA7005/CG5317.
         type: integer
         default: 1000
+      set_key_handling_mode:
+        description: |
+          Set-key behavior mode:
+            - legacy_single_attempt: send one CM_SET_KEY.REQ and accept any CM_SET_KEY.CNF.
+            - retry_confirmed: retry on timeout/failure and only accept CM_SET_KEY.CNF result success.
+        type: string
+        enum:
+          - legacy_single_attempt
+          - retry_confirmed
+        default: legacy_single_attempt
+      set_key_max_attempts:
+        description: Maximum CM_SET_KEY.REQ attempts before proceeding to the next reset state.
+        type: integer
+        minimum: 1
+        default: 10
       sounding_attenuation_adjustment:
         description: Offset in dB that should be added to the calculated sounding attenuation
         type: integer
