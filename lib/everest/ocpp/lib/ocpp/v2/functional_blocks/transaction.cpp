@@ -63,9 +63,15 @@ void TransactionBlock::on_transaction_started(const std::int32_t evse_id, const 
     evse_handle.open_transaction(session_id, connector_id, timestamp, meter_start, id_token, group_id_token,
                                  reservation_id, charging_state);
 
+    const auto include_signed =
+        this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::SampledDataSignReadings)
+            .value_or(false);
+
     const auto meter_value = utils::get_meter_value_with_measurands_applied(
-        meter_start, utils::get_measurands_vec(this->context.device_model.get_value<std::string>(
-                         ControllerComponentVariables::SampledDataTxStartedMeasurands)));
+        meter_start,
+        utils::get_measurands_vec(this->context.device_model.get_value<std::string>(
+            ControllerComponentVariables::SampledDataTxStartedMeasurands)),
+        include_signed);
 
     const auto& enhanced_transaction = evse_handle.get_transaction();
     Transaction transaction{enhanced_transaction->transactionId};
