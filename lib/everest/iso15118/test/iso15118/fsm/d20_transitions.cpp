@@ -2,10 +2,15 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
+#include "helper.hpp"
+
 #include <optional>
 #include <string>
 #include <vector>
 
+#include <iso15118/d20/state/dc_charge_loop.hpp>
+
+#include <iso15118/message/dc_charge_loop.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/session/protocol.hpp>
 #include <iso15118/session/secc_sap.hpp>
@@ -152,6 +157,84 @@ SCENARIO("ISO15118-20 SECC supported app protocol negotiation") {
             THEN("negotiation fails - DIN is not offered over TLS") {
                 REQUIRE(result.response.response_code == ResponseCode::Failed_NoNegotiation);
             }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 DC charge loop - error forced via ErrorShutdown") {
+
+    namespace dt = message_20::datatypes;
+
+    const auto evse_id = std::string("everest se");
+    const std::vector<dt::ServiceCategory> supported_energy_services = {dt::ServiceCategory::DC};
+    const auto cert_install{false};
+    const std::vector<uint16_t> vas_services{};
+    const std::vector<dt::Authorization> auth_services = {dt::Authorization::EIM};
+
+    d20::DcTransferLimits dc_limits;
+    d20::AcTransferLimits ac_limits;
+    d20::DcTransferLimits powersupply_limits;
+    dc_limits.charge_limits.power.max = {22, 3};
+    dc_limits.charge_limits.power.min = {10, 0};
+    dc_limits.charge_limits.current.max = {250, 0};
+    dc_limits.voltage.max = {900, 0};
+
+    const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
+        {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
+
+    session::EvseSetupConfig evse_setup{};
+    evse_setup.evse_id = evse_id;
+    evse_setup.supported_energy_services = supported_energy_services;
+    evse_setup.authorization_services = auth_services;
+    evse_setup.supported_vas_services = vas_services;
+    evse_setup.enable_certificate_install_service = cert_install;
+    evse_setup.dc_limits = dc_limits;
+    evse_setup.ac_limits = ac_limits;
+    evse_setup.control_mobility_modes = control_mobility_modes;
+    evse_setup.powersupply_limits = powersupply_limits;
+
+    std::optional<d20::PauseContext> pause_ctx{std::nullopt};
+
+    GIVEN("forced failed response requested - response code must be FAILED") {
+        // This test verifies the centralized forced-failed mechanism in Context.
+        // The state itself forwards the generated response through
+        // respond_and_publish_response_code(), which applies the override before sending.
+
+        dt::ResponseCode captured_response_code{dt::ResponseCode::OK};
+
+        // Capture the response_code feedback so we can verify it was published correctly
+        session::feedback::Callbacks callbacks{};
+        callbacks.response_code = [&captured_response_code](const dt::ResponseCode& rc) {
+            captured_response_code = rc;
+        };
+
+        auto state_helper = FsmStateHelper(session::SessionConfig(evse_setup), pause_ctx, callbacks);
+        auto& ctx = state_helper.get_context();
+        // Set up a valid DC scheduled session so handle_request() itself would return OK
+        ctx.session = d20::Session(d20::SelectedServiceParameters(
+            dt::ServiceCategory::DC, dt::DcConnector::Extended, dt::ControlMode::Scheduled,
+            dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing));
+
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::DC_ChargeLoop>()};
+        ctx.request_forced_failed_response();
+        // Build a valid DC_ChargeLoopRequest (would produce OK without forced failed response)
+        message_20::DC_ChargeLoopRequest req;
+        req.header.session_id = ctx.session.get_id();
+        req.header.timestamp = 1691411798;
+        auto& req_mode = req.control_mode.emplace<dt::Scheduled_DC_CLReqControlMode>();
+        req_mode.target_current = {40, 0};
+        req_mode.target_voltage = {400, 0};
+        req.meter_info_requested = false;
+        req.present_voltage = {330, 0};
+
+        state_helper.handle_request(req);
+        fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+        THEN("Response and feedback callback both report FAILED") {
+            const auto response_message = ctx.get_response<message_20::DC_ChargeLoopResponse>();
+            REQUIRE(response_message.has_value());
+            REQUIRE(response_message->response_code >= dt::ResponseCode::FAILED);
+            REQUIRE(captured_response_code >= dt::ResponseCode::FAILED);
         }
     }
 }
