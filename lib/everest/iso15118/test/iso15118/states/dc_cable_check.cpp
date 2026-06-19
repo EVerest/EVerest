@@ -58,6 +58,21 @@ SCENARIO("DC cable check state handling") {
         }
     }
 
+    GIVEN("Good case - finished with failed cable check") {
+        d20::Session session = d20::Session();
+
+        message_20::DC_CableCheckRequest req;
+        req.header.session_id = session.get_id();
+        req.header.timestamp = 1691411798;
+
+        const auto res = d20::state::handle_request(req, session, false);
+
+        THEN("ResponseCode: FAILED, processing: Finished") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED);
+            REQUIRE(res.processing == dt::Processing::Finished);
+        }
+    }
+
     // GIVEN("Bad Case - sequence error") {} // TODO(sl): not here
 
     // GIVEN("Bad Case - Performance Timeout") {} // TODO(sl): not here
