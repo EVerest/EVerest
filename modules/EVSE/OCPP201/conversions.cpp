@@ -944,52 +944,63 @@ to_ocpp_islanding_detection(const types::iso15118::IslandingDetection islanding_
     throw std::out_of_range("Could not convert IslandingDetection");
 }
 
-ocpp::v2::DERControlEnum to_ocpp_der_control(const types::iso15118::DERControl der_control) {
+std::optional<ocpp::v2::DERControlEnum> to_ocpp_der_control(const types::grid_support::DirectiveType der_control) {
     switch (der_control) {
-    case types::iso15118::DERControl::EnterService:
+    case types::grid_support::DirectiveType::EnterService:
         return ocpp::v2::DERControlEnum::EnterService;
-    case types::iso15118::DERControl::FixedPFAbsorb:
+    case types::grid_support::DirectiveType::FixedPFAbsorb:
         return ocpp::v2::DERControlEnum::FixedPFAbsorb;
-    case types::iso15118::DERControl::FixedPFInject:
+    case types::grid_support::DirectiveType::FixedPFInject:
         return ocpp::v2::DERControlEnum::FixedPFInject;
-    case types::iso15118::DERControl::FixedVar:
+    case types::grid_support::DirectiveType::FixedVar:
         return ocpp::v2::DERControlEnum::FixedVar;
-    case types::iso15118::DERControl::FreqDroop:
+    case types::grid_support::DirectiveType::FreqDroop:
         return ocpp::v2::DERControlEnum::FreqDroop;
-    case types::iso15118::DERControl::FreqWatt:
+    case types::grid_support::DirectiveType::FreqWatt:
         return ocpp::v2::DERControlEnum::FreqWatt;
-    case types::iso15118::DERControl::VoltWatt:
+    case types::grid_support::DirectiveType::VoltWatt:
         return ocpp::v2::DERControlEnum::VoltWatt;
-    case types::iso15118::DERControl::VoltVar:
+    case types::grid_support::DirectiveType::VoltVar:
         return ocpp::v2::DERControlEnum::VoltVar;
-    case types::iso15118::DERControl::Gradients:
+    case types::grid_support::DirectiveType::Gradients:
         return ocpp::v2::DERControlEnum::Gradients;
-    case types::iso15118::DERControl::HFMayTrip:
+    case types::grid_support::DirectiveType::HFMayTrip:
         return ocpp::v2::DERControlEnum::HFMayTrip;
-    case types::iso15118::DERControl::HFMustTrip:
+    case types::grid_support::DirectiveType::HFMustTrip:
         return ocpp::v2::DERControlEnum::HFMustTrip;
-    case types::iso15118::DERControl::HVMustTrip:
+    case types::grid_support::DirectiveType::HVMustTrip:
         return ocpp::v2::DERControlEnum::HVMustTrip;
-    case types::iso15118::DERControl::LFMustTrip:
+    case types::grid_support::DirectiveType::LFMustTrip:
         return ocpp::v2::DERControlEnum::LFMustTrip;
-    case types::iso15118::DERControl::LVMustTrip:
+    case types::grid_support::DirectiveType::LVMustTrip:
         return ocpp::v2::DERControlEnum::LVMustTrip;
-    case types::iso15118::DERControl::PowerMonitoringMustTrip:
+    case types::grid_support::DirectiveType::PowerMonitoringMustTrip:
         return ocpp::v2::DERControlEnum::PowerMonitoringMustTrip;
-    case types::iso15118::DERControl::HVMayTrip:
+    case types::grid_support::DirectiveType::HVMayTrip:
         return ocpp::v2::DERControlEnum::HVMayTrip;
-    case types::iso15118::DERControl::LVMayTrip:
+    case types::grid_support::DirectiveType::LVMayTrip:
         return ocpp::v2::DERControlEnum::LVMayTrip;
-    case types::iso15118::DERControl::HVMomCess:
+    case types::grid_support::DirectiveType::HVMomCess:
         return ocpp::v2::DERControlEnum::HVMomCess;
-    case types::iso15118::DERControl::LVMomCess:
+    case types::grid_support::DirectiveType::LVMomCess:
         return ocpp::v2::DERControlEnum::LVMomCess;
-    case types::iso15118::DERControl::LimitMaxDischarge:
+    case types::grid_support::DirectiveType::LimitMaxDischarge:
         return ocpp::v2::DERControlEnum::LimitMaxDischarge;
-    case types::iso15118::DERControl::WattPF:
+    case types::grid_support::DirectiveType::WattPF:
         return ocpp::v2::DERControlEnum::WattPF;
-    case types::iso15118::DERControl::WattVar:
+    case types::grid_support::DirectiveType::WattVar:
         return ocpp::v2::DERControlEnum::WattVar;
+    case types::grid_support::DirectiveType::ZeroCurrent:
+    case types::grid_support::DirectiveType::OvervoltageFaultRideThrough:
+    case types::grid_support::DirectiveType::UndervoltageFaultRideThrough:
+    case types::grid_support::DirectiveType::DSOQSetpoint:
+    case types::grid_support::DirectiveType::DSOCosPhiSetpoint:
+    case types::grid_support::DirectiveType::MaximumLevelDCInjection:
+        // These ISO 15118-20 AMD1 AC-DER values have no OCPP DERControlEnum mapping yet; warn and skip
+        // rather than fail until OCPP support for them is added.
+        EVLOG_warning << "DirectiveType '" << types::grid_support::directive_type_to_string(der_control)
+                      << "' has no OCPP DERControl mapping yet (ISO 15118-20 AMD1-only value); skipping";
+        return std::nullopt;
     }
     throw std::out_of_range("Could not convert DERControl");
 }
@@ -1120,7 +1131,9 @@ ocpp::v2::ChargingNeeds to_ocpp_charging_needs(const types::iso15118::ChargingNe
             der_charging_params.evSupportedDERControl = {};
             der_charging_params.evSupportedDERControl->reserve(der.ev_supported_dercontrol->size());
             for (const auto& der_control : der.ev_supported_dercontrol.value()) {
-                der_charging_params.evSupportedDERControl->emplace_back(to_ocpp_der_control(der_control));
+                if (const auto mapped = to_ocpp_der_control(der_control); mapped.has_value()) {
+                    der_charging_params.evSupportedDERControl->emplace_back(mapped.value());
+                }
             }
         }
     }
