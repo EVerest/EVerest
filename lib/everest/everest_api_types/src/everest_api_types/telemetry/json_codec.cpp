@@ -9,35 +9,388 @@
 namespace everest::lib::API::V1_0::types::telemetry {
 
 void to_json(json& j, V2gCommunicationState const& k) noexcept {
-    j = static_cast<int32_t>(k);
+    switch (k) {
+    case V2gCommunicationState::StateId0:
+        j = "StateId0";
+        return;
+    case V2gCommunicationState::StateId1:
+        j = "StateId1";
+        return;
+    case V2gCommunicationState::StateId2:
+        j = "StateId2";
+        return;
+    case V2gCommunicationState::StateId3:
+        j = "StateId3";
+        return;
+    case V2gCommunicationState::StateId4:
+        j = "StateId4";
+        return;
+    case V2gCommunicationState::StateId5:
+        j = "StateId5";
+        return;
+    case V2gCommunicationState::StateId6:
+        j = "StateId6";
+        return;
+    case V2gCommunicationState::StateId7:
+        j = "StateId7";
+        return;
+    case V2gCommunicationState::StateId8:
+        j = "StateId8";
+        return;
+    case V2gCommunicationState::StateId9:
+        j = "StateId9";
+        return;
+    case V2gCommunicationState::StateId10:
+        j = "StateId10";
+        return;
+    case V2gCommunicationState::StateId11:
+        j = "StateId11";
+        return;
+    case V2gCommunicationState::StateId12:
+        j = "StateId12";
+        return;
+    case V2gCommunicationState::StateId13:
+        j = "StateId13";
+        return;
+    case V2gCommunicationState::StateId14:
+        j = "StateId14";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::telemetry::V2gCommunicationState";
 }
 
 void from_json(json const& j, V2gCommunicationState& k) {
-    k = static_cast<V2gCommunicationState>(j.get<int32_t>());
+    std::string s = j;
+    if (s == "StateId0") {
+        k = V2gCommunicationState::StateId0;
+        return;
+    }
+    if (s == "StateId1") {
+        k = V2gCommunicationState::StateId1;
+        return;
+    }
+    if (s == "StateId2") {
+        k = V2gCommunicationState::StateId2;
+        return;
+    }
+    if (s == "StateId3") {
+        k = V2gCommunicationState::StateId3;
+        return;
+    }
+    if (s == "StateId4") {
+        k = V2gCommunicationState::StateId4;
+        return;
+    }
+    if (s == "StateId5") {
+        k = V2gCommunicationState::StateId5;
+        return;
+    }
+    if (s == "StateId6") {
+        k = V2gCommunicationState::StateId6;
+        return;
+    }
+    if (s == "StateId7") {
+        k = V2gCommunicationState::StateId7;
+        return;
+    }
+    if (s == "StateId8") {
+        k = V2gCommunicationState::StateId8;
+        return;
+    }
+    if (s == "StateId9") {
+        k = V2gCommunicationState::StateId9;
+        return;
+    }
+    if (s == "StateId10") {
+        k = V2gCommunicationState::StateId10;
+        return;
+    }
+    if (s == "StateId11") {
+        k = V2gCommunicationState::StateId11;
+        return;
+    }
+    if (s == "StateId12") {
+        k = V2gCommunicationState::StateId12;
+        return;
+    }
+    if (s == "StateId13") {
+        k = V2gCommunicationState::StateId13;
+        return;
+    }
+    if (s == "StateId14") {
+        k = V2gCommunicationState::StateId14;
+        return;
+    }
+    throw std::out_of_range("Provided string " + s +
+                            " could not be converted to enum of type "
+                            "API_V1_0_TYPES_TELEMETRY_V2gCommunicationState");
 }
 
 void to_json(json& j, V2gMessageState const& k) noexcept {
-    j = static_cast<int32_t>(k);
+    switch (k) {
+    case V2gMessageState::SupportedAppProtocol:
+        j = "SupportedAppProtocol";
+        return;
+    case V2gMessageState::SessionSetup:
+        j = "SessionSetup";
+        return;
+    case V2gMessageState::ServiceDiscovery:
+        j = "ServiceDiscovery";
+        return;
+    case V2gMessageState::ServiceDetail:
+        j = "ServiceDetail";
+        return;
+    case V2gMessageState::PaymentServiceSelection:
+        j = "PaymentServiceSelection";
+        return;
+    case V2gMessageState::PaymentDetails:
+        j = "PaymentDetails";
+        return;
+    case V2gMessageState::Authorization:
+        j = "Authorization";
+        return;
+    case V2gMessageState::ChargeParameterDiscovery:
+        j = "ChargeParameterDiscovery";
+        return;
+    case V2gMessageState::MeteringReceipt:
+        j = "MeteringReceipt";
+        return;
+    case V2gMessageState::CertificateUpdate:
+        j = "CertificateUpdate";
+        return;
+    case V2gMessageState::CertificateInstallation:
+        j = "CertificateInstallation";
+        return;
+    case V2gMessageState::ChargingStatus:
+        j = "ChargingStatus";
+        return;
+    case V2gMessageState::CableCheck:
+        j = "CableCheck";
+        return;
+    case V2gMessageState::PreCharge:
+        j = "PreCharge";
+        return;
+    case V2gMessageState::PowerDelivery:
+        j = "PowerDelivery";
+        return;
+    case V2gMessageState::CurrentDemand:
+        j = "CurrentDemand";
+        return;
+    case V2gMessageState::WeldingDetection:
+        j = "WeldingDetection";
+        return;
+    case V2gMessageState::SessionStop:
+        j = "SessionStop";
+        return;
+    case V2gMessageState::Unknown:
+        j = "Unknown";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::telemetry::V2gMessageState";
 }
 
 void from_json(json const& j, V2gMessageState& k) {
-    k = static_cast<V2gMessageState>(j.get<int32_t>());
+    std::string s = j;
+    if (s == "SupportedAppProtocol") {
+        k = V2gMessageState::SupportedAppProtocol;
+        return;
+    }
+    if (s == "SessionSetup") {
+        k = V2gMessageState::SessionSetup;
+        return;
+    }
+    if (s == "ServiceDiscovery") {
+        k = V2gMessageState::ServiceDiscovery;
+        return;
+    }
+    if (s == "ServiceDetail") {
+        k = V2gMessageState::ServiceDetail;
+        return;
+    }
+    if (s == "PaymentServiceSelection") {
+        k = V2gMessageState::PaymentServiceSelection;
+        return;
+    }
+    if (s == "PaymentDetails") {
+        k = V2gMessageState::PaymentDetails;
+        return;
+    }
+    if (s == "Authorization") {
+        k = V2gMessageState::Authorization;
+        return;
+    }
+    if (s == "ChargeParameterDiscovery") {
+        k = V2gMessageState::ChargeParameterDiscovery;
+        return;
+    }
+    if (s == "MeteringReceipt") {
+        k = V2gMessageState::MeteringReceipt;
+        return;
+    }
+    if (s == "CertificateUpdate") {
+        k = V2gMessageState::CertificateUpdate;
+        return;
+    }
+    if (s == "CertificateInstallation") {
+        k = V2gMessageState::CertificateInstallation;
+        return;
+    }
+    if (s == "ChargingStatus") {
+        k = V2gMessageState::ChargingStatus;
+        return;
+    }
+    if (s == "CableCheck") {
+        k = V2gMessageState::CableCheck;
+        return;
+    }
+    if (s == "PreCharge") {
+        k = V2gMessageState::PreCharge;
+        return;
+    }
+    if (s == "PowerDelivery") {
+        k = V2gMessageState::PowerDelivery;
+        return;
+    }
+    if (s == "CurrentDemand") {
+        k = V2gMessageState::CurrentDemand;
+        return;
+    }
+    if (s == "WeldingDetection") {
+        k = V2gMessageState::WeldingDetection;
+        return;
+    }
+    if (s == "SessionStop") {
+        k = V2gMessageState::SessionStop;
+        return;
+    }
+    if (s == "Unknown") {
+        k = V2gMessageState::Unknown;
+        return;
+    }
+    throw std::out_of_range("Provided string " + s +
+                            " could not be converted to enum of type API_V1_0_TYPES_TELEMETRY_V2gMessageState");
 }
 
 void to_json(json& j, V2gServerStatus const& k) noexcept {
-    j = static_cast<int32_t>(k);
+    switch (k) {
+    case V2gServerStatus::Inactive:
+        j = "Inactive";
+        return;
+    case V2gServerStatus::Active:
+        j = "Active";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::telemetry::V2gServerStatus";
 }
 
 void from_json(json const& j, V2gServerStatus& k) {
-    k = static_cast<V2gServerStatus>(j.get<int32_t>());
+    std::string s = j;
+    if (s == "Inactive") {
+        k = V2gServerStatus::Inactive;
+        return;
+    }
+    if (s == "Active") {
+        k = V2gServerStatus::Active;
+        return;
+    }
+    throw std::out_of_range("Provided string " + s +
+                            " could not be converted to enum of type API_V1_0_TYPES_TELEMETRY_V2gServerStatus");
 }
 
 void to_json(json& j, V2gEvErrorCode const& k) noexcept {
-    j = static_cast<int32_t>(k);
+    switch (k) {
+    case V2gEvErrorCode::NO_ERROR:
+        j = "NO_ERROR";
+        return;
+    case V2gEvErrorCode::FAILED_RESSTemperatureInhibit:
+        j = "FAILED_RESSTemperatureInhibit";
+        return;
+    case V2gEvErrorCode::FAILED_EVShiftPosition:
+        j = "FAILED_EVShiftPosition";
+        return;
+    case V2gEvErrorCode::FAILED_ChargerConnectorLockFault:
+        j = "FAILED_ChargerConnectorLockFault";
+        return;
+    case V2gEvErrorCode::FAILED_EVRESSMalfunction:
+        j = "FAILED_EVRESSMalfunction";
+        return;
+    case V2gEvErrorCode::FAILED_ChargingCurrentdifferential:
+        j = "FAILED_ChargingCurrentdifferential";
+        return;
+    case V2gEvErrorCode::FAILED_ChargingVoltageOutOfRange:
+        j = "FAILED_ChargingVoltageOutOfRange";
+        return;
+    case V2gEvErrorCode::Reserved_A:
+        j = "Reserved_A";
+        return;
+    case V2gEvErrorCode::Reserved_B:
+        j = "Reserved_B";
+        return;
+    case V2gEvErrorCode::Reserved_C:
+        j = "Reserved_C";
+        return;
+    case V2gEvErrorCode::FAILED_ChargingSystemIncompatibility:
+        j = "FAILED_ChargingSystemIncompatibility";
+        return;
+    case V2gEvErrorCode::NoData:
+        j = "NoData";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::telemetry::V2gEvErrorCode";
 }
 
 void from_json(json const& j, V2gEvErrorCode& k) {
-    k = static_cast<V2gEvErrorCode>(j.get<int32_t>());
+    std::string s = j;
+    if (s == "NO_ERROR") {
+        k = V2gEvErrorCode::NO_ERROR;
+        return;
+    }
+    if (s == "FAILED_RESSTemperatureInhibit") {
+        k = V2gEvErrorCode::FAILED_RESSTemperatureInhibit;
+        return;
+    }
+    if (s == "FAILED_EVShiftPosition") {
+        k = V2gEvErrorCode::FAILED_EVShiftPosition;
+        return;
+    }
+    if (s == "FAILED_ChargerConnectorLockFault") {
+        k = V2gEvErrorCode::FAILED_ChargerConnectorLockFault;
+        return;
+    }
+    if (s == "FAILED_EVRESSMalfunction") {
+        k = V2gEvErrorCode::FAILED_EVRESSMalfunction;
+        return;
+    }
+    if (s == "FAILED_ChargingCurrentdifferential") {
+        k = V2gEvErrorCode::FAILED_ChargingCurrentdifferential;
+        return;
+    }
+    if (s == "FAILED_ChargingVoltageOutOfRange") {
+        k = V2gEvErrorCode::FAILED_ChargingVoltageOutOfRange;
+        return;
+    }
+    if (s == "Reserved_A") {
+        k = V2gEvErrorCode::Reserved_A;
+        return;
+    }
+    if (s == "Reserved_B") {
+        k = V2gEvErrorCode::Reserved_B;
+        return;
+    }
+    if (s == "Reserved_C") {
+        k = V2gEvErrorCode::Reserved_C;
+        return;
+    }
+    if (s == "FAILED_ChargingSystemIncompatibility") {
+        k = V2gEvErrorCode::FAILED_ChargingSystemIncompatibility;
+        return;
+    }
+    if (s == "NoData") {
+        k = V2gEvErrorCode::NoData;
+        return;
+    }
+    throw std::out_of_range("Provided string " + s +
+                            " could not be converted to enum of type API_V1_0_TYPES_TELEMETRY_V2gEvErrorCode");
 }
 
 void to_json(json& j, ChargeProgress const& k) noexcept {
