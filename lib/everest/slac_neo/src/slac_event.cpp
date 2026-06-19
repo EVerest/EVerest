@@ -34,7 +34,7 @@ SlacEvent::SlacEvent(std::string const& if_name) : m_connection(if_name), m_if_n
     }
 }
 
-void SlacEvent::handle_socket_error(int id, std::string const& msg) {
+void SlacEvent::handle_socket_error(int id, [[maybe_unused]] std::string const& msg) {
     auto was_on_error = m_on_error;
     m_on_error = id not_eq 0;
     if (not m_on_error) {
@@ -87,7 +87,6 @@ void SlacEvent::send(HomeplugMessage& msg) {
 }
 
 const uint8_t* SlacEvent::get_mac_addr() {
-    auto buf = m_mac_address.data();
     return m_mac_address.data();
 }
 

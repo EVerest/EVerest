@@ -14,6 +14,11 @@ MatchingSessionData::MatchingSessionData(const uint8_t* ev_mac, const uint8_t* r
     std::memset(captured_aags, 0, sizeof(captured_aags));
 }
 
+bool MatchingSessionData::matches_identity(const uint8_t* other_ev_mac, const uint8_t* other_run_id) const {
+    return (std::memcmp(ev_mac, other_ev_mac, sizeof(ev_mac)) == 0) and
+           (std::memcmp(run_id, other_run_id, sizeof(run_id)) == 0);
+}
+
 bool MatchingSessionData::validate_message(messages::cm_atten_char_rsp const& msg) const {
     if (msg.application_type not_eq slac::defs::COMMON_APPLICATION_TYPE) {
         return false;

@@ -61,7 +61,7 @@ struct update{};
 struct is_link_detection_on
 {
     template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm& fsm, SrcT& src, TarT& )
+    bool operator()(Evt const&, Fsm&, SrcT&, TarT& )
     {
         return true;
     }
@@ -88,6 +88,14 @@ struct link_status_cnf
     }
 };
 
+struct link_status_neg
+{
+    template <class Fsm, class Evt, class SrcT, class TarT>
+    bool operator()(Evt const& e, Fsm& fsm, SrcT& src, TarT&) {
+        return src.is_link_status_neg(e, fsm);
+    }
+};
+
 struct timeout
 {
     template <class Fsm, class Evt, class SrcT, class TarT>
@@ -110,7 +118,7 @@ template<std::uint16_t MessageType>
 struct is_message_of_type
 {
     template <class Fsm, class SrcT, class TarT>
-    bool operator()(message const& e, Fsm& fsm, SrcT&, TarT& ) {
+    bool operator()(message const& e, Fsm&, SrcT&, TarT&) {
         const auto mmtype = e.payload.get_mmtype();
         return mmtype == MessageType;
     }
@@ -123,7 +131,7 @@ struct trigger_update
     template <class Fsm, class Evt, class SrcT, class TarT>
     void operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
         fsm.process_event(update{});
-    };
+    }
 };
 struct link_status_req
 {
@@ -184,11 +192,19 @@ struct CheckLink     : public state<> {
 };
 struct Lumissil      : public CheckLink {
     template <class Fsm, class Evt>
-    bool link_status_cnf(Evt const& e, Fsm& fsm) {
+    bool is_link_status_message(Evt const& e, Fsm&) {
         const auto mmtype = e.payload.get_mmtype();
-        auto expected = defs::lumissil::MMTYPE_NSCM_GET_D_LINK_STATUS | defs::MMTYPE_MODE_CNF;
-        auto link_status = e.payload.template get_payload<messages::lumissil::nscm_get_d_link_status_cnf>().link_status;
-        return (expected == mmtype) and (link_status == 0x01);
+        return mmtype == (defs::lumissil::MMTYPE_NSCM_GET_D_LINK_STATUS | defs::MMTYPE_MODE_CNF);
+    }
+
+    template <class Fsm, class Evt>
+    bool link_status_cnf(Evt const& e, Fsm& fsm) {
+        return is_link_status_message(e, fsm) and (e.payload.template get_payload<messages::lumissil::nscm_get_d_link_status_cnf>().link_status == 0x01);
+    }
+
+    template <class Fsm, class Evt>
+    bool is_link_status_neg(Evt const& e, Fsm& fsm) {
+        return is_link_status_message(e, fsm) and (e.payload.template get_payload<messages::lumissil::nscm_get_d_link_status_cnf>().link_status != 0x01);
     }
 
     template <class Fsm>
@@ -203,11 +219,19 @@ struct Lumissil      : public CheckLink {
 };
 struct Qualcomm      : public CheckLink {
     template <class Fsm, class Evt>
-    bool link_status_cnf(Evt const& e, Fsm& fsm) {
+    bool is_link_status_message(Evt const& e, Fsm&) {
         const auto mmtype = e.payload.get_mmtype();
-        auto expected = defs::qualcomm::MMTYPE_LINK_STATUS | defs::MMTYPE_MODE_CNF;
-        auto link_status = e.payload.template get_payload<messages::qualcomm::link_status_cnf>().link_status;
-        return (expected == mmtype) and (link_status == 0x01);
+        return mmtype == (defs::qualcomm::MMTYPE_LINK_STATUS | defs::MMTYPE_MODE_CNF);
+    }
+
+    template <class Fsm, class Evt>
+    bool link_status_cnf(Evt const& e, Fsm& fsm) {
+        return is_link_status_message(e, fsm) and (e.payload.template get_payload<messages::qualcomm::link_status_cnf>().link_status == 0x01);
+    }
+
+    template <class Fsm, class Evt>
+    bool is_link_status_neg(Evt const& e, Fsm& fsm) {
+        return is_link_status_message(e, fsm) and (e.payload.template get_payload<messages::qualcomm::link_status_cnf>().link_status != 0x01);
     }
 
     template <class Fsm>
@@ -229,7 +253,7 @@ struct Session_def     : public state_machine_def<Session_def> {
     struct Sounding         : public timeout_ms_state<defs::TT_EVSE_MATCH_MNBC_MS> {
         struct update_session {
             template <class Fsm, class SrcT, class TarT>
-            void operator()(message const& e, Fsm& fsm, SrcT& src, TarT& ) {
+            void operator()(message const& e, Fsm& fsm, SrcT&, TarT& ) {
                 for (int i = 0; i < slac::defs::AAG_LIST_LEN; ++i) {
                     auto msg = e.payload.get_payload<slac::messages::cm_atten_profile_ind>();
                     fsm.session_data.captured_aags[i] += msg.aag[i];
@@ -239,17 +263,18 @@ struct Session_def     : public state_machine_def<Session_def> {
         };
         struct is_atten_profile_ind {
             template <class Fsm, class SrcT, class TarT>
-            bool operator()(message const& e, Fsm& fsm, SrcT& src, TarT& ) {
+            bool operator()(message const& e, Fsm& fsm, SrcT&, TarT& ) {
                 auto mmtype = slac::defs::MMTYPE_CM_ATTEN_PROFILE | slac::defs::MMTYPE_MODE_IND;
                 return check_message<slac::messages::cm_atten_profile_ind>(e, mmtype, fsm.session_data);
             }
         };
 
         struct internal_transition_table : boost::mpl::vector<
-            //         Event              / Action             [Guard]
-            //        +------------------+--------------------+-----------------------+-
-            Internal  < message          , update_session     , is_atten_profile_ind >
-            //        +------------------+--------------------+-----------------------+-
+            //        +---------+----------------+----------------------+
+            //        | Event   | Action         | Guard                |
+            //        +---------+----------------+----------------------+
+            Internal  < message , update_session , is_atten_profile_ind >
+            //        +---------+----------------+----------------------+
             > {};
     };
     struct FinalizeSounding : public timeout_ms_state<FINALIZE_SOUNDING_DELAY_MS> { };
@@ -283,12 +308,12 @@ struct Session_def     : public state_machine_def<Session_def> {
         auto mmtype = slac::defs::MMTYPE_CM_SLAC_MATCH | slac::defs::MMTYPE_MODE_REQ;
         return check_message<slac::messages::cm_slac_match_req>(e, mmtype, session_data);
     }
-    bool enough_sounds(message const& e) {
+    bool enough_sounds(message const&) {
         return session_data.captured_sounds >= slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS;
     }
     struct retry_limit {
         template <class Fsm, class Evt, class SrcT, class TarT>
-        bool operator()(Evt const&, Fsm& fsm, SrcT& src, TarT& ) {
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
             return fsm.session_data.num_retries > slac::defs::C_EV_MATCH_RETRY;
         }
     };
@@ -296,7 +321,7 @@ struct Session_def     : public state_machine_def<Session_def> {
     // Actions
     struct finalize_snd {
         template <class Fsm, class Evt, class SrcT, class TarT>
-        void operator()(Evt const&, Fsm& fsm, SrcT& src, TarT& ) {
+        void operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
             // action
             auto atten_char = fsm.session_data.create_cm_atten_char_ind(fsm.ctx->slac_config.sounding_atten_adjustment);
             fsm.ctx->send_slac_message(fsm.session_data.ev_mac, atten_char);
@@ -320,7 +345,16 @@ struct Session_def     : public state_machine_def<Session_def> {
     void match_cnf(message const& e){
         messages::cm_slac_match_cnf& reply = ctx->match_confirm_message;
         auto msg = e.payload.get_payload<slac::messages::cm_slac_match_req>();
-        session_data.create_cm_slac_match_cnf(reply, msg, ctx->slac_config.session_nmk);
+        static constexpr uint8_t failed_match_session_nmk[defs::NMK_LEN] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                                                                          0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10};
+
+        uint8_t const* session_nmk = ctx->slac_config.session_nmk;
+        if (ctx->slac_config.link_status.debug_simulate_failed_matching) {
+            ctx->log_info("Sending wrong NMK to EV to simulate a failed link setup after match request");
+            session_nmk = failed_match_session_nmk;
+        }
+
+        session_data.create_cm_slac_match_cnf(reply, msg, session_nmk);
         ctx->send_slac_message(session_data.ev_mac, reply);
         ctx->signal_cm_slac_match_cnf(session_data.ev_mac);
         std::copy(std::begin(session_data.ev_mac), std::end(session_data.ev_mac), std::begin(ctx->status.ev_mac));
@@ -329,27 +363,29 @@ struct Session_def     : public state_machine_def<Session_def> {
     // Transitions
     using initial_state = WaitStartAtten;
     using p = Session_def;
+    using retry_timeout = And_<timeout, retry_limit>;
     struct transition_table : boost::mpl::vector<
-        //     Source            + Event             -> Target           / Action            [Guard] last transition wins
-        //    +------------------+--------------------+------------------+------------------+---------------------------+-
-        Row   < WaitStartAtten   , update             , Failed           , none             , timeout                   >,
-        g_row < WaitStartAtten   , message            , Sounding         /* none */         , &p::is_start_atten_char   >,
-        Row   < Sounding         , update             , FinalizeSounding , none             , timeout                   >,
-        g_row < Sounding         , message            , FinalizeSounding /* none */         , &p::enough_sounds         >,
-        Row   < FinalizeSounding , update             , WaitAttenRsp     , finalize_snd     , timeout                   >,
-        Row   < WaitAttenRsp     , update             , WaitAttenRsp     , retry_snd        , timeout                   >,
-        Row   < WaitAttenRsp     , update             , Failed           , none             , And_<timeout, retry_limit>>,
-        g_row < WaitAttenRsp     , message            , WaitSlacMatch    /* none */         , &p::is_atten_char_rsp     >,
-        Row   < WaitSlacMatch    , update             , Failed           , none             , timeout                   >,
-        row   < WaitSlacMatch    , message            , MatchComplete    , &p::match_cnf    , &p::is_slac_match_req     >
-        //    +------------------+--------------------+------------------+------------------+---------------------------+-
+        //    +------------------+---------+------------------+---------------+--------------------------+
+        //    | Source           | Event   | Target           | Action        | Guard                    |
+        //    +------------------+---------+------------------+---------------+--------------------------+
+        Row   < WaitStartAtten   , update  , Failed           , none          , timeout                  >,
+        g_row < WaitStartAtten   , message , Sounding         /* none */      , &p::is_start_atten_char  >,
+        Row   < Sounding         , update  , FinalizeSounding , none          , timeout                  >,
+        g_row < Sounding         , message , FinalizeSounding /* none */      , &p::enough_sounds        >,
+        Row   < FinalizeSounding , update  , WaitAttenRsp     , finalize_snd  , timeout                  >,
+        Row   < WaitAttenRsp     , update  , WaitAttenRsp     , retry_snd     , timeout                  >,
+        Row   < WaitAttenRsp     , update  , Failed           , none          , retry_timeout            >,
+        g_row < WaitAttenRsp     , message , WaitSlacMatch    /* none */      , &p::is_atten_char_rsp    >,
+        Row   < WaitSlacMatch    , update  , Failed           , none          , timeout                  >,
+        row   < WaitSlacMatch    , message , MatchComplete    , &p::match_cnf , &p::is_slac_match_req    >
+        //    +------------------+---------+------------------+---------------+--------------------------+
         >{};
     template <class FSM,class Event>
-    void no_transition(Event const& e, FSM&,int state) { }
+    void no_transition(Event const&, FSM&, int) { }
 
     // Members
     template <class Event, class Fsm>
-    void on_entry(Event const&, Fsm& fsm) {
+    void on_entry(Event const&, Fsm&) {
         //ctx = fsm.ctx; <- does not work here, since there is no parent FSM
         session_data.num_retries = 0;
     }
@@ -397,14 +433,46 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         }
     };
 
+    struct send_validate_cnf {
+        template <class Evt, class Fsm, class SrcT, class TarT>
+        void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT&) {
+            messages::cm_validate_cnf reply{};
+            reply.signal_type = defs::CM_VALIDATE_REQ_SIGNAL_TYPE;
+            reply.toggle_num = 0;
+            reply.result = defs::CM_VALIDATE_REQ_RESULT_FAILURE;
+            fsm.ctx->send_slac_message(e.payload.get_src_mac(), reply);
+        }
+    };
+
+    struct reset_matching_subfsm {
+        template <class Evt, class Fsm, class SrcT, class TarT>
+        void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            fsm.ctx->status.session_count = 0;
+            fsm.sessions.clear();
+            fsm.to.setDurationMilliSeconds(fsm.ctx->slac_config.slac_init_timeout_ms);
+            fsm.to.reset();
+            fsm.failed_matching_reset_once = true;
+        }
+    };
+
     struct add_session {
         template <class Fsm, class SrcT, class TarT>
-        void operator()(message const& e, Fsm& fsm, SrcT& src, TarT& ) {
+        void operator()(message const& e, Fsm& fsm, SrcT&, TarT& ) {
             // Add session
             auto& ctx = *fsm.ctx;
-            auto& msg = e.payload.get_payload<slac::messages::cm_slac_parm_req>();
+            auto const& msg = e.payload.get_payload<slac::messages::cm_slac_parm_req>();
+            if (not fsm::evse::MatchingSessionData::validate_message(msg)) {
+                return;
+            }
             fsm::evse::MatchingSessionData data(e.payload.get_src_mac(), msg.run_id, ctx.evse_mac);
-            auto& session = fsm.sessions.emplace_back();
+            auto session_iter = std::find_if(fsm.sessions.begin(), fsm.sessions.end(),
+                                            [&data](Session const& session) {
+                                                return session.session_data.matches_identity(data.ev_mac, data.run_id);
+                                            });
+            if (session_iter == fsm.sessions.end()) {
+                session_iter = fsm.sessions.emplace(fsm.sessions.end());
+            }
+            auto& session = *session_iter;
             session.session_data = data;
             session.ctx = fsm.ctx;
             session.start();
@@ -415,26 +483,57 @@ struct Matching_def    : public state_machine_def<Matching_def> {
             ctx.status.session_count = fsm.sessions.size();
         }
     };
+    struct is_validate_req : public is_message_of_type<defs::MMTYPE_CM_VALIDATE | defs::MMTYPE_MODE_REQ> { };
+
+    struct should_reset_instead_of_fail {
+        template <class Evt, class Fsm, class SrcT, class TarT>
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+            auto const should_timeout = fsm.to.timeout();
+            auto const is_failed = fsm.is_failed(update{});
+            auto const no_sessions = fsm.sessions.empty();
+            auto const should_reset = (not fsm.failed_matching_reset_once) and
+                                      fsm.ctx->slac_config.reset_instead_of_fail and
+                                      (is_failed or (no_sessions && should_timeout));
+            return should_reset;
+        }
+    };
+    struct should_transition_to_failed_matching {
+        template <class Evt, class Fsm, class SrcT, class TarT>
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
+            auto const should_timeout = fsm.to.timeout();
+            auto const is_failed = fsm.is_failed(update{});
+            auto const no_sessions = fsm.sessions.empty();
+            auto const should_fail = (is_failed or (no_sessions && should_timeout)) and
+                                     ((not fsm.ctx->slac_config.reset_instead_of_fail) or fsm.failed_matching_reset_once);
+            return should_fail;
+        }
+    };
 
     // Transitions
     using Session = state_machine<Session_def>;
     using initial_state = boost::mpl::vector<Init, Listen, Pipe>;
     using p = Matching_def;
+    using fail_matching = should_transition_to_failed_matching;
+    using reset_matching = should_reset_instead_of_fail;
+    using not_validate_req = Not_<is_validate_req>;
     struct transition_table : boost::mpl::vector<
-        //     Source         + Event             -> Target           / Action            [Guard]
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
-        g_row < Init          , update             , Matched          /* none */         , &p::is_matched           >,
-        g_row < Init          , update             , Failed           /* none */         , &p::is_failed            >,
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
-        Row   < Listen        , message            , Listen           , add_session      , is_slac_param_req        >,
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
-        Row   < Pipe          , message            , none             , pipe_event       , none                     >,
-        Row   < Pipe          , update             , none             , pipe_event       , none                     >
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
+        //    +--------+---------+---------+------------------------+-------------------+
+        //    | Source | Event   | Target  | Action                 | Guard             |
+        //    +--------+---------+---------+------------------------+-------------------+
+        g_row < Init   , update  , Matched /* none */               , &p::is_matched    >,
+        Row   < Init   , update  , Failed  , none                   , fail_matching     >,
+        Row   < Init   , update  , Init    , reset_matching_subfsm  , reset_matching    >,
+        //    +--------+---------+---------+------------------------+-------------------+
+        Row   < Listen , message , Listen  , add_session            , is_slac_param_req >,
+        Row   < Listen , message , Listen  , send_validate_cnf      , is_validate_req   >,
+        //    +--------+---------+---------+------------------------+-------------------+
+        Row   < Pipe   , message , none    , pipe_event             , not_validate_req  >,
+        Row   < Pipe   , update  , none    , pipe_event             , none              >
+        //    +--------+---------+---------+------------------------+-------------------+
         >{};
 
     template <class FSM,class Event>
-    void no_transition(Event const& e, FSM&,int state) {
+    void no_transition(Event const&, FSM&, int) {
     }
 
     // Members
@@ -443,12 +542,13 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         ctx = fsm.ctx;
         to.setDurationMilliSeconds(ctx->slac_config.slac_init_timeout_ms);
         to.reset();
+        failed_matching_reset_once = false;
         ctx->status.match_state = SlacState::Matching;
         ctx->status.d3_state = D3State::Matching;
     }
 
     template <class Event, class Fsm>
-    void on_exit(Event const&, Fsm& fsm) {
+    void on_exit(Event const&, Fsm&) {
         sessions.clear();
         ctx->status.session_count = 0;
     }
@@ -456,6 +556,7 @@ struct Matching_def    : public state_machine_def<Matching_def> {
     std::vector<Session> sessions;
     fsm::evse::Context* ctx;
     timer to;
+    bool failed_matching_reset_once{false};
 
     bool state_timeout() {
         return to.timeout();
@@ -521,7 +622,7 @@ struct Reset_def       : public state_machine_def<Reset_def> {
         template <class Fsm, class Evt, class SrcT, class TarT>
         bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
             return fsm.ctx->slac_config.chip_reset.enabled;
-        };
+        }
     };
     //Actions
     struct send_set_key_req {
@@ -596,25 +697,27 @@ struct Reset_def       : public state_machine_def<Reset_def> {
     using set_key_accepted         = And_<msg_expected, is_legacy_single_attempt_set_key>;
     using set_key_failed_retry     = And_<set_key_failed, has_set_key_attempts_left>;
     using set_key_failed_give_up   = And_<set_key_failed, has_no_set_key_attempts_left>;
+    using no_reset_chip            = Not_<is_reset_chip_on>;
 
     // Transitions
     using initial_state = Init;
     struct transition_table : boost::mpl::vector<
-        //   Source    + Event   -> Target    / Action                    [Guard]
-        //  +----------+---------+------------+---------------------------+---------------------------+
-        Row < Init     , none    , MsgSent    , send_set_key_req          , none                      >,
-        Row < MsgSent  , update  , MsgSent    , retry_send_set_key_req    , timeout_retry             >,
-        Row < MsgSent  , update  , MsgValid   , fail_send_set_key_req     , timeout_give_up           >,
-        Row < MsgSent  , message , MsgValid   , trigger_update            , set_key_accepted          >,
-        Row < MsgSent  , message , MsgValid   , apply_set_key_cnf         , set_key_ok                >,
-        Row < MsgSent  , message , MsgSent    , note_set_key_failed       , set_key_failed_retry      >,
-        Row < MsgSent  , message , MsgValid   , give_up_set_key_failed    , set_key_failed_give_up    >,
-        Row < MsgValid , update  , ResetChip  , none                      , is_reset_chip_on          >,
-        Row < MsgValid , update  , Idle       , none                      , Not_<is_reset_chip_on>    >
-        //  +----------+---------+------------+---------------------------+---------------------------+
+        //  +----------+---------+-----------+------------------------+--------------------------+
+        //  | Source   | Event   | Target    | Action                 | Guard                    |
+        //  +----------+---------+-----------+------------------------+--------------------------+
+        Row < Init     , none    , MsgSent   , send_set_key_req       , none                     >,
+        Row < MsgSent  , update  , MsgSent   , retry_send_set_key_req , timeout_retry            >,
+        Row < MsgSent  , update  , MsgValid  , fail_send_set_key_req  , timeout_give_up          >,
+        Row < MsgSent  , message , MsgValid  , trigger_update         , set_key_accepted         >,
+        Row < MsgSent  , message , MsgValid  , apply_set_key_cnf      , set_key_ok               >,
+        Row < MsgSent  , message , MsgSent   , note_set_key_failed    , set_key_failed_retry     >,
+        Row < MsgSent  , message , MsgValid  , give_up_set_key_failed , set_key_failed_give_up   >,
+        Row < MsgValid , update  , ResetChip , none                   , is_reset_chip_on         >,
+        Row < MsgValid , update  , Idle      , none                   , no_reset_chip            >
+        //  +----------+---------+-----------+------------------------+--------------------------+
         > {};
     template <class FSM,class Event>
-    void no_transition(Event const& e, FSM&,int state) { }
+    void no_transition(Event const&, FSM&, int) { }
 
     // Members
     template <class Event, class Fsm>
@@ -679,7 +782,7 @@ struct ResetChip_def   : public state_machine_def<ResetChip_def> {
     }
     struct is_reset_message {
         template <class Fsm, class SrcT, class TarT>
-        bool operator()(message const& e, Fsm& fsm, SrcT&, TarT& ) {
+        bool operator()(message const& e, Fsm&, SrcT&, TarT& ) {
             const auto mmtype = e.payload.get_mmtype();
             auto expected = defs::qualcomm::MMTYPE_CM_RESET_DEVICE | defs::MMTYPE_MODE_CNF;
             return mmtype == expected;
@@ -698,23 +801,24 @@ struct ResetChip_def   : public state_machine_def<ResetChip_def> {
                 messages::lumissil::nscm_reset_device_req reset_req;
                 ctx.send_slac_message(ctx.slac_config.plc_peer_mac, reset_req);
             }
-        };
+        }
     };
 
-    // Transistions
+    // Transitions
     using initial_state = Delay;
     using p = ResetChip_def;
     struct transition_table : boost::mpl::vector<
-        //     Source         + Event             -> Target           / Action            [Guard]
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
-        Row   < Delay         , update             , Sent             , send_message     , timeout                  >,
-        Row   < Sent          , message            , Received         , trigger_update   , is_reset_message         >,
-        g_row < Sent          , update             , Done             /* none */         , &p::is_done              >,
-        _row  < Received      , update             , Done             /* none */           /*none*/                 >
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
+        //    +----------+---------+----------+----------------+------------------+
+        //    | Source   | Event   | Target   | Action         | Guard            |
+        //    +----------+---------+----------+----------------+------------------+
+        Row   < Delay    , update  , Sent     , send_message   , timeout          >,
+        Row   < Sent     , message , Received , trigger_update , is_reset_message >,
+        g_row < Sent     , update  , Done     /* none */       , &p::is_done      >,
+        _row  < Received , update  , Done     /* none */         /* none */       >
+        //    +----------+---------+----------+----------------+------------------+
         >{};
     template <class FSM,class Event>
-    void no_transition(Event const& e, FSM&,int state) { }
+    void no_transition(Event const&, FSM&, int) { }
 
     //Members
     template <class Event, class Fsm>
@@ -744,24 +848,26 @@ struct Matched_def     : public state_machine_def<Matched_def> {
     // Transitions
     using initial_state = Init;
     using p = ResetChip_def;
+    using link_detection_off = Not_<detect_link>;
     struct transition_table : boost::mpl::vector<
-        //     Source         + Event             -> Target           / Action            [Guard] // last transition fires first
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
-        Row   < Init          , none               , Other            , none             , none                     >,
-        Row   < Init          , none               , Lumissil         , link_status_req  , is_lumissil              >,
-        Row   < Init          , none               , Qualcomm         , link_status_req  , is_qualcomm              >,
-        Row   < Init          , none               , NoDetect         , none             , Not_<detect_link>        >,
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
-        Row   < Lumissil      , update             , Lumissil         , link_status_req  , timeout                  >,
-        Row   < Lumissil      , message            , Failed           , none             , Not_<link_status_cnf>    >,
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
-        Row   < Qualcomm      , update             , Qualcomm         , link_status_req  , timeout                  >,
-        Row   < Qualcomm      , message            , Failed           , none             , Not_<link_status_cnf>    >
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
+        //    +----------+---------+----------+-----------------+--------------------+
+        //    | Source   | Event   | Target   | Action          | Guard              |
+        //    +----------+---------+----------+-----------------+--------------------+
+        Row   < Init     , none    , Other    , none            , none               >,
+        Row   < Init     , none    , Lumissil , link_status_req , is_lumissil        >,
+        Row   < Init     , none    , Qualcomm , link_status_req , is_qualcomm        >,
+        Row   < Init     , none    , NoDetect , none            , link_detection_off >,
+        //    +----------+---------+----------+-----------------+--------------------+
+        Row   < Lumissil , update  , Lumissil , link_status_req , timeout            >,
+        Row   < Lumissil , message , Failed   , none            , link_status_neg    >,
+        //    +----------+---------+----------+-----------------+--------------------+
+        Row   < Qualcomm , update  , Qualcomm , link_status_req , timeout            >,
+        Row   < Qualcomm , message , Failed   , none            , link_status_neg    >
+        //    +----------+---------+----------+-----------------+--------------------+
         >{};
 
     template <class FSM,class Event>
-    void no_transition(Event const& e, FSM&,int state) { }
+    void no_transition(Event const&, FSM&, int) { }
 
     // members;
     template <class Event, class Fsm>
@@ -809,24 +915,25 @@ struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
     using initial_state = Init;
     using p = ResetChip_def;
     struct transition_table : boost::mpl::vector<
-        //     Source         + Event             -> Target           / Action            [Guard] // last transition fires first
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
-        Row   < Init          , none               , Failed           , none             , none                     >,
-        Row   < Init          , none               , Lumissil         , link_status_req  , is_lumissil              >,
-        Row   < Init          , none               , Qualcomm         , link_status_req  , is_qualcomm              >,
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
-        Row   < Lumissil      , update             , Lumissil         , link_status_req  , timeout                  >,
-        Row   < Lumissil      , message            , Lumissil         , send_match_cnf   , is_match_req             >,
-        Row   < Lumissil      , message            , Matched          , none             , link_status_cnf          >,
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
-        Row   < Qualcomm      , update             , Qualcomm         , link_status_req  , timeout                  >,
-        Row   < Qualcomm      , message            , Qualcomm         , send_match_cnf   , is_match_req             >,
-        Row   < Qualcomm      , message            , Matched          , none             , link_status_cnf          >
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
+        //    +----------+---------+----------+-----------------+-----------------+
+        //    | Source   | Event   | Target   | Action          | Guard           |
+        //    +----------+---------+----------+-----------------+-----------------+
+        Row   < Init     , none    , Failed   , none            , none            >,
+        Row   < Init     , none    , Lumissil , link_status_req , is_lumissil     >,
+        Row   < Init     , none    , Qualcomm , link_status_req , is_qualcomm     >,
+        //    +----------+---------+----------+-----------------+-----------------+
+        Row   < Lumissil , update  , Lumissil , link_status_req , timeout         >,
+        Row   < Lumissil , message , Lumissil , send_match_cnf  , is_match_req    >,
+        Row   < Lumissil , message , Matched  , none            , link_status_cnf >,
+        //    +----------+---------+----------+-----------------+-----------------+
+        Row   < Qualcomm , update  , Qualcomm , link_status_req , timeout         >,
+        Row   < Qualcomm , message , Qualcomm , send_match_cnf  , is_match_req    >,
+        Row   < Qualcomm , message , Matched  , none            , link_status_cnf >
+        //    +----------+---------+----------+-----------------+-----------------+
         >{};
 
     template <class FSM,class Event>
-    void no_transition(Event const& e, FSM&,int state) { }
+    void no_transition(Event const&, FSM&, int) { }
 
     // Members
     template <class Event, class Fsm>
@@ -905,18 +1012,19 @@ struct Init_def        : public state_machine_def<Init_def> {
     // Transitions
     using initial_state = boost::mpl::vector<Init, Other>;
     struct transition_table : boost::mpl::vector<
-        //     Source         + Event             -> Target           / Action            [Guard]
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
-        Row   < Init          , update             , OpAttr           , op_attr_req      , timeout                  >,
-        Row   < OpAttr        , update             , GetVersion       , get_version_req  , timeout                  >,
-        Row   < GetVersion    , update             , Done             , none             , timeout                  >,
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
-        Row   < Other         , message            , Lumissil         , set_modem_vendor , is_lumissil_msg          >,
-        Row   < Other         , message            , Qualcomm         , set_modem_vendor , is_qualcomm_msg          >
-        //    +---------------+--------------------+------------------+------------------+--------------------------+-
+        //    +------------+---------+------------+------------------+-----------------+
+        //    | Source     | Event   | Target     | Action           | Guard           |
+        //    +------------+---------+------------+------------------+-----------------+
+        Row   < Init       , update  , OpAttr     , op_attr_req      , timeout         >,
+        Row   < OpAttr     , update  , GetVersion , get_version_req  , timeout         >,
+        Row   < GetVersion , update  , Done       , none             , timeout         >,
+        //    +------------+---------+------------+------------------+-----------------+
+        Row   < Other      , message , Lumissil   , set_modem_vendor , is_lumissil_msg >,
+        Row   < Other      , message , Qualcomm   , set_modem_vendor , is_qualcomm_msg >
+        //    +------------+---------+------------+------------------+-----------------+
         >{};
     template <class FSM,class Event>
-    void no_transition(Event const& e, FSM&,int state) { }
+    void no_transition(Event const&, FSM&, int) { }
 
     // Members
     template <class Event, class Fsm>
@@ -993,50 +1101,52 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
     // Actions
     struct on_matched_fail {
         template <class Fsm, class Evt, class SrcT, class TarT>
-        void operator()(Evt const&, Fsm& fsm, SrcT& src, TarT& ) {
+        void operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
             auto& ctx = *fsm.ctx;
             ctx.log_error("Connection lost in matched state");
             ctx.signal_error_routine_request();
-        };
+        }
     };
 
     // Transitions
     using initial_state = Init;
+    using reset_timeout = And_<timeout, is_legacy_set_key_handling_mode>;
+    using no_link_wait = Not_<cfg_wait_for_link>;
     struct transition_table : boost::mpl::vector<
-        //  +Source            + Event              + -> Target        + / Action         + [Guard]                  +
-        //  +------------------+--------------------+------------------+------------------+--------------------------+
-        Row < Init_Done        , update             , Reset            , none             , none                    >,
-        //  +------------------+--------------------+------------------+------------------+--------------------------+
-        Row < Reset            , reset              , Reset            , none             , none                    >,
-        Row < Reset            , update             , Failed           , none             , And_<timeout, is_legacy_set_key_handling_mode> >,
-        Row < Reset_ResetChip  , update             , ResetChip        , none             , none                    >,
-        Row < Reset_Idle       , update             , Idle             , none             , none                    >,
-        //  +------------------+--------------------+------------------+------------------+--------------------------+
-        Row < ResetChip_Done   , update             , Idle             , none             , none                    >,
-        //  +------------------+--------------------+------------------+------------------+--------------------------+
-        Row < Idle             , enter_bcd          , Matching         , none             , none                    >,
-        Row < Idle             , reset              , Reset            , none             , none                    >,
-        //  +------------------+--------------------+------------------+------------------+--------------------------+
-        Row < Matching         , reset              , Reset            , none             , none                    >,
-        Row < Matching         , leave_bcd          , Idle             , none             , none                    >,
-        Row < Matching         , update             , Failed           , none             , timeout                 >,
-        Row < Matching_Fail    , none               , Failed           , none             , none                    >,
-        Row < Matching_Match   , none               , WaitForLink      , none             , cfg_wait_for_link       >,
-        Row < Matching_Match   , none               , Matched          , none             , Not_<cfg_wait_for_link> >,
-        //  +------------------+--------------------+------------------+------------------+--------------------------+
-        Row < WaitForLink      , update             , Failed           , none             , timeout                 >,
-        Row < WaitForLink      , reset              , Reset            , none             , none                    >,
-        Row < WaitForLink_Fail , none               , Failed           , none             , none                    >,
-        Row < WaitForLink_Match, message            , Matched          , none             , none                    >,
-        //  +------------------+--------------------+------------------+------------------+--------------------------+
-        Row < Matched          , reset              , Reset            , none             , none                    >,
-        Row < Matched_Fail     , message            , Failed           , on_matched_fail  , none                    >,
-        //  +------------------+--------------------+------------------+------------------+--------------------------+
-        Row < Failed           , reset              , Reset            , none             , none                    >
-        //  +------------------+--------------------+------------------+------------------+--------------------------+
+        //  +-------------------+-----------+-------------+-----------------+-------------------+
+        //  | Source            | Event     | Target      | Action          | Guard             |
+        //  +-------------------+-----------+-------------+-----------------+-------------------+
+        Row < Init_Done         , update    , Reset       , none            , none              >,
+        //  +-------------------+-----------+-------------+-----------------+-------------------+
+        Row < Reset             , reset     , Reset       , none            , none              >,
+        Row < Reset             , update    , Failed      , none            , reset_timeout     >,
+        Row < Reset_ResetChip   , update    , ResetChip   , none            , none              >,
+        Row < Reset_Idle        , update    , Idle        , none            , none              >,
+        //  +-------------------+-----------+-------------+-----------------+-------------------+
+        Row < ResetChip_Done    , update    , Idle        , none            , none              >,
+        //  +-------------------+-----------+-------------+-----------------+-------------------+
+        Row < Idle              , enter_bcd , Matching    , none            , none              >,
+        Row < Idle              , reset     , Reset       , none            , none              >,
+        //  +-------------------+-----------+-------------+-----------------+-------------------+
+        Row < Matching          , reset     , Reset       , none            , none              >,
+        Row < Matching          , leave_bcd , Idle        , none            , none              >,
+        Row < Matching_Fail     , none      , Failed      , none            , none              >,
+        Row < Matching_Match    , none      , WaitForLink , none            , cfg_wait_for_link >,
+        Row < Matching_Match    , none      , Matched     , none            , no_link_wait      >,
+        //  +-------------------+-----------+-------------+-----------------+-------------------+
+        Row < WaitForLink       , update    , Failed      , none            , timeout           >,
+        Row < WaitForLink       , reset     , Reset       , none            , none              >,
+        Row < WaitForLink_Fail  , none      , Failed      , none            , none              >,
+        Row < WaitForLink_Match , message   , Matched     , none            , none              >,
+        //  +-------------------+-----------+-------------+-----------------+-------------------+
+        Row < Matched           , reset     , Reset       , none            , none              >,
+        Row < Matched_Fail      , message   , Failed      , on_matched_fail , none              >,
+        //  +-------------------+-----------+-------------+-----------------+-------------------+
+        Row < Failed            , reset     , Reset       , none            , none              >
+        //  +-------------------+-----------+-------------+-----------------+-------------------+
         > {};
     template <class FSM,class Event>
-    void no_transition(Event const& e, FSM& fsm,int state) {
+    void no_transition(Event const&, FSM&, int) {
     }
 
     fsm::evse::Context* ctx;
