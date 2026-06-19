@@ -10,6 +10,8 @@ struct MatchingSessionData {
     MatchingSessionData() = default;
     MatchingSessionData(const uint8_t* ev_mac, const uint8_t* run_id, const uint8_t* evse_mac);
 
+    bool matches_identity(const uint8_t* other_ev_mac, const uint8_t* other_run_id) const;
+
     // context related
     uint8_t evse_mac[ETH_ALEN];
 

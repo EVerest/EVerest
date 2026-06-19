@@ -161,6 +161,7 @@ bool test_legacy_single_attempt_accepts_any_result_and_no_retry() {
     fill_session_nmk(ctx, 0x11);
 
     slac_fsm machine(ctx);
+    machine.restart_fsm();
     machine.reset();
 
     if (!wait_for_match_state(ctx, SlacState::Reset, machine, 200)) {
@@ -218,6 +219,7 @@ bool test_legacy_single_attempt_reaches_failed() {
     fill_session_nmk(ctx, 0x22);
 
     slac_fsm machine(ctx);
+    machine.restart_fsm();
     machine.reset();
 
     if (!wait_for_match_state(ctx, SlacState::Reset, machine, 200)) {
@@ -254,6 +256,7 @@ bool test_retry_confirmed_retries_until_attempt_limit_without_promoting_session_
     auto session_nmk_before = current_session_nmk(ctx);
 
     slac_fsm machine(ctx);
+    machine.restart_fsm();
     machine.reset();
 
     if (!wait_for_match_state(ctx, SlacState::Reset, machine, 200)) {
@@ -322,6 +325,7 @@ bool run_retry_confirmed_success(uint8_t result) {
     auto session_nmk_before = current_session_nmk(ctx);
 
     slac_fsm machine(ctx);
+    machine.restart_fsm();
     machine.reset();
 
     if (!wait_for_match_state(ctx, SlacState::Reset, machine, 200)) {

@@ -206,7 +206,7 @@ void slac_fsm::event_post_processing() {
                 traverse_fsm(msm, 0, print_visitor);
 
                 std::cout << current_state_str;
-                std::cout << "-----------------------\n";
+                std::cout << "-----------------------\n" << std::endl;
             }
             if (telemetry) {
                 FsmStateVisitor fsm_state_visitor;
