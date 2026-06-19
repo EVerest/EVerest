@@ -4,7 +4,7 @@
 #pragma once
 
 #include <device_model/everest_device_model_storage.hpp>
-#include <everest/conversions/ocpp/evse_security_ocpp.hpp>
+
 #include <generated/interfaces/evse_manager/Interface.hpp>
 #include <generated/interfaces/iso15118_extensions/Interface.hpp>
 #include <generated/interfaces/reservation/Interface.hpp>
@@ -23,7 +23,6 @@
 #include <ocpp/v2/types.hpp>
 
 #include <cstdint>
-#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -102,8 +101,8 @@ struct GenericChargePointCallbacks {
     cb_set_display_message(const std::vector<ocpp::DisplayMessage>& messages) = 0;
     virtual void cb_set_running_cost(const ocpp::RunningCost& running_cost, std::uint32_t number_of_decimals,
                                      const std::optional<std::string>& currency_code) = 0;
-    virtual ocpp::v2::RequestStartStopStatusEnum cb_stop_transaction(std::int32_t evse_id,
-                                                                     ocpp::v2::ReasonEnum stop_reason) = 0;
+    virtual ocpp::v2::RequestStartStopStatusEnum
+    cb_stop_transaction(std::int32_t evse_id, types::evse_manager::StopTransactionReason stop_reason) = 0;
     virtual void cb_supported_energy_transfer_modes(
         std::int32_t evse_id,
         const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes) = 0;
@@ -158,6 +157,7 @@ struct GenericChargePointInterface {
         fs::path message_log_path;
         fs::path share_path;
         fs::path v16_chargepoint_config_path;
+        fs::path v16_database_path;
         fs::path v16_user_config_path;
         fs::path v2_core_database_path;
         fs::path v2_device_model_config_path;
@@ -178,6 +178,10 @@ struct GenericChargePointInterface {
     virtual void set_message_queue_resume_delay(std::chrono::seconds delay) = 0;
     virtual void start(ocpp::v2::BootReasonEnum bootreason, bool start_connecting) = 0;
     virtual void stop() = 0;
+    virtual void update_chargepoint_information(const std::string& vendor, const std::string& model,
+                                                const std::optional<std::string>& serialnumber,
+                                                const std::optional<std::string>& chargebox_serialnumber,
+                                                const std::optional<std::string>& firmware_version) = 0;
 
     virtual std::optional<ocpp::v2::DataTransferResponse>
     data_transfer_req(const ocpp::v2::DataTransferRequest& request) = 0;
@@ -216,8 +220,9 @@ struct GenericChargePointInterface {
                                      const types::evse_manager::SessionEvent& session_event) = 0;
     virtual void on_session_started(std::int32_t evse_id, std::int32_t connector_id,
                                     const types::evse_manager::SessionEvent& session_event) = 0;
-    virtual void on_transaction_finished(std::int32_t evse_id, const ocpp::DateTime& timestamp,
-                                         const ocpp::v2::MeterValue& meter_stop, ocpp::v2::ReasonEnum reason,
+    virtual void on_transaction_finished(std::int32_t evse_id, const std::string& session_id,
+                                         const ocpp::DateTime& timestamp, const ocpp::v2::MeterValue& meter_stop,
+                                         types::evse_manager::StopTransactionReason reason,
                                          ocpp::v2::TriggerReasonEnum trigger_reason,
                                          const std::optional<ocpp::v2::IdToken>& id_token,
                                          const std::optional<std::string>& signed_meter_value,

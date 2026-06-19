@@ -2,21 +2,9 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "v16_chargepoint.hpp"
-#include "generic_chargepoint_interface.hpp"
-#include "ocpp/common/cistring.hpp"
-#include "ocpp/common/types.hpp"
-#include "ocpp/v16/messages/ChangeAvailability.hpp"
-#include "ocpp/v16/messages/GetConfiguration.hpp"
-#include "ocpp/v16/ocpp_enums.hpp"
-#include "ocpp/v16/types.hpp"
-#include "ocpp/v2/messages/TransactionEvent.hpp"
-#include "ocpp/v2/messages/UpdateFirmware.hpp"
-#include "ocpp/v2/ocpp_enums.hpp"
-#include "ocpp/v2/ocpp_types.hpp"
-#include "ocpp/v2/types.hpp"
+
 #include <conversions.hpp>
 #include <conversions_v16.hpp>
-#include <optional>
 
 namespace {
 
@@ -339,41 +327,6 @@ auto convert(ocpp::v2::OperationalStatusEnum value) {
     return result;
 }
 
-auto convert(ocpp::v16::Reason value) {
-    ocpp::v2::ReasonEnum result{};
-    switch (value) {
-    case ocpp::v16::Reason::EmergencyStop:
-        result = ocpp::v2::ReasonEnum::EmergencyStop;
-        break;
-    case ocpp::v16::Reason::EVDisconnected:
-        result = ocpp::v2::ReasonEnum::EVDisconnected;
-        break;
-    case ocpp::v16::Reason::HardReset:
-    case ocpp::v16::Reason::SoftReset:
-    case ocpp::v16::Reason::Reboot:
-        result = ocpp::v2::ReasonEnum::Reboot;
-        break;
-    case ocpp::v16::Reason::Local:
-        result = ocpp::v2::ReasonEnum::Local;
-        break;
-    case ocpp::v16::Reason::PowerLoss:
-        result = ocpp::v2::ReasonEnum::PowerLoss;
-        break;
-    case ocpp::v16::Reason::Remote:
-        result = ocpp::v2::ReasonEnum::Remote;
-        break;
-    case ocpp::v16::Reason::DeAuthorized:
-        result = ocpp::v2::ReasonEnum::DeAuthorized;
-        break;
-    case ocpp::v16::Reason::UnlockCommand:
-    case ocpp::v16::Reason::Other:
-    default:
-        result = ocpp::v2::ReasonEnum::Other;
-        break;
-    }
-    return result;
-}
-
 auto convert(ocpp::v2::ReserveNowStatusEnum value) {
     ocpp::v16::ReservationStatus result{};
     switch (value) {
@@ -532,6 +485,8 @@ void ChargePointV16::check_configured(const std::string_view& fn) {
         msg += fn;
         throw NotConfigured(msg);
     }
+
+    EVLOG_info << "Enterring: " << fn;
 }
 
 // ----------------------------------------------------------------------------
@@ -664,7 +619,8 @@ ChargePointV16::cb_signed_update_firmware(const ocpp::v16::SignedUpdateFirmwareR
 }
 
 bool ChargePointV16::cb_stop_transaction(std::int32_t connector, ocpp::v16::Reason reason) {
-    const auto res = m_callbacks_ptr->cb_stop_transaction(connector, convert(reason));
+    const auto stop_reason = module::conversions_v16::to_everest_stop_transaction_reason(reason);
+    const auto res = m_callbacks_ptr->cb_stop_transaction(connector, stop_reason);
     return res == ocpp::v2::RequestStartStopStatusEnum::Accepted;
 }
 
@@ -685,6 +641,7 @@ void ChargePointV16::cb_transaction_started(const std::int32_t connector, const 
 
 void ChargePointV16::cb_transaction_stopped(const std::int32_t connector, const std::string& session_id,
                                             const std::int32_t transaction_id) {
+    EVLOG_info << "Transaction stopped at connector: " << connector << ", session_id: " << session_id;
     ocpp::v2::TransactionEventRequest event;
     event.eventType = ocpp::v2::TransactionEventEnum::Ended;
     event.evse = {connector, 1};
@@ -944,7 +901,7 @@ void ChargePointV16::init(init_args_t& args) {
         ocpp_share_path,
         sql_init_path,
         args.v16_user_config_path,
-        static_cast<std::uint32_t>(args.evse_connector_structure.size()) // numnber_of_connectors;
+        static_cast<std::uint32_t>(args.evse_connector_structure.size()) // number of connectors;
     };
 
     configure_data_model(config);
@@ -953,7 +910,7 @@ void ChargePointV16::init(init_args_t& args) {
     m_charge_point = std::make_unique<ocpp::v16::ChargePoint>(
         *m_charge_point_configuration,
         ocpp_share_path,
-        args.v2_core_database_path,
+        args.v16_database_path,
         sql_init_path,
         args.message_log_path,
         m_evse_security,
@@ -988,6 +945,15 @@ void ChargePointV16::start(ocpp::v2::BootReasonEnum bootreason, bool start_conne
 void ChargePointV16::stop() {
     check_configured("stop");
     m_charge_point->stop();
+}
+
+void ChargePointV16::update_chargepoint_information(const std::string& vendor, const std::string& model,
+                                                    const std::optional<std::string>& serialnumber,
+                                                    const std::optional<std::string>& chargebox_serialnumber,
+                                                    const std::optional<std::string>& firmware_version) {
+    check_configured("update_chargepoint_information");
+    m_charge_point->update_chargepoint_information(vendor, model, serialnumber, chargebox_serialnumber,
+                                                   firmware_version);
 }
 
 std::optional<ocpp::v2::DataTransferResponse>
@@ -1201,14 +1167,36 @@ void ChargePointV16::on_session_started(std::int32_t evse_id, std::int32_t conne
     }
 }
 
-void ChargePointV16::on_transaction_finished(std::int32_t evse_id, const ocpp::DateTime& timestamp,
-                                             const ocpp::v2::MeterValue& meter_stop, ocpp::v2::ReasonEnum reason,
+void ChargePointV16::on_transaction_finished(std::int32_t evse_id, const std::string& session_id,
+                                             const ocpp::DateTime& timestamp, const ocpp::v2::MeterValue& meter_stop,
+                                             types::evse_manager::StopTransactionReason reason,
                                              ocpp::v2::TriggerReasonEnum trigger_reason,
                                              const std::optional<ocpp::v2::IdToken>& id_token,
                                              const std::optional<std::string>& signed_meter_value,
                                              ocpp::v2::ChargingStateEnum charging_state) {
     check_configured("on_transaction_finished");
+
+    std::string found_token{};
+    double found_meter_end{0.};
+
+    for (const auto& entry : meter_stop.sampledValue) {
+        if (entry.measurand.value_or(ocpp::v2::MeasurandEnum::Frequency) ==
+            ocpp::v2::MeasurandEnum::Energy_Active_Import_Register) {
+            found_meter_end = entry.value;
+            break;
+        }
+    }
+
+    if (id_token) {
+        found_token = id_token->idToken;
+    }
+
+    const auto v16_reason = module::conversions_v16::to_ocpp_reason(reason);
+
+    m_charge_point->on_transaction_stopped(evse_id, session_id, v16_reason, timestamp, found_meter_end, found_token,
+                                           signed_meter_value);
 }
+
 void ChargePointV16::on_transaction_started(
     std::int32_t evse_id, std::int32_t connector_id, const std::string& session_id, const ocpp::DateTime& timestamp,
     ocpp::v2::TriggerReasonEnum trigger_reason, const ocpp::v2::MeterValue& meter_start,

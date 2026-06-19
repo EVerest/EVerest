@@ -6,6 +6,7 @@
 #include "generic_chargepoint_interface.hpp"
 #include "v16_chargepoint.hpp"
 #include "v2_chargepoint.hpp"
+
 #include <memory>
 
 namespace ocpp_multi {
@@ -21,14 +22,6 @@ public:
 private:
     GenericChargePointCallbacks& m_charge_point_callbacks;
     evse_securityIntf& m_evse_security_interface;
-
-    std::shared_ptr<ocpp::v2::DeviceModelAbstract> m_device_model;
-    std::map<std::int32_t, std::int32_t> m_evse_connector_structure;
-    std::unique_ptr<ocpp::v2::DeviceModelStorageInterface> m_device_model_storage_interface;
-    std::string m_ocpp_share_path;
-    std::string m_core_database_path;
-    std::string m_sql_init_path;
-    std::string m_message_log_path;
     ocpp::v2::Callbacks m_callbacks;
 
     state_t m_state{state_t::idle};
@@ -54,6 +47,10 @@ public:
     void set_message_queue_resume_delay(std::chrono::seconds delay) override;
     void start(ocpp::v2::BootReasonEnum bootreason, bool start_connecting) override;
     void stop() override;
+    void update_chargepoint_information(const std::string& vendor, const std::string& model,
+                                        const std::optional<std::string>& serialnumber,
+                                        const std::optional<std::string>& chargebox_serialnumber,
+                                        const std::optional<std::string>& firmware_version) override;
 
     std::optional<ocpp::v2::DataTransferResponse>
     data_transfer_req(const ocpp::v2::DataTransferRequest& request) override;
@@ -102,8 +99,9 @@ public:
                              const types::evse_manager::SessionEvent& session_event) override;
     void on_session_started(std::int32_t evse_id, std::int32_t connector_id,
                             const types::evse_manager::SessionEvent& session_event) override;
-    void on_transaction_finished(std::int32_t evse_id, const ocpp::DateTime& timestamp,
-                                 const ocpp::v2::MeterValue& meter_stop, ocpp::v2::ReasonEnum reason,
+    void on_transaction_finished(std::int32_t evse_id, const std::string& session_id, const ocpp::DateTime& timestamp,
+                                 const ocpp::v2::MeterValue& meter_stop,
+                                 types::evse_manager::StopTransactionReason reason,
                                  ocpp::v2::TriggerReasonEnum trigger_reason,
                                  const std::optional<ocpp::v2::IdToken>& id_token,
                                  const std::optional<std::string>& signed_meter_value,

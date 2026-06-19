@@ -292,8 +292,8 @@ TEST_F(GenericOcppRequiresTester, callSetPlugAndChargeConfiguration) {
 TEST_F(GenericOcppRequiresTester, callStopTransaction) {
     // call_stop_transaction() used in cb_stop_transaction()
 
-    using ocpp::v2::ReasonEnum;
     using ocpp::v2::RequestStartStopStatusEnum;
+    using types::evse_manager::StopTransactionReason;
 
     // there are 2 EVSE Managers - check routing to the correct manager
     std::vector<json> received_0;
@@ -308,8 +308,8 @@ TEST_F(GenericOcppRequiresTester, callStopTransaction) {
     interfaces->add_cmd_result(R"(true)"_json);
     interfaces->add_cmd_result(R"(false)"_json);
 
-    const auto result_0 = ocpp->cb_stop_transaction(1, ReasonEnum::DeAuthorized);
-    const auto result_1 = ocpp->cb_stop_transaction(2, ReasonEnum::StoppedByEV);
+    const auto result_0 = ocpp->cb_stop_transaction(1, StopTransactionReason::DeAuthorized);
+    const auto result_1 = ocpp->cb_stop_transaction(2, StopTransactionReason::StoppedByEV);
 
     ASSERT_EQ(received_0.size(), 1);
     EXPECT_EQ(received_0[0], R"({"request":{"reason":"DeAuthorized"}})"_json);

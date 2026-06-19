@@ -126,6 +126,8 @@ protected:
 
     virtual std::optional<json> auth_call_set_connection_timeout(const Requirement& req, const json& args);
     virtual std::optional<json> auth_call_set_master_pass_group_id(const Requirement& req, const json& args);
+    virtual std::optional<json> charger_information_call_get_charger_information(const Requirement& req,
+                                                                                 const json& args);
     virtual std::optional<json> display_message_call_clear_display_message(const Requirement& req, const json& args);
     virtual std::optional<json> display_message_call_get_display_messages(const Requirement& req, const json& args);
     virtual std::optional<json> display_message_call_set_display_message(const Requirement& req, const json& args);

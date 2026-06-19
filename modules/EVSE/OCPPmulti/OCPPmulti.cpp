@@ -20,6 +20,9 @@ std::string ConfigAccess::getCoreDatabasePath() const {
 std::string ConfigAccess::getCustomMrecErrorMapPath() const {
     return m_config.CustomMrecErrorMapPath;
 }
+std::string ConfigAccess::getDatabasePath() const {
+    return m_config.DatabasePath;
+}
 int ConfigAccess::getDelayOcppStart() const {
     return m_config.DelayOcppStart;
 }

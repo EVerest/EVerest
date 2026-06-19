@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "generic_chargepoint_interface.hpp"
+
 #include <generated/interfaces/auth/Interface.hpp>
 #include <generated/interfaces/auth_token_provider/Implementation.hpp>
 #include <generated/interfaces/auth_token_validator/Implementation.hpp>
@@ -20,13 +22,6 @@
 #include <generated/interfaces/session_cost/Implementation.hpp>
 #include <generated/interfaces/system/Interface.hpp>
 
-#include "generated/types/powermeter.hpp"
-#include "generic_chargepoint.hpp"
-#include <device_model/everest_device_model_storage.hpp>
-#include <error_handling.hpp>
-#include <everest/util/async/monitor.hpp>
-#include <ocpp/common/connectivity_manager.hpp>
-#include <ocpp/v2/charge_point_callbacks.hpp>
 #include <ocpp/v2/messages/BootNotification.hpp>
 #include <ocpp/v2/messages/ClearDisplayMessage.hpp>
 #include <ocpp/v2/messages/DataTransfer.hpp>
@@ -40,11 +35,11 @@
 #include <ocpp/v2/messages/TransactionEvent.hpp>
 #include <ocpp/v2/messages/UnlockConnector.hpp>
 #include <ocpp/v2/messages/UpdateFirmware.hpp>
-#include <ocpp/v2/ocpp_types.hpp>
-#include <ocpp/v2/types.hpp>
+
+#include <device_model/everest_device_model_storage.hpp>
+#include <error_handling.hpp>
 #include <transaction_handler.hpp>
 
-#include <filesystem>
 #include <queue>
 #include <variant>
 
@@ -112,6 +107,7 @@ struct ConfigInterface {
     [[nodiscard]] virtual int getCompositeScheduleIntervalS() const = 0;
     [[nodiscard]] virtual std::string getCoreDatabasePath() const = 0;
     [[nodiscard]] virtual std::string getCustomMrecErrorMapPath() const = 0;
+    [[nodiscard]] virtual std::string getDatabasePath() const = 0;
     [[nodiscard]] virtual int getDelayOcppStart() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelConfigPath() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelDatabasePath() const = 0;
@@ -301,8 +297,8 @@ protected:
     cb_set_display_message(const std::vector<ocpp::DisplayMessage>& messages) override;
     void cb_set_running_cost(const ocpp::RunningCost& running_cost, std::uint32_t number_of_decimals,
                              const std::optional<std::string>& currency_code) override;
-    ocpp::v2::RequestStartStopStatusEnum cb_stop_transaction(std::int32_t evse_id,
-                                                             ocpp::v2::ReasonEnum stop_reason) override;
+    ocpp::v2::RequestStartStopStatusEnum
+    cb_stop_transaction(std::int32_t evse_id, types::evse_manager::StopTransactionReason stop_reason) override;
     void cb_supported_energy_transfer_modes(
         std::int32_t evse_id,
         const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes) override;

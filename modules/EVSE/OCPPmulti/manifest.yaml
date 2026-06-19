@@ -29,6 +29,13 @@ config:
       built-in defaults. Leave empty to use only the defaults.
     type: string
     default: ''
+  DatabasePath:
+    description: >-
+      OCPP 1.6
+      Path to the persistent SQLite database directory. Please refer to the libocpp documentation for more information
+      about the database and its structure.
+    type: string
+    default: /tmp/ocpp_1_6_charge_point
   DelayOcppStart:
     description: >-
       OCPP 1.6

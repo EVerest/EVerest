@@ -49,6 +49,7 @@ public:
     [[nodiscard]] int getCompositeScheduleIntervalS() const override;
     [[nodiscard]] std::string getCoreDatabasePath() const override;
     [[nodiscard]] std::string getCustomMrecErrorMapPath() const override;
+    [[nodiscard]] std::string getDatabasePath() const override;
     [[nodiscard]] int getDelayOcppStart() const override;
     [[nodiscard]] std::string getDeviceModelConfigPath() const override;
     [[nodiscard]] std::string getDeviceModelDatabasePath() const override;
@@ -73,6 +74,7 @@ struct Conf {
     int CompositeScheduleIntervalS;
     std::string CoreDatabasePath;
     std::string CustomMrecErrorMapPath;
+    std::string DatabasePath;
     int DelayOcppStart;
     std::string DeviceModelConfigPath;
     std::string DeviceModelDatabasePath;
@@ -121,7 +123,7 @@ public:
         r_reservation(std::move(r_reservation)),
         r_security(std::move(r_security)),
         r_system(std::move(r_system)),
-        config(config) {};
+        config(config){};
 
     Everest::MqttProvider& mqtt;
     const std::unique_ptr<auth_token_validatorImplBase> p_auth_validator;

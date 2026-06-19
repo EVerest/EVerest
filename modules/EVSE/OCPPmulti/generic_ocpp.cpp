@@ -2,21 +2,12 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "generic_ocpp.hpp"
-#include "generic_chargepoint_interface.hpp"
+#include "ocpp/common/types.hpp"
+
 #include <conversions.hpp>
-#include <device_model/composed_device_model_storage.hpp>
-#include <error_handling.hpp>
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/external_energy_limits/external_energy_limits.hpp>
-#include <everest/logging.hpp>
-#include <filesystem>
-#include <generated/types/ocpp.hpp>
-#include <ocpp/v2/ocpp_types.hpp>
-#include <ocpp/v2/utils.hpp>
-
 #include <ld-ev.hpp>
-#include <optional>
-#include <string>
 
 namespace fs = std::filesystem;
 
@@ -558,6 +549,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     const auto share_path = remove_dir(m_info.paths.share);
 
     const auto charge_point_config_path = update_path_v16(share_path, m_config.getChargePointConfigPath());
+    const auto database_path = update_path_v16(share_path, m_config.getDatabasePath());
     const auto user_config_path = update_path_v16(share_path, m_config.getUserConfigPath());
 
     const auto core_database_path = update_path_v2(share_path, m_config.getCoreDatabasePath());
@@ -571,6 +563,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     EVLOG_info << "Configuration";
     EVLOG_info << "Share path:                         " << share_path;
     EVLOG_info << "v16 config path:                    " << charge_point_config_path;
+    EVLOG_info << "v16 database path:                  " << database_path;
     EVLOG_info << "v16 user config path:               " << user_config_path;
     EVLOG_info << "v2 core database path:              " << core_database_path;
     EVLOG_info << "v2 device model config path:        " << device_model_config_path;
@@ -584,11 +577,20 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
         m_evse_supported_energy_transfer_modes, m_evse_service_renegotiation_supported,
         everest_device_model_database_path, device_model_database_migration_path, client);
 
+    // if charger information interface is connected, override only these specific
+    // properties which were loaded from configuration file(s)
+    if (!m_requires.charger_information.empty()) {
+        auto info = m_requires.charger_information.at(0)->call_get_charger_information();
+        m_charge_point.update_chargepoint_information(info.vendor, info.model, info.chargepoint_serial,
+                                                      info.chargebox_serial, info.firmware_version);
+    }
+
     // clang-format off
     ocpp_multi::GenericChargePointInterface::init_args_t args{
         m_config.getMessageLogPath(),
         share_path,
         charge_point_config_path,
+        database_path,
         user_config_path,
         core_database_path,
         device_model_config_path,
@@ -613,6 +615,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     // database and potentially triggers enable/disable callbacks at the evse.
     m_charge_point.start(boot_reason, false);
     m_started = true;
+    EVLOG_info << "OCPP started";
 
     // Signal to EVSEs to start their internal state machines
     for (const auto& evse : m_requires.evse_manager) {
@@ -1179,27 +1182,23 @@ void GenericOcpp::cb_log_status(types::system::LogStatus status) {
 }
 
 void GenericOcpp::cb_ocpp_messages(const std::string& message, ocpp::MessageDirection direction) {
+    types::ocpp::Message ocpp_message;
+    ocpp_message.message = message;
+    if (m_ocpp_protocol_version != ocpp::OcppProtocolVersion::Unknown) {
+        ocpp_message.version = ocpp_protocol_version_to_string(m_ocpp_protocol_version);
+    }
     switch (direction) {
-    case ocpp::MessageDirection::CSMSToChargingStation: {
-        types::ocpp::Message ocpp_message;
-        ocpp_message.message = message;
-        ocpp_message.version = ocpp_protocol_version_to_string(m_ocpp_protocol_version);
+    case ocpp::MessageDirection::CSMSToChargingStation:
         ocpp_message.direction = types::ocpp::MessageDirection::CSMSToChargingStation;
-        m_provides.ocpp_generic.publish_ocpp_message(ocpp_message);
         break;
-    }
-    case ocpp::MessageDirection::ChargingStationToCSMS: {
-        types::ocpp::Message ocpp_message;
-        ocpp_message.message = message;
-        ocpp_message.version = ocpp_protocol_version_to_string(m_ocpp_protocol_version);
+    case ocpp::MessageDirection::ChargingStationToCSMS:
         ocpp_message.direction = types::ocpp::MessageDirection::ChargingStationToCSMS;
-        m_provides.ocpp_generic.publish_ocpp_message(ocpp_message);
         break;
-    }
     default:
         // unknown message direction (ignored)
         break;
     }
+    m_provides.ocpp_generic.publish_ocpp_message(ocpp_message);
 }
 
 bool GenericOcpp::cb_pause_charging(std::int32_t evse_id) {
@@ -1427,15 +1426,15 @@ void GenericOcpp::cb_set_running_cost(const ocpp::RunningCost& running_cost, std
     m_provides.session_cost.publish_session_cost(cost);
 }
 
-ocpp::v2::RequestStartStopStatusEnum GenericOcpp::cb_stop_transaction(std::int32_t evse_id,
-                                                                      ocpp::v2::ReasonEnum stop_reason) {
+ocpp::v2::RequestStartStopStatusEnum
+GenericOcpp::cb_stop_transaction(std::int32_t evse_id, types::evse_manager::StopTransactionReason stop_reason) {
     using namespace module::conversions;
 
     auto result = ocpp::v2::RequestStartStopStatusEnum::Rejected;
 
     if (evse_id > 0 && evse_id <= m_requires.evse_manager.size()) {
         types::evse_manager::StopTransactionRequest req;
-        req.reason = to_everest_stop_transaction_reason(stop_reason);
+        req.reason = stop_reason;
         result = m_requires.evse_manager.at(evse_id - 1)->call_stop_transaction(req)
                      ? ocpp::v2::RequestStartStopStatusEnum::Accepted
                      : ocpp::v2::RequestStartStopStatusEnum::Rejected;
@@ -1635,7 +1634,6 @@ void GenericOcpp::charging_schedules_timer_start() {
     const auto interval = m_config.getCompositeScheduleIntervalS();
     if (interval > 0) {
         m_charging_schedules_timer.interval([this]() { cb_set_charging_profiles(); }, std::chrono::seconds(interval));
-        EVLOG_error << "T: " << m_charging_schedules_timer.is_running();
     }
 }
 
@@ -2137,10 +2135,14 @@ void GenericOcpp::process_tx_event_effect(std::int32_t evse_id, const module::Tx
             transaction_data->meter_value =
                 to_ocpp_meter_value(get_meter_value(session_event), ocpp::v2::ReadingContextEnum::Transaction_End,
                                     get_signed_meter_value(session_event));
-            m_charge_point.on_transaction_finished(evse_id, transaction_data->timestamp, transaction_data->meter_value,
-                                                   transaction_data->stop_reason, transaction_data->trigger_reason,
-                                                   transaction_data->id_token, std::nullopt,
-                                                   transaction_data->charging_state);
+            auto stop_reason = types::evse_manager::StopTransactionReason::Other;
+            if (session_event.transaction_finished && session_event.transaction_finished->reason) {
+                stop_reason = session_event.transaction_finished->reason.value();
+            }
+            m_charge_point.on_transaction_finished(evse_id, transaction_data->session_id, transaction_data->timestamp,
+                                                   transaction_data->meter_value, stop_reason,
+                                                   transaction_data->trigger_reason, transaction_data->id_token,
+                                                   std::nullopt, transaction_data->charging_state);
             m_transaction_handler->reset_transaction_data(evse_id);
         }
     }

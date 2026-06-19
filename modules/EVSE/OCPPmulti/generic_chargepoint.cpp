@@ -2,8 +2,6 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "generic_chargepoint.hpp"
-#include "v16_chargepoint.hpp"
-#include <memory>
 
 namespace ocpp_multi {
 
@@ -19,13 +17,6 @@ void GenericChargePoint::check_configured(const std::string_view& fn) {
 }
 
 void GenericChargePoint::init(init_args_t& args) {
-    // m_evse_connector_structure = std::move(args.evse_connector_structure);
-    // m_device_model_storage_interface = std::move(args.device_model_storage_interface);
-    // m_ocpp_share_path = args.ocpp_share_path;
-    // m_core_database_path = args.core_database_path;
-    // m_sql_init_path = args.sql_init_path;
-    // m_message_log_path = args.message_log_path;
-
     // TODO(james-ctc): how to share the database
 
     m_state = state_t::v16_active;
@@ -70,6 +61,14 @@ void GenericChargePoint::start(ocpp::v2::BootReasonEnum bootreason, bool start_c
 void GenericChargePoint::stop() {
     check_configured("stop");
     m_active_ptr->stop();
+}
+
+void GenericChargePoint::update_chargepoint_information(const std::string& vendor, const std::string& model,
+                                                        const std::optional<std::string>& serialnumber,
+                                                        const std::optional<std::string>& chargebox_serialnumber,
+                                                        const std::optional<std::string>& firmware_version) {
+    check_configured("update_chargepoint_information");
+    m_active_ptr->update_chargepoint_information(vendor, model, serialnumber, chargebox_serialnumber, firmware_version);
 }
 
 std::optional<ocpp::v2::DataTransferResponse>
@@ -233,14 +232,13 @@ void GenericChargePoint::on_session_started(std::int32_t evse_id, std::int32_t c
     m_active_ptr->on_session_started(evse_id, connector_id, session_event);
 }
 
-void GenericChargePoint::on_transaction_finished(std::int32_t evse_id, const ocpp::DateTime& timestamp,
-                                                 const ocpp::v2::MeterValue& meter_stop, ocpp::v2::ReasonEnum reason,
-                                                 ocpp::v2::TriggerReasonEnum trigger_reason,
-                                                 const std::optional<ocpp::v2::IdToken>& id_token,
-                                                 const std::optional<std::string>& signed_meter_value,
-                                                 ocpp::v2::ChargingStateEnum charging_state) {
+void GenericChargePoint::on_transaction_finished(
+    std::int32_t evse_id, const std::string& session_id, const ocpp::DateTime& timestamp,
+    const ocpp::v2::MeterValue& meter_stop, types::evse_manager::StopTransactionReason reason,
+    ocpp::v2::TriggerReasonEnum trigger_reason, const std::optional<ocpp::v2::IdToken>& id_token,
+    const std::optional<std::string>& signed_meter_value, ocpp::v2::ChargingStateEnum charging_state) {
     check_configured("on_transaction_finished");
-    m_active_ptr->on_transaction_finished(evse_id, timestamp, meter_stop, reason, trigger_reason, id_token,
+    m_active_ptr->on_transaction_finished(evse_id, session_id, timestamp, meter_stop, reason, trigger_reason, id_token,
                                           signed_meter_value, charging_state);
 }
 

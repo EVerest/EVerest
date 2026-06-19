@@ -2,10 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "v2_chargepoint.hpp"
-#include "generic_chargepoint_interface.hpp"
-#include "ocpp/v2/ctrlr_component_variables.hpp"
-#include "ocpp/v2/ocpp_enums.hpp"
-#include "ocpp/v2/ocpp_types.hpp"
+
 #include <conversions.hpp>
 #include <device_model/composed_device_model_storage.hpp>
 
@@ -74,6 +71,22 @@ ChargePointV2::cb_remote_start_transaction(const ocpp::v2::RequestStartTransacti
     return ocpp::v2::RequestStartStopStatusEnum::Accepted;
 }
 
+ocpp::v2::RequestStartStopStatusEnum ChargePointV2::cb_stop_transaction(std::int32_t evse_id,
+                                                                        const ocpp::v2::ReasonEnum& stop_reason) {
+    const auto reason = module::conversions::to_everest_stop_transaction_reason(stop_reason);
+    return m_callbacks_ptr->cb_stop_transaction(evse_id, reason);
+}
+
+void ChargePointV2::cb_variable_listener(
+    const std::unordered_map<std::int64_t, ocpp::v2::VariableMonitoringMeta>& monitors,
+    const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
+    const ocpp::v2::VariableCharacteristics& characteristics, const ocpp::v2::VariableAttribute& attribute,
+    const std::string& value_previous, const std::string& value_current) {
+    if (m_variable_listener != nullptr) {
+        m_variable_listener(component, variable, value_current);
+    }
+}
+
 std::optional<bool> ChargePointV2::get_bool(const ocpp::v2::Component& component_id,
                                             const ocpp::v2::Variable& variable_id,
                                             ocpp::v2::AttributeEnum attribute_enum) {
@@ -109,16 +122,6 @@ std::optional<std::string> ChargePointV2::get_string(const ocpp::v2::Component& 
     return res;
 }
 
-void ChargePointV2::cb_variable_listener(
-    const std::unordered_map<std::int64_t, ocpp::v2::VariableMonitoringMeta>& monitors,
-    const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
-    const ocpp::v2::VariableCharacteristics& characteristics, const ocpp::v2::VariableAttribute& attribute,
-    const std::string& value_previous, const std::string& value_current) {
-    if (m_variable_listener != nullptr) {
-        m_variable_listener(component, variable, value_current);
-    }
-}
-
 ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
     ocpp::v2::Callbacks callbacks;
 
@@ -128,13 +131,11 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
     callbacks.remote_start_transaction_callback = [this](auto&&... args) {
         return cb_remote_start_transaction(args...);
     };
+    callbacks.stop_transaction_callback = [this](auto&&... args) { return cb_stop_transaction(args...); };
 
     // directly supported
     callbacks.connector_effective_operative_status_changed_callback = [this](auto&&... args) {
         m_callbacks_ptr->cb_connector_effective_operative_status(args...);
-    };
-    callbacks.stop_transaction_callback = [this](auto&&... args) {
-        return m_callbacks_ptr->cb_stop_transaction(args...);
     };
     callbacks.pause_charging_callback = [this](auto&&... args) { m_callbacks_ptr->cb_pause_charging(args...); };
     callbacks.unlock_connector_callback = [this](auto&&... args) {
@@ -253,6 +254,13 @@ void ChargePointV2::start(ocpp::v2::BootReasonEnum bootreason, bool start_connec
 void ChargePointV2::stop() {
     check_configured("stop");
     m_charge_point->stop();
+}
+
+void ChargePointV2::update_chargepoint_information(const std::string& vendor, const std::string& model,
+                                                   const std::optional<std::string>& serialnumber,
+                                                   const std::optional<std::string>& chargebox_serialnumber,
+                                                   const std::optional<std::string>& firmware_version) {
+    // TODO(james-ctc): is this needed?
 }
 
 std::optional<ocpp::v2::DataTransferResponse>
@@ -398,14 +406,16 @@ void ChargePointV2::on_session_started(std::int32_t evse_id, std::int32_t connec
     check_configured("on_session_started");
     m_charge_point->on_session_started(evse_id, connector_id);
 }
-void ChargePointV2::on_transaction_finished(std::int32_t evse_id, const ocpp::DateTime& timestamp,
-                                            const ocpp::v2::MeterValue& meter_stop, ocpp::v2::ReasonEnum reason,
+void ChargePointV2::on_transaction_finished(std::int32_t evse_id, const std::string& session_id,
+                                            const ocpp::DateTime& timestamp, const ocpp::v2::MeterValue& meter_stop,
+                                            types::evse_manager::StopTransactionReason reason,
                                             ocpp::v2::TriggerReasonEnum trigger_reason,
                                             const std::optional<ocpp::v2::IdToken>& id_token,
                                             const std::optional<std::string>& signed_meter_value,
                                             ocpp::v2::ChargingStateEnum charging_state) {
     check_configured("on_transaction_finished");
-    m_charge_point->on_transaction_finished(evse_id, timestamp, meter_stop, reason, trigger_reason, id_token,
+    const auto v2_reason = module::conversions::to_ocpp_reason(reason);
+    m_charge_point->on_transaction_finished(evse_id, timestamp, meter_stop, v2_reason, trigger_reason, id_token,
                                             signed_meter_value, charging_state);
 }
 void ChargePointV2::on_transaction_started(

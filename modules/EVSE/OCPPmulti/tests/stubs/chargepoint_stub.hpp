@@ -53,6 +53,12 @@ struct ChargePointStub : public ocpp_multi::GenericChargePointInterface {
     MOCK_METHOD(void, start, (ocpp::v2::BootReasonEnum bootreason, bool start_connecting), (override));
     MOCK_METHOD(void, stop, (), (override));
 
+    MOCK_METHOD(void, update_chargepoint_information,
+                (const std::string& vendor, const std::string& model, const std::optional<std::string>& serialnumber,
+                 const std::optional<std::string>& chargebox_serialnumber,
+                 const std::optional<std::string>& firmware_version),
+                (override));
+
     MOCK_METHOD(std::optional<ocpp::v2::DataTransferResponse>, data_transfer_req,
                 (const ocpp::v2::DataTransferRequest& request), (override));
 
@@ -122,10 +128,10 @@ struct ChargePointStub : public ocpp_multi::GenericChargePointInterface {
                  const types::evse_manager::SessionEvent& session_event),
                 (override));
     MOCK_METHOD(void, on_transaction_finished,
-                (std::int32_t evse_id, const ocpp::DateTime& timestamp, const ocpp::v2::MeterValue& meter_stop,
-                 ocpp::v2::ReasonEnum reason, ocpp::v2::TriggerReasonEnum trigger_reason,
-                 const std::optional<ocpp::v2::IdToken>& id_token, const std::optional<std::string>& signed_meter_value,
-                 ocpp::v2::ChargingStateEnum charging_state),
+                (std::int32_t evse_id, const std::string& session_id, const ocpp::DateTime& timestamp,
+                 const ocpp::v2::MeterValue& meter_stop, types::evse_manager::StopTransactionReason reason,
+                 ocpp::v2::TriggerReasonEnum trigger_reason, const std::optional<ocpp::v2::IdToken>& id_token,
+                 const std::optional<std::string>& signed_meter_value, ocpp::v2::ChargingStateEnum charging_state),
                 (override));
     MOCK_METHOD(void, on_transaction_started,
                 (std::int32_t evse_id, std::int32_t connector_id, const std::string& session_id,

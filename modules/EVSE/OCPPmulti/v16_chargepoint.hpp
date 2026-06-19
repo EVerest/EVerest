@@ -5,6 +5,7 @@
 
 #include "generic_chargepoint_interface.hpp"
 
+#include <everest/conversions/ocpp/evse_security_ocpp.hpp>
 #include <ocpp/v16/charge_point_configuration.hpp>
 
 namespace ocpp_multi {
@@ -95,6 +96,10 @@ public:
     void set_message_queue_resume_delay(std::chrono::seconds delay) override;
     void start(ocpp::v2::BootReasonEnum bootreason, bool start_connecting) override;
     void stop() override;
+    void update_chargepoint_information(const std::string& vendor, const std::string& model,
+                                        const std::optional<std::string>& serialnumber,
+                                        const std::optional<std::string>& chargebox_serialnumber,
+                                        const std::optional<std::string>& firmware_version) override;
 
     std::optional<ocpp::v2::DataTransferResponse>
     data_transfer_req(const ocpp::v2::DataTransferRequest& request) override;
@@ -132,8 +137,9 @@ public:
                              const types::evse_manager::SessionEvent& session_event) override;
     void on_session_started(std::int32_t evse_id, std::int32_t connector_id,
                             const types::evse_manager::SessionEvent& session_event) override;
-    void on_transaction_finished(std::int32_t evse_id, const ocpp::DateTime& timestamp,
-                                 const ocpp::v2::MeterValue& meter_stop, ocpp::v2::ReasonEnum reason,
+    void on_transaction_finished(std::int32_t evse_id, const std::string& session_id, const ocpp::DateTime& timestamp,
+                                 const ocpp::v2::MeterValue& meter_stop,
+                                 types::evse_manager::StopTransactionReason reason,
                                  ocpp::v2::TriggerReasonEnum trigger_reason,
                                  const std::optional<ocpp::v2::IdToken>& id_token,
                                  const std::optional<std::string>& signed_meter_value,

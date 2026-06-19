@@ -57,6 +57,115 @@ std::optional<json> ModuleAdapter::auth_call_set_master_pass_group_id(const Requ
     return {};
 }
 
+std::optional<json> ModuleAdapter::charger_information_call_get_charger_information(const Requirement& req,
+                                                                                    const json& args) {
+
+    // charger_information interface
+    // get_charger_information:
+    //   description: Queries the current charger information
+    //   result:
+    //     description: Returns an object with the current charger meta information
+    //     type: object
+    //     $ref: /charger_information#/ChargerInformation
+    //
+
+    // ChargerInformation:
+    //   description: >-
+    //     Type holding (mostly static) meta information about the whole charger.
+    //     Note: Vendor and manufacturer refer here to the very same company - it is the brand
+    //     which appears physically on the device label and/or which is shown on device's web
+    //     frontend, in UPnP etc.
+    //     We use both terms here to differentiate the different usages - with legal suffix, or without.
+    //     This is why e.g. no `vendor_url` field is defined - it would be the very same
+    //     as `manufacturer_url`.
+    //   type: object
+    //   additionalProperties: false
+    //   required:
+    //     - vendor
+    //     - model
+    //   properties:
+    //     vendor:
+    //       description: >-
+    //         Name of vendor, not including any legal form. Is typically used with `model` to
+    //         form a unique product name aka `vendor` + `single whitespace` + `model`.
+    //         Example: Pionix
+    //       type: string
+    //     model:
+    //       description: >-
+    //         A human-friendly name of the model, aka the product name; without vendor name,
+    //         without any device specific data/numbers (serial numbers/MAC addresses).
+    //         Example: BelayBox
+    //       type: string
+    //     chargepoint_serial:
+    //       description: >-
+    //         The traditional serial number as string. It does not necessarily consist of digits only.
+    //         Usually, this serial appears also on a label on the device.
+    //         Example: SH4CAWN00123
+    //       type: string
+    //     chargebox_serial:
+    //       description: >-
+    //         The serial number of the controller as string (if any).
+    //         It does not necessarily consist of digits only.
+    //         Example: CB123456
+    //       type: string
+    //     friendly_name:
+    //       description: >-
+    //         A string with can be used to display the device eg. in network listings/enumerations.
+    //         As mentioned above, this could typically consist of eg.:
+    //         `vendor` + `single whitespace` + `model` + ` [` + `serial` + `]`
+    //         Printers or wifi access points for example often use the last digits of their
+    //         MAC address instead of the serial number to allow users to differentiate multiple
+    //         instances in the network.
+    //       type: string
+    //     manufacturer:
+    //       description: >-
+    //         The name of the vendor, but this may include the legal form.
+    //         Typically used in product property lists or as text for the following URL.
+    //       type: string
+    //     manufacturer_url:
+    //       description: >-
+    //         An URL to the vendor website, ideally not a deep link so that it is available for
+    //         the whole product lifetime.
+    //       type: string
+    //     model_url:
+    //       description: >-
+    //         An URL to the model website (if any); as above, ideally not a deep link.
+    //       type: string
+    //     model_number:
+    //       description: >-
+    //         A model number as string (if any).
+    //       type: string
+    //     model_revision:
+    //       description: >-
+    //         A model or product revision string. Very often this is not defined for the first one
+    //         so that users of this variable should consider reasonable fallback/default
+    //         values. For later product/model revisions, this is typically printed also on a device
+    //         label so that customers can refer to it when e.g requesting product support.
+    //       type: string
+    //     board_revision:
+    //       description: >-
+    //         The revision (aka version) of the internal (main) PCB, ie. that one with
+    //         the CPU running the EVerest system.
+    //       type: string
+    //     firmware_version:
+    //       description: >-
+    //         A string containing the current running firmware version of the complete system.
+    //         This is typically not the EVerest version itself, but a firmware version which appears
+    //         e.g. on the web frontend and as part of the filenames the customer can download from
+    //         the manufacturer's website.
+    //         This is the only property which is typically not static for the product lifetime,
+    //         but determined at runtime.
+    //       type: string
+
+    EVLOG_debug << "Call call_get_charger_information: " << args.dump();
+    publish_fn("charger_information", "call_get_charger_information", req.index, args);
+    auto result = get_cmd_response(R"({"vendor":"Pionix", "model":"BelayBox"})"_json);
+    if (result) {
+        EVLOG_debug << "result:                            " << result.value().dump();
+    }
+    return result;
+}
+
 std::optional<json> ModuleAdapter::display_message_call_clear_display_message(const Requirement& req,
                                                                               const json& args) {
     // display_message interface
@@ -850,6 +959,8 @@ ModuleAdapter::ModuleAdapter() : m_error_type_map(std::make_shared<Everest::erro
         {"external_ready_to_start_charging", &ModuleAdapter::evse_manager_call_external_ready_to_start_charging});
     m_call_implementations.insert({"force_unlock", &ModuleAdapter::evse_manager_call_force_unlock});
     m_call_implementations.insert({"get_boot_reason", &ModuleAdapter::system_call_get_boot_reason});
+    m_call_implementations.insert(
+        {"get_charger_information", &ModuleAdapter::charger_information_call_get_charger_information});
     m_call_implementations.insert({"get_display_messages", &ModuleAdapter::display_message_call_get_display_messages});
     m_call_implementations.insert({"get_evse", &ModuleAdapter::evse_manager_call_get_evse});
     m_call_implementations.insert({"is_reset_allowed", &ModuleAdapter::system_call_is_reset_allowed});
