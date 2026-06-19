@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <generic_ocpp.hpp>
+#include <optional>
 
 #include "stubs/generic_ocpp_stub.hpp"
 
@@ -14,20 +15,18 @@ using namespace stubs;
 TEST_F(GenericOcppProvidesTester, publishDefaultPrice) {
     // publish_default_price() called from cb_default_price
 
-    using ocpp::DisplayMessageContent;
+    using types::session_cost::DefaultPrice;
 
     std::vector<json> received;
     interfaces->subscribe_var("session_cost", "default_price",
                               [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    std::vector<DisplayMessageContent> messages;
-    DisplayMessageContent message;
-    message.message = "My Message";
-    // std::string message;
-    // std::optional<std::string> language;
-    // std::optional<v2::MessageFormatEnum> message_format;
+    DefaultPrice messages;
+    messages.messages.push_back({"My Message", std::nullopt, std::nullopt});
 
-    messages.push_back(message);
+    // std::string content; ///< TODO: description
+    // std::optional<types::text_message::MessageFormat> format; ///< TODO: description
+    // std::optional<std::string> language; ///< TODO: description
 
     ocpp->cb_default_price(messages);
 

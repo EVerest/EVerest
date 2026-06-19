@@ -267,7 +267,7 @@ protected:
                                                  ocpp::v2::OperationalStatusEnum new_status) override;
     void cb_connection_state_changed(bool is_connected, ocpp::OcppProtocolVersion protocol_version) override;
     ocpp::v2::DataTransferResponse cb_data_transfer(const ocpp::v2::DataTransferRequest& request) override;
-    void cb_default_price(const std::vector<ocpp::DisplayMessageContent>& messages) override;
+    void cb_default_price(const types::session_cost::DefaultPrice& messages) override;
     void cb_ev_info(std::int32_t evse_id, const types::evse_manager::EVInfo& ev_info) override;
     void cb_fault_cleared_handler(std::int32_t evse_id, const Everest::error::Error& error) override;
     void cb_fault_handler(std::int32_t evse_id, const Everest::error::Error& error) override;

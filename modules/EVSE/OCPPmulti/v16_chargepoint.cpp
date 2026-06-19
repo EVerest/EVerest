@@ -5,6 +5,7 @@
 
 #include <conversions.hpp>
 #include <conversions_v16.hpp>
+#include <everest/conversions/ocpp/ocpp_conversions.hpp>
 
 namespace {
 
@@ -507,6 +508,11 @@ ocpp::v16::DataTransferResponse ChargePointV16::cb_data_transfer(const ocpp::v16
     return convert(m_callbacks_ptr->cb_data_transfer(req));
 }
 
+void ChargePointV16::cb_default_price(const ocpp::TariffMessage& message) {
+    const auto default_price = ocpp_conversions::to_everest_default_price(message.message);
+    m_callbacks_ptr->cb_default_price(default_price);
+}
+
 bool ChargePointV16::cb_disable_evse(std::int32_t connector) {
     bool result{false};
     if (connector > 0) {
@@ -780,8 +786,6 @@ void ChargePointV16::configure_callbacks() {
         [this](auto&&... args) { return m_callbacks_ptr->cb_all_connectors_unavailable(args...); });
     m_charge_point->register_cancel_reservation_callback(
         [this](auto&&... args) { return m_callbacks_ptr->cb_cancel_reservation(args...); });
-    m_charge_point->register_default_price_callback(
-        [this](auto&&... args) { return m_callbacks_ptr->cb_tariff_message(args...); });
     m_charge_point->register_pause_charging_callback(
         [this](auto&&... args) { return m_callbacks_ptr->cb_pause_charging(args...); });
     m_charge_point->register_resume_charging_callback(
@@ -822,6 +826,7 @@ void ChargePointV16::configure_callbacks() {
     m_charge_point->register_boot_notification_response_callback(
         [this](auto&&... args) { return cb_boot_notification_response(args...); });
     m_charge_point->register_session_cost_callback([this](auto&&... args) { return cb_session_cost(args...); });
+    m_charge_point->register_default_price_callback([this](auto&&... args) { cb_default_price(args...); });
     m_charge_point->register_tariff_message_callback([this](auto&&... args) { return cb_tariff_message(args...); });
     m_charge_point->register_set_display_message_callback(
         [this](auto&&... args) { return cb_set_display_message(args...); });

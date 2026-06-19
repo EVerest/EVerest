@@ -8,6 +8,7 @@
 #include <generated/interfaces/evse_manager/Interface.hpp>
 #include <generated/interfaces/iso15118_extensions/Interface.hpp>
 #include <generated/interfaces/reservation/Interface.hpp>
+#include <generated/interfaces/session_cost/Interface.hpp>
 #include <generated/interfaces/system/Interface.hpp>
 #include <ocpp/v16/charge_point.hpp>
 #include <ocpp/v16/messages/GetConfiguration.hpp>
@@ -64,7 +65,7 @@ struct GenericChargePointCallbacks {
                                                          ocpp::v2::OperationalStatusEnum new_status) = 0;
     virtual void cb_connection_state_changed(bool is_connected, ocpp::OcppProtocolVersion protocol_version) = 0;
     virtual ocpp::v2::DataTransferResponse cb_data_transfer(const ocpp::v2::DataTransferRequest& request) = 0;
-    virtual void cb_default_price(const std::vector<ocpp::DisplayMessageContent>& messages) = 0;
+    virtual void cb_default_price(const types::session_cost::DefaultPrice& messages) = 0;
     virtual void cb_ev_info(std::int32_t evse_id, const types::evse_manager::EVInfo& ev_info) = 0;
     virtual void cb_fault_cleared_handler(std::int32_t evse_id, const Everest::error::Error& error) = 0;
     virtual void cb_fault_handler(std::int32_t evse_id, const Everest::error::Error& error) = 0;

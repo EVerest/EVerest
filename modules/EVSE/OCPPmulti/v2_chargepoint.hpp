@@ -21,10 +21,11 @@ private:
     void check_configured(const std::string_view& fn);
     ocpp::v2::Callbacks configure_callbacks();
 
-    void cb_reset(const std::optional<const std::int32_t>& evse_id, const ocpp::v2::ResetEnum& type);
+    void cb_default_price(const std::vector<ocpp::DisplayMessageContent>& messages);
     bool cb_is_reset_allowed(const std::optional<const std::int32_t>& evse_id, const ocpp::v2::ResetEnum& type);
     ocpp::v2::RequestStartStopStatusEnum
     cb_remote_start_transaction(const ocpp::v2::RequestStartTransactionRequest& request, bool authorize_remote_start);
+    void cb_reset(const std::optional<const std::int32_t>& evse_id, const ocpp::v2::ResetEnum& type);
     ocpp::v2::RequestStartStopStatusEnum cb_stop_transaction(std::int32_t evse_id,
                                                              const ocpp::v2::ReasonEnum& stop_reason);
 

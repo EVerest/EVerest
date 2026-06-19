@@ -34,6 +34,7 @@ private:
     void cb_boot_notification_response(const ocpp::v16::BootNotificationResponse& boot_notification_response);
     void cb_connection_state_changed(bool is_connected);
     ocpp::v16::DataTransferResponse cb_data_transfer(const ocpp::v16::DataTransferRequest& request);
+    void cb_default_price(const ocpp::TariffMessage& message);
     bool cb_disable_evse(std::int32_t connector);
     bool cb_enable_evse(std::int32_t connector);
     void cb_generic_configuration_key_changed(const ocpp::v16::KeyValue& key_value);

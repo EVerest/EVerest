@@ -5,6 +5,7 @@
 
 #include <conversions.hpp>
 #include <device_model/composed_device_model_storage.hpp>
+#include <everest/conversions/ocpp/ocpp_conversions.hpp>
 
 namespace {
 
@@ -42,21 +43,22 @@ namespace ocpp_multi {
 // ----------------------------------------------------------------------------
 // OCPP v2 ChargePoint
 
-void ChargePointV2::cb_reset(const std::optional<const std::int32_t>& evse_id, const ocpp::v2::ResetEnum& type) {
-    m_callbacks_ptr->cb_reset(evse_id, convert(type));
-}
-
-bool ChargePointV2::cb_is_reset_allowed(const std::optional<const std::int32_t>& evse_id,
-                                        const ocpp::v2::ResetEnum& type) {
-    return m_callbacks_ptr->cb_is_reset_allowed(evse_id, convert(type));
-}
-
 void ChargePointV2::check_configured(const std::string_view& fn) {
     if (m_charge_point == nullptr) {
         std::string msg{"ChargePointV2 not configured: "};
         msg += fn;
         throw NotConfigured(msg);
     }
+}
+
+void ChargePointV2::cb_default_price(const std::vector<ocpp::DisplayMessageContent>& messages) {
+    const auto prices = ocpp_conversions::to_everest_default_price(messages);
+    m_callbacks_ptr->cb_default_price(prices);
+}
+
+bool ChargePointV2::cb_is_reset_allowed(const std::optional<const std::int32_t>& evse_id,
+                                        const ocpp::v2::ResetEnum& type) {
+    return m_callbacks_ptr->cb_is_reset_allowed(evse_id, convert(type));
 }
 
 ocpp::v2::RequestStartStopStatusEnum
@@ -69,6 +71,10 @@ ChargePointV2::cb_remote_start_transaction(const ocpp::v2::RequestStartTransacti
     token.request_id = request.remoteStartId;
     m_callbacks_ptr->cb_provide_token(token);
     return ocpp::v2::RequestStartStopStatusEnum::Accepted;
+}
+
+void ChargePointV2::cb_reset(const std::optional<const std::int32_t>& evse_id, const ocpp::v2::ResetEnum& type) {
+    m_callbacks_ptr->cb_reset(evse_id, convert(type));
 }
 
 ocpp::v2::RequestStartStopStatusEnum ChargePointV2::cb_stop_transaction(std::int32_t evse_id,
@@ -126,11 +132,12 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
     ocpp::v2::Callbacks callbacks;
 
     // indirectly supported
-    callbacks.reset_callback = [this](auto&&... args) { cb_reset(args...); };
+    callbacks.default_price_callback = [this](auto&&... args) { cb_default_price(args...); };
     callbacks.is_reset_allowed_callback = [this](auto&&... args) { return cb_is_reset_allowed(args...); };
     callbacks.remote_start_transaction_callback = [this](auto&&... args) {
         return cb_remote_start_transaction(args...);
     };
+    callbacks.reset_callback = [this](auto&&... args) { cb_reset(args...); };
     callbacks.stop_transaction_callback = [this](auto&&... args) { return cb_stop_transaction(args...); };
 
     // directly supported
@@ -178,7 +185,6 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
     };
     callbacks.set_running_cost_callback = [this](auto&&... args) { m_callbacks_ptr->cb_set_running_cost(args...); };
     callbacks.tariff_message_callback = [this](auto&&... args) { m_callbacks_ptr->cb_tariff_message(args...); };
-    callbacks.default_price_callback = [this](auto&&... args) { m_callbacks_ptr->cb_default_price(args...); };
     callbacks.data_transfer_callback = [this](auto&&... args) { return m_callbacks_ptr->cb_data_transfer(args...); };
     callbacks.connection_state_changed_callback =
         [this](auto is_connected, auto /*configuration_slot*/, const auto& /*network_connection_profile*/,

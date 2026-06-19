@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "generic_ocpp.hpp"
+#include "everest/logging.hpp"
 #include "ocpp/common/types.hpp"
 
 #include <conversions.hpp>
@@ -966,9 +967,8 @@ ocpp::v2::DataTransferResponse GenericOcpp::cb_data_transfer(const ocpp::v2::Dat
     return response;
 }
 
-void GenericOcpp::cb_default_price(const std::vector<ocpp::DisplayMessageContent>& messages) {
-    const types::session_cost::DefaultPrice p = ocpp_conversions::to_everest_default_price(messages);
-    m_provides.session_cost.publish_default_price(p);
+void GenericOcpp::cb_default_price(const types::session_cost::DefaultPrice& messages) {
+    m_provides.session_cost.publish_default_price(messages);
 }
 
 void GenericOcpp::cb_error_cleared_handler(const Everest::error::Error& error) {
@@ -1471,6 +1471,7 @@ void GenericOcpp::cb_supported_energy_transfer_modes(
 }
 
 void GenericOcpp::cb_tariff_message(const ocpp::TariffMessage& message) {
+    EVLOG_error << "cb_tariff_message called";
     const types::session_cost::TariffMessage m = ocpp_conversions::to_everest_tariff_message(message);
     m_provides.session_cost.publish_tariff_message(m);
 }
