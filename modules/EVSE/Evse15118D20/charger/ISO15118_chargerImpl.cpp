@@ -1340,11 +1340,17 @@ void ISO15118_chargerImpl::handle_update_meter_info(types::powermeter::Powermete
 }
 
 void ISO15118_chargerImpl::handle_send_error(types::iso15118::EvseError& error) {
-    // your code for cmd send_error goes here
+    std::scoped_lock lock(GEL);
+    if (controller) {
+        controller->send_control_event(iso15118::d20::ErrorShutdown{true});
+    }
 }
 
 void ISO15118_chargerImpl::handle_reset_error() {
-    // your code for cmd reset_error goes here
+    std::scoped_lock lock(GEL);
+    if (controller) {
+        controller->send_control_event(iso15118::d20::ErrorShutdown{false});
+    }
 }
 
 } // namespace charger
