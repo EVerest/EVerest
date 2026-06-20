@@ -20,6 +20,11 @@ CB_STATIC_ASSERT((sizeof(CbFirmwareEnd) == 4 + 1 + (128 + 1) && sizeof(CbFirmwar
                  "Wrong CB type size!");
 CB_STATIC_ASSERT((sizeof(CbHeartbeatPacket) == 183 && sizeof(CbHeartbeatPacket) <= CB_MAX_CB_STRUCT_SIZE),
                  "Wrong CB type size!");
-CB_STATIC_ASSERT((sizeof(CbIoPacket) == 1 + (CB_NUMBER_OF_GPIOS * 2) + 1 + (CB_NUMBER_OF_ADCS * 4) &&
+CB_STATIC_ASSERT(sizeof(CbTelemetryEntry) == CB_TELEMETRY_NAME_LEN + 4, "Wrong CB type size!");
+CB_STATIC_ASSERT((sizeof(CbTelemetry) == 1 + CB_TELEMETRY_MAX_ENTRIES * (CB_TELEMETRY_NAME_LEN + 4) &&
+                  sizeof(CbTelemetry) <= CB_MAX_CB_STRUCT_SIZE),
+                 "Wrong CB type size!");
+CB_STATIC_ASSERT((sizeof(CbIoPacket) ==
+                      1 + (CB_NUMBER_OF_GPIOS * 2) + 1 + (CB_NUMBER_OF_ADCS * 4) + sizeof(CbTelemetry) &&
                   sizeof(CbIoPacket) <= CB_MAX_CB_STRUCT_SIZE),
                  "Wrong CB type size!");

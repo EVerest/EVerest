@@ -90,13 +90,41 @@ struct CB_COMPILER_ATTR_PACK CbGpioPacket {
 	uint16_t gpio_values[CB_NUMBER_OF_GPIOS]; // Actual value, 0: low, 1: high, or duty cycle for PWM
 };
 
-// MCU -> host: combined I/O report (CST_CbToHost_Io). GPIO inputs and the
-// calibrated generic ADC values are reported together in a single packet.
+// Generic, unstructured telemetry carried inside the combined IO packet (see CbIoPacket).
+// Each entry is just a name and a raw integer value; the MCU owns the set of names and what
+// they mean. The host does NOT interpret telemetry - it simply republishes every entry as
+// telemetry/<name> = <value> to MQTT for other apps to consume. Add new telemetry by emitting
+// more entries on the MCU; no protocol/host change is needed as long as the entry count stays
+// within CB_TELEMETRY_MAX_ENTRIES.
+#define CB_TELEMETRY_NAME_LEN 12   // max name length including the NUL terminator (<=11 chars)
+#define CB_TELEMETRY_MAX_ENTRIES 24 // max entries carried in one IO packet
+
+struct CB_COMPILER_ATTR_PACK CbTelemetryEntry {
+	char name[CB_TELEMETRY_NAME_LEN]; // NUL-terminated ASCII; unused tail bytes are 0
+	int32_t value;                    // raw value, published verbatim
+};
+
+struct CB_COMPILER_ATTR_PACK CbTelemetry {
+	uint8_t number_of_entries; // count of valid entries[] (0..CB_TELEMETRY_MAX_ENTRIES)
+	CbTelemetryEntry entries[CB_TELEMETRY_MAX_ENTRIES];
+};
+
+// MCU -> host: combined I/O report (CST_CbToHost_Io). GPIO inputs, the calibrated generic ADC
+// values and the unstructured telemetry snapshot are reported together in a single packet. The
+// telemetry block rides along whenever this packet is transmitted (GPIO change / significant
+// ADC change / periodic / poll reply); it never triggers a transmission on its own.
+//
+// VARIABLE LENGTH ON THE WIRE: only telemetry.number_of_entries entries are transmitted, so the
+// sent length is (sizeof(CbIoPacket) - sizeof(telemetry.entries)) + number_of_entries *
+// sizeof(CbTelemetryEntry), i.e. the fixed GPIO/ADC prefix + the telemetry count byte + that many
+// entries. The struct size below is the MAXIMUM (full entries[] capacity); the receiver must
+// accept any length in [fixed_prefix, sizeof(CbIoPacket)] and validate it against number_of_entries.
 struct CB_COMPILER_ATTR_PACK CbIoPacket {
 	uint8_t number_of_gpios; // Just to check compatibility
 	uint16_t gpio_values[CB_NUMBER_OF_GPIOS]; // Actual value, 0: low, 1: high, or duty cycle for PWM
 	uint8_t number_of_adcs; // Just to check compatibility
 	uint32_t adc_values_mV[CB_NUMBER_OF_ADCS]; // Actual values in mV (calibrated)
+	CbTelemetry telemetry; // Generic unstructured telemetry; variable length, rides along, never triggers sends
 };
 
 struct CB_COMPILER_ATTR_PACK CbHeartbeatPacket {

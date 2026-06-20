@@ -52,6 +52,7 @@ private:
     void dispatch(everest::lib::io::mqtt::mqtt_client::message const& data);
     void send_mqtt(std::string const& topic, std::string const& message);
     void send_adc_mqtt(std::string const& topic, std::string const& message);
+    void send_telemetry_mqtt(std::string const& topic, std::string const& message);
     void send_udp();
 
     std::unique_ptr<everest::lib::io::udp::udp_client> m_udp;
@@ -69,6 +70,7 @@ private:
     std::string m_receive_topic;
     std::string m_send_topic;
     std::string m_adc_send_topic;
+    std::string m_telemetry_send_topic;
     everest::lib::util::observable<bool> m_ready{false};
     everest::lib::util::observable<bool> m_cb_is_connected{false};
     everest::lib::io::event::event_fd& m_ready_notify;

@@ -42,6 +42,7 @@ io_bridge::io_bridge(io_config const& config, everest::lib::io::event::event_fd&
     m_receive_topic = "pionix/chargebridge/" + config.cb + "/gpio/output/";
     m_send_topic = "pionix/chargebridge/" + config.cb + "/gpio/input/";
     m_adc_send_topic = "pionix/chargebridge/" + config.cb + "/adc/input/";
+    m_telemetry_send_topic = "pionix/chargebridge/" + config.cb + "/telemetry/";
 
     m_mqtt.set_error_handler([this, config](int id, std::string const& msg) {
         utilities::print_error(m_identifier, "IO/MQTT", id) << msg << std::endl;
@@ -170,6 +171,13 @@ void io_bridge::send_adc_mqtt(std::string const& topic, std::string const& messa
     m_mqtt.publish(payload);
 }
 
+void io_bridge::send_telemetry_mqtt(std::string const& topic, std::string const& message) {
+    everest::lib::io::mqtt::mqtt_client::message payload;
+    payload.topic = m_telemetry_send_topic + topic;
+    payload.payload = message;
+    m_mqtt.publish(payload);
+}
+
 void io_bridge::send_udp() {
     if (not m_udp_on_error && m_udp) {
         everest::lib::io::udp::udp_payload payload;
@@ -191,21 +199,46 @@ void io_bridge::handle_heartbeat_timer() {
 }
 
 void io_bridge::handle_udp_rx(everest::lib::io::udp::udp_payload const& payload) {
-    CbManagementPacket<CbIoPacket> data;
-    if (payload.size() != sizeof(data)) {
-        std::cout << "INVALID DATA SIZE in UDP RX of IO: " << payload.size() << " vs " << sizeof(data) << std::endl;
+    CbManagementPacket<CbIoPacket> data{}; // zero-init so untransmitted telemetry slots stay empty
+
+    // The telemetry tail is variable length: the MCU sends only the populated entries. The fixed
+    // prefix is everything up to and including telemetry.number_of_entries; valid total lengths are
+    // [fixed_prefix, sizeof(data)] and must match the entry count exactly.
+    auto const entry_size = sizeof(CbTelemetryEntry);
+    auto const fixed_prefix = sizeof(data) - sizeof(data.data.telemetry.entries);
+    auto const size = payload.size();
+    if (size < fixed_prefix || size > sizeof(data)) {
+        std::cout << "INVALID DATA SIZE in UDP RX of IO: " << size << " (expected " << fixed_prefix << ".."
+                  << sizeof(data) << ")" << std::endl;
         return;
     }
-    std::memcpy(&data, payload.buffer.data(), sizeof(data));
+    std::memcpy(&data, payload.buffer.data(), size);
     if (data.type != CbStructType::CST_CbToHost_Io) {
         std::cout << "UNEXPECTED packet type in UDP RX of IO: " << static_cast<int>(data.type) << std::endl;
         return;
     }
+    auto const entry_count = data.data.telemetry.number_of_entries;
+    if (entry_count > CB_TELEMETRY_MAX_ENTRIES || size != fixed_prefix + entry_count * entry_size) {
+        std::cout << "INVALID TELEMETRY in UDP RX of IO: entries=" << static_cast<int>(entry_count)
+                  << " size=" << size << std::endl;
+        return;
+    }
+
     for (std::size_t i = 0; i < sizeof(data.data.gpio_values) / sizeof(data.data.gpio_values[0]); ++i) {
         send_mqtt(std::to_string(i), std::to_string(data.data.gpio_values[i]));
     }
     for (std::size_t i = 0; i < sizeof(data.data.adc_values_mV) / sizeof(data.data.adc_values_mV[0]); ++i) {
         send_adc_mqtt(std::to_string(i), std::to_string(data.data.adc_values_mV[i]));
+    }
+    // Unstructured telemetry: republish each name -> value verbatim. We do not interpret the
+    // names; the MCU owns their meaning.
+    for (std::size_t i = 0; i < entry_count; ++i) {
+        auto const& entry = data.data.telemetry.entries[i];
+        std::string name(entry.name, ::strnlen(entry.name, CB_TELEMETRY_NAME_LEN));
+        if (name.empty()) {
+            continue;
+        }
+        send_telemetry_mqtt(name, std::to_string(entry.value));
     }
 }
 
