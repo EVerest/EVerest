@@ -52,6 +52,9 @@ enum class CbStructType : uint16_t {
 	CST_HostToCb_Gpio = 3,
 	CST_CbToHost_Gpio = 4,
 
+	// ADC client (push only: MCU -> host, no request)
+	CST_CbToHost_Adc = 6,
+
 	// FW update
 	CST_CbFirmwareReply = 0xFFF9,
 	CST_CbFirmwareStart = 0xFFFA,
@@ -86,10 +89,8 @@ struct CB_COMPILER_ATTR_PACK CbGpioPacket {
 
 struct CB_COMPILER_ATTR_PACK CbAdcPacket {
 	uint8_t number_of_adcs; // Just to check compatibility
-	uint32_t adc_values_mV[CB_NUMBER_OF_ADCS]; // Actual values in mV
+	uint32_t adc_values_mV[CB_NUMBER_OF_ADCS]; // Actual values in mV (calibrated)
 };
-
-
 
 struct CB_COMPILER_ATTR_PACK CbHeartbeatPacket {
     CbConfig module_config;

@@ -77,7 +77,6 @@ typedef enum _CbSafetyMode : uint8_t {
 
 } CbSafetyMode;
 
-
 typedef enum _CbAdcMode : uint8_t {
 	CBA_Generic = 0x00,
 	CBA_PT10000 = 0x01,
@@ -128,14 +127,14 @@ typedef struct CB_COMPILER_ATTR_PACK _CbNetworkConfig {
 } CbNetworkConfig;
 
 typedef struct CB_COMPILER_ATTR_PACK _CbAdcConfig {
-    CbAdcMode mode;
-    uint16_t calib_offset_mV;
-    float calib_gain;
+	CbAdcMode mode;
+	uint16_t calib_offset_mV;
+	float calib_gain;
 } CbAdcConfig;
 
 // Final complete config struct
 
-#define CB_CONFIG_VERSION 1
+#define CB_CONFIG_VERSION 2
 typedef struct CB_COMPILER_ATTR_PACK _cb_config {
 	uint32_t config_version;
 	SafetyConfig safety;
@@ -143,5 +142,5 @@ typedef struct CB_COMPILER_ATTR_PACK _cb_config {
 	CbUartConfig uarts[CB_NUMBER_OF_UARTS];
 	CbCanConfig can;
 	uint8_t plc_powersaving_mode;
-  CbAdcConfig adcs[CB_NUMBER_OF_ADCS];
+	CbAdcConfig adcs[CB_NUMBER_OF_ADCS];
 } CbConfig;

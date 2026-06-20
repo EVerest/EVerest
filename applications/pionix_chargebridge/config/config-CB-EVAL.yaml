@@ -193,20 +193,20 @@ gpio:
     mdns: false
     config: 32767
   gpio_18:
-    mode: "Input"
-    pulls: "PullUp"
+    mode: "StatusLED_B"
+    pulls: "NoPull"
     mdns: false
-    config: 32767
+    config: 0
   gpio_19:
-    mode: "Input"
-    pulls: "PullUp"
+    mode: "StatusLED_G"
+    pulls: "NoPull"
     mdns: false
-    config: 32767
+    config: 0
   gpio_20:
-    mode: "Input"
-    pulls: "PullUp"
+    mode: "StatusLED_R"
+    pulls: "NoPull"
     mdns: false
-    config: 32767
+    config: 0
 
 adc:
   enable: true
