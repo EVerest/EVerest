@@ -344,7 +344,14 @@ void evse_bsp_api::handle_error(const SafetyErrorFlags& data) {
     }
 }
 
-void evse_bsp_api::handle_stop_button([[maybe_unused]] std::uint8_t data) {
+void evse_bsp_api::handle_stop_button(std::uint8_t data) {
+    // Only react to the pressed edge, not to the release (or any other toggle)
+    // of the stop_charging flag in the status frame.
+    if (data == 0) {
+        return;
+    }
+    utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 0)
+        << "Stop charging button pressed -> requesting local stop transaction." << std::endl;
     auto reason = API_EVM::StopTransactionReason::Local;
     send_request_stop_transaction(reason);
 }
