@@ -114,7 +114,26 @@ bool decode_CbGpioMode(c4::yml::ConstNodeRef const& node, CbGpioMode& rhs) {
     } else if (value == "MotorLock_2") {
         rhs = CbGpioMode::CBG_MotorLock_2;
         return true;
+    } else if (value == "MotorLock_Feedback") {
+        rhs = CbGpioMode::CBG_MotorLock_Feedback;
+        return true;
+    } else if (value == "Fan_Tacho_Input") {
+        rhs = CbGpioMode::CBG_Fan_Tacho_Input;
+        return true;
+    } else if (value == "StatusLED_R") {
+        rhs = CbGpioMode::CBG_StatusLED_R;
+        return true;
+    } else if (value == "StatusLED_G") {
+        rhs = CbGpioMode::CBG_StatusLED_G;
+        return true;
+    } else if (value == "StatusLED_B") {
+        rhs = CbGpioMode::CBG_StatusLED_B;
+        return true;
+    } else if (value == "WS28_LED") {
+        rhs = CbGpioMode::CBG_WS28_LED;
+        return true;
     }
+
     throw yml_node_error(node);
 
     return false;
@@ -305,8 +324,8 @@ bool decode_CbRelayMode(c4::yml::ConstNodeRef const& node, CbRelayMode& rhs) {
         rhs = CBR_PowerRelay;
         return true;
     }
-    if (value == "UserRelay") {
-        rhs = CBR_UserRelay;
+    if (value == "GPIO") {
+        rhs = CBR_GPIO;
         return true;
     }
     throw yml_node_error(node);
@@ -338,6 +357,31 @@ bool decode_CbSafetyMode(c4::yml::ConstNodeRef const& node, CbSafetyMode& rhs) {
     return false;
 }
 
+bool decode_CbAdcMode(c4::yml::ConstNodeRef const& node, CbAdcMode& rhs) {
+    if (node.invalid()) {
+        return false;
+    }
+    std::string value;
+    decode(node, value);
+
+    if (value == "Generic") {
+        rhs = CBA_Generic;
+        return true;
+    }
+    if (value == "OverTemperature") {
+        rhs = CBA_OverTemp;
+        return true;
+    }
+    if (value == "OVM") {
+        rhs = CBA_OVM;
+        return true;
+    }
+
+    throw yml_node_error(node);
+    return false;
+}
+
+
 bool decode_RelayConfig(c4::yml::ConstNodeRef const& node, RelayConfig& rhs) {
     using ryml::ConstNodeRef;
 
@@ -366,8 +410,8 @@ bool decode_SafetyConfig(c4::yml::ConstNodeRef const& node, SafetyConfig& rhs) {
 
     rhs.pp_mode = decode<decltype(rhs.pp_mode)>(node, "pp_mode");
     rhs.cp_avg_ms = decode<decltype(rhs.cp_avg_ms)>(node, "cp_avg_ms", 10);
-    rhs.temperature_limit_pt1000_C =
-        decode<decltype(rhs.temperature_limit_pt1000_C)>(node, "temperature_limit_pt1000_C", 0);
+    rhs.temperature_limit_C =
+        decode<decltype(rhs.temperature_limit_C)>(node, "temperature_limit_C", 0);
     rhs.inverted_emergency_input = decode<decltype(rhs.inverted_emergency_input)>(node, "inverted_emergency_input", 0);
     rhs.enable_stop_charging_input =
         decode<decltype(rhs.enable_stop_charging_input)>(node, "enable_stop_charging_input", 1);
@@ -419,36 +463,23 @@ bool decode_CbCanConfig(c4::yml::ConstNodeRef const& node, CbCanConfig& rhs) {
     return true;
 }
 
-bool decode_CbNetworkConfig(c4::yml::ConstNodeRef const& node, CbNetworkConfig& rhs) {
+bool decode_CbAdcConfig(c4::yml::ConstNodeRef const& node, CbAdcConfig& rhs) {
     using ryml::ConstNodeRef;
 
     if (node.invalid()) {
         return false;
     }
+    rhs.mode = decode<decltype(rhs.mode)>(node, "mode");
+    // Calibration polynomial out = c0 + c1*x + c2*x^2 + c3*x^3 (x = raw ADC mV). Defaults form the
+    // identity passthrough (out = x), so an omitted or partial calib still behaves sensibly.
+    rhs.calib_coeff[0] = decode<float>(node, "calib_c0", 0.0f);
+    rhs.calib_coeff[1] = decode<float>(node, "calib_c1", 1.0f);
+    rhs.calib_coeff[2] = decode<float>(node, "calib_c2", 0.0f);
+    rhs.calib_coeff[3] = decode<float>(node, "calib_c3", 0.0f);
 
-    ConstNodeRef local_node = node;
-    local_node = node.find_child("mdns_name");
-
-    if (not local_node.invalid()) {
-
-        auto limit = sizeof(rhs.mdns_name);
-        std::string name;
-        decode(local_node, name);
-
-        if (name.size() >= limit) {
-            return false;
-        }
-
-        if (name.size() >= limit) {
-            return false;
-        }
-        std::memset(rhs.mdns_name, 0, limit);
-        std::memcpy(rhs.mdns_name, name.c_str(), std::min(name.size(), limit));
-        return true;
-    }
-    throw yml_node_error(local_node);
-    return false;
+    return true;
 }
+
 
 namespace EXT_API = everest::lib::API;
 namespace EXT_API_BSP = EXT_API::V1_0::types::evse_board_support;
@@ -546,6 +577,13 @@ c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbRel
     throw std::runtime_error("CbRelayMode");
 }
 
+c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbAdcMode& rhs) {
+    if (decode_CbAdcMode(node, rhs)) {
+        return node;
+    }
+    throw std::runtime_error("CbAdcMode");
+}
+
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbSafetyMode& rhs) {
     if (decode_CbSafetyMode(node, rhs)) {
         return node;
@@ -588,11 +626,11 @@ c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbCan
     throw std::runtime_error("CbCanConfig");
 }
 
-c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbNetworkConfig& rhs) {
-    if (decode_CbNetworkConfig(node, rhs)) {
+c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbAdcConfig& rhs) {
+    if (decode_CbAdcConfig(node, rhs)) {
         return node;
     }
-    throw std::runtime_error("CbNetworkConfig");
+    throw std::runtime_error("CbAdcConfig");
 }
 
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, EXT_API_BSP::Connector_type& rhs) {

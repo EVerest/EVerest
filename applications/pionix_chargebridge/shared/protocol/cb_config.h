@@ -6,8 +6,13 @@
 #include "cb_platform.h"
 #include <stdint.h>
 
-#define CB_NUMBER_OF_GPIOS 10
+#define CB_NUMBER_OF_GPIOS 21
 #define CB_NUMBER_OF_UARTS 3
+#define CB_NUMBER_OF_ADCS 4
+
+// Max LEDs in a WS28_LED strip. Sizes both the firmware DMA frame buffer and the UDP pixel
+// buffer (CbWs28Packet), so they can never drift.
+#define CB_WS28_MAX_LEDS 256
 
 // enums
 
@@ -22,10 +27,16 @@ typedef enum _CbGpioMode : uint8_t {
 	CBG_Rcd_PWM_Input= 0x07,
 	CBG_MotorLock_1 = 0x08,
 	CBG_MotorLock_2 = 0x09,
+	CBG_MotorLock_Feedback = 0x0A,
+	CBG_Fan_Tacho_Input = 0x0B,
+	CBG_StatusLED_R = 0x0C,
+	CBG_StatusLED_G = 0x0D,
+	CBG_StatusLED_B = 0x0E,
+	CBG_WS28_LED = 0x0F, // WS2812/NeoPixel single-wire LED output (GPIO8 only); mode_config = LED count
 } CbGpioMode;
 
 typedef enum _CbRelayMode : uint8_t {
-	CBR_PowerRelay = 0x00, CBR_UserRelay = 0x01,
+	CBR_PowerRelay = 0x00, CBR_GPIO = 0x01,
 } CbRelayMode;
 
 typedef enum _CbGpioPulls : uint8_t {
@@ -71,6 +82,12 @@ typedef enum _CbSafetyMode : uint8_t {
 
 } CbSafetyMode;
 
+typedef enum _CbAdcMode : uint8_t {
+	CBA_Generic = 0x00,
+	CBA_OverTemp = 0x01, // Over-temperature monitor: calibrated value is milli-degC, drives the over-temperature shutdown
+	CBA_OVM = 0x03,
+} CbAdcMode;
+
 // Structs
 
 typedef struct CB_COMPILER_ATTR_PACK _relay_config {
@@ -89,7 +106,7 @@ typedef struct CB_COMPILER_ATTR_PACK _safety_config {
 	uint8_t cp_avg_ms;     // default is 10ms / pulses
 	RelayConfig relays[3]; // Config for the 3 relay I/Os
 	uint8_t inverted_emergency_input; // 0: normal operation, 1: emergency input is inverted
-	uint8_t temperature_limit_pt1000_C; // Temperature limit for the PT1000 inputs. Relays will switch off if temperature is above the limit. Setting this to 0 will disable the feature.
+	uint8_t temperature_limit_C; // Over-temperature limit in degC for any ADC channel in CBA_OverTemp mode. Relays latch off if a temperature channel exceeds this for 10ms. Setting this to 0 disables the feature.
 	uint8_t enable_stop_charging_input; // 0: stop_charging input disabled (no action), 1: enabled (default)
 } SafetyConfig;
 
@@ -114,15 +131,27 @@ typedef struct CB_COMPILER_ATTR_PACK _CbNetworkConfig {
 	char mdns_name[20]; // custom MDNS name
 } CbNetworkConfig;
 
+#define CB_ADC_CALIB_NCOEFF 4 // cubic: out = c0 + c1*x + c2*x^2 + c3*x^3 (x = raw ADC mV)
+
+typedef struct CB_COMPILER_ATTR_PACK _CbAdcConfig {
+	CbAdcMode mode;
+	// Polynomial transfer function from raw ADC mV to the channel output unit (m degC for
+	// CBA_OverTemp, mV for CBA_OVM/CBA_Generic). Evaluated by Horner's method, clamped to >= 0.
+	// Identity (raw passthrough) is { 0, 1, 0, 0 }. c2/c3 are meant for temperature channels
+	// with bounded mV; leave them 0 on voltage channels.
+	float calib_coeff[CB_ADC_CALIB_NCOEFF];
+} CbAdcConfig;
+
 // Final complete config struct
 
-#define CB_CONFIG_VERSION 1
+#define CB_CONFIG_VERSION 4
 typedef struct CB_COMPILER_ATTR_PACK _cb_config {
 	uint32_t config_version;
 	SafetyConfig safety;
 	CbGpioConfig gpios[CB_NUMBER_OF_GPIOS];
 	CbUartConfig uarts[CB_NUMBER_OF_UARTS];
 	CbCanConfig can;
-	CbNetworkConfig network;
 	uint8_t plc_powersaving_mode;
+	CbAdcConfig adcs[CB_NUMBER_OF_ADCS];
+	uint8_t debug_uart_udp_enabled; // 1: forward MCU debug-UART printf to the host over UDP (CST_CbToHost_DebugUart)
 } CbConfig;

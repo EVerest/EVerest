@@ -20,7 +20,7 @@ enum class discovery_device_type {
 
 class discovery : public everest::lib::io::event::fd_event_register_interface {
 public:
-    using discovery_cb = std::function<void(std::string const&)>;
+    using discovery_cb = std::function<void(everest::lib::io::mdns::mDNS_discovery const&)>;
 
     discovery(discovery_device_type type);
     discovery(discovery_device_type type, std::set<std::string> const& interfaces, bool excluding);

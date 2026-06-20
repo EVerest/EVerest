@@ -83,7 +83,7 @@ void discovery::query_registry() {
         if (not m_on_discover) {
             continue;
         }
-        m_on_discover(value.ip);
+        m_on_discover(value);
         return;
     }
 }
