@@ -48,12 +48,14 @@ enum class CbStructType : uint16_t {
 	CST_CbToHost_Heartbeat = 2,
 
 	// track IP with timeout and port
-	// GPIO client
+	// GPIO client (host -> MCU: write GPIO outputs)
 	CST_HostToCb_Gpio = 3,
-	CST_CbToHost_Gpio = 4,
 
-	// ADC client (push only: MCU -> host, no request)
-	CST_CbToHost_Adc = 6,
+	// Combined I/O report (MCU -> host): GPIO inputs + calibrated ADC values in
+	// one packet. Pushed on GPIO change / significant ADC change / periodically,
+	// and as a reply to each host CST_HostToCb_Gpio poll. Replaces the former
+	// separate CST_CbToHost_Gpio (4) and CST_CbToHost_Adc (6).
+	CST_CbToHost_Io = 4,
 
 	// FW update
 	CST_CbFirmwareReply = 0xFFF9,
@@ -82,12 +84,17 @@ template<> struct CB_COMPILER_ATTR_PACK CbManagementPacket<void> {
 };
 
 
+// Host -> MCU: GPIO output write (and connection keepalive/poll).
 struct CB_COMPILER_ATTR_PACK CbGpioPacket {
 	uint8_t number_of_gpios; // Just to check compatibility
 	uint16_t gpio_values[CB_NUMBER_OF_GPIOS]; // Actual value, 0: low, 1: high, or duty cycle for PWM
 };
 
-struct CB_COMPILER_ATTR_PACK CbAdcPacket {
+// MCU -> host: combined I/O report (CST_CbToHost_Io). GPIO inputs and the
+// calibrated generic ADC values are reported together in a single packet.
+struct CB_COMPILER_ATTR_PACK CbIoPacket {
+	uint8_t number_of_gpios; // Just to check compatibility
+	uint16_t gpio_values[CB_NUMBER_OF_GPIOS]; // Actual value, 0: low, 1: high, or duty cycle for PWM
 	uint8_t number_of_adcs; // Just to check compatibility
 	uint32_t adc_values_mV[CB_NUMBER_OF_ADCS]; // Actual values in mV (calibrated)
 };

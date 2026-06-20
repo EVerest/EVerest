@@ -146,7 +146,7 @@ void status_ui::apply_status_row(utilities::chargebridge_status const& status) {
     row.plc = status.plc;
     row.bsp = status.bsp;
     row.heartbeat = status.heartbeat;
-    row.gpio = status.gpio;
+    row.io = status.io;
     row.mcu_resets = status.mcu_resets;
 }
 
@@ -213,7 +213,7 @@ void status_ui::render_terminal_status() {
 
     static const std::array<char const*, STATUS_FIELD_COUNT> k_headers = {
         "cb_name", "discovered", "connected", "can0",      "serial1", "serial2",
-        "serial3", "plc",        "bsp",       "heartbeat", "gpio",    "mcu_resets",
+        "serial3", "plc",        "bsp",       "heartbeat", "io",      "mcu_resets",
     };
 
     render_border(STATUS_FIELD_COUNT, STATUS_FIELD_WIDTH);
@@ -252,7 +252,7 @@ void status_ui::render_terminal_status() {
         render_bool_cell(row.plc);
         render_bool_cell(row.bsp);
         render_bool_cell(row.heartbeat);
-        render_bool_cell(row.gpio);
+        render_bool_cell(row.io);
 
         if (row.mcu_resets.has_value()) {
             render_field(std::to_string(*row.mcu_resets), ANSI_BRIGHT_WHITE, STATUS_FIELD_WIDTH);

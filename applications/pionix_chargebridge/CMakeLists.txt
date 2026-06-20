@@ -31,11 +31,10 @@ add_executable(pionix_chargebridge
   src/utilities/type_converters.cpp
   src/status_ui.cpp
 
-  src/adc_bridge.cpp
+  src/io_bridge.cpp
   src/can_bridge.cpp
   src/charge_bridge.cpp
   src/bsp_bridge.cpp
-  src/gpio_bridge.cpp
   src/heartbeat_service.cpp
   src/plc_bridge.cpp
   src/serial_bridge.cpp

@@ -97,7 +97,7 @@ void print_status_table(const chargebridge_status& s, std::ostream& os) {
     const std::vector<Field> bool_fields{
         {"discovered", s.discovered}, {"connected", s.connected}, {"can0", s.can0}, {"serial1", s.serial1},
         {"serial2", s.serial2},       {"serial3", s.serial3},     {"plc", s.plc},   {"bsp", s.bsp},
-        {"heartbeat", s.heartbeat},   {"gpio", s.gpio},
+        {"heartbeat", s.heartbeat},   {"io", s.io},
     };
     const std::vector<NumericField> numeric_fields{
         {"mcu_resets", s.mcu_resets},
@@ -172,7 +172,7 @@ void print_status_log(const chargebridge_status& s, std::ostream& os) {
     // Overall health: connected plus every known (has_value) sub-status is good.
     auto good = [](std::optional<bool> const& v) { return !v.has_value() || *v; };
     const bool all_good = s.connected && good(s.discovered) && good(s.can0) && good(s.serial1) && good(s.serial2) &&
-                          good(s.serial3) && good(s.plc) && good(s.bsp) && good(s.heartbeat) && good(s.gpio);
+                          good(s.serial3) && good(s.plc) && good(s.bsp) && good(s.heartbeat) && good(s.io);
 
     // Mirror the "[ <unit> ] <device>  <details>" style of print_error, with the unit colored red while
     // not everything is connected and green once all services are up. This gives a single line that
@@ -183,7 +183,7 @@ void print_status_log(const chargebridge_status& s, std::ostream& os) {
     os << "[ " << unit_color << std::left << std::setw(13) << unit_text << ansi::reset << " ] " << ansi::bold_bright_white
        << std::left << std::setw(20) << escape_kv_string(s.cb_name) << ansi::reset << " ";
 
-    // Each service is colored green (OK) / red (FAIL) / gray (N/A).
+    // Each service is colored green (OK) / red (ERROR) / gray (N/A).
     auto col_bool = [](bool ok) { return std::string(ok ? ansi::green : ansi::red) + (ok ? "OK" : "ERROR") + ansi::reset; };
     auto field = [&col_bool](std::optional<bool> const& v) {
         return v.has_value() ? col_bool(*v) : std::string(ansi::gray) + "N/A" + ansi::reset;
@@ -198,7 +198,7 @@ void print_status_log(const chargebridge_status& s, std::ostream& os) {
     os << "plc=" << field(s.plc) << " ";
     os << "bsp=" << field(s.bsp) << " ";
     os << "heartbeat=" << field(s.heartbeat) << " ";
-    os << "gpio=" << field(s.gpio) << " ";
+    os << "io=" << field(s.io) << " ";
     os << "mcu_resets=" << (s.mcu_resets.has_value() ? std::to_string(*s.mcu_resets) : "na") << '\n';
 }
 

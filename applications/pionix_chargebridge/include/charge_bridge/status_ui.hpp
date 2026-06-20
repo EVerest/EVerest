@@ -50,7 +50,7 @@ private:
         std::optional<bool> plc;
         std::optional<bool> bsp;
         std::optional<bool> heartbeat;
-        std::optional<bool> gpio;
+        std::optional<bool> io;
         std::optional<int> mcu_resets;
     };
 

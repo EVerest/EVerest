@@ -4,8 +4,8 @@
 #include <charge_bridge/charge_bridge.hpp>
 #include <charge_bridge/discovery.hpp>
 #include <charge_bridge/firmware_update/sync_fw_updater.hpp>
-#include <charge_bridge/gpio_bridge.hpp>
 #include <charge_bridge/heartbeat_service.hpp>
+#include <charge_bridge/io_bridge.hpp>
 #include <charge_bridge/utilities/logging.hpp>
 #include <charge_bridge/utilities/print_config.hpp>
 #include <charge_bridge/utilities/string.hpp>
@@ -200,11 +200,8 @@ void charge_bridge::handle_discovery(std::string const& ip) {
     if (m_config.heartbeat) {
         m_config.heartbeat->cb_remote = ip;
     }
-    if (m_config.gpio) {
-        m_config.gpio->cb_remote = ip;
-    }
-    if (m_config.adc) {
-        m_config.adc->cb_remote = ip;
+    if (m_config.io) {
+        m_config.io->cb_remote = ip;
     }
 
     m_config.firmware.cb_remote = ip;
@@ -238,7 +235,7 @@ std::future<bool> charge_bridge::start_internal_runtime() {
     auto promise = std::make_shared<std::promise<bool>>();
     auto result = promise->get_future();
     auto preserve_runtime_objects =
-        m_can_0_client || m_pty_1 || m_pty_2 || m_pty_3 || m_bsp || m_plc || m_gpio || m_heartbeat;
+        m_can_0_client || m_pty_1 || m_pty_2 || m_pty_3 || m_bsp || m_plc || m_io || m_heartbeat;
 
     if (not m_event_handler) {
         promise->set_value(false);
@@ -321,11 +318,11 @@ void charge_bridge::create_internal_runtime() {
             m_bsp->connect_cb_endpoint(m_config.bsp->cb_remote);
         }
     }
-    if (m_config.gpio.has_value()) {
-        if (not m_gpio) {
-            m_gpio = std::make_unique<gpio_bridge>(m_config.gpio.value(), m_ready_notify);
+    if (m_config.io.has_value()) {
+        if (not m_io) {
+            m_io = std::make_unique<io_bridge>(m_config.io.value(), m_ready_notify);
         } else {
-            m_gpio->connect_cb_endpoint(m_config.gpio->cb_remote);
+            m_io->connect_cb_endpoint(m_config.io->cb_remote);
         }
     }
     if (m_config.heartbeat.has_value()) {
@@ -337,8 +334,8 @@ void charge_bridge::create_internal_runtime() {
             if (m_plc) {
                 m_plc->set_cb_connection_status(connected);
             }
-            if (m_gpio) {
-                m_gpio->set_cb_connection_status(connected);
+            if (m_io) {
+                m_io->set_cb_connection_status(connected);
             }
             if (m_can_0_client) {
                 m_can_0_client->set_cb_connection_status(connected);
@@ -352,11 +349,6 @@ void charge_bridge::create_internal_runtime() {
             m_heartbeat->connect_cb_endpoint(m_config.heartbeat->cb_remote);
         }
     }
-    if (m_config.adc.has_value()) {
-        if (not m_adc) {
-            m_adc = std::make_unique<adc_bridge>(m_config.adc.value());
-        }
-    }
 }
 
 void charge_bridge::cleanup_internal_runtime() {
@@ -367,9 +359,8 @@ void charge_bridge::cleanup_internal_runtime() {
     m_pty_3.reset();
     m_bsp.reset();
     m_plc.reset();
-    m_gpio.reset();
+    m_io.reset();
     m_heartbeat.reset();
-    m_adc.reset();
 }
 
 void charge_bridge::disconnect_internal_runtime_endpoints() {
@@ -391,8 +382,8 @@ void charge_bridge::disconnect_internal_runtime_endpoints() {
     if (m_plc) {
         m_plc->disconnect_cb_endpoint();
     }
-    if (m_gpio) {
-        m_gpio->disconnect_cb_endpoint();
+    if (m_io) {
+        m_io->disconnect_cb_endpoint();
     }
     if (m_heartbeat) {
         m_heartbeat->disconnect_cb_endpoint();
@@ -422,8 +413,8 @@ bool charge_bridge::unregister_internal_runtime_events(everest::lib::io::event::
     if (m_heartbeat) {
         result = handler.unregister_event_handler(m_heartbeat.get()) && result;
     }
-    if (m_gpio) {
-        result = handler.unregister_event_handler(m_gpio.get()) && result;
+    if (m_io) {
+        result = handler.unregister_event_handler(m_io.get()) && result;
     }
     return result;
 }
@@ -787,9 +778,9 @@ utilities::chargebridge_status charge_bridge::get_status() {
         status.heartbeat.emplace(available);
         status.mcu_resets.emplace(m_heartbeat->mcu_reset_count());
     }
-    if (m_gpio) {
-        auto available = m_gpio->available();
-        status.gpio.emplace(available);
+    if (m_io) {
+        auto available = m_io->available();
+        status.io.emplace(available);
     }
 
     return status;
@@ -865,10 +856,10 @@ void charge_bridge::publish_status(utilities::chargebridge_status const& status)
         result = result && available;
         publish_status("heartbeat", available);
     }
-    if (status.gpio.has_value()) {
-        auto available = status.gpio.value();
+    if (status.io.has_value()) {
+        auto available = status.io.value();
         result = result && available;
-        publish_status("gpio", available);
+        publish_status("io", available);
     }
     publish_status("chargebridge", result);
 }
@@ -940,11 +931,8 @@ bool charge_bridge::register_internal_events(everest::lib::io::event::fd_event_h
     if (m_heartbeat) {
         result = handler.register_event_handler(m_heartbeat.get()) && result;
     }
-    if (m_gpio) {
-        result = handler.register_event_handler(m_gpio.get()) && result;
-    }
-    if (m_adc) {
-        result = handler.register_event_handler(m_adc.get()) && result;
+    if (m_io) {
+        result = handler.register_event_handler(m_io.get()) && result;
     }
 
     if (m_discovery) {
@@ -977,11 +965,8 @@ bool charge_bridge::unregister_internal_events(everest::lib::io::event::fd_event
     if (m_heartbeat) {
         result = handler.unregister_event_handler(m_heartbeat.get()) && result;
     }
-    if (m_gpio) {
-        result = handler.unregister_event_handler(m_gpio.get()) && result;
-    }
-    if (m_adc) {
-        result = handler.unregister_event_handler(m_adc.get()) && result;
+    if (m_io) {
+        result = handler.unregister_event_handler(m_io.get()) && result;
     }
     if (m_discovery) {
         result = handler.unregister_event_handler(m_discovery.get()) && result;
@@ -1054,20 +1039,13 @@ void print_charge_bridge_config(charge_bridge_config const& c) {
         std::cout << " * heartbeat: " << c.cb_remote << ":" << c.cb_port;
         std::cout << " heartbeat interval " << c.heartbeat->interval_s << "s" << std::endl;
     }
-    if (c.gpio) {
-        std::cout << " * gpio:      " << c.cb_remote << ":" << c.cb_port;
-        std::cout << " MQTT " << c.gpio->mqtt_remote << ":" << c.gpio->mqtt_port;
-        if (not c.gpio->mqtt_bind.empty()) {
-            std::cout << " on " << c.gpio->mqtt_bind;
+    if (c.io) {
+        std::cout << " * io:        " << c.cb_remote << ":" << c.cb_port;
+        std::cout << " MQTT " << c.io->mqtt_remote << ":" << c.io->mqtt_port;
+        if (not c.io->mqtt_bind.empty()) {
+            std::cout << " on " << c.io->mqtt_bind;
         }
-        std::cout << " send interval " << c.gpio->interval_s << "s" << std::endl;
-    }
-    if (c.adc) {
-        std::cout << " * adc:      " << c.cb_remote << ":" << c.cb_port;
-        std::cout << " MQTT " << c.adc->mqtt_remote << ":" << c.adc->mqtt_port;
-        if (not c.adc->mqtt_bind.empty()) {
-            std::cout << " on " << c.adc->mqtt_bind;
-        }
+        std::cout << " send interval " << c.io->interval_s << "s" << std::endl;
     }
 
     std::cout << "\n" << std::endl;

@@ -14,7 +14,12 @@
 
 namespace charge_bridge {
 
-struct gpio_config {
+// Combined GPIO + ADC bridge. Owns one UDP connection to the ChargeBridge:
+//  - sends GPIO output writes (CST_HostToCb_Gpio), which also keeps the connection
+//    alive so the MCU keeps pushing to this endpoint;
+//  - receives the combined CbIoPacket (CST_CbToHost_Io) and republishes GPIO inputs
+//    and calibrated ADC values to MQTT.
+struct io_config {
     std::string cb;
     std::string item;
     std::uint16_t cb_port;
@@ -26,10 +31,10 @@ struct gpio_config {
     std::uint32_t mqtt_ping_interval_ms;
 };
 
-class gpio_bridge : public everest::lib::io::event::fd_event_register_interface {
+class io_bridge : public everest::lib::io::event::fd_event_register_interface {
 public:
-    gpio_bridge(gpio_config const& config, everest::lib::io::event::event_fd& ready_notify);
-    ~gpio_bridge();
+    io_bridge(io_config const& config, everest::lib::io::event::event_fd& ready_notify);
+    ~io_bridge();
 
     bool register_events(everest::lib::io::event::fd_event_handler& handler) override;
     bool unregister_events(everest::lib::io::event::fd_event_handler& handler) override;
@@ -46,6 +51,7 @@ private:
     void handle_udp_rx(everest::lib::io::udp::udp_payload const& payload);
     void dispatch(everest::lib::io::mqtt::mqtt_client::message const& data);
     void send_mqtt(std::string const& topic, std::string const& message);
+    void send_adc_mqtt(std::string const& topic, std::string const& message);
     void send_udp();
 
     std::unique_ptr<everest::lib::io::udp::udp_client> m_udp;
@@ -62,6 +68,7 @@ private:
     everest::lib::io::mqtt::mqtt_client m_mqtt;
     std::string m_receive_topic;
     std::string m_send_topic;
+    std::string m_adc_send_topic;
     everest::lib::util::observable<bool> m_ready{false};
     everest::lib::util::observable<bool> m_cb_is_connected{false};
     everest::lib::io::event::event_fd& m_ready_notify;

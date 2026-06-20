@@ -257,17 +257,10 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         });
     }
 
-    get_block("gpio", c.gpio, [&](auto& cfg, auto const& main) {
+    // Combined GPIO + ADC bridge: a single "io" config section drives one bridge that both
+    // writes GPIO outputs and republishes the GPIO inputs + ADC values from the combined packet.
+    get_block("io", c.io, [&](auto& cfg, auto const& main) {
         get_node(cfg.interval_s, main, "interval_s");
-        get_node(cfg.mqtt_remote, main, "mqtt_remote");
-        get_node_or_default(cfg.mqtt_bind, main, "mqtt_bind", "");
-        get_node(cfg.mqtt_port, main, "mqtt_port");
-        get_node_or_default(cfg.mqtt_ping_interval_ms, main, "mqtt_ping_interval_ms", default_mqtt_ping_interval_ms);
-        cfg.cb_remote = c.cb_remote;
-        cfg.cb_port = c.cb_port;
-    });
-
-    get_block("adc", c.adc, [&](auto& cfg, auto const& main) {
         get_node(cfg.mqtt_remote, main, "mqtt_remote");
         get_node_or_default(cfg.mqtt_bind, main, "mqtt_bind", "");
         get_node(cfg.mqtt_port, main, "mqtt_port");
@@ -296,14 +289,12 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         // if (c.serial3) {
         //     get_main_node("serial_3", cfg.cb_config.uarts[2]);
         // }
-        if (c.gpio) {
+        if (c.io) {
             for (auto i = 0; i < CB_NUMBER_OF_GPIOS; ++i) {
-                get_node(cfg.cb_config.gpios[i], "gpio", "gpio_" + std::to_string(i));
+                get_node(cfg.cb_config.gpios[i], "io", "gpio_" + std::to_string(i));
             }
-        }
-        if (c.adc) {
             for (auto i = 0; i < CB_NUMBER_OF_ADCS; ++i) {
-                get_node(cfg.cb_config.adcs[i], "adc", "adc_" + std::to_string(i));
+                get_node(cfg.cb_config.adcs[i], "io", "adc_" + std::to_string(i));
             }
         }
 
@@ -374,13 +365,9 @@ charge_bridge_config set_config_placeholders(charge_bridge_config const& src, ch
         result.heartbeat->cb = result.cb_name;
         result.heartbeat->cb_remote = ip;
     }
-    if (result.gpio.has_value()) {
-        result.gpio->cb = result.cb_name;
-        result.gpio->cb_remote = ip;
-    }
-    if (result.adc.has_value()) {
-        result.adc->cb = result.cb_name;
-        result.adc->cb_remote = ip;
+    if (result.io.has_value()) {
+        result.io->cb = result.cb_name;
+        result.io->cb_remote = ip;
     }
 
     if (result.heartbeat.has_value()) {

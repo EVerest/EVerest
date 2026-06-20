@@ -111,6 +111,9 @@ bool decode_CbGpioMode(c4::yml::ConstNodeRef const& node, CbGpioMode& rhs) {
     } else if (value == "MotorLock_1") {
         rhs = CbGpioMode::CBG_MotorLock_1;
         return true;
+    } else if (value == "MotorLock_2") {
+        rhs = CbGpioMode::CBG_MotorLock_2;
+        return true;
     } else if (value == "MotorLock_Feedback") {
         rhs = CbGpioMode::CBG_MotorLock_Feedback;
         return true;
