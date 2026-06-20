@@ -31,6 +31,7 @@ add_executable(pionix_chargebridge
   src/utilities/type_converters.cpp
   src/status_ui.cpp
 
+  src/adc_bridge.cpp
   src/can_bridge.cpp
   src/charge_bridge.cpp
   src/bsp_bridge.cpp

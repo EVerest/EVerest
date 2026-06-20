@@ -203,6 +203,10 @@ void charge_bridge::handle_discovery(std::string const& ip) {
     if (m_config.gpio) {
         m_config.gpio->cb_remote = ip;
     }
+    if (m_config.adc) {
+        m_config.adc->cb_remote = ip;
+    }
+
     m_config.firmware.cb_remote = ip;
 
     m_event_handler->add_action([this]() {
@@ -348,6 +352,11 @@ void charge_bridge::create_internal_runtime() {
             m_heartbeat->connect_cb_endpoint(m_config.heartbeat->cb_remote);
         }
     }
+    if (m_config.adc.has_value()) {
+        if (not m_adc) {
+            m_adc = std::make_unique<adc_bridge>(m_config.adc.value());
+        }
+    }
 }
 
 void charge_bridge::cleanup_internal_runtime() {
@@ -360,6 +369,7 @@ void charge_bridge::cleanup_internal_runtime() {
     m_plc.reset();
     m_gpio.reset();
     m_heartbeat.reset();
+    m_adc.reset();
 }
 
 void charge_bridge::disconnect_internal_runtime_endpoints() {
@@ -933,6 +943,10 @@ bool charge_bridge::register_internal_events(everest::lib::io::event::fd_event_h
     if (m_gpio) {
         result = handler.register_event_handler(m_gpio.get()) && result;
     }
+    if (m_adc) {
+        result = handler.register_event_handler(m_adc.get()) && result;
+    }
+
     if (m_discovery) {
         result = handler.register_event_handler(m_discovery.get()) && result;
     }
@@ -965,6 +979,9 @@ bool charge_bridge::unregister_internal_events(everest::lib::io::event::fd_event
     }
     if (m_gpio) {
         result = handler.unregister_event_handler(m_gpio.get()) && result;
+    }
+    if (m_adc) {
+        result = handler.unregister_event_handler(m_adc.get()) && result;
     }
     if (m_discovery) {
         result = handler.unregister_event_handler(m_discovery.get()) && result;
@@ -1044,6 +1061,13 @@ void print_charge_bridge_config(charge_bridge_config const& c) {
             std::cout << " on " << c.gpio->mqtt_bind;
         }
         std::cout << " send interval " << c.gpio->interval_s << "s" << std::endl;
+    }
+    if (c.adc) {
+        std::cout << " * adc:      " << c.cb_remote << ":" << c.cb_port;
+        std::cout << " MQTT " << c.adc->mqtt_remote << ":" << c.adc->mqtt_port;
+        if (not c.adc->mqtt_bind.empty()) {
+            std::cout << " on " << c.adc->mqtt_bind;
+        }
     }
 
     std::cout << "\n" << std::endl;

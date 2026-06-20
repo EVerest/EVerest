@@ -6,8 +6,9 @@
 #include "cb_platform.h"
 #include <stdint.h>
 
-#define CB_NUMBER_OF_GPIOS 10
+#define CB_NUMBER_OF_GPIOS 21
 #define CB_NUMBER_OF_UARTS 3
+#define CB_NUMBER_OF_ADCS 4
 
 // enums
 
@@ -22,10 +23,15 @@ typedef enum _CbGpioMode : uint8_t {
 	CBG_Rcd_PWM_Input= 0x07,
 	CBG_MotorLock_1 = 0x08,
 	CBG_MotorLock_2 = 0x09,
+	CBG_MotorLock_Feedback = 0x0A,
+	CBG_Fan_Tacho_Input = 0x0B,
+	CBG_StatusLED_R = 0x0C,
+	CBG_StatusLED_G = 0x0D,
+	CBG_StatusLED_B = 0x0E,
 } CbGpioMode;
 
 typedef enum _CbRelayMode : uint8_t {
-	CBR_PowerRelay = 0x00, CBR_UserRelay = 0x01,
+	CBR_PowerRelay = 0x00, CBR_GPIO = 0x01,
 } CbRelayMode;
 
 typedef enum _CbGpioPulls : uint8_t {
@@ -71,6 +77,13 @@ typedef enum _CbSafetyMode : uint8_t {
 
 } CbSafetyMode;
 
+
+typedef enum _CbAdcMode : uint8_t {
+	CBA_Generic = 0x00,
+	CBA_PT10000 = 0x01,
+	CBA_OVM = 0x03,
+} CbAdcMode;
+
 // Structs
 
 typedef struct CB_COMPILER_ATTR_PACK _relay_config {
@@ -114,6 +127,12 @@ typedef struct CB_COMPILER_ATTR_PACK _CbNetworkConfig {
 	char mdns_name[20]; // custom MDNS name
 } CbNetworkConfig;
 
+typedef struct CB_COMPILER_ATTR_PACK _CbAdcConfig {
+    CbAdcMode mode;
+    uint16_t calib_offset_mV;
+    float calib_gain;
+} CbAdcConfig;
+
 // Final complete config struct
 
 #define CB_CONFIG_VERSION 1
@@ -123,6 +142,6 @@ typedef struct CB_COMPILER_ATTR_PACK _cb_config {
 	CbGpioConfig gpios[CB_NUMBER_OF_GPIOS];
 	CbUartConfig uarts[CB_NUMBER_OF_UARTS];
 	CbCanConfig can;
-	CbNetworkConfig network;
 	uint8_t plc_powersaving_mode;
+  CbAdcConfig adcs[CB_NUMBER_OF_ADCS];
 } CbConfig;
