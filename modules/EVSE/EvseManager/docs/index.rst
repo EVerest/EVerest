@@ -65,11 +65,6 @@ Software over-voltage supervision is always active during DC charging. The confi
 must exceed the negotiated limit before EvseManager raises ``MREC5OverVoltage``.
 Set it to ``0`` to trigger immediately once the threshold is crossed.
 
-Software over-voltage supervision is always active during DC charging. The configuration option
-``internal_over_voltage_duration_ms`` defines for how long the measured DC voltage
-must exceed the negotiated limit before EvseManager raises ``MREC5OverVoltage``.
-Set it to ``0`` to trigger immediately once the threshold is crossed.
-
 Published variables
 ===================
 
