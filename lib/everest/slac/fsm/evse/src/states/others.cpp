@@ -74,8 +74,7 @@ FSMSimpleState::CallbackReturnType ResetState::callback() {
         // A request is already in flight. We can get here either because the timeout elapsed
         // or because we were woken up early by a rejected/unexpected CNF. In the latter case we
         // wait for the remainder of the interval so that retries happen at a steady pace.
-        const auto elapsed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(now - last_attempt_time).count();
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_attempt_time).count();
         if (elapsed < cfg.set_key_timeout_ms) {
             return static_cast<int>(cfg.set_key_timeout_ms - elapsed);
         }

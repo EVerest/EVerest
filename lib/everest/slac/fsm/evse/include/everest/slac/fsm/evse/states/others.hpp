@@ -26,7 +26,7 @@ struct ResetState : public FSMSimpleState {
     // time the last CM_SET_KEY.REQ was sent, used to space out retries
     std::chrono::steady_clock::time_point last_attempt_time{};
 
-    // Candidate NMK currently being programmed into the modem. 
+    // Candidate NMK currently being programmed into the modem.
     // Promoted to slac_config.session_nmk when CM_SET_KEY.CNF succeeds, or else we continue with the old key.
     uint8_t pending_nmk[slac::defs::NMK_LEN]{};
 };
