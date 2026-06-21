@@ -341,6 +341,9 @@ void status_ui::run_terminal_loop() {
     // ticked that series for plotting. click_targets holds the on-screen boxes of the checkbox
     // glyphs (rebuilt every render); a deque keeps the Box references stable for reflect().
     std::map<std::string, bool> plot_enabled;
+    // Enable the CPU load series by default so its graph shows on startup (still toggleable). Its
+    // key matches collect_plottable_series()'s "tlm:" prefix for io_telemetry entries.
+    plot_enabled["tlm:cpu_load_pm"] = true;
     std::deque<std::pair<Box, std::string>> click_targets;
 
     // --- cell builders -------------------------------------------------------
@@ -366,9 +369,15 @@ void status_ui::run_terminal_loop() {
                 return out;
             }
             const float range = (vmax - vmin) > 0.0F ? (vmax - vmin) : 1.0F;
+            // Spread the available samples across the full plot width (oldest at the left, newest at
+            // the right) instead of one-sample-per-column. This keeps the graph using the entire
+            // width when the window is wider than the sample count (and downsamples when narrower),
+            // rather than only filling the rightmost columns.
+            const int last = static_cast<int>(data.size()) - 1;
             for (int x = 0; x < width; ++x) {
-                const int idx = static_cast<int>(data.size()) - width + x;
-                const float value = idx >= 0 ? data[static_cast<std::size_t>(idx)] : data.front();
+                const int idx =
+                    width > 1 ? static_cast<int>(std::lround(static_cast<double>(x) * last / (width - 1))) : last;
+                const float value = data[static_cast<std::size_t>(idx)];
                 const float norm = std::clamp((value - vmin) / range, 0.0F, 1.0F);
                 out[static_cast<std::size_t>(x)] = static_cast<int>(std::lround(norm * height));
             }
