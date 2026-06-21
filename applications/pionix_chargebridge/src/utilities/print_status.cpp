@@ -23,7 +23,6 @@ constexpr const char* gray = "\033[90m";
 constexpr const char* bright_white = "\033[97m";
 constexpr const char* bold_bright_white = "\033[1;97m";
 constexpr const char* bold_bright_red = "\033[1;91m";
-constexpr const char* bold_green = "\033[1;32m";
 } // namespace ansi
 
 struct Field {
@@ -170,18 +169,36 @@ void print_status_table(const chargebridge_status& s, std::ostream& os) {
 }
 
 void print_status_log(const chargebridge_status& s, std::ostream& os) {
-    os << "chargebridge_status ";
-    os << "cb_name=\"" << escape_kv_string(s.cb_name) << "\" ";
-    os << "discovered=" << (s.discovered.has_value() ? (*s.discovered ? "true" : "false") : "na") << " ";
-    os << "connected=" << (s.connected ? "true" : "false") << " ";
-    os << "can0=" << (s.can0.has_value() ? (*s.can0 ? "true" : "false") : "na") << " ";
-    os << "serial1=" << (s.serial1.has_value() ? (*s.serial1 ? "true" : "false") : "na") << " ";
-    os << "serial2=" << (s.serial2.has_value() ? (*s.serial2 ? "true" : "false") : "na") << " ";
-    os << "serial3=" << (s.serial3.has_value() ? (*s.serial3 ? "true" : "false") : "na") << " ";
-    os << "plc=" << (s.plc.has_value() ? (*s.plc ? "true" : "false") : "na") << " ";
-    os << "bsp=" << (s.bsp.has_value() ? (*s.bsp ? "true" : "false") : "na") << " ";
-    os << "heartbeat=" << (s.heartbeat.has_value() ? (*s.heartbeat ? "true" : "false") : "na") << " ";
-    os << "gpio=" << (s.gpio.has_value() ? (*s.gpio ? "true" : "false") : "na") << " ";
+    // Overall health: connected plus every known (has_value) sub-status is good.
+    auto good = [](std::optional<bool> const& v) { return !v.has_value() || *v; };
+    const bool all_good = s.connected && good(s.discovered) && good(s.can0) && good(s.serial1) && good(s.serial2) &&
+                          good(s.serial3) && good(s.plc) && good(s.bsp) && good(s.heartbeat) && good(s.gpio);
+
+    // Mirror the "[ <unit> ] <device>  <details>" style of print_error, with the unit colored red while
+    // not everything is connected and green once all services are up. This gives a single line that
+    // turns green when the previously-red "Waiting…" conditions are resolved.
+    const char* unit_color = all_good ? ansi::green : ansi::red;
+    const char* unit_text = all_good ? "CONNECTED" : "CONNECTING";
+
+    os << "[ " << unit_color << std::left << std::setw(13) << unit_text << ansi::reset << " ] " << ansi::bold_bright_white
+       << std::left << std::setw(20) << escape_kv_string(s.cb_name) << ansi::reset << " ";
+
+    // Each service is colored green (OK) / red (FAIL) / gray (N/A).
+    auto col_bool = [](bool ok) { return std::string(ok ? ansi::green : ansi::red) + (ok ? "OK" : "ERROR") + ansi::reset; };
+    auto field = [&col_bool](std::optional<bool> const& v) {
+        return v.has_value() ? col_bool(*v) : std::string(ansi::gray) + "N/A" + ansi::reset;
+    };
+
+    os << "discovered=" << field(s.discovered) << " ";
+    os << "connected=" << col_bool(s.connected) << " ";
+    os << "can0=" << field(s.can0) << " ";
+    os << "serial1=" << field(s.serial1) << " ";
+    os << "serial2=" << field(s.serial2) << " ";
+    os << "serial3=" << field(s.serial3) << " ";
+    os << "plc=" << field(s.plc) << " ";
+    os << "bsp=" << field(s.bsp) << " ";
+    os << "heartbeat=" << field(s.heartbeat) << " ";
+    os << "gpio=" << field(s.gpio) << " ";
     os << "mcu_resets=" << (s.mcu_resets.has_value() ? std::to_string(*s.mcu_resets) : "na") << '\n';
 }
 
