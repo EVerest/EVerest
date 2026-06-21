@@ -7,6 +7,7 @@
 #include <chrono>
 #include <deque>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -66,9 +67,9 @@ private:
         std::optional<std::vector<int>> gpio;
         std::optional<std::vector<int>> adc;
         std::optional<std::vector<std::pair<std::string, int>>> io_telemetry;
-        std::deque<float> mcu_temp_history;
-        std::deque<float> cp_lo_history;
-        std::deque<float> cp_hi_history;
+        // Time-series history for every numeric series, keyed by a stable series id (see
+        // collect_plottable_series in the .cpp). Used to render the toggleable plots.
+        std::map<std::string, std::deque<float>> history;
     };
 
     static constexpr std::size_t k_telemetry_history = 120;

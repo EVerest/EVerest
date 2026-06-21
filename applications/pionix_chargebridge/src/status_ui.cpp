@@ -8,7 +8,7 @@
 #include <array>
 #include <cmath>
 #include <deque>
-#include <limits>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -95,6 +95,54 @@ private:
 ftxui::Component Scroller(ftxui::Component child) {
     return ftxui::Make<ScrollerBase>(std::move(child));
 }
+
+// One plottable numeric series for an instance: a stable key, a human label, a unit and the
+// current value. The key is used both to store the time-series history and to remember which
+// series the user enabled for plotting.
+struct series_desc {
+    std::string key;
+    std::string label;
+    std::string unit;
+    double value;
+};
+
+// Enumerate, in a stable order, every numeric value available for an instance: heartbeat
+// telemetry, ADC channels, GPIO lines and the unstructured IO telemetry entries.
+std::vector<series_desc>
+collect_plottable_series(std::optional<charge_bridge::utilities::chargebridge_telemetry> const& telemetry,
+                         std::optional<std::vector<int>> const& adc, std::optional<std::vector<int>> const& gpio,
+                         std::optional<std::vector<std::pair<std::string, int>>> const& io_telemetry) {
+    std::vector<series_desc> out;
+    if (telemetry.has_value()) {
+        out.push_back({"mcu_temp", "MCU temp", "degC", static_cast<double>(telemetry->temperature_mcu_C)});
+        out.push_back({"cp_hi", "CP high", "mV", static_cast<double>(telemetry->cp_hi_mV)});
+        out.push_back({"cp_lo", "CP low", "mV", static_cast<double>(telemetry->cp_lo_mV)});
+        out.push_back({"pp", "PP", "mOhm", static_cast<double>(telemetry->pp_mOhm)});
+        out.push_back({"vdd_12", "VDD 12V", "mV", static_cast<double>(telemetry->vdd_12V_mV)});
+        out.push_back({"vdd_n12", "VDD -12V", "mV", static_cast<double>(telemetry->vdd_N12V_mV)});
+        out.push_back({"vdd_3v3", "VDD 3.3V", "mV", static_cast<double>(telemetry->vdd_3v3_mV)});
+    }
+    if (adc.has_value()) {
+        for (std::size_t i = 0; i < adc->size(); ++i) {
+            out.push_back({"adc" + std::to_string(i), "ADC" + std::to_string(i), "", static_cast<double>((*adc)[i])});
+        }
+    }
+    if (gpio.has_value()) {
+        for (std::size_t i = 0; i < gpio->size(); ++i) {
+            out.push_back(
+                {"gpio" + std::to_string(i), "GPIO" + std::to_string(i), "", static_cast<double>((*gpio)[i])});
+        }
+    }
+    if (io_telemetry.has_value()) {
+        for (auto const& [name, value] : *io_telemetry) {
+            out.push_back({"tlm:" + name, name, "", static_cast<double>(value)});
+        }
+    }
+    return out;
+}
+
+// The one series that is always plotted and cannot be toggled off.
+constexpr char const* k_always_plotted = "mcu_temp";
 
 } // namespace
 
@@ -231,16 +279,13 @@ void status_ui::apply_status_row(utilities::chargebridge_status const& status) {
     row.adc = status.adc;
     row.io_telemetry = status.io_telemetry;
 
-    if (status.telemetry.has_value()) {
-        auto push = [](std::deque<float>& history, float value) {
-            history.push_back(value);
-            while (history.size() > k_telemetry_history) {
-                history.pop_front();
-            }
-        };
-        push(row.mcu_temp_history, static_cast<float>(status.telemetry->temperature_mcu_C));
-        push(row.cp_lo_history, static_cast<float>(status.telemetry->cp_lo_mV));
-        push(row.cp_hi_history, static_cast<float>(status.telemetry->cp_hi_mV));
+    // Record the latest value of every numeric series so any of them can be plotted on demand.
+    for (auto const& series : collect_plottable_series(row.telemetry, row.adc, row.gpio, row.io_telemetry)) {
+        auto& history = row.history[series.key];
+        history.push_back(static_cast<float>(series.value));
+        while (history.size() > k_telemetry_history) {
+            history.pop_front();
+        }
     }
 }
 
@@ -290,6 +335,12 @@ void status_ui::run_terminal_loop() {
         std::scoped_lock lock(m_screen_mutex);
         m_screen = &screen;
     }
+
+    // Plot-selection state, alive for the whole loop. plot_enabled[key] == true means the user
+    // ticked that series for plotting. click_targets holds the on-screen boxes of the checkbox
+    // glyphs (rebuilt every render); a deque keeps the Box references stable for reflect().
+    std::map<std::string, bool> plot_enabled;
+    std::deque<std::pair<Box, std::string>> click_targets;
 
     // --- cell builders -------------------------------------------------------
     // With colors disabled we drop both color and bold to mirror the previous --status-no-color behavior.
@@ -440,6 +491,9 @@ void status_ui::run_terminal_loop() {
     auto detail = Renderer([&] {
         std::scoped_lock lock(m_state_mutex);
 
+        // Rebuilt every render; the click handler reads it to map clicks to series checkboxes.
+        click_targets.clear();
+
         if (m_status_rows.empty()) {
             return window(text("Instance"), text("no instances configured")) | flex;
         }
@@ -449,74 +503,89 @@ void status_ui::run_terminal_loop() {
                 : 0;
         auto const& row = m_status_rows[idx];
 
+        auto series = collect_plottable_series(row.telemetry, row.adc, row.gpio, row.io_telemetry);
+
         Elements sections;
 
         // CP state from the BSP bridge (if enabled).
         if (row.cp_state.has_value()) {
             sections.push_back(hbox({text("CP state: ") | bold, styled(*row.cp_state, Color::Yellow, true)}));
+            sections.push_back(separator());
         }
 
-        // Heartbeat telemetry readouts + sparklines (available once heartbeat packets arrive).
-        if (row.telemetry.has_value()) {
-            auto const& telemetry = *row.telemetry;
-            sections.push_back(text("MCU temp:       " + std::to_string(telemetry.temperature_mcu_C) + " degC"));
-            sections.push_back(text("CP hi/lo:       " + std::to_string(telemetry.cp_hi_mV) + " / " +
-                                    std::to_string(telemetry.cp_lo_mV) + " mV"));
-            sections.push_back(text("PP:             " + std::to_string(telemetry.pp_mOhm) + " mOhm"));
-            sections.push_back(text("VDD 12/-12/3.3: " + std::to_string(telemetry.vdd_12V_mV) + " / " +
-                                    std::to_string(telemetry.vdd_N12V_mV) + " / " +
-                                    std::to_string(telemetry.vdd_3v3_mV) + " mV"));
-            sections.push_back(separator());
-            sections.push_back(plot("MCU temp", "degC", row.mcu_temp_history));
-            sections.push_back(plot("CP low", "mV", row.cp_lo_history));
-            sections.push_back(plot("CP high", "mV", row.cp_hi_history));
+        if (series.empty()) {
+            sections.push_back(text("waiting for telemetry / IO data...") | dim);
         } else {
-            sections.push_back(text("waiting for heartbeat telemetry...") | dim);
-        }
+            sections.push_back(text("Values  (click the box to plot)") | bold);
 
-        // GPIO states (wrapped into rows).
-        if (row.gpio.has_value() && not row.gpio->empty()) {
-            sections.push_back(separator());
-            sections.push_back(text("GPIO") | bold);
-            constexpr std::size_t k_per_row = 7;
-            Elements gpio_rows;
-            Elements current;
-            for (std::size_t i = 0; i < row.gpio->size(); ++i) {
-                current.push_back(text(std::to_string(i) + ":" + std::to_string((*row.gpio)[i])) |
-                                  size(WIDTH, EQUAL, 9));
-                if (current.size() == k_per_row) {
-                    gpio_rows.push_back(hbox(std::move(current)));
-                    current.clear();
+            // One value row per series with a clickable [ ]/[x] checkbox, grouped by category.
+            auto category_of = [](std::string const& key) -> std::string {
+                if (key.rfind("adc", 0) == 0) {
+                    return "ADC";
+                }
+                if (key.rfind("gpio", 0) == 0) {
+                    return "GPIO";
+                }
+                if (key.rfind("tlm:", 0) == 0) {
+                    return "Telemetry";
+                }
+                return "Heartbeat";
+            };
+            constexpr int k_cell_width = 26;
+            constexpr std::size_t k_columns = 3;
+            std::string category;
+            Elements row_cells;
+            auto flush_row = [&] {
+                if (not row_cells.empty()) {
+                    sections.push_back(hbox(std::move(row_cells)));
+                    row_cells.clear();
+                }
+            };
+            for (auto const& entry : series) {
+                auto cat = category_of(entry.key);
+                if (cat != category) {
+                    flush_row(); // categories never share a row
+                    category = cat;
+                    sections.push_back(text(category) | dim);
+                }
+                const bool always = entry.key == k_always_plotted;
+                const bool on = always || plot_enabled[entry.key];
+                auto box_glyph = text(always ? "[*] " : (on ? "[x] " : "[ ] "));
+                if (not m_options.no_color && on) {
+                    box_glyph = box_glyph | color(Color::Green);
+                }
+                if (not always) {
+                    click_targets.emplace_back(Box{}, entry.key);
+                    box_glyph = box_glyph | reflect(click_targets.back().first);
+                }
+                auto value = std::to_string(static_cast<long>(std::lround(entry.value)));
+                if (not entry.unit.empty()) {
+                    value += " " + entry.unit;
+                }
+                row_cells.push_back(hbox({std::move(box_glyph), text(entry.label + ": " + value)}) |
+                                    size(WIDTH, EQUAL, k_cell_width));
+                if (row_cells.size() == k_columns) {
+                    flush_row();
                 }
             }
-            if (not current.empty()) {
-                gpio_rows.push_back(hbox(std::move(current)));
-            }
-            sections.push_back(vbox(std::move(gpio_rows)));
-        }
+            flush_row();
 
-        // ADC values.
-        if (row.adc.has_value() && not row.adc->empty()) {
-            sections.push_back(text("ADC") | bold);
-            Elements adc_cells;
-            for (std::size_t i = 0; i < row.adc->size(); ++i) {
-                adc_cells.push_back(text(std::to_string(i) + ":" + std::to_string((*row.adc)[i])) |
-                                    size(WIDTH, EQUAL, 12));
-            }
-            sections.push_back(hbox(std::move(adc_cells)));
-        }
-
-        // Unstructured telemetry (i2c temperature sensor, etc.).
-        if (row.io_telemetry.has_value() && not row.io_telemetry->empty()) {
+            // Plots: MCU temperature always, plus every series the user enabled.
             sections.push_back(separator());
-            sections.push_back(text("Telemetry (unstructured)") | bold);
-            for (auto const& [name, value] : *row.io_telemetry) {
-                sections.push_back(text("  " + name + " = " + std::to_string(value)));
+            sections.push_back(text("Plots") | bold);
+            for (auto const& entry : series) {
+                const bool plotted = (entry.key == k_always_plotted) || plot_enabled[entry.key];
+                if (not plotted) {
+                    continue;
+                }
+                auto it = row.history.find(entry.key);
+                if (it != row.history.end()) {
+                    sections.push_back(plot(entry.label, entry.unit, it->second));
+                }
             }
         }
 
-        return window(text("Instance: " + row.cb_name), vbox(std::move(sections)) | vscroll_indicator | yframe) |
-               flex;
+        return window(text("Instance: " + row.cb_name), vbox(std::move(sections))) | flex;
     });
 
     // --- message panel (scrollable, optionally filtered to the selected instance) -----------
@@ -529,8 +598,14 @@ void status_ui::run_terminal_loop() {
                 m_selected_row < static_cast<int>(m_status_rows.size())) {
                 filter_name = m_status_rows[static_cast<std::size_t>(m_selected_row)].cb_name;
             }
+            // A message belongs to the instance if its device is exactly the cb name or a
+            // "<cb_name>/<bridge>" child (e.g. "cb_eval" and "cb_eval/bsp", but not "cb_eval2").
+            const std::string child_prefix = filter_name + "/";
             for (auto const& entry : m_log_messages) {
-                if (filter_name.empty() || entry.first == filter_name) {
+                auto const& device = entry.first;
+                const bool matches = filter_name.empty() || device == filter_name ||
+                                     device.rfind(child_prefix, 0) == 0;
+                if (matches) {
                     shown.push_back(entry.second);
                 }
             }
@@ -582,7 +657,18 @@ void status_ui::run_terminal_loop() {
 
     // Only intercept the global shortcuts; selection, scrolling and border-dragging are handled by
     // the components themselves (menu, scrollers, resizable splits).
-    auto root = CatchEvent(app, [&](const Event& event) {
+    auto root = CatchEvent(app, [&](Event event) {
+        // Toggle a series plot when its checkbox is clicked; other clicks fall through to the menu
+        // / resizable borders.
+        if (event.is_mouse() && event.mouse().button == Mouse::Left && event.mouse().motion == Mouse::Pressed) {
+            for (auto const& [box, key] : click_targets) {
+                if (box.Contain(event.mouse().x, event.mouse().y)) {
+                    plot_enabled[key] = not plot_enabled[key];
+                    return true;
+                }
+            }
+            return false;
+        }
         if (event == Event::Character('f')) {
             m_log_filter_selected = not m_log_filter_selected;
             return true;
