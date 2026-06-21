@@ -262,6 +262,7 @@ void status_ui::apply_status_row(utilities::chargebridge_status const& status) {
     }
 
     auto& row = m_status_rows[row_it->second];
+    row.network = status.network;
     row.discovered = status.discovered;
     row.connected = status.connected;
     row.can0 = status.can0;
@@ -513,6 +514,37 @@ void status_ui::run_terminal_loop() {
             sections.push_back(separator());
         }
 
+        // User-entered name prefix (press 'n' / the button to change). Local-only until the protocol
+        // to push it to the MCU is defined.
+        if (row.name_prefix.has_value() && not row.name_prefix->empty()) {
+            sections.push_back(hbox({text("Name prefix: ") | bold, styled(*row.name_prefix, Color::Cyan, true),
+                                     text("  (pending — not yet sent)") | dim}));
+            sections.push_back(separator());
+        }
+
+        // Read-only network identity (IP, MAC, mDNS). MAC is best-effort from the local ARP cache.
+        if (row.network.has_value()) {
+            auto const& net = *row.network;
+            auto info_line = [&](std::string const& label, std::string const& value) {
+                auto val = value.empty() ? (styled("N/A", Color::GrayDark, false) | dim) : text(value);
+                return hbox({text(label) | dim | size(WIDTH, EQUAL, 10), std::move(val)});
+            };
+            Elements net_lines;
+            net_lines.push_back(text("Network") | bold);
+            net_lines.push_back(info_line("IP:", net.ip));
+            if (not net.mdns_hostname.empty() || not net.mdns_service.empty() || not net.mdns_txt.empty()) {
+                net_lines.push_back(info_line("mDNS:", net.mdns_hostname));
+                if (not net.mdns_service.empty()) {
+                    net_lines.push_back(info_line("service:", net.mdns_service));
+                }
+                for (auto const& [key, value] : net.mdns_txt) {
+                    net_lines.push_back(info_line(key + ":", value));
+                }
+            }
+            sections.push_back(vbox(std::move(net_lines)));
+            sections.push_back(separator());
+        }
+
         if (series.empty()) {
             sections.push_back(text("waiting for telemetry / IO data...") | dim);
         } else {
@@ -625,6 +657,80 @@ void status_ui::run_terminal_loop() {
         return window(text(title), vbox(std::move(lines)));
     });
 
+    // --- "Set name prefix" button + modal popup -----------------------------
+    // A future protocol revision lets the MCU accept an 8-byte name prefix. The button (and the 'n'
+    // key) open a modal text entry; the value is stored locally on the instance row for now. Pushing
+    // it onto the UDP stack is deferred until the protocol is defined.
+    constexpr std::size_t k_name_prefix_max = 8;
+
+    auto selected_idx = [this]() -> int {
+        if (m_status_rows.empty()) {
+            return -1;
+        }
+        if (m_selected_row >= 0 && m_selected_row < static_cast<int>(m_status_rows.size())) {
+            return m_selected_row;
+        }
+        return 0;
+    };
+
+    auto open_name_modal = [&] {
+        const int idx = selected_idx();
+        if (idx < 0) {
+            return;
+        }
+        {
+            std::scoped_lock lock(m_state_mutex);
+            m_name_input_value = m_status_rows[static_cast<std::size_t>(idx)].name_prefix.value_or("");
+        }
+        m_name_modal_open = true;
+    };
+
+    auto commit_name = [&] {
+        const int idx = selected_idx();
+        if (idx >= 0) {
+            std::scoped_lock lock(m_state_mutex);
+            m_status_rows[static_cast<std::size_t>(idx)].name_prefix = m_name_input_value;
+        }
+        m_name_modal_open = false;
+        // TODO(cornelius.claussen): once the protocol is defined, push the new name prefix to the MCU.
+    };
+
+    InputOption name_input_option;
+    name_input_option.content = &m_name_input_value;
+    name_input_option.placeholder = "name";
+    name_input_option.multiline = false;
+    name_input_option.on_change = [this] {
+        if (m_name_input_value.size() > k_name_prefix_max) {
+            m_name_input_value.resize(k_name_prefix_max);
+        }
+    };
+    name_input_option.on_enter = [&] { commit_name(); };
+    auto name_input = Input(name_input_option);
+
+    auto set_button = Button(
+        "Set", [&] { commit_name(); }, ButtonOption::Ascii());
+    auto cancel_button = Button(
+        "Cancel", [&] { m_name_modal_open = false; }, ButtonOption::Ascii());
+    auto open_button = Button(
+        "Set name prefix", [&] { open_name_modal(); }, ButtonOption::Ascii());
+
+    auto modal_container = Container::Vertical({
+        name_input,
+        Container::Horizontal({set_button, cancel_button}),
+    });
+    auto name_modal = Renderer(modal_container, [&] {
+        return vbox({
+                   text("Set name prefix") | bold,
+                   separator(),
+                   hbox({text("Name (max 8 chars): "),
+                         name_input->Render() | inverted | size(WIDTH, GREATER_THAN, 12)}),
+                   text("Stored locally — not yet sent to the MCU (protocol pending).") | dim,
+                   separator(),
+                   hbox({filler(), set_button->Render(), text("  "), cancel_button->Render()}),
+               }) |
+               border | size(WIDTH, GREATER_THAN, 46) | clear_under | center;
+    });
+
     // --- overall layout: list (left) | details (right), messages (bottom), with draggable borders.
     // The menu is the interactive child of the list panel so it receives keyboard/mouse events.
     auto list_panel = Renderer(instance_menu, [&] {
@@ -636,8 +742,17 @@ void status_ui::run_terminal_loop() {
                       }));
     });
 
-    // Details and messages are wrapped in scrollers so the mouse wheel / keys scroll them.
-    auto detail_panel = Scroller(detail);
+    // Details are wrapped in a scroller (mouse wheel / keys scroll them) with the always-visible
+    // "Set name prefix" button pinned above it.
+    auto detail_scroller = Scroller(detail);
+    auto detail_area = Container::Vertical({open_button, detail_scroller});
+    auto detail_panel = Renderer(detail_area, [&] {
+        return vbox({
+            hbox({open_button->Render(), filler()}),
+            separator(),
+            detail_scroller->Render() | flex,
+        });
+    });
     auto split = ResizableSplitLeft(list_panel, detail_panel, &m_list_split_size);
 
     if (m_options.status_message_lines > 0) {
@@ -648,16 +763,28 @@ void status_ui::run_terminal_loop() {
     auto app = Renderer(split, [&] {
         return vbox({
             text("PIONIX ChargeBridge") | bold | hcenter,
-            text("[ click/↑↓ select   wheel scroll   drag borders to resize   f filter log   q quit ]") | dim |
-                hcenter,
+            text("[ click/↑↓ select   wheel scroll   drag borders to resize   n set name   f filter log   q "
+                 "quit ]") |
+                dim | hcenter,
             separator(),
             split->Render() | flex,
         });
     });
 
+    // Overlay the name-prefix modal on top of everything; ftxui routes events to it while open.
+    auto with_modal = Modal(app, name_modal, &m_name_modal_open);
+
     // Only intercept the global shortcuts; selection, scrolling and border-dragging are handled by
     // the components themselves (menu, scrollers, resizable splits).
-    auto root = CatchEvent(app, [&](Event event) {
+    auto root = CatchEvent(with_modal, [&](Event event) {
+        // While the modal is open, let its input/buttons handle everything; Escape cancels.
+        if (m_name_modal_open) {
+            if (event == Event::Escape) {
+                m_name_modal_open = false;
+                return true;
+            }
+            return false;
+        }
         // Toggle a series plot when its checkbox is clicked; other clicks fall through to the menu
         // / resizable borders.
         if (event.is_mouse() && event.mouse().button == Mouse::Left && event.mouse().motion == Mouse::Pressed) {
@@ -668,6 +795,10 @@ void status_ui::run_terminal_loop() {
                 }
             }
             return false;
+        }
+        if (event == Event::Character('n')) {
+            open_name_modal();
+            return true;
         }
         if (event == Event::Character('f')) {
             m_log_filter_selected = not m_log_filter_selected;

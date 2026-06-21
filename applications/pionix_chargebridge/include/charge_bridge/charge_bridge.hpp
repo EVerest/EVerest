@@ -109,7 +109,7 @@ private:
     void stop_discovery();
     void set_discovery_pending(bool pending);
     void set_discovery_pending(charge_bridge_status& status, bool pending);
-    void handle_discovery(std::string const& ip);
+    void handle_discovery(everest::lib::io::mdns::mDNS_discovery const& info);
     void handle_ready();
     void handle_tick();
     bool register_internal_events(everest::lib::io::event::fd_event_handler& handler);
@@ -140,6 +140,9 @@ private:
     bool m_internal_runtime_started{false};
     std::thread m_manager;
     endpoint_intent_info m_endpoint_intent;
+    // Network identity of the discovered endpoint (hostname, service instance, TXT records). Empty
+    // for fixed-IP configs (no mDNS discovery); the IP itself always lives in m_config.cb_remote.
+    std::optional<everest::lib::io::mdns::mDNS_discovery> m_discovery_info;
     std::function<void(utilities::chargebridge_status)> m_status_sink;
     std::function<void(utilities::chargebridge_status)> m_tick_sink;
 

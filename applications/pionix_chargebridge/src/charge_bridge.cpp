@@ -176,9 +176,11 @@ void charge_bridge::stop_discovery() {
     });
 }
 
-void charge_bridge::handle_discovery(std::string const& ip) {
+void charge_bridge::handle_discovery(everest::lib::io::mdns::mDNS_discovery const& info) {
+    auto const& ip = info.ip;
     utilities::print_error(m_config.cb_name, "DISCOVERY", 0) << "Discovered at: " + ip << std::endl;
 
+    m_discovery_info = info;
     m_config.cb_remote = ip;
     if (m_config.can0) {
         m_config.can0->cb_remote = ip;
@@ -748,6 +750,21 @@ utilities::chargebridge_status charge_bridge::get_status() {
         if (m_endpoint_intent.value != endpoint_intent::fixed_ip) {
             status.discovered = not handle->discovery_pending;
         }
+    }
+
+    // Read-only network identity: the IP we talk to (configured or discovered) and the mDNS
+    // hostname/service/TXT records when discovered.
+    if (not m_config.cb_remote.empty() || m_discovery_info.has_value()) {
+        utilities::chargebridge_network_info net;
+        net.ip = m_config.cb_remote;
+        if (m_discovery_info.has_value()) {
+            net.mdns_hostname = m_discovery_info->hostname;
+            net.mdns_service = m_discovery_info->service_instance;
+            for (auto const& [key, value] : m_discovery_info->txt) {
+                net.mdns_txt.emplace_back(key, value);
+            }
+        }
+        status.network = std::move(net);
     }
 
     if (m_can_0_client) {

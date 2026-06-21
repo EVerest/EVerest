@@ -51,6 +51,7 @@ public:
 private:
     struct status_row {
         std::string cb_name;
+        std::optional<utilities::chargebridge_network_info> network;
         std::optional<bool> discovered;
         std::optional<bool> connected;
         std::optional<bool> can0;
@@ -67,6 +68,9 @@ private:
         std::optional<std::vector<int>> gpio;
         std::optional<std::vector<int>> adc;
         std::optional<std::vector<std::pair<std::string, int>>> io_telemetry;
+        // User-entered name prefix (max 8 bytes), set via the detail panel. Stored locally only for
+        // now; the protocol to push it to the MCU is not yet defined (see status_ui.cpp).
+        std::optional<std::string> name_prefix;
         // Time-series history for every numeric series, keyed by a stable series id (see
         // collect_plottable_series in the .cpp). Used to render the toggleable plots.
         std::map<std::string, std::deque<float>> history;
@@ -119,6 +123,10 @@ private:
     bool m_log_filter_selected{false}; // when true, show only the selected instance's messages
     int m_list_split_size{72};         // width of the instance list panel (mouse-draggable)
     int m_msg_split_size{12};          // height of the message panel (mouse-draggable)
+
+    // "Set name prefix" modal state; only touched on the ftxui loop thread.
+    bool m_name_modal_open{false};
+    std::string m_name_input_value;
 
     // Screen pointer is valid only while the terminal loop runs; guarded for cross-thread access.
     std::mutex m_screen_mutex;
