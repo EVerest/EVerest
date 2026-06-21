@@ -123,7 +123,7 @@ struct CB_COMPILER_ATTR_PACK CbIoPacket {
 	uint8_t number_of_gpios; // Just to check compatibility
 	uint16_t gpio_values[CB_NUMBER_OF_GPIOS]; // Actual value, 0: low, 1: high, or duty cycle for PWM
 	uint8_t number_of_adcs; // Just to check compatibility
-	uint32_t adc_values_mV[CB_NUMBER_OF_ADCS]; // Actual values in mV (calibrated)
+	int32_t adc_values[CB_NUMBER_OF_ADCS]; // Calibrated values: raw mV run through the per-channel transfer function; unit depends on the channel mode (mV, m degC, ...). Signed so temperature channels can report negative values.
 	CbTelemetry telemetry; // Generic unstructured telemetry; variable length, rides along, never triggers sends
 };
 

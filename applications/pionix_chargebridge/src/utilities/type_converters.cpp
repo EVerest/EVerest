@@ -365,8 +365,8 @@ bool decode_CbAdcMode(c4::yml::ConstNodeRef const& node, CbAdcMode& rhs) {
         rhs = CBA_Generic;
         return true;
     }
-    if (value == "PT1000") {
-        rhs = CBA_PT10000;
+    if (value == "OverTemperature") {
+        rhs = CBA_OverTemp;
         return true;
     }
     if (value == "OVM") {
@@ -407,8 +407,8 @@ bool decode_SafetyConfig(c4::yml::ConstNodeRef const& node, SafetyConfig& rhs) {
 
     rhs.pp_mode = decode<decltype(rhs.pp_mode)>(node, "pp_mode");
     rhs.cp_avg_ms = decode<decltype(rhs.cp_avg_ms)>(node, "cp_avg_ms", 10);
-    rhs.temperature_limit_pt1000_C =
-        decode<decltype(rhs.temperature_limit_pt1000_C)>(node, "temperature_limit_pt1000_C", 0);
+    rhs.temperature_limit_C =
+        decode<decltype(rhs.temperature_limit_C)>(node, "temperature_limit_C", 0);
     rhs.inverted_emergency_input = decode<decltype(rhs.inverted_emergency_input)>(node, "inverted_emergency_input", 0);
     rhs.enable_stop_charging_input =
         decode<decltype(rhs.enable_stop_charging_input)>(node, "enable_stop_charging_input", 1);
@@ -467,8 +467,12 @@ bool decode_CbAdcConfig(c4::yml::ConstNodeRef const& node, CbAdcConfig& rhs) {
         return false;
     }
     rhs.mode = decode<decltype(rhs.mode)>(node, "mode");
-    rhs.calib_offset_mV = decode<decltype(rhs.calib_offset_mV)>(node, "calib_offset_mV");
-    rhs.calib_gain = decode<decltype(rhs.calib_gain)>(node, "calib_gain");
+    // Calibration polynomial out = c0 + c1*x + c2*x^2 + c3*x^3 (x = raw ADC mV). Defaults form the
+    // identity passthrough (out = x), so an omitted or partial calib still behaves sensibly.
+    rhs.calib_coeff[0] = decode<float>(node, "calib_c0", 0.0f);
+    rhs.calib_coeff[1] = decode<float>(node, "calib_c1", 1.0f);
+    rhs.calib_coeff[2] = decode<float>(node, "calib_c2", 0.0f);
+    rhs.calib_coeff[3] = decode<float>(node, "calib_c3", 0.0f);
 
     return true;
 }

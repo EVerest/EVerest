@@ -79,7 +79,7 @@ typedef enum _CbSafetyMode : uint8_t {
 
 typedef enum _CbAdcMode : uint8_t {
 	CBA_Generic = 0x00,
-	CBA_PT10000 = 0x01,
+	CBA_OverTemp = 0x01, // Over-temperature monitor: calibrated value is milli-degC, drives the over-temperature shutdown
 	CBA_OVM = 0x03,
 } CbAdcMode;
 
@@ -101,7 +101,7 @@ typedef struct CB_COMPILER_ATTR_PACK _safety_config {
 	uint8_t cp_avg_ms;     // default is 10ms / pulses
 	RelayConfig relays[3]; // Config for the 3 relay I/Os
 	uint8_t inverted_emergency_input; // 0: normal operation, 1: emergency input is inverted
-	uint8_t temperature_limit_pt1000_C; // Temperature limit for the PT1000 inputs. Relays will switch off if temperature is above the limit. Setting this to 0 will disable the feature.
+	uint8_t temperature_limit_C; // Over-temperature limit in degC for any ADC channel in CBA_OverTemp mode. Relays latch off if a temperature channel exceeds this for 10ms. Setting this to 0 disables the feature.
 	uint8_t enable_stop_charging_input; // 0: stop_charging input disabled (no action), 1: enabled (default)
 } SafetyConfig;
 
@@ -126,15 +126,20 @@ typedef struct CB_COMPILER_ATTR_PACK _CbNetworkConfig {
 	char mdns_name[20]; // custom MDNS name
 } CbNetworkConfig;
 
+#define CB_ADC_CALIB_NCOEFF 4 // cubic: out = c0 + c1*x + c2*x^2 + c3*x^3 (x = raw ADC mV)
+
 typedef struct CB_COMPILER_ATTR_PACK _CbAdcConfig {
 	CbAdcMode mode;
-	uint16_t calib_offset_mV;
-	float calib_gain;
+	// Polynomial transfer function from raw ADC mV to the channel output unit (m degC for
+	// CBA_OverTemp, mV for CBA_OVM/CBA_Generic). Evaluated by Horner's method, clamped to >= 0.
+	// Identity (raw passthrough) is { 0, 1, 0, 0 }. c2/c3 are meant for temperature channels
+	// with bounded mV; leave them 0 on voltage channels.
+	float calib_coeff[CB_ADC_CALIB_NCOEFF];
 } CbAdcConfig;
 
 // Final complete config struct
 
-#define CB_CONFIG_VERSION 2
+#define CB_CONFIG_VERSION 3
 typedef struct CB_COMPILER_ATTR_PACK _cb_config {
 	uint32_t config_version;
 	SafetyConfig safety;

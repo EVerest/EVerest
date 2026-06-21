@@ -27,9 +27,9 @@ const int mqtt_reconnect_timeout_ms = 1000;
 } // namespace
 
 io_bridge::io_bridge(io_config const& config, everest::lib::io::event::event_fd& ready_notify) :
-    m_mqtt(mqtt_reconnect_timeout_ms),
     m_udp_port(config.cb_port),
     m_udp_remote(config.cb_remote),
+    m_mqtt(mqtt_reconnect_timeout_ms),
     m_ready_notify(ready_notify)
 
 {
@@ -227,8 +227,8 @@ void io_bridge::handle_udp_rx(everest::lib::io::udp::udp_payload const& payload)
     for (std::size_t i = 0; i < sizeof(data.data.gpio_values) / sizeof(data.data.gpio_values[0]); ++i) {
         send_mqtt(std::to_string(i), std::to_string(data.data.gpio_values[i]));
     }
-    for (std::size_t i = 0; i < sizeof(data.data.adc_values_mV) / sizeof(data.data.adc_values_mV[0]); ++i) {
-        send_adc_mqtt(std::to_string(i), std::to_string(data.data.adc_values_mV[i]));
+    for (std::size_t i = 0; i < sizeof(data.data.adc_values) / sizeof(data.data.adc_values[0]); ++i) {
+        send_adc_mqtt(std::to_string(i), std::to_string(data.data.adc_values[i]));
     }
     // Unstructured telemetry: republish each name -> value verbatim. We do not interpret the
     // names; the MCU owns their meaning.

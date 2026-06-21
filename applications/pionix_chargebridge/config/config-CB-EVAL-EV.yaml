@@ -214,20 +214,30 @@ io:
     pulls: "NoPull"
     mdns: false
     config: 0
-  # ADC channels (calibrated values pushed by the MCU in the combined IO packet)
+  # ADC channels (calibrated values pushed by the MCU in the combined IO packet).
+  # Per-channel calibration polynomial: out = c0 + c1*x + c2*x^2 + c3*x^3, x = raw ADC mV.
+  # Output unit: m°C for "OverTemperature" channels, mV otherwise. Identity = (0, 1, 0, 0).
   adc_0:
     mode: "OVM"
-    calib_offset_mV: 100
-    calib_gain: 1.02
+    calib_c0: 0.0
+    calib_c1: 1.0
+    calib_c2: 0.0
+    calib_c3: 0.0
   adc_1:
-    mode: "PT1000"
-    calib_offset_mV: 100
-    calib_gain: 1.02
+    mode: "OverTemperature"
+    calib_c0: 0.0
+    calib_c1: 1.0
+    calib_c2: 0.0
+    calib_c3: 0.0
   adc_2:
-    mode: "PT1000"
-    calib_offset_mV: 100
-    calib_gain: 1.02
+    mode: "OverTemperature"
+    calib_c0: 0.0
+    calib_c1: 1.0
+    calib_c2: 0.0
+    calib_c3: 0.0
   adc_3:
     mode: "Generic"
-    calib_offset_mV: 100
-    calib_gain: 1.02
+    calib_c0: 0.0
+    calib_c1: 1.0
+    calib_c2: 0.0
+    calib_c3: 0.0
