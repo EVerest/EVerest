@@ -10,9 +10,20 @@
 #include <everest/io/mqtt/mqtt_client.hpp>
 #include <everest/io/udp/udp_client.hpp>
 #include <everest/util/misc/observable.hpp>
+#include <optional>
 #include <protocol/cb_management.h>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace charge_bridge {
+
+// Latest decoded contents of a received CbIoPacket, for display in the terminal UI.
+struct io_state {
+    std::vector<int> gpio;                              // GPIO input values (0/1 or PWM duty)
+    std::vector<int> adc;                               // calibrated ADC values
+    std::vector<std::pair<std::string, int>> telemetry; // unstructured name -> value entries
+};
 
 // Combined GPIO + ADC bridge. Owns one UDP connection to the ChargeBridge:
 //  - sends GPIO output writes (CST_HostToCb_Gpio), which also keeps the connection
@@ -42,6 +53,8 @@ public:
     void connect_cb_endpoint(std::string const& remote);
     bool available() const;
     void set_cb_connection_status(bool connected);
+    // Latest decoded GPIO/ADC/telemetry snapshot; empty until the first valid IO packet arrives.
+    std::optional<io_state> latest_io() const;
 
 private:
     void handle_error_timer();
@@ -73,6 +86,8 @@ private:
     std::string m_telemetry_send_topic;
     everest::lib::util::observable<bool> m_ready{false};
     everest::lib::util::observable<bool> m_cb_is_connected{false};
+    io_state m_io_state;
+    bool m_have_io{false};
     everest::lib::io::event::event_fd& m_ready_notify;
 };
 

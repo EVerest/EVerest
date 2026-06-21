@@ -46,8 +46,7 @@ mode parse_args(int argc, char* argv[], std::vector<std::string>& config_files,
                      "                    terminal: always table output (requires stdout TTY)\n"
                      "                    off: suppress status output\n";
         std::cout << "--status-refresh-ms=100\n"
-                     "                    terminal refresh rate in milliseconds, minimum is 0 (immediate)\n"
-                     "                    ignored in log/off modes\n";
+                     "                    deprecated: terminal redraws are event-driven, this value is ignored\n";
         std::cout << "--status-message-lines=10\n"
                      "                    terminal message buffer size, minimum is 0 (disabled), maximum is 1000\n"
                      "                    shows latest N non-success messages below dashboard\n"
@@ -213,12 +212,25 @@ int main(int argc, char* argv[]) {
     }
 
     status_ui ui(effective_ui_options, cb_names);
+    // Quitting the terminal UI (q / Ctrl-C) must shut down the whole application. ftxui installs its
+    // own SIGINT handler while its loop runs, so we cannot rely on the signal reaching the app; the
+    // UI thread notifies us here. add_action wakes the (possibly blocking) event loop poll.
+    ui.set_quit_handler([&]() {
+        g_run_application = false;
+        ev_handler.add_action([]() {});
+    });
     auto status_sink = [&ui](utilities::chargebridge_status status) { ui.publish(std::move(status)); };
+    // The terminal UI wants a live (every-tick) feed for its readouts and telemetry charts; log mode
+    // keeps emitting only on status changes, so its tick sink stays empty.
+    std::function<void(utilities::chargebridge_status)> tick_sink;
+    if (effective_status_output_mode == utilities::status_output_mode::terminal) {
+        tick_sink = [&ui](utilities::chargebridge_status status) { ui.publish(std::move(status)); };
+    }
     std::vector<std::unique_ptr<::charge_bridge::charge_bridge>> cb_handler;
 
     for (auto const& config : cb_configs) {
         print_charge_bridge_config(config);
-        cb_handler.push_back(std::make_unique<::charge_bridge::charge_bridge>(config, status_sink));
+        cb_handler.push_back(std::make_unique<::charge_bridge::charge_bridge>(config, status_sink, tick_sink));
         auto& cb = *cb_handler.rbegin();
 
         if (mode_of_operation == mode::update_only) {

@@ -4,32 +4,97 @@
 #include <charge_bridge/status_ui.hpp>
 #include <charge_bridge/utilities/logging.hpp>
 
+#include <algorithm>
 #include <array>
-#include <chrono>
-#include <iostream>
-#include <sstream>
+#include <cmath>
+#include <deque>
+#include <limits>
 #include <string>
 #include <utility>
+#include <vector>
+
+#include <ftxui/component/component.hpp>
+#include <ftxui/component/component_base.hpp>
+#include <ftxui/component/event.hpp>
+#include <ftxui/component/mouse.hpp>
+#include <ftxui/component/screen_interactive.hpp>
+#include <ftxui/dom/elements.hpp>
+#include <ftxui/dom/table.hpp>
+#include <ftxui/screen/box.hpp>
 
 namespace {
 
-constexpr char ANSI_RESET[] = "\033[0m";
-constexpr char ANSI_GREEN[] = "\033[32m";
-constexpr char ANSI_BOLD_BRIGHT_RED[] = "\033[1;91m";
-constexpr char ANSI_BOLD_WHITE[] = "\033[1;97m";
-constexpr char ANSI_BRIGHT_WHITE[] = "\033[97m";
-constexpr char ANSI_GRAY[] = "\033[90m";
-constexpr char ANSI_CURSOR_HOME[] = "\033[H";
-constexpr char ANSI_RETURN_TO_START[] = "\r";
-constexpr char ANSI_HIDE_CURSOR[] = "\033[?25l";
-constexpr char ANSI_SHOW_CURSOR[] = "\033[?25h";
-constexpr char ANSI_CLEAR_TO_END[] = "\033[0J";
-
-constexpr std::size_t STATUS_FIELD_COUNT = 12;
-constexpr std::size_t STATUS_FIELD_WIDTH = 12;
-constexpr std::size_t STATUS_LINE_WIDTH = 1 + STATUS_FIELD_COUNT * (STATUS_FIELD_WIDTH + 1);
-constexpr std::size_t STATUS_MESSAGE_WIDTH = STATUS_LINE_WIDTH - 2;
 constexpr std::size_t STATUS_MESSAGE_MAX_LENGTH = 1024;
+
+// A component that makes its (non-interactive) child vertically scrollable with the mouse wheel,
+// arrow keys and PageUp/PageDown/Home/End. Standard ftxui pattern. Mouse events only act while the
+// cursor is over the component, so several scrollers can coexist.
+class ScrollerBase : public ftxui::ComponentBase {
+public:
+    explicit ScrollerBase(ftxui::Component child) {
+        Add(std::move(child));
+    }
+
+    ftxui::Element OnRender() override {
+        using namespace ftxui;
+        auto background = ComponentBase::OnRender();
+        background->ComputeRequirement();
+        size_ = background->requirement().min_y;
+        auto marker = Focused() ? focus(text("")) : select(text(""));
+        return dbox({
+                   std::move(background),
+                   vbox({
+                       text("") | size(HEIGHT, EQUAL, selected_),
+                       std::move(marker),
+                   }),
+               }) |
+               vscroll_indicator | yframe | reflect(box_);
+    }
+
+    bool OnEvent(ftxui::Event event) override {
+        using namespace ftxui;
+        if (event.is_mouse()) {
+            if (not box_.Contain(event.mouse().x, event.mouse().y)) {
+                return false;
+            }
+            TakeFocus();
+        }
+
+        const int viewport = box_.y_max - box_.y_min;
+        const int selected_old = selected_;
+        if (event == Event::ArrowUp || (event.is_mouse() && event.mouse().button == Mouse::WheelUp)) {
+            selected_ -= 3;
+        } else if (event == Event::ArrowDown || (event.is_mouse() && event.mouse().button == Mouse::WheelDown)) {
+            selected_ += 3;
+        } else if (event == Event::PageUp) {
+            selected_ -= viewport;
+        } else if (event == Event::PageDown) {
+            selected_ += viewport;
+        } else if (event == Event::Home) {
+            selected_ = 0;
+        } else if (event == Event::End) {
+            selected_ = size_;
+        } else {
+            return false;
+        }
+
+        selected_ = std::max(0, std::min(size_ - 1, selected_));
+        return selected_old != selected_;
+    }
+
+    bool Focusable() const override {
+        return true;
+    }
+
+private:
+    int selected_{0};
+    int size_{0};
+    ftxui::Box box_;
+};
+
+ftxui::Component Scroller(ftxui::Component child) {
+    return ftxui::Make<ScrollerBase>(std::move(child));
+}
 
 } // namespace
 
@@ -43,11 +108,17 @@ status_ui::status_ui(status_ui_options options, std::vector<std::string> cb_name
         auto insertion = m_cb_name_to_row.try_emplace(cb_name, m_status_rows.size());
         if (insertion.second) {
             m_status_rows.push_back(std::move(row));
+            m_cb_names.push_back(cb_name);
         }
     }
 
+    // Keep a scrollback buffer larger than the visible window so the log can be scrolled back.
+    constexpr std::size_t k_min_scrollback = 1000;
+    m_log_capacity = std::max(m_options.status_message_lines, k_min_scrollback);
+
     if (m_terminal_active()) {
-        utilities::set_print_error_sink([this](std::string message) { publish_message(std::move(message)); });
+        utilities::set_print_error_sink(
+            [this](std::string device, std::string message) { publish_message(std::move(device), std::move(message)); });
     }
 }
 
@@ -55,16 +126,35 @@ status_ui::~status_ui() {
     stop();
 }
 
-void status_ui::publish(utilities::chargebridge_status status) {
-    if (m_options.status_output == utilities::status_output_mode::off) {
-        return;
-    }
-
-    m_status_queue.push(status_update_event{std::move(status)});
+void status_ui::set_quit_handler(std::function<void()> handler) {
+    m_quit_handler = std::move(handler);
 }
 
-void status_ui::publish_message(std::string message) {
-    if (m_options.status_output != utilities::status_output_mode::terminal || m_options.status_message_lines == 0) {
+bool status_ui::m_terminal_active() const {
+    return m_options.status_output == utilities::status_output_mode::terminal;
+}
+
+void status_ui::publish(utilities::chargebridge_status status) {
+    switch (m_options.status_output) {
+    case utilities::status_output_mode::off:
+        return;
+    case utilities::status_output_mode::terminal: {
+        {
+            std::scoped_lock lock(m_state_mutex);
+            apply_status_row(status);
+        }
+        request_redraw();
+        return;
+    }
+    default:
+        // log / auto (auto is resolved to a concrete mode before construction)
+        m_status_queue.push(status_update_event{std::move(status)});
+        return;
+    }
+}
+
+void status_ui::publish_message(std::string device, std::string message) {
+    if (not m_terminal_active() || m_options.status_message_lines == 0) {
         return;
     }
 
@@ -72,7 +162,11 @@ void status_ui::publish_message(std::string message) {
         message.resize(STATUS_MESSAGE_MAX_LENGTH);
     }
 
-    m_status_queue.push(log_message_event{std::move(message)});
+    {
+        std::scoped_lock lock(m_state_mutex);
+        apply_log_message(std::move(device), std::move(message));
+    }
+    request_redraw();
 }
 
 void status_ui::run() {
@@ -85,49 +179,32 @@ void status_ui::run() {
         return;
     }
 
-    m_thread = std::thread(&status_ui::run_internal, this);
-
     if (m_terminal_active()) {
-        wait_for_terminal_ready();
+        m_thread = std::thread(&status_ui::run_terminal_loop, this);
+    } else {
+        m_thread = std::thread(&status_ui::run_log_loop, this);
     }
-}
-
-void status_ui::notify_terminal_ready() {
-    if (not m_terminal_active()) {
-        return;
-    }
-
-    {
-        auto handle = m_initial_terminal_render_done.handle();
-        *handle = true;
-    }
-    m_initial_terminal_render_done.notify_one();
-}
-
-void status_ui::wait_for_terminal_ready() {
-    auto handle = m_initial_terminal_render_done.handle();
-    handle.wait([&handle] { return *handle; });
 }
 
 void status_ui::stop() {
-    m_status_queue.stop();
     auto const was_running = m_running.exchange(false);
+
+    // Wake whichever loop is running.
+    m_status_queue.stop();
+    {
+        std::scoped_lock lock(m_screen_mutex);
+        if (m_screen != nullptr) {
+            m_screen->Exit();
+        }
+    }
 
     if (was_running && m_thread.joinable()) {
         m_thread.join();
     }
 
-    if (m_terminal_cursor_hidden.exchange(false)) {
-        std::cout << ANSI_SHOW_CURSOR << std::flush;
-    }
-
     if (m_terminal_active()) {
         utilities::clear_print_error_sink();
     }
-}
-
-bool status_ui::m_terminal_active() const {
-    return m_options.status_output == utilities::status_output_mode::terminal;
 }
 
 void status_ui::apply_status_row(utilities::chargebridge_status const& status) {
@@ -148,246 +225,385 @@ void status_ui::apply_status_row(utilities::chargebridge_status const& status) {
     row.heartbeat = status.heartbeat;
     row.io = status.io;
     row.mcu_resets = status.mcu_resets;
+    row.telemetry = status.telemetry;
+    row.cp_state = status.cp_state;
+    row.gpio = status.gpio;
+    row.adc = status.adc;
+    row.io_telemetry = status.io_telemetry;
+
+    if (status.telemetry.has_value()) {
+        auto push = [](std::deque<float>& history, float value) {
+            history.push_back(value);
+            while (history.size() > k_telemetry_history) {
+                history.pop_front();
+            }
+        };
+        push(row.mcu_temp_history, static_cast<float>(status.telemetry->temperature_mcu_C));
+        push(row.cp_lo_history, static_cast<float>(status.telemetry->cp_lo_mV));
+        push(row.cp_hi_history, static_cast<float>(status.telemetry->cp_hi_mV));
+    }
 }
 
-void status_ui::apply_log_message(std::string message) {
-    m_log_messages.push_back(std::move(message));
-    if (m_log_messages.size() > m_options.status_message_lines) {
+void status_ui::apply_log_message(std::string device, std::string message) {
+    m_log_messages.emplace_back(std::move(device), std::move(message));
+    while (m_log_messages.size() > m_log_capacity) {
         m_log_messages.pop_front();
     }
 }
 
-void status_ui::process_event(status_ui_event const& event) {
-    if (auto* status_update = std::get_if<status_update_event>(&event)) {
-        apply_status_row(status_update->status);
-        return;
-    }
-
-    if (auto* log_message = std::get_if<log_message_event>(&event)) {
-        apply_log_message(log_message->message);
+void status_ui::request_redraw() {
+    std::scoped_lock lock(m_screen_mutex);
+    if (m_screen != nullptr) {
+        m_screen->PostEvent(ftxui::Event::Custom);
     }
 }
 
-bool status_ui::has_message_event(status_ui_event const& event) {
-    return std::holds_alternative<log_message_event>(event);
-}
-
-std::string status_ui::center(std::string text, std::size_t width) {
-    if (text.size() >= width) {
-        return text.substr(0, width);
-    }
-
-    const std::size_t left = (width - text.size()) / 2;
-    const std::size_t right = width - text.size() - left;
-    return std::string(left, ' ') + text + std::string(right, ' ');
-}
-
-void status_ui::render_border(std::size_t field_count, std::size_t width) {
-    std::cout << '+';
-    for (std::size_t i = 0; i < field_count; ++i) {
-        std::cout << std::string(width, '-') << '+';
-    }
-    std::cout << '\n';
-}
-
-const char* status_ui::maybe_no_color(const char* color) const {
-    return m_options.no_color ? "" : color;
-}
-
-void status_ui::render_field(std::string const& value, const char* color, std::size_t width) {
-    std::cout << maybe_no_color(color) << center(value, width) << maybe_no_color(ANSI_RESET) << '|';
-}
-
-void status_ui::render_message_row(std::string const& text, std::size_t width) {
-    std::cout << '|';
-    if (text.size() >= width) {
-        std::cout << text.substr(0, width);
-    } else {
-        std::cout << text << std::string(width - text.size(), ' ');
-    }
-    std::cout << "|\n";
-}
-
-void status_ui::render_terminal_status() {
-    std::cout << ANSI_RETURN_TO_START << ANSI_CURSOR_HOME << ANSI_CLEAR_TO_END;
-
-    static const std::array<char const*, STATUS_FIELD_COUNT> k_headers = {
-        "cb_name", "discovered", "connected", "can0",      "serial1", "serial2",
-        "serial3", "plc",        "bsp",       "heartbeat", "io",      "mcu_resets",
-    };
-
-    render_border(STATUS_FIELD_COUNT, STATUS_FIELD_WIDTH);
-
-    auto render_bool_cell = [this](std::optional<bool> value) {
-        if (!value.has_value()) {
-            render_field("N/A", ANSI_GRAY, STATUS_FIELD_WIDTH);
-            return;
-        }
-
-        if (*value) {
-            render_field("OK", ANSI_GREEN, STATUS_FIELD_WIDTH);
-        } else {
-            render_field("ERROR", ANSI_BOLD_BRIGHT_RED, STATUS_FIELD_WIDTH);
-        }
-    };
-
-    std::cout << '|';
-    for (std::size_t col = 0; col < STATUS_FIELD_COUNT; ++col) {
-        std::cout << maybe_no_color(ANSI_BOLD_WHITE) << center(k_headers[col], STATUS_FIELD_WIDTH)
-                  << maybe_no_color(ANSI_RESET) << '|';
-    }
-    std::cout << '\n';
-
-    for (auto const& row : m_status_rows) {
-        std::cout << '|';
-        std::cout << maybe_no_color(ANSI_BOLD_WHITE) << center(row.cb_name, STATUS_FIELD_WIDTH)
-                  << maybe_no_color(ANSI_RESET) << '|';
-
-        render_bool_cell(row.discovered);
-        render_bool_cell(row.connected);
-        render_bool_cell(row.can0);
-        render_bool_cell(row.serial1);
-        render_bool_cell(row.serial2);
-        render_bool_cell(row.serial3);
-        render_bool_cell(row.plc);
-        render_bool_cell(row.bsp);
-        render_bool_cell(row.heartbeat);
-        render_bool_cell(row.io);
-
-        if (row.mcu_resets.has_value()) {
-            render_field(std::to_string(*row.mcu_resets), ANSI_BRIGHT_WHITE, STATUS_FIELD_WIDTH);
-        } else {
-            render_field("N/A", ANSI_GRAY, STATUS_FIELD_WIDTH);
-        }
-
-        std::cout << '\n';
-    }
-
-    render_border(STATUS_FIELD_COUNT, STATUS_FIELD_WIDTH);
-
-    if (m_options.status_message_lines > 0) {
-        const std::size_t blank_rows = m_options.status_message_lines > m_log_messages.size()
-                                           ? m_options.status_message_lines - m_log_messages.size()
-                                           : 0;
-
-        std::cout << '+' << std::string(STATUS_MESSAGE_WIDTH, '-') << "+\n";
-        std::ostringstream header;
-        header << " Messages (showing last " << m_options.status_message_lines << ")";
-        auto const header_text = header.str();
-        if (header_text.size() >= STATUS_MESSAGE_WIDTH) {
-            render_message_row(header_text.substr(0, STATUS_MESSAGE_WIDTH), STATUS_MESSAGE_WIDTH);
-        } else {
-            render_message_row(header_text, STATUS_MESSAGE_WIDTH);
-        }
-
-        for (std::size_t i = 0; i < blank_rows; ++i) {
-            render_message_row("", STATUS_MESSAGE_WIDTH);
-        }
-
-        for (auto const& message : m_log_messages) {
-            render_message_row(message, STATUS_MESSAGE_WIDTH);
-        }
-    }
-
-    std::cout << std::flush;
-}
-
-void status_ui::run_internal() {
-    const bool is_terminal = m_terminal_active();
-    const bool terminal_with_refresh = is_terminal && (m_options.status_refresh_ms.count() > 0);
-
-    if (is_terminal) {
-        m_terminal_cursor_hidden.store(true);
-        std::cout << ANSI_HIDE_CURSOR;
-        render_terminal_status();
-        notify_terminal_ready();
-    }
-
-    if (not is_terminal) {
-        while (true) {
-            auto event = m_status_queue.wait_and_pop();
-            if (!event.has_value()) {
-                return;
-            }
-
-            if (auto* status_event = std::get_if<status_update_event>(&*event)) {
-                utilities::print_status(status_event->status, m_options.status_output);
-            }
-
-            if (!m_running.load(std::memory_order_acquire)) {
-                auto next_event = m_status_queue.try_pop(std::chrono::milliseconds{0});
-                while (next_event.has_value()) {
-                    if (auto* status_event = std::get_if<status_update_event>(&*next_event)) {
-                        utilities::print_status(status_event->status, m_options.status_output);
-                    }
-                    next_event = m_status_queue.try_pop(std::chrono::milliseconds{0});
-                }
-                return;
-            }
-        }
-    }
-
-    if (is_terminal && not terminal_with_refresh) {
-        while (true) {
-            auto event = m_status_queue.wait_and_pop();
-            if (!event.has_value()) {
-                return;
-            }
-
-            process_event(*event);
-            if (!m_running.load(std::memory_order_acquire)) {
-                auto next_event = m_status_queue.try_pop(std::chrono::milliseconds{0});
-                while (next_event.has_value()) {
-                    process_event(*next_event);
-                    next_event = m_status_queue.try_pop(std::chrono::milliseconds{0});
-                }
-                render_terminal_status();
-                return;
-            }
-
-            render_terminal_status();
-        }
-    }
-
+void status_ui::run_log_loop() {
     while (true) {
         auto event = m_status_queue.wait_and_pop();
-        if (!event.has_value()) {
+        if (not event.has_value()) {
             return;
         }
 
-        process_event(*event);
-        auto render_deadline = std::chrono::steady_clock::now() + m_options.status_refresh_ms;
-        auto should_render_immediately = has_message_event(*event);
-
-        while (m_running.load(std::memory_order_acquire) && !should_render_immediately) {
-            const auto now = std::chrono::steady_clock::now();
-            if (now >= render_deadline) {
-                break;
-            }
-
-            const auto timeout = std::chrono::duration_cast<std::chrono::milliseconds>(render_deadline - now);
-            const auto next_event = m_status_queue.try_pop(timeout);
-            if (!next_event.has_value()) {
-                break;
-            }
-
-            process_event(*next_event);
-            if (has_message_event(*next_event)) {
-                should_render_immediately = true;
-            }
+        if (auto* status_event = std::get_if<status_update_event>(&*event)) {
+            utilities::print_status(status_event->status, m_options.status_output);
         }
 
-        if (!m_running.load(std::memory_order_acquire)) {
+        if (not m_running.load(std::memory_order_acquire)) {
             auto next_event = m_status_queue.try_pop(std::chrono::milliseconds{0});
             while (next_event.has_value()) {
-                process_event(*next_event);
+                if (auto* status_event = std::get_if<status_update_event>(&*next_event)) {
+                    utilities::print_status(status_event->status, m_options.status_output);
+                }
                 next_event = m_status_queue.try_pop(std::chrono::milliseconds{0});
             }
-            render_terminal_status();
             return;
         }
+    }
+}
 
-        render_terminal_status();
+void status_ui::run_terminal_loop() {
+    using namespace ftxui;
+
+    auto screen = ScreenInteractive::Fullscreen();
+    {
+        std::scoped_lock lock(m_screen_mutex);
+        m_screen = &screen;
+    }
+
+    // --- cell builders -------------------------------------------------------
+    // With colors disabled we drop both color and bold to mirror the previous --status-no-color behavior.
+    auto styled = [this](std::string s, Color c, bool bold_it) -> Element {
+        auto e = text(std::move(s));
+        if (m_options.no_color) {
+            return e;
+        }
+        e = e | color(c);
+        if (bold_it) {
+            e = e | bold;
+        }
+        return e;
+    };
+
+    // Sparkline of a numeric history against an explicit [vmin, vmax] range (newest at the right).
+    constexpr int k_spark_height = 5;
+    auto spark = [](std::deque<float> data, float vmin, float vmax) -> Element {
+        auto fn = [data = std::move(data), vmin, vmax](int width, int height) {
+            std::vector<int> out(width > 0 ? static_cast<std::size_t>(width) : 0, 0);
+            if (data.empty() || width <= 0 || height <= 0) {
+                return out;
+            }
+            const float range = (vmax - vmin) > 0.0F ? (vmax - vmin) : 1.0F;
+            for (int x = 0; x < width; ++x) {
+                const int idx = static_cast<int>(data.size()) - width + x;
+                const float value = idx >= 0 ? data[static_cast<std::size_t>(idx)] : data.front();
+                const float norm = std::clamp((value - vmin) / range, 0.0F, 1.0F);
+                out[static_cast<std::size_t>(x)] = static_cast<int>(std::lround(norm * height));
+            }
+            return out;
+        };
+        return graph(std::move(fn)) | ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, k_spark_height);
+    };
+
+    // A small plot with a title (+ unit and latest value), a labeled y-axis (min/max) and an x-axis
+    // caption. The graph is auto-scaled to the data's range.
+    auto plot = [&](std::string const& title, std::string const& unit, std::deque<float> const& data) -> Element {
+        constexpr int k_axis_width = 7;
+        float vmin = 0.0F;
+        float vmax = 0.0F;
+        std::string now = "-";
+        if (not data.empty()) {
+            vmin = data.front();
+            vmax = data.front();
+            for (float value : data) {
+                vmin = std::min(vmin, value);
+                vmax = std::max(vmax, value);
+            }
+            now = std::to_string(static_cast<long>(std::lround(static_cast<double>(data.back()))));
+        }
+        if (vmax - vmin < 1.0F) { // avoid a degenerate flat range
+            vmax += 1.0F;
+            vmin -= 1.0F;
+        }
+        auto axis_label = [](float value) {
+            return std::to_string(static_cast<long>(std::lround(static_cast<double>(value))));
+        };
+        auto header =
+            hbox({text(title) | bold, text(" [" + unit + "]") | dim, filler(), text("now=" + now) | bold});
+        auto yaxis = vbox({
+                         text(axis_label(vmax)) | dim | align_right,
+                         filler(),
+                         text(axis_label(vmin)) | dim | align_right,
+                     }) |
+                     size(HEIGHT, EQUAL, k_spark_height) | size(WIDTH, EQUAL, k_axis_width);
+        auto body = hbox({yaxis, separator(), spark(data, vmin, vmax) | flex});
+        auto footer = hbox({text("") | size(WIDTH, EQUAL, k_axis_width + 1), text("oldest") | dim, filler(),
+                            text("now") | dim});
+        return vbox({header, body, footer});
+    };
+
+    // Compact, bold status glyph for the instance list (distinct shapes even without color).
+    auto glyph = [&](std::optional<bool> v) -> Element {
+        if (not v.has_value()) {
+            auto e = text("N/A") | dim;
+            return m_options.no_color ? e : (e | color(Color::GrayDark));
+        }
+        auto e = text(*v ? "●" : "✖") | bold;
+        return m_options.no_color ? e : (e | color(*v ? Color::Green : Color::Red));
+    };
+
+    // Interleave vertical separators between a row's cells so columns are easy to read.
+    auto row_with_separators = [](std::vector<Element> cells) -> Element {
+        Elements out;
+        for (std::size_t i = 0; i < cells.size(); ++i) {
+            if (i != 0) {
+                out.push_back(separator());
+            }
+            out.push_back(std::move(cells[i]));
+        }
+        return hbox(std::move(out));
+    };
+
+    constexpr int k_name_width = 16;
+    constexpr int k_glyph_width = 4;
+    constexpr int k_rst_width = 4;
+    static const std::array<char const*, 10> k_bridge_cols = {
+        "disc", "conn", "can0", "ser1", "ser2", "ser3", "plc", "bsp", "hbt", "io",
+    };
+
+    auto list_header = [&]() -> Element {
+        std::vector<Element> cells;
+        cells.push_back(text("instance") | bold | size(WIDTH, EQUAL, k_name_width));
+        for (auto const* col : k_bridge_cols) {
+            cells.push_back(text(col) | bold | hcenter | size(WIDTH, EQUAL, k_glyph_width));
+        }
+        cells.push_back(text("rst") | bold | hcenter | size(WIDTH, EQUAL, k_rst_width));
+        return row_with_separators(std::move(cells));
+    };
+
+    // --- instance list (left): scrollable, mouse + keyboard selectable -------
+    MenuOption menu_option;
+    menu_option.entries = &m_cb_names;
+    menu_option.selected = &m_selected_row;
+    menu_option.entries_option.transform = [&](const EntryState& entry) -> Element {
+        std::scoped_lock lock(m_state_mutex);
+        if (entry.index < 0 || entry.index >= static_cast<int>(m_status_rows.size())) {
+            return text(entry.label);
+        }
+        auto const& row = m_status_rows[static_cast<std::size_t>(entry.index)];
+        std::vector<Element> cells;
+        cells.push_back(text(row.cb_name) | size(WIDTH, EQUAL, k_name_width));
+        cells.push_back(glyph(row.discovered) | hcenter | size(WIDTH, EQUAL, k_glyph_width));
+        cells.push_back(glyph(row.connected) | hcenter | size(WIDTH, EQUAL, k_glyph_width));
+        cells.push_back(glyph(row.can0) | hcenter | size(WIDTH, EQUAL, k_glyph_width));
+        cells.push_back(glyph(row.serial1) | hcenter | size(WIDTH, EQUAL, k_glyph_width));
+        cells.push_back(glyph(row.serial2) | hcenter | size(WIDTH, EQUAL, k_glyph_width));
+        cells.push_back(glyph(row.serial3) | hcenter | size(WIDTH, EQUAL, k_glyph_width));
+        cells.push_back(glyph(row.plc) | hcenter | size(WIDTH, EQUAL, k_glyph_width));
+        cells.push_back(glyph(row.bsp) | hcenter | size(WIDTH, EQUAL, k_glyph_width));
+        cells.push_back(glyph(row.heartbeat) | hcenter | size(WIDTH, EQUAL, k_glyph_width));
+        cells.push_back(glyph(row.io) | hcenter | size(WIDTH, EQUAL, k_glyph_width));
+        cells.push_back((row.mcu_resets.has_value() ? styled(std::to_string(*row.mcu_resets), Color::White, false)
+                                                     : styled("-", Color::GrayDark, false)) |
+                        hcenter | size(WIDTH, EQUAL, k_rst_width));
+        auto line = row_with_separators(std::move(cells));
+        if (entry.active) {
+            line = line | (m_options.no_color ? inverted : bgcolor(Color::Blue));
+        } else if (entry.focused) {
+            line = line | bold;
+        }
+        return line;
+    };
+    auto instance_menu = Menu(menu_option);
+
+    // --- per-instance detail panel (right) ----------------------------------
+    auto detail = Renderer([&] {
+        std::scoped_lock lock(m_state_mutex);
+
+        if (m_status_rows.empty()) {
+            return window(text("Instance"), text("no instances configured")) | flex;
+        }
+        const std::size_t idx =
+            (m_selected_row >= 0 && m_selected_row < static_cast<int>(m_status_rows.size()))
+                ? static_cast<std::size_t>(m_selected_row)
+                : 0;
+        auto const& row = m_status_rows[idx];
+
+        Elements sections;
+
+        // CP state from the BSP bridge (if enabled).
+        if (row.cp_state.has_value()) {
+            sections.push_back(hbox({text("CP state: ") | bold, styled(*row.cp_state, Color::Yellow, true)}));
+        }
+
+        // Heartbeat telemetry readouts + sparklines (available once heartbeat packets arrive).
+        if (row.telemetry.has_value()) {
+            auto const& telemetry = *row.telemetry;
+            sections.push_back(text("MCU temp:       " + std::to_string(telemetry.temperature_mcu_C) + " degC"));
+            sections.push_back(text("CP hi/lo:       " + std::to_string(telemetry.cp_hi_mV) + " / " +
+                                    std::to_string(telemetry.cp_lo_mV) + " mV"));
+            sections.push_back(text("PP:             " + std::to_string(telemetry.pp_mOhm) + " mOhm"));
+            sections.push_back(text("VDD 12/-12/3.3: " + std::to_string(telemetry.vdd_12V_mV) + " / " +
+                                    std::to_string(telemetry.vdd_N12V_mV) + " / " +
+                                    std::to_string(telemetry.vdd_3v3_mV) + " mV"));
+            sections.push_back(separator());
+            sections.push_back(plot("MCU temp", "degC", row.mcu_temp_history));
+            sections.push_back(plot("CP low", "mV", row.cp_lo_history));
+            sections.push_back(plot("CP high", "mV", row.cp_hi_history));
+        } else {
+            sections.push_back(text("waiting for heartbeat telemetry...") | dim);
+        }
+
+        // GPIO states (wrapped into rows).
+        if (row.gpio.has_value() && not row.gpio->empty()) {
+            sections.push_back(separator());
+            sections.push_back(text("GPIO") | bold);
+            constexpr std::size_t k_per_row = 7;
+            Elements gpio_rows;
+            Elements current;
+            for (std::size_t i = 0; i < row.gpio->size(); ++i) {
+                current.push_back(text(std::to_string(i) + ":" + std::to_string((*row.gpio)[i])) |
+                                  size(WIDTH, EQUAL, 9));
+                if (current.size() == k_per_row) {
+                    gpio_rows.push_back(hbox(std::move(current)));
+                    current.clear();
+                }
+            }
+            if (not current.empty()) {
+                gpio_rows.push_back(hbox(std::move(current)));
+            }
+            sections.push_back(vbox(std::move(gpio_rows)));
+        }
+
+        // ADC values.
+        if (row.adc.has_value() && not row.adc->empty()) {
+            sections.push_back(text("ADC") | bold);
+            Elements adc_cells;
+            for (std::size_t i = 0; i < row.adc->size(); ++i) {
+                adc_cells.push_back(text(std::to_string(i) + ":" + std::to_string((*row.adc)[i])) |
+                                    size(WIDTH, EQUAL, 12));
+            }
+            sections.push_back(hbox(std::move(adc_cells)));
+        }
+
+        // Unstructured telemetry (i2c temperature sensor, etc.).
+        if (row.io_telemetry.has_value() && not row.io_telemetry->empty()) {
+            sections.push_back(separator());
+            sections.push_back(text("Telemetry (unstructured)") | bold);
+            for (auto const& [name, value] : *row.io_telemetry) {
+                sections.push_back(text("  " + name + " = " + std::to_string(value)));
+            }
+        }
+
+        return window(text("Instance: " + row.cb_name), vbox(std::move(sections)) | vscroll_indicator | yframe) |
+               flex;
+    });
+
+    // --- message panel (scrollable, optionally filtered to the selected instance) -----------
+    auto messages = Renderer([&] {
+        std::string filter_name;
+        std::vector<std::string> shown;
+        {
+            std::scoped_lock lock(m_state_mutex);
+            if (m_log_filter_selected && m_selected_row >= 0 &&
+                m_selected_row < static_cast<int>(m_status_rows.size())) {
+                filter_name = m_status_rows[static_cast<std::size_t>(m_selected_row)].cb_name;
+            }
+            for (auto const& entry : m_log_messages) {
+                if (filter_name.empty() || entry.first == filter_name) {
+                    shown.push_back(entry.second);
+                }
+            }
+        }
+
+        // Newest first, so the latest message is visible without scrolling; wheel/keys scroll back.
+        Elements lines;
+        for (auto it = shown.rbegin(); it != shown.rend(); ++it) {
+            lines.push_back(text(*it));
+        }
+        if (lines.empty()) {
+            lines.push_back(text("(no messages)") | dim);
+        }
+
+        std::string title = "Messages [" + (filter_name.empty() ? std::string("all") : filter_name) +
+                            "]   (wheel/PgUp/PgDn scroll, f filter)";
+        return window(text(title), vbox(std::move(lines)));
+    });
+
+    // --- overall layout: list (left) | details (right), messages (bottom), with draggable borders.
+    // The menu is the interactive child of the list panel so it receives keyboard/mouse events.
+    auto list_panel = Renderer(instance_menu, [&] {
+        return window(text("ChargeBridges (" + std::to_string(m_status_rows.size()) + ")"),
+                      vbox({
+                          list_header(),
+                          separator(),
+                          instance_menu->Render() | vscroll_indicator | yframe | flex,
+                      }));
+    });
+
+    // Details and messages are wrapped in scrollers so the mouse wheel / keys scroll them.
+    auto detail_panel = Scroller(detail);
+    auto split = ResizableSplitLeft(list_panel, detail_panel, &m_list_split_size);
+
+    if (m_options.status_message_lines > 0) {
+        m_msg_split_size = std::max(3, static_cast<int>(m_options.status_message_lines) + 2);
+        split = ResizableSplitBottom(Scroller(messages), split, &m_msg_split_size);
+    }
+
+    auto app = Renderer(split, [&] {
+        return vbox({
+            text("PIONIX ChargeBridge") | bold | hcenter,
+            text("[ click/↑↓ select   wheel scroll   drag borders to resize   f filter log   q quit ]") | dim |
+                hcenter,
+            separator(),
+            split->Render() | flex,
+        });
+    });
+
+    // Only intercept the global shortcuts; selection, scrolling and border-dragging are handled by
+    // the components themselves (menu, scrollers, resizable splits).
+    auto root = CatchEvent(app, [&](const Event& event) {
+        if (event == Event::Character('f')) {
+            m_log_filter_selected = not m_log_filter_selected;
+            return true;
+        }
+        if (event == Event::Character('q') || event == Event::Escape) {
+            screen.Exit();
+            return true;
+        }
+        return false;
+    });
+
+    screen.Loop(root);
+
+    {
+        std::scoped_lock lock(m_screen_mutex);
+        m_screen = nullptr;
+    }
+
+    // If the loop exited because the user quit (rather than stop() being called), notify the app.
+    if (m_running.load(std::memory_order_acquire) && m_quit_handler) {
+        m_quit_handler();
     }
 }
 

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "protocol/cb_management.h"
+#include <charge_bridge/utilities/print_status.hpp>
 #include <chrono>
 #include <everest/io/can/can_payload.hpp>
 #include <everest/io/event/fd_event_register_interface.hpp>
@@ -10,6 +11,7 @@
 #include <everest/io/udp/udp_client.hpp>
 #include <everest/util/misc/observable.hpp>
 #include <memory>
+#include <optional>
 #include <protocol/cb_config.h>
 
 namespace charge_bridge {
@@ -36,6 +38,7 @@ public:
     void connect_cb_endpoint(std::string const& remote);
     bool available() const;
     int mcu_reset_count() const;
+    std::optional<utilities::chargebridge_telemetry> latest_telemetry() const;
 
 private:
     void handle_error_timer();
@@ -60,6 +63,8 @@ private:
     std::function<void(bool)> m_publish_connection_status;
     std::uint32_t m_mcu_timestamp{0};
     int m_mcu_reset_count{0};
+    utilities::chargebridge_telemetry m_telemetry;
+    bool m_have_telemetry{false};
     everest::lib::util::observable<bool> m_ready{false};
     everest::lib::io::event::event_fd& m_ready_notify;
 };

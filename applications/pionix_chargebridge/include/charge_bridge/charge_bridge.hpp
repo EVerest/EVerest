@@ -77,7 +77,8 @@ void print_charge_bridge_config(charge_bridge_config const& config);
 class charge_bridge : public everest::lib::io::event::fd_event_register_interface {
 public:
     charge_bridge(charge_bridge_config const& config,
-                  std::function<void(utilities::chargebridge_status)> status_sink = {});
+                  std::function<void(utilities::chargebridge_status)> status_sink = {},
+                  std::function<void(utilities::chargebridge_status)> tick_sink = {});
     ~charge_bridge();
 
     bool update_firmware(bool force);
@@ -140,6 +141,7 @@ private:
     std::thread m_manager;
     endpoint_intent_info m_endpoint_intent;
     std::function<void(utilities::chargebridge_status)> m_status_sink;
+    std::function<void(utilities::chargebridge_status)> m_tick_sink;
 
     charge_bridge_config m_config;
     std::unique_ptr<everest::lib::io::mqtt::mqtt_client> m_mqtt;

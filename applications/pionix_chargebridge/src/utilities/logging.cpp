@@ -69,8 +69,9 @@ print_error_sink current_print_error_sink() {
 
 class print_error_capture_streambuf : public std::streambuf {
 public:
-    void reset(std::string const& prefix) {
+    void reset(std::string const& device, std::string const& prefix) {
         publish_line();
+        m_device = device;
         m_buffer = prefix;
     }
 
@@ -109,7 +110,7 @@ private:
         if (!m_buffer.empty()) {
             auto sink = current_print_error_sink();
             if (sink) {
-                sink(std::move(m_buffer));
+                sink(m_device, std::move(m_buffer));
             }
         }
 
@@ -117,6 +118,7 @@ private:
     }
 
     static constexpr std::size_t k_print_error_max_length = 2048;
+    std::string m_device;
     std::string m_buffer;
 };
 
@@ -156,7 +158,7 @@ inline std::ostream& capture_print_error(std::string const& device, std::string 
     thread_local std::ostream capture_stream(&capture_buffer);
 
     auto const prefix = print_error_prefix_plain(device, unit, status);
-    capture_buffer.reset(prefix);
+    capture_buffer.reset(device, prefix);
     return capture_stream;
 }
 

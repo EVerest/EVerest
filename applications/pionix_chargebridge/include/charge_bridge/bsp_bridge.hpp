@@ -8,6 +8,8 @@
 #include <everest/util/misc/observable.hpp>
 #include <everest_api_types/evse_board_support/API.hpp>
 #include <memory>
+#include <optional>
+#include <string>
 
 namespace charge_bridge {
 
@@ -29,6 +31,8 @@ public:
     void disconnect_cb_endpoint();
     void connect_cb_endpoint(std::string const& remote);
     bool available() const;
+    // Latest CP state reported by the MCU ("A".."F", "DF", "INVALID"); empty until the first packet.
+    std::optional<std::string> cp_state() const;
 
 private:
     void handle_timer_event();
@@ -44,6 +48,7 @@ private:
     std::string m_udp_remote;
     everest::lib::io::event::timer_fd m_timer;
     bool m_udp_on_error{false};
+    std::optional<std::string> m_cp_state;
     everest::lib::util::observable<bool> m_ready{false};
     everest::lib::io::event::event_fd& m_ready_notify;
 };

@@ -67,8 +67,9 @@ endpoint_intent_info parse_endpoint_intent(std::string const& cb_remote) {
 } // namespace
 
 charge_bridge::charge_bridge(charge_bridge_config const& config,
-                             std::function<void(utilities::chargebridge_status)> status_sink) :
-    m_status_sink(std::move(status_sink)), m_config(config) {
+                             std::function<void(utilities::chargebridge_status)> status_sink,
+                             std::function<void(utilities::chargebridge_status)> tick_sink) :
+    m_status_sink(std::move(status_sink)), m_tick_sink(std::move(tick_sink)), m_config(config) {
     std::cout << "CB CONSTRUCT" << std::endl;
 
     m_endpoint_intent = parse_endpoint_intent(config.cb_remote);
@@ -768,6 +769,7 @@ utilities::chargebridge_status charge_bridge::get_status() {
     if (m_bsp) {
         auto available = m_bsp->available();
         status.bsp.emplace(available);
+        status.cp_state = m_bsp->cp_state();
     }
     if (m_plc) {
         auto available = m_plc->available();
@@ -777,10 +779,16 @@ utilities::chargebridge_status charge_bridge::get_status() {
         auto available = m_heartbeat->available();
         status.heartbeat.emplace(available);
         status.mcu_resets.emplace(m_heartbeat->mcu_reset_count());
+        status.telemetry = m_heartbeat->latest_telemetry();
     }
     if (m_io) {
         auto available = m_io->available();
         status.io.emplace(available);
+        if (auto io = m_io->latest_io()) {
+            status.gpio = std::move(io->gpio);
+            status.adc = std::move(io->adc);
+            status.io_telemetry = std::move(io->telemetry);
+        }
     }
 
     return status;
@@ -797,6 +805,11 @@ void charge_bridge::handle_ready() {
 void charge_bridge::handle_tick() {
     auto status = get_status();
     publish_status(status);
+    // The tick sink is wired up only for the interactive terminal UI, so its live readouts and
+    // telemetry charts refresh every tick. In log mode it stays unset to keep the log output unchanged.
+    if (m_tick_sink) {
+        m_tick_sink(status);
+    }
 }
 
 void charge_bridge::publish_status(utilities::chargebridge_status const& status) {

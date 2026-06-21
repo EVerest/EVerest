@@ -224,10 +224,19 @@ void io_bridge::handle_udp_rx(everest::lib::io::udp::udp_payload const& payload)
         return;
     }
 
+    // Snapshot the decoded contents for the terminal UI (this runs on the event loop thread, the
+    // same thread that reads it via get_status()). gpio_values/adc_values live in a packed struct,
+    // so copy element by element (no binding to array references).
+    m_io_state.gpio.clear();
+    m_io_state.adc.clear();
+    m_io_state.telemetry.clear();
+
     for (std::size_t i = 0; i < sizeof(data.data.gpio_values) / sizeof(data.data.gpio_values[0]); ++i) {
+        m_io_state.gpio.push_back(data.data.gpio_values[i]);
         send_mqtt(std::to_string(i), std::to_string(data.data.gpio_values[i]));
     }
     for (std::size_t i = 0; i < sizeof(data.data.adc_values) / sizeof(data.data.adc_values[0]); ++i) {
+        m_io_state.adc.push_back(data.data.adc_values[i]);
         send_adc_mqtt(std::to_string(i), std::to_string(data.data.adc_values[i]));
     }
     // Unstructured telemetry: republish each name -> value verbatim. We do not interpret the
@@ -238,8 +247,10 @@ void io_bridge::handle_udp_rx(everest::lib::io::udp::udp_payload const& payload)
         if (name.empty()) {
             continue;
         }
+        m_io_state.telemetry.emplace_back(name, entry.value);
         send_telemetry_mqtt(name, std::to_string(entry.value));
     }
+    m_have_io = true;
 }
 
 void io_bridge::handle_ready() {
@@ -248,6 +259,13 @@ void io_bridge::handle_ready() {
 
 bool io_bridge::available() const {
     return m_ready;
+}
+
+std::optional<io_state> io_bridge::latest_io() const {
+    if (not m_have_io) {
+        return std::nullopt;
+    }
+    return m_io_state;
 }
 
 void io_bridge::set_cb_connection_status(bool connected) {

@@ -10,7 +10,29 @@
 
 namespace {
 const int default_udp_timeout_ms = 1000;
+
+const char* cp_state_to_string(CpState state) {
+    switch (state) {
+    case CpState_A:
+        return "A";
+    case CpState_B:
+        return "B";
+    case CpState_C:
+        return "C";
+    case CpState_D:
+        return "D";
+    case CpState_E:
+        return "E";
+    case CpState_F:
+        return "F";
+    case CpState_DF:
+        return "DF";
+    case CpState_INVALID:
+    default:
+        return "INVALID";
+    }
 }
+} // namespace
 
 namespace charge_bridge {
 
@@ -49,6 +71,7 @@ void bsp_bridge::create_udp_client(std::string const& remote, uint16_t remote_po
     m_udp->set_rx_handler([this](auto const& data, auto&) {
         evse_bsp_cb_to_host msg;
         std::memcpy(&msg, data.buffer.data(), data.size());
+        m_cp_state = cp_state_to_string(msg.cp_state);
         m_api.set_cb_message(msg);
     });
     m_udp->set_error_handler([this, identifier](auto id, auto const& msg) {
@@ -94,6 +117,10 @@ void bsp_bridge::handle_status() {
 
 bool bsp_bridge::available() const {
     return m_ready;
+}
+
+std::optional<std::string> bsp_bridge::cp_state() const {
+    return m_cp_state;
 }
 
 bool bsp_bridge::register_events(everest::lib::io::event::fd_event_handler& handler) {

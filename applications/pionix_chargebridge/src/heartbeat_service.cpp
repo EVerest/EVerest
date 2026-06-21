@@ -138,6 +138,13 @@ int heartbeat_service::mcu_reset_count() const {
     return m_mcu_reset_count;
 }
 
+std::optional<utilities::chargebridge_telemetry> heartbeat_service::latest_telemetry() const {
+    if (not m_have_telemetry) {
+        return std::nullopt;
+    }
+    return m_telemetry;
+}
+
 void heartbeat_service::handle_udp_rx(everest::lib::io::udp::udp_payload const& payload) {
     CbManagementPacket<CbHeartbeatReplyPacket> data;
     if (payload.size() == sizeof(data)) {
@@ -152,12 +159,17 @@ void heartbeat_service::handle_udp_rx(everest::lib::io::udp::udp_payload const& 
         }
         m_mcu_timestamp = mcu_current;
 
-        // TODO: Once we have the telemetry framework in EVerest, we should publish those values.
-        /*printf(
-            "CP: %.2f/%.2f PP: %i MCU_temp %i degC\nVoltages: 12V: %.2f, -12V: %.2f, ref %.3f, 3.3V: %.3f, core:
-           %.3f\n", data.data.cp_hi_mV / 1000., data.data.cp_lo_mV / 1000., (int)data.data.pp_mOhm / 1000,
-            data.data.temperature_mcu_C, data.data.vdd_12V/1000., data.data.vdd_N12V/1000., data.data.vdd_refint/1000.,
-           data.data.vdd_3v3/1000., data.data.vdd_core/1000.);*/
+        // Snapshot the numeric telemetry for the interactive terminal UI (live readouts/sparklines).
+        // This runs on the event loop thread, the same thread that reads it via get_status().
+        m_telemetry.cp_hi_mV = data.data.cp_hi_mV;
+        m_telemetry.cp_lo_mV = data.data.cp_lo_mV;
+        m_telemetry.pp_mOhm = data.data.pp_mOhm;
+        m_telemetry.temperature_mcu_C = data.data.temperature_mcu_C;
+        m_telemetry.temperature_pcb_C = data.data.temperature_pcb_C;
+        m_telemetry.vdd_12V_mV = data.data.vdd_12V;
+        m_telemetry.vdd_N12V_mV = data.data.vdd_N12V;
+        m_telemetry.vdd_3v3_mV = data.data.vdd_3v3;
+        m_have_telemetry = true;
     } else {
         std::cout << "INVALID DATA SIZE in UDP RX of HEARTBEAT: " << payload.size() << " vs " << sizeof(data)
                   << std::endl;
