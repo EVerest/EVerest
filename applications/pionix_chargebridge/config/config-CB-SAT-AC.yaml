@@ -10,7 +10,7 @@ heartbeat:
   connection_to_s: 10
 
 telemetry:
-  enable: false
+  enable: true
   mqtt_remote: "localhost"
   mqtt_port: 1883
   telemetry_topic: "pionix/chargebridge/telemetry"

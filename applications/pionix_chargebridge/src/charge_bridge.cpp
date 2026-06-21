@@ -469,8 +469,11 @@ void charge_bridge::manage(everest::lib::io::event::fd_event_handler& handler, s
 
             m_mqtt->set_callback_connect(
                 [this](auto&, auto, auto, auto const&) { m_1s_tick.set_timeout(std::chrono::seconds(1)); });
-            register_manage_events(*m_event_handler);
         }
+        // Register the manage events (readiness notifier + tick) regardless of telemetry, so the
+        // status report is produced even when telemetry/MQTT is disabled. The MQTT fd itself is only
+        // registered when the telemetry client exists (see register_manage_events).
+        register_manage_events(*m_event_handler);
     });
 
     if (is_mdns_endpoint()) {
@@ -850,7 +853,7 @@ void charge_bridge::publish_status(utilities::chargebridge_status const& status)
     if (status.heartbeat.has_value()) {
         auto available = status.heartbeat.value();
         result = result && available;
-        publish_status("heatbeat", available);
+        publish_status("heartbeat", available);
     }
     if (status.gpio.has_value()) {
         auto available = status.gpio.value();
@@ -880,11 +883,15 @@ bool charge_bridge::register_manage_events(everest::lib::io::event::fd_event_han
         handler.register_event_handler(&m_1s_tick, everest::lib::util::bind_obj(&charge_bridge::handle_tick, this)) &&
         result;
 
+    // The readiness notifier drives the status report (status UI line + the telemetry status publish),
+    // so it must be registered regardless of telemetry. publish_status() itself no-ops when telemetry
+    // is disabled, and the MQTT fd below is only registered when the client exists.
+    result = handler.register_event_handler(&m_ready_notify,
+                                            everest::lib::util::bind_obj(&charge_bridge::handle_ready, this)) &&
+             result;
+
     if (m_mqtt) {
         result = handler.register_event_handler(m_mqtt.get()) && result;
-        result = handler.register_event_handler(&m_ready_notify,
-                                                everest::lib::util::bind_obj(&charge_bridge::handle_ready, this)) &&
-                 result;
     }
 
     return result;
@@ -892,9 +899,9 @@ bool charge_bridge::register_manage_events(everest::lib::io::event::fd_event_han
 bool charge_bridge::unregister_manage_events(everest::lib::io::event::fd_event_handler& handler) {
     auto result = true;
     result = handler.unregister_event_handler(&m_1s_tick) && result;
+    result = handler.unregister_event_handler(&m_ready_notify) && result;
     if (m_mqtt) {
         result = handler.unregister_event_handler(m_mqtt.get()) && result;
-        result = handler.unregister_event_handler(&m_ready_notify) && result;
     }
 
     return result;
