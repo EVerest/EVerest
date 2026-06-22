@@ -20,17 +20,19 @@ namespace Everest::config {
 /// Owns the active-slot ModuleConfigurations as the single in-memory runtime authority.
 class ConfigServiceCore : public ConfigServiceInterface {
 public:
-    /// \param initial_module_configs Initial module configurations for the active slot.
     /// \param parse_settings Parse settings used to validate incoming YAML configs (paths to schemas, modules, etc.).
     /// \param db_connection  Shared, already-migrated SQLite connection (from open_config_database()).
     /// \param active_slot_id Slot ID that is currently booted.
     /// \param stop_fn        Callback to stop running modules (optional stub).
     /// \param restart_fn     Callback to restart modules (optional stub).
-    ConfigServiceCore(everest::config::ModuleConfigurations initial_module_configs,
-                      const ConfigParseSettings& parse_settings,
+    ConfigServiceCore(const ConfigParseSettings& parse_settings,
                       std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection,
                       std::optional<int> active_slot_id, std::function<StopModulesResult()> stop_fn = {},
                       std::function<RestartModulesResult()> restart_fn = {});
+
+    // --- Re-initialize configuration ---
+    // \brief Reloads the active_slot_id from the db and reloads the modules accordingly
+    void reinitialize_from_db();
 
     // --- Active-slot in-memory access (zero-copy) ---
     const everest::config::ModuleConfigurations& get_active_module_configurations() const override;
@@ -39,6 +41,7 @@ public:
     // --- Slot management ---
     std::vector<SlotInfo> list_all_slots() override;
     int get_active_slot_id() override;
+    int get_next_boot_slot_id() override;
     SetActiveSlotStatus mark_active_slot(int slot_id) override;
     DeleteSlotStatus delete_slot(int slot_id) override;
     DuplicateSlotResult duplicate_slot(int slot_id, std::optional<std::string> description) override;
