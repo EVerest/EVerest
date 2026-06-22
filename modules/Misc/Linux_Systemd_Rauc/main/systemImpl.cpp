@@ -39,6 +39,7 @@ fs::path create_temp_file(const fs::path& dir, const std::string& prefix) {
 
 void systemImpl::init() {
     this->scripts_path = mod->info.paths.libexec;
+    this->boot_reason_key = "ocpp_boot_reason";
 }
 
 void systemImpl::ready() {
@@ -161,6 +162,11 @@ bool systemImpl::handle_is_reset_allowed(types::system::ResetType& type) {
 }
 
 void systemImpl::handle_reset(types::system::ResetType& type, bool& scheduled) {
+    EVLOG_info << "Reset request received: " << type << ", " << (scheduled ? "" : "not ") << "scheduled";
+    if (!this->mod->r_store->call_exists(boot_reason_key)) {
+        this->mod->r_store->call_store(boot_reason_key,
+                                        boot_reason_to_string(types::system::BootReason::RemoteReset));
+    }
     if (type == types::system::ResetType::Soft) {
         EVLOG_info << "Performing soft reset";
         // This will effectivly stop everest and make it restart via systemd
@@ -179,7 +185,14 @@ bool systemImpl::handle_set_system_time(std::string& timestamp) {
 }
 
 types::system::BootReason systemImpl::handle_get_boot_reason() {
-    return types::system::BootReason::Unknown;
+    auto reason_variant = this->mod->r_store->call_load(boot_reason_key);
+    auto* reason = std::get_if<std::string>(&reason_variant);
+    std::string final_reason{boot_reason_to_string(types::system::BootReason::PowerUp)};
+    if (reason != nullptr) {
+        final_reason = *reason;
+    }
+    this->mod->r_store->call_delete(boot_reason_key);
+    return types::system::string_to_boot_reason(final_reason);
 }
 
 void systemImpl::handle_allow_firmware_installation() {
