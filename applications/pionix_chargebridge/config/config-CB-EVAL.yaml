@@ -4,7 +4,7 @@ charge_bridge:
   #ip: chargebridge-44b7d0c98099.local
   #ip: chargebridge-44b7d0c99629.local
   fw_file: ./firmware/charge-bridge-fw_complete.cbfw
-  fw_update_on_start: false
+  fw_update_on_start: true
   mdns_name: ""
 
 heartbeat:
