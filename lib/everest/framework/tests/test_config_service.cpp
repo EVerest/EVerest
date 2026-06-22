@@ -26,6 +26,9 @@ struct StubConfigService : Everest::config::ConfigServiceInterface {
     int get_active_slot_id() override {
         return 0;
     }
+    int get_next_boot_slot_id() override {
+        return 0;
+    }
     SetActiveSlotStatus mark_active_slot(int) override {
         return SetActiveSlotStatus::Success;
     }

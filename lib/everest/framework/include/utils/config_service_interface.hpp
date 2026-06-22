@@ -129,6 +129,7 @@ public:
     // --- Slot management ---
     virtual std::vector<SlotInfo> list_all_slots() = 0;
     virtual int get_active_slot_id() = 0;
+    virtual int get_next_boot_slot_id() = 0;
     virtual SetActiveSlotStatus mark_active_slot(int slot_id) = 0;
     virtual DeleteSlotStatus delete_slot(int slot_id) = 0;
     virtual DuplicateSlotResult duplicate_slot(int slot_id, std::optional<std::string> description) = 0;
