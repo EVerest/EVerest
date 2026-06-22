@@ -11,9 +11,12 @@
 
 #include <everest/logging.hpp>
 #include <ocpp/v2/enums.hpp>
+#include <ocpp/v2/ocpp16_legacy_ctrlr_default_schema.hpp>
 
 const static std::string STANDARDIZED_COMPONENT_CONFIG_DIR = "standardized";
 const static std::string CUSTOM_COMPONENT_CONFIG_DIR = "custom";
+const static std::string OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG = "OCPP16LegacyCtrlr";
+const static std::string DEFAULT_SOURCE = "default";
 
 using namespace everest::db;
 using namespace everest::db::sqlite;
@@ -61,6 +64,24 @@ component_exists_in_db(const std::map<ComponentKey, std::vector<DeviceModelVaria
 ///
 bool component_exists_in_config(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_config,
                                 const ComponentKey& component);
+
+///
+/// \brief Get all component properties (variables) from the given (component) json.
+/// \param component_properties The json component properties
+/// \return A vector with all Variables belonging to this component.
+///
+std::vector<DeviceModelVariable> get_all_component_properties(const json& component_properties) {
+    std::vector<DeviceModelVariable> variables;
+    variables.reserve(component_properties.size());
+    for (const auto& variable : component_properties.items()) {
+        const DeviceModelVariable v = variable.value();
+
+        variables.push_back(v);
+    }
+
+    return variables;
+}
+
 } // namespace
 
 InitDeviceModelDb::InitDeviceModelDb(const std::filesystem::path& database_path,
@@ -75,9 +96,22 @@ InitDeviceModelDb::~InitDeviceModelDb() {
     close_connection();
 }
 
+bool InitDeviceModelDb::is_db_initialized() {
+    if (!this->database_exists) {
+        return false;
+    }
+    try {
+        this->database->open_connection();
+        return this->database->get_user_version() > 0;
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Could not read device model database user_version: " << e.what();
+        return false;
+    }
+}
+
 void InitDeviceModelDb::initialize_database(
-    const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
-    bool delete_db_if_exists = true) {
+    const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs, bool delete_db_if_exists,
+    bool inject_ocpp16_legacy_ctrlr_fallback) {
     execute_init_sql(delete_db_if_exists);
 
     // Get existing components from the database.
@@ -86,8 +120,15 @@ void InitDeviceModelDb::initialize_database(
         existing_components = get_all_components_from_db();
     }
 
-    // Check if the config is consistent.
-    check_integrity(component_configs);
+    // If OCPP16LegacyCtrlr is not present in the config files nor the database, add the built-in default config for it.
+    // This ensures the OCPP 1.6 device model bridge works even with a custom DeviceModelConfigPath that does not
+    // include the file.
+    const bool config_files_contain_ocpp16_legacy_ctrlr =
+        std::any_of(component_configs.begin(), component_configs.end(),
+                    [](const auto& c) { return c.first.name == OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG; });
+    const bool db_contains_ocpp16_legacy_ctrlr =
+        std::any_of(existing_components.begin(), existing_components.end(),
+                    [](const auto& c) { return c.first.name == OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG; });
 
     // Components in the database that no longer have a matching entry in the component
     // config (e.g. NetworkConfiguration_<N>.json was removed from the install) are kept
@@ -98,10 +139,46 @@ void InitDeviceModelDb::initialize_database(
         warn_about_components_missing_from_config(component_configs, existing_components);
     }
 
+    // Only allocate an augmented copy when the fallback component is actually missing.
+    std::optional<std::map<ComponentKey, std::vector<DeviceModelVariable>>> augmented;
+    if (inject_ocpp16_legacy_ctrlr_fallback && !config_files_contain_ocpp16_legacy_ctrlr &&
+        !db_contains_ocpp16_legacy_ctrlr) {
+        EVLOG_warning
+            << "OCPP16LegacyCtrlr not found in component config directory or database, using built-in defaults";
+        try {
+            const json fallback_json = json::parse(get_default_ocpp16_legacy_ctrlr_schema());
+            const ComponentKey key = fallback_json;
+            const std::vector<DeviceModelVariable> variables =
+                get_all_component_properties(fallback_json.at("properties"));
+            augmented = component_configs;
+            augmented->insert({key, variables});
+        } catch (const json::parse_error& e) {
+            EVLOG_error << "Failed to parse built-in OCPP16LegacyCtrlr fallback: " << e.what();
+        }
+    }
+
+    const auto& configs = augmented.has_value() ? *augmented : component_configs;
+
+    // Check if the config is consistent.
+    check_integrity(configs);
+
     // Starting a transaction makes this a lot faster (inserting all components takes a few seconds without it and a
     // few milliseconds if it is done inside a transaction).
     std::unique_ptr<TransactionInterface> transaction = database->begin_transaction();
-    insert_components(component_configs, existing_components);
+    insert_components(configs, existing_components);
+
+    // If the caller explicitly opts out of the OCPP16LegacyCtrlr fallback, also remove any stale entry that may have
+    // been injected by an older version of this function.
+    if (!inject_ocpp16_legacy_ctrlr_fallback && !config_files_contain_ocpp16_legacy_ctrlr &&
+        db_contains_ocpp16_legacy_ctrlr) {
+        const auto it = std::find_if(existing_components.begin(), existing_components.end(), [](const auto& c) {
+            return c.first.name == OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG;
+        });
+        if (it != existing_components.end()) {
+            remove_component_from_db(it->first);
+        }
+    }
+
     transaction->commit();
 }
 
@@ -145,23 +222,6 @@ std::vector<std::filesystem::path> get_component_config_from_directory(const std
     }
 
     return component_config_files;
-}
-
-///
-/// \brief Get all component properties (variables) from the given (component) json.
-/// \param component_properties The json component properties
-/// \return A vector with all Variables belonging to this component.
-///
-std::vector<DeviceModelVariable> get_all_component_properties(const json& component_properties) {
-    std::vector<DeviceModelVariable> variables;
-    variables.reserve(component_properties.size());
-    for (const auto& variable : component_properties.items()) {
-        const DeviceModelVariable v = variable.value();
-
-        variables.push_back(v);
-    }
-
-    return variables;
 }
 
 ///
@@ -230,6 +290,22 @@ get_all_component_configs(const std::filesystem::path& directory) {
     components.merge(standardized_components_map);
 
     return components;
+}
+
+void ensure_ocpp16_legacy_ctrlr(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs) {
+    const bool already_present = std::any_of(component_configs.begin(), component_configs.end(), [](const auto& c) {
+        return c.first.name == OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG;
+    });
+    if (already_present) {
+        return;
+    }
+    try {
+        const json fallback_json = json::parse(get_default_ocpp16_legacy_ctrlr_schema());
+        const ComponentKey key = fallback_json;
+        component_configs[key] = get_all_component_properties(fallback_json.at("properties"));
+    } catch (const json::parse_error& e) {
+        EVLOG_error << "Failed to parse built-in OCPP16LegacyCtrlr fallback: " << e.what();
+    }
 }
 
 void InitDeviceModelDb::insert_components(
@@ -355,8 +431,9 @@ void InitDeviceModelDb::update_variable_characteristics(const VariableCharacteri
                                                         const std::int64_t& characteristics_id,
                                                         const std::int64_t& variable_id) {
     static const std::string update_characteristics_statement =
-        "UPDATE VARIABLE_CHARACTERISTICS SET DATATYPE_ID=@datatype_id, VARIABLE_ID=@variable_id, MAX_LIMIT=@max_limit, "
-        "MIN_LIMIT=@min_limit, SUPPORTS_MONITORING=@supports_monitoring, UNIT=@unit, VALUES_LIST=@values_list WHERE "
+        "UPDATE VARIABLE_CHARACTERISTICS SET DATATYPE_ID=@datatype_id, VARIABLE_ID=@variable_id, "
+        "MAX_LIMIT=COALESCE(MAX_LIMIT, @max_limit), MIN_LIMIT=COALESCE(MIN_LIMIT, @min_limit), "
+        "SUPPORTS_MONITORING=@supports_monitoring, UNIT=@unit, VALUES_LIST=@values_list WHERE "
         "ID=@characteristics_id";
 
     std::unique_ptr<StatementInterface> update_statement;
@@ -526,7 +603,8 @@ void InitDeviceModelDb::delete_variable(const DeviceModelVariable& variable) {
 }
 
 void InitDeviceModelDb::insert_attribute(const VariableAttribute& attribute, const std::uint64_t& variable_id,
-                                         const std::optional<std::string>& default_actual_value) {
+                                         const std::optional<std::string>& default_actual_value,
+                                         const std::optional<std::string>& value_source) {
     static const std::string statement =
         "INSERT OR REPLACE INTO VARIABLE_ATTRIBUTE (VARIABLE_ID, MUTABILITY_ID, PERSISTENT, CONSTANT, TYPE_ID) "
         "VALUES(@variable_id, @mutability_id, @persistent, @constant, @type_id)";
@@ -562,7 +640,7 @@ void InitDeviceModelDb::insert_attribute(const VariableAttribute& attribute, con
         insert_variable_attribute_value(
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access): has_attribute_actual_value ensures this
             attribute_id, (attribute.value.has_value() ? attribute.value.value().get() : default_actual_value.value()),
-            true);
+            true, value_source.value_or(DEFAULT_SOURCE));
     }
 }
 
@@ -570,7 +648,7 @@ void InitDeviceModelDb::insert_attributes(const std::vector<DbVariableAttribute>
                                           const std::uint64_t& variable_id,
                                           const std::optional<std::string>& default_actual_value) {
     for (const auto& attribute : attributes) {
-        insert_attribute(attribute.variable_attribute, variable_id, default_actual_value);
+        insert_attribute(attribute.variable_attribute, variable_id, default_actual_value, attribute.value_source);
     }
 }
 
@@ -599,17 +677,20 @@ void InitDeviceModelDb::update_attributes(const std::vector<DbVariableAttribute>
 
         if (it == db_attributes.end()) {
             // Variable attribute does not exist in the db, add to db.
-            insert_attribute(new_attribute.variable_attribute, variable_id, default_actual_value);
+            insert_attribute(new_attribute.variable_attribute, variable_id, default_actual_value,
+                             new_attribute.value_source);
         } else {
             if (is_attribute_different(new_attribute.variable_attribute, it->variable_attribute)) {
-                update_attribute(new_attribute.variable_attribute, *it, default_actual_value);
+                update_attribute(new_attribute.variable_attribute, *it, default_actual_value,
+                                 new_attribute.value_source);
             }
         }
     }
 }
 
 void InitDeviceModelDb::update_attribute(const VariableAttribute& attribute, const DbVariableAttribute& db_attribute,
-                                         const std::optional<std::string>& default_actual_value) {
+                                         const std::optional<std::string>& default_actual_value,
+                                         const std::optional<std::string>& value_source) {
     if (!db_attribute.db_id.has_value()) {
         EVLOG_error << "Can not update attribute: id not found";
         return;
@@ -667,7 +748,8 @@ void InitDeviceModelDb::update_attribute(const VariableAttribute& attribute, con
         if (!insert_variable_attribute_value(
                 static_cast<std::int64_t>(db_attribute.db_id.value()),
                 // NOLINTNEXTLINE(bugprone-unchecked-optional-access): has_attribute_actual_value ensures this
-                (attribute.value.has_value() ? attribute.value.value().get() : default_actual_value.value()), false)) {
+                (attribute.value.has_value() ? attribute.value.value().get() : default_actual_value.value()), false,
+                value_source.value_or(DEFAULT_SOURCE))) {
             EVLOG_error << "Can not update variable attribute (" << db_attribute.db_id.value()
                         << ") value: " << attribute.value.value_or("");
         }
@@ -698,15 +780,18 @@ void InitDeviceModelDb::delete_attribute(const DbVariableAttribute& attribute) {
 
 bool InitDeviceModelDb::insert_variable_attribute_value(const std::int64_t& variable_attribute_id,
                                                         const std::string& variable_attribute_value,
-                                                        const bool warn_source_not_default) {
+                                                        const bool warn_source_not_default,
+                                                        const std::string& value_source) {
     // Insert variable statement.
     // Use 'IS' when value can also be NULL
-    // Only update when VALUE_SOURCE is 'default', because otherwise it is already updated by the csms or the user and
-    // we don't overwrite that.
+    // Only update when VALUE_SOURCE is 'default'/empty/NULL, or when the existing source matches the new source
+    // (same-origin re-migration). This prevents a different module's 'default' from overwriting values that were
+    // deliberately set by a specific source (e.g. 'OCPP16Config').
     static const std::string statement = "UPDATE VARIABLE_ATTRIBUTE "
-                                         "SET VALUE = @value, VALUE_SOURCE = 'default' "
+                                         "SET VALUE = @value, VALUE_SOURCE = @value_source "
                                          "WHERE ID = @variable_attribute_id "
-                                         "AND (VALUE_SOURCE = 'default' OR VALUE_SOURCE = '' OR VALUE_SOURCE IS NULL)";
+                                         "AND (VALUE_SOURCE = 'default' OR VALUE_SOURCE = '' OR VALUE_SOURCE IS NULL "
+                                         "OR VALUE_SOURCE = @value_source)";
 
     std::unique_ptr<StatementInterface> insert_variable_attribute_statement;
     try {
@@ -718,6 +803,7 @@ bool InitDeviceModelDb::insert_variable_attribute_value(const std::int64_t& vari
     insert_variable_attribute_statement->bind_int("@variable_attribute_id",
                                                   static_cast<std::int32_t>(variable_attribute_id));
     insert_variable_attribute_statement->bind_text("@value", variable_attribute_value, SQLiteString::Transient);
+    insert_variable_attribute_statement->bind_text("@value_source", value_source, SQLiteString::Transient);
 
     if (insert_variable_attribute_statement->step() != SQLITE_DONE) {
         throw InitDeviceModelDbError("Could not set value '" + variable_attribute_value +
@@ -1268,9 +1354,9 @@ void from_json(const json& j, DeviceModelVariable& c) {
         c.instance = j.at("instance");
     }
 
-    if (j.contains("default")) {
+    if (j.contains(DEFAULT_SOURCE)) {
         // I want the default value as string here as it is stored in the db as a string as well.
-        const json& default_value = j.at("default");
+        const json& default_value = j.at(DEFAULT_SOURCE);
         c.default_actual_value = get_string_value_from_json(default_value);
     }
 

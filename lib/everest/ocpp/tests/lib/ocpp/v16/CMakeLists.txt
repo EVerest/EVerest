@@ -14,6 +14,7 @@ target_sources(libocpp_unit_tests PRIVATE
         v2config/test_pnc.cpp
         v2config/test_security.cpp
         v2config/test_smart_charging.cpp
+        v2config/test_integrity.cpp
         v2config/test_user_config.cpp
         profile_tests_common.cpp
         profile_testsA.cpp

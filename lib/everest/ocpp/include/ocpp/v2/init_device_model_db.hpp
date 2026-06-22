@@ -139,6 +139,12 @@ std::pair<ComponentKey, std::vector<DeviceModelVariable>> parse_component_config
 std::pair<ComponentKey, std::vector<DeviceModelVariable>>
 parse_component_config_from_string(const std::string& json_content);
 
+///
+/// \brief Ensure OCPP16LegacyCtrlr is present in component_configs. If absent, injects built-in defaults.
+/// \param component_configs    The component configs map to augment in-place.
+///
+void ensure_ocpp16_legacy_ctrlr(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs);
+
 class InitDeviceModelDb : public common::DatabaseHandlerCommon {
 private: // Members
     /// \brief Database path of the device model database.
@@ -160,21 +166,30 @@ public:
     ~InitDeviceModelDb() override;
 
     ///
+    /// \brief Returns true when the database file exists and has been initialized (user_version > 0).
+    ///        A zero user_version indicates the file was created but migrations never completed.
+    ///
+    bool is_db_initialized();
+
+    ///
     /// \brief Initialize the database schema and component config.
     /// \param component_configs    A map with all components, variables, characteristics and attributes.
     /// \param delete_db_if_exists  Set to true to delete the database if it already exists.
+    /// \param inject_ocpp16_legacy_ctrlr_fallback
+    ///                             If true and OCPP16LegacyCtrlr is absent from both \p component_configs
+    ///                             and the existing database, inject built-in defaults. Required for
+    ///                             backwards compatibility with component config directories that predate
+    ///                             the OCPP1.6 device model implementation.
     ///
     /// \throws InitDeviceModelDbError  - When database could not be initialized or
     ///                                 - Foreign keys could not be turned on or
     ///                                 - Something could not be added to, retrieved or removed from the database
-    /// \throws std::runtime_error      If something went wrong during migration
     /// \throws MigrationException  If something went wrong during migration
     /// \throws ConnectionException If the database could not be opened
-    /// \throws std::filesystem::filesystem_error   If the component config path does not exist
     ///
     ///
     void initialize_database(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
-                             const bool delete_db_if_exists);
+                             const bool delete_db_if_exists, const bool inject_ocpp16_legacy_ctrlr_fallback = true);
 
 private: // Functions
     ///
@@ -265,14 +280,16 @@ private: // Functions
 
     ///
     /// \brief Insert a variable attribute into the database.
-    /// \param attribute    The attribute to insert.
-    /// \param variable_id  The variable id the attribute belongs to.
+    /// \param attribute            The attribute to insert.
+    /// \param variable_id          The variable id the attribute belongs to.
     /// \param default_actual_value The default value for the 'Actual' attribute.
+    /// \param value_source         Optional source tag written to VALUE_SOURCE (defaults to "default").
     ///
     /// \throws InitDeviceModelDbError If attribute could not be inserted
     ///
     void insert_attribute(const VariableAttribute& attribute, const std::uint64_t& variable_id,
-                          const std::optional<std::string>& default_actual_value);
+                          const std::optional<std::string>& default_actual_value,
+                          const std::optional<std::string>& value_source = std::nullopt);
 
     ///
     /// \brief Insert variable attributes into the database.
@@ -304,14 +321,16 @@ private: // Functions
 
     ///
     /// \brief Update a single attribute
-    /// \param attribute        The attribute with the new values
-    /// \param db_attribute     The attribute currently in the database, that needs updating.
+    /// \param attribute            The attribute with the new values
+    /// \param db_attribute         The attribute currently in the database, that needs updating.
     /// \param default_actual_value The default value for the 'Actual' attribute.
+    /// \param value_source         Optional source tag written to VALUE_SOURCE (defaults to "default").
     ///
     /// \throws InitDeviceModelDbError If the attribute could not be updated
     ///
     void update_attribute(const VariableAttribute& attribute, const DbVariableAttribute& db_attribute,
-                          const std::optional<std::string>& default_actual_value);
+                          const std::optional<std::string>& default_actual_value,
+                          const std::optional<std::string>& value_source = std::nullopt);
 
     ///
     /// \brief Delete an attribute from the database.
@@ -322,19 +341,20 @@ private: // Functions
     void delete_attribute(const DbVariableAttribute& attribute);
 
     ///
-    /// \brief Insert varaible attribute value
+    /// \brief Insert variable attribute value
     /// \param variable_attribute_id    Variable attribute id
     /// \param variable_attribute_value Attribute value
-    /// \param warn_source_not_default  Put a warning in the log if the value could not be added because the value
-    /// source
-    ///                                 is not 'default'
+    /// \param warn_source_not_default  Log a debug message if the value could not be written because
+    ///                                 the existing VALUE_SOURCE is not 'default'
+    /// \param value_source             Source tag to write to VALUE_SOURCE (defaults to "default").
     /// \return true on success
     ///
     /// \throws InitDeviceModelDbError  When inserting failed
     ///
     bool insert_variable_attribute_value(const std::int64_t& variable_attribute_id,
                                          const std::string& variable_attribute_value,
-                                         const bool warn_source_not_default);
+                                         const bool warn_source_not_default,
+                                         const std::string& value_source = "default");
 
     ///
     /// \brief  Inserts a single monitor in the database
