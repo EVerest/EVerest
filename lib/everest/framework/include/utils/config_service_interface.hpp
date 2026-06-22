@@ -115,13 +115,19 @@ struct ActiveSlotUpdate {
 struct ConfigParameterUpdateNotice {
     everest::config::ConfigurationParameterIdentifier identifier;
     std::string value;
-    SetConfigParameterResult result;
+    SetConfigParameterResultEnum result;
+};
+
+struct Origin {
+    bool external;
+    std::optional<std::string> module_id;
 };
 
 struct ConfigurationUpdate {
     std::string timestamp;
     int slot_id;
     std::vector<ConfigParameterUpdateNotice> updates;
+    Origin origin;
 };
 
 struct GetConfigurationResult {
