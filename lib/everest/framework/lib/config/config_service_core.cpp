@@ -336,6 +336,14 @@ RestartModulesResult ConfigServiceCore::restart_modules() {
     return RestartModulesResult::Rejected;
 }
 
+void ConfigServiceCore::set_modules_running() {
+    modules_running_ = true;
+}
+
+void ConfigServiceCore::set_modules_stopped() {
+    modules_running_ = false;
+}
+
 // --- Push-event subscriptions ---
 
 void ConfigServiceCore::register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) {

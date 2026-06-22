@@ -737,6 +737,17 @@ int Manager::run() {
 
     RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
                                ms,     status_fifo,       retain_topics};
+
+    register_state_transition_handler([this, &config_service_core](ManagerState from, ManagerState to) {
+        // TODO(CB): This is black-and-white right now - maybe the transition states between running and stopped need to
+        // handled differently
+        if (to == ManagerState::Running) {
+            config_service_core->set_modules_running();
+        } else if (from == ManagerState::Running) {
+            config_service_core->set_modules_stopped();
+        }
+    });
+
     if (vm_.count("into-idle") == 0) {
         module_handles_ = handle_start_modules(runtime_ctx);
     } else {

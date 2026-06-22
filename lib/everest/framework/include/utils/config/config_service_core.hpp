@@ -52,6 +52,14 @@ public:
     // --- Module lifecycle ---
     StopModulesResult stop_modules() override;
     RestartModulesResult restart_modules() override;
+    // TODO(CB): Add these functions to the ConfigServiceInterface
+    // TODO(CB): Add tests?
+    void set_modules_running();
+    // TODO(CB): Do we need a in_transition case (modules are starting, so parameter changes might or might not arrive
+    // in time to be taken-into-account by the individual modules, but they aren't really running yet, so the
+    // runtime-cfg-parm-change mimic is not in place yet)
+    // void set_modules_in_transition();
+    void set_modules_stopped();
 
     // --- Push-event subscriptions ---
     void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) override;
@@ -64,6 +72,8 @@ private:
     /// \brief Keepalive for the shared connection
     std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_;
     int active_slot_id_;
+    // TODO(CB): Thread-safety?
+    bool modules_running_{false};
     std::function<StopModulesResult()> stop_fn_;
     std::function<RestartModulesResult()> restart_fn_;
 
