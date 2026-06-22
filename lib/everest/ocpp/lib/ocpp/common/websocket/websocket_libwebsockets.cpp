@@ -643,7 +643,9 @@ bool WebsocketLibwebsockets::initialize_connection_options(std::shared_ptr<Conne
 
     // Lifetime of this is important since we use the data from this in private_key_callback()
     std::optional<std::string> private_key_password;
-    SSL_CTX* ssl_ctx = nullptr;
+    // Owned via RAII so it is freed on every early-return path; ownership is moved into
+    // ConnectionData only on the success path below.
+    std::unique_ptr<SSL_CTX> ssl_ctx;
 
     if (this->connection_options.security_profile == 2 || this->connection_options.security_profile == 3) {
         // Setup context - need to know the key type first
@@ -677,7 +679,7 @@ bool WebsocketLibwebsockets::initialize_connection_options(std::shared_ptr<Conne
 
         OpenSSLProvider provider;
         const SSL_METHOD* method = SSLv23_client_method();
-        ssl_ctx = SSL_CTX_new_ex(provider, provider.propquery_default(), method);
+        ssl_ctx.reset(SSL_CTX_new_ex(provider, provider.propquery_default(), method));
 
         if (ssl_ctx == nullptr) {
             ERR_print_errors_fp(stderr);
@@ -688,17 +690,17 @@ bool WebsocketLibwebsockets::initialize_connection_options(std::shared_ptr<Conne
         if (this->connection_options.enable_tls_keylog and this->connection_options.keylog_file.has_value()) {
             EVLOG_info << "Logging TLS secrets to: " << this->connection_options.keylog_file.value().string();
             keylog_file = this->connection_options.keylog_file;
-            SSL_CTX_set_keylog_callback(ssl_ctx, keylog_callback);
+            SSL_CTX_set_keylog_callback(ssl_ctx.get(), keylog_callback);
         }
 
         // Init TLS data
-        if (!tls_init(ssl_ctx, path_chain, path_key, private_key_password)) {
+        if (!tls_init(ssl_ctx.get(), path_chain, path_key, private_key_password)) {
             EVLOG_error << "Unable to init tls security options for websocket";
             return false;
         }
 
         // Setup our context
-        info.provided_client_ssl_ctx = ssl_ctx;
+        info.provided_client_ssl_ctx = ssl_ctx.get();
     }
 
     lws_context* lws_ctx = lws_create_context(&info);
@@ -708,7 +710,7 @@ bool WebsocketLibwebsockets::initialize_connection_options(std::shared_ptr<Conne
     }
 
     // Conn acquire the lws context and security context
-    new_connection_data->init_connection_context(lws_ctx, ssl_ctx);
+    new_connection_data->init_connection_context(lws_ctx, ssl_ctx.release());
     return true;
 }
 
