@@ -188,6 +188,8 @@ to_internal_api(ConfigurationParameterUpdateResultEnum_External const& val) {
         return TarT::WillApplyOnRestart;
     case SrcT::DoesNotExist:
         return TarT::DoesNotExist;
+    case SrcT::RetryLater:
+        return TarT::RetryLater;
     case SrcT::AccessDenied:
         return TarT::AccessDenied;
     case SrcT::Rejected:
@@ -209,6 +211,8 @@ to_external_api(ConfigurationParameterUpdateResultEnum_Internal const& val) {
         return TarT::WillApplyOnRestart;
     case SrcT::DoesNotExist:
         return TarT::DoesNotExist;
+    case SrcT::RetryLater:
+        return TarT::RetryLater;
     case SrcT::AccessDenied:
         return TarT::AccessDenied;
     case SrcT::Rejected:
@@ -225,6 +229,10 @@ ActiveSlotStatusEnum_Internal to_internal_api(ActiveSlotStatusEnum_External cons
         return TarT::Running;
     case SrcT::Stopped:
         return TarT::Stopped;
+    case SrcT::Starting:
+        return TarT::Starting;
+    case SrcT::Stopping:
+        return TarT::Stopping;
     case SrcT::FailedToStart:
         return TarT::FailedToStart;
     case SrcT::RestartTriggered:
@@ -242,6 +250,10 @@ ActiveSlotStatusEnum_External to_external_api(ActiveSlotStatusEnum_Internal cons
         return TarT::Running;
     case SrcT::Stopped:
         return TarT::Stopped;
+    case SrcT::Starting:
+        return TarT::Starting;
+    case SrcT::Stopping:
+        return TarT::Stopping;
     case SrcT::FailedToStart:
         return TarT::FailedToStart;
     case SrcT::RestartTriggered:
