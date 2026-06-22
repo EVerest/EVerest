@@ -33,8 +33,9 @@ struct Conf {
     int initial_connection_retry_delay_ms;
     int timezone_offset_minutes;
     int live_measurement_interval_ms;
-    int device_state_read_interval_ms;
+    int device_and_transaction_state_read_interval_ms;
     std::string public_key_format;
+    bool monitor_transaction_state;
 };
 
 class powermeterImpl : public powermeterImplBase {
@@ -61,6 +62,14 @@ public:
 
         static void set_pending_closed_transaction(powermeterImpl& self, bool pending) {
             self.m_pending_closed_transaction = pending;
+        }
+
+        static bool pending_closed_transaction(const powermeterImpl& self) {
+            return self.m_pending_closed_transaction;
+        }
+
+        static void monitor_transaction_ocmf_state(powermeterImpl& self, std::uint16_t ocmf_state) {
+            self.monitor_transaction_ocmf_state(ocmf_state);
         }
 
         static void set_transaction_id(powermeterImpl& self, std::string transaction_id) {
@@ -142,6 +151,10 @@ private:
     void read_firmware_versions();
     void read_serial_number();
     void read_transaction_state_and_id();
+    [[nodiscard]] std::uint16_t read_ocmf_state();
+    void apply_ocmf_state_on_configure(std::uint16_t ocmf_state);
+    void monitor_transaction_ocmf_state(std::uint16_t ocmf_state);
+    void clear_ocmf_transaction_closed_error();
     std::string read_ocmf_file();
     void synchronize_time();
     void set_timezone(int offset_minutes);

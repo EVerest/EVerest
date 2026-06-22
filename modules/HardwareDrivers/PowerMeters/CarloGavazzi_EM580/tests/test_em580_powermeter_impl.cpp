@@ -91,7 +91,7 @@ module::main::Conf make_test_conf() {
     conf.initial_connection_retry_delay_ms = 0;
     conf.timezone_offset_minutes = 0;
     conf.live_measurement_interval_ms = kDefaultIntervalMs;
-    conf.device_state_read_interval_ms = kDefaultIntervalMs;
+    conf.device_and_transaction_state_read_interval_ms = kDefaultIntervalMs;
     conf.communication_error_pause_delay_s = 0;
     return conf;
 }
@@ -240,4 +240,44 @@ TEST(EM580PowermeterImpl, StopTransactionUnknownIdReturnsErrorAndNoWrites) {
     ASSERT_TRUE(resp.error.has_value());
     EXPECT_EQ(*resp.error, "No open transaction or unknown transaction id");
     EXPECT_TRUE(transport_ptr->write_calls().empty());
+}
+
+TEST(EM580PowermeterImpl, MonitorTransactionStateReadyWhileActiveSetsPendingClosed) {
+    static Everest::PtrContainer<module::CarloGavazzi_EM580> dummy_mod;
+    auto conf = make_test_conf();
+    conf.monitor_transaction_state = true;
+    module::main::powermeterImpl impl(nullptr, dummy_mod, conf);
+
+    module::main::powermeterImpl::TestAccess::set_transaction_id(impl, "12345678-1234-5678-1234-567812345678");
+    EXPECT_FALSE(module::main::powermeterImpl::TestAccess::pending_closed_transaction(impl));
+
+    module::main::powermeterImpl::TestAccess::monitor_transaction_ocmf_state(impl,
+                                                                             em580::registers::MODBUS_OCMF_STATE_READY);
+
+    EXPECT_TRUE(module::main::powermeterImpl::TestAccess::pending_closed_transaction(impl));
+}
+
+TEST(EM580PowermeterImpl, MonitorTransactionStateReadyWhileInactiveIsIgnored) {
+    static Everest::PtrContainer<module::CarloGavazzi_EM580> dummy_mod;
+    auto conf = make_test_conf();
+    conf.monitor_transaction_state = true;
+    module::main::powermeterImpl impl(nullptr, dummy_mod, conf);
+
+    module::main::powermeterImpl::TestAccess::monitor_transaction_ocmf_state(impl,
+                                                                             em580::registers::MODBUS_OCMF_STATE_READY);
+
+    EXPECT_FALSE(module::main::powermeterImpl::TestAccess::pending_closed_transaction(impl));
+}
+
+TEST(EM580PowermeterImpl, MonitorTransactionStateDisabledWhileActiveIsIgnored) {
+    static Everest::PtrContainer<module::CarloGavazzi_EM580> dummy_mod;
+    auto conf = make_test_conf();
+    conf.monitor_transaction_state = false;
+    module::main::powermeterImpl impl(nullptr, dummy_mod, conf);
+
+    module::main::powermeterImpl::TestAccess::set_transaction_id(impl, "12345678-1234-5678-1234-567812345678");
+    module::main::powermeterImpl::TestAccess::monitor_transaction_ocmf_state(impl,
+                                                                             em580::registers::MODBUS_OCMF_STATE_READY);
+
+    EXPECT_FALSE(module::main::powermeterImpl::TestAccess::pending_closed_transaction(impl));
 }

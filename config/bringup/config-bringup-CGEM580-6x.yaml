@@ -16,7 +16,7 @@ active_modules:
         initial_connection_retry_delay_ms: 100
         timezone_offset_minutes: 60
         live_measurement_interval_ms: 1000      # once per second
-        device_state_read_interval_ms: 10000    # once per 10 seconds
+        device_and_transaction_state_read_interval_ms: 10000    # once per 10 seconds
     connections:
       modbus:                         # required interface: serial_communication_hub
         - module_id: comm_hub
@@ -34,7 +34,7 @@ active_modules:
         initial_connection_retry_delay_ms: 100
         timezone_offset_minutes: 60
         live_measurement_interval_ms: 1000
-        device_state_read_interval_ms: 10000
+        device_and_transaction_state_read_interval_ms: 10000
     connections:
       modbus:
         - module_id: comm_hub
@@ -52,7 +52,7 @@ active_modules:
         initial_connection_retry_delay_ms: 100
         timezone_offset_minutes: 60
         live_measurement_interval_ms: 1000
-        device_state_read_interval_ms: 10000
+        device_and_transaction_state_read_interval_ms: 10000
     connections:
       modbus:
         - module_id: comm_hub
@@ -70,7 +70,7 @@ active_modules:
         initial_connection_retry_delay_ms: 100
         timezone_offset_minutes: 60
         live_measurement_interval_ms: 1000
-        device_state_read_interval_ms: 10000
+        device_and_transaction_state_read_interval_ms: 10000
     connections:
       modbus:
         - module_id: comm_hub
@@ -88,7 +88,7 @@ active_modules:
         initial_connection_retry_delay_ms: 100
         timezone_offset_minutes: 60
         live_measurement_interval_ms: 1000
-        device_state_read_interval_ms: 10000
+        device_and_transaction_state_read_interval_ms: 10000
     connections:
       modbus:
         - module_id: comm_hub
@@ -106,7 +106,7 @@ active_modules:
         initial_connection_retry_delay_ms: 100
         timezone_offset_minutes: 60
         live_measurement_interval_ms: 1000
-        device_state_read_interval_ms: 10000
+        device_and_transaction_state_read_interval_ms: 10000
     connections:
       modbus:
         - module_id: comm_hub

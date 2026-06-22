@@ -21,7 +21,7 @@ This is an **EVerest Hardware Driver** module that:
 - **Resilience / retries**:
   - Separate initial connection retry settings vs. normal operation retry settings
   - Communication-fault raise/clear hooks
-- **Device state monitoring**: periodic read of device state bitfield (`device_state_read_interval_ms`)
+- **Device and transaction state monitoring**: periodic read of device state bitfield and OCMF transaction state (`device_and_transaction_state_read_interval_ms`)
 - **Signature key readout**: reads signature type and public keys; publishes public key (hex) via `public_key_ocmf`
 
 ## Hardware requirements & compatibility
@@ -78,7 +78,7 @@ active_modules:
         initial_connection_retry_delay_ms: 2000
         timezone_offset_minutes: 60
         live_measurement_interval_ms: 1000
-        device_state_read_interval_ms: 10000
+        device_and_transaction_state_read_interval_ms: 10000
     connections:
       modbus:
         - module_id: comm_hub
@@ -106,7 +106,7 @@ All parameters are defined in `modules/HardwareDrivers/PowerMeters/CarloGavazzi_
 | `initial_connection_retry_delay_ms` | integer | `2000` | Delay between initialization retries |
 | `timezone_offset_minutes` | integer | `0` | Timezone offset from UTC (minutes) |
 | `live_measurement_interval_ms` | integer | `1000` | Interval for reading/publishing live measurements |
-| `device_state_read_interval_ms` | integer | `10000` | Interval for reading device-state bitfield (VendorError reporting) |
+| `device_and_transaction_state_read_interval_ms` | integer | `10000` | Interval for reading device-state bitfield and OCMF transaction state (when `monitor_transaction_state` is enabled) |
 | `public_key_format` | enum | `binary` | The key format to use for the public key.
 
 ### Parameter tuning notes
@@ -121,7 +121,7 @@ All parameters are defined in `modules/HardwareDrivers/PowerMeters/CarloGavazzi_
 - **`communication_error_pause_delay_s`**:
   - After a communication exception in the live thread, the module waits this long before retrying.
   - If the line is physically broken (wrong wiring / adapter unplugged), increasing this value reduces log spam.
-- **`live_measurement_interval_ms` / `device_state_read_interval_ms`**:
+- **`live_measurement_interval_ms` / `device_and_transaction_state_read_interval_ms`**:
   - Keep live measurements reasonable for your bus speed and number of devices.
   - For multi-drop RS-485, consider increasing intervals if you see bus contention/timeouts.
 
