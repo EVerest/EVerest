@@ -336,8 +336,8 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
 
             if (result_enum == SetConfigParameterResultEnum::Applied or
                 result_enum == SetConfigParameterResultEnum::WillApplyOnRestart) {
-                const auto write_status = active_storage_->write_configuration_parameter(
-                    update.identifier, parameter->characteristics, update.value);
+                const auto write_status =
+                    active_storage_->write_configuration_parameter(update.identifier, parameter->characteristics, update.value);
                 if (write_status != everest::config::GetSetResponseStatus::OK) {
                     EVLOG_error << "ConfigServiceCore: Couldn't persist a configuration parameter change which was "
                                    "accepted by the module.";
