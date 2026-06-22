@@ -758,7 +758,7 @@ int Manager::run() {
 
     const auto migrations_dir = ms.runtime_settings.data_dir / "migrations";
 
-    auto config_service_core = std::make_unique<config::ConfigServiceCore>(ms, db_connection_);
+    config_service_core_ = std::make_unique<config::ConfigServiceCore>(ms, db_connection_);
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core_);
 
@@ -846,7 +846,8 @@ std::string_view Manager::state_to_string(ManagerState state) const {
 }
 
 // TODO(CB): this parameters list is a bit long(?)
-// TODO(CB)_REFACTOR: split this up into two (one using the given cfg (does this even need to be function?) and another writing to the db)
+// TODO(CB)_REFACTOR: split this up into two (one using the given cfg (does this even need to be function?) and another
+// writing to the db)
 // TODO(CB): Throw a special exception for invalid configs
 std::shared_ptr<const ManagerConfig> Manager::load_and_validate_config(
     const ManagerSettings& ms, const std::unique_ptr<everest::config::SqliteStorage>& db_storage,

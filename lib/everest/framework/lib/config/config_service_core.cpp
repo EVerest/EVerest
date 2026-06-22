@@ -21,14 +21,10 @@ std::string now_rfc3339() {
 } // namespace
 
 ConfigServiceCore::ConfigServiceCore(const ConfigParseSettings& parse_settings,
-                                     std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection,
-                                     std::function<StopModulesResult()> stop_fn,
-                                     std::function<RestartModulesResult()> restart_fn) :
+                                     std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection) :
     parse_settings_(parse_settings),
     slot_manager_(db_connection),
-    db_(std::move(db_connection)),
-    stop_fn_(std::move(stop_fn)),
-    restart_fn_(std::move(restart_fn)) {
+    db_(std::move(db_connection)) {
     active_slot_id_ = slot_manager_.get_next_boot_slot_id();
     // TODO(CB): Do not check is_valid, as this get removed
     if (slot_manager_.is_valid(active_slot_id_)) {
@@ -330,20 +326,6 @@ ConfigServiceCore::set_config_parameters(int slot_id, const std::vector<ConfigPa
 }
 
 // --- Module lifecycle ---
-
-StopModulesResult ConfigServiceCore::stop_modules() {
-    if (stop_fn_) {
-        return stop_fn_();
-    }
-    return StopModulesResult::Rejected;
-}
-
-RestartModulesResult ConfigServiceCore::restart_modules() {
-    if (restart_fn_) {
-        return restart_fn_();
-    }
-    return RestartModulesResult::Rejected;
-}
 
 void ConfigServiceCore::set_modules_running() {
     publish_active_slot_update(
