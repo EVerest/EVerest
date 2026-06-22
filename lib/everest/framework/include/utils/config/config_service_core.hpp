@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <utils/config/settings.hpp>
@@ -91,6 +92,8 @@ private:
 
     /// \brief Storage handle for the currently active slot, used to persist runtime config writes.
     std::unique_ptr<everest::config::SqliteStorage> active_storage_;
+
+    SetParamCallback set_parameter_callback_;
 };
 
 } // namespace Everest::config
