@@ -268,7 +268,11 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
     event.timestamp = now_rfc3339();
     event.slot_id = resolved_slot_id;
 
-    if (resolved_slot_id == active_slot_id_) {
+    if (modifies_active_slot and modules_in_transient) {
+        result.status = SetConfigParameterStatus::ModulesInTransientState;
+        result.parameter_results.emplace(
+            updates.size(), Everest::config::SetConfigPerParameterResult{SetConfigParameterResultEnum::RetryLater, ""});
+    } else if (modifies_active_slot and not modules_in_transient) {
         for (size_t i = 0; i < updates.size(); ++i) {
             const auto& update = updates[i];
             SetConfigParameterResultEnum& result_enum = result.parameter_results.value()[i].status;
