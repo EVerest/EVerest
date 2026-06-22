@@ -186,6 +186,14 @@ public:
     ///                          set_config_parameters) are routed through this interface.
     MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstraction, ConfigServiceInterface& config_svc);
 
+    /// \brief This class provides an MQTT interface to modules and uses the ConfigServiceInterface to fulfill incoming
+    /// requests This function allows to request a config parameter change from a module. This function skips validating
+    /// module_ids and characteristics on purpose. It should only be called with inputs known to work. \param
+    /// cfg_param_id  The identifier for the parameter to be changed \param value         The new configuration
+    /// parameter value as string
+    std::optional<Everest::config::SetResponse>
+    cmd_set_cfg_param(const everest::config::ConfigurationParameterIdentifier& cfg_param_id, const std::string& value);
+
 private:
     MQTTAbstraction& mqtt_abstraction;
     std::shared_ptr<TypedHandler> get_config_token;

@@ -100,9 +100,6 @@ struct LoadFromYamlResult {
 struct ConfigParameterUpdate {
     everest::config::ConfigurationParameterIdentifier identifier;
     std::string value;
-    /// \brief When true the module confirmed the value took effect without a reboot
-    /// When false (default) the value is only persisted to storage (WillApplyOnRestart).
-    bool immediately_applied = false;
 };
 
 struct ActiveSlotUpdate {
@@ -115,13 +112,19 @@ struct ActiveSlotUpdate {
 struct ConfigParameterUpdateNotice {
     everest::config::ConfigurationParameterIdentifier identifier;
     std::string value;
-    SetConfigParameterResult result;
+    SetConfigParameterResultEnum result;
+};
+
+struct Origin {
+    bool external;
+    std::optional<std::string> module_id;
 };
 
 struct ConfigurationUpdate {
     std::string timestamp;
     int slot_id;
     std::vector<ConfigParameterUpdateNotice> updates;
+    Origin origin;
 };
 
 struct GetConfigurationResult {
