@@ -17,8 +17,17 @@ using namespace Everest::tests;
 // ─── Minimal ConfigServiceInterface stub for handler tests ───────────────────
 
 struct StubConfigService : Everest::config::ConfigServiceInterface {
-    std::vector<SetConfigParameterResult> last_set_results{SetConfigParameterResult::Applied};
+    SetConfigParameterResult last_set_results;
     everest::config::ModuleConfigurations module_configurations;
+
+    using SetParamCallback =
+        std::function<void(const everest::config::ConfigurationParameterIdentifier&, const std::string&)>;
+    SetParamCallback set_parameter_callback_;
+
+    StubConfigService() {
+        last_set_results.parameter_results.emplace(
+            1, SetConfigPerParameterResult{SetConfigParameterResultEnum::Applied, ""});
+    }
 
     std::vector<SlotInfo> list_all_slots() override {
         return {};
@@ -48,8 +57,18 @@ struct StubConfigService : Everest::config::ConfigServiceInterface {
     GetConfigurationResult get_configuration(int) override {
         return {GetConfigurationStatus::Success, module_configurations};
     }
-    std::vector<SetConfigParameterResult> set_config_parameters(int,
-                                                                const std::vector<ConfigParameterUpdate>&) override {
+
+    SetConfigParameterResult set_config_parameters(int, const std::vector<ConfigParameterUpdate>& update,
+                                                   const Origin& origin) override {
+        set_parameter_callback_(update.at(0).identifier, update.at(0).value);
+        last_set_results.status = SetConfigParameterStatus::Ok;
+        SetConfigPerParameterResult set_result{SetConfigParameterResultEnum::Rejected, ""};
+        if (update.front().value == "new_value") {
+            set_result.status = SetConfigParameterResultEnum::Applied;
+        } else if (update.front().value == "bad_value") {
+            set_result.status = SetConfigParameterResultEnum::Rejected;
+        }
+        last_set_results.parameter_results = {set_result};
         return last_set_results;
     }
     GetConfigParametersResult
@@ -293,6 +312,11 @@ TEST_CASE("MqttConfigServiceHandler", "[config_service]") {
     stub_svc.module_configurations = config->get_module_configurations();
 
     MqttConfigServiceHandler service(mock, stub_svc);
+
+    stub_svc.set_parameter_callback_ = [&service](const everest::config::ConfigurationParameterIdentifier& cfg_param_id,
+                                                  const std::string& value) {
+        service.cmd_set_cfg_param(cfg_param_id, value);
+    };
 
     const std::string config_topic = prefix + "config/request";
 

@@ -109,10 +109,10 @@ GenericResponseStatus SqliteStorage::write_module_configs(const ModuleConfigurat
     try {
         auto transaction = this->db->begin_transaction();
 
-        write_module_config_items(module_configs);
+        auto response = write_module_config_items(module_configs);
 
         transaction->commit();
-        return GenericResponseStatus::OK;
+        return response;
     } catch (const std::exception& e) {
         EVLOG_error << "Failed writing config to database: " << e.what();
         return GenericResponseStatus::Failed;
@@ -125,10 +125,10 @@ GenericResponseStatus SqliteStorage::replace_module_configs(const ModuleConfigur
 
         delete_module_config_items();
 
-        write_module_config_items(module_configs);
+        auto response = write_module_config_items(module_configs);
 
         transaction->commit();
-        return GenericResponseStatus::OK;
+        return response;
     } catch (const std::exception& e) {
         EVLOG_error << "Failed writing config to database: " << e.what();
         return GenericResponseStatus::Failed;
@@ -269,6 +269,9 @@ SqliteStorage::get_configuration_parameter(const ConfigurationParameterIdentifie
         const auto status = stmt->step();
 
         if (status == SQLITE_DONE) {
+            EVLOG_error << "failed to get parameter " << identifier.module_id << " | "
+                        << identifier.module_implementation_id.value_or("<unspecified>") << " | "
+                        << identifier.configuration_parameter_name;
             response.status = GetSetResponseStatus::NotFound;
             return response;
         }
@@ -278,14 +281,23 @@ SqliteStorage::get_configuration_parameter(const ConfigurationParameterIdentifie
 
             ConfigurationParameter configuration_parameter;
             configuration_parameter.name = identifier.configuration_parameter_name;
+
+            EVLOG_error << "got parameter " << identifier.configuration_parameter_name;
+
             const auto value_str = stmt->column_text(0);
             ConfigurationParameterCharacteristics characteristics;
+
+            EVLOG_error << "    converting mutability" << identifier.configuration_parameter_name;
             characteristics.mutability = static_cast<Mutability>(stmt->column_int(1));
+
+            EVLOG_error << "    converting characteristics" << identifier.configuration_parameter_name;
             characteristics.datatype = static_cast<Datatype>(stmt->column_int(2));
             characteristics.unit = stmt->column_text_nullable(3);
             configuration_parameter.characteristics = characteristics;
             configuration_parameter.value = parse_config_value(characteristics.datatype, value_str);
             response.configuration_parameter = configuration_parameter;
+
+            EVLOG_error << "    done";
             return response;
         }
     } catch (const std::exception& e) {
@@ -444,6 +456,9 @@ GenericResponseStatus SqliteStorage::write_module_config_items(const ModuleConfi
                     GetSetResponseStatus::OK) {
                     EVLOG_error << "Failed to write configuration parameter for module: " << module_id
                                 << ", param: " << identifier.configuration_parameter_name;
+                } else {
+                    EVLOG_debug << "Written configuration parameter for modul: " << module_id
+                                << ", impl_id: " << impl_id << ", param: " << identifier.configuration_parameter_name;
                 }
             }
         }

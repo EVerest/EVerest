@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <utils/config/settings.hpp>
@@ -13,6 +14,16 @@
 #include <utils/config_service_interface.hpp>
 
 namespace Everest::config {
+
+/// \brief Helper type, which should not be part of the config_service_interface
+///
+/// The provided set_parameter_callback uses it to return success/failure
+enum class SetParameterResponse {
+    SetCallFailed,
+    ModuleReplied_Applied,
+    ModuleReplied_RequiresRestart,
+    ModuleReplied_Rejected,
+};
 
 /// \brief Core framework implementation of ConfigServiceInterface.
 ///
@@ -91,6 +102,8 @@ private:
 
     /// \brief Storage handle for the currently active slot, used to persist runtime config writes.
     std::unique_ptr<everest::config::SqliteStorage> active_storage_;
+
+    SetParamCallback set_parameter_callback_;
 };
 
 } // namespace Everest::config
