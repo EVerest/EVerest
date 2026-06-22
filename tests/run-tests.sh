@@ -25,6 +25,7 @@ set -euo pipefail
 #   --junitxml PATH      JUnit XML output (default: result.xml)
 #   --html PATH          HTML report output (default: report.html)
 #   --no-isolation       Disable network isolation
+#   --ocpp-impl V        OCPP module(s) to test: both (default), legacy, multi
 #   -h, --help           Show this help
 #
 # Environment variables:
@@ -45,6 +46,7 @@ JUNITXML="result.xml"
 HTML="report.html"
 ISOLATION="${NETWORK_ISOLATION:-true}"
 SUITE=""
+OCPP_IMPL="both"
 
 usage() {
     sed -n '3,/^$/s/^# \?//p' "$0"
@@ -59,6 +61,7 @@ while [[ $# -gt 0 ]]; do
         --junitxml)        JUNITXML="$2"; shift 2;;
         --html)            HTML="$2"; shift 2;;
         --no-isolation)    ISOLATION=false; shift;;
+        --ocpp-impl)       OCPP_IMPL="$2"; shift 2;;
         -h|--help)         usage;;
         -*)                echo "Unknown option: $1" >&2; exit 1;;
         *)                 SUITE="$1"; shift;;
@@ -70,6 +73,11 @@ if [[ -z "$SUITE" ]]; then
     echo "Run '$(basename "$0") --help' for usage." >&2
     exit 1
 fi
+
+case "$OCPP_IMPL" in
+    both|legacy|multi) ;;
+    *) echo "Error: --ocpp-impl must be one of: both, legacy, multi (got '$OCPP_IMPL')." >&2; exit 1;;
+esac
 
 echo "Suite:   $SUITE"
 echo "Python:  $PYTHON"
@@ -129,6 +137,8 @@ fi
 
 [[ -n "$ISOLATION_FLAG" ]] && PYTEST_ARGS+=("$ISOLATION_FLAG")
 
+OCPP_IMPL_ARGS=(--ocpp-impl "$OCPP_IMPL")
+
 # OCPP setup (certs + configs)
 setup_ocpp() {
     local aux_dir="$SCRIPT_DIR/ocpp_tests/test_sets/everest-aux"
@@ -149,6 +159,7 @@ case "$SUITE" in
 
         "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
             --junitxml="$JUNITXML" --html="$HTML" \
+            "${OCPP_IMPL_ARGS[@]}" \
             core_tests/*.py \
             framework_tests/*.py \
             async_api_tests/*.py \
@@ -192,6 +203,7 @@ case "$SUITE" in
         cd "$SCRIPT_DIR"
         "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
             --junitxml="$JUNITXML" --html="$HTML" \
+            "${OCPP_IMPL_ARGS[@]}" \
             ocpp_tests/test_sets/ocpp16/*.py \
             ocpp_tests/test_sets/ocpp201/*.py \
             ocpp_tests/test_sets/ocpp21/*.py
@@ -202,6 +214,7 @@ case "$SUITE" in
         cd "$SCRIPT_DIR"
         "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
             --junitxml="$JUNITXML" --html="$HTML" \
+            "${OCPP_IMPL_ARGS[@]}" \
             ocpp_tests/test_sets/ocpp16/*.py
         ;;
 
@@ -210,6 +223,7 @@ case "$SUITE" in
         cd "$SCRIPT_DIR"
         "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
             --junitxml="$JUNITXML" --html="$HTML" \
+            "${OCPP_IMPL_ARGS[@]}" \
             ocpp_tests/test_sets/ocpp201/*.py
         ;;
 
@@ -218,6 +232,7 @@ case "$SUITE" in
         cd "$SCRIPT_DIR"
         "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
             --junitxml="$JUNITXML" --html="$HTML" \
+            "${OCPP_IMPL_ARGS[@]}" \
             ocpp_tests/test_sets/ocpp21/*.py
         ;;
 

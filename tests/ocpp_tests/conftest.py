@@ -23,7 +23,18 @@ from everest.testing.ocpp_utils.fixtures import (
 
 import test_sets.everest_test_utils as everest_test_utils
 
+from everest.testing.core_utils.network_isolation import (
+    NetworkIsolationStrategy,
+    WORKER_INTERFACE_ENV,
+    WORKER_PROXY_INTERFACE_ENV,
+)
+from everest.testing.core_utils._configuration.everest_configuration_strategies.everest_configuration_strategy import (
+    EverestConfigAdjustmentStrategy,
+)
+
 from typing import Any, Callable
+
+import os
 
 import logging
 
@@ -44,9 +55,54 @@ def pytest_addoption(parser):
     except ValueError:
         logging.error("Option --everest-prefix already registered, skipping duplicate registration.")
 
+    try:
+        parser.addoption(
+            "--ocpp-impl",
+            action="store",
+            default="both",
+            choices=["both", "legacy", "multi"],
+            help="Which OCPP module implementation(s) to test: 'both' (default), 'legacy' (OCPP/OCPP201), or 'multi' (OCPPmulti).",
+        )
+    except ValueError:
+        logging.error("Option --ocpp-impl already registered, skipping duplicate registration.")
+
+
+def pytest_generate_tests(metafunc):
+    if "ocpp_impl" in metafunc.fixturenames:
+        selected = metafunc.config.getoption("--ocpp-impl")
+        impls = ["legacy", "multi"] if selected == "both" else [selected]
+        metafunc.parametrize("ocpp_impl", impls)
+
 
 def pytest_sessionfinish(session, exitstatus):
     pass
+
+
+@pytest.fixture
+def ocpp_impl():
+    # Overridden by pytest_generate_tests parametrization for every EVerest-booting test.
+    return "legacy"
+
+
+@pytest.fixture
+def everest_config_strategies(request, ocpp_impl, ocpp_version) -> list:
+    strategies = []
+    marker = request.node.get_closest_marker("everest_config_adaptions")
+    if marker:
+        for v in marker.args:
+            assert isinstance(v, EverestConfigAdjustmentStrategy), \
+                "Arguments to 'everest_config_adaptions' must all be instances of EverestConfigAdjustmentStrategy"
+            strategies.append(v)
+
+    interface = os.environ.get(WORKER_INTERFACE_ENV)
+    if interface:
+        proxy_interface = os.environ.get(WORKER_PROXY_INTERFACE_ENV)
+        strategies.append(NetworkIsolationStrategy(interface, proxy_interface))
+
+    if ocpp_impl == "multi":
+        strategies.append(everest_test_utils.OCPPMultiConfigurationStrategy(ocpp_version=ocpp_version))
+
+    return strategies
 
 
 @pytest.fixture(scope="session")
