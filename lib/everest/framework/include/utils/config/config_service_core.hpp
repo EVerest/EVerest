@@ -25,9 +25,7 @@ public:
     /// \param stop_fn        Callback to stop running modules (optional stub).
     /// \param restart_fn     Callback to restart modules (optional stub).
     ConfigServiceCore(const ConfigParseSettings& parse_settings,
-                      std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection,
-                      std::function<StopModulesResult()> stop_fn = {},
-                      std::function<RestartModulesResult()> restart_fn = {});
+                      std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection);
 
     // --- Re-initialize configuration ---
     // \brief Reloads the active_slot_id from the db and reloads the modules accordingly
@@ -52,8 +50,6 @@ public:
     set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates) override;
 
     // --- Module lifecycle ---
-    StopModulesResult stop_modules() override;
-    RestartModulesResult restart_modules() override;
     // TODO(CB): Add these functions to the ConfigServiceInterface
     // TODO(CB): Add tests?
     void set_modules_running();
@@ -76,8 +72,6 @@ private:
     int active_slot_id_;
     // TODO(CB): Thread-safety?
     bool modules_running_{false};
-    std::function<StopModulesResult()> stop_fn_;
-    std::function<RestartModulesResult()> restart_fn_;
 
     std::vector<std::function<void(const ActiveSlotUpdate&)>> active_slot_handlers_;
     std::vector<std::function<void(const ConfigurationUpdate&)>> config_update_handlers_;

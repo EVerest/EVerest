@@ -48,12 +48,6 @@ struct StubConfigService : Everest::config::ConfigServiceInterface {
                                                                 const std::vector<ConfigParameterUpdate>&) override {
         return last_set_results;
     }
-    StopModulesResult stop_modules() override {
-        return StopModulesResult::NoModulesToStop;
-    }
-    RestartModulesResult restart_modules() override {
-        return RestartModulesResult::NoConfigToStart;
-    }
     void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)>) override {
     }
     void register_config_update_handler(std::function<void(const ConfigurationUpdate&)>) override {
