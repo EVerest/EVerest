@@ -1,7 +1,7 @@
 charge_bridge:
   name: cb_eval
   ip: ANY_EVSE
-  #ip: chargebridge-44b7d0c9bcc0.local^
+  #ip: chargebridge-44b7d0c98099.local
   #ip: chargebridge-44b7d0c99629.local
   fw_file: ./firmware/charge-bridge-fw_complete.cbfw
   fw_update_on_start: false
@@ -27,7 +27,8 @@ safety:
   temperature_limit_C: 0
   relay_1:
     relay_mode: "PowerRelay"
-    feedback_enabled: true
+    # enable if you connect a relay with mirror contact
+    feedback_enabled: false
     feedback_delay_ms: 200
     feedback_inverted: true
     # PWM not supported yet
@@ -36,7 +37,8 @@ safety:
     switchoff_delay_ms: 10
   relay_2:
     relay_mode: "PowerRelay"
-    feedback_enabled: true
+    # enable if you connect a relay with mirror contact
+    feedback_enabled: false
     feedback_delay_ms: 200
     feedback_inverted: true
     pwm_dc: 100
@@ -213,27 +215,33 @@ io:
   # ADC channels (calibrated values pushed by the MCU in the combined IO packet).
   # Per-channel calibration polynomial: out = c0 + c1*x + c2*x^2 + c3*x^3, x = raw ADC mV.
   # Output unit: m°C for "OverTemperature" channels, mV otherwise. Identity = (0, 1, 0, 0).
+  # Correct coefficients for CB-EVAL board schematics, PT1000 may need better calibration for higher accuracy.
+
+  # Isoltated HV input
   adc_0:
     mode: "OVM"
     calib_c0: 0.0
-    calib_c1: 1.0
+    calib_c1: 601.0
     calib_c2: 0.0
     calib_c3: 0.0
+  # PT_1000_1 input
   adc_1:
     mode: "OverTemperature"
-    calib_c0: 0.0
-    calib_c1: 1.0
-    calib_c2: 0.0
-    calib_c3: 0.0
+    calib_c0: -44195.1264
+    calib_c1: 70.5974603
+    calib_c2: 0.00865485337
+    calib_c3: -0.00000122367625
+  # PT_1000_2 input
   adc_2:
     mode: "OverTemperature"
-    calib_c0: 0.0
-    calib_c1: 1.0
-    calib_c2: 0.0
-    calib_c3: 0.0
+    calib_c0: -44195.1264
+    calib_c1: 70.5974603
+    calib_c2: 0.00865485337
+    calib_c3: -0.00000122367625
+  # 12V/24V supply voltage
   adc_3:
     mode: "Generic"
     calib_c0: 0.0
-    calib_c1: 1.0
+    calib_c1: 18.8571428571
     calib_c2: 0.0
     calib_c3: 0.0
