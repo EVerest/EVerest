@@ -8,7 +8,10 @@
 // template version 3
 //
 
+#include "fsm_controller.hpp"
+#include <everest/slac/io.hpp>
 #include <generated/interfaces/slac/Implementation.hpp>
+#include <slac/slac.hpp>
 
 #include "../EvseSlac.hpp"
 
@@ -70,8 +73,10 @@ private:
     virtual void init() override;
     virtual void ready() override;
 
+    slac::fsm::evse::ContextCallbacks callbacks;
+    SlacIO slac_io;
+    std::unique_ptr<FSMController> fsm_ctrl{nullptr};
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
-    void run();
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
