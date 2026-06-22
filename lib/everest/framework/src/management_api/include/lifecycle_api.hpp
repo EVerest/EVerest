@@ -19,10 +19,25 @@ enum class ConfigurationApiStatus {
     AvailableRW,
 };
 
+enum class StopModulesResult {
+    Stopping,
+    NoModulesToStop,
+    Rejected
+};
+
+enum class RestartModulesResult {
+    Starting,
+    Restarting,
+    NoConfigToStart,
+    Rejected
+};
+
 class LifecycleAPI {
 public:
     LifecycleAPI(MQTTAbstraction& mqtt_abstraction, ::Everest::config::ConfigServiceInterface& config_service,
-                 ConfigurationApiStatus config_api_availability, bool readonly = true);
+                 ConfigurationApiStatus config_api_availability, bool readonly = true,
+                 std::function<StopModulesResult()> stop_fn = {},
+                 std::function<RestartModulesResult()> restart_fn = {});
 
     void modules_started_running();
     void modules_stopped_running();
@@ -35,11 +50,19 @@ private:
     ConfigurationApiStatus m_config_api_availability;
     const bool m_readonly;
 
+    std::function<StopModulesResult()> stop_fn_;
+    std::function<RestartModulesResult()> restart_fn_;
+
+    StopModulesResult stop_modules();
+    RestartModulesResult restart_modules();
+
     void generate_api_cmd_stop_modules();
     void generate_api_cmd_start_modules();
 
     // no need to have this, as updates are triggered via module_runtime_status_changed() calls
     // void generate_api_var_status();
+    void module_runtime_status_changed(bool running);
+
     void module_runtime_status_changed(bool running);
 
     using ParseAndPublishFtor = std::function<bool(std::string const&)>;

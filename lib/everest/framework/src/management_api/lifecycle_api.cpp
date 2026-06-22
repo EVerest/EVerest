@@ -41,16 +41,35 @@ namespace Everest::api::lifecycle {
 using ev_API::deserialize;
 
 LifecycleAPI::LifecycleAPI(MQTTAbstraction& mqtt_abstraction, ::Everest::config::ConfigServiceInterface& config_service,
-                           ConfigurationApiStatus config_api_availability, bool readonly) :
+                           ConfigurationApiStatus config_api_availability, bool readonly,
+                           std::function<StopModulesResult()> stop_fn,
+                           std::function<RestartModulesResult()> restart_fn) :
     m_mqtt_abstraction(mqtt_abstraction),
+    // TODO(CB): If we don't need m_config_service anymore, remove it (but maybe we want to publish the active_slot id?)
     m_config_service(config_service),
     m_config_api_availability(config_api_availability),
-    m_readonly(readonly) {
+    m_readonly(readonly),
+    stop_fn_(std::move(stop_fn)),
+    restart_fn_(std::move(restart_fn)) {
 
     m_topics.setup("_unused_", "lifecycle", 0);
 
     generate_api_cmd_stop_modules();
     generate_api_cmd_start_modules();
+}
+
+StopModulesResult LifecycleAPI::stop_modules() {
+    if (stop_fn_) {
+        return stop_fn_();
+    }
+    return StopModulesResult::Rejected;
+}
+
+RestartModulesResult LifecycleAPI::restart_modules() {
+    if (restart_fn_) {
+        return restart_fn_();
+    }
+    return RestartModulesResult::Rejected;
 }
 
 void LifecycleAPI::modules_started_running() {
@@ -69,7 +88,7 @@ void LifecycleAPI::generate_api_cmd_stop_modules() {
                 API_types_ext::StopModulesResult ext_res{API_types_ext::StopModulesResultEnum::Rejected};
                 m_mqtt_abstraction.publish(msg.replyTo, serialize(ext_res));
             } else {
-                auto res = m_config_service.stop_modules();
+                auto res = stop_modules();
                 API_types_ext::StopModulesResult ext_res{API_wrapper::to_external_api(res)};
                 m_mqtt_abstraction.publish(msg.replyTo, serialize(ext_res));
             }
@@ -88,7 +107,7 @@ void LifecycleAPI::generate_api_cmd_start_modules() {
                 API_types_ext::StartModulesResult ext_res{API_types_ext::StartModulesResultEnum::Rejected};
                 m_mqtt_abstraction.publish(msg.replyTo, serialize(ext_res));
             } else {
-                auto res = m_config_service.restart_modules();
+                auto res = restart_modules();
                 API_types_ext::StartModulesResult ext_res{API_wrapper::to_external_api(res)};
                 m_mqtt_abstraction.publish(msg.replyTo, serialize(ext_res));
             }
