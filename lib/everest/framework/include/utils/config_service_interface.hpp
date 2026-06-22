@@ -25,7 +25,7 @@ using SlotInfo = everest::config::SlotInfo;
 
 enum class SetActiveSlotStatus {
     Success,
-    AlreadyActive,
+    NoChangeRequired,
     DoesNotExist,
     Rejected
 };
@@ -64,6 +64,7 @@ enum class GetConfigurationStatus {
 
 enum class ActiveSlotStatus {
     Running,
+    Stopped,
     FailedToStart,
     RestartTriggered
 };
@@ -94,7 +95,8 @@ struct ConfigParameterUpdate {
 
 struct ActiveSlotUpdate {
     std::string timestamp;
-    int slot_id;
+    int active_slot_id;
+    std::optional<int> next_boot_slot_id;
     ActiveSlotStatus status;
 };
 

@@ -65,7 +65,8 @@ void ConfigServiceCore::reinitialize_from_db() {
         reload_from_storage();
         // TODO(CB): This was just a config reload, but nothing is running yet ...
         // TODO(CB): Better simply send active_slot_id + next_reboot_slot_id and leave this to the lifecycle API
-        publish_active_slot_update({now_rfc3339(), active_slot_id_, ActiveSlotStatus::Running});
+        publish_active_slot_update(
+            {now_rfc3339(), active_slot_id_, slot_manager_.get_next_boot_slot_id(), ActiveSlotStatus::Running});
     }
 }
 
@@ -114,15 +115,15 @@ int ConfigServiceCore::get_next_boot_slot_id() {
 }
 
 SetActiveSlotStatus ConfigServiceCore::mark_active_slot(int slot_id) {
-    if (slot_id == active_slot_id_) {
-        return SetActiveSlotStatus::AlreadyActive;
+    int next_boot_slot_id = slot_manager_.get_next_boot_slot_id();
+    if (slot_id == next_boot_slot_id) {
+        return SetActiveSlotStatus::NoChangeRequired;
     }
     const auto status = slot_manager_.set_next_boot_slot_id(slot_id);
     if (status != everest::config::GenericResponseStatus::OK) {
         return SetActiveSlotStatus::DoesNotExist;
     }
-    // TODO(CB): This is triggered even though the old slot's configuration is still running
-    publish_active_slot_update({now_rfc3339(), slot_id, ActiveSlotStatus::RestartTriggered});
+    publish_active_slot_update({now_rfc3339(), active_slot_id_, slot_id, ActiveSlotStatus::RestartTriggered});
     return SetActiveSlotStatus::Success;
 }
 
@@ -358,13 +359,14 @@ RestartModulesResult ConfigServiceCore::restart_modules() {
 }
 
 void ConfigServiceCore::set_modules_running() {
-    // TODO(CB): Maybe "Running" is not ideal here (because we don't republish on stopping)
-    // TODO(CB): Better simply send active_slot_id + next_reboot_slot_id and leave this to the lifecycle API
-    publish_active_slot_update({now_rfc3339(), active_slot_id_, ActiveSlotStatus::Running});
+    publish_active_slot_update(
+        {now_rfc3339(), active_slot_id_, slot_manager_.get_next_boot_slot_id(), ActiveSlotStatus::Running});
     modules_running_ = true;
 }
 
 void ConfigServiceCore::set_modules_stopped() {
+    publish_active_slot_update(
+        {now_rfc3339(), active_slot_id_, slot_manager_.get_next_boot_slot_id(), ActiveSlotStatus::Stopped});
     modules_running_ = false;
 }
 
