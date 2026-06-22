@@ -46,9 +46,6 @@ public:
     void modules_started_running();
     void modules_stopped_running();
 
-    void modules_started_running();
-    void modules_stopped_running();
-
 private:
     MQTTAbstraction& m_mqtt_abstraction;
     ::Everest::config::ConfigServiceInterface& m_config_service;
