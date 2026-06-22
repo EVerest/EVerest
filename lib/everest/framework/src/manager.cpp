@@ -766,13 +766,16 @@ int Manager::run() {
                                ms,     status_fifo,       retain_topics};
 
     register_state_transition_handler([this](ManagerState from, ManagerState to) {
-        // TODO(CB): This is black-and-white right now - maybe the transition states between running and stopped need to
-        // TODO(CB): handled differently (transition phase during which the active config slot cannot be modified? - >
-        // or better switch to stopped early and therefore don't ask the modules on parameter-changes anymore)
         if (to == ManagerState::Running) {
             config_service_core_->set_modules_running();
         } else if (from == ManagerState::Running) {
+            config_service_core_->set_modules_stopping();
+            // we consider ShutdownFinalizing to be "stopped": this allows ConfigServiceCore to consider the modules
+            // stopped and allow to process reinitilization
+        } else if (to == ManagerState::ShutdownFinalizing) {
             config_service_core_->set_modules_stopped();
+        } else if (to == ManagerState::StartingModules) {
+            config_service_core_->set_modules_starting();
         }
     });
 

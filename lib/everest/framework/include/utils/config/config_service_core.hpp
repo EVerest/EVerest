@@ -49,19 +49,20 @@ public:
     std::vector<SetConfigParameterResult>
     set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates) override;
 
-    // --- Module lifecycle ---
-    // TODO(CB): Add these functions to the ConfigServiceInterface
-    // TODO(CB): Add tests?
-    void set_modules_running();
-    // TODO(CB): Do we need a in_transition case (modules are starting, so parameter changes might or might not arrive
-    // in time to be taken-into-account by the individual modules, but they aren't really running yet, so the
-    // runtime-cfg-parm-change mimic is not in place yet)
-    // void set_modules_in_transition();
-    void set_modules_stopped();
-
     // --- Push-event subscriptions ---
     void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) override;
     void register_config_update_handler(std::function<void(const ConfigurationUpdate&)> handler) override;
+
+    // \brief Provide the means, to change module config parameters at runtime
+    using SetParamCallback = std::function<SetParameterResponse(
+        const everest::config::ConfigurationParameterIdentifier&, const std::string&)>;
+    void register_set_runtime_parameter_handler(const SetParamCallback& callback);
+
+    // --- Module state ---
+    void set_modules_stopped() override;
+    void set_modules_running() override;
+    void set_modules_starting() override;
+    void set_modules_stopping() override;
 
 private:
     everest::config::ModuleConfigurations module_configs_;
@@ -69,15 +70,14 @@ private:
     everest::config::SqliteConfigSlotManager slot_manager_;
     /// \brief Keepalive for the shared connection
     std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_;
-    int active_slot_id_;
-    // TODO(CB): Thread-safety?
-    bool modules_running_{false};
+    int active_slot_id_{-1};
+    ActiveSlotStatus module_status_{ActiveSlotStatus::Stopped};
 
     std::vector<std::function<void(const ActiveSlotUpdate&)>> active_slot_handlers_;
     std::vector<std::function<void(const ConfigurationUpdate&)>> config_update_handlers_;
 
     std::unique_ptr<everest::config::SqliteStorage> make_storage(int slot_id);
-    void publish_active_slot_update(const ActiveSlotUpdate& update);
+    void publish_active_slot_update();
     void publish_config_update(const ConfigurationUpdate& update);
 
     /// \brief Storage handle for the currently active slot, used to persist runtime config writes.

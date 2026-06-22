@@ -41,7 +41,30 @@ enum class SetConfigParameterResultEnum {
     Applied,
     WillApplyOnRestart,
     DoesNotExist,
+    RetryLater,
+    AccessDenied,
     Rejected
+};
+
+enum class SetConfigParameterStatus {
+    Ok,
+    Error,
+    ModulesInTransientState,
+    AccessDenied
+};
+
+struct SetConfigPerParameterResult {
+    SetConfigParameterResultEnum status;
+    std::string status_info;
+
+    SetConfigPerParameterResult(SetConfigParameterResultEnum status_, std::string status_info_) :
+        status(status_), status_info(status_info_){};
+};
+
+struct SetConfigParameterResult {
+    SetConfigParameterStatus status = SetConfigParameterStatus::Error;
+    std::string status_info;
+    std::optional<std::vector<SetConfigPerParameterResult>> parameter_results;
 };
 
 enum class GetConfigurationStatus {
@@ -52,6 +75,8 @@ enum class GetConfigurationStatus {
 enum class ActiveSlotStatus {
     Running,
     Stopped,
+    Starting,
+    Stopping,
     FailedToStart,
     RestartTriggered
 };
@@ -136,6 +161,12 @@ public:
     // --- Push-event subscriptions ---
     virtual void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) = 0;
     virtual void register_config_update_handler(std::function<void(const ConfigurationUpdate&)> handler) = 0;
+
+    // --- Module state ---
+    virtual void set_modules_stopped() = 0;
+    virtual void set_modules_running() = 0;
+    virtual void set_modules_starting() = 0;
+    virtual void set_modules_stopping() = 0;
 };
 
 } // namespace Everest::config
