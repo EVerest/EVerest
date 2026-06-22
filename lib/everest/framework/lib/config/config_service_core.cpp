@@ -20,12 +20,10 @@ std::string now_rfc3339() {
 }
 } // namespace
 
-ConfigServiceCore::ConfigServiceCore(everest::config::ModuleConfigurations initial_module_configs,
-                                     const ConfigParseSettings& parse_settings,
+ConfigServiceCore::ConfigServiceCore(const ConfigParseSettings& parse_settings,
                                      std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection,
                                      std::optional<int> active_slot_id, std::function<StopModulesResult()> stop_fn,
                                      std::function<RestartModulesResult()> restart_fn) :
-    module_configs_(std::move(initial_module_configs)),
     parse_settings_(parse_settings),
     slot_manager_(db_connection),
     db_(std::move(db_connection)),
@@ -47,9 +45,27 @@ ConfigServiceCore::ConfigServiceCore(everest::config::ModuleConfigurations initi
             slot_manager_.set_next_boot_slot_id(active_slot_id_);
         }
         active_storage_ = make_storage(active_slot_id_);
+        reload_from_storage();
     } else {
         // TODO(CB): What do we do now? (in the end it should end up in a confiuration_API-only mode, IF this API is
         // active, otherwise the manager should quit)
+        // TODO(CB): Maybe add query function for is_valid and set the underlying state here?
+    }
+}
+
+void ConfigServiceCore::reinitialize_from_db() {
+    if (modules_running_) {
+        // TODO(CB): Or better even throw?
+        return;
+    }
+    int new_active_slot_id = slot_manager_.get_next_boot_slot_id();
+    if (new_active_slot_id != active_slot_id_) {
+        active_slot_id_ = new_active_slot_id;
+        active_storage_ = make_storage(active_slot_id_);
+        reload_from_storage();
+        // TODO(CB): This was just a config reload, but nothing is running yet ...
+        // TODO(CB): Better simply send active_slot_id + next_reboot_slot_id and leave this to the lifecycle API
+        publish_active_slot_update({now_rfc3339(), active_slot_id_, ActiveSlotStatus::Running});
     }
 }
 
@@ -93,6 +109,10 @@ int ConfigServiceCore::get_active_slot_id() {
     return active_slot_id_;
 }
 
+int ConfigServiceCore::get_next_boot_slot_id() {
+    return slot_manager_.get_next_boot_slot_id();
+}
+
 SetActiveSlotStatus ConfigServiceCore::mark_active_slot(int slot_id) {
     if (slot_id == active_slot_id_) {
         return SetActiveSlotStatus::AlreadyActive;
@@ -101,6 +121,7 @@ SetActiveSlotStatus ConfigServiceCore::mark_active_slot(int slot_id) {
     if (status != everest::config::GenericResponseStatus::OK) {
         return SetActiveSlotStatus::DoesNotExist;
     }
+    // TODO(CB): This is triggered even though the old slot's configuration is still running
     publish_active_slot_update({now_rfc3339(), slot_id, ActiveSlotStatus::RestartTriggered});
     return SetActiveSlotStatus::Success;
 }
@@ -337,6 +358,9 @@ RestartModulesResult ConfigServiceCore::restart_modules() {
 }
 
 void ConfigServiceCore::set_modules_running() {
+    // TODO(CB): Maybe "Running" is not ideal here (because we don't republish on stopping)
+    // TODO(CB): Better simply send active_slot_id + next_reboot_slot_id and leave this to the lifecycle API
+    publish_active_slot_update({now_rfc3339(), active_slot_id_, ActiveSlotStatus::Running});
     modules_running_ = true;
 }
 
