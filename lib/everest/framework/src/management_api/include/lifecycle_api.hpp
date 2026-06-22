@@ -46,9 +46,6 @@ public:
     void modules_started_running();
     void modules_stopped_running();
 
-    void modules_started_running();
-    void modules_stopped_running();
-
 private:
     MQTTAbstraction& m_mqtt_abstraction;
     ::Everest::config::ConfigServiceInterface& m_config_service;
@@ -57,6 +54,12 @@ private:
     ConfigurationApiStatus m_config_api_availability;
     const bool m_readonly;
     ::Everest::config::ActiveSlotStatus m_last_module_status{::Everest::config::ActiveSlotStatus::Stopped};
+
+    std::function<StopModulesResult()> stop_fn_;
+    std::function<RestartModulesResult()> restart_fn_;
+
+    StopModulesResult stop_modules();
+    RestartModulesResult restart_modules();
 
     std::function<StopModulesResult()> stop_fn_;
     std::function<RestartModulesResult()> restart_fn_;

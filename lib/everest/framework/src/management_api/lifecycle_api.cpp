@@ -44,6 +44,7 @@ LifecycleAPI::LifecycleAPI(MQTTAbstraction& mqtt_abstraction, ::Everest::config:
                            std::function<StopModulesResult()> stop_fn,
                            std::function<RestartModulesResult()> restart_fn) :
     m_mqtt_abstraction(mqtt_abstraction),
+    // TODO(CB): If we don't need m_config_service anymore, remove it (but maybe we want to publish the active_slot id?)
     m_config_service(config_service),
     m_config_api_availability(config_api_availability),
     m_readonly(readonly),
@@ -55,6 +56,20 @@ LifecycleAPI::LifecycleAPI(MQTTAbstraction& mqtt_abstraction, ::Everest::config:
     generate_api_cmd_stop_modules();
     generate_api_cmd_start_modules();
     generate_api_cmd_get_everest_version();
+}
+
+StopModulesResult LifecycleAPI::stop_modules() {
+    if (stop_fn_) {
+        return stop_fn_();
+    }
+    return StopModulesResult::Rejected;
+}
+
+RestartModulesResult LifecycleAPI::restart_modules() {
+    if (restart_fn_) {
+        return restart_fn_();
+    }
+    return RestartModulesResult::Rejected;
 }
 
 void LifecycleAPI::modules_started_running() {
