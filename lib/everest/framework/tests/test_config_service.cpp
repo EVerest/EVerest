@@ -52,6 +52,15 @@ struct StubConfigService : Everest::config::ConfigServiceInterface {
     }
     void register_config_update_handler(std::function<void(const ConfigurationUpdate&)>) override {
     }
+
+    void set_modules_stopped() override {
+    }
+    void set_modules_running() override {
+    }
+    void set_modules_starting() override {
+    }
+    void set_modules_stopping() override {
+    }
     const everest::config::ModuleConfigurations& get_active_module_configurations() const override {
         return module_configurations;
     }
