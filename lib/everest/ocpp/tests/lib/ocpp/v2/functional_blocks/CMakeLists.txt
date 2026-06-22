@@ -102,6 +102,10 @@ set(TEST_REMOTE_TRANSACTION_CONTROL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../devic
             # charging mock needs; profile.cpp and the charging profile related messages are its dependencies.
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/smart_charging.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/profile.cpp
+            # smart_charging.cpp references the DynamicScheduleManager and its v2.1 messages.
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/dynamic_schedule_manager.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v21/messages/PullDynamicScheduleUpdate.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v21/messages/UpdateDynamicSchedule.cpp
             # ChangeAvailability and Get15118EVCertificate are not used by the tests directly, but the mocks of
             # the availability and security interfaces need their vtables and stream operators.
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/ChangeAvailability.cpp
