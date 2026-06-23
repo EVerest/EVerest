@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 - 2023 Pionix GmbH and Contributors to EVerest
-#include <everest/slac/fsm/evse/context.hpp>
+#include <everest/slac/fsm/context.hpp>
 
+#include <algorithm>
 #include <random>
 
 #include "misc.hpp"
@@ -38,6 +39,25 @@ void Context::signal_state(const std::string& state) {
     if (callbacks.signal_state) {
         callbacks.signal_state(state);
     }
+}
+
+void Context::clear_match_confirm_cache() {
+    match_confirm_cache = MatchConfirmCache{};
+}
+
+void Context::cache_match_confirm_message(messages::cm_slac_match_cnf const& match_confirm_message, uint8_t const* ev_mac,
+                                          uint8_t const* evse_mac, uint8_t const* run_id) {
+    cache_match_confirm_message(match_confirm_message, byte_array_from_wire<MacAddress>(ev_mac),
+                                byte_array_from_wire<MacAddress>(evse_mac), byte_array_from_wire<RunId>(run_id));
+}
+
+void Context::cache_match_confirm_message(messages::cm_slac_match_cnf const& match_confirm_message, MacAddress const& ev_mac,
+                                          MacAddress const& evse_mac, RunId const& run_id) {
+    match_confirm_cache.valid = true;
+    match_confirm_cache.message = match_confirm_message;
+    match_confirm_cache.ev_mac = ev_mac;
+    match_confirm_cache.evse_mac = evse_mac;
+    match_confirm_cache.run_id = run_id;
 }
 
 void Context::log_debug(const std::string& text) {

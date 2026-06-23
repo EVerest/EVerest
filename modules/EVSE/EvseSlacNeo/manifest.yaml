@@ -26,13 +26,35 @@ provides:
       set_key_handling_mode:
         description: |
           Set-key behavior mode:
-            - legacy_single_attempt: send one CM_SET_KEY.REQ and accept any CM_SET_KEY.CNF.
+            - legacy_single_attempt: send one CM_SET_KEY.REQ and only accept a valid CM_SET_KEY.CNF success result.
             - retry_confirmed: retry on timeout/failure and only accept CM_SET_KEY.CNF result success.
         type: string
         enum:
           - legacy_single_attempt
           - retry_confirmed
-        default: legacy_single_attempt
+        default: retry_confirmed
+      set_key_cnf_success_mode:
+        description: |
+          CM_SET_KEY.CNF success result interpretation:
+            - modem_compat_0x01: default QCA/practical modem behavior; only result 0x01 is accepted as success.
+            - hpgp_standard_0x00: explicit HomePlug Green PHY standard behavior; only result 0x00 is accepted.
+            - accept_0x00_or_0x01: compatibility mode accepting either standard 0x00 or modem-compatible 0x01.
+        type: string
+        enum:
+          - modem_compat_0x01
+          - hpgp_standard_0x00
+          - accept_0x00_or_0x01
+        default: modem_compat_0x01
+      nmk_generation_mode:
+        description: |
+          NMK generation mode for internal session NMK generation:
+            - legacy_printable: default compatibility mode; use legacy printable characters only (0-9A-Z).
+            - full_byte_range: explicit opt-in for the full byte range 0x00..0xFF to reduce collision probability.
+        type: string
+        enum:
+          - legacy_printable
+          - full_byte_range
+        default: legacy_printable
       set_key_max_attempts:
         description: Maximum CM_SET_KEY.REQ attempts before proceeding to the next reset state.
         type: integer
@@ -91,6 +113,11 @@ provides:
           To react to this message and restart the SLAC process, the EVSE go to the reset state here.
         type: boolean
         default: true
+      max_matching_sessions:
+        description: Maximum number of simultaneous CM_SLAC_PARM sessions the EVSE keeps active.
+        type: integer
+        minimum: 1
+        default: 4
       startup_delay_ms:
         description: >-
           Delay initialization of SLAC I/O by the given amount.

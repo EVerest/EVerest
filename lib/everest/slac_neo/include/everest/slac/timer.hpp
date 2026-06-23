@@ -19,7 +19,7 @@ public:
 
     virtual ~timer() = default;
 
-    explicit operator bool() const;
+    [[nodiscard]] explicit operator bool() const;
 
     void reset();
     void resetReference();
@@ -35,21 +35,19 @@ public:
     void setDurationSeconds(long long value);
     void setDurationMinutes(long long value);
 
-    template <class Rep, class Periode> bool getRemainingTime(std::chrono::duration<Rep, Periode>& remaining) {
-        auto now = clock::now();
-        remaining = target - now;
-        return now > target;
+    template <class Rep, class Period> [[nodiscard]] bool getRemainingTime(std::chrono::duration<Rep, Period>& remaining_time) const {
+        remaining_time = std::chrono::duration_cast<std::chrono::duration<Rep, Period>>(remaining());
+        return timeout();
     }
-    long long getRemainingMicroSeconds() const;
-    long long getRemainingMilliSeconds() const;
-    long long getRemainingSeconds() const;
-    long long getRemainingMinutes() const;
+    [[nodiscard]] long long getRemainingMicroSeconds() const;
+    [[nodiscard]] long long getRemainingMilliSeconds() const;
+    [[nodiscard]] long long getRemainingSeconds() const;
+    [[nodiscard]] long long getRemainingMinutes() const;
+    [[nodiscard]] tick remaining() const;
 
     void setTimePoint(tp const& value);
-    tp getTargetTime() const;
-
-    bool timeout() const;
-    void wait() const;
+    [[nodiscard]] tp getTargetTime() const;
+    [[nodiscard]] bool timeout() const;
 
 private:
     tp reference;

@@ -5,6 +5,7 @@
 
 #include "everest/slac/slac_fsm.hpp"
 
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 
@@ -26,6 +27,7 @@ public:
     void run();
 
     void init();
+    void stop();
 
     bool register_events(io::event::fd_event_handler& handler) override;
     bool unregister_events(io::event::fd_event_handler& handler) override;
@@ -41,6 +43,7 @@ private:
 
     slac::fsm::evse::Context& ctx;
     slac::slac_fsm fsm;
+    std::atomic_bool active{false};
 
     event_fd m_reset;
     event_fd m_enter_bcd;

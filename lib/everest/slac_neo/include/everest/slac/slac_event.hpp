@@ -13,16 +13,18 @@ class SlacEvent : public everest::lib::io::event::fd_event_register_interface {
 public:
     using HomeplugMessage = slac_client::ClientPayloadT;
     using HomeplugMessageHandler = std::function<void(HomeplugMessage const&)>;
-    using HomeplugErrorHandler = std::function<void(bool)>;
+    using HomeplugErrorHandler = std::function<void(bool, std::string const&)>;
+    using HomeplugReadyHandler = std::function<void()>;
     using MacAddress = slac_socket::MacAddress;
 
     SlacEvent(std::string const& if_name);
-    void send(HomeplugMessage& msg);
+    bool send(HomeplugMessage& msg);
 
     const uint8_t* get_mac_addr();
 
     void set_callback(HomeplugMessageHandler const& callback);
     void set_error_callback(HomeplugErrorHandler const& callback);
+    void set_ready_callback(HomeplugReadyHandler const& callback);
 
     bool register_events(everest::lib::io::event::fd_event_handler& handler) override;
     bool unregister_events(everest::lib::io::event::fd_event_handler& handler) override;
@@ -35,6 +37,7 @@ private:
     slac_client m_connection;
     io::event::timer_fd m_error_timer;
     bool m_on_error{false};
+    std::string m_error_detail;
     HomeplugMessageHandler m_callback;
     HomeplugErrorHandler m_error_cb;
     MacAddress m_mac_address;

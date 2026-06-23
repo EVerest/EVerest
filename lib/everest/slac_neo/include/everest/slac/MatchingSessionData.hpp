@@ -3,25 +3,28 @@
 #pragma once
 
 #include <everest/slac/slac_messages.hpp>
+#include <everest/slac/slac_types.hpp>
 
 namespace everest::lib::slac::fsm::evse {
 
 struct MatchingSessionData {
     MatchingSessionData() = default;
+    MatchingSessionData(MacAddress ev_mac, RunId run_id, MacAddress evse_mac);
     MatchingSessionData(const uint8_t* ev_mac, const uint8_t* run_id, const uint8_t* evse_mac);
 
+    bool matches_identity(MacAddress const& other_ev_mac, RunId const& other_run_id) const;
     bool matches_identity(const uint8_t* other_ev_mac, const uint8_t* other_run_id) const;
 
     // context related
-    uint8_t evse_mac[ETH_ALEN];
+    MacAddress evse_mac{};
 
     // common session related
-    uint8_t ev_mac[ETH_ALEN];
-    uint8_t run_id[defs::RUN_ID_LEN];
+    MacAddress ev_mac{};
+    RunId run_id{};
 
     // sounding related
     int captured_sounds{0};
-    int captured_aags[defs::AAG_LIST_LEN];
+    int captured_aags[defs::AAG_LIST_LEN]{};
     bool received_mnbc_sound{false};
 
     int num_retries{0};
@@ -37,7 +40,7 @@ struct MatchingSessionData {
     messages::cm_atten_char_ind create_cm_atten_char_ind(int atten_offset);
     // Note (aw): this function doesn't return by value in order to optimize for fewer copies
     void create_cm_slac_match_cnf(messages::cm_slac_match_cnf& match_cnf, messages::cm_slac_match_req const& match_req,
-                                  uint8_t const* session_nmk);
-    static messages::cm_set_key_req create_cm_set_key_req(uint8_t const* session_nmk);
+                                  Nmk const& session_nmk);
+    static messages::cm_set_key_req create_cm_set_key_req(Nmk const& session_nmk);
 };
 } // namespace everest::lib::slac::fsm::evse

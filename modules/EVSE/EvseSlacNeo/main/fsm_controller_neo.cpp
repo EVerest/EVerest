@@ -6,48 +6,78 @@
 #include <everest/util/misc/bind.hpp>
 
 FSMController::FSMController(slac::fsm::evse::Context& context) : ctx(context), fsm(ctx) {
-    m_retrigger.set_timeout_ms(10);
-};
+}
 
 void FSMController::init() {
     ctx.log_info("Starting the SLAC state machine");
+    active.store(true);
     fsm.restart_fsm();
+    m_retrigger.set_timeout_ms(10);
+}
+
+void FSMController::stop() {
+    active.store(false);
+    m_retrigger.disarm();
 }
 
 void FSMController::signal_new_slac_message(slac::messages::HomeplugMessage const& msg) {
+    if (!active.load()) {
+        return;
+    }
     ctx.slac_message_payload = msg;
     fsm.message(msg);
 }
 
 void FSMController::signal_reset() {
+    if (!active.load()) {
+        return;
+    }
     m_reset.notify();
 }
 
 bool FSMController::signal_enter_bcd() {
+    if (!active.load()) {
+        return false;
+    }
     m_enter_bcd.notify();
     return true;
 }
 
 bool FSMController::signal_leave_bcd() {
+    if (!active.load()) {
+        return false;
+    }
     m_leave_bcd.notify();
     return true;
 }
 
 void FSMController::handle_retrigger() {
+    if (!active.load()) {
+        return;
+    }
     fsm.update();
 }
 
 void FSMController::handle_reset() {
+    if (!active.load()) {
+        return;
+    }
     ctx.log_info("Signal reset");
     fsm.reset();
 }
 
 void FSMController::handle_enter_bcd() {
+    if (!active.load()) {
+        return;
+    }
     ctx.log_info("Signal enter_bcd");
     fsm.enter_bcd();
 }
 
 void FSMController::handle_leave_bcd() {
+    if (!active.load()) {
+        return;
+    }
     ctx.log_info("Signal leave_bcd");
     fsm.leave_bcd();
 }

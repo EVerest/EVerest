@@ -18,7 +18,7 @@
 
 #include <everest/slac/HomeplugMessage.hpp>
 #include <everest/slac/MatchingSessionData.hpp>
-#include <everest/slac/fsm/evse/context.hpp>
+#include <everest/slac/fsm/context.hpp>
 #include <everest/slac/timer.hpp>
 
 #include <algorithm>
@@ -31,6 +31,30 @@ using namespace everest::lib::slac;
 using namespace std::chrono_literals;
 using namespace boost::msm::front;
 using namespace boost::msm::back;
+
+inline bool accepts_set_key_cnf_success_result(fsm::evse::SetKeyCnfSuccessMode mode, std::uint8_t result) {
+    switch (mode) {
+    case fsm::evse::SetKeyCnfSuccessMode::modem_compat_0x01:
+        return result == defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS;
+    case fsm::evse::SetKeyCnfSuccessMode::hpgp_standard_0x00:
+        return result == defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS;
+    case fsm::evse::SetKeyCnfSuccessMode::accept_0x00_or_0x01:
+        return result == defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS ||
+               result == defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS;
+    }
+    return false;
+}
+
+inline std::string format_session_nmk_for_log(Nmk const& nmk) {
+    static constexpr char hex_chars[] = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(nmk.size() * 2U);
+    for (auto const octet : nmk) {
+        out.push_back(hex_chars[(octet >> 4U) & 0x0FU]);
+        out.push_back(hex_chars[octet & 0x0FU]);
+    }
+    return out;
+}
 
 template <class Guard> struct Not_ {
     template <class Evt, class Fsm, class SourceState, class TargetState>
@@ -119,6 +143,9 @@ struct is_message_of_type
 {
     template <class Fsm, class SrcT, class TarT>
     bool operator()(message const& e, Fsm&, SrcT&, TarT&) {
+        if (not e.payload.is_valid()) {
+            return false;
+        }
         const auto mmtype = e.payload.get_mmtype();
         return mmtype == MessageType;
     }
@@ -144,8 +171,10 @@ template <class MsgT>
 struct send_default_msg {
     template <class Evt, class Fsm, class SrcT, class TarT>
     void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-        MsgT msg;
-        fsm.ctx->send_slac_message(fsm.ctx->slac_config.plc_peer_mac, msg);
+        MsgT msg{};
+        if (not fsm.ctx->send_slac_message(fsm.ctx->slac_config.plc_peer_mac, msg)) {
+            fsm.ctx->log_warn("Failed to send default SLAC message");
+        }
     }
 };
 
@@ -156,7 +185,7 @@ struct SessionMatched{};
 // States
 template <std::uint32_t TimeoutMS> struct timeout_ms_state : public state<> {
     template <class Event, class Fsm> void on_entry(Event const&, Fsm&) {
-        to.setDurationMilliSeconds(TimeoutMS);
+        to.setDuration(std::chrono::milliseconds(TimeoutMS));
         to.reset();
     }
 
@@ -167,7 +196,7 @@ template <std::uint32_t TimeoutMS> struct timeout_ms_state : public state<> {
 };
 struct timeout_state : public state<> {
     template <class Event, class Fsm> void on_entry(Event const&, Fsm&) {
-        to.setDurationMilliSeconds(state_timeout_ms);
+        to.setDuration(std::chrono::milliseconds(state_timeout_ms));
         to.reset();
     }
 
@@ -181,7 +210,7 @@ struct timeout_state : public state<> {
 struct CheckLink     : public state<> {
     template <class Event, class Fsm>
     void on_entry(Event const&, Fsm& fsm) {
-        to.setDurationMilliSeconds(fsm.link_check_to_ms);
+        to.setDuration(std::chrono::milliseconds(fsm.link_check_to_ms));
         to.reset();
     }
 
@@ -199,18 +228,28 @@ struct Lumissil      : public CheckLink {
 
     template <class Fsm, class Evt>
     bool link_status_cnf(Evt const& e, Fsm& fsm) {
-        return is_link_status_message(e, fsm) and (e.payload.template get_payload<messages::lumissil::nscm_get_d_link_status_cnf>().link_status == 0x01);
+        if (not is_link_status_message(e, fsm)) {
+            return false;
+        }
+        auto const link_status_msg = e.payload.template payload_as<messages::lumissil::nscm_get_d_link_status_cnf>();
+        return link_status_msg.has_value() && (link_status_msg->link_status == defs::D_LINK_STATUS_LINKED);
     }
 
     template <class Fsm, class Evt>
     bool is_link_status_neg(Evt const& e, Fsm& fsm) {
-        return is_link_status_message(e, fsm) and (e.payload.template get_payload<messages::lumissil::nscm_get_d_link_status_cnf>().link_status != 0x01);
+        if (not is_link_status_message(e, fsm)) {
+            return false;
+        }
+        auto const link_status_msg = e.payload.template payload_as<messages::lumissil::nscm_get_d_link_status_cnf>();
+        return link_status_msg.has_value() && (link_status_msg->link_status != defs::D_LINK_STATUS_LINKED);
     }
 
     template <class Fsm>
     void link_status_req(Fsm& fsm) {
-        messages::lumissil::nscm_get_d_link_status_req link_status_req;
-        fsm.ctx->send_slac_message(fsm.ctx->slac_config.plc_peer_mac, link_status_req);
+        messages::lumissil::nscm_get_d_link_status_req link_status_req{};
+        if (not fsm.ctx->send_slac_message(fsm.ctx->slac_config.plc_peer_mac, link_status_req)) {
+            fsm.ctx->log_warn("Failed to send CM_GET_D_LINK_STATUS.REQ to SLAC peer");
+        }
     }
     template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
         CheckLink::on_entry(e, fsm);
@@ -226,18 +265,28 @@ struct Qualcomm      : public CheckLink {
 
     template <class Fsm, class Evt>
     bool link_status_cnf(Evt const& e, Fsm& fsm) {
-        return is_link_status_message(e, fsm) and (e.payload.template get_payload<messages::qualcomm::link_status_cnf>().link_status == 0x01);
+        if (not is_link_status_message(e, fsm)) {
+            return false;
+        }
+        auto const link_status_msg = e.payload.template payload_as<messages::qualcomm::link_status_cnf>();
+        return link_status_msg.has_value() && (link_status_msg->link_status == defs::D_LINK_STATUS_LINKED);
     }
 
     template <class Fsm, class Evt>
     bool is_link_status_neg(Evt const& e, Fsm& fsm) {
-        return is_link_status_message(e, fsm) and (e.payload.template get_payload<messages::qualcomm::link_status_cnf>().link_status != 0x01);
+        if (not is_link_status_message(e, fsm)) {
+            return false;
+        }
+        auto const link_status_msg = e.payload.template payload_as<messages::qualcomm::link_status_cnf>();
+        return link_status_msg.has_value() && (link_status_msg->link_status != defs::D_LINK_STATUS_LINKED);
     }
 
     template <class Fsm>
     void link_status_req(Fsm& fsm) {
-        messages::qualcomm::link_status_req link_status_req;
-        fsm.ctx->send_slac_message(fsm.ctx->slac_config.plc_peer_mac, link_status_req);
+        messages::qualcomm::link_status_req link_status_req{};
+        if (not fsm.ctx->send_slac_message(fsm.ctx->slac_config.plc_peer_mac, link_status_req)) {
+            fsm.ctx->log_warn("Failed to send LINK_STATUS.REQ to SLAC peer");
+        }
     }
     template <class Event, class Fsm> void on_entry(Event const& e, Fsm& fsm) {
         CheckLink::on_entry(e, fsm);
@@ -254,9 +303,12 @@ struct Session_def     : public state_machine_def<Session_def> {
         struct update_session {
             template <class Fsm, class SrcT, class TarT>
             void operator()(message const& e, Fsm& fsm, SrcT&, TarT& ) {
+                auto const msg = e.payload.payload_as<slac::messages::cm_atten_profile_ind>();
+                if (not msg.has_value()) {
+                    return;
+                }
                 for (int i = 0; i < slac::defs::AAG_LIST_LEN; ++i) {
-                    auto msg = e.payload.get_payload<slac::messages::cm_atten_profile_ind>();
-                    fsm.session_data.captured_aags[i] += msg.aag[i];
+                    fsm.session_data.captured_aags[i] += msg->aag[i];
                 }
                 fsm.session_data.captured_sounds++;
             }
@@ -294,7 +346,11 @@ struct Session_def     : public state_machine_def<Session_def> {
         if(mmtype not_eq expected){
             return false;
         }
-        return session_data.validate_message(e.payload.get_payload<MsgT>());
+        auto const msg = e.payload.template payload_as<MsgT>();
+        if (not msg.has_value()) {
+            return false;
+        }
+        return session_data.validate_message(*msg);
     }
     bool is_start_atten_char(message const& e) {
         auto mmtype = defs::MMTYPE_CM_START_ATTEN_CHAR | defs::MMTYPE_MODE_IND;
@@ -324,7 +380,9 @@ struct Session_def     : public state_machine_def<Session_def> {
         void operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
             // action
             auto atten_char = fsm.session_data.create_cm_atten_char_ind(fsm.ctx->slac_config.sounding_atten_adjustment);
-            fsm.ctx->send_slac_message(fsm.session_data.ev_mac, atten_char);
+            if (not fsm.ctx->send_slac_message(fsm.session_data.ev_mac, atten_char)) {
+                fsm.ctx->log_warn("Failed to send CM_ATTEN_CHAR.IND");
+            }
             // logging
             // FIXME (jh) Still need to add all logging
             int aag_overall_sum = 0;
@@ -343,20 +401,26 @@ struct Session_def     : public state_machine_def<Session_def> {
         }
     };
     void match_cnf(message const& e){
-        messages::cm_slac_match_cnf& reply = ctx->match_confirm_message;
-        auto msg = e.payload.get_payload<slac::messages::cm_slac_match_req>();
-        static constexpr uint8_t failed_match_session_nmk[defs::NMK_LEN] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-                                                                          0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10};
+        messages::cm_slac_match_cnf& reply = ctx->match_confirm_cache.message;
+        auto const msg = e.payload.payload_as<slac::messages::cm_slac_match_req>();
+        if (not msg.has_value()) {
+            return;
+        }
+        static constexpr Nmk failed_match_session_nmk{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                                                     0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10};
 
-        uint8_t const* session_nmk = ctx->slac_config.session_nmk;
+        Nmk const* session_nmk = &ctx->slac_config.session_nmk;
         if (ctx->slac_config.link_status.debug_simulate_failed_matching) {
             ctx->log_info("Sending wrong NMK to EV to simulate a failed link setup after match request");
-            session_nmk = failed_match_session_nmk;
+            session_nmk = &failed_match_session_nmk;
         }
 
-        session_data.create_cm_slac_match_cnf(reply, msg, session_nmk);
-        ctx->send_slac_message(session_data.ev_mac, reply);
-        ctx->signal_cm_slac_match_cnf(session_data.ev_mac);
+        session_data.create_cm_slac_match_cnf(reply, *msg, *session_nmk);
+        if (not ctx->send_slac_message(session_data.ev_mac, reply)) {
+            ctx->log_warn("Failed to send CM_SLAC_MATCH.CNF");
+        }
+        ctx->signal_cm_slac_match_cnf(session_data.ev_mac.data());
+        ctx->cache_match_confirm_message(reply, session_data.ev_mac, session_data.evse_mac, session_data.run_id);
         std::copy(std::begin(session_data.ev_mac), std::end(session_data.ev_mac), std::begin(ctx->status.ev_mac));
     }
 
@@ -440,7 +504,9 @@ struct Matching_def    : public state_machine_def<Matching_def> {
             reply.signal_type = defs::CM_VALIDATE_REQ_SIGNAL_TYPE;
             reply.toggle_num = 0;
             reply.result = defs::CM_VALIDATE_REQ_RESULT_FAILURE;
-            fsm.ctx->send_slac_message(e.payload.get_src_mac(), reply);
+            if (not fsm.ctx->send_slac_message(e.payload.get_src_mac(), reply)) {
+                fsm.ctx->log_warn("Failed to send CM_VALIDATE.CNF");
+            }
         }
     };
 
@@ -449,7 +515,7 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
             fsm.ctx->status.session_count = 0;
             fsm.sessions.clear();
-            fsm.to.setDurationMilliSeconds(fsm.ctx->slac_config.slac_init_timeout_ms);
+            fsm.to.setDuration(std::chrono::milliseconds(fsm.ctx->slac_config.slac_init_timeout_ms));
             fsm.to.reset();
             fsm.failed_matching_reset_once = true;
         }
@@ -460,16 +526,27 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         void operator()(message const& e, Fsm& fsm, SrcT&, TarT& ) {
             // Add session
             auto& ctx = *fsm.ctx;
-            auto const& msg = e.payload.get_payload<slac::messages::cm_slac_parm_req>();
-            if (not fsm::evse::MatchingSessionData::validate_message(msg)) {
+            auto const msg = e.payload.payload_as<slac::messages::cm_slac_parm_req>();
+            if (not msg.has_value()) {
                 return;
             }
-            fsm::evse::MatchingSessionData data(e.payload.get_src_mac(), msg.run_id, ctx.evse_mac);
+            if (not fsm::evse::MatchingSessionData::validate_message(*msg)) {
+                return;
+            }
+            auto const ev_mac = byte_array_from_wire<MacAddress>(e.payload.get_src_mac());
+            auto const run_id = byte_array_from_wire<RunId>(msg->run_id);
+            fsm::evse::MatchingSessionData data(ev_mac, run_id, ctx.evse_mac);
             auto session_iter = std::find_if(fsm.sessions.begin(), fsm.sessions.end(),
                                             [&data](Session const& session) {
                                                 return session.session_data.matches_identity(data.ev_mac, data.run_id);
                                             });
             if (session_iter == fsm.sessions.end()) {
+                auto const max_matching_sessions = fsm.max_matching_sessions();
+                if (static_cast<int>(fsm.sessions.size()) >= max_matching_sessions) {
+                    ctx.log_warn("Ignoring CM_SLAC_PARM.REQ because max_matching_sessions was reached (" +
+                                 std::to_string(max_matching_sessions) + ")");
+                    return;
+                }
                 session_iter = fsm.sessions.emplace(fsm.sessions.end());
             }
             auto& session = *session_iter;
@@ -478,8 +555,10 @@ struct Matching_def    : public state_machine_def<Matching_def> {
             session.start();
             // send reply
             auto param_confirm = data.create_cm_slac_parm_cnf();
-            ctx.send_slac_message(param_confirm.forwarding_sta, param_confirm);
-            ctx.signal_cm_slac_parm_req(data.ev_mac);
+            if (not ctx.send_slac_message(data.ev_mac, param_confirm)) {
+                ctx.log_warn("Failed to send CM_SLAC_PARM.CNF");
+            }
+            ctx.signal_cm_slac_parm_req(data.ev_mac.data());
             ctx.status.session_count = fsm.sessions.size();
         }
     };
@@ -540,7 +619,7 @@ struct Matching_def    : public state_machine_def<Matching_def> {
     template <class Event, class Fsm>
     void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
-        to.setDurationMilliSeconds(ctx->slac_config.slac_init_timeout_ms);
+        to.setDuration(std::chrono::milliseconds(ctx->slac_config.slac_init_timeout_ms));
         to.reset();
         failed_matching_reset_once = false;
         ctx->status.match_state = SlacState::Matching;
@@ -557,6 +636,13 @@ struct Matching_def    : public state_machine_def<Matching_def> {
     fsm::evse::Context* ctx;
     timer to;
     bool failed_matching_reset_once{false};
+
+    static int clamp_max_matching_sessions(int max_matching_sessions) {
+        return std::max(1, max_matching_sessions);
+    }
+    int max_matching_sessions() const {
+        return clamp_max_matching_sessions(ctx->slac_config.max_matching_sessions);
+    }
 
     bool state_timeout() {
         return to.timeout();
@@ -590,6 +676,13 @@ struct Reset_def       : public state_machine_def<Reset_def> {
             return fsm.set_key_timeout();
         }
     };
+    struct has_set_key_cnf_payload {
+        template <class Evt, class Fsm, class SrcT, class TarT>
+        bool operator()(Evt const& e, Fsm&, SrcT&, TarT& ) {
+            const auto msg = e.payload.template payload_as<messages::cm_set_key_cnf>();
+            return msg.has_value();
+        }
+    };
     struct has_set_key_attempts_left {
         template <class Fsm, class Evt, class SrcT, class TarT>
         bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
@@ -604,18 +697,24 @@ struct Reset_def       : public state_machine_def<Reset_def> {
     };
     struct is_set_key_cnf_success {
         template <class Fsm, class Evt, class SrcT, class TarT>
-        bool operator()(Evt const& e, Fsm&, SrcT&, TarT& ) {
-            const auto msg = e.payload.template get_payload<messages::cm_set_key_cnf>();
-            return msg.result == defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS or
-                   msg.result == defs::CM_SET_KEY_CNF_RESULT_SUCCESS;
+        bool operator()(Evt const& e, Fsm& fsm, SrcT& src, TarT& tar) {
+            if (not has_set_key_cnf_payload{}(e, fsm, src, tar)) {
+                return false;
+            }
+
+            const auto msg = e.payload.template payload_as<messages::cm_set_key_cnf>();
+            return accepts_set_key_cnf_success_result(fsm.ctx->slac_config.set_key_cnf_success_mode, msg->result);
         }
     };
     struct is_set_key_cnf_failed {
         template <class Fsm, class Evt, class SrcT, class TarT>
-        bool operator()(Evt const& e, Fsm&, SrcT&, TarT& ) {
-            const auto msg = e.payload.template get_payload<messages::cm_set_key_cnf>();
-            return msg.result not_eq defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS and
-                   msg.result not_eq defs::CM_SET_KEY_CNF_RESULT_SUCCESS;
+        bool operator()(Evt const& e, Fsm& fsm, SrcT& src, TarT& tar) {
+            if (not has_set_key_cnf_payload{}(e, fsm, src, tar)) {
+                return false;
+            }
+
+            const auto msg = e.payload.template payload_as<messages::cm_set_key_cnf>();
+            return not accepts_set_key_cnf_success_result(fsm.ctx->slac_config.set_key_cnf_success_mode, msg->result);
         }
     };
     struct is_reset_chip_on {
@@ -628,13 +727,16 @@ struct Reset_def       : public state_machine_def<Reset_def> {
     struct send_set_key_req {
         template <class Fsm>
         static void send(Fsm& fsm) {
-            const auto* nmk = (fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed)
-                                  ? fsm.pending_nmk
-                                  : fsm.ctx->slac_config.session_nmk;
+            Nmk const& nmk = (fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed)
+                                 ? fsm.pending_nmk
+                                 : fsm.ctx->slac_config.session_nmk;
+            fsm.ctx->log_info("Using SLAC session NMK " + format_session_nmk_for_log(nmk));
             auto msg = everest::lib::slac::fsm::evse::MatchingSessionData::create_cm_set_key_req(nmk);
-            fsm.set_key_timer.setDurationMilliSeconds(fsm.ctx->slac_config.set_key_timeout_ms);
+            fsm.set_key_timer.setDuration(std::chrono::milliseconds(fsm.ctx->slac_config.set_key_timeout_ms));
             fsm.set_key_timer.reset();
-            fsm.ctx->send_slac_message(fsm.ctx->slac_config.plc_peer_mac, msg);
+            if (not fsm.ctx->send_slac_message(fsm.ctx->slac_config.plc_peer_mac, msg)) {
+                fsm.ctx->log_warn("Failed to send CM_SET_KEY.REQ");
+            }
         }
 
         template <class Evt, class Fsm, class SrcT, class TarT>
@@ -663,9 +765,12 @@ struct Reset_def       : public state_machine_def<Reset_def> {
     struct note_set_key_failed {
         template <class Evt, class Fsm, class SrcT, class TarT>
         void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT&) {
-            const auto reply = e.payload.template get_payload<messages::cm_set_key_cnf>();
+            const auto reply = e.payload.template payload_as<messages::cm_set_key_cnf>();
+            if (not reply.has_value()) {
+                return;
+            }
             fsm.ctx->log_warn("CM_SET_KEY.CNF indicates failure with result=" +
-                              std::to_string(reply.result) +
+                              std::to_string(reply->result) +
                               " on attempt " + std::to_string(fsm.set_key_attempts) +
                               "; retrying after timeout (max " +
                               std::to_string(fsm.ctx->slac_config.set_key_max_attempts) + ")");
@@ -674,16 +779,19 @@ struct Reset_def       : public state_machine_def<Reset_def> {
     struct give_up_set_key_failed {
         template <class Evt, class Fsm, class SrcT, class TarT>
         void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT&) {
-            const auto reply = e.payload.template get_payload<messages::cm_set_key_cnf>();
+            const auto reply = e.payload.template payload_as<messages::cm_set_key_cnf>();
+            if (not reply.has_value()) {
+                return;
+            }
             fsm.ctx->log_error("CM_SET_KEY.CNF indicates failure with result=" +
-                               std::to_string(reply.result) +
+                               std::to_string(reply->result) +
                                " after maximum attempts; continuing to reset/idle path");
         }
     };
     struct apply_set_key_cnf {
         template <class Evt, class Fsm, class SrcT, class TarT>
         void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-            std::copy(std::begin(fsm.pending_nmk), std::end(fsm.pending_nmk), std::begin(fsm.ctx->slac_config.session_nmk));
+            fsm.ctx->slac_config.session_nmk = fsm.pending_nmk;
             fsm.ctx->log_info("CM_SET_KEY.CNF success, NMK set on modem");
             fsm.ctx->status.modem_NMK = true;
         }
@@ -692,11 +800,10 @@ struct Reset_def       : public state_machine_def<Reset_def> {
     // Transition guards
     using timeout_retry            = And_<set_key_timeout, And_<is_retry_confirmed_set_key, has_set_key_attempts_left>>;
     using timeout_give_up          = And_<set_key_timeout, And_<is_retry_confirmed_set_key, has_no_set_key_attempts_left>>;
-    using set_key_ok               = And_<msg_expected, And_<is_set_key_cnf_success, is_retry_confirmed_set_key>>;
-    using set_key_failed           = And_<msg_expected, And_<is_set_key_cnf_failed, is_retry_confirmed_set_key>>;
-    using set_key_accepted         = And_<msg_expected, is_legacy_single_attempt_set_key>;
-    using set_key_failed_retry     = And_<set_key_failed, has_set_key_attempts_left>;
-    using set_key_failed_give_up   = And_<set_key_failed, has_no_set_key_attempts_left>;
+    using set_key_ok               = And_<msg_expected, is_set_key_cnf_success>;
+    using set_key_failed           = And_<msg_expected, is_set_key_cnf_failed>;
+    using set_key_failed_retry     = And_<set_key_failed, And_<is_retry_confirmed_set_key, has_set_key_attempts_left>>;
+    using set_key_failed_give_up   = And_<set_key_failed, And_<is_retry_confirmed_set_key, has_no_set_key_attempts_left>>;
     using no_reset_chip            = Not_<is_reset_chip_on>;
 
     // Transitions
@@ -708,7 +815,6 @@ struct Reset_def       : public state_machine_def<Reset_def> {
         Row < Init     , none    , MsgSent   , send_set_key_req       , none                     >,
         Row < MsgSent  , update  , MsgSent   , retry_send_set_key_req , timeout_retry            >,
         Row < MsgSent  , update  , MsgValid  , fail_send_set_key_req  , timeout_give_up          >,
-        Row < MsgSent  , message , MsgValid  , trigger_update         , set_key_accepted         >,
         Row < MsgSent  , message , MsgValid  , apply_set_key_cnf      , set_key_ok               >,
         Row < MsgSent  , message , MsgSent   , note_set_key_failed    , set_key_failed_retry     >,
         Row < MsgSent  , message , MsgValid  , give_up_set_key_failed , set_key_failed_give_up   >,
@@ -730,21 +836,20 @@ struct Reset_def       : public state_machine_def<Reset_def> {
                 fsm.ctx->slac_config.generate_nmk(fsm.ctx->slac_config.session_nmk);
             }
         } else {
-            std::copy(std::begin(fsm.ctx->slac_config.session_nmk), std::end(fsm.ctx->slac_config.session_nmk),
-                      std::begin(this->pending_nmk));
+            this->pending_nmk = fsm.ctx->slac_config.session_nmk;
         }
         if (fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::legacy_single_attempt) {
-            std::copy(std::begin(fsm.ctx->slac_config.session_nmk), std::end(fsm.ctx->slac_config.session_nmk),
-                      std::begin(this->pending_nmk));
+            this->pending_nmk = fsm.ctx->slac_config.session_nmk;
         }
         this->set_key_attempts = 1;
+        ctx->clear_match_confirm_cache();
         ctx->status.match_state = SlacState::Reset;
         ctx->status.d3_state = D3State::Unmatched;
         ctx->status.modem_NMK = false;
     }
 
     fsm::evse::Context* ctx;
-    std::uint8_t pending_nmk[defs::NMK_LEN]{};
+    Nmk pending_nmk{};
     int set_key_attempts{0};
     timer set_key_timer;
 
@@ -760,7 +865,7 @@ struct ResetChip_def   : public state_machine_def<ResetChip_def> {
     struct Delay     : public state<> {
         template <class Event, class Fsm>
         void on_entry(Event const&, Fsm& fsm) {
-            to.setDurationMilliSeconds(fsm.ctx->slac_config.chip_reset.delay_ms);
+            to.setDuration(std::chrono::milliseconds(fsm.ctx->slac_config.chip_reset.delay_ms));
             to.reset();
         }
 
@@ -795,11 +900,15 @@ struct ResetChip_def   : public state_machine_def<ResetChip_def> {
         void operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
             auto& ctx = *fsm.ctx;
             if (ctx.modem_vendor == defs::ModemVendor::Qualcomm) {
-                messages::qualcomm::cm_reset_device_req reset_req;
-                ctx.send_slac_message(ctx.slac_config.plc_peer_mac, reset_req);
+                messages::qualcomm::cm_reset_device_req reset_req{};
+                if (not ctx.send_slac_message(ctx.slac_config.plc_peer_mac, reset_req)) {
+                    ctx.log_warn("Failed to send CM_RESET_DEVICE.REQ");
+                }
             } else if (ctx.modem_vendor == defs::ModemVendor::Lumissil) {
-                messages::lumissil::nscm_reset_device_req reset_req;
-                ctx.send_slac_message(ctx.slac_config.plc_peer_mac, reset_req);
+                messages::lumissil::nscm_reset_device_req reset_req{};
+                if (not ctx.send_slac_message(ctx.slac_config.plc_peer_mac, reset_req)) {
+                    ctx.log_warn("Failed to send NSCM_RESET_DEVICE.REQ");
+                }
             }
         }
     };
@@ -873,6 +982,7 @@ struct Matched_def     : public state_machine_def<Matched_def> {
     template <class Event, class Fsm>
     void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
+        ctx->clear_match_confirm_cache();
         ctx->signal_dlink_ready(true);
         link_check_to_ms = ctx->slac_config.link_status.poll_in_matched_state_ms;
         ctx->status.match_state = SlacState::Matched;
@@ -886,6 +996,7 @@ struct Matched_def     : public state_machine_def<Matched_def> {
         ctx->status.ev_mac.fill(0);
         ctx->status.average_attenuation = 0.f;
         ctx->status.modem_link_ready = false;
+        ctx->clear_match_confirm_cache();
     }
 
     fsm::evse::Context* ctx;
@@ -899,15 +1010,44 @@ struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
     struct Matched       : public exit_pseudo_state<message> { };
 
     // Guards
-    struct is_match_req : public is_message_of_type<defs::MMTYPE_CM_SLAC_MATCH | defs::MMTYPE_MODE_REQ> { };
+    struct is_match_req {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        bool operator()(Evt const& e, Fsm& fsm, SrcT&, TarT&) {
+            if (e.payload.get_mmtype() != (defs::MMTYPE_CM_SLAC_MATCH | defs::MMTYPE_MODE_REQ)) {
+                return false;
+            }
+            auto const msg = e.payload.template payload_as<slac::messages::cm_slac_match_req>();
+            if (not msg.has_value()) {
+                return false;
+            }
+            if (not fsm.ctx->match_confirm_cache.valid) {
+                return false;
+            }
+            auto const source_mac = e.payload.get_src_mac();
+            if (source_mac == nullptr) {
+                return false;
+            }
+            if (not wire_pointer_equal(source_mac, fsm.ctx->match_confirm_cache.ev_mac)) {
+                return false;
+            }
+            fsm::evse::MatchingSessionData data(fsm.ctx->match_confirm_cache.ev_mac,
+                                                fsm.ctx->match_confirm_cache.run_id,
+                                                fsm.ctx->match_confirm_cache.evse_mac);
+            return data.validate_message(*msg);
+        }
+    };
 
     //Actions
     struct send_match_cnf {
         template <class Fsm, class Evt, class SrcT, class TarT>
-        void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT& ) {
+        void operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
             auto& ctx = *fsm.ctx;
-            auto ev_mac = e.payload.get_src_mac();
-            ctx.send_slac_message(ev_mac, ctx.match_confirm_message);
+            if (not ctx.match_confirm_cache.valid) {
+                return;
+            }
+            if (not ctx.send_slac_message(ctx.match_confirm_cache.ev_mac, ctx.match_confirm_cache.message)) {
+                ctx.log_warn("Failed to send cached CM_SLAC_MATCH.CNF");
+            }
         }
     };
 
@@ -940,7 +1080,7 @@ struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
     void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
         link_check_to_ms = ctx->slac_config.link_status.retry_ms;
-        to.setDurationMilliSeconds(ctx->slac_config.link_status.timeout_ms);
+        to.setDuration(std::chrono::milliseconds(ctx->slac_config.link_status.timeout_ms));
         to.reset();
         ctx->status.match_state = SlacState::WaitForLink;
         ctx->status.d3_state = D3State::Unmatched;
@@ -978,16 +1118,16 @@ struct Init_def        : public state_machine_def<Init_def> {
     struct Other      : state<> { };
     struct Lumissil   : public state<> {
         static std::string device_info(message const& e) {
-            auto msg = e.payload.get_payload<messages::lumissil::nscm_get_version_cnf>();
-            return utils::device_info(msg);
+            auto msg = e.payload.payload_as<messages::lumissil::nscm_get_version_cnf>();
+            return msg ? utils::device_info(*msg) : std::string{};
         }
         static auto constexpr modem_vendor = defs::ModemVendor::Lumissil;
         static auto constexpr msg_type = defs::lumissil::MMTYPE_NSCM_GET_VERSION | defs::MMTYPE_MODE_CNF;
     };
     struct Qualcomm   : public state<> {
         static std::string device_info(message const& e) {
-            auto msg = e.payload.get_payload<messages::qualcomm::op_attr_cnf>();
-            return utils::device_info(msg);
+            auto msg = e.payload.payload_as<messages::qualcomm::op_attr_cnf>();
+            return msg ? utils::device_info(*msg) : std::string{};
         }
         static auto constexpr modem_vendor = defs::ModemVendor::Qualcomm;
         static auto constexpr msg_type = defs::qualcomm::MMTYPE_OP_ATTR | defs::MMTYPE_MODE_CNF;
@@ -1066,10 +1206,10 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
     struct Idle   : public state<> {
         template <class Event, class Fsm>
         void on_entry(Event const&, Fsm& fsm) {
+            fsm.ctx->clear_match_confirm_cache();
             fsm.ctx->status.match_state = SlacState::Idle;
             fsm.ctx->status.d3_state = D3State::Unmatched;
             fsm.ctx->status.modem_PIB = true;
-            fsm.ctx->status.modem_NMK = true;
         }
     };
     struct Failed : public state<> {
@@ -1079,6 +1219,7 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
             if (ctx.slac_config.ac_mode_five_percent) {
                 ctx.signal_error_routine_request();
             }
+            ctx.clear_match_confirm_cache();
             ctx.status.match_state = SlacState::Failed;
             ctx.status.d3_state = D3State::Unmatched;
         }

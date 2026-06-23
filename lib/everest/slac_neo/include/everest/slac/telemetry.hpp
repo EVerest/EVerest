@@ -34,7 +34,7 @@ struct SlacTelemetry {
     bool modem_link_ready{false}; // link status is good.
     int session_count{0};         // number of active sounding sessions
     float average_attenuation{0.f};
-    messages::HomeplugMessage::MacAddress ev_mac;
+    messages::HomeplugMessage::MacAddress ev_mac{};
     SlacState match_state{SlacState::Init};
     D3State d3_state{D3State::Unmatched};
 };

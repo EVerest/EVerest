@@ -12,10 +12,32 @@
 
 #include "../EvseSlacNeo.hpp"
 
+class FSMController;
+
+namespace everest {
+namespace lib {
+namespace slac {
+class SlacEvent;
+namespace fsm {
+namespace evse {
+struct Context;
+struct ContextCallbacks;
+} // namespace evse
+} // namespace fsm
+} // namespace slac
+} // namespace lib
+} // namespace everest
+
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
 #include <atomic>
+#include <memory>
+#include <string>
+#include <thread>
+
 #include <everest/io/event/event_fd.hpp>
+#include <everest/slac/fsm/context.hpp>
+#include <everest/util/async/monitor.hpp>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -28,6 +50,8 @@ struct Conf {
     int set_key_timeout_ms;
     int set_key_max_attempts;
     std::string set_key_handling_mode;
+    std::string set_key_cnf_success_mode;
+    std::string nmk_generation_mode;
     int sounding_attenuation_adjustment;
     bool publish_mac_on_match_cnf;
     bool publish_mac_on_first_parm_req;
@@ -41,6 +65,7 @@ struct Conf {
     bool reset_instead_of_fail;
     int startup_delay_ms;
     int slac_init_timeout_ms;
+    int max_matching_sessions;
     bool print_state_transitions;
     bool hack_disable_regenerate_key_on_reset;
 };
@@ -48,12 +73,16 @@ struct Conf {
 class slacImpl : public slacImplBase {
 public:
     slacImpl() = delete;
-    slacImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<EvseSlacNeo>& mod, Conf& config) :
-        slacImplBase(ev, "main"), mod(mod), config(config){};
+    slacImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<EvseSlacNeo>& mod, Conf& config);
 
     // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
     // insert your public definitions here
     ~slacImpl() override;
+
+    // Preparation for future generated/framework shutdown logic: when a shutdown phase is added next to init()/ready(),
+    // that hook should call this helper directly. The destructor calls it today as a fallback for the current static
+    // module lifetime.
+    void shutdown();
     // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
 
 protected:
@@ -80,8 +109,36 @@ private:
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     void run();
+    bool wait_for_ready_or_shutdown();
+    bool wait_for_startup_delay_or_shutdown();
+    bool initialize_slac_io();
+    void configure_callbacks();
+    void configure_fsm_context();
+    bool create_fsm_controller();
+    void configure_slac_io_callbacks();
+    void run_blocking_event_loop();
+    void handle_slac_io_ready();
+    void handle_slac_io_error(bool on_error, const std::string& detail);
+    FSMController* get_available_fsm_controller();
+    void raise_communication_fault(const std::string& message);
+    void clear_communication_fault();
+    void mark_worker_offline(const std::string& reason);
     std::atomic<bool> online{true};
+    std::thread worker;
     everest::lib::io::event::event_fd exit_event;
+    struct LifecycleState {
+        bool ready_requested{false};
+        bool shutting_down{false};
+        bool slac_io_ready{false};
+        bool communication_fault_raised{false};
+        std::string communication_fault_message;
+        FSMController* fsm_ctrl{nullptr};
+    };
+    everest::lib::util::monitor<LifecycleState> lifecycle_state;
+    everest::lib::slac::fsm::evse::ContextCallbacks callbacks;
+    std::unique_ptr<everest::lib::slac::fsm::evse::Context> fsm_ctx;
+    std::unique_ptr<everest::lib::slac::SlacEvent> slac_io;
+    std::unique_ptr<FSMController> fsm_ctrl;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

@@ -28,12 +28,15 @@ public:
 
     int get_fd() const;
     int get_error() const;
+    std::string get_error_message() const;
     bool is_open() const;
     MacAddress get_mac_address() const;
 
 private:
     io::event::unique_fd m_fd;
     MacAddress m_mac;
+    int m_error_code{0};
+    std::string m_error_message;
 };
 
 using slac_client = io::event::fd_event_client<slac_socket>::type;
