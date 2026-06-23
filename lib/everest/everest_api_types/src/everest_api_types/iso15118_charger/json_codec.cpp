@@ -80,8 +80,12 @@ void from_json(json const& j, EnergyTransferMode& k) {
         k = EnergyTransferMode::AC_BPT_DER;
         return;
     }
-    if (s == "AC_DER") {
-        k = EnergyTransferMode::AC_DER;
+    if (s == "AC_DER_IEC") {
+        k = EnergyTransferMode::AC_DER_IEC;
+        return;
+    }
+    if (s == "AC_DER_SAE") {
+        k = EnergyTransferMode::AC_DER_SAE;
         return;
     }
     if (s == "DC_BPT") {
@@ -146,8 +150,11 @@ void to_json(json& j, EnergyTransferMode const& k) noexcept {
     case EnergyTransferMode::AC_BPT_DER:
         j = "AC_BPT_DER";
         return;
-    case EnergyTransferMode::AC_DER:
-        j = "AC_DER";
+    case EnergyTransferMode::AC_DER_IEC:
+        j = "AC_DER_IEC";
+        return;
+    case EnergyTransferMode::AC_DER_SAE:
+        j = "AC_DER_SAE";
         return;
     case EnergyTransferMode::DC_BPT:
         j = "DC_BPT";
