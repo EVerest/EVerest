@@ -6,6 +6,8 @@
 
 namespace everest::lib::slac::utils {
 
+namespace qca_defs = slac::defs::qualcomm;
+
 // note on byte order:
 //   - sha256 takes the most significant byte first from the lowest
 //     memory address
@@ -65,11 +67,10 @@ std::string device_info(messages::qualcomm::op_attr_cnf const& msg) {
 
     result += "\n  ZC signal: ";
 
-    // FIXME: no magic numbers
-    const auto zc_signal = (msg.line_freq_zc >> 2) & 0x03;
-    if (zc_signal == 0x01) {
+    const auto zc_signal = (msg.line_freq_zc >> qca_defs::OP_ATTR_ZC_SIGNAL_SHIFT) & qca_defs::OP_ATTR_LINE_FREQ_ZC_MASK;
+    if (zc_signal == qca_defs::OP_ATTR_ZC_SIGNAL_DETECTED) {
         result += "Detected";
-    } else if (zc_signal == 0x02) {
+    } else if (zc_signal == qca_defs::OP_ATTR_ZC_SIGNAL_MISSING) {
         result += "Missing";
     } else {
         result += ("Unknown (" + std::to_string(zc_signal) + ")");
@@ -77,10 +78,10 @@ std::string device_info(messages::qualcomm::op_attr_cnf const& msg) {
 
     result += "\n  Line frequency: ";
 
-    const auto line_freq = (msg.line_freq_zc) & 0x03;
-    if (line_freq == 0x01) {
+    const auto line_freq = msg.line_freq_zc & qca_defs::OP_ATTR_LINE_FREQ_ZC_MASK;
+    if (line_freq == qca_defs::OP_ATTR_LINE_FREQUENCY_50HZ) {
         result += "50Hz";
-    } else if (line_freq == 0x02) {
+    } else if (line_freq == qca_defs::OP_ATTR_LINE_FREQUENCY_60HZ) {
         result += "60Hz";
     } else {
         result += ("Unknown (" + std::to_string(line_freq) + ")");

@@ -4,11 +4,12 @@
 #define EVSE_SLAC_CONTEXT_HPP
 
 #include "everest/slac/slac_messages.hpp"
-#include <cstring>
+#include <array>
 #include <functional>
 #include <string>
 
 #include <everest/slac/EvseSlacConfig.hpp>
+#include <everest/slac/slac_types.hpp>
 #include <everest/slac/slac.hpp>
 #include <everest/slac/telemetry.hpp>
 
@@ -134,7 +135,7 @@ template <> struct MMV<messages::lumissil::nscm_get_d_link_status_cnf> {
 } // namespace _context_detail
 
 struct ContextCallbacks {
-    std::function<void(messages::HomeplugMessage&)> send_raw_slac{nullptr};
+    std::function<bool(messages::HomeplugMessage&)> send_raw_slac{nullptr};
     std::function<void(const std::string&)> signal_state{nullptr};
     std::function<void(bool)> signal_dlink_ready{nullptr};
     std::function<void()> signal_error_routine_request{nullptr};
@@ -150,6 +151,14 @@ struct ContextCallbacks {
 struct Context {
     explicit Context(const ContextCallbacks& callbacks_) : callbacks(callbacks_){};
 
+    struct MatchConfirmCache {
+        bool valid{false};
+        messages::cm_slac_match_cnf message{};
+        MacAddress ev_mac{};
+        MacAddress evse_mac{};
+        RunId run_id{};
+    };
+
     EvseSlacConfig slac_config{};
 
     // event specific payloads
@@ -157,15 +166,18 @@ struct Context {
     messages::HomeplugMessage slac_message_payload;
 
     // FIXME (aw): message should be const, but libslac doesn't allow for const ptr - needs changes in libslac
-    template <typename SlacMessageType> void send_slac_message(const uint8_t* mac, SlacMessageType const& message) {
+    template <typename SlacMessageType> bool send_slac_message(MacAddress const& mac, SlacMessageType const& message) {
         messages::HomeplugMessage hp_message;
-        messages::HomeplugMessage::MacAddress dst;
-        std::memcpy(dst.data(), mac, dst.size());
-        hp_message.set_destination(dst);
-        //        hp_message.setup_ethernet_header(mac);
         hp_message.setup_payload(&message, sizeof(message), _context_detail::MMTYPE<SlacMessageType>::value,
                                  _context_detail::MMV<SlacMessageType>::value);
-        callbacks.send_raw_slac(hp_message);
+        hp_message.set_destination(mac);
+        if (not callbacks.send_raw_slac) {
+            return false;
+        }
+        return callbacks.send_raw_slac(hp_message);
+    }
+    template <typename SlacMessageType> bool send_slac_message(uint8_t const* mac, SlacMessageType const& message) {
+        return send_slac_message(byte_array_from_wire<MacAddress>(mac), message);
     }
 
     // signal handlers
@@ -174,6 +186,11 @@ struct Context {
     void signal_dlink_ready(bool value);
     void signal_error_routine_request();
     void signal_state(const std::string& state);
+    void clear_match_confirm_cache();
+    void cache_match_confirm_message(messages::cm_slac_match_cnf const& match_confirm_message, uint8_t const* ev_mac,
+                                     uint8_t const* evse_mac, uint8_t const* run_id);
+    void cache_match_confirm_message(messages::cm_slac_match_cnf const& match_confirm_message, MacAddress const& ev_mac,
+                                    MacAddress const& evse_mac, RunId const& run_id);
 
     // logging util
     void log_debug(const std::string& text);
@@ -183,8 +200,8 @@ struct Context {
     void telemetry(const std::string& block, const std::string& key, const std::string& value);
 
     defs::ModemVendor modem_vendor{defs::ModemVendor::Unknown};
-    uint8_t evse_mac[ETH_ALEN];
-    messages::cm_slac_match_cnf match_confirm_message;
+    MacAddress evse_mac{};
+    MatchConfirmCache match_confirm_cache;
 
     SlacTelemetry status;
 

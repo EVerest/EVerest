@@ -5,7 +5,6 @@
 #include "everest/io/socket/socket.hpp"
 #include <cstring>
 #include <everest/util/misc/bind.hpp>
-#include <iostream>
 #include <linux/if_ether.h>
 
 #include <algorithm>
@@ -34,22 +33,46 @@ SlacEvent::SlacEvent(std::string const& if_name) : m_connection(if_name), m_if_n
     }
 }
 
-void SlacEvent::handle_socket_error(int id, [[maybe_unused]] std::string const& msg) {
+void SlacEvent::handle_socket_error(int id, std::string const& msg) {
     auto was_on_error = m_on_error;
+    auto previous_detail = m_error_detail;
+
     m_on_error = id not_eq 0;
-    if (not m_on_error) {
-        m_mac_address = m_connection.get_raw_handler()->get_mac_address();
+
+    auto detail = msg;
+    auto const& raw_handler = m_connection.get_raw_handler();
+    if (raw_handler) {
+        auto const socket_error_message = raw_handler->get_error_message();
+        if (!socket_error_message.empty()) {
+            detail = socket_error_message;
+        }
+        if (not m_on_error) {
+            m_mac_address = raw_handler->get_mac_address();
+        }
     }
-    if (m_error_cb and (m_on_error not_eq was_on_error)) {
-        m_error_cb(m_on_error);
+
+    if (m_on_error) {
+        m_error_detail = detail;
+    } else {
+        m_error_detail.clear();
+    }
+
+    if (not m_on_error) {
+        if (m_error_cb and (m_on_error not_eq was_on_error)) {
+            m_error_cb(m_on_error, "");
+        }
+        return;
+    }
+
+    auto const changed_detail = detail != previous_detail;
+    if (m_error_cb and (m_on_error not_eq was_on_error or changed_detail)) {
+        m_error_cb(m_on_error, m_error_detail);
     }
 }
 
 void SlacEvent::handle_socket_rx(HomeplugMessage const& data, [[maybe_unused]] slac_client::interface& client) {
     if (m_callback) {
         m_callback(data);
-    } else {
-        std::cout << "\n#################### Something went wrong ##########\n" << std::endl;
     }
 }
 
@@ -81,9 +104,17 @@ void SlacEvent::set_error_callback(const HomeplugErrorHandler& callback) {
     m_error_cb = callback;
 }
 
-void SlacEvent::send(HomeplugMessage& msg) {
+void SlacEvent::set_ready_callback(const HomeplugReadyHandler& callback) {
+    m_connection.set_on_ready_action([callback]() {
+        if (callback) {
+            callback();
+        }
+    });
+}
+
+bool SlacEvent::send(HomeplugMessage& msg) {
     msg.set_source(m_mac_address);
-    m_connection.tx(msg);
+    return m_connection.tx(msg);
 }
 
 const uint8_t* SlacEvent::get_mac_addr() {

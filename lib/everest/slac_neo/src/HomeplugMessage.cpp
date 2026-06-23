@@ -26,16 +26,30 @@ homeplug_message* HomeplugMessage::get_raw_message_ptr() {
     return &raw_msg;
 }
 
-int HomeplugMessage::get_raw_msg_len() const {
+std::size_t HomeplugMessage::frame_size() const {
     return raw_msg_len;
 }
 
-void HomeplugMessage::setup_payload(void const* payload, int len, std::uint16_t mmtype, const defs::MMV mmv) {
+void HomeplugMessage::mark_received_length(std::size_t len) {
+    if (len > sizeof(raw_msg)) {
+        raw_msg_len = sizeof(raw_msg);
+        return;
+    }
+    raw_msg_len = len;
+}
+
+void HomeplugMessage::setup_payload(void const* payload, std::size_t len, std::uint16_t mmtype, const defs::MMV mmv) {
+    if (payload == nullptr && len != 0) {
+        throw std::runtime_error("Homeplug payload pointer is null");
+    }
     if (len > effective_payload_length(mmv)) {
         throw std::runtime_error("Homeplug Payload length too long");
     }
     raw_msg.homeplug_header.mmv = static_cast<std::underlying_type_t<defs::MMV>>(mmv);
-    raw_msg.homeplug_header.mmtype = htole16(mmtype);
+    const auto encoded_mmtype = htole16(mmtype);
+    std::memcpy(&raw_msg.homeplug_header.mmtype, &encoded_mmtype, sizeof(encoded_mmtype));
+    auto const payload_base = reinterpret_cast<std::uint8_t*>(&raw_msg.payload);
+    std::memset(payload_base, 0x00, effective_payload_length(mmv));
 
     std::uint8_t* dst = raw_msg.payload;
 
@@ -48,7 +62,9 @@ void HomeplugMessage::setup_payload(void const* payload, int len, std::uint16_t 
     }
 
     // copy payload into place
-    memcpy(dst, payload, len);
+    if (len != 0) {
+        std::memcpy(dst, payload, len);
+    }
 
     // get pointer to the end of buffer
     std::uint8_t* dst_end = dst + len;
@@ -57,15 +73,18 @@ void HomeplugMessage::setup_payload(void const* payload, int len, std::uint16_t 
     raw_msg_len = dst_end - reinterpret_cast<std::uint8_t*>(&raw_msg);
 
     // do padding
-    auto padding_len = defs::MME_MIN_LENGTH - raw_msg_len;
-    if (padding_len > 0) {
-        memset(dst_end, 0x00, padding_len);
+    if (raw_msg_len < static_cast<std::size_t>(defs::MME_MIN_LENGTH)) {
+        auto const padding_len = static_cast<std::size_t>(defs::MME_MIN_LENGTH) - raw_msg_len;
+        if (padding_len > 0) {
+            std::memset(dst_end, 0x00, padding_len);
+        }
         raw_msg_len = defs::MME_MIN_LENGTH;
     }
 }
 
 void HomeplugMessage::set_destination(MacAddress const& mac) {
-    raw_msg.ethernet_header.ether_type = htons(defs::ETH_P_HOMEPLUG_GREENPHY);
+    const auto encoded_ether_type = htons(defs::ETH_P_HOMEPLUG_GREENPHY);
+    std::memcpy(&raw_msg.ethernet_header.ether_type, &encoded_ether_type, sizeof(encoded_ether_type));
     std::memcpy(raw_msg.ethernet_header.ether_dhost, mac.data(), ETH_ALEN);
 }
 
@@ -74,7 +93,12 @@ void HomeplugMessage::set_source(MacAddress const& mac) {
 }
 
 std::uint16_t HomeplugMessage::get_mmtype() const {
-    return le16toh(raw_msg.homeplug_header.mmtype);
+    if (frame_size() < HOMEPLUG_PAYLOAD_OFFSET) {
+        return 0;
+    }
+    std::uint16_t encoded_mmtype{};
+    std::memcpy(&encoded_mmtype, &raw_msg.homeplug_header.mmtype, sizeof(encoded_mmtype));
+    return le16toh(encoded_mmtype);
 }
 
 std::uint8_t const* HomeplugMessage::get_src_mac() const {
@@ -82,7 +106,7 @@ std::uint8_t const* HomeplugMessage::get_src_mac() const {
 }
 
 bool HomeplugMessage::is_valid() const {
-    return raw_msg_len >= defs::MME_MIN_LENGTH;
+    return frame_size() >= HOMEPLUG_PAYLOAD_OFFSET && frame_size() >= defs::MME_MIN_LENGTH;
 }
 
 std::uint8_t const* HomeplugMessage::get_raw_payload_ptr() const {

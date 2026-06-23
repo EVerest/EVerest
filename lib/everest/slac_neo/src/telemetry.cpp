@@ -94,7 +94,7 @@ api_telemetry::SlacStatus to_api(SlacTelemetry const& status) {
     telemetry.modem_link_ready = status.modem_link_ready;
     telemetry.session_count = status.session_count;
     telemetry.average_attenuation = status.average_attenuation;
-    telemetry.ev_mac = format_mac_addr(status.ev_mac.data());
+    telemetry.ev_mac = format_mac_addr(status.ev_mac);
     telemetry.match_state = to_api(status.match_state);
     telemetry.d3_state = to_api(status.d3_state);
     return telemetry;
@@ -109,7 +109,9 @@ SlacTelemetry from_api(api_telemetry::SlacStatus const& status) {
     telemetry.session_count = static_cast<int>(status.session_count);
     telemetry.average_attenuation = status.average_attenuation;
     telemetry.ev_mac.fill(0);
-    parse_mac_addr(status.ev_mac, telemetry.ev_mac.data(), telemetry.ev_mac.size());
+    if (auto parsed = parse_mac_addr(status.ev_mac); parsed) {
+        telemetry.ev_mac = *parsed;
+    }
     telemetry.match_state = from_api(status.match_state);
     telemetry.d3_state = from_api(status.d3_state);
     return telemetry;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 
-#include <everest/slac/msm/slac_evse_fsm.hpp>
+#include <everest/slac/fsm/slac_evse_fsm.hpp>
 #include <everest/slac/slac_fsm.hpp>
 #include <everest_api_types/telemetry/codec.hpp>
 // clang-format off
@@ -14,10 +14,6 @@ namespace everest::lib::slac {
 
 namespace {
 namespace api_telemetry = everest::lib::API::V1_0::types::telemetry;
-
-inline msm::SlacFSM* to_msm(void* ptr) {
-    return reinterpret_cast<msm::SlacFSM*>(ptr);
-}
 
 template <typename T, typename = void> struct is_submachine : std::false_type {};
 template <typename T>
@@ -187,12 +183,17 @@ struct FsmStateVisitor {
 
 } // namespace
 
+struct slac_fsm::Impl {
+    msm::SlacFSM fsm;
+    explicit Impl(fsm::evse::Context& ctx) : fsm(ctx) {}
+};
+
 void slac_fsm::event_post_processing() {
     auto print = ctx.slac_config.print_state_transitions;
     auto telemetry = ctx.slac_config.provide_telemetry;
 
     if (print or telemetry) {
-        auto const& msm = *to_msm(fsm);
+        auto const& msm = impl->fsm;
         std::vector<int> current_signature;
         current_signature.reserve(last_signature.capacity());
 
@@ -220,51 +221,40 @@ void slac_fsm::event_post_processing() {
     }
 }
 
-slac_fsm::slac_fsm(fsm::evse::Context& ctx) : ctx(ctx) {
-    auto ptr = new msm::SlacFSM(ctx);
-    fsm = ptr;
-}
+slac_fsm::slac_fsm(fsm::evse::Context& ctx) : impl(std::make_unique<Impl>(ctx)), ctx(ctx) {}
 
 slac_fsm::~slac_fsm() {
-    auto ptr = to_msm(fsm);
-    delete ptr;
 }
 
 void slac_fsm::reset() {
-    auto ptr = to_msm(fsm);
-    ptr->process_event(msm::reset{});
+    impl->fsm.process_event(msm::reset{});
     event_post_processing();
 }
 
 void slac_fsm::enter_bcd() {
-    auto ptr = to_msm(fsm);
-    ptr->process_event(msm::enter_bcd{});
+    impl->fsm.process_event(msm::enter_bcd{});
     event_post_processing();
 }
 
 void slac_fsm::leave_bcd() {
-    auto ptr = to_msm(fsm);
-    ptr->process_event(msm::leave_bcd{});
+    impl->fsm.process_event(msm::leave_bcd{});
     event_post_processing();
 }
 
 void slac_fsm::message(messages::HomeplugMessage msg) {
     msm::message event;
     event.payload = std::move(msg);
-    auto ptr = to_msm(fsm);
-    ptr->process_event(event);
+    impl->fsm.process_event(event);
     event_post_processing();
 }
 
 void slac_fsm::update() {
-    auto ptr = to_msm(fsm);
-    ptr->process_event(msm::update{});
+    impl->fsm.process_event(msm::update{});
     event_post_processing();
 }
 
 void slac_fsm::restart_fsm() {
-    auto ptr = to_msm(fsm);
-    ptr->start();
+    impl->fsm.start();
     event_post_processing();
 }
 
