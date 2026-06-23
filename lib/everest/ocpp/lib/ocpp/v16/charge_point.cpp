@@ -172,8 +172,10 @@ void ChargePoint::on_log_status_notification(std::int32_t request_id, std::strin
 }
 
 void ChargePoint::on_firmware_update_status_notification(std::int32_t request_id,
-                                                         const FirmwareStatusNotification firmware_update_status) {
-    this->charge_point->on_firmware_update_status_notification(request_id, firmware_update_status);
+                                                         const FirmwareStatusNotification firmware_update_status,
+                                                         const bool disable_connectors_during_install) {
+    this->charge_point->on_firmware_update_status_notification(request_id, firmware_update_status,
+                                                               disable_connectors_during_install);
 }
 
 void ChargePoint::on_reservation_start(std::int32_t connector) {

@@ -23,7 +23,8 @@ public:
     ~FirmwareUpdateInterface() override = default;
 
     virtual void on_firmware_update_status_notification(std::int32_t request_id,
-                                                        const FirmwareStatusEnum& firmware_update_status) = 0;
+                                                        const FirmwareStatusEnum& firmware_update_status,
+                                                        const bool disable_connectors_during_install = true) = 0;
     virtual void on_firmware_status_notification_request() = 0;
 };
 
@@ -48,7 +49,8 @@ public:
                    std::optional<AllConnectorsUnavailableCallback> all_connectors_unavailable_callback);
     void handle_message(const ocpp::EnhancedMessage<MessageType>& message) override;
     void on_firmware_update_status_notification(std::int32_t request_id,
-                                                const FirmwareStatusEnum& firmware_update_status) override;
+                                                const FirmwareStatusEnum& firmware_update_status,
+                                                bool disable_connectors_during_install = true) override;
     void on_firmware_status_notification_request() override;
 
 private: // Functions
