@@ -14,3 +14,7 @@ __pycache__/
 *.diff
 *.orig
 *.rej
+docs/source/conf.py
+Testing/
+tests/result*.xml
+tests/report*.html

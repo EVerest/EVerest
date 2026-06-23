@@ -139,12 +139,6 @@ class TestOcpp201CostAndPrice:
     async def await_mock_called(mock):
         while not mock.call_count:
             await asyncio.sleep(0.1)
-    
-    @staticmethod
-    async def await_mock_called_matching(mock, predicate):
-        """Wait until `mock` has been called with args satisfying `predicate`."""
-        while not any(predicate(call) for call in mock.call_args_list):
-            await asyncio.sleep(0.1)
 
     @pytest.mark.asyncio
     @pytest.mark.probe_module
@@ -239,7 +233,7 @@ class TestOcpp201CostAndPrice:
         received_data['cost_chunks'][0] = {
             'cost': {'value': 5510000}, 'metervalue_to': 0, 'timestamp_to': ANY}
         received_data['status'] = 'Finished'
-        probe_module_mock_fn.reset_mock()
+        probe_module_mock_fn.call_count = 0
 
         assert await wait_for_and_validate(test_utility, chargepoint_with_pm, "TransactionEvent",
                                            {"eventType": "Ended"})
@@ -336,7 +330,7 @@ class TestOcpp201CostAndPrice:
         # Clear cache
         r: call_result201.ClearCache = await chargepoint_with_pm.clear_cache_req()
         assert r.status == ClearCacheStatusEnumType.accepted
-        session_cost_mock.reset_mock()
+        session_cost_mock.call_count = 0
 
         await chargepoint_with_pm.cost_update_req(total_cost=1.345, transaction_id=transaction_id,
                                                   custom_data=self.cost_updated_custom_data)
@@ -348,7 +342,7 @@ class TestOcpp201CostAndPrice:
         # Clear cache
         r: call_result201.ClearCache = await chargepoint_with_pm.clear_cache_req()
         assert r.status == ClearCacheStatusEnumType.accepted
-        session_cost_mock.reset_mock()
+        session_cost_mock.call_count = 0
 
         # Set transaction id to a not existing transaction id.
         await chargepoint_with_pm.cost_update_req(total_cost=1.345, transaction_id="12345",
@@ -828,10 +822,22 @@ class TestOcpp201CostAndPrice:
 
         test_controller.disconnect_websocket()
 
-        await self.await_mock_called_matching(
-            default_price_mock,
-            lambda c: c.args[0]["messages"][0]["content"] == "Station is offline",
-        )
+        # Multiple publications can arrive around disconnect; wait for the explicit offline text.
+        offline_message_received = False
+        for _ in range(30):
+            for call_args in default_price_mock.call_args_list:
+                call_data = call_args[0][0]
+                if (
+                    len(call_data.get("messages", [])) == 1
+                    and call_data["messages"][0].get("content") == "Station is offline"
+                ):
+                    offline_message_received = True
+                    break
+            if offline_message_received:
+                break
+            await asyncio.sleep(0.1)
+
+        assert offline_message_received
 
         # Reconnect for clean teardown.
         test_controller.connect_websocket()

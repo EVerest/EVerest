@@ -74,6 +74,13 @@ option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
 option(EVEREST_ENABLE_COMPILE_WARNINGS "Enable compile warnings set in the EVEREST_COMPILE_OPTIONS flag" OFF)
 option(EVEREST_ENABLE_GLOBAL_COMPILE_WARNINGS "Enable compile warnings set in the EVEREST_COMPILE_OPTIONS flag globally" OFF)
 option(EVEREST_ENABLE_DEBUG_BUILD "Enable debug build" OFF)
+# When ON: enables compiler coverage flags where supported, defines EVEREST_COVERAGE_ENABLED for
+# code that must only run under instrumentation (see helpers coverage helpers), and wires CTest
+# coverage targets in test CMake files. Does not control whether library unit tests are built;
+# that remains BUILD_TESTING / per-project *_BUILD_TESTING. Python integration tests that spawn
+# the manager should use EverestCore so each run sets GCOV_PREFIX under a private workspace—parallel
+# pytest workers would otherwise clobber shared .gcda files in the build tree.
+option(EVEREST_ENABLE_COVERAGE "Enable code coverage instrumentation and coverage targets" OFF)
 option(EVEREST_BUILD_APPLICATIONS "Build applications like drivers for the EVerest stable API" ON)
 option(EVEREST_LIBS_ONLY "Only build libraries, skip modules/applications/config" OFF)
 option(EVEREST_IO_WITH_MQTT "Build MQTT (mosquitto) support in everest::io" ON)
@@ -234,7 +241,6 @@ endif()
 
 # testing
 if(EVEREST_CORE_BUILD_TESTING AND NOT EVEREST_LIBS_ONLY)
-    add_subdirectory(types)
     add_subdirectory(tests)
 else()
     message("Not running unit tests")
