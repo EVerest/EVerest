@@ -78,7 +78,10 @@ void power_supply_DCImpl::init() {
         new_caps.max_export_voltage_V = min_max_output_voltage;
         new_caps.min_export_voltage_V = max_min_output_voltage;
         new_caps.conversion_efficiency_export = mod->config.conversion_efficiency_export;
-        caps = new_caps;
+        {
+            std::lock_guard<std::mutex> lock(caps_mutex);
+            caps = new_caps;
+        }
         EVLOG_info << "Infy: Capabilities updated: " << new_caps.max_export_voltage_V << "V / "
                    << new_caps.min_export_voltage_V << "V, " << new_caps.max_export_current_A << "A, power "
                    << new_caps.max_export_power_W << "W";
@@ -139,6 +142,7 @@ void power_supply_DCImpl::ready() {
 
 void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& mode,
                                          types::power_supply_DC::ChargingPhase& phase) {
+    std::lock_guard<std::mutex> command_lock(command_mutex);
     EVLOG_info << "Set mode via CAN: " << mode << " with phase " << phase;
     if (mode == types::power_supply_DC::Mode::Off) {
         mod->acdc->switch_on_off(false);
@@ -154,15 +158,19 @@ void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& mode,
 };
 
 void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double& current) {
-    if (voltage > caps.max_export_voltage_V)
-        voltage = caps.max_export_voltage_V;
-    else if (voltage < caps.min_export_voltage_V)
-        voltage = caps.min_export_voltage_V;
+    std::lock_guard<std::mutex> command_lock(command_mutex);
+    {
+        std::lock_guard<std::mutex> caps_lock(caps_mutex);
+        if (voltage > caps.max_export_voltage_V)
+            voltage = caps.max_export_voltage_V;
+        else if (voltage < caps.min_export_voltage_V)
+            voltage = caps.min_export_voltage_V;
 
-    if (current > caps.max_export_current_A)
-        current = caps.max_export_current_A;
-    else if (current < caps.min_export_current_A)
-        current = caps.min_export_current_A;
+        if (current > caps.max_export_current_A)
+            current = caps.max_export_current_A;
+        else if (current < caps.min_export_current_A)
+            current = caps.min_export_current_A;
+    }
 
     exportVoltage.store(voltage);
     exportCurrentLimit.store(current);
@@ -181,18 +189,26 @@ void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double
 };
 
 void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double& current) {
-    if (caps.min_import_voltage_V.has_value() && caps.max_import_voltage_V.has_value() &&
-        caps.min_import_current_A.has_value() && caps.max_import_current_A.has_value()) {
-        if (voltage > caps.max_import_voltage_V.value())
-            voltage = caps.max_import_voltage_V.value();
-        else if (voltage < caps.min_import_voltage_V.value())
-            voltage = caps.min_import_voltage_V.value();
+    std::lock_guard<std::mutex> command_lock(command_mutex);
+    bool has_import_caps = false;
+    {
+        std::lock_guard<std::mutex> caps_lock(caps_mutex);
+        has_import_caps = caps.min_import_voltage_V.has_value() && caps.max_import_voltage_V.has_value() &&
+                          caps.min_import_current_A.has_value() && caps.max_import_current_A.has_value();
+        if (has_import_caps) {
+            if (voltage > caps.max_import_voltage_V.value())
+                voltage = caps.max_import_voltage_V.value();
+            else if (voltage < caps.min_import_voltage_V.value())
+                voltage = caps.min_import_voltage_V.value();
 
-        if (current > caps.max_import_current_A.value())
-            current = caps.max_import_current_A.value();
-        else if (current < caps.min_import_current_A.value())
-            current = caps.min_import_current_A.value();
+            if (current > caps.max_import_current_A.value())
+                current = caps.max_import_current_A.value();
+            else if (current < caps.min_import_current_A.value())
+                current = caps.min_import_current_A.value();
+        }
+    }
 
+    if (has_import_caps) {
         minImportVoltage.store(voltage);
         importCurrentLimit.store(current);
 
