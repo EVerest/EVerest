@@ -158,33 +158,10 @@ async def test_F01_F02_F03(
     await asyncio.sleep(2)
 
     # send RequestStartTransaction without evse_id and expect Accepted: with no evse_id given the
-    # request is accepted as long as at least one EVSE can start a transaction (F01.FR.07).
+    # request is accepted as long as at least one EVSE can start a transaction (F01.FR.07). The
+    # transaction is then started on the first available EVSE once the vehicle is plugged in.
     await charge_point_v201.request_start_transaction_req(
         id_token=id_token, remote_start_id=remote_start_id
-    )
-    assert await wait_for_and_validate(
-        test_utility,
-        charge_point_v201,
-        "RequestStartTransaction",
-        call_result201.RequestStartTransaction(
-            status=RequestStartStopStatusEnumType.accepted
-        ),
-    )
-
-    # because AuthorizeRemoteStart is true we expect an Authorize here; don't plug in so no
-    # transaction is started for this request.
-    assert await wait_for_and_validate(
-        test_utility,
-        charge_point_v201,
-        "Authorize",
-        call201.Authorize(id_token=id_token),
-    )
-
-    test_utility.messages.clear()
-
-    # send RequestStartTransaction and expect Accepted
-    await charge_point_v201.request_start_transaction_req(
-        id_token=id_token, remote_start_id=remote_start_id, evse_id=evse_id
     )
     assert await wait_for_and_validate(
         test_utility,
