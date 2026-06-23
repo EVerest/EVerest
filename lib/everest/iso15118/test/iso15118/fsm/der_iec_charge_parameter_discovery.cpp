@@ -164,7 +164,8 @@ SCENARIO("ISO15118-20 der iec ac charge parameter discovery state transitions") 
             REQUIRE(dt::from_RationalNumber(transfer_mode.max_charge_power) == 11000);
             REQUIRE(dt::from_RationalNumber(transfer_mode.min_charge_power) == 2000);
             REQUIRE(dt::from_RationalNumber(transfer_mode.nominal_frequency) == 50);
-            REQUIRE(dt::from_RationalNumber(transfer_mode.power_ramp_limitation.value_or({})) == 2);
+            REQUIRE(dt::from_RationalNumber(transfer_mode.power_ramp_limitation.value_or(dt::RationalNumber{0, 0})) ==
+                    2);
 
             REQUIRE(dt::from_RationalNumber(transfer_mode.nominal_charge_power) == 11000);
             REQUIRE(dt::from_RationalNumber(transfer_mode.nominal_discharge_power) == 11000);
@@ -239,7 +240,8 @@ SCENARIO("ISO15118-20 der iec ac charge parameter discovery state transitions") 
             REQUIRE(dt::from_RationalNumber(transfer_mode.max_charge_power) == 11000);
             REQUIRE(dt::from_RationalNumber(transfer_mode.min_charge_power) == 2000);
             REQUIRE(dt::from_RationalNumber(transfer_mode.nominal_frequency) == 50);
-            REQUIRE(dt::from_RationalNumber(transfer_mode.power_ramp_limitation.value_or({})) == 2);
+            REQUIRE(dt::from_RationalNumber(transfer_mode.power_ramp_limitation.value_or(dt::RationalNumber{0, 0})) ==
+                    2);
 
             REQUIRE(dt::from_RationalNumber(transfer_mode.nominal_charge_power) == 11000);
             REQUIRE(dt::from_RationalNumber(transfer_mode.nominal_discharge_power) == 11000);
@@ -263,7 +265,8 @@ SCENARIO("ISO15118-20 der iec ac charge parameter discovery state transitions") 
 
             REQUIRE_FALSE(transfer_mode.der_control.reactive_power_support.has_value());
             REQUIRE_FALSE(transfer_mode.der_control.active_power_support.has_value());
-            REQUIRE(dt::from_RationalNumber(transfer_mode.der_control.max_level_dc_injection.value_or({})) == 450);
+            REQUIRE(dt::from_RationalNumber(
+                        transfer_mode.der_control.max_level_dc_injection.value_or(dt::RationalNumber{0, 0})) == 450);
         }
     }
 
