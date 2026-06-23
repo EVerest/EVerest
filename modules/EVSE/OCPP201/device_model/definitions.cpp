@@ -131,7 +131,7 @@ const VariableCharacteristics SupportedEnergyTransferModes = [] {
     var.dataType = DataEnum::MemberList;
     var.supportsMonitoring = false;
     var.valuesList =
-        "AC_single_phase,AC_two_phase,AC_three_phase,DC,AC_BPT,AC_BPT_DER,AC_DER,DC_BPT,DC_ACDP,DC_ACDP_BPT,WPT";
+        "AC_single_phase,AC_two_phase,AC_three_phase,DC,AC_BPT,AC_BPT_DER,AC_DER_IEC,AC_DER_SAE,DC_BPT,DC_ACDP,DC_ACDP_BPT,WPT";
     return var;
 }();
 

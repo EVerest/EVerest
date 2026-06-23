@@ -458,7 +458,8 @@ enum class EnergyTransferModeEnum {
     DC,
     AC_BPT,
     AC_BPT_DER,
-    AC_DER,
+    AC_DER_IEC,
+    AC_DER_SAE,
     DC_BPT,
     DC_ACDP,
     DC_ACDP_BPT,
@@ -491,8 +492,10 @@ inline std::string energy_transfer_mode_enum_to_string(EnergyTransferModeEnum e)
         return "AC_BPT";
     case EnergyTransferModeEnum::AC_BPT_DER:
         return "AC_BPT_DER";
-    case EnergyTransferModeEnum::AC_DER:
-        return "AC_DER";
+    case EnergyTransferModeEnum::AC_DER_IEC:
+        return "AC_DER_IEC";
+    case EnergyTransferModeEnum::AC_DER_SAE:
+        return "AC_DER_SAE";
     case EnergyTransferModeEnum::DC_BPT:
         return "DC_BPT";
     case EnergyTransferModeEnum::DC_ACDP:
@@ -543,8 +546,11 @@ inline EnergyTransferModeEnum string_to_energy_transfer_mode_enum(const std::str
     if (s == "AC_BPT_DER") {
         return EnergyTransferModeEnum::AC_BPT_DER;
     }
-    if (s == "AC_DER") {
-        return EnergyTransferModeEnum::AC_DER;
+    if (s == "AC_DER_IEC") {
+        return EnergyTransferModeEnum::AC_DER_IEC;
+    }
+    if (s == "AC_DER_SAE") {
+        return EnergyTransferModeEnum::AC_DER_SAE;
     }
     if (s == "DC_BPT") {
         return EnergyTransferModeEnum::DC_BPT;
