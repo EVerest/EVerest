@@ -8,8 +8,8 @@
 #include <iso15118/d20/dynamic_mode_parameters.hpp>
 
 namespace iso15118::d20::state {
-struct AC_ChargeLoop : public StateBase {
-    AC_ChargeLoop(Context& ctx) : StateBase(ctx, StateID::AC_ChargeLoop) {
+struct AC_DER_IEC_ChargeLoop : public StateBase {
+    AC_DER_IEC_ChargeLoop(Context& ctx) : StateBase(ctx, StateID::AC_DER_IEC_ChargeLoop) {
     }
 
     void enter() final;

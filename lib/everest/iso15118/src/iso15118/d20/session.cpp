@@ -83,6 +83,19 @@ SelectedServiceParameters::SelectedServiceParameters(dt::ServiceCategory energy_
     selected_connector.emplace<dt::McsConnector>(mcs_connector_);
 };
 
+SelectedServiceParameters::SelectedServiceParameters(dt::ServiceCategory energy_service_, dt::AcConnector ac_connector_,
+                                                     dt::ControlMode control_mode_, dt::MobilityNeedsMode mobility_,
+                                                     dt::Pricing pricing_, float nominal_voltage_,
+                                                     std::bitset<11> der_control_functions_) :
+    selected_energy_service(energy_service_),
+    selected_control_mode(control_mode_),
+    selected_mobility_needs_mode(mobility_),
+    selected_pricing(pricing_),
+    evse_nominal_voltage(nominal_voltage_),
+    selected_der_control_functions(der_control_functions_) {
+    selected_connector.emplace<dt::AcConnector>(ac_connector_);
+};
+
 Session::Session() {
     std::random_device rd;
     std::mt19937 generator(rd());
@@ -94,7 +107,7 @@ Session::Session() {
 }
 
 Session::Session(const PauseContext& pause_ctx) :
-    id(pause_ctx.old_session_id), selected_services(pause_ctx.selected_service_parameters) {};
+    id(pause_ctx.old_session_id), selected_services(pause_ctx.selected_service_parameters){};
 
 Session::Session(SelectedServiceParameters service_parameters_) : selected_services(service_parameters_) {
     std::random_device rd;
@@ -239,10 +252,10 @@ void Session::selected_service_parameters(const dt::ServiceCategory service, con
         if (this->offered_services.ac_der_iec_parameter_list.find(id) !=
             this->offered_services.ac_der_iec_parameter_list.end()) {
             const auto& parameters = this->offered_services.ac_der_iec_parameter_list.at(id);
-            this->selected_services = SelectedServiceParameters(dt::ServiceCategory::AC_DER_IEC, parameters.connector,
-                                                                parameters.control_mode, parameters.mobility_needs_mode,
-                                                                parameters.pricing, parameters.evse_nominal_voltage);
-            this->selected_services.selected_der_control_functions = parameters.der_control_functions;
+            this->selected_services =
+                SelectedServiceParameters(dt::ServiceCategory::AC_DER_IEC, parameters.connector,
+                                          parameters.control_mode, parameters.mobility_needs_mode, parameters.pricing,
+                                          parameters.evse_nominal_voltage, parameters.der_control_functions);
         } else {
             // Todo(sl): Should be not the case -> Raise Error?
         }

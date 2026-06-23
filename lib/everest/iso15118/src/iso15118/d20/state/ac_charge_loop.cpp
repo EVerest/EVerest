@@ -236,7 +236,18 @@ Result AC_ChargeLoop::feed(Event ev) {
             return {};
         }
 
-        m_ctx.feedback.ac_charge_loop_req(req->control_mode);
+        if (const auto* mode = std::get_if<Scheduled_AC_Req>(&req->control_mode)) {
+            m_ctx.feedback.ac_charge_loop_req(*mode);
+        } else if (const auto* mode = std::get_if<Scheduled_BPT_AC_Req>(&req->control_mode)) {
+            m_ctx.feedback.ac_charge_loop_req(*mode);
+        }
+        if (const auto* mode = std::get_if<Dynamic_AC_Req>(&req->control_mode)) {
+            m_ctx.feedback.ac_charge_loop_req(*mode);
+        }
+        if (const auto* mode = std::get_if<Dynamic_BPT_AC_Req>(&req->control_mode)) {
+            m_ctx.feedback.ac_charge_loop_req(*mode);
+        }
+
         m_ctx.feedback.ac_charge_loop_req(req->meter_info_requested);
         if (req->display_parameters) {
             m_ctx.feedback.ac_charge_loop_req(*req->display_parameters);

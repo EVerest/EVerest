@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/ac_charge_loop.hpp>
+#include <iso15118/d20/state/ac_der_iec_charge_loop.hpp>
 #include <iso15118/d20/state/dc_charge_loop.hpp>
 #include <iso15118/d20/state/dc_welding_detection.hpp>
 #include <iso15118/d20/state/power_delivery.hpp>
@@ -58,7 +59,7 @@ Result PowerDelivery::feed(Event ev) {
         if (const auto* control_data = m_ctx.get_control_event<PresentVoltageCurrent>()) {
             present_voltage = control_data->voltage;
         } else if (const auto* control_data = m_ctx.get_control_event<ClosedContactor>()) {
-            ac_connector_closed = control_data;
+            ac_connector_closed = *control_data;
 
             if (not ac_connector_closed) {
                 logf_warning(
@@ -115,7 +116,7 @@ Result PowerDelivery::feed(Event ev) {
                 m_ctx.feedback.signal(session::feedback::Signal::SETUP_FINISHED);
             }
 
-            if (m_ctx.session.is_ac_charger() and ac_connector_closed == false and
+            if ((m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger()) and not ac_connector_closed and
                 req->charge_progress == dt::Progress::Start) {
                 // Save req
                 previous_req = *req;
@@ -150,6 +151,9 @@ Result PowerDelivery::feed(Event ev) {
 
         if (m_ctx.session.is_ac_charger()) {
             return m_ctx.create_state<AC_ChargeLoop>();
+        }
+        if (m_ctx.session.is_ac_der_iec_charger()) {
+            return m_ctx.create_state<AC_DER_IEC_ChargeLoop>();
         }
         if (m_ctx.session.is_dc_charger()) {
             return m_ctx.create_state<DC_ChargeLoop>();

@@ -13,6 +13,8 @@
 #include <iso15118/d20/session.hpp>
 #include <iso15118/message/ac_charge_loop.hpp>
 #include <iso15118/message/ac_charge_parameter_discovery.hpp>
+#include <iso15118/message/ac_der_iec_charge_loop.hpp>
+#include <iso15118/message/ac_der_iec_charge_parameter_discovery.hpp>
 #include <iso15118/message/dc_charge_loop.hpp>
 #include <iso15118/message/dc_charge_parameter_discovery.hpp>
 #include <iso15118/message/schedule_exchange.hpp>
@@ -53,18 +55,21 @@ using DcReqControlMode = std::variant<dt::Scheduled_DC_CLReqControlMode, dt::BPT
                                       dt::Dynamic_DC_CLReqControlMode, dt::BPT_Dynamic_DC_CLReqControlMode>;
 
 using AcReqControlMode = std::variant<dt::Scheduled_AC_CLReqControlMode, dt::BPT_Scheduled_AC_CLReqControlMode,
-                                      dt::Dynamic_AC_CLReqControlMode, dt::BPT_Dynamic_AC_CLReqControlMode>;
+                                      dt::DER_Scheduled_AC_CLReqControlMode, dt::Dynamic_AC_CLReqControlMode,
+                                      dt::BPT_Dynamic_AC_CLReqControlMode, dt::DER_Dynamic_AC_CLReqControlMode>;
 
 using DcChargeLoopReq = std::variant<DcReqControlMode, dt::DisplayParameters, PresentVoltage, MeterInfoRequested>;
 
 using EvseTransferLimits = std::variant<d20::DcTransferLimits, d20::AcTransferLimits>;
 
-using EvTransferLimits = std::variant<dt::DC_CPDReqEnergyTransferMode, dt::BPT_DC_CPDReqEnergyTransferMode,
-                                      dt::AC_CPDReqEnergyTransferMode, dt::BPT_AC_CPDReqEnergyTransferMode>;
+using EvTransferLimits =
+    std::variant<dt::DC_CPDReqEnergyTransferMode, dt::BPT_DC_CPDReqEnergyTransferMode, dt::AC_CPDReqEnergyTransferMode,
+                 dt::BPT_AC_CPDReqEnergyTransferMode, dt::DER_AC_CPDReqEnergyTransferMode>;
 using EvSEControlMode = std::variant<dt::Dynamic_SEReqControlMode, dt::Scheduled_SEReqControlMode>;
 
 using AcChargeLoopReq = std::variant<AcReqControlMode, dt::DisplayParameters, MeterInfoRequested>;
-using AcLimits = std::variant<dt::AC_CPDReqEnergyTransferMode, dt::BPT_AC_CPDReqEnergyTransferMode>;
+using AcLimits = std::variant<dt::AC_CPDReqEnergyTransferMode, dt::BPT_AC_CPDReqEnergyTransferMode,
+                              dt::DER_AC_CPDReqEnergyTransferMode>;
 
 struct Callbacks {
     std::function<void(Signal)> signal;

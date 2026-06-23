@@ -246,7 +246,7 @@ template <> void convert(const ServiceDetailRequest& in, iso20_ServiceDetailReqT
 }
 
 struct ParameterValueVisitor {
-    ParameterValueVisitor(iso20_ParameterType& parameter_) : parameter(parameter_) {};
+    ParameterValueVisitor(iso20_ParameterType& parameter_) : parameter(parameter_){};
     void operator()(const bool& in) {
         CB_SET_USED(parameter.boolValue);
         parameter.boolValue = in;
