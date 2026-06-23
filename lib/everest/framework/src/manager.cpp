@@ -759,9 +759,6 @@ int Manager::run() {
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core_);
 
-    RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
-                               ms,     status_fifo,       retain_topics};
-
     register_state_transition_handler([this](ManagerState from, ManagerState to) {
         if (to == ManagerState::Running) {
             config_service_core_->set_modules_running();
@@ -776,77 +773,6 @@ int Manager::run() {
         }
     });
 
-    bool cfg_api_rw = false;
-    std::unique_ptr<Everest::api::configuration::ConfigurationAPI> configuration_api;
-    if (cfg_api_active) {
-        cfg_api_rw = vm_["configuration-api"].as<std::string>() == "rw";
-        if (cfg_api_rw) {
-            EVLOG_info << "Starting ConfigurationAPI in read-write mode";
-        } else {
-            EVLOG_info << "Starting ConfigurationAPI in read-only mode";
-        }
-        configuration_api = std::make_unique<Everest::api::configuration::ConfigurationAPI>(
-            *mqtt_abstraction, *config_service_core_, not cfg_api_rw);
-    }
-
-    bool lfc_api_rw = false;
-    std::unique_ptr<Everest::api::lifecycle::LifecycleAPI> lifecycle_api;
-    if (lfc_api_active) {
-        lfc_api_rw = vm_["lifecycle-api"].as<std::string>() == "rw";
-        if (lfc_api_rw) {
-            EVLOG_info << "Starting LifecycleAPI in read-write mode";
-        } else {
-            EVLOG_info << "Starting LifecycleAPI in read-only mode";
-        }
-        lifecycle_api = std::make_unique<Everest::api::lifecycle::LifecycleAPI>(
-            *mqtt_abstraction, *config_service_core_,
-            configuration_api ? (cfg_api_rw ? Everest::api::lifecycle::ConfigurationApiStatus::AvailableRW
-                                            : Everest::api::lifecycle::ConfigurationApiStatus::AvailableRO)
-                              : Everest::api::lifecycle::ConfigurationApiStatus::NotAvailable,
-            not lfc_api_rw,
-            [this, &mqtt_abstraction, &ms]() {
-                Everest::api::lifecycle::StopModulesResult ret = Everest::api::lifecycle::StopModulesResult::Rejected;
-                if (is_idle()) {
-                    ret = Everest::api::lifecycle::StopModulesResult::NoModulesToStop;
-                } else if (are_modules_started()) {
-                    handle_initiate_graceful_shutdown(std::chrono::system_clock::now(), false, nullptr,
-                                                      *mqtt_abstraction, ms);
-                    ret = Everest::api::lifecycle::StopModulesResult::Stopping;
-                }
-                return ret;
-            },
-            [this, &runtime_ctx, &mqtt_abstraction, &ms]() {
-                Everest::api::lifecycle::RestartModulesResult ret =
-                    Everest::api::lifecycle::RestartModulesResult::Rejected;
-                if (are_modules_started()) {
-                    shutdown_cause_ = ShutdownCause::Restart;
-                    ret = Everest::api::lifecycle::RestartModulesResult::Restarting;
-                    config_service_core_->notice_module_restart_triggered();
-                    handle_initiate_graceful_shutdown(std::chrono::system_clock::now(), false, nullptr,
-                                                      *mqtt_abstraction, ms);
-                } else if (is_idle()) {
-                    ret = Everest::api::lifecycle::RestartModulesResult::Starting;
-                    if (reload_and_update_context(runtime_ctx)) {
-                        module_handles_ = handle_start_modules(runtime_ctx);
-                        EVLOG_info << "Modules restart initiated with reloaded configuration.";
-                    } else {
-                        config_service_core_->notice_cfg_validation_failed();
-                        EVLOG_error << "Failed to reload the configuration, staying in Idle.";
-                    }
-                }
-                return ret;
-            });
-
-        register_state_transition_handler([this, &lifecycle_api](ManagerState from, ManagerState to) {
-            // TODO(CB): Might want to interprete some more to-states as "running"
-            if (to == ManagerState::Running) {
-                lifecycle_api->modules_started_running();
-            } else if (from == ManagerState::Running) {
-                lifecycle_api->modules_stopped_running();
-            }
-        });
-    }
-
     if (not boot_into_idle and runtime_ctx_has_valid_config) {
         module_handles_ = handle_start_modules(runtime_ctx);
     } else {
@@ -855,13 +781,7 @@ int Manager::run() {
         } else if (not runtime_ctx_has_valid_config) {
             EVLOG_error << "No valid module configuration found -> entering Idle";
         }
-        // only enter idle if configuration and lifecycle APIs are available rw
-        if (lfc_api_rw and cfg_api_rw) {
-            transition_to(ManagerState::Idle);
-        } else {
-            EVLOG_error << "Can only go into idle, if the lifecycle and configuration APIs are active";
-            return EXIT_FAILURE;
-        }
+        transition_to(ManagerState::Idle);
     }
 
     if (const auto err_set_user = ManagerAdminPanel::switch_manager_user_if_needed(runtime_ctx.ms)) {
@@ -930,7 +850,7 @@ std::string_view Manager::state_to_string(ManagerState state) const {
 std::shared_ptr<const ManagerConfig>
 Manager::load_and_validate_config(const ManagerSettings& ms,
                                   everest::config::ModuleConfigurations& preloaded_module_configs) const {
-    const auto start_time = std::chrono::system_clock::now();
+    const auto start_time = std::chrono::steady_clock::now();
     std::shared_ptr<const ManagerConfig> config;
     try {
         config = std::make_shared<const ManagerConfig>(ms, std::move(preloaded_module_configs));

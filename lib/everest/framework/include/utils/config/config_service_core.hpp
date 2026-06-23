@@ -15,6 +15,16 @@
 
 namespace Everest::config {
 
+/// \brief Helper type, which should not be part of the config_service_interface
+///
+/// The provided set_parameter_callback uses it to return success/failure
+enum class SetParameterResponse {
+    SetCallFailed,
+    ModuleReplied_Applied,
+    ModuleReplied_RequiresRestart,
+    ModuleReplied_Rejected,
+};
+
 /// \brief Core framework implementation of ConfigServiceInterface.
 ///
 /// Owns a SqliteConfigSlotManager and uses a SqliteStorage factory for per-slot storage access.
