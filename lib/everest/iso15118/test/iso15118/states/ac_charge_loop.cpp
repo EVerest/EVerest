@@ -44,9 +44,20 @@ SCENARIO("AC charge loop state handling") {
         {dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedByEvcc},
         {dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedBySecc}};
 
-    const d20::EvseSetupConfig evse_setup{
-        evse_id,   supported_energy_services, auth_services, vas_services, cert_install, dc_limits,
-        ac_limits, control_mobility_modes,    std::nullopt,  std::nullopt, std::nullopt, powersupply_limits};
+    const d20::EvseSetupConfig evse_setup{evse_id,
+                                          supported_energy_services,
+                                          auth_services,
+                                          vas_services,
+                                          cert_install,
+                                          dc_limits,
+                                          ac_limits,
+                                          std::nullopt,
+                                          control_mobility_modes,
+                                          std::nullopt,
+                                          std::nullopt,
+                                          std::nullopt,
+                                          std::nullopt,
+                                          powersupply_limits};
 
     GIVEN("Bad case - Unknown session") {
         d20::Session session = d20::Session();

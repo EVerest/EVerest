@@ -4,11 +4,12 @@
 
 #include <bitset>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <vector>
 
+#include <iso15118/d20/der_functions.hpp>
 #include <iso15118/d20/limits.hpp>
-#include <iso15118/message/ac_der_iec_charge_parameter_discovery.hpp>
 #include <iso15118/message/common_types.hpp>
 
 namespace iso15118::d20 {
@@ -30,12 +31,10 @@ struct BptSetupConfig {
 };
 
 struct DerSetupConfig {
-    std::bitset<16> control_functions{};
-    message_20::datatypes::OperatingMode operating_mode{message_20::datatypes::OperatingMode::GridFollowing};
-    message_20::datatypes::GridConnectionMode grid_connection_mode{
-        message_20::datatypes::GridConnectionMode::GridConnected};
-    message_20::datatypes::RationalNumber evse_nominal_frequency{50, 0};
-    std::optional<message_20::datatypes::ReactivePowerLimits> reactive_power_limits{std::nullopt};
+    std::bitset<11> control_functions;
+    std::map<iec::DERControlName, iec::DERControlFunction> supported_der_control_functions;
+    iec::OperatingMode operating_mode;
+    iec::GridConnectionMode grid_connection_mode;
 };
 
 struct EvseSetupConfig {
@@ -46,6 +45,7 @@ struct EvseSetupConfig {
     bool enable_certificate_install_service;
     d20::DcTransferLimits dc_limits;
     d20::AcTransferLimits ac_limits;
+    std::optional<d20::IecDerTransferLimits> der_limits;
     std::vector<ControlMobilityNeedsModes> control_mobility_modes;
     std::optional<std::string> custom_protocol{std::nullopt};
     std::optional<AcSetupConfig> ac_setup_config{std::nullopt};
@@ -83,6 +83,7 @@ struct SessionConfig {
     AcTransferLimits ac_limits;
 
     DerSetupConfig der_setup_config;
+    std::optional<IecDerTransferLimits> der_limits;
 
     DcTransferLimits powersupply_limits;
 

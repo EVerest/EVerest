@@ -121,14 +121,6 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
 
     if (const auto req = variant->get_if<message_20::AC_ChargeParameterDiscoveryRequest>()) {
 
-        if (const auto* mode = std::get_if<AC_ModeReq>(&req->transfer_mode)) {
-            // Set EV transfer limits
-            m_ctx.session_ev_info.ev_transfer_limits.emplace<AC_ModeReq>(*mode);
-        } else if (const auto* mode = std::get_if<BPT_AC_ModeReq>(&req->transfer_mode)) {
-            // Set EV transfer limits
-            m_ctx.session_ev_info.ev_transfer_limits.emplace<BPT_AC_ModeReq>(*mode);
-        }
-
         const auto res = handle_request(*req, m_ctx.session, m_ctx.session_config.ac_limits, present_powers);
 
         m_ctx.respond(res);
@@ -138,7 +130,13 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
             return {};
         }
 
-        m_ctx.feedback.ac_limits(req->transfer_mode);
+        if (const auto* mode = std::get_if<AC_ModeReq>(&req->transfer_mode)) {
+            m_ctx.session_ev_info.ev_transfer_limits.emplace<AC_ModeReq>(*mode);
+            m_ctx.feedback.ac_limits(*mode);
+        } else if (const auto* mode = std::get_if<BPT_AC_ModeReq>(&req->transfer_mode)) {
+            m_ctx.session_ev_info.ev_transfer_limits.emplace<BPT_AC_ModeReq>(*mode);
+            m_ctx.feedback.ac_limits(*mode);
+        }
 
         return m_ctx.create_state<ScheduleExchange>();
 
