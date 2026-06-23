@@ -25,12 +25,15 @@ This policy applies to all components of the EVerest public API:
 
 - External AsyncAPIs
 - Energy Management JSON RPC API
-- Configuration and storage contracts (EVerest module configuration, OCPP
-  configuration)
+- Configuration, storage, and module contracts (EVerest module configuration and module availability,
+  OCPP configuration)
 
-Internal interfaces, types, and the configuration/storage contracts of Dummy
-and Simulation modules are explicitly excluded and may be changed or removed
-without a deprecation period.
+Internal interfaces and types, as well as Dummy and Simulation modules
+(including their availability and their configuration/storage contracts), are
+explicitly excluded and may be changed or removed without a deprecation period.
+
+Public API components that are explicitly marked as **experimental** are also
+exempt from the deprecation period (see :ref:`project-experimental-components`).
 
 **********************
 Deprecation Lifecycle
@@ -44,6 +47,68 @@ A deprecated public API component passes through three phases:
    removal release is announced.
 3. **Removed**: The component is no longer available. Its removal is a breaking
    change and follows the rules defined in :ref:`project-breaking-changes`.
+
+Before reaching the **Active** phase, a component may optionally be offered as
+:ref:`experimental <project-experimental-components>`. Experimental components
+are not yet covered by the stability guarantees or the deprecation period.
+
+.. _project-experimental-components:
+
+***********************
+Experimental Components
+***********************
+
+New public API components may be introduced as **experimental**. Experimental
+components are part of the public API surface but are explicitly **exempt from
+the stability guarantees and the deprecation period** described in this policy.
+This allows the project to ship and iterate on new features quickly before
+committing to their long-term stability.
+
+While a component is experimental:
+
+- It may change in incompatible ways or be removed in any release, outside the
+  normal deprecation process. Such changes are **not** considered breaking
+  changes (see :ref:`project-breaking-changes`).
+- It does **not** need to be listed in the :doc:`Active Deprecation Index
+  <deprecation-index>`, and its removal does not require a preceding deprecation.
+
+Examples of components that may be introduced as experimental include a new
+EVerest module, an AsyncAPI channel or operation, a JSON RPC method, or a
+configuration option.
+
+How Experimental Components Are Marked
+======================================
+
+An experimental component must be clearly identifiable as such. Where reasonable,
+this is signalled through all applicable channels:
+
+- **Documentation**: The component is marked as experimental in its reference
+  documentation, including a note that it is exempt from the stability
+  guarantees.
+- **Release notes**: The component is listed as experimental in the release notes
+  of the version that introduces it.
+- **Runtime warnings**: Where reasonable, EVerest emits a clearly identifiable
+  warning when an experimental component is used (e.g. a log message at startup
+  for an experimental configuration option or module).
+
+Graduation and Removal
+======================
+
+An experimental component leaves the experimental phase in one of two ways:
+
+1. **Promotion to active/stable**: Once a component is considered stable, it is
+   explicitly promoted. From that point on it is a regular public API component
+   and is fully covered by the stability guarantees and this deprecation policy.
+   The promotion is announced in the release notes.
+2. **Removal**: An experimental component that does not graduate may be removed
+   without a deprecation period.
+
+Components should not remain experimental indefinitely. With every stable
+release, the maintainers review the set of experimental components and decide,
+per component, whether to promote, keep, or remove it. The outcome of this review
+is recorded in the release notes. Long-lived experimental components are
+discouraged, as integrators may come to depend on them despite the missing
+guarantees.
 
 **************************
 Minimum Deprecation Period

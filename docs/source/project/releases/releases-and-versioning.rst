@@ -82,9 +82,13 @@ The public API consists of:
 
 - :doc:`External AsyncAPIs </explanation/adapt-everest/apis>`
 - :ref:`Energy Management JSON RPC API <everest_modules_RpcApi>`
-- Configuration and Storage contracts. As of today, this includes:
+- Configuration, Storage, and Module contracts. As of today, this includes:
     - EVerest module configuration files (YAML or SQLite)
     - OCPP configuration (JSON or SQLite)
+
+  These contracts also cover the availability of the EVerest modules that a configuration references by name. Only a
+  module's availability under a stable name is guaranteed; its implementation may change, and the interfaces and types it
+  provides remain internal and may change without notice.
 
 The individual public API components may maintain their own version numbers independent of the EVerest release version.
 
@@ -95,7 +99,20 @@ Please refer to :ref:`breaking changes <project-breaking-changes>` for detailed 
     Internal EVerest :doc:`interfaces </reference/interfaces_index>` and :doc:`types </reference/types_index>` are explicitly excluded from the public API
     and may change without notice.
 
-    The configuration and storage contracts of any Dummy and Simulation modules are explicitly excluded from the public API and may change without notice.
+    Any Dummy and Simulation modules, including their availability and their configuration and storage contracts, are explicitly excluded from the public API and may change or be removed without notice.
+
+.. _project-release-and-versioning-experimental:
+
+Experimental Components
+=======================
+
+Individual public API components may be introduced as **experimental**. Experimental components are part of the public API
+surface but are **not** covered by the stability guarantees described below: they may change in incompatible ways or be
+removed in any release. This allows the project to develop and iterate on new features before committing to their long-term
+stability.
+
+Experimental components are clearly marked as such and are exempt from the :ref:`deprecation policy <project-deprecation-policy>`.
+See :ref:`Experimental Components <project-experimental-components>` for how they are marked, promoted, and removed.
 
 ********************
 Stability Guarantees
@@ -108,6 +125,11 @@ This guarantee means:
 
 - All EVerest and OCPP Configuration as well as other file and path dependencies from ``2026.01.0`` work with ``2026.01.5``
 - External AsyncAPI clients compatible with ``2026.01.0`` work with all ``2026.01.x`` releases
+
+.. note::
+
+    Components marked as :ref:`experimental <project-release-and-versioning-experimental>` are exempt from these stability
+    guarantees and may change or be removed at any time.
 
 EVerest makes a **best-effort attempt** to minimize breaking changes across major releases (e.g., from ``2026.01.x`` to ``2026.07.0``). However, breaking
 changes may be necessary for:
