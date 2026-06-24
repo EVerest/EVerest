@@ -12,6 +12,8 @@
 #include <iso15118/d20/ev_information.hpp>
 #include <iso15118/message/ac_charge_loop.hpp>
 #include <iso15118/message/ac_charge_parameter_discovery.hpp>
+#include <iso15118/message/ac_der_iec_charge_loop.hpp>
+#include <iso15118/message/ac_der_iec_charge_parameter_discovery.hpp>
 #include <iso15118/message/dc_charge_loop.hpp>
 #include <iso15118/message/service_detail.hpp>
 #include <iso15118/message/type.hpp>
@@ -145,6 +147,9 @@ types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::Dynamic_AC_CL
 types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::BPT_Dynamic_AC_CLReqControlMode& mode);
 types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::Scheduled_AC_CLReqControlMode& mode);
 types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::BPT_Scheduled_AC_CLReqControlMode& mode);
+types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::DER_AC_CPDReqEnergyTransferMode& mode);
+types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::DER_Scheduled_AC_CLReqControlMode& mode);
+types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::DER_Dynamic_AC_CLReqControlMode& mode);
 
 types::iso15118::AcEvPresentPowerValues fill_ac_ev_present_power_values(const dt::Dynamic_AC_CLReqControlMode& mode);
 types::iso15118::AcEvPresentPowerValues fill_ac_ev_present_power_values(const dt::Scheduled_AC_CLReqControlMode& mode);
