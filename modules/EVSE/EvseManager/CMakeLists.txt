@@ -19,6 +19,7 @@ target_sources(${MODULE_NAME}
         ErrorHandling.cpp
         backtrace.cpp
         PersistentStore.cpp
+        ac_energy_transfer.cpp
         over_voltage/OverVoltageMonitor.cpp
         voltage_plausibility/VoltagePlausibilityMonitor.cpp
 )
