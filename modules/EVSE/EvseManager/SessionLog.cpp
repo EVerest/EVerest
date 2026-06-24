@@ -33,7 +33,12 @@ SessionLog::~SessionLog() {
 }
 
 void SessionLog::setPath(const std::string& path) {
-    logpath_root = std::filesystem::weakly_canonical(std::filesystem::path(path));
+    try {
+        logpath_root = std::filesystem::weakly_canonical(std::filesystem::path(path));
+    } catch (const std::filesystem::filesystem_error& e) {
+        EVLOG_error << fmt::format("Cannot resolve session logpath {}: {}", path, e.what());
+        logpath_root = std::filesystem::path(path);
+    }
 }
 
 void SessionLog::setMqtt(mqtt_publish_ftor const& mqtt_provider) {
@@ -50,19 +55,26 @@ std::optional<std::filesystem::path> SessionLog::startSession(const std::string&
             stopSession();
         }
 
-        // create general log directory if it does not exist
-        if (!std::filesystem::exists(logpath_root)) {
-            try {
+        try {
+            // create general log directory if it does not exist
+            if (!std::filesystem::exists(logpath_root)) {
                 std::filesystem::create_directories(logpath_root);
-            } catch (std::filesystem::filesystem_error& e) {
-                EVLOG_error << fmt::format("Cannot create logpath {}: {}", logpath_root.string(), e.what());
-                return std::nullopt;
             }
+        } catch (const std::filesystem::filesystem_error& e) {
+            EVLOG_error << fmt::format("Cannot create logpath {}: {}", logpath_root.string(), e.what());
+            return std::nullopt;
         }
 
         std::string ts = Everest::Date::to_rfc3339(date::utc_clock::now());
         auto ts_suffix_string = fmt::format("{}-{}", ts, suffix_string);
-        auto logpath_with_suffix = std::filesystem::weakly_canonical(logpath_root / ts_suffix_string);
+        std::filesystem::path logpath_with_suffix;
+        try {
+            logpath_with_suffix = std::filesystem::weakly_canonical(logpath_root / ts_suffix_string);
+        } catch (const std::filesystem::filesystem_error& e) {
+            EVLOG_error << fmt::format("Cannot resolve session logpath {}: {}",
+                                       (logpath_root / ts_suffix_string).string(), e.what());
+            return std::nullopt;
+        }
 
         const auto [root_it, suffix_ix] = std::mismatch(logpath_root.begin(), logpath_root.end(),
                                                         logpath_with_suffix.begin(), logpath_with_suffix.end());
@@ -74,9 +86,14 @@ std::optional<std::filesystem::path> SessionLog::startSession(const std::string&
 
         logpath = logpath_with_suffix;
 
-        // create sessionlog directory if it does not exist
-        if (!std::filesystem::exists(logpath)) {
-            std::filesystem::create_directories(logpath);
+        try {
+            // create sessionlog directory if it does not exist
+            if (!std::filesystem::exists(logpath)) {
+                std::filesystem::create_directories(logpath);
+            }
+        } catch (const std::filesystem::filesystem_error& e) {
+            EVLOG_error << fmt::format("Cannot create session logpath {}: {}", logpath.string(), e.what());
+            return std::nullopt;
         }
 
         // open new file
