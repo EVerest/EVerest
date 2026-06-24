@@ -17,7 +17,7 @@ struct AC_DER_IEC_ChargeLoop : public StateBase {
     Result feed(Event) final;
 
 private:
-    float target_frequency{50}; // TODO(SL): Adding updating feature
+    std::optional<float> target_frequency; // TODO(SL): Adding updating feature
     bool stop{false};
     bool pause{false};
 

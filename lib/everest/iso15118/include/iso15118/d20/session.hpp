@@ -57,7 +57,7 @@ struct SelectedServiceParameters {
     std::optional<float> evse_nominal_voltage;
     std::optional<dt::GridCodeIslandingDetectionMethod> selected_grid_code_method;
 
-    std::bitset<11> selected_der_control_functions;
+    std::bitset<12> selected_der_control_functions;
 
     SelectedServiceParameters() = default;
     SelectedServiceParameters(dt::ServiceCategory energy_service_, dt::DcConnector dc_connector_,
@@ -79,7 +79,7 @@ struct SelectedServiceParameters {
                               dt::GridCodeIslandingDetectionMethod grid_code_method_);
     SelectedServiceParameters(dt::ServiceCategory energy_service_, dt::AcConnector ac_connector_,
                               dt::ControlMode control_mode_, dt::MobilityNeedsMode mobility_, dt::Pricing pricing_,
-                              float nominal_voltage_, std::bitset<11> der_control_functions_);
+                              float nominal_voltage_, std::bitset<12> der_control_functions_);
 };
 
 // Todo(sl): missing services

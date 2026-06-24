@@ -126,7 +126,7 @@ SCENARIO("ISO15118-20 der iec ac charge parameter discovery state transitions") 
     GIVEN("Good Case - No der functions selected (ongoing)") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_IEC_ChargeParameterDiscovery>()};
 
-        std::bitset<11> der_control_functions{};
+        std::bitset<12> der_control_functions{};
 
         d20::SelectedServiceParameters service_parameters = d20::SelectedServiceParameters(
             dt::ServiceCategory::AC_DER_IEC, dt::AcConnector::ThreePhase, dt::ControlMode::Scheduled,
@@ -200,7 +200,7 @@ SCENARIO("ISO15118-20 der iec ac charge parameter discovery state transitions") 
             .supported_der_control_functions[iec::DERControlName::DCInjectionRestriction] =
             iec::MaximumLevelDCInjection{450};
 
-        std::bitset<11> der_control_functions{};
+        std::bitset<12> der_control_functions{};
         der_control_functions.set(static_cast<size_t>(iec::DERControlName::ZeroCurrentMode), true);
         der_control_functions.set(static_cast<size_t>(iec::DERControlName::DCInjectionRestriction), true);
 

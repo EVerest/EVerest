@@ -48,7 +48,7 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
     der_setup_config.grid_connection_mode = iec::GridConnectionMode::GridConnected;
     der_setup_config.operating_mode = iec::OperatingMode::GridFollowing;
 
-    const auto no_der_function_selected = std::bitset<11>{};
+    const auto no_der_function_selected = std::bitset<12>{};
 
     const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
         {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
@@ -106,7 +106,7 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
             REQUIRE(res.status.has_value() == false);
             REQUIRE(res.meter_info.has_value() == false);
             REQUIRE(res.receipt.has_value() == false);
-            REQUIRE(res.target_frequency.has_value() == false);
+            REQUIRE_FALSE(res.target_frequency.has_value());
             REQUIRE(std::holds_alternative<dt::DER_Scheduled_AC_CLResControlMode>(res.control_mode));
             const auto& control_mode = std::get<dt::DER_Scheduled_AC_CLResControlMode>(res.control_mode);
             REQUIRE(dt::from_RationalNumber(control_mode.max_charge_power) == 0);
@@ -152,8 +152,7 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
             REQUIRE(res.status.has_value() == false);
             REQUIRE(res.meter_info.has_value() == false);
             REQUIRE(res.receipt.has_value() == false);
-            REQUIRE(res.target_frequency.has_value() == false);
-
+            REQUIRE_FALSE(res.target_frequency.has_value());
             REQUIRE(std::holds_alternative<dt::DER_Scheduled_AC_CLResControlMode>(res.control_mode));
             const auto& control_mode = std::get<dt::DER_Scheduled_AC_CLResControlMode>(res.control_mode);
             REQUIRE(dt::from_RationalNumber(control_mode.max_charge_power) == 0);
@@ -207,7 +206,7 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
             REQUIRE(res.status.has_value() == false);
             REQUIRE(res.meter_info.has_value() == false);
             REQUIRE(res.receipt.has_value() == false);
-            REQUIRE(dt::from_RationalNumber(res.target_frequency.value_or(dt::RationalNumber{0, 0})) == 50.0f);
+            REQUIRE_FALSE(res.target_frequency.has_value());
             REQUIRE(std::holds_alternative<dt::DER_Scheduled_AC_CLResControlMode>(res.control_mode));
 
             const auto& control_mode = std::get<dt::DER_Scheduled_AC_CLResControlMode>(res.control_mode);
@@ -269,7 +268,7 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
             REQUIRE(res.status.has_value() == false);
             REQUIRE(res.meter_info.has_value() == false);
             REQUIRE(res.receipt.has_value() == false);
-            REQUIRE(dt::from_RationalNumber(res.target_frequency.value_or(dt::RationalNumber{0, 0})) == 50.0f);
+            REQUIRE_FALSE(res.target_frequency.has_value());
             REQUIRE(std::holds_alternative<dt::DER_Dynamic_AC_CLResControlMode>(res.control_mode));
 
             const auto& control_mode = std::get<dt::DER_Dynamic_AC_CLResControlMode>(res.control_mode);
@@ -301,7 +300,7 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
         present_power.present_active_power = {11, 3};
         state_helper.set_active_control_event(present_power);
         fsm.feed(d20::Event::CONTROL_MESSAGE);
-        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 40, std::nullopt, 95};
+        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 40, 95, 80};
         state_helper.set_active_control_event(dynamic_parameters);
         fsm.feed(d20::Event::CONTROL_MESSAGE);
 
@@ -336,7 +335,7 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
             REQUIRE(res.status.has_value() == false);
             REQUIRE(res.meter_info.has_value() == false);
             REQUIRE(res.receipt.has_value() == false);
-            REQUIRE(dt::from_RationalNumber(res.target_frequency.value_or(dt::RationalNumber{0, 0})) == 50.0f);
+            REQUIRE_FALSE(res.target_frequency.has_value());
             REQUIRE(std::holds_alternative<dt::DER_Dynamic_AC_CLResControlMode>(res.control_mode));
 
             const auto& control_mode = std::get<dt::DER_Dynamic_AC_CLResControlMode>(res.control_mode);
@@ -349,7 +348,8 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
             REQUIRE_FALSE(control_mode.dso_q_setpoint.has_value());
 
             REQUIRE(control_mode.departure_time.value_or(0) >= 39);
-            REQUIRE(control_mode.minimum_soc.value_or(0) == 95);
+            REQUIRE(control_mode.target_soc.value_or(0) == 95);
+            REQUIRE(control_mode.minimum_soc.value_or(0) == 80);
             REQUIRE(control_mode.ack_max_delay.value_or(0) == 30);
         }
     }
@@ -372,7 +372,7 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
             .supported_der_control_functions[iec::DERControlName::DSOCosPhiSetpointProvision] =
             iec::DSOCosPhiSetpoint{345, std::nullopt, std::nullopt, iec::PowerFactorExcitation::OverExcited, true, 422};
 
-        auto der_functions = std::bitset<11>{};
+        auto der_functions = std::bitset<12>{};
         der_functions.set(static_cast<size_t>(iec::DERControlName::DSOQSetpointProvision), true);
         der_functions.set(static_cast<size_t>(iec::DERControlName::DSOCosPhiSetpointProvision), true);
 
@@ -422,7 +422,7 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
             REQUIRE(res.status.has_value() == false);
             REQUIRE(res.meter_info.has_value() == false);
             REQUIRE(res.receipt.has_value() == false);
-            REQUIRE(dt::from_RationalNumber(res.target_frequency.value_or(dt::RationalNumber{0, 0})) == 50.0f);
+            REQUIRE_FALSE(res.target_frequency.has_value());
             REQUIRE(std::holds_alternative<dt::DER_Dynamic_AC_CLResControlMode>(res.control_mode));
 
             const auto& control_mode = std::get<dt::DER_Dynamic_AC_CLResControlMode>(res.control_mode);
@@ -500,7 +500,7 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
             REQUIRE(res.response_code == dt::ResponseCode::OK);
             REQUIRE(res.meter_info.has_value() == false);
             REQUIRE(res.receipt.has_value() == false);
-            REQUIRE(dt::from_RationalNumber(res.target_frequency.value_or(dt::RationalNumber{0, 0})) == 50.0f);
+            REQUIRE_FALSE(res.target_frequency.has_value());
             REQUIRE(std::holds_alternative<dt::DER_Dynamic_AC_CLResControlMode>(res.control_mode));
 
             const auto& control_mode = std::get<dt::DER_Dynamic_AC_CLResControlMode>(res.control_mode);

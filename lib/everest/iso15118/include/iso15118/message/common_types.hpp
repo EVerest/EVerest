@@ -222,7 +222,7 @@ struct AcBptParameterList : AcParameterList {
 };
 
 struct AcDerParameterList : AcParameterList {
-    std::bitset<11> der_control_functions;
+    std::bitset<12> der_control_functions;
 };
 
 struct DcParameterList {

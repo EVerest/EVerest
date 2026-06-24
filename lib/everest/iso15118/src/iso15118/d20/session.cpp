@@ -86,7 +86,7 @@ SelectedServiceParameters::SelectedServiceParameters(dt::ServiceCategory energy_
 SelectedServiceParameters::SelectedServiceParameters(dt::ServiceCategory energy_service_, dt::AcConnector ac_connector_,
                                                      dt::ControlMode control_mode_, dt::MobilityNeedsMode mobility_,
                                                      dt::Pricing pricing_, float nominal_voltage_,
-                                                     std::bitset<11> der_control_functions_) :
+                                                     std::bitset<12> der_control_functions_) :
     selected_energy_service(energy_service_),
     selected_control_mode(control_mode_),
     selected_mobility_needs_mode(mobility_),

@@ -48,8 +48,7 @@ void convert(dt::DsoCosPhiSetpoint& out, const iec::DSOCosPhiSetpoint& in) {
     out.step_response_time_constant_reactive_power = dt::from_float(in.step_response_time_constant_reactive_power);
 }
 
-template <typename T>
-void set_dynamic_parameters_in_res(T& res_mode, const UpdateDynamicModeParameters& parameters,
+void set_dynamic_parameters_in_res(Dynamic_DER_Res& res_mode, const UpdateDynamicModeParameters& parameters,
                                    uint64_t header_timestamp) {
     if (parameters.departure_time) {
         const auto departure_time = static_cast<uint64_t>(parameters.departure_time.value());
@@ -58,7 +57,12 @@ void set_dynamic_parameters_in_res(T& res_mode, const UpdateDynamicModeParameter
         }
     }
     res_mode.target_soc = parameters.target_soc;
-    res_mode.minimum_soc = parameters.min_soc;
+
+    // [V2G20-3155]
+    if (parameters.min_soc.has_value() and parameters.target_soc.has_value() and
+        parameters.min_soc.value() <= parameters.target_soc.value()) {
+        res_mode.minimum_soc = parameters.min_soc;
+    }
     res_mode.ack_max_delay = 30; // TODO(sl) what to send here and define 30 seconds as const
 }
 
@@ -131,9 +135,9 @@ void fill(Dynamic_DER_Res& out, const AcTargetPower& targets, const d20::AcPrese
 
 message_20::DER_AC_ChargeLoopResponse
 handle_request(const message_20::DER_AC_ChargeLoopRequest& req, const d20::Session& session, bool stop, bool pause,
-               float target_frequency, const AcTargetPower& target_powers, const AcPresentPower& present_powers,
-               const UpdateDynamicModeParameters& dynamic_parameters, const AcTransferLimits& ac_limits,
-               const std::optional<IecDerTransferLimits>& der_limits,
+               std::optional<float> target_frequency, const AcTargetPower& target_powers,
+               const AcPresentPower& present_powers, const UpdateDynamicModeParameters& dynamic_parameters,
+               const AcTransferLimits& ac_limits, const std::optional<IecDerTransferLimits>& der_limits,
                const std::optional<dt::DsoQSetpoint>& dso_q_setpoint,
                const std::optional<dt::DsoCosPhiSetpoint>& dso_cos_phi_setpoint) {
 
@@ -176,16 +180,20 @@ handle_request(const message_20::DER_AC_ChargeLoopRequest& req, const d20::Sessi
         }
     }
 
-    res.target_frequency = dt::from_float(target_frequency);
+    if (target_frequency.has_value()) {
+        res.target_frequency = dt::from_float(target_frequency.value());
+    }
 
     // TODO(sl): Setting EvseStatus, MeterInfo, Receipt
 
     if (stop) {
         res.status = {0, dt::EvseNotification::Terminate};
     } else if (pause) {
-        const uint16_t notification_max_delay =
-            (selected_control_mode == dt::ControlMode::Dynamic) ? 60 : 0; // [V2G20-1850]
-        res.status = {notification_max_delay, dt::EvseNotification::Pause};
+        constexpr auto NotificationMaxDelay = 60; // [V2G20-3308]
+        res.status = {NotificationMaxDelay, dt::EvseNotification::Pause};
+
+        // TODO(SL): [V2G20-3318] Decrease notificationmaxdelay based on the reaming seconds if the ev did not perform a
+        // pause
     }
 
     return response_with_code(res, dt::ResponseCode::OK);
@@ -234,7 +242,7 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
             return {};
         }
 
-        // V2G20-1623 -> state machine direct transition (skipped PowerDelivery)
+        // V2G20-3210 -> state machine direct transition (skipped PowerDelivery)
         if (req->charge_progress == dt::Progress::Stop) {
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
             m_ctx.feedback.signal(session::feedback::Signal::AC_OPEN_CONTACTOR);

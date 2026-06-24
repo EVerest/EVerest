@@ -31,7 +31,7 @@ struct BptSetupConfig {
 };
 
 struct DerSetupConfig {
-    std::bitset<11> control_functions;
+    std::bitset<12> control_functions;
     std::map<iec::DERControlName, iec::DERControlFunction> supported_der_control_functions;
     iec::OperatingMode operating_mode;
     iec::GridConnectionMode grid_connection_mode;
