@@ -1242,13 +1242,15 @@ Server::state_t Server::serve(const ConnectionHandler& handler) {
         break;
     }
 
+    // set before publishing m_running so stop() never reads a stale (zero) id
+    m_server_thread = pthread_self(); // for use by stop()
+
     // wakeup wait_running()
     {
         std::lock_guard lock(m_cv_mutex);
         m_running = true;
     }
     m_cv.notify_all();
-    m_server_thread = pthread_self(); // for use by stop()
 
     if (result) {
         m_exit = false;
