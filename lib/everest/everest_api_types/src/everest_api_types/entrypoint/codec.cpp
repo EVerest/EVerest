@@ -5,21 +5,22 @@
 #include "entrypoint/json_codec.hpp"
 #include "nlohmann/json.hpp"
 #include "utilities/constants.hpp"
+#include "utilities/json_codec_helpers.hpp"
 
 #include <iostream>
 
 namespace everest::lib::API::V1_0::types::entrypoint {
 
 std::string serialize(ApiParameter val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(ApiDiscoverResponse val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::string serialize(CommunicationParameters val) noexcept {
-    return nlohmann::json(val).dump(json_indent);
+    return utilities::dump_json(val);
 }
 
 std::ostream& operator<<(std::ostream& os, ApiParameter const& val) {
@@ -37,16 +38,16 @@ std::ostream& operator<<(std::ostream& os, CommunicationParameters const& val) {
     return os;
 }
 
-template <> ApiParameter deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ApiParameter deserialize(std::string_view val) {
+    return utilities::parse_json<ApiParameter>(val);
 }
 
-template <> ApiDiscoverResponse deserialize(std::string const& val) {
-    return json::parse(val);
+template <> ApiDiscoverResponse deserialize(std::string_view val) {
+    return utilities::parse_json<ApiDiscoverResponse>(val);
 }
 
-template <> CommunicationParameters deserialize(std::string const& val) {
-    return json::parse(val);
+template <> CommunicationParameters deserialize(std::string_view val) {
+    return utilities::parse_json<CommunicationParameters>(val);
 }
 
 } // namespace everest::lib::API::V1_0::types::entrypoint

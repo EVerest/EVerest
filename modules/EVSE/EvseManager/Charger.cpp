@@ -649,12 +649,15 @@ void Charger::run_state_machine() {
                 }
             }
 
-            if (stop_charging_on_fatal_error_internal() or not shared_context.flag_authorized or
-                not shared_context.flag_transaction_active or not shared_context.flag_ev_plugged_in or
-                shared_context.flag_disable_requested) {
-                // We started to initialize charging already, so we need to stop via StoppingCharging
-                set_state(EvseState::StoppingCharging);
-                break;
+            {
+                const bool fatal_error = stop_charging_on_fatal_error_internal();
+                if (fatal_error or not shared_context.flag_authorized or not shared_context.flag_transaction_active or
+                    not shared_context.flag_ev_plugged_in or shared_context.flag_disable_requested) {
+                    // We started to initialize charging already, so we need to stop via StoppingCharging
+                    session_log.evse(false, fmt::format("Stop in PrepareCharging: {}", stop_reason_flags(fatal_error)));
+                    set_state(EvseState::StoppingCharging);
+                    break;
+                }
             }
 
             if (config_context.charge_mode == ChargeMode::DC) {
@@ -737,12 +740,22 @@ void Charger::run_state_machine() {
             }
 
             // Stop charging on errors, user stops, pause requests, or disable
-            if (stop_charging_on_fatal_error_internal() or not shared_context.flag_authorized or
-                not shared_context.flag_transaction_active or not shared_context.flag_ev_plugged_in or
-                shared_context.flag_paused_by_evse or not shared_context.iec_allow_close_contactor or
-                shared_context.flag_disable_requested) {
-                set_state(EvseState::StoppingCharging);
-                break;
+            {
+                const bool fatal_error = stop_charging_on_fatal_error_internal();
+                if (fatal_error or not shared_context.flag_authorized or not shared_context.flag_transaction_active or
+                    not shared_context.flag_ev_plugged_in or shared_context.flag_paused_by_evse or
+                    not shared_context.iec_allow_close_contactor or shared_context.flag_disable_requested) {
+                    auto reasons = stop_reason_flags(fatal_error);
+                    if (shared_context.flag_paused_by_evse) {
+                        reasons += "[paused by EVSE]";
+                    }
+                    if (not shared_context.iec_allow_close_contactor) {
+                        reasons += "[IEC stop]";
+                    }
+                    session_log.evse(false, fmt::format("Stop in Charging: {}", reasons));
+                    set_state(EvseState::StoppingCharging);
+                    break;
+                }
             }
 
             if (not power_available()) {
@@ -830,6 +843,7 @@ void Charger::run_state_machine() {
 
             if (not shared_context.flag_transaction_active or not shared_context.flag_authorized or
                 not shared_context.flag_ev_plugged_in or shared_context.flag_disable_requested) {
+                session_log.evse(false, fmt::format("Stop in ChargingPausedEV: {}", stop_reason_flags()));
                 set_state(EvseState::StoppingCharging);
                 break;
             }
@@ -891,6 +905,7 @@ void Charger::run_state_machine() {
 
             if (not shared_context.flag_transaction_active or not shared_context.flag_authorized or
                 not shared_context.flag_ev_plugged_in or shared_context.flag_disable_requested) {
+                session_log.evse(false, fmt::format("Stop in ChargingPausedEVSE: {}", stop_reason_flags()));
                 set_state(EvseState::StoppingCharging);
                 break;
             }
@@ -1297,6 +1312,10 @@ bool Charger::resume_charging() {
 bool Charger::cancel_transaction(const types::evse_manager::StopTransactionRequest& request) {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_cancel_transaction);
 
+    EVLOG_info << "Received external request to stop transaction with reason "
+               << types::evse_manager::stop_transaction_reason_to_string(request.reason)
+               << (shared_context.flag_transaction_active ? "" : " (ignored, no transaction active)");
+
     if (shared_context.flag_transaction_active) {
 
         if (shared_context.hlc_charging_active) {
@@ -1347,6 +1366,8 @@ void Charger::stop_session() {
 bool Charger::start_transaction() {
     shared_context.stop_transaction_id_token.reset();
     shared_context.last_stop_transaction_reason.reset();
+    shared_context.start_signed_meter_value.reset();
+    shared_context.stop_signed_meter_value.reset();
 
     types::powermeter::TransactionReq req;
     req.evse_id = evse_id;
@@ -1373,6 +1394,9 @@ bool Charger::start_transaction() {
                     "Failed to start transaction on the power meter");
                 return false;
             }
+        } else if (response.status == types::powermeter::TransactionRequestStatus::OK) {
+            shared_context.start_signed_meter_value = response.signed_meter_value;
+            break;
         }
     }
 
@@ -1399,7 +1423,10 @@ void Charger::stop_transaction() {
             EVLOG_error << "Failed to stop a transaction on the power meter " << response.error.value_or("");
             break;
         } else if (response.status == types::powermeter::TransactionRequestStatus::OK) {
-            shared_context.start_signed_meter_value = response.start_signed_meter_value;
+            // Only update the start_signed_meter_value if we did not already store one on transaction start
+            if (!shared_context.start_signed_meter_value.has_value()) {
+                shared_context.start_signed_meter_value = response.start_signed_meter_value;
+            }
             shared_context.stop_signed_meter_value = response.signed_meter_value;
             break;
         }
@@ -1448,21 +1475,14 @@ void Charger::cleanup_transactions_on_startup() {
     }
 }
 
-std::optional<types::units_signed::SignedMeterValue>
-Charger::take_signed_meter_data(std::optional<types::units_signed::SignedMeterValue>& in) {
-    std::optional<types::units_signed::SignedMeterValue> out;
-    std::swap(out, in);
-    return out;
-}
-
 std::optional<types::units_signed::SignedMeterValue> Charger::get_stop_signed_meter_value() {
     // This is used only inside of the state machine, so we do not need to lock here.
-    return take_signed_meter_data(shared_context.stop_signed_meter_value);
+    return shared_context.stop_signed_meter_value;
 }
 
 std::optional<types::units_signed::SignedMeterValue> Charger::get_start_signed_meter_value() {
     // This is used only inside of the state machine, so we do not need to lock here.
-    return take_signed_meter_data(shared_context.start_signed_meter_value);
+    return shared_context.start_signed_meter_value;
 }
 
 bool Charger::switch_three_phases_while_charging(bool n) {
@@ -2173,6 +2193,26 @@ bool Charger::stop_charging_on_fatal_error_internal() {
     internal_context.fatal_error_timer_running = err;
     shared_context.last_shutdown_type = shared_context.shutdown_type;
     return err;
+}
+
+std::string Charger::stop_reason_flags(bool fatal_error) {
+    std::string reasons;
+    if (fatal_error) {
+        reasons += "[fatal error]";
+    }
+    if (not shared_context.flag_authorized) {
+        reasons += "[deauthorized]";
+    }
+    if (not shared_context.flag_transaction_active) {
+        reasons += "[transaction stopped]";
+    }
+    if (not shared_context.flag_ev_plugged_in) {
+        reasons += "[EV unplugged]";
+    }
+    if (shared_context.flag_disable_requested) {
+        reasons += "[disable requested]";
+    }
+    return reasons;
 }
 
 void Charger::emergency_shutdown() {

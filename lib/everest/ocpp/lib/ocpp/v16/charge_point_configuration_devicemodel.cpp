@@ -12,6 +12,7 @@
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/device_model_interface.hpp>
+#include <ocpp/v2/ocpp16_custom_config_mappings.hpp>
 #include <ocpp/v2/ocpp_enums.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 
@@ -39,16 +40,9 @@ using SetResult = v16::ChargePointConfigurationDeviceModel::SetResult;
 using DeviceModelInterface = v2::DeviceModelInterface;
 using SupportedFeatureProfiles = v16::SupportedFeatureProfiles;
 
-constexpr const std::string_view cost_and_price_component{"OCPP16LegacyCtrlr"};
 constexpr const std::string_view cost_and_price_feature{"CostAndPrice"};
-constexpr const std::string_view custom_component{"Custom16LegacyCtrlr"};
 constexpr const std::string_view custom_feature{"Custom"};
-constexpr const std::string_view pnc_component{"ISO15118Ctrlr"};
 constexpr const std::string_view pnc_feature{"PnC"};
-
-constexpr bool starts_with(const std::string_view& str, const std::string_view& looking_for) {
-    return str.rfind(looking_for, 0) == 0;
-}
 
 constexpr v16::ConfigurationStatus convert(SetResult res) {
     switch (res) {
@@ -198,9 +192,12 @@ std::optional<T> get_optional(DeviceModelInterface& storage, const std::string_v
 
 template <typename T>
 std::optional<T> get_optional(DeviceModelInterface& storage, v16::keys::valid_keys key, bool writeOnly = false) {
-    const auto max_limit_cv = v16::keys::convert_v2_max_limit(key);
-    if (max_limit_cv) {
-        const auto meta = storage.get_variable_meta_data(max_limit_cv->first, max_limit_cv->second);
+    const auto cv = v16::keys::convert_v2(key);
+    if (!cv) {
+        return std::nullopt;
+    }
+    if (v16::keys::is_max_limit_key(key)) {
+        const auto meta = storage.get_variable_meta_data(cv->first, cv->second);
         if (meta && meta->characteristics.maxLimit) {
             if constexpr (std::is_same_v<T, std::string>) {
                 return std::to_string(static_cast<std::int32_t>(meta->characteristics.maxLimit.value()));
@@ -210,18 +207,11 @@ std::optional<T> get_optional(DeviceModelInterface& storage, v16::keys::valid_ke
         }
         return std::nullopt;
     }
-    std::optional<T> result;
-    const auto cv = v16::keys::convert_v2(key);
-    if (cv) {
-        const auto& component = std::get<v2::Component>(*cv);
-        const auto& variable = std::get<v2::Variable>(*cv);
-        const auto& attribute = std::get<v2::AttributeEnum>(*cv);
-        result = get_optional<T>(storage, component, variable, attribute, writeOnly);
-    }
-    return result;
+    return get_optional<T>(storage, cv->first, cv->second, v2::AttributeEnum::Actual, writeOnly);
 }
 
-template <typename T> T inline get_value(DeviceModelInterface& storage, v16::keys::valid_keys key) {
+template <typename T>
+T inline get_value(DeviceModelInterface& storage, v16::keys::valid_keys key, bool allow_write_only = false) {
     const auto result = get_optional<T>(storage, key);
     if (!result) {
         raise_not_found(v16::keys::to_section_string_view(key), v16::keys::convert(key));
@@ -244,13 +234,18 @@ T get_value(DeviceModelInterface& storage, const C& var, v2::AttributeEnum attri
 }
 
 template <typename T>
-inline void get_value(std::optional<T>& value, DeviceModelInterface& storage, v16::keys::valid_keys key) {
+inline void get_value(std::optional<T>& value, DeviceModelInterface& storage, v16::keys::valid_keys key,
+                      bool allow_write_only = false) {
     value = get_optional<T>(storage, key);
 }
 
-template <typename T> inline void get_value(T& value, DeviceModelInterface& storage, v16::keys::valid_keys key) {
-    value = get_value<T>(storage, key);
+template <typename T>
+inline void get_value(T& value, DeviceModelInterface& storage, v16::keys::valid_keys key,
+                      bool allow_write_only = false) {
+    value = get_value<T>(storage, key, allow_write_only);
 }
+
+std::optional<v16::KeyValue> get_derived_key_value_optional(DeviceModelInterface& storage, v16::keys::valid_keys key);
 
 bool key_exists(DeviceModelInterface& storage, const v2::Component& component, const v2::Variable& variable) {
     const auto result = storage.get_variable_meta_data(component, variable);
@@ -264,21 +259,18 @@ bool key_exists(DeviceModelInterface& storage, const std::string_view& component
 }
 
 bool key_exists(DeviceModelInterface& storage, v16::keys::valid_keys key) {
-    const auto max_limit_cv = v16::keys::convert_v2_max_limit(key);
-    if (max_limit_cv) {
-        return storage.get_variable_meta_data(max_limit_cv->first, max_limit_cv->second).has_value();
-    }
-    bool result{false};
     const auto cv = v16::keys::convert_v2(key);
-    if (cv) {
-        const auto& component = std::get<v2::Component>(*cv);
-        const auto& variable = std::get<v2::Variable>(*cv);
-        result = key_exists(storage, component, variable);
+    if (!cv) {
+        return false;
     }
-    return result;
+    return key_exists(storage, cv->first, cv->second);
 }
 
 std::optional<v16::KeyValue> get_key_value_optional(DeviceModelInterface& storage, v16::keys::valid_keys key) {
+    if (const auto derived = get_derived_key_value_optional(storage, key); derived.has_value()) {
+        return derived;
+    }
+
     auto get_result = get_optional<std::string>(storage, key);
     std::optional<v16::KeyValue> result;
     if (get_result) {
@@ -328,9 +320,7 @@ SetResult set_value(DeviceModelInterface& storage, v16::keys::valid_keys key, co
     auto result = SetResult::UnknownVariable;
     const auto cv = v16::keys::convert_v2(key);
     if (cv) {
-        const auto& component = std::get<v2::Component>(*cv);
-        const auto& variable = std::get<v2::Variable>(*cv);
-        result = set_value(storage, component, variable, value);
+        result = set_value(storage, cv->first, cv->second, value);
     }
     return result;
 }
@@ -392,85 +382,6 @@ inline SetResult set_value_check(check_fn fn, DeviceModelInterface& storage, v16
     return result;
 }
 
-// Custom key support ...
-
-template <typename T> std::optional<T> get_optional(DeviceModelInterface& storage, const std::string_view& name) {
-    return get_optional<T>(storage, custom_component, name, v2::AttributeEnum::Actual);
-}
-
-template <typename T> inline T get_value(DeviceModelInterface& storage, const std::string_view& name) {
-    const auto result = get_optional<T>(storage, name);
-    if (!result) {
-        raise_not_found(custom_component, name);
-    }
-    return result.value();
-}
-
-template <typename T>
-inline void get_value(std::optional<T>& value, DeviceModelInterface& storage, const std::string_view& name) {
-    value = get_optional<T>(storage, name);
-}
-
-template <typename T> inline void get_value(T& value, DeviceModelInterface& storage, const std::string_view& name) {
-    value = get_value<T>(storage, name);
-}
-
-std::optional<v16::KeyValue> get_key_value_optional(DeviceModelInterface& storage, const std::string_view& name) {
-    auto get_result = get_optional<std::string>(storage, name);
-    std::optional<v16::KeyValue> result;
-    if (get_result) {
-        v16::KeyValue kv;
-        kv.key = std::move(std::string{name});
-        kv.readonly = isReadOnly(storage, custom_component, name, v2::AttributeEnum::Actual).value_or(true);
-        kv.value = get_result.value();
-        result = kv;
-    }
-    return result;
-}
-
-v16::KeyValue get_key_value(DeviceModelInterface& storage, const std::string_view& name) {
-    const auto result = get_key_value_optional(storage, name);
-    if (!result) {
-        raise_not_found(custom_component, name);
-    }
-    return result.value();
-}
-
-/// \brief check if a custom key exists
-bool key_exists(DeviceModelInterface& storage, const std::string_view& name) {
-    return key_exists(storage, custom_component, name);
-}
-
-/// \brief set custom value
-SetResult set_value(DeviceModelInterface& storage, const std::string_view& name, const std::string& value) {
-    // CiString is missing many construct options - so creating a temporary string
-    const v2::Component component{std::string{custom_component}};
-    const v2::Variable variable{std::string{name}};
-    return set_value(storage, component, variable, value);
-}
-
-/// \brief set custom value
-constexpr SetResult set_value(DeviceModelInterface& storage, const std::string_view& name,
-                              const std::optional<std::string>& value) {
-    // using accepted since there isn't a value to set - so not an error
-    SetResult result{SetResult::Accepted};
-    if (value) {
-        result = set_value(storage, name, value.value());
-    }
-    return result;
-}
-
-inline SetResult set_value_check(DeviceModelInterface& storage, const std::string_view& name,
-                                 const std::string& value) {
-    SetResult result{SetResult::UnknownVariable};
-    if (key_exists(storage, name)) {
-        result = set_value(storage, name, value);
-    } else {
-        EVLOG_warning << "set " << name << '=' << value << " failed, key doesn't exist";
-    }
-    return result;
-}
-
 void add_to_list(v16::utils::OrderedUniqueStringList& list, const ocpp::v2::ReportData& entry) {
     // VariableCharacteristics of valuesList are added to the set of they exist
     if (entry.variableCharacteristics) {
@@ -485,6 +396,125 @@ void add_to_list(v16::utils::OrderedUniqueStringList& list, const ocpp::v2::Repo
         EVLOG_info << "ReportData with no variableCharacteristics: " << entry.component.name << '['
                    << entry.variable.name << ']';
     }
+}
+
+int32_t get_active_network_slot(DeviceModelInterface& storage) {
+    // use active_network_profile if available
+    const auto active_network_profile =
+        get_optional<int32_t>(storage, "OCPPCommCtrlr", "ActiveNetworkProfile", v2::AttributeEnum::Actual);
+    if (active_network_profile.has_value()) {
+        return active_network_profile.value();
+    }
+
+    // fallback to use NetworkConfigurationPriority
+    const auto priority =
+        get_optional<std::string>(storage, "OCPPCommCtrlr", "NetworkConfigurationPriority", v2::AttributeEnum::Actual);
+    if (priority.has_value() && !priority->empty()) {
+        const auto comma_pos = priority->find(',');
+        const auto first_token = (comma_pos != std::string::npos) ? priority->substr(0, comma_pos) : *priority;
+        try {
+            return std::stoi(first_token);
+        } catch (const std::exception& e) {
+            EVLOG_warning << "Could not parse NetworkConfigurationPriority value '" << first_token
+                          << "' as integer, defaulting to slot 1: " << e.what();
+        }
+    }
+    return 1;
+}
+
+std::optional<v16::KeyValue> get_derived_key_value_optional(DeviceModelInterface& storage, v16::keys::valid_keys key) {
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    namespace CC = ocpp::v2::ControllerComponentVariables;
+
+    const auto slot = get_active_network_slot(storage);
+
+    // Simple NC-slot-backed key: value taken directly from the active NetworkConfiguration slot.
+    auto make_nc_kv = [&](const v2::ComponentVariable& cv) -> std::optional<v16::KeyValue> {
+        v16::KeyValue kv;
+        kv.key = std::string{v16::keys::convert(key)};
+        kv.readonly = v16::keys::is_readonly(key);
+        kv.value = get_optional<std::string>(storage, cv, v2::AttributeEnum::Actual);
+        return kv;
+    };
+    // NC-slot value with SecurityCtrlr fallback for keys where the NC slot write may have been skipped.
+    auto make_nc_kv_with_fallback = [&](const v2::Variable& nc_var, const v2::ComponentVariable& fallback_cv,
+                                        bool writeOnly = false) -> std::optional<v16::KeyValue> {
+        v16::KeyValue kv;
+        kv.key = std::string{v16::keys::convert(key)};
+        kv.readonly = v16::keys::is_readonly(key);
+        const auto nc_val = get_optional<std::string>(storage, NC::get_component_variable(slot, nc_var),
+                                                      v2::AttributeEnum::Actual, writeOnly);
+        kv.value = (nc_val.has_value() && !nc_val->empty())
+                       ? nc_val
+                       : get_optional<std::string>(storage, fallback_cv, v2::AttributeEnum::Actual, writeOnly);
+        return kv;
+    };
+
+    if (key == v16::keys::valid_keys::CentralSystemURI) {
+        return make_nc_kv(NC::get_component_variable(slot, NC::OcppCsmsUrl));
+    }
+    if (key == v16::keys::valid_keys::SecurityProfile) {
+        return make_nc_kv(NC::get_component_variable(slot, NC::SecurityProfile));
+    }
+    if (key == v16::keys::valid_keys::HostName) {
+        return make_nc_kv(NC::get_component_variable(slot, NC::HostName));
+    }
+    if (key == v16::keys::valid_keys::ChargePointId) {
+        return make_nc_kv_with_fallback(NC::Identity, CC::SecurityCtrlrIdentity);
+    }
+    if (key == v16::keys::valid_keys::AuthorizationKey) {
+        return make_nc_kv_with_fallback(NC::BasicAuthPassword, CC::BasicAuthPassword, true);
+    }
+
+    if (key == v16::keys::valid_keys::ChargingScheduleAllowedChargingRateUnit) {
+        const auto raw = get_optional<std::string>(storage, key);
+        if (!raw.has_value()) {
+            return std::nullopt;
+        }
+        auto tokens = v16::utils::from_csl(*raw);
+        for (auto& t : tokens) {
+            if (t == "A") {
+                t = "Current";
+            } else if (t == "W") {
+                t = "Power";
+            }
+        }
+        v16::KeyValue kv;
+        kv.key = std::string{v16::keys::convert(key)};
+        kv.readonly = v16::keys::is_readonly(key);
+        kv.value = v16::utils::to_csl(tokens);
+        return kv;
+    }
+
+    if (key != v16::keys::valid_keys::SupportedMeasurands) {
+        return std::nullopt;
+    }
+
+    using namespace ocpp::v2::ControllerComponentVariables;
+    const std::vector<v2::ComponentVariable> component_variables = {
+        {AlignedDataMeasurands.component, AlignedDataMeasurands.variable},
+        {AlignedDataTxEndedMeasurands.component, AlignedDataTxEndedMeasurands.variable},
+        {SampledDataTxEndedMeasurands.component, SampledDataTxEndedMeasurands.variable},
+        {SampledDataTxStartedMeasurands.component, SampledDataTxStartedMeasurands.variable},
+        {SampledDataTxUpdatedMeasurands.component, SampledDataTxUpdatedMeasurands.variable},
+    };
+
+    const auto report = storage.get_custom_report_data(component_variables);
+    v16::utils::OrderedUniqueStringList valid_measurands;
+    for (const auto& entry : report) {
+        add_to_list(valid_measurands, entry);
+    }
+
+    v16::KeyValue kv;
+    kv.key = std::string{v16::keys::convert(key)};
+    kv.readonly = v16::keys::is_readonly(key);
+
+    const auto value = v16::utils::to_csl(valid_measurands.get());
+    if (!value.empty()) {
+        kv.value = value;
+    }
+
+    return kv;
 }
 
 } // namespace
@@ -504,7 +534,9 @@ ChargePointConfigurationDeviceModel::setInternalAllowChargingProfileWithoutStart
 
 ChargePointConfigurationDeviceModel::SetResult
 ChargePointConfigurationDeviceModel::setInternalCentralSystemURI(const std::string& value) {
-    auto result = set_value(*storage, keys::valid_keys::CentralSystemURI, value);
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    const auto cv = NC::get_component_variable(get_active_network_slot(*storage), NC::OcppCsmsUrl);
+    auto result = set_value(*storage, cv.component, cv.variable.value(), value);
     if (result == SetResult::Accepted) {
         EVLOG_warning << "CentralSystemURI changed to: " << value;
         result = SetResult::RebootRequired;
@@ -542,32 +574,14 @@ ChargePointConfigurationDeviceModel::setInternalCompositeScheduleDefaultNumberPh
 
 ChargePointConfigurationDeviceModel::SetResult
 ChargePointConfigurationDeviceModel::setInternalConnectorEvseIds(const std::string& value) {
-    auto result = SetResult::Rejected;
-    const auto existing = calculateEvseIds();
-    if (existing) {
-        // an existing value for ConnectorEvseIds needs to exist
-        if (areValidEvseIds(value)) {
-            bool valid{true};
-            const auto evse_ids = v16::utils::split_string(',', value);
-            std::size_t index{1};
-            v2::Component component{"EVSE"};
-            v2::Variable variable{"ISO15118EvseId"};
-            for (const auto evse_id : evse_ids) {
-                v2::EVSE evse;
-                evse.id = static_cast<decltype(evse.id)>(index++);
-                component.evse = std::move(evse);
-                if (set_value(*storage, component, variable, evse_id) != SetResult::Accepted) {
-                    valid = false;
-                }
-            }
-            if (valid) {
-                result = SetResult::Accepted;
-            }
-        } else {
-            EVLOG_warning << "Invalid ConnectorEvseIds: " << value;
-        }
+    if (!getConnectorEvseIds()) {
+        return SetResult::Rejected;
     }
-    return result;
+    if (!areValidEvseIds(value)) {
+        EVLOG_warning << "Invalid ConnectorEvseIds: " << value;
+        return SetResult::Rejected;
+    }
+    return set_value(*storage, keys::valid_keys::ConnectorEvseIds, value);
 }
 
 ChargePointConfigurationDeviceModel::SetResult
@@ -842,7 +856,9 @@ ChargePointConfigurationDeviceModel::setInternalAuthorizationKey(const std::stri
     }
 
     if (str.size() >= AUTHORIZATION_KEY_MIN_LENGTH) {
-        result = set_value(*storage, keys::valid_keys::AuthorizationKey, str);
+        namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+        const auto cv = NC::get_component_variable(get_active_network_slot(*storage), NC::BasicAuthPassword);
+        result = set_value(*storage, cv.component, cv.variable.value(), str);
     } else {
         EVLOG_warning << "Attempt to change AuthorizationKey to value with < 8 characters";
     }
@@ -863,7 +879,9 @@ ChargePointConfigurationDeviceModel::setInternalDisableSecurityEventNotification
 ChargePointConfigurationDeviceModel::SetResult
 ChargePointConfigurationDeviceModel::setInternalSecurityProfile(const std::string& value) {
     // TODO(piet): add boundaries for value of security profile
-    return set_value_check(*storage, keys::valid_keys::SecurityProfile, value);
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    const auto cv = NC::get_component_variable(get_active_network_slot(*storage), NC::SecurityProfile);
+    return set_value(*storage, cv.component, cv.variable.value(), value);
 }
 
 ChargePointConfigurationDeviceModel::SetResult
@@ -1081,37 +1099,6 @@ ChargePointConfigurationDeviceModel::setInternalWaitForSetUserPriceTimeout(const
     return set_value_check(check, *storage, keys::valid_keys::WaitForSetUserPriceTimeout, value);
 }
 
-std::optional<std::string> ChargePointConfigurationDeviceModel::calculateEvseIds() {
-    // the 15118 EVSE ID is available from the EVSE component
-    // iterate through the valid EVSEs to obtain the IDs
-    // variable name is ISO15118EvseId
-    std::optional<std::string> result;
-    bool found{false};
-    const auto max = getNumberOfConnectors();
-    v2::Component component{"EVSE"};
-    v2::Variable variable{"ISO15118EvseId"};
-    std::vector<std::string> evse_ids;
-    if (max > 0) {
-        for (std::size_t i = 1; i <= max; i++) {
-            v2::EVSE evse;
-            evse.id = static_cast<decltype(evse.id)>(i);
-            component.evse = std::move(evse);
-            auto value = get_optional<std::string>(*storage, component, variable, v2::AttributeEnum::Actual);
-            if (value) {
-                found = true; // at least one instance exists
-                evse_ids.push_back(std::move(value.value()));
-            } else {
-                // support EVSEs with no ISO15118EvseId
-                evse_ids.emplace_back();
-            }
-        }
-    }
-    if (found) {
-        result = std::move(v16::utils::to_csl(evse_ids));
-    }
-    return result;
-}
-
 std::string ChargePointConfigurationDeviceModel::calculateSupportedMeasurands() {
     // these are not in a single place in the V2 device model
     // - AlignedDataCtrlr->Measurands
@@ -1142,48 +1129,344 @@ std::string ChargePointConfigurationDeviceModel::calculateSupportedMeasurands() 
 // Public methods
 
 ChargePointConfigurationDeviceModel::ChargePointConfigurationDeviceModel(
-    const std::string_view& ocpp_main_path, std::unique_ptr<v2::DeviceModelInterface> device_model_interface) :
-    ChargePointConfigurationBase(ocpp_main_path), storage(std::move(device_model_interface)) {
+    const std::string_view& ocpp_main_path, std::unique_ptr<v2::DeviceModelInterface> device_model_interface,
+    v2::Ocpp16CustomConfigMappings custom_config_mappings_) :
+    ChargePointConfigurationBase(ocpp_main_path),
+    storage(std::move(device_model_interface)),
+    custom_config_mappings(std::move(custom_config_mappings_)) {
     const auto profiles = get_optional<std::string>(*storage, keys::valid_keys::SupportedFeatureProfiles);
     const auto measurands = calculateSupportedMeasurands();
     ProfilesSet initial;
 
-    bool PnC_found{false};
-    bool CostAndPrice_found{false};
-    bool Custom_found{false};
+    // Mirror OCPP 1.6 behavior: add behind-the-scenes profiles only when the corresponding
+    // OCPP 1.6 parameter set is present in migrated configuration values.
+    const bool pnc_config_present =
+        get_optional<std::string>(*storage, keys::valid_keys::ISO15118PnCEnabled).has_value() &&
+        get_optional<std::string>(*storage, keys::valid_keys::ISO15118CertificateManagementEnabled).has_value() &&
+        get_optional<std::string>(*storage, keys::valid_keys::ContractValidationOffline).has_value();
+    const bool cost_and_price_config_present =
+        get_optional<std::string>(*storage, keys::valid_keys::CustomDisplayCostAndPrice).has_value();
+    const bool custom_config_present = !custom_config_mappings.empty();
 
-    // check the device model to identify other supported feature profiles
-    const auto report = storage->get_base_report_data(v2::ReportBaseEnum::ConfigurationInventory);
-    for (const auto& entry : report) {
-        const std::string component = entry.component.name;
-        const std::string variable = entry.variable.name;
-        EVLOG_debug << "Component: " << component << " Variable: " << variable;
-        if (component == custom_component && variable == "CustomImplementationEnabled") {
-            Custom_found = true;
-        } else if (component == pnc_component && variable == "PnCEnabled") {
-            PnC_found = true;
-        } else if (component == cost_and_price_component &&
-                   (variable == "CustomDisplayCostAndPrice" || starts_with(variable, "DefaultPrice"))) {
-            CostAndPrice_found = true;
-        }
-    }
-
-    if (PnC_found) {
+    if (pnc_config_present) {
         // add PnC behind the scenes as supported feature profile
         initial.insert(conversions::string_to_supported_feature_profiles(pnc_feature));
     }
 
-    if (CostAndPrice_found) {
+    if (cost_and_price_config_present) {
         // Add California Pricing Requirements behind the scenes as supported feature profile
         initial.insert(conversions::string_to_supported_feature_profiles(cost_and_price_feature));
     }
 
-    if (Custom_found) {
+    if (custom_config_present) {
         // add Custom behind the scenes as supported feature profile
         initial.insert(conversions::string_to_supported_feature_profiles(custom_feature));
     }
 
     initialise(initial, profiles, measurands);
+}
+
+void ChargePointConfigurationDeviceModel::check_integrity(int32_t expected_number_of_connectors) {
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    std::vector<std::string> errors;
+
+    // Helper: check a key is present in storage.
+    // Uses get_optional so both regular keys (VariableAttribute.value) and max-limit keys
+    // (VariableCharacteristics.maxLimit, e.g. LocalAuthListMaxLength) are handled correctly.
+    const auto require = [&](keys::valid_keys key) {
+        if (!get_optional<std::string>(*storage, key).has_value()) {
+            errors.emplace_back(std::string(keys::convert(key)));
+        }
+    };
+
+    // Helper: check a NetworkConfiguration slot-backed key is non-empty
+    const auto slot = get_active_network_slot(*storage);
+    const auto require_nc = [&](std::string_view name, const v2::Variable& nc_var) {
+        const auto cv = NC::get_component_variable(slot, nc_var);
+        const auto val = get_optional<std::string>(*storage, cv, v2::AttributeEnum::Actual);
+        if (!val.has_value() || val->empty()) {
+            errors.emplace_back(std::string(name));
+        }
+    };
+
+    // NumberOfConnectors: must be present and match the actual number of connected EVSEs
+    const auto num_opt = get_optional<int32_t>(*storage, keys::valid_keys::NumberOfConnectors);
+    if (!num_opt.has_value()) {
+        errors.emplace_back("NumberOfConnectors (missing)");
+    } else if (num_opt.value() != expected_number_of_connectors) {
+        errors.emplace_back("NumberOfConnectors=" + std::to_string(num_opt.value()) + " but " +
+                            std::to_string(expected_number_of_connectors) + " EVSE(s) are connected");
+    }
+
+    // Core profile required keys
+    require(keys::valid_keys::AuthorizeRemoteTxRequests);
+    require(keys::valid_keys::ClockAlignedDataInterval);
+    require(keys::valid_keys::ConnectionTimeOut);
+    require(keys::valid_keys::ConnectorPhaseRotation);
+    require(keys::valid_keys::GetConfigurationMaxKeys);
+    require(keys::valid_keys::HeartbeatInterval);
+    require(keys::valid_keys::LocalAuthorizeOffline);
+    require(keys::valid_keys::LocalPreAuthorize);
+    require(keys::valid_keys::MeterValuesAlignedData);
+    require(keys::valid_keys::MeterValuesSampledData);
+    require(keys::valid_keys::MeterValueSampleInterval);
+    require(keys::valid_keys::ResetRetries);
+    require(keys::valid_keys::StopTransactionOnInvalidId);
+    require(keys::valid_keys::StopTxnAlignedData);
+    require(keys::valid_keys::StopTxnSampledData);
+    require(keys::valid_keys::SupportedFeatureProfiles);
+    require(keys::valid_keys::TransactionMessageAttempts);
+    require(keys::valid_keys::TransactionMessageRetryInterval);
+    require(keys::valid_keys::UnlockConnectorOnEVSideDisconnect);
+
+    // Internal profile required keys: identity/connectivity are NC slot-backed
+    require_nc("CentralSystemURI", NC::OcppCsmsUrl);
+    require_nc("ChargePointId", NC::Identity);
+    require(keys::valid_keys::ChargeBoxSerialNumber);
+    require(keys::valid_keys::ChargePointModel);
+    require(keys::valid_keys::ChargePointVendor);
+    require(keys::valid_keys::FirmwareVersion);
+
+    // Security profile required key (NC slot-backed)
+    require_nc("SecurityProfile", NC::SecurityProfile);
+
+    // Profile-conditional required keys: warn and strip the profile rather than failing, to preserve
+    // backwards compatibility with migrated OCPP 1.6 configs that listed a profile without its full key set.
+    const auto check_profile = [&](SupportedFeatureProfiles profile, auto check_fn) {
+        if (!supported_feature_profiles.count(profile)) {
+            return;
+        }
+        std::vector<std::string> profile_errors;
+        const auto require_for_profile = [&](keys::valid_keys key) {
+            if (!get_optional<std::string>(*storage, key).has_value()) {
+                profile_errors.emplace_back(std::string(keys::convert(key)));
+            }
+        };
+        check_fn(require_for_profile);
+        if (!profile_errors.empty()) {
+            const auto name = conversions::supported_feature_profiles_to_string(profile);
+            EVLOG_warning << "OCPP 1.6 device model: profile " << name
+                          << " is listed in SupportedFeatureProfiles but is missing required key(s):";
+            for (const auto& err : profile_errors) {
+                EVLOG_warning << "  - " << err;
+            }
+            EVLOG_warning << "Removing " << name << " from supported feature profiles.";
+            supported_feature_profiles.erase(profile);
+        }
+    };
+
+    check_profile(SupportedFeatureProfiles::LocalAuthListManagement, [&](auto require_for_profile) {
+        require_for_profile(keys::valid_keys::LocalAuthListEnabled);
+        require_for_profile(keys::valid_keys::LocalAuthListMaxLength);
+        require_for_profile(keys::valid_keys::SendLocalListMaxLength);
+    });
+
+    check_profile(SupportedFeatureProfiles::SmartCharging, [&](auto require_for_profile) {
+        require_for_profile(keys::valid_keys::ChargeProfileMaxStackLevel);
+        require_for_profile(keys::valid_keys::ChargingScheduleAllowedChargingRateUnit);
+        require_for_profile(keys::valid_keys::ChargingScheduleMaxPeriods);
+        require_for_profile(keys::valid_keys::MaxChargingProfilesInstalled);
+    });
+
+    check_profile(SupportedFeatureProfiles::PnC, [&](auto require_for_profile) {
+        require_for_profile(keys::valid_keys::ISO15118PnCEnabled);
+        require_for_profile(keys::valid_keys::ContractValidationOffline);
+    });
+
+    check_profile(SupportedFeatureProfiles::CostAndPrice,
+                  [&](auto require_for_profile) { require_for_profile(keys::valid_keys::CustomDisplayCostAndPrice); });
+
+    if (!errors.empty()) {
+        for (const auto& err : errors) {
+            EVLOG_error << "OCPP 1.6 device model integrity check: missing or misconfigured key: " << err;
+        }
+        EVLOG_AND_THROW(
+            std::runtime_error("OCPP 1.6 device model integrity check failed: " + std::to_string(errors.size()) +
+                               " required configuration key(s) missing or misconfigured"));
+    }
+
+    EVLOG_info << "OCPP 1.6 device model integrity check passed.";
+}
+
+bool ChargePointConfigurationDeviceModel::shouldExposeKey(keys::valid_keys key) const {
+    if (keys::is_hidden(key)) {
+        return false;
+    }
+
+    for (const auto profile :
+         {SupportedFeatureProfiles::FirmwareManagement, SupportedFeatureProfiles::PnC,
+          SupportedFeatureProfiles::SmartCharging, SupportedFeatureProfiles::Security,
+          SupportedFeatureProfiles::LocalAuthListManagement, SupportedFeatureProfiles::CostAndPrice}) {
+        if (ignore_key(key, supported_feature_profiles, profile)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::optional<KeyValue> ChargePointConfigurationDeviceModel::getCustomKeyValue(const std::string& key) {
+    const auto it = custom_config_mappings.find(key);
+    if (it == custom_config_mappings.end()) {
+        return std::nullopt;
+    }
+
+    const auto& [component, variable] = it->second;
+    const auto value = get_optional<std::string>(*storage, component, variable, v2::AttributeEnum::Actual);
+    if (!value.has_value()) {
+        return std::nullopt;
+    }
+
+    KeyValue kv;
+    kv.key = key;
+    kv.readonly =
+        isReadOnly(*storage, component.name.get(), variable.name.get(), v2::AttributeEnum::Actual).value_or(true);
+    kv.value = value.value();
+    return kv;
+}
+
+void ChargePointConfigurationDeviceModel::appendDefaultPriceTextKeyValues(std::vector<KeyValue>& all) {
+    const auto default_price_texts = getAllDefaultPriceTextKeyValues();
+    if (!default_price_texts.has_value()) {
+        return;
+    }
+
+    for (auto& kv : default_price_texts.value()) {
+        all.push_back(std::move(kv));
+    }
+}
+
+void ChargePointConfigurationDeviceModel::appendMeterPublicKeyKeyValues(std::vector<KeyValue>& all,
+                                                                        const std::string& meter_public_keys) const {
+    if (meter_public_keys.empty()) {
+        return;
+    }
+
+    const auto keys_list = utils::split_string(',', meter_public_keys);
+    for (std::size_t idx = 0; idx < keys_list.size(); ++idx) {
+        KeyValue kv;
+        kv.key = meterPublicKeyString(static_cast<std::uint32_t>(idx + 1));
+        kv.value = keys_list.at(idx);
+        kv.readonly = true;
+        all.push_back(std::move(kv));
+    }
+}
+
+void ChargePointConfigurationDeviceModel::appendCustomKeyValues(std::vector<KeyValue>& all) {
+    for (const auto& [ocpp16_key, _] : custom_config_mappings) {
+        const auto kv = getCustomKeyValue(ocpp16_key);
+        if (kv.has_value()) {
+            all.push_back(std::move(kv.value()));
+        }
+    }
+}
+
+void ChargePointConfigurationDeviceModel::appendActiveNetworkConfigKeyValues(std::vector<KeyValue>& all) {
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    const auto slot = get_active_network_slot(*storage);
+
+    const auto append = [&](const v2::Variable& nc_var, v16::keys::valid_keys v16_key) {
+        const auto value =
+            get_optional<std::string>(*storage, NC::get_component_variable(slot, nc_var), v2::AttributeEnum::Actual);
+        if (value.has_value()) {
+            KeyValue kv;
+            kv.key = std::string{v16::keys::convert(v16_key)};
+            kv.value = value;
+            kv.readonly = v16::keys::is_readonly(v16_key);
+            all.push_back(std::move(kv));
+        }
+    };
+
+    using K = v16::keys::valid_keys;
+    append(NC::OcppCsmsUrl, K::CentralSystemURI);
+    append(NC::Identity, K::ChargePointId);
+    append(NC::SecurityProfile, K::SecurityProfile);
+    append(NC::HostName, K::HostName);
+}
+
+void ChargePointConfigurationDeviceModel::appendReportKeyValue(std::vector<KeyValue>& all, keys::valid_keys key,
+                                                               const std::optional<std::string>& value,
+                                                               v2::MutabilityEnum mutability) {
+    if (key == keys::valid_keys::DefaultPriceText) {
+        appendDefaultPriceTextKeyValues(all);
+        return;
+    }
+
+    if (key == keys::valid_keys::MeterPublicKeys) {
+        if (value.has_value()) {
+            appendMeterPublicKeyKeyValues(all, value.value());
+        }
+        return;
+    }
+
+    if (key == keys::valid_keys::ChargingScheduleAllowedChargingRateUnit) {
+        if (value.has_value()) {
+            KeyValue kv;
+            kv.key = std::string{keys::convert(key)};
+            kv.value = getChargingScheduleAllowedChargingRateUnit();
+            kv.readonly = keys::is_readonly(key) || (mutability == v2::MutabilityEnum::ReadOnly);
+            all.push_back(std::move(kv));
+        }
+        return;
+    }
+
+    if (!value.has_value()) {
+        return;
+    }
+
+    KeyValue kv;
+    kv.key = std::string{keys::convert(key)};
+    kv.value = value.value();
+    kv.readonly = keys::is_readonly(key) || (mutability == v2::MutabilityEnum::ReadOnly);
+    all.push_back(std::move(kv));
+}
+
+void ChargePointConfigurationDeviceModel::appendMaxLimitKeyValues(std::vector<KeyValue>& all) const {
+    for (const auto& [key, cv] : v16::keys::max_limit_entries) {
+        if (cv->variable) {
+            const auto meta = storage->get_variable_meta_data(cv->component, cv->variable.value());
+            if (meta && meta->characteristics.maxLimit) {
+                KeyValue kv;
+                kv.key = std::string{v16::keys::convert(key)};
+                kv.value = std::to_string(static_cast<std::int32_t>(meta->characteristics.maxLimit.value()));
+                kv.readonly = v16::keys::is_readonly(key);
+                all.push_back(std::move(kv));
+            }
+        }
+    }
+}
+
+void ChargePointConfigurationDeviceModel::appendSupportedMeasurandsKeyValue(
+    std::vector<KeyValue>& all, const utils::OrderedUniqueStringList& valid_measurands) const {
+    std::string supported_measurands;
+    if (!valid_measurands.empty()) {
+        supported_measurands = v16::utils::to_csl(valid_measurands.get());
+    }
+
+    KeyValue kv;
+    const auto key = keys::valid_keys::SupportedMeasurands;
+    kv.key = std::move(std::string{v16::keys::convert(key)});
+    if (!supported_measurands.empty()) {
+        kv.value = supported_measurands;
+    }
+    kv.readonly = v16::keys::is_readonly(key);
+    all.push_back(std::move(kv));
+}
+
+std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::setCustomKey(const std::string& key,
+                                                                                     const std::string& value) {
+    const auto it = custom_config_mappings.find(key);
+    if (it == custom_config_mappings.end()) {
+        return std::nullopt;
+    }
+
+    const auto& [component, variable] = it->second;
+    const auto exists_ro = isReadOnly(*storage, component.name.get(), variable.name.get(), v2::AttributeEnum::Actual);
+    if (exists_ro.value_or(true)) {
+        return std::nullopt;
+    }
+
+    return convert(set_value(*storage, component, variable, value));
 }
 
 // ----------------------------------------------------------------------------
@@ -1272,11 +1555,21 @@ void ChargePointConfigurationDeviceModel::setChargepointModemInformation(const s
 // Internal
 
 std::string ChargePointConfigurationDeviceModel::getCentralSystemURI() {
-    return get_value<std::string>(*storage, keys::valid_keys::CentralSystemURI);
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    const auto cv = NC::get_component_variable(get_active_network_slot(*storage), NC::OcppCsmsUrl);
+    return get_value<std::string>(*storage, cv, v2::AttributeEnum::Actual);
 }
 
 std::string ChargePointConfigurationDeviceModel::getChargePointId() {
-    return get_value<std::string>(*storage, keys::valid_keys::ChargePointId);
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    namespace CC = ocpp::v2::ControllerComponentVariables;
+    const auto cv = NC::get_component_variable(get_active_network_slot(*storage), NC::Identity);
+    const auto nc_identity = get_optional<std::string>(*storage, cv, v2::AttributeEnum::Actual);
+    if (nc_identity.has_value() && !nc_identity->empty()) {
+        return *nc_identity;
+    }
+    // Per-slot Identity is empty: fall back to the global SecurityCtrlr.Identity
+    return get_value<std::string>(*storage, CC::SecurityCtrlrIdentity, v2::AttributeEnum::Actual);
 }
 
 std::string ChargePointConfigurationDeviceModel::getSupportedCiphers12() {
@@ -1442,16 +1735,18 @@ std::vector<ChargingProfilePurposeType> ChargePointConfigurationDeviceModel::get
 }
 
 std::optional<std::string> ChargePointConfigurationDeviceModel::getConnectorEvseIds() {
-    std::optional<std::string> result;
-    auto evse_ids = calculateEvseIds();
-    if (evse_ids) {
-        result = std::move(evse_ids.value());
+    auto stored = get_optional<std::string>(*storage, keys::valid_keys::ConnectorEvseIds);
+    if (stored.has_value() && stored->empty()) {
+        const auto n = getNumberOfConnectors();
+        stored = (n > 1) ? std::string(static_cast<std::size_t>(n - 1), ',') : std::string{};
     }
-    return result;
+    return stored;
 }
 
 std::optional<std::string> ChargePointConfigurationDeviceModel::getHostName() {
-    return get_optional<std::string>(*storage, keys::valid_keys::HostName);
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    const auto cv = NC::get_component_variable(get_active_network_slot(*storage), ocpp::v2::Variable{"HostName"});
+    return get_optional<std::string>(*storage, cv, v2::AttributeEnum::Actual);
 }
 
 std::optional<std::string> ChargePointConfigurationDeviceModel::getIFace() {
@@ -1513,14 +1808,19 @@ std::optional<KeyValue> ChargePointConfigurationDeviceModel::getPublicKeyKeyValu
         EVLOG_warning << "Cannot get MeterPublicKey for connector " << connector_id
                       << ", because the connector id does not exist.";
     } else {
-        auto key = meterPublicKeyString(connector_id);
-        auto value = get_optional<std::string>(*storage, "Internal", key, v2::AttributeEnum::Actual);
-        if (value) {
-            KeyValue kv;
-            kv.key = std::move(key);
-            kv.readonly = true;
-            kv.value = std::move(value);
-            result = std::move(kv);
+        // MeterPublicKeys are migrated and stored as a single CSL value.
+        const auto meter_public_keys = get_optional<std::string>(*storage, keys::valid_keys::MeterPublicKeys);
+        if (meter_public_keys.has_value() && !meter_public_keys->empty()) {
+            const auto keys_list = utils::split_string(',', meter_public_keys.value());
+            const std::size_t index = static_cast<std::size_t>(connector_id - 1);
+
+            if (index < keys_list.size()) {
+                KeyValue kv;
+                kv.key = meterPublicKeyString(connector_id);
+                kv.readonly = true;
+                kv.value = keys_list.at(index);
+                result = std::move(kv);
+            }
         }
     }
     return result;
@@ -1531,15 +1831,23 @@ KeyValue ChargePointConfigurationDeviceModel::getAuthorizeConnectorZeroOnConnect
 }
 
 KeyValue ChargePointConfigurationDeviceModel::getCentralSystemURIKeyValue() {
-    auto kv = get_key_value(*storage, keys::valid_keys::CentralSystemURI);
-    kv.readonly =
-        isReadOnly(*storage, ocpp::v2::ControllerComponentVariables::CentralSystemURI16, v2::AttributeEnum::Actual)
-            .value_or(true);
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    const auto cv = NC::get_component_variable(get_active_network_slot(*storage), NC::OcppCsmsUrl);
+    v16::KeyValue kv;
+    kv.key = std::string{v16::keys::convert(v16::keys::valid_keys::CentralSystemURI)};
+    kv.value = get_optional<std::string>(*storage, cv, v2::AttributeEnum::Actual);
+    const auto mutability = storage->get_mutability(cv.component, cv.variable.value(), v2::AttributeEnum::Actual);
+    kv.readonly = mutability.has_value() ? (mutability.value() == v2::MutabilityEnum::ReadOnly) : true;
     return kv;
 }
 
 KeyValue ChargePointConfigurationDeviceModel::getChargePointIdKeyValue() {
-    return get_key_value(*storage, keys::valid_keys::ChargePointId);
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    v16::KeyValue kv;
+    kv.key = std::string{v16::keys::convert(v16::keys::valid_keys::ChargePointId)};
+    kv.value = getChargePointId();
+    kv.readonly = v16::keys::is_readonly(v16::keys::valid_keys::ChargePointId);
+    return kv;
 }
 
 KeyValue ChargePointConfigurationDeviceModel::getChargePointModelKeyValue() {
@@ -1634,28 +1942,16 @@ KeyValue ChargePointConfigurationDeviceModel::getSupportedMeasurandsKeyValue() {
     return kv;
 }
 
-KeyValue ChargePointConfigurationDeviceModel::getTLSKeylogFileKeyValue() {
-    return get_key_value(*storage, keys::valid_keys::TLSKeylogFile);
-}
-
 KeyValue ChargePointConfigurationDeviceModel::getUseSslDefaultVerifyPathsKeyValue() {
     return get_key_value(*storage, keys::valid_keys::UseSslDefaultVerifyPaths);
 }
 
-KeyValue ChargePointConfigurationDeviceModel::getUseTPMKeyValue() {
-    return get_key_value(*storage, keys::valid_keys::UseTPM);
-}
-
-KeyValue ChargePointConfigurationDeviceModel::getUseTPMSeccLeafCertificateKeyValue() {
-    return get_key_value(*storage, keys::valid_keys::UseTPMSeccLeafCertificate);
+KeyValue ChargePointConfigurationDeviceModel::getVerifyCsmsCommonNameKeyValue() {
+    return get_key_value(*storage, keys::valid_keys::VerifyCsmsCommonName);
 }
 
 KeyValue ChargePointConfigurationDeviceModel::getVerifyCsmsAllowWildcardsKeyValue() {
     return get_key_value(*storage, keys::valid_keys::VerifyCsmsAllowWildcards);
-}
-
-KeyValue ChargePointConfigurationDeviceModel::getVerifyCsmsCommonNameKeyValue() {
-    return get_key_value(*storage, keys::valid_keys::VerifyCsmsCommonName);
 }
 
 KeyValue ChargePointConfigurationDeviceModel::getWaitForStopTransactionsOnResetTimeoutKeyValue() {
@@ -1668,6 +1964,18 @@ KeyValue ChargePointConfigurationDeviceModel::getWebsocketPingPayloadKeyValue() 
 
 KeyValue ChargePointConfigurationDeviceModel::getWebsocketPongTimeoutKeyValue() {
     return get_key_value(*storage, keys::valid_keys::WebsocketPongTimeout);
+}
+
+KeyValue ChargePointConfigurationDeviceModel::getTLSKeylogFileKeyValue() {
+    return get_key_value(*storage, keys::valid_keys::TLSKeylogFile);
+}
+
+KeyValue ChargePointConfigurationDeviceModel::getUseTPMKeyValue() {
+    return get_key_value(*storage, keys::valid_keys::UseTPM);
+}
+
+KeyValue ChargePointConfigurationDeviceModel::getUseTPMSeccLeafCertificateKeyValue() {
+    return get_key_value(*storage, keys::valid_keys::UseTPMSeccLeafCertificate);
 }
 
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getAllowChargingProfileWithoutStartScheduleKeyValue() {
@@ -1691,21 +1999,30 @@ std::optional<KeyValue> ChargePointConfigurationDeviceModel::getCompositeSchedul
 }
 
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getConnectorEvseIdsKeyValue() {
-    auto evse_ids = calculateEvseIds();
-    std::optional<KeyValue> result;
-    if (evse_ids) {
-        const auto key = keys::valid_keys::ConnectorEvseIds;
-        v16::KeyValue kv;
-        kv.key = std::move(std::string{v16::keys::convert(key)});
-        kv.readonly = v16::keys::is_readonly(key);
-        kv.value = std::move(evse_ids.value());
-        result = std::move(kv);
+    auto stored = getConnectorEvseIds();
+    if (!stored.has_value()) {
+        return std::nullopt;
     }
-    return result;
+    const auto key = keys::valid_keys::ConnectorEvseIds;
+    v16::KeyValue kv;
+    kv.key = std::string{v16::keys::convert(key)};
+    kv.readonly = v16::keys::is_readonly(key);
+    kv.value = std::move(*stored);
+    return kv;
 }
 
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getHostNameKeyValue() {
-    return get_key_value_optional(*storage, keys::valid_keys::HostName);
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    const auto cv = NC::get_component_variable(get_active_network_slot(*storage), ocpp::v2::Variable{"HostName"});
+    const auto value = get_optional<std::string>(*storage, cv, v2::AttributeEnum::Actual);
+    if (!value.has_value()) {
+        return std::nullopt;
+    }
+    v16::KeyValue kv;
+    kv.key = std::string{v16::keys::convert(v16::keys::valid_keys::HostName)};
+    kv.value = value;
+    kv.readonly = v16::keys::is_readonly(v16::keys::valid_keys::HostName);
+    return kv;
 }
 
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getIFaceKeyValue() {
@@ -2263,8 +2580,32 @@ std::optional<KeyValue> ChargePointConfigurationDeviceModel::getSupportedFileTra
 // ----------------------------------------------------------------------------
 // Smart Charging
 
+// Convert a single OCPP 2.x charging rate unit token ("A", "W") to the OCPP 1.6 representation
+// ("Current", "Power"). Unknown tokens pass through unchanged.
+static std::string charging_rate_unit_token_v2_to_v16(const std::string& token) {
+    if (token == "A") {
+        return "Current";
+    }
+    if (token == "W") {
+        return "Power";
+    }
+    return token;
+}
+
+// Convert a CSL of charging rate units from OCPP 2.x ("A", "W") to OCPP 1.6 ("Current", "Power").
+static std::string charging_rate_unit_csl_v2_to_v16(const std::string& v2_csl) {
+    const auto tokens = utils::from_csl(v2_csl);
+    std::vector<std::string> result;
+    result.reserve(tokens.size());
+    for (const auto& token : tokens) {
+        result.push_back(charging_rate_unit_token_v2_to_v16(token));
+    }
+    return utils::to_csl(result);
+}
+
 std::string ChargePointConfigurationDeviceModel::getChargingScheduleAllowedChargingRateUnit() {
-    return get_value<std::string>(*storage, keys::valid_keys::ChargingScheduleAllowedChargingRateUnit);
+    const auto raw = get_value<std::string>(*storage, keys::valid_keys::ChargingScheduleAllowedChargingRateUnit);
+    return charging_rate_unit_csl_v2_to_v16(raw);
 }
 
 std::int32_t ChargePointConfigurationDeviceModel::getChargeProfileMaxStackLevel() {
@@ -2289,9 +2630,9 @@ std::vector<ChargingRateUnit> ChargePointConfigurationDeviceModel::getChargingSc
     if (csl) {
         const auto components = utils::from_csl(csl.value());
         for (const auto& component : components) {
-            if (component == "Current") {
+            if (component == "Current" || component == "A") {
                 result.push_back(ChargingRateUnit::A);
-            } else if (component == "Power") {
+            } else if (component == "Power" || component == "W") {
                 result.push_back(ChargingRateUnit::W);
             }
         }
@@ -2304,7 +2645,9 @@ KeyValue ChargePointConfigurationDeviceModel::getChargeProfileMaxStackLevelKeyVa
 }
 
 KeyValue ChargePointConfigurationDeviceModel::getChargingScheduleAllowedChargingRateUnitKeyValue() {
-    return get_key_value(*storage, keys::valid_keys::ChargingScheduleAllowedChargingRateUnit);
+    auto kv = get_key_value(*storage, keys::valid_keys::ChargingScheduleAllowedChargingRateUnit);
+    kv.value.emplace(getChargingScheduleAllowedChargingRateUnit());
+    return kv;
 }
 
 KeyValue ChargePointConfigurationDeviceModel::getChargingScheduleMaxPeriodsKeyValue() {
@@ -2327,11 +2670,21 @@ bool ChargePointConfigurationDeviceModel::getDisableSecurityEventNotifications()
 }
 
 std::int32_t ChargePointConfigurationDeviceModel::getSecurityProfile() {
-    return get_value<std::int32_t>(*storage, keys::valid_keys::SecurityProfile);
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    const auto cv = NC::get_component_variable(get_active_network_slot(*storage), NC::SecurityProfile);
+    return get_value<std::int32_t>(*storage, cv, v2::AttributeEnum::Actual);
 }
 
 std::optional<std::string> ChargePointConfigurationDeviceModel::getAuthorizationKey() {
-    return get_optional<std::string>(*storage, keys::valid_keys::AuthorizationKey, true);
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    namespace CC = ocpp::v2::ControllerComponentVariables;
+    const auto cv = NC::get_component_variable(get_active_network_slot(*storage), NC::BasicAuthPassword);
+    const auto nc_val = get_optional<std::string>(*storage, cv, v2::AttributeEnum::Actual, true);
+    if (nc_val.has_value() && !nc_val->empty()) {
+        return nc_val;
+    }
+    // Per-slot BasicAuthPassword is empty: fall back to the global SecurityCtrlr.BasicAuthPassword
+    return get_optional<std::string>(*storage, CC::BasicAuthPassword, v2::AttributeEnum::Actual, true);
 }
 
 std::optional<std::string> ChargePointConfigurationDeviceModel::getCpoName() {
@@ -2355,7 +2708,13 @@ KeyValue ChargePointConfigurationDeviceModel::getDisableSecurityEventNotificatio
 }
 
 KeyValue ChargePointConfigurationDeviceModel::getSecurityProfileKeyValue() {
-    return get_key_value(*storage, keys::valid_keys::SecurityProfile);
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    const auto cv = NC::get_component_variable(get_active_network_slot(*storage), NC::SecurityProfile);
+    v16::KeyValue kv;
+    kv.key = std::string{v16::keys::convert(v16::keys::valid_keys::SecurityProfile)};
+    kv.value = get_optional<std::string>(*storage, cv, v2::AttributeEnum::Actual);
+    kv.readonly = v16::keys::is_readonly(v16::keys::valid_keys::SecurityProfile);
+    return kv;
 }
 
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getAdditionalRootCertificateCheckKeyValue() {
@@ -2365,11 +2724,13 @@ std::optional<KeyValue> ChargePointConfigurationDeviceModel::getAdditionalRootCe
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getAuthorizationKeyKeyValue() {
     // AuthorizationKey is writeOnly so we return a dummy when a value is set
     // a KeyValue is always returned
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    const auto cv = NC::get_component_variable(get_active_network_slot(*storage), NC::BasicAuthPassword);
     const auto key = keys::valid_keys::AuthorizationKey;
     v16::KeyValue kv;
     kv.key = std::move(std::string{v16::keys::convert(key)});
     kv.readonly = v16::keys::is_readonly(key);
-    if (key_exists(*storage, key)) {
+    if (key_exists(*storage, cv.component, cv.variable.value())) {
         kv.value = "DummyAuthorizationKey";
     }
     return kv;
@@ -2783,103 +3144,34 @@ void ChargePointConfigurationDeviceModel::setWaitForSetUserPriceTimeout(std::int
 // ----------------------------------------------------------------------------
 // Custom
 
-std::optional<KeyValue> ChargePointConfigurationDeviceModel::getCustomKeyValue(const CiString<50>& key) {
-    std::string sv_key{key};
-    return get_key_value_optional(*storage, sv_key);
-}
-
-ConfigurationStatus ChargePointConfigurationDeviceModel::setCustomKey(const CiString<50>& key,
-                                                                      const CiString<500>& value, bool force) {
-    const std::string sv_key{key};
-    auto result = ConfigurationStatus::Rejected;
-
-    const auto exists_ro = isReadOnly(*storage, custom_component, sv_key, v2::AttributeEnum::Actual);
-    if (exists_ro) {
-        // the key exists (not allowed to create keys)
-        const auto ro = exists_ro.value();
-
-        if (!ro || force) {
-            try {
-                // validation is performed by the device model implementation
-                const auto res = set_value(*storage, sv_key, std::string{value});
-                result = convert(res);
-            } catch (const std::exception& e) {
-                EVLOG_warning << "Could not set custom configuration key: " << e.what();
-            }
-        }
-    }
-
-    return result;
-}
-
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::get(const CiString<50>& key) {
-    std::optional<KeyValue> result;
     const std::string key_str{key};
     const auto sv_key_opt = keys::convert(key_str);
-    bool get_value{true};
 
     if (sv_key_opt) {
-        const auto sv_key = sv_key_opt.value();
-
-        if (ignore_key(sv_key, supported_feature_profiles, SupportedFeatureProfiles::FirmwareManagement)) {
-            get_value = false;
-        }
-        if (ignore_key(sv_key, supported_feature_profiles, SupportedFeatureProfiles::PnC)) {
-            get_value = false;
-        }
-        if (ignore_key(sv_key, supported_feature_profiles, SupportedFeatureProfiles::SmartCharging)) {
-            get_value = false;
-        }
-        if (ignore_key(sv_key, supported_feature_profiles, SupportedFeatureProfiles::Security)) {
-            get_value = false;
-        }
-        if (ignore_key(sv_key, supported_feature_profiles, SupportedFeatureProfiles::LocalAuthListManagement)) {
-            get_value = false;
-        }
-        if (ignore_key(sv_key, supported_feature_profiles, SupportedFeatureProfiles::CostAndPrice)) {
-            get_value = false;
+        if (!shouldExposeKey(sv_key_opt.value())) {
+            return std::nullopt;
         }
 
-        if (keys::is_hidden(sv_key)) {
-            // we should not return an AuthorizationKey because it's write only
-            get_value = false;
-        }
-    } else {
-        if (supported_feature_profiles.find(SupportedFeatureProfiles::CostAndPrice) !=
-            supported_feature_profiles.end()) {
-            // check keys starting DefaultPriceText
-            if (key_str.rfind("DefaultPriceText", 0) == 0) {
-                if (getCustomMultiLanguageMessagesEnabled().value_or(false)) {
-                    const auto lang = utils::split_string(',', key_str);
-                    if (lang.size() == 2) {
-                        result = getDefaultPriceTextKeyValue(lang.at(1));
-                    }
-                }
-                get_value = false;
-            }
-        }
-        // check keys starting MeterPublicKey
-        if (key_str.rfind("MeterPublicKey", 0) == 0) {
-            auto id = extractConnectorIdFromMeterPublicKey(key_str);
-            if (id) {
-                result = getPublicKeyKeyValue(id.value());
-            }
-            get_value = false;
+        return get_key_value_optional(*storage, sv_key_opt.value());
+    }
+
+    if (supported_feature_profiles.find(SupportedFeatureProfiles::CostAndPrice) != supported_feature_profiles.end() &&
+        key_str.rfind("DefaultPriceText", 0) == 0 && getCustomMultiLanguageMessagesEnabled().value_or(false)) {
+        const auto language_parts = utils::split_string(',', key_str);
+        if (language_parts.size() > 1) {
+            return getDefaultPriceTextKeyValue(language_parts.at(1));
         }
     }
 
-    if (get_value) {
-        if (sv_key_opt) {
-            // known key
-            result = get_key_value_optional(*storage, sv_key_opt.value());
-        } else {
-            // TODO(james-ctc): check for SupportedFeatureProfiles::Custom from device model
-            // custom key
-            result = get_key_value_optional(*storage, key_str);
+    if (key_str.rfind("MeterPublicKey", 0) == 0) {
+        const auto connector_id = extractConnectorIdFromMeterPublicKey(key_str);
+        if (connector_id.has_value()) {
+            return getPublicKeyKeyValue(connector_id.value());
         }
     }
 
-    return result;
+    return getCustomKeyValue(key_str);
 }
 
 std::vector<KeyValue> ChargePointConfigurationDeviceModel::get_all_key_value() {
@@ -2887,18 +3179,18 @@ std::vector<KeyValue> ChargePointConfigurationDeviceModel::get_all_key_value() {
 
     std::vector<KeyValue> all;
     v16::utils::OrderedUniqueStringList valid_measurands;
-    const auto report = storage->get_base_report_data(v2::ReportBaseEnum::ConfigurationInventory);
+    const auto report = storage->get_base_report_data(v2::ReportBaseEnum::FullInventory);
     for (const auto& entry : report) {
         const auto& component = entry.component;
         const auto& variable = entry.variable;
         const auto& value_attribute = entry.variableAttribute;
         auto attribute = v2::AttributeEnum::Actual;
         auto mutability = v2::MutabilityEnum::ReadOnly;
-        std::string value;
+        std::optional<std::string> value;
         if (!value_attribute.empty()) {
             attribute = value_attribute.front().type.value_or(v2::AttributeEnum::Actual);
             mutability = value_attribute.front().mutability.value_or(v2::MutabilityEnum::ReadOnly);
-            value = value_attribute.front().value.value_or("");
+            value = value_attribute.front().value;
         }
         try {
             // convert to OCPP 1.6 key
@@ -2907,18 +3199,16 @@ std::vector<KeyValue> ChargePointConfigurationDeviceModel::get_all_key_value() {
                 // convert string to enum
                 const auto key = keys::convert(*v16_key_opt);
                 if (key) {
+                    if (keys::is_hidden(key.value())) {
+                        continue;
+                    }
+
                     const auto feature = keys::get_profile(*key);
                     if (feature) {
                         // check key is valid against the supported profiles
                         if (const auto it = supported_feature_profiles.find(*feature);
                             it != supported_feature_profiles.end()) {
-                            KeyValue kv;
-                            kv.key = *v16_key_opt;
-                            if (!value.empty()) {
-                                kv.value = std::move(value);
-                            }
-                            kv.readonly = mutability == v2::MutabilityEnum::ReadOnly;
-                            all.push_back(std::move(kv));
+                            appendReportKeyValue(all, key.value(), value, mutability);
                         }
                     } else {
                         EVLOG_warning << "OCPP 1.6 key not associated with a profile: " << *v16_key_opt;
@@ -2939,18 +3229,6 @@ std::vector<KeyValue> ChargePointConfigurationDeviceModel::get_all_key_value() {
             } else {
                 if (is_same(SampledDataTxStartedMeasurands, component, variable)) {
                     add_to_list(valid_measurands, entry);
-                } else {
-                    // check for OCPP 1.6 custom variables
-                    // don't include all 2.x keys
-                    if (component.name == custom_component) {
-                        KeyValue kv;
-                        kv.key = variable.name;
-                        if (!value.empty()) {
-                            kv.value = std::move(value);
-                        }
-                        kv.readonly = mutability == v2::MutabilityEnum::ReadOnly;
-                        all.push_back(std::move(kv));
-                    }
                 }
             }
         } catch (std::exception& ex) {
@@ -2958,34 +3236,11 @@ std::vector<KeyValue> ChargePointConfigurationDeviceModel::get_all_key_value() {
         }
     }
 
-    // Add keys that map to VariableCharacteristics.maxLimit
-    for (const auto& [key, cv] : v16::keys::max_limit_entries) {
-        const auto max_limit_cv = v16::keys::convert_v2_max_limit(key);
-        if (max_limit_cv) {
-            const auto meta = storage->get_variable_meta_data(max_limit_cv->first, max_limit_cv->second);
-            if (meta && meta->characteristics.maxLimit) {
-                KeyValue kv;
-                kv.key = std::string{v16::keys::convert(key)};
-                kv.value = std::to_string(static_cast<std::int32_t>(meta->characteristics.maxLimit.value()));
-                kv.readonly = v16::keys::is_readonly(key);
-                all.push_back(std::move(kv));
-            }
-        }
-    }
+    appendCustomKeyValues(all);
+    appendActiveNetworkConfigKeyValues(all);
 
-    // add SupportedMeasurands
-    std::string supported_measurands;
-    if (!valid_measurands.empty()) {
-        supported_measurands = v16::utils::to_csl(valid_measurands.get());
-    }
-    KeyValue kv;
-    const auto key = keys::valid_keys::SupportedMeasurands;
-    kv.key = std::move(std::string{v16::keys::convert(key)});
-    if (!supported_measurands.empty()) {
-        kv.value = supported_measurands;
-    }
-    kv.readonly = v16::keys::is_readonly(key);
-    all.push_back(std::move(kv));
+    appendMaxLimitKeyValues(all);
+    appendSupportedMeasurandsKeyValue(all, valid_measurands);
 
     return all;
 }
@@ -3137,7 +3392,8 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
             result = convert(setInternalDisableSecurityEventNotifications(value_str));
             break;
         case keys::valid_keys::SecurityProfile:
-            result = convert(setInternalSecurityProfile(value_str));
+            result = ConfigurationStatus::Accepted; // do nothing here (key is valid!); actual update done via
+                                                    // setSecurityProfile() after validation
             break;
         case keys::valid_keys::ISO15118CertificateManagementEnabled:
             result = convert(setInternalISO15118CertificateManagementEnabled(value_str));
@@ -3269,21 +3525,12 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         if (key_str.rfind("DefaultPriceText", 0) == 0) {
             if (supported_feature_profiles.find(SupportedFeatureProfiles::CostAndPrice) !=
                 supported_feature_profiles.end()) {
-                // check keys starting DefaultPriceText
-                result = setDefaultPriceText(key, value);
+                result = convert(setInternalDefaultPriceText(key_str, value_str));
             } else {
                 result = ConfigurationStatus::NotSupported;
             }
-        } else if (key_str.rfind("MeterPublicKey", 0) == 0) {
-            // not setable
         } else {
-            // custom key
-            const auto exists_ro = isReadOnly(*storage, custom_component, key_str, v2::AttributeEnum::Actual);
-            if (!exists_ro.value_or(true)) {
-                // key exists and is not read-only
-                const auto res = set_value(*storage, key_str, value_str);
-                result = convert(res);
-            }
+            result = setCustomKey(key_str, value_str);
         }
     }
 

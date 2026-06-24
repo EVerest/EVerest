@@ -12,6 +12,10 @@
 using namespace std::chrono_literals;
 using namespace std::string_literals;
 
+namespace {
+constexpr auto UNKNOWN_SQL_ERROR{"<unknown>"};
+}
+
 namespace everest::db::sqlite {
 
 class DatabaseTransaction : public TransactionInterface {
@@ -143,7 +147,8 @@ bool Connection::close_connection_internal(bool force_close) {
 bool Connection::execute_statement(const std::string& statement) {
     char* err_msg = nullptr;
     if (sqlite3_exec(this->db, statement.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK) {
-        EVLOG_error << "Could not execute statement \"" << statement << "\": " << err_msg;
+        EVLOG_error << "Could not execute statement \"" << statement
+                    << "\": " << ((err_msg == nullptr) ? UNKNOWN_SQL_ERROR : err_msg);
         sqlite3_free(err_msg);
         return false;
     }

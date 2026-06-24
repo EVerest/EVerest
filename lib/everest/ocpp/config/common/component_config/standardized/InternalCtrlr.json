@@ -19,22 +19,6 @@
           "default": true,
           "type": "boolean"
       },
-      "ChargePointId": {
-          "variable_name": "ChargePointId",
-          "characteristics": {
-              "supportsMonitoring": true,
-              "dataType": "string"
-          },
-          "attributes": [
-              {
-                  "type": "Actual",
-                  "mutability": "ReadOnly",
-                  "value": "cp001"
-              }
-          ],
-          "minLength": 1,
-          "type": "string"
-      },
       "NetworkConnectionProfiles": {
           "variable_name": "NetworkConnectionProfiles",
           "characteristics": {
@@ -393,26 +377,6 @@
               }
           ],
           "default": "31536000",
-          "type": "integer"
-      },
-      "NumberOfConnectors": {
-          "variable_name": "NumberOfConnectors",
-          "characteristics": {
-              "minLimit": 1,
-              "maxLimit": 128,
-              "supportsMonitoring": true,
-              "dataType": "integer"
-          },
-          "attributes": [
-              {
-                  "type": "Actual",
-                  "mutability": "ReadOnly",
-                  "value": 1
-              }
-          ],
-          "minimum": 1,
-          "maximum": 128,
-          "default": "1",
           "type": "integer"
       },
       "UseSslDefaultVerifyPaths": {
@@ -873,13 +837,11 @@
   },
   "required": [
     "ChargeBoxSerialNumber",
-    "ChargePointId",
     "ChargePointModel",
     "ChargePointVendor",
     "FirmwareVersion",
     "LogMessagesFormat",
     "NetworkConnectionProfiles",
-    "NumberOfConnectors",
     "SupportedCiphers12",
     "SupportedCiphers13",
     "SupportedOcppVersions"

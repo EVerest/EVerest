@@ -114,6 +114,11 @@ Have a look at this categorized list of all guides:
       :link-type: doc
 
       How to contribute code to EVerest.
+   .. grid-item-card:: Migrate OCPP 1.6 Storage to the Device Model
+      :link: ocpp-storage-migration
+      :link-type: doc
+
+      How to migrate an existing OCPP 1.6 JSON configuration into the unified device model storage.
 
 .. toctree::
     :maxdepth: 1
@@ -136,3 +141,4 @@ Have a look at this categorized list of all guides:
     integrate-tariff-and-cost
     devcontainer-usage/index
     c++-coding-guidelines
+    ocpp-storage-migration

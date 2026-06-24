@@ -6,6 +6,7 @@ IMPLS = [
 
 cc_everest_module(
     name = "GenericPowermeter",
+    data = glob(["models/**"]),
     deps = [],
     impls = IMPLS,
 )

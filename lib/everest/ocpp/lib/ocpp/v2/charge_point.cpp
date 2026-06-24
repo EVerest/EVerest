@@ -445,6 +445,11 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
         EVLOG_AND_THROW(std::invalid_argument("Database handler should not be null"));
     }
 
+    // make sure number of connectors is set correctly
+    const auto number_of_connectors_cv = ControllerComponentVariables::NumberOfConnectors;
+    this->device_model->set_value(number_of_connectors_cv.component, number_of_connectors_cv.variable.value(),
+                                  AttributeEnum::Actual, std::to_string(evse_connector_structure.size()),
+                                  VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL, true);
     this->device_model->check_integrity(evse_connector_structure);
     // One-time migration: if NetworkConnectionProfiles blob is non-empty, write into DM components and clear blob
     NetworkConfigurationComponentVariables::migrate_from_blob_if_needed(*this->device_model);
@@ -771,6 +776,7 @@ void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message
         case MessageType::GetChargingProfiles:
         case MessageType::GetCompositeSchedule:
         case MessageType::NotifyEVChargingNeedsResponse:
+        case MessageType::UpdateDynamicSchedule:
             if (this->smart_charging != nullptr) {
                 this->smart_charging->handle_message(message);
             } else {
@@ -937,7 +943,6 @@ void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message
         case MessageType::ReportDERControl:
         case MessageType::ReportDERControlResponse:
         case MessageType::SetDERControlResponse:
-        case MessageType::UpdateDynamicSchedule:
         case MessageType::UpdateDynamicScheduleResponse:
         case MessageType::UsePriorityCharging:
         case MessageType::UsePriorityChargingResponse:

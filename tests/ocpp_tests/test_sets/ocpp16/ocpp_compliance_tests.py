@@ -407,7 +407,7 @@ async def test_regular_charging_session_identification_conn_timeout(
     )
 
     await charge_point_v16.clear_cache_req()
-    await charge_point_v16.change_configuration_req(key="ConnectionTimeout", value="5")
+    await charge_point_v16.change_configuration_req(key="ConnectionTimeOut", value="5")
 
     # swipe id tag to authorize
     test_controller.swipe(test_config.authorization_info.valid_id_tag_1)
@@ -1419,7 +1419,7 @@ async def test_clear_authorization_data_cache(
         call_result.ChangeConfiguration(ConfigurationStatus.accepted),
     )
 
-    await charge_point_v16.change_configuration_req(key="ConnectionTimeout", value="2")
+    await charge_point_v16.change_configuration_req(key="ConnectionTimeOut", value="2")
     # expect ChangeConfiguration.conf with status Accepted
     assert await wait_for_and_validate(
         test_utility,
@@ -1693,7 +1693,7 @@ async def test_remote_charge_start_timeout(
     logging.info("######### test_remote_charge_start_timeout #########")
 
     await charge_point_v16.get_configuration_req(key=["AuthorizeRemoteTxRequests"])
-    await charge_point_v16.change_configuration_req(key="ConnectionTimeout", value="10")
+    await charge_point_v16.change_configuration_req(key="ConnectionTimeOut", value="10")
 
     # send RemoteStartTransaction.req
     await charge_point_v16.remote_start_transaction_req(

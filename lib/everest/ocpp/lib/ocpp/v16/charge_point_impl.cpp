@@ -1874,6 +1874,7 @@ ChargePointImpl::set_configuration_key_internal(CiString<50> key, CiString<500> 
                                                 std::optional<MessageId> uniqueId) {
     ConfigurationStatus result{ConfigurationStatus::NotSupported};
     std::optional<ChangeConfigurationResponse> response = ChangeConfigurationResponse();
+
     const auto kv = configuration.get(key);
 
     if (kv || key == "AuthorizationKey") {
@@ -1961,7 +1962,7 @@ ChargePointImpl::set_configuration_key_internal(CiString<50> key, CiString<500> 
                     } catch (const std::invalid_argument& e) {
                         result = ConfigurationStatus::Rejected;
                     }
-                } else if (key == "ConnectionTimeout") {
+                } else if (key == "ConnectionTimeOut") {
                     call_set_connection_timeout();
                 } else if (key == "TransactionMessageAttempts") {
                     message_queue->update_transaction_message_attempts(configuration.getTransactionMessageAttempts());
@@ -4451,13 +4452,16 @@ void ChargePointImpl::on_transaction_started(const std::int32_t& connector, cons
     const std::shared_ptr<Transaction> transaction = std::make_shared<Transaction>(
         this->transaction_handler->get_negative_random_transaction_id(), connector, session_id, CiString<20>(id_token),
         meter_start, reservation_id, timestamp, std::move(meter_values_sample_timer));
+    std::optional<MeterValue> meter_value = std::nullopt;
     if (signed_meter_value) {
-        const auto meter_value =
-            get_signed_meter_value(signed_meter_value.value(), ReadingContext::Transaction_Begin, timestamp);
-        transaction->add_meter_value(meter_value);
+        meter_value = get_signed_meter_value(signed_meter_value.value(), ReadingContext::Transaction_Begin, timestamp);
+        transaction->add_meter_value(meter_value.value());
     }
 
     this->start_transaction(transaction);
+    if (meter_value) {
+        this->send_meter_value(connector, meter_value.value());
+    }
 }
 
 void ChargePointImpl::on_transaction_stopped(const std::int32_t connector, const std::string& session_id,

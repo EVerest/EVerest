@@ -13,6 +13,7 @@ safety:
   pp_mode: "disabled"
   cp_avg_ms: 10
   inverted_emergency_input: 0
+  enable_stop_charging_input: 1
   relay_1:
     relay_mode: "PowerRelay"
     # Auxilary contact is connected from the OMRON relay

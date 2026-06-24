@@ -184,9 +184,17 @@ std::string enhanced_convert(const ocpp::v2::Component& component, const ocpp::v
                              ocpp::v2::AttributeEnum attribute) {
     using namespace ocpp::v2::ControllerComponentVariables;
     auto result = ocpp::v16::keys::convert_v2(component, variable, attribute);
-    if (!result.has_value()) {
-        if (component.name == "EVSE" && variable.name == "ISO15118EvseId") {
-            result = std::string{ocpp::v16::keys::convert(ocpp::v16::keys::valid_keys::ConnectorEvseIds)};
+    if (!result.has_value() && component.name == "NetworkConfiguration") {
+        // NC variables are no longer in V2ConfigMap; map them to the V16 key names in vars_internal.
+        static const std::map<std::string, std::string> nc_to_v16 = {
+            {"OcppCsmsUrl", "CentralSystemURI"},
+            {"Identity", "ChargePointId"},
+            {"SecurityProfile", "SecurityProfile"},
+            {"BasicAuthPassword", "AuthorizationKey"},
+            {"HostName", "HostName"},
+        };
+        if (const auto it = nc_to_v16.find(variable.name); it != nc_to_v16.end()) {
+            result = it->second;
         }
     }
     return result.value_or(variable.name);
@@ -282,7 +290,29 @@ std::optional<MemoryStorage::Storage::iterator> MemoryStorage::locate_v16(const 
     return std::nullopt;
 }
 
+std::optional<std::string> MemoryStorage::get_meter_public_keys_v16() const {
+    std::vector<std::string> meter_public_keys;
+    for (std::uint32_t i = 1;; i++) {
+        const auto key = "MeterPublicKey" + std::to_string(i);
+        auto it = locate_v16(key);
+        if (!it.has_value()) {
+            break;
+        }
+        meter_public_keys.push_back(it.value()->second);
+    }
+
+    if (meter_public_keys.empty()) {
+        return std::nullopt;
+    }
+
+    return ocpp::v16::utils::to_csl(meter_public_keys);
+}
+
 std::optional<std::string> MemoryStorage::get_v16(const std::string& name) const {
+    if (name == std::string{ocpp::v16::keys::convert(ocpp::v16::keys::valid_keys::MeterPublicKeys)}) {
+        return get_meter_public_keys_v16();
+    }
+
     // since V16 items are unique, just search through the storage items
     // to locate it
     auto it = locate_v16(name);
@@ -392,26 +422,20 @@ void MemoryStorage::add_to_report(std::vector<ocpp::v2::ReportData>& report, con
     // they don't need a VariableAttribute entry in the report.
     const auto key = keys::convert(name);
     if (key) {
-        const auto max_limit_cv = keys::convert_v2_max_limit(*key);
-        if (max_limit_cv) {
+        if (keys::is_max_limit_key(*key)) {
             return;
         }
     }
 
     const auto cv = ocpp::v16::keys::convert_v2(name);
     if (cv) {
-        auto component = std::get<ocpp::v2::Component>(*cv);
-        auto variable = std::get<ocpp::v2::Variable>(*cv);
-        auto attribute = std::get<ocpp::v2::AttributeEnum>(*cv);
         ocpp::v2::ReportData data;
-        data.component = std::move(component);
-        data.variable = std::move(variable);
+        data.component = cv->first;
+        data.variable = cv->second;
         ocpp::v2::VariableAttribute va;
-        va.type = attribute;
+        va.type = ocpp::v2::AttributeEnum::Actual;
         va.mutability = get_mutability(name_str);
-        if (!value_str.empty()) {
-            va.value = std::move(value_str);
-        }
+        va.value = std::move(value_str);
 
         if (key == keys::valid_keys::MeterValuesAlignedData) {
             add_supported_measureands_values_list(data);
@@ -487,7 +511,7 @@ void MemoryStorage::set(const std::string_view& component, const std::string_vie
         // std::cout << "Custom[" << variable << "]=" << value << '\n';
         vars_custom[variable_v] = value;
     } else {
-        std::cerr << "set not implemented for: " << component << '\n';
+        vars_additional[variable_v] = value;
     }
 }
 
@@ -524,7 +548,7 @@ void MemoryStorage::clear(const std::string_view& component, const std::string_v
     } else if (component == "Custom") {
         vars_custom.erase(var);
     } else {
-        std::cerr << "clear not implemented for: " << component << '\n';
+        vars_additional.erase(var);
     }
 }
 
@@ -542,24 +566,6 @@ MemoryStorage::GetVariableStatusEnum MemoryStorage::get_variable(const Component
         retrieved = get_v16(name);
         if (retrieved) {
             const auto key_opt = v16::keys::convert(name);
-            if (key_opt) {
-                if (key_opt.value() == v16::keys::valid_keys::ConnectorEvseIds) {
-                    if (component_id.evse) {
-                        const auto id = component_id.evse.value().id;
-                        auto fetched = get_connector_id(id, *retrieved);
-                        if (fetched) {
-                            retrieved = *fetched;
-                        } else {
-                            retrieved = "";
-                        }
-                        std::cout << component_id.name << '[' << variable_id.name << "]." << id << " has value: '"
-                                  << *retrieved << "' (" << name << ")\n";
-                    } else {
-                        std::cerr << "get_value with missing evse: " << component_id.name << '[' << variable_id.name
-                                  << "]\n";
-                    }
-                }
-            }
         } else {
             std::cout << component_id.name << '[' << variable_id.name << "] has no value (" << name << ")\n";
         }
@@ -587,30 +593,6 @@ MemoryStorage::SetVariableStatusEnum MemoryStorage::set_value(const Component& c
         const auto key_opt = v16::keys::convert(key_str);
         std::string store_value = value;
         result = MemoryStorage::SetVariableStatusEnum::Accepted;
-        if (key_opt) {
-            if (key_opt.value() == v16::keys::valid_keys::ConnectorEvseIds) {
-                result = MemoryStorage::SetVariableStatusEnum::Rejected;
-                auto retrieved = get_v16(v16::keys::valid_keys::ConnectorEvseIds);
-                store_value.clear();
-                if (retrieved) {
-                    store_value = *retrieved;
-                }
-                if (component_id.evse) {
-                    const auto id = component_id.evse.value().id;
-                    auto updated = set_connector_id(id, store_value, value);
-                    if (updated) {
-                        store_value = *updated;
-                        result = MemoryStorage::SetVariableStatusEnum::Accepted;
-                    } else {
-                        std::cerr << "set_value with invalid evse: " << component_id.name << '[' << variable_id.name
-                                  << "] " << id << '\n';
-                    }
-                } else {
-                    std::cerr << "set_value with missing evse: " << component_id.name << '[' << variable_id.name
-                              << "]\n";
-                }
-            }
-        }
         if (result == MemoryStorage::SetVariableStatusEnum::Accepted) {
             result = set_v16(key_str, store_value);
             std::cout << component_id.name << '[' << variable_id.name << "] = '" << store_value << "' (" << key_str
@@ -643,8 +625,7 @@ MemoryStorage::SetVariableStatusEnum MemoryStorage::clear_value(const Component&
 std::optional<MemoryStorage::MutabilityEnum> MemoryStorage::get_mutability(const Component& component_id,
                                                                            const Variable& variable_id,
                                                                            const AttributeEnum& attribute_enum) {
-    auto key_str_opt = keys::convert_v2(component_id, variable_id, attribute_enum);
-    auto key_str = key_str_opt.value_or(variable_id.name);
+    auto key_str = enhanced_convert(component_id, variable_id, attribute_enum);
     return get_mutability(key_str);
 }
 
@@ -657,7 +638,7 @@ std::optional<MemoryStorage::VariableMetaData> MemoryStorage::get_variable_meta_
         if (result) {
             return; // already found
         }
-        const auto cv = keys::convert_v2_max_limit(key);
+        const auto cv = keys::convert_v2(key);
         if (cv && cv->first.name == component_id.name && cv->second.name == variable_id.name &&
             cv->second.instance == variable_id.instance) {
             const auto retrieved = get_v16(std::string{keys::convert(key)});
@@ -678,8 +659,8 @@ std::optional<MemoryStorage::VariableMetaData> MemoryStorage::get_variable_meta_
     }
 
     if (!result) {
-        const auto key_str = keys::convert_v2(component_id, variable_id, ocpp::v2::AttributeEnum::Actual);
-        const auto retrieved = get_v16(key_str.value_or(""));
+        const auto key_str = enhanced_convert(component_id, variable_id, ocpp::v2::AttributeEnum::Actual);
+        const auto retrieved = get_v16(key_str);
         if (retrieved) {
             MemoryStorage::VariableMetaData md;
             md.characteristics.dataType = v2::DataEnum::string;
@@ -687,7 +668,7 @@ std::optional<MemoryStorage::VariableMetaData> MemoryStorage::get_variable_meta_
             result = std::move(md);
         } else {
             std::cerr << "get_variable_meta_data not implemented for: " << component_id.name << ':' << variable_id.name
-                      << " (" << key_str.value_or("") << ")\n";
+                      << " (" << key_str << ")\n";
         }
     }
 
@@ -695,7 +676,7 @@ std::optional<MemoryStorage::VariableMetaData> MemoryStorage::get_variable_meta_
 }
 
 std::vector<MemoryStorage::ReportData> MemoryStorage::get_base_report_data(const ReportBaseEnum& report_base) {
-    if (report_base == v2::ReportBaseEnum::ConfigurationInventory) {
+    if (report_base == v2::ReportBaseEnum::FullInventory || report_base == v2::ReportBaseEnum::ConfigurationInventory) {
         std::vector<MemoryStorage::ReportData> result;
         generate_report(result);
         return result;
