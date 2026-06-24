@@ -16,19 +16,17 @@
 #else
 // dummy structures for non-OpenSSL 3
 struct ossl_provider_st {};
-using OSSL_PROVIDER = struct ossl_provider_st;
+typedef struct ossl_provider_st OSSL_PROVIDER;
 struct ossl_lib_ctx_st;
-using OSSL_LIB_CTX = struct ossl_lib_ctx_st;
+typedef struct ossl_lib_ctx_st OSSL_LIB_CTX;
 #endif
 
 namespace evse_security {
 
-namespace {
-const auto KEY_HEADER_DEFAULT = "-----BEGIN PRIVATE KEY-----";
-const auto KEY_HEADER_DEFAULT_ENCRYPTED = "-----BEGIN ENCRYPTED PRIVATE KEY-----";
+static auto KEY_HEADER_DEFAULT = "-----BEGIN PRIVATE KEY-----";
+static auto KEY_HEADER_DEFAULT_ENCRYPTED = "-----BEGIN ENCRYPTED PRIVATE KEY-----";
 
-const auto KEY_HEADER_TPM2 = "-----BEGIN TSS2 PRIVATE KEY-----";
-} // namespace
+static auto KEY_HEADER_TPM2 = "-----BEGIN TSS2 PRIVATE KEY-----";
 
 bool is_custom_private_key_string(const std::string& private_key_pem) {
     // If we can't find the standard header it means it's a custom key
@@ -38,7 +36,7 @@ bool is_custom_private_key_string(const std::string& private_key_pem) {
 
 bool is_custom_private_key_file(const fs::path& private_key_file_pem) {
     if (fs::is_regular_file(private_key_file_pem)) {
-        fsstd::ifstream key_file(private_key_file_pem);
+        std::ifstream key_file(private_key_file_pem);
         std::string line;
         std::getline(key_file, line);
         key_file.close();
@@ -143,7 +141,6 @@ OpenSSLProvider::OpenSSLProvider() {
 }
 
 OpenSSLProvider::~OpenSSLProvider() {
-    set_global_mode(OpenSSLProvider::mode_t::default_provider);
     s_mux.unlock();
 }
 
@@ -257,24 +254,25 @@ OSSL_PROVIDER* OpenSSLProvider::s_tls_prov_default_p = nullptr;
 OSSL_PROVIDER* OpenSSLProvider::s_tls_prov_custom_p = nullptr;
 OSSL_LIB_CTX* OpenSSLProvider::s_tls_libctx_p = nullptr;
 
-OpenSSLProvider::OpenSSLProvider() = default;
+OpenSSLProvider::OpenSSLProvider() {
+}
 
-OpenSSLProvider::~OpenSSLProvider() = default;
+OpenSSLProvider::~OpenSSLProvider() {
+}
 
-bool OpenSSLProvider::load(OSSL_PROVIDER*& /*unused*/, OSSL_PROVIDER*& /*unused*/, OSSL_LIB_CTX* /*unused*/,
-                           mode_t /*unused*/) {
+bool OpenSSLProvider::load(OSSL_PROVIDER*&, OSSL_PROVIDER*&, OSSL_LIB_CTX*, mode_t) {
     return false;
 }
 
-bool OpenSSLProvider::set_propstr(OSSL_LIB_CTX* /*unused*/, mode_t /*unused*/) {
+bool OpenSSLProvider::set_propstr(OSSL_LIB_CTX*, mode_t) {
     return false;
 }
 
-bool OpenSSLProvider::set_mode(OSSL_LIB_CTX* /*unused*/, mode_t /*unused*/) {
+bool OpenSSLProvider::set_mode(OSSL_LIB_CTX*, mode_t) {
     return false;
 }
 
-const char* OpenSSLProvider::propquery(mode_t /*mode*/) const {
+const char* OpenSSLProvider::propquery(mode_t mode) const {
     return nullptr;
 }
 

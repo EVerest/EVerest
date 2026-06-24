@@ -80,6 +80,7 @@ public:
     // if none were found. Can be useful when we have SUB-CAs in multiple bundles
     std::vector<X509Wrapper> find_certificates_multi(const CertificateHashData& hash);
 
+public:
     std::string to_debug_string();
 
     /// @brief Breadth-first iteration through all the hierarchy of
@@ -88,12 +89,11 @@ public:
         std::queue<std::reference_wrapper<X509Node>> queue;
         for (auto& root : hierarchy) {
             // Process roots
-            if (!func(root)) {
+            if (!func(root))
                 return;
-            }
 
             for (auto& child : root.children) {
-                queue.push(child); // NOLINT(modernize-use-emplace)
+                queue.push(child);
             }
         }
 
@@ -102,21 +102,20 @@ public:
             queue.pop();
 
             // Process node
-            if (!func(top)) {
+            if (!func(top))
                 return;
-            }
 
             for (auto& child : top.children) {
-                queue.push(child); // NOLINT(modernize-use-emplace)
+                queue.push(child);
             }
         }
     }
 
+public:
     /// @brief Depth-first descendant iteration
     template <typename function> static void for_each_descendant(function func, const X509Node& node, int depth = 0) {
-        if (node.children.empty()) {
+        if (node.children.empty())
             return;
-        }
 
         for (const auto& child : node.children) {
             func(child, depth);
@@ -127,6 +126,7 @@ public:
         }
     }
 
+public:
     /// @brief Builds a proper certificate hierarchy from the provided certificates. The
     /// hierarchy can be incomplete, in case orphan certificates are present in the list
     static X509CertificateHierarchy build_hierarchy(std::vector<X509Wrapper>& certificates);
@@ -135,11 +135,7 @@ public:
         X509CertificateHierarchy ordered;
 
         (std::for_each(certificates.begin(), certificates.end(),
-#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ < 9)
-                       [ordered_ptr = &ordered](X509Wrapper& cert) { ordered_ptr->insert(std::move(cert)); }),
-#else
                        [&ordered](X509Wrapper& cert) { ordered.insert(std::move(cert)); }),
-#endif
          ...); // Fold expr
 
         // Prune the tree
@@ -160,6 +156,7 @@ private:
     /// were not successfully parented as permanently orphan
     void prune();
 
+private:
     std::vector<X509Node> hierarchy;
 };
 
