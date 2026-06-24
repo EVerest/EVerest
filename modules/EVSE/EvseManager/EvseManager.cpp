@@ -327,7 +327,7 @@ void EvseManager::ready() {
     // otherwise we provide an empty vector of pointers to the powermeter interface
     error_handling = std::unique_ptr<ErrorHandling>(
         new ErrorHandling(r_bsp, r_hlc, r_connector_lock, r_ac_rcd, p_evse, r_imd, r_powersupply_DC,
-                          config.fail_on_powermeter_errors ? r_powermeter_billing() : EMPTY_POWERMETER_VECTOR,
+                          config.fail_on_powermeter_errors ? r_powermeter_billing() : EMPTY_POWERMETER_VECTOR, r_slac,
                           r_over_voltage_monitor, config.inoperative_error_use_vendor_id));
 
     internal_over_voltage_monitor = std::make_unique<OverVoltageMonitor>(
