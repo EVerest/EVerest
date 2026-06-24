@@ -94,7 +94,8 @@ public:
 class FirmwareUpdateMock : public FirmwareUpdateInterface {
 public:
     MOCK_METHOD(void, handle_message, (const ocpp::EnhancedMessage<MessageType>&), (override));
-    MOCK_METHOD(void, on_firmware_update_status_notification, (std::int32_t, const FirmwareStatusEnum&, const bool), (override));
+    MOCK_METHOD(void, on_firmware_update_status_notification, (std::int32_t, const FirmwareStatusEnum&, const bool),
+                (override));
     MOCK_METHOD(void, on_firmware_status_notification_request, (), (override));
 };
 
