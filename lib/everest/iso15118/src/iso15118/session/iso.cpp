@@ -325,4 +325,16 @@ void Session::close() {
     ctx.session_stopped = true;
 }
 
+void Session::request_shutdown() {
+    if (not state.connected) {
+        logf_info("Shutdown requested before an EV connected");
+        ctx.session_stopped = true;
+        connection->close();
+        ctx.feedback.signal(session::feedback::Signal::DLINK_TERMINATE);
+    } else {
+        push_control_event(d20::StopCharging{true}); // Stopping active charge loop
+        ctx.request_shutdown();
+    }
+}
+
 } // namespace iso15118

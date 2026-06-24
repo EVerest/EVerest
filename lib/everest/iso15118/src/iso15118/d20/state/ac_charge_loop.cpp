@@ -200,7 +200,10 @@ Result AC_ChargeLoop::feed(Event ev) {
     const auto variant = m_ctx.pull_request();
 
     if (const auto req = variant->get_if<message_20::PowerDeliveryRequest>()) {
-        const auto res = handle_request(*req, m_ctx.session, false);
+
+        const auto shutdown_requested = m_ctx.shutdown_requested();
+
+        const auto res = handle_request(*req, m_ctx.session, false, shutdown_requested);
 
         m_ctx.respond(res);
 
@@ -210,7 +213,7 @@ Result AC_ChargeLoop::feed(Event ev) {
         }
 
         // V2G20-1623 -> state machine direct transition (skipped PowerDelivery)
-        if (req->charge_progress == dt::Progress::Stop) {
+        if (req->charge_progress == dt::Progress::Stop or shutdown_requested) {
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
             m_ctx.feedback.signal(session::feedback::Signal::AC_OPEN_CONTACTOR);
             return m_ctx.create_state<SessionStop>();
