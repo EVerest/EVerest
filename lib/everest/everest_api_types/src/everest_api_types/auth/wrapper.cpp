@@ -420,8 +420,8 @@ TokenValidationStatusMessage_Internal to_internal_api(TokenValidationStatusMessa
     TokenValidationStatusMessage_Internal result;
     result.token = to_internal_api(val.token);
     result.status = to_internal_api(val.status);
-    if (val.messages) {
-        result.messages = vecToInternal(val.messages.value());
+    if (val.validation_results) {
+        result.validation_results = vecToInternal(val.validation_results.value());
     }
     return result;
 }
@@ -430,8 +430,8 @@ TokenValidationStatusMessage_External to_external_api(TokenValidationStatusMessa
     TokenValidationStatusMessage_External result;
     result.token = to_external_api(val.token);
     result.status = to_external_api(val.status);
-    if (val.messages) {
-        result.messages = vecToExternal(val.messages.value());
+    if (val.validation_results) {
+        result.validation_results = vecToExternal(val.validation_results.value());
     }
     return result;
 }
