@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -50,6 +51,16 @@ struct sdp_query {
     enum sdp_security security_requested;
     enum sdp_transport_protocol proto_requested;
 };
+
+static void set_sdp_failure_detail(std::string* failure_detail, const std::string& detail) {
+    if (failure_detail != nullptr) {
+        *failure_detail = detail;
+    }
+}
+
+static bool should_log_sdp_init_failure(const std::string* failure_detail) {
+    return failure_detail == nullptr;
+}
 
 /*
  * Fills the SDP header into a given buffer
@@ -206,44 +217,72 @@ int sdp_send_response(int sdp_socket, struct sdp_query* sdp_query) {
 }
 
 int sdp_init(struct v2g_context* v2g_ctx) {
+    return sdp_init(v2g_ctx, nullptr);
+}
+
+int sdp_init(struct v2g_context* v2g_ctx, std::string* failure_detail) {
     struct sockaddr_in6 sdp_addr = {AF_INET6, htons(SDP_SRV_PORT)};
     struct ipv6_mreq mreq = {{IN6ADDR_ALLNODES}, 0};
     int enable = 1;
+    const auto log_setup_failures = should_log_sdp_init_failure(failure_detail);
+
+    set_sdp_failure_detail(failure_detail, "Failed to initialize SDP socket");
 
     mreq.ipv6mr_interface = if_nametoindex(v2g_ctx->if_name);
     if (!mreq.ipv6mr_interface) {
-        dlog(DLOG_LEVEL_ERROR, "No such interface: %s", v2g_ctx->if_name);
+        set_sdp_failure_detail(failure_detail, std::string("No such interface: ") + v2g_ctx->if_name);
+        if (log_setup_failures) {
+            dlog(DLOG_LEVEL_ERROR, "No such interface: %s", v2g_ctx->if_name);
+        }
+        v2g_ctx->sdp_socket = -1;
         return -1;
     }
 
     /* create receiving socket */
     v2g_ctx->sdp_socket = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
     if (v2g_ctx->sdp_socket == -1) {
-        dlog(DLOG_LEVEL_ERROR, "socket() failed: %s", strerror(errno));
+        const auto error = std::string(strerror(errno));
+        set_sdp_failure_detail(failure_detail, "socket() failed: " + error);
+        if (log_setup_failures) {
+            dlog(DLOG_LEVEL_ERROR, "socket() failed: %s", error.c_str());
+        }
         return -1;
     }
 
     if (setsockopt(v2g_ctx->sdp_socket, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(enable)) == -1) {
-        dlog(DLOG_LEVEL_ERROR, "setsockopt(SO_REUSEPORT) failed: %s", strerror(errno));
+        const auto error = std::string(strerror(errno));
+        set_sdp_failure_detail(failure_detail, "setsockopt(SO_REUSEPORT) failed: " + error);
+        if (log_setup_failures) {
+            dlog(DLOG_LEVEL_ERROR, "setsockopt(SO_REUSEPORT) failed: %s", error.c_str());
+        }
         close(v2g_ctx->sdp_socket);
+        v2g_ctx->sdp_socket = -1;
         return -1;
     }
 
     sdp_addr.sin6_addr = in6addr_any;
 
     if (bind(v2g_ctx->sdp_socket, (struct sockaddr*)&sdp_addr, sizeof(sdp_addr)) == -1) {
-        dlog(DLOG_LEVEL_ERROR, "bind() failed: %s", strerror(errno));
+        const auto error = std::string(strerror(errno));
+        set_sdp_failure_detail(failure_detail, "bind() failed: " + error);
+        if (log_setup_failures) {
+            dlog(DLOG_LEVEL_ERROR, "bind() failed: %s", error.c_str());
+        }
         close(v2g_ctx->sdp_socket);
+        v2g_ctx->sdp_socket = -1;
         return -1;
     }
-
-    dlog(DLOG_LEVEL_INFO, "SDP socket setup succeeded");
 
     /* bind only to specified device */
     if (setsockopt(v2g_ctx->sdp_socket, SOL_SOCKET, SO_BINDTODEVICE, v2g_ctx->if_name, strlen(v2g_ctx->if_name)) ==
         -1) {
-        dlog(DLOG_LEVEL_ERROR, "setsockopt(SO_BINDTODEVICE) failed: %s", strerror(errno));
+        const auto error = std::string(strerror(errno));
+        set_sdp_failure_detail(failure_detail, "setsockopt(SO_BINDTODEVICE) failed: " + error);
+        if (log_setup_failures) {
+            dlog(DLOG_LEVEL_ERROR, "setsockopt(SO_BINDTODEVICE) failed: %s", error.c_str());
+        }
         close(v2g_ctx->sdp_socket);
+        v2g_ctx->sdp_socket = -1;
         return -1;
     }
 
@@ -251,12 +290,18 @@ int sdp_init(struct v2g_context* v2g_ctx) {
 
     /* join multicast group */
     if (setsockopt(v2g_ctx->sdp_socket, IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq, sizeof(mreq)) == -1) {
-        dlog(DLOG_LEVEL_ERROR, "setsockopt(IPV6_JOIN_GROUP) failed: %s", strerror(errno));
+        const auto error = std::string(strerror(errno));
+        set_sdp_failure_detail(failure_detail, "setsockopt(IPV6_JOIN_GROUP) failed: " + error);
+        if (log_setup_failures) {
+            dlog(DLOG_LEVEL_ERROR, "setsockopt(IPV6_JOIN_GROUP) failed: %s", error.c_str());
+        }
         close(v2g_ctx->sdp_socket);
+        v2g_ctx->sdp_socket = -1;
         return -1;
     }
 
     dlog(DLOG_LEVEL_TRACE, "joined multicast group");
+    dlog(DLOG_LEVEL_INFO, "SDP socket setup succeeded");
 
     return 0;
 }
@@ -350,6 +395,7 @@ int sdp_listen(struct v2g_context* v2g_ctx) {
     if (close(v2g_ctx->sdp_socket) == -1) {
         dlog(DLOG_LEVEL_ERROR, "close() failed: %s", strerror(errno));
     }
+    v2g_ctx->sdp_socket = -1;
 
     return 0;
 }
