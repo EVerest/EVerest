@@ -11,16 +11,16 @@
 namespace iso15118::iec {
 
 enum class OperatingMode : std::uint8_t {
-    GridFollowing,
+    GridFollowing = 0,
     GridForming,
 };
 
 enum class GridConnectionMode : std::uint8_t {
-    GridConnected,
+    GridConnected = 0,
     GridIslanded
 };
 
-enum class DERControlName {
+enum class DERControlName : std::uint8_t {
     OverFrequencyWattMode = 0,
     UnderFrequencyWattMode,
     VoltWattMode,
@@ -37,26 +37,26 @@ enum class DERControlName {
 
 using MaximumLevelDCInjection = float;
 
-enum class PowerReference : uint8_t {
-    MaximumDischargePower,
+enum class PowerReference : std::uint8_t {
+    MaximumDischargePower = 0,
     MomentaryPower
 };
 
-enum class CurveDataPointsUnit : uint8_t {
-    V,
+enum class CurveDataPointsUnit : std::uint8_t {
+    V = 0,
     Hz,
     W,
     s,
     var,
 };
 
-enum class PowerFactorExcitation : uint8_t {
-    OverExcited,
+enum class PowerFactorExcitation : std::uint8_t {
+    OverExcited = 0,
     UnderExcited,
 };
 
-enum class LockValueUnit : uint8_t {
-    V,
+enum class LockValueUnit : std::uint8_t {
+    V = 0,
     Hz,
     W,
     s,

@@ -42,7 +42,7 @@ SCENARIO("ISO15118-20 supported app protocol state transitions") {
                                           std::nullopt,
                                           std::nullopt,
                                           powersupply_limits,
-        false};
+                                          false};
 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
 

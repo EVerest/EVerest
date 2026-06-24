@@ -420,7 +420,7 @@ SCENARIO("DC charge loop state handling") {
         req.meter_info_requested = false;
         req.present_voltage = {330, 0};
 
-        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 40, std::nullopt, 95};
+        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 40, 95, 80};
 
         const auto res =
             d20::state::handle_request(req, session, 330, 30, false, false, evse_setup.dc_limits, dynamic_parameters);
@@ -444,7 +444,8 @@ SCENARIO("DC charge loop state handling") {
             REQUIRE(dt::from_RationalNumber(res_control_mode.max_discharge_current) == 30.0f);
 
             REQUIRE(res_control_mode.departure_time.value_or(0) >= 39);
-            REQUIRE(res_control_mode.minimum_soc.value_or(0) == 95);
+            REQUIRE(res_control_mode.target_soc.value_or(0) == 95);
+            REQUIRE(res_control_mode.minimum_soc.value_or(0) == 80);
             REQUIRE(res_control_mode.ack_max_delay.value_or(0) == 30);
         }
     }
@@ -760,7 +761,7 @@ SCENARIO("DC charge loop state handling") {
         req.meter_info_requested = false;
         req.present_voltage = {330, 0};
 
-        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 40, std::nullopt, 95};
+        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 40, 95, 80};
 
         const auto res =
             d20::state::handle_request(req, session, 330, 30, false, false, evse_setup.dc_limits, dynamic_parameters);
@@ -784,7 +785,8 @@ SCENARIO("DC charge loop state handling") {
             REQUIRE(dt::from_RationalNumber(res_control_mode.max_discharge_current) == 30.0f);
 
             REQUIRE(res_control_mode.departure_time.value_or(0) >= 39);
-            REQUIRE(res_control_mode.minimum_soc.value_or(0) == 95);
+            REQUIRE(res_control_mode.target_soc.value_or(0) == 95);
+            REQUIRE(res_control_mode.minimum_soc.value_or(0) == 80);
             REQUIRE(res_control_mode.ack_max_delay.value_or(0) == 30);
         }
     }

@@ -118,7 +118,7 @@ template <typename T> T& get_or_emplace(std::optional<T>& opt) {
     return opt.has_value() ? opt.value() : opt.emplace();
 }
 
-dt::DerControl create_der_control(const std::bitset<11>& selected_der_functions,
+dt::DerControl create_der_control(const std::bitset<12>& selected_der_functions,
                                   const std::map<iec::DERControlName, iec::DERControlFunction>& der_functions) {
     dt::DerControl control{};
 
