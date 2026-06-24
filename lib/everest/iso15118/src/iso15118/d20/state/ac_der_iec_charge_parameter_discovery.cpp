@@ -344,14 +344,15 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
             return {};
         }
 
-        // TODO(SL): Check [V2G20-3154]
+        // TODO(SL): Check [V2G20-3154]: It is possible that the EV sends a ServiceDiscoveryReq if the settings from
+        // evse is not accepted from the ev.
 
         m_ctx.feedback.ac_limits(req->transfer_mode);
 
         if (req->transfer_mode.processing == dt::Processing::Finished) {
-            return m_ctx.create_state<ScheduleExchange>();
+            return m_ctx.create_state<ScheduleExchange>(); // [V2G20-3151]
         }
-        return {};
+        return {}; // [V2G20-3150]: Stay in the state because ev set processing to Ongoing
     }
     if (const auto* const req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
