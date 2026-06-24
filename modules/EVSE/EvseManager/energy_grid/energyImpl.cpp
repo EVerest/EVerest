@@ -189,9 +189,11 @@ void energyImpl::request_energy_from_energy_manager(bool priority_request) {
         charger_state == Charger::EvseState::WaitingForAuthentication ||
         charger_state == Charger::EvseState::ChargingPausedEV || !mod->config.request_zero_power_in_idle) {
 
+        const auto local_energy_limits = mod->get_local_energy_limits();
+
         // copy complete external limit schedules for import
-        if (not mod->get_local_energy_limits().schedule_import.empty()) {
-            energy_flow_request.schedule_import = mod->get_local_energy_limits().schedule_import;
+        if (not local_energy_limits.schedule_import.empty()) {
+            energy_flow_request.schedule_import = local_energy_limits.schedule_import;
 
             if (mod->config.charge_mode == "DC") {
                 // For DC, apply our power supply capabilities as an additional limit on leaves side
@@ -233,8 +235,8 @@ void energyImpl::request_energy_from_energy_manager(bool priority_request) {
         }
 
         // copy complete external limit schedules for export
-        if (not mod->get_local_energy_limits().schedule_export.empty()) {
-            energy_flow_request.schedule_export = mod->get_local_energy_limits().schedule_export;
+        if (not local_energy_limits.schedule_export.empty()) {
+            energy_flow_request.schedule_export = local_energy_limits.schedule_export;
 
             if (mod->config.charge_mode == "DC") {
                 // For DC, apply our power supply capabilities as an additional limit on leaves side
