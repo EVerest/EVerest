@@ -265,6 +265,8 @@ Response handle_set_request(const SetRequest& set_request, const std::string& or
                                                set_request.identifier.module_id);
             break;
         case Everest::config::SetConfigParameterResultEnum::DoesNotExist:
+            response.status = ResponseStatus::Error;
+            break;
         case Everest::config::SetConfigParameterResultEnum::Rejected:
             // TODO(CB) : commented, because the test failed otherwise - correct?
             // response.status = ResponseStatus::Error;
