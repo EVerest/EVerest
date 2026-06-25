@@ -185,6 +185,9 @@ else()
     find_package(nlohmann_json REQUIRED)
     find_package(nlohmann_json_schema_validator REQUIRED)
     find_package(fmt REQUIRED)
+    # ryml is linked by the controller and is part of the link interface of
+    # everest::yaml, which the manager executable links against
+    find_package(ryml REQUIRED)
 
     if (EVEREST_ENABLE_ADMIN_PANEL_BACKEND)
         find_package(libwebsockets REQUIRED)

@@ -1,3 +1,9 @@
+if(DISABLE_EDM)
+    find_package(nlohmann_json REQUIRED)
+    find_package(ryml REQUIRED)
+    find_package(fmt REQUIRED)
+endif()
+
 add_library(everest_yaml STATIC)
 add_library(everest::yaml ALIAS everest_yaml)
 ev_register_library_target(everest_yaml)

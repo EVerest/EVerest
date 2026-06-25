@@ -44,7 +44,7 @@ if(POLICY CMP0167)
 endif()
 
 # dependencies
-find_package(Boost COMPONENTS program_options regex thread REQUIRED)
+find_package(Boost COMPONENTS program_options thread REQUIRED)
 find_package(SQLite3 REQUIRED)
 find_package(OpenSSL 3 REQUIRED)
 

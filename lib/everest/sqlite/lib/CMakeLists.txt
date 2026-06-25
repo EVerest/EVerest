@@ -75,4 +75,4 @@ endif()
 # End logging configuration
 #############
 
-target_compile_features(everest_sqlite PRIVATE cxx_std_17)
+target_compile_features(everest_sqlite PUBLIC cxx_std_17)

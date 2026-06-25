@@ -1,4 +1,8 @@
 # SO for API with structs and (de)serialization codec
+if(DISABLE_EDM)
+    find_package(nlohmann_json REQUIRED)
+endif()
+
 add_library(everest_api_types SHARED)
 add_library(everest::everest_api_types ALIAS everest_api_types)
 ev_register_library_target(everest_api_types)
