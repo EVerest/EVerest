@@ -19,8 +19,9 @@
 
 #include <chrono>
 #include <mutex>
-#include <optional>
 #include <queue>
+#include <utility>
+#include <vector>
 
 #include <generated/interfaces/ISO15118_charger/Interface.hpp>
 #include <generated/interfaces/ac_rcd/Interface.hpp>
@@ -103,12 +104,12 @@ public:
     void clear_voltage_plausibility_fault();
 
 protected:
-    void raise_inoperative_error(const Everest::error::Error& caused_by);
+    void raise_inoperative_error(const std::vector<Everest::error::Error>& causes);
 
 private:
     void process_error();
     void clear_inoperative_error();
-    std::optional<Everest::error::Error> errors_prevent_charging();
+    std::vector<Everest::error::Error> errors_prevent_charging();
 
     const std::unique_ptr<evse_board_supportIntf>& r_bsp;
     const std::vector<std::unique_ptr<ISO15118_chargerIntf>>& r_hlc;
@@ -121,6 +122,14 @@ private:
     const std::vector<std::unique_ptr<slacIntf>>& r_slac;
     const std::vector<std::unique_ptr<over_voltage_monitorIntf>>& r_over_voltage_monitor;
     const bool inoperative_error_use_vendor_id;
+
+    // (type, sub_type) of the fatal causes the raised Inoperative error currently describes, in detection order.
+    // Used to refresh that error when the active fatal set changes. Empty while Inoperative is not raised.
+    std::vector<std::pair<std::string, std::string>> inoperative_causes;
+
+    // Serializes process_error(): it is invoked from every requirement's error callbacks (potentially on
+    // different threads) and mutates inoperative_causes, so the read-compare-clear-raise sequence must be atomic.
+    std::mutex process_error_mutex;
 };
 
 } // namespace module
