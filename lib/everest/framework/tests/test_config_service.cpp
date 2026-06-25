@@ -60,13 +60,22 @@ struct StubConfigService : Everest::config::ConfigServiceInterface {
 
     SetConfigParameterResult set_config_parameters(int, const std::vector<ConfigParameterUpdate>& update,
                                                    const Origin& origin) override {
-        set_parameter_callback_(update.at(0).identifier, update.at(0).value);
         last_set_results.status = SetConfigParameterStatus::Ok;
         SetConfigPerParameterResult set_result{SetConfigParameterResultEnum::Rejected, ""};
-        if (update.front().value == "new_value") {
-            set_result.status = SetConfigParameterResultEnum::Applied;
-        } else if (update.front().value == "bad_value") {
-            set_result.status = SetConfigParameterResultEnum::Rejected;
+
+        if (update.front().identifier.configuration_parameter_name == "ro_param") {
+            set_result.status = SetConfigParameterResultEnum::WillApplyOnRestart;
+        } else if (update.front().identifier.configuration_parameter_name == "no_such_param") {
+            set_result.status = SetConfigParameterResultEnum::DoesNotExist;
+        } else {
+            if (set_parameter_callback_) {
+                set_parameter_callback_(update.at(0).identifier, update.at(0).value);
+            }
+            if (update.front().value == "new_value") {
+                set_result.status = SetConfigParameterResultEnum::Applied;
+            } else if (update.front().value == "bad_value") {
+                set_result.status = SetConfigParameterResultEnum::Rejected;
+            }
         }
         last_set_results.parameter_results = {set_result};
         return last_set_results;
