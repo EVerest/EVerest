@@ -195,7 +195,7 @@ struct EvseSlacConfig {
 };
 
 struct Context {
-    explicit Context(const ContextCallbacks& callbacks_) : callbacks(callbacks_){};
+    explicit Context(){};
 
     EvseSlacConfig slac_config{};
 
@@ -227,9 +227,7 @@ struct Context {
 
     ModemVendor modem_vendor{ModemVendor::Unknown};
     uint8_t evse_mac[ETH_ALEN];
-
-private:
-    const ContextCallbacks& callbacks;
+    ContextCallbacks callbacks;
 };
 
 } // namespace slac::fsm::evse

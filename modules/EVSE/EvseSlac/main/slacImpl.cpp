@@ -42,11 +42,11 @@ void slacImpl::init() {
     }
 
     // setup callbacks
-    callbacks.send_raw_slac = [this](slac::messages::HomeplugMessage& msg) { slac_io.send(msg); };
+    fsm_ctx.callbacks.send_raw_slac = [this](slac::messages::HomeplugMessage& msg) { slac_io.send(msg); };
 
-    callbacks.signal_dlink_ready = [this](bool value) { publish_dlink_ready(value); };
+    fsm_ctx.callbacks.signal_dlink_ready = [this](bool value) { publish_dlink_ready(value); };
 
-    callbacks.signal_state = [this](const std::string& value) {
+    fsm_ctx.callbacks.signal_state = [this](const std::string& value) {
         try {
             publish_state(types::slac::string_to_state(value));
         } catch (const std::exception& e) {
@@ -54,22 +54,25 @@ void slacImpl::init() {
         }
     };
 
-    callbacks.signal_error_routine_request = [this]() { publish_request_error_routine(nullptr); };
+    fsm_ctx.callbacks.signal_error_routine_request = [this]() { publish_request_error_routine(nullptr); };
 
-    callbacks.log_debug = [](const std::string& text) { EVLOG_debug << text; };
-    callbacks.log_info = [](const std::string& text) { EVLOG_info << text; };
-    callbacks.log_warn = [](const std::string& text) { EVLOG_warning << text; };
-    callbacks.log_error = [](const std::string& text) { EVLOG_error << text; };
+    fsm_ctx.callbacks.log_debug = [](const std::string& text) { EVLOG_debug << text; };
+    fsm_ctx.callbacks.log_info = [](const std::string& text) { EVLOG_info << text; };
+    fsm_ctx.callbacks.log_warn = [](const std::string& text) { EVLOG_warning << text; };
+    fsm_ctx.callbacks.log_error = [](const std::string& text) { EVLOG_error << text; };
 
     if (config.publish_mac_on_first_parm_req) {
-        callbacks.signal_ev_mac_address_parm_req = [this](const std::string& mac) { publish_ev_mac_address(mac); };
+        fsm_ctx.callbacks.signal_ev_mac_address_parm_req = [this](const std::string& mac) {
+            publish_ev_mac_address(mac);
+        };
     }
 
     if (config.publish_mac_on_match_cnf) {
-        callbacks.signal_ev_mac_address_match_cnf = [this](const std::string& mac) { publish_ev_mac_address(mac); };
+        fsm_ctx.callbacks.signal_ev_mac_address_match_cnf = [this](const std::string& mac) {
+            publish_ev_mac_address(mac);
+        };
     }
 
-    auto fsm_ctx = slac::fsm::evse::Context(callbacks);
     fsm_ctx.slac_config.set_key_timeout_ms = config.set_key_timeout_ms;
     fsm_ctx.slac_config.slac_init_timeout_ms = config.slac_init_timeout_ms;
     fsm_ctx.slac_config.ac_mode_five_percent = config.ac_mode_five_percent;

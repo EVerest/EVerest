@@ -73,10 +73,10 @@ private:
     virtual void init() override;
     virtual void ready() override;
 
-    slac::fsm::evse::ContextCallbacks callbacks;
+    // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
+    slac::fsm::evse::Context fsm_ctx;
     SlacIO slac_io;
     std::unique_ptr<FSMController> fsm_ctrl{nullptr};
-    // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
