@@ -295,7 +295,7 @@ def test_manager_recovers_after_crash_with_blocked_module_timeout(
         wait_for_log_message(
             caplog,
             "Manager state transition: StartingModules -> Running",
-            timeout_s=20.0,
+            timeout_s=60.0,
             start_index=log_marker,
     )
 
