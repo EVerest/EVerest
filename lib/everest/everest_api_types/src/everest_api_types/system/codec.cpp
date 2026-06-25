@@ -54,6 +54,10 @@ std::string serialize(LogStatus const& val) noexcept {
     return utilities::dump_json(val);
 }
 
+std::string serialize(FirmwareUpdateMetadata const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
 std::string serialize(FirmwareUpdateStatus const& val) noexcept {
     return utilities::dump_json(val);
 }
@@ -103,6 +107,11 @@ std::ostream& operator<<(std::ostream& os, UploadLogsRequest const& val) {
 }
 
 std::ostream& operator<<(std::ostream& os, LogStatus const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, FirmwareUpdateMetadata const& val) {
     os << serialize(val);
     return os;
 }
@@ -160,6 +169,10 @@ template <> UploadLogsResponse deserialize(std::string_view val) {
 
 template <> LogStatus deserialize(std::string_view val) {
     return utilities::parse_json<LogStatus>(val);
+}
+
+template <> FirmwareUpdateMetadata deserialize(std::string_view val) {
+    return utilities::parse_json<FirmwareUpdateMetadata>(val);
 }
 
 template <> FirmwareUpdateStatus deserialize(std::string_view val) {

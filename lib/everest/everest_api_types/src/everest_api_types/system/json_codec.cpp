@@ -132,15 +132,34 @@ void from_json(const json& j, LogStatus& k) {
     k.request_id = j.at("request_id");
 }
 
+void to_json(json& j, const FirmwareUpdateMetadata& k) noexcept {
+    j = json::object();
+    if (k.disable_connectors_during_install.has_value()) {
+        j["disable_connectors_during_install"] = k.disable_connectors_during_install.value();
+    }
+}
+
+void from_json(const json& j, FirmwareUpdateMetadata& k) {
+    if (j.contains("disable_connectors_during_install")) {
+        k.disable_connectors_during_install = j.at("disable_connectors_during_install");
+    }
+}
+
 void to_json(json& j, const FirmwareUpdateStatus& k) noexcept {
     j = json{
         {"firmware_update_status", k.firmware_update_status},
         {"request_id", k.request_id},
     };
+    if (k.firmware_update_metadata.has_value()) {
+        j["firmware_update_metadata"] = k.firmware_update_metadata.value();
+    }
 }
 void from_json(const json& j, FirmwareUpdateStatus& k) {
     k.firmware_update_status = j.at("firmware_update_status");
     k.request_id = j.at("request_id");
+    if (j.contains("firmware_update_metadata")) {
+        k.firmware_update_metadata = j.at("firmware_update_metadata");
+    }
 }
 
 void to_json(json& j, const ResetRequest& k) noexcept {
