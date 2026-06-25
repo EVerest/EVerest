@@ -1,5 +1,7 @@
 # EVerest run application helper functions
 
+find_package(Boost COMPONENTS program_options headers REQUIRED)
+
 add_library(everest_run_application STATIC)
 add_library(everest::run_application ALIAS everest_run_application)
 ev_register_library_target(everest_run_application)

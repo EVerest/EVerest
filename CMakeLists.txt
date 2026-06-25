@@ -135,15 +135,17 @@ if(POLICY CMP0167)
     cmake_policy(SET CMP0167 OLD)
 endif()
 
-find_package(Boost
-    COMPONENTS
-        filesystem
-        program_options
-        thread
-    REQUIRED
-)
+if(NOT EVEREST_LIBS_ONLY)
+  find_package(Boost
+      COMPONENTS
+          filesystem
+          program_options
+          thread
+      REQUIRED
+  )
 
-include(compatibility/boost)
+  include(compatibility/boost)
+endif()
 
 set(everest-framework_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/everest/framework)
 set(everest-framework_BINARY_DIR ${CMAKE_BINARY_DIR}/lib/everest/framework)

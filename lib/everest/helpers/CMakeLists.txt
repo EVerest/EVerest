@@ -4,6 +4,8 @@ add_library(everest_helpers STATIC)
 add_library(everest::helpers ALIAS everest_helpers)
 ev_register_library_target(everest_helpers)
 
+find_package(Boost REQUIRED COMPONENTS headers)
+
 target_sources(everest_helpers
     PRIVATE
         src/helpers.cpp
