@@ -1297,8 +1297,14 @@ OCPP201::DerApplyResult OCPP201::apply_der_capability(int32_t evse_id,
         } else {
             EVLOG_error << "Rejecting set_capability for EVSE " << evse_id
                         << ": device model rejected DER capability variables: " << rejected_details;
-            auto state_handle = this->grid_support_state.handle();
-            state_handle->unregister(evse_id);
+            {
+                auto state_handle = this->grid_support_state.handle();
+                state_handle->unregister(evse_id);
+            }
+            if (evse_id >= 1 and static_cast<size_t>(evse_id) <= this->r_evse_manager.size()) {
+                // best-effort DER withdraw; a NoHlc result here is benign
+                (void)this->r_evse_manager.at(evse_id - 1)->call_set_der_available(false);
+            }
         }
         result.accepted = false;
         result.rejected_details = rejected_details;
@@ -1313,6 +1319,14 @@ OCPP201::DerApplyResult OCPP201::apply_der_capability(int32_t evse_id,
     }
 
     this->charge_point->on_der_republish_active_directives();
+
+    if (evse_id >= 1 and static_cast<size_t>(evse_id) <= this->r_evse_manager.size()) {
+        const auto der_result = this->r_evse_manager.at(evse_id - 1)->call_set_der_available(true);
+        if (der_result != types::evse_manager::SetDerAvailableResult::Accepted) {
+            EVLOG_warning << "EvseManager did not accept DER availability for EVSE " << evse_id << ": "
+                          << types::evse_manager::set_der_available_result_to_string(der_result);
+        }
+    }
 
     std::vector<types::grid_support::GridAlarm> pending_alarms;
     {

@@ -10,6 +10,7 @@
 #include "IECStateMachine.hpp"
 #include "SessionLog.hpp"
 #include "Timeout.hpp"
+#include "energy_transfer_modes.hpp"
 #include "scoped_lock_timeout.hpp"
 #include "utils.hpp"
 
@@ -108,30 +109,6 @@ get_dc_external_derate(std::optional<float> present_voltage,
     }
 
     return d;
-}
-
-std::vector<types::iso15118::EnergyTransferMode>
-get_supported_ac_energy_transfers(const Conf& config, const types::evse_board_support::HardwareCapabilities& caps) {
-    std::vector<types::iso15118::EnergyTransferMode> energy_transfers;
-
-    const auto min_phases = std::clamp(caps.min_phase_count_import, 1, 3);
-    const auto max_phases = std::clamp(caps.max_phase_count_import, min_phases, 3);
-
-    for (const auto& [count, mode] : {
-             std::pair{1, types::iso15118::EnergyTransferMode::AC_single_phase_core},
-             std::pair{2, types::iso15118::EnergyTransferMode::AC_two_phase},
-             std::pair{3, types::iso15118::EnergyTransferMode::AC_three_phase_core},
-         }) {
-        if (count >= min_phases and count <= max_phases) {
-            energy_transfers.push_back(mode);
-        }
-    }
-
-    if (config.supported_iso_ac_bpt and caps.max_current_A_export > 0 and caps.max_phase_count_export >= 1) {
-        energy_transfers.push_back(types::iso15118::EnergyTransferMode::AC_BPT);
-    }
-
-    return energy_transfers;
 }
 
 } // namespace
@@ -305,11 +282,7 @@ void EvseManager::init() {
             EVLOG_debug << fmt::format("Max AC hardware capabilities: {}A/{}ph", c.max_current_A_import,
                                        c.max_phase_count_import);
 
-            const auto energy_transfers = get_supported_ac_energy_transfers(config, c);
-
-            if (update_supported_energy_transfers(energy_transfers)) {
-                this->publish_and_update_supported_energy_transfers();
-            }
+            recompute_and_publish_supported_ac_energy_transfers();
 
             update_hlc_ac_parameters();
         }
@@ -471,7 +444,7 @@ void EvseManager::ready() {
             r_hlc[0]->call_set_charging_parameters(setup_physical_values);
 
             const auto hw_caps = *hw_capabilities.handle();
-            initial_energy_transfers = get_supported_ac_energy_transfers(config, hw_caps);
+            initial_energy_transfers = get_supported_ac_energy_transfers(hw_caps, config.supported_iso_ac_bpt, false);
 
             r_hlc[0]->subscribe_ac_eamount([this](double e) {
                 // FIXME send only on change / throttle messages
@@ -1829,6 +1802,15 @@ bool EvseManager::update_supported_energy_transfers(
 
 bool EvseManager::update_supported_energy_transfers(const types::iso15118::EnergyTransferMode& energy_transfer) {
     return update_supported_energy_transfers(std::vector<types::iso15118::EnergyTransferMode>{energy_transfer});
+}
+
+void EvseManager::recompute_and_publish_supported_ac_energy_transfers() {
+    const auto caps = *hw_capabilities.handle();
+    const auto der = der_available.load();
+    const auto energy_transfers = get_supported_ac_energy_transfers(caps, config.supported_iso_ac_bpt, der);
+    if (update_supported_energy_transfers(energy_transfers)) {
+        publish_and_update_supported_energy_transfers();
+    }
 }
 
 void EvseManager::update_hlc_ac_parameters() {

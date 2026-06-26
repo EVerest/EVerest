@@ -158,6 +158,10 @@ The device reports grid event faults through the ``alarm`` variable, which is fo
 once the first capability is accepted; if no capability is ever accepted, the buffered alarms are dropped. Capability and
 alarm updates received before the charge point is initialized are queued and replayed once the charge point is ready.
 
+In addition to enabling the DER device-model component, the module asserts DER availability to the matching
+EvseManager via its **set_der_available** command, so that EvseManager can advertise the corresponding ISO 15118-20
+DER energy transfer modes. If the device model rejects the capability, DER availability is withdrawn instead.
+
 The configuration parameter **grid_support_heartbeat_s** sets the interval (in seconds) at which the current active
 directive set is re-sent for every registered EVSE. A value of ``0`` disables the heartbeat; the set is then sent only when
 it changes.
