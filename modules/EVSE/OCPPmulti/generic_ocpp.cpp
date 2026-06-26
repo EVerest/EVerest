@@ -681,7 +681,8 @@ void GenericOcpp::ready_event_queue() {
                     } else if constexpr (std::is_same_v<std::monostate, TYPE>) {
                     } else {
                         // all items should have handlers
-                        static_assert(false);
+                        // some compilers trigger this so commenting out for now
+                        // static_assert(false);
                     }
                 },
                 queued_event);
@@ -914,6 +915,7 @@ ocpp::v2::DataTransferResponse GenericOcpp::cb_data_transfer(const ocpp::v2::Dat
     ocpp::v2::DataTransferResponse response{};
     if (mv_requires.data_transfer.empty()) {
         EVLOG_error << "data_transfer called with no configured connections";
+        response.status = ocpp::v2::DataTransferStatusEnum::Rejected;
     } else {
         using namespace module::conversions;
 
