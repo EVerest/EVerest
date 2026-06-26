@@ -30,11 +30,19 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <everest/util/misc/change_tracker.hpp>
+
 #define DEFAULT_SOCKET_BACKLOG        3
 #define DEFAULT_TCP_PORT              61341
 #define DEFAULT_TLS_PORT              64109
 #define ERROR_SESSION_ALREADY_STARTED 2
 #define CLIENT_FIN_TIMEOUT            3000
+
+namespace telemetry_types = everest::lib::API::V1_0::types::telemetry;
+using V2gTransportTracker = everest::lib::util::change_tracker<telemetry_types::V2gTransport>;
+using V2gEvElectricalTracker = everest::lib::util::change_tracker<telemetry_types::V2gEvElectrical>;
+using V2gPaymentServiceTracker = everest::lib::util::change_tracker<telemetry_types::V2gPaymentService>;
+using V2gChargerStatusTracker = everest::lib::util::change_tracker<telemetry_types::V2gChargerStatus>;
 
 /*!
  * \brief connection_create_socket This function creates a tcp/tls socket
@@ -194,12 +202,13 @@ int connection_init(struct v2g_context* v2g_ctx) {
                      v2g_ctx->if_name, buffer, v2g_ctx->local_tcp_addr->sin6_scope_id,
                      ntohs(v2g_ctx->local_tcp_addr->sin6_port));
                 if (v2g_ctx->telemetry_publisher) {
-                    v2g_ctx->telemetry_publisher->update_transport([&](auto& transport) {
-                        transport.tcp_listener_status =
-                            everest::lib::API::V1_0::types::telemetry::V2gServerStatus::Active;
-                        transport.tcp_discovery_enable = true;
-                        transport.tcp_security_required = false;
-                        transport.tcp_port_number = ntohs(v2g_ctx->local_tcp_addr->sin6_port);
+                    v2g_ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
+                        transport.set(&telemetry_types::V2gTransport::tcp_listener_status,
+                                      telemetry_types::V2gServerStatus::Active);
+                        transport.set(&telemetry_types::V2gTransport::tcp_discovery_enable, true);
+                        transport.set(&telemetry_types::V2gTransport::tcp_security_required, false);
+                        transport.set(&telemetry_types::V2gTransport::tcp_port_number,
+                                      ntohs(v2g_ctx->local_tcp_addr->sin6_port));
                     });
                 }
             } else {
@@ -231,13 +240,15 @@ int connection_init(struct v2g_context* v2g_ctx) {
                      v2g_ctx->if_name, buffer, v2g_ctx->local_tls_addr->sin6_scope_id,
                      ntohs(v2g_ctx->local_tls_addr->sin6_port));
                 if (v2g_ctx->telemetry_publisher) {
-                    v2g_ctx->telemetry_publisher->update_transport([&](auto& transport) {
-                        transport.tcp_security_enable = true;
-                        transport.tcp_security_required = v2g_ctx->tls_security == TLS_SECURITY_FORCE;
+                    v2g_ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
+                        transport.set(&telemetry_types::V2gTransport::tcp_security_enable, true);
+                        transport.set(&telemetry_types::V2gTransport::tcp_security_required,
+                                      v2g_ctx->tls_security == TLS_SECURITY_FORCE);
                         if (!v2g_ctx->local_tcp_addr) {
-                            transport.tcp_listener_status =
-                                everest::lib::API::V1_0::types::telemetry::V2gServerStatus::Active;
-                            transport.tcp_port_number = ntohs(v2g_ctx->local_tls_addr->sin6_port);
+                            transport.set(&telemetry_types::V2gTransport::tcp_listener_status,
+                                          telemetry_types::V2gServerStatus::Active);
+                            transport.set(&telemetry_types::V2gTransport::tcp_port_number,
+                                          ntohs(v2g_ctx->local_tls_addr->sin6_port));
                         }
                     });
                 }
@@ -533,9 +544,10 @@ static void* connection_handle_tcp(void* data) {
 
     conn->ctx->connection_initiated = false;
     if (conn->ctx->telemetry_publisher) {
-        conn->ctx->telemetry_publisher->update_transport([&](auto& transport) {
-            transport.tcp_connection_established = false;
-            transport.tcp_server_status = everest::lib::API::V1_0::types::telemetry::V2gServerStatus::Inactive;
+        conn->ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
+            transport.set(&telemetry_types::V2gTransport::tcp_connection_established, false);
+            transport.set(&telemetry_types::V2gTransport::tcp_server_status,
+                          telemetry_types::V2gServerStatus::Inactive);
         });
     }
 
@@ -612,9 +624,10 @@ static void* connection_server(void* data) {
         }
         ctx->connection_initiated = true;
         if (ctx->telemetry_publisher) {
-            ctx->telemetry_publisher->update_transport([&](auto& transport) {
-                transport.tcp_connection_established = true;
-                transport.tcp_server_status = everest::lib::API::V1_0::types::telemetry::V2gServerStatus::Active;
+            ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
+                transport.set(&telemetry_types::V2gTransport::tcp_connection_established, true);
+                transport.set(&telemetry_types::V2gTransport::tcp_server_status,
+                              telemetry_types::V2gServerStatus::Active);
             });
         }
 
@@ -622,9 +635,10 @@ static void* connection_server(void* data) {
             dlog(DLOG_LEVEL_ERROR, "pthread_create() failed: %s", strerror(errno));
             ctx->connection_initiated = false;
             if (ctx->telemetry_publisher) {
-                ctx->telemetry_publisher->update_transport([&](auto& transport) {
-                    transport.tcp_connection_established = false;
-                    transport.tcp_server_status = everest::lib::API::V1_0::types::telemetry::V2gServerStatus::Inactive;
+                ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
+                    transport.set(&telemetry_types::V2gTransport::tcp_connection_established, false);
+                    transport.set(&telemetry_types::V2gTransport::tcp_server_status,
+                                  telemetry_types::V2gServerStatus::Inactive);
                 });
             }
             continue;

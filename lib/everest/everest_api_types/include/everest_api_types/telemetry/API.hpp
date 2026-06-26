@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace everest::lib::API::V1_0::types::telemetry {
@@ -16,23 +17,69 @@ enum class ChargeProgress {
     Terminate,
 };
 
-enum class V2gCommunicationState {
-    StateId0 = 0,
-    StateId1 = 1,
-    StateId2 = 2,
-    StateId3 = 3,
-    StateId4 = 4,
-    StateId5 = 5,
-    StateId6 = 6,
-    StateId7 = 7,
-    StateId8 = 8,
-    StateId9 = 9,
-    StateId10 = 10,
-    StateId11 = 11,
-    StateId12 = 12,
-    StateId13 = 13,
-    StateId14 = 14,
+enum class V2gDin70121CommunicationState {
+    WaitForSessionSetup = 0,
+    WaitForServiceDiscovery = 1,
+    WaitForPaymentServiceSelection = 2,
+    WaitForAuthorization = 3,
+    WaitForChargeParameterDiscovery = 4,
+    WaitForCableCheck = 5,
+    WaitForPreCharge = 6,
+    WaitForPreChargePowerDelivery = 7,
+    WaitForCurrentDemand = 8,
+    WaitForCurrentDemandPowerDelivery = 9,
+    WaitForWeldingDetectionSessionStop = 10,
+    WaitForSessionStop = 11,
+    WaitForTerminatedSession = 12,
 };
+
+enum class V2gIso15118AcCommunicationState {
+    WaitForSessionSetup = 0,
+    WaitForServiceDiscovery = 1,
+    WaitForServiceDetailPaymentServiceSelection = 2,
+    WaitForPaymentDetailsCertificateInstallCertificateUpdate = 3,
+    WaitForPaymentDetails = 4,
+    WaitForAuthorization = 5,
+    WaitForChargeParameterDiscovery = 6,
+    WaitForPowerDelivery = 7,
+    WaitForChargingStatus = 8,
+    WaitForChargingStatusPowerDelivery = 9,
+    WaitForMeteringReceipt = 10,
+    WaitForSessionStop = 11,
+    WaitForTerminatedSession = 12,
+};
+
+enum class V2gIso15118DcCommunicationState {
+    WaitForSessionSetup = 0,
+    WaitForServiceDiscovery = 1,
+    WaitForServiceDetailPaymentServiceSelection = 2,
+    WaitForPaymentDetailsCertificateInstallCertificateUpdate = 3,
+    WaitForPaymentDetails = 4,
+    WaitForAuthorization = 5,
+    WaitForChargeParameterDiscovery = 6,
+    WaitForCableCheck = 7,
+    WaitForPreCharge = 8,
+    WaitForPreChargePowerDelivery = 9,
+    WaitForCurrentDemandPowerDelivery = 10,
+    WaitForCurrentDemand = 11,
+    WaitForMeteringReceipt = 12,
+    WaitForWeldingDetectionSessionStop = 13,
+    WaitForTerminatedSession = 14,
+};
+
+struct V2gCommunicationState {
+    std::optional<V2gDin70121CommunicationState> din70121;
+    std::optional<V2gIso15118AcCommunicationState> iso15118_ac;
+    std::optional<V2gIso15118DcCommunicationState> iso15118_dc;
+};
+
+inline bool operator==(V2gCommunicationState const& lhs, V2gCommunicationState const& rhs) {
+    return lhs.din70121 == rhs.din70121 && lhs.iso15118_ac == rhs.iso15118_ac && lhs.iso15118_dc == rhs.iso15118_dc;
+}
+
+inline bool operator!=(V2gCommunicationState const& lhs, V2gCommunicationState const& rhs) {
+    return !(lhs == rhs);
+}
 
 enum class V2gMessageState {
     SupportedAppProtocol = 0,
@@ -100,7 +147,7 @@ struct EvseControlStatus {
 };
 
 struct V2gTransport {
-    V2gCommunicationState comm_state{V2gCommunicationState::StateId0};
+    V2gCommunicationState comm_state;
     V2gMessageState message_state{V2gMessageState::SupportedAppProtocol};
     V2gServerStatus udp_server_status{V2gServerStatus::Inactive};
     V2gServerStatus tcp_listener_status{V2gServerStatus::Inactive};

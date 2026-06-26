@@ -12,6 +12,9 @@
 namespace everest::lib::API::V1_0::types::telemetry {
 
 std::string serialize(ChargeProgress val) noexcept;
+std::string serialize(V2gDin70121CommunicationState val) noexcept;
+std::string serialize(V2gIso15118AcCommunicationState val) noexcept;
+std::string serialize(V2gIso15118DcCommunicationState val) noexcept;
 std::string serialize(V2gCommunicationState val) noexcept;
 std::string serialize(V2gMessageState val) noexcept;
 std::string serialize(V2gServerStatus val) noexcept;
@@ -27,6 +30,9 @@ std::string serialize(V2gEvseElectrical const& val) noexcept;
 
 std::ostream& operator<<(std::ostream& os, ChargeProgress const& val);
 std::ostream& operator<<(std::ostream& os, V2gCommunicationState const& val);
+std::ostream& operator<<(std::ostream& os, V2gDin70121CommunicationState const& val);
+std::ostream& operator<<(std::ostream& os, V2gIso15118AcCommunicationState const& val);
+std::ostream& operator<<(std::ostream& os, V2gIso15118DcCommunicationState const& val);
 std::ostream& operator<<(std::ostream& os, V2gMessageState const& val);
 std::ostream& operator<<(std::ostream& os, V2gServerStatus const& val);
 std::ostream& operator<<(std::ostream& os, V2gEvErrorCode const& val);

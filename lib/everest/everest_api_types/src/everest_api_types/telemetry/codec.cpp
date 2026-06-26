@@ -14,6 +14,18 @@ std::string serialize(ChargeProgress val) noexcept {
     return utilities::dump_json(val);
 }
 
+std::string serialize(V2gDin70121CommunicationState val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(V2gIso15118AcCommunicationState val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(V2gIso15118DcCommunicationState val) noexcept {
+    return utilities::dump_json(val);
+}
+
 std::string serialize(V2gCommunicationState val) noexcept {
     return utilities::dump_json(val);
 }
@@ -70,6 +82,18 @@ template <> V2gCommunicationState deserialize(std::string_view val) {
     return utilities::parse_json<V2gCommunicationState>(val);
 }
 
+template <> V2gDin70121CommunicationState deserialize(std::string_view val) {
+    return utilities::parse_json<V2gDin70121CommunicationState>(val);
+}
+
+template <> V2gIso15118AcCommunicationState deserialize(std::string_view val) {
+    return utilities::parse_json<V2gIso15118AcCommunicationState>(val);
+}
+
+template <> V2gIso15118DcCommunicationState deserialize(std::string_view val) {
+    return utilities::parse_json<V2gIso15118DcCommunicationState>(val);
+}
+
 template <> V2gMessageState deserialize(std::string_view val) {
     return utilities::parse_json<V2gMessageState>(val);
 }
@@ -120,6 +144,21 @@ std::ostream& operator<<(std::ostream& os, ChargeProgress const& val) {
 }
 
 std::ostream& operator<<(std::ostream& os, V2gCommunicationState const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, V2gDin70121CommunicationState const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, V2gIso15118AcCommunicationState const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, V2gIso15118DcCommunicationState const& val) {
     os << serialize(val);
     return os;
 }

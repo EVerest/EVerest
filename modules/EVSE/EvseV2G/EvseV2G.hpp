@@ -40,6 +40,7 @@ struct Conf {
     int auth_timeout_pnc;
     int auth_timeout_eim;
     bool enable_sdp_server;
+    bool publish_telemetry_only_on_change;
 };
 
 class EvseV2G : public Everest::ModuleBase {

@@ -37,7 +37,8 @@ namespace module {
 
 void EvseV2G::init() {
 
-    telemetry_publisher = std::make_unique<V2gTelemetryPublisher>(telemetry, info.telemetry_enabled);
+    telemetry_publisher = std::make_unique<V2gTelemetryPublisher>(telemetry, info.telemetry_enabled,
+                                                                  config.publish_telemetry_only_on_change);
 
     std::vector<ISO15118_vasIntf*> r_vas;
     r_vas.reserve(r_iso15118_vas.size());

@@ -8,122 +8,357 @@
 
 namespace everest::lib::API::V1_0::types::telemetry {
 
-void to_json(json& j, V2gCommunicationState const& k) noexcept {
+void to_json(json& j, V2gDin70121CommunicationState const& k) noexcept {
     switch (k) {
-    case V2gCommunicationState::StateId0:
-        j = "StateId0";
+    case V2gDin70121CommunicationState::WaitForSessionSetup:
+        j = "WaitForSessionSetup";
         return;
-    case V2gCommunicationState::StateId1:
-        j = "StateId1";
+    case V2gDin70121CommunicationState::WaitForServiceDiscovery:
+        j = "WaitForServiceDiscovery";
         return;
-    case V2gCommunicationState::StateId2:
-        j = "StateId2";
+    case V2gDin70121CommunicationState::WaitForPaymentServiceSelection:
+        j = "WaitForPaymentServiceSelection";
         return;
-    case V2gCommunicationState::StateId3:
-        j = "StateId3";
+    case V2gDin70121CommunicationState::WaitForAuthorization:
+        j = "WaitForAuthorization";
         return;
-    case V2gCommunicationState::StateId4:
-        j = "StateId4";
+    case V2gDin70121CommunicationState::WaitForChargeParameterDiscovery:
+        j = "WaitForChargeParameterDiscovery";
         return;
-    case V2gCommunicationState::StateId5:
-        j = "StateId5";
+    case V2gDin70121CommunicationState::WaitForCableCheck:
+        j = "WaitForCableCheck";
         return;
-    case V2gCommunicationState::StateId6:
-        j = "StateId6";
+    case V2gDin70121CommunicationState::WaitForPreCharge:
+        j = "WaitForPreCharge";
         return;
-    case V2gCommunicationState::StateId7:
-        j = "StateId7";
+    case V2gDin70121CommunicationState::WaitForPreChargePowerDelivery:
+        j = "WaitForPreChargePowerDelivery";
         return;
-    case V2gCommunicationState::StateId8:
-        j = "StateId8";
+    case V2gDin70121CommunicationState::WaitForCurrentDemand:
+        j = "WaitForCurrentDemand";
         return;
-    case V2gCommunicationState::StateId9:
-        j = "StateId9";
+    case V2gDin70121CommunicationState::WaitForCurrentDemandPowerDelivery:
+        j = "WaitForCurrentDemandPowerDelivery";
         return;
-    case V2gCommunicationState::StateId10:
-        j = "StateId10";
+    case V2gDin70121CommunicationState::WaitForWeldingDetectionSessionStop:
+        j = "WaitForWeldingDetectionSessionStop";
         return;
-    case V2gCommunicationState::StateId11:
-        j = "StateId11";
+    case V2gDin70121CommunicationState::WaitForSessionStop:
+        j = "WaitForSessionStop";
         return;
-    case V2gCommunicationState::StateId12:
-        j = "StateId12";
-        return;
-    case V2gCommunicationState::StateId13:
-        j = "StateId13";
-        return;
-    case V2gCommunicationState::StateId14:
-        j = "StateId14";
+    case V2gDin70121CommunicationState::WaitForTerminatedSession:
+        j = "WaitForTerminatedSession";
         return;
     }
-    j = "INVALID_VALUE__everest::lib::API::V1_0::types::telemetry::V2gCommunicationState";
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::telemetry::V2gDin70121CommunicationState";
+}
+
+void from_json(json const& j, V2gDin70121CommunicationState& k) {
+    std::string s = j;
+    if (s == "WaitForSessionSetup") {
+        k = V2gDin70121CommunicationState::WaitForSessionSetup;
+        return;
+    }
+    if (s == "WaitForServiceDiscovery") {
+        k = V2gDin70121CommunicationState::WaitForServiceDiscovery;
+        return;
+    }
+    if (s == "WaitForPaymentServiceSelection") {
+        k = V2gDin70121CommunicationState::WaitForPaymentServiceSelection;
+        return;
+    }
+    if (s == "WaitForAuthorization") {
+        k = V2gDin70121CommunicationState::WaitForAuthorization;
+        return;
+    }
+    if (s == "WaitForChargeParameterDiscovery") {
+        k = V2gDin70121CommunicationState::WaitForChargeParameterDiscovery;
+        return;
+    }
+    if (s == "WaitForCableCheck") {
+        k = V2gDin70121CommunicationState::WaitForCableCheck;
+        return;
+    }
+    if (s == "WaitForPreCharge") {
+        k = V2gDin70121CommunicationState::WaitForPreCharge;
+        return;
+    }
+    if (s == "WaitForPreChargePowerDelivery") {
+        k = V2gDin70121CommunicationState::WaitForPreChargePowerDelivery;
+        return;
+    }
+    if (s == "WaitForCurrentDemand") {
+        k = V2gDin70121CommunicationState::WaitForCurrentDemand;
+        return;
+    }
+    if (s == "WaitForCurrentDemandPowerDelivery") {
+        k = V2gDin70121CommunicationState::WaitForCurrentDemandPowerDelivery;
+        return;
+    }
+    if (s == "WaitForWeldingDetectionSessionStop") {
+        k = V2gDin70121CommunicationState::WaitForWeldingDetectionSessionStop;
+        return;
+    }
+    if (s == "WaitForSessionStop") {
+        k = V2gDin70121CommunicationState::WaitForSessionStop;
+        return;
+    }
+    if (s == "WaitForTerminatedSession") {
+        k = V2gDin70121CommunicationState::WaitForTerminatedSession;
+        return;
+    }
+    throw std::out_of_range(
+        "Provided string " + s +
+        " could not be converted to enum of type API_V1_0_TYPES_TELEMETRY_V2gDin70121CommunicationState");
+}
+
+void to_json(json& j, V2gIso15118AcCommunicationState const& k) noexcept {
+    switch (k) {
+    case V2gIso15118AcCommunicationState::WaitForSessionSetup:
+        j = "WaitForSessionSetup";
+        return;
+    case V2gIso15118AcCommunicationState::WaitForServiceDiscovery:
+        j = "WaitForServiceDiscovery";
+        return;
+    case V2gIso15118AcCommunicationState::WaitForServiceDetailPaymentServiceSelection:
+        j = "WaitForServiceDetailPaymentServiceSelection";
+        return;
+    case V2gIso15118AcCommunicationState::WaitForPaymentDetailsCertificateInstallCertificateUpdate:
+        j = "WaitForPaymentDetailsCertificateInstallCertificateUpdate";
+        return;
+    case V2gIso15118AcCommunicationState::WaitForPaymentDetails:
+        j = "WaitForPaymentDetails";
+        return;
+    case V2gIso15118AcCommunicationState::WaitForAuthorization:
+        j = "WaitForAuthorization";
+        return;
+    case V2gIso15118AcCommunicationState::WaitForChargeParameterDiscovery:
+        j = "WaitForChargeParameterDiscovery";
+        return;
+    case V2gIso15118AcCommunicationState::WaitForPowerDelivery:
+        j = "WaitForPowerDelivery";
+        return;
+    case V2gIso15118AcCommunicationState::WaitForChargingStatus:
+        j = "WaitForChargingStatus";
+        return;
+    case V2gIso15118AcCommunicationState::WaitForChargingStatusPowerDelivery:
+        j = "WaitForChargingStatusPowerDelivery";
+        return;
+    case V2gIso15118AcCommunicationState::WaitForMeteringReceipt:
+        j = "WaitForMeteringReceipt";
+        return;
+    case V2gIso15118AcCommunicationState::WaitForSessionStop:
+        j = "WaitForSessionStop";
+        return;
+    case V2gIso15118AcCommunicationState::WaitForTerminatedSession:
+        j = "WaitForTerminatedSession";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::telemetry::V2gIso15118AcCommunicationState";
+}
+
+void from_json(json const& j, V2gIso15118AcCommunicationState& k) {
+    std::string s = j;
+    if (s == "WaitForSessionSetup") {
+        k = V2gIso15118AcCommunicationState::WaitForSessionSetup;
+        return;
+    }
+    if (s == "WaitForServiceDiscovery") {
+        k = V2gIso15118AcCommunicationState::WaitForServiceDiscovery;
+        return;
+    }
+    if (s == "WaitForServiceDetailPaymentServiceSelection") {
+        k = V2gIso15118AcCommunicationState::WaitForServiceDetailPaymentServiceSelection;
+        return;
+    }
+    if (s == "WaitForPaymentDetailsCertificateInstallCertificateUpdate") {
+        k = V2gIso15118AcCommunicationState::WaitForPaymentDetailsCertificateInstallCertificateUpdate;
+        return;
+    }
+    if (s == "WaitForPaymentDetails") {
+        k = V2gIso15118AcCommunicationState::WaitForPaymentDetails;
+        return;
+    }
+    if (s == "WaitForAuthorization") {
+        k = V2gIso15118AcCommunicationState::WaitForAuthorization;
+        return;
+    }
+    if (s == "WaitForChargeParameterDiscovery") {
+        k = V2gIso15118AcCommunicationState::WaitForChargeParameterDiscovery;
+        return;
+    }
+    if (s == "WaitForPowerDelivery") {
+        k = V2gIso15118AcCommunicationState::WaitForPowerDelivery;
+        return;
+    }
+    if (s == "WaitForChargingStatus") {
+        k = V2gIso15118AcCommunicationState::WaitForChargingStatus;
+        return;
+    }
+    if (s == "WaitForChargingStatusPowerDelivery") {
+        k = V2gIso15118AcCommunicationState::WaitForChargingStatusPowerDelivery;
+        return;
+    }
+    if (s == "WaitForMeteringReceipt") {
+        k = V2gIso15118AcCommunicationState::WaitForMeteringReceipt;
+        return;
+    }
+    if (s == "WaitForSessionStop") {
+        k = V2gIso15118AcCommunicationState::WaitForSessionStop;
+        return;
+    }
+    if (s == "WaitForTerminatedSession") {
+        k = V2gIso15118AcCommunicationState::WaitForTerminatedSession;
+        return;
+    }
+    throw std::out_of_range(
+        "Provided string " + s +
+        " could not be converted to enum of type API_V1_0_TYPES_TELEMETRY_V2gIso15118AcCommunicationState");
+}
+
+void to_json(json& j, V2gIso15118DcCommunicationState const& k) noexcept {
+    switch (k) {
+    case V2gIso15118DcCommunicationState::WaitForSessionSetup:
+        j = "WaitForSessionSetup";
+        return;
+    case V2gIso15118DcCommunicationState::WaitForServiceDiscovery:
+        j = "WaitForServiceDiscovery";
+        return;
+    case V2gIso15118DcCommunicationState::WaitForServiceDetailPaymentServiceSelection:
+        j = "WaitForServiceDetailPaymentServiceSelection";
+        return;
+    case V2gIso15118DcCommunicationState::WaitForPaymentDetailsCertificateInstallCertificateUpdate:
+        j = "WaitForPaymentDetailsCertificateInstallCertificateUpdate";
+        return;
+    case V2gIso15118DcCommunicationState::WaitForPaymentDetails:
+        j = "WaitForPaymentDetails";
+        return;
+    case V2gIso15118DcCommunicationState::WaitForAuthorization:
+        j = "WaitForAuthorization";
+        return;
+    case V2gIso15118DcCommunicationState::WaitForChargeParameterDiscovery:
+        j = "WaitForChargeParameterDiscovery";
+        return;
+    case V2gIso15118DcCommunicationState::WaitForCableCheck:
+        j = "WaitForCableCheck";
+        return;
+    case V2gIso15118DcCommunicationState::WaitForPreCharge:
+        j = "WaitForPreCharge";
+        return;
+    case V2gIso15118DcCommunicationState::WaitForPreChargePowerDelivery:
+        j = "WaitForPreChargePowerDelivery";
+        return;
+    case V2gIso15118DcCommunicationState::WaitForCurrentDemandPowerDelivery:
+        j = "WaitForCurrentDemandPowerDelivery";
+        return;
+    case V2gIso15118DcCommunicationState::WaitForCurrentDemand:
+        j = "WaitForCurrentDemand";
+        return;
+    case V2gIso15118DcCommunicationState::WaitForMeteringReceipt:
+        j = "WaitForMeteringReceipt";
+        return;
+    case V2gIso15118DcCommunicationState::WaitForWeldingDetectionSessionStop:
+        j = "WaitForWeldingDetectionSessionStop";
+        return;
+    case V2gIso15118DcCommunicationState::WaitForTerminatedSession:
+        j = "WaitForTerminatedSession";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::telemetry::V2gIso15118DcCommunicationState";
+}
+
+void from_json(json const& j, V2gIso15118DcCommunicationState& k) {
+    std::string s = j;
+    if (s == "WaitForSessionSetup") {
+        k = V2gIso15118DcCommunicationState::WaitForSessionSetup;
+        return;
+    }
+    if (s == "WaitForServiceDiscovery") {
+        k = V2gIso15118DcCommunicationState::WaitForServiceDiscovery;
+        return;
+    }
+    if (s == "WaitForServiceDetailPaymentServiceSelection") {
+        k = V2gIso15118DcCommunicationState::WaitForServiceDetailPaymentServiceSelection;
+        return;
+    }
+    if (s == "WaitForPaymentDetailsCertificateInstallCertificateUpdate") {
+        k = V2gIso15118DcCommunicationState::WaitForPaymentDetailsCertificateInstallCertificateUpdate;
+        return;
+    }
+    if (s == "WaitForPaymentDetails") {
+        k = V2gIso15118DcCommunicationState::WaitForPaymentDetails;
+        return;
+    }
+    if (s == "WaitForAuthorization") {
+        k = V2gIso15118DcCommunicationState::WaitForAuthorization;
+        return;
+    }
+    if (s == "WaitForChargeParameterDiscovery") {
+        k = V2gIso15118DcCommunicationState::WaitForChargeParameterDiscovery;
+        return;
+    }
+    if (s == "WaitForCableCheck") {
+        k = V2gIso15118DcCommunicationState::WaitForCableCheck;
+        return;
+    }
+    if (s == "WaitForPreCharge") {
+        k = V2gIso15118DcCommunicationState::WaitForPreCharge;
+        return;
+    }
+    if (s == "WaitForPreChargePowerDelivery") {
+        k = V2gIso15118DcCommunicationState::WaitForPreChargePowerDelivery;
+        return;
+    }
+    if (s == "WaitForCurrentDemandPowerDelivery") {
+        k = V2gIso15118DcCommunicationState::WaitForCurrentDemandPowerDelivery;
+        return;
+    }
+    if (s == "WaitForCurrentDemand") {
+        k = V2gIso15118DcCommunicationState::WaitForCurrentDemand;
+        return;
+    }
+    if (s == "WaitForMeteringReceipt") {
+        k = V2gIso15118DcCommunicationState::WaitForMeteringReceipt;
+        return;
+    }
+    if (s == "WaitForWeldingDetectionSessionStop") {
+        k = V2gIso15118DcCommunicationState::WaitForWeldingDetectionSessionStop;
+        return;
+    }
+    if (s == "WaitForTerminatedSession") {
+        k = V2gIso15118DcCommunicationState::WaitForTerminatedSession;
+        return;
+    }
+    throw std::out_of_range(
+        "Provided string " + s +
+        " could not be converted to enum of type API_V1_0_TYPES_TELEMETRY_V2gIso15118DcCommunicationState");
+}
+
+void to_json(json& j, V2gCommunicationState const& k) noexcept {
+    json state = json::object();
+    if (k.din70121.has_value()) {
+        state["din70121"] = k.din70121.value();
+    }
+    if (k.iso15118_ac.has_value()) {
+        state["iso15118_ac"] = k.iso15118_ac.value();
+    }
+    if (k.iso15118_dc.has_value()) {
+        state["iso15118_dc"] = k.iso15118_dc.value();
+    }
+    j = state;
 }
 
 void from_json(json const& j, V2gCommunicationState& k) {
-    std::string s = j;
-    if (s == "StateId0") {
-        k = V2gCommunicationState::StateId0;
-        return;
+    k = {};
+    if (j.contains("din70121")) {
+        k.din70121 = j.at("din70121").get<V2gDin70121CommunicationState>();
     }
-    if (s == "StateId1") {
-        k = V2gCommunicationState::StateId1;
-        return;
+    if (j.contains("iso15118_ac")) {
+        k.iso15118_ac = j.at("iso15118_ac").get<V2gIso15118AcCommunicationState>();
     }
-    if (s == "StateId2") {
-        k = V2gCommunicationState::StateId2;
-        return;
+    if (j.contains("iso15118_dc")) {
+        k.iso15118_dc = j.at("iso15118_dc").get<V2gIso15118DcCommunicationState>();
     }
-    if (s == "StateId3") {
-        k = V2gCommunicationState::StateId3;
-        return;
-    }
-    if (s == "StateId4") {
-        k = V2gCommunicationState::StateId4;
-        return;
-    }
-    if (s == "StateId5") {
-        k = V2gCommunicationState::StateId5;
-        return;
-    }
-    if (s == "StateId6") {
-        k = V2gCommunicationState::StateId6;
-        return;
-    }
-    if (s == "StateId7") {
-        k = V2gCommunicationState::StateId7;
-        return;
-    }
-    if (s == "StateId8") {
-        k = V2gCommunicationState::StateId8;
-        return;
-    }
-    if (s == "StateId9") {
-        k = V2gCommunicationState::StateId9;
-        return;
-    }
-    if (s == "StateId10") {
-        k = V2gCommunicationState::StateId10;
-        return;
-    }
-    if (s == "StateId11") {
-        k = V2gCommunicationState::StateId11;
-        return;
-    }
-    if (s == "StateId12") {
-        k = V2gCommunicationState::StateId12;
-        return;
-    }
-    if (s == "StateId13") {
-        k = V2gCommunicationState::StateId13;
-        return;
-    }
-    if (s == "StateId14") {
-        k = V2gCommunicationState::StateId14;
-        return;
-    }
-    throw std::out_of_range("Provided string " + s +
-                            " could not be converted to enum of type "
-                            "API_V1_0_TYPES_TELEMETRY_V2gCommunicationState");
 }
 
 void to_json(json& j, V2gMessageState const& k) noexcept {
