@@ -32,10 +32,10 @@ std::optional<mDNS_discovery> parse_mdns_packet(std::vector<std::uint8_t> const&
 std::vector<std::uint8_t> create_mdns_query(std::string const& name);
 
 /// Build an mDNS response packet advertising the given service.
-/// Includes PTR, SRV, TXT, and A records.
+/// Includes the DNS-SD service-type PTR plus PTR, SRV, TXT, and A records.
 std::vector<std::uint8_t> create_mdns_response(mDNS_discovery const& service, std::string const& service_type);
 
-/// Check if an mDNS packet is a query for the given service type.
+/// Check if an mDNS packet is a query for the given service type or DNS-SD service-type enumeration.
 bool is_query_for(std::vector<std::uint8_t> const& packet, std::string const& service_type);
 
 class mDNS_registry {

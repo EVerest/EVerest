@@ -257,6 +257,7 @@ mDNS_registry::registry const& mDNS_registry::get() {
 
 [[maybe_unused]] std::vector<std::uint8_t> create_mdns_response(mDNS_discovery const& service,
                                                                 std::string const& service_type) {
+    std::string const service_enum_fqdn = "_services._dns-sd._udp.local";
     std::string service_fqdn = service_type + ".local";
     std::string instance_fqdn = service.service_instance;
     if (instance_fqdn.empty()) {
@@ -268,11 +269,21 @@ mDNS_registry::registry const& mDNS_registry::get() {
     append_uint16(packet, 0x0000); // Transaction ID
     append_uint16(packet, 0x8400); // Flags: response, authoritative
     append_uint16(packet, 0x0000); // Questions
-    append_uint16(packet, 0x0004); // Answer RRs (PTR + SRV + TXT + A)
+    append_uint16(packet, 0x0005); // Answer RRs (enum PTR + PTR + SRV + TXT + A)
     append_uint16(packet, 0x0000); // Authority RRs
     append_uint16(packet, 0x0000); // Additional RRs
 
     auto const default_ttl = static_cast<std::uint32_t>(120);
+
+    // DNS-SD enumeration PTR: _services._dns-sd._udp.local -> service_fqdn
+    encode_dns_name(packet, service_enum_fqdn);
+    append_uint16(packet, 0x000C);
+    append_uint16(packet, 0x0001);
+    append_uint32(packet, default_ttl);
+    std::vector<std::uint8_t> enum_ptr_rdata;
+    encode_dns_name(enum_ptr_rdata, service_fqdn);
+    append_uint16(packet, static_cast<std::uint16_t>(enum_ptr_rdata.size()));
+    packet.insert(packet.end(), enum_ptr_rdata.begin(), enum_ptr_rdata.end());
 
     // PTR record: service_type.local -> instance_fqdn
     encode_dns_name(packet, service_fqdn);
@@ -357,6 +368,7 @@ mDNS_registry::registry const& mDNS_registry::get() {
     }
 
     int curr = mdns_packet_min_size;
+    std::string const service_enum_fqdn = "_services._dns-sd._udp.local";
     std::string service_fqdn = service_type + ".local";
 
     for (std::size_t i = 0; i < questions && curr < size; ++i) {
@@ -367,7 +379,7 @@ mDNS_registry::registry const& mDNS_registry::get() {
         std::uint16_t qtype = (buf[curr] << 8) | buf[curr + 1];
         curr += 4;
 
-        if ((qtype == 0x0C || qtype == 0xFF) && qname == service_fqdn) {
+        if ((qtype == 0x0C || qtype == 0xFF) && (qname == service_fqdn || qname == service_enum_fqdn)) {
             return true;
         }
     }
