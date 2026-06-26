@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <ctime>
 
 #include <iso15118/detail/helper.hpp>
-#include <iso15118/ev/d20/session.hpp>
+#include <iso15118/ev/d20/session_id.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/common_types.hpp>
 
@@ -16,14 +16,14 @@ static inline void setup_timestamp(message_20::Header& header) {
 }
 
 // TODO(SL): Is this necessary for the ev?
-bool validate_and_setup_header(message_20::Header& header, const Session& cur_session,
+bool validate_and_setup_header(message_20::Header& header, const SessionId& cur_session,
                                const decltype(message_20::Header::session_id)& res_session_id) {
 
     setup_header(header, cur_session);
     return (cur_session.get_id() == res_session_id);
 }
 
-void setup_header(message_20::Header& header, const Session& cur_session) {
+void setup_header(message_20::Header& header, const SessionId& cur_session) {
     header.session_id = cur_session.get_id();
     setup_timestamp(header);
 }

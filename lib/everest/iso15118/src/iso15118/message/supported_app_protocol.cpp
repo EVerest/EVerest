@@ -57,8 +57,22 @@ template <> void convert(const SupportedAppProtocolResponse& in, struct appHand_
     }
 }
 
+template <> void convert(const struct appHand_supportedAppProtocolRes& in, SupportedAppProtocolResponse& out) {
+    cb_convert_enum(in.ResponseCode, out.response_code);
+
+    if (in.SchemaID_isUsed) {
+        out.schema_id = in.SchemaID;
+    } else {
+        out.schema_id.reset();
+    }
+}
+
 template <> void insert_type(VariantAccess& va, const struct appHand_supportedAppProtocolReq& in) {
     va.insert_type<SupportedAppProtocolRequest>(in);
+};
+
+template <> void insert_type(VariantAccess& va, const struct appHand_supportedAppProtocolRes& in) {
+    va.insert_type<SupportedAppProtocolResponse>(in);
 };
 
 template <> int serialize_to_exi(const SupportedAppProtocolResponse& in, exi_bitstream_t& out) {

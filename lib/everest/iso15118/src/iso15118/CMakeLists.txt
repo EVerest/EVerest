@@ -14,6 +14,7 @@ target_sources(iso15118
 
         ev/d20/context.cpp
         ev/d20/context_helper.cpp
+        ev/d20/state/supported_app_protocol.cpp
         ev/d20/state/session_setup.cpp
         ev/d20/state/authorization_setup.cpp
         ev/d20/state/authorization.cpp
@@ -25,7 +26,9 @@ target_sources(iso15118
         ev/d20/state/session_stop.cpp
         ev/session/feedback.cpp
         ev/io/sdp_client.cpp
-        ev/ev_controller.cpp
+        ev/io/data_client.cpp
+        ev/session.cpp
+        ev/controller.cpp
 
         io/connection_plain.cpp
         io/logging.cpp

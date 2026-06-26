@@ -1,36 +1,54 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <any>
+#include <array>
+#include <cstdint>
+#include <functional>
 #include <memory>
+#include <optional>
+#include <utility>
+#include <vector>
 
+#include <iso15118/io/sha_hash.hpp>
+#include <iso15118/io/stream_view.hpp>
 #include <iso15118/message/common_types.hpp>
+#include <iso15118/message/payload_type.hpp>
+#include <iso15118/message/supported_app_protocol.hpp>
+#include <iso15118/message/type.hpp>
 #include <iso15118/message/variant.hpp>
 
-#include <iso15118/ev/d20/session.hpp>
+#include <iso15118/ev/d20/control_event.hpp>
+#include <iso15118/ev/d20/evse_session_info.hpp>
+#include <iso15118/ev/d20/session_id.hpp>
 #include <iso15118/ev/session/feedback.hpp>
-#include <iso15118/io/sha_hash.hpp>
 #include <iso15118/session/logger.hpp>
 
 namespace iso15118::ev::d20 {
 
 using SessionLogger = ::iso15118::session::SessionLogger;
 
+// The EV is the inverse of the SECC: it ENCODES requests and DECODES responses.
 class MessageExchange {
 public:
-    MessageExchange(io::StreamOutputView);
+    MessageExchange() = default;
 
-    void set_response(std::unique_ptr<message_20::Variant> new_request);
-    std::unique_ptr<message_20::Variant> pull_response();
-    message_20::Type peek_response_type() const;
-
-    template <typename MessageType> void set_request(const MessageType& msg) {
-        // TODO(SL): Adding serialize
-
-        request_type = message_20::TypeTrait<MessageType>::type;
+    // Defer serialization to transmit time; also retain the typed request for get_request<Msg>.
+    template <typename Msg> void set_request(const Msg& msg) {
+        pending_serialize = [msg](io::StreamOutputView view) { return message_20::serialize(msg, view); };
+        out_type = message_20::PayloadTypeTrait<Msg>::type;
+        request_available = true;
+        request_type = message_20::TypeTrait<Msg>::type;
         request_message = msg;
     }
+
+    bool has_request() const {
+        return request_available;
+    }
+
+    // Encode the pending request to EXI bytes; std::nullopt on no-request or encode failure.
+    std::optional<std::pair<std::vector<uint8_t>, io::v2gtp::PayloadType>> take_request();
 
     template <typename Msg> std::optional<Msg> get_request() {
         static_assert(message_20::TypeTrait<Msg>::type != message_20::Type::None, "Unhandled type!");
@@ -39,28 +57,38 @@ public:
         }
         try {
             return std::any_cast<Msg>(request_message);
-        } catch (const std::bad_any_cast& ex) {
+        } catch (const std::bad_any_cast&) {
             return std::nullopt;
         }
     }
 
-private:
-    // input
-    std::unique_ptr<message_20::Variant> response{nullptr};
+    // Inbound (DECODE).
+    void set_response(std::unique_ptr<message_20::Variant> new_response);
+    std::unique_ptr<message_20::Variant> pull_response();
+    message_20::Type peek_response_type() const;
 
-    // output
-    const io::StreamOutputView request;
-    message_20::Type request_type;
+private:
+    static constexpr std::size_t OUT_BUFFER_SIZE = 4096;
+    std::array<uint8_t, OUT_BUFFER_SIZE> out_buffer{};
+    std::function<std::size_t(io::StreamOutputView)> pending_serialize;
+    io::v2gtp::PayloadType out_type{io::v2gtp::PayloadType::Part20Main};
+    bool request_available{false};
+
+    // output: typed request retained for get_request<Msg> introspection.
+    message_20::Type request_type{message_20::Type::None};
     std::any request_message;
+
+    // input: decoded response.
+    std::unique_ptr<message_20::Variant> response{nullptr};
 };
 
 struct StateBase;
 using BasePointerType = std::unique_ptr<StateBase>;
-class Session;
 
 class Context {
 public:
-    Context(session::feedback::Callbacks, MessageExchange&, SessionLogger&);
+    Context(feedback::Callbacks feedback_callbacks, MessageExchange& message_exchange_, SessionLogger& logger,
+            message_20::datatypes::Identifier evcc_id_, const std::optional<ControlEvent>& current_control_event_);
 
     template <typename StateType, typename... Args> BasePointerType create_state(Args&&... args) {
         return std::make_unique<StateType>(*this, std::forward<Args>(args)...);
@@ -77,11 +105,23 @@ public:
         return message_exchange.get_request<Msg>();
     }
 
+    // Control-event seam (mirrors iso15118::d20::Context). The pump owns the
+    // optional and feeds CONTROL_MESSAGE; states read the active event by type.
+    template <typename T> T const* get_control_event() {
+        if (not current_control_event.has_value()) {
+            return nullptr;
+        }
+        if (not std::holds_alternative<T>(*current_control_event)) {
+            return nullptr;
+        }
+        return &std::get<T>(*current_control_event);
+    }
+
     void stop_session(bool stop) {
         session_stopped = stop;
     }
 
-    bool is_session_stopped() {
+    bool is_session_stopped() const {
         return session_stopped;
     }
 
@@ -101,11 +141,11 @@ public:
         return charger_cert_session_hash;
     }
 
-    message_20::datatypes::Identifier get_evcc_id() {
+    const message_20::datatypes::Identifier& get_evcc_id() const {
         return evcc_id;
     }
 
-    Session& get_session() {
+    SessionId& get_session() {
         return session;
     }
 
@@ -114,17 +154,23 @@ public:
 
     message_20::datatypes::RationalNumber dc_pre_charge_target_voltage{0, 0};
 
-    const iso15118::ev::d20::session::Feedback feedback;
+    // Advertised SupportedAppProtocol list (config-driven). Defaults to the single
+    // ISO 15118-20 DC entry; the Session overwrites this from EvConfig. Only -20 is wired.
+    std::vector<message_20::SupportedAppProtocol> advertised_app_protocols{
+        {"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}};
+
+    const iso15118::ev::Feedback feedback;
 
     SessionLogger& log;
 
 private:
     MessageExchange& message_exchange;
 
-    // TODO(Sl): How to set evcc_id on startup and in which format (Identifier is a string)
-    message_20::datatypes::Identifier evcc_id{};
+    message_20::datatypes::Identifier evcc_id;
 
-    Session session{std::array<uint8_t, Session::ID_LENGTH>{}};
+    const std::optional<ControlEvent>& current_control_event;
+
+    SessionId session{std::array<uint8_t, SessionId::ID_LENGTH>{}};
 
     bool session_stopped{false};
 
