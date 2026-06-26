@@ -20,7 +20,7 @@ namespace transport {
 namespace {
 
 types::serial_comm_hub_requests::Result call_modbus_read(serial_communication_hubIntf& serial_hub, int device_id,
-                                                           int read_address, std::uint16_t register_to_read) {
+                                                         int read_address, std::uint16_t register_to_read) {
     try {
         return serial_hub.call_modbus_read_input_registers(device_id, read_address, register_to_read);
     } catch (const Everest::CmdTimeout& e) {
@@ -30,8 +30,8 @@ types::serial_comm_hub_requests::Result call_modbus_read(serial_communication_hu
 }
 
 types::serial_comm_hub_requests::StatusCodeEnum call_modbus_write(serial_communication_hubIntf& serial_hub,
-                                                                   int device_id, int write_address,
-                                                                   types::serial_comm_hub_requests::VectorUint16& data) {
+                                                                  int device_id, int write_address,
+                                                                  types::serial_comm_hub_requests::VectorUint16& data) {
     try {
         return serial_hub.call_modbus_write_multiple_registers(device_id, write_address, data);
     } catch (const Everest::CmdTimeout& e) {
@@ -55,9 +55,8 @@ transport::DataVector SerialCommHubTransport::fetch(std::int32_t address, std::u
                                                        ? MAX_READ_REGISTERS_PER_MESSAGE
                                                        : remaining_register_to_read;
 
-            types::serial_comm_hub_requests::Result serial_com_hub_result =
-                call_modbus_read(m_serial_hub, static_cast<int>(m_device_id), static_cast<int>(read_address),
-                                 register_to_read);
+            types::serial_comm_hub_requests::Result serial_com_hub_result = call_modbus_read(
+                m_serial_hub, static_cast<int>(m_device_id), static_cast<int>(read_address), register_to_read);
 
             // Check for communication errors
             if (serial_com_hub_result.status_code == types::serial_comm_hub_requests::StatusCodeEnum::Timeout) {
