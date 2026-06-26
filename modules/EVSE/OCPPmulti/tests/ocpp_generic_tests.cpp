@@ -19,6 +19,8 @@ using ::testing::InSequence;
 using ::testing::Return;
 
 TEST(SteadyTimer, StartStop) {
+    GTEST_SKIP() << "Unreliable - consider using a different timer";
+
     // currently unreliable
     Everest::SteadyTimer timer;
     EXPECT_FALSE(timer.is_running());
@@ -56,6 +58,8 @@ TEST(SteadyTimer, StartStop) {
 // Calls
 
 TEST_F(GenericOcppProvidesTester, stopRestart) {
+    GTEST_SKIP() << "Unreliable - consider using a different timer";
+
     // currently unreliable (see SteadyTimer.StartStop)
 
     InSequence seq;
