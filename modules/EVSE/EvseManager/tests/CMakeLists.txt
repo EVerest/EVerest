@@ -73,3 +73,35 @@ target_link_libraries(${CHARGER_TEST_TARGET_NAME} PRIVATE
 
 add_test(${CHARGER_TEST_TARGET_NAME} ${CHARGER_TEST_TARGET_NAME})
 ev_register_test_target(${CHARGER_TEST_TARGET_NAME})
+
+set(AC_ENERGY_TRANSFER_TEST_TARGET_NAME ${PROJECT_NAME}_EvseManager_AcEnergyTransfer_tests)
+add_executable(${AC_ENERGY_TRANSFER_TEST_TARGET_NAME})
+
+add_dependencies(${AC_ENERGY_TRANSFER_TEST_TARGET_NAME} ${MODULE_NAME})
+
+target_include_directories(${AC_ENERGY_TRANSFER_TEST_TARGET_NAME} PRIVATE
+    .. ${TESTS_INCLUDE_DIR}
+    ${GENERATED_INCLUDE_DIR}
+    ${CMAKE_BINARY_DIR}/generated/modules/${MODULE_NAME}
+)
+
+target_sources(${AC_ENERGY_TRANSFER_TEST_TARGET_NAME} PRIVATE
+    AcEnergyTransferTest.cpp
+    ../ac_energy_transfer.cpp
+)
+
+target_compile_definitions(${AC_ENERGY_TRANSFER_TEST_TARGET_NAME} PRIVATE
+    BUILD_TESTING_MODULE_EVSE_MANAGER
+)
+
+target_link_libraries(${AC_ENERGY_TRANSFER_TEST_TARGET_NAME} PRIVATE
+    GTest::gmock
+    GTest::gtest_main
+    everest::log
+    everest::framework
+    everest::helpers
+    sigslot
+)
+
+add_test(${AC_ENERGY_TRANSFER_TEST_TARGET_NAME} ${AC_ENERGY_TRANSFER_TEST_TARGET_NAME})
+ev_register_test_target(${AC_ENERGY_TRANSFER_TEST_TARGET_NAME})
