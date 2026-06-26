@@ -43,7 +43,7 @@ bool check_response_code(ResponseCode response_code) {
 }
 
 message_20::PowerDeliveryRequest
-make_request(const Session& session, message_20::datatypes::Progress charge_progress,
+make_request(const SessionId& session, message_20::datatypes::Progress charge_progress,
              std::optional<message_20::datatypes::Processing> processing = std::nullopt) {
     message_20::PowerDeliveryRequest req;
     setup_header(req.header, session);
