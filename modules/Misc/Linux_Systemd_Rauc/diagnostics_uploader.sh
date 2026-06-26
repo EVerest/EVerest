@@ -5,7 +5,6 @@
 # Copyright Pionix GmbH and Contributors to EVerest
 #
 
-
 . "${1}"
 
 echo "$UPLOADING"
