@@ -13,21 +13,25 @@ using namespace iso15118;
 
 class FsmStateHelper {
 public:
-    FsmStateHelper(const ev::d20::session::feedback::Callbacks& callbacks) : ctx(callbacks, msg_exch) {
+    FsmStateHelper(const ev::d20::session::feedback::Callbacks& callbacks) :
+        ctx(callbacks, msg_exch, evcc_id, control_event) {
     }
 
     ev::d20::Context& get_context();
+
+    ev::d20::MessageExchange& get_message_exchange() {
+        return msg_exch;
+    }
 
     template <typename ResponseType> void handle_response(const ResponseType& response) {
         msg_exch.set_response(std::make_unique<message_20::Variant>(response));
     }
 
 private:
-    // TODO(SL): Check how to remove output_buffer & output_stream_view
-    std::array<uint8_t, 1024> output_buffer{};
-    io::StreamOutputView output_stream_view{output_buffer.data(), output_buffer.size()};
+    ev::d20::MessageExchange msg_exch{};
 
-    ev::d20::MessageExchange msg_exch{output_stream_view};
+    message_20::datatypes::Identifier evcc_id{"EVTESTID01"};
+    std::optional<ev::d20::ControlEvent> control_event{};
 
     ev::d20::Context ctx;
 };
