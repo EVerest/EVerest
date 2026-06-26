@@ -26,7 +26,7 @@ bool check_response_code(ResponseCode response_code) {
     }
 }
 
-message_20::DC_CableCheckRequest make_request(const Session& session) {
+message_20::DC_CableCheckRequest make_request(const SessionId& session) {
     message_20::DC_CableCheckRequest req;
     setup_header(req.header, session);
     return req;

@@ -27,7 +27,7 @@ bool check_response_code(ResponseCode response_code) {
     }
 }
 
-message_20::DC_WeldingDetectionRequest make_request(const Session& session,
+message_20::DC_WeldingDetectionRequest make_request(const SessionId& session,
                                                     message_20::datatypes::Processing processing) {
     message_20::DC_WeldingDetectionRequest req;
     setup_header(req.header, session);
