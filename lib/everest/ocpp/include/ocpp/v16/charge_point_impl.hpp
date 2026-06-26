@@ -104,6 +104,7 @@ private:
 
     bool boot_notification_callerror;
     bool firmware_update_is_pending = false;
+    bool disable_connectors_during_install = true;
 
     std::unique_ptr<Websocket> websocket;
     std::unique_ptr<ocpp::MessageDispatcherInterface<MessageType>> message_dispatcher;
@@ -244,11 +245,13 @@ private:
                              const std::optional<CiString<50>>& vendor_error_code = std::nullopt,
                              bool initiated_by_trigger_message = false);
     void diagnostic_status_notification(DiagnosticsStatus status, bool initiated_by_trigger_message = false);
-    void firmware_status_notification(FirmwareStatus status, bool initiated_by_trigger_message = false);
+    void firmware_status_notification(FirmwareStatus status, bool initiated_by_trigger_message = false,
+                                      bool disable_connectors_during_install = true);
     void log_status_notification(UploadLogStatusEnumType status, int requestId,
                                  bool initiated_by_trigger_message = false);
     void signed_firmware_update_status_notification(FirmwareStatusEnumType status, int requestId,
-                                                    bool initiated_by_trigger_message = false);
+                                                    bool initiated_by_trigger_message = false,
+                                                    bool disable_connectors_during_install = true);
 
     /// \brief Changes all unoccupied connectors to unavailable. If a transaction is running schedule an availabilty
     /// change. If all connectors are unavailable signal to the firmware updater that installation of the firmware
@@ -675,8 +678,11 @@ public:
     /// \param request_id A \p request_id of -1 indicates a FirmwareStatusNotification.req, else a
     /// SignedFirmwareUpdateStatusNotification.req .
     /// \param firmware_update_status The \p firmware_update_status
+    /// \param disable_connectors_during_install By default, all connectors will be disabled before installing the
+    /// firmware update. Setting this parameter to false will keep the connectors available during the update.
     void on_firmware_update_status_notification(std::int32_t request_id,
-                                                const ocpp::FirmwareStatusNotification firmware_update_status);
+                                                const ocpp::FirmwareStatusNotification firmware_update_status,
+                                                const bool disable_connectors_during_install = true);
 
     /// \brief This function must be called when a reservation is started at the given \p connector .
     /// \param connector

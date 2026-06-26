@@ -2463,7 +2463,7 @@ void ChargePointImpl::handleStopTransactionResponse(const EnhancedMessage<v16::M
     // when this transaction was stopped because of a Reset.req this signals that StopTransaction.conf has been received
     this->stop_transaction_cv.notify_one();
 
-    if (this->firmware_update_is_pending) {
+    if (this->firmware_update_is_pending && this->disable_connectors_during_install) {
         this->change_all_connectors_to_unavailable_for_firmware_update();
     }
 }
@@ -2675,7 +2675,7 @@ void ChargePointImpl::handleTriggerMessageRequest(ocpp::Call<TriggerMessageReque
         this->diagnostic_status_notification(this->diagnostics_status, true);
         break;
     case MessageTrigger::FirmwareStatusNotification:
-        this->firmware_status_notification(this->firmware_status, true);
+        this->firmware_status_notification(this->firmware_status, true, this->disable_connectors_during_install);
         break;
     case MessageTrigger::Heartbeat:
         this->heartbeat(true);
@@ -2800,7 +2800,8 @@ void ChargePointImpl::handleExtendedTriggerMessageRequest(ocpp::Call<ExtendedTri
         break;
     case MessageTriggerEnumType::FirmwareStatusNotification:
         this->signed_firmware_update_status_notification(this->signed_firmware_status,
-                                                         this->signed_firmware_status_request_id, true);
+                                                         this->signed_firmware_status_request_id, true,
+                                                         this->disable_connectors_during_install);
         break;
     case MessageTriggerEnumType::Heartbeat:
         this->heartbeat(true);
@@ -3106,7 +3107,8 @@ void ChargePointImpl::log_status_notification(UploadLogStatusEnumType status, in
 }
 
 void ChargePointImpl::signed_firmware_update_status_notification(FirmwareStatusEnumType status, int requestId,
-                                                                 bool initiated_by_trigger_message) {
+                                                                 bool initiated_by_trigger_message,
+                                                                 bool disable_connectors_during_install) {
     EVLOG_debug << "Sending FirmwareUpdateStatusNotification with status"
                 << conversions::firmware_status_enum_type_to_string(status);
     SignedFirmwareStatusNotificationRequest req;
@@ -3118,11 +3120,13 @@ void ChargePointImpl::signed_firmware_update_status_notification(FirmwareStatusE
     // update this is revoked
     if (status == FirmwareStatusEnumType::SignatureVerified) {
         this->firmware_update_is_pending = true;
+        this->disable_connectors_during_install = disable_connectors_during_install;
     } else if (status == FirmwareStatusEnumType::InstallationFailed ||
                status == FirmwareStatusEnumType::DownloadFailed ||
                status == FirmwareStatusEnumType::InstallVerificationFailed ||
                status == FirmwareStatusEnumType::InvalidSignature) {
         this->firmware_update_is_pending = false;
+        this->disable_connectors_during_install = true;
     }
 
     this->signed_firmware_status = status;
@@ -3136,7 +3140,7 @@ void ChargePointImpl::signed_firmware_update_status_notification(FirmwareStatusE
         this->securityEventNotification(ocpp::security_events::INVALIDFIRMWARESIGNATURE, std::nullopt, true, true);
     }
 
-    if (this->firmware_update_is_pending) {
+    if (this->firmware_update_is_pending && this->disable_connectors_during_install) {
         this->change_all_connectors_to_unavailable_for_firmware_update();
     }
 }
@@ -4667,15 +4671,17 @@ void ChargePointImpl::on_log_status_notification(std::int32_t request_id, std::s
 }
 
 void ChargePointImpl::on_firmware_update_status_notification(std::int32_t request_id,
-                                                             const FirmwareStatusNotification firmware_update_status) {
+                                                             const FirmwareStatusNotification firmware_update_status,
+                                                             const bool disable_connectors_during_install) {
     try {
         if (request_id != -1) {
             this->signed_firmware_update_status_notification(
                 ocpp::conversions::firmware_status_notification_to_firmware_status_enum_type(firmware_update_status),
-                request_id);
+                request_id, false, disable_connectors_during_install);
         } else {
             this->firmware_status_notification(
-                ocpp::conversions::firmware_status_notification_to_firmware_status(firmware_update_status));
+                ocpp::conversions::firmware_status_notification_to_firmware_status(firmware_update_status),
+                disable_connectors_during_install);
         }
     } catch (const std::out_of_range& e) {
         EVLOG_debug << "Could not convert incoming FirmwareStatusNotification to OCPP type";
@@ -4735,7 +4741,8 @@ void ChargePointImpl::diagnostic_status_notification(DiagnosticsStatus status, b
     }
 }
 
-void ChargePointImpl::firmware_status_notification(FirmwareStatus status, bool initiated_by_trigger_message) {
+void ChargePointImpl::firmware_status_notification(FirmwareStatus status, bool initiated_by_trigger_message,
+                                                   bool disable_connectors_during_install) {
 
     EVLOG_debug << "Received FirmwareUpdateStatusNotification with status"
                 << conversions::firmware_status_to_string(status);
@@ -4747,8 +4754,10 @@ void ChargePointImpl::firmware_status_notification(FirmwareStatus status, bool i
     // firmware update this is revoked
     if (status == FirmwareStatus::Downloaded) {
         this->firmware_update_is_pending = true;
+        this->disable_connectors_during_install = disable_connectors_during_install;
     } else if (status == FirmwareStatus::DownloadFailed || status == FirmwareStatus::InstallationFailed) {
         this->firmware_update_is_pending = false;
+        this->disable_connectors_during_install = true;
     }
 
     this->firmware_status = status;
@@ -4756,7 +4765,7 @@ void ChargePointImpl::firmware_status_notification(FirmwareStatus status, bool i
     const ocpp::Call<FirmwareStatusNotificationRequest> call(req);
     this->message_dispatcher->dispatch_call_async(call, initiated_by_trigger_message);
 
-    if (this->firmware_update_is_pending) {
+    if (this->firmware_update_is_pending && this->disable_connectors_during_install) {
         this->change_all_connectors_to_unavailable_for_firmware_update();
     }
 }

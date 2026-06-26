@@ -434,8 +434,12 @@ void OCPP201::init() {
 
     r_system->subscribe_firmware_update_status([this](const types::system::FirmwareUpdateStatus status) {
         if (this->started) {
+            auto disable_connectors_during_install =
+                !status.firmware_update_metadata.has_value() ||
+                status.firmware_update_metadata.value().disable_connectors_during_install.value_or(true);
             this->charge_point->on_firmware_update_status_notification(
-                status.request_id, conversions::to_ocpp_firmware_status_enum(status.firmware_update_status));
+                status.request_id, conversions::to_ocpp_firmware_status_enum(status.firmware_update_status),
+                disable_connectors_during_install);
         } else {
             std::scoped_lock lock(this->session_event_mutex);
             this->event_queue[0].push(status);
@@ -1124,9 +1128,13 @@ void OCPP201::ready() {
             } else if (std::holds_alternative<types::system::FirmwareUpdateStatus>(queued_event)) {
                 const auto fw_update_status = std::get<types::system::FirmwareUpdateStatus>(queued_event);
                 EVLOG_info << "Processing queued firmware update status";
+                auto disable_connectors_during_install =
+                    !fw_update_status.firmware_update_metadata.has_value() ||
+                    fw_update_status.firmware_update_metadata.value().disable_connectors_during_install.value_or(true);
                 this->charge_point->on_firmware_update_status_notification(
                     fw_update_status.request_id,
-                    conversions::to_ocpp_firmware_status_enum(fw_update_status.firmware_update_status));
+                    conversions::to_ocpp_firmware_status_enum(fw_update_status.firmware_update_status),
+                    disable_connectors_during_install);
             } else if (std::holds_alternative<types::system::LogStatus>(queued_event)) {
                 const auto log_status = std::get<types::system::LogStatus>(queued_event);
                 EVLOG_info << "Processing queued log status";
