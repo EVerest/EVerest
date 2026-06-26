@@ -10,7 +10,7 @@
 
 echo "$UPLOADING"
 sleep 2
-curl -L --progress-bar --connect-timeout "$CONNECTION_TIMEOUT" -T "${4}" "${2}"
+curl -L --progress-bar --proto =ftp,ftps,http,https --connect-timeout "$CONNECTION_TIMEOUT" -T "${4}" "${2}"
 curl_exit_code=$?
 if [[ $curl_exit_code -eq 0 ]]; then
     echo "$UPLOADED"
