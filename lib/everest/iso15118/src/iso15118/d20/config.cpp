@@ -77,6 +77,17 @@ auto get_default_ac_der_iec_parameter_list(const std::vector<ControlMobilityNeed
 
     std::vector<AcDerParameterList> param_list;
 
+    constexpr auto MAX_IEC_CONTROL_FUNCTIONS = 12;
+    std::bitset<MAX_IEC_CONTROL_FUNCTIONS> control_functions{};
+
+    static_assert(MAX_IEC_CONTROL_FUNCTIONS ==
+                      message_20::to_underlying_value(iec::DERControlName::UnderVoltageFaultRideThroughMode) + 1,
+                  "MAX_IEC_CONTROL_FUNCTIONS should be in sync with the DERControlName enum definition");
+
+    for (const auto& function : der_setup_config.supported_der_control_functions) {
+        control_functions.set(static_cast<size_t>(function.first), true);
+    }
+
     for (const auto& mode : control_mobility_modes) {
         for (const auto& connector : ac_setup_config.connectors) {
             param_list.push_back({{
@@ -86,7 +97,7 @@ auto get_default_ac_der_iec_parameter_list(const std::vector<ControlMobilityNeed
                                       ac_setup_config.voltage,
                                       Pricing::NoPricing,
                                   },
-                                  der_setup_config.control_functions});
+                                  control_functions});
         }
     }
 
@@ -231,7 +242,7 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
     const auto dc_bpt_setup_config = config.bpt_setup_config.value_or(
         BptSetupConfig({dt::BptChannel::Unified, dt::GeneratorMode::GridFollowing, std::nullopt}));
     der_setup_config = config.der_setup_config.value_or(
-        DerSetupConfig({0, {}, iec::OperatingMode::GridFollowing, iec::GridConnectionMode::GridConnected}));
+        DerSetupConfig({{}, iec::OperatingMode::GridFollowing, iec::GridConnectionMode::GridConnected}));
 
     ac_parameter_list = get_default_ac_parameter_list(supported_control_mobility_modes, ac_setup_config);
     ac_bpt_parameter_list =

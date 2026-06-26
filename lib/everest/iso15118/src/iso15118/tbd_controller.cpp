@@ -186,7 +186,6 @@ void TbdController::update_supported_der_functions(iec::DERControlName der_contr
     auto& der_setup = evse_setup.der_setup_config.has_value() ? evse_setup.der_setup_config.value()
                                                               : evse_setup.der_setup_config.emplace();
 
-    der_setup.control_functions.set(static_cast<size_t>(der_control), true);
     der_setup.supported_der_control_functions[der_control] = function;
 }
 
@@ -194,7 +193,6 @@ void TbdController::update_unsupported_der_functions(iec::DERControlName der_con
     if (evse_setup.der_setup_config.has_value()) {
         logf_info("Removing supported DER control function: %u", static_cast<uint32_t>(der_control));
         auto& der_setup = evse_setup.der_setup_config.value();
-        der_setup.control_functions.set(static_cast<size_t>(der_control), false);
         der_setup.supported_der_control_functions.erase(der_control);
     }
 }
