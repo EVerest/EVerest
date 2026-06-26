@@ -34,8 +34,8 @@ void process_schedule_with_limits(std::vector<types::energy::ScheduleReqEntry>& 
                 entry.limits_to_root.total_power_W.value().value > 0 && nominal_voltage_V > 0 &&
                 !entry.limits_to_root.ac_max_current_A.has_value()) {
 
-                float calculated_current = static_cast<float>(entry.limits_to_root.total_power_W.value().value /
-                                                              (nominal_voltage_V * effective_phase_count));
+                double calculated_current = static_cast<double>(entry.limits_to_root.total_power_W.value().value /
+                                                               (nominal_voltage_V * effective_phase_count));
                 entry.limits_to_root.ac_max_current_A = {calculated_current, source};
             }
 
@@ -45,7 +45,7 @@ void process_schedule_with_limits(std::vector<types::energy::ScheduleReqEntry>& 
         // Apply fuse limit to limits_to_root (as a safety constraint)
         if (!entry.limits_to_root.ac_max_current_A.has_value() ||
             entry.limits_to_root.ac_max_current_A->value > fuse_limit_A) {
-            entry.limits_to_root.ac_max_current_A = {static_cast<float>(fuse_limit_A), source};
+            entry.limits_to_root.ac_max_current_A = {static_cast<double>(fuse_limit_A), source};
         }
 
         // Apply phase count limit to limits_to_root (as a safety constraint, same model as fuse limit)

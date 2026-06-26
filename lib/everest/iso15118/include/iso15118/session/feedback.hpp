@@ -42,9 +42,9 @@ enum class Signal {
 };
 
 struct DcMaximumLimits {
-    float voltage{NAN};
-    float current{NAN};
-    float power{NAN};
+    double voltage{NAN};
+    double current{NAN};
+    double power{NAN};
 };
 
 using PresentVoltage = dt::RationalNumber;
@@ -68,7 +68,7 @@ using AcLimits = std::variant<dt::AC_CPDReqEnergyTransferMode, dt::BPT_AC_CPDReq
 
 struct Callbacks {
     std::function<void(Signal)> signal;
-    std::function<void(float)> dc_pre_charge_target_voltage;
+    std::function<void(double)> dc_pre_charge_target_voltage;
     std::function<void(const DcChargeLoopReq&)> dc_charge_loop_req;
     std::function<void(const DcMaximumLimits&)> dc_max_limits;
     std::function<void(const AcChargeLoopReq&)> ac_charge_loop_req;
@@ -95,7 +95,7 @@ public:
     Feedback(feedback::Callbacks);
 
     void signal(feedback::Signal) const;
-    void dc_pre_charge_target_voltage(float) const;
+    void dc_pre_charge_target_voltage(double) const;
     void dc_charge_loop_req(const feedback::DcChargeLoopReq&) const;
     void dc_max_limits(const feedback::DcMaximumLimits&) const;
     void ac_charge_loop_req(const feedback::AcChargeLoopReq&) const;

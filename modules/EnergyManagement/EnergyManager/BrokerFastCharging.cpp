@@ -72,7 +72,7 @@ void BrokerFastCharging::tradeImpl() {
                 types::energy::IntegerWithSource number_of_phases = {ac_number_of_active_phases_import,
                                                                      "BrokerFastCharging_Default"};
 
-                float min_power_3ph = 0.;
+                double min_power_3ph = 0.;
 
                 if (min_current_import.has_value()) {
                     min_power_3ph =

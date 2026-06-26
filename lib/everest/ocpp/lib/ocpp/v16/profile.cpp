@@ -453,8 +453,8 @@ IntermediateProfile generate_profile_from_periods(std::vector<period_entry_t>& p
             current = earliest;
         } else {
             // there is a schedule to use
-            float current_limit = NO_LIMIT_SPECIFIED;
-            float power_limit = NO_LIMIT_SPECIFIED;
+            double current_limit = NO_LIMIT_SPECIFIED;
+            double power_limit = NO_LIMIT_SPECIFIED;
             std::int32_t stack_level_current = 0;
             std::int32_t stack_level_power = 0;
 
@@ -597,15 +597,15 @@ IntermediateProfile merge_tx_profile_with_tx_default_profile(const IntermediateP
 IntermediateProfile merge_profiles_by_lowest_limit(const std::vector<IntermediateProfile>& profiles) {
     auto combinator = [](const period_pair_vector& periods) {
         IntermediatePeriod period{};
-        period.current_limit = std::numeric_limits<float>::max();
-        period.power_limit = std::numeric_limits<float>::max();
+        period.current_limit = std::numeric_limits<double>::max();
+        period.power_limit = std::numeric_limits<double>::max();
 
         for (const auto& [it, end] : periods) {
-            if (it->current_limit >= 0.0F && it->current_limit < period.current_limit) {
+            if (it->current_limit >= 0.0 && it->current_limit < period.current_limit) {
                 period.current_limit = it->current_limit;
                 period.stack_level_current = it->stack_level_current;
             }
-            if (it->power_limit >= 0.0F && it->power_limit < period.power_limit) {
+            if (it->power_limit >= 0.0 && it->power_limit < period.power_limit) {
                 period.power_limit = it->power_limit;
                 period.stack_level_power = it->stack_level_power;
             }
@@ -619,11 +619,11 @@ IntermediateProfile merge_profiles_by_lowest_limit(const std::vector<Intermediat
             }
         }
 
-        if (period.current_limit == std::numeric_limits<float>::max()) {
+        if (period.current_limit == std::numeric_limits<double>::max()) {
             period.current_limit = NO_LIMIT_SPECIFIED;
             period.stack_level_current = 0;
         }
-        if (period.power_limit == std::numeric_limits<float>::max()) {
+        if (period.power_limit == std::numeric_limits<double>::max()) {
             period.power_limit = NO_LIMIT_SPECIFIED;
             period.stack_level_power = 0;
         }
@@ -635,12 +635,12 @@ IntermediateProfile merge_profiles_by_lowest_limit(const std::vector<Intermediat
 }
 
 IntermediateProfile merge_profiles_by_summing_limits(const std::vector<IntermediateProfile>& profiles,
-                                                     float current_default, float power_default) {
+                                                     double current_default, double power_default) {
     auto combinator = [current_default, power_default](const period_pair_vector& periods) {
         IntermediatePeriod period{};
         for (const auto& [it, end] : periods) {
-            period.current_limit += it->current_limit >= 0.0F ? it->current_limit : current_default;
-            period.power_limit += it->power_limit >= 0.0F ? it->power_limit : power_default;
+            period.current_limit += it->current_limit >= 0.0 ? it->current_limit : current_default;
+            period.power_limit += it->power_limit >= 0.0 ? it->power_limit : power_default;
             period.stack_level_current = 0; // Stack level cant be determined when summing intermediate profiles
             period.stack_level_power = 0;   // Stack level cant be determined when summing intermediate profiles
 
@@ -660,7 +660,7 @@ IntermediateProfile merge_profiles_by_summing_limits(const std::vector<Intermedi
 
 std::vector<EnhancedChargingSchedulePeriod>
 convert_intermediate_into_schedule(const IntermediateProfile& profile, ChargingRateUnit charging_rate_unit,
-                                   float default_limit, std::int32_t default_number_phases, float supply_voltage) {
+                                   double default_limit, std::int32_t default_number_phases, double supply_voltage) {
 
     std::vector<EnhancedChargingSchedulePeriod> output{};
 
@@ -672,9 +672,9 @@ convert_intermediate_into_schedule(const IntermediateProfile& profile, ChargingR
         if (period.current_limit == NO_LIMIT_SPECIFIED && period.power_limit == NO_LIMIT_SPECIFIED) {
             period_out.limit = default_limit;
         } else {
-            const float transform_value =
-                supply_voltage * static_cast<float>(period_out.numberPhases.value_or(default_number_phases));
-            period_out.limit = std::numeric_limits<float>::max();
+            const double transform_value =
+                supply_voltage * static_cast<double>(period_out.numberPhases.value_or(default_number_phases));
+            period_out.limit = std::numeric_limits<double>::max();
             if (charging_rate_unit == ChargingRateUnit::A) {
                 if (period.current_limit != NO_LIMIT_SPECIFIED) {
                     period_out.limit = period.current_limit;

@@ -74,45 +74,45 @@ enum class TransactionStatus {
 };
 
 struct Current {
-    std::optional<float> DC; ///< DC current
-    std::optional<float> L1; ///< AC L1 value only
-    std::optional<float> L2; ///< AC L2 value only
-    std::optional<float> L3; ///< AC L3 value only
-    std::optional<float> N;  ///< AC Neutral value only
+    std::optional<double> DC; ///< DC current
+    std::optional<double> L1; ///< AC L1 value only
+    std::optional<double> L2; ///< AC L2 value only
+    std::optional<double> L3; ///< AC L3 value only
+    std::optional<double> N;  ///< AC Neutral value only
 };
 
 struct Voltage {
-    std::optional<float> DC; ///< DC voltage
-    std::optional<float> L1; ///< AC L1 value only
-    std::optional<float> L2; ///< AC L2 value only
-    std::optional<float> L3; ///< AC L3 value only
+    std::optional<double> DC; ///< DC voltage
+    std::optional<double> L1; ///< AC L1 value only
+    std::optional<double> L2; ///< AC L2 value only
+    std::optional<double> L3; ///< AC L3 value only
 };
 
 struct Frequency {
-    float L1;                ///< AC L1 value
-    std::optional<float> L2; ///< AC L2 value
-    std::optional<float> L3; ///< AC L3 value
+    double L1;                ///< AC L1 value
+    std::optional<double> L2; ///< AC L2 value
+    std::optional<double> L3; ///< AC L3 value
 };
 
 struct Power {
-    float total;             ///< DC / AC Sum value
-    std::optional<float> L1; ///< AC L1 value only
-    std::optional<float> L2; ///< AC L2 value only
-    std::optional<float> L3; ///< AC L3 value only
+    double total;             ///< DC / AC Sum value
+    std::optional<double> L1; ///< AC L1 value only
+    std::optional<double> L2; ///< AC L2 value only
+    std::optional<double> L3; ///< AC L3 value only
 };
 
 struct Energy {
-    float total;             ///< DC / AC Sum value (which is relevant for billing)
-    std::optional<float> L1; ///< AC L1 value only
-    std::optional<float> L2; ///< AC L2 value only
-    std::optional<float> L3; ///< AC L3 value only
+    double total;             ///< DC / AC Sum value (which is relevant for billing)
+    std::optional<double> L1; ///< AC L1 value only
+    std::optional<double> L2; ///< AC L2 value only
+    std::optional<double> L3; ///< AC L3 value only
 };
 
 struct ReactivePower {
-    float total;             ///< VAR total
-    std::optional<float> L1; ///< VAR phase A
-    std::optional<float> L2; ///< VAR phase B
-    std::optional<float> L3; ///< VAR phase C
+    double total;             ///< VAR total
+    std::optional<double> L1; ///< VAR phase A
+    std::optional<double> L2; ///< VAR phase B
+    std::optional<double> L3; ///< VAR phase C
 };
 
 struct SignedMeterValue {
@@ -166,7 +166,7 @@ struct SignedReactivePower {
 };
 
 struct Temperature {
-    float temperature;
+    double temperature;
     std::optional<std::string> identification;
     std::optional<std::string> location;
 };

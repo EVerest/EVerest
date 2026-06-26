@@ -10,7 +10,7 @@ namespace module {
 globals_t globals;
 
 void globals_t::init(date::utc_clock::time_point _start_time, int _interval_duration, int _schedule_duration,
-                     float _slice_ampere, float _slice_watt, bool _debug,
+                     double _slice_ampere, double _slice_watt, bool _debug,
                      const types::energy::EnergyFlowRequest& energy_flow_request) {
     start_time = _start_time;
     interval_duration = std::chrono::minutes(_interval_duration);
@@ -257,7 +257,7 @@ ScheduleReq Market::get_available_energy(const ScheduleReq& max_available, bool 
         // FIXME: sold_root is the sum of all energy sold, but we need to limit indivdual paths as well
         // add config option for pure star type of cabling here as well.
 
-        float sold_current = 0;
+        double sold_current = 0;
 
         if (sold_root[i].limits_to_root.ac_max_current_A.has_value()) {
             sold_current = (add_sold ? 1 : -1) * sold_root[i].limits_to_root.ac_max_current_A.value().value;
@@ -266,7 +266,7 @@ ScheduleReq Market::get_available_energy(const ScheduleReq& max_available, bool 
         if (sold_current > 0)
             sold_current = 0;
 
-        float sold_watt = 0;
+        double sold_watt = 0;
 
         if (sold_root[i].limits_to_root.total_power_W.has_value()) {
             sold_watt = (add_sold ? 1 : -1) * sold_root[i].limits_to_root.total_power_W.value().value;
@@ -292,7 +292,7 @@ ScheduleReq Market::get_available_energy_export() {
     return get_available_energy(export_max_available, true);
 }
 
-float get_watt_from_freq_table(const std::vector<types::energy::FrequencyWattPoint>& table, float freq) {
+double get_watt_from_freq_table(const std::vector<types::energy::FrequencyWattPoint>& table, double freq) {
     // the table has to be sorted by freqency
 
     if (table.size() == 0) {
@@ -303,9 +303,9 @@ float get_watt_from_freq_table(const std::vector<types::energy::FrequencyWattPoi
         return table[0].total_power_W;
     }
 
-    float watt1 = table[0].total_power_W;
-    float watt2 = 0.;
-    float freq1 = 0.;
+    double watt1 = table[0].total_power_W;
+    double watt2 = 0.;
+    double freq1 = 0.;
 
     for (const auto e : table) {
         watt2 = e.total_power_W;
@@ -318,7 +318,7 @@ float get_watt_from_freq_table(const std::vector<types::energy::FrequencyWattPoi
     return watt1 + (freq - freq1) * (watt2 - watt1);
 }
 
-void apply_limit_if_smaller(std::optional<types::energy::NumberWithSource>& base, float limit,
+void apply_limit_if_smaller(std::optional<types::energy::NumberWithSource>& base, double limit,
                             const std::string& source) {
     if (not base.has_value() or (base.has_value() and base.value().value > limit)) {
         base = {limit, source};
@@ -326,7 +326,7 @@ void apply_limit_if_smaller(std::optional<types::energy::NumberWithSource>& base
 }
 
 void apply_setpoints(ScheduleReq& imp, ScheduleReq& exp, const ScheduleSetpoints& setpoints,
-                     std::optional<float> freq) {
+                     std::optional<double> freq) {
     if (setpoints.size() != imp.size()) {
         EVLOG_error << fmt::format("apply_setpoints: setpoints({}) and import({}) do not have the same size.",
                                    setpoints.size(), imp.size());
@@ -369,7 +369,7 @@ void apply_setpoints(ScheduleReq& imp, ScheduleReq& exp, const ScheduleSetpoints
 
             } else if (sp.frequency_table.has_value() and freq.has_value()) {
                 // get actual watt limit from table and current frequency from meter
-                float watt_limit = get_watt_from_freq_table(sp.frequency_table.value(), freq.value());
+                double watt_limit = get_watt_from_freq_table(sp.frequency_table.value(), freq.value());
                 if (watt_limit >= 0.) {
                     // Charging setpoint
                     apply_limit_if_smaller(imp_limits.total_power_W, watt_limit, sp.source);
@@ -384,7 +384,7 @@ void apply_setpoints(ScheduleReq& imp, ScheduleReq& exp, const ScheduleSetpoints
     }
 }
 
-Market::Market(const types::energy::EnergyFlowRequest& _energy_flow_request, const float __nominal_ac_voltage,
+Market::Market(const types::energy::EnergyFlowRequest& _energy_flow_request, const double __nominal_ac_voltage,
                Market* __parent) :
     energy_flow_request(_energy_flow_request), _parent(__parent), _nominal_ac_voltage(__nominal_ac_voltage) {
 
@@ -414,7 +414,7 @@ Market::Market(const types::energy::EnergyFlowRequest& _energy_flow_request, con
     }
 
     // Try to find a frequency measurement
-    std::optional<float> freq;
+    std::optional<double> freq;
     if (energy_flow_request.energy_usage_root.has_value() and
         energy_flow_request.energy_usage_root.value().frequency_Hz.has_value()) {
         freq = energy_flow_request.energy_usage_root.value().frequency_Hz.value().L1;
@@ -525,7 +525,7 @@ void Market::trade(const ScheduleRes& traded) {
     }
 }
 
-float Market::nominal_ac_voltage() {
+double Market::nominal_ac_voltage() {
     return _nominal_ac_voltage;
 }
 

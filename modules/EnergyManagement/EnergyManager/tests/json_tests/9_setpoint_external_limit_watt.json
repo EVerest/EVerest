@@ -243,7 +243,7 @@
         "limits_root_side": {
           "ac_max_current_A": {
             "source": "external_limit_1_setpoint",
-            "value": 6.147826194763184
+            "value": 6.147826086956521
           },
           "ac_max_phase_count": {
             "source": "grid_connection_phase,external_limit_1_phase,EVSE1_phase",
@@ -259,7 +259,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "external_limit_1_setpoint",
-                "value": 6.147826194763184
+                "value": 6.147826086956521
               },
               "ac_max_phase_count": {
                 "source": "grid_connection_phase,external_limit_1_phase,EVSE1_phase",
@@ -276,7 +276,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "external_limit_1_setpoint",
-                "value": 6.147826194763184
+                "value": 6.147826086956521
               },
               "ac_max_phase_count": {
                 "source": "grid_connection_phase,external_limit_1_phase,EVSE1_phase",
@@ -293,7 +293,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "external_limit_1_setpoint",
-                "value": 11.944927215576172
+                "value": 11.944927536231884
               },
               "ac_max_phase_count": {
                 "source": "grid_connection_phase,external_limit_1_phase,EVSE1_phase",
@@ -310,7 +310,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "external_limit_1_setpoint",
-                "value": -6.147826194763184
+                "value": -6.147826086956521
               },
               "ac_max_phase_count": {
                 "source": "BrokerFastCharging_FixedValue",

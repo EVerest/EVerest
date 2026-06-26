@@ -320,17 +320,17 @@ static void publish_iso_charge_parameter_discovery_req(
             ctx->p_charger->publish_departure_time(buffer);
         }
 
-        // TODO(ioan): calc physical once
-        float ac_eamount =
+        // TODO(Ioan): calc physical once
+        double ac_eamount =
             calc_physical_value(v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EAmount.Value,
                                 v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EAmount.Multiplier);
-        float ac_ev_max_voltage =
+        double ac_ev_max_voltage =
             calc_physical_value(v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EVMaxVoltage.Value,
                                 v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EVMaxVoltage.Multiplier);
-        float ac_ev_max_current =
+        double ac_ev_max_current =
             calc_physical_value(v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EVMaxCurrent.Value,
                                 v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EVMaxCurrent.Multiplier);
-        float ac_ev_min_current =
+        double ac_ev_min_current =
             calc_physical_value(v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EVMinCurrent.Value,
                                 v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EVMinCurrent.Multiplier);
 
@@ -387,13 +387,13 @@ static void publish_iso_charge_parameter_discovery_req(
             ctx->p_charger->publish_dc_bulk_soc(v2g_charge_parameter_discovery_req->DC_EVChargeParameter.BulkSOC);
             dc_charging_parameters.bulk_soc = v2g_charge_parameter_discovery_req->DC_EVChargeParameter.BulkSOC;
         }
-        float evMaximumCurrentLimit = calc_physical_value(
+        double evMaximumCurrentLimit = calc_physical_value(
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumCurrentLimit.Value,
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumCurrentLimit.Multiplier);
-        float evMaximumPowerLimit = calc_physical_value(
+        double evMaximumPowerLimit = calc_physical_value(
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumPowerLimit.Value,
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumPowerLimit.Multiplier);
-        float evMaximumVoltageLimit = calc_physical_value(
+        double evMaximumVoltageLimit = calc_physical_value(
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumVoltageLimit.Value,
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumVoltageLimit.Multiplier);
         publish_dc_ev_maximum_limits(
@@ -470,21 +470,21 @@ static void publish_iso_current_demand_req(struct v2g_context* ctx,
                                          calc_physical_value(v2g_current_demand_req->EVTargetCurrent.Value,
                                                              v2g_current_demand_req->EVTargetCurrent.Multiplier));
 
-    float evMaximumCurrentLimit = calc_physical_value(v2g_current_demand_req->EVMaximumCurrentLimit.Value,
-                                                      v2g_current_demand_req->EVMaximumCurrentLimit.Multiplier);
-    float evMaximumPowerLimit = calc_physical_value(v2g_current_demand_req->EVMaximumPowerLimit.Value,
-                                                    v2g_current_demand_req->EVMaximumPowerLimit.Multiplier);
-    float evMaximumVoltageLimit = calc_physical_value(v2g_current_demand_req->EVMaximumVoltageLimit.Value,
-                                                      v2g_current_demand_req->EVMaximumVoltageLimit.Multiplier);
+    double evMaximumCurrentLimit = calc_physical_value(v2g_current_demand_req->EVMaximumCurrentLimit.Value,
+                                                       v2g_current_demand_req->EVMaximumCurrentLimit.Multiplier);
+    double evMaximumPowerLimit = calc_physical_value(v2g_current_demand_req->EVMaximumPowerLimit.Value,
+                                                     v2g_current_demand_req->EVMaximumPowerLimit.Multiplier);
+    double evMaximumVoltageLimit = calc_physical_value(v2g_current_demand_req->EVMaximumVoltageLimit.Value,
+                                                       v2g_current_demand_req->EVMaximumVoltageLimit.Multiplier);
 
     publish_dc_ev_maximum_limits(ctx, evMaximumCurrentLimit, v2g_current_demand_req->EVMaximumCurrentLimit_isUsed,
                                  evMaximumPowerLimit, v2g_current_demand_req->EVMaximumPowerLimit_isUsed,
                                  evMaximumVoltageLimit, v2g_current_demand_req->EVMaximumVoltageLimit_isUsed);
 
-    float v2g_dc_ev_remaining_time_to_full_soc =
+    double v2g_dc_ev_remaining_time_to_full_soc =
         calc_physical_value(v2g_current_demand_req->RemainingTimeToFullSoC.Value,
                             v2g_current_demand_req->RemainingTimeToFullSoC.Multiplier);
-    float v2g_dc_ev_remaining_time_to_bulk_soc =
+    double v2g_dc_ev_remaining_time_to_bulk_soc =
         calc_physical_value(v2g_current_demand_req->RemainingTimeToBulkSoC.Value,
                             v2g_current_demand_req->RemainingTimeToBulkSoC.Multiplier);
     publish_dc_ev_remaining_time(
@@ -1274,7 +1274,7 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
     if (conn->ctx->is_dc_charger == false) {
         /* Determin max current and nominal voltage */
         /* Setup default params (before the departure time overrides) */
-        float max_current = conn->ctx->basic_config.evse_ac_nominal_current;
+        double max_current = conn->ctx->basic_config.evse_ac_nominal_current;
         int64_t voltage = conn->ctx->evse_v2g_data.evse_nominal_voltage.Value *
                           pow(10, conn->ctx->evse_v2g_data.evse_nominal_voltage.Multiplier); /* nominal voltage */
         pmax = max_current * voltage *
@@ -1360,7 +1360,7 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
         populate_ac_evse_status(conn->ctx, &res->AC_EVSEChargeParameter.AC_EVSEStatus);
 
         /* Max current */
-        float max_current = conn->ctx->basic_config.evse_ac_nominal_current;
+        double max_current = conn->ctx->basic_config.evse_ac_nominal_current;
         populate_physical_value_float(&res->AC_EVSEChargeParameter.EVSEMaxCurrent, max_current, 1,
                                       iso2_unitSymbolType_A);
 

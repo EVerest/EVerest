@@ -222,13 +222,13 @@ static void publish_din_charge_parameter_discovery_req(
             ctx->p_charger->publish_dc_bulk_soc(v2g_charge_parameter_discovery_req->DC_EVChargeParameter.BulkSOC);
         }
 
-        float evMaximumCurrentLimit = calc_physical_value(
+        double evMaximumCurrentLimit = calc_physical_value(
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumCurrentLimit.Value,
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumCurrentLimit.Multiplier);
-        float evMaximumPowerLimit = calc_physical_value(
+        double evMaximumPowerLimit = calc_physical_value(
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumPowerLimit.Value,
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumPowerLimit.Multiplier);
-        float evMaximumVoltageLimit = calc_physical_value(
+        double evMaximumVoltageLimit = calc_physical_value(
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumVoltageLimit.Value,
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumVoltageLimit.Multiplier);
         publish_dc_ev_maximum_limits(
@@ -295,20 +295,20 @@ static void publish_din_current_demand_req(struct v2g_context* ctx,
                                          calc_physical_value(v2g_current_demand_req->EVTargetCurrent.Value,
                                                              v2g_current_demand_req->EVTargetCurrent.Multiplier));
 
-    float evMaximumCurrentLimit = calc_physical_value(v2g_current_demand_req->EVMaximumCurrentLimit.Value,
-                                                      v2g_current_demand_req->EVMaximumCurrentLimit.Multiplier);
-    float evMaximumPowerLimit = calc_physical_value(v2g_current_demand_req->EVMaximumPowerLimit.Value,
-                                                    v2g_current_demand_req->EVMaximumPowerLimit.Multiplier);
-    float evMaximumVoltageLimit = calc_physical_value(v2g_current_demand_req->EVMaximumVoltageLimit.Value,
-                                                      v2g_current_demand_req->EVMaximumVoltageLimit.Multiplier);
+    double evMaximumCurrentLimit = calc_physical_value(v2g_current_demand_req->EVMaximumCurrentLimit.Value,
+                                                       v2g_current_demand_req->EVMaximumCurrentLimit.Multiplier);
+    double evMaximumPowerLimit = calc_physical_value(v2g_current_demand_req->EVMaximumPowerLimit.Value,
+                                                     v2g_current_demand_req->EVMaximumPowerLimit.Multiplier);
+    double evMaximumVoltageLimit = calc_physical_value(v2g_current_demand_req->EVMaximumVoltageLimit.Value,
+                                                       v2g_current_demand_req->EVMaximumVoltageLimit.Multiplier);
     publish_dc_ev_maximum_limits(ctx, evMaximumCurrentLimit, v2g_current_demand_req->EVMaximumCurrentLimit_isUsed,
                                  evMaximumPowerLimit, v2g_current_demand_req->EVMaximumPowerLimit_isUsed,
                                  evMaximumVoltageLimit, v2g_current_demand_req->EVMaximumVoltageLimit_isUsed);
 
-    float v2g_dc_ev_remaining_time_to_full_soc =
+    double v2g_dc_ev_remaining_time_to_full_soc =
         calc_physical_value(v2g_current_demand_req->RemainingTimeToFullSoC.Value,
                             v2g_current_demand_req->RemainingTimeToFullSoC.Multiplier);
-    float v2g_dc_ev_remaining_time_to_bulk_soc =
+    double v2g_dc_ev_remaining_time_to_bulk_soc =
         calc_physical_value(v2g_current_demand_req->RemainingTimeToBulkSoC.Value,
                             v2g_current_demand_req->RemainingTimeToBulkSoC.Multiplier);
 

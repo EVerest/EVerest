@@ -198,13 +198,13 @@ struct EventData {
 };
 
 struct V2XFreqWattPointType {
-    float frequency;
-    float power;
+    double frequency;
+    double power;
 };
 
 struct V2XSignalWattPointCurve {
     int32_t signal;
-    float power;
+    double power;
 };
 
 enum class OperationMode {
@@ -220,24 +220,24 @@ enum class OperationMode {
 
 struct ChargingSchedulePeriod {
     int32_t start_period;
-    float limit;
-    std::optional<float> limit_L2;
-    std::optional<float> limit_L3;
+    double limit;
+    std::optional<double> limit_L2;
+    std::optional<double> limit_L3;
     std::optional<int32_t> number_phases;
     std::optional<int32_t> stack_level;
     std::optional<int32_t> phase_to_use;
-    std::optional<float> discharge_limit;
-    std::optional<float> discharge_limit_L2;
-    std::optional<float> discharge_limit_L3;
-    std::optional<float> setpoint;
-    std::optional<float> setpoint_L2;
-    std::optional<float> setpoint_L3;
-    std::optional<float> setpoint_reactive;
-    std::optional<float> setpoint_reactive_L2;
-    std::optional<float> setpoint_reactive_L3;
+    std::optional<double> discharge_limit;
+    std::optional<double> discharge_limit_L2;
+    std::optional<double> discharge_limit_L3;
+    std::optional<double> setpoint;
+    std::optional<double> setpoint_L2;
+    std::optional<double> setpoint_L3;
+    std::optional<double> setpoint_reactive;
+    std::optional<double> setpoint_reactive_L2;
+    std::optional<double> setpoint_reactive_L3;
     std::optional<bool> preconditioning_request;
     std::optional<bool> evse_sleep;
-    std::optional<float> v2x_baseline;
+    std::optional<double> v2x_baseline;
     std::optional<OperationMode> operation_mode;
     std::optional<std::vector<V2XFreqWattPointType>> v2x_freq_watt_curve;
     std::optional<std::vector<V2XSignalWattPointCurve>> v2x_signal_watt_curve;
@@ -249,7 +249,7 @@ struct ChargingSchedule {
     std::vector<ChargingSchedulePeriod> charging_schedule_period;
     std::optional<int32_t> duration;
     std::optional<std::string> start_schedule;
-    std::optional<float> min_charging_rate;
+    std::optional<double> min_charging_rate;
 };
 
 struct ChargingSchedules {

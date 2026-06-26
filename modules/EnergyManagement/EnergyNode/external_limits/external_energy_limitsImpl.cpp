@@ -13,10 +13,10 @@ void external_energy_limitsImpl::ready() {
     // special case: phase_count could be configured as zero for historic reason,
     // so let's just use voltage and current for power calculation
     types::energy::CapabilityLimits capabilities{
-        static_cast<float>(mod->config.fuse_limit_A), mod->config.phase_count,
-        static_cast<float>(mod->config.nominal_voltage_V),
-        static_cast<float>(mod->config.nominal_voltage_V * mod->config.fuse_limit_A *
-                           (mod->config.phase_count ? mod->config.phase_count : 1))};
+        static_cast<double>(mod->config.fuse_limit_A), mod->config.phase_count,
+        static_cast<double>(mod->config.nominal_voltage_V),
+        static_cast<double>(mod->config.nominal_voltage_V * mod->config.fuse_limit_A *
+                            (mod->config.phase_count ? mod->config.phase_count : 1))};
 
     this->publish_capabilities(capabilities);
 }

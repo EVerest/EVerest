@@ -16,7 +16,7 @@ bool iequals(const std::string& lhs, const std::string rhs) {
     return boost::algorithm::iequals(lhs, rhs);
 }
 
-bool is_finite_or_unset(const std::optional<float>& v) {
+bool is_finite_or_unset(const std::optional<double>& v) {
     return !v.has_value() || std::isfinite(v.value());
 }
 
@@ -113,15 +113,11 @@ bool is_boolean(const std::string& value) {
     return iequals(value, "true") || iequals(value, "false");
 }
 
-bool is_equal(const float& value1, const float& value2, const double& epsilon) {
-    return is_equal(static_cast<double>(value1), static_cast<double>(value2), epsilon);
-}
-
 bool is_equal(const double& value1, const double& value2, const double& epsilon) {
     return fabs(value1 - value2) < epsilon;
 }
 
-std::size_t convert_to_positive_size_t(float value) {
+std::size_t convert_to_positive_size_t(double value) {
     if (value < 0) {
         return 0;
     }

@@ -112,25 +112,25 @@ bool Broker::time_slot_active(const int i, const ScheduleReq& offer) {
     return active_slot == i;
 }
 
-bool Broker::buy_ampere_import(int index, float ampere, bool allow_less,
+bool Broker::buy_ampere_import(int index, double ampere, bool allow_less,
                                types::energy::IntegerWithSource number_of_phases) {
     return buy_ampere(offer->import_offer[index], index, ampere, allow_less, true, number_of_phases);
 }
 
-bool Broker::buy_ampere_export(int index, float ampere, bool allow_less,
+bool Broker::buy_ampere_export(int index, double ampere, bool allow_less,
                                types::energy::IntegerWithSource number_of_phases) {
     return buy_ampere(offer->export_offer[index], index, ampere, allow_less, false, number_of_phases);
 }
 
-bool Broker::buy_watt_import(int index, float watt, bool allow_less) {
+bool Broker::buy_watt_import(int index, double watt, bool allow_less) {
     return buy_watt(offer->import_offer[index], index, watt, allow_less, true);
 }
 
-bool Broker::buy_watt_export(int index, float watt, bool allow_less) {
+bool Broker::buy_watt_export(int index, double watt, bool allow_less) {
     return buy_watt(offer->export_offer[index], index, watt, allow_less, false);
 }
 
-bool Broker::buy_ampere(const types::energy::ScheduleReqEntry& _offer, int index, float ampere, bool allow_less,
+bool Broker::buy_ampere(const types::energy::ScheduleReqEntry& _offer, int index, double ampere, bool allow_less,
                         bool import, types::energy::IntegerWithSource number_of_phases) {
     // make this more readable
     auto& max_current = _offer.limits_to_root.ac_max_current_A;
@@ -192,7 +192,7 @@ bool Broker::buy_ampere(const types::energy::ScheduleReqEntry& _offer, int index
                     return true;
                 } else {
                     // watt limit is lower, try to reduce ampere
-                    float reduced_ampere =
+                    double reduced_ampere =
                         total_power.value().value / number_of_phases.value / local_market.nominal_ac_voltage();
                     // EVLOG_info << "[OK leftovers] total power is not big enough, buy reduced current " <<
                     // reduced_ampere
@@ -219,7 +219,7 @@ bool Broker::buy_ampere(const types::energy::ScheduleReqEntry& _offer, int index
     return false;
 }
 
-bool Broker::buy_watt(const types::energy::ScheduleReqEntry& _offer, int index, float watt, bool allow_less,
+bool Broker::buy_watt(const types::energy::ScheduleReqEntry& _offer, int index, double watt, bool allow_less,
                       bool import) {
     // make this more readable
     auto& total_power = _offer.limits_to_root.total_power_W;

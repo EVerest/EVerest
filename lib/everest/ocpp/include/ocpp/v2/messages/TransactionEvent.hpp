@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 // This code is generated using the generator in 'src/code_generator/common`, please do not edit manually
 
 #ifndef OCPP_V2_TRANSACTIONEVENT_HPP
@@ -51,7 +51,7 @@ std::ostream& operator<<(std::ostream& os, const TransactionEventRequest& k);
 
 /// \brief Contains a OCPP TransactionEventResponse message
 struct TransactionEventResponse : public ocpp::Message {
-    std::optional<float> totalCost;
+    std::optional<double> totalCost;
     std::optional<std::int32_t> chargingPriority;
     std::optional<IdTokenInfo> idTokenInfo;
     std::optional<TransactionLimit> transactionLimit;

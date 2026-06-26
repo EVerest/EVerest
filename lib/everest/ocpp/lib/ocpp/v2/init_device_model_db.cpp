@@ -1264,7 +1264,7 @@ std::vector<VariableMonitoringMeta> InitDeviceModelDb::get_variable_monitors_fro
         monitor.id = select_stmt->column_int(1);
         monitor.severity = select_stmt->column_int(2);
         monitor.transaction = static_cast<bool>(select_stmt->column_int(3));
-        monitor.value = static_cast<float>(select_stmt->column_double(4));
+        monitor.value = select_stmt->column_double(4);
 
         auto reference_value = select_stmt->column_text_nullable(6);
 
@@ -1591,7 +1591,7 @@ bool is_monitor_different(const VariableMonitoringMeta& meta1, const VariableMon
     }
 
     const bool value_differs =
-        std::abs(meta1.monitor.value - meta2.monitor.value) > std::numeric_limits<float>::epsilon();
+        std::abs(meta1.monitor.value - meta2.monitor.value) > std::numeric_limits<double>::epsilon();
 
     if (value_differs) {
         return true;
