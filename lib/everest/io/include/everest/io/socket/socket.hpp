@@ -10,25 +10,64 @@
 #include <vector>
 
 #include <everest/io/event/unique_fd.hpp>
+#include <everest/io/udp/endpoint.hpp>
 
 namespace everest::lib::io::socket {
 
 /**
  * @brief Open a UDP socket in server mode
  * @param[in] port The port to listen to
+ * @param[in] device Optional interface name (e.g. "eth0"). When non-empty the socket is bound
+ * to that device via SO_BINDTODEVICE. Requires CAP_NET_RAW or root.
  * @return The managed file descriptor of the socket
  * @throws std::runtime_error if the operation fails.
  */
-event::unique_fd open_udp_server_socket(std::uint16_t port);
+event::unique_fd open_udp_server_socket(std::uint16_t port, std::string const& device = {});
 
 /**
  * @brief Open a UDP socket in client mode
  * @param[in] host The host to connect to
  * @param[in] port The port to listen to
+ * @param[in] device Optional interface name (e.g. "eth0"). When non-empty the socket is bound
+ * to that device via SO_BINDTODEVICE before connect. Requires CAP_NET_RAW or root.
  * @return The managed file descriptor of the socket
  * @throws std::runtime_error if the operation fails.
  */
-event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t port);
+event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t port, std::string const& device = {});
+
+/**
+ * @brief Open an unconnected UDP datagram socket (IPv4 or IPv6) for a target.
+ * @details Socket family is taken from @p target. SOCK_DGRAM, non-blocking,
+ * bound to the family wildcard address on an ephemeral port. For a multicast
+ * @p target the multicast egress interface is pinned (IP_MULTICAST_IF /
+ * IPV6_MULTICAST_IF) to @p iface (falling back to the interface carried by
+ * @p target); SO_BINDTODEVICE is applied best-effort for extra link
+ * confinement (tolerated to fail unprivileged). Performs neither ::connect()
+ * nor any multicast group join, so a unicast reply from an address other than
+ * the configured target is delivered on this same fd by destination address
+ * and port.
+ * @param[in] target Destination address; selects the socket family.
+ * @param[in] iface Optional interface name. Empty uses @p target's iface hint.
+ * @return The managed file descriptor of the socket.
+ * @throws std::runtime_error if the operation fails.
+ */
+event::unique_fd open_udp_unconnected_socket(udp::endpoint const& target, std::string const& iface = {});
+
+/**
+ * @brief Open a dual-stack (IPv6 + IPv4-mapped) UDP server socket.
+ * @details AF_INET6/SOCK_DGRAM, IPV6_V6ONLY=0, non-blocking, SO_REUSEADDR,
+ * bound to [::]:@p port so it receives both native IPv6 and IPv4-mapped
+ * traffic. @p device (optional) is applied best-effort via
+ * bind_socket_to_device (SO_BINDTODEVICE → IPV6_UNICAST_IF); the wildcard
+ * bind is always kept. If IPv6 is unavailable (socket(AF_INET6) fails with
+ * EAFNOSUPPORT) it falls back to AF_INET bound to 0.0.0.0:@p port.
+ * @param[in] port Local UDP port; 0 picks an ephemeral port.
+ * @param[in] device Optional interface name. Empty = no binding.
+ * @return The managed file descriptor of the socket.
+ * @throws std::runtime_error on any failure other than the EAFNOSUPPORT
+ * v6→v4 fallback.
+ */
+event::unique_fd open_udp_dualstack_server_socket(std::uint16_t port, std::string const& device = {});
 
 /**
  * @brief Open a UDP socket with <a href="https://man7.org/linux/man-pages/man7/ip.7.html">multicast</a>
@@ -65,17 +104,36 @@ event::unique_fd open_mdns_socket(std::string const& interface_name);
  * @return The managed file descriptor of the socket
  * @throws std::runtime_error if the operation fails.
  */
-event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port);
+event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, const std::string& device = {});
 
 /**
  * @brief Open a TCP socket in client mode
  * @param[in] host The host to connect to
  * @param[in] port The port to listen to.
  * @param[in] timeout_ms Timeout for the operation in ms
+ * @param[in] device Optional interface name (e.g. "eth0"). When non-empty the socket is bound
+ * to that device via SO_BINDTODEVICE before connect. If the caller lacks CAP_NET_RAW, falls back
+ * to source-IP bind using the interface's IPv4 address (no privilege needed).
  * @return The managed file descriptor of the socket
  * @throws std::runtime_error if the operation fails.
  */
-event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint16_t port, unsigned int timeout_ms);
+event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint16_t port, unsigned int timeout_ms,
+                                              const std::string& device = {});
+
+/**
+ * @brief Bind a socket to a specific network interface.
+ * @details Tries SO_BINDTODEVICE first (needs CAP_NET_RAW). On EPERM/EACCES, falls back to:
+ *   - IP_UNICAST_IF (AF_INET) or IPV6_UNICAST_IF (AF_INET6) to restrict the outgoing
+ *     interface for unicast packets — no privilege required, works for both v4 and v6
+ *     client sockets.
+ *   - As a last resort for AF_INET, a source-IP bind() to the interface's IPv4 address.
+ * The IPV6 source-IP fallback is not implemented; IPv6 sockets must succeed via
+ * SO_BINDTODEVICE or IPV6_UNICAST_IF. No-op when @p device is empty.
+ * @param[in] fd Open socket file descriptor
+ * @param[in] device Interface name (e.g. "eth0"). Empty string is a no-op.
+ * @throws std::runtime_error if all viable strategies fail.
+ */
+void bind_socket_to_device(int fd, std::string const& device);
 
 #ifndef EVEREST_NO_PACKET_IGNORE_OUTGOING
 /**

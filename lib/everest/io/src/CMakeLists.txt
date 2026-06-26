@@ -5,6 +5,7 @@ add_library(everest::io ALIAS everest_io)
 set_target_properties(everest_io PROPERTIES
   VERSION 0.1.0
   SOVERSION 0
+  EXPORT_NAME io
 )
 
 target_sources(everest_io
@@ -14,11 +15,15 @@ target_sources(everest_io
         event/event_fd.cpp
         event/timer_fd.cpp
         can/socket_can_handler.cpp
+        can/can_recv_filter.cpp
         can/can_payload.cpp
         socket/socket.cpp
         utilities/generic_error_state.cpp
         event/fd_event_client.cpp
         udp/udp_socket.cpp
+        udp/udp_unconnected_socket.cpp
+        udp/udp_dualstack_server_socket.cpp
+        udp/endpoint.cpp
         udp/udp_payload.cpp
         utilities/stop_watch.cpp
         serial/serial.cpp
@@ -52,6 +57,7 @@ endif()
 
 target_link_libraries(everest_io
     PUBLIC
+        atomic
         $<BUILD_INTERFACE:everest_util>
         $<INSTALL_INTERFACE:everest::util>
 )
@@ -127,5 +133,15 @@ else()
         DESTINATION include
         FILES_MATCHING PATTERN "*.hpp"
         PATTERN "mqtt" EXCLUDE
+    )
+endif()
+
+if(DISABLE_EDM)
+    evc_setup_package_no_export(
+        NAME everest-io
+        LIBRARY_NAME io
+        IMPORTED_LOCATION_FILENAME libeverest_io.so
+        NAMESPACE everest
+        TYPE SHARED
     )
 endif()

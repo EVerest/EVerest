@@ -8,12 +8,13 @@
 
 namespace everest::lib::io::tcp {
 
-bool tcp_socket::open(std::string const& remote, uint16_t port) {
+bool tcp_socket::open(std::string const& remote, uint16_t port, std::string const& device) {
     m_remote = remote;
     m_port = port;
     m_timeout_ms = 1000;
+    m_device = device;
     try {
-        auto socket = socket::open_tcp_socket_with_timeout(remote, port, m_timeout_ms);
+        auto socket = socket::open_tcp_socket_with_timeout(remote, port, m_timeout_ms, m_device);
         socket::set_non_blocking(socket);
         m_fd = std::move(socket);
         return socket::get_pending_error(m_fd) == 0;
@@ -22,20 +23,22 @@ bool tcp_socket::open(std::string const& remote, uint16_t port) {
     return false;
 }
 
-bool tcp_socket::setup(std::string const& remote, uint16_t port, int timeout_ms) {
+bool tcp_socket::setup(std::string const& remote, uint16_t port, int timeout_ms, std::string const& device) {
     m_remote = remote;
     m_port = port;
     m_timeout_ms = timeout_ms;
+    m_device = device;
     m_fd.close();
     return true;
 }
 
 void tcp_socket::connect(std::function<void(bool, int)> const& setup_cb) {
     try {
-        auto socket = socket::open_tcp_socket_with_timeout(m_remote, m_port, m_timeout_ms);
+        auto socket = socket::open_tcp_socket_with_timeout(m_remote, m_port, m_timeout_ms, m_device);
         socket::set_non_blocking(socket);
-        setup_cb(true, socket);
+        const auto fd = static_cast<int>(socket);
         m_fd = std::move(socket);
+        setup_cb(true, fd);
     } catch (...) {
         std::this_thread::sleep_for(std::chrono::milliseconds(m_timeout_ms));
         setup_cb(false, -1);

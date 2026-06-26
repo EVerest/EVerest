@@ -15,7 +15,7 @@ namespace everest::lib::util {
 /**
  * A thread safe queue implemented on top of \ref queue::simple_queue. <br>
  * The common resource \ref simple_queue is guarded by a mutex in every member function. A caller blocking on \p pop
- * or \p try_pop will be unblocked when new data made available via \p push
+ * or \p try_pop will be unblocked when new data made available via \p push or \p emplace
  * @tparam T Datatype held by the queue
  */
 template <class T> class thread_safe_queue {
@@ -25,34 +25,47 @@ public:
      * @brief Inherited type definition.
      */
     using value_type = typename simple_queue<T>::value_type;
+    /**
+     * @var size_type
+     * @brief Inherited type definition.
+     */
+    using size_type = typename simple_queue<T>::size_type;
 
     /**
      * @brief Push new data into the queue
      * @param[in] value data
-     * @return The size of the queue after push
+     * @return The size of the queue after push. Returns 0 if the queue is stopped.
      */
-    typename simple_queue<T>::size_type push(const value_type& value) {
+    size_type push(const value_type& value) {
+        return emplace(value);
+    }
+    /**
+     * @brief Push new data into the queue
+     * @param[in] value data
+     * @return The size of the queue after push. Returns 0 if the queue is stopped.
+     */
+    size_type push(value_type&& value) {
+        return emplace(std::move(value));
+    }
+
+    /**
+     * @brief Construct a new element in-place at the end of the queue.
+     * @param[in] args Arguments forwarded to construct the data element.
+     * @return The size of the queue after emplace. Returns 0 if the queue is stopped.
+     */
+    template <class... Args> size_type emplace(Args&&... args) {
         std::unique_lock lock(m_mtx);
-        m_queue.push(value);
+
+        if (m_stop) {
+            return 0;
+        }
+
+        m_queue.emplace(std::forward<Args>(args)...);
         auto result = m_queue.size();
         lock.unlock();
         m_cv.notify_one();
         return result;
     }
-    /**
-     * @brief Push new data into the queue
-     * @param[in] value data
-     * @return The size of the queue after push
-     */
-    typename simple_queue<T>::size_type push(value_type&& value) {
-        std::unique_lock lock(m_mtx);
-        m_queue.push(std::forward<value_type>(value));
-        auto result = m_queue.size();
-        lock.unlock();
-        m_cv.notify_one();
-        return result;
-    }
-
     /**
      * @brief Try to get an element from the queue.
      * @details Returns immediately.
@@ -80,6 +93,8 @@ public:
      * @return An element from the queue.
      */
     value_type pop() {
+        // Since pop_impl returns a temporary (an rvalue),
+        // value() returns an rvalue as well, effectively avoiding a copy.
         return pop_impl(-1).value();
     }
 

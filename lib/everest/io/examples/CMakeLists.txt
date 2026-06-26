@@ -86,6 +86,19 @@ target_compile_features(test_udp_server PUBLIC cxx_std_17)
 target_compile_options(test_udp_server PRIVATE -fsanitize=address -g)
 target_link_options(test_udp_server PRIVATE -static-libasan -fsanitize=address)
 
+###
+
+add_executable(test_udp_unconnected_client test_udp_unconnected_client.cpp)
+
+target_link_libraries(test_udp_unconnected_client
+    PRIVATE
+        everest::io
+)
+
+target_compile_features(test_udp_unconnected_client PUBLIC cxx_std_17)
+target_compile_options(test_udp_unconnected_client PRIVATE -fsanitize=address -g)
+target_link_options(test_udp_unconnected_client PRIVATE -static-libasan -fsanitize=address)
+
 
 
 
