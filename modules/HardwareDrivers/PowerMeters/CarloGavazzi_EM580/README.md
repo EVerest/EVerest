@@ -21,7 +21,7 @@ This is an **EVerest Hardware Driver** module that:
 - **Resilience / retries**:
   - Separate initial connection retry settings vs. normal operation retry settings
   - Communication-fault raise/clear hooks
-- **Device and transaction state monitoring**: periodic read of device state bitfield and OCMF transaction state (`device_and_transaction_state_read_interval_ms`)
+- **Device and transaction state monitoring**: periodic read of device state bitfield and OCMF transaction state (`device_state_read_interval_ms`)
 - **Signature key readout**: reads signature type and public keys; publishes public key (hex) via `public_key_ocmf`
 
 ## Hardware requirements & compatibility
@@ -78,7 +78,7 @@ active_modules:
         initial_connection_retry_delay_ms: 2000
         timezone_offset_minutes: 60
         live_measurement_interval_ms: 1000
-        device_and_transaction_state_read_interval_ms: 10000
+        device_state_read_interval_ms: 10000
     connections:
       modbus:
         - module_id: comm_hub
@@ -106,7 +106,7 @@ All parameters are defined in `modules/HardwareDrivers/PowerMeters/CarloGavazzi_
 | `initial_connection_retry_delay_ms` | integer | `2000` | Delay between initialization retries |
 | `timezone_offset_minutes` | integer | `0` | Timezone offset from UTC (minutes) |
 | `live_measurement_interval_ms` | integer | `1000` | Interval for reading/publishing live measurements |
-| `device_and_transaction_state_read_interval_ms` | integer | `10000` | Interval for reading device-state bitfield and OCMF transaction state (when `monitor_transaction_state` is enabled) |
+| `device_state_read_interval_ms` | integer | `10000` | Interval for reading device-state bitfield and OCMF transaction state (when `monitor_transaction_state` is enabled) |
 | `public_key_format` | enum | `binary` | The key format to use for the public key.
 
 ### Parameter tuning notes
@@ -121,7 +121,7 @@ All parameters are defined in `modules/HardwareDrivers/PowerMeters/CarloGavazzi_
 - **`communication_error_pause_delay_s`**:
   - After a communication exception in the live thread, the module waits this long before retrying.
   - If the line is physically broken (wrong wiring / adapter unplugged), increasing this value reduces log spam.
-- **`live_measurement_interval_ms` / `device_and_transaction_state_read_interval_ms`**:
+- **`live_measurement_interval_ms` / `device_state_read_interval_ms`**:
   - Keep live measurements reasonable for your bus speed and number of devices.
   - For multi-drop RS-485, consider increasing intervals if you see bus contention/timeouts.
 
@@ -141,7 +141,7 @@ All parameters are defined in `modules/HardwareDrivers/PowerMeters/CarloGavazzi_
 
 High-level flow:
 
-1. Read OCMF state register and ensure it is `NOT_READY` before starting.
+1. Read OCMF state. If it is not `NOT_READY` (e.g. `READY` with an unread OCMF file after a communication outage), log a warning, run cleanup via `clear_transaction_states()` (for `READY`: read and confirm the file on the device), then continue with the new transaction below.
 2. Write OCMF transaction registers:
    - Identification status/level/flags/type
    - Identification data (ID)
@@ -150,6 +150,8 @@ High-level flow:
      - Written as **0-terminated** and only the **used** portion (no full padding).
 3. Write session modality (charging vehicle).
 4. Write the start command (`'B'`).
+
+**Important:** Cleanup on start confirms a pending OCMF file on the device but does **not** return it to the caller. For billable sessions, call `stop_transaction` with the session id **before** `start_transaction` so the OCMF report is delivered to the upper layer (e.g. EvseManager/OCPP). Use start-time cleanup only when discarding a stale unread file is acceptable.
 
 ### `stop_transaction`
 
@@ -220,6 +222,7 @@ If it fails:
 
 - **Write-multiple-registers limit**: the Modbus transport enforces the protocol limit by chunking into max 123 registers.
 - **Tariff text length**: TT is a `CHAR[252]` field (126 words). The driver logs a warning and truncates if needed.
+- **Start with pending OCMF (`READY`)**: if `start_transaction` runs while the device still holds an unread closed transaction, the driver clears that file on the meter without returning it. Prefer `stop_transaction` first when billing data must be preserved.
 
 ## References
 

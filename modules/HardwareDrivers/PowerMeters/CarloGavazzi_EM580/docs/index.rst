@@ -37,10 +37,12 @@ Start transaction
 
 At transaction start the module:
 
-1. Ensures OCMF state is ``NOT_READY``
+1. Reads OCMF state. If it is not ``NOT_READY``, logs a warning, clears stale state on the device (for ``READY``: reads and confirms the pending OCMF file), then continues.
 2. Writes OCMF identification data, EVSE ID and tariff text (TT) (0-terminated, used bytes only)
 3. Writes session modality
 4. Sends the start command (``'B'``)
+
+Cleanup on start does not return a pending OCMF file to the caller. Use ``stop_transaction`` with the session id before starting a new transaction when billing data must be delivered to the upper layer.
 
 Stop transaction
 ----------------
@@ -57,6 +59,7 @@ Notes / Limitations
 
 - Modbus ``Write Multiple Registers`` requests are chunked to max 123 registers per request.
 - TT is a ``CHAR[252]`` field (126 words); overlong strings are warned and truncated.
+- If ``start_transaction`` runs while the device OCMF state is ``READY`` (unread closed transaction), the driver confirms and discards that file on the meter without returning it. Call ``stop_transaction`` first when the OCMF report must reach the CSMS.
 
 Device identification code (register ``300012`` / ``000Bh``)
 ----------------------------------------------------------

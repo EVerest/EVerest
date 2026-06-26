@@ -14,14 +14,14 @@ provides:
         description: Number of retries for communication operations before giving up.
         type: integer
         minimum: 1
-        maximum: 100
-        default: 3
+        maximum: 3
+        default: 2
       communication_retry_delay_ms:
         description: Delay in milliseconds between retry attempts.
         type: integer
         minimum: 10
-        maximum: 10000
-        default: 500
+        maximum: 500
+        default: 200
       communication_error_pause_delay_s:
         description: Delay in seconds before retrying communication in the live measurement thread after a failure. Default 10 seconds. Applies to initial communication too.
         type: integer
@@ -52,7 +52,7 @@ provides:
         minimum: 500
         maximum: 60000
         default: 1000
-      device_and_transaction_state_read_interval_ms:
+      device_state_read_interval_ms:
         description: >-
           Interval in milliseconds between reading the device state bitfield (VendorError
           reporting) and, when monitor_transaction_state is enabled, the OCMF transaction
@@ -71,10 +71,10 @@ provides:
         default: binary
       monitor_transaction_state:
         description: >-
-          When enabled, reads the OCMF state at device_and_transaction_state_read_interval_ms
+          When enabled, reads the OCMF state at device_state_read_interval_ms
           while a transaction is active. If the device reports READY (transaction closed on
           the meter side, e.g. after a brief power loss), raises powermeter/VendorError so
-          the charging session can be stopped when fail_on_powermeter_errors is enabled.
+          the charging session can be stopped when fail_on_powermeter_errors is enabled in the EvseManager module.
         type: boolean
         default: false
 requires:

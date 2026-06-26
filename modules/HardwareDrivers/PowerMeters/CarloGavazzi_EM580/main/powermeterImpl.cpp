@@ -196,7 +196,7 @@ powermeterImpl::~powermeterImpl() {
 }
 
 void powermeterImpl::init() {
-    m_pending_closed_transaction = false;
+    m_pending_closed_transaction.store(false);
     // Set up error handler for CommunicationFault
     transport::ErrorHandler error_handler = [this](const std::string& error_message) {
         // Check if error is already active to avoid duplicate errors
@@ -415,8 +415,11 @@ void powermeterImpl::read_transaction_state_and_id() {
         const auto tx_id_opt =
             ocmf::extract_transaction_id_from_tariff_text(tt_str, powermeterImpl::TARIFF_TEXT_TRANSACTION_ID_MARKER);
         if (tx_id_opt.has_value()) {
-            m_transaction_id = *tx_id_opt;
-            EVLOG_info << "Recovered transaction id from tariff text (6900h): " << m_transaction_id;
+            {
+                std::lock_guard<std::mutex> lock(m_transaction_mutex);
+                m_transaction_id = *tx_id_opt;
+            }
+            EVLOG_info << "Recovered transaction id from tariff text (6900h): " << *tx_id_opt;
         }
     } catch (const std::exception& e) {
         EVLOG_warning << "Failed to read tariff text (6900h): " << e.what();
@@ -432,12 +435,17 @@ std::uint16_t powermeterImpl::read_ocmf_state() {
 
 void powermeterImpl::apply_ocmf_state_on_configure(std::uint16_t ocmf_state) {
     if (ocmf_state == MODBUS_OCMF_STATE_READY) {
-        m_pending_closed_transaction = true;
+        m_pending_closed_transaction.store(true);
         EVLOG_info << "Detected a closed transaction with data pending to be read";
     }
     if (ocmf_state == MODBUS_OCMF_STATE_RUNNING) {
+        std::string transaction_id;
+        {
+            std::lock_guard<std::mutex> lock(m_transaction_mutex);
+            transaction_id = m_transaction_id;
+        }
         EVLOG_info << "Detected a running transaction, waiting for a stop transaction command with transaction id: "
-                   << m_transaction_id << " or an empty transaction id";
+                   << transaction_id << " or an empty transaction id";
         m_transaction_active.store(true);
     }
     monitor_transaction_ocmf_state(ocmf_state);
@@ -454,10 +462,15 @@ void powermeterImpl::monitor_transaction_ocmf_state(std::uint16_t ocmf_state) {
         return;
     }
 
-    m_pending_closed_transaction = true;
+    m_pending_closed_transaction.store(true);
+    std::string transaction_id;
+    {
+        std::lock_guard<std::mutex> lock(m_transaction_mutex);
+        transaction_id = m_transaction_id;
+    }
     const std::string error_description =
         fmt::format("OCMF transaction closed unexpectedly on device (state READY) while transaction {} is still active",
-                    m_transaction_id);
+                    transaction_id);
     EVLOG_error << error_description;
     if (error_state_monitor != nullptr && error_factory != nullptr &&
         !error_state_monitor->is_error_active("powermeter/VendorError", "OcmfTransactionClosed")) {
@@ -475,6 +488,7 @@ void powermeterImpl::clear_ocmf_transaction_closed_error() {
 
 void powermeterImpl::configure_device() {
     EVLOG_info << "Configure the device...";
+    p_modbus_transport->enter_initial_connection_mode();
     read_identification();
     read_firmware_versions();
     read_serial_number();
@@ -490,6 +504,7 @@ void powermeterImpl::configure_device() {
         // see if there is a pending closed transaction that needs to be read
         read_transaction_state_and_id();
     }
+    p_modbus_transport->mark_normal_operation_mode();
     EVLOG_info << "Device configured";
 }
 
@@ -500,8 +515,7 @@ void powermeterImpl::ready() {
         auto last_state_read = std::chrono::steady_clock::time_point{};
         while (!stop_requested_.load()) {
             const auto measurement_interval = std::chrono::milliseconds{config.live_measurement_interval_ms};
-            const auto state_read_interval =
-                std::chrono::milliseconds{config.device_and_transaction_state_read_interval_ms};
+            const auto state_read_interval = std::chrono::milliseconds{config.device_state_read_interval_ms};
             try {
                 if (device_not_configured.load()) {
                     configure_device();
@@ -526,6 +540,7 @@ void powermeterImpl::ready() {
             } catch (const std::exception& e) {
                 EVLOG_error << "Failed to communicate with the device, try again in "
                             << config.communication_error_pause_delay_s << " seconds: " << e.what();
+                p_modbus_transport->enter_initial_connection_mode();
                 device_not_configured = true;
                 {
                     std::unique_lock<std::mutex> lock(stop_mutex_);
@@ -653,19 +668,18 @@ powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& treq
                           treq.identification_level.value_or(types::powermeter::OCMFIdentificationLevel::NONE))
                    << " identification data: " << treq.identification_data.value_or("")
                    << " tariff text: " << treq.tariff_text.value_or("none");
-        // Check OCMF state and ensure it's NOT_READY before starting a transaction
-        // According to the Modbus document, the OCMF state must be NOT_READY (0) to
-        // start a new transaction
+        // If OCMF is not NOT_READY, clear stale device state before starting (see docs).
+        // For READY, clear_transaction_states() confirms the pending file on the device
+        // but does not return it — stop_transaction should be used when billing data matters.
         const std::uint16_t ocmf_state = read_ocmf_state();
         EVLOG_info << "Current OCMF state: " << ocmf_state_to_string(ocmf_state) << "(" << ocmf_state << ")";
 
         if (ocmf_state != MODBUS_OCMF_STATE_NOT_READY) {
-            EVLOG_warning << "Spurious transaction detected, clearing transaction states ...";
+            EVLOG_warning << "Non-NOT_READY OCMF state at start, clearing device state before new transaction ...";
             clear_transaction_states();
-            m_pending_closed_transaction = false;
+            m_pending_closed_transaction.store(false);
             m_transaction_active.store(false);
             clear_ocmf_transaction_closed_error();
-            return make_transaction_start_response(types::powermeter::TransactionRequestStatus::OK);
         }
 
         // Write transaction registers first
@@ -683,7 +697,10 @@ powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& treq
 
         // Track local state (only used internally, not in device dump)
         m_transaction_active.store(true);
-        m_transaction_id = treq.transaction_id;
+        {
+            std::lock_guard<std::mutex> lock(m_transaction_mutex);
+            m_transaction_id = treq.transaction_id;
+        }
         clear_ocmf_transaction_closed_error();
 
         // Capture signed meter value for transaction start (returned on stop)
@@ -710,23 +727,23 @@ types::powermeter::TransactionStopResponse powermeterImpl::handle_stop_transacti
     if (transaction_id.empty()) {
         EVLOG_info << "Cleaning up the transaction request.";
         try {
-            if (!m_pending_closed_transaction and m_transaction_active.load()) {
+            if (!m_pending_closed_transaction.load() and m_transaction_active.load()) {
                 std::vector<std::uint16_t> command_data = {MODBUS_OCMF_COMMAND_END};
                 p_modbus_transport->write_multiple_registers(MODBUS_OCMF_COMMAND_ADDRESS, command_data);
                 EVLOG_info << "Transaction " << transaction_id << " stopped";
             }
-            m_pending_closed_transaction = false;
+            m_pending_closed_transaction.store(false);
             clear_transaction_states();
         } catch (const std::exception& e) {
             EVLOG_error << e.what();
         }
-        m_pending_closed_transaction = false;
+        m_pending_closed_transaction.store(false);
         m_transaction_active.store(false);
         clear_ocmf_transaction_closed_error();
         return make_transaction_stop_response(types::powermeter::TransactionRequestStatus::OK);
     }
     try {
-        if (m_pending_closed_transaction) {
+        if (m_pending_closed_transaction.load()) {
             // the received transaction id is different from the current transaction
             // id since there is a pending closed transaction, I assume a power loss
             // occurred we need to check if the transaction id is equal to the
@@ -748,45 +765,52 @@ types::powermeter::TransactionStopResponse powermeterImpl::handle_stop_transacti
             }
             EVLOG_info << "Transaction id matches, sending successful transaction "
                           "stop response with OCMF file";
-            m_pending_closed_transaction = false;
+            m_pending_closed_transaction.store(false);
             m_transaction_active.store(false);
-            clear_ocmf_transaction_closed_error();
             auto signed_meter_value = types::units_signed::SignedMeterValue{ocmf_file, "", "OCMF"};
             signed_meter_value.public_key.emplace(m_public_key_hex);
             ocmf::confirm_file_read(*p_modbus_transport);
+            clear_ocmf_transaction_closed_error();
             return types::powermeter::TransactionStopResponse{types::powermeter::TransactionRequestStatus::OK,
                                                               {}, // Empty start_signed_meter_value
                                                               signed_meter_value};
-        } else if (m_transaction_id == transaction_id) {
-            EVLOG_info << "Sending the end transaction command to the device";
-            // Write 'E' command to end transaction (Table 4.35, register 328737)
-            std::vector<std::uint16_t> command_data = {MODBUS_OCMF_COMMAND_END};
-            p_modbus_transport->write_multiple_registers(MODBUS_OCMF_COMMAND_ADDRESS, command_data);
-            EVLOG_info << "Transaction " << transaction_id << " stopped";
-            m_transaction_active.store(false);
+        }
 
-            // check if the OCMF state is ready (Table 4.36, register 328742)
-            if (!ocmf::wait_for_ready(*p_modbus_transport)) {
-                return make_transaction_stop_response(types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR,
-                                                      "can't stop transaction: OCMF did not reach ready state");
-            }
-
-            // For Eichrecht, return the OCMF file as the signed meter value report.
-            const std::string ocmf_data = read_ocmf_file();
-            auto signed_meter_value = types::units_signed::SignedMeterValue{ocmf_data, "", "OCMF"};
-            signed_meter_value.public_key.emplace(m_public_key_hex);
-
-            // write 0 to the OCMF state to confirm the reading of the OCMF file
-            ocmf::confirm_file_read(*p_modbus_transport);
-            m_pending_closed_transaction = false;
-            clear_ocmf_transaction_closed_error();
-            return types::powermeter::TransactionStopResponse{types::powermeter::TransactionRequestStatus::OK,
-                                                              m_start_signed_meter_value, signed_meter_value};
-        } else {
+        std::string active_transaction_id;
+        {
+            std::lock_guard<std::mutex> lock(m_transaction_mutex);
+            active_transaction_id = m_transaction_id;
+        }
+        if (active_transaction_id != transaction_id) {
             EVLOG_error << "No open transaction or unknown transaction id: " << transaction_id;
             return make_transaction_stop_response(types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR,
                                                   "No open transaction or unknown transaction id");
         }
+
+        EVLOG_info << "Sending the end transaction command to the device";
+        // Write 'E' command to end transaction (Table 4.35, register 328737)
+        std::vector<std::uint16_t> command_data = {MODBUS_OCMF_COMMAND_END};
+        p_modbus_transport->write_multiple_registers(MODBUS_OCMF_COMMAND_ADDRESS, command_data);
+        EVLOG_info << "Transaction " << transaction_id << " stopped";
+        m_transaction_active.store(false);
+
+        // check if the OCMF state is ready (Table 4.36, register 328742)
+        if (!ocmf::wait_for_ready(*p_modbus_transport)) {
+            return make_transaction_stop_response(types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR,
+                                                  "can't stop transaction: OCMF did not reach ready state");
+        }
+
+        // For Eichrecht, return the OCMF file as the signed meter value report.
+        const std::string ocmf_data = read_ocmf_file();
+        auto signed_meter_value = types::units_signed::SignedMeterValue{ocmf_data, "", "OCMF"};
+        signed_meter_value.public_key.emplace(m_public_key_hex);
+
+        // write 0 to the OCMF state to confirm the reading of the OCMF file
+        ocmf::confirm_file_read(*p_modbus_transport);
+        m_pending_closed_transaction.store(false);
+        clear_ocmf_transaction_closed_error();
+        return types::powermeter::TransactionStopResponse{types::powermeter::TransactionRequestStatus::OK,
+                                                          m_start_signed_meter_value, signed_meter_value};
     } catch (const std::exception& e) {
         EVLOG_error << e.what();
         return make_transaction_stop_response(types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR,
