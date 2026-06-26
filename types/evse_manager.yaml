@@ -665,3 +665,9 @@ types:
       - IncompatibleEnergyTransfer
       - ServiceRenegotiationFailed
       - NoHlc
+  SetDerAvailableResult:
+    description: Outcome of a set_der_available command.
+    type: string
+    enum:
+      - Accepted
+      - NoHlc
