@@ -291,6 +291,12 @@ public:
         // limits are not yet included in request.
     }
     std::atomic_int ac_nr_phases_active{0};
+
+    std::atomic<bool> der_available{false};
+    void recompute_and_publish_supported_ac_energy_transfers();
+    bool is_hlc_enabled() const {
+        return hlc_enabled;
+    }
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:

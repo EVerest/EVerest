@@ -499,5 +499,16 @@ evse_managerImpl::handle_update_allowed_energy_transfer_modes(
     return types::evse_manager::UpdateAllowedEnergyTransferModesResult::Accepted;
 }
 
+types::evse_manager::SetDerAvailableResult evse_managerImpl::handle_set_der_available(bool& available) {
+    if (not mod->is_hlc_enabled()) {
+        return types::evse_manager::SetDerAvailableResult::NoHlc;
+    }
+    mod->der_available.store(available);
+    if (mod->config.charge_mode == "AC") {
+        mod->recompute_and_publish_supported_ac_energy_transfers();
+    }
+    return types::evse_manager::SetDerAvailableResult::Accepted;
+}
+
 } // namespace evse
 } // namespace module
