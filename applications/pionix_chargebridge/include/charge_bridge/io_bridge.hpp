@@ -63,10 +63,14 @@ private:
     void create_udp_client(std::string const& remote, uint16_t remote_port);
     void handle_udp_rx(everest::lib::io::udp::udp_payload const& payload);
     void dispatch(everest::lib::io::mqtt::mqtt_client::message const& data);
+    void dispatch_ws28(everest::lib::io::mqtt::mqtt_client::message const& data);
+    void dispatch_ws28_anim(everest::lib::io::mqtt::mqtt_client::message const& data);
     void send_mqtt(std::string const& topic, std::string const& message);
     void send_adc_mqtt(std::string const& topic, std::string const& message);
     void send_telemetry_mqtt(std::string const& topic, std::string const& message);
     void send_udp();
+    void send_ws28_udp();
+    void send_ws28_anim_udp();
 
     std::unique_ptr<everest::lib::io::udp::udp_client> m_udp;
     std::uint16_t m_udp_port{0};
@@ -76,11 +80,15 @@ private:
     everest::lib::io::event::timer_fd m_heartbeat_timer;
     std::chrono::steady_clock::time_point last_heartbeat;
     CbManagementPacket<CbGpioPacket> m_message;
+    CbManagementPacket<CbWs28Packet> m_ws28_message;
+    CbManagementPacket<CbWs28AnimPacket> m_ws28_anim_message;
     std::string m_identifier;
     bool m_mqtt_on_error{false};
     bool m_mqtt_ready{false};
     everest::lib::io::mqtt::mqtt_client m_mqtt;
     std::string m_receive_topic;
+    std::string m_ws28_receive_topic;
+    std::string m_ws28_anim_receive_topic;
     std::string m_send_topic;
     std::string m_adc_send_topic;
     std::string m_telemetry_send_topic;

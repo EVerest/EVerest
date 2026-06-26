@@ -10,6 +10,10 @@
 #define CB_NUMBER_OF_UARTS 3
 #define CB_NUMBER_OF_ADCS 4
 
+// Max LEDs in a WS28_LED strip. Sizes both the firmware DMA frame buffer and the UDP pixel
+// buffer (CbWs28Packet), so they can never drift.
+#define CB_WS28_MAX_LEDS 256
+
 // enums
 
 typedef enum _CbGpioMode : uint8_t {
@@ -28,6 +32,7 @@ typedef enum _CbGpioMode : uint8_t {
 	CBG_StatusLED_R = 0x0C,
 	CBG_StatusLED_G = 0x0D,
 	CBG_StatusLED_B = 0x0E,
+	CBG_WS28_LED = 0x0F, // WS2812/NeoPixel single-wire LED output (GPIO8 only); mode_config = LED count
 } CbGpioMode;
 
 typedef enum _CbRelayMode : uint8_t {

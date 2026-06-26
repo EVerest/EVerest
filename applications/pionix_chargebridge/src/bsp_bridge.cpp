@@ -38,9 +38,9 @@ namespace charge_bridge {
 
 bsp_bridge::bsp_bridge(bsp_bridge_config const& config, everest::lib::io::event::event_fd& ready_notify) :
     m_api(config.api, config.cb + "/" + config.item),
+    m_identifier(config.cb + "/" + config.item),
     m_udp_port(config.cb_port),
     m_udp_remote(config.cb_remote),
-    m_identifier(config.cb + "/" + config.item),
     m_ready_notify(ready_notify) {
     using namespace std::chrono_literals;
     m_timer.set_timeout(5s);

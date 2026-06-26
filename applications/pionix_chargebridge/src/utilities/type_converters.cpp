@@ -129,6 +129,9 @@ bool decode_CbGpioMode(c4::yml::ConstNodeRef const& node, CbGpioMode& rhs) {
     } else if (value == "StatusLED_B") {
         rhs = CbGpioMode::CBG_StatusLED_B;
         return true;
+    } else if (value == "WS28_LED") {
+        rhs = CbGpioMode::CBG_WS28_LED;
+        return true;
     }
 
     throw yml_node_error(node);

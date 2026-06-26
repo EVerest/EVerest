@@ -57,6 +57,13 @@ enum class CbStructType : uint16_t {
 	// separate CST_CbToHost_Gpio (4) and CST_CbToHost_Adc (6).
 	CST_CbToHost_Io = 4,
 
+	// WS2812/NeoPixel pixel data (host -> MCU): RGB frame for a WS28_LED strip.
+	CST_HostToCb_Ws28 = 5,
+
+	// WS2812/NeoPixel animation command (host -> MCU): selects an autonomous animation style the
+	// MCU renders on its own (no per-frame pixel streaming). See CbWs28AnimPacket.
+	CST_HostToCb_Ws28Anim = 6,
+
 	// FW update
 	CST_CbFirmwareReply = 0xFFF9,
 	CST_CbFirmwareStart = 0xFFFA,
@@ -88,6 +95,32 @@ template<> struct CB_COMPILER_ATTR_PACK CbManagementPacket<void> {
 struct CB_COMPILER_ATTR_PACK CbGpioPacket {
 	uint8_t number_of_gpios; // Just to check compatibility
 	uint16_t gpio_values[CB_NUMBER_OF_GPIOS]; // Actual value, 0: low, 1: high, or duty cycle for PWM
+};
+
+// Host -> MCU: WS2812/NeoPixel pixel frame for a WS28_LED strip. Fixed-size like CbGpioPacket
+// (the whole struct is sent); only the first led_count pixels of rgb[] are meaningful. Pixels are
+// R,G,B per LED in LED order -- the firmware reorders to the WS2812 GRB wire order.
+struct CB_COMPILER_ATTR_PACK CbWs28Packet {
+	uint8_t gpio_index;                 // target GPIO (must be a WS28_LED pin; only 8 today)
+	uint8_t reserved;                   // 0; reserved for future flags (e.g. RGBW)
+	uint16_t led_count;                 // number of valid LEDs in rgb[]
+	uint8_t rgb[CB_WS28_MAX_LEDS * 3];  // R,G,B per LED, in LED order
+};
+
+// Host -> MCU: WS2812/NeoPixel animation command. Selects one of the autonomous animation styles the
+// MCU renders locally (the strip keeps animating with no further host traffic) until a new command or
+// a static pixel frame (CbWs28Packet) arrives. style values match Ws28AnimStyle in ws28_led.hpp.
+// style 0 (STATIC) shows the last host-pushed pixel frame; the other styles are colour-generated.
+struct CB_COMPILER_ATTR_PACK CbWs28AnimPacket {
+	uint8_t gpio_index;  // target GPIO (must be a WS28_LED pin; only 8 today)
+	uint8_t style;       // Ws28AnimStyle: 0 STATIC,1 BLINK,2 BREATHE,3 WIPE,4 THEATER,5 SCANNER,
+	                     // 6 COMET,7 RAINBOW,8 RAINBOW_CHASE,9 SPARKLE,10 GRADIENT,11 FIRE
+	uint8_t speed;       // 0..255 animation rate (style-relative; higher = faster)
+	uint8_t brightness;  // 0..255 master brightness scale applied to the whole strip
+	uint8_t r1, g1, b1;  // colour1 (primary)
+	uint8_t r2, g2, b2;  // colour2 (background / gradient end; unused by some styles)
+	uint8_t param;       // style-specific (tail length / chase gap / sparkle density / fire cooling)
+	uint8_t flags;       // bit0 = reverse direction, bit1 = scroll (gradient); rest reserved 0
 };
 
 // Generic, unstructured telemetry carried inside the combined IO packet (see CbIoPacket).

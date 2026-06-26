@@ -28,3 +28,5 @@ CB_STATIC_ASSERT((sizeof(CbIoPacket) ==
                       1 + (CB_NUMBER_OF_GPIOS * 2) + 1 + (CB_NUMBER_OF_ADCS * 4) + sizeof(CbTelemetry) &&
                   sizeof(CbIoPacket) <= CB_MAX_CB_STRUCT_SIZE),
                  "Wrong CB type size!");
+CB_STATIC_ASSERT((sizeof(CbWs28AnimPacket) == 12 && sizeof(CbWs28AnimPacket) <= CB_MAX_CB_STRUCT_SIZE),
+                 "Wrong CB type size!");
