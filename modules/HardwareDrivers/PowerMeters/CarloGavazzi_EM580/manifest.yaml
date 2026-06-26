@@ -74,7 +74,7 @@ provides:
           When enabled, reads the OCMF state at device_and_transaction_state_read_interval_ms
           while a transaction is active. If the device reports READY (transaction closed on
           the meter side, e.g. after a brief power loss), raises powermeter/VendorError so
-          the charging session can be stopped when fail_on_powermeter_errors is enabled.
+          the charging session can be stopped when fail_on_powermeter_errors is enabled in the EvseManager module.
         type: boolean
         default: false
 requires:
