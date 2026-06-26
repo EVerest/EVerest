@@ -44,7 +44,6 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
     d20::DcTransferLimits powersupply_limits;
 
     d20::DerSetupConfig der_setup_config;
-    der_setup_config.control_functions.reset();
     der_setup_config.grid_connection_mode = iec::GridConnectionMode::GridConnected;
     der_setup_config.operating_mode = iec::OperatingMode::GridFollowing;
 
@@ -357,13 +356,7 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
     GIVEN("Good case - Der control functions") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_IEC_ChargeLoop>()};
 
-        ctx.session_config.der_setup_config.control_functions.reset();
         ctx.session_config.der_setup_config.supported_der_control_functions.clear();
-
-        ctx.session_config.der_setup_config.control_functions.set(
-            static_cast<size_t>(iec::DERControlName::DSOQSetpointProvision), true);
-        ctx.session_config.der_setup_config.control_functions.set(
-            static_cast<size_t>(iec::DERControlName::DSOCosPhiSetpointProvision), true);
 
         ctx.session_config.der_setup_config
             .supported_der_control_functions[iec::DERControlName::DSOQSetpointProvision] =
