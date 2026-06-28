@@ -281,8 +281,13 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
             // does the parameter exist?
             auto parameter_lookup_result = get_parameter(update.identifier, module_configs_);
             if (not parameter_lookup_result.has_value()) {
-                result.parameter_results.value()[i].status_info =
-                    fmt::format("Unknown target module: {}", update.identifier.module_id);
+                if (module_configs_.find(update.identifier.module_id) == module_configs_.end()) {
+                    result.parameter_results.value()[i].status_info =
+                        fmt::format("Unknown target module: {}", update.identifier.module_id);
+                } else {
+                    result.parameter_results.value()[i].status_info =
+                        fmt::format("Unknown parameter: {} in module: {}", update.identifier.configuration_parameter_name, update.identifier.module_id);
+                }
                 continue;
             }
             auto [parameter, parameter_access] = parameter_lookup_result.value();
@@ -367,6 +372,13 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
             // does the parameter exist?
             auto parameter_lookup_result = get_parameter(update.identifier, inactive_configuration.module_configs);
             if (not parameter_lookup_result.has_value()) {
+                if (inactive_configuration.module_configs.find(update.identifier.module_id) == inactive_configuration.module_configs.end()) {
+                    result.parameter_results.value()[i].status_info =
+                        fmt::format("Unknown target module: {}", update.identifier.module_id);
+                } else {
+                    result.parameter_results.value()[i].status_info =
+                        fmt::format("Unknown parameter: {} in module: {}", update.identifier.configuration_parameter_name, update.identifier.module_id);
+                }
                 continue;
             }
             auto [parameter, parameter_access] = parameter_lookup_result.value();
