@@ -348,6 +348,11 @@ protected:
     void cb_variable_set(const ocpp::v2::SetVariableData& set_variable_data) override;
     void cb_waiting_for_external_ready(std::int32_t evse_id, bool ready) override;
     bool map_error(const std::string& error, std::string& updated_error) override;
+    void transaction_add(std::int32_t evse_id,
+                         const std::shared_ptr<module::TransactionData>& transaction_data) override;
+    std::shared_ptr<module::TransactionData> transaction_data(std::int32_t evse_id) override;
+    module::TxEventEffect transaction_event(std::int32_t evse_id, module::TxEvent tx_event) override;
+    void transaction_reset(std::int32_t evse_id) override;
     void update_evcc_id_token(std::int32_t evse, ocpp::v2::IdToken& id_token) override;
 
     // ------------------------------------------------------------------------

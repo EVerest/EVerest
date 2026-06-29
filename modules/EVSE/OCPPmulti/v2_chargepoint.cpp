@@ -19,6 +19,16 @@ constexpr const auto SETPOINT_PRIORITY_VAR_NAME = "SetpointPriority";
 constexpr const auto TX_START_POINT_VAR_NAME = "TxStartPoint";
 constexpr const auto TX_STOP_POINT_VAR_NAME = "TxStopPoint";
 
+auto convert(const ocpp::v2::MessageContent& value) {
+    ocpp::DisplayMessageContent result{};
+
+    result.message = value.content;
+    result.language = value.language;
+    result.message_format = value.format;
+
+    return result;
+}
+
 auto convert(ocpp::v2::ResetEnum value) {
     using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
     ResetType result{};
@@ -288,7 +298,7 @@ void ChargePointV2::process_tx_event_effect(std::int32_t evse_id, module::TxEven
     using namespace module::conversions;
 
     if (tx_event_effect != module::TxEventEffect::NONE) {
-        const auto transaction_data = m_transaction_handler->get_transaction_data(evse_id);
+        const auto transaction_data = m_callbacks_ptr->transaction_data(evse_id);
         if (transaction_data == nullptr) {
             throw std::runtime_error("Could not start transaction because no tranasaction data is present");
         }
@@ -316,7 +326,7 @@ void ChargePointV2::process_tx_event_effect(std::int32_t evse_id, module::TxEven
                                                     stop_reason, transaction_data->trigger_reason,
                                                     transaction_data->id_token, std::nullopt,
                                                     transaction_data->charging_state);
-            m_transaction_handler->reset_transaction_data(evse_id);
+            m_callbacks_ptr->transaction_reset(evse_id);
         }
     }
 }
@@ -400,8 +410,6 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
 }
 
 void ChargePointV2::init(init_args_t& args) {
-    m_transaction_handler = args.transaction_handler;
-
     // initialise libocpp device model
     auto libocpp_device_model_storage = std::make_shared<ocpp::v2::DeviceModelStorageSqlite>(
         args.v2_device_model_database_path, args.v2_device_model_database_migration_path,
@@ -550,23 +558,23 @@ void ChargePointV2::on_event_authorised(std::int32_t evse_id, std::int32_t conne
 void ChargePointV2::on_event_deauthorised(std::int32_t evse_id, std::int32_t connector_id,
                                           const types::evse_manager::SessionEvent& session_event) {
     check_configured("on_event_deauthorised");
-    auto transaction_data = m_transaction_handler->get_transaction_data(evse_id);
+    auto transaction_data = m_callbacks_ptr->transaction_data(evse_id);
     if (transaction_data != nullptr) {
         transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::StopAuthorized;
     }
-    const auto tx_event_effect = m_transaction_handler->submit_event(evse_id, module::TxEvent::DEAUTHORIZED);
+    const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, module::TxEvent::DEAUTHORIZED);
     process_tx_event_effect(evse_id, tx_event_effect, session_event);
 }
 void ChargePointV2::on_event_charging_paused_ev(std::int32_t evse_id, std::int32_t connector_id,
                                                 const types::evse_manager::SessionEvent& session_event) {
     check_configured("on_event_charging_paused_ev");
-    auto transaction_data = m_transaction_handler->get_transaction_data(evse_id);
+    auto transaction_data = m_callbacks_ptr->transaction_data(evse_id);
     if (transaction_data != nullptr) {
         transaction_data->charging_state = ocpp::v2::ChargingStateEnum::SuspendedEV;
         transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::ChargingStateChanged;
         transaction_data->stop_reason = ocpp::v2::ReasonEnum::StoppedByEV;
     }
-    const auto tx_event_effect = m_transaction_handler->submit_event(evse_id, module::TxEvent::ENERGY_TRANSFER_STOPPED);
+    const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, module::TxEvent::ENERGY_TRANSFER_STOPPED);
     process_tx_event_effect(evse_id, tx_event_effect, session_event);
     m_charge_point->on_charging_state_changed(evse_id, ocpp::v2::ChargingStateEnum::SuspendedEV,
                                               ocpp::v2::TriggerReasonEnum::ChargingStateChanged);
@@ -574,7 +582,7 @@ void ChargePointV2::on_event_charging_paused_ev(std::int32_t evse_id, std::int32
 void ChargePointV2::on_event_charging_paused_evse(std::int32_t evse_id, std::int32_t connector_id,
                                                   const types::evse_manager::SessionEvent& session_event) {
     check_configured("on_event_charging_paused_evse");
-    auto transaction_data = m_transaction_handler->get_transaction_data(evse_id);
+    auto transaction_data = m_callbacks_ptr->transaction_data(evse_id);
     auto trigger_reason = ocpp::v2::TriggerReasonEnum::ChargingStateChanged;
     if (transaction_data != nullptr) {
         transaction_data->charging_state = ocpp::v2::ChargingStateEnum::SuspendedEVSE;
@@ -583,19 +591,19 @@ void ChargePointV2::on_event_charging_paused_evse(std::int32_t evse_id, std::int
             transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::ChargingStateChanged;
         }
     }
-    const auto tx_event_effect = m_transaction_handler->submit_event(evse_id, module::TxEvent::ENERGY_TRANSFER_STOPPED);
+    const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, module::TxEvent::ENERGY_TRANSFER_STOPPED);
     process_tx_event_effect(evse_id, tx_event_effect, session_event);
     m_charge_point->on_charging_state_changed(evse_id, ocpp::v2::ChargingStateEnum::SuspendedEVSE, trigger_reason);
 }
 void ChargePointV2::on_event_charging_started(std::int32_t evse_id, std::int32_t connector_id,
                                               const types::evse_manager::SessionEvent& session_event) {
     check_configured("on_event_charging_started");
-    auto transaction_data = m_transaction_handler->get_transaction_data(evse_id);
+    auto transaction_data = m_callbacks_ptr->transaction_data(evse_id);
     if (transaction_data != nullptr) {
         transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::ChargingStateChanged;
         transaction_data->charging_state = ocpp::v2::ChargingStateEnum::Charging;
     }
-    const auto tx_event_effect = m_transaction_handler->submit_event(evse_id, module::TxEvent::ENERGY_TRANSFER_STARTED);
+    const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, module::TxEvent::ENERGY_TRANSFER_STARTED);
     process_tx_event_effect(evse_id, tx_event_effect, session_event);
     m_charge_point->on_charging_state_changed(evse_id, ocpp::v2::ChargingStateEnum::Charging,
                                               ocpp::v2::TriggerReasonEnum::ChargingStateChanged);
@@ -627,13 +635,13 @@ void ChargePointV2::on_event_reservation_start(std::int32_t evse_id, std::int32_
 void ChargePointV2::on_event_session_finished(std::int32_t evse_id, std::int32_t connector_id,
                                               const types::evse_manager::SessionEvent& session_event) {
     check_configured("on_event_session_finished");
-    auto transaction_data = m_transaction_handler->get_transaction_data(evse_id);
+    auto transaction_data = m_callbacks_ptr->transaction_data(evse_id);
     if (transaction_data != nullptr) {
         transaction_data->charging_state = ocpp::v2::ChargingStateEnum::Idle;
         transaction_data->stop_reason = ocpp::v2::ReasonEnum::EVDisconnected;
         transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::EVCommunicationLost;
     }
-    const auto tx_event_effect = m_transaction_handler->submit_event(evse_id, module::TxEvent::EV_DISCONNECTED);
+    const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, module::TxEvent::EV_DISCONNECTED);
     process_tx_event_effect(evse_id, tx_event_effect, session_event);
     m_charge_point->on_session_finished(evse_id, connector_id);
 }
@@ -653,7 +661,7 @@ void ChargePointV2::on_event_session_resumed(std::int32_t evse_id, std::int32_t 
                                                                       ocpp::v2::TriggerReasonEnum::TxResumed,
                                                                       ocpp::v2::ChargingStateEnum::Idle);
     transaction_data->started = true;
-    m_transaction_handler->add_transaction_data(evse_id, transaction_data);
+    m_callbacks_ptr->transaction_add(evse_id, transaction_data);
 }
 GenericChargePointInterface::SessionResult
 ChargePointV2::on_event_session_started(std::int32_t evse_id, std::int32_t connector_id,
@@ -701,9 +709,9 @@ ChargePointV2::on_event_session_started(std::int32_t evse_id, std::int32_t conne
         transaction_data->group_id_token = group_id_token;
         transaction_data->remote_start_id = remote_start_id;
         transaction_data->reservation_id = reservation_id;
-        m_transaction_handler->add_transaction_data(evse_id, transaction_data);
+        m_callbacks_ptr->transaction_add(evse_id, transaction_data);
 
-        const auto tx_event_effect = m_transaction_handler->submit_event(evse_id, tx_event);
+        const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, tx_event);
         process_tx_event_effect(evse_id, tx_event_effect, session_event);
         if (session_started.reason == types::evse_manager::StartSessionReason::EVConnected) {
             m_charge_point->on_session_started(evse_id, connector_id);
@@ -732,7 +740,7 @@ void ChargePointV2::on_event_transaction_finished(std::int32_t evse_id, std::int
             reason = to_ocpp_reason(transaction_finished.reason.value());
             tx_event = get_tx_event(reason);
         }
-        auto transaction_data = m_transaction_handler->get_transaction_data(evse_id);
+        auto transaction_data = m_callbacks_ptr->transaction_data(evse_id);
         if (transaction_data != nullptr) {
             std::optional<ocpp::v2::IdToken> id_token = std::nullopt;
             if (transaction_finished.id_tag.has_value()) {
@@ -757,7 +765,7 @@ void ChargePointV2::on_event_transaction_finished(std::int32_t evse_id, std::int
         }
 
         // tx_event could be DEAUTHORIZED or EV_DISCONNECTED
-        const auto tx_event_effect = m_transaction_handler->submit_event(evse_id, tx_event);
+        const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, tx_event);
         process_tx_event_effect(evse_id, tx_event_effect, session_event);
 
         if (tx_event == module::TxEvent::DEAUTHORIZED) {
@@ -775,7 +783,7 @@ void ChargePointV2::on_event_transaction_finished(std::int32_t evse_id, std::int
             // authorization is always withdrawn in case of TransactionFinished, so in case we haven't updated the
             // transaction handler yet, we have to do it
             // now
-            const auto tx_event_effect = m_transaction_handler->submit_event(evse_id, module::TxEvent::DEAUTHORIZED);
+            const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, module::TxEvent::DEAUTHORIZED);
             process_tx_event_effect(evse_id, tx_event_effect, session_event);
         }
     } else {
@@ -791,16 +799,16 @@ ChargePointV2::on_event_transaction_started(std::int32_t evse_id, std::int32_t c
     SessionResult result{false};
 
     if (session_event.transaction_started.has_value()) {
-        auto transaction_data = m_transaction_handler->get_transaction_data(evse_id);
+        auto transaction_data = m_callbacks_ptr->transaction_data(evse_id);
         if (transaction_data == nullptr) {
             EVLOG_warning
                 << "Could not update transaction data because no transaction data is present. This might happen "
                    "in case a TxStopPoint is already active when a TransactionStarted event occurs (e.g. "
                    "TxStopPoint is EnergyTransfer or ParkingBayOccupied)";
             m_charge_point->on_session_started(evse_id, connector_id);
-            auto tx_event_effect = m_transaction_handler->submit_event(evse_id, module::TxEvent::AUTHORIZED);
+            auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, module::TxEvent::AUTHORIZED);
             process_tx_event_effect(evse_id, tx_event_effect, session_event);
-            tx_event_effect = m_transaction_handler->submit_event(evse_id, module::TxEvent::EV_CONNECTED);
+            tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, module::TxEvent::EV_CONNECTED);
             process_tx_event_effect(evse_id, tx_event_effect, session_event);
             result = true;
         } else {
@@ -837,7 +845,7 @@ ChargePointV2::on_event_transaction_started(std::int32_t evse_id, std::int32_t c
             }
 
             transaction_data->trigger_reason = trigger_reason;
-            const auto tx_event_effect = m_transaction_handler->submit_event(evse_id, tx_event);
+            const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, tx_event);
             process_tx_event_effect(evse_id, tx_event_effect, session_event);
             result = tx_event == module::TxEvent::EV_CONNECTED;
         }
@@ -985,6 +993,15 @@ ocpp::v2::AuthorizeResponse ChargePointV2::validate_token(const types::authoriza
                 to_ocpp_ocsp_request_data_vector(provided_token.iso15118CertificateHashData.value());
         }
         validation_result = m_charge_point->validate_token(id_token, certificate_opt, ocsp_request_data_opt);
+
+        // Publish tariff message on the session_cost interface
+        if (validation_result.idTokenInfo.personalMessage) {
+            ocpp::TariffMessage tariff_message;
+            tariff_message.message.push_back(convert(validation_result.idTokenInfo.personalMessage.value()));
+            tariff_message.identifier_id = provided_token.id_token.value;
+            tariff_message.identifier_type = ocpp::IdentifierType::IdToken;
+            m_callbacks_ptr->cb_tariff_message(tariff_message);
+        }
     } catch (const ocpp::StringConversionException& e) {
         EVLOG_warning << "Error converting id token to validate: " << e.what();
         validation_result.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Unknown;
