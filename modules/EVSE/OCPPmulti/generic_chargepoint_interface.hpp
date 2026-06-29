@@ -4,6 +4,7 @@
 #pragma once
 
 #include <device_model/everest_device_model_storage.hpp>
+#include <transaction_handler.hpp>
 
 #include <generated/interfaces/charger_information/Interface.hpp>
 #include <generated/interfaces/evse_manager/Interface.hpp>
@@ -27,10 +28,6 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
-
-namespace module {
-class TransactionHandler;
-}
 
 namespace ocpp_multi {
 
@@ -134,6 +131,11 @@ struct GenericChargePointCallbacks {
     virtual void cb_waiting_for_external_ready(std::int32_t evse_id, bool ready) = 0;
 
     virtual bool map_error(const std::string& error, std::string& updated_error) = 0;
+    virtual void transaction_add(std::int32_t evse_id,
+                                 const std::shared_ptr<module::TransactionData>& transaction_data) = 0;
+    virtual std::shared_ptr<module::TransactionData> transaction_data(std::int32_t evse_id) = 0;
+    virtual module::TxEventEffect transaction_event(std::int32_t evse_id, module::TxEvent tx_event) = 0;
+    virtual void transaction_reset(std::int32_t evse_id) = 0;
     virtual void update_evcc_id_token(std::int32_t evse, ocpp::v2::IdToken& id_token) = 0;
 };
 
@@ -191,7 +193,6 @@ struct GenericChargePointInterface {
         ConnectorStructure evse_connector_structure;
         ConnectorStructureV16 connector_mapping;
         std::shared_ptr<module::device_model::EverestDeviceModelStorage> everest_device_model;
-        std::shared_ptr<module::TransactionHandler> transaction_handler;
         std::optional<types::charger_information::ChargerInformation> charger_info;
     };
 

@@ -216,23 +216,6 @@ GenericOcpp::handle_validate_token(const types::authorization::ProvidedIdToken& 
     if (mv_started) {
         const auto response = mv_charge_point.validate_token(provided_token);
         validation_result = module::conversions::to_everest_validation_result(response);
-
-        // to_everest_validation_result() ignores tariff messages
-        validation_result.tariff_messages = convert(response.tariff);
-
-        // the following block is excluded because OCPP 1.6 tests fail otherwise
-        // IF it is needed for OCPP 2.x then it can be added to v2_chargepoint
-        // via cb_tariff_message()
-#if 0
-        // Publish tariff message on the session_cost interface
-        if (!validation_result.tariff_messages.empty()) {
-            types::session_cost::TariffMessage tariff_message;
-            tariff_message.messages = validation_result.tariff_messages;
-            tariff_message.identifier_id = provided_token.id_token.value;
-            tariff_message.identifier_type = types::display_message::IdentifierType::IdToken;
-            mv_provides.session_cost.publish_tariff_message(tariff_message);
-        }
-#endif
     } else {
         EVLOG_warning << "ChargePoint not initialized, cannot handle validate token command";
         validation_result.authorization_status = types::authorization::AuthorizationStatus::Unknown;
@@ -1642,6 +1625,35 @@ bool GenericOcpp::map_error(const std::string& error, std::string& updated_error
         updated_error = error;
     }
     return result;
+}
+
+void GenericOcpp::transaction_add(std::int32_t evse_id,
+                                  const std::shared_ptr<module::TransactionData>& transaction_data) {
+    if (m_transaction_handler) {
+        m_transaction_handler->add_transaction_data(evse_id, transaction_data);
+    }
+}
+
+std::shared_ptr<module::TransactionData> GenericOcpp::transaction_data(std::int32_t evse_id) {
+    std::shared_ptr<module::TransactionData> result{};
+    if (m_transaction_handler) {
+        result = m_transaction_handler->get_transaction_data(evse_id);
+    }
+    return result;
+}
+
+module::TxEventEffect GenericOcpp::transaction_event(std::int32_t evse_id, module::TxEvent tx_event) {
+    auto result{module::TxEventEffect::NONE};
+    if (m_transaction_handler) {
+        result = m_transaction_handler->submit_event(evse_id, tx_event);
+    }
+    return result;
+}
+
+void GenericOcpp::transaction_reset(std::int32_t evse_id) {
+    if (m_transaction_handler) {
+        m_transaction_handler->reset_transaction_data(evse_id);
+    }
 }
 
 void GenericOcpp::update_evcc_id_token(std::int32_t evse, ocpp::v2::IdToken& id_token) {

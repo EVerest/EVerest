@@ -15,7 +15,6 @@ private:
     using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
 
     std::shared_ptr<EvseSecurity> m_evse_security;
-    std::shared_ptr<module::TransactionHandler> m_transaction_handler;
     ocpp_multi::GenericChargePointCallbacks* m_callbacks_ptr{nullptr};
     std::unique_ptr<ocpp::v2::ChargePoint> m_charge_point;
     listener_t m_variable_listener{nullptr};
