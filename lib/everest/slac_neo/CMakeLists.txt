@@ -13,6 +13,7 @@ target_sources(slac_neo
     src/slac_event.cpp
     src/slac_socket.cpp
     src/slac_fsm.cpp
+    src/ev_slac_fsm.cpp
     src/slac_utils.cpp
     src/slac_messages.cpp
     src/HomeplugMessage.cpp
