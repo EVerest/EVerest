@@ -67,7 +67,7 @@ private:
 
     bool log_upload_running;
     bool standard_firmware_update_running;
-    bool firmware_download_running;
+    std::atomic<bool> firmware_download_running;
     std::atomic<bool> firmware_installation_running;
 
     std::condition_variable log_upload_cv;
