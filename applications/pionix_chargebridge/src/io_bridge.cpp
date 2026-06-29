@@ -397,6 +397,31 @@ void io_bridge::handle_heartbeat_timer() {
 }
 
 void io_bridge::handle_udp_rx(everest::lib::io::udp::udp_payload const& payload) {
+    // Debug-UART forwarding: the MCU sends its printf output on this same IO connection, one
+    // length-delimited line per packet (CST_CbToHost_DebugUart). Peek the type and handle it before
+    // the CbIoPacket decoding below, which would otherwise reject it as an unexpected type.
+    if (payload.size() >= sizeof(CbStructType)) {
+        CbStructType peek_type{};
+        std::memcpy(&peek_type, payload.buffer.data(), sizeof(peek_type));
+        if (peek_type == CbStructType::CST_CbToHost_DebugUart) {
+            CbManagementPacket<CbDebugUartLinePacket> dbg{};
+            auto const hdr = sizeof(dbg.type) + sizeof(dbg.data.length);
+            if (payload.size() >= hdr) {
+                auto const copy_n = std::min(payload.size(), sizeof(dbg));
+                std::memcpy(&dbg, payload.buffer.data(), copy_n);
+                std::uint16_t len = dbg.data.length;
+                if (len > CB_DEBUG_UART_LINE_MAX) {
+                    len = CB_DEBUG_UART_LINE_MAX;
+                }
+                // Route through print_info (not raw std::cout) so the line lands in the terminal
+                // UI's message panel instead of being painted over by the ftxui redraw; in log mode
+                // it prints to stdout like the other "[ unit ] device ..." lines.
+                utilities::print_info(m_identifier, "MCU") << std::string(dbg.data.text, len) << std::endl;
+            }
+            return;
+        }
+    }
+
     CbManagementPacket<CbIoPacket> data{}; // zero-init so untransmitted telemetry slots stay empty
 
     // The telemetry tail is variable length: the MCU sends only the populated entries. The fixed

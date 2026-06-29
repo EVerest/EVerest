@@ -31,7 +31,8 @@ constexpr std::size_t STATUS_MESSAGE_MAX_LENGTH = 1024;
 // cursor is over the component, so several scrollers can coexist.
 class ScrollerBase : public ftxui::ComponentBase {
 public:
-    explicit ScrollerBase(ftxui::Component child) {
+    explicit ScrollerBase(ftxui::Component child, bool stick_to_bottom = false) :
+        stick_to_bottom_(stick_to_bottom) {
         Add(std::move(child));
     }
 
@@ -40,6 +41,11 @@ public:
         auto background = ComponentBase::OnRender();
         background->ComputeRequirement();
         size_ = background->requirement().min_y;
+        // Tail-follow: while pinned to the bottom, keep the selection on the last line so newly
+        // appended log lines stay visible without manual scrolling.
+        if (stick_to_bottom_ && follow_) {
+            selected_ = std::max(0, size_ - 1);
+        }
         auto marker = Focused() ? focus(text("")) : select(text(""));
         return dbox({
                    std::move(background),
@@ -79,6 +85,11 @@ public:
         }
 
         selected_ = std::max(0, std::min(size_ - 1, selected_));
+        // Re-engage tail-follow only when the user scrolls back to the bottom; any scroll-up pins
+        // the view so history stays put while new lines arrive.
+        if (stick_to_bottom_) {
+            follow_ = selected_ >= size_ - 1;
+        }
         return selected_old != selected_;
     }
 
@@ -89,11 +100,13 @@ public:
 private:
     int selected_{0};
     int size_{0};
+    bool stick_to_bottom_{false};
+    bool follow_{true};
     ftxui::Box box_;
 };
 
-ftxui::Component Scroller(ftxui::Component child) {
-    return ftxui::Make<ScrollerBase>(std::move(child));
+ftxui::Component Scroller(ftxui::Component child, bool stick_to_bottom = false) {
+    return ftxui::Make<ScrollerBase>(std::move(child), stick_to_bottom);
 }
 
 // One plottable numeric series for an instance: a stable key, a human label, a unit and the
@@ -652,10 +665,11 @@ void status_ui::run_terminal_loop() {
             }
         }
 
-        // Newest first, so the latest message is visible without scrolling; wheel/keys scroll back.
+        // Chronological order (oldest first, newest last) like a console log. The scroller sticks to
+        // the bottom so the latest line stays visible; scroll up (wheel/PgUp) to see history.
         Elements lines;
-        for (auto it = shown.rbegin(); it != shown.rend(); ++it) {
-            lines.push_back(text(*it));
+        for (auto const& line : shown) {
+            lines.push_back(text(line));
         }
         if (lines.empty()) {
             lines.push_back(text("(no messages)") | dim);
@@ -766,7 +780,7 @@ void status_ui::run_terminal_loop() {
 
     if (m_options.status_message_lines > 0) {
         m_msg_split_size = std::max(3, static_cast<int>(m_options.status_message_lines) + 2);
-        split = ResizableSplitBottom(Scroller(messages), split, &m_msg_split_size);
+        split = ResizableSplitBottom(Scroller(messages, /*stick_to_bottom=*/true), split, &m_msg_split_size);
     }
 
     auto app = Renderer(split, [&] {

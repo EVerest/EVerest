@@ -144,7 +144,7 @@ typedef struct CB_COMPILER_ATTR_PACK _CbAdcConfig {
 
 // Final complete config struct
 
-#define CB_CONFIG_VERSION 3
+#define CB_CONFIG_VERSION 4
 typedef struct CB_COMPILER_ATTR_PACK _cb_config {
 	uint32_t config_version;
 	SafetyConfig safety;
@@ -153,4 +153,5 @@ typedef struct CB_COMPILER_ATTR_PACK _cb_config {
 	CbCanConfig can;
 	uint8_t plc_powersaving_mode;
 	CbAdcConfig adcs[CB_NUMBER_OF_ADCS];
+	uint8_t debug_uart_udp_enabled; // 1: forward MCU debug-UART printf to the host over UDP (CST_CbToHost_DebugUart)
 } CbConfig;

@@ -302,6 +302,13 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
             get_node(cfg.cb_config.can, "can_0");
         }
         get_node(cfg.cb_config.plc_powersaving_mode, "plc", "powersaving_mode");
+
+        // Optional: forward the MCU's debug-UART (printf) output to this host over UDP. Off by
+        // default; the bridge logs each received line to the console prefixed with "[MCU]".
+        bool enable_debug_uart_udp = false;
+        get_node_or_default(enable_debug_uart_udp, main, "enable_debug_uart_udp", false);
+        cfg.cb_config.debug_uart_udp_enabled = enable_debug_uart_udp ? 1 : 0;
+
         cfg.cb_config.config_version = CB_CONFIG_VERSION;
     });
 

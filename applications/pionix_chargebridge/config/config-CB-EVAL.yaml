@@ -4,12 +4,14 @@ charge_bridge:
   ip: chargebridge-44b7d0c98099.local
   #ip: chargebridge-44b7d0c99629.local
   fw_file: ./firmware/charge-bridge-fw_complete.cbfw
-  fw_update_on_start: true
+  fw_update_on_start: false
   mdns_name: ""
 
 heartbeat:
   interval_s: 1
   connection_to_s: 10
+  # Forward MCU debug-UART (printf) to this host over UDP; logged on console as "[MCU] ...".
+  enable_debug_uart_udp: true
 
 telemetry:
   enable: true

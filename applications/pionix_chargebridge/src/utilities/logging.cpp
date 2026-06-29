@@ -151,6 +151,19 @@ std::string print_error_prefix_ansi(std::string const& device, std::string const
     return oss.str();
 }
 
+std::string print_info_prefix_plain(std::string const& device, std::string const& unit) {
+    std::ostringstream oss;
+    oss << "[ " << std::left << std::setw(13) << unit << " ] " << std::left << std::setw(20) << device << " ";
+    return oss.str();
+}
+
+std::string print_info_prefix_ansi(std::string const& device, std::string const& unit) {
+    std::ostringstream oss;
+    oss << "[ " << color::message << std::setw(13) << std::left << unit << color::terminal << " ] " << color::unit
+        << std::setw(20) << std::left << device << color::terminal << " ";
+    return oss.str();
+}
+
 } // namespace
 
 inline std::ostream& capture_print_error(std::string const& device, std::string const& unit, int status) {
@@ -159,6 +172,14 @@ inline std::ostream& capture_print_error(std::string const& device, std::string 
 
     auto const prefix = print_error_prefix_plain(device, unit, status);
     capture_buffer.reset(device, prefix);
+    return capture_stream;
+}
+
+inline std::ostream& capture_print_info(std::string const& device, std::string const& unit) {
+    thread_local print_error_capture_streambuf capture_buffer;
+    thread_local std::ostream capture_stream(&capture_buffer);
+
+    capture_buffer.reset(device, print_info_prefix_plain(device, unit));
     return capture_stream;
 }
 
@@ -184,6 +205,15 @@ std::ostream& print_error(std::string const& device, std::string const& unit, in
     std::cout << print_error_prefix_ansi(device, unit, ctrl, status);
     return std::cout << color::standard;
     // clang-format on
+}
+
+std::ostream& print_info(std::string const& device, std::string const& unit) {
+    if (current_print_error_sink()) {
+        return capture_print_info(device, unit);
+    }
+
+    std::cout << print_info_prefix_ansi(device, unit);
+    return std::cout << color::standard;
 }
 
 void set_print_error_sink(print_error_sink sink) {

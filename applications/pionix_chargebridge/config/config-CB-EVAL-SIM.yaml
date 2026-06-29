@@ -9,6 +9,8 @@ charge_bridge:
 heartbeat:
   interval_s: 1
   connection_to_s: 10
+  # Forward MCU debug-UART (printf) to this host over UDP; logged on console as "[MCU] ...".
+  enable_debug_uart_udp: false
 
 telemetry:
   enable: true
