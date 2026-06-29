@@ -97,6 +97,10 @@ private:
     io_state m_io_state;
     bool m_have_io{false};
     everest::lib::io::event::event_fd& m_ready_notify;
+
+    // Reassembly buffer for the MCU debug-UART byte stream (CST_CbToHost_DebugUart). Chunks arrive
+    // split at arbitrary byte boundaries, so we accumulate and emit one log entry per '\n'.
+    std::string m_mcu_log_partial;
 };
 
 } // namespace charge_bridge

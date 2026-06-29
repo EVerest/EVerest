@@ -397,9 +397,10 @@ void io_bridge::handle_heartbeat_timer() {
 }
 
 void io_bridge::handle_udp_rx(everest::lib::io::udp::udp_payload const& payload) {
-    // Debug-UART forwarding: the MCU sends its printf output on this same IO connection, one
-    // length-delimited line per packet (CST_CbToHost_DebugUart). Peek the type and handle it before
-    // the CbIoPacket decoding below, which would otherwise reject it as an unexpected type.
+    // Debug-UART forwarding: the MCU sends its printf output on this same IO connection as raw byte
+    // chunks (CST_CbToHost_DebugUart), each possibly containing several '\n'-separated lines split at
+    // an arbitrary boundary. Peek the type and handle it before the CbIoPacket decoding below, which
+    // would otherwise reject it as an unexpected type.
     if (payload.size() >= sizeof(CbStructType)) {
         CbStructType peek_type{};
         std::memcpy(&peek_type, payload.buffer.data(), sizeof(peek_type));
@@ -413,10 +414,26 @@ void io_bridge::handle_udp_rx(everest::lib::io::udp::udp_payload const& payload)
                 if (len > CB_DEBUG_UART_LINE_MAX) {
                     len = CB_DEBUG_UART_LINE_MAX;
                 }
-                // Route through print_info (not raw std::cout) so the line lands in the terminal
-                // UI's message panel instead of being painted over by the ftxui redraw; in log mode
-                // it prints to stdout like the other "[ unit ] device ..." lines.
-                utilities::print_info(m_identifier, "MCU") << std::string(dbg.data.text, len) << std::endl;
+                // Reassemble the byte stream and emit one log entry per complete line. Route through
+                // print_info (not raw std::cout) so each line lands in the terminal UI's message
+                // panel instead of being painted over by the ftxui redraw; in log mode it prints to
+                // stdout like the other "[ unit ] device ..." lines.
+                m_mcu_log_partial.append(dbg.data.text, len);
+                std::size_t nl;
+                while ((nl = m_mcu_log_partial.find('\n')) != std::string::npos) {
+                    std::string line = m_mcu_log_partial.substr(0, nl);
+                    m_mcu_log_partial.erase(0, nl + 1);
+                    if (!line.empty() && line.back() == '\r') {
+                        line.pop_back();
+                    }
+                    utilities::print_info(m_identifier, "MCU") << line << std::endl;
+                }
+                // Flush an over-long unterminated line so a missing newline can't grow it unbounded.
+                constexpr std::size_t k_max_partial = 2048;
+                if (m_mcu_log_partial.size() > k_max_partial) {
+                    utilities::print_info(m_identifier, "MCU") << m_mcu_log_partial << std::endl;
+                    m_mcu_log_partial.clear();
+                }
             }
             return;
         }

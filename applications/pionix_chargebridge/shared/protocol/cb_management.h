@@ -127,16 +127,17 @@ struct CB_COMPILER_ATTR_PACK CbWs28AnimPacket {
 	uint8_t flags;       // bit0 = reverse direction, bit1 = scroll (gradient); rest reserved 0
 };
 
-// MCU -> host: one line of the MCU's debug-UART (printf) output, forwarded over UDP on the IO
-// connection when CbConfig.debug_uart_udp_enabled is set. VARIABLE LENGTH ON THE WIRE: only the
-// first `length` bytes of text[] are transmitted, so the sent payload is sizeof(uint16_t) + length
-// bytes (no NUL terminator; length-delimited). The MCU buffers printf bytes until a newline (or the
-// line fills) and emits one packet per line; lines printed before the host connects are retained in
-// a small ring and flushed once forwarding is enabled.
+// MCU -> host: a chunk of the MCU's debug-UART (printf) byte stream, forwarded over UDP on the IO
+// connection when CbConfig.debug_uart_udp_enabled is set. The chunk is raw bytes and may contain
+// several '\n'-separated lines (including a partial trailing line); the host reassembles the stream
+// and splits on '\n'. VARIABLE LENGTH ON THE WIRE: only the first `length` bytes of text[] are
+// transmitted, so the sent payload is sizeof(uint16_t) + length bytes (no NUL terminator). The MCU
+// buffers printf bytes in a ring, dropping the oldest byte on overflow, so output produced before
+// the host connects is retained and flushed once forwarding is enabled.
 #define CB_DEBUG_UART_LINE_MAX 128
 struct CB_COMPILER_ATTR_PACK CbDebugUartLinePacket {
 	uint16_t length;                      // bytes of text[] actually used (1..CB_DEBUG_UART_LINE_MAX)
-	char     text[CB_DEBUG_UART_LINE_MAX]; // line text (newline stripped), not NUL-terminated
+	char     text[CB_DEBUG_UART_LINE_MAX]; // raw byte chunk (may contain newlines), not NUL-terminated
 };
 
 // Generic, unstructured telemetry carried inside the combined IO packet (see CbIoPacket).
