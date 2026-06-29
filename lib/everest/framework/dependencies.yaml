@@ -1,7 +1,7 @@
 ---
 libwebsockets:
   git: https://github.com/warmcat/libwebsockets.git
-  git_tag: v4.5.2
+  git_tag: v4.5.8
   cmake_condition: "EVEREST_ENABLE_ADMIN_PANEL_BACKEND"
   options:
     - CMAKE_POLICY_VERSION_MINIMUM 3.5
