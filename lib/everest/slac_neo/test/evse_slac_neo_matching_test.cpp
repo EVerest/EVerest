@@ -36,7 +36,8 @@ messages::HomeplugMessage create_cm_set_key_cnf(std::uint8_t result) {
     return message;
 }
 
-messages::cm_slac_match_req create_cm_slac_match_req_payload(EvMac const& ev_mac, RunId const& run_id, EvMac const& evse_mac) {
+messages::cm_slac_match_req create_cm_slac_match_req_payload(EvMac const& ev_mac, RunId const& run_id,
+                                                             EvMac const& evse_mac) {
     messages::cm_slac_match_req msg{};
     msg.application_type = defs::COMMON_APPLICATION_TYPE;
     msg.security_type = defs::COMMON_SECURITY_TYPE;
@@ -90,7 +91,8 @@ messages::HomeplugMessage create_cm_start_atten_char_ind(EvMac const& ev_mac, Ru
 
     messages::HomeplugMessage message;
     message.set_source(ev_mac);
-    message.setup_payload(&msg, sizeof(msg), defs::MMTYPE_CM_START_ATTEN_CHAR | defs::MMTYPE_MODE_IND, defs::MMV::AV_1_1);
+    message.setup_payload(&msg, sizeof(msg), defs::MMTYPE_CM_START_ATTEN_CHAR | defs::MMTYPE_MODE_IND,
+                          defs::MMV::AV_1_1);
     return message;
 }
 
@@ -108,7 +110,8 @@ messages::HomeplugMessage create_cm_atten_profile_ind(EvMac const& ev_mac, uint8
     return message;
 }
 
-messages::HomeplugMessage create_cm_atten_char_rsp(EvMac const& ev_mac, RunId const& run_id, uint8_t result = defs::CM_ATTEN_CHAR_RSP_RESULT) {
+messages::HomeplugMessage create_cm_atten_char_rsp(EvMac const& ev_mac, RunId const& run_id,
+                                                   uint8_t result = defs::CM_ATTEN_CHAR_RSP_RESULT) {
     messages::cm_atten_char_rsp msg{};
     msg.application_type = defs::COMMON_APPLICATION_TYPE;
     msg.security_type = defs::COMMON_SECURITY_TYPE;
@@ -126,7 +129,8 @@ messages::HomeplugMessage create_cm_slac_match_req(EvMac const& ev_mac, RunId co
     return wrap_cm_slac_match_req(ev_mac, create_cm_slac_match_req_payload(ev_mac, run_id, evse_mac));
 }
 
-messages::HomeplugMessage create_short_cm_slac_match_req(EvMac const& ev_mac, RunId const& run_id, EvMac const& evse_mac) {
+messages::HomeplugMessage create_short_cm_slac_match_req(EvMac const& ev_mac, RunId const& run_id,
+                                                         EvMac const& evse_mac) {
     auto message = create_cm_slac_match_req(ev_mac, run_id, evse_mac);
     message.mark_received_length(messages::HOMEPLUG_PAYLOAD_OFFSET);
     return message;
@@ -150,13 +154,15 @@ messages::HomeplugMessage create_lumissil_link_status_cnf(EvMac const& source_ma
 
     messages::HomeplugMessage message;
     message.set_source(source_mac);
-    message.setup_payload(&msg, sizeof(msg), defs::lumissil::MMTYPE_NSCM_GET_D_LINK_STATUS | defs::MMTYPE_MODE_CNF, defs::MMV::AV_1_0);
+    message.setup_payload(&msg, sizeof(msg), defs::lumissil::MMTYPE_NSCM_GET_D_LINK_STATUS | defs::MMTYPE_MODE_CNF,
+                          defs::MMV::AV_1_0);
     return message;
 }
 
 messages::HomeplugMessage create_short_lumissil_link_status_cnf(EvMac const& source_mac, uint8_t link_status) {
     auto message = create_lumissil_link_status_cnf(source_mac, link_status);
-    message.mark_received_length(messages::HOMEPLUG_PAYLOAD_OFFSET + sizeof(messages::lumissil::nscm_get_d_link_status_cnf));
+    message.mark_received_length(messages::HOMEPLUG_PAYLOAD_OFFSET +
+                                 sizeof(messages::lumissil::nscm_get_d_link_status_cnf));
     return message;
 }
 
@@ -166,7 +172,8 @@ messages::HomeplugMessage create_qualcomm_link_status_cnf(EvMac const& source_ma
 
     messages::HomeplugMessage message;
     message.set_source(source_mac);
-    message.setup_payload(&msg, sizeof(msg), defs::qualcomm::MMTYPE_LINK_STATUS | defs::MMTYPE_MODE_CNF, defs::MMV::AV_1_0);
+    message.setup_payload(&msg, sizeof(msg), defs::qualcomm::MMTYPE_LINK_STATUS | defs::MMTYPE_MODE_CNF,
+                          defs::MMV::AV_1_0);
     return message;
 }
 
@@ -214,20 +221,18 @@ std::size_t count_cm_slac_match_cnf(std::vector<SentMessage> const& messages) {
 
 bool is_cm_slac_match_cnf_to(messages::HomeplugMessage const& msg, EvMac const& destination_mac) {
     auto const* raw = msg.get_raw_message_ptr();
-    return is_cm_slac_match_cnf(msg) &&
-           std::equal(std::begin(raw->ethernet_header.ether_dhost),
-                      std::end(raw->ethernet_header.ether_dhost),
-                      destination_mac.begin());
+    return is_cm_slac_match_cnf(msg) && std::equal(std::begin(raw->ethernet_header.ether_dhost),
+                                                   std::end(raw->ethernet_header.ether_dhost), destination_mac.begin());
 }
 
 std::size_t count_cm_slac_match_cnf_to(std::vector<SentMessage> const& messages, EvMac const& destination_mac) {
-    return std::count_if(messages.begin(), messages.end(),
-                         [&destination_mac](auto const& entry) {
-                             return is_cm_slac_match_cnf_to(entry.hp_message, destination_mac);
-                         });
+    return std::count_if(messages.begin(), messages.end(), [&destination_mac](auto const& entry) {
+        return is_cm_slac_match_cnf_to(entry.hp_message, destination_mac);
+    });
 }
 
-bool get_last_cm_atten_char_ind(std::vector<SentMessage> const& sent_messages, messages::cm_atten_char_ind& atten_char) {
+bool get_last_cm_atten_char_ind(std::vector<SentMessage> const& sent_messages,
+                                messages::cm_atten_char_ind& atten_char) {
     for (auto it = sent_messages.rbegin(); it != sent_messages.rend(); ++it) {
         if (not is_cm_atten_char_ind(it->hp_message)) {
             continue;
@@ -298,7 +303,8 @@ bool assert_true(bool cond, const char* test_name, const char* details) {
     return true;
 }
 
-template <typename Predicate> bool wait_for(std::chrono::milliseconds timeout, slac_fsm& machine, Predicate&& predicate) {
+template <typename Predicate>
+bool wait_for(std::chrono::milliseconds timeout, slac_fsm& machine, Predicate&& predicate) {
     auto start = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - start < timeout) {
         if (predicate()) {
@@ -316,19 +322,21 @@ bool wait_for_match_state(Context const& ctx, SlacState expected, slac_fsm& mach
 }
 
 bool wait_for_parm_cnf_count(std::vector<SentMessage> const& sent_messages, size_t expected, slac_fsm& machine,
-                            int timeout_ms) {
+                             int timeout_ms) {
     const auto check_count = [&sent_messages, expected]() { return count_slac_parm_cnf(sent_messages) >= expected; };
     return wait_for(std::chrono::milliseconds(timeout_ms), machine, check_count);
 }
 
 bool wait_for_atten_char_ind_count(std::vector<SentMessage> const& sent_messages, size_t expected, slac_fsm& machine,
-                                  int timeout_ms) {
-    const auto check_count = [&sent_messages, expected]() { return count_cm_atten_char_ind(sent_messages) >= expected; };
+                                   int timeout_ms) {
+    const auto check_count = [&sent_messages, expected]() {
+        return count_cm_atten_char_ind(sent_messages) >= expected;
+    };
     return wait_for(std::chrono::milliseconds(timeout_ms), machine, check_count);
 }
 
 bool assert_stays_at_count(std::size_t expected, std::vector<SentMessage> const& sent_messages, slac_fsm& machine,
-                          int timeout_ms) {
+                           int timeout_ms) {
     const auto observed_count_increase = [&sent_messages, expected]() {
         return count_cm_atten_char_ind(sent_messages) > expected;
     };
@@ -338,26 +346,30 @@ bool assert_stays_at_count(std::size_t expected, std::vector<SentMessage> const&
     return not wait_for(std::chrono::milliseconds(timeout_ms), machine, observed_count_increase);
 }
 
-bool assert_parm_cnf_count_stays_at(std::size_t expected, std::vector<SentMessage> const& sent_messages, slac_fsm& machine,
-                                   int timeout_ms) {
-    const auto observed_count_increase = [&sent_messages, expected]() { return count_slac_parm_cnf(sent_messages) > expected; };
+bool assert_parm_cnf_count_stays_at(std::size_t expected, std::vector<SentMessage> const& sent_messages,
+                                    slac_fsm& machine, int timeout_ms) {
+    const auto observed_count_increase = [&sent_messages, expected]() {
+        return count_slac_parm_cnf(sent_messages) > expected;
+    };
     if (count_slac_parm_cnf(sent_messages) > expected) {
         return false;
     }
     return not wait_for(std::chrono::milliseconds(timeout_ms), machine, observed_count_increase);
 }
 
-bool assert_validate_cnf_count_stays_at(std::size_t expected, std::vector<SentMessage> const& sent_messages, slac_fsm& machine,
-                                      int timeout_ms) {
-    const auto observed_count_increase = [&sent_messages, expected]() { return count_cm_validate_cnf(sent_messages) > expected; };
+bool assert_validate_cnf_count_stays_at(std::size_t expected, std::vector<SentMessage> const& sent_messages,
+                                        slac_fsm& machine, int timeout_ms) {
+    const auto observed_count_increase = [&sent_messages, expected]() {
+        return count_cm_validate_cnf(sent_messages) > expected;
+    };
     if (count_cm_validate_cnf(sent_messages) > expected) {
         return false;
     }
     return not wait_for(std::chrono::milliseconds(timeout_ms), machine, observed_count_increase);
 }
 
-bool perform_full_match_sequence(Context& ctx, std::vector<SentMessage>& sent_messages, slac_fsm& machine, EvMac const& ev_mac,
-                                RunId const& run_id, SlacState expected_state, int timeout_ms) {
+bool perform_full_match_sequence(Context& ctx, std::vector<SentMessage>& sent_messages, slac_fsm& machine,
+                                 EvMac const& ev_mac, RunId const& run_id, SlacState expected_state, int timeout_ms) {
     const char* test_name = "perform_full_match_sequence";
     const auto initial_parm_count = count_slac_parm_cnf(sent_messages);
     const auto initial_atten_count = count_cm_atten_char_ind(sent_messages);
@@ -525,9 +537,8 @@ bool test_duplicate_cm_slac_parm_req_restarts_inflight_session() {
     for (int i = 0; i < 9; ++i) {
         machine.message(create_cm_atten_profile_ind(ev_mac, static_cast<uint8_t>(0xA0 + i)));
     }
-    if (!assert_true(assert_stays_at_count(atten_char_count_before_duplicate, sent_messages, machine, 80),
-                    test_name,
-                    "received CM_ATTEN_CHAR.IND before restart-involved profile sequence completed")) {
+    if (!assert_true(assert_stays_at_count(atten_char_count_before_duplicate, sent_messages, machine, 80), test_name,
+                     "received CM_ATTEN_CHAR.IND before restart-involved profile sequence completed")) {
         return false;
     }
 
@@ -545,7 +556,8 @@ bool test_duplicate_cm_slac_parm_req_restarts_inflight_session() {
         return false;
     }
 
-    const auto expected_aag = calc_expected_aag(0xA0, defs::CM_SLAC_PARM_CNF_NUM_SOUNDS, ctx.slac_config.sounding_atten_adjustment);
+    const auto expected_aag =
+        calc_expected_aag(0xA0, defs::CM_SLAC_PARM_CNF_NUM_SOUNDS, ctx.slac_config.sounding_atten_adjustment);
     for (std::size_t i = 0; i < defs::AAG_LIST_LEN; ++i) {
         if (!assert_true(atten_char.attenuation_profile.aag[i] == expected_aag[i], test_name,
                          "CM_ATTEN_CHAR.IND attenuation profile contains pre-duplicate samples")) {
@@ -638,10 +650,10 @@ bool test_short_cm_slac_param_req_does_not_create_session() {
     }
     machine.message(short_cm_slac_parm_req);
     auto changed = wait_for(std::chrono::milliseconds(80), machine,
-                           [&sent_messages, baseline_parm_cnf_count, &ctx, baseline_session_count]() {
-                               return (count_slac_parm_cnf(sent_messages) > baseline_parm_cnf_count) ||
-                                      (ctx.status.session_count != baseline_session_count);
-                           });
+                            [&sent_messages, baseline_parm_cnf_count, &ctx, baseline_session_count]() {
+                                return (count_slac_parm_cnf(sent_messages) > baseline_parm_cnf_count) ||
+                                       (ctx.status.session_count != baseline_session_count);
+                            });
     return assert_true(not changed, test_name, "short CM_SLAC_PARAM.REQ created session or emitted CNF");
 }
 
@@ -743,7 +755,9 @@ bool test_matching_sessions_respect_max_matching_sessions() {
         sent_messages.push_back({sent_messages.size(), hp_message});
         return true;
     };
-    callbacks.signal_ev_mac_address_parm_req = [&cm_parm_req_signal_count](const std::string&) { ++cm_parm_req_signal_count; };
+    callbacks.signal_ev_mac_address_parm_req = [&cm_parm_req_signal_count](const std::string&) {
+        ++cm_parm_req_signal_count;
+    };
     callbacks.log_warn = [&warning_count](const std::string&) { ++warning_count; };
 
     Context ctx(callbacks);
@@ -783,7 +797,8 @@ bool test_matching_sessions_respect_max_matching_sessions() {
     if (!assert_true(ctx.status.session_count == 2, test_name, "second run_id did not create second session")) {
         return false;
     }
-    if (!assert_true(cm_parm_req_signal_count == 2, test_name, "second request did not signal second CM_SLAC_PARM.CNF")) {
+    if (!assert_true(cm_parm_req_signal_count == 2, test_name,
+                     "second request did not signal second CM_SLAC_PARM.CNF")) {
         return false;
     }
 
@@ -820,10 +835,12 @@ bool test_matching_sessions_respect_max_matching_sessions() {
     if (!wait_for_parm_cnf_count(sent_messages, duplicate_count + 1, machine, 100)) {
         return assert_true(false, test_name, "existing identity did not receive CM_SLAC_PARM.CNF at cap");
     }
-    if (!assert_true(ctx.status.session_count == 3, test_name, "session_count changed after existing identity restart")) {
+    if (!assert_true(ctx.status.session_count == 3, test_name,
+                     "session_count changed after existing identity restart")) {
         return false;
     }
-    if (!assert_true(cm_parm_req_signal_count == 4, test_name, "existing identity restart did not signal CM_SLAC_PARM.CNF")) {
+    if (!assert_true(cm_parm_req_signal_count == 4, test_name,
+                     "existing identity restart did not signal CM_SLAC_PARM.CNF")) {
         return false;
     }
     if (!assert_true(warning_count == warning_count_before_cap + 1, test_name,
@@ -971,7 +988,7 @@ bool test_matching_uses_session_nmk_when_debug_disabled() {
     std::copy(std::begin(ctx.slac_config.session_nmk), std::end(ctx.slac_config.session_nmk), configured_nmk.begin());
 
     return assert_true(expect_nmk_equal(observed_nmk, configured_nmk), test_name,
-                      "CM_SLAC_MATCH.CNF did not use configured session NMK");
+                       "CM_SLAC_MATCH.CNF did not use configured session NMK");
 }
 
 bool test_waitforlink_retry_from_same_ev_and_run_id_resends_cnf() {
@@ -1010,9 +1027,9 @@ bool test_waitforlink_retry_from_same_ev_and_run_id_resends_cnf() {
     machine.message(retry);
 
     if (!assert_true(wait_for(std::chrono::milliseconds(120), machine,
-                             [&baseline_match_cnf_count, &sent_messages]() {
-                                 return count_cm_slac_match_cnf(sent_messages) > baseline_match_cnf_count;
-                             }),
+                              [&baseline_match_cnf_count, &sent_messages]() {
+                                  return count_cm_slac_match_cnf(sent_messages) > baseline_match_cnf_count;
+                              }),
                      test_name, "same EV MAC retry did not resend CM_SLAC_MATCH.CNF")) {
         return false;
     }
@@ -1060,10 +1077,9 @@ bool test_waitforlink_retry_from_different_src_does_not_resend_cnf() {
     auto retry_msg = create_cm_slac_match_req_payload(ev_mac, run_id, evse_mac_copy);
     machine.message(wrap_cm_slac_match_req(bad_source, retry_msg));
 
-    auto changed = wait_for(std::chrono::milliseconds(120), machine,
-                           [&baseline_match_cnf_count, &sent_messages]() {
-                               return count_cm_slac_match_cnf(sent_messages) > baseline_match_cnf_count;
-                           });
+    auto changed = wait_for(std::chrono::milliseconds(120), machine, [&baseline_match_cnf_count, &sent_messages]() {
+        return count_cm_slac_match_cnf(sent_messages) > baseline_match_cnf_count;
+    });
     return assert_true(not changed, test_name, "retry from different source MAC resent CM_SLAC_MATCH.CNF") and
            assert_true(match_cnf_cb_count == baseline_cb_count, test_name,
                        "invalid retry from different source triggered CM_SLAC match callback");
@@ -1101,10 +1117,9 @@ bool test_waitforlink_retry_with_different_run_id_does_not_resend_cnf() {
     auto retry_msg = create_cm_slac_match_req_payload(ev_mac, retry_run_id, EvMac{0x02, 0x00, 0x00, 0x00, 0x00, 0x01});
     machine.message(wrap_cm_slac_match_req(ev_mac, retry_msg));
 
-    auto changed = wait_for(std::chrono::milliseconds(120), machine,
-                           [&baseline_match_cnf_count, &sent_messages]() {
-                               return count_cm_slac_match_cnf(sent_messages) > baseline_match_cnf_count;
-                           });
+    auto changed = wait_for(std::chrono::milliseconds(120), machine, [&baseline_match_cnf_count, &sent_messages]() {
+        return count_cm_slac_match_cnf(sent_messages) > baseline_match_cnf_count;
+    });
     return assert_true(not changed, test_name, "retry with different run_id resent CM_SLAC_MATCH.CNF");
 }
 
@@ -1141,10 +1156,9 @@ bool test_waitforlink_retry_with_different_pev_mac_does_not_resend_cnf() {
     std::copy(altered_pev_mac.begin(), altered_pev_mac.end(), retry_msg.pev_mac);
     machine.message(wrap_cm_slac_match_req(ev_mac, retry_msg));
 
-    auto changed = wait_for(std::chrono::milliseconds(120), machine,
-                           [&baseline_match_cnf_count, &sent_messages]() {
-                               return count_cm_slac_match_cnf(sent_messages) > baseline_match_cnf_count;
-                           });
+    auto changed = wait_for(std::chrono::milliseconds(120), machine, [&baseline_match_cnf_count, &sent_messages]() {
+        return count_cm_slac_match_cnf(sent_messages) > baseline_match_cnf_count;
+    });
     return assert_true(not changed, test_name, "retry with different pev_mac resent CM_SLAC_MATCH.CNF");
 }
 
@@ -1197,10 +1211,9 @@ bool test_waitforlink_retry_with_invalid_match_fields_does_not_resend_cnf() {
     wrong_mvf.mvf_length = defs::CM_SLAC_MATCH_REQ_MVF_LENGTH + 1;
     machine.message(wrap_cm_slac_match_req(ev_mac, wrong_mvf));
 
-    auto changed = wait_for(std::chrono::milliseconds(120), machine,
-                           [&baseline_match_cnf_count, &sent_messages]() {
-                               return count_cm_slac_match_cnf(sent_messages) > baseline_match_cnf_count;
-                           });
+    auto changed = wait_for(std::chrono::milliseconds(120), machine, [&baseline_match_cnf_count, &sent_messages]() {
+        return count_cm_slac_match_cnf(sent_messages) > baseline_match_cnf_count;
+    });
     return assert_true(not changed, test_name, "retry with invalid match fields resent CM_SLAC_MATCH.CNF") and
            assert_true(match_cnf_cb_count == baseline_cb_count, test_name,
                        "retry with invalid match fields triggered CM_SLAC match callback");
@@ -1251,10 +1264,9 @@ bool test_waitforlink_retry_after_reset_does_not_emit_cached_match_cnf() {
 
     auto retry = create_cm_slac_match_req(ev_mac, run_id, EvMac{0x02, 0x00, 0x00, 0x00, 0x00, 0x01});
     machine.message(retry);
-    auto changed = wait_for(std::chrono::milliseconds(120), machine,
-                           [&baseline_match_cnf_count, &sent_messages]() {
-                               return count_cm_slac_match_cnf(sent_messages) > baseline_match_cnf_count;
-                           });
+    auto changed = wait_for(std::chrono::milliseconds(120), machine, [&baseline_match_cnf_count, &sent_messages]() {
+        return count_cm_slac_match_cnf(sent_messages) > baseline_match_cnf_count;
+    });
     return assert_true(not changed, test_name, "retry after reset emitted stale cached CM_SLAC_MATCH.CNF");
 }
 
@@ -1301,9 +1313,11 @@ bool test_short_cm_slac_match_req_does_not_emit_match_cnf() {
         return false;
     }
     machine.message(short_cm_slac_match_req);
-    auto changed = wait_for(std::chrono::milliseconds(120), machine, [&ctx, &sent_messages, baseline_match_cnf_count]() {
-        return ctx.status.match_state != SlacState::WaitForLink || count_cm_slac_match_cnf(sent_messages) > baseline_match_cnf_count;
-    });
+    auto changed =
+        wait_for(std::chrono::milliseconds(120), machine, [&ctx, &sent_messages, baseline_match_cnf_count]() {
+            return ctx.status.match_state != SlacState::WaitForLink ||
+                   count_cm_slac_match_cnf(sent_messages) > baseline_match_cnf_count;
+        });
     return assert_true(not changed, test_name, "short CM_SLAC_MATCH.REQ emitted CM_SLAC_MATCH.CNF or changed state");
 }
 
@@ -1357,7 +1371,8 @@ bool test_short_link_status_cnf_does_not_leave_matched_or_failed() {
         return false;
     }
     machine.message(short_link_status_cnf);
-    auto failed = wait_for(std::chrono::milliseconds(120), machine, [&ctx]() { return ctx.status.match_state == SlacState::Failed; });
+    auto failed = wait_for(std::chrono::milliseconds(120), machine,
+                           [&ctx]() { return ctx.status.match_state == SlacState::Failed; });
     if (!assert_true(not failed, test_name, "short link-status CNF changed matched/failed state")) {
         return false;
     }
@@ -1401,9 +1416,9 @@ bool test_reset_instead_of_fail_waits_for_new_parm_request() {
     if (!wait_for_parm_cnf_count(sent_messages, initial_parm_count + 1, machine, 150)) {
         return assert_true(false, test_name, "did not emit CM_SLAC_PARM.CNF for first request");
     }
-    const auto first_failure_reset = wait_for(
-        std::chrono::milliseconds(1700), machine,
-        [&ctx]() { return ctx.status.match_state == SlacState::Matching && ctx.status.session_count == 0; });
+    const auto first_failure_reset = wait_for(std::chrono::milliseconds(1700), machine, [&ctx]() {
+        return ctx.status.match_state == SlacState::Matching && ctx.status.session_count == 0;
+    });
     if (!first_failure_reset) {
         return assert_true(false, test_name,
                            "first matching failure did not reset and return to Matching without failing");
@@ -1417,7 +1432,8 @@ bool test_reset_instead_of_fail_waits_for_new_parm_request() {
                      "reset_instead_of_fail should keep Matching on first failure")) {
         return false;
     }
-    if (!assert_true(ctx.status.session_count == 1, test_name, "second parm request did not start a new matching session")) {
+    if (!assert_true(ctx.status.session_count == 1, test_name,
+                     "second parm request did not start a new matching session")) {
         return false;
     }
     if (!wait_for_match_state(ctx, SlacState::Failed, machine, 1900)) {
@@ -1453,8 +1469,9 @@ bool test_cm_validate_req_returns_failure_cnf() {
     const auto expected_validate_cnf_count = initial_validate_cnf + 1;
     machine.message(create_cm_validate_req(ev_mac));
 
-    if (!wait_for(std::chrono::milliseconds(200), machine,
-                  [&sent_messages, expected_validate_cnf_count]() { return count_cm_validate_cnf(sent_messages) == expected_validate_cnf_count; })) {
+    if (!wait_for(std::chrono::milliseconds(200), machine, [&sent_messages, expected_validate_cnf_count]() {
+            return count_cm_validate_cnf(sent_messages) == expected_validate_cnf_count;
+        })) {
         return assert_true(false, test_name, "did not emit CM_VALIDATE.CNF");
     }
     if (!assert_validate_cnf_count_stays_at(expected_validate_cnf_count, sent_messages, machine, 80)) {
@@ -1496,8 +1513,7 @@ bool test_no_cm_slac_parm_timeout_resets_then_fails() {
     }
 
     auto const timeout_ms = ctx.slac_config.slac_init_timeout_ms;
-    auto const first_timeout_deadline =
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms + 30);
+    auto const first_timeout_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms + 30);
     while (std::chrono::steady_clock::now() < first_timeout_deadline) {
         machine.update();
         if (ctx.status.match_state == SlacState::Failed) {
@@ -1589,15 +1605,15 @@ bool test_matched_link_status_rejects_only_negative_cnf() {
 
     machine.message(create_lumissil_link_status_cnf(modem_source, defs::D_LINK_STATUS_LINKED));
     if (!assert_true(not wait_for(std::chrono::milliseconds(60), machine,
-                                 [&ctx]() { return ctx.status.match_state != SlacState::Matched; }), test_name,
-                     "positive link-status CNF changed state")) {
+                                  [&ctx]() { return ctx.status.match_state != SlacState::Matched; }),
+                     test_name, "positive link-status CNF changed state")) {
         return false;
     }
 
     machine.message(create_cm_validate_req(ev_mac));
     if (!assert_true(not wait_for(std::chrono::milliseconds(60), machine,
-                                 [&ctx]() { return ctx.status.match_state != SlacState::Matched; }), test_name,
-                     "unrelated message changed state in Matched")) {
+                                  [&ctx]() { return ctx.status.match_state != SlacState::Matched; }),
+                     test_name, "unrelated message changed state in Matched")) {
         return false;
     }
 
@@ -1649,8 +1665,8 @@ bool test_matched_qualcomm_link_status_rejects_only_negative_cnf() {
 
     machine.message(create_cm_validate_req(ev_mac));
     if (!assert_true(not wait_for(std::chrono::milliseconds(60), machine,
-                                 [&ctx]() { return ctx.status.match_state != SlacState::Matched; }), test_name,
-                     "unrelated message changed state in Matched")) {
+                                  [&ctx]() { return ctx.status.match_state != SlacState::Matched; }),
+                     test_name, "unrelated message changed state in Matched")) {
         return false;
     }
 
@@ -1666,17 +1682,18 @@ bool test_matched_qualcomm_link_status_rejects_only_negative_cnf() {
 
 int main() {
     const auto tests = std::array<std::pair<const char*, bool (*)()>, 24>{
-        std::make_pair("test_duplicate_cm_slac_parm_req_restarts_same_session", test_duplicate_cm_slac_parm_req_restarts_same_session),
+        std::make_pair("test_duplicate_cm_slac_parm_req_restarts_same_session",
+                       test_duplicate_cm_slac_parm_req_restarts_same_session),
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_inflight_session",
                        test_duplicate_cm_slac_parm_req_restarts_inflight_session),
         std::make_pair("test_invalid_cm_slac_parm_req_is_ignored", test_invalid_cm_slac_parm_req_is_ignored),
-        std::make_pair("test_short_cm_slac_param_req_does_not_create_session", test_short_cm_slac_param_req_does_not_create_session),
+        std::make_pair("test_short_cm_slac_param_req_does_not_create_session",
+                       test_short_cm_slac_param_req_does_not_create_session),
         std::make_pair("test_different_run_id_creates_new_session", test_different_run_id_creates_new_session),
         std::make_pair("test_different_ev_mac_creates_new_session", test_different_ev_mac_creates_new_session),
         std::make_pair("test_matching_sessions_respect_max_matching_sessions",
                        test_matching_sessions_respect_max_matching_sessions),
-        std::make_pair("test_invalid_max_matching_sessions_is_clamped",
-                       test_invalid_max_matching_sessions_is_clamped),
+        std::make_pair("test_invalid_max_matching_sessions_is_clamped", test_invalid_max_matching_sessions_is_clamped),
         std::make_pair("test_debug_simulate_failed_matching_uses_wrong_nmk",
                        test_debug_simulate_failed_matching_uses_wrong_nmk),
         std::make_pair("test_matching_uses_session_nmk_when_debug_disabled",

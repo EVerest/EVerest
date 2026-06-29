@@ -73,7 +73,8 @@ bool test_setup_payload_is_valid_with_sane_frame_size() {
     const char* test_name = "test_setup_payload_is_valid_with_sane_frame_size";
     messages::cm_set_key_req payload{};
     messages::HomeplugMessage message;
-    message.setup_payload(&payload, sizeof(payload), defs::MMTYPE_CM_SET_KEY | defs::MMTYPE_MODE_REQ, defs::MMV::AV_1_0);
+    message.setup_payload(&payload, sizeof(payload), defs::MMTYPE_CM_SET_KEY | defs::MMTYPE_MODE_REQ,
+                          defs::MMV::AV_1_0);
 
     return assert_true(message.is_valid(), test_name, "setup payload message invalid") &&
            assert_true(message.frame_size() >= static_cast<std::size_t>(defs::MME_MIN_LENGTH), test_name,
@@ -89,7 +90,8 @@ int main() {
                        test_default_lumissil_get_version_req_is_initialized),
         std::make_pair("test_default_lumissil_link_status_req_is_initialized",
                        test_default_lumissil_link_status_req_is_initialized),
-        std::make_pair("test_default_lumissil_reset_req_is_initialized", test_default_lumissil_reset_req_is_initialized),
+        std::make_pair("test_default_lumissil_reset_req_is_initialized",
+                       test_default_lumissil_reset_req_is_initialized),
         std::make_pair("test_default_homeplug_message_is_invalid", test_default_homeplug_message_is_invalid),
         std::make_pair("test_setup_payload_is_valid_with_sane_frame_size",
                        test_setup_payload_is_valid_with_sane_frame_size),

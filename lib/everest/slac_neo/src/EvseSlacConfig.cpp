@@ -2,8 +2,8 @@
 // Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 #include <everest/slac/EvseSlacConfig.hpp>
 #include <limits>
-#include <stdexcept>
 #include <random>
+#include <stdexcept>
 #include <string_view>
 
 namespace everest::lib::slac::fsm::evse {

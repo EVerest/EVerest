@@ -67,7 +67,8 @@ std::string device_info(messages::qualcomm::op_attr_cnf const& msg) {
 
     result += "\n  ZC signal: ";
 
-    const auto zc_signal = (msg.line_freq_zc >> qca_defs::OP_ATTR_ZC_SIGNAL_SHIFT) & qca_defs::OP_ATTR_LINE_FREQ_ZC_MASK;
+    const auto zc_signal =
+        (msg.line_freq_zc >> qca_defs::OP_ATTR_ZC_SIGNAL_SHIFT) & qca_defs::OP_ATTR_LINE_FREQ_ZC_MASK;
     if (zc_signal == qca_defs::OP_ATTR_ZC_SIGNAL_DETECTED) {
         result += "Detected";
     } else if (zc_signal == qca_defs::OP_ATTR_ZC_SIGNAL_MISSING) {

@@ -3,13 +3,13 @@
 #pragma once
 
 #include <array>
-#include <cstring>
-#include <cstdint>
 #include <cstddef>
-#include <optional>
-#include <stdexcept>
+#include <cstdint>
+#include <cstring>
 #include <everest/slac/slac_defs.hpp>
 #include <net/ethernet.h>
+#include <optional>
+#include <stdexcept>
 
 namespace everest::lib::slac::messages {
 
@@ -59,7 +59,8 @@ public:
 
     template <typename T> bool has_payload() const {
         auto const payload_end = frame_size();
-        auto const payload_offset = static_cast<std::size_t>(get_raw_payload_ptr() - reinterpret_cast<std::uint8_t const*>(&raw_msg));
+        auto const payload_offset =
+            static_cast<std::size_t>(get_raw_payload_ptr() - reinterpret_cast<std::uint8_t const*>(&raw_msg));
         return payload_end >= static_cast<std::size_t>(defs::MME_MIN_LENGTH) &&
                payload_end >= payload_offset + sizeof(T);
     }

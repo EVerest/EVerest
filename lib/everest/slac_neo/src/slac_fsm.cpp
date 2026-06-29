@@ -185,7 +185,8 @@ struct FsmStateVisitor {
 
 struct slac_fsm::Impl {
     msm::SlacFSM fsm;
-    explicit Impl(fsm::evse::Context& ctx) : fsm(ctx) {}
+    explicit Impl(fsm::evse::Context& ctx) : fsm(ctx) {
+    }
 };
 
 void slac_fsm::event_post_processing() {
@@ -221,7 +222,8 @@ void slac_fsm::event_post_processing() {
     }
 }
 
-slac_fsm::slac_fsm(fsm::evse::Context& ctx) : impl(std::make_unique<Impl>(ctx)), ctx(ctx) {}
+slac_fsm::slac_fsm(fsm::evse::Context& ctx) : impl(std::make_unique<Impl>(ctx)), ctx(ctx) {
+}
 
 slac_fsm::~slac_fsm() {
 }
