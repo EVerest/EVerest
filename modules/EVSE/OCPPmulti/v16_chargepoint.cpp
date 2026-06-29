@@ -838,16 +838,12 @@ ChargePointV16::validate_standard(const types::authorization::ProvidedIdToken& p
 
     if (enhanced_id_tag_info.tariff_message) {
         // this can be used as the TT field of the OCMF.
-        const auto& messages = enhanced_id_tag_info.tariff_message.value().message;
+        const auto& messages = enhanced_id_tag_info.tariff_message->message;
         if (!messages.empty()) {
-            std::vector<ocpp::v2::MessageContent> vec;
-            vec.reserve(messages.size());
-            for (const auto& message : messages) {
-                vec.push_back({ocpp::v2::MessageFormatEnum::ASCII, message.message, std::nullopt, std::nullopt});
-            }
-            ocpp::v2::Tariff tariff;
-            tariff.description = std::move(vec);
-            validation_result.tariff = std::move(tariff);
+            ocpp::v2::MessageContent content;
+            content.content = messages[0].message;
+            content.format = ocpp::v2::MessageFormatEnum::ASCII;
+            validation_result.idTokenInfo.personalMessage = std::move(content);
         }
     }
 
