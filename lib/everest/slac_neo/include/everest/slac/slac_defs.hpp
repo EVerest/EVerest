@@ -46,8 +46,9 @@ inline constexpr int RUN_ID_LEN = 8;
 inline constexpr int C_EV_START_ATTEN_CHAR_INDS = 3;
 inline constexpr int C_EV_MATCH_RETRY = 2;
 inline constexpr int C_EV_MATCH_MNBC = 10;
-inline constexpr int TP_EV_BATCH_MSG_INTERVAL_MS = 40; // 20ms - 50ms, interval between start_atten_char and mnbc_sound msgs
-inline constexpr int TT_EV_ATTEN_RESULTS_MS = 1200;    // max. 1200ms
+inline constexpr int TP_EV_BATCH_MSG_INTERVAL_MS =
+    40; // 20ms - 50ms, interval between start_atten_char and mnbc_sound msgs
+inline constexpr int TT_EV_ATTEN_RESULTS_MS = 1200; // max. 1200ms
 inline constexpr int TT_EVSE_MATCH_MNBC_MS = 600;
 inline constexpr int TT_MATCH_SEQUENCE_MS = 400;
 inline constexpr int TT_MATCH_RESPONSE_MS = 200;

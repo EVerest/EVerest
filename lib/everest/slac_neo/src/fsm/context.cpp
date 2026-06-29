@@ -45,14 +45,14 @@ void Context::clear_match_confirm_cache() {
     match_confirm_cache = MatchConfirmCache{};
 }
 
-void Context::cache_match_confirm_message(messages::cm_slac_match_cnf const& match_confirm_message, uint8_t const* ev_mac,
-                                          uint8_t const* evse_mac, uint8_t const* run_id) {
+void Context::cache_match_confirm_message(messages::cm_slac_match_cnf const& match_confirm_message,
+                                          uint8_t const* ev_mac, uint8_t const* evse_mac, uint8_t const* run_id) {
     cache_match_confirm_message(match_confirm_message, byte_array_from_wire<MacAddress>(ev_mac),
                                 byte_array_from_wire<MacAddress>(evse_mac), byte_array_from_wire<RunId>(run_id));
 }
 
-void Context::cache_match_confirm_message(messages::cm_slac_match_cnf const& match_confirm_message, MacAddress const& ev_mac,
-                                          MacAddress const& evse_mac, RunId const& run_id) {
+void Context::cache_match_confirm_message(messages::cm_slac_match_cnf const& match_confirm_message,
+                                          MacAddress const& ev_mac, MacAddress const& evse_mac, RunId const& run_id) {
     match_confirm_cache.valid = true;
     match_confirm_cache.message = match_confirm_message;
     match_confirm_cache.ev_mac = ev_mac;

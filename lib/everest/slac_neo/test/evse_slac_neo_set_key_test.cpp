@@ -6,8 +6,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <net/ethernet.h>
-#include <utility>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <everest/slac/HomeplugMessage.hpp>
@@ -99,7 +99,8 @@ bool assert_true(bool cond, const char* test_name, const char* details) {
     return true;
 }
 
-template <typename Predicate> bool wait_for(std::chrono::milliseconds timeout, slac_fsm& machine, Predicate&& predicate) {
+template <typename Predicate>
+bool wait_for(std::chrono::milliseconds timeout, slac_fsm& machine, Predicate&& predicate) {
     auto start = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - start < timeout) {
         if (predicate()) {
@@ -117,13 +118,13 @@ bool wait_for_match_state(Context const& ctx, SlacState expected, slac_fsm& mach
 }
 
 bool wait_for_set_key_count(std::vector<SetKeySentMessage> const& sent_messages, size_t expected, slac_fsm& machine,
-                           int timeout_ms) {
+                            int timeout_ms) {
     const auto check_count = [&sent_messages, expected]() { return count_set_key_messages(sent_messages) >= expected; };
     return wait_for(std::chrono::milliseconds(timeout_ms), machine, check_count);
 }
 
-bool assert_stays_at_count(std::vector<SetKeySentMessage> const& sent_messages, size_t expected_count, slac_fsm& machine,
-                          int timeout_ms) {
+bool assert_stays_at_count(std::vector<SetKeySentMessage> const& sent_messages, size_t expected_count,
+                           slac_fsm& machine, int timeout_ms) {
     size_t start_count = count_set_key_messages(sent_messages);
     if (start_count != expected_count) {
         return false;
@@ -193,7 +194,7 @@ bool test_legacy_single_attempt_accepts_valid_success_result() {
         return assert_true(false, test_name, "did not send initial CM_SET_KEY.REQ");
     }
     if (!assert_true(count_set_key_messages(sent_messages) == 1, test_name,
-                    "legacy_single_attempt did not send exactly one initial CM_SET_KEY.REQ")) {
+                     "legacy_single_attempt did not send exactly one initial CM_SET_KEY.REQ")) {
         return false;
     }
     if (!assert_stays_at_count(sent_messages, 1, machine, 20)) {
@@ -204,7 +205,7 @@ bool test_legacy_single_attempt_accepts_valid_success_result() {
     auto initial_nmk = extract_nmk(set_key_messages.front().hp_message);
     auto session_nmk_before = current_session_nmk(ctx);
     if (!assert_true(expect_nmk_equal(session_nmk_before, initial_nmk), test_name,
-                    "legacy_single_attempt should send session_nmk on CM_SET_KEY.REQ")) {
+                     "legacy_single_attempt should send session_nmk on CM_SET_KEY.REQ")) {
         return false;
     }
 
@@ -222,7 +223,7 @@ bool test_legacy_single_attempt_accepts_valid_success_result() {
     }
 
     if (!assert_true(count_set_key_messages(sent_messages) == 1, test_name,
-                    "legacy_single_attempt sent unexpected CM_SET_KEY.REQ count")) {
+                     "legacy_single_attempt sent unexpected CM_SET_KEY.REQ count")) {
         return false;
     }
 
@@ -270,7 +271,8 @@ bool test_legacy_single_attempt_rejects_reserved_result() {
         return assert_true(false, test_name, "did not reach Failed on reserved result");
     }
 
-    if (!assert_true(not ctx.status.modem_NMK, test_name, "legacy_single_attempt incorrectly set modem_NMK on failure")) {
+    if (!assert_true(not ctx.status.modem_NMK, test_name,
+                     "legacy_single_attempt incorrectly set modem_NMK on failure")) {
         return false;
     }
 
@@ -319,7 +321,8 @@ bool test_legacy_single_attempt_accepts_compat_success_cnf() {
         return assert_true(false, test_name, "legacy_single_attempt retried after compatible success CNF");
     }
 
-    return assert_true(ctx.status.modem_NMK, test_name, "legacy_single_attempt did not set modem_NMK on compatible success CNF");
+    return assert_true(ctx.status.modem_NMK, test_name,
+                       "legacy_single_attempt did not set modem_NMK on compatible success CNF");
 }
 
 bool test_legacy_single_attempt_reaches_failed() {
@@ -355,7 +358,7 @@ bool test_legacy_single_attempt_reaches_failed() {
     }
 
     return assert_true(count_set_key_messages(sent_messages) == 1, test_name,
-                      "legacy_single_attempt attempted more than one CM_SET_KEY.REQ");
+                       "legacy_single_attempt attempted more than one CM_SET_KEY.REQ");
 }
 
 bool test_retry_confirmed_accepts_wrong_source() {
@@ -398,7 +401,8 @@ bool test_retry_confirmed_accepts_wrong_source() {
         return assert_true(false, test_name, "retry_confirmed retried after wrong-source success CNF");
     }
 
-    return assert_true(ctx.status.modem_NMK, test_name, "retry_confirmed did not set modem_NMK on wrong-source success CNF");
+    return assert_true(ctx.status.modem_NMK, test_name,
+                       "retry_confirmed did not set modem_NMK on wrong-source success CNF");
 }
 
 bool test_retry_confirmed_accepts_malformed_fields() {
@@ -439,7 +443,8 @@ bool test_retry_confirmed_accepts_malformed_fields() {
             return assert_true(false, test_name, "retry_confirmed retried after compatible success CNF");
         }
 
-        return assert_true(ctx.status.modem_NMK, test_name, "retry_confirmed did not set modem_NMK on compatible success CNF");
+        return assert_true(ctx.status.modem_NMK, test_name,
+                           "retry_confirmed did not set modem_NMK on compatible success CNF");
     };
 
     auto malformed_pid = SetKeyCnfParams{};
@@ -511,7 +516,8 @@ bool test_retry_confirmed_reserved_result_is_failure() {
         return assert_true(false, test_name, "retry_confirmed did not give up to Idle on max reserved failures");
     }
 
-    if (!assert_true(count_set_key_messages(sent_messages) == 2, test_name, "did not stop retries at max on reserved result")) {
+    if (!assert_true(count_set_key_messages(sent_messages) == 2, test_name,
+                     "did not stop retries at max on reserved result")) {
         return false;
     }
     if (!assert_true(not ctx.status.modem_NMK, test_name, "modem_NMK set on reserved failure path")) {
@@ -528,7 +534,7 @@ bool test_default_set_key_handling_mode_is_retry_confirmed() {
     Context ctx(callbacks);
 
     return assert_true(ctx.slac_config.set_key_handling_mode == SetKeyHandlingMode::retry_confirmed, test_name,
-                      "default set_key_handling_mode is not retry_confirmed");
+                       "default set_key_handling_mode is not retry_confirmed");
 }
 
 bool test_default_set_key_cnf_success_mode_is_modem_compat() {
@@ -538,7 +544,7 @@ bool test_default_set_key_cnf_success_mode_is_modem_compat() {
     Context ctx(callbacks);
 
     return assert_true(ctx.slac_config.set_key_cnf_success_mode == SetKeyCnfSuccessMode::modem_compat_0x01, test_name,
-                      "default set_key_cnf_success_mode is not modem_compat_0x01");
+                       "default set_key_cnf_success_mode is not modem_compat_0x01");
 }
 
 bool test_retry_confirmed_retries_until_attempt_limit_without_promoting_session_nmk() {
@@ -583,7 +589,7 @@ bool test_retry_confirmed_retries_until_attempt_limit_without_promoting_session_
 
         machine.message(create_cm_set_key_cnf_reserved());
         if (!assert_true(expect_nmk_equal(ctx.slac_config.session_nmk, session_nmk_before), test_name,
-                        "session_nmk changed before success")) {
+                         "session_nmk changed before success")) {
             return false;
         }
 
@@ -596,14 +602,14 @@ bool test_retry_confirmed_retries_until_attempt_limit_without_promoting_session_
                 return assert_true(false, test_name, "retry_confirmed did not return to Idle after max attempts");
             }
             if (!assert_true(assert_stays_at_count(sent_messages, current_count, machine, 50), test_name,
-                            "retry_confirmed sent extra CM_SET_KEY.REQ after max attempts")) {
+                             "retry_confirmed sent extra CM_SET_KEY.REQ after max attempts")) {
                 return false;
             }
         }
     }
 
-    if (!assert_true(count_set_key_messages(sent_messages) == static_cast<size_t>(ctx.slac_config.set_key_max_attempts), test_name,
-                    "retry_confirmed did not retry up to set_key_max_attempts")) {
+    if (!assert_true(count_set_key_messages(sent_messages) == static_cast<size_t>(ctx.slac_config.set_key_max_attempts),
+                     test_name, "retry_confirmed did not retry up to set_key_max_attempts")) {
         return false;
     }
 
@@ -647,7 +653,8 @@ bool run_retry_confirmed_success(uint8_t result, SetKeyCnfSuccessMode success_mo
     }
 
     auto updated_nmk = current_session_nmk(ctx);
-    if (!assert_true(expect_nmk_equal(updated_nmk, request_nmk), test_name, "session_nmk did not match CM_SET_KEY.REQ new_key")) {
+    if (!assert_true(expect_nmk_equal(updated_nmk, request_nmk), test_name,
+                     "session_nmk did not match CM_SET_KEY.REQ new_key")) {
         return false;
     }
     if (!assert_true(not expect_nmk_equal(updated_nmk, session_nmk_before), test_name,
@@ -698,7 +705,7 @@ bool test_default_retries_on_hpgp_0x00_success_result() {
         return false;
     }
     return assert_true(expect_nmk_equal(ctx.slac_config.session_nmk, session_nmk_before), test_name,
-                      "default 0x00 CNF promoted session_nmk");
+                       "default 0x00 CNF promoted session_nmk");
 }
 
 bool test_short_cm_set_key_cnf_keeps_reset() {
@@ -739,9 +746,10 @@ bool test_short_cm_set_key_cnf_keeps_reset() {
         return false;
     }
     machine.message(short_cm_set_key_cnf);
-    auto stayed_in_reset = not wait_for(std::chrono::milliseconds(80), machine, [&ctx, &sent_messages, initial_count]() {
-        return ctx.status.match_state != SlacState::Reset || count_set_key_messages(sent_messages) > initial_count;
-    });
+    auto stayed_in_reset =
+        not wait_for(std::chrono::milliseconds(80), machine, [&ctx, &sent_messages, initial_count]() {
+            return ctx.status.match_state != SlacState::Reset || count_set_key_messages(sent_messages) > initial_count;
+        });
     return assert_true(stayed_in_reset, test_name, "short CM_SET_KEY.CNF changed state or emitted retry");
 }
 
@@ -751,7 +759,8 @@ int main() {
     const auto tests = std::array<std::pair<const char*, bool (*)()>, 13>{
         std::make_pair("legacy_single_attempt_accepts_valid_success_result",
                        test_legacy_single_attempt_accepts_valid_success_result),
-        std::make_pair("legacy_single_attempt_rejects_reserved_result", test_legacy_single_attempt_rejects_reserved_result),
+        std::make_pair("legacy_single_attempt_rejects_reserved_result",
+                       test_legacy_single_attempt_rejects_reserved_result),
         std::make_pair("legacy_single_attempt_accepts_compat_success_cnf",
                        test_legacy_single_attempt_accepts_compat_success_cnf),
         std::make_pair("legacy_single_attempt_reaches_failed", test_legacy_single_attempt_reaches_failed),
@@ -760,16 +769,18 @@ int main() {
         std::make_pair("retry_confirmed_reserved_result_is_failure", test_retry_confirmed_reserved_result_is_failure),
         std::make_pair("retry_confirmed_retries_until_attempt_limit_without_promoting_session_nmk",
                        test_retry_confirmed_retries_until_attempt_limit_without_promoting_session_nmk),
-        std::make_pair("test_default_set_key_handling_mode_is_retry_confirmed", test_default_set_key_handling_mode_is_retry_confirmed),
+        std::make_pair("test_default_set_key_handling_mode_is_retry_confirmed",
+                       test_default_set_key_handling_mode_is_retry_confirmed),
         std::make_pair("test_default_set_key_cnf_success_mode_is_modem_compat",
                        test_default_set_key_cnf_success_mode_is_modem_compat),
         std::make_pair("test_default_retries_on_hpgp_0x00_success_result",
                        test_default_retries_on_hpgp_0x00_success_result),
-        std::make_pair("retry_confirmed_hpgp_standard_accepts_0x00_success", [] {
-            return run_retry_confirmed_success(defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS,
-                                               SetKeyCnfSuccessMode::hpgp_standard_0x00,
-                                               "retry_confirmed_hpgp_standard_accepts_0x00_success");
-        }),
+        std::make_pair("retry_confirmed_hpgp_standard_accepts_0x00_success",
+                       [] {
+                           return run_retry_confirmed_success(defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS,
+                                                              SetKeyCnfSuccessMode::hpgp_standard_0x00,
+                                                              "retry_confirmed_hpgp_standard_accepts_0x00_success");
+                       }),
         std::make_pair("test_short_cm_set_key_cnf_keeps_reset", test_short_cm_set_key_cnf_keeps_reset),
     };
 
@@ -792,8 +803,7 @@ int main() {
         std::printf("[PASS] retry_confirmed_accepts_0x01_success\n");
     }
 
-    if (run_retry_confirmed_success(defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS,
-                                    SetKeyCnfSuccessMode::accept_0x00_or_0x01,
+    if (run_retry_confirmed_success(defs::CM_SET_KEY_CNF_RESULT_HPGP_SUCCESS, SetKeyCnfSuccessMode::accept_0x00_or_0x01,
                                     "retry_confirmed_dual_accepts_0x00_success") == false) {
         std::printf("[FAIL] retry_confirmed_dual_accepts_0x00_success\n");
         ++failed_count;

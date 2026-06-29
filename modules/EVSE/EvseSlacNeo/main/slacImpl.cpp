@@ -241,7 +241,8 @@ void slacImpl::configure_fsm_context() {
     if (config.set_key_handling_mode.empty() || config.set_key_handling_mode == "retry_confirmed") {
         fsm_ctx->slac_config.set_key_handling_mode = everest::lib::slac::fsm::evse::SetKeyHandlingMode::retry_confirmed;
     } else if (config.set_key_handling_mode == "legacy_single_attempt") {
-        fsm_ctx->slac_config.set_key_handling_mode = everest::lib::slac::fsm::evse::SetKeyHandlingMode::legacy_single_attempt;
+        fsm_ctx->slac_config.set_key_handling_mode =
+            everest::lib::slac::fsm::evse::SetKeyHandlingMode::legacy_single_attempt;
     } else {
         EVLOG_warning << "Invalid set_key_handling_mode '" << config.set_key_handling_mode
                       << "'. Expected 'legacy_single_attempt' or 'retry_confirmed'. Falling back to "
@@ -267,16 +268,14 @@ void slacImpl::configure_fsm_context() {
     }
 
     if (config.nmk_generation_mode.empty() || config.nmk_generation_mode == "legacy_printable") {
-        fsm_ctx->slac_config.nmk_generation_mode =
-            everest::lib::slac::fsm::evse::NmkGenerationMode::legacy_printable;
+        fsm_ctx->slac_config.nmk_generation_mode = everest::lib::slac::fsm::evse::NmkGenerationMode::legacy_printable;
     } else if (config.nmk_generation_mode == "full_byte_range") {
         fsm_ctx->slac_config.nmk_generation_mode = everest::lib::slac::fsm::evse::NmkGenerationMode::full_byte_range;
     } else {
         EVLOG_warning << "Invalid nmk_generation_mode '" << config.nmk_generation_mode
                       << "'. Expected 'full_byte_range' or 'legacy_printable'. Falling back to "
                       << "legacy_printable";
-        fsm_ctx->slac_config.nmk_generation_mode =
-            everest::lib::slac::fsm::evse::NmkGenerationMode::legacy_printable;
+        fsm_ctx->slac_config.nmk_generation_mode = everest::lib::slac::fsm::evse::NmkGenerationMode::legacy_printable;
     }
 
     fsm_ctx->slac_config.slac_init_timeout_ms = config.slac_init_timeout_ms;
@@ -339,9 +338,7 @@ void slacImpl::configure_slac_io_callbacks() {
         }
         local_fsm_ctrl->signal_new_slac_message(msg);
     });
-    slac_io->set_error_callback([this](auto on_error, auto const& detail) {
-        handle_slac_io_error(on_error, detail);
-    });
+    slac_io->set_error_callback([this](auto on_error, auto const& detail) { handle_slac_io_error(on_error, detail); });
     slac_io->set_ready_callback([this]() { handle_slac_io_ready(); });
 }
 
@@ -400,7 +397,8 @@ void slacImpl::handle_slac_io_error(bool on_error, const std::string& detail) {
             local_fsm_ctrl->stop();
         }
         auto const detail_message = detail.empty() ? "unknown error" : detail;
-        auto const fault_message = fmt::format("SLAC PLC communication unavailable on device {}: {}", config.device, detail_message);
+        auto const fault_message =
+            fmt::format("SLAC PLC communication unavailable on device {}: {}", config.device, detail_message);
         EVLOG_error << "SLAC I/O is in error. Waiting for hardware recovery: " << detail_message;
         raise_communication_fault(fault_message);
     } else {

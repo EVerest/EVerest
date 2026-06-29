@@ -4,8 +4,8 @@
 #define EVSE_SLAC_MISC_HPP
 
 #include <cstddef>
-#include <optional>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 

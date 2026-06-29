@@ -35,7 +35,8 @@ public:
     void setDurationSeconds(long long value);
     void setDurationMinutes(long long value);
 
-    template <class Rep, class Period> [[nodiscard]] bool getRemainingTime(std::chrono::duration<Rep, Period>& remaining_time) const {
+    template <class Rep, class Period>
+    [[nodiscard]] bool getRemainingTime(std::chrono::duration<Rep, Period>& remaining_time) const {
         remaining_time = std::chrono::duration_cast<std::chrono::duration<Rep, Period>>(remaining());
         return timeout();
     }

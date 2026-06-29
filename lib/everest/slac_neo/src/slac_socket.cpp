@@ -8,11 +8,11 @@
 #include <linux/if_packet.h>
 #include <net/if.h>
 #include <netinet/in.h>
-#include <system_error>
 #include <sstream>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <system_error>
 #include <unistd.h>
 
 namespace {
@@ -33,8 +33,7 @@ event::unique_fd open_raw_socket(std::string const& if_name) {
     int const if_index = if_nametoindex(if_name.c_str());
     if (if_index == 0) {
         auto const error_code = errno == 0 ? ENODEV : errno;
-        throw std::system_error(error_code, std::generic_category(),
-                                "SLAC PLC interface '" + if_name + "' not found");
+        throw std::system_error(error_code, std::generic_category(), "SLAC PLC interface '" + if_name + "' not found");
     }
 
     auto const socket_fd = ::socket(AF_PACKET, SOCK_RAW, protocol);
@@ -60,8 +59,7 @@ event::unique_fd open_raw_socket(std::string const& if_name) {
         auto const error_code = errno;
         auto msg = "Could not bind raw socket to interface '" + if_name + "'";
         if (error_code == EPERM || error_code == EACCES) {
-            msg = "Could not bind raw socket to interface '" + if_name +
-                  "': requires CAP_NET_RAW or root privileges";
+            msg = "Could not bind raw socket to interface '" + if_name + "': requires CAP_NET_RAW or root privileges";
         }
         close(socket_fd);
         throw std::system_error(error_code, std::generic_category(), msg);
@@ -70,7 +68,8 @@ event::unique_fd open_raw_socket(std::string const& if_name) {
     return event::unique_fd(socket_fd);
 }
 
-void set_error_state(int& error_code, std::string& error_message, int new_error_code, std::string const& new_error_message) {
+void set_error_state(int& error_code, std::string& error_message, int new_error_code,
+                     std::string const& new_error_message) {
     error_code = new_error_code;
     error_message = new_error_message;
 }
@@ -128,7 +127,8 @@ bool slac_socket::tx(PayloadT const& payload) {
     if (status < 0) {
         auto const error_code = errno;
         if (error_code != EAGAIN && error_code != EWOULDBLOCK) {
-            set_error_state(m_error_code, m_error_message, error_code, build_errno_string("Failed to send raw socket payload", error_code));
+            set_error_state(m_error_code, m_error_message, error_code,
+                            build_errno_string("Failed to send raw socket payload", error_code));
         }
         return false;
     }

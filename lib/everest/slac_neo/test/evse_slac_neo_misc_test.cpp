@@ -90,7 +90,8 @@ int main() {
         {"test_parse_mac_addr_rejects_wrong_length", test_parse_mac_addr_rejects_wrong_length},
         {"test_parse_mac_addr_rejects_bad_separators", test_parse_mac_addr_rejects_bad_separators},
         {"test_parse_mac_addr_rejects_non_hex", test_parse_mac_addr_rejects_non_hex},
-        {"test_parse_mac_addr_legacy_output_unchanged_on_failure", test_parse_mac_addr_legacy_output_unchanged_on_failure},
+        {"test_parse_mac_addr_legacy_output_unchanged_on_failure",
+         test_parse_mac_addr_legacy_output_unchanged_on_failure},
         {"test_parse_and_format_round_trip", test_parse_and_format_round_trip},
     }};
 

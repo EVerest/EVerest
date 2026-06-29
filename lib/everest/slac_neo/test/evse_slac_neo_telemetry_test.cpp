@@ -35,12 +35,11 @@ bool test_default_slac_telemetry_serializes_with_zero_ev_mac() {
 
     auto const deserialized = deserialize(serialized);
     auto const zero = messages::HomeplugMessage::MacAddress{};
-    return assert_true(deserialized.ev_mac == zero, test_name,
-                      "Deserialized ev_mac is not zeroed") &&
+    return assert_true(deserialized.ev_mac == zero, test_name, "Deserialized ev_mac is not zeroed") &&
            assert_true(deserialized.match_state == SlacState::Init, test_name,
-                      "Default deserialized match_state changed from Init") &&
+                       "Default deserialized match_state changed from Init") &&
            assert_true(deserialized.d3_state == D3State::Unmatched, test_name,
-                      "Default deserialized d3_state changed from Unmatched");
+                       "Default deserialized d3_state changed from Unmatched");
 }
 
 } // namespace

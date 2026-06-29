@@ -3,9 +3,9 @@
 #pragma once
 
 #include <cstdint>
-#include <type_traits>
 #include <everest/slac/HomeplugMessage.hpp>
 #include <everest/slac/slac_defs.hpp>
+#include <type_traits>
 
 namespace everest::lib::slac::messages {
 

@@ -9,8 +9,8 @@
 #include <string>
 
 #include <everest/slac/EvseSlacConfig.hpp>
-#include <everest/slac/slac_types.hpp>
 #include <everest/slac/slac.hpp>
+#include <everest/slac/slac_types.hpp>
 #include <everest/slac/telemetry.hpp>
 
 namespace everest::lib::slac::fsm::evse {
@@ -190,7 +190,7 @@ struct Context {
     void cache_match_confirm_message(messages::cm_slac_match_cnf const& match_confirm_message, uint8_t const* ev_mac,
                                      uint8_t const* evse_mac, uint8_t const* run_id);
     void cache_match_confirm_message(messages::cm_slac_match_cnf const& match_confirm_message, MacAddress const& ev_mac,
-                                    MacAddress const& evse_mac, RunId const& run_id);
+                                     MacAddress const& evse_mac, RunId const& run_id);
 
     // logging util
     void log_debug(const std::string& text);

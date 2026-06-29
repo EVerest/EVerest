@@ -44,8 +44,8 @@ bool test_generate_nmk_updates_session_nmk() {
     config.generate_nmk();
 
     return assert_true(not std::all_of(std::begin(config.session_nmk), std::end(config.session_nmk),
-                                      [](auto value) { return value == 0xA5; }),
-                      test_name, "generate_nmk() left session_nmk unchanged");
+                                       [](auto value) { return value == 0xA5; }),
+                       test_name, "generate_nmk() left session_nmk unchanged");
 }
 
 bool test_generate_nmk_writes_target_only() {
@@ -59,8 +59,8 @@ bool test_generate_nmk_writes_target_only() {
 
     config.generate_nmk(buffer.data() + 1);
 
-    const auto target_changed = not std::all_of(buffer.begin() + 1, buffer.end() - 1,
-                                               [](auto value) { return value == 0x11; });
+    const auto target_changed =
+        not std::all_of(buffer.begin() + 1, buffer.end() - 1, [](auto value) { return value == 0x11; });
     return assert_true(buffer.front() == 0xA5, test_name, "generate_nmk(target) wrote before target buffer") &&
            assert_true(buffer.back() == 0x5A, test_name, "generate_nmk(target) wrote after target buffer") &&
            assert_true(std::all_of(std::begin(config.session_nmk), std::end(config.session_nmk),
@@ -93,8 +93,7 @@ bool test_generate_nmk_default_mode_is_legacy_printable() {
         Nmk nmk{};
         config.generate_nmk(nmk.data());
         if (not contains_only_legacy_base36_bytes(nmk)) {
-            return assert_true(false, test_name,
-                              "default generated NMK contains non-legacy byte");
+            return assert_true(false, test_name, "default generated NMK contains non-legacy byte");
         }
     }
 
@@ -111,7 +110,7 @@ bool test_generate_nmk_legacy_printable_mode() {
         config.generate_nmk(nmk.data());
         if (not contains_only_legacy_base36_bytes(nmk)) {
             return assert_true(false, test_name,
-                              "generated NMK contains non-legacy byte while in legacy_printable mode");
+                               "generated NMK contains non-legacy byte while in legacy_printable mode");
         }
     }
 
