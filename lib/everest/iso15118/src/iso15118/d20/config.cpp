@@ -194,7 +194,7 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
     supported_vas_services(std::move(config.supported_vas_services)),
     dc_limits(std::move(config.dc_limits)),
     ac_limits(std::move(config.ac_limits)),
-    der_limits(std::move(config.der_limits)),
+    der_iec_limits(std::move(config.der_iec_limits)),
     powersupply_limits(std::move(config.powersupply_limits)),
     supported_control_mobility_modes(std::move(config.control_mobility_modes)),
     custom_protocol(std::move(config.custom_protocol)),
@@ -226,10 +226,20 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
     };
     const auto ac_der_iec_found = std::any_of(supported_energy_transfer_services.begin(),
                                               supported_energy_transfer_services.end(), is_ac_der_iec_service);
-    if (ac_der_iec_found and not der_limits.has_value()) {
+    if (ac_der_iec_found and not der_iec_limits.has_value()) {
         logf_warning("The supported energy services contain AC_DER_IEC, but there is no der limits defined. This "
                      "can lead to session shutdowns.");
     }
+
+    // const auto is_ac_der_sae_service = [](dt::ServiceCategory service) {
+    //     return service == dt::ServiceCategory::AC_DER_SAE;
+    // };
+    // const auto ac_der_sae_found = std::any_of(supported_energy_transfer_services.begin(),
+    //                                           supported_energy_transfer_services.end(), is_ac_der_sae_service);
+    // if (ac_der_sae_found and not sae_der_limits.has_value()) {
+    //     logf_warning("The supported energy services contain AC_DER_IEC, but there is no der limits defined. This "
+    //                  "can lead to session shutdowns.");
+    // }
 
     if (supported_control_mobility_modes.empty()) {
         logf_warning("No control modes were provided, set to scheduled mode");

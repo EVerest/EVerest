@@ -335,7 +335,7 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
 
         const auto res =
             handle_request(*req, m_ctx.session, m_ctx.session_config.ac_limits, present_powers,
-                           m_ctx.session_config.der_limits, operating_mode, grid_connection_mode, der_control);
+                           m_ctx.session_config.der_iec_limits, operating_mode, grid_connection_mode, der_control);
 
         m_ctx.respond(res);
 

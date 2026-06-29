@@ -44,7 +44,7 @@ struct EvseSetupConfig {
     bool enable_certificate_install_service;
     d20::DcTransferLimits dc_limits;
     d20::AcTransferLimits ac_limits;
-    std::optional<d20::IecDerTransferLimits> der_limits;
+    std::optional<d20::IecDerTransferLimits> der_iec_limits;
     std::vector<ControlMobilityNeedsModes> control_mobility_modes;
     std::optional<std::string> custom_protocol{std::nullopt};
     std::optional<AcSetupConfig> ac_setup_config{std::nullopt};
@@ -82,7 +82,7 @@ struct SessionConfig {
     AcTransferLimits ac_limits;
 
     DerSetupConfig der_setup_config;
-    std::optional<IecDerTransferLimits> der_limits;
+    std::optional<IecDerTransferLimits> der_iec_limits;
 
     DcTransferLimits powersupply_limits;
 
