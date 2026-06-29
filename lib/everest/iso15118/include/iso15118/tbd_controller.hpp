@@ -10,7 +10,7 @@
 
 #include "config.hpp"
 #include <iso15118/d20/config.hpp>
-#include <iso15118/d20/control_event.hpp>
+#include <iso15118/control_event.hpp>
 #include <iso15118/d20/limits.hpp>
 #include <iso15118/io/poll_manager.hpp>
 #include <iso15118/io/sdp_server.hpp>
@@ -37,7 +37,7 @@ public:
 
     void shutdown();
 
-    void send_control_event(const d20::ControlEvent&);
+    void send_control_event(const ControlEvent&);
 
     void update_authorization_services(const std::vector<message_20::datatypes::Authorization>& services,
                                        bool cert_install_service);

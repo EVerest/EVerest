@@ -63,7 +63,7 @@ SCENARIO("ISO15118-20 dc pre charge state transitions") {
         ctx.session_config.supported_energy_transfer_services = {dt::ServiceCategory::DC};
 
         // Set control event for present voltage (400.1V)
-        state_helper.set_active_control_event(d20::PresentVoltageCurrent{400.1f, 0.0f});
+        state_helper.set_active_control_event(PresentVoltageCurrent{400.1f, 0.0f});
         fsm.feed(d20::Event::CONTROL_MESSAGE);
 
         message_20::DC_PreChargeRequest req;
@@ -97,7 +97,7 @@ SCENARIO("ISO15118-20 dc pre charge state transitions") {
         ctx.session_config.supported_energy_transfer_services = {dt::ServiceCategory::DC};
 
         // Set control event for present voltage (400.1V)
-        state_helper.set_active_control_event(d20::PresentVoltageCurrent{400.1f, 0.0f});
+        state_helper.set_active_control_event(PresentVoltageCurrent{400.1f, 0.0f});
         fsm.feed(d20::Event::CONTROL_MESSAGE);
 
         message_20::DC_PreChargeRequest req;

@@ -110,7 +110,7 @@ void TbdController::shutdown() {
     shutdown_active.store(true);
 }
 
-void TbdController::send_control_event(const d20::ControlEvent& event) {
+void TbdController::send_control_event(const ControlEvent& event) {
     if (session) {
         session->push_control_event(event);
     }
@@ -149,7 +149,7 @@ void TbdController::update_energy_modes(const std::vector<message_20::datatypes:
     }
 }
 
-void TbdController::update_supported_vas_services(const d20::SupportedVASs& vas_services) {
+void TbdController::update_supported_vas_services(const SupportedVASs& vas_services) {
 
     evse_setup.supported_vas_services = vas_services;
 

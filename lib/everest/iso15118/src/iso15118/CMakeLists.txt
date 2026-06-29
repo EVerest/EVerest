@@ -19,13 +19,13 @@ target_sources(iso15118
         io/sdp_server.cpp
         io/socket_helper.cpp
 
+        session/control_event_queue.cpp
         session/feedback.cpp
         session/iso.cpp
         session/logger.cpp
 
         d20/context.cpp
         d20/context_helper.cpp
-        d20/control_event_queue.cpp
         d20/session.cpp
         d20/timeout.cpp
         d20/config.cpp

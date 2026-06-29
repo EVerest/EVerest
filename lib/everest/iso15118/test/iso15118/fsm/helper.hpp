@@ -9,7 +9,7 @@
 #include <everest/util/fsm/fsm.hpp>
 #include <iso15118/d20/config.hpp>
 #include <iso15118/d20/context.hpp>
-#include <iso15118/d20/control_event.hpp>
+#include <iso15118/control_event.hpp>
 #include <iso15118/d20/states.hpp>
 #include <iso15118/d20/timeout.hpp>
 #include <iso15118/detail/cb_exi.hpp>
@@ -65,7 +65,7 @@ public:
         msg_exch.set_request(std::make_unique<message_20::Variant>(request));
     }
 
-    void set_active_control_event(const std::optional<d20::ControlEvent>& event) {
+    void set_active_control_event(const std::optional<ControlEvent>& event) {
         active_control_event = event;
     }
 
@@ -74,7 +74,7 @@ private:
     io::StreamOutputView output_stream_view{output_buffer.data(), output_buffer.size()};
 
     d20::MessageExchange msg_exch{output_stream_view};
-    std::optional<d20::ControlEvent> active_control_event;
+    std::optional<ControlEvent> active_control_event;
 
     session::SessionLogger log;
 

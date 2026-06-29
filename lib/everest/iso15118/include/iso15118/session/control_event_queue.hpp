@@ -6,9 +6,9 @@
 #include <optional>
 #include <queue>
 
-#include "control_event.hpp"
+#include <iso15118/control_event.hpp>
 
-namespace iso15118::d20 {
+namespace iso15118::session {
 
 class ControlEventQueue {
 public:
@@ -20,4 +20,4 @@ private:
     std::mutex mutex;
 };
 
-} // namespace iso15118::d20
+} // namespace iso15118::session

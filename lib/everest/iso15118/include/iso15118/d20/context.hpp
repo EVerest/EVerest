@@ -5,9 +5,9 @@
 #include <any>
 #include <memory>
 #include <optional>
-#include <string>
 #include <tuple>
 
+#include <iso15118/control_event.hpp>
 #include <iso15118/d20/timeout.hpp>
 #include <iso15118/message/payload_type.hpp>
 #include <iso15118/message/variant.hpp>
@@ -15,7 +15,6 @@
 #include <iso15118/session/logger.hpp>
 
 #include "config.hpp"
-#include "control_event.hpp"
 #include "ev_information.hpp"
 #include "ev_session_info.hpp"
 #include "session.hpp"

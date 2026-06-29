@@ -10,8 +10,8 @@
 #include <everest/util/fsm/fsm.hpp>
 #include <iso15118/d20/config.hpp>
 #include <iso15118/d20/context.hpp>
-#include <iso15118/d20/control_event_queue.hpp>
 #include <iso15118/d20/states.hpp>
+#include <iso15118/session/control_event_queue.hpp>
 
 #include <iso15118/io/connection_abstract.hpp>
 #include <iso15118/io/poll_manager.hpp>
@@ -38,7 +38,7 @@ public:
     ~Session();
 
     TimePoint const& poll();
-    void push_control_event(const d20::ControlEvent&);
+    void push_control_event(const ControlEvent&);
 
     bool is_finished() const {
         return (ctx.session_stopped or ctx.session_paused) and not message_exchange.has_response();
@@ -63,8 +63,8 @@ private:
                                            sizeof(response_buffer) - io::SdpPacket::V2GTP_HEADER_SIZE}};
 
     // control event buffer
-    d20::ControlEventQueue control_event_queue;
-    std::optional<d20::ControlEvent> active_control_event{std::nullopt};
+    session::ControlEventQueue control_event_queue;
+    std::optional<ControlEvent> active_control_event{std::nullopt};
 
     d20::Context ctx;
 

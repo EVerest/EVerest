@@ -3,7 +3,6 @@
 #pragma once
 
 #include <cstdint>
-#include <optional>
 #include <variant>
 #include <vector>
 
@@ -11,7 +10,7 @@
 #include <iso15118/d20/dynamic_mode_parameters.hpp>
 #include <iso15118/d20/limits.hpp>
 
-namespace iso15118::d20 {
+namespace iso15118 {
 class CableCheckFinished {
 public:
     explicit CableCheckFinished(bool success_) : success(success_) {
@@ -88,7 +87,7 @@ private:
 using SupportedVASs = std::vector<uint16_t>;
 
 using ControlEvent = std::variant<CableCheckFinished, PresentVoltageCurrent, AuthorizationResponse, StopCharging,
-                                  PauseCharging, DcTransferLimits, AcTransferLimits, UpdateDynamicModeParameters,
-                                  ClosedContactor, AcTargetPower, AcPresentPower, EnergyServices, SupportedVASs>;
+                                  PauseCharging, d20::DcTransferLimits, d20::AcTransferLimits, d20::UpdateDynamicModeParameters,
+                                  ClosedContactor, d20::AcTargetPower, d20::AcPresentPower, EnergyServices, SupportedVASs>;
 
-} // namespace iso15118::d20
+} // namespace iso15118

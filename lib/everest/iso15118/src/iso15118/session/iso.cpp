@@ -135,7 +135,7 @@ Session::Session(std::unique_ptr<io::IConnection> connection_, d20::SessionConfi
 
 Session::~Session() = default;
 
-void Session::push_control_event(const d20::ControlEvent& event) {
+void Session::push_control_event(const ControlEvent& event) {
     control_event_queue.push(event);
 }
 
@@ -163,9 +163,9 @@ TimePoint const& Session::poll() {
 
         if (const auto control_data = ctx.get_control_event<d20::DcTransferLimits>()) {
             ctx.session_config.dc_limits = *control_data;
-        } else if (const auto control_data = ctx.get_control_event<d20::EnergyServices>()) {
+        } else if (const auto control_data = ctx.get_control_event<EnergyServices>()) {
             ctx.session_config.supported_energy_transfer_services = *control_data;
-        } else if (const auto control_data = ctx.get_control_event<d20::SupportedVASs>()) {
+        } else if (const auto control_data = ctx.get_control_event<SupportedVASs>()) {
             ctx.session_config.supported_vas_services = *control_data;
         } else if (const auto control_data = ctx.get_control_event<d20::AcTransferLimits>()) {
             ctx.session_config.ac_limits = *control_data;
@@ -332,7 +332,7 @@ void Session::request_shutdown() {
         connection->close();
         ctx.feedback.signal(session::feedback::Signal::DLINK_TERMINATE);
     } else {
-        push_control_event(d20::StopCharging{true}); // Stopping active charge loop
+        push_control_event(StopCharging{true}); // Stopping active charge loop
         ctx.request_shutdown();
     }
 }
