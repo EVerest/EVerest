@@ -33,6 +33,7 @@ types::energy::ExternalLimits make_external_limits(double limit_A) {
 void AcTemperatureDerating::init() {
     try {
         derating_curves_ = ac_temperature_derating::parse_derating_curves_json(config.derating_curves_json);
+        ignore_list_ = ac_temperature_derating::parse_temperature_provider_ignore_list(config.temperature_provider_ignore_list);
 
         std::vector<std::string> provider_module_ids;
         provider_module_ids.reserve(r_temperature.size());
@@ -40,8 +41,9 @@ void AcTemperatureDerating::init() {
             provider_module_ids.push_back(sensor->module_id);
         }
         ac_temperature_derating::validate_curves_for_providers(derating_curves_, provider_module_ids);
+        ac_temperature_derating::validate_ignore_list_vs_curves(derating_curves_, ignore_list_);
     } catch (const std::exception& e) {
-        EVLOG_error << "Failed to parse derating_curves_json: " << e.what();
+        EVLOG_error << "AcTemperatureDerating configuration error: " << e.what();
         throw;
     }
 
@@ -123,6 +125,8 @@ void AcTemperatureDerating::update_and_publish_limits() {
     {
         std::scoped_lock lock(state_mutex_);
         for (auto& provider : provider_states_) {
+            bool any_non_ignored_reading_added = false;
+
             if (provider.has_reading_without_identification) {
                 const auto& state = provider.reading_without_identification;
                 if (state.ever_received && (now - state.last_update) <= stale_timeout) {
@@ -131,6 +135,7 @@ void AcTemperatureDerating::update_and_publish_limits() {
                         .identification = std::nullopt,
                         .temperature_C = state.temperature_C,
                     });
+                    any_non_ignored_reading_added = true;
                 } else {
                     // The unidentified reading has lapsed; clear it so a transient or unmappable
                     // reading does not pin the provider to fallback forever once it resumes
@@ -140,16 +145,12 @@ void AcTemperatureDerating::update_and_publish_limits() {
                 }
             }
 
-            if (provider.readings_by_identification.empty() && !provider.has_reading_without_identification) {
-                readings.push_back(ac_temperature_derating::SensorReadingInput{
-                    .module_id = provider.module_id,
-                    .identification = std::nullopt,
-                    .temperature_C = std::nullopt,
-                });
-                continue;
-            }
-
             for (const auto& [identification, state] : provider.readings_by_identification) {
+                if (ac_temperature_derating::is_temperature_reading_ignored(ignore_list_, provider.module_id,
+                                                                          identification)) {
+                    continue;
+                }
+
                 std::optional<double> temperature_C = std::nullopt;
                 if (state.ever_received && (now - state.last_update) <= stale_timeout) {
                     temperature_C = state.temperature_C;
@@ -159,6 +160,16 @@ void AcTemperatureDerating::update_and_publish_limits() {
                     .module_id = provider.module_id,
                     .identification = identification,
                     .temperature_C = temperature_C,
+                });
+                any_non_ignored_reading_added = true;
+            }
+
+            if (!any_non_ignored_reading_added && provider.readings_by_identification.empty() &&
+                !provider.has_reading_without_identification) {
+                readings.push_back(ac_temperature_derating::SensorReadingInput{
+                    .module_id = provider.module_id,
+                    .identification = std::nullopt,
+                    .temperature_C = std::nullopt,
                 });
             }
         }

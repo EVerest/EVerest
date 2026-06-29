@@ -31,6 +31,7 @@ namespace module {
 
 struct Conf {
     std::string derating_curves_json;
+    std::string temperature_provider_ignore_list;
     double fallback_max_current_A;
     int temperature_stale_timeout_ms;
     int update_debounce_ms;
@@ -52,6 +53,35 @@ public:
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
+    struct TestAccess {
+        static void init(AcTemperatureDerating& self) {
+            self.init();
+        }
+
+        static void set_identified_reading(AcTemperatureDerating& self, std::size_t provider_index,
+                                           const std::string& identification, double temp_C,
+                                           std::chrono::milliseconds age_before_now) {
+            const auto now = std::chrono::steady_clock::now();
+            auto& provider = self.provider_states_.at(provider_index);
+            auto& state = provider.readings_by_identification[identification];
+            state.temperature_C = temp_C;
+            state.last_update = now - age_before_now;
+            state.ever_received = true;
+        }
+
+        static void update_and_publish_limits(AcTemperatureDerating& self) {
+            self.update_and_publish_limits();
+        }
+
+        static void set_last_publish_time_age(AcTemperatureDerating& self, std::chrono::milliseconds age_before_now) {
+            self.last_publish_time_ = std::chrono::steady_clock::now() - age_before_now;
+        }
+
+        static void clear_last_published_limit(AcTemperatureDerating& self) {
+            self.last_published_limit_A_.reset();
+            self.last_publish_time_ = {};
+        }
+    };
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
@@ -79,6 +109,7 @@ private:
     };
 
     ac_temperature_derating::DeratingCurveMap derating_curves_;
+    ac_temperature_derating::TemperatureProviderIgnoreList ignore_list_;
     std::vector<ProviderState> provider_states_;
     std::mutex state_mutex_;
 

@@ -1,6 +1,14 @@
-# SIL config based on config-sil-energy-management.yaml with an AC temperature derating node.
-# YetiSimulator publishes load-dependent temperature on temperature_sensor; AcTemperatureDerating
+# SIL config for AC temperature derating with a single connector.
+# TemperatureSensorSimulator publishes MQTT-controllable temperature readings; AcTemperatureDerating
 # applies interpolated current limits via a dedicated EnergyNode in the energy tree.
+#
+# MQTT control topics (module id temp_sensor_sim), logged at startup:
+#   everest_api/temp_sensor_sim/cmd/set_temperature_C
+#   everest_api/temp_sensor_sim/cmd/set_identification
+#   everest_api/temp_sensor_sim/cmd/set_location
+#   everest_api/temp_sensor_sim/cmd/set_publish_interval_ms
+#   everest_api/temp_sensor_sim/cmd/stop_publishing
+#   everest_api/temp_sensor_sim/cmd/start_publishing
 active_modules:
   iso15118_charger:
     module: EvseV2G
@@ -31,9 +39,6 @@ active_modules:
       ac_hlc_use_5percent: false
       ac_enforce_hlc: false
       request_zero_power_in_idle: false
-      uk_smartcharging_random_delay_at_any_change: false
-      uk_smartcharging_random_delay_max_duration: 100
-      uk_smartcharging_random_delay_enable: true
     connections:
       bsp:
         - module_id: yeti_driver_1
@@ -47,35 +52,10 @@ active_modules:
       hlc:
         - module_id: iso15118_charger
           implementation_id: charger
-  evse_manager_2:
-    module: EvseManager
-    mapping:
-      module:
-        evse: 2
-    config_module:
-      connector_id: 2
-      evse_id: DE*PNX*E12345*2
-      session_logging: true
-      session_logging_xml: false
-      session_logging_path: /tmp
-      ac_hlc_enabled: false
-      ac_hlc_use_5percent: false
-      ac_enforce_hlc: false
-    connections:
-      bsp:
-        - module_id: yeti_driver_2
-          implementation_id: board_support
-      powermeter_grid_side:
-        - module_id: yeti_driver_2
-          implementation_id: powermeter
   yeti_driver_1:
     module: YetiSimulator
     config_module:
       connector_id: 1
-  yeti_driver_2:
-    module: YetiSimulator
-    config_module:
-      connector_id: 2
   slac:
     module: SlacSimulator
   ev_manager_1:
@@ -83,7 +63,7 @@ active_modules:
     config_module:
       connector_id: 1
       auto_enable: true
-      auto_exec: false
+      auto_exec: true
       auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
     connections:
       ev_board_support:
@@ -95,16 +75,6 @@ active_modules:
       slac:
         - module_id: slac
           implementation_id: ev
-  ev_manager_2:
-    module: EvManager
-    config_module:
-      connector_id: 2
-      auto_enable: true
-      auto_exec: false
-    connections:
-      ev_board_support:
-        - module_id: yeti_driver_2
-          implementation_id: ev_board_support
   auth:
     module: Auth
     config_module:
@@ -114,15 +84,11 @@ active_modules:
       token_provider:
         - module_id: token_provider_1
           implementation_id: main
-        - module_id: token_provider_2
-          implementation_id: main
       token_validator:
         - module_id: token_validator
           implementation_id: main
       evse_manager:
         - module_id: evse_manager_1
-          implementation_id: evse
-        - module_id: evse_manager_2
           implementation_id: evse
   evse_security:
     module: EvseSecurity
@@ -136,12 +102,6 @@ active_modules:
     connections:
       evse:
         - module_id: evse_manager_1
-          implementation_id: evse
-  token_provider_2:
-    module: DummyTokenProvider
-    connections:
-      evse:
-        - module_id: evse_manager_2
           implementation_id: evse
   token_validator:
     module: DummyTokenValidator
@@ -160,17 +120,26 @@ active_modules:
       energy_trunk:
         - module_id: grid_connection_point
           implementation_id: energy_grid
+  temp_sensor_sim:
+    module: TemperatureSensorSimulator
+    config_implementation:
+      temperature_sensor:
+        temperature_C: 25.0
+        identification: internal
+        location: cabinet
+        publish_interval_ms: 1000
   ac_temp_derating:
     module: AcTemperatureDerating
     config_module:
       fallback_max_current_A: 0
       temperature_stale_timeout_ms: 10000
-      update_debounce_ms: 1000
+      update_debounce_ms: 5000
       derating_curves_json: |
-        {"yeti_driver_1.Powermeter": [{"temp_C": 25, "max_current_A": 32}, {"temp_C": 40, "max_current_A": 16}, {"temp_C": 55, "max_current_A": 6}]}
+        {"temp_sensor_sim.internal": [{"temp_C": 25, "max_current_A": 32}, {"temp_C": 40, "max_current_A": 16}, {"temp_C": 55, "max_current_A": 6}]}
+      temperature_provider_ignore_list: "temp_sensor_sim.internal1"
     connections:
       temperature:
-        - module_id: yeti_driver_1
+        - module_id: temp_sensor_sim
           implementation_id: temperature_sensor
       energy_node:
         - module_id: temp_derate_node
@@ -184,12 +153,10 @@ active_modules:
       energy_consumer:
         - module_id: evse_manager_1_sink
           implementation_id: energy_grid
-        - module_id: evse_manager_2_sink
-          implementation_id: energy_grid
   grid_connection_point:
     module: EnergyNode
     config_module:
-      fuse_limit_A: 20.0
+      fuse_limit_A: 32.0
       phase_count: 3
     connections:
       price_information: []
@@ -211,25 +178,11 @@ active_modules:
       energy_consumer:
         - module_id: evse_manager_1
           implementation_id: energy_grid
-  evse_manager_2_sink:
-    module: EnergyNode
-    mapping:
-      module:
-        evse: 2
-    config_module:
-      fuse_limit_A: 32.0
-      phase_count: 3
-    connections:
-      energy_consumer:
-        - module_id: evse_manager_2
-          implementation_id: energy_grid
   api:
     module: API
     connections:
       evse_manager:
         - module_id: evse_manager_1
-          implementation_id: evse
-        - module_id: evse_manager_2
           implementation_id: evse
       random_delay:
         - module_id: evse_manager_1
@@ -240,16 +193,12 @@ active_modules:
       evse_energy_sink:
         - module_id: evse_manager_1_sink
           implementation_id: external_limits
-        - module_id: evse_manager_2_sink
-          implementation_id: external_limits
   ev_api:
     module: EvAPI
     connections:
       ev_manager:
         - implementation_id: ev_manager
           module_id: ev_manager_1
-        - implementation_id: ev_manager
-          module_id: ev_manager_2
   error_history:
     module: ErrorHistory
     config_implementation:

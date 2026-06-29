@@ -10,3 +10,5 @@ vars:
     items:
       type: object
       $ref: /temperature#/Temperature
+errors:
+  - reference: /errors/generic

@@ -31,6 +31,10 @@ temperature values need one curve per ``identification``. The effective limit is
 all readings. Missing curves log a warning and use ``fallback_max_current_A``. Temperature readings
 without ``identification`` are treated as misconfigured and also use ``fallback_max_current_A``.
 
+``temperature_provider_ignore_list`` is a comma-separated list of ``module_id.identification`` entries
+to exclude from derating. If a derating curve is configured for an ignored entry, the module fails
+to start.
+
 Runtime behaviour
 -----------------
 
@@ -65,4 +69,5 @@ No derating (constant limit at all temperatures)::
   derating_curves_json: |
     {"yeti_driver_1.Powermeter": [{"temp_C": -20, "max_current_A": 32}, {"temp_C": 25, "max_current_A": 32}, {"temp_C": 80, "max_current_A": 32}]}
 
-See also ``config/config-sil-ac-temp-derating.yaml`` for a full SIL example using YetiSimulator.
+See also ``config/config-sil-ac-temp-derating.yaml`` for a full SIL example using
+:ref:`TemperatureSensorSimulator <everest_modules_handwritten_TemperatureSensorSimulator>`.

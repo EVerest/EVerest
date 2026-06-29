@@ -4,9 +4,11 @@
 #include "derating_curve.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <limits>
 #include <nlohmann/json.hpp>
+#include <sstream>
 #include <stdexcept>
 
 namespace ac_temperature_derating {
@@ -53,6 +55,12 @@ void validate_curve_key_format(const std::string& key) {
     }
 }
 
+void trim_inplace(std::string& value) {
+    const auto not_space = [](unsigned char character) { return !std::isspace(character); };
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
+    value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
+}
+
 } // namespace
 
 std::string make_curve_key(const std::string& module_id, const std::string& identification) {
@@ -89,6 +97,40 @@ void validate_curves_for_providers(const DeratingCurveMap& curves, const std::ve
             throw std::invalid_argument("no derating curve configured for temperature provider: " + module_id);
         }
     }
+}
+
+TemperatureProviderIgnoreList parse_temperature_provider_ignore_list(const std::string& csv) {
+    TemperatureProviderIgnoreList ignore_list;
+    if (csv.empty()) {
+        return ignore_list;
+    }
+
+    std::stringstream stream(csv);
+    std::string entry;
+    while (std::getline(stream, entry, ',')) {
+        trim_inplace(entry);
+        if (entry.empty()) {
+            continue;
+        }
+        validate_curve_key_format(entry);
+        ignore_list.insert(entry);
+    }
+    return ignore_list;
+}
+
+void validate_ignore_list_vs_curves(const DeratingCurveMap& curves,
+                                    const TemperatureProviderIgnoreList& ignore_list) {
+    for (const auto& [curve_key, curve] : curves) {
+        (void)curve;
+        if (ignore_list.count(curve_key) != 0) {
+            throw std::invalid_argument("derating curve configured for ignored temperature reading: " + curve_key);
+        }
+    }
+}
+
+bool is_temperature_reading_ignored(const TemperatureProviderIgnoreList& ignore_list, const std::string& module_id,
+                                    const std::string& identification) {
+    return ignore_list.count(make_curve_key(module_id, identification)) != 0;
 }
 
 double interpolate_max_current_A(const DeratingCurve& curve, double temp_C) {

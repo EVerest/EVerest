@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <set>
 
 namespace ac_temperature_derating {
 
@@ -18,6 +19,7 @@ struct DeratingPoint {
 
 using DeratingCurve = std::vector<DeratingPoint>;
 using DeratingCurveMap = std::map<std::string, DeratingCurve>;
+using TemperatureProviderIgnoreList = std::set<std::string>;
 
 /// Build curve key as module_id.identification.
 std::string make_curve_key(const std::string& module_id, const std::string& identification);
@@ -30,6 +32,16 @@ DeratingCurveMap parse_derating_curves_json(const std::string& json);
 
 /// Throws if any connected temperature provider has no matching curve key prefix.
 void validate_curves_for_providers(const DeratingCurveMap& curves, const std::vector<std::string>& module_ids);
+
+/// Parse comma-separated module_id.identification entries (whitespace trimmed). Empty string yields an empty set.
+TemperatureProviderIgnoreList parse_temperature_provider_ignore_list(const std::string& csv);
+
+/// Throws if any derating curve key is listed in the ignore list.
+void validate_ignore_list_vs_curves(const DeratingCurveMap& curves, const TemperatureProviderIgnoreList& ignore_list);
+
+/// True when module_id.identification is in the ignore list.
+bool is_temperature_reading_ignored(const TemperatureProviderIgnoreList& ignore_list, const std::string& module_id,
+                                    const std::string& identification);
 
 /// Linearly interpolate max current for a temperature. Clamps below/above the curve endpoints.
 double interpolate_max_current_A(const DeratingCurve& curve, double temp_C);
