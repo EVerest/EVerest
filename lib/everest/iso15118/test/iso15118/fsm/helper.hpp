@@ -35,9 +35,20 @@ inline d20::EvseSetupConfig create_default_evse_setup() {
     const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
         {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
 
-    return d20::EvseSetupConfig{
-        evse_id,   supported_energy_services, auth_services, vas_services, cert_install, dc_limits,
-        ac_limits, control_mobility_modes,    std::nullopt,  std::nullopt, std::nullopt, powersupply_limits};
+    return d20::EvseSetupConfig{evse_id,
+                                supported_energy_services,
+                                auth_services,
+                                vas_services,
+                                cert_install,
+                                dc_limits,
+                                ac_limits,
+                                std::nullopt,
+                                control_mobility_modes,
+                                std::nullopt,
+                                std::nullopt,
+                                std::nullopt,
+                                std::nullopt,
+                                powersupply_limits};
 }
 
 class FsmStateHelper {
