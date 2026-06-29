@@ -2,9 +2,8 @@
 // Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 
 #pragma once
-#define BOOST_MSM_DEBUG_SIGMASK
-#define BOOST_MPL_CFG_NO_PREPROCESSED_HEADERS
-#define BOOST_MPL_LIMIT_VECTOR_SIZE 30
+#include <everest/slac/fsm/slac_msm_helpers.hpp>
+
 #include <boost/mpl/vector.hpp>
 #include <boost/msm/back/state_machine.hpp>
 #include <boost/msm/front/completion_event.hpp>
@@ -56,32 +55,8 @@ inline std::string format_session_nmk_for_log(Nmk const& nmk) {
     return out;
 }
 
-template <class Guard> struct Not_ {
-    template <class Evt, class Fsm, class SourceState, class TargetState>
-    bool operator()(Evt const& evt, Fsm& fsm, SourceState& src, TargetState& tgt) {
-        return !Guard()(evt, fsm, src, tgt);
-    }
-};
-
-template <class G1, class G2> struct And_ {
-    template <class Evt, class Fsm, class SourceState, class TargetState>
-    bool operator()(Evt const& evt, Fsm& fsm, SourceState& src, TargetState& tgt) {
-        return G1()(evt, fsm, src, tgt) && G2()(evt, fsm, src, tgt);
-    }
-};
-
-// clang-format off
-
-// Events
-struct message{
-    messages::HomeplugMessage payload; //TODO: proper type
-};
-struct reset{};
-struct enter_bcd{};
-struct leave_bcd{};
-struct update{};
-
 // Guards
+// clang-format off
 struct is_link_detection_on
 {
     template <class Fsm, class Evt, class SrcT, class TarT>
@@ -120,15 +95,6 @@ struct link_status_neg
     }
 };
 
-struct timeout
-{
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    bool operator()(Evt const&, Fsm&, SrcT& src, TarT& )
-    {
-        return src.state_timeout();
-    }
-};
-
 struct failed
 {
     template <class Fsm, class Evt, class SrcT, class TarT>
@@ -138,28 +104,6 @@ struct failed
     }
 };
 
-template<std::uint16_t MessageType>
-struct is_message_of_type
-{
-    template <class Fsm, class SrcT, class TarT>
-    bool operator()(message const& e, Fsm&, SrcT&, TarT&) {
-        if (not e.payload.is_valid()) {
-            return false;
-        }
-        const auto mmtype = e.payload.get_mmtype();
-        return mmtype == MessageType;
-    }
-};
-
-
-// Actions
-struct trigger_update
-{
-    template <class Fsm, class Evt, class SrcT, class TarT>
-    void operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
-        fsm.process_event(update{});
-    }
-};
 struct link_status_req
 {
     template <class Fsm, class Evt, class SrcT, class TarT>
@@ -167,46 +111,10 @@ struct link_status_req
         tar.link_status_req(fsm);
     }
 };
-template <class MsgT>
-struct send_default_msg {
-    template <class Evt, class Fsm, class SrcT, class TarT>
-    void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-        MsgT msg{};
-        if (not fsm.ctx->send_slac_message(fsm.ctx->slac_config.plc_peer_mac, msg)) {
-            fsm.ctx->log_warn("Failed to send default SLAC message");
-        }
-    }
-};
 
 // Flags
 struct SessionFailed{};
 struct SessionMatched{};
-
-// States
-template <std::uint32_t TimeoutMS> struct timeout_ms_state : public state<> {
-    template <class Event, class Fsm> void on_entry(Event const&, Fsm&) {
-        to.setDuration(std::chrono::milliseconds(TimeoutMS));
-        to.reset();
-    }
-
-    timer to;
-    bool state_timeout() {
-        return to.timeout();
-    }
-};
-struct timeout_state : public state<> {
-    template <class Event, class Fsm> void on_entry(Event const&, Fsm&) {
-        to.setDuration(std::chrono::milliseconds(state_timeout_ms));
-        to.reset();
-    }
-
-    timer to;
-    bool state_timeout() {
-        return to.timeout();
-    }
-
-    std::uint32_t state_timeout_ms{0};
-};
 struct CheckLink     : public state<> {
     template <class Event, class Fsm>
     void on_entry(Event const&, Fsm& fsm) {
