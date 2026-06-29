@@ -653,7 +653,8 @@ bool ChargePointV16::cb_stop_transaction(std::int32_t connector, ocpp::v16::Reas
 }
 
 ocpp::v16::DataTransferResponse ChargePointV16::cb_tariff_message(const ocpp::TariffMessage& message) {
-    m_callbacks_ptr->cb_tariff_message(message);
+    const auto msg = ocpp_conversions::to_everest_tariff_message(message);
+    m_callbacks_ptr->cb_tariff_message(msg);
     ocpp::v16::DataTransferResponse response;
     response.status = ocpp::v16::DataTransferStatus::Accepted;
     return response;

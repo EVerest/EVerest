@@ -332,7 +332,7 @@ protected:
     void cb_supported_energy_transfer_modes(
         std::int32_t evse_id,
         const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes) override;
-    void cb_tariff_message(const ocpp::TariffMessage& message) override;
+    void cb_tariff_message(const types::session_cost::TariffMessage& message) override;
     void cb_time_sync(const ocpp::DateTime& current_time) override;
     void cb_transaction_event(const ocpp::v2::TransactionEventRequest& transaction_event) override;
     void cb_transaction_event_response(const ocpp::v2::TransactionEventRequest& transaction_event,

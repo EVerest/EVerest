@@ -30,6 +30,7 @@ private:
     void cb_reset(const std::optional<const std::int32_t>& evse_id, const ocpp::v2::ResetEnum& type);
     ocpp::v2::RequestStartStopStatusEnum cb_stop_transaction(std::int32_t evse_id,
                                                              const ocpp::v2::ReasonEnum& stop_reason);
+    void cb_tariff_message(const ocpp::TariffMessage& message);
     void cb_variable_listener(const std::unordered_map<std::int64_t, ocpp::v2::VariableMonitoringMeta>& monitors,
                               const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
                               const ocpp::v2::VariableCharacteristics& characteristics,

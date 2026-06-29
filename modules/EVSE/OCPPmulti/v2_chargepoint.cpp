@@ -248,6 +248,11 @@ ocpp::v2::RequestStartStopStatusEnum ChargePointV2::cb_stop_transaction(std::int
     return m_callbacks_ptr->cb_stop_transaction(evse_id, reason);
 }
 
+void ChargePointV2::cb_tariff_message(const ocpp::TariffMessage& message) {
+    const auto msg = ocpp_conversions::to_everest_tariff_message(message);
+    m_callbacks_ptr->cb_tariff_message(msg);
+}
+
 void ChargePointV2::cb_variable_listener(
     const std::unordered_map<std::int64_t, ocpp::v2::VariableMonitoringMeta>& monitors,
     const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
@@ -343,6 +348,7 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
     };
     callbacks.reset_callback = [this](auto&&... args) { cb_reset(args...); };
     callbacks.stop_transaction_callback = [this](auto&&... args) { return cb_stop_transaction(args...); };
+    callbacks.tariff_message_callback = [this](auto&&... args) { cb_tariff_message(args...); };
 
     // directly supported
     callbacks.connector_effective_operative_status_changed_callback = [this](auto&&... args) {
@@ -385,7 +391,6 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
         return m_callbacks_ptr->cb_clear_display_message(args...);
     };
     callbacks.set_running_cost_callback = [this](auto&&... args) { m_callbacks_ptr->cb_set_running_cost(args...); };
-    callbacks.tariff_message_callback = [this](auto&&... args) { m_callbacks_ptr->cb_tariff_message(args...); };
     callbacks.data_transfer_callback = [this](auto&&... args) { return m_callbacks_ptr->cb_data_transfer(args...); };
     callbacks.connection_state_changed_callback =
         [this](auto is_connected, auto /*configuration_slot*/, const auto& /*network_connection_profile*/,
@@ -979,7 +984,7 @@ ocpp::v2::AuthorizeResponse ChargePointV2::validate_token(const types::authoriza
     check_configured("validate_token");
     using namespace module::conversions;
 
-    ocpp::v2::AuthorizeResponse validation_result;
+    ocpp::v2::AuthorizeResponse response;
 
     try {
         const auto id_token = to_ocpp_id_token(provided_token.id_token);
@@ -992,25 +997,26 @@ ocpp::v2::AuthorizeResponse ChargePointV2::validate_token(const types::authoriza
             ocsp_request_data_opt =
                 to_ocpp_ocsp_request_data_vector(provided_token.iso15118CertificateHashData.value());
         }
-        validation_result = m_charge_point->validate_token(id_token, certificate_opt, ocsp_request_data_opt);
+        response = m_charge_point->validate_token(id_token, certificate_opt, ocsp_request_data_opt);
 
         // Publish tariff message on the session_cost interface
-        if (validation_result.idTokenInfo.personalMessage) {
-            ocpp::TariffMessage tariff_message;
-            tariff_message.message.push_back(convert(validation_result.idTokenInfo.personalMessage.value()));
+        const auto validation_result = module::conversions::to_everest_validation_result(response);
+        if (!validation_result.tariff_messages.empty()) {
+            types::session_cost::TariffMessage tariff_message;
+            tariff_message.messages = validation_result.tariff_messages;
             tariff_message.identifier_id = provided_token.id_token.value;
-            tariff_message.identifier_type = ocpp::IdentifierType::IdToken;
+            tariff_message.identifier_type = types::display_message::IdentifierType::IdToken;
             m_callbacks_ptr->cb_tariff_message(tariff_message);
         }
     } catch (const ocpp::StringConversionException& e) {
         EVLOG_warning << "Error converting id token to validate: " << e.what();
-        validation_result.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Unknown;
+        response.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Unknown;
     } catch (const std::exception& e) {
         EVLOG_warning << "Unknown error during validation of id token: " << e.what();
-        validation_result.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Unknown;
+        response.idTokenInfo.status = ocpp::v2::AuthorizationStatusEnum::Unknown;
     }
 
-    return validation_result;
+    return response;
 }
 
 } // namespace ocpp_multi

@@ -113,7 +113,7 @@ struct GenericChargePointCallbacks {
     virtual void cb_supported_energy_transfer_modes(
         std::int32_t evse_id,
         const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes) = 0;
-    virtual void cb_tariff_message(const ocpp::TariffMessage& message) = 0;
+    virtual void cb_tariff_message(const types::session_cost::TariffMessage& message) = 0;
     virtual void cb_time_sync(const ocpp::DateTime& current_time) = 0;
     virtual void cb_transaction_event(const ocpp::v2::TransactionEventRequest& transaction_event) = 0;
     virtual void

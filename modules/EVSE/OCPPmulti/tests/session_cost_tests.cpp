@@ -9,6 +9,8 @@
 
 #include "stubs/generic_ocpp_stub.hpp"
 
+#include <everest/conversions/ocpp/ocpp_conversions.hpp>
+
 namespace {
 using namespace stubs;
 
@@ -69,7 +71,9 @@ TEST_F(GenericOcppProvidesTester, publishTariffMessage) {
 
     message.message.push_back(content);
 
-    ocpp->cb_tariff_message(message);
+    const auto msg = ocpp_conversions::to_everest_tariff_message(message);
+
+    ocpp->cb_tariff_message(msg);
 
     ProvidedIdToken token;
     // types::authorization::IdToken id_token;
