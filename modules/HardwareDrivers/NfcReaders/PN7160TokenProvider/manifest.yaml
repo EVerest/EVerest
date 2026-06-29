@@ -4,8 +4,67 @@ provides:
     description: Implementation of PN7160 RFID/NFC token provider
     interface: auth_token_provider
     config:
+      transport:
+        description: >-
+          Defines which interface to use to access the reader, that is usually either
+          I2C or SPI. The third option 'file' - which is the default - is only
+          to provide backwards compatibity - in this case, the/a static configuration
+          file (usually /etc/everest/libnfc_config/libnfc-nxp.conf) is used and the
+          following hardware related config options here are not used at all.
+        type: string
+        enum:
+          - file
+          - i2c
+          - spi
+        default: file
+      device:
+        description: >-
+          This is either the I2C bus user-space device, e.g. '/dev/i2c-1',
+          or the SPI user-space device, e.g. '/dev/spidev0.0'.
+        type: string
+      i2c_address:
+        description: >-
+          When using 'i2c' as transport, defines at which I2C address the reader can be found.
+          Note that this configuration value must be given as hex string and so quoted correctly!
+        type: string
+        enum:
+          - 0x28
+          - 0x29
+          - 0x2a
+          - 0x2b
+        default: 0x28
+      pin_int:
+        description: >-
+          Defines which input GPIO is connected to the interrupt pin of the PN7160.
+          This can be either an integer value when using the older number based sysfs interface,
+          or a GPIO line name (defined for example via board's device tree) when libnfc-nci is
+          compiled with enabled libgpiod support.
+          Note: When using plain GPIO sysfs numbers, then this must be properly enclosed in quotes
+          since this configuration option must be given as string.
+        type: string
+        default: ""
+      pin_enable:
+        description: >-
+          The output GPIO which is used as enable/reset pin.
+          This can be either an integer value when using the older number based sysfs interface,
+          or a GPIO line name (defined for example via board's device tree) when libnfc-nci is
+          compiled with enabled libgpiod support.
+          Note: When using plain GPIO sysfs numbers, then this must be properly enclosed in quotes
+          since this configuration option must be given as string.
+        type: string
+        default: ""
+      pin_fwdnld:
+        description: >-
+          The output GPIO which is connected to the firmware download mode pin.
+          This can be either an integer value when using the older number based sysfs interface,
+          or a GPIO line name (defined for example via board's device tree) when libnfc-nci is
+          compiled with enabled libgpiod support.
+          Note: When using plain GPIO sysfs numbers, then this must be properly enclosed in quotes
+          since this configuration option must be given as string.
+        type: string
+        default: ""
       token_debounce_interval_ms:
-        description: Minimal wait time in ms until next token will be published (debounce interval). 
+        description: Minimal wait time in ms until next token will be published (debounce interval).
         type: integer
         default: 3000
         minimum: 1000
