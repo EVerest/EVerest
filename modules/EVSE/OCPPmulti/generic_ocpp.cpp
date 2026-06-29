@@ -898,7 +898,9 @@ ocpp::v2::DataTransferResponse GenericOcpp::cb_data_transfer(const ocpp::v2::Dat
     ocpp::v2::DataTransferResponse response{};
     if (mv_requires.data_transfer.empty()) {
         EVLOG_error << "data_transfer called with no configured connections";
-        response.status = ocpp::v2::DataTransferStatusEnum::Rejected;
+        // TestOcpp201DataTransferIntegration::test_p1_no_callback
+        // expects UnknownVendorId rather than Rejected
+        response.status = ocpp::v2::DataTransferStatusEnum::UnknownVendorId;
     } else {
         using namespace module::conversions;
 
@@ -1436,9 +1438,8 @@ void GenericOcpp::cb_supported_energy_transfer_modes(
     m_evse_supported_energy_transfer_modes[evse_id] = supported_energy_transfer_modes;
 }
 
-void GenericOcpp::cb_tariff_message(const ocpp::TariffMessage& message) {
-    const types::session_cost::TariffMessage m = ocpp_conversions::to_everest_tariff_message(message);
-    mv_provides.session_cost.publish_tariff_message(m);
+void GenericOcpp::cb_tariff_message(const types::session_cost::TariffMessage& message) {
+    mv_provides.session_cost.publish_tariff_message(message);
 }
 
 void GenericOcpp::cb_time_sync(const ocpp::DateTime& current_time) {
