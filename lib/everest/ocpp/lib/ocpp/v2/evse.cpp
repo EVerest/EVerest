@@ -596,7 +596,8 @@ void Evse::send_meter_value_on_pricing_trigger(const MeterValue& meter_value) {
                            "function is not set.";
             this->trigger_metervalue_on_energy_kwh.reset();
         } else {
-            const std::optional<double> active_import_register_meter_value_wh = get_active_import_register_meter_value();
+            const std::optional<double> active_import_register_meter_value_wh =
+                get_active_import_register_meter_value();
             if (active_import_register_meter_value_wh.has_value() and
                 active_import_register_meter_value_wh.value() >= trigger_energy_kwh * 1000) {
                 const MeterValue active_import_meter_value = utils::get_meter_value_with_measurands_applied(

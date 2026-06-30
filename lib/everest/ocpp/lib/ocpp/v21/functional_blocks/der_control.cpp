@@ -26,7 +26,7 @@ using namespace v2;
 namespace {
 
 constexpr std::size_t MAX_CURVE_POINTS = 256;
-constexpr double MAX_DURATION_SECONDS = 86400.0 * 365.0;          // one year
+constexpr double MAX_DURATION_SECONDS = 86400.0 * 365.0;           // one year
 constexpr std::int64_t MAX_SCHEDULE_HORIZON_SECONDS = 86400 * 365; // one year
 
 /// \brief Cap on total persisted DER controls to bound DER_CONTROLS table growth.
