@@ -90,6 +90,7 @@ typedef struct CB_COMPILER_ATTR_PACK _safety_config {
 	RelayConfig relays[3]; // Config for the 3 relay I/Os
 	uint8_t inverted_emergency_input; // 0: normal operation, 1: emergency input is inverted
 	uint8_t temperature_limit_pt1000_C; // Temperature limit for the PT1000 inputs. Relays will switch off if temperature is above the limit. Setting this to 0 will disable the feature.
+	uint8_t enable_stop_charging_input; // 0: stop_charging input disabled (no action), 1: enabled (default)
 } SafetyConfig;
 
 typedef struct CB_COMPILER_ATTR_PACK _CbGpioConfig {
@@ -115,7 +116,7 @@ typedef struct CB_COMPILER_ATTR_PACK _CbNetworkConfig {
 
 // Final complete config struct
 
-#define CB_CONFIG_VERSION 0
+#define CB_CONFIG_VERSION 1
 typedef struct CB_COMPILER_ATTR_PACK _cb_config {
 	uint32_t config_version;
 	SafetyConfig safety;
