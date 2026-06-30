@@ -6,9 +6,9 @@
 
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
-#include <set>
 
 namespace ac_temperature_derating {
 

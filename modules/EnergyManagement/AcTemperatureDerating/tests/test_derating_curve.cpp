@@ -40,7 +40,8 @@ TEST(DeratingCurveTest, parse_rejects_missing_point_fields) {
 }
 
 TEST(DeratingCurveTest, parse_rejects_duplicate_temp_c) {
-    EXPECT_THROW(parse_derating_curves_json(R"({"meter1.internal":[{"temp_C":20,"max_current_A":32},{"temp_C":20,"max_current_A":16}]})"),
+    EXPECT_THROW(parse_derating_curves_json(
+                     R"({"meter1.internal":[{"temp_C":20,"max_current_A":32},{"temp_C":20,"max_current_A":16}]})"),
                  std::invalid_argument);
 }
 

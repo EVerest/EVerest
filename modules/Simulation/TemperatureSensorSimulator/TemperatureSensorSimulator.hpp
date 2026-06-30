@@ -25,10 +25,7 @@ public:
     TemperatureSensorSimulator() = delete;
     TemperatureSensorSimulator(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
                                std::unique_ptr<temperature_sensorImplBase> p_temperature_sensor, Conf& config) :
-        ModuleBase(info),
-        mqtt(mqtt_provider),
-        p_temperature_sensor(std::move(p_temperature_sensor)),
-        config(config){};
+        ModuleBase(info), mqtt(mqtt_provider), p_temperature_sensor(std::move(p_temperature_sensor)), config(config){};
 
     Everest::MqttProvider& mqtt;
     const std::unique_ptr<temperature_sensorImplBase> p_temperature_sensor;

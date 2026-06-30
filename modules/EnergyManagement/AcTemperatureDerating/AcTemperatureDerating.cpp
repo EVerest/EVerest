@@ -33,7 +33,8 @@ types::energy::ExternalLimits make_external_limits(double limit_A) {
 void AcTemperatureDerating::init() {
     try {
         derating_curves_ = ac_temperature_derating::parse_derating_curves_json(config.derating_curves_json);
-        ignore_list_ = ac_temperature_derating::parse_temperature_provider_ignore_list(config.temperature_provider_ignore_list);
+        ignore_list_ =
+            ac_temperature_derating::parse_temperature_provider_ignore_list(config.temperature_provider_ignore_list);
 
         std::vector<std::string> provider_module_ids;
         provider_module_ids.reserve(r_temperature.size());
@@ -147,7 +148,7 @@ void AcTemperatureDerating::update_and_publish_limits() {
 
             for (const auto& [identification, state] : provider.readings_by_identification) {
                 if (ac_temperature_derating::is_temperature_reading_ignored(ignore_list_, provider.module_id,
-                                                                          identification)) {
+                                                                            identification)) {
                     continue;
                 }
 

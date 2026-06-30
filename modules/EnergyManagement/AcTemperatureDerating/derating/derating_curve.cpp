@@ -118,8 +118,7 @@ TemperatureProviderIgnoreList parse_temperature_provider_ignore_list(const std::
     return ignore_list;
 }
 
-void validate_ignore_list_vs_curves(const DeratingCurveMap& curves,
-                                    const TemperatureProviderIgnoreList& ignore_list) {
+void validate_ignore_list_vs_curves(const DeratingCurveMap& curves, const TemperatureProviderIgnoreList& ignore_list) {
     for (const auto& [curve_key, curve] : curves) {
         (void)curve;
         if (ignore_list.count(curve_key) != 0) {

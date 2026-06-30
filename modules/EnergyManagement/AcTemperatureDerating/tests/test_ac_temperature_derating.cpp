@@ -41,7 +41,7 @@ std::optional<double> extract_ac_max_current_A(const types::energy::ExternalLimi
 }
 
 std::unique_ptr<module::AcTemperatureDerating> make_module(CapturingEnergyLimitsAdapter& adapter,
-                                                          module::Conf& config) {
+                                                           module::Conf& config) {
     Requirement temperature_req{.id = "temperature", .index = 0};
     Requirement energy_node_req{.id = "energy_node", .index = 0};
 
@@ -127,6 +127,5 @@ TEST(AcTemperatureDeratingModuleTest, StaleReadingUsesFallbackLimit) {
     module::AcTemperatureDerating::TestAccess::update_and_publish_limits(*module);
     ASSERT_EQ(adapter.published_limits.size(), 2U);
     ASSERT_TRUE(extract_ac_max_current_A(adapter.published_limits.back()).has_value());
-    EXPECT_NEAR(extract_ac_max_current_A(adapter.published_limits.back()).value(), config.fallback_max_current_A,
-                0.01);
+    EXPECT_NEAR(extract_ac_max_current_A(adapter.published_limits.back()).value(), config.fallback_max_current_A, 0.01);
 }
