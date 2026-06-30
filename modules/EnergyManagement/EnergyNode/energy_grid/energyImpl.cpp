@@ -71,9 +71,9 @@ types::energy::ScheduleReqEntry energyImpl::get_local_schedule_req_entry() {
     local_schedule.timestamp =
         Everest::Date::to_rfc3339(date::floor<std::chrono::hours>(tp) + date::get_leap_second_info(tp).elapsed);
     local_schedule.limits_to_root.ac_max_phase_count = {mod->config.phase_count, source_cfg};
-    local_schedule.limits_to_root.ac_max_current_A = {static_cast<double>(mod->config.fuse_limit_A), source_cfg};
+    local_schedule.limits_to_root.ac_max_current_A = {static_cast<float>(mod->config.fuse_limit_A), source_cfg};
     local_schedule.limits_to_leaves.ac_max_phase_count = {mod->config.phase_count, source_cfg};
-    local_schedule.limits_to_leaves.ac_max_current_A = {static_cast<double>(mod->config.fuse_limit_A), source_cfg};
+    local_schedule.limits_to_leaves.ac_max_current_A = {static_cast<float>(mod->config.fuse_limit_A), source_cfg};
 
     return local_schedule;
 }

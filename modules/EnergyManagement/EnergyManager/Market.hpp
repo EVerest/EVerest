@@ -19,13 +19,13 @@ typedef std::vector<types::energy::ScheduleSetpointEntry> ScheduleSetpoints;
 class globals_t {
 public:
     void init(date::utc_clock::time_point _start_time, int _interval_duration, int _schedule_duration,
-              double _slice_ampere, double _slice_watt, bool _debug,
+              float _slice_ampere, float _slice_watt, bool _debug,
               const types::energy::EnergyFlowRequest& energy_flow_request);
     date::utc_clock::time_point start_time; // common start point
     std::chrono::minutes interval_duration; // interval duration
     int schedule_length;                    // total forcast length (in counts of (non-regular) intervals)
-    double slice_ampere;                     // ampere_slices for trades
-    double slice_watt;                       // ampere_slices for trades
+    float slice_ampere;                     // ampere_slices for trades
+    float slice_watt;                       // ampere_slices for trades
     bool debug{false};
     ScheduleReq zero_schedule_req, empty_schedule_req;
     ScheduleRes zero_schedule_res, empty_schedule_res;
@@ -54,7 +54,7 @@ private:
 
 class Market {
 public:
-    Market(const types::energy::EnergyFlowRequest& _energy_flow_request, const double __nominal_ac_voltage,
+    Market(const types::energy::EnergyFlowRequest& _energy_flow_request, const float __nominal_ac_voltage,
            Market* __parent = nullptr);
 
     void trade(const ScheduleRes& s);
@@ -73,7 +73,7 @@ public:
 
     Market* parent();
 
-    double nominal_ac_voltage();
+    float nominal_ac_voltage();
 
     // local request only for this node
     const types::energy::EnergyFlowRequest& energy_flow_request;
@@ -81,7 +81,7 @@ public:
 private:
     Market* _parent;
     std::list<Market> _children;
-    double _nominal_ac_voltage;
+    float _nominal_ac_voltage;
 
     // main data structures
     ScheduleReq import_max_available, export_max_available;
@@ -94,10 +94,10 @@ private:
     ScheduleSetpoints resample(const ScheduleSetpoints& request);
 };
 
-double get_watt_from_freq_table(const std::vector<types::energy::FrequencyWattPoint>& table, double freq);
-void apply_limit_if_smaller(std::optional<types::energy::NumberWithSource>& base, double limit,
+float get_watt_from_freq_table(const std::vector<types::energy::FrequencyWattPoint>& table, float freq);
+void apply_limit_if_smaller(std::optional<types::energy::NumberWithSource>& base, float limit,
                             const std::string& source);
-void apply_setpoints(ScheduleReq& imp, ScheduleReq& exp, const ScheduleSetpoints& setpoints, std::optional<double> freq);
+void apply_setpoints(ScheduleReq& imp, ScheduleReq& exp, const ScheduleSetpoints& setpoints, std::optional<float> freq);
 
 } // namespace module
 

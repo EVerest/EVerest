@@ -291,7 +291,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "external_limit_1_root",
-                "value": 15.942028985507246
+                "value": 15.942028999328613
               },
               "ac_max_phase_count": {
                 "source": "grid_connection_phase,EVSE1_phase",
@@ -352,7 +352,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "external_limit_1_root",
-                "value": 15.942028985507246
+                "value": 15.942028999328613
               },
               "ac_max_phase_count": {
                 "source": "grid_connection_phase,EVSE1_phase",

@@ -232,9 +232,9 @@ struct v2g_context {
     pthread_condattr_t mqtt_attr;
 
     struct {
-        double evse_ac_current_limit;   // default is 0
-        double evse_ac_nominal_current; // default is 0
-        double evse_ac_nominal_voltage; // default is 230
+        float evse_ac_current_limit;   // default is 0
+        float evse_ac_nominal_current; // default is 0
+        float evse_ac_nominal_voltage; // default is 230
     } basic_config;                    // This config will not reseted after beginning of a new charging session
 
     /* actual charging state */
@@ -354,13 +354,13 @@ struct v2g_context {
             struct din_DC_EVStatusType din_dc_ev_status;
             struct iso2_DC_EVStatusType iso2_dc_ev_status;
         };
-        double ev_maximum_current_limit;
-        double ev_maximum_power_limit;
-        double ev_maximum_voltage_limit;
-        double v2g_target_current;
-        double v2g_target_voltage;
-        double remaining_time_to_bulk_soc;
-        double remaining_time_to_full_soc;
+        float ev_maximum_current_limit;
+        float ev_maximum_power_limit;
+        float ev_maximum_voltage_limit;
+        float v2g_target_current;
+        float v2g_target_voltage;
+        float remaining_time_to_bulk_soc;
+        float remaining_time_to_full_soc;
     } ev_v2g_data;
 
     bool hlc_pause_active;

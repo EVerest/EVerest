@@ -12,7 +12,7 @@
 namespace everest::lib::API::V1_0::types::energy {
 
 struct NumberWithSource {
-    double value;
+    float value;
     std::string source;
 };
 
@@ -22,21 +22,21 @@ struct IntegerWithSource {
 };
 
 struct FrequencyWattPoint {
-    double frequency_Hz;
-    double total_power_W;
+    float frequency_Hz;
+    float total_power_W;
 };
 
 struct SetpointType {
     int32_t priority;
     std::string source;
-    std::optional<double> ac_current_A;
-    std::optional<double> total_power_W;
+    std::optional<float> ac_current_A;
+    std::optional<float> total_power_W;
     std::optional<std::vector<types::energy::FrequencyWattPoint>> frequency_table;
 };
 
 struct PricePerkWh {
     std::string timestamp;
-    double value;
+    float value;
     std::string currency;
 };
 
@@ -60,7 +60,7 @@ struct ScheduleReqEntry {
     std::string timestamp;
     LimitsReq limits_to_root;
     LimitsReq limits_to_leaves;
-    std::optional<double> conversion_efficiency;
+    std::optional<float> conversion_efficiency;
     std::optional<PricePerkWh> price_per_kwh;
 };
 
@@ -89,10 +89,10 @@ struct EnforcedLimits {
 };
 
 struct CapabilityLimits {
-    double max_current_A;
+    float max_current_A;
     int32_t max_phase_count;
-    double nominal_voltage_V;
-    double total_power_W;
+    float nominal_voltage_V;
+    float total_power_W;
 };
 
 } // namespace everest::lib::API::V1_0::types::energy

@@ -13,7 +13,7 @@ void Feedback::signal(feedback::Signal signal) const {
     call_if_available(callbacks.signal, signal);
 }
 
-void Feedback::dc_pre_charge_target_voltage(double voltage) const {
+void Feedback::dc_pre_charge_target_voltage(float voltage) const {
     call_if_available(callbacks.dc_pre_charge_target_voltage, voltage);
 }
 
