@@ -21,6 +21,7 @@ constexpr static uint8_t PLC_SRC_MAC_ADDR[ETH_ALEN] = {0x00, 0x01, 0x87, 0x0e, 0
 
 static void handle_set_key_req(int origin_fd) {
     slac::messages::cm_set_key_cnf set_key_cnf;
+    set_key_cnf.result = slac::defs::CM_SET_KEY_CNF_RESULT_SUCCESS;
     // FIXME (aw): proper message and mac header setup!
     homeplug_message.setup_payload(&set_key_cnf, sizeof(set_key_cnf),
                                    (slac::defs::MMTYPE_CM_SET_KEY | slac::defs::MMTYPE_MODE_CNF),

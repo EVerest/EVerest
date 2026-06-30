@@ -14,4 +14,7 @@ std::string format_run_id(const uint8_t* run_id);
 
 std::string format_mmtype(const uint16_t mmtype);
 
+// Fills the given buffer (slac::defs::NMK_LEN bytes) with a freshly generated random NMK.
+void generate_nmk(uint8_t* out);
+
 #endif // EVSE_SLAC_MISC_HPP

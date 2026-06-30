@@ -119,7 +119,9 @@ const uint8_t CM_SET_KEY_REQ_PMN_UNUSED = 0x00;
 const uint8_t CM_SET_KEY_REQ_CCO_CAP_NONE = 0x00; // Level-0 CCo Capable, neither QoS nor TDMA
 const uint8_t CM_SET_KEY_REQ_PEKS_NMK_KNOWN_TO_STA = 0x01;
 
-const uint8_t CM_SET_KEY_CNF_RESULT_SUCCESS = 0x0;
+// HPGP documents 0x00 as success, but in practice modems report success
+// as 0x01 in the CM_SET_KEY.CNF result field, so we treat 0x01 as success.
+const uint8_t CM_SET_KEY_CNF_RESULT_SUCCESS = 0x01;
 
 const uint8_t CM_ATTEN_CHAR_RSP_RESULT = 0x00;
 
@@ -323,7 +325,7 @@ typedef struct {
 } __attribute__((packed)) cm_set_key_req;
 
 typedef struct {
-    uint8_t result; // 0x00 = success, 0x01 = failure, 0x02 - 0xFF = reserved
+    uint8_t result; // standard: 0x00 = success; in practice Qualcomm/Lumissil report 0x01 on success
     uint32_t my_nonce;
     uint32_t your_nonce;
     uint8_t pid;

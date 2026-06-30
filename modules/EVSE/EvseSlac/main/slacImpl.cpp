@@ -74,6 +74,7 @@ void slacImpl::init() {
     }
 
     fsm_ctx.slac_config.set_key_timeout_ms = config.set_key_timeout_ms;
+    fsm_ctx.slac_config.set_key_max_attempts = config.set_key_max_attempts;
     fsm_ctx.slac_config.slac_init_timeout_ms = config.slac_init_timeout_ms;
     fsm_ctx.slac_config.ac_mode_five_percent = config.ac_mode_five_percent;
     fsm_ctx.slac_config.sounding_atten_adjustment = config.sounding_attenuation_adjustment;
@@ -90,8 +91,6 @@ void slacImpl::init() {
     fsm_ctx.slac_config.reset_instead_of_fail = config.reset_instead_of_fail;
 
     fsm_ctx.slac_config.regenerate_key_on_reset = !config.hack_disable_regenerate_key_on_reset;
-
-    fsm_ctx.slac_config.generate_nmk();
 
     memcpy(fsm_ctx.evse_mac, slac_io.get_mac_addr(), ETH_ALEN);
 
