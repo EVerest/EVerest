@@ -75,6 +75,45 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         return adjusted_config
 
 
+class D20TlsConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
+    """Force a specific TLS version on the direct-d20 SIL config so the
+    Evse15118D20 ConnectionSSL adapter performs the handshake end to end.
+
+    Unlike the IsoMux configs (where IsoMux terminates TLS and the d20
+    backend only sees decrypted plaintext), config-sil-dc-d20.yaml wires
+    EvseManager's `hlc` straight to Evse15118D20, which runs its own SDP
+    server and therefore drives the ConnectionSSL / tls::Server adapter.
+
+    tls13=False -> EV offers TLS 1.2 only and presents no client cert; the
+                   SECC accepts the 1.2 offer and requires no client cert
+                   (server-authenticated / unilateral TLS).
+    tls13=True  -> EV offers TLS 1.3 and presents its VEHICLE client cert;
+                   the SECC is pinned to TLS 1.3 (so the session cannot fall
+                   back to 1.2) and the verify-on-1.3 upgrade requires that
+                   client cert (mutual TLS, as ISO 15118-20 mandates).
+    """
+
+    def __init__(self, tls13: bool):
+        self.tls13 = tls13
+
+    def adjust_everest_configuration(self, everest_config: Dict):
+        adjusted_config = deepcopy(everest_config)
+        ev = adjusted_config["active_modules"]["iso15118_car"]["config_module"]
+        secc = adjusted_config["active_modules"]["iso15118_charger"]["config_module"]
+
+        ev["tls_active"] = True
+        ev["enforce_tls"] = True
+        ev["enable_tls_1_3"] = self.tls13
+
+        if self.tls13:
+            secc["tls_negotiation_strategy"] = "ENFORCE_TLS"
+            secc["enforce_tls_1_3"] = True
+        else:
+            secc["tls_negotiation_strategy"] = "ACCEPT_CLIENT_OFFER"
+            secc["enforce_tls_1_3"] = False
+        return adjusted_config
+
+
 async def wait_for_session_events(mock, expected_events, timeout=30):
     """Wait for specific events to appear in the mock's call list in the exact order.
     
@@ -528,7 +567,52 @@ async def test_iso15118_dc_session(
     _, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
         test_controller, everest_core
     )
-    
+
+    await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso")
+
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.probe_module(
+    connections={"evse_manager": [Requirement("evse_manager", "evse")]}
+)
+@pytest.mark.everest_core_config("config-sil-dc-d20.yaml")
+@pytest.mark.parametrize(
+    "tls_version",
+    [
+        pytest.param(
+            "tls1_2",
+            marks=pytest.mark.everest_config_adaptions(
+                D20TlsConfigAdjustmentStrategy(tls13=False)
+            ),
+            id="d20_tls1_2",
+        ),
+        pytest.param(
+            "tls1_3",
+            marks=pytest.mark.everest_config_adaptions(
+                D20TlsConfigAdjustmentStrategy(tls13=True)
+            ),
+            id="d20_tls1_3",
+        ),
+    ],
+)
+async def test_iso15118_20_dc_session_over_tls(
+    tls_version, test_controller: TestController, everest_core: EverestCore
+):
+    """ISO 15118-20 DC charging session over TLS through the Evse15118D20
+    ConnectionSSL adapter, at both negotiated TLS versions.
+
+    config-sil-dc-d20.yaml wires EvseManager.hlc directly to Evse15118D20
+    (no IsoMux), so the d20 module owns the SDP server and terminates TLS via
+    the tls::Server adapter under test. The session only reaches Charging if
+    the handshake succeeds, so a regression in the adapter (TLS 1.2 min-version
+    pinning, the enforce_tls_1_3 path, or the verify-client-on-1.3 upgrade)
+    surfaces as a timeout in run_basic_session.
+    """
+    _, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
+        test_controller, everest_core
+    )
+
     await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso")
 
 @pytest.mark.asyncio

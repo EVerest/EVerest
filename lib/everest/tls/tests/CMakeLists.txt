@@ -39,6 +39,7 @@ target_sources(${TLS_GTEST_NAME} PRIVATE
     openssl_util_test.cpp
     tls_test.cpp
     tls_connection_test.cpp
+    tls_connection_tls13_test.cpp
     ../extensions/helpers.cpp
     ../extensions/status_request.cpp
     ../extensions/trusted_ca_keys.cpp
