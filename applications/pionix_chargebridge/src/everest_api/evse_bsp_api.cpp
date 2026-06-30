@@ -264,6 +264,7 @@ enum class SafetyErrorMask : std::uint32_t {
     external_allow_power_on = (1 << 12),
     config_mem_error = (1 << 13),
     dc_hv_ov = (1 << 14),
+    rcd_error = (1 << 16),
 };
 
 // Table that maps a mask to our API error + message
@@ -294,6 +295,7 @@ static constexpr FlagSpec error_specs[] = {
     {SafetyErrorMask::config_mem_error, API_BSP::ErrorEnum::VendorError, "CONFIGMEM", "Internal config memory error"},
     {SafetyErrorMask::dc_hv_ov, API_BSP::ErrorEnum::VendorError, "DV_HV",
      "DC HV OVM. FIXME: This should be on OVM not EVSE interface"},
+    {SafetyErrorMask::rcd_error, API_BSP::ErrorEnum::MREC2GroundFailure, "", "RCD error detected"},
 };
 
 static constexpr FlagSpec print_warning_specs[] = {
