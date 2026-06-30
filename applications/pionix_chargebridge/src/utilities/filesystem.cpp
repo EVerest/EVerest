@@ -64,24 +64,33 @@ bool process_file(std::ifstream& file, std::size_t buffer_size,
         return false;
     }
 
-    std::vector<std::uint8_t> buffer(buffer_size);
-    bool interupted = false;
+    // We read one chunk ahead so we can flag the last *non-empty* chunk with
+    // last_chunk=true. A naive read-until-EOF loop cannot tell that a full
+    // buffer_size read was the final one until the next read returns 0 bytes,
+    // which would force us to emit a trailing empty chunk. Downstream (the
+    // firmware updater) that empty chunk turns into a last_packet with
+    // data_len==0, and the device then never strips the PKCS#7 padding from the
+    // real last chunk -> SHA mismatch. Reading ahead avoids the empty chunk
+    // whenever the file size is an exact multiple of buffer_size.
+    std::vector<std::uint8_t> current(buffer_size);
+    std::vector<std::uint8_t> next(buffer_size);
 
-    while (file.read(reinterpret_cast<char*>(buffer.data()), buffer_size)) {
-        interupted = func(buffer, false);
+    file.read(reinterpret_cast<char*>(current.data()), buffer_size);
+    current.resize(static_cast<std::size_t>(file.gcount()));
 
-        if (interupted) {
+    while (true) {
+        next.resize(buffer_size);
+        file.read(reinterpret_cast<char*>(next.data()), buffer_size);
+        next.resize(static_cast<std::size_t>(file.gcount()));
+
+        const bool is_last = next.empty(); // nothing follows `current`
+        const bool interupted = func(current, is_last);
+
+        if (interupted || is_last) {
             break;
         }
-    }
 
-    // Process the remaining bytes
-    if (interupted == false) {
-        std::size_t remaining = file.gcount();
-
-        // Keep only remaining elements
-        buffer.resize(remaining);
-        func(buffer, true);
+        std::swap(current, next);
     }
 
     return true;
