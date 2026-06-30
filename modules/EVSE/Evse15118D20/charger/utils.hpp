@@ -125,7 +125,7 @@ std::optional<dt::RationalNumber> convert_from_optional(const std::optional<floa
 std::optional<float> convert_from_optional(const std::optional<uint32_t>& in);
 
 types::iso15118::AppProtocol
-convert_app_protocol(const iso15118::message_20::datatypes::SupportedAppProtocol& app_protocol);
+convert_app_protocol(const iso15118::message_20::SupportedAppProtocol& app_protocol);
 types::iso15118::EvInformation convert_ev_info(const iso15118::d20::EVInformation& ev_info);
 
 types::iso15118::DcChargeDynamicModeValues convert_dynamic_values(const dt::Dynamic_DC_CLReqControlMode& in);
