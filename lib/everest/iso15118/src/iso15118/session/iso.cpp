@@ -170,11 +170,11 @@ TimePoint const& Session::poll() {
         } else if (const auto control_data = ctx.get_control_event<d20::AcTransferLimits>()) {
             ctx.session_config.ac_limits = *control_data;
         } else if (const auto control_data = ctx.get_control_event<d20::UpdateDynamicModeParameters>()) {
-            ctx.cache_dynamic_mode_parameters.emplace(*control_data);
-        } else if (const auto control_data = ctx.get_control_event<d20::AcTargetPower>()) {
-            ctx.cache_ac_target_power.emplace(*control_data);
-        } else if (const auto control_data = ctx.get_control_event<d20::AcPresentPower>()) {
-            ctx.cache_ac_present_power.emplace(*control_data);
+            ctx.cl_dynamic_mode_parameters = *control_data;
+        } else if (const auto control_data = ctx.get_control_event<AcTargetPower>()) {
+            ctx.ac_target_power = *control_data;
+        } else if (const auto control_data = ctx.get_control_event<AcPresentPower>()) {
+            ctx.ac_present_power = *control_data;
         }
         // Save some control events. It can happen that these events are sent before the corresponding state. They are
         // stored temporarily here.

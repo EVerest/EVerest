@@ -190,7 +190,7 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
 
 void DC_ChargeLoop::enter() {
     m_ctx.log.enter_state("DC_ChargeLoop");
-    dynamic_parameters = m_ctx.cache_dynamic_mode_parameters.value_or(UpdateDynamicModeParameters{});
+    dynamic_parameters = m_ctx.cl_dynamic_mode_parameters;
 }
 
 Result DC_ChargeLoop::feed(Event ev) {

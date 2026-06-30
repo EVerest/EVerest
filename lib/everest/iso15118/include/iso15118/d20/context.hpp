@@ -164,9 +164,10 @@ public:
     bool session_stopped{false};
     bool session_paused{false};
 
-    std::optional<UpdateDynamicModeParameters> cache_dynamic_mode_parameters;
-    std::optional<AcTargetPower> cache_ac_target_power;
-    std::optional<AcPresentPower> cache_ac_present_power;
+    // TODO(SL): Make it private
+    UpdateDynamicModeParameters cl_dynamic_mode_parameters;
+    iso15118::AcTargetPower ac_target_power;
+    iso15118::AcPresentPower ac_present_power;
 
 private:
     const std::optional<ControlEvent>& current_control_event;

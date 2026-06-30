@@ -18,10 +18,19 @@ using BPT_AC_ModeReq = dt::BPT_AC_CPDReqEnergyTransferMode;
 using AC_ModeRes = dt::AC_CPDResEnergyTransferMode;
 using BPT_AC_ModeRes = dt::BPT_AC_CPDResEnergyTransferMode;
 
-template <typename Out>
-void convert(Out& out, const d20::AcTransferLimits& limits, const d20::AcPresentPower& present_power);
+namespace {
 
-template <>
+// TODO(SL): Move to datatypes for all
+std::optional<dt::RationalNumber> convert_from_optional(const std::optional<float>& in) {
+    return (in.has_value()) ? std::make_optional(dt::from_float(*in)) : std::nullopt;
+}
+
+void convert(d20::AcPresentPower& out, const iso15118::AcPresentPower& in) {
+    out.present_active_power = convert_from_optional(in.present_active_power);
+    out.present_active_power_L2 = convert_from_optional(in.present_active_power_L2);
+    out.present_active_power_L3 = convert_from_optional(in.present_active_power_L3);
+}
+
 void convert(AC_ModeRes& out, const d20::AcTransferLimits& limits, const d20::AcPresentPower& present_power) {
     out.min_charge_power = limits.charge_power.min;
     out.max_charge_power = limits.charge_power.max;
@@ -44,7 +53,6 @@ void convert(AC_ModeRes& out, const d20::AcTransferLimits& limits, const d20::Ac
     out.present_active_power_L3 = present_power.present_active_power_L3;
 }
 
-template <>
 void convert(BPT_AC_ModeRes& out, const d20::AcTransferLimits& limits, const d20::AcPresentPower& present_power) {
     convert(static_cast<AC_ModeRes&>(out), limits, present_power);
 
@@ -64,13 +72,15 @@ void convert(BPT_AC_ModeRes& out, const d20::AcTransferLimits& limits, const d20
     }
 }
 
+} // namespace
+
 message_20::AC_ChargeParameterDiscoveryResponse
 handle_request(const message_20::AC_ChargeParameterDiscoveryRequest& req, const d20::Session& session,
                const d20::AcTransferLimits& limits, const d20::AcPresentPower& powers) {
 
     message_20::AC_ChargeParameterDiscoveryResponse res;
 
-    if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
+    if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_UnknownSession);
     }
 
@@ -101,14 +111,14 @@ handle_request(const message_20::AC_ChargeParameterDiscoveryRequest& req, const 
 
 void AC_ChargeParameterDiscovery::enter() {
     m_ctx.log.enter_state("AC_ChargeParameterDiscovery");
-    present_powers = m_ctx.cache_ac_present_power.value_or(AcPresentPower{});
+    convert(present_powers, m_ctx.ac_present_power);
 }
 
 Result AC_ChargeParameterDiscovery::feed(Event ev) {
 
     if (ev == Event::CONTROL_MESSAGE) {
-        if (const auto* control_data = m_ctx.get_control_event<AcPresentPower>()) {
-            present_powers = *control_data;
+        if (const auto* control_data = m_ctx.get_control_event<iso15118::AcPresentPower>()) {
+            convert(present_powers, *control_data);
         }
         return {};
     }

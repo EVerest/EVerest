@@ -6,7 +6,6 @@
 #include <variant>
 #include <vector>
 
-#include <iso15118/d20/ac_powers.hpp>
 #include <iso15118/d20/dynamic_mode_parameters.hpp>
 #include <iso15118/d20/limits.hpp>
 
@@ -83,11 +82,28 @@ private:
     bool closed;
 };
 
+struct AcTargetPower {
+    std::optional<float> target_active_power;
+    std::optional<float> target_active_power_L2;
+    std::optional<float> target_active_power_L3;
+    std::optional<float> target_reactive_power;
+    std::optional<float> target_reactive_power_L2;
+    std::optional<float> target_reactive_power_L3;
+    std::optional<float> target_frequency;
+};
+
+struct AcPresentPower {
+    std::optional<float> present_active_power;
+    std::optional<float> present_active_power_L2;
+    std::optional<float> present_active_power_L3;
+};
+
 // TODO(SL): Define this globally for message and states
 using SupportedVASs = std::vector<uint16_t>;
 
-using ControlEvent = std::variant<CableCheckFinished, PresentVoltageCurrent, AuthorizationResponse, StopCharging,
-                                  PauseCharging, d20::DcTransferLimits, d20::AcTransferLimits, d20::UpdateDynamicModeParameters,
-                                  ClosedContactor, d20::AcTargetPower, d20::AcPresentPower, EnergyServices, SupportedVASs>;
+using ControlEvent =
+    std::variant<CableCheckFinished, PresentVoltageCurrent, AuthorizationResponse, StopCharging, PauseCharging,
+                 d20::DcTransferLimits, d20::AcTransferLimits, d20::UpdateDynamicModeParameters, ClosedContactor,
+                 AcTargetPower, AcPresentPower, EnergyServices, SupportedVASs>;
 
 } // namespace iso15118

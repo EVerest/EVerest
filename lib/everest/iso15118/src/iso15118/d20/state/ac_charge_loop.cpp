@@ -25,9 +25,29 @@ using Scheduled_BPT_AC_Res = dt::BPT_Scheduled_AC_CLResControlMode;
 using Dynamic_AC_Res = dt::Dynamic_AC_CLResControlMode;
 using Dynamic_BPT_AC_Res = dt::BPT_Dynamic_AC_CLResControlMode;
 
-template <typename Out> void convert(Out& out, const AcTargetPower& targets, const d20::AcPresentPower& present_power);
+namespace {
 
-template <>
+// TODO(SL): Move to datatypes for all
+std::optional<dt::RationalNumber> convert_from_optional(const std::optional<float>& in) {
+    return (in.has_value()) ? std::make_optional(dt::from_float(*in)) : std::nullopt;
+}
+
+void convert(d20::AcTargetPower& out, const iso15118::AcTargetPower& in) {
+    out.target_active_power = convert_from_optional(in.target_active_power);
+    out.target_active_power_L2 = convert_from_optional(in.target_active_power_L2);
+    out.target_active_power_L3 = convert_from_optional(in.target_active_power_L3);
+    out.target_reactive_power = convert_from_optional(in.target_reactive_power);
+    out.target_reactive_power_L2 = convert_from_optional(in.target_reactive_power_L2);
+    out.target_reactive_power_L3 = convert_from_optional(in.target_reactive_power_L3);
+    out.target_frequency = convert_from_optional(in.target_frequency);
+}
+
+void convert(d20::AcPresentPower& out, const iso15118::AcPresentPower& in) {
+    out.present_active_power = convert_from_optional(in.present_active_power);
+    out.present_active_power_L2 = convert_from_optional(in.present_active_power_L2);
+    out.present_active_power_L3 = convert_from_optional(in.present_active_power_L3);
+}
+
 void convert(Scheduled_AC_Res& out, const AcTargetPower& targets, const d20::AcPresentPower& present_power) {
     out.target_active_power = targets.target_active_power;
     out.target_active_power_L2 = targets.target_active_power_L2;
@@ -40,12 +60,11 @@ void convert(Scheduled_AC_Res& out, const AcTargetPower& targets, const d20::AcP
     out.present_active_power_L3 = present_power.present_active_power_L3;
 }
 
-template <>
 void convert(Scheduled_BPT_AC_Res& out, const AcTargetPower& targets, const d20::AcPresentPower& present_power) {
     convert(static_cast<Scheduled_AC_Res&>(out), targets, present_power);
 }
 
-template <> void convert(Dynamic_AC_Res& out, const AcTargetPower& targets, const d20::AcPresentPower& present_power) {
+void convert(Dynamic_AC_Res& out, const AcTargetPower& targets, const d20::AcPresentPower& present_power) {
     out.target_active_power =
         targets.target_active_power.value_or(dt::RationalNumber{0, 0}); // 0kW if no value is available
     out.target_active_power_L2 = targets.target_active_power_L2;
@@ -58,15 +77,12 @@ template <> void convert(Dynamic_AC_Res& out, const AcTargetPower& targets, cons
     out.present_active_power_L3 = present_power.present_active_power_L3;
 }
 
-template <>
 void convert(Dynamic_BPT_AC_Res& out, const AcTargetPower& targets, const d20::AcPresentPower& present_power) {
     convert(static_cast<Dynamic_AC_Res&>(out), targets, present_power);
 }
 
 // TODO(sl): Refactor with DcChargeLoop state
-namespace {
-template <typename T>
-void set_dynamic_parameters_in_res(T& res_mode, const UpdateDynamicModeParameters& parameters,
+void set_dynamic_parameters_in_res(Dynamic_AC_Res& res_mode, const UpdateDynamicModeParameters& parameters,
                                    uint64_t header_timestamp) {
     if (parameters.departure_time) {
         const auto departure_time = static_cast<uint64_t>(parameters.departure_time.value());
@@ -88,7 +104,7 @@ message_20::AC_ChargeLoopResponse handle_request(const message_20::AC_ChargeLoop
 
     message_20::AC_ChargeLoopResponse res;
 
-    if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
+    if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
     }
 
@@ -169,9 +185,9 @@ message_20::AC_ChargeLoopResponse handle_request(const message_20::AC_ChargeLoop
 
 void AC_ChargeLoop::enter() {
     m_ctx.log.enter_state("AC_ChargeLoop");
-    dynamic_parameters = m_ctx.cache_dynamic_mode_parameters.value_or(UpdateDynamicModeParameters{});
-    target_powers = m_ctx.cache_ac_target_power.value_or(AcTargetPower{});
-    present_powers = m_ctx.cache_ac_present_power.value_or(AcPresentPower{});
+    dynamic_parameters = m_ctx.cl_dynamic_mode_parameters;
+    convert(target_powers, m_ctx.ac_target_power);
+    convert(present_powers, m_ctx.ac_present_power);
 }
 
 Result AC_ChargeLoop::feed(Event ev) {
@@ -183,10 +199,10 @@ Result AC_ChargeLoop::feed(Event ev) {
             pause = *control_data;
         } else if (const auto* control_data = m_ctx.get_control_event<UpdateDynamicModeParameters>()) {
             dynamic_parameters = *control_data;
-        } else if (const auto* control_data = m_ctx.get_control_event<AcTargetPower>()) {
-            target_powers = *control_data;
-        } else if (const auto* control_data = m_ctx.get_control_event<AcPresentPower>()) {
-            present_powers = *control_data;
+        } else if (const auto* control_data = m_ctx.get_control_event<iso15118::AcTargetPower>()) {
+            convert(target_powers, *control_data);
+        } else if (const auto* control_data = m_ctx.get_control_event<iso15118::AcPresentPower>()) {
+            convert(present_powers, *control_data);
         }
 
         // Ignore control message
