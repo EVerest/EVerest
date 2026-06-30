@@ -235,7 +235,7 @@ void powermeterImpl::init() {
 }
 
 void powermeterImpl::read_signature_config() {
-    EVLOG_info << "Read the signature public key...";
+    EVLOG_debug << "Read the signature public key...";
 
     enum SignatureType {
         SIGNATURE_256_BIT,
@@ -323,7 +323,7 @@ void powermeterImpl::read_identification() {
 }
 
 void powermeterImpl::read_firmware_versions() {
-    EVLOG_info << "Read the firmware versions...";
+    EVLOG_debug << "Read the firmware versions...";
 
     // Read measure module firmware version/revision (register 300771)
     transport::DataVector measure_fw_data = p_modbus_transport->fetch(MODBUS_FIRMWARE_MEASURE_MODULE_ADDRESS, 1);
@@ -355,7 +355,8 @@ void powermeterImpl::read_firmware_versions() {
 }
 
 void powermeterImpl::read_serial_number() {
-    EVLOG_info << "Read the serial number...";
+    EVLOG_debug << "Read the serial number...";
+
     // Read serial number (registers 320481-320487, 7 UINT16 registers = 14 bytes)
     transport::DataVector serial_data =
         p_modbus_transport->fetch(MODBUS_SERIAL_NUMBER_START_ADDRESS, MODBUS_SERIAL_NUMBER_REGISTER_COUNT);
@@ -435,7 +436,7 @@ void powermeterImpl::read_transaction_state_and_id() {
 }
 
 void powermeterImpl::configure_device() {
-    EVLOG_info << "Configure the device...";
+    EVLOG_debug << "Configure the device...";
     read_identification();
     read_firmware_versions();
     read_serial_number();
@@ -584,8 +585,8 @@ void powermeterImpl::clear_transaction_states() {
     std::uint16_t ocmf_state = modbus_utils::to_uint16(state_data, modbus_utils::ByteOffset{0});
 
     if (ocmf_state == MODBUS_OCMF_STATE_READY) {
-        EVLOG_info << "Current OCMF state: " << ocmf_state_to_string(ocmf_state) << "(" << ocmf_state << ")";
-        EVLOG_info << "Cleanup necessary ...";
+        EVLOG_debug << "Current OCMF state: " << ocmf_state_to_string(ocmf_state) << "(" << ocmf_state << ")";
+        EVLOG_debug << "Cleanup necessary ...";
         read_ocmf_file();
         // write 0 to the OCMF state to confirm the reading of the OCMF file
         std::vector<std::uint16_t> ocmf_confirmation_data = {MODBUS_OCMF_STATE_NOT_READY};
@@ -616,7 +617,7 @@ powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& treq
         // start a new transaction
         transport::DataVector state_data = p_modbus_transport->fetch(MODBUS_OCMF_STATE_ADDRESS, 1);
         std::uint16_t ocmf_state = modbus_utils::to_uint16(state_data, modbus_utils::ByteOffset{0});
-        EVLOG_info << "Current OCMF state: " << ocmf_state_to_string(ocmf_state) << "(" << ocmf_state << ")";
+        EVLOG_debug << "Current OCMF state: " << ocmf_state_to_string(ocmf_state) << "(" << ocmf_state << ")";
 
         if (ocmf_state != MODBUS_OCMF_STATE_NOT_READY) {
             EVLOG_warning << "Spurious transaction detected, clearing transaction states ...";
@@ -626,10 +627,10 @@ powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& treq
         }
 
         // Write transaction registers first
-        EVLOG_info << "Write transaction registers...";
+        EVLOG_debug << "Write transaction registers...";
         write_transaction_registers(treq);
 
-        EVLOG_info << "Write session modality ... to charging vehicle";
+        EVLOG_debug << "Write session modality ... to charging vehicle";
         std::vector<std::uint16_t> session_modality_data = {MODBUS_OCMF_SESSION_MODALITY_CHARGING_VEHICLE};
         p_modbus_transport->write_multiple_registers(MODBUS_OCMF_SESSION_MODALITY_ADDRESS, session_modality_data);
 
@@ -664,7 +665,7 @@ types::powermeter::TransactionStopResponse powermeterImpl::handle_stop_transacti
     // if the transaction id is empty, we need to clean up the transaction states
     // we do our best to clean up the transaction states
     if (transaction_id.empty()) {
-        EVLOG_info << "Cleaning up the transaction request.";
+        EVLOG_debug << "Cleaning up the transaction request.";
         try {
             if (!m_pending_closed_transaction and m_transaction_active.load()) {
                 std::vector<std::uint16_t> command_data = {MODBUS_OCMF_COMMAND_END};
@@ -981,14 +982,18 @@ void powermeterImpl::synchronize_time() {
 }
 
 void powermeterImpl::set_timezone(int offset_minutes) {
-    EVLOG_info << "Try to set the timezone ... ";
-
+    EVLOG_debug << "Try to set the timezone ... ";
     // Convert to INT16 (signed 16-bit integer)
     // Timezone offset range: -1440 to +1440 minutes is validated by the manifest.
     std::int16_t offset_int16 = static_cast<std::int16_t>(offset_minutes);
     std::vector<std::uint16_t> data;
     data.push_back(static_cast<std::uint16_t>(offset_int16));
-    p_modbus_transport->write_multiple_registers(MODBUS_TIMEZONE_OFFSET_ADDRESS, data);
+    try {
+        p_modbus_transport->write_multiple_registers(MODBUS_TIMEZONE_OFFSET_ADDRESS, data);
+    } catch (const std::exception& e) {
+        EVLOG_error << "Failed to set the timezone: " << e.what();
+        throw e;
+    }
 
     EVLOG_info << "Timezone set to: " << (offset_minutes >= 0 ? "+" : "") << offset_minutes << " minutes";
 }
