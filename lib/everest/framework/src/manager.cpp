@@ -529,7 +529,7 @@ std::optional<int> Manager::handle_finish_normal_shutdown(RuntimeContext& ctx, M
     return std::nullopt;
 }
 
-void Manager::handle_finish_crash_recovery(RuntimeContext& ctx) {
+std::optional<int> Manager::handle_finish_crash_recovery(RuntimeContext& ctx, ManagerAdminPanel& admin_panel) {
     const auto duration_ms = shutdown_start_time_.has_value()
                                  ? std::chrono::duration_cast<std::chrono::milliseconds>(
                                        std::chrono::steady_clock::now() - shutdown_start_time_.value())
@@ -557,15 +557,23 @@ void Manager::handle_finish_crash_recovery(RuntimeContext& ctx) {
     force_terminate_start_time_ = std::nullopt;
     force_kill_sent_ = false;
 
-    transition_to(ManagerState::Idle);
-    EVLOG_info << "Crash recovery completed, manager is idle after module shutdown. Send SIGINT/SIGTERM to stop.";
+    if (recover_module_crashes_) {
+        transition_to(ManagerState::Idle);
+        EVLOG_info << "Crash recovery completed, manager is idle after module shutdown. Send SIGINT/SIGTERM to stop.";
+        return std::nullopt;
+    }
+
+    EVLOG_critical << "Unexpected module exit; manager is exiting.";
+    admin_panel.shutdown_controller();
+    cleanup(ctx.mqtt_abstraction);
+    transition_to(ManagerState::Exiting);
+    return EXIT_FAILURE;
 }
 
 std::optional<int> Manager::handle_finalize_shutdown_transition(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
                                                                 bool restart_requested, bool crash_in_progress) {
     if (crash_in_progress) {
-        handle_finish_crash_recovery(ctx);
-        return std::nullopt;
+        return handle_finish_crash_recovery(ctx, admin_panel);
     }
     if (restart_requested) {
         handle_restart_modules_after_shutdown(ctx);
@@ -883,7 +891,8 @@ void Manager::register_state_transition_handler(std::function<void(ManagerState,
     state_transition_handlers_.push_back(std::move(handler));
 }
 
-Manager::Manager(const po::variables_map& vm) : vm_(vm) {
+Manager::Manager(const po::variables_map& vm) :
+    vm_(vm), recover_module_crashes_(vm.count("recover-module-crashes") != 0) {
 }
 
 // ---- State predicates -------------------------------------------------------
@@ -1079,7 +1088,8 @@ Manager::LifecycleAdvanceResult Manager::advance_lifecycle_state_if_ready(Runtim
     // after a timeout-triggered force shutdown.
     if (in_shutdown_flow && module_handles_.empty() && state_ != ManagerState::ShutdownFinalizing) {
         transition_to(ManagerState::ShutdownFinalizing);
-        if (crash_in_progress && unexpected_module_exit_count_ <= MAX_UNEXPECTED_MODULE_RESTARTS) {
+        if (crash_in_progress && recover_module_crashes_ &&
+            unexpected_module_exit_count_ <= MAX_UNEXPECTED_MODULE_RESTARTS) {
             EVLOG_warning << fmt::format(
                 "Unexpected module exit recovery attempt {}/{}. Reloading config and restarting "
                 "modules.",
@@ -1317,6 +1327,9 @@ int main(int argc, char* argv[]) {
     desc.add_options()("db-init", "Indicator to initialize the database if it does not contain a valid configuration. "
                                   "Requires --config and --db to be set.");
     desc.add_options()("into-idle", "Boot into idle state (no modules are started)");
+    desc.add_options()("recover-module-crashes",
+                       "After unexpected module exit, reload config and restart modules (bounded by an internal retry "
+                       "limit). Default: shut down all modules and exit the manager.");
     desc.add_options()("status-fifo", po::value<std::string>()->default_value(""),
                        "Path to a named pipe, that shall be used for status updates from the manager");
     desc.add_options()("retain-topics", "Retain configuration MQTT topics setup by manager for inspection, by default "

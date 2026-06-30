@@ -108,6 +108,7 @@ class EverestTestEnvironmentSetup:
                  evse_security_config: Optional[EverestEnvironmentEvseSecurityConfiguration] = None,
                  persistent_store_config: Optional[EverestEnvironmentPersistentStoreConfiguration] = None,
                  standalone_module: Optional[Union[str, List[str]]] = None,
+                 manager_extra_args: Optional[List[str]] = None,
                  everest_config_strategies: Optional[List[EverestConfigAdjustmentStrategy]] = None
                  ) -> None:
         self._core_config = core_config
@@ -116,6 +117,7 @@ class EverestTestEnvironmentSetup:
         self._evse_security_config = evse_security_config
         self._persistent_store_config = persistent_store_config
         self._standalone_module = standalone_module
+        self._manager_extra_args = manager_extra_args or []
         if not self._standalone_module and self._probe_config:
             self._standalone_module = self._probe_config.module_id
         self._additional_everest_config_strategies = everest_config_strategies if everest_config_strategies else []
@@ -134,6 +136,7 @@ class EverestTestEnvironmentSetup:
                                          everest_configuration_adjustment_strategies=configuration_strategies +
                                          self._additional_everest_config_strategies,
                                          standalone_module=self._standalone_module,
+                                         manager_extra_args=self._manager_extra_args,
                                          tmp_path=tmp_path)
 
         if self._ocpp_config:

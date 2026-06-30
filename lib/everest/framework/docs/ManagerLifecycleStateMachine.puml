@@ -99,9 +99,11 @@ StartingModules -[#4f46e5]-> RestartRequested : <color:#4f46e5>IPC restart_modul
 
 G_DRAIN -[#d97706]-> ShutdownFinalizing : <color:#d97706>all module PIDs gone</color>\n(drain or after SIGTERM/SIGKILL)
 
-ShutdownFinalizing -[#047857]-> StartingModules : <color:#047857>ShutdownFinalizing to StartingModules:</color>\nreload config,\nRestart or Crash under max restarts
+    ShutdownFinalizing -[#047857]-> StartingModules : <color:#047857>ShutdownFinalizing to StartingModules:</color>\nreload config,\nRestart or Crash under max restarts\n(--recover-module-crashes)
 
-ShutdownFinalizing -[#047857]-> Idle : <color:#047857>ShutdownFinalizing to Idle:</color>\n(crash cap exceeded or idle mode)
+    ShutdownFinalizing -[#047857]-> Idle : <color:#047857>ShutdownFinalizing to Idle:</color>\n(crash cap exceeded with --recover-module-crashes)
+
+    ShutdownFinalizing -[#047857]-> Exiting : <color:#047857>ShutdownFinalizing to Exiting:</color>\nunexpected module exit without --recover-module-crashes
 
 Running -[#3730a3]-> Exiting : <color:#3730a3>Second SIGINT/SIGTERM</color>\n(sigint_received_ already true)\ndirect to Exiting, not via drain
 

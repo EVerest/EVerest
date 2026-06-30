@@ -1,0 +1,90 @@
+%% EVerest manager — ManagerState lifecycle (Mermaid conversion of ManagerLifecycleStateMachine.puml)
+%% Narrative: lib/everest/framework/src/manager.hpp
+%% Transitions / timeouts: lib/everest/framework/src/manager.cpp
+%%
+%% Render: GitHub/GitLab markdown fenced block, VS Code Mermaid preview, or:
+%%   npx -y @mermaid-js/mermaid-cli -i ManagerLifecycleStateMachine.mmd -o ManagerLifecycleStateMachine.svg
+%%
+%% Conversion notes vs PlantUML:
+%% - Composite regions (Startup / Shutdown / Finalize) are supported.
+%% - Per-edge stroke color matching source state fill is not supported; states use classDef fills instead.
+%% - Multi-line creole labels and bottom legend are replaced by shorter edge labels + comments here.
+%% - Orthogonal routing and skinparam theming are not available.
+
+stateDiagram-v2
+    direction TB
+
+    state "Startup" as G_BOOT {
+        [*] --> Idle : construct
+        Idle --> Initializing : run()
+        Initializing --> StartingModules : handle_start_modules(), spawn,\nMQTT ready handlers
+        StartingModules --> Running : all non-ignored modules ready\n(skip if shutdown already started)
+    }
+
+    state "Shutdown / drain" as G_DRAIN {
+        ShutdownRequested --> ForceTerminating : SHUTDOWN_TIMEOUT_MS exceeded
+        CrashShutdownInProgress --> ForceTerminating : SHUTDOWN_TIMEOUT_MS exceeded
+        RestartRequested --> ForceTerminating : SHUTDOWN_TIMEOUT_MS exceeded
+        ShutdownRequested --> CrashShutdownInProgress : crash path\n(immediate after MQTT shutdown)
+    }
+
+    state "Finalize" as G_END {
+        ShutdownFinalizing --> Exiting : SIGINT shutdown finish\n(cleanup, EXIT_SUCCESS)
+        Exiting --> [*] : process exit
+    }
+
+    %% Cross-region: signals and IPC while starting or running
+    Running --> ShutdownRequested : first SIGINT/SIGTERM,\nShutdownCause Normal,\nMQTT shutdown published
+    StartingModules --> ShutdownRequested : first SIGINT/SIGTERM,\nShutdownCause Normal
+
+    Running --> CrashShutdownInProgress : unexpected module exit,\nShutdownCause Crash
+    StartingModules --> CrashShutdownInProgress : unexpected module exit,\nShutdownCause Crash
+
+    Running --> RestartRequested : IPC restart_modules,\nShutdownCause Restart
+    StartingModules --> RestartRequested : IPC restart_modules,\nShutdownCause Restart
+
+    Running --> Exiting : second SIGINT/SIGTERM\n(sigint_received_ already true)
+
+    %% Drain complete → finalize (when module_handles_ is empty)
+    ShutdownRequested --> ShutdownFinalizing : all module PIDs gone
+    CrashShutdownInProgress --> ShutdownFinalizing : all module PIDs gone
+    RestartRequested --> ShutdownFinalizing : all module PIDs gone
+    ForceTerminating --> ShutdownFinalizing : all module PIDs gone
+
+    %% Finalize outcomes
+    ShutdownFinalizing --> StartingModules : reload config\n(--recover-module-crashes, under max restarts)
+    ShutdownFinalizing --> Idle : crash cap exceeded\n(--recover-module-crashes)
+    ShutdownFinalizing --> Exiting : unexpected module exit\n(default, no flag)
+
+    %% First SIGINT with no module children: Idle/Initializing shortcut to Exiting (see manager.cpp)
+    note right of Running
+        Last MQTT ready while shutdown in progress: skip Running.
+        First SIGINT with no module PIDs: cleanup → Exiting (no drain).
+    end note
+
+    note right of ForceTerminating
+        SIGTERM then SIGKILL after FORCE_KILL_GRACE_TIMEOUT_MS.
+        ShutdownCause at finalize: Normal exit, Restart, or Crash recovery.
+    end note
+
+    classDef idle fill:#64748b,color:#f8fafc
+    classDef init fill:#818cf8,color:#f8fafc
+    classDef starting fill:#4f46e5,color:#f8fafc
+    classDef running fill:#3730a3,color:#f8fafc
+    classDef shutdownReq fill:#ca8a04,color:#f8fafc
+    classDef crash fill:#ea580c,color:#f8fafc
+    classDef restart fill:#c2410c,color:#f8fafc
+    classDef force fill:#9a3412,color:#f8fafc
+    classDef finalize fill:#047857,color:#f8fafc
+    classDef exiting fill:#dc2626,color:#f8fafc
+
+    class Idle idle
+    class Initializing init
+    class StartingModules starting
+    class Running running
+    class ShutdownRequested shutdownReq
+    class CrashShutdownInProgress crash
+    class RestartRequested restart
+    class ForceTerminating force
+    class ShutdownFinalizing finalize
+    class Exiting exiting
