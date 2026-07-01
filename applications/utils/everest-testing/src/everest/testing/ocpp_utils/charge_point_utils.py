@@ -50,6 +50,8 @@ class CertificateInfo:
 class FirmwareInfo:
     update_file: Path
     update_file_signature: Path
+    update_file_keep_connectors_available: Optional[Path] = None
+    update_file_keep_connectors_available_signature: Optional[Path] = None
 
 
 @dataclass

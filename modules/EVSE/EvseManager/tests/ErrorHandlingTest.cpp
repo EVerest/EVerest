@@ -56,13 +56,20 @@ struct ErrorDatabaseStub : public Everest::error::ErrorDatabase {
 struct EvseManagerModuleAdapterStub : public module::stub::EvseManagerModuleAdapter {
     std::shared_ptr<Everest::error::ErrorTypeMap> error_type_map;
     std::shared_ptr<ErrorDatabaseStub> error_database;
+    std::shared_ptr<ErrorDatabaseStub> slac_error_database;
+    std::shared_ptr<ErrorDatabaseStub> hlc_error_database;
     std::list<Everest::error::ErrorType> error_list;
+    std::list<Everest::error::ErrorType> requirement_error_list;
     std::list<Everest::error::Error> active_errors;
+    std::list<Everest::error::Error> slac_active_errors;
+    std::list<Everest::error::Error> hlc_active_errors;
 
     EvseManagerModuleAdapterStub() :
         module::stub::EvseManagerModuleAdapter(),
         error_type_map(std::make_shared<Everest::error::ErrorTypeMap>()),
         error_database(std::make_shared<ErrorDatabaseStub>(active_errors)),
+        slac_error_database(std::make_shared<ErrorDatabaseStub>(slac_active_errors)),
+        hlc_error_database(std::make_shared<ErrorDatabaseStub>(hlc_active_errors)),
         error_list{} {
     }
 
@@ -88,12 +95,23 @@ struct EvseManagerModuleAdapterStub : public module::stub::EvseManagerModuleAdap
 
     virtual std::shared_ptr<Everest::error::ErrorManagerReq> get_error_manager_req_fn(const Requirement& req) {
         return std::make_shared<Everest::error::ErrorManagerReq>(
-            error_type_map, std::make_shared<Everest::error::ErrorDatabaseMap>(), error_list,
+            error_type_map, std::make_shared<Everest::error::ErrorDatabaseMap>(), requirement_error_list,
             [this](const Everest::error::ErrorType& error_type, const Everest::error::ErrorCallback& callback,
                    const Everest::error::ErrorCallback& clear_callback) {
                 error_raise[error_type] = callback;
                 error_clear[error_type] = clear_callback;
             });
+    }
+
+    virtual std::shared_ptr<Everest::error::ErrorStateMonitor> get_error_state_monitor_req_fn(const Requirement& req) {
+        if (req.id == "slac") {
+            return std::make_shared<Everest::error::ErrorStateMonitor>(slac_error_database);
+        }
+        if (req.id == "hlc") {
+            return std::make_shared<Everest::error::ErrorStateMonitor>(hlc_error_database);
+        }
+        return std::make_shared<Everest::error::ErrorStateMonitor>(
+            std::make_shared<Everest::error::ErrorDatabaseMap>());
     }
 
     virtual std::shared_ptr<Everest::error::ErrorFactory> get_error_factory_fn(const std::string&) {
@@ -110,30 +128,53 @@ struct ErrorHandlingTesting : public testing::Test {
     std::map<Everest::error::ErrorType, std::string> error_types_map;
 
     std::unique_ptr<evse_board_supportIntf> r_bsp{};
-    const std::vector<std::unique_ptr<ISO15118_chargerIntf>> r_hlc{};
+    std::vector<std::unique_ptr<ISO15118_chargerIntf>> r_hlc{};
     const std::vector<std::unique_ptr<connector_lockIntf>> r_connector_lock{};
     const std::vector<std::unique_ptr<ac_rcdIntf>> r_ac_rcd{};
     std::unique_ptr<evse_managerImplBase> p_evse{};
     const std::vector<std::unique_ptr<isolation_monitorIntf>> _r_imd{};
     const std::vector<std::unique_ptr<power_supply_DCIntf>> _r_powersupply{};
     const std::vector<std::unique_ptr<powermeterIntf>> _r_powermeter{};
+    std::vector<std::unique_ptr<slacIntf>> r_slac{};
     const std::vector<std::unique_ptr<over_voltage_monitorIntf>> _r_over_voltage_monitor{};
 
     std::unique_ptr<ErrorHandlingTest> error_handler;
 
-    void construct(bool _inoperative_error_use_vendor_id) {
+    void construct(bool _inoperative_error_use_vendor_id, bool connect_slac = false, bool connect_hlc = false) {
         error_types_map = {{"evse_board_support/VendorWarning", "warning"},
+                           {"generic/CommunicationFault", "communication fault"},
+                           {"generic/VendorError", "vendor error"},
+                           {"generic/VendorWarning", "vendor warning"},
                            {"evse_manager/Inoperative", "inoperative"}};
         adapter.error_type_map->load_error_types_map(error_types_map);
         adapter.active_errors.clear();
+        adapter.error_list.clear();
+        adapter.requirement_error_list.clear();
+        adapter.error_raise.clear();
+        adapter.error_clear.clear();
+        adapter.slac_active_errors.clear();
+        adapter.hlc_active_errors.clear();
+        r_slac.clear();
+        r_hlc.clear();
         for (const auto& [error, description] : error_types_map) {
             adapter.error_list.push_back(error);
         }
+        adapter.requirement_error_list = {"evse_board_support/VendorWarning", "generic/CommunicationFault",
+                                          "generic/VendorError", "generic/VendorWarning"};
+        adapter.error_raise["evse_manager/Inoperative"] = [](const Everest::error::Error&) {};
+        adapter.error_clear["evse_manager/Inoperative"] = [](const Everest::error::Error&) {};
         r_bsp = std::make_unique<module::stub::evse_board_supportIntfStub>(adapter);
+        if (connect_slac) {
+            r_slac.push_back(std::make_unique<slacIntf>(&adapter, Requirement{"slac", 1}, "slac", std::nullopt));
+        }
+        if (connect_hlc) {
+            r_hlc.push_back(
+                std::make_unique<ISO15118_chargerIntf>(&adapter, Requirement{"hlc", 1}, "hlc", std::nullopt));
+        }
         p_evse = std::make_unique<module::stub::evse_managerImplStub>(&adapter, "manager");
         error_handler = std::make_unique<ErrorHandlingTest>(r_bsp, r_hlc, r_connector_lock, r_ac_rcd, p_evse, _r_imd,
-                                                            _r_powersupply, _r_powermeter, _r_over_voltage_monitor,
-                                                            _inoperative_error_use_vendor_id);
+                                                            _r_powersupply, _r_powermeter, r_slac,
+                                                            _r_over_voltage_monitor, _inoperative_error_use_vendor_id);
     }
 
     static constexpr std::string_view default_description{"description"};
@@ -155,6 +196,26 @@ struct ErrorHandlingTesting : public testing::Test {
         EXPECT_EQ(active.sub_type, "");
         EXPECT_EQ(active.message, error.type);
         return active;
+    }
+
+    void raise_slac_error(const std::string& type) {
+        Everest::error::Error error{};
+        error.type = type;
+        error.sub_type = "";
+        error.message = "message";
+        error.description = "description";
+        adapter.slac_active_errors.push_back(error);
+        adapter.error_raise.at(type)(error);
+    }
+
+    void raise_hlc_error(const std::string& type) {
+        Everest::error::Error error{};
+        error.type = type;
+        error.sub_type = "";
+        error.message = "message";
+        error.description = "description";
+        adapter.hlc_active_errors.push_back(error);
+        adapter.error_raise.at(type)(error);
     }
 };
 
@@ -347,6 +408,55 @@ TEST_F(ErrorHandlingTesting, IsActive) {
     EXPECT_EQ(error.message, first_error.type);
     EXPECT_EQ(error.description, "type/sub-type");
     EXPECT_EQ(error.vendor_id, first_error.vendor_id);
+}
+
+TEST_F(ErrorHandlingTesting, SlacCommunicationFaultIsFatal) {
+    construct(false, true);
+
+    raise_slac_error("generic/CommunicationFault");
+
+    ASSERT_EQ(adapter.active_errors.size(), 1);
+    const auto& error = adapter.active_errors.front();
+    EXPECT_EQ(error.type, "evse_manager/Inoperative");
+    EXPECT_EQ(error.message, "generic/CommunicationFault");
+}
+
+TEST_F(ErrorHandlingTesting, SlacVendorErrorIsFatal) {
+    construct(false, true);
+
+    raise_slac_error("generic/VendorError");
+
+    ASSERT_EQ(adapter.active_errors.size(), 1);
+    const auto& error = adapter.active_errors.front();
+    EXPECT_EQ(error.type, "evse_manager/Inoperative");
+    EXPECT_EQ(error.message, "generic/VendorError");
+}
+
+TEST_F(ErrorHandlingTesting, OtherSlacErrorsAreNotFatal) {
+    construct(false, true);
+
+    raise_slac_error("generic/VendorWarning");
+
+    EXPECT_FALSE(p_evse->error_state_monitor->is_error_active("evse_manager/Inoperative", ""));
+}
+
+TEST_F(ErrorHandlingTesting, HlcCommunicationFaultIsFatal) {
+    construct(false, false, true);
+
+    raise_hlc_error("generic/CommunicationFault");
+
+    ASSERT_EQ(adapter.active_errors.size(), 1);
+    const auto& error = adapter.active_errors.front();
+    EXPECT_EQ(error.type, "evse_manager/Inoperative");
+    EXPECT_EQ(error.message, "generic/CommunicationFault");
+}
+
+TEST_F(ErrorHandlingTesting, HlcVendorWarningIsNotFatal) {
+    construct(false, false, true);
+
+    raise_hlc_error("generic/VendorWarning");
+
+    EXPECT_FALSE(p_evse->error_state_monitor->is_error_active("evse_manager/Inoperative", ""));
 }
 
 } // namespace

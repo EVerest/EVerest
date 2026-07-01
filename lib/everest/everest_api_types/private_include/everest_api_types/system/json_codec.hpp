@@ -22,6 +22,9 @@ void from_json(const json& j, UploadLogsResponse& k);
 void to_json(json& j, const LogStatus& k) noexcept;
 void from_json(const json& j, LogStatus& k);
 
+void to_json(json& j, const FirmwareUpdateMetadata& k) noexcept;
+void from_json(const json& j, FirmwareUpdateMetadata& k);
+
 void to_json(json& j, const FirmwareUpdateStatus& k) noexcept;
 void from_json(const json& j, FirmwareUpdateStatus& k);
 

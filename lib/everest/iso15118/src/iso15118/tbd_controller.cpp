@@ -34,8 +34,18 @@ TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks cal
     }
 }
 
+TbdController::~TbdController() {
+    if (config.enable_sdp_server) {
+        poll_manager.unregister_fd(sdp_server->get_fd());
+        sdp_server->close();
+    }
+}
+
 void TbdController::loop() {
     static constexpr auto POLL_MANAGER_TIMEOUT_MS = 50;
+
+    shutdown_active.store(false);
+    bool shutdown_signaled{false};
 
     if (not config.enable_sdp_server) {
         auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
@@ -45,7 +55,7 @@ void TbdController::loop() {
 
     auto next_event = get_current_time_point();
 
-    while (true) {
+    while (session or not shutdown_active.load()) {
         const auto poll_timeout_ms = get_timeout_ms_until(next_event, POLL_MANAGER_TIMEOUT_MS);
 
         try {
@@ -66,6 +76,11 @@ void TbdController::loop() {
             callbacks.signal(session::feedback::Signal::DLINK_ERROR);
         }
 
+        if (session and shutdown_active.load() and not shutdown_signaled) {
+            session->request_shutdown(); // Stopping the session
+            shutdown_signaled = true;
+        }
+
         if (session) {
             try {
                 const auto next_session_event = session->poll();
@@ -79,7 +94,7 @@ void TbdController::loop() {
             if (session->is_finished()) {
                 session.reset();
 
-                if (not config.enable_sdp_server) {
+                if (not shutdown_active.load() and not config.enable_sdp_server) {
                     auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
                     session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup),
                                                         callbacks, pause_ctx);
@@ -87,6 +102,12 @@ void TbdController::loop() {
             }
         }
     }
+    logf_info("Exiting TbdController loop gracefully");
+}
+
+void TbdController::shutdown() {
+    logf_info("Trigger graceful shutdown");
+    shutdown_active.store(true);
 }
 
 void TbdController::send_control_event(const d20::ControlEvent& event) {
@@ -164,6 +185,11 @@ void TbdController::handle_sdp_server_input() {
 
     if (not sdp_server->is_dlink_ready()) {
         logf_info("Ignoring SDP request because dlink is not ready");
+        return;
+    }
+
+    if (shutdown_active.load()) {
+        logf_warning("Ignoring sdp request message because the TbdController loop is being shutdown");
         return;
     }
 

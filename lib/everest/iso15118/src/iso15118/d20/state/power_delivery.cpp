@@ -2,6 +2,7 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/ac_charge_loop.hpp>
 #include <iso15118/d20/state/dc_charge_loop.hpp>
+#include <iso15118/d20/state/dc_welding_detection.hpp>
 #include <iso15118/d20/state/power_delivery.hpp>
 #include <iso15118/d20/state/session_stop.hpp>
 #include <iso15118/d20/timeout.hpp>
@@ -16,16 +17,23 @@ namespace iso15118::d20::state {
 namespace dt = message_20::datatypes;
 
 message_20::PowerDeliveryResponse handle_request(const message_20::PowerDeliveryRequest& req,
-                                                 const d20::Session& session, bool contactor_error) {
+                                                 const d20::Session& session, bool contactor_error,
+                                                 bool shutdown_requested) {
 
     message_20::PowerDeliveryResponse res;
 
-    if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
+    if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
         return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
     }
 
     if (contactor_error) {
         return response_with_code(res, dt::ResponseCode::FAILED_ContactorError);
+    }
+
+    if (shutdown_requested) {
+        auto& notification = res.status.emplace();
+        notification.notification = dt::EvseNotification::Terminate;
+        notification.notification_max_delay = 0;
     }
 
     // TODO(sl): Check Req PowerProfile & ChannelSelection
@@ -65,7 +73,7 @@ Result PowerDelivery::feed(Event ev) {
                 return {};
             }
 
-            const auto& res = handle_request(previous_req.value(), m_ctx.session, false);
+            const auto& res = handle_request(previous_req.value(), m_ctx.session, false, false);
             m_ctx.respond(res);
 
             if (res.response_code >= dt::ResponseCode::FAILED) {
@@ -84,7 +92,7 @@ Result PowerDelivery::feed(Event ev) {
         if (timeout and *timeout == d20::TimeoutType::CONTACTOR) {
             // TODO(SL): Check if value_or is the correct way
             const auto& res =
-                handle_request(previous_req.value_or(message_20::PowerDeliveryRequest{}), m_ctx.session, true);
+                handle_request(previous_req.value_or(message_20::PowerDeliveryRequest{}), m_ctx.session, true, false);
             m_ctx.respond(res);
             m_ctx.session_stopped = true;
         }
@@ -97,10 +105,29 @@ Result PowerDelivery::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::DC_PreChargeRequest>()) {
-        const auto res = handle_request(*req, m_ctx.session, present_voltage);
+    if (const auto req = variant->get_if<message_20::PowerDeliveryRequest>()) {
 
-        m_ctx.feedback.dc_pre_charge_target_voltage(dt::from_RationalNumber(req->target_voltage));
+        const auto shutdown_requested = m_ctx.shutdown_requested();
+
+        if (not shutdown_requested) {
+
+            if (req->charge_progress == dt::Progress::Start) {
+                m_ctx.feedback.signal(session::feedback::Signal::SETUP_FINISHED);
+            }
+
+            if (m_ctx.session.is_ac_charger() and ac_connector_closed == false and
+                req->charge_progress == dt::Progress::Start) {
+                // Save req
+                previous_req = *req;
+                // Close the AC contactor so that charging can start
+                m_ctx.feedback.signal(session::feedback::Signal::AC_CLOSE_CONTACTOR);
+                m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, 3000);
+                logf_info("Waiting for contactor is closed");
+                return {};
+            }
+        }
+
+        const auto& res = handle_request(*req, m_ctx.session, false, shutdown_requested);
 
         m_ctx.respond(res);
 
@@ -109,30 +136,16 @@ Result PowerDelivery::feed(Event ev) {
             return {};
         }
 
-        return {};
-    } else if (const auto req = variant->get_if<message_20::PowerDeliveryRequest>()) {
-        if (req->charge_progress == dt::Progress::Start) {
-            m_ctx.feedback.signal(session::feedback::Signal::SETUP_FINISHED);
-        }
-
-        if (m_ctx.session.is_ac_charger() and ac_connector_closed == false and
-            req->charge_progress == dt::Progress::Start) {
-            // Save req
-            previous_req = *req;
-            // Close the AC contactor so that charging can start
-            m_ctx.feedback.signal(session::feedback::Signal::AC_CLOSE_CONTACTOR);
-            m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, 3000);
-            logf_info("Waiting for contactor is closed");
-            return {};
-        }
-
-        const auto& res = handle_request(*req, m_ctx.session, false);
-
-        m_ctx.respond(res);
-
-        if (res.response_code >= dt::ResponseCode::FAILED) {
-            m_ctx.session_stopped = true;
-            return {};
+        if (shutdown_requested) {
+            m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
+            if (m_ctx.session.is_ac_charger()) {
+                m_ctx.feedback.signal(session::feedback::Signal::AC_OPEN_CONTACTOR);
+                return m_ctx.create_state<SessionStop>();
+            }
+            if (m_ctx.session.is_dc_charger()) {
+                m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
+                return m_ctx.create_state<DC_WeldingDetection>();
+            }
         }
 
         if (m_ctx.session.is_ac_charger()) {
@@ -148,7 +161,7 @@ Result PowerDelivery::feed(Event ev) {
         return {};
 
     } else {
-        m_ctx.log("Expected DC_PreChargeReq or PowerDeliveryReq! But code type id: %d", variant->get_type());
+        m_ctx.log("Expected PowerDeliveryReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

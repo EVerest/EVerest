@@ -140,6 +140,14 @@ public:
         current_timeout = timeout;
     }
 
+    void request_shutdown() {
+        requested_shutdown = true;
+    }
+
+    [[nodiscard]] bool shutdown_requested() const {
+        return requested_shutdown;
+    }
+
     const session::Feedback feedback;
 
     session::SessionLogger& log;
@@ -170,6 +178,8 @@ private:
     Timeouts& timeouts;
 
     std::optional<TimeoutType> current_timeout{std::nullopt};
+
+    bool requested_shutdown{false};
 };
 
 } // namespace iso15118::d20

@@ -2,6 +2,7 @@
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
 
 #include "system/wrapper.hpp"
+#include "system/API.hpp"
 #include "system/codec.hpp"
 #include <stdexcept>
 #include <string>
@@ -344,16 +345,33 @@ LogStatus_External to_external_api(LogStatus_Internal const& val) {
     return result;
 }
 
+FirmwareUpdateMetadata_Internal to_internal_api(FirmwareUpdateMetadata_External const& val) {
+    FirmwareUpdateMetadata_Internal result;
+    result.disable_connectors_during_install = val.disable_connectors_during_install;
+    return result;
+}
+FirmwareUpdateMetadata_External to_external_api(FirmwareUpdateMetadata_Internal const& val) {
+    FirmwareUpdateMetadata_External result;
+    result.disable_connectors_during_install = val.disable_connectors_during_install;
+    return result;
+}
+
 FirmwareUpdateStatus_Internal to_internal_api(FirmwareUpdateStatus_External const& val) {
     FirmwareUpdateStatus_Internal result;
     result.firmware_update_status = to_internal_api(val.firmware_update_status);
     result.request_id = val.request_id;
+    if (val.firmware_update_metadata.has_value()) {
+        result.firmware_update_metadata.emplace(to_internal_api(val.firmware_update_metadata.value()));
+    }
     return result;
 }
 FirmwareUpdateStatus_External to_external_api(FirmwareUpdateStatus_Internal const& val) {
     FirmwareUpdateStatus_External result;
     result.firmware_update_status = to_external_api(val.firmware_update_status);
     result.request_id = val.request_id;
+    if (val.firmware_update_metadata.has_value()) {
+        result.firmware_update_metadata.emplace(to_external_api(val.firmware_update_metadata.value()));
+    }
     return result;
 }
 

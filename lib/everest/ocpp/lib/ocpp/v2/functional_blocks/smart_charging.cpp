@@ -197,6 +197,10 @@ std::string profile_validation_result_to_string(ProfileValidationResultEnum e) {
         return "ChargingSchedulePeriodPriorityChargingNotChargingOnly";
     case ProfileValidationResultEnum::ChargingSchedulePeriodUnsupportedOperationMode:
         return "ChargingSchedulePeriodUnsupportedOperationMode";
+    case ProfileValidationResultEnum::ChargingSchedulePeriodOperationModeNotInSupportedList:
+        return "ChargingSchedulePeriodOperationModeNotInSupportedList";
+    case ProfileValidationResultEnum::ChargingSchedulePeriodLocalLoadBalancingNotSupported:
+        return "ChargingSchedulePeriodLocalLoadBalancingNotSupported";
     case ProfileValidationResultEnum::ChargingSchedulePeriodUnsupportedLimitSetpoint:
         return "ChargingSchedulePeriodUnsupportedLimitSetpoint";
     case ProfileValidationResultEnum::ChargingSchedulePeriodNoPhaseForDC:
@@ -279,6 +283,10 @@ std::string profile_validation_result_to_reason_code(ProfileValidationResultEnum
     case ProfileValidationResultEnum::ChargingSchedulePeriodNonFiniteValue:
     case ProfileValidationResultEnum::ChargingSchedulePeriodSetpointOutOfRange:
         return "InvalidSchedule";
+    case ProfileValidationResultEnum::ChargingSchedulePeriodLocalLoadBalancingNotSupported:
+        return "UnsupportedParam";
+    case ProfileValidationResultEnum::ChargingSchedulePeriodOperationModeNotInSupportedList:
+        return "InvalidOperationMode";
     case ProfileValidationResultEnum::ChargingSchedulePeriodPhaseConflict:
         return "PhaseConflict";
     case ProfileValidationResultEnum::ChargingSchedulePeriodNoPhaseForDC:
@@ -927,6 +935,20 @@ ProfileValidationResultEnum SmartCharging::validate_priority_charging_profile(co
  * - K01.FR.90
  */
 
+bool SmartCharging::is_operation_mode_supported_by_evse(const OperationModeEnum operation_mode,
+                                                        const std::int32_t evse_id) const {
+    if (operation_mode == OperationModeEnum::ChargingOnly) {
+        return true;
+    }
+    const auto supported_operation_modes = this->context.device_model.get_optional_value<std::string>(
+        V2xComponentVariables::get_component_variable(evse_id, V2xComponentVariables::SupportedOperationModes));
+    if (!supported_operation_modes.has_value()) {
+        return false;
+    }
+    return supported_operation_modes.value().find(conversions::operation_mode_enum_to_string(operation_mode)) !=
+           std::string::npos;
+}
+
 ProfileValidationResultEnum SmartCharging::validate_profile_schedules(ChargingProfile& profile,
                                                                       std::optional<EvseInterface*> evse_opt) const {
     if (profile.chargingSchedule.empty()) {
@@ -1106,17 +1128,38 @@ ProfileValidationResultEnum SmartCharging::validate_profile_schedules(ChargingPr
                     return ProfileValidationResultEnum::ChargingSchedulePeriodUnsupportedOperationMode;
                 }
 
+                // Q09.FR.01: operationMode must be in V2XChargingCtrlr.SupportedOperationModes (per-EVSE;
+                // evseId 0 must be supported by every EVSE).
+                bool operation_mode_supported = true;
+                if (evse_opt.has_value()) {
+                    operation_mode_supported =
+                        this->is_operation_mode_supported_by_evse(operation_mode, evse_opt.value()->get_id());
+                } else {
+                    for (std::int32_t id = 1;
+                         id <= static_cast<std::int32_t>(this->context.evse_manager.get_number_of_evses()); ++id) {
+                        if (this->context.evse_manager.does_evse_exist(id) &&
+                            !this->is_operation_mode_supported_by_evse(operation_mode, id)) {
+                            operation_mode_supported = false;
+                            break;
+                        }
+                    }
+                }
+                if (!operation_mode_supported) {
+                    // Q09.FR.01 carves out LocalLoadBalancing with reasonCode UnsupportedParam; every other
+                    // operationMode not listed in V2XSupportedOperationModes uses InvalidOperationMode (K01.FR.115).
+                    return operation_mode == OperationModeEnum::LocalLoadBalancing
+                               ? ProfileValidationResultEnum::ChargingSchedulePeriodLocalLoadBalancingNotSupported
+                               : ProfileValidationResultEnum::ChargingSchedulePeriodOperationModeNotInSupportedList;
+                }
+
                 // Q08.FR.05: LocalFrequency should have chargingRateUnit `W`.
                 if (operation_mode == OperationModeEnum::LocalFrequency &&
                     schedule.chargingRateUnit == ChargingRateUnitEnum::A) {
                     return ProfileValidationResultEnum::ChargingScheduleChargingRateUnitUnsupported;
                 }
 
-                // K01.FR.126: EvseSleep is not supported.
-                if (charging_schedule_period.evseSleep.value_or(false) &&
-                    !this->context.device_model
-                         .get_optional_value<bool>(ControllerComponentVariables::SupportsEvseSleep)
-                         .value_or(false)) {
+                // K01.FR.126: evseSleep is only valid with operationMode Idle.
+                if (charging_schedule_period.evseSleep.value_or(false) && operation_mode != OperationModeEnum::Idle) {
                     return ProfileValidationResultEnum::ChargingScheduleUnsupportedEvseSleep;
                 }
 

@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <optional>
 #include <string>
-#include <vector>
 
 #include <everest/util/vector/fixed_vector.hpp>
 

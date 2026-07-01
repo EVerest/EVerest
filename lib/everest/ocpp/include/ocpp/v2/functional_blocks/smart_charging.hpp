@@ -79,6 +79,8 @@ enum class ProfileValidationResultEnum {
     ChargingSchedulePeriodPhaseToUseACPhaseSwitchingUnsupported,
     ChargingSchedulePeriodPriorityChargingNotChargingOnly,
     ChargingSchedulePeriodUnsupportedOperationMode,
+    ChargingSchedulePeriodOperationModeNotInSupportedList,
+    ChargingSchedulePeriodLocalLoadBalancingNotSupported,
     ChargingSchedulePeriodUnsupportedLimitSetpoint,
     ChargingSchedulePeriodNoPhaseForDC,
     ChargingSchedulePeriodNoFreqWattCurve,
@@ -265,6 +267,15 @@ protected:
     /// we set it to the default value (3).
     ProfileValidationResultEnum validate_profile_schedules(ChargingProfile& profile,
                                                            std::optional<EvseInterface*> evse_opt = std::nullopt) const;
+
+    ///
+    /// \brief Q09.FR.01: whether \p operation_mode is listed in V2XChargingCtrlr.SupportedOperationModes for
+    ///        the given EVSE. The variable is per-EVSE (component evse = *, there is no Charging-Station-level
+    ///        instance), so callers check the profile's EVSE, or every EVSE for a station-wide profile.
+    /// \return true for ChargingOnly or when \p operation_mode is listed; false when the variable is absent
+    ///         (no V2X advertised) or the mode is not listed.
+    ///
+    bool is_operation_mode_supported_by_evse(OperationModeEnum operation_mode, std::int32_t evse_id) const;
 
     ///
     /// \brief V2X.05: Ensure every charging schedule period has setpoint within [dischargeLimit, limit].

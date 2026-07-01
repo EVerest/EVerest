@@ -327,7 +327,7 @@ void EvseManager::ready() {
     // otherwise we provide an empty vector of pointers to the powermeter interface
     error_handling = std::unique_ptr<ErrorHandling>(
         new ErrorHandling(r_bsp, r_hlc, r_connector_lock, r_ac_rcd, p_evse, r_imd, r_powersupply_DC,
-                          config.fail_on_powermeter_errors ? r_powermeter_billing() : EMPTY_POWERMETER_VECTOR,
+                          config.fail_on_powermeter_errors ? r_powermeter_billing() : EMPTY_POWERMETER_VECTOR, r_slac,
                           r_over_voltage_monitor, config.inoperative_error_use_vendor_id));
 
     internal_over_voltage_monitor = std::make_unique<OverVoltageMonitor>(
@@ -2421,6 +2421,10 @@ void EvseManager::powersupply_DC_off() {
         session_log.evse(false, "DC power supply OFF");
         r_powersupply_DC[0]->call_setMode(types::power_supply_DC::Mode::Off, power_supply_DC_charging_phase);
         powersupply_dc_is_on = false;
+        // Invalidate the powersupply_DC_set() cache: the power supply resets its
+        // internal targets on the Off transition, so the cached values are stale now.
+        last_power_supply_voltage = 0.;
+        last_power_supply_current = 0.;
     }
     power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Other;
 }
