@@ -107,6 +107,13 @@ SqliteStorage::~SqliteStorage() {
 
 GenericResponseStatus SqliteStorage::write_module_configs(const ModuleConfigurations& module_configs) {
     try {
+        auto check = this->db->new_statement("SELECT 1 FROM CONFIG WHERE ID = ?");
+        check->bind_int(1, config_id_);
+        if (check->step() != SQLITE_ROW) {
+            throw std::logic_error("Cannot write module configs: Config slot " + std::to_string(config_id_) +
+                                   " does not exist. A slot must be created first.");
+        }
+
         auto transaction = this->db->begin_transaction();
 
         auto response = write_module_config_items(module_configs);
@@ -121,6 +128,13 @@ GenericResponseStatus SqliteStorage::write_module_configs(const ModuleConfigurat
 
 GenericResponseStatus SqliteStorage::replace_module_configs(const ModuleConfigurations& module_configs) {
     try {
+        auto check = this->db->new_statement("SELECT 1 FROM CONFIG WHERE ID = ?");
+        check->bind_int(1, config_id_);
+        if (check->step() != SQLITE_ROW) {
+            throw std::logic_error("Cannot replace module configs: Config slot " + std::to_string(config_id_) +
+                                   " does not exist. A slot must be created first.");
+        }
+
         auto transaction = this->db->begin_transaction();
 
         delete_module_config_items();
