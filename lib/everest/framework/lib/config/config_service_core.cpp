@@ -8,11 +8,11 @@
 #include <date/tz.h>
 #include <everest/logging.hpp>
 
+#include <everest/utils/yaml_loader.hpp>
 #include <utils/config.hpp>
 #include <utils/config/storage_sqlite.hpp>
 #include <utils/config/types.hpp>
 #include <utils/date.hpp>
-#include <everest/utils/yaml_loader.hpp>
 
 namespace Everest::config {
 
@@ -286,7 +286,8 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
                         fmt::format("Unknown target module: {}", update.identifier.module_id);
                 } else {
                     result.parameter_results.value()[i].status_info =
-                        fmt::format("Unknown parameter: {} in module: {}", update.identifier.configuration_parameter_name, update.identifier.module_id);
+                        fmt::format("Unknown parameter: {} in module: {}",
+                                    update.identifier.configuration_parameter_name, update.identifier.module_id);
                 }
                 continue;
             }
@@ -357,6 +358,15 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
             }
         }
     } else {
+        const auto slots = slot_manager_.list_slots();
+        const bool exists = std::any_of(slots.begin(), slots.end(),
+                                        [resolved_slot_id](const auto& s) { return s.id == resolved_slot_id; });
+        if (!exists) {
+            std::fill(result.parameter_results.value().begin(), result.parameter_results.value().end(),
+                      SetConfigPerParameterResult{SetConfigParameterResultEnum::DoesNotExist, "Slot does not exist"});
+            return result;
+        }
+
         auto storage = make_storage(resolved_slot_id);
         auto inactive_configuration = storage->get_module_configs();
         if (inactive_configuration.status != everest::config::GenericResponseStatus::OK) {
@@ -372,12 +382,14 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
             // does the parameter exist?
             auto parameter_lookup_result = get_parameter(update.identifier, inactive_configuration.module_configs);
             if (not parameter_lookup_result.has_value()) {
-                if (inactive_configuration.module_configs.find(update.identifier.module_id) == inactive_configuration.module_configs.end()) {
+                if (inactive_configuration.module_configs.find(update.identifier.module_id) ==
+                    inactive_configuration.module_configs.end()) {
                     result.parameter_results.value()[i].status_info =
-                        fmt::format("Unknown target module: {}", update.identifier.module_id);
+                        "Unknown target module: " + update.identifier.module_id;
                 } else {
                     result.parameter_results.value()[i].status_info =
-                        fmt::format("Unknown parameter: {} in module: {}", update.identifier.configuration_parameter_name, update.identifier.module_id);
+                        "Unknown parameter: " + update.identifier.configuration_parameter_name +
+                        " in module: " + update.identifier.module_id;
                 }
                 continue;
             }
