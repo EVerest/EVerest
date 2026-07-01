@@ -411,6 +411,6 @@ std::string get_interface_address(std::string const& name);
  * @return The list of interfaces and adresses.
  * @throws std::runtime_error if the operation fails.
  */
-std::vector<if_info> get_all_interaces();
+std::vector<if_info> get_all_interfaces();
 
 } // namespace everest::lib::io::socket
