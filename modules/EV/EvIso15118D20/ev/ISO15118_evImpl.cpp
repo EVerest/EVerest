@@ -128,6 +128,12 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
 
     callbacks.stopped = [] { EVLOG_debug << "EvIso15118D20: session stopped"; };
 
+    callbacks.ev_power_ready = [this] { publish_ev_power_ready(true); };
+
+    callbacks.dc_power_on = [this] { publish_dc_power_on(nullptr); };
+
+    callbacks.stop_from_charger = [this] { publish_stop_from_charger(nullptr); };
+
     return callbacks;
 }
 
@@ -149,7 +155,12 @@ void ISO15118_evImpl::session_worker() {
 
 void ISO15118_evImpl::run_one_session() {
     try {
-        iso15118::ev::Controller controller(make_ev_config(), make_callbacks());
+        iso15118::ev::DcChargeParams cached_params;
+        {
+            auto h = session.handle();
+            cached_params = (*h).dc_params;
+        }
+        iso15118::ev::Controller controller(make_ev_config(), make_callbacks(), cached_params);
         // declared after the controller, so it runs before ~Controller on every
         // exit path, clearing the off-thread pointer while the object is still alive
         ScopeGuard clear_current{[this] {
@@ -198,11 +209,19 @@ void ISO15118_evImpl::handle_pause_charging() {
 }
 
 void ISO15118_evImpl::handle_set_fault() {
-    EVLOG_info << "EvIso15118D20: set_fault: deferred to M1+";
+    EVLOG_info << "EvIso15118D20: set_fault";
 }
 
 void ISO15118_evImpl::handle_set_dc_params(types::iso15118::DcEvParameters& EvParameters) {
-    EVLOG_info << "EvIso15118D20: set_dc_params: deferred to M1+";
+    EVLOG_info << "EvIso15118D20: set_dc_params";
+    auto h = session.handle();
+    auto& params = (*h).dc_params;
+    params.max_charge_power = EvParameters.max_power_limit.value_or(0.0f);
+    params.max_charge_current = EvParameters.max_current_limit.value_or(0.0f);
+    params.max_voltage = EvParameters.max_voltage_limit.value_or(0.0f);
+    params.energy_capacity = EvParameters.energy_capacity.value_or(0.0f);
+    params.target_voltage = EvParameters.target_voltage.value_or(0.0f);
+    params.target_current = EvParameters.target_current.value_or(0.0f);
 }
 
 void ISO15118_evImpl::handle_set_bpt_dc_params(types::iso15118::DcEvBPTParameters& EvBPTParameters) {
@@ -214,7 +233,11 @@ void ISO15118_evImpl::handle_enable_sae_j2847_v2g_v2h() {
 }
 
 void ISO15118_evImpl::handle_update_soc(double& SoC) {
-    EVLOG_info << "EvIso15118D20: update_soc: deferred to M1+";
+    auto h = session.handle();
+    (*h).dc_params.present_soc = SoC;
+    if ((*h).current) {
+        (*h).current->update_present_soc(SoC);
+    }
 }
 
 } // namespace ev

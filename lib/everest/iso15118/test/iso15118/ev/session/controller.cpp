@@ -33,6 +33,10 @@ SCENARIO("ISO15118-20 EV Controller config defaults") {
             REQUIRE(config.advertised_security == io::v2gtp::Security::NO_TRANSPORT_SECURITY);
         }
 
+        THEN("It paces re-poll sends with a non-zero default send delay") {
+            REQUIRE(config.send_delay > std::chrono::milliseconds{0});
+        }
+
         THEN("It advertises exactly the single ISO 15118-20 DC app protocol") {
             REQUIRE(config.advertised_app_protocols.size() == 1);
             REQUIRE(config.advertised_app_protocols.front().protocol_namespace == "urn:iso:std:iso:15118:-20:DC");

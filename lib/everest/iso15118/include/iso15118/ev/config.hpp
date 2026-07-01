@@ -14,6 +14,10 @@
 
 namespace iso15118::ev {
 
+// Default re-poll cadence for Ongoing FSM states (e.g. DC_CableCheck): non-zero so
+// the EV paces re-polls instead of busy-looping (and flooding) the SECC.
+constexpr auto DEFAULT_SEND_DELAY = std::chrono::milliseconds(25);
+
 /**
  * Static configuration for the EV-side \ref Controller.
  *
@@ -49,8 +53,10 @@ struct EvConfig {
 
     // Delay between a request becoming ready (FSM-produced, or the first request
     // on connect) and it being transmitted. During this window events may replace
-    // the pending request. Zero means "transmit on the next reactor pass".
-    std::chrono::milliseconds send_delay{0};
+    // the pending request. Zero transmits on the next reactor pass, which makes
+    // Ongoing re-poll states re-send at reactor speed and flood the SECC; the
+    // default paces re-polls. Set 0 to opt into transmit-ASAP.
+    std::chrono::milliseconds send_delay{DEFAULT_SEND_DELAY};
 
     // How long to wait for a response after a request is sent before the session
     // is failed (the response watchdog).
