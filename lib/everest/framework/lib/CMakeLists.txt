@@ -103,7 +103,7 @@ collect_migration_files(
 )
 
 target_compile_definitions(framework
-    PRIVATE
+    PUBLIC
         TARGET_MIGRATION_FILE_VERSION=${TARGET_MIGRATION_FILE_VERSION}
 )
 
