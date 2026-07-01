@@ -182,6 +182,33 @@ make_transaction_start_response(types::powermeter::TransactionRequestStatus stat
     return response;
 }
 
+// Each driver-level Modbus attempt may already block for ~1.5 s at SerialCommHub (default: 3 attempts ×
+// 500 ms initial_timeout_ms). We cannot tune that per device. Too large communication_retry_count and/or
+// communication_retry_delay_ms can then treat a power outage (meter rebooting ~6 s) as a minor fault: the
+// driver keeps retrying instead of raising CommunicationFault and reconfiguring.
+constexpr std::int64_t LOW_LEVEL_MODBUS_TIMEOUT_MS = 1500;
+constexpr std::int64_t CGEM_TYPICAL_REBOOT_TIME_MS = 6000;
+constexpr std::int64_t CGEM_REBOOT_COMM_RETRY_BUDGET_MS = CGEM_TYPICAL_REBOOT_TIME_MS * 3 / 4; // 75%, 25% margin
+
+void warn_if_comm_retry_delay_exceeds_reboot_budget(int retry_count, int retry_delay_ms) {
+    if (retry_count <= 0) {
+        return;
+    }
+
+    const auto total_backoff_ms =
+        static_cast<std::int64_t>(retry_count) * LOW_LEVEL_MODBUS_TIMEOUT_MS +
+        static_cast<std::int64_t>(std::max(retry_count - 1, 0)) * static_cast<std::int64_t>(retry_delay_ms);
+    if (total_backoff_ms <= CGEM_REBOOT_COMM_RETRY_BUDGET_MS) {
+        return;
+    }
+
+    EVLOG_warning << "communication_retry_count (" << retry_count << ") and communication_retry_delay_ms ("
+                  << retry_delay_ms << ") can defer CommunicationFault for up to ~" << total_backoff_ms
+                  << " ms, which exceeds 75% of the typical EM580 reboot time (~" << CGEM_REBOOT_COMM_RETRY_BUDGET_MS
+                  << " ms). A power outage may look like a transient fault instead of triggering "
+                     "reconfigure. Consider lowering these values.";
+}
+
 } // namespace
 
 powermeterImpl::~powermeterImpl() {
@@ -223,6 +250,9 @@ void powermeterImpl::init() {
         config.communication_retry_count,
         config.communication_retry_delay_ms,
     };
+
+    warn_if_comm_retry_delay_exceeds_reboot_budget(config.communication_retry_count,
+                                                   config.communication_retry_delay_ms);
 
     const transport::SerialCommHubTransport::TransportConfig transport_config{
         config.powermeter_device_id,

@@ -14,14 +14,14 @@ provides:
         description: Number of retries for communication operations before giving up.
         type: integer
         minimum: 1
-        maximum: 3
-        default: 2
+        maximum: 100
+        default: 3
       communication_retry_delay_ms:
         description: Delay in milliseconds between retry attempts.
         type: integer
         minimum: 10
-        maximum: 500
-        default: 200
+        maximum: 10000
+        default: 500
       communication_error_pause_delay_s:
         description: Delay in seconds before retrying communication in the live measurement thread after a failure. Default 10 seconds. Applies to initial communication too.
         type: integer
