@@ -869,9 +869,11 @@ void ChargePointV2::on_faulted(std::int32_t evse_id, std::int32_t connector_id) 
     m_charge_point->on_faulted(evse_id, connector_id);
 }
 void ChargePointV2::on_firmware_update_status_notification(std::int32_t request_id,
-                                                           ocpp::v2::FirmwareStatusEnum firmware_update_status) {
+                                                           ocpp::v2::FirmwareStatusEnum firmware_update_status,
+                                                           bool disable_connectors_during_install) {
     check_configured("on_firmware_update_status_notification");
-    m_charge_point->on_firmware_update_status_notification(request_id, firmware_update_status);
+    m_charge_point->on_firmware_update_status_notification(request_id, firmware_update_status,
+                                                           disable_connectors_during_install);
 }
 void ChargePointV2::on_get_15118_ev_certificate_request(std::int32_t extensions_id,
                                                         const ocpp::v2::Get15118EVCertificateRequest& request) {

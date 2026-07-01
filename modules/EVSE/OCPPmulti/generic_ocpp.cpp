@@ -774,8 +774,12 @@ void GenericOcpp::visit_impl(std::int32_t evse_id, const powermeter_t& meter) {
 void GenericOcpp::visit_impl(std::int32_t evse_id, const types::system::FirmwareUpdateStatus& fw_update_status) {
     using namespace module::conversions;
     EVLOG_info << "Processing queued firmware update status";
+    const auto disable_connectors_during_install =
+        !fw_update_status.firmware_update_metadata.has_value() ||
+        fw_update_status.firmware_update_metadata.value().disable_connectors_during_install.value_or(true);
     mv_charge_point.on_firmware_update_status_notification(
-        fw_update_status.request_id, to_ocpp_firmware_status_enum(fw_update_status.firmware_update_status));
+        fw_update_status.request_id, to_ocpp_firmware_status_enum(fw_update_status.firmware_update_status),
+        disable_connectors_during_install);
 }
 
 void GenericOcpp::visit_impl(std::int32_t evse_id, const types::system::LogStatus& log_status) {
@@ -998,8 +1002,12 @@ void GenericOcpp::cb_firmware_update_status(types::system::FirmwareUpdateStatus 
     using namespace module::conversions;
 
     if (mv_started) {
+        const auto disable_connectors_during_install =
+            !status.firmware_update_metadata.has_value() ||
+            status.firmware_update_metadata.value().disable_connectors_during_install.value_or(true);
         mv_charge_point.on_firmware_update_status_notification(
-            status.request_id, to_ocpp_firmware_status_enum(status.firmware_update_status));
+            status.request_id, to_ocpp_firmware_status_enum(status.firmware_update_status),
+            disable_connectors_during_install);
     } else {
         std::lock_guard lock(m_member_mux);
         m_event_queue[0].emplace(status);
