@@ -12,6 +12,7 @@
 #include <type_traits>
 
 #include <everest/util/queue/thread_safe_queue.hpp>
+#include <everest/util/async/thread_pool_scaling.hpp>
 
 #include <utils/config/settings.hpp>
 #include <utils/config/slot_manager.hpp>
@@ -40,9 +41,11 @@ public:
     /// \param parse_settings Parse settings used to validate incoming YAML configs (paths to schemas, modules, etc.).
     /// \param db_connection  Shared, already-migrated SQLite connection (from open_config_database()).
     /// \param spawn_threads  Whether to use background threads for async/actor tasks (default true).
+    /// \param max_worker_threads Maximum number of concurrent network callbacks allowed (default 10).
     ConfigServiceCore(const ConfigParseSettings& parse_settings,
                       std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection,
-                      bool spawn_threads = true);
+                      bool spawn_threads = true,
+                      unsigned int max_worker_threads = 10);
     ~ConfigServiceCore() override;
 
     // --- Re-initialize configuration ---
@@ -166,6 +169,8 @@ private:
     SetParamCallback set_parameter_callback_;
 
     std::vector<std::future<SetParameterResponse>> orphaned_futures_;
+
+    everest::lib::util::thread_pool_scaling<> async_worker_pool_;
 };
 
 } // namespace Everest::config

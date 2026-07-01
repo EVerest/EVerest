@@ -59,8 +59,10 @@ bool is_set_read_only_allowed(const everest::config::Access& access, const std::
 
 ConfigServiceCore::ConfigServiceCore(const ConfigParseSettings& parse_settings,
                                      std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection,
-                                     bool spawn_threads) :
-    parse_settings_(parse_settings), slot_manager_(db_connection), db_(std::move(db_connection)), spawn_threads_(spawn_threads) {
+                                     bool spawn_threads,
+                                     unsigned int max_worker_threads) :
+    parse_settings_(parse_settings), slot_manager_(db_connection), db_(std::move(db_connection)),
+    spawn_threads_(spawn_threads), async_worker_pool_(0, std::max(1u, max_worker_threads), std::chrono::seconds(60)) {
     active_slot_id_ = everest::config::SqliteStorage::DEFAULT_CONFIG_ID;
     active_configs_ptr_ = std::make_shared<const everest::config::ModuleConfigurations>();
 
@@ -406,10 +408,9 @@ SetConfigParameterResult ConfigServiceCore::internal_set_config_parameters(int s
                 }
                 if (spawn_threads_) {
                     pending_calls.push_back({i, parameter,
-                                             std::async(std::launch::async,
-                                                        [this, id = update.identifier, val = update.value]() {
-                                                            return set_parameter_callback_(id, val);
-                                                        })});
+                                             async_worker_pool_([this, id = update.identifier, val = update.value]() {
+                                                 return set_parameter_callback_(id, val);
+                                             })});
                 } else {
                     pending_calls.push_back({i, parameter,
                                              std::async(std::launch::deferred,
