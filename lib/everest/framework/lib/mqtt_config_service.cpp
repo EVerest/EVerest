@@ -517,7 +517,8 @@ MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstrac
             const auto response_topic =
                 fmt::format("{}modules/{}/response", mqtt_abstraction.get_everest_prefix(), request.origin);
 
-            const auto& module_configs = config_svc.get_active_module_configurations();
+            const auto module_configs_ptr = config_svc.get_active_module_configurations();
+            const auto& module_configs = *module_configs_ptr;
 
             if (request.type == Type::Get) {
                 const GetRequest get_request = std::get<GetRequest>(request.request);

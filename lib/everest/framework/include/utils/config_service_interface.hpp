@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <memory>
 
 #include <utils/config/slot_manager.hpp>
 #include <utils/config/types.hpp>
@@ -163,7 +164,7 @@ public:
     virtual bool set_description(int slot_id, const std::string& description) = 0;
 
     // --- Active-slot in-memory access ---
-    virtual const everest::config::ModuleConfigurations& get_active_module_configurations() const = 0;
+    virtual std::shared_ptr<const everest::config::ModuleConfigurations> get_active_module_configurations() const = 0;
 
     // --- Slot-scoped configuration ---
     virtual GetConfigurationResult get_configuration(int slot_id) = 0;
