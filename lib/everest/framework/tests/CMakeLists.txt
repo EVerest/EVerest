@@ -14,6 +14,7 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE
 target_sources(${TEST_TARGET_NAME} PRIVATE
     test_config.cpp
     test_config_service.cpp
+    test_config_service_core.cpp
     test_config_sqlite.cpp
     test_conversions.cpp
     test_database_migration_files.cpp
