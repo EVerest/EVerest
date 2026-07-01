@@ -371,8 +371,8 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
                          }) != supported_energy_transfer_modes.cend();
         component_configs[v2x_component_key] = build_v2x_variables(
             supports_v2x, supported_energy_transfer_modes_vector_to_string(supported_energy_transfer_modes),
-            supported_operation_modes_vector_to_string(
-                std::vector<ocpp::v2::OperationModeEnum>{ocpp::v2::OperationModeEnum::ChargingOnly}));
+            supported_operation_modes_vector_to_string(std::vector<ocpp::v2::OperationModeEnum>{
+                ocpp::v2::OperationModeEnum::ChargingOnly, ocpp::v2::OperationModeEnum::Idle}));
 
         const auto connected_ev_component_key = get_connected_ev_component_key(evse_info.id);
         component_configs[connected_ev_component_key] = build_connected_ev_variables();
