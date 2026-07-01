@@ -3,6 +3,7 @@
 
 #include "v16_chargepoint.hpp"
 
+#include "charge_point_config_factory_v16.hpp"
 #include <conversions.hpp>
 #include <conversions_v16.hpp>
 #include <error_mapping.hpp>
@@ -25,18 +26,6 @@ constexpr const auto ISO15118_PNC_ENABLED_VARIABLE = "PnCEnabled";
 
 constexpr const auto INOPERATIVE_ERROR_TYPE = "evse_manager/Inoperative";
 constexpr const auto SWITCHING_PHASES_REASON = "SwitchingPhases";
-
-void create_empty_user_config(const fs::path& user_config_path) {
-    if (fs::exists(user_config_path.parent_path())) {
-        std::ofstream fs(user_config_path.c_str());
-        auto user_config = json::object();
-        fs << user_config << std::endl;
-        fs.close();
-    } else {
-        EVLOG_AND_THROW(
-            std::runtime_error(fmt::format("Provided UserConfigPath is invalid: {}", user_config_path.string())));
-    }
-}
 
 auto convert(ocpp::v16::AuthorizationStatus value) {
     ocpp::v2::AuthorizationStatusEnum result{};
@@ -910,52 +899,23 @@ void ChargePointV16::configure_callbacks() {
 }
 
 void ChargePointV16::configure_data_model(const config_info_t& config) {
-    auto configured_config_path = fs::path(config.chargepoint_config_path);
-    auto ocpp_share_path = fs::path(config.ocpp_share_path);
+    const auto ocpp_share_path = fs::path(config.ocpp_share_path);
 
-    // try to find the config file if it has been provided as a relative path
-    if (!fs::exists(configured_config_path) && configured_config_path.is_relative()) {
-        configured_config_path = ocpp_share_path / configured_config_path;
-    }
-    if (!fs::exists(configured_config_path)) {
-        EVLOG_AND_THROW(
-            Everest::EverestConfigError(fmt::format("OCPP config file is not available at given path: {} which was "
-                                                    "resolved to: {}",
-                                                    config.chargepoint_config_path, configured_config_path.string())));
-    }
-    const auto config_path = configured_config_path;
-    EVLOG_info << "OCPP config: " << config_path.string();
+    const module::config_factory_v16::Ocpp16DeviceModelParams params{
+        config.device_model_database_path,           // DeviceModelDatabasePath
+        config.device_model_database_migration_path, // DeviceModelDatabaseMigrationPath
+        config.device_model_config_path,             // DeviceModelConfigPath
+        config.device_model_config_mappings,         // DeviceModelConfigMappings
+        config.ocpp16_network_config_slot,           // Ocpp16NetworkConfigSlot
+        config.enable_legacy_config_migration,       // EnableLegacyConfigMigration
+        config.chargepoint_config_path,              // ChargePointConfigPath
+        config.user_config_path,                     // UserConfigPath
+    };
 
-    auto configured_user_config_path = fs::path(config.user_config_path);
-    // try to find the user config file if it has been provided as a relative path
-    if (!fs::exists(configured_user_config_path) && configured_user_config_path.is_relative()) {
-        configured_user_config_path = ocpp_share_path / configured_user_config_path;
-    }
-    const auto user_config_path = configured_user_config_path;
-    EVLOG_info << "OCPP user config: " << user_config_path.string();
+    m_charge_point_configuration = module::config_factory_v16::create_charge_point_configuration(
+        ocpp_share_path, params, static_cast<int32_t>(config.numnber_of_connectors));
 
-    std::ifstream ifs(config_path.c_str());
-    std::string config_file((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
-    auto json_config = json::parse(config_file);
-    json_config.at("Core").at("NumberOfConnectors") = config.numnber_of_connectors;
-
-    if (fs::exists(user_config_path)) {
-        std::ifstream ifs(user_config_path.c_str());
-        std::string user_config_file((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
-
-        try {
-            const auto user_config = json::parse(user_config_file);
-            EVLOG_info << "Augmenting chargepoint config with user_config entries";
-            json_config.merge_patch(user_config);
-        } catch (const json::parse_error& e) {
-            EVLOG_error << "Error while parsing user config file.";
-            EVLOG_AND_THROW(e);
-        }
-    } else {
-        EVLOG_debug << "No user-config provided. Creating user config file";
-        create_empty_user_config(user_config_path);
-    }
-
+    // The factory does not create the message-log directory; retain that here.
     if (!fs::exists(config.message_log_path)) {
         try {
             fs::create_directory(config.message_log_path);
@@ -963,10 +923,6 @@ void ChargePointV16::configure_data_model(const config_info_t& config) {
             EVLOG_AND_THROW(e);
         }
     }
-
-    const auto charge_point_config_json = json_config.dump();
-    m_charge_point_configuration = std::make_unique<ocpp::v16::ChargePointConfiguration>(
-        charge_point_config_json, ocpp_share_path, user_config_path);
 }
 
 void ChargePointV16::init(init_args_t& args) {
@@ -982,7 +938,13 @@ void ChargePointV16::init(init_args_t& args) {
         ocpp_share_path,
         sql_init_path,
         args.v16_user_config_path,
-        static_cast<std::uint32_t>(args.evse_connector_structure.size()) // number of connectors;
+        static_cast<std::uint32_t>(args.evse_connector_structure.size()), // number of connectors;
+        args.v2_device_model_database_path.string(),
+        args.v2_device_model_database_migration_path.string(),
+        args.v2_device_model_config_path.string(),
+        args.v16_device_model_config_mappings,
+        args.v16_ocpp16_network_config_slot,
+        args.v16_enable_legacy_config_migration,
     };
 
     configure_data_model(config);

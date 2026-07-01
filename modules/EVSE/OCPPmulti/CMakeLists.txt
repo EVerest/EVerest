@@ -30,6 +30,7 @@ target_sources(${MODULE_NAME}
 
     common/conversions.cpp
     common/conversions_v16.cpp
+    common/charge_point_config_factory_v16.cpp
     common/error_handling.cpp
     common/transaction_handler.cpp
 

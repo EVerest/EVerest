@@ -26,6 +26,9 @@ std::string ConfigAccess::getDatabasePath() const {
 int ConfigAccess::getDelayOcppStart() const {
     return m_config.DelayOcppStart;
 }
+std::string ConfigAccess::getDeviceModelConfigMappings() const {
+    return m_config.DeviceModelConfigMappings;
+}
 std::string ConfigAccess::getDeviceModelConfigPath() const {
     return m_config.DeviceModelConfigPath;
 }
@@ -38,8 +41,14 @@ std::string ConfigAccess::getDeviceModelDatabaseMigrationPath() const {
 bool ConfigAccess::getEnableExternalWebsocketControl() const {
     return m_config.EnableExternalWebsocketControl;
 }
+bool ConfigAccess::getEnableLegacyConfigMigration() const {
+    return m_config.EnableLegacyConfigMigration;
+}
 std::string ConfigAccess::getEverestDeviceModelDatabasePath() const {
     return m_config.EverestDeviceModelDatabasePath;
+}
+int ConfigAccess::getOcpp16NetworkConfigSlot() const {
+    return m_config.Ocpp16NetworkConfigSlot;
 }
 std::string ConfigAccess::getMessageLogPath() const {
     return m_config.MessageLogPath;

@@ -52,6 +52,7 @@ target_sources(${TEST_TARGET_NAME}
     ../common/device_model/composed_device_model_storage.cpp
     ../common/device_model/definitions.cpp
     ../common/device_model/everest_device_model_storage.cpp
+    ../common/charge_point_config_factory_v16.cpp
     ../common/conversions.cpp
     ../common/conversions_v16.cpp
     ../common/error_handling.cpp

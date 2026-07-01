@@ -64,6 +64,34 @@ config:
       Path to the migration files for both device models
     type: string
     default: device_model_migrations
+  EnableLegacyConfigMigration:
+    description: >-
+      OCPP 1.6
+      If true, a one-time migration of the legacy OCPP 1.6 JSON config (ChargePointConfigPath) into the
+      device model database is performed on the first startup, while the database does not yet exist.
+      Once the database is initialized the migration is skipped and the legacy JSON is not read.
+      If false (default), the device model is initialized only from the component configs (DeviceModelConfigPath).
+    type: boolean
+    default: false
+  DeviceModelConfigMappings:
+    description: >-
+      OCPP 1.6
+      Optional path to a YAML file with custom OCPP1.6 to device model component-config mappings.
+      Relative paths are resolved against this module's share path.
+      Applied both when migrating the legacy OCPP 1.6 JSON config into the device model and when
+      serving the device-model-backed configuration at runtime.
+      If empty, only built-in mappings are used.
+    type: string
+    default: ""
+  Ocpp16NetworkConfigSlot:
+    description: >-
+      OCPP 1.6
+      NetworkConfiguration slot number that OCPP 1.6 connection details (CentralSystemURI, SecurityProfile,
+      AuthorizationKey, HostName, ChargePointId) are migrated to during the one-time device model migration.
+      Any existing attribute values in the target slot are overwritten.
+      Set to 0 to skip migration of network connection details entirely.
+    type: integer
+    default: 1
   EnableExternalWebsocketControl:
     description: >-
       OCPP 1.6

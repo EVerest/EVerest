@@ -7,7 +7,7 @@
 #include "ocpp/v2/ocpp_types.hpp"
 
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
-#include <ocpp/v16/charge_point_configuration.hpp>
+#include <ocpp/v16/charge_point_configuration_interface.hpp>
 
 namespace ocpp_multi {
 
@@ -16,7 +16,7 @@ private:
     using key_monitor_map_t = std::map<std::string, std::pair<ocpp::v2::Component, ocpp::v2::Variable>>;
 
     std::shared_ptr<EvseSecurity> m_evse_security;
-    std::unique_ptr<ocpp::v16::ChargePointConfiguration> m_charge_point_configuration;
+    std::unique_ptr<ocpp::v16::ChargePointConfigurationInterface> m_charge_point_configuration;
     std::unique_ptr<ocpp::v16::ChargePoint> m_charge_point;
     ocpp_multi::GenericChargePointCallbacks* m_callbacks_ptr{nullptr};
     listener_t m_variable_listener{nullptr};
@@ -30,6 +30,13 @@ private:
         const std::string& sql_init_path;
         const std::string& user_config_path;
         std::uint32_t numnber_of_connectors; // r_evse_manager.size();
+        // Device-model database/migration/config paths shared with the OCPP 2.x path.
+        std::string device_model_database_path;
+        std::string device_model_database_migration_path;
+        std::string device_model_config_path;
+        std::string device_model_config_mappings;
+        std::int32_t ocpp16_network_config_slot;
+        bool enable_legacy_config_migration;
     };
 
     void check_configured(const std::string_view& fn);

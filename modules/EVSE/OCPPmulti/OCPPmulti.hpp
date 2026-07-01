@@ -51,10 +51,13 @@ public:
     [[nodiscard]] std::string getCustomMrecErrorMapPath() const override;
     [[nodiscard]] std::string getDatabasePath() const override;
     [[nodiscard]] int getDelayOcppStart() const override;
+    [[nodiscard]] std::string getDeviceModelConfigMappings() const override;
     [[nodiscard]] std::string getDeviceModelConfigPath() const override;
     [[nodiscard]] std::string getDeviceModelDatabasePath() const override;
     [[nodiscard]] std::string getDeviceModelDatabaseMigrationPath() const override;
     [[nodiscard]] bool getEnableExternalWebsocketControl() const override;
+    [[nodiscard]] bool getEnableLegacyConfigMigration() const override;
+    [[nodiscard]] int getOcpp16NetworkConfigSlot() const override;
     [[nodiscard]] std::string getEverestDeviceModelDatabasePath() const override;
     [[nodiscard]] std::string getMessageLogPath() const override;
     [[nodiscard]] int getMessageQueueResumeDelay() const override;
@@ -76,11 +79,14 @@ struct Conf {
     std::string CustomMrecErrorMapPath;
     std::string DatabasePath;
     int DelayOcppStart;
+    std::string DeviceModelConfigMappings;
     std::string DeviceModelConfigPath;
     std::string DeviceModelDatabasePath;
     std::string DeviceModelDatabaseMigrationPath;
     bool EnableExternalWebsocketControl;
+    bool EnableLegacyConfigMigration;
     std::string EverestDeviceModelDatabasePath;
+    int Ocpp16NetworkConfigSlot;
     std::string MessageLogPath;
     int MessageQueueResumeDelay;
     int RequestCompositeScheduleDurationS;

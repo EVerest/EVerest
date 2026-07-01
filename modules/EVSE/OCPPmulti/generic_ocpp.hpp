@@ -111,10 +111,13 @@ struct ConfigInterface {
     [[nodiscard]] virtual std::string getCustomMrecErrorMapPath() const = 0;
     [[nodiscard]] virtual std::string getDatabasePath() const = 0;
     [[nodiscard]] virtual int getDelayOcppStart() const = 0;
+    [[nodiscard]] virtual std::string getDeviceModelConfigMappings() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelConfigPath() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelDatabasePath() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelDatabaseMigrationPath() const = 0;
     [[nodiscard]] virtual bool getEnableExternalWebsocketControl() const = 0;
+    [[nodiscard]] virtual bool getEnableLegacyConfigMigration() const = 0;
+    [[nodiscard]] virtual int getOcpp16NetworkConfigSlot() const = 0;
     [[nodiscard]] virtual std::string getEverestDeviceModelDatabasePath() const = 0;
     [[nodiscard]] virtual std::string getMessageLogPath() const = 0;
     [[nodiscard]] virtual int getMessageQueueResumeDelay() const = 0;
