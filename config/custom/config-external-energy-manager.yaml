@@ -1,0 +1,60 @@
+active_modules:
+
+  # ── Energy Management ──────────────────────────────────────────────────────
+  # Central EnergyManager orchestrating all clusters via the grid connection
+  # point. Runs in a separate Everest process on mosquitto-external; communicates
+  # with cluster processes via Mosquitto bridge (external MQTT topics bridged
+  # between mosquitto-external and the primary Mosquitto broker).
+  energy_manager:
+    module: EnergyManager
+    config_module:
+      schedule_total_duration: 2
+      schedule_interval_duration: 15
+      debug: false
+    connections:
+      energy_trunk:
+        - module_id: grid_connection_point
+          implementation_id: energy_grid
+
+  # ── Grid connection point ──────────────────────────────────────────────────
+  # Represents the site grid contract (125 A, Siemens PAC2200 placeholder).
+  # enable_external_mqtt: true allows this module to use mod->mqtt directly.
+  # external_consumer_ids: tells it which cluster nodes to subscribe/publish to
+  # over external MQTT (no local Everest connection required — min_connections: 0).
+  #
+  # Bridge flow (via mosquitto-external.conf bridge to primary mosquitto:1883):
+  #   cluster_m0/energy_grid/var/energy_flow_request  ← EnergyNodeSwitch publishes
+  #   cluster_m0/energy_grid/cmd/enforce_limits        → EnergyNode publishes
+  #
+  # TODO: wire powermeter once SiemensPAC2200 module is available (WP3.d)
+  grid_connection_point:
+    module: EnergyNode
+    config_module:
+      fuse_limit_A: 125
+      phase_count: 3
+      nominal_voltage_V: 230.0
+      external_consumer_ids: "cluster_m0"
+      # external_consumer_ids: "cluster_m0,cluster_m1,cluster_m3"  # uncomment when M1/M3 are active
+    connections:
+      energy_consumer: []
+
+# ── External modules declaration ───────────────────────────────────────────
+# These modules run in the cluster process (config-sil-ac-multi-energy-nodes.yaml)
+# and are not started by this manager. The framework does NOT validate these
+# entries at startup — connections are resolved at runtime via MQTT bridge.
+external_modules:
+  cluster_m0:
+    description: "EnergyNodeSwitch for cluster M0 (CP01–CP06), running in cluster process"
+    implementations:
+      energy_grid:
+        interface: energy
+#  cluster_m1:
+#    description: "EnergyNodeSwitch for cluster M1 (CP07–CP12), running in cluster process"
+#    implementations:
+#      energy_grid:
+#        interface: energy
+#  cluster_m3:
+#    description: "EnergyNodeSwitch for cluster M3 (CP13–CP18), running in cluster process"
+#    implementations:
+#      energy_grid:
+#        interface: energy

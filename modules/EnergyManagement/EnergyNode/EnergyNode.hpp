@@ -22,6 +22,9 @@
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
 #include <sigslot/signal.hpp>
+#include <sstream>
+#include <string>
+#include <vector>
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -30,18 +33,24 @@ struct Conf {
     double fuse_limit_A;
     int phase_count;
     double nominal_voltage_V;
+    std::string external_consumer_ids; // comma-separated, e.g. "cluster_m0,cluster_m1"
     bool enhance_external_schedule;
 };
 
 class EnergyNode : public Everest::ModuleBase {
 public:
     EnergyNode() = delete;
-    EnergyNode(const ModuleInfo& info, std::unique_ptr<energyImplBase> p_energy_grid,
+    // NOTE: MqttProvider& mqtt_provider is injected by the loader when
+    //       enable_external_mqtt: true is set in the manifest. Re-run ev-cli
+    //       code generation after adding that flag to get the updated ld-ev.cpp.
+    EnergyNode(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
+               std::unique_ptr<energyImplBase> p_energy_grid,
                std::unique_ptr<external_energy_limitsImplBase> p_external_limits,
                std::vector<std::unique_ptr<energyIntf>> r_energy_consumer,
                std::vector<std::unique_ptr<powermeterIntf>> r_powermeter,
                std::vector<std::unique_ptr<energy_price_informationIntf>> r_price_information, Conf& config) :
         ModuleBase(info),
+        mqtt(mqtt_provider),
         p_energy_grid(std::move(p_energy_grid)),
         p_external_limits(std::move(p_external_limits)),
         r_energy_consumer(std::move(r_energy_consumer)),
@@ -49,6 +58,7 @@ public:
         r_price_information(std::move(r_price_information)),
         config(config){};
 
+    Everest::MqttProvider& mqtt;
     const std::unique_ptr<energyImplBase> p_energy_grid;
     const std::unique_ptr<external_energy_limitsImplBase> p_external_limits;
     const std::vector<std::unique_ptr<energyIntf>> r_energy_consumer;
@@ -72,7 +82,8 @@ private:
     void ready();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
-    // insert your private definitions here
+    // Parsed list of external consumer IDs from config.external_consumer_ids
+    std::vector<std::string> external_consumers;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 
