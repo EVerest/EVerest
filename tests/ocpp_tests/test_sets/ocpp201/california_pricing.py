@@ -233,7 +233,7 @@ class TestOcpp201CostAndPrice:
         received_data['cost_chunks'][0] = {
             'cost': {'value': 5510000}, 'metervalue_to': 0, 'timestamp_to': ANY}
         received_data['status'] = 'Finished'
-        probe_module_mock_fn.call_count = 0
+        probe_module_mock_fn.reset_mock()
 
         assert await wait_for_and_validate(test_utility, chargepoint_with_pm, "TransactionEvent",
                                            {"eventType": "Ended"})
