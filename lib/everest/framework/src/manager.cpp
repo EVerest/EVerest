@@ -588,7 +588,9 @@ void Manager::handle_initiate_graceful_shutdown(const std::chrono::steady_clock:
 
 bool Manager::reload_and_update_context(RuntimeContext& ctx) {
     config_service_core_->reinitialize_from_db();
-    auto module_cfg = config_service_core_->get_active_module_configurations();
+    auto module_cfg_ptr = config_service_core_->get_active_module_configurations();
+    // create a copy, because load_and_validate_config below will take ownership
+    everest::config::ModuleConfigurations module_cfg = *module_cfg_ptr;
 
     std::shared_ptr<const ManagerConfig> config;
     try {
