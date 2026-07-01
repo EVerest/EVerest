@@ -5,6 +5,7 @@
 #define SDP_H
 
 #include "v2g.hpp"
+#include <string>
 
 enum sdp_security {
     SDP_SECURITY_TLS = 0x00,
@@ -21,6 +22,7 @@ int sdp_validate_header(uint8_t* buffer, uint16_t expected_payload_type, uint32_
 int sdp_create_response(uint8_t* buffer, struct sockaddr_in6* addr, enum sdp_security security,
                         enum sdp_transport_protocol proto);
 int sdp_init(struct v2g_context* v2g_ctx);
+int sdp_init(struct v2g_context* v2g_ctx, std::string* failure_detail);
 int sdp_listen(struct v2g_context* v2g_ctx);
 void sdp_set_dlink_ready(struct v2g_context* v2g_ctx, bool ready);
 
