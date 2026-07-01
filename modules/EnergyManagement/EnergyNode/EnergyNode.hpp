@@ -29,6 +29,10 @@
 
 namespace module {
 
+namespace energy_grid {
+class energyImpl;
+} // namespace energy_grid
+
 struct Conf {
     double fuse_limit_A;
     int phase_count;
@@ -77,7 +81,11 @@ protected:
     // ev@4714b2ab-a24f-4b95-ab81-36439e1478de:v1
 
 private:
+    // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
+    // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
+
     friend class LdEverest;
+    friend class energy_grid::energyImpl;
     void init();
     void ready();
 

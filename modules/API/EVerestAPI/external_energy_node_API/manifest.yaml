@@ -1,0 +1,59 @@
+description: >-
+  Energy node API server (cluster side). Aggregates energy_flow_requests from
+  locally connected EnergyNodes and publishes the aggregate to external MQTT so
+  a remote site-level EnergyManager (via external_energy_node_API_client) can
+  participate in load management. Incoming enforce_limits from the external L1
+  EnergyManager (via external MQTT) are routed to all child EnergyNodes and take
+  priority over limits from the local L0 EnergyManager.
+
+  Also provides energy_grid so the local L0 EnergyManager can connect as a fallback:
+  when the external L1 EnergyManager has been silent for longer than timeout_s,
+  the module falls back to forwarding enforce_limits from the local L0 EnergyManager.
+
+  One instance per cluster in the cluster EVerest process. The companion module
+  external_energy_node_API_client runs in the L1 (site-level) EVerest process.
+config:
+  timeout_s:
+    description: >-
+      Seconds without an enforce_limits message from the external L1 EnergyManager
+      before falling back to limits from the local L0 EnergyManager. Set to 0 to
+      disable the timeout (always prefer external limits, ignore L0).
+    type: integer
+    minimum: 0
+    default: 30
+  cfg_heartbeat_interval_ms:
+    description: >-
+      Interval in milliseconds at which the module sends a heartbeat to the external
+      L1 EnergyManager via the ApiHelper. Set to 0 to disable heartbeat.
+    type: integer
+    minimum: 0
+    default: 5000
+  cfg_communication_check_to_s:
+    description: >-
+      Timeout in seconds for the ApiHelper communication check. If no communication-check
+      message is received within this period, a CommunicationFault error is raised.
+      Set to 0 to disable.
+    type: integer
+    minimum: 0
+    default: 30
+provides:
+  main:
+    interface: generic_error
+    description: "Provides error types for module communication status."
+  energy_grid:
+    description: >-
+      Local energy interface for the cluster's internal L0 EnergyManager (fallback).
+      The L0 EnergyManager connects here as its energy trunk. Limits from L0 are
+      applied only when the external L1 EnergyManager has been silent for longer
+      than timeout_s. When L1 is active, L1's MQTT limits take priority.
+    interface: energy
+requires:
+  energy_consumer:
+    interface: energy
+    min_connections: 0
+    max_connections: 128
+enable_external_mqtt: true
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Marc Nulens

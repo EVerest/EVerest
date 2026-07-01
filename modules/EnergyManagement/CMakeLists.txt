@@ -1,4 +1,2 @@
 ev_add_module(EnergyManager)
 ev_add_module(EnergyNode)
-ev_add_module(external_energy_node_API)
-ev_add_module(external_energy_node_API_client)
