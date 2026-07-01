@@ -161,7 +161,8 @@ public:
     void on_fault_cleared(std::int32_t evse_id, std::int32_t connector_id) override;
     void on_faulted(std::int32_t evse_id, std::int32_t connector_id) override;
     void on_firmware_update_status_notification(std::int32_t request_id,
-                                                ocpp::v2::FirmwareStatusEnum firmware_update_status) override;
+                                                ocpp::v2::FirmwareStatusEnum firmware_update_status,
+                                                bool disable_connectors_during_install = true) override;
     void on_get_15118_ev_certificate_request(std::int32_t extensions_id,
                                              const ocpp::v2::Get15118EVCertificateRequest& request) override;
     void on_log_status_notification(ocpp::v2::UploadLogStatusEnum status, std::int32_t requestId) override;
