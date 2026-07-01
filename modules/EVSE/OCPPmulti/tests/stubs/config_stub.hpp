@@ -14,11 +14,14 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     std::string CustomMrecErrorMapPath{};
     std::string DatabasePath{};
     int DelayOcppStart{1};
+    std::string DeviceModelConfigMappings{};
     std::string DeviceModelConfigPath{"dm_config"};
     std::string DeviceModelDatabasePath{"dm.db"};
     std::string DeviceModelDatabaseMigrationPath{"device_model_migrations"};
     bool EnableExternalWebsocketControl{true};
+    bool EnableLegacyConfigMigration{false};
     std::string EverestDeviceModelDatabasePath{"everest.db"};
+    int Ocpp16NetworkConfigSlot{1};
     std::string MessageLogPath{"log"};
     int MessageQueueResumeDelay{120};
     int RequestCompositeScheduleDurationS{600};
@@ -44,6 +47,9 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     [[nodiscard]] std::string getDatabasePath() const override {
         return DeviceModelConfigPath;
     }
+    [[nodiscard]] std::string getDeviceModelConfigMappings() const override {
+        return DeviceModelConfigMappings;
+    }
     [[nodiscard]] std::string getDeviceModelConfigPath() const override {
         return DeviceModelConfigPath;
     }
@@ -56,8 +62,14 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     [[nodiscard]] bool getEnableExternalWebsocketControl() const override {
         return EnableExternalWebsocketControl;
     }
+    [[nodiscard]] bool getEnableLegacyConfigMigration() const override {
+        return EnableLegacyConfigMigration;
+    }
     [[nodiscard]] std::string getEverestDeviceModelDatabasePath() const override {
         return EverestDeviceModelDatabasePath;
+    }
+    [[nodiscard]] int getOcpp16NetworkConfigSlot() const override {
+        return Ocpp16NetworkConfigSlot;
     }
     [[nodiscard]] std::string getMessageLogPath() const override {
         return MessageLogPath;
