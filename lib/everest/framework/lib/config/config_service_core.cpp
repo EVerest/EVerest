@@ -165,7 +165,7 @@ LoadFromYamlResult ConfigServiceCore::load_from_yaml(const std::string& raw_yaml
                                                      std::optional<int> slot_id) {
     int target_slot_id = slot_id.value_or(slot_manager_.next_slot_id());
 
-    if (target_slot_id == active_slot_id_) {
+    if (target_slot_id == active_slot_id_ and module_status_ != ActiveSlotStatus::Stopped) {
         return {false, std::nullopt, "Cannot load YAML into the active slot"};
     }
     bool into_new_slot = not slot_manager_.exists(target_slot_id);
