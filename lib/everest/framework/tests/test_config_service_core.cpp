@@ -40,8 +40,9 @@ TEST_CASE("ConfigServiceCore Unit Tests", "[config_service_core]") {
     auto db = setup_in_memory_db();
     auto parse_settings = setup_parse_settings();
 
-    // Instantiate the core service
-    ConfigServiceCore config_service(parse_settings, db);
+    // Instantiate the core service with spawn_threads = false
+    // This guarantees completely deterministic, single-threaded execution for the tests.
+    ConfigServiceCore config_service(parse_settings, db, false);
 
     SECTION("Loading YAML into a new slot") {
         std::string valid_yaml = R"(
