@@ -186,7 +186,6 @@ public:
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
-    std::unique_ptr<Charger> charger;
     sigslot::signal<int> signalNrOfPhasesAvailable;
     types::powermeter::Powermeter get_latest_powermeter_data_billing();
     types::evse_board_support::HardwareCapabilities get_hw_capabilities();
@@ -245,6 +244,8 @@ public:
     std::unique_ptr<IECStateMachine> bsp;
     std::unique_ptr<ErrorHandling> error_handling;
     std::unique_ptr<PersistentStore> store;
+    // Declared last so it is destroyed first; ~Charger dereferences bsp/error_handling/store.
+    std::unique_ptr<Charger> charger;
 
     std::atomic_bool random_delay_enabled{false};
     std::atomic_bool random_delay_running{false};
