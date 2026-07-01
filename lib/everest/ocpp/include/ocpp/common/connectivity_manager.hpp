@@ -3,9 +3,9 @@
 
 #pragma once
 
+#include <ocpp/common/connectivity_manager_configuration.hpp>
 #include <ocpp/common/websocket/websocket.hpp>
 #include <ocpp/v2/messages/SetNetworkProfile.hpp>
-#include <ocpp/v2/ocpp_types.hpp>
 
 #include <everest/util/async/monitor.hpp>
 
@@ -16,9 +16,6 @@
 #include <optional>
 
 namespace ocpp {
-namespace v2 {
-class DeviceModelAbstract;
-} // namespace v2
 
 /// \brief The result of a configuration of a network profile.
 struct ConfigNetworkResult {
@@ -56,6 +53,15 @@ public:
     /// \brief Set the websocket connection options without triggering a reconnect
     ///
     virtual void set_websocket_connection_options_without_reconnect() = 0;
+
+    /// \brief Apply the websocket ping interval to a connection immediately.
+    /// \param ping_interval_s The ping interval in seconds (0 disables pinging)
+    /// \param pong_timeout_s The pong timeout in seconds
+    ///
+    /// Unlike set_websocket_connection_options_without_reconnect(), this takes effect on the current connection
+    /// instead of only on the next reconnect. Only has an effect while the websocket is connected; while
+    /// disconnected the interval is applied from the configuration on the next reconnect.
+    virtual void set_websocket_ping_interval(std::int32_t ping_interval_s, std::int32_t pong_timeout_s) = 0;
 
     /// \brief Set the \p callback that is called when the websocket is connected.
     ///
@@ -150,8 +156,8 @@ public:
 
 class ConnectivityManager : public ConnectivityManagerInterface {
 private:
-    /// \brief Reference to the device model
-    ocpp::v2::DeviceModelAbstract& device_model;
+    /// \brief Configuration interface used to persist and retrieve network configuration
+    ocpp::ConnectivityManagerConfiguration& configuration;
     /// \brief Pointer to the evse security class
     std::shared_ptr<EvseSecurity> evse_security;
     /// \brief Pointer to the logger
@@ -193,8 +199,8 @@ private:
     mutable everest::lib::util::monitor<NetworkProfileCacheState, std::recursive_mutex> m_state;
 
 public:
-    ConnectivityManager(ocpp::v2::DeviceModelAbstract& device_model, std::shared_ptr<EvseSecurity> evse_security,
-                        const fs::path& share_path = {});
+    ConnectivityManager(ocpp::ConnectivityManagerConfiguration& configuration,
+                        std::shared_ptr<EvseSecurity> evse_security, const fs::path& share_path = {});
 
     void reload_network_profiles() override;
     bool set_network_profile(int32_t slot, const ocpp::v2::NetworkConnectionProfile& profile,
@@ -205,6 +211,7 @@ public:
     void set_websocket_authorization_key(const std::string& authorization_key) override;
     void set_websocket_connection_options(const WebsocketConnectionOptions& connection_options) override;
     void set_websocket_connection_options_without_reconnect() override;
+    void set_websocket_ping_interval(std::int32_t ping_interval_s, std::int32_t pong_timeout_s) override;
     void set_websocket_connected_callback(WebsocketConnectionCallback callback) override;
     void set_websocket_disconnected_callback(WebsocketConnectionCallback callback) override;
     void set_websocket_connection_failed_callback(WebsocketConnectionFailedCallback callback) override;
@@ -239,19 +246,11 @@ private:
     ///
     void try_connect_websocket();
 
-    /// \brief Get the current websocket connection options
-    /// \return the current websocket connection options
+    /// \brief Get the current websocket connection options for the given slot.
+    /// Delegates to configuration and appends the local everest version string.
+    /// \return the current websocket connection options, or nullopt on failure.
     ///
     std::optional<WebsocketConnectionOptions> get_ws_connection_options(const std::int32_t configuration_slot);
-
-    /// \brief Resolve the Identity to use for the given slot. Per-slot Identity overrides
-    ///        SecurityCtrlr.Identity (B09.FR.16-18) when present and non-empty.
-    std::string resolve_identity(std::int32_t configuration_slot) const;
-
-    /// \brief Resolve the BasicAuthPassword to use for the given slot. Per-slot BasicAuthPassword
-    ///        overrides the global SecurityCtrlr.BasicAuthPassword (B09.FR.26-28) when present
-    ///        and non-empty.
-    std::optional<std::string> resolve_basic_auth_password(std::int32_t configuration_slot) const;
 
     /// \brief Read the everest version string from the deployed version_information.txt,
     ///        next to the binary. Returns nullopt if the file is missing or contains no usable line.

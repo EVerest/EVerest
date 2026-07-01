@@ -5,7 +5,7 @@
 #define OCPP_V16_CHARGE_POINT_CONFIGURATION_DEVICEMODEL_HPP
 
 #include <ocpp/v16/charge_point_configuration_base.hpp>
-#include <ocpp/v16/charge_point_configuration_interface.hpp>
+#include <ocpp/v16/charge_point_configuration_connectivity.hpp>
 #include <ocpp/v16/known_keys.hpp>
 #include <ocpp/v16/types.hpp>
 #include <ocpp/v2/ocpp16_custom_config_mappings.hpp>
@@ -24,7 +24,7 @@ class OrderedUniqueStringList;
 
 /// \brief contains the configuration of the charge point
 class ChargePointConfigurationDeviceModel : private ChargePointConfigurationBase,
-                                            public ChargePointConfigurationInterface {
+                                            public ChargePointConfigurationConnectivity {
 public:
     using SetResult = v2::SetVariableStatusEnum;
 
@@ -48,6 +48,7 @@ protected:
     SetResult setInternalSeccLeafSubjectOrganization(const std::string& value);
     SetResult setInternalStopTransactionIfUnlockNotSupported(const std::string& value);
     SetResult setInternalSupplyVoltage(const std::string& value);
+    SetResult setInternalSwitchSecurityProfileConnectionTimeout(const std::string& value);
     SetResult setInternalVerifyCsmsAllowWildcards(const std::string& value);
     SetResult setInternalWaitForStopTransactionsOnResetTimeout(const std::string& value);
 
@@ -192,6 +193,7 @@ public:
     std::optional<std::int32_t> getCompositeScheduleDefaultLimitWatts() override;
     std::optional<std::int32_t> getCompositeScheduleDefaultNumberPhases() override;
     std::optional<std::int32_t> getSupplyVoltage() override;
+    std::optional<std::int32_t> getSwitchSecurityProfileConnectionTimeout() override;
     std::optional<std::vector<KeyValue>> getAllMeterPublicKeyKeyValues() override;
 
     std::set<MessageType> getSupportedMessageTypesSending() override;
@@ -247,6 +249,7 @@ public:
     std::optional<KeyValue> getSeccLeafSubjectCountryKeyValue() override;
     std::optional<KeyValue> getSeccLeafSubjectOrganizationKeyValue() override;
     std::optional<KeyValue> getSupplyVoltageKeyValue() override;
+    std::optional<KeyValue> getSwitchSecurityProfileConnectionTimeoutKeyValue() override;
 
     void setAllowChargingProfileWithoutStartSchedule(bool allow) override;
     void setCentralSystemURI(const std::string& ocpp_uri) override;
@@ -265,6 +268,7 @@ public:
     void setSeccLeafSubjectOrganization(const std::string& secc_leaf_subject_organization) override;
     void setStopTransactionIfUnlockNotSupported(bool stop_transaction_if_unlock_not_supported) override;
     void setSupplyVoltage(std::int32_t supply_voltage) override;
+    void setSwitchSecurityProfileConnectionTimeout(std::int32_t switch_security_profile_connection_timeout) override;
     void setVerifyCsmsAllowWildcards(bool verify_csms_allow_wildcards) override;
     void setWaitForStopTransactionsOnResetTimeout(std::int32_t wait_for_stop_transactions_on_reset_timeout) override;
 

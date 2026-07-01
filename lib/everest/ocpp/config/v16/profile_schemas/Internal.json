@@ -327,6 +327,12 @@
             "minimum": 0,
             "default": 60
         },
+        "SwitchSecurityProfileConnectionTimeout": {
+            "$comment": "Timeout in seconds for a security profile switch to establish a connection before reverting to the previous profile. When unset, the built-in default is used.",
+            "type": "integer",
+            "readOnly": false,
+            "minimum": 1
+        },
         "QueueAllMessages": {
             "$comment": "If set to true, also non-transactional messages are queued in memory in case they cannot be sent immediately.",
             "type": "boolean",

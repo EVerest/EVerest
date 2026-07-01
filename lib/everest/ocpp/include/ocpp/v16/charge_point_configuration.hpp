@@ -10,7 +10,7 @@
 
 #include <ocpp/common/support_older_cpp_versions.hpp>
 #include <ocpp/v16/charge_point_configuration_base.hpp>
-#include <ocpp/v16/charge_point_configuration_interface.hpp>
+#include <ocpp/v16/charge_point_configuration_connectivity.hpp>
 #include <ocpp/v16/ocpp_types.hpp>
 #include <ocpp/v16/types.hpp>
 #include <ocpp/v16/utils.hpp>
@@ -19,7 +19,7 @@ namespace ocpp {
 namespace v16 {
 
 /// \brief contains the configuration of the charge point
-class ChargePointConfiguration : private ChargePointConfigurationBase, public ChargePointConfigurationInterface {
+class ChargePointConfiguration : private ChargePointConfigurationBase, public ChargePointConfigurationConnectivity {
 private:
     json config;
     json custom_schema;
@@ -115,6 +115,9 @@ public:
     std::optional<std::int32_t> getSupplyVoltage() override;
     std::optional<KeyValue> getSupplyVoltageKeyValue() override;
     void setSupplyVoltage(std::int32_t supply_voltage) override;
+    std::optional<std::int32_t> getSwitchSecurityProfileConnectionTimeout() override;
+    std::optional<KeyValue> getSwitchSecurityProfileConnectionTimeoutKeyValue() override;
+    void setSwitchSecurityProfileConnectionTimeout(std::int32_t switch_security_profile_connection_timeout) override;
     std::string getSupportedCiphers12() override;
     KeyValue getSupportedCiphers12KeyValue() override;
     std::string getSupportedCiphers13() override;
