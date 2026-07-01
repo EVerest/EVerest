@@ -6,6 +6,12 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <atomic>
+#include <future>
+#include <thread>
+#include <type_traits>
+
+#include <everest/util/queue/thread_safe_queue.hpp>
 
 #include <utils/config/settings.hpp>
 #include <utils/config/slot_manager.hpp>
@@ -37,6 +43,7 @@ public:
     /// \param restart_fn     Callback to restart modules (optional stub).
     ConfigServiceCore(const ConfigParseSettings& parse_settings,
                       std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection);
+    ~ConfigServiceCore() override;
 
     // --- Re-initialize configuration ---
     // \brief Reloads the active_slot_id from the db and reloads the modules accordingly
@@ -44,7 +51,7 @@ public:
     void reinitialize_from_db(bool force_reload = false);
 
     // --- Active-slot in-memory access (zero-copy) ---
-    const everest::config::ModuleConfigurations& get_active_module_configurations() const override;
+    std::shared_ptr<const everest::config::ModuleConfigurations> get_active_module_configurations() const override;
 
     // --- Slot management ---
     std::vector<SlotInfo> list_all_slots() override;
@@ -83,6 +90,7 @@ public:
     void notice_module_restart_triggered() override;
 
 private:
+    std::shared_ptr<const everest::config::ModuleConfigurations> active_configs_ptr_;
     everest::config::ModuleConfigurations module_configs_;
     ConfigParseSettings parse_settings_;
     everest::config::SqliteConfigSlotManager slot_manager_;
@@ -93,6 +101,48 @@ private:
 
     std::vector<std::function<void(const ActiveSlotUpdate&)>> active_slot_handlers_;
     std::vector<std::function<void(const ConfigurationUpdate&)>> config_update_handlers_;
+
+    everest::lib::util::thread_safe_queue<std::function<void()>> command_queue_;
+    std::thread worker_thread_;
+    std::atomic<bool> running_{false};
+
+    void process_queue();
+
+    template <typename Func>
+    auto post_to_actor(Func&& f) {
+        using ReturnType = std::invoke_result_t<Func>;
+        auto promise = std::make_shared<std::promise<ReturnType>>();
+        auto future = promise->get_future();
+        command_queue_.push([promise, f = std::forward<Func>(f)]() mutable {
+            if constexpr (std::is_void_v<ReturnType>) {
+                f();
+                promise->set_value();
+            } else {
+                promise->set_value(f());
+            }
+        });
+        return future.get();
+    }
+
+    // --- Internal Actor Methods ---
+    void internal_reinitialize_from_db(bool force_reload = false);
+    std::vector<SlotInfo> internal_list_all_slots();
+    int internal_get_active_slot_id();
+    int internal_get_next_boot_slot_id();
+    SetActiveSlotStatus internal_mark_active_slot(int slot_id);
+    DeleteSlotStatus internal_delete_slot(int slot_id);
+    DuplicateSlotResult internal_duplicate_slot(int slot_id, std::optional<std::string> description);
+    LoadFromYamlResult internal_load_from_yaml(const std::string& raw_yaml, std::optional<std::string> description, std::optional<int> slot_id);
+    bool internal_set_description(int slot_id, const std::string& description);
+    GetConfigurationResult internal_get_configuration(int slot_id);
+    SetConfigParameterResult internal_set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates, const Origin& origin);
+    GetConfigParametersResult internal_get_config_parameters(int slot_id, const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters);
+    void internal_set_modules_stopped();
+    void internal_set_modules_running();
+    void internal_set_modules_starting();
+    void internal_set_modules_stopping();
+    void internal_notice_cfg_validation_failed();
+    void internal_notice_module_restart_triggered();
 
     void reload_from_storage();
 
