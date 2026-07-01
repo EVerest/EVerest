@@ -17,6 +17,7 @@ cc_everest_module(
         "@sigslot//:sigslot",
         "//lib/everest/helpers",
         "//lib/everest/util",
+        "//lib/everest/everest_api_types:everest_api_types",
     ],
     impls = IMPLS,
     srcs = glob(
