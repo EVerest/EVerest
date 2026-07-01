@@ -330,7 +330,7 @@ class TestOcpp201CostAndPrice:
         # Clear cache
         r: call_result201.ClearCache = await chargepoint_with_pm.clear_cache_req()
         assert r.status == ClearCacheStatusEnumType.accepted
-        session_cost_mock.call_count = 0
+        probe_module_mock_fn.reset_mock()
 
         await chargepoint_with_pm.cost_update_req(total_cost=1.345, transaction_id=transaction_id,
                                                   custom_data=self.cost_updated_custom_data)
