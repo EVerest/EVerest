@@ -20,8 +20,12 @@
 #include <chrono>
 #include <mutex>
 #include <queue>
+#include <set>
+#include <tuple>
 #include <utility>
 #include <vector>
+
+#include <everest/util/async/monitor.hpp>
 
 #include <generated/interfaces/ISO15118_charger/Interface.hpp>
 #include <generated/interfaces/ac_rcd/Interface.hpp>
@@ -104,11 +108,21 @@ public:
     void clear_voltage_plausibility_fault();
 
 protected:
-    void raise_inoperative_error(const std::vector<Everest::error::Error>& causes);
+    // Orders errors by (type, sub_type) only, so inoperative_causes tracks the identity of the active fatal set
+    // regardless of detection order.
+    struct ErrorCauseLess {
+        bool operator()(const Everest::error::Error& a, const Everest::error::Error& b) const {
+            return std::tie(a.type, a.sub_type) < std::tie(b.type, b.sub_type);
+        }
+    };
+    using InoperativeCauses = std::set<Everest::error::Error, ErrorCauseLess>;
+
+    void raise_inoperative_error(const std::vector<Everest::error::Error>& causes,
+                                 InoperativeCauses& inoperative_causes);
 
 private:
     void process_error();
-    void clear_inoperative_error();
+    void clear_inoperative_error(InoperativeCauses& inoperative_causes);
     std::vector<Everest::error::Error> errors_prevent_charging();
 
     const std::unique_ptr<evse_board_supportIntf>& r_bsp;
@@ -123,13 +137,12 @@ private:
     const std::vector<std::unique_ptr<over_voltage_monitorIntf>>& r_over_voltage_monitor;
     const bool inoperative_error_use_vendor_id;
 
-    // (type, sub_type) of the fatal causes the raised Inoperative error currently describes, in detection order.
-    // Used to refresh that error when the active fatal set changes. Empty while Inoperative is not raised.
-    std::vector<std::pair<std::string, std::string>> inoperative_causes;
-
-    // Serializes process_error(): it is invoked from every requirement's error callbacks (potentially on
-    // different threads) and mutates inoperative_causes, so the read-compare-clear-raise sequence must be atomic.
-    std::mutex process_error_mutex;
+    // The fatal causes the raised Inoperative error currently describes; empty while Inoperative is not raised. Used
+    // to refresh that error when the active fatal set changes. The monitor bundles the state with the mutex that
+    // guards it: process_error() holds the handle across the whole read-compare-clear-raise sequence, which runs from
+    // every requirement's error callbacks (potentially on different threads). Passing the guarded set explicitly into
+    // raise_/clear_inoperative_error() also makes it impossible to mutate it without holding the lock.
+    everest::lib::util::monitor<InoperativeCauses> inoperative_causes;
 };
 
 } // namespace module

@@ -158,17 +158,17 @@ void ErrorHandling::clear_over_voltage_error() {
 
 // Find out if the current error set is fatal to charging or not
 void ErrorHandling::process_error() {
-    // Called from every requirement's error callbacks (potentially on different threads); serialize so the
-    // inoperative_causes read-compare-clear-raise sequence below cannot interleave.
-    const std::lock_guard<std::mutex> lock(process_error_mutex);
+    // Called from every requirement's error callbacks (potentially on different threads). Holding the monitor handle
+    // serializes the whole inoperative_causes read-compare-clear-raise sequence below so it cannot interleave.
+    auto causes = inoperative_causes.handle();
 
     const auto fatal = errors_prevent_charging();
     if (not fatal.empty()) {
         // signal to charger that errors are active that prevent charging
-        raise_inoperative_error(fatal);
+        raise_inoperative_error(fatal, *causes);
     } else {
         // signal an error that does not prevent charging
-        clear_inoperative_error();
+        clear_inoperative_error(*causes);
     }
 
     // All errors cleared signal is for OCPP 1.6. It is triggered when there are no errors anymore,
@@ -237,23 +237,42 @@ std::vector<Everest::error::Error> ErrorHandling::errors_prevent_charging() {
     return fatal_errors;
 }
 
-// Caller must hold process_error_mutex (mutates inoperative_causes).
-void ErrorHandling::raise_inoperative_error(const std::vector<Everest::error::Error>& causes) {
+// Caller must hold the inoperative_causes monitor handle (this mutates it).
+void ErrorHandling::raise_inoperative_error(const std::vector<Everest::error::Error>& causes,
+                                            InoperativeCauses& inoperative_causes) {
     if (causes.empty()) {
         return;
     }
 
-    std::vector<std::pair<std::string, std::string>> cause_ids;
-    cause_ids.reserve(causes.size());
-    for (const auto& cause : causes) {
-        cause_ids.emplace_back(cause.type, cause.sub_type);
+    auto is_emergency = [](const auto& errors) {
+        return std::any_of(errors.begin(), errors.end(), [](const Everest::error::Error& cause) {
+            return cause.severity == Everest::error::Severity::High;
+        });
+    };
+
+    // Everest::error::Error has no operator==, so compare the two sets by their (type, sub_type) keys via the
+    // comparator: same size and every corresponding element equivalent under ErrorCauseLess.
+    auto same_causes = [](const InoperativeCauses& a, const InoperativeCauses& b) {
+        const ErrorCauseLess less;
+        return a.size() == b.size() &&
+               std::equal(a.begin(), a.end(), b.begin(),
+                          [&less](const Everest::error::Error& x, const Everest::error::Error& y) {
+                              return not less(x, y) and not less(y, x);
+                          });
+    };
+
+    // Key the causes on (type, sub_type); the set makes change-detection independent of detection order.
+    const InoperativeCauses current(causes.begin(), causes.end());
+
+    const bool already_raised = p_evse->error_state_monitor->is_error_active("evse_manager/Inoperative", "");
+    if (already_raised && same_causes(current, inoperative_causes)) {
+        // Same set of causes, nothing to update.
+        return;
     }
 
-    if (p_evse->error_state_monitor->is_error_active("evse_manager/Inoperative", "")) {
-        if (cause_ids == inoperative_causes) {
-            // Same set of causes, nothing to update.
-            return;
-        }
+    const bool was_emergency = is_emergency(inoperative_causes);
+
+    if (already_raised) {
         // Causes changed: the framework has no in-place update, so clear and re-raise. No
         // AllErrorsPreventingChargingCleared is emitted, keeping the charger shut down across the refresh.
         p_evse->clear_error("evse_manager/Inoperative");
@@ -277,17 +296,20 @@ void ErrorHandling::raise_inoperative_error(const std::vector<Everest::error::Er
     }
     p_evse->raise_error(error_object);
     // Track what we just raised, so the next call detects a changed cause set.
-    inoperative_causes = std::move(cause_ids);
+    inoperative_causes = current;
 
-    // Emergency shutdown if any active cause is high severity, otherwise error shutdown.
-    const bool emergency = std::any_of(causes.begin(), causes.end(), [](const Everest::error::Error& cause) {
-        return cause.severity == Everest::error::Severity::High;
-    });
-    signal_error(emergency ? ErrorHandlingEvents::ForceEmergencyShutdown : ErrorHandlingEvents::ForceErrorShutdown);
+    // Emergency shutdown if any active cause is high severity, otherwise error shutdown. Only (re)signal on a genuine
+    // transition -- the first raise or a change of shutdown type. A pure description refresh must not re-signal:
+    // downstream this cancels an active reservation again (EvseManager) on every refresh, and the charger already
+    // stays shut down without a repeat.
+    const bool emergency = is_emergency(causes);
+    if (not already_raised or emergency != was_emergency) {
+        signal_error(emergency ? ErrorHandlingEvents::ForceEmergencyShutdown : ErrorHandlingEvents::ForceErrorShutdown);
+    }
 }
 
-// Caller must hold process_error_mutex (mutates inoperative_causes).
-void ErrorHandling::clear_inoperative_error() {
+// Caller must hold the inoperative_causes monitor handle (this mutates it).
+void ErrorHandling::clear_inoperative_error(InoperativeCauses& inoperative_causes) {
     // clear externally
     if (p_evse->error_state_monitor->is_error_active("evse_manager/Inoperative", "")) {
         p_evse->clear_error("evse_manager/Inoperative");
