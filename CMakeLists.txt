@@ -241,6 +241,7 @@ endif()
 
 # testing
 if(EVEREST_CORE_BUILD_TESTING AND NOT EVEREST_LIBS_ONLY)
+    add_subdirectory(types)
     add_subdirectory(tests)
 else()
     message("Not running unit tests")
