@@ -43,6 +43,8 @@ static const struct IgnoreErrors {
     ErrorList imd{"isolation_monitor/VendorWarning"};
     ErrorList powersupply{"power_supply_DC/VendorWarning"};
     ErrorList powermeter{"generic/VendorWarning"};
+    ErrorList slac{"generic/VendorWarning"};
+    ErrorList hlc{"generic/VendorWarning"};
     ErrorList over_voltage_monitor{"over_voltage_monitor/VendorWarning"};
 } ignore_errors;
 
@@ -54,6 +56,7 @@ ErrorHandling::ErrorHandling(const std::unique_ptr<evse_board_supportIntf>& _r_b
                              const std::vector<std::unique_ptr<isolation_monitorIntf>>& _r_imd,
                              const std::vector<std::unique_ptr<power_supply_DCIntf>>& _r_powersupply,
                              const std::vector<std::unique_ptr<powermeterIntf>>& _r_powermeter,
+                             const std::vector<std::unique_ptr<slacIntf>>& _r_slac,
                              const std::vector<std::unique_ptr<over_voltage_monitorIntf>>& _r_over_voltage_monitor,
                              bool _inoperative_error_use_vendor_id) :
     r_bsp(_r_bsp),
@@ -64,12 +67,19 @@ ErrorHandling::ErrorHandling(const std::unique_ptr<evse_board_supportIntf>& _r_b
     r_imd(_r_imd),
     r_powersupply(_r_powersupply),
     r_powermeter(_r_powermeter),
+    r_slac(_r_slac),
     r_over_voltage_monitor(_r_over_voltage_monitor),
     inoperative_error_use_vendor_id(_inoperative_error_use_vendor_id) {
 
     // Subscribe to bsp driver to receive Errors from the bsp hardware
     r_bsp->subscribe_all_errors([this](const Everest::error::Error& error) { process_error(); },
                                 [this](const Everest::error::Error& error) { process_error(); });
+
+    // Subscribe to HLC to receive errors from ISO15118 charger module
+    if (r_hlc.size() > 0) {
+        r_hlc[0]->subscribe_all_errors([this](const Everest::error::Error& error) { process_error(); },
+                                       [this](const Everest::error::Error& error) { process_error(); });
+    }
 
     // Subscribe to connector lock to receive errors from connector lock hardware
     if (r_connector_lock.size() > 0) {
@@ -99,6 +109,12 @@ ErrorHandling::ErrorHandling(const std::unique_ptr<evse_board_supportIntf>& _r_b
     if (r_powermeter.size() > 0) {
         r_powermeter[0]->subscribe_all_errors([this](const Everest::error::Error& error) { process_error(); },
                                               [this](const Everest::error::Error& error) { process_error(); });
+    }
+
+    // Subscribe to slac to receive errors from SLAC module
+    if (r_slac.size() > 0) {
+        r_slac[0]->subscribe_all_errors([this](const Everest::error::Error& error) { process_error(); },
+                                        [this](const Everest::error::Error& error) { process_error(); });
     }
 
     // Subscribe to over_voltage_monitor to receive errors from over voltage monitor hardware
@@ -162,11 +178,11 @@ void ErrorHandling::process_error() {
         }
     };
 
-    const int error_count = p_evse->error_state_monitor->get_active_errors().size() +
-                            r_bsp->error_state_monitor->get_active_errors().size() +
-                            number_of_active_errors(r_connector_lock) + number_of_active_errors(r_ac_rcd) +
-                            number_of_active_errors(r_imd) + number_of_active_errors(r_powersupply) +
-                            number_of_active_errors(r_powermeter);
+    const int error_count =
+        p_evse->error_state_monitor->get_active_errors().size() +
+        r_bsp->error_state_monitor->get_active_errors().size() + number_of_active_errors(r_connector_lock) +
+        number_of_active_errors(r_ac_rcd) + number_of_active_errors(r_imd) + number_of_active_errors(r_powersupply) +
+        number_of_active_errors(r_powermeter) + number_of_active_errors(r_slac) + number_of_active_errors(r_hlc);
 
     if (error_count == 0) {
         signal_all_errors_cleared();
@@ -225,6 +241,20 @@ std::optional<Everest::error::Error> ErrorHandling::errors_prevent_charging() {
 
     if (r_powermeter.size() > 0) {
         fatal = is_fatal(r_powermeter[0]->error_state_monitor->get_active_errors(), ignore_errors.powermeter);
+        if (fatal) {
+            return fatal;
+        }
+    }
+
+    if (r_slac.size() > 0) {
+        fatal = is_fatal(r_slac[0]->error_state_monitor->get_active_errors(), ignore_errors.slac);
+        if (fatal) {
+            return fatal;
+        }
+    }
+
+    if (r_hlc.size() > 0) {
+        fatal = is_fatal(r_hlc[0]->error_state_monitor->get_active_errors(), ignore_errors.hlc);
         if (fatal) {
             return fatal;
         }

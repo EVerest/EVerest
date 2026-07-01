@@ -19,12 +19,15 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     ErrorHandlingTest.cpp
     IECStateMachineTest.cpp
     OverVoltageMonitorTest.cpp
+    SessionLogTest.cpp
     VoltagePlausibilityMonitorTest.cpp
     ../ErrorHandling.cpp
     ../IECStateMachine.cpp
+    ../SessionLog.cpp
     ../backtrace.cpp
     ../over_voltage/OverVoltageMonitor.cpp
     ../voltage_plausibility/VoltagePlausibilityMonitor.cpp
+    ../v2gMessage.cpp
 )
 
 target_compile_definitions(${TEST_TARGET_NAME} PRIVATE
@@ -37,6 +40,7 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     everest::log
     everest::framework
     everest::helpers
+    pugixml::pugixml
     sigslot
 )
 
