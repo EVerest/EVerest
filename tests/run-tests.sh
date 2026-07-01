@@ -148,7 +148,7 @@ fi
 PYTEST_ARGS=(
     -rA
     --self-contained-html
-    --max-worker-restart=100  # allow worker restarts for debugging purposes 
+    --max-worker-restart=0
     --timeout=300
     --everest-prefix "$PREFIX"
     --config-file "$SCRIPT_DIR/pytest.ini"
