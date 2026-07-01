@@ -3,10 +3,16 @@ config:
   valid_config_entry:
     description: "This is a valid config entry"
     type: string
+    mutability: ReadWrite
   valid_config_entry_with_default:
     description: "This is a valid config entry with a default"
     type: number
     default: 42
+  valid_bool_config_entry:
+    description: "A boolean type config entry"
+    type: boolean
+    mutability: ReadOnly
+    default: true
 provides:
   main:
     description: "This unit has a valid manifest but no corresponding class"
