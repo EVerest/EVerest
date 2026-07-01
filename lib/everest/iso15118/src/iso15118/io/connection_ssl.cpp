@@ -264,6 +264,10 @@ void ConnectionSSL::handle_connect() {
 
     call_if_available(event_callback, ConnectionEvent::ACCEPTED);
 
+    if (not set_tcp_keepalive(accepted_fd)) {
+        logf_warning("Failed to configure TCP keepalive on accepted TLS connection");
+    }
+
     ssl->connection = ssl->server->wrap_accepted_fd(accepted_fd, host, service);
     if (ssl->connection == nullptr) {
         ::close(accepted_fd);
@@ -313,6 +317,14 @@ void ConnectionSSL::close() {
     // Idempotency / re-entry guard: the connection is reset before CLOSED is
     // delivered below, so a re-entrant or repeated close() is a no-op.
     if (ssl->connection == nullptr) {
+        // Never-connected teardown: the listener is still registered because
+        // handle_connect never ran. Release it and fire CLOSED once.
+        if (ssl->listen_fd != -1) {
+            poll_manager.unregister_fd(ssl->listen_fd);
+            ::close(ssl->listen_fd);
+            ssl->listen_fd = -1;
+            call_if_available(event_callback, ConnectionEvent::CLOSED);
+        }
         return;
     }
 
