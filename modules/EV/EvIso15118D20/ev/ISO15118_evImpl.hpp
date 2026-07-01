@@ -19,6 +19,7 @@
 
 #include <iso15118/ev/config.hpp>
 #include <iso15118/ev/controller.hpp>
+#include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
@@ -72,6 +73,7 @@ private:
         SessionPhase phase{SessionPhase::idle};
         bool shutting_down{false};
         iso15118::ev::Controller* current{nullptr};
+        iso15118::ev::DcChargeParams dc_params;
     };
 
     everest::lib::util::monitor<SessionState> session;
