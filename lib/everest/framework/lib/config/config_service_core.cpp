@@ -59,11 +59,36 @@ ConfigServiceCore::ConfigServiceCore(const ConfigParseSettings& parse_settings,
                                      std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection) :
     parse_settings_(parse_settings), slot_manager_(db_connection), db_(std::move(db_connection)) {
     active_slot_id_ = everest::config::SqliteStorage::DEFAULT_CONFIG_ID;
+    active_configs_ptr_ = std::make_shared<const everest::config::ModuleConfigurations>();
 
-    reinitialize_from_db(true);
+    running_ = true;
+    worker_thread_ = std::thread(&ConfigServiceCore::process_queue, this);
+
+    post_to_actor([this]() { internal_reinitialize_from_db(true); });
+}
+
+ConfigServiceCore::~ConfigServiceCore() {
+    running_ = false;
+    command_queue_.stop();
+    if (worker_thread_.joinable()) {
+        worker_thread_.join();
+    }
+}
+
+void ConfigServiceCore::process_queue() {
+    while (running_) {
+        auto task = command_queue_.wait_and_pop();
+        if (task) {
+            (*task)();
+        }
+    }
 }
 
 void ConfigServiceCore::reinitialize_from_db(bool force_reload) {
+    post_to_actor([this, force_reload]() { internal_reinitialize_from_db(force_reload); });
+}
+
+void ConfigServiceCore::internal_reinitialize_from_db(bool force_reload) {
     if (module_status_ != ActiveSlotStatus::Stopped) {
         return;
     }
@@ -86,21 +111,27 @@ std::unique_ptr<everest::config::SqliteStorage> ConfigServiceCore::make_storage(
 void ConfigServiceCore::publish_active_slot_update() {
     const ActiveSlotUpdate update{now_rfc3339(), active_slot_id_, slot_manager_.get_next_boot_slot_id(),
                                   module_status_};
-    for (const auto& handler : active_slot_handlers_) {
-        handler(update);
-    }
+    auto handlers_copy = active_slot_handlers_;
+    std::thread([handlers_copy = std::move(handlers_copy), update]() {
+        for (const auto& handler : handlers_copy) {
+            handler(update);
+        }
+    }).detach();
 }
 
 void ConfigServiceCore::publish_config_update(const ConfigurationUpdate& update) {
-    for (const auto& handler : config_update_handlers_) {
-        handler(update);
-    }
+    auto handlers_copy = config_update_handlers_;
+    std::thread([handlers_copy = std::move(handlers_copy), update]() {
+        for (const auto& handler : handlers_copy) {
+            handler(update);
+        }
+    }).detach();
 }
 
 // --- Active-slot in-memory access ---
 
-const everest::config::ModuleConfigurations& ConfigServiceCore::get_active_module_configurations() const {
-    return module_configs_;
+std::shared_ptr<const everest::config::ModuleConfigurations> ConfigServiceCore::get_active_module_configurations() const {
+    return std::atomic_load(&active_configs_ptr_);
 }
 
 void ConfigServiceCore::reload_from_storage() {
@@ -108,6 +139,7 @@ void ConfigServiceCore::reload_from_storage() {
         const auto resp = active_storage_->get_module_configs();
         if (resp.status == everest::config::GenericResponseStatus::OK) {
             module_configs_ = resp.module_configs;
+            std::atomic_store(&active_configs_ptr_, std::make_shared<const everest::config::ModuleConfigurations>(module_configs_));
         }
     }
 }
@@ -115,18 +147,30 @@ void ConfigServiceCore::reload_from_storage() {
 // --- Slot management ---
 
 std::vector<SlotInfo> ConfigServiceCore::list_all_slots() {
+    return post_to_actor([this]() { return internal_list_all_slots(); });
+}
+std::vector<SlotInfo> ConfigServiceCore::internal_list_all_slots() {
     return slot_manager_.list_slots();
 }
 
 int ConfigServiceCore::get_active_slot_id() {
+    return post_to_actor([this]() { return internal_get_active_slot_id(); });
+}
+int ConfigServiceCore::internal_get_active_slot_id() {
     return active_slot_id_;
 }
 
 int ConfigServiceCore::get_next_boot_slot_id() {
+    return post_to_actor([this]() { return internal_get_next_boot_slot_id(); });
+}
+int ConfigServiceCore::internal_get_next_boot_slot_id() {
     return slot_manager_.get_next_boot_slot_id();
 }
 
 SetActiveSlotStatus ConfigServiceCore::mark_active_slot(int slot_id) {
+    return post_to_actor([this, slot_id]() { return internal_mark_active_slot(slot_id); });
+}
+SetActiveSlotStatus ConfigServiceCore::internal_mark_active_slot(int slot_id) {
     int next_boot_slot_id = slot_manager_.get_next_boot_slot_id();
     if (slot_id == next_boot_slot_id) {
         return SetActiveSlotStatus::NoChangeRequired;
@@ -140,6 +184,9 @@ SetActiveSlotStatus ConfigServiceCore::mark_active_slot(int slot_id) {
 }
 
 DeleteSlotStatus ConfigServiceCore::delete_slot(int slot_id) {
+    return post_to_actor([this, slot_id]() { return internal_delete_slot(slot_id); });
+}
+DeleteSlotStatus ConfigServiceCore::internal_delete_slot(int slot_id) {
     if (slot_id == active_slot_id_ or slot_id == slot_manager_.get_next_boot_slot_id()) {
         return DeleteSlotStatus::CannotDeleteActiveSlot;
     }
@@ -157,12 +204,20 @@ DeleteSlotStatus ConfigServiceCore::delete_slot(int slot_id) {
 }
 
 DuplicateSlotResult ConfigServiceCore::duplicate_slot(int slot_id, std::optional<std::string> description) {
+    return post_to_actor([this, slot_id, description]() { return internal_duplicate_slot(slot_id, description); });
+}
+DuplicateSlotResult ConfigServiceCore::internal_duplicate_slot(int slot_id, std::optional<std::string> description) {
     return slot_manager_.duplicate_slot(slot_id, description);
 }
 
 LoadFromYamlResult ConfigServiceCore::load_from_yaml(const std::string& raw_yaml,
                                                      std::optional<std::string> description,
                                                      std::optional<int> slot_id) {
+    return post_to_actor([this, raw_yaml, description, slot_id]() { return internal_load_from_yaml(raw_yaml, description, slot_id); });
+}
+LoadFromYamlResult ConfigServiceCore::internal_load_from_yaml(const std::string& raw_yaml,
+                                                              std::optional<std::string> description,
+                                                              std::optional<int> slot_id) {
     int target_slot_id = slot_id.value_or(slot_manager_.next_slot_id());
 
     if (target_slot_id == active_slot_id_ and module_status_ != ActiveSlotStatus::Stopped) {
@@ -213,6 +268,9 @@ LoadFromYamlResult ConfigServiceCore::load_from_yaml(const std::string& raw_yaml
 }
 
 bool ConfigServiceCore::set_description(int slot_id, const std::string& description) {
+    return post_to_actor([this, slot_id, description]() { return internal_set_description(slot_id, description); });
+}
+bool ConfigServiceCore::internal_set_description(int slot_id, const std::string& description) {
     if (slot_manager_.exists(slot_id)) {
         auto slots = slot_manager_.list_slots();
 
@@ -226,6 +284,9 @@ bool ConfigServiceCore::set_description(int slot_id, const std::string& descript
 // --- Slot-scoped configuration ---
 
 GetConfigurationResult ConfigServiceCore::get_configuration(int slot_id) {
+    return post_to_actor([this, slot_id]() { return internal_get_configuration(slot_id); });
+}
+GetConfigurationResult ConfigServiceCore::internal_get_configuration(int slot_id) {
     const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
     if (resolved_slot_id == active_slot_id_) {
         return {GetConfigurationStatus::Success, module_configs_};
@@ -248,6 +309,11 @@ GetConfigurationResult ConfigServiceCore::get_configuration(int slot_id) {
 }
 
 SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
+                                                                  const std::vector<ConfigParameterUpdate>& updates,
+                                                                  const Origin& origin) {
+    return post_to_actor([this, slot_id, updates, origin]() { return internal_set_config_parameters(slot_id, updates, origin); });
+}
+SetConfigParameterResult ConfigServiceCore::internal_set_config_parameters(int slot_id,
                                                                   const std::vector<ConfigParameterUpdate>& updates,
                                                                   const Origin& origin) {
     SetConfigParameterResult result;
@@ -409,6 +475,9 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
     }
 
     if (!event.updates.empty()) {
+            if (modifies_active_slot) {
+                std::atomic_store(&active_configs_ptr_, std::make_shared<const everest::config::ModuleConfigurations>(module_configs_));
+            }
         publish_config_update(event);
     }
 
@@ -417,7 +486,11 @@ SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
 
 GetConfigParametersResult ConfigServiceCore::get_config_parameters(
     int slot_id, const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters) {
-    GetConfigurationResult get_cfg_result = get_configuration(slot_id);
+    return post_to_actor([this, slot_id, parameters]() { return internal_get_config_parameters(slot_id, parameters); });
+}
+GetConfigParametersResult ConfigServiceCore::internal_get_config_parameters(
+    int slot_id, const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters) {
+    GetConfigurationResult get_cfg_result = internal_get_configuration(slot_id);
 
     GetConfigParametersResult result;
     result.status = GetConfigurationStatus::SlotDoesNotExist;
@@ -445,44 +518,62 @@ GetConfigParametersResult ConfigServiceCore::get_config_parameters(
 // --- Push-event subscriptions ---
 
 void ConfigServiceCore::register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) {
-    active_slot_handlers_.push_back(std::move(handler));
+    post_to_actor([this, handler = std::move(handler)]() mutable { active_slot_handlers_.push_back(std::move(handler)); });
 }
 
 void ConfigServiceCore::register_config_update_handler(std::function<void(const ConfigurationUpdate&)> handler) {
-    config_update_handlers_.push_back(std::move(handler));
+    post_to_actor([this, handler = std::move(handler)]() mutable { config_update_handlers_.push_back(std::move(handler)); });
 }
 
 void ConfigServiceCore::register_set_runtime_parameter_handler(const SetParamCallback& callback) {
-    set_parameter_callback_ = callback;
+    post_to_actor([this, callback]() { set_parameter_callback_ = callback; });
 }
 
 // --- Module state ---
 void ConfigServiceCore::set_modules_running() {
+    post_to_actor([this]() { internal_set_modules_running(); });
+}
+void ConfigServiceCore::internal_set_modules_running() {
     module_status_ = ActiveSlotStatus::Running;
     publish_active_slot_update();
 }
 
 void ConfigServiceCore::set_modules_stopped() {
+    post_to_actor([this]() { internal_set_modules_stopped(); });
+}
+void ConfigServiceCore::internal_set_modules_stopped() {
     module_status_ = ActiveSlotStatus::Stopped;
     publish_active_slot_update();
 }
 
 void ConfigServiceCore::set_modules_starting() {
+    post_to_actor([this]() { internal_set_modules_starting(); });
+}
+void ConfigServiceCore::internal_set_modules_starting() {
     module_status_ = ActiveSlotStatus::Starting;
     publish_active_slot_update();
 }
 
 void ConfigServiceCore::set_modules_stopping() {
+    post_to_actor([this]() { internal_set_modules_stopping(); });
+}
+void ConfigServiceCore::internal_set_modules_stopping() {
     module_status_ = ActiveSlotStatus::Stopping;
     publish_active_slot_update();
 }
 
 void ConfigServiceCore::notice_cfg_validation_failed() {
+    post_to_actor([this]() { internal_notice_cfg_validation_failed(); });
+}
+void ConfigServiceCore::internal_notice_cfg_validation_failed() {
     module_status_ = ActiveSlotStatus::FailedToStart;
     publish_active_slot_update();
 }
 
 void ConfigServiceCore::notice_module_restart_triggered() {
+    post_to_actor([this]() { internal_notice_module_restart_triggered(); });
+}
+void ConfigServiceCore::internal_notice_module_restart_triggered() {
     module_status_ = ActiveSlotStatus::RestartTriggered;
     publish_active_slot_update();
 }

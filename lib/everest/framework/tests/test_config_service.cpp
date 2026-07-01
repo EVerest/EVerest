@@ -102,8 +102,8 @@ struct StubConfigService : Everest::config::ConfigServiceInterface {
     }
     void notice_module_restart_triggered() override {
     }
-    const everest::config::ModuleConfigurations& get_active_module_configurations() const override {
-        return module_configurations;
+    std::shared_ptr<const everest::config::ModuleConfigurations> get_active_module_configurations() const override {
+        return std::make_shared<const everest::config::ModuleConfigurations>(module_configurations);
     }
 };
 
