@@ -120,6 +120,8 @@ class OCPPMultiConfigurationStrategy(EverestConfigAdjustmentStrategy):
         module_config["module"] = OCPP_MULTI_MODULE_NAME
         module_config.setdefault("config_module", {})
         module_config["config_module"]["Mode"] = OCPP_VERSION_TO_MULTI_MODE[self._ocpp_version]
+        if self._ocpp_version == OCPPVersion.ocpp16:
+            module_config["config_module"]["EnableLegacyConfigMigration"] = True
         return adjusted
 
 

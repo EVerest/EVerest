@@ -913,7 +913,7 @@ void ChargePointV16::configure_data_model(const config_info_t& config) {
     };
 
     m_charge_point_configuration = module::config_factory_v16::create_charge_point_configuration(
-        ocpp_share_path, params, static_cast<int32_t>(config.numnber_of_connectors));
+        ocpp_share_path, params, static_cast<int32_t>(config.number_of_connectors));
 
     // The factory does not create the message-log directory; retain that here.
     if (!fs::exists(config.message_log_path)) {

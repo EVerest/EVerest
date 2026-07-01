@@ -29,7 +29,7 @@ private:
         const std::string& ocpp_share_path;
         const std::string& sql_init_path;
         const std::string& user_config_path;
-        std::uint32_t numnber_of_connectors; // r_evse_manager.size();
+        std::uint32_t number_of_connectors; // r_evse_manager.size();
         // Device-model database/migration/config paths shared with the OCPP 2.x path.
         std::string device_model_database_path;
         std::string device_model_database_migration_path;

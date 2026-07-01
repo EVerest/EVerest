@@ -1957,7 +1957,7 @@ void GenericOcpp::wait_all_ready() {
                 return false;
             }
         }
-        EVLOG_info << "All EVSE ready. Starting OCPP2.X service";
+        EVLOG_info << "All EVSE ready. Starting OCPP service";
         return true;
     });
 }

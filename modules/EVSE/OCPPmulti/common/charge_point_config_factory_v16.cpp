@@ -102,19 +102,50 @@ DeviceModelInitializationContext resolve_device_model_initialization_context(con
     return context;
 }
 
-void initialize_device_model_direct(const DeviceModelInitializationContext& context) {
+/// \brief Overrides the OCPP 1.6 NumberOfConnectors device-model value with the actual number of connected EVSEs.
+void patch_number_of_connectors(
+    std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>& component_configs, int32_t n_evse) {
+    constexpr auto legacy_ctrlr_name = "OCPP16LegacyCtrlr";
+    constexpr auto number_of_connectors_var = "NumberOfConnectors";
+
+    for (auto& [component_key, variables] : component_configs) {
+        if (component_key.name != legacy_ctrlr_name) {
+            continue;
+        }
+        for (auto& variable : variables) {
+            if (variable.name != number_of_connectors_var) {
+                continue;
+            }
+            for (auto& attribute : variable.attributes) {
+                if (attribute.variable_attribute.type == ocpp::v2::AttributeEnum::Actual) {
+                    attribute.value_source = "OCPP16Config";
+                    attribute.variable_attribute.value = std::to_string(n_evse);
+                }
+            }
+            variable.default_actual_value = std::to_string(n_evse);
+            return;
+        }
+    }
+
+    EVLOG_warning << "Could not find " << legacy_ctrlr_name << "/" << number_of_connectors_var
+                  << " in component configs; NumberOfConnectors may not match the number of connected EVSEs.";
+}
+
+void initialize_device_model_direct(const DeviceModelInitializationContext& context, int32_t n_evse) {
     EVLOG_info << "Updating device model database from component configs.";
     auto component_configs = ocpp::v2::get_all_component_configs(context.component_config_path);
+    ocpp::v2::ensure_ocpp16_legacy_ctrlr(component_configs);
+    patch_number_of_connectors(component_configs, n_evse);
     ocpp::v2::InitDeviceModelDb init_device_model_db(context.database_path, context.migration_files_path);
     init_device_model_db.initialize_database(component_configs, false);
 }
 
 void initialize_device_model_with_migration(const fs::path& ocpp_share_path, const fs::path& user_config_path,
                                             const std::string& charge_point_config_json,
-                                            const DeviceModelInitializationContext& context) {
+                                            const DeviceModelInitializationContext& context, int32_t n_evse) {
     if (ocpp::v2::InitDeviceModelDb(context.database_path, context.migration_files_path).is_db_initialized()) {
         EVLOG_info << "Device model database already initialized. Skipping migration, updating from component configs.";
-        initialize_device_model_direct(context);
+        initialize_device_model_direct(context, n_evse);
         return;
     }
 
@@ -219,14 +250,15 @@ create_charge_point_configuration(const fs::path& ocpp_share_path, const Ocpp16D
 
         const auto charge_point_config_json =
             load_charge_point_config_json(configured_config_path, user_config_path, n_evse);
-        initialize_device_model_with_migration(ocpp_share_path, user_config_path, charge_point_config_json, context);
+        initialize_device_model_with_migration(ocpp_share_path, user_config_path, charge_point_config_json, context,
+                                               n_evse);
     } else {
         if (config.EnableLegacyConfigMigration) {
             EVLOG_info << "Legacy OCPP1.6 config migration is enabled but the device model database is already "
                           "initialized; skipping the one-time migration.";
         }
         // No migration: bootstrap/refresh the device model directly from the component configs.
-        initialize_device_model_direct(context);
+        initialize_device_model_direct(context, n_evse);
     }
 
     auto dm_config = create_device_model_charge_point_configuration(ocpp_share_path, context);
