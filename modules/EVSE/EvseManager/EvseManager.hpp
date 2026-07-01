@@ -57,7 +57,6 @@ namespace module {
 
 struct Conf {
     int connector_id;
-    std::string connector_type;
     std::string evse_id;
     std::string evse_id_din;
     bool payment_enable_eim;
@@ -426,6 +425,9 @@ private:
     void publish_and_update_supported_energy_transfers();
     bool update_supported_energy_transfers(const std::vector<types::iso15118::EnergyTransferMode>& energy_transfers);
     bool update_supported_energy_transfers(const types::iso15118::EnergyTransferMode& energy_transfer);
+    // Computes the supported DC energy transfer modes (MCS vs plain DC) from the BSP-announced
+    // connector type and the current power supply capabilities (bidirectional).
+    std::vector<types::iso15118::EnergyTransferMode> get_supported_dc_energy_transfers();
     std::mutex hlc_ac_parameters_mutex;
     void update_hlc_ac_parameters();
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1

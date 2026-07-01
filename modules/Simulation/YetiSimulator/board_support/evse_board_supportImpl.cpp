@@ -4,22 +4,26 @@
 #include "evse_board_supportImpl.hpp"
 #include "util/state.hpp"
 
+#include <everest/logging.hpp>
+#include <stdexcept>
+
 namespace module::board_support {
 
 namespace {
-types::evse_board_support::HardwareCapabilities set_default_capabilities() {
-    return {32.0,                                                          // max_current_A_import
-            6.0,                                                           // min_current_A_import
-            3,                                                             // max_phase_count_import
-            1,                                                             // min_phase_count_import
-            16.0,                                                          // max_current_A_export
-            0.0,                                                           // min_current_A_export
-            3,                                                             // max_phase_count_export
-            1,                                                             // min_phase_count_export
-            true,                                                          // supports_changing_phases_during_charging
-            false,                                                         // supports_cp_state_E
-            types::evse_board_support::Connector_type::IEC62196Type2Cable, // connector_type
-            std::nullopt};                                                 // max_plug_temperature_C
+types::evse_board_support::HardwareCapabilities
+set_default_capabilities(types::evse_manager::ConnectorTypeEnum connector_type) {
+    return {32.0,           // max_current_A_import
+            6.0,            // min_current_A_import
+            3,              // max_phase_count_import
+            1,              // min_phase_count_import
+            16.0,           // max_current_A_export
+            0.0,            // min_current_A_export
+            3,              // max_phase_count_export
+            1,              // min_phase_count_export
+            true,           // supports_changing_phases_during_charging
+            false,          // supports_cp_state_E
+            connector_type, // connector_type
+            std::nullopt};  // max_plug_temperature_C
 }
 } // namespace
 
@@ -27,7 +31,13 @@ void evse_board_supportImpl::init() {
 }
 
 void evse_board_supportImpl::ready() {
-    const auto default_capabilities = set_default_capabilities();
+    auto connector_type = types::evse_manager::ConnectorTypeEnum::cType2;
+    try {
+        connector_type = types::evse_manager::string_to_connector_type_enum(mod->config.connector_type);
+    } catch (const std::out_of_range& e) {
+        EVLOG_warning << "Unknown/invalid connector type: " << mod->config.connector_type << ", falling back to cType2";
+    }
+    const auto default_capabilities = set_default_capabilities(connector_type);
     publish_capabilities(default_capabilities);
 }
 

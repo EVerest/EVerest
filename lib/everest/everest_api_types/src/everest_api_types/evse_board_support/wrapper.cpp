@@ -3,6 +3,7 @@
 
 #include "evse_board_support/wrapper.hpp"
 #include "evse_board_support/API.hpp"
+#include "evse_manager/wrapper.hpp"
 
 namespace everest::lib::API::V1_0::types::evse_board_support {
 
@@ -74,36 +75,6 @@ BspEvent_External to_external_api(BspEvent_Internal const& val) {
     return result;
 }
 
-Connector_type_Internal to_internal_api(Connector_type_External const& val) {
-    using SrcT = Connector_type_External;
-    using TarT = Connector_type_Internal;
-
-    switch (val) {
-    case SrcT::IEC62196Type2Cable:
-        return TarT::IEC62196Type2Cable;
-    case SrcT::IEC62196Type2Socket:
-        return TarT::IEC62196Type2Socket;
-    }
-
-    throw std::out_of_range(
-        "Unexpected value for everest::lib::API::V1_0::types::evse_board_support::Connector_type_External");
-}
-
-Connector_type_External to_external_api(Connector_type_Internal const& val) {
-    using SrcT = Connector_type_Internal;
-    using TarT = Connector_type_External;
-
-    switch (val) {
-    case SrcT::IEC62196Type2Cable:
-        return TarT::IEC62196Type2Cable;
-    case SrcT::IEC62196Type2Socket:
-        return TarT::IEC62196Type2Socket;
-    }
-
-    throw std::out_of_range(
-        "Unexpected value for everest::lib::API::V1_0::types::evse_board_support::Connector_type_Internal");
-}
-
 HardwareCapabilities_Internal to_internal_api(HardwareCapabilities_External const& val) {
     HardwareCapabilities_Internal result;
     result.max_current_A_import = val.max_current_A_import;
@@ -116,7 +87,7 @@ HardwareCapabilities_Internal to_internal_api(HardwareCapabilities_External cons
     result.min_phase_count_export = val.min_phase_count_export;
     result.supports_changing_phases_during_charging = val.supports_changing_phases_during_charging;
     result.supports_cp_state_E = val.supports_cp_state_E;
-    result.connector_type = to_internal_api(val.connector_type);
+    result.connector_type = evse_manager::to_internal_api(val.connector_type);
     result.max_plug_temperature_C = val.max_plug_temperature_C;
 
     return result;
@@ -134,7 +105,7 @@ HardwareCapabilities_External to_external_api(HardwareCapabilities_Internal cons
     result.min_phase_count_export = val.min_phase_count_export;
     result.supports_changing_phases_during_charging = val.supports_changing_phases_during_charging;
     result.supports_cp_state_E = val.supports_cp_state_E;
-    result.connector_type = to_external_api(val.connector_type);
+    result.connector_type = evse_manager::to_external_api(val.connector_type);
     result.max_plug_temperature_C = val.max_plug_temperature_C;
 
     return result;

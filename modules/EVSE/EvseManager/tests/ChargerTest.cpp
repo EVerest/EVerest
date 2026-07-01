@@ -71,9 +71,9 @@ struct ChargerTest : public testing::Test {
 
     void SetUp() override {
         reset_last_event();
-        charger = std::make_unique<ChargerDerived>(
-            charger_bsp, charger_error_handling, charger_powermeter_billing, charger_store,
-            types::evse_board_support::Connector_type::IEC62196Type2Socket, "EVSETEST");
+        charger =
+            std::make_unique<ChargerDerived>(charger_bsp, charger_error_handling, charger_powermeter_billing,
+                                             charger_store, types::evse_manager::ConnectorTypeEnum::sType2, "EVSETEST");
         charger->signal_simple_event.connect(&ChargerTest::session_event, this);
     }
 

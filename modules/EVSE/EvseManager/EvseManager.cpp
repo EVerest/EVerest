@@ -138,14 +138,6 @@ get_supported_ac_energy_transfers(const Conf& config, const types::evse_board_su
 
 void EvseManager::init() {
 
-    if (!config.connector_type.empty()) {
-        try {
-            connector_type = types::evse_manager::string_to_connector_type_enum(config.connector_type);
-        } catch (const std::out_of_range& e) {
-            EVLOG_warning << "Unknown/invalid connector type: " << config.connector_type;
-        }
-    }
-
     latest_target_current_low_pass_last_update = std::chrono::steady_clock::now();
 
     store = std::unique_ptr<PersistentStore>(new PersistentStore(r_store, info.id));
@@ -182,7 +174,7 @@ void EvseManager::init() {
         hw_capabilities_handle->min_phase_count_export = 0;
         hw_capabilities_handle->supports_changing_phases_during_charging = false;
         hw_capabilities_handle->supports_cp_state_E = false;
-        hw_capabilities_handle->connector_type = types::evse_board_support::Connector_type::IEC62196Type2Cable;
+        hw_capabilities_handle->connector_type = types::evse_manager::ConnectorTypeEnum::Undetermined;
     }
 
     invoke_init(*p_evse);
@@ -240,23 +232,7 @@ void EvseManager::init() {
             r_powersupply_DC[0]->subscribe_capabilities([this](const auto& caps) {
                 update_powersupply_capabilities(caps);
 
-                auto mode = types::iso15118::EnergyTransferMode::DC_extended;
-                auto bpt_mode = types::iso15118::EnergyTransferMode::DC_BPT;
-
-                if (connector_type.has_value() and
-                    connector_type.value() == types::evse_manager::ConnectorTypeEnum::cMCS) {
-                    mode = types::iso15118::EnergyTransferMode::MCS;
-                    bpt_mode = types::iso15118::EnergyTransferMode::MCS_BPT;
-                }
-
-                std::vector<types::iso15118::EnergyTransferMode> energy_transfers{mode};
-                if (caps.bidirectional) {
-                    energy_transfers.push_back(bpt_mode);
-                }
-
-                const bool was_updated = update_supported_energy_transfers(energy_transfers);
-
-                if (was_updated) {
+                if (update_supported_energy_transfers(get_supported_dc_energy_transfers())) {
                     this->publish_and_update_supported_energy_transfers();
                 }
             });
@@ -300,6 +276,11 @@ void EvseManager::init() {
 
         bsp->set_max_phases(get_max_phases(c.max_phase_count_import));
         charger->set_connector_type(c.connector_type);
+
+        // The connector type is announced by the BSP hardware capabilities (sole source of truth)
+        if (c.connector_type not_eq types::evse_manager::ConnectorTypeEnum::Undetermined) {
+            connector_type = c.connector_type;
+        }
         p_evse->publish_hw_capabilities(c);
         if (config.charge_mode == "AC" and hlc_enabled) {
             EVLOG_debug << fmt::format("Max AC hardware capabilities: {}A/{}ph", c.max_current_A_import,
@@ -312,6 +293,12 @@ void EvseManager::init() {
             }
 
             update_hlc_ac_parameters();
+        } else if (config.charge_mode == "DC" and hlc_enabled) {
+            // The connector type (e.g. cMCS) is announced asynchronously by the BSP, so the supported
+            // energy transfer modes must be recomputed once it is known to pick MCS over plain DC.
+            if (update_supported_energy_transfers(get_supported_dc_energy_transfers())) {
+                this->publish_and_update_supported_energy_transfers();
+            }
         }
     });
 }
@@ -558,23 +545,12 @@ void EvseManager::ready() {
                 config.voltage_plausibility_max_spread_threshold_V,
                 std::chrono::milliseconds(config.voltage_plausibility_fault_duration_ms));
 
-            if (connector_type.has_value() and connector_type.value() == types::evse_manager::ConnectorTypeEnum::cMCS) {
-                initial_energy_transfers.push_back(types::iso15118::EnergyTransferMode::MCS);
-            } else {
-                initial_energy_transfers.push_back(types::iso15118::EnergyTransferMode::DC_extended);
-            }
-
             const auto caps = get_powersupply_capabilities();
             update_powersupply_capabilities(caps);
 
-            if (caps.bidirectional) {
-                if (connector_type.has_value() and
-                    connector_type.value() == types::evse_manager::ConnectorTypeEnum::cMCS) {
-                    initial_energy_transfers.push_back(types::iso15118::EnergyTransferMode::MCS_BPT);
-                } else {
-                    initial_energy_transfers.push_back(types::iso15118::EnergyTransferMode::DC_BPT);
-                }
-            }
+            // Connector type may still be unknown here (announced asynchronously by the BSP); the BSP
+            // capabilities subscription recomputes the modes once it arrives. See init().
+            initial_energy_transfers = get_supported_dc_energy_transfers();
 
             // Set present measurements on HLC to sane defaults
             types::iso15118::DcEvsePresentVoltageCurrent present_values;
@@ -1832,6 +1808,21 @@ bool EvseManager::update_supported_energy_transfers(
 
 bool EvseManager::update_supported_energy_transfers(const types::iso15118::EnergyTransferMode& energy_transfer) {
     return update_supported_energy_transfers(std::vector<types::iso15118::EnergyTransferMode>{energy_transfer});
+}
+
+std::vector<types::iso15118::EnergyTransferMode> EvseManager::get_supported_dc_energy_transfers() {
+    const bool is_mcs =
+        connector_type.has_value() and connector_type.value() == types::evse_manager::ConnectorTypeEnum::cMCS;
+
+    std::vector<types::iso15118::EnergyTransferMode> energy_transfers{
+        is_mcs ? types::iso15118::EnergyTransferMode::MCS : types::iso15118::EnergyTransferMode::DC_extended};
+
+    if (get_powersupply_capabilities().bidirectional) {
+        energy_transfers.push_back(is_mcs ? types::iso15118::EnergyTransferMode::MCS_BPT
+                                          : types::iso15118::EnergyTransferMode::DC_BPT);
+    }
+
+    return energy_transfers;
 }
 
 void EvseManager::update_hlc_ac_parameters() {

@@ -51,15 +51,12 @@
 
 namespace module {
 
-const std::string IEC62196Type2Cable = "IEC62196Type2Cable";
-const std::string IEC62196Type2Socket = "IEC62196Type2Socket";
-
 class Charger {
 public:
     Charger(const std::unique_ptr<IECStateMachine>& bsp, const std::unique_ptr<ErrorHandling>& error_handling,
             const std::vector<std::unique_ptr<powermeterIntf>>& r_powermeter_billing,
-            const std::unique_ptr<PersistentStore>& store,
-            const types::evse_board_support::Connector_type& connector_type, const std::string& evse_id);
+            const std::unique_ptr<PersistentStore>& store, const types::evse_manager::ConnectorTypeEnum& connector_type,
+            const std::string& evse_id);
     ~Charger();
 
     enum class ChargeMode {
@@ -217,7 +214,7 @@ public:
         return stopwatch;
     }
 
-    void set_connector_type(types::evse_board_support::Connector_type t) {
+    void set_connector_type(types::evse_manager::ConnectorTypeEnum t) {
         connector_type = t;
     }
 
@@ -427,8 +424,8 @@ private:
     const std::unique_ptr<ErrorHandling>& error_handling;
     const std::vector<std::unique_ptr<powermeterIntf>>& r_powermeter_billing;
     const std::unique_ptr<PersistentStore>& store;
-    std::atomic<types::evse_board_support::Connector_type> connector_type{
-        types::evse_board_support::Connector_type::IEC62196Type2Cable};
+    std::atomic<types::evse_manager::ConnectorTypeEnum> connector_type{
+        types::evse_manager::ConnectorTypeEnum::Undetermined};
     const std::string evse_id;
 
     EventQueue<ErrorHandlingEvents> error_handling_event_queue;

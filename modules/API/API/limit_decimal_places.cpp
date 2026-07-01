@@ -243,7 +243,7 @@ std::string LimitDecimalPlaces::limit(const types::evse_board_support::HardwareC
             this->config.hw_caps_max_plug_temperature_C_decimal_places);
     }
 
-    root["connector_type"] << types::evse_board_support::connector_type_to_string(hw_capabilities.connector_type);
+    root["connector_type"] << types::evse_manager::connector_type_enum_to_string(hw_capabilities.connector_type);
 
     std::stringstream hardware_capabilities_stream;
     hardware_capabilities_stream << ryml::as_json(tree);

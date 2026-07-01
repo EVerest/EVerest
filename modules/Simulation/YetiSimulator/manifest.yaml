@@ -15,6 +15,10 @@ config:
     description: Dummy meter value blob sent on transaction stop to be used for testing
     type: string
     default: "test stop value"
+  connector_type:
+    description: The connector type announced by this simulated BSP in its hardware capabilities (/evse_manager#/ConnectorTypeEnum)
+    type: string
+    default: cType2
 provides:
   powermeter:
     interface: powermeter

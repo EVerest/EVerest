@@ -55,10 +55,17 @@ types:
     enum:
     - cCCS1
     - cCCS2
+    - cChaoJi
     - cG105
+    - cGBT_DC
+    - cLECCS
+    - cMCS
+    - cNACS
+    - cNACS_CCS1
     - cTesla
     - cType1
     - cType2
+    - cUltraChaoJi
     - s309_1P_16A
     - s309_1P_32A
     - s309_3P_16A

@@ -968,11 +968,26 @@ void to_json(json& j, ConnectorTypeEnum const& k) noexcept {
     case ConnectorTypeEnum::cCCS2:
         j = "cCCS2";
         return;
+    case ConnectorTypeEnum::cChaoJi:
+        j = "cChaoJi";
+        return;
     case ConnectorTypeEnum::cG105:
         j = "cG105";
         return;
+    case ConnectorTypeEnum::cGBT_DC:
+        j = "cGBT_DC";
+        return;
+    case ConnectorTypeEnum::cLECCS:
+        j = "cLECCS";
+        return;
     case ConnectorTypeEnum::cMCS:
         j = "cMCS";
+        return;
+    case ConnectorTypeEnum::cNACS:
+        j = "cNACS";
+        return;
+    case ConnectorTypeEnum::cNACS_CCS1:
+        j = "cNACS_CCS1";
         return;
     case ConnectorTypeEnum::cTesla:
         j = "cTesla";
@@ -982,6 +997,9 @@ void to_json(json& j, ConnectorTypeEnum const& k) noexcept {
         return;
     case ConnectorTypeEnum::cType2:
         j = "cType2";
+        return;
+    case ConnectorTypeEnum::cUltraChaoJi:
+        j = "cUltraChaoJi";
         return;
     case ConnectorTypeEnum::s309_1P_16A:
         j = "s309_1P_16A";
@@ -1045,12 +1063,32 @@ void from_json(json const& j, ConnectorTypeEnum& k) {
         k = ConnectorTypeEnum::cCCS2;
         return;
     }
+    if (s == "cChaoJi") {
+        k = ConnectorTypeEnum::cChaoJi;
+        return;
+    }
     if (s == "cG105") {
         k = ConnectorTypeEnum::cG105;
         return;
     }
+    if (s == "cGBT_DC") {
+        k = ConnectorTypeEnum::cGBT_DC;
+        return;
+    }
+    if (s == "cLECCS") {
+        k = ConnectorTypeEnum::cLECCS;
+        return;
+    }
     if (s == "cMCS") {
         k = ConnectorTypeEnum::cMCS;
+        return;
+    }
+    if (s == "cNACS") {
+        k = ConnectorTypeEnum::cNACS;
+        return;
+    }
+    if (s == "cNACS_CCS1") {
+        k = ConnectorTypeEnum::cNACS_CCS1;
         return;
     }
     if (s == "cTesla") {
@@ -1063,6 +1101,10 @@ void from_json(json const& j, ConnectorTypeEnum& k) {
     }
     if (s == "cType2") {
         k = ConnectorTypeEnum::cType2;
+        return;
+    }
+    if (s == "cUltraChaoJi") {
+        k = ConnectorTypeEnum::cUltraChaoJi;
         return;
     }
     if (s == "s309_1P_16A") {
@@ -1127,6 +1169,17 @@ void from_json(json const& j, ConnectorTypeEnum& k) {
     }
     if (s == "Unknown") {
         k = ConnectorTypeEnum::Unknown;
+        return;
+    }
+    // Deprecated wire values of the former evse_board_support Connector_type enum.
+    // Still accepted on input so that existing external API clients keep working;
+    // scheduled for removal following the EVerest deprecation policy.
+    if (s == "IEC62196Type2Cable") {
+        k = ConnectorTypeEnum::cType2;
+        return;
+    }
+    if (s == "IEC62196Type2Socket") {
+        k = ConnectorTypeEnum::sType2;
         return;
     }
     throw std::out_of_range("Provided string " + s +

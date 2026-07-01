@@ -4,6 +4,7 @@
 #include "evse_board_support/json_codec.hpp"
 #include "evse_board_support/API.hpp"
 #include "evse_board_support/codec.hpp"
+#include "evse_manager/json_codec.hpp"
 #include "nlohmann/json.hpp"
 #include <string>
 
@@ -390,35 +391,6 @@ void from_json(const json& j, Error& k) {
     if (j.contains("message")) {
         k.message.emplace(j.at("message"));
     }
-}
-
-void to_json(json& j, Connector_type const& k) noexcept {
-    switch (k) {
-    case Connector_type::IEC62196Type2Cable:
-        j = "IEC62196Type2Cable";
-        return;
-    case Connector_type::IEC62196Type2Socket:
-        j = "IEC62196Type2Socket";
-        return;
-    }
-
-    j = "INVALID_VALUE__everest::lib::API::V1_0::types::evse_board_support::Connector_type";
-}
-
-void from_json(json const& j, Connector_type& k) {
-    std::string s = j;
-    if (s == "IEC62196Type2Cable") {
-        k = Connector_type::IEC62196Type2Cable;
-        return;
-    }
-    if (s == "IEC62196Type2Socket") {
-        k = Connector_type::IEC62196Type2Socket;
-        return;
-    }
-
-    throw std::out_of_range(
-        "Provided string " + s +
-        " could not be converted to enum of type everest::lib::API::1_0::types::evse_board_support::Connector_type");
 }
 
 void to_json(json& j, HardwareCapabilities const& k) noexcept {

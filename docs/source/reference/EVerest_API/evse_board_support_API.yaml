@@ -439,7 +439,7 @@ components:
             "min_phase_count_export": 1
             "supports_changing_phases_during_charging": true
             "max_plug_temperature_C": 80
-            "connector_type": "IEC62196Type2Cable"
+            "connector_type": "cType2"
     send_ac_pp_ampacity:
       name: send_ac_pp_ampacity
       title: 'Send AC pp ampacity'
@@ -678,11 +678,40 @@ components:
         max_plug_temperature_C:
           type: number
         connector_type:
-          description: Type of charging connector available at this EVSE
+          description: >-
+            Type of charging connector available at this EVSE
+            (unified with evse_manager ConnectorTypeEnum)
           type: string
           enum:
-            - IEC62196Type2Cable
-            - IEC62196Type2Socket
+            - cCCS1
+            - cCCS2
+            - cChaoJi
+            - cG105
+            - cGBT_DC
+            - cLECCS
+            - cMCS
+            - cNACS
+            - cNACS_CCS1
+            - cTesla
+            - cType1
+            - cType2
+            - cUltraChaoJi
+            - s309_1P_16A
+            - s309_1P_32A
+            - s309_3P_16A
+            - s309_3P_32A
+            - sBS1361
+            - sCEE_7_7
+            - sType2
+            - sType3
+            - Other1PhMax16A
+            - Other1PhOver16A
+            - Other3Ph
+            - Pan
+            - wInductive
+            - wResonant
+            - Undetermined
+            - Unknown
     OverCurrent:
       description: Electrical current in ampere (A)
       type: number

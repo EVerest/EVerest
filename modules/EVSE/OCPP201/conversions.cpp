@@ -5,6 +5,8 @@
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/logging.hpp>
 
+#include <map>
+
 namespace module {
 namespace conversions {
 ocpp::v2::FirmwareStatusEnum to_ocpp_firmware_status_enum(const types::system::FirmwareUpdateStatusEnum status) {
@@ -689,6 +691,50 @@ types::evse_manager::StopTransactionReason to_everest_stop_transaction_reason(co
         return types::evse_manager::StopTransactionReason::ReqEnergyTransferRejected;
     }
     return types::evse_manager::StopTransactionReason::Other;
+}
+
+types::evse_manager::ConnectorTypeEnum to_everest_connector_type(const ocpp::CiString<20>& connector_type) {
+    using ConnectorTypeEnum = types::evse_manager::ConnectorTypeEnum;
+    // OCPP wire values use hyphens (e.g. sCEE-7-7) while the EVerest enum uses
+    // underscores, so the generated string_to_connector_type_enum can not be used here
+    static const std::map<std::string, ConnectorTypeEnum> mapping = {
+        {"cCCS1", ConnectorTypeEnum::cCCS1},
+        {"cCCS2", ConnectorTypeEnum::cCCS2},
+        {"cChaoJi", ConnectorTypeEnum::cChaoJi},
+        {"cG105", ConnectorTypeEnum::cG105},
+        {"cGBT-DC", ConnectorTypeEnum::cGBT_DC},
+        {"cLECCS", ConnectorTypeEnum::cLECCS},
+        {"cMCS", ConnectorTypeEnum::cMCS},
+        {"cNACS", ConnectorTypeEnum::cNACS},
+        {"cNACS-CCS1", ConnectorTypeEnum::cNACS_CCS1},
+        {"cTesla", ConnectorTypeEnum::cTesla},
+        {"cType1", ConnectorTypeEnum::cType1},
+        {"cType2", ConnectorTypeEnum::cType2},
+        {"cUltraChaoJi", ConnectorTypeEnum::cUltraChaoJi},
+        {"s309-1P-16A", ConnectorTypeEnum::s309_1P_16A},
+        {"s309-1P-32A", ConnectorTypeEnum::s309_1P_32A},
+        {"s309-3P-16A", ConnectorTypeEnum::s309_3P_16A},
+        {"s309-3P-32A", ConnectorTypeEnum::s309_3P_32A},
+        {"sBS1361", ConnectorTypeEnum::sBS1361},
+        {"sCEE-7-7", ConnectorTypeEnum::sCEE_7_7},
+        {"sType2", ConnectorTypeEnum::sType2},
+        {"sType3", ConnectorTypeEnum::sType3},
+        {"Other1PhMax16A", ConnectorTypeEnum::Other1PhMax16A},
+        {"Other1PhOver16A", ConnectorTypeEnum::Other1PhOver16A},
+        {"Other3Ph", ConnectorTypeEnum::Other3Ph},
+        {"Pan", ConnectorTypeEnum::Pan},
+        {"wInductive", ConnectorTypeEnum::wInductive},
+        {"wResonant", ConnectorTypeEnum::wResonant},
+        {"Undetermined", ConnectorTypeEnum::Undetermined},
+        {"Unknown", ConnectorTypeEnum::Unknown}};
+
+    const auto it = mapping.find(connector_type.get());
+    if (it != mapping.end()) {
+        return it->second;
+    }
+    EVLOG_warning << "Could not convert OCPP connector type '" << connector_type.get()
+                  << "' to a known connector type, using Unknown";
+    return ConnectorTypeEnum::Unknown;
 }
 
 std::vector<ocpp::v2::OCSPRequestData> to_ocpp_ocsp_request_data_vector(

@@ -29,6 +29,7 @@ struct Conf {
     bool reset_powermeter_on_session_start;
     std::string dummy_meter_value_blob_start;
     std::string dummy_meter_value_blob_stop;
+    std::string connector_type;
 };
 
 class YetiSimulator : public Everest::ModuleBase {
