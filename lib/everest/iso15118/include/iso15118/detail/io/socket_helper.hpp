@@ -14,4 +14,6 @@ bool check_and_update_interface(std::string& interface_name);
 bool get_first_sockaddr_in6_for_interface(const std::string& interface_name, sockaddr_in6& address);
 
 std::unique_ptr<char[]> sockaddr_in6_to_name(const sockaddr_in6&);
+
+bool set_tcp_keepalive(int fd);
 } // namespace iso15118::io
