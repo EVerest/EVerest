@@ -14,8 +14,6 @@ void GenericChargePoint::check_configured(const std::string_view& fn) {
         msg += fn;
         throw NotConfigured(msg);
     }
-
-    EVLOG_info << "Enterring: " << fn;
 }
 
 void GenericChargePoint::init(init_args_t& args) {

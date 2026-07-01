@@ -79,14 +79,14 @@ struct Conf {
     std::string CustomMrecErrorMapPath;
     std::string DatabasePath;
     int DelayOcppStart;
-    std::string DeviceModelConfigMappings;
     std::string DeviceModelConfigPath;
     std::string DeviceModelDatabasePath;
     std::string DeviceModelDatabaseMigrationPath;
-    bool EnableExternalWebsocketControl;
     bool EnableLegacyConfigMigration;
-    std::string EverestDeviceModelDatabasePath;
+    std::string DeviceModelConfigMappings;
     int Ocpp16NetworkConfigSlot;
+    bool EnableExternalWebsocketControl;
+    std::string EverestDeviceModelDatabasePath;
     std::string MessageLogPath;
     int MessageQueueResumeDelay;
     int RequestCompositeScheduleDurationS;
