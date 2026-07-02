@@ -90,6 +90,8 @@ cc_everest_module(
         "device_model/everest_device_model_storage.hpp",
         "error_handling.cpp",
         "error_handling.hpp",
+        "grid_support/grid_support_state.cpp",
+        "grid_support/grid_support_state.hpp",
         "transaction_handler.cpp",
         "transaction_handler.hpp",
     ],
@@ -112,6 +114,7 @@ cc_test(
     srcs = glob([
         "*.hpp",
         "device_model/*.hpp",
+        "grid_support/*.hpp",
         "ocpp_generic/*.hpp",
     ]) + [
         "error_handling.cpp",

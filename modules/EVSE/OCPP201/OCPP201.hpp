@@ -23,6 +23,7 @@
 #include <generated/interfaces/evse_manager/Interface.hpp>
 #include <generated/interfaces/evse_security/Interface.hpp>
 #include <generated/interfaces/external_energy_limits/Interface.hpp>
+#include <generated/interfaces/grid_support/Interface.hpp>
 #include <generated/interfaces/iso15118_extensions/Interface.hpp>
 #include <generated/interfaces/ocpp_data_transfer/Interface.hpp>
 #include <generated/interfaces/reservation/Interface.hpp>
@@ -38,6 +39,7 @@
 #include <error_handling.hpp>
 #include <everest/util/async/monitor.hpp>
 #include <generated/types/evse_board_support.hpp>
+#include <grid_support/grid_support_state.hpp>
 #include <ocpp/v2/charge_point.hpp>
 #include <transaction_handler.hpp>
 
@@ -64,6 +66,7 @@ struct Conf {
     int DelayOcppStart;
     int ResetStopDelay;
     std::string CustomMrecErrorMapPath;
+    int grid_support_heartbeat_s;
 };
 
 class OCPP201 : public Everest::ModuleBase {
@@ -80,7 +83,8 @@ public:
             std::vector<std::unique_ptr<external_energy_limitsIntf>> r_evse_energy_sink,
             std::vector<std::unique_ptr<display_messageIntf>> r_display_message,
             std::vector<std::unique_ptr<reservationIntf>> r_reservation,
-            std::vector<std::unique_ptr<iso15118_extensionsIntf>> r_extensions_15118, Conf& config) :
+            std::vector<std::unique_ptr<iso15118_extensionsIntf>> r_extensions_15118,
+            std::vector<std::unique_ptr<grid_supportIntf>> r_grid_support, Conf& config) :
         ModuleBase(info),
         mqtt(mqtt_provider),
         p_auth_validator(std::move(p_auth_validator)),
@@ -97,6 +101,7 @@ public:
         r_display_message(std::move(r_display_message)),
         r_reservation(std::move(r_reservation)),
         r_extensions_15118(std::move(r_extensions_15118)),
+        r_grid_support(std::move(r_grid_support)),
         config(config){};
 
     Everest::MqttProvider& mqtt;
@@ -114,6 +119,7 @@ public:
     const std::vector<std::unique_ptr<display_messageIntf>> r_display_message;
     const std::vector<std::unique_ptr<reservationIntf>> r_reservation;
     const std::vector<std::unique_ptr<iso15118_extensionsIntf>> r_extensions_15118;
+    const std::vector<std::unique_ptr<grid_supportIntf>> r_grid_support;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
@@ -122,6 +128,37 @@ public:
     void charging_schedules_timer_callback();
     void charging_schedules_timer_start();
     void charging_schedules_timer_stop();
+
+    everest::lib::util::monitor<GridSupportState> grid_support_state;
+    void grid_support_heartbeat_timer_callback();
+    void grid_support_heartbeat_timer_start();
+    void grid_support_heartbeat_timer_stop();
+
+    /// \brief Outcome of enabling DER for one EVSE via apply_der_capability.
+    struct DerEnableResult {
+        bool accepted{false};
+        /// \brief Per-variable rejection details when accepted is false; empty when accepted.
+        std::string rejected_details;
+    };
+
+    /// \brief Enable DER for \p evse_id from \p capability. Shared path for both the live set_capability
+    /// handler and the ready() flush of pre-construction buffered capabilities.
+    ///
+    /// Registers the EVSE before the enabling device-model write (so the block's construction-time emit
+    /// reaches it) and unregisters on rejection. Requires charge_point != nullptr.
+    DerEnableResult apply_der_capability(int32_t evse_id, const types::grid_support::DERCapability& capability);
+
+    /// \brief Drain the pre-construction buffered DER capabilities and alarms into libocpp at ready().
+    /// Only meaningful when a grid_support consumer is connected; nothing is buffered otherwise.
+    void flush_pending_grid_support();
+
+    /// \brief Handle a DER capability published by the grid_support provider for one EVSE. Buffers until the
+    /// charge point exists, then enables DER via apply_der_capability.
+    void on_grid_support_capability(const types::grid_support::EVSECapability& evse_capability);
+
+    /// \brief Forward a grid alarm raised by the grid_support provider to the CSMS. Buffers until the charge
+    /// point exists.
+    void on_grid_support_alarm(const types::grid_support::GridAlarm& alarm);
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
@@ -139,6 +176,7 @@ private:
     std::shared_ptr<device_model::EverestDeviceModelStorage> everest_device_model_storage;
     std::unique_ptr<TransactionHandler> transaction_handler;
     Everest::SteadyTimer charging_schedules_timer;
+    Everest::SteadyTimer grid_support_heartbeat_timer;
 
     std::filesystem::path ocpp_share_path;
 

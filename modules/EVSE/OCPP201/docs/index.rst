@@ -103,6 +103,32 @@ Provides: session_cost
 
 This interface is implemented to publish session costs received by the CSMS as part of the California Pricing whitepaper extension.
 
+Requires: grid_support
+^^^^^^^^^^^^^^^^^^^^^^
+
+**Interface**: :ref:`grid_support <everest_interfaces_grid_support>`
+
+This optional requirement connects the module to a DER device (inverter / grid-support hardware abstraction) implementing
+the grid_support interface, exposing the OCPP 2.1 DER / grid-code functional block (block R). The module maintains a
+per-EVSE snapshot of the DER directives currently applied by the CSMS and pushes it to the device through the
+**set_active_directives** command. When libocpp applies, schedules, clears, supersedes, or expires a DER control, the
+snapshot is rebuilt and re-sent for every registered EVSE.
+
+At startup the module pre-provisions an ``ACDERCtrlr`` or ``DCDERCtrlr`` device-model component (chosen by the EVSE's
+energy-transfer modes) with ``Available=false`` and an empty ``ModesSupported`` for every DER-capable EVSE, so no static
+device-model JSON is required for the DER controllers.
+
+The device declares its inverter capability through the ``capability`` variable. The module stores the capability, sets the
+component ``Available=true`` and writes ``ModesSupported`` through the device model (which lazily constructs the libocpp DER
+block), then pushes the current active directives filtered to the declared control types, so a freshly connected device
+immediately learns its active set. The device reports grid event faults through the ``alarm`` variable, which is forwarded
+to the CSMS as a **NotifyDERAlarm.req**. Capability and alarm updates received before the charge point is initialized are
+queued and replayed once the charge point is ready.
+
+The configuration parameter **grid_support_heartbeat_s** sets the interval (in seconds) at which the current active
+directive set is re-sent for every registered EVSE. A value of ``0`` disables the heartbeat; the set is then sent only when
+it changes.
+
 Requires: evse_manager
 ^^^^^^^^^^^^^^^^^^^^^^
 
