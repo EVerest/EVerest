@@ -12,6 +12,8 @@ namespace {
 
 using ResponseCode = message_20::datatypes::ResponseCode;
 
+constexpr uint16_t MAX_SUPPORTING_POINTS = 12;
+
 bool check_response_code(ResponseCode response_code) {
     switch (response_code) {
     case ResponseCode::OK:
@@ -28,7 +30,7 @@ bool check_response_code(ResponseCode response_code) {
 message_20::ScheduleExchangeRequest make_request(const SessionId& session) {
     message_20::ScheduleExchangeRequest req;
     setup_header(req.header, session);
-    req.max_supporting_points = 12;
+    req.max_supporting_points = MAX_SUPPORTING_POINTS;
 
     message_20::datatypes::Dynamic_SEReqControlMode control_mode{};
     control_mode.departure_time = 0;

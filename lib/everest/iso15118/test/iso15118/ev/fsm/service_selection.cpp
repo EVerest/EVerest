@@ -12,9 +12,6 @@
 using namespace iso15118;
 
 namespace {
-constexpr auto SESSION_HEADER =
-    message_20::Header{std::array<uint8_t, 8>{0x10, 0x34, 0xAB, 0x7A, 0x01, 0xF3, 0x95, 0x02}, 1691411798};
-
 message_20::ServiceSelectionResponse make_response(message_20::datatypes::ResponseCode code) {
     message_20::ServiceSelectionResponse res{};
     res.header.session_id = SESSION_HEADER.session_id;
@@ -24,14 +21,15 @@ message_20::ServiceSelectionResponse make_response(message_20::datatypes::Respon
 } // namespace
 
 SCENARIO("ISO15118-20 EV ServiceSelection emits a DC ServiceSelectionRequest on enter") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
 
     fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::ServiceSelection>(uint16_t{3})};
 
-    const auto request_message = ctx.get_request<message_20::ServiceSelectionRequest>();
+    const auto requests = drain_requests(state_helper.get_message_exchange());
+    const auto request_message = requests.get<message_20::ServiceSelectionRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
     REQUIRE(request_message->selected_energy_transfer_service.service_id == message_20::datatypes::ServiceCategory::DC);
@@ -40,7 +38,7 @@ SCENARIO("ISO15118-20 EV ServiceSelection emits a DC ServiceSelectionRequest on 
 }
 
 SCENARIO("ISO15118-20 EV ServiceSelection transitions to DC_ChargeParameterDiscovery on OK") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
@@ -57,7 +55,7 @@ SCENARIO("ISO15118-20 EV ServiceSelection transitions to DC_ChargeParameterDisco
 }
 
 SCENARIO("ISO15118-20 EV ServiceSelection stops session on FAILED response") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
@@ -74,7 +72,7 @@ SCENARIO("ISO15118-20 EV ServiceSelection stops session on FAILED response") {
 }
 
 SCENARIO("ISO15118-20 EV ServiceSelection stops session on wrong variant") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
@@ -91,7 +89,7 @@ SCENARIO("ISO15118-20 EV ServiceSelection stops session on wrong variant") {
 }
 
 SCENARIO("ISO15118-20 EV ServiceSelection stops session on mismatched response session_id") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);

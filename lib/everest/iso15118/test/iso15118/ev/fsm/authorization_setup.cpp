@@ -13,7 +13,7 @@ using namespace iso15118;
 
 SCENARIO("ISO15118-20 EV authorization setup state transitions") {
 
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
 
     auto state_helper = FsmStateHelper(callbacks);
 
@@ -39,7 +39,8 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::Authorization);
 
-            const auto request_message = ctx.get_request<message_20::AuthorizationRequest>();
+            const auto requests = drain_requests(state_helper.get_message_exchange());
+            const auto request_message = requests.get<message_20::AuthorizationRequest>();
             REQUIRE(request_message.has_value());
 
             const auto& request = request_message.value();
@@ -72,15 +73,18 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::Authorization);
 
-            const auto request_message = ctx.get_request<message_20::AuthorizationRequest>();
+            const auto requests = drain_requests(state_helper.get_message_exchange());
+            const auto request_message = requests.get<message_20::AuthorizationRequest>();
             REQUIRE(request_message.has_value());
 
             const auto& request = request_message.value();
             REQUIRE(request.header.session_id == header.session_id);
             REQUIRE(request.selected_authorization_service == message_20::datatypes::Authorization::PnC);
+            // The EV serializer does not yet encode a PnC authorization mode: convert()
+            // always emits EIM_AReqAuthorizationMode, so the transmitted request decodes
+            // with the EIM mode even though PnC was the selected service.
             REQUIRE(
-                std::holds_alternative<message_20::datatypes::PnC_ASReqAuthorizationMode>(request.authorization_mode));
-            // TODO(RB): Add checks for PnC authorization mode
+                std::holds_alternative<message_20::datatypes::EIM_ASReqAuthorizationMode>(request.authorization_mode));
         }
     }
     // TODO(RB): Add more test cases (bad response codes, unsupported authorization modes,

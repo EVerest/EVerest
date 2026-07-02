@@ -52,7 +52,10 @@ SCENARIO("EV Session stops loudly when the outbound send is refused") {
                             ++send_attempts;
                             return false;
                         },
-                        reactor, timing, "EVTESTID01"};
+                        reactor,
+                        timing,
+                        "EVTESTID01",
+                        ev::test::default_advertised_app_protocols()};
     GIVEN("A Session whose outbound seam refuses the SAP request") {
         session.start();
 

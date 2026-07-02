@@ -9,10 +9,10 @@
 
 #include <cbv2g/exi_v2gtp.h>
 
-#include <iso15118/ev/io/sdp_client.hpp>
+#include <iso15118/ev/transport/sdp_client.hpp>
 #include <iso15118/io/sdp.hpp>
 
-using iso15118::ev::io::SdpClient;
+using iso15118::ev::transport::SdpClient;
 using namespace iso15118::io;
 
 SCENARIO("SdpClient builds an SDP request") {

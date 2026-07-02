@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
-#include <iso15118/ev/io/sdp_client.hpp>
+#include <iso15118/ev/transport/sdp_client.hpp>
 
 #include <cstring>
 #include <stdexcept>
@@ -16,7 +16,7 @@
 
 #include <iso15118/detail/helper.hpp>
 
-namespace iso15118::ev::io {
+namespace iso15118::ev::transport {
 
 namespace {
 // link-local all-nodes multicast address; the SECC SDP server joins this group
@@ -139,4 +139,4 @@ void SdpClient::send_request() {
     }
 }
 
-} // namespace iso15118::ev::io
+} // namespace iso15118::ev::transport

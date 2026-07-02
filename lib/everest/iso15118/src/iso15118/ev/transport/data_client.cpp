@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
-#include <iso15118/ev/io/data_client.hpp>
+#include <iso15118/ev/transport/data_client.hpp>
 
 #include <utility>
 
@@ -8,7 +8,7 @@
 
 #include <iso15118/detail/helper.hpp>
 
-namespace iso15118::ev::io {
+namespace iso15118::ev::transport {
 
 namespace {
 // libio tcp_socket::setup expects a connect timeout in milliseconds.
@@ -143,4 +143,4 @@ bool DataClient::register_events(everest::lib::io::event::fd_event_handler& hand
     return true;
 }
 
-} // namespace iso15118::ev::io
+} // namespace iso15118::ev::transport

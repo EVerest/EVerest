@@ -48,12 +48,3 @@ private:
 };
 
 } // namespace iso15118::ev
-
-// Backward-compat aliases so the oracle tests' iso15118::ev::d20::session
-// spelling keeps compiling; the canonical types live in iso15118::ev.
-namespace iso15118::ev::d20::session {
-namespace feedback {
-using Callbacks = ::iso15118::ev::feedback::Callbacks;
-} // namespace feedback
-using Feedback = ::iso15118::ev::Feedback;
-} // namespace iso15118::ev::d20::session
