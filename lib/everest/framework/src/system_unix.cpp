@@ -13,6 +13,7 @@
 #include <signal.h>
 #include <sys/capability.h>
 #include <sys/prctl.h>
+#include <sys/signalfd.h>
 #include <unistd.h>
 
 #include <fmt/core.h>
@@ -22,6 +23,7 @@
 namespace Everest::system {
 
 const auto PARENT_DIED_SIGNAL = SIGTERM;
+const int SIGNAL_POLL_TIMEOUT_MS = 50;
 
 struct GetPasswdEntryResult {
     explicit GetPasswdEntryResult(const std::string& error_) : error(error_) {
@@ -257,11 +259,62 @@ SubProcess SubProcess::create(const std::string& run_as_user, const std::vector<
             kill(getpid(), PARENT_DIED_SIGNAL);
         }
 
+        // The manager blocks signals for signalfd polling.
+        // Child module processes must unblock SIGTERM so manager can terminate them directly.
+        // Keep SIGINT blocked in children so Ctrl+C is coordinated by manager instead of interrupting
+        // module internals (e.g. Python waits), which can produce noisy/asynchronous failures.
+        sigset_t unblocked_signals;
+        sigemptyset(&unblocked_signals);
+        sigaddset(&unblocked_signals, SIGTERM);
+        if (sigprocmask(SIG_UNBLOCK, &unblocked_signals, nullptr) != 0) {
+            handle.send_error_and_exit(fmt::format("Syscall to sigprocmask() failed ({})", strerror(errno)));
+        }
+
         return handle;
     } else {
         close(writing_end_fd);
         return {reading_end_fd, pid};
     }
+}
+
+namespace {
+int setup_signal_fd() {
+    sigset_t mask;
+
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT);
+    sigaddset(&mask, SIGTERM);
+    if (sigprocmask(SIG_BLOCK, &mask, NULL) == -1) {
+        return EXIT_FAILURE;
+    }
+
+    return signalfd(-1, &mask, 0);
+}
+} // namespace
+
+SignalPolling::SignalPolling() {
+    signal_fd = setup_signal_fd();
+    if (signal_fd != -1) {
+        pollfds[0] = {signal_fd, POLLIN, 0};
+        available = true;
+    }
+}
+
+std::optional<uint32_t> SignalPolling::poll_signal() {
+    if (not available) {
+        return std::nullopt;
+    }
+    std::optional<uint32_t> received_signal = std::nullopt;
+    auto poll_retval = poll(pollfds, 1, SIGNAL_POLL_TIMEOUT_MS);
+    if (poll_retval > 0) {
+        struct signalfd_siginfo siginfo;
+        auto read_retval = read(signal_fd, &siginfo, sizeof(siginfo));
+        if (read_retval == sizeof(siginfo)) {
+            received_signal.emplace(siginfo.ssi_signo);
+        } // TODO(kai): should we go to not available in this case?
+    }
+
+    return received_signal;
 }
 
 } // namespace Everest::system

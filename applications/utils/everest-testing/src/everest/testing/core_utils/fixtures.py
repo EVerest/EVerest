@@ -100,6 +100,7 @@ def everest_environment(request,
                  everest_config_strategies
                  ):
     standalone_module_marker = request.node.get_closest_marker('standalone_module')
+    manager_args_marker = request.node.get_closest_marker('everest_manager_args')
 
     environment_setup = EverestTestEnvironmentSetup(
         core_config=core_config,
@@ -108,6 +109,7 @@ def everest_environment(request,
         evse_security_config=evse_security_config,
         persistent_store_config=persistent_store_config,
         standalone_module=list(standalone_module_marker.args) if standalone_module_marker else None,
+        manager_extra_args=list(manager_args_marker.args) if manager_args_marker else None,
         everest_config_strategies=everest_config_strategies
     )
 
