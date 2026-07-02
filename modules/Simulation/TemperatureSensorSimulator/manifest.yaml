@@ -1,0 +1,31 @@
+description: >-
+  SIL implementation of a temperature sensor. Readings and publish interval can
+  be changed at runtime via MQTT (see module log on startup for topic names).
+provides:
+  temperature_sensor:
+    interface: temperature_sensor
+    description: Simulated temperature readings for SIL and integration tests
+    config:
+      temperature_C:
+        description: Initial temperature reading in degree Celsius
+        type: number
+        default: 25.0
+      identification:
+        description: >-
+          Temperature.identification published with each reading. Used as part
+          of the derating curve key module_id.identification.
+        type: string
+        default: internal
+      location:
+        description: Optional Temperature.location metadata
+        type: string
+        default: ""
+      publish_interval_ms:
+        description: Interval between temperature publications in milliseconds
+        type: integer
+        default: 1000
+enable_external_mqtt: true
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Pionix GmbH

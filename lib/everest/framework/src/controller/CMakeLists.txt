@@ -36,6 +36,7 @@ target_link_libraries(controller
         
         everest::log
         everest::yaml
+        ryml::ryml
 
         ${STD_FILESYSTEM_COMPAT_LIB}
 )

@@ -19,6 +19,9 @@ provides:
   powermeter:
     interface: powermeter
     description: provides the Yeti Internal Power Meter
+  temperature_sensor:
+    interface: temperature_sensor
+    description: Simulated internal temperature derived from powermeter load
   board_support:
     interface: evse_board_support
     description: provides the EVSE board support Interface to low level control pilot, relais, rcd, motor lock

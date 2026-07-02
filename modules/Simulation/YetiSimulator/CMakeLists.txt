@@ -14,6 +14,7 @@ ev_setup_cpp_module()
 target_sources(${MODULE_NAME}
     PRIVATE
         "powermeter/powermeterImpl.cpp"
+        "temperature_sensor/temperature_sensorImpl.cpp"
         "board_support/evse_board_supportImpl.cpp"
         "ev_board_support/ev_board_supportImpl.cpp"
         "rcd/ac_rcdImpl.cpp"

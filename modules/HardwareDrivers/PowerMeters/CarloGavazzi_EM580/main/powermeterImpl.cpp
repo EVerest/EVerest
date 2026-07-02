@@ -889,20 +889,25 @@ void powermeterImpl::read_powermeter_values() {
         powermeter.energy_Wh_export = energy_Wh_export;
     }
 
-    // Disable for now the temperature reading, since I can't read it in the above
-    // block read Read internal temperature (INT16, weight: Temperature*10) -
-    // register 300776 (0307h) - 1 word transport::DataVector temperature_data =
-    // p_modbus_transport->fetch(MODBUS_TEMPERATURE_ADDRESS, 1);
-    // types::temperature::Temperature temperature;
-    // temperature.temperature = Factors::TEMPERATURE *
-    //                           static_cast<float>(modbus_utils::to_int16(temperature_data,
-    //                           modbus_utils::ByteOffset{0}));
-    // temperature.location = "Internal";
-    // std::vector<types::temperature::Temperature> temperatures;
-    // temperatures.push_back(temperature);
-    // powermeter.temperatures = temperatures;
-
     if (m_transaction_support) {
+        // Read internal temperature (INT16, weight: Temperature*10) - register 300776 (0307h).
+        // Not available on EM300/ET300 series (e.g. EM340).
+        try {
+            const transport::DataVector temperature_data = p_modbus_transport->fetch(MODBUS_TEMPERATURE_ADDRESS, 1);
+            types::temperature::Temperature temperature;
+            temperature.temperature =
+                Factors::TEMPERATURE *
+                static_cast<float>(modbus_utils::to_int16(temperature_data, modbus_utils::ByteOffset{0}));
+            temperature.location = "Body";
+            temperature.identification = "Powermeter";
+            mod->p_temperature_sensor->publish_temperatures({temperature});
+            std::vector<types::temperature::Temperature> temperatures;
+            temperatures.push_back(temperature);
+            powermeter.temperatures = temperatures;
+        } catch (const std::exception& e) {
+            EVLOG_debug << "Failed to read internal temperature: " << e.what();
+        }
+
         powermeter.signed_meter_value = read_signed_meter_value();
     }
     publish_powermeter(powermeter);
