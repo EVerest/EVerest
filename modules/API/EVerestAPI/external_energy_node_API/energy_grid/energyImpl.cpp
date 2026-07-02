@@ -14,17 +14,17 @@ void energyImpl::ready() {
 }
 
 void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
-    // This is called by the local L0 EnergyManager via the Everest internal bus.
-    // Apply L0 limits ONLY when the external L1 EnergyManager is not currently active.
-    // When L1 is active, its enforce_limits (received via external MQTT in the module's
-    // ready() callback) take priority and L0 limits are discarded here.
+    // This is called by the internal EnergyManager via the Everest internal bus.
+    // Apply internal limits ONLY when the external EnergyManager is not currently active.
+    // When external is active, its enforce_limits (received via external MQTT in the module's
+    // ready() callback) take priority and internal limits are discarded here.
     if (!mod->external_active.load()) {
         for (auto& entry : mod->r_energy_consumer) {
             entry->call_enforce_limits(value);
         }
     }
-    // If external_active is true: L1 is in control, silently discard L0's limits.
-    // L1 limits are already being applied by the MQTT subscriber in external_energy_node_API.cpp.
+    // If external_active is true: external EnergyManager is in control, silently discard internal limits.
+    // External limits are already being applied by the MQTT subscriber in external_energy_node_API.cpp.
 }
 
 } // namespace energy_grid

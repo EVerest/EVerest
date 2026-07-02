@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifndef EXTERNAL_ENERGY_NODE_API_CLIENT_HPP
-#define EXTERNAL_ENERGY_NODE_API_CLIENT_HPP
+#ifndef EXTERNAL_ENERGY_NODE_CLIENT_API_HPP
+#define EXTERNAL_ENERGY_NODE_CLIENT_API_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
@@ -34,12 +34,12 @@ struct Conf {
     int cfg_communication_check_to_s;
 };
 
-class external_energy_node_API_client : public Everest::ModuleBase {
+class external_energy_node_client_API : public Everest::ModuleBase {
 public:
-    external_energy_node_API_client() = delete;
+    external_energy_node_client_API() = delete;
     // NOTE: MqttProvider& is injected by the generated ld-ev.cpp because
     //       enable_external_mqtt: true is set in the manifest.
-    external_energy_node_API_client(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
+    external_energy_node_client_API(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
                                     std::unique_ptr<generic_errorImplBase> p_main,
                                     std::unique_ptr<energyImplBase> p_energy_grid,
                                     Conf& config) :
@@ -85,4 +85,4 @@ private:
 
 } // namespace module
 
-#endif // EXTERNAL_ENERGY_NODE_API_CLIENT_HPP
+#endif // EXTERNAL_ENERGY_NODE_CLIENT_API_HPP

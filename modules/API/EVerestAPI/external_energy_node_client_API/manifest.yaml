@@ -1,11 +1,11 @@
 description: >-
-  Energy node API client (site/L1 side). Subscribes to an external_energy_node_API
+  Energy node API client (site/external side). Subscribes to an external_energy_node_API
   server's aggregated energy_flow_request over external MQTT and presents it as a
   local energy_consumer to the site-level EnergyNode (grid connection point). Routes
   enforce_limits from the local EnergyManager back to the remote cluster server via
   external MQTT.
 
-  Run one instance per cluster in the L1 (site-level) EVerest process. The
+  Run one instance per cluster in the external (site-level) EVerest process. The
   server_id config must match the module ID of the corresponding
   external_energy_node_API instance in the cluster EVerest process.
 config:

@@ -63,7 +63,7 @@ public:
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
-    // Shared state — written by MQTT path, read by energy_grid impl (local L0 path).
+    // Shared state — written by MQTT path, read by energy_grid impl (internal path).
     std::atomic<bool> external_active{false};
     std::chrono::steady_clock::time_point external_last_seen{};
 

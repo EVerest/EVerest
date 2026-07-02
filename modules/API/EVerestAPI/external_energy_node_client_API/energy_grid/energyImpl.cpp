@@ -35,7 +35,7 @@ void energyImpl::ready() {
             auto flow = nlohmann::json::parse(msg).get<types::energy::EnergyFlowRequest>();
             publish_energy_flow_request(flow);
         } catch (const std::exception& e) {
-            EVLOG_warning << "external_energy_node_API_client [" << mod->config.server_id
+            EVLOG_warning << "external_energy_node_client_API [" << mod->config.server_id
                           << "]: failed to parse energy_flow_request: " << e.what();
         }
     });
@@ -55,7 +55,7 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
         mod->mqtt.publish(mod->enforce_limits_topic,
                             serialize(to_external_api(value)));
     } catch (const std::exception& e) {
-        EVLOG_warning << "external_energy_node_API_client [" << mod->config.server_id
+        EVLOG_warning << "external_energy_node_client_API [" << mod->config.server_id
                       << "]: failed to publish enforce_limits: " << e.what();
     }
 }
