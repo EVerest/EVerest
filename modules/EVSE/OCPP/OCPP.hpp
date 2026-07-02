@@ -42,6 +42,8 @@
 #include <mutex>
 #include <queue>
 
+#include <everest/ocpp_module_common/conversions.hpp>
+#include <everest/ocpp_module_common/v16/conversions.hpp>
 #include <ocpp/common/types.hpp>
 #include <ocpp/v16/charge_point.hpp>
 #include <ocpp/v16/charge_point_configuration.hpp>
@@ -70,6 +72,10 @@ using EvseConnectorMap = std::map<int32_t, std::map<int32_t, int32_t>>;
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
+
+// Shared OCPP module support code lives in lib/everest/ocpp_module_common;
+// pull the names into the module namespace to keep call sites unchanged.
+namespace conversions = ocpp_module_common::v16::conversions;
 
 struct Conf {
     std::string ChargePointConfigPath;

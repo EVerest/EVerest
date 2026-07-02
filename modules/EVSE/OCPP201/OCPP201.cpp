@@ -7,12 +7,12 @@
 
 #include <websocketpp_utils/uri.hpp>
 
-#include <conversions.hpp>
-#include <device_model/composed_device_model_storage.hpp>
-#include <error_handling.hpp>
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/external_energy_limits/external_energy_limits.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
+#include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
+#include <everest/ocpp_module_common/error_handling.hpp>
 #include <ocpp/v2/utils.hpp>
 
 namespace {

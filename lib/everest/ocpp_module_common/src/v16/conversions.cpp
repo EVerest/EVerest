@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include <conversions.hpp>
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
+#include <everest/ocpp_module_common/v16/conversions.hpp>
 
-namespace module {
+namespace ocpp_module_common::v16 {
 namespace conversions {
 
 ocpp::FirmwareStatusNotification
@@ -106,17 +106,6 @@ ocpp::v16::Reason to_ocpp_reason(const types::evse_manager::StopTransactionReaso
         return ocpp::v16::Reason::Other;
     }
     throw std::out_of_range("Could not convert types::evse_manager::StopTransactionReason to ocpp::v16::Reason");
-}
-
-ocpp::v2::CertificateActionEnum to_ocpp_certificate_action_enum(const types::iso15118::CertificateActionEnum action) {
-    switch (action) {
-    case types::iso15118::CertificateActionEnum::Install:
-        return ocpp::v2::CertificateActionEnum::Install;
-    case types::iso15118::CertificateActionEnum::Update:
-        return ocpp::v2::CertificateActionEnum::Update;
-    }
-    throw std::out_of_range(
-        "Could not convert types::iso15118::CertificateActionEnum to ocpp::v2::CertificateActionEnum");
 }
 
 ocpp::v16::ReservationStatus to_ocpp_reservation_status(const types::reservation::ReservationResult result) {
@@ -257,18 +246,6 @@ std::vector<ocpp::Temperature> to_ocpp_temperatures(const std::vector<types::tem
     return ocpp_temperatures;
 }
 
-ocpp::v2::HashAlgorithmEnum to_ocpp_hash_algorithm_enum(const types::iso15118::HashAlgorithm hash_algorithm) {
-    switch (hash_algorithm) {
-    case types::iso15118::HashAlgorithm::SHA256:
-        return ocpp::v2::HashAlgorithmEnum::SHA256;
-    case types::iso15118::HashAlgorithm::SHA384:
-        return ocpp::v2::HashAlgorithmEnum::SHA384;
-    case types::iso15118::HashAlgorithm::SHA512:
-        return ocpp::v2::HashAlgorithmEnum::SHA512;
-    }
-    throw std::out_of_range("Could not convert types::iso15118::HashAlgorithm to ocpp::v16::HashAlgorithmEnumType");
-}
-
 types::evse_manager::StopTransactionReason to_everest_stop_transaction_reason(const ocpp::v16::Reason reason) {
     switch (reason) {
     case ocpp::v16::Reason::EmergencyStop:
@@ -307,50 +284,6 @@ types::system::ResetType to_everest_reset_type(const ocpp::v16::ResetType type) 
     throw std::out_of_range("Could not convert ocpp::v16::ResetType to types::system::ResetType");
 }
 
-types::iso15118::Status to_everest_iso15118_status(const ocpp::v2::Iso15118EVCertificateStatusEnum status) {
-    switch (status) {
-    case ocpp::v2::Iso15118EVCertificateStatusEnum::Accepted:
-        return types::iso15118::Status::Accepted;
-    case ocpp::v2::Iso15118EVCertificateStatusEnum::Failed:
-        return types::iso15118::Status::Failed;
-    }
-    throw std::out_of_range("Could not convert ocpp::v2::Iso15118EVCertificateStatusEnum to types::iso15118::Status");
-}
-
-types::iso15118::CertificateActionEnum
-to_everest_certificate_action_enum(const ocpp::v2::CertificateActionEnum action) {
-    switch (action) {
-    case ocpp::v2::CertificateActionEnum::Install:
-        return types::iso15118::CertificateActionEnum::Install;
-    case ocpp::v2::CertificateActionEnum::Update:
-        return types::iso15118::CertificateActionEnum::Update;
-    }
-    throw std::out_of_range(
-        "Could not convert ocpp::v2::CertificateActionEnum to types::iso15118::CertificateActionEnum");
-}
-
-types::authorization::CertificateStatus
-to_everest_certificate_status(const ocpp::v2::AuthorizeCertificateStatusEnum status) {
-    switch (status) {
-    case ocpp::v2::AuthorizeCertificateStatusEnum::Accepted:
-        return types::authorization::CertificateStatus::Accepted;
-    case ocpp::v2::AuthorizeCertificateStatusEnum::SignatureError:
-        return types::authorization::CertificateStatus::SignatureError;
-    case ocpp::v2::AuthorizeCertificateStatusEnum::CertificateExpired:
-        return types::authorization::CertificateStatus::CertificateExpired;
-    case ocpp::v2::AuthorizeCertificateStatusEnum::CertificateRevoked:
-        return types::authorization::CertificateStatus::CertificateRevoked;
-    case ocpp::v2::AuthorizeCertificateStatusEnum::NoCertificateAvailable:
-        return types::authorization::CertificateStatus::NoCertificateAvailable;
-    case ocpp::v2::AuthorizeCertificateStatusEnum::CertChainError:
-        return types::authorization::CertificateStatus::CertChainError;
-    case ocpp::v2::AuthorizeCertificateStatusEnum::ContractCancelled:
-        return types::authorization::CertificateStatus::ContractCancelled;
-    }
-    throw std::out_of_range(
-        "Could not convert ocpp::v2::AuthorizeCertificateStatusEnum to types::authorization::CertificateStatus");
-}
-
 types::authorization::AuthorizationStatus to_everest_authorization_status(const ocpp::v16::AuthorizationStatus status) {
     switch (status) {
     case ocpp::v16::AuthorizationStatus::Accepted:
@@ -366,34 +299,6 @@ types::authorization::AuthorizationStatus to_everest_authorization_status(const 
     }
     throw std::out_of_range(
         "Could not convert ocpp::v16::AuthorizationStatus to types::authorization::AuthorizationStatus");
-}
-
-types::authorization::AuthorizationStatus
-to_everest_authorization_status(const ocpp::v2::AuthorizationStatusEnum status) {
-    switch (status) {
-    case ocpp::v2::AuthorizationStatusEnum::Accepted:
-        return types::authorization::AuthorizationStatus::Accepted;
-    case ocpp::v2::AuthorizationStatusEnum::Blocked:
-        return types::authorization::AuthorizationStatus::Blocked;
-    case ocpp::v2::AuthorizationStatusEnum::ConcurrentTx:
-        return types::authorization::AuthorizationStatus::ConcurrentTx;
-    case ocpp::v2::AuthorizationStatusEnum::Expired:
-        return types::authorization::AuthorizationStatus::Expired;
-    case ocpp::v2::AuthorizationStatusEnum::Invalid:
-        return types::authorization::AuthorizationStatus::Invalid;
-    case ocpp::v2::AuthorizationStatusEnum::NoCredit:
-        return types::authorization::AuthorizationStatus::NoCredit;
-    case ocpp::v2::AuthorizationStatusEnum::NotAllowedTypeEVSE:
-        return types::authorization::AuthorizationStatus::NotAllowedTypeEVSE;
-    case ocpp::v2::AuthorizationStatusEnum::NotAtThisLocation:
-        return types::authorization::AuthorizationStatus::NotAtThisLocation;
-    case ocpp::v2::AuthorizationStatusEnum::NotAtThisTime:
-        return types::authorization::AuthorizationStatus::NotAtThisTime;
-    case ocpp::v2::AuthorizationStatusEnum::Unknown:
-        return types::authorization::AuthorizationStatus::Unknown;
-    }
-    throw std::out_of_range(
-        "Could not convert ocpp::v2::AuthorizationStatusEnum to types::authorization::AuthorizationStatus");
 }
 
 types::ocpp::ChargingSchedulePeriod
@@ -442,7 +347,7 @@ to_everest_registration_status(const ocpp::v16::RegistrationStatus& registration
     case ocpp::v16::RegistrationStatus::Rejected:
         return types::ocpp::RegistrationStatus::Rejected;
     }
-    throw std::out_of_range("Could not convert ocpp::v2::RegistrationStatus to types::ocpp::RegistrationStatus");
+    throw std::out_of_range("Could not convert ocpp::v16::RegistrationStatus to types::ocpp::RegistrationStatus");
 }
 
 ocpp::v16::DataTransferStatus
@@ -473,5 +378,6 @@ to_ocpp_data_transfer_response(const types::display_message::SetDisplayMessageRe
     response.data = set_display_message_response.status_info;
     return response;
 }
+
 } // namespace conversions
-} // namespace module
+} // namespace ocpp_module_common::v16

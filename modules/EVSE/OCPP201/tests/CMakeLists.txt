@@ -12,21 +12,13 @@ target_include_directories(${TEST_TARGET_NAME} PUBLIC
 
 target_sources(${TEST_TARGET_NAME}
     PRIVATE
-    error_handling_tests.cpp
     ocpp_conversions_test.cpp
-    transaction_handler_tests.cpp
-    ../error_handling.cpp
-    ../transaction_handler.cpp
-)
-
-target_compile_definitions(${TEST_TARGET_NAME}
-    PRIVATE
-    TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
 )
 
 target_link_libraries(${TEST_TARGET_NAME}
     PRIVATE
     everest::ocpp
+    everest::ocpp_module_common
     everest::framework
     nlohmann_json::nlohmann_json
     GTest::gtest_main

@@ -12,7 +12,7 @@
 
 #include <ocpp/v2/ocpp_types.hpp>
 
-namespace module {
+namespace ocpp_module_common {
 
 /// \brief TxStartStopPoint of OCPP2.0.1
 enum class TxStartStopPoint {
@@ -220,4 +220,4 @@ private:
     bool should_transaction_stop(const int32_t evse_id);
 };
 
-} // namespace module
+} // namespace ocpp_module_common

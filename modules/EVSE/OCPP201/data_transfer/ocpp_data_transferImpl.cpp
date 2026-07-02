@@ -3,7 +3,7 @@
 
 #include "ocpp_data_transferImpl.hpp"
 
-#include <conversions.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
 
 namespace module {
 namespace data_transfer {

@@ -34,12 +34,13 @@
 #include <tuple>
 #include <variant>
 
-#include <device_model/everest_device_model_storage.hpp>
-#include <error_handling.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
+#include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
+#include <everest/ocpp_module_common/error_handling.hpp>
+#include <everest/ocpp_module_common/transaction_handler.hpp>
 #include <everest/util/async/monitor.hpp>
 #include <generated/types/evse_board_support.hpp>
 #include <ocpp/v2/charge_point.hpp>
-#include <transaction_handler.hpp>
 
 using EventQueue =
     std::map<int32_t,
@@ -48,6 +49,26 @@ using EventQueue =
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
+
+// Shared OCPP module support code lives in lib/everest/ocpp_module_common;
+// pull the names into the module namespace to keep call sites unchanged.
+namespace conversions = ocpp_module_common::conversions;
+namespace device_model = ocpp_module_common::device_model;
+using ocpp_module_common::CHARGING_STATION_COMPONENT_NAME;
+using ocpp_module_common::CONNECTOR_COMPONENT_NAME;
+using ocpp_module_common::EVSE_COMPONENT_NAME;
+using ocpp_module_common::EVSE_MANAGER_INOPERATIVE_ERROR;
+using ocpp_module_common::get_component_from_error;
+using ocpp_module_common::get_event_data;
+using ocpp_module_common::load_mrec_error_map_overrides;
+using ocpp_module_common::MREC_ERROR_MAP;
+using ocpp_module_common::MREC_ERROR_MAP_TYPE;
+using ocpp_module_common::PROBLEM_VARIABLE_NAME;
+using ocpp_module_common::TransactionData;
+using ocpp_module_common::TransactionHandler;
+using ocpp_module_common::TxEvent;
+using ocpp_module_common::TxEventEffect;
+using ocpp_module_common::TxStartStopPoint;
 
 struct Conf {
     std::string MessageLogPath;

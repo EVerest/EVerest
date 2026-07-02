@@ -4,8 +4,8 @@
 #include "ocppImpl.hpp"
 #include "everest/conversions/ocpp/evse_security_ocpp.hpp"
 #include "ocpp/v2/ocpp_types.hpp"
-#include <conversions.hpp>
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
 
 namespace {
 inline module::ocpp_generic::ocppImpl::MonitorListEntry convert(const types::ocpp::ComponentVariable& cv) {
