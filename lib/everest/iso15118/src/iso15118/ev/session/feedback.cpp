@@ -33,4 +33,16 @@ void Feedback::evse_session_info(const d20::EVSESessionInfo& info) const {
     call_if_available(callbacks.evse_session_info, info);
 }
 
+void Feedback::ev_power_ready() const {
+    call_if_available(callbacks.ev_power_ready);
+}
+
+void Feedback::dc_power_on() const {
+    call_if_available(callbacks.dc_power_on);
+}
+
+void Feedback::stop_from_charger() const {
+    call_if_available(callbacks.stop_from_charger);
+}
+
 } // namespace iso15118::ev

@@ -2,6 +2,8 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
+#include <iso15118/ev/d20/state/dc_charge_loop.hpp>
+#include <iso15118/ev/d20/state/dc_welding_detection.hpp>
 #include <iso15118/ev/d20/state/power_delivery.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/power_delivery.hpp>
@@ -88,16 +90,14 @@ Result PowerDelivery::feed(Event ev) {
     using Progress = message_20::datatypes::Progress;
     switch (m_charge_progress) {
     case Progress::Start:
-        // Next state: DC_ChargeLoop (not yet implemented)
-        return {};
+        return m_ctx.create_state<DC_ChargeLoop>();
     case Progress::Stop:
-        // Next state: DC_WeldingDetection or SessionStop, decided by the caller's energy-service selection
-        return {};
+        return m_ctx.create_state<DC_WeldingDetection>();
     case Progress::Standby:
-        // Stay in PowerDelivery; see evse-side state for re-entry pattern
+        logf_info("PowerDelivery Standby accepted; staying in PowerDelivery");
         return {};
     case Progress::ScheduleRenegotiation:
-        // Next state: ScheduleExchange (not yet implemented)
+        logf_info("PowerDelivery ScheduleRenegotiation accepted; staying in PowerDelivery");
         return {};
     }
     return {};
