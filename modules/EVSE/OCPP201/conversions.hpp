@@ -8,6 +8,7 @@
 #include "ocpp/v2/types.hpp"
 #include <generated/types/display_message.hpp>
 #include <generated/types/evse_manager.hpp>
+#include <generated/types/grid_support.hpp>
 #include <generated/types/iso15118.hpp>
 #include <generated/types/ocpp.hpp>
 #include <generated/types/reservation.hpp>

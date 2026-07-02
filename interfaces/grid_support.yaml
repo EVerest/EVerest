@@ -1,0 +1,35 @@
+description: >-
+  Interface implemented by a DER device (inverter / grid-support hardware
+  abstraction). A protocol backend optionally requires this interface to push
+  DER/grid-code directives down to the device, and subscribes to the device's
+  declared capability and to the grid alarms it raises.
+cmds:
+  set_active_directives:
+    description: >-
+      Apply the set of currently active DER directives for one EVSE. Called by
+      the protocol backend whenever the active set changes, and on the backend
+      heartbeat.
+    arguments:
+      directives:
+        description: The active directive set to apply for one EVSE.
+        type: object
+        $ref: /grid_support#/ActiveDirectiveSet
+    result:
+      description: Whether the device accepted the directive set.
+      type: object
+      $ref: /grid_support#/SetDirectivesResponse
+vars:
+  capability:
+    description: >-
+      The device's DER capability for an EVSE. Published on startup and on every
+      capability change. The protocol backend uses it to enable its DER
+      device-model component and advertise the supported control modes.
+    type: object
+    $ref: /grid_support#/EVSECapability
+  alarm:
+    description: >-
+      Grid event alarm raised by the device. alarm_ended=false marks the
+      condition turning on, alarm_ended=true marks it clearing/turning off.
+      Forwarded upstream by the protocol backend.
+    type: object
+    $ref: /grid_support#/GridAlarm

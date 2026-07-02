@@ -696,33 +696,6 @@ types:
           range dedicated for cycling activity.
         type: number
         minimum: 0
-  DERControl:
-    description: >-
-      Name of control settings to clear. Not used when _controlId_ is provided.
-    type: string
-    enum:
-      - EnterService
-      - FreqDroop
-      - FreqWatt
-      - FixedPFAbsorb
-      - FixedPFInject
-      - FixedVar
-      - Gradients
-      - HFMustTrip
-      - HFMayTrip
-      - HVMustTrip
-      - HVMomCess
-      - HVMayTrip
-      - LimitMaxDischarge
-      - LFMustTrip
-      - LVMustTrip
-      - LVMomCess
-      - LVMayTrip
-      - PowerMonitoringMustTrip
-      - VoltVar
-      - VoltWatt
-      - WattPF
-      - WattVar
   ServiceCategory:
     description: Different service (energy and VAS) in ISO15118-20
     type: string
@@ -1125,7 +1098,7 @@ types:
         type: array
         items:
           type: string
-          $ref: /iso15118#/DERControl
+          $ref: /grid_support#/DirectiveType
         minItems: 1
       ev_over_excited_max_discharge_power:
         description: >-
