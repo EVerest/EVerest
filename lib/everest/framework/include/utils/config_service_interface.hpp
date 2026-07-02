@@ -28,7 +28,7 @@ enum class SetActiveSlotStatus {
     Success,
     NoChangeRequired,
     DoesNotExist,
-    Rejected
+    Failed
 };
 
 enum class DeleteSlotStatus {

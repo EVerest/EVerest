@@ -2,14 +2,14 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <atomic>
 #include <functional>
+#include <future>
 #include <memory>
 #include <string>
-#include <vector>
-#include <atomic>
-#include <future>
 #include <thread>
 #include <type_traits>
+#include <vector>
 
 #include <everest/util/queue/thread_safe_queue.hpp>
 
@@ -113,8 +113,7 @@ private:
 
     void process_queue();
 
-    template <typename Func>
-    auto post_to_actor(Func&& f) {
+    template <typename Func> auto post_to_actor(Func&& f) {
         using ReturnType = std::invoke_result_t<Func>;
         auto promise = std::make_shared<std::promise<ReturnType>>();
         auto future = promise->get_future();
@@ -137,11 +136,17 @@ private:
     SetActiveSlotStatus internal_mark_active_slot(int slot_id);
     DeleteSlotStatus internal_delete_slot(int slot_id);
     DuplicateSlotResult internal_duplicate_slot(int slot_id, std::optional<std::string> description);
-    LoadFromYamlResult internal_load_from_yaml(const std::string& raw_yaml, std::optional<std::string> description, std::optional<int> slot_id);
+    LoadFromYamlResult internal_load_from_yaml(const std::string& raw_yaml,
+                                               const std::optional<std::string>& description,
+                                               std::optional<int> slot_id);
     bool internal_set_description(int slot_id, const std::string& description);
     GetConfigurationResult internal_get_configuration(int slot_id);
-    SetConfigParameterResult internal_set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates, const Origin& origin);
-    GetConfigParametersResult internal_get_config_parameters(int slot_id, const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters);
+    SetConfigParameterResult internal_set_config_parameters(int slot_id,
+                                                            const std::vector<ConfigParameterUpdate>& updates,
+                                                            const Origin& origin);
+    GetConfigParametersResult
+    internal_get_config_parameters(int slot_id,
+                                   const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters);
     void internal_set_modules_stopped();
     void internal_set_modules_running();
     void internal_set_modules_starting();

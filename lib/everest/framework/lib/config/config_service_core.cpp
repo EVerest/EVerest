@@ -6,8 +6,8 @@
 #include <optional>
 
 #include <date/tz.h>
-#include <fmt/format.h>
 #include <everest/logging.hpp>
+#include <fmt/format.h>
 
 #include <everest/utils/yaml_loader.hpp>
 #include <utils/config.hpp>
@@ -132,7 +132,7 @@ void ConfigServiceCore::internal_reinitialize_from_db(bool force_reload) {
     if (module_status_ != ActiveSlotStatus::Stopped) {
         return;
     }
-    int new_active_slot_id = slot_manager_.get_next_boot_slot_id();
+    const int new_active_slot_id = slot_manager_.get_next_boot_slot_id();
     bool slot_changed = (new_active_slot_id != active_slot_id_);
     if (slot_changed or force_reload) {
         slot_changed = true;
@@ -215,13 +215,16 @@ SetActiveSlotStatus ConfigServiceCore::mark_active_slot(int slot_id) {
     return post_to_actor([this, slot_id]() { return internal_mark_active_slot(slot_id); });
 }
 SetActiveSlotStatus ConfigServiceCore::internal_mark_active_slot(int slot_id) {
-    int next_boot_slot_id = slot_manager_.get_next_boot_slot_id();
+    const int next_boot_slot_id = slot_manager_.get_next_boot_slot_id();
     if (slot_id == next_boot_slot_id) {
         return SetActiveSlotStatus::NoChangeRequired;
     }
+    if (not slot_manager_.exists(slot_id)) {
+        return SetActiveSlotStatus::DoesNotExist;
+    }
     const auto status = slot_manager_.set_next_boot_slot_id(slot_id);
     if (status != everest::config::GenericResponseStatus::OK) {
-        return SetActiveSlotStatus::DoesNotExist;
+        return SetActiveSlotStatus::Failed;
     }
     publish_active_slot_update();
     return SetActiveSlotStatus::Success;
@@ -251,7 +254,7 @@ DuplicateSlotResult ConfigServiceCore::duplicate_slot(int slot_id, std::optional
     return post_to_actor([this, slot_id, description]() { return internal_duplicate_slot(slot_id, description); });
 }
 DuplicateSlotResult ConfigServiceCore::internal_duplicate_slot(int slot_id, std::optional<std::string> description) {
-    return slot_manager_.duplicate_slot(slot_id, description);
+    return slot_manager_.duplicate_slot(slot_id, std::move(description));
 }
 
 LoadFromYamlResult ConfigServiceCore::load_from_yaml(const std::string& raw_yaml,
@@ -261,14 +264,14 @@ LoadFromYamlResult ConfigServiceCore::load_from_yaml(const std::string& raw_yaml
         [this, raw_yaml, description, slot_id]() { return internal_load_from_yaml(raw_yaml, description, slot_id); });
 }
 LoadFromYamlResult ConfigServiceCore::internal_load_from_yaml(const std::string& raw_yaml,
-                                                              std::optional<std::string> description,
+                                                              const std::optional<std::string>& description,
                                                               std::optional<int> slot_id) {
     int target_slot_id = slot_id.value_or(slot_manager_.next_slot_id());
 
     if (target_slot_id == active_slot_id_ and module_status_ != ActiveSlotStatus::Stopped) {
         return {false, std::nullopt, "Cannot load YAML into the active slot when modules are running"};
     }
-    bool into_new_slot = not slot_manager_.exists(target_slot_id);
+    const bool into_new_slot = not slot_manager_.exists(target_slot_id);
     try {
         const auto json_config = Everest::load_yaml_from_string(raw_yaml);
         if (not json_config.contains("active_modules")) {

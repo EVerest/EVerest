@@ -306,13 +306,20 @@ int SqliteConfigSlotManager::get_next_boot_slot_id() {
 }
 
 GenericResponseStatus SqliteConfigSlotManager::set_next_boot_slot_id(int slot_id) {
-    if (exists(slot_id)) {
+    if (not exists(slot_id)) {
+        return GenericResponseStatus::Failed;
+    }
+    try {
         auto stmt = this->db->new_statement("UPDATE BOOT_CONFIG SET NEXT_BOOT_SLOT_ID = ?;");
         stmt->bind_int(1, slot_id);
-        stmt->step();
+        if (stmt->step() != SQLITE_DONE) {
+            return GenericResponseStatus::Failed;
+        }
         return GenericResponseStatus::OK;
+    } catch (const std::exception& e) {
+        EVLOG_error << "Failed to set next boot slot id to " << slot_id << ": " << e.what();
+        return GenericResponseStatus::Failed;
     }
-    return GenericResponseStatus::Failed;
 }
 
 GenericResponseStatus SqliteConfigSlotManager::delete_slot(int slot_id) {
