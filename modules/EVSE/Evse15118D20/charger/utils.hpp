@@ -121,7 +121,7 @@ constexpr types::iso15118::V2gMessageId convert_v2g_message_type(iso15118::messa
 }
 
 std::optional<float> convert_from_optional(const std::optional<dt::RationalNumber>& in);
-std::optional<dt::RationalNumber> convert_from_optional(const std::optional<float>& in);
+std::optional<dt::RationalNumber> convert_from_optional(const std::optional<double>& in);
 std::optional<float> convert_from_optional(const std::optional<uint32_t>& in);
 
 types::iso15118::AppProtocol convert_app_protocol(const iso15118::message_20::SupportedAppProtocol& app_protocol);

@@ -60,7 +60,7 @@ std::optional<float> convert_from_optional(const std::optional<dt::RationalNumbe
     return (in.has_value()) ? std::make_optional(dt::from_RationalNumber(*in)) : std::nullopt;
 }
 
-std::optional<dt::RationalNumber> convert_from_optional(const std::optional<float>& in) {
+std::optional<dt::RationalNumber> convert_from_optional(const std::optional<double>& in) {
     return (in.has_value()) ? std::make_optional(dt::from_float(*in)) : std::nullopt;
 }
 

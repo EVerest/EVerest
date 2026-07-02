@@ -1240,7 +1240,7 @@ TEST_F(DERControlTest, SetDERControl_RejectsCurveWithExcessivePoints) {
     req.curve->curveData.clear();
     for (int i = 0; i < 1024; ++i) {
         DERCurvePoints p;
-        p.x = static_cast<float>(i);
+        p.x = static_cast<double>(i);
         p.y = 0.0F;
         req.curve->curveData.push_back(p);
     }
@@ -1260,7 +1260,7 @@ TEST_F(DERControlTest, SetDERControl_RejectsNonFiniteDuration) {
     DERControl der_control(functional_block_context);
 
     auto req = make_freq_droop_request("ctrl-inf-dur", false, 0);
-    req.freqDroop->duration = std::numeric_limits<float>::infinity();
+    req.freqDroop->duration = std::numeric_limits<double>::infinity();
     req.freqDroop->startTime = ocpp::DateTime();
     auto msg = make_set_der_control_msg(req);
 
@@ -1746,7 +1746,7 @@ TEST_F(DERControlTest, SetDERControl_Rejects_NaN_In_CurvePoint) {
     auto req = make_volt_watt_curve_request("ctrl-nan-curve", /*is_default=*/true, /*priority=*/0);
     ASSERT_TRUE(req.curve.has_value());
     ASSERT_FALSE(req.curve->curveData.empty());
-    req.curve->curveData.front().x = std::numeric_limits<float>::quiet_NaN();
+    req.curve->curveData.front().x = std::numeric_limits<double>::quiet_NaN();
     auto msg = make_set_der_control_msg(req);
 
     // Must NOT reach persistence.
@@ -1764,7 +1764,7 @@ TEST_F(DERControlTest, SetDERControl_Rejects_Inf_In_FreqDroop) {
     DERControl der_control(functional_block_context);
 
     auto req = make_freq_droop_request("ctrl-inf-fd", /*is_default=*/true, /*priority=*/0);
-    req.freqDroop->overDroop = std::numeric_limits<float>::infinity();
+    req.freqDroop->overDroop = std::numeric_limits<double>::infinity();
     auto msg = make_set_der_control_msg(req);
 
     EXPECT_CALL(database_handler_mock, insert_or_update_der_control(_, _, _, _, _, _, _, _)).Times(0);
@@ -1786,7 +1786,7 @@ TEST_F(DERControlTest, SetDERControl_Rejects_NaN_In_FixedVar) {
     req.controlType = DERControlEnum::FixedVar;
     FixedVar fv;
     fv.priority = 0;
-    fv.setpoint = std::numeric_limits<float>::quiet_NaN();
+    fv.setpoint = std::numeric_limits<double>::quiet_NaN();
     fv.unit = DERUnitEnum::PctMaxVar;
     req.fixedVar = fv;
     auto msg = make_set_der_control_msg(req);
@@ -2144,7 +2144,7 @@ TEST_F(DERControlTest, SetDERControl_PersistsImmediateSupersedeInDisplacedIds) {
 
     EXPECT_CALL(database_handler_mock, insert_or_update_der_control(_, _, _, _, _, _, _, _))
         .WillOnce(Invoke([](const std::string& /*id*/, bool /*isd*/, const std::string& /*ct*/, bool /*sup*/,
-                            int32_t /*p*/, const std::optional<std::string>& /*st*/, const std::optional<float>& /*d*/,
+                            int32_t /*p*/, const std::optional<std::string>& /*st*/, const std::optional<double>& /*d*/,
                             const std::string& control_json) {
             auto j = json::parse(control_json);
             ASSERT_TRUE(j.contains("displacedIds")) << control_json;
@@ -2194,7 +2194,7 @@ TEST_F(DERControlTest, SetDERControl_CapsSupersededIdsAndDisplacedIdsAt24) {
 
     EXPECT_CALL(database_handler_mock, insert_or_update_der_control(_, _, _, _, _, _, _, _))
         .WillOnce(Invoke([](const std::string& /*id*/, bool /*isd*/, const std::string& /*ct*/, bool /*sup*/,
-                            int32_t /*p*/, const std::optional<std::string>& /*st*/, const std::optional<float>& /*d*/,
+                            int32_t /*p*/, const std::optional<std::string>& /*st*/, const std::optional<double>& /*d*/,
                             const std::string& control_json) {
             auto j = json::parse(control_json);
             ASSERT_TRUE(j.contains("displacedIds"));

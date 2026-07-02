@@ -67,7 +67,7 @@ std::string generate_token_hash(const IdToken& token);
 ocpp::DateTime align_timestamp(const DateTime timestamp, std::chrono::seconds align_interval);
 
 /// \brief Returns the total Power_Active_Import value from the \p meter_value or std::nullopt if it is not present
-std::optional<float> get_total_power_active_import(const MeterValue& meter_value);
+std::optional<double> get_total_power_active_import(const MeterValue& meter_value);
 
 /// \brief Determines if a given \p security_event is critical as defined in the OCPP 2.0.1 appendix
 bool is_critical(const std::string& security_event);

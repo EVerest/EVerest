@@ -172,11 +172,11 @@ SessionStartedReason string_to_session_started_reason(const std::string& s);
 std::ostream& operator<<(std::ostream& os, const SessionStartedReason& session_started_reason);
 
 struct Current {
-    std::optional<float> DC; ///< DC current
-    std::optional<float> L1; ///< AC L1 value only
-    std::optional<float> L2; ///< AC L2 value only
-    std::optional<float> L3; ///< AC L3 value only
-    std::optional<float> N;  ///< AC Neutral value only
+    std::optional<double> DC; ///< DC current
+    std::optional<double> L1; ///< AC L1 value only
+    std::optional<double> L2; ///< AC L2 value only
+    std::optional<double> L3; ///< AC L3 value only
+    std::optional<double> N;  ///< AC Neutral value only
 
     /// \brief Conversion from a given Current \p k to a given json object \p j
     friend void to_json(json& j, const Current& k);
@@ -189,10 +189,10 @@ struct Current {
     friend std::ostream& operator<<(std::ostream& os, const Current& k);
 };
 struct Voltage {
-    std::optional<float> DC; ///< DC voltage
-    std::optional<float> L1; ///< AC L1 value only
-    std::optional<float> L2; ///< AC L2 value only
-    std::optional<float> L3; ///< AC L3 value only
+    std::optional<double> DC; ///< DC voltage
+    std::optional<double> L1; ///< AC L1 value only
+    std::optional<double> L2; ///< AC L2 value only
+    std::optional<double> L3; ///< AC L3 value only
 
     /// \brief Conversion from a given Voltage \p k to a given json object \p j
     friend void to_json(json& j, const Voltage& k);
@@ -205,9 +205,9 @@ struct Voltage {
     friend std::ostream& operator<<(std::ostream& os, const Voltage& k);
 };
 struct Frequency {
-    float L1;                ///< AC L1 value
-    std::optional<float> L2; ///< AC L2 value
-    std::optional<float> L3; ///< AC L3 value
+    double L1;                ///< AC L1 value
+    std::optional<double> L2; ///< AC L2 value
+    std::optional<double> L3; ///< AC L3 value
 
     /// \brief Conversion from a given Frequency \p k to a given json object \p j
     friend void to_json(json& j, const Frequency& k);
@@ -220,10 +220,10 @@ struct Frequency {
     friend std::ostream& operator<<(std::ostream& os, const Frequency& k);
 };
 struct Power {
-    float total;             ///< DC / AC Sum value
-    std::optional<float> L1; ///< AC L1 value only
-    std::optional<float> L2; ///< AC L2 value only
-    std::optional<float> L3; ///< AC L3 value only
+    double total;             ///< DC / AC Sum value
+    std::optional<double> L1; ///< AC L1 value only
+    std::optional<double> L2; ///< AC L2 value only
+    std::optional<double> L3; ///< AC L3 value only
 
     /// \brief Conversion from a given Power \p k to a given json object \p j
     friend void to_json(json& j, const Power& k);
@@ -236,10 +236,10 @@ struct Power {
     friend std::ostream& operator<<(std::ostream& os, const Power& k);
 };
 struct Energy {
-    float total;             ///< DC / AC Sum value (which is relevant for billing)
-    std::optional<float> L1; ///< AC L1 value only
-    std::optional<float> L2; ///< AC L2 value only
-    std::optional<float> L3; ///< AC L3 value only
+    double total;             ///< DC / AC Sum value (which is relevant for billing)
+    std::optional<double> L1; ///< AC L1 value only
+    std::optional<double> L2; ///< AC L2 value only
+    std::optional<double> L3; ///< AC L3 value only
 
     /// \brief Conversion from a given Energy \p k to a given json object \p j
     friend void to_json(json& j, const Energy& k);
@@ -252,10 +252,10 @@ struct Energy {
     friend std::ostream& operator<<(std::ostream& os, const Energy& k);
 };
 struct ReactivePower {
-    float total;                 ///< VAR total
-    std::optional<float> VARphA; ///< VAR phase A
-    std::optional<float> VARphB; ///< VAR phase B
-    std::optional<float> VARphC; ///< VAR phase C
+    double total;                 ///< VAR total
+    std::optional<double> VARphA; ///< VAR phase A
+    std::optional<double> VARphB; ///< VAR phase B
+    std::optional<double> VARphC; ///< VAR phase C
 
     /// \brief Conversion from a given ReactivePower \p k to a given json object \p j
     friend void to_json(json& j, const ReactivePower& k);
@@ -293,7 +293,7 @@ struct Powermeter {
 };
 
 struct StateOfCharge {
-    float value = 0;                     ///< State of Charge in percent
+    double value = 0;                    ///< State of Charge in percent
     std::optional<std::string> location; ///< Location of the State of Charge measurement
 
     /// \brief Conversion from a given StateOfCharge \p k to a given json object \p j
@@ -308,7 +308,7 @@ struct StateOfCharge {
 };
 
 struct Temperature {
-    float value = 0;                     ///< Temperature in degree Celsius
+    double value = 0;                    ///< Temperature in degree Celsius
     std::optional<std::string> location; ///< Location of the Temperature measurement
 
     /// \brief Conversion from a given Temperature \p k to a given json object \p j
@@ -323,7 +323,7 @@ struct Temperature {
 };
 
 struct RPM {
-    float value = 0;                     ///< RPM
+    double value = 0;                    ///< RPM
     std::optional<std::string> location; ///< Location of the RPM measurement
 
     /// \brief Conversion from a given RPM \p k to a given json object \p j

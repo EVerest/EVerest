@@ -319,7 +319,7 @@ public:
     /// \param id_tag_end
     /// \param signed_meter_value e.g. in OCMF format
     void on_transaction_stopped(const std::int32_t connector, const std::string& session_id, const Reason& reason,
-                                ocpp::DateTime timestamp, float energy_wh_import,
+                                ocpp::DateTime timestamp, double energy_wh_import,
                                 std::optional<CiString<20>> id_tag_end, std::optional<std::string> signed_meter_value);
 
     /// \brief This function should be called when EV indicates that it suspends charging on the given \p connector

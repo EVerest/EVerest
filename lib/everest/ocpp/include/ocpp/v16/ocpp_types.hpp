@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 // This code is generated using the generator in 'src/code_generator/common`, please do not edit manually
 
 #ifndef OCPP_V16_OCPP_TYPES_HPP
@@ -49,7 +49,7 @@ std::ostream& operator<<(std::ostream& os, const CertificateHashDataType& k);
 
 struct ChargingSchedulePeriod {
     std::int32_t startPeriod;
-    float limit;
+    double limit;
     std::optional<std::int32_t> numberPhases;
 };
 /// \brief Conversion from a given ChargingSchedulePeriod \p k to a given json object \p j
@@ -67,7 +67,7 @@ struct ChargingSchedule {
     std::vector<ChargingSchedulePeriod> chargingSchedulePeriod;
     std::optional<std::int32_t> duration;
     std::optional<ocpp::DateTime> startSchedule;
-    std::optional<float> minChargingRate;
+    std::optional<double> minChargingRate;
 };
 /// \brief Conversion from a given ChargingSchedule \p k to a given json object \p j
 void to_json(json& j, const ChargingSchedule& k);

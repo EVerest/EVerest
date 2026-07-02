@@ -29,15 +29,15 @@ using namespace std::chrono;
 
 constexpr std::int32_t default_stack_level{0};
 constexpr std::int32_t default_numberPhases{3};
-constexpr float default_limit_A{48.0};
-constexpr float default_limit_W{33120.0};
+constexpr double default_limit_A{48.0};
+constexpr double default_limit_W{33120.0};
 
-float to_watts(const ChargingSchedulePeriod& period) {
+double to_watts(const ChargingSchedulePeriod& period) {
     const int nPhases = period.numberPhases.value_or(ocpp::v16::DEFAULT_AND_MAX_NUMBER_PHASES);
     return period.limit * nPhases * 230;
 }
 
-float to_amps(const ChargingSchedulePeriod& period) {
+double to_amps(const ChargingSchedulePeriod& period) {
     const int nPhases = period.numberPhases.value_or(ocpp::v16::DEFAULT_AND_MAX_NUMBER_PHASES);
     return period.limit / (nPhases * 230);
 }

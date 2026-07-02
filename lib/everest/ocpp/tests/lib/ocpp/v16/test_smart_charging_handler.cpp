@@ -85,7 +85,7 @@ protected:
         std::vector<ChargingSchedulePeriod> chargingSchedulePeriod;
         std::optional<std::int32_t> duration;
         std::optional<ocpp::DateTime> startSchedule;
-        std::optional<float> minChargingRate;
+        std::optional<double> minChargingRate;
 
         return ChargingSchedule{chargingRateUnit, chargingSchedulePeriod, duration, startSchedule, minChargingRate};
     }
@@ -165,7 +165,7 @@ protected:
         auto chargingSchedulePeriod = std::vector<ChargingSchedulePeriod>{ChargingSchedulePeriod{0, 2000, 1}};
         auto duration = 1080;
         auto startSchedule = ocpp::DateTime("2024-01-17T17:00:00");
-        float minChargingRate = 0;
+        double minChargingRate = 0;
         auto chargingSchedule =
             ChargingSchedule{chargingRateUnit, chargingSchedulePeriod, duration, startSchedule, minChargingRate};
 
@@ -195,7 +195,7 @@ protected:
         auto chargingSchedulePeriod = std::vector<ChargingSchedulePeriod>{ChargingSchedulePeriod{0, 999999, 1}};
         auto duration = 0;
         auto startSchedule = ocpp::DateTime("2020-01-19T00:00:00");
-        float minChargingRate = 0;
+        double minChargingRate = 0;
         auto chargingSchedule =
             ChargingSchedule{chargingRateUnit, chargingSchedulePeriod, duration, startSchedule, minChargingRate};
 
@@ -473,7 +473,7 @@ TEST_F(ChargepointTestFixture, ValidateProfile__ValidProfile_InvalidChargingSche
 TEST_F(ChargepointTestFixture, ValidateProfile__PeriodLimitIsInfinity__ReturnsFalse) {
     auto profile = createChargingProfile(createChargeSchedule(ChargingRateUnit::A));
     profile.chargingSchedule.chargingSchedulePeriod = {
-        ChargingSchedulePeriod{0, std::numeric_limits<float>::infinity(), std::nullopt}};
+        ChargingSchedulePeriod{0, std::numeric_limits<double>::infinity(), std::nullopt}};
     auto handler = createSmartChargingHandler();
 
     const std::vector<ChargingRateUnit>& charging_schedule_allowed_charging_rate_units{ChargingRateUnit::A};
@@ -487,7 +487,7 @@ TEST_F(ChargepointTestFixture, ValidateProfile__PeriodLimitIsInfinity__ReturnsFa
 TEST_F(ChargepointTestFixture, ValidateProfile__MinChargingRateIsInfinity__ReturnsFalse) {
     auto profile = createChargingProfile(createChargeSchedule(ChargingRateUnit::A));
     profile.chargingSchedule.chargingSchedulePeriod = {ChargingSchedulePeriod{0, 10.0f, std::nullopt}};
-    profile.chargingSchedule.minChargingRate = std::numeric_limits<float>::infinity();
+    profile.chargingSchedule.minChargingRate = std::numeric_limits<double>::infinity();
     auto handler = createSmartChargingHandler();
 
     const std::vector<ChargingRateUnit>& charging_schedule_allowed_charging_rate_units{ChargingRateUnit::A};

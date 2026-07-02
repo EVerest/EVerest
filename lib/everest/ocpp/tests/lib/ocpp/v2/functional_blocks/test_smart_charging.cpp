@@ -316,7 +316,7 @@ TEST_F(SmartChargingTest, K01FR35_IfChargingSchedulePeriodsAreNotInChonologicalO
 TEST_F(SmartChargingTest, IfChargingSchedulePeriodLimitIsInfinity_ThenProfileIsInvalid) {
     ChargingSchedulePeriod period;
     period.startPeriod = 0;
-    period.limit = std::numeric_limits<float>::infinity();
+    period.limit = std::numeric_limits<double>::infinity();
     auto profile = create_charging_profile(DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
                                            create_charge_schedule(ChargingRateUnitEnum::A, {period}), DEFAULT_TX_ID);
 
@@ -328,7 +328,7 @@ TEST_F(SmartChargingTest, IfChargingSchedulePeriodLimitIsInfinity_ThenProfileIsI
 TEST_F(SmartChargingTest, IfChargingSchedulePeriodLimitIsNaN_ThenProfileIsInvalid) {
     ChargingSchedulePeriod period;
     period.startPeriod = 0;
-    period.limit = std::numeric_limits<float>::quiet_NaN();
+    period.limit = std::numeric_limits<double>::quiet_NaN();
     auto profile = create_charging_profile(DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
                                            create_charge_schedule(ChargingRateUnitEnum::A, {period}), DEFAULT_TX_ID);
 
@@ -339,7 +339,7 @@ TEST_F(SmartChargingTest, IfChargingSchedulePeriodLimitIsNaN_ThenProfileIsInvali
 
 TEST_F(SmartChargingTest, IfChargingScheduleMinChargingRateIsInfinity_ThenProfileIsInvalid) {
     auto schedule = create_charge_schedule(ChargingRateUnitEnum::A, create_charging_schedule_periods(0));
-    schedule.minChargingRate = std::numeric_limits<float>::infinity();
+    schedule.minChargingRate = std::numeric_limits<double>::infinity();
     auto profile =
         create_charging_profile(DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile, schedule, DEFAULT_TX_ID);
 
@@ -350,7 +350,7 @@ TEST_F(SmartChargingTest, IfChargingScheduleMinChargingRateIsInfinity_ThenProfil
 
 TEST_F(SmartChargingTest, IfChargingSchedulePowerToleranceIsNaN_ThenProfileIsInvalid) {
     auto schedule = create_charge_schedule(ChargingRateUnitEnum::A, create_charging_schedule_periods(0));
-    schedule.powerTolerance = std::numeric_limits<float>::quiet_NaN();
+    schedule.powerTolerance = std::numeric_limits<double>::quiet_NaN();
     auto profile =
         create_charging_profile(DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile, schedule, DEFAULT_TX_ID);
 
@@ -363,7 +363,7 @@ TEST_F(SmartChargingTest, IfChargingScheduleLimitAtSoCIsInfinity_ThenProfileIsIn
     auto schedule = create_charge_schedule(ChargingRateUnitEnum::A, create_charging_schedule_periods(0));
     LimitAtSoC limit_at_soc;
     limit_at_soc.soc = 80;
-    limit_at_soc.limit = std::numeric_limits<float>::infinity();
+    limit_at_soc.limit = std::numeric_limits<double>::infinity();
     schedule.limitAtSoC = limit_at_soc;
     auto profile =
         create_charging_profile(DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile, schedule, DEFAULT_TX_ID);
@@ -377,7 +377,7 @@ TEST_F(SmartChargingTest, IfV2XFreqWattCurveFrequencyIsInfinity_ThenProfileIsInv
     ChargingSchedulePeriod period;
     period.startPeriod = 0;
     V2XFreqWattPoint point;
-    point.frequency = std::numeric_limits<float>::infinity();
+    point.frequency = std::numeric_limits<double>::infinity();
     point.power = 1000.0f;
     period.v2xFreqWattCurve = {point};
     auto profile = create_charging_profile(DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
@@ -393,7 +393,7 @@ TEST_F(SmartChargingTest, IfV2XSignalWattCurvePowerIsNaN_ThenProfileIsInvalid) {
     period.startPeriod = 0;
     V2XSignalWattPoint point;
     point.signal = 0;
-    point.power = std::numeric_limits<float>::quiet_NaN();
+    point.power = std::numeric_limits<double>::quiet_NaN();
     period.v2xSignalWattCurve = {point};
     auto profile = create_charging_profile(DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
                                            create_charge_schedule(ChargingRateUnitEnum::A, {period}), DEFAULT_TX_ID);

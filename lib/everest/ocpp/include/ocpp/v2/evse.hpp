@@ -189,7 +189,7 @@ private:
     boost::asio::io_context io_context;
 
     /// \brief gets the active import energy meter value from meter_value, normalized to Wh.
-    std::optional<float> get_active_import_register_meter_value();
+    std::optional<double> get_active_import_register_meter_value();
 
     /// \brief function to check if the max energy has been exceeded, calls pause_charging_callback if so.
     void check_max_energy_on_invalid_id();

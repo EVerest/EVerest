@@ -65,9 +65,9 @@ bool is_monitor_active(MonitoringBaseEnum active_monitoring_base, const Variable
     return true;
 }
 
-std::chrono::time_point<std::chrono::system_clock> get_next_clock_aligned_point(float monitor_interval) {
+std::chrono::time_point<std::chrono::system_clock> get_next_clock_aligned_point(double monitor_interval) {
     auto monitor_seconds =
-        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::duration<float>(monitor_interval));
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::duration<double>(monitor_interval));
 
     auto sys_time_now = std::chrono::system_clock::now();
     auto hours_now = std::chrono::floor<std::chrono::hours>(sys_time_now);
@@ -457,7 +457,7 @@ void MonitoringUpdater::process_monitor_meta_internal(UpdaterMonitorMeta& update
     if (updater_meta_data.type == UpdateMonitorMetaType::PERIODIC) {
         // Monitor seconds interval
         auto monitor_seconds =
-            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::duration<float>(monitor.value));
+            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::duration<double>(monitor.value));
 
         // If we match the trigger time
         bool matches_time = false;

@@ -243,7 +243,7 @@
         "limits_root_side": {
           "ac_max_current_A": {
             "source": "external_limit_1_setpoint",
-            "value": 6.147826194763184
+            "value": 6.147826090455055
           },
           "ac_max_phase_count": {
             "source": "grid_connection_phase,external_limit_1_phase,EVSE1_phase",
@@ -251,7 +251,7 @@
           },
           "total_power_W": {
             "source": "external_limit_1_setpoint",
-            "value": 4242.0
+            "value": 4242.0000076293945
           }
         },
         "schedule": [
@@ -259,7 +259,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "external_limit_1_setpoint",
-                "value": 6.147826194763184
+                "value": 6.147826090455055
               },
               "ac_max_phase_count": {
                 "source": "grid_connection_phase,external_limit_1_phase,EVSE1_phase",
@@ -267,7 +267,7 @@
               },
               "total_power_W": {
                 "source": "external_limit_1_setpoint",
-                "value": 4242.0
+                "value": 4242.0000076293945
               }
             },
             "timestamp": "2024-12-17T13:00:00.000Z"
@@ -276,7 +276,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "external_limit_1_setpoint",
-                "value": 6.147826194763184
+                "value": 6.147826090455055
               },
               "ac_max_phase_count": {
                 "source": "grid_connection_phase,external_limit_1_phase,EVSE1_phase",
@@ -284,7 +284,7 @@
               },
               "total_power_W": {
                 "source": "external_limit_1_setpoint",
-                "value": 4242.0
+                "value": 4242.0000076293945
               }
             },
             "timestamp": "2024-12-17T13:08:36.479Z"
@@ -293,7 +293,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "external_limit_1_setpoint",
-                "value": 11.944927215576172
+                "value": 11.944927543401718
               },
               "ac_max_phase_count": {
                 "source": "grid_connection_phase,external_limit_1_phase,EVSE1_phase",
@@ -310,7 +310,7 @@
             "limits_to_root": {
               "ac_max_current_A": {
                 "source": "external_limit_1_setpoint",
-                "value": -6.147826194763184
+                "value": -6.147826090455055
               },
               "ac_max_phase_count": {
                 "source": "BrokerFastCharging_FixedValue",
@@ -318,7 +318,7 @@
               },
               "total_power_W": {
                 "source": "external_limit_1_setpoint",
-                "value": -4242.0
+                "value": -4242.0000076293945
               }
             },
             "timestamp": "2024-12-17T13:08:40.479Z"

@@ -207,7 +207,7 @@ public:
     virtual void insert_or_update_der_control(const std::string& control_id, bool is_default,
                                               const std::string& control_type, bool is_superseded, int32_t priority,
                                               const std::optional<std::string>& start_time,
-                                              const std::optional<float>& duration,
+                                              const std::optional<double>& duration,
                                               const std::string& control_json) = 0;
 
     /// \brief Retrieves a single DER control by control_id
@@ -370,7 +370,7 @@ public:
     void insert_or_update_der_control(const std::string& control_id, bool is_default, const std::string& control_type,
                                       bool is_superseded, int32_t priority,
                                       const std::optional<std::string>& start_time,
-                                      const std::optional<float>& duration, const std::string& control_json) override;
+                                      const std::optional<double>& duration, const std::string& control_json) override;
     std::optional<std::string> get_der_control(const std::string& control_id) override;
     std::size_t count_der_controls() override;
     std::vector<std::string> get_der_controls_matching_criteria(const std::optional<bool>& is_default,

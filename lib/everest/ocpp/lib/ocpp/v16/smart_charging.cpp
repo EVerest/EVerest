@@ -154,10 +154,10 @@ int SmartChargingHandler::get_number_installed_profiles() {
 namespace {
 struct CompositeScheduleConfig {
     std::set<ChargingProfilePurposeType> purposes_to_ignore;
-    float current_limit{};
-    float power_limit{};
+    double current_limit{};
+    double power_limit{};
     std::int32_t default_number_phases{};
-    float supply_voltage{};
+    double supply_voltage{};
 
     CompositeScheduleConfig(ChargePointConfigurationInterface& configuration, bool is_offline) {
 
@@ -169,15 +169,15 @@ struct CompositeScheduleConfig {
         }
 
         this->current_limit =
-            static_cast<float>(configuration.getCompositeScheduleDefaultLimitAmps().value_or(DEFAULT_LIMIT_AMPS));
+            static_cast<double>(configuration.getCompositeScheduleDefaultLimitAmps().value_or(DEFAULT_LIMIT_AMPS));
 
         this->power_limit =
-            static_cast<float>(configuration.getCompositeScheduleDefaultLimitWatts().value_or(DEFAULT_LIMIT_WATTS));
+            static_cast<double>(configuration.getCompositeScheduleDefaultLimitWatts().value_or(DEFAULT_LIMIT_WATTS));
 
         this->default_number_phases =
             configuration.getCompositeScheduleDefaultNumberPhases().value_or(DEFAULT_AND_MAX_NUMBER_PHASES);
 
-        this->supply_voltage = static_cast<float>(configuration.getSupplyVoltage().value_or(LOW_VOLTAGE));
+        this->supply_voltage = static_cast<double>(configuration.getSupplyVoltage().value_or(LOW_VOLTAGE));
     }
 };
 

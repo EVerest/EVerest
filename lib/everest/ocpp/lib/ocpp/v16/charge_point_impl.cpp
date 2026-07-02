@@ -4437,7 +4437,7 @@ void ChargePointImpl::on_transaction_started(const std::int32_t& connector, cons
 }
 
 void ChargePointImpl::on_transaction_stopped(const std::int32_t connector, const std::string& session_id,
-                                             const Reason& reason, ocpp::DateTime timestamp, float energy_wh_import,
+                                             const Reason& reason, ocpp::DateTime timestamp, double energy_wh_import,
                                              std::optional<CiString<20>> id_tag_end,
                                              std::optional<std::string> signed_meter_value) {
     auto transaction = this->transaction_handler->get_transaction(connector);

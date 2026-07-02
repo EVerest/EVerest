@@ -21,7 +21,7 @@ struct EnhancedTransaction : public Transaction {
     bool id_token_sent = false;
     std::int32_t connector_id = 0;
     std::int32_t seq_no = 0;
-    std::optional<float> active_energy_import_start_value;
+    std::optional<double> active_energy_import_start_value;
     DateTime start_time;
     bool check_max_active_import_energy = false;
 

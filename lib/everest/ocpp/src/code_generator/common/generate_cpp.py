@@ -284,7 +284,7 @@ def parse_property(prop_name: str, prop: Dict, depends_on: List[str], ob_name=No
     elif prop['type'] == 'integer':
         prop_type = 'std::int32_t'
     elif prop['type'] == 'number':
-        prop_type = 'float'
+        prop_type = 'double'
     elif prop['type'] == 'boolean':
         prop_type = 'bool'
     elif prop['type'] == 'array':

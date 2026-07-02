@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 // This code is generated using the generator in 'src/code_generator/common`, please do not edit manually
 
 #ifndef OCPP_V2_OCPP_TYPES_HPP
@@ -141,12 +141,12 @@ struct TariffConditions {
     std::optional<std::string> validFromDate;
     std::optional<std::string> validToDate;
     std::optional<EvseKindEnum> evseKind;
-    std::optional<float> minEnergy;
-    std::optional<float> maxEnergy;
-    std::optional<float> minCurrent;
-    std::optional<float> maxCurrent;
-    std::optional<float> minPower;
-    std::optional<float> maxPower;
+    std::optional<double> minEnergy;
+    std::optional<double> maxEnergy;
+    std::optional<double> minCurrent;
+    std::optional<double> maxCurrent;
+    std::optional<double> minPower;
+    std::optional<double> maxPower;
     std::optional<std::int32_t> minTime;
     std::optional<std::int32_t> maxTime;
     std::optional<std::int32_t> minChargingTime;
@@ -166,7 +166,7 @@ void from_json(const json& j, TariffConditions& k);
 std::ostream& operator<<(std::ostream& os, const TariffConditions& k);
 
 struct TariffEnergyPrice {
-    float priceKwh;
+    double priceKwh;
     std::optional<TariffConditions> conditions;
     std::optional<CustomData> customData;
 };
@@ -182,7 +182,7 @@ std::ostream& operator<<(std::ostream& os, const TariffEnergyPrice& k);
 
 struct TaxRate {
     CiString<20> type;
-    float tax;
+    double tax;
     std::optional<std::int32_t> stack;
     std::optional<CustomData> customData;
 };
@@ -212,7 +212,7 @@ void from_json(const json& j, TariffEnergy& k);
 std::ostream& operator<<(std::ostream& os, const TariffEnergy& k);
 
 struct TariffTimePrice {
-    float priceMinute;
+    double priceMinute;
     std::optional<TariffConditions> conditions;
     std::optional<CustomData> customData;
 };
@@ -263,7 +263,7 @@ void from_json(const json& j, TariffConditionsFixed& k);
 std::ostream& operator<<(std::ostream& os, const TariffConditionsFixed& k);
 
 struct TariffFixedPrice {
-    float priceFixed;
+    double priceFixed;
     std::optional<TariffConditionsFixed> conditions;
     std::optional<CustomData> customData;
 };
@@ -293,8 +293,8 @@ void from_json(const json& j, TariffFixed& k);
 std::ostream& operator<<(std::ostream& os, const TariffFixed& k);
 
 struct Price {
-    std::optional<float> exclTax;
-    std::optional<float> inclTax;
+    std::optional<double> exclTax;
+    std::optional<double> inclTax;
     std::optional<std::vector<TaxRate>> taxRates;
     std::optional<CustomData> customData;
 };
@@ -336,8 +336,8 @@ std::ostream& operator<<(std::ostream& os, const Tariff& k);
 struct BatteryData {
     std::int32_t evseId;
     CiString<50> serialNumber;
-    float soC;
-    float soH;
+    double soC;
+    double soH;
     std::optional<ocpp::DateTime> productionDate;
     std::optional<CiString<500>> vendorInfo;
     std::optional<CustomData> customData;
@@ -517,8 +517,8 @@ void from_json(const json& j, ChargingProfileCriterion& k);
 std::ostream& operator<<(std::ostream& os, const ChargingProfileCriterion& k);
 
 struct V2XFreqWattPoint {
-    float frequency;
-    float power;
+    double frequency;
+    double power;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given V2XFreqWattPoint \p k to a given json object \p j
@@ -533,7 +533,7 @@ std::ostream& operator<<(std::ostream& os, const V2XFreqWattPoint& k);
 
 struct V2XSignalWattPoint {
     std::int32_t signal;
-    float power;
+    double power;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given V2XSignalWattPoint \p k to a given json object \p j
@@ -548,23 +548,23 @@ std::ostream& operator<<(std::ostream& os, const V2XSignalWattPoint& k);
 
 struct ChargingSchedulePeriod {
     std::int32_t startPeriod;
-    std::optional<float> limit;
-    std::optional<float> limit_L2;
-    std::optional<float> limit_L3;
+    std::optional<double> limit;
+    std::optional<double> limit_L2;
+    std::optional<double> limit_L3;
     std::optional<std::int32_t> numberPhases;
     std::optional<std::int32_t> phaseToUse;
-    std::optional<float> dischargeLimit;
-    std::optional<float> dischargeLimit_L2;
-    std::optional<float> dischargeLimit_L3;
-    std::optional<float> setpoint;
-    std::optional<float> setpoint_L2;
-    std::optional<float> setpoint_L3;
-    std::optional<float> setpointReactive;
-    std::optional<float> setpointReactive_L2;
-    std::optional<float> setpointReactive_L3;
+    std::optional<double> dischargeLimit;
+    std::optional<double> dischargeLimit_L2;
+    std::optional<double> dischargeLimit_L3;
+    std::optional<double> setpoint;
+    std::optional<double> setpoint_L2;
+    std::optional<double> setpoint_L3;
+    std::optional<double> setpointReactive;
+    std::optional<double> setpointReactive_L2;
+    std::optional<double> setpointReactive_L3;
     std::optional<bool> preconditioningRequest;
     std::optional<bool> evseSleep;
-    std::optional<float> v2xBaseline;
+    std::optional<double> v2xBaseline;
     std::optional<OperationModeEnum> operationMode;
     std::optional<std::vector<V2XFreqWattPoint>> v2xFreqWattCurve;
     std::optional<std::vector<V2XSignalWattPoint>> v2xSignalWattCurve;
@@ -778,7 +778,7 @@ void from_json(const json& j, UnitOfMeasure& k);
 std::ostream& operator<<(std::ostream& os, const UnitOfMeasure& k);
 
 struct SampledValue {
-    float value;
+    double value;
     std::optional<MeasurandEnum> measurand;
     std::optional<ReadingContextEnum> context;
     std::optional<PhaseEnum> phase;
@@ -814,7 +814,7 @@ std::ostream& operator<<(std::ostream& os, const MeterValue& k);
 
 struct LimitAtSoC {
     std::int32_t soc;
-    float limit;
+    double limit;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given LimitAtSoC \p k to a given json object \p j
@@ -859,7 +859,7 @@ void from_json(const json& j, Cost& k);
 std::ostream& operator<<(std::ostream& os, const Cost& k);
 
 struct ConsumptionCost {
-    float startValue;
+    double startValue;
     std::vector<Cost> cost;
     std::optional<CustomData> customData;
 };
@@ -1090,8 +1090,8 @@ struct ChargingSchedule {
     std::optional<LimitAtSoC> limitAtSoC;
     std::optional<ocpp::DateTime> startSchedule;
     std::optional<std::int32_t> duration;
-    std::optional<float> minChargingRate;
-    std::optional<float> powerTolerance;
+    std::optional<double> minChargingRate;
+    std::optional<double> powerTolerance;
     std::optional<std::int32_t> signatureId;
     std::optional<CiString<88>> digestValue;
     std::optional<bool> useLocalTime;
@@ -1150,10 +1150,10 @@ void from_json(const json& j, MessageInfo& k);
 std::ostream& operator<<(std::ostream& os, const MessageInfo& k);
 
 struct ACChargingParameters {
-    float energyAmount;
-    float evMinCurrent;
-    float evMaxCurrent;
-    float evMaxVoltage;
+    double energyAmount;
+    double evMinCurrent;
+    double evMaxCurrent;
+    double evMaxVoltage;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given ACChargingParameters \p k to a given json object \p j
@@ -1168,46 +1168,46 @@ std::ostream& operator<<(std::ostream& os, const ACChargingParameters& k);
 
 struct DERChargingParameters {
     std::optional<std::vector<DERControlEnum>> evSupportedDERControl;
-    std::optional<float> evOverExcitedMaxDischargePower;
-    std::optional<float> evOverExcitedPowerFactor;
-    std::optional<float> evUnderExcitedMaxDischargePower;
-    std::optional<float> evUnderExcitedPowerFactor;
-    std::optional<float> maxApparentPower;
-    std::optional<float> maxChargeApparentPower;
-    std::optional<float> maxChargeApparentPower_L2;
-    std::optional<float> maxChargeApparentPower_L3;
-    std::optional<float> maxDischargeApparentPower;
-    std::optional<float> maxDischargeApparentPower_L2;
-    std::optional<float> maxDischargeApparentPower_L3;
-    std::optional<float> maxChargeReactivePower;
-    std::optional<float> maxChargeReactivePower_L2;
-    std::optional<float> maxChargeReactivePower_L3;
-    std::optional<float> minChargeReactivePower;
-    std::optional<float> minChargeReactivePower_L2;
-    std::optional<float> minChargeReactivePower_L3;
-    std::optional<float> maxDischargeReactivePower;
-    std::optional<float> maxDischargeReactivePower_L2;
-    std::optional<float> maxDischargeReactivePower_L3;
-    std::optional<float> minDischargeReactivePower;
-    std::optional<float> minDischargeReactivePower_L2;
-    std::optional<float> minDischargeReactivePower_L3;
-    std::optional<float> nominalVoltage;
-    std::optional<float> nominalVoltageOffset;
-    std::optional<float> maxNominalVoltage;
-    std::optional<float> minNominalVoltage;
+    std::optional<double> evOverExcitedMaxDischargePower;
+    std::optional<double> evOverExcitedPowerFactor;
+    std::optional<double> evUnderExcitedMaxDischargePower;
+    std::optional<double> evUnderExcitedPowerFactor;
+    std::optional<double> maxApparentPower;
+    std::optional<double> maxChargeApparentPower;
+    std::optional<double> maxChargeApparentPower_L2;
+    std::optional<double> maxChargeApparentPower_L3;
+    std::optional<double> maxDischargeApparentPower;
+    std::optional<double> maxDischargeApparentPower_L2;
+    std::optional<double> maxDischargeApparentPower_L3;
+    std::optional<double> maxChargeReactivePower;
+    std::optional<double> maxChargeReactivePower_L2;
+    std::optional<double> maxChargeReactivePower_L3;
+    std::optional<double> minChargeReactivePower;
+    std::optional<double> minChargeReactivePower_L2;
+    std::optional<double> minChargeReactivePower_L3;
+    std::optional<double> maxDischargeReactivePower;
+    std::optional<double> maxDischargeReactivePower_L2;
+    std::optional<double> maxDischargeReactivePower_L3;
+    std::optional<double> minDischargeReactivePower;
+    std::optional<double> minDischargeReactivePower_L2;
+    std::optional<double> minDischargeReactivePower_L3;
+    std::optional<double> nominalVoltage;
+    std::optional<double> nominalVoltageOffset;
+    std::optional<double> maxNominalVoltage;
+    std::optional<double> minNominalVoltage;
     std::optional<CiString<50>> evInverterManufacturer;
     std::optional<CiString<50>> evInverterModel;
     std::optional<CiString<50>> evInverterSerialNumber;
     std::optional<CiString<50>> evInverterSwVersion;
     std::optional<CiString<50>> evInverterHwVersion;
     std::optional<std::vector<IslandingDetectionEnum>> evIslandingDetectionMethod;
-    std::optional<float> evIslandingTripTime;
-    std::optional<float> evMaximumLevel1DCInjection;
-    std::optional<float> evDurationLevel1DCInjection;
-    std::optional<float> evMaximumLevel2DCInjection;
-    std::optional<float> evDurationLevel2DCInjection;
-    std::optional<float> evReactiveSusceptance;
-    std::optional<float> evSessionTotalDischargeEnergyAvailable;
+    std::optional<double> evIslandingTripTime;
+    std::optional<double> evMaximumLevel1DCInjection;
+    std::optional<double> evDurationLevel1DCInjection;
+    std::optional<double> evMaximumLevel2DCInjection;
+    std::optional<double> evDurationLevel2DCInjection;
+    std::optional<double> evReactiveSusceptance;
+    std::optional<double> evSessionTotalDischargeEnergyAvailable;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given DERChargingParameters \p k to a given json object \p j
@@ -1221,8 +1221,8 @@ void from_json(const json& j, DERChargingParameters& k);
 std::ostream& operator<<(std::ostream& os, const DERChargingParameters& k);
 
 struct EVPriceRule {
-    float energyFee;
-    float powerRangeStart;
+    double energyFee;
+    double powerRangeStart;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given EVPriceRule \p k to a given json object \p j
@@ -1270,7 +1270,7 @@ std::ostream& operator<<(std::ostream& os, const EVAbsolutePriceSchedule& k);
 
 struct EVPowerScheduleEntry {
     std::int32_t duration;
-    float power;
+    double power;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given EVPowerScheduleEntry \p k to a given json object \p j
@@ -1314,11 +1314,11 @@ void from_json(const json& j, EVEnergyOffer& k);
 std::ostream& operator<<(std::ostream& os, const EVEnergyOffer& k);
 
 struct DCChargingParameters {
-    float evMaxCurrent;
-    float evMaxVoltage;
-    std::optional<float> evMaxPower;
-    std::optional<float> evEnergyCapacity;
-    std::optional<float> energyAmount;
+    double evMaxCurrent;
+    double evMaxVoltage;
+    std::optional<double> evMaxPower;
+    std::optional<double> evEnergyCapacity;
+    std::optional<double> energyAmount;
     std::optional<std::int32_t> stateOfCharge;
     std::optional<std::int32_t> fullSoC;
     std::optional<std::int32_t> bulkSoC;
@@ -1335,29 +1335,29 @@ void from_json(const json& j, DCChargingParameters& k);
 std::ostream& operator<<(std::ostream& os, const DCChargingParameters& k);
 
 struct V2XChargingParameters {
-    std::optional<float> minChargePower;
-    std::optional<float> minChargePower_L2;
-    std::optional<float> minChargePower_L3;
-    std::optional<float> maxChargePower;
-    std::optional<float> maxChargePower_L2;
-    std::optional<float> maxChargePower_L3;
-    std::optional<float> minDischargePower;
-    std::optional<float> minDischargePower_L2;
-    std::optional<float> minDischargePower_L3;
-    std::optional<float> maxDischargePower;
-    std::optional<float> maxDischargePower_L2;
-    std::optional<float> maxDischargePower_L3;
-    std::optional<float> minChargeCurrent;
-    std::optional<float> maxChargeCurrent;
-    std::optional<float> minDischargeCurrent;
-    std::optional<float> maxDischargeCurrent;
-    std::optional<float> minVoltage;
-    std::optional<float> maxVoltage;
-    std::optional<float> evTargetEnergyRequest;
-    std::optional<float> evMinEnergyRequest;
-    std::optional<float> evMaxEnergyRequest;
-    std::optional<float> evMinV2XEnergyRequest;
-    std::optional<float> evMaxV2XEnergyRequest;
+    std::optional<double> minChargePower;
+    std::optional<double> minChargePower_L2;
+    std::optional<double> minChargePower_L3;
+    std::optional<double> maxChargePower;
+    std::optional<double> maxChargePower_L2;
+    std::optional<double> maxChargePower_L3;
+    std::optional<double> minDischargePower;
+    std::optional<double> minDischargePower_L2;
+    std::optional<double> minDischargePower_L3;
+    std::optional<double> maxDischargePower;
+    std::optional<double> maxDischargePower_L2;
+    std::optional<double> maxDischargePower_L3;
+    std::optional<double> minChargeCurrent;
+    std::optional<double> maxChargeCurrent;
+    std::optional<double> minDischargeCurrent;
+    std::optional<double> maxDischargeCurrent;
+    std::optional<double> minVoltage;
+    std::optional<double> maxVoltage;
+    std::optional<double> evTargetEnergyRequest;
+    std::optional<double> evMinEnergyRequest;
+    std::optional<double> evMaxEnergyRequest;
+    std::optional<double> evMinV2XEnergyRequest;
+    std::optional<double> evMaxV2XEnergyRequest;
     std::optional<std::int32_t> targetSoC;
     std::optional<CustomData> customData;
 };
@@ -1424,7 +1424,7 @@ std::ostream& operator<<(std::ostream& os, const EventData& k);
 struct VariableMonitoring {
     std::int32_t id;
     bool transaction;
-    float value;
+    double value;
     MonitorEnum type;
     std::int32_t severity;
     std::optional<EventNotificationEnum> eventNotificationType;
@@ -1457,7 +1457,7 @@ void from_json(const json& j, MonitoringData& k);
 std::ostream& operator<<(std::ostream& os, const MonitoringData& k);
 
 struct StreamDataElement {
-    float t;
+    double t;
     CiString<2500> v;
     std::optional<CustomData> customData;
 };
@@ -1510,8 +1510,8 @@ struct VariableCharacteristics {
     DataEnum dataType;
     bool supportsMonitoring;
     std::optional<CiString<16>> unit;
-    std::optional<float> minLimit;
-    std::optional<float> maxLimit;
+    std::optional<double> minLimit;
+    std::optional<double> maxLimit;
     std::optional<std::int32_t> maxElements;
     std::optional<CiString<1000>> valuesList;
     std::optional<CustomData> customData;
@@ -1563,18 +1563,18 @@ void from_json(const json& j, Address& k);
 std::ostream& operator<<(std::ostream& os, const Address& k);
 
 struct ChargingScheduleUpdate {
-    std::optional<float> limit;
-    std::optional<float> limit_L2;
-    std::optional<float> limit_L3;
-    std::optional<float> dischargeLimit;
-    std::optional<float> dischargeLimit_L2;
-    std::optional<float> dischargeLimit_L3;
-    std::optional<float> setpoint;
-    std::optional<float> setpoint_L2;
-    std::optional<float> setpoint_L3;
-    std::optional<float> setpointReactive;
-    std::optional<float> setpointReactive_L2;
-    std::optional<float> setpointReactive_L3;
+    std::optional<double> limit;
+    std::optional<double> limit_L2;
+    std::optional<double> limit_L3;
+    std::optional<double> dischargeLimit;
+    std::optional<double> dischargeLimit_L2;
+    std::optional<double> dischargeLimit_L3;
+    std::optional<double> setpoint;
+    std::optional<double> setpoint_L2;
+    std::optional<double> setpoint_L3;
+    std::optional<double> setpointReactive;
+    std::optional<double> setpointReactive_L2;
+    std::optional<double> setpointReactive_L3;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given ChargingScheduleUpdate \p k to a given json object \p j
@@ -1615,8 +1615,8 @@ void from_json(const json& j, ChargingProfile& k);
 std::ostream& operator<<(std::ostream& os, const ChargingProfile& k);
 
 struct DERCurvePoints {
-    float x;
-    float y;
+    double x;
+    double y;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given DERCurvePoints \p k to a given json object \p j
@@ -1630,10 +1630,10 @@ void from_json(const json& j, DERCurvePoints& k);
 std::ostream& operator<<(std::ostream& os, const DERCurvePoints& k);
 
 struct Hysteresis {
-    std::optional<float> hysteresisHigh;
-    std::optional<float> hysteresisLow;
-    std::optional<float> hysteresisDelay;
-    std::optional<float> hysteresisGradient;
+    std::optional<double> hysteresisHigh;
+    std::optional<double> hysteresisLow;
+    std::optional<double> hysteresisDelay;
+    std::optional<double> hysteresisGradient;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given Hysteresis \p k to a given json object \p j
@@ -1647,9 +1647,9 @@ void from_json(const json& j, Hysteresis& k);
 std::ostream& operator<<(std::ostream& os, const Hysteresis& k);
 
 struct ReactivePowerParams {
-    std::optional<float> vRef;
+    std::optional<double> vRef;
     std::optional<bool> autonomousVRefEnable;
-    std::optional<float> autonomousVRefTimeConstant;
+    std::optional<double> autonomousVRefTimeConstant;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given ReactivePowerParams \p k to a given json object \p j
@@ -1663,8 +1663,8 @@ void from_json(const json& j, ReactivePowerParams& k);
 std::ostream& operator<<(std::ostream& os, const ReactivePowerParams& k);
 
 struct VoltageParams {
-    std::optional<float> hv10MinMeanValue;
-    std::optional<float> hv10MinMeanTripDelay;
+    std::optional<double> hv10MinMeanValue;
+    std::optional<double> hv10MinMeanTripDelay;
     std::optional<PowerDuringCessationEnum> powerDuringCessation;
     std::optional<CustomData> customData;
 };
@@ -1685,9 +1685,9 @@ struct DERCurve {
     std::optional<Hysteresis> hysteresis;
     std::optional<ReactivePowerParams> reactivePowerParams;
     std::optional<VoltageParams> voltageParams;
-    std::optional<float> responseTime;
+    std::optional<double> responseTime;
     std::optional<ocpp::DateTime> startTime;
-    std::optional<float> duration;
+    std::optional<double> duration;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given DERCurve \p k to a given json object \p j
@@ -1720,13 +1720,13 @@ std::ostream& operator<<(std::ostream& os, const DERCurveGet& k);
 
 struct EnterService {
     std::int32_t priority;
-    float highVoltage;
-    float lowVoltage;
-    float highFreq;
-    float lowFreq;
-    std::optional<float> delay;
-    std::optional<float> randomDelay;
-    std::optional<float> rampRate;
+    double highVoltage;
+    double lowVoltage;
+    double highFreq;
+    double lowFreq;
+    std::optional<double> delay;
+    std::optional<double> randomDelay;
+    std::optional<double> rampRate;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given EnterService \p k to a given json object \p j
@@ -1756,10 +1756,10 @@ std::ostream& operator<<(std::ostream& os, const EnterServiceGet& k);
 
 struct FixedPF {
     std::int32_t priority;
-    float displacement;
+    double displacement;
     bool excitation;
     std::optional<ocpp::DateTime> startTime;
-    std::optional<float> duration;
+    std::optional<double> duration;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given FixedPF \p k to a given json object \p j
@@ -1791,10 +1791,10 @@ std::ostream& operator<<(std::ostream& os, const FixedPFGet& k);
 
 struct FixedVar {
     std::int32_t priority;
-    float setpoint;
+    double setpoint;
     DERUnitEnum unit;
     std::optional<ocpp::DateTime> startTime;
-    std::optional<float> duration;
+    std::optional<double> duration;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given FixedVar \p k to a given json object \p j
@@ -1826,13 +1826,13 @@ std::ostream& operator<<(std::ostream& os, const FixedVarGet& k);
 
 struct FreqDroop {
     std::int32_t priority;
-    float overFreq;
-    float underFreq;
-    float overDroop;
-    float underDroop;
-    float responseTime;
+    double overFreq;
+    double underFreq;
+    double overDroop;
+    double underDroop;
+    double responseTime;
     std::optional<ocpp::DateTime> startTime;
-    std::optional<float> duration;
+    std::optional<double> duration;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given FreqDroop \p k to a given json object \p j
@@ -1864,8 +1864,8 @@ std::ostream& operator<<(std::ostream& os, const FreqDroopGet& k);
 
 struct Gradient {
     std::int32_t priority;
-    float gradient;
-    float softGradient;
+    double gradient;
+    double softGradient;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given Gradient \p k to a given json object \p j
@@ -1895,10 +1895,10 @@ std::ostream& operator<<(std::ostream& os, const GradientGet& k);
 
 struct LimitMaxDischarge {
     std::int32_t priority;
-    std::optional<float> pctMaxDischargePower;
+    std::optional<double> pctMaxDischargePower;
     std::optional<DERCurve> powerMonitoringMustTrip;
     std::optional<ocpp::DateTime> startTime;
-    std::optional<float> duration;
+    std::optional<double> duration;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given LimitMaxDischarge \p k to a given json object \p j
@@ -2006,7 +2006,7 @@ void from_json(const json& j, NetworkConnectionProfile& k);
 std::ostream& operator<<(std::ostream& os, const NetworkConnectionProfile& k);
 
 struct SetMonitoringData {
-    float value;
+    double value;
     MonitorEnum type;
     std::int32_t severity;
     Component component;
@@ -2083,7 +2083,7 @@ std::ostream& operator<<(std::ostream& os, const SetVariableResult& k);
 
 struct CostDimension {
     CostDimensionEnum type;
-    float volume;
+    double volume;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given CostDimension \p k to a given json object \p j
@@ -2113,8 +2113,8 @@ void from_json(const json& j, ChargingPeriod& k);
 std::ostream& operator<<(std::ostream& os, const ChargingPeriod& k);
 
 struct TotalPrice {
-    std::optional<float> exclTax;
-    std::optional<float> inclTax;
+    std::optional<double> exclTax;
+    std::optional<double> inclTax;
     std::optional<CustomData> customData;
 };
 /// \brief Conversion from a given TotalPrice \p k to a given json object \p j
@@ -2150,7 +2150,7 @@ void from_json(const json& j, TotalCost& k);
 std::ostream& operator<<(std::ostream& os, const TotalCost& k);
 
 struct TotalUsage {
-    float energy;
+    double energy;
     std::int32_t chargingTime;
     std::int32_t idleTime;
     std::optional<std::int32_t> reservationTime;
@@ -2185,8 +2185,8 @@ void from_json(const json& j, CostDetails& k);
 std::ostream& operator<<(std::ostream& os, const CostDetails& k);
 
 struct TransactionLimit {
-    std::optional<float> maxCost;
-    std::optional<float> maxEnergy;
+    std::optional<double> maxCost;
+    std::optional<double> maxEnergy;
     std::optional<std::int32_t> maxTime;
     std::optional<std::int32_t> maxSoC;
     std::optional<CustomData> customData;

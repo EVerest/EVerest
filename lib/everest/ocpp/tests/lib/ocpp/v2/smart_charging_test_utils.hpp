@@ -108,7 +108,7 @@ ChargingSchedule create_charge_schedule(ChargingRateUnitEnum charging_rate_unit,
 std::vector<ChargingSchedulePeriod>
 create_charging_schedule_periods(std::int32_t start_period, std::optional<std::int32_t> number_phases = std::nullopt,
                                  std::optional<std::int32_t> phase_to_use = std::nullopt,
-                                 std::optional<float> limit = std::nullopt);
+                                 std::optional<double> limit = std::nullopt);
 std::vector<ChargingSchedulePeriod> create_charging_schedule_periods(const std::vector<std::int32_t>& start_periods);
 std::vector<ChargingSchedulePeriod> create_charging_schedule_periods_with_phases(std::int32_t start_period,
                                                                                  std::int32_t numberPhases,

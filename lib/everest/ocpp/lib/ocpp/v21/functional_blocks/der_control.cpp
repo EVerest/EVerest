@@ -26,7 +26,7 @@ using namespace v2;
 namespace {
 
 constexpr std::size_t MAX_CURVE_POINTS = 256;
-constexpr float MAX_DURATION_SECONDS = 86400.0F * 365.0F;          // one year
+constexpr double MAX_DURATION_SECONDS = 86400.0 * 365.0;           // one year
 constexpr std::int64_t MAX_SCHEDULE_HORIZON_SECONDS = 86400 * 365; // one year
 
 /// \brief Cap on total persisted DER controls to bound DER_CONTROLS table growth.
@@ -36,11 +36,11 @@ constexpr std::size_t MAX_DER_CONTROLS = 1000;
 /// arrived or whose duration has expired.
 constexpr std::chrono::seconds SCHEDULED_CONTROL_CHECK_INTERVAL{30};
 
-bool duration_is_sane(std::optional<float> d) {
+bool duration_is_sane(std::optional<double> d) {
     if (!d.has_value()) {
         return true;
     }
-    return std::isfinite(d.value()) && d.value() >= 0.0F && d.value() <= MAX_DURATION_SECONDS;
+    return std::isfinite(d.value()) && d.value() >= 0.0 && d.value() <= MAX_DURATION_SECONDS;
 }
 
 bool is_finite_curve(const DERCurve& curve) {
@@ -193,7 +193,7 @@ std::optional<std::string> get_start_time_from_request(const SetDERControlReques
     return std::nullopt;
 }
 
-std::optional<float> get_duration_from_request(const SetDERControlRequest& req) {
+std::optional<double> get_duration_from_request(const SetDERControlRequest& req) {
     if (req.freqDroop.has_value() && req.freqDroop->duration.has_value())
         return req.freqDroop->duration;
     if (req.curve.has_value() && req.curve->duration.has_value())
@@ -529,11 +529,11 @@ void DERControl::handle_set_der_control(ocpp::Call<SetDERControlRequest> call) {
                         if (duration_it == existing.end() || !duration_it->is_number()) {
                             existing_is_currently_active = true;
                         } else {
-                            const auto existing_duration = duration_it->get<float>();
+                            const auto existing_duration = duration_it->get<double>();
                             if (std::isfinite(existing_duration)) {
                                 const auto expiry = ocpp::DateTime(
                                     existing_start.to_time_point() +
-                                    std::chrono::milliseconds(static_cast<int64_t>(existing_duration * 1000.0F)));
+                                    std::chrono::milliseconds(static_cast<int64_t>(existing_duration * 1000.0)));
                                 existing_is_currently_active = expiry.to_time_point() > now.to_time_point();
                             } else {
                                 existing_is_currently_active = true;
@@ -835,8 +835,8 @@ void DERControl::check_scheduled_controls() {
                 }
 
                 auto start_str = control.at("startTime").get<std::string>();
-                auto duration_seconds = control.at("duration").get<float>();
-                if (!std::isfinite(duration_seconds) || duration_seconds < 0.0F) {
+                auto duration_seconds = control.at("duration").get<double>();
+                if (!std::isfinite(duration_seconds) || duration_seconds < 0.0) {
                     continue;
                 }
                 auto start_time = ocpp::DateTime(start_str);

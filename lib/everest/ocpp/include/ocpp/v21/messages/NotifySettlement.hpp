@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 // This code is generated using the generator in 'src/code_generator/common`, please do not edit manually
 
 #ifndef OCPP_V21_NOTIFYSETTLEMENT_HPP
@@ -20,7 +20,7 @@ namespace v21 {
 struct NotifySettlementRequest : public ocpp::Message {
     CiString<255> pspRef;
     PaymentStatusEnum status;
-    float settlementAmount;
+    double settlementAmount;
     ocpp::DateTime settlementTime;
     std::optional<CiString<36>> transactionId;
     std::optional<CiString<500>> statusInfo;

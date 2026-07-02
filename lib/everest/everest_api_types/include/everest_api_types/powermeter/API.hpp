@@ -102,10 +102,10 @@ struct Power {
 };
 
 struct Energy {
-    float total;             ///< DC / AC Sum value (which is relevant for billing)
-    std::optional<float> L1; ///< AC L1 value only
-    std::optional<float> L2; ///< AC L2 value only
-    std::optional<float> L3; ///< AC L3 value only
+    double total;             ///< DC / AC Sum value (which is relevant for billing)
+    std::optional<double> L1; ///< AC L1 value only
+    std::optional<double> L2; ///< AC L2 value only
+    std::optional<double> L3; ///< AC L3 value only
 };
 
 struct ReactivePower {

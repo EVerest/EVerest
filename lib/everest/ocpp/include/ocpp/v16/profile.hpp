@@ -15,14 +15,14 @@ class ChargingProfile;
 class EnhancedChargingSchedulePeriod;
 class ChargingSchedulePeriod;
 
-constexpr float no_limit_specified = -1.0;
+constexpr double no_limit_specified = -1.0;
 
 using ocpp::DateTime;
 
 struct IntermediatePeriod {
     std::int32_t startPeriod;
-    float current_limit;
-    float power_limit;
+    double current_limit;
+    double power_limit;
     std::int32_t stack_level_current;
     std::int32_t stack_level_power;
     std::optional<std::int32_t> numberPhases;
@@ -38,11 +38,11 @@ struct period_entry_t {
 
     DateTime start;
     DateTime end;
-    float limit;
+    double limit;
     std::optional<std::int32_t> number_phases;
     std::int32_t stack_level;
     ChargingRateUnit charging_rate_unit;
-    std::optional<float> min_charging_rate;
+    std::optional<double> min_charging_rate;
 };
 
 /// \brief Calculate the number of seconds elapsed between \param to and \param from
@@ -94,14 +94,14 @@ IntermediateProfile merge_profiles_by_lowest_limit(const std::vector<Intermediat
 /// \brief Generates a new profile by summing the limits of all the provided \param profiles, filling in defaults
 /// wherever a profile has no limit
 IntermediateProfile merge_profiles_by_summing_limits(const std::vector<IntermediateProfile>& profiles,
-                                                     float current_default, float power_default);
+                                                     double current_default, double power_default);
 
 /// \brief Convert an intermediate profile into a final charging schedule.
 /// This will fill in defaults and convert merge the current and power limits into the final \p charging_rate_unit based
 /// limit
 std::vector<EnhancedChargingSchedulePeriod>
 convert_intermediate_into_schedule(const IntermediateProfile& profile, ChargingRateUnit charging_rate_unit,
-                                   float default_limit, std::int32_t default_number_phases, float supply_voltage);
+                                   double default_limit, std::int32_t default_number_phases, double supply_voltage);
 
 } // namespace ocpp::v16
 

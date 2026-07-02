@@ -150,7 +150,7 @@ void patch_variable_value(std::map<ComponentKey, std::vector<DeviceModelVariable
 void patch_variable_max_limit(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
                               const ocpp::v16::keys::DeviceModel_CV& device_model_cv, const int32_t max_limit) {
     if (auto variable_to_patch = get_variable_to_patch(component_configs, device_model_cv)) {
-        variable_to_patch->get().characteristics.maxLimit = static_cast<float>(max_limit);
+        variable_to_patch->get().characteristics.maxLimit = static_cast<double>(max_limit);
     }
 }
 

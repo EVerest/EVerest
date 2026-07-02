@@ -74,7 +74,7 @@ public:
     // DER Control persistence
     MOCK_METHOD(void, insert_or_update_der_control,
                 (const std::string& control_id, bool is_default, const std::string& control_type, bool is_superseded,
-                 int32_t priority, const std::optional<std::string>& start_time, const std::optional<float>& duration,
+                 int32_t priority, const std::optional<std::string>& start_time, const std::optional<double>& duration,
                  const std::string& control_json),
                 (override));
     MOCK_METHOD(std::optional<std::string>, get_der_control, (const std::string& control_id), (override));

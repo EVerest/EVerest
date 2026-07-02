@@ -61,7 +61,7 @@ void AverageMeterValues::average_meter_value() {
                     EVLOG_warning << "Measurand: " << measurand << " not present in map";
                 } else {
                     const MeterValueCalc& temp = this->aligned_meter_values.at(key);
-                    element.value = static_cast<float>(temp.sum / temp.num_elements);
+                    element.value = static_cast<double>(temp.sum / temp.num_elements);
                 }
             }
         }

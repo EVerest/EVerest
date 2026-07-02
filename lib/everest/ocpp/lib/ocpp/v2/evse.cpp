@@ -19,14 +19,14 @@ namespace v2 {
 
 namespace {
 // Convert an energy value into Wh
-float get_normalized_energy_value(SampledValue sampled_value) {
-    float value = sampled_value.value;
+double get_normalized_energy_value(SampledValue sampled_value) {
+    double value = sampled_value.value;
     // If no unit of measure is present the unit is in Wh so nothing to do
     if (sampled_value.unitOfMeasure.has_value()) {
         const auto& unit_of_measure = sampled_value.unitOfMeasure.value();
         if (unit_of_measure.unit.has_value()) {
             if (unit_of_measure.unit.value() == "kWh") {
-                value *= 1000.0F;
+                value *= 1000.0;
             } else if (unit_of_measure.unit.value() == "Wh") {
                 // do nothing
             } else {
@@ -37,7 +37,7 @@ float get_normalized_energy_value(SampledValue sampled_value) {
 
         if (unit_of_measure.multiplier.has_value()) {
             if (unit_of_measure.multiplier.value() != 0) {
-                value *= powf(10, static_cast<float>(unit_of_measure.multiplier.value()));
+                value *= pow(10, static_cast<double>(unit_of_measure.multiplier.value()));
             }
         }
     }
@@ -378,7 +378,7 @@ void Evse::clear_idle_meter_values() {
     this->aligned_data_updated.clear_values();
 }
 
-std::optional<float> Evse::get_active_import_register_meter_value() {
+std::optional<double> Evse::get_active_import_register_meter_value() {
     const std::lock_guard<std::recursive_mutex> lk(this->meter_value_mutex);
     auto it = std::find_if(
         this->meter_value.sampledValue.begin(), this->meter_value.sampledValue.end(), [](const SampledValue& value) {
@@ -596,9 +596,10 @@ void Evse::send_meter_value_on_pricing_trigger(const MeterValue& meter_value) {
                            "function is not set.";
             this->trigger_metervalue_on_energy_kwh.reset();
         } else {
-            const std::optional<float> active_import_register_meter_value_wh = get_active_import_register_meter_value();
+            const std::optional<double> active_import_register_meter_value_wh =
+                get_active_import_register_meter_value();
             if (active_import_register_meter_value_wh.has_value() and
-                static_cast<double>(active_import_register_meter_value_wh.value()) >= trigger_energy_kwh * 1000) {
+                active_import_register_meter_value_wh.value() >= trigger_energy_kwh * 1000) {
                 const MeterValue active_import_meter_value = utils::get_meter_value_with_measurands_applied(
                     meter_value, {MeasurandEnum::Energy_Active_Import_Register, MeasurandEnum::Power_Active_Import});
                 if (active_import_meter_value.sampledValue.empty()) {
@@ -617,7 +618,7 @@ void Evse::send_meter_value_on_pricing_trigger(const MeterValue& meter_value) {
 
     // Check if there is a power kw trigger and if that is triggered. For the power kw trigger, we added hysterisis
     // to prevent constant triggering.
-    const std::optional<float> active_power_meter_value = utils::get_total_power_active_import(meter_value);
+    const std::optional<double> active_power_meter_value = utils::get_total_power_active_import(meter_value);
 
     if (!this->trigger_metervalue_on_power_kw.has_value() or !active_power_meter_value.has_value()) {
         return;
@@ -637,7 +638,7 @@ void Evse::send_meter_value_on_pricing_trigger(const MeterValue& meter_value) {
         // Hysteresis of 5% to avoid repetitive triggers when the power fluctuates around the trigger level.
         const double hysterisis_kw = trigger_power_kw * 0.05;
         const double triggered_power_kw = this->last_triggered_metervalue_power_kw.value();
-        const auto current_metervalue_w = static_cast<double>(active_power_meter_value.value());
+        const auto current_metervalue_w = active_power_meter_value.value();
         const double current_metervalue_kw = current_metervalue_w / 1000;
 
         if ( // Check if trigger value is crossed in upward direction.
@@ -662,7 +663,7 @@ void Evse::send_meter_value_on_pricing_trigger(const MeterValue& meter_value) {
             const MeterValue mv = utils::set_meter_value_reading_context(meter_value, ReadingContextEnum::Other);
             this->send_metervalue_function({mv});
         }
-        this->last_triggered_metervalue_power_kw = active_power_meter_value.value() / 1000;
+        this->last_triggered_metervalue_power_kw = active_power_meter_value.value() / 1000.0;
     }
 }
 
