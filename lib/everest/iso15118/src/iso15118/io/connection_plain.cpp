@@ -16,8 +16,6 @@
 
 namespace iso15118::io {
 
-static constexpr auto DEFAULT_SOCKET_BACKLOG = 4;
-
 ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, const std::string& interface_name) :
     poll_manager(poll_manager_) {
     sockaddr_in6 address;
@@ -30,35 +28,7 @@ ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, const std::string& 
     end_point.port = 50000;
     memcpy(&end_point.address, &address.sin6_addr, sizeof(address.sin6_addr));
 
-    fd = socket(AF_INET6, SOCK_STREAM, 0);
-    if (fd == -1) {
-        log_and_throw("Failed to create an ipv6 socket");
-    }
-
-    // before bind, set the port
-    address.sin6_port = htons(end_point.port);
-
-    int optval_tmp{1};
-    const auto set_reuseaddr = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval_tmp, sizeof(optval_tmp));
-    if (set_reuseaddr == -1) {
-        log_and_throw("setsockopt(SO_REUSEADDR) failed");
-    }
-
-    const auto set_reuseport = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &optval_tmp, sizeof(optval_tmp));
-    if (set_reuseport == -1) {
-        log_and_throw("setsockopt(SO_REUSEPORT) failed");
-    }
-
-    const auto bind_result = bind(fd, reinterpret_cast<const struct sockaddr*>(&address), sizeof(address));
-    if (bind_result == -1) {
-        const auto error = "Failed to bind ipv6 socket to interface " + interface_name;
-        log_and_throw(error.c_str());
-    }
-
-    const auto listen_result = listen(fd, DEFAULT_SOCKET_BACKLOG);
-    if (listen_result == -1) {
-        log_and_throw("Listen on socket failed");
-    }
+    fd = create_tcp_listen_socket(address, end_point.port, DEFAULT_SOCKET_BACKLOG);
 
     poll_manager.register_fd(fd, [this]() { this->handle_connect(); });
 }
@@ -116,6 +86,10 @@ void ConnectionPlain::handle_connect() {
     const auto accept_fd = accept4(fd, reinterpret_cast<struct sockaddr*>(&address), &address_len, SOCK_NONBLOCK);
     if (accept_fd == -1) {
         log_and_throw("Failed to accept4");
+    }
+
+    if (not set_tcp_keepalive(accept_fd)) {
+        logf_warning("Failed to configure TCP keepalive on accepted connection");
     }
 
     const auto address_name = sockaddr_in6_to_name(address);

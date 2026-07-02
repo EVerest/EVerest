@@ -136,6 +136,28 @@ else()
     )
 endif()
 
+option(EVEREST_IO_ENABLE_TLS "Build TLS client/server adapters in everest_io (requires everest::tls)" ON)
+
+if(EVEREST_IO_ENABLE_TLS)
+    target_sources(everest_io
+        PRIVATE
+            tls/tls_server_socket.cpp
+            tls/tls_server.cpp
+            tls/tls_listener.cpp
+            tls/tls_client_socket.cpp
+            tls/tls_client.cpp
+    )
+    target_link_libraries(everest_io PRIVATE $<BUILD_INTERFACE:tls>)
+    # libtls is not installed as part of everest-core's export set, so its
+    # public include directories are propagated to in-tree consumers only via
+    # BUILD_INTERFACE. Mirrors libtls's own PUBLIC include directories.
+    target_include_directories(everest_io
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/lib/everest/tls>
+            $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/lib/everest/tls/include>
+    )
+endif()
+
 if(DISABLE_EDM)
     evc_setup_package_no_export(
         NAME everest-io

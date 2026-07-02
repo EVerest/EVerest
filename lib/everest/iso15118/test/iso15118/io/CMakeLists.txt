@@ -10,9 +10,21 @@ target_link_libraries(test_logging
 
 catch_discover_tests(test_logging)
 
+add_executable(socket_helper_test socket_helper_test.cpp)
+target_link_libraries(socket_helper_test
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+catch_discover_tests(socket_helper_test)
+
 add_executable(test_sdp_server sdp_server_test.cpp)
 target_link_libraries(test_sdp_server PRIVATE iso15118 Catch2::Catch2WithMain)
 catch_discover_tests(test_sdp_server)
+
+add_executable(test_socket_keepalive socket_keepalive.cpp)
+target_link_libraries(test_socket_keepalive PRIVATE iso15118 Catch2::Catch2WithMain)
+catch_discover_tests(test_socket_keepalive)
 
 add_executable(connection_openssl_test)
 add_custom_command(
