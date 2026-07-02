@@ -1,6 +1,31 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
 
+"""Helpers to spawn a full EVerest stack from tests (`EverestCore`).
+
+**Parallel pytest / gcov**
+
+When the tree is built with coverage instrumentation (CMake option ``EVEREST_ENABLE_COVERAGE`` in
+everest-core), ``gcov`` writes ``.gcda`` files when processes exit. By default those files are
+placed next to the instrumented object files in the **build tree**. Several ``EverestCore``
+instances (for example ``pytest-xdist`` workers) would then write the **same** paths concurrently.
+That corrupts profiling data (``libgcov`` merge mismatch) and can also perturb process teardown
+timing.
+
+``EverestCore`` therefore sets ``GCOV_PREFIX`` (and ``GCOV_PREFIX_STRIP``) on the **manager**
+subprocess so each instance writes under its own workspace directory (``<workspace>/gcda/``). This
+keeps coverage data isolated per test session without changing non-coverage builds (the env vars
+are harmless when binaries are not instrumented).
+
+**Stopping the manager subprocess**
+
+``stop()`` mirrors what a human operator does: graceful shutdown first (``SIGINT``, which the
+manager treats as normal shutdown), then bounded waits. If the process does not exit, it escalates
+to ``SIGTERM`` and finally ``SIGKILL`` so CI and local runs do not hang indefinitely on a wedged
+stack. If escalation was required, ``stop()`` raises ``RuntimeError`` so tests that require a clean
+SIGINT-only shutdown cannot silently ignore a broken teardown.
+"""
+
 import logging
 import os
 import signal
@@ -26,6 +51,9 @@ from ._configuration.everest_configuration_strategies.probe_module_configuration
     ProbeModuleConfigurationStrategy
 
 STARTUP_TIMEOUT = 30
+SHUTDOWN_TIMEOUT_SIGINT_SECONDS = 60
+SHUTDOWN_TIMEOUT_SIGTERM_SECONDS = 15
+SHUTDOWN_TIMEOUT_SIGKILL_SECONDS = 5
 
 Connections = dict[str, List[Requirement]]
 
@@ -74,7 +102,11 @@ class StatusFifoListener:
 
 
 class EverestCore:
-    """This class can be used to configure, start and stop a full build of EVerest
+    """Configure, start, and stop a full EVerest install from tests.
+
+    Each instance gets a private workspace (temp dir or supplied ``tmp_path``) including generated
+    config, status FIFO, and (when applicable) a per-instance ``gcda`` directory for coverage; see
+    module docstring.
     """
 
     def __init__(self,
@@ -95,7 +127,8 @@ class EverestCore:
         self.everest_uuid = uuid.uuid4().hex
 
         if not tmp_path:
-            temp_dir = Path(tempfile.mkdtemp(prefix=self.everest_uuid))
+            self._workspace_root = Path(tempfile.mkdtemp(prefix=self.everest_uuid))
+            temp_dir = self._workspace_root
             temp_everest_config_file = tempfile.NamedTemporaryFile(
                 delete=False, mode="w+", suffix=".yaml", dir=temp_dir)
             self.everest_config_path = Path(temp_everest_config_file.name)
@@ -104,12 +137,17 @@ class EverestCore:
             self.everest_core_user_config_path.mkdir(parents=True, exist_ok=True)
             self._status_fifo_path = temp_dir / "status.fifo"
         else:
+            self._workspace_root = tmp_path
             config_dir = tmp_path / "everest_config"
             config_dir.mkdir()
             self.everest_core_user_config_path = config_dir / "user-config"
             self.everest_core_user_config_path.mkdir()
             self.everest_config_path = config_dir / "everest_config.yaml"
             self._status_fifo_path = tmp_path / "status.fifo"
+
+        # See module docstring: isolate gcov output per workspace for parallel pytest.
+        self._gcda_root = self._workspace_root / "gcda"
+        self._gcda_root.mkdir(parents=True, exist_ok=True)
 
         self.prefix_path = prefix_path
         self.etc_path = Path('/etc/everest') if prefix_path == '/usr' else prefix_path / 'etc/everest'
@@ -131,6 +169,13 @@ class EverestCore:
         self.all_modules_started_event = threading.Event()
 
         self._standalone_module = standalone_module
+
+    def _manager_subprocess_env(self) -> Dict[str, str]:
+        """Environment for the manager child: redirects gcov output when instrumentation is on."""
+        env = os.environ.copy()
+        env["GCOV_PREFIX"] = str(self._gcda_root) + os.sep
+        env["GCOV_PREFIX_STRIP"] = "0"
+        return env
 
     @property
     def everest_config(self) -> Dict:
@@ -186,7 +231,12 @@ class EverestCore:
         logging.info('  '.join(args))
 
         self.process = subprocess.Popen(
-            args, cwd=self.prefix_path, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            args,
+            cwd=self.prefix_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=self._manager_subprocess_env(),
+        )
 
         self.log_reader_thread = Thread(target=self.read_everest_log)
         self.log_reader_thread.start()
@@ -218,16 +268,51 @@ class EverestCore:
         logging.debug("EVerest output stopped")
 
     def stop(self):
-        """Stops execution of EVerest by signaling SIGINT
+        """Request manager shutdown and wait for the subprocess to exit.
+
+        Sends ``SIGINT`` first (EVerest manager graceful path), waits up to
+        ``SHUTDOWN_TIMEOUT_SIGINT_SECONDS``, then ``SIGTERM`` / ``SIGKILL`` with shorter timeouts if
+        needed. Raises ``RuntimeError`` if escalation beyond SIGINT was required so callers can treat
+        a stuck stack as a failure; see module docstring.
         """
         logging.debug("CONTROLLER stop() function called...")
+        escalation_signal = None
         if self.process:
             # NOTE (aw): we could also call process.kill()
-            self.process.send_signal(SIGINT)
-            self.process.wait()
+            if self.process.poll() is None:
+                self.process.send_signal(SIGINT)
+                try:
+                    self.process.wait(timeout=SHUTDOWN_TIMEOUT_SIGINT_SECONDS)
+                except subprocess.TimeoutExpired:
+                    logging.warning(
+                        f"EVerest did not stop after SIGINT within {SHUTDOWN_TIMEOUT_SIGINT_SECONDS}s, sending SIGTERM"
+                    )
+                    escalation_signal = "SIGTERM"
+                    self.process.terminate()
+                    try:
+                        self.process.wait(timeout=SHUTDOWN_TIMEOUT_SIGTERM_SECONDS)
+                    except subprocess.TimeoutExpired:
+                        logging.warning(
+                            f"EVerest did not stop after SIGTERM within {SHUTDOWN_TIMEOUT_SIGTERM_SECONDS}s, sending SIGKILL"
+                        )
+                        escalation_signal = "SIGKILL"
+                        self.process.kill()
+                        try:
+                            self.process.wait(timeout=SHUTDOWN_TIMEOUT_SIGKILL_SECONDS)
+                        except subprocess.TimeoutExpired:
+                            logging.error(
+                                "EVerest child not reaped after SIGKILL within "
+                                f"{SHUTDOWN_TIMEOUT_SIGKILL_SECONDS}s (pid may be stuck as zombie)"
+                            )
 
         if self.log_reader_thread:
-            self.log_reader_thread.join()
+            self.log_reader_thread.join(timeout=5)
+
+        if escalation_signal is not None:
+            raise RuntimeError(
+                f"EVerest stop() required escalation to {escalation_signal}. "
+                "Tests must shut down cleanly via SIGINT only."
+            )
 
     def _create_testing_user_config(self):
         """Creates a user-config file to include the PyTestControlModule in the current SIL simulation.
