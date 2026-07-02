@@ -6,9 +6,7 @@
 
 #include <evse_security/utils/evse_filesystem_types.hpp>
 
-namespace evse_security {
 struct CertificateHashData;
-}
 
 namespace evse_security::filesystem_utils {
 
