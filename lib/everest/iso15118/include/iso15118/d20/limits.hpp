@@ -41,4 +41,19 @@ struct AcTransferLimits {
     std::optional<Limit<dt::RationalNumber>> discharge_power_L3;
 };
 
+struct IecDerTransferLimits {
+    dt::RationalNumber nominal_charge_power;
+    std::optional<dt::RationalNumber> nominal_charge_power_L2;
+    std::optional<dt::RationalNumber> nominal_charge_power_L3;
+    dt::RationalNumber nominal_discharge_power;
+    std::optional<dt::RationalNumber> nominal_discharge_power_L2;
+    std::optional<dt::RationalNumber> nominal_discharge_power_L3;
+    dt::RationalNumber max_discharge_power;
+    std::optional<dt::RationalNumber> max_discharge_power_L2;
+    std::optional<dt::RationalNumber> max_discharge_power_L3;
+    std::optional<dt::RationalNumber> dso_discharge_power;
+    std::optional<dt::RationalNumber> dso_discharge_power_L2;
+    std::optional<dt::RationalNumber> dso_discharge_power_L3;
+};
+
 } // namespace iso15118::d20

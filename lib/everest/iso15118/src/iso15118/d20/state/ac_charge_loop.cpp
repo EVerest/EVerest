@@ -75,16 +75,20 @@ void set_dynamic_parameters_in_res(T& res_mode, const UpdateDynamicModeParameter
         }
     }
     res_mode.target_soc = parameters.target_soc;
-    res_mode.minimum_soc = parameters.min_soc;
+
+    // [V2G20-1366]
+    if (parameters.min_soc.has_value() and parameters.target_soc.has_value() and
+        parameters.min_soc.value() <= parameters.target_soc.value()) {
+        res_mode.minimum_soc = parameters.min_soc;
+    }
     res_mode.ack_max_delay = 30; // TODO(sl) what to send here and define 30 seconds as const
 }
 } // namespace
 
-message_20::AC_ChargeLoopResponse handle_request(const message_20::AC_ChargeLoopRequest& req,
-                                                 const d20::Session& session, bool stop, bool pause,
-                                                 float target_frequency, const AcTargetPower& target_powers,
-                                                 const AcPresentPower& present_powers,
-                                                 const UpdateDynamicModeParameters& dynamic_parameters) {
+message_20::AC_ChargeLoopResponse
+handle_request(const message_20::AC_ChargeLoopRequest& req, const d20::Session& session, bool stop, bool pause,
+               std::optional<float> target_frequency, const AcTargetPower& target_powers,
+               const AcPresentPower& present_powers, const UpdateDynamicModeParameters& dynamic_parameters) {
 
     message_20::AC_ChargeLoopResponse res;
 
@@ -152,16 +156,20 @@ message_20::AC_ChargeLoopResponse handle_request(const message_20::AC_ChargeLoop
         }
     }
 
-    res.target_frequency = dt::from_float(target_frequency);
+    if (target_frequency.has_value()) {
+        res.target_frequency = dt::from_float(target_frequency.value());
+    }
 
     // TODO(sl): Setting EvseStatus, MeterInfo, Receipt
 
     if (stop) {
         res.status = {0, dt::EvseNotification::Terminate};
     } else if (pause) {
-        const uint16_t notification_max_delay =
-            (selected_control_mode == dt::ControlMode::Dynamic) ? 60 : 0; // [V2G20-1850]
-        res.status = {notification_max_delay, dt::EvseNotification::Pause};
+        constexpr auto NotificationMaxDelay = 60; // [V2G20-3308]
+        res.status = {NotificationMaxDelay, dt::EvseNotification::Pause};
+
+        // TODO(SL): [V2G20-3318] Decrease notificationmaxdelay based on the reaming seconds if the ev did not perform a
+        // pause
     }
 
     return response_with_code(res, dt::ResponseCode::OK);
@@ -212,7 +220,7 @@ Result AC_ChargeLoop::feed(Event ev) {
             return {};
         }
 
-        // V2G20-1623 -> state machine direct transition (skipped PowerDelivery)
+        // V2G20-3210 -> state machine direct transition (skipped PowerDelivery)
         if (req->charge_progress == dt::Progress::Stop or shutdown_requested) {
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
             m_ctx.feedback.signal(session::feedback::Signal::AC_OPEN_CONTACTOR);
@@ -236,7 +244,18 @@ Result AC_ChargeLoop::feed(Event ev) {
             return {};
         }
 
-        m_ctx.feedback.ac_charge_loop_req(req->control_mode);
+        if (const auto* mode = std::get_if<Scheduled_AC_Req>(&req->control_mode)) {
+            m_ctx.feedback.ac_charge_loop_req(*mode);
+        } else if (const auto* mode = std::get_if<Scheduled_BPT_AC_Req>(&req->control_mode)) {
+            m_ctx.feedback.ac_charge_loop_req(*mode);
+        }
+        if (const auto* mode = std::get_if<Dynamic_AC_Req>(&req->control_mode)) {
+            m_ctx.feedback.ac_charge_loop_req(*mode);
+        }
+        if (const auto* mode = std::get_if<Dynamic_BPT_AC_Req>(&req->control_mode)) {
+            m_ctx.feedback.ac_charge_loop_req(*mode);
+        }
+
         m_ctx.feedback.ac_charge_loop_req(req->meter_info_requested);
         if (req->display_parameters) {
             m_ctx.feedback.ac_charge_loop_req(*req->display_parameters);

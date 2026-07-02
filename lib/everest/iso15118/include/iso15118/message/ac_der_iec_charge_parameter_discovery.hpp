@@ -177,8 +177,8 @@ struct DER_AC_CPDResEnergyTransferMode : AC_CPDResEnergyTransferMode {
     RationalNumber max_discharge_power;
     std::optional<RationalNumber> max_discharge_power_L2;
     std::optional<RationalNumber> max_discharge_power_L3;
-    OperatingMode operating_mode;
-    GridConnectionMode grid_connection_mode;
+    OperatingMode operating_mode{OperatingMode::GridFollowing};
+    GridConnectionMode grid_connection_mode{GridConnectionMode::GridConnected};
     DerControl der_control;
 };
 

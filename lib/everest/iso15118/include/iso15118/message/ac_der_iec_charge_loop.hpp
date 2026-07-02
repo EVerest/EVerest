@@ -39,7 +39,7 @@ struct DER_Scheduled_AC_CLReqControlMode : Scheduled_AC_CLReqControlMode {
     std::optional<RationalNumber> max_discharge_reactive_power;
     std::optional<RationalNumber> max_discharge_reactive_power_L2;
     std::optional<RationalNumber> max_discharge_reactive_power_L3;
-    uint8_t grid_event_condition;
+    uint8_t grid_event_condition; // 0: no event, 1...: defined in IEC61851-1
 };
 
 struct DER_Dynamic_AC_CLReqControlMode : Dynamic_AC_CLReqControlMode {
@@ -55,7 +55,7 @@ struct DER_Dynamic_AC_CLReqControlMode : Dynamic_AC_CLReqControlMode {
     std::optional<RationalNumber> max_discharge_reactive_power;
     std::optional<RationalNumber> max_discharge_reactive_power_L2;
     std::optional<RationalNumber> max_discharge_reactive_power_L3;
-    uint8_t grid_event_condition;
+    uint8_t grid_event_condition; // 0: no event, 1...: defined in IEC61851-1
     std::optional<RationalNumber> max_v2x_energy_request;
     std::optional<RationalNumber> min_v2x_energy_request;
     std::optional<RationalNumber> session_total_discharge_energy_available;

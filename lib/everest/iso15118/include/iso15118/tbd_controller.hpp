@@ -50,6 +50,9 @@ public:
 
     void set_dlink_ready(bool ready);
 
+    void update_supported_der_functions(iec::DERControlName der_control, const iec::DERControlFunction& function);
+    void update_unsupported_der_functions(iec::DERControlName der_control);
+
 private:
     io::PollManager poll_manager;
     std::unique_ptr<io::SdpServer> sdp_server;

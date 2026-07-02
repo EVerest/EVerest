@@ -828,7 +828,8 @@ ocpp::v2::EnergyTransferModeEnum to_ocpp_energy_transfer_mode(const types::iso15
         return ocpp::v2::EnergyTransferModeEnum::AC_BPT;
     case types::iso15118::EnergyTransferMode::AC_BPT_DER:
         return ocpp::v2::EnergyTransferModeEnum::AC_BPT_DER;
-    case types::iso15118::EnergyTransferMode::AC_DER:
+    case types::iso15118::EnergyTransferMode::AC_DER_IEC:
+    case types::iso15118::EnergyTransferMode::AC_DER_SAE:
         return ocpp::v2::EnergyTransferModeEnum::AC_DER;
     case types::iso15118::EnergyTransferMode::DC_BPT:
         return ocpp::v2::EnergyTransferModeEnum::DC_BPT;
@@ -1837,7 +1838,7 @@ to_everest_allowed_energy_transfer_mode(const ocpp::v2::EnergyTransferModeEnum& 
     case ocpp::v2::EnergyTransferModeEnum::AC_BPT_DER:
         return types::iso15118::EnergyTransferMode::AC_BPT_DER;
     case ocpp::v2::EnergyTransferModeEnum::AC_DER:
-        return types::iso15118::EnergyTransferMode::AC_DER;
+        return types::iso15118::EnergyTransferMode::AC_DER_IEC;
     case ocpp::v2::EnergyTransferModeEnum::AC_single_phase:
         return types::iso15118::EnergyTransferMode::AC_single_phase_core;
     case ocpp::v2::EnergyTransferModeEnum::AC_three_phase:

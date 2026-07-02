@@ -437,6 +437,8 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
             publish_ac_ev_power_limits(fill_ac_ev_power_limits(*ac_transfer_mode));
         } else if (const auto* ac_bpt_transfer_mode = std::get_if<dt::BPT_AC_CPDReqEnergyTransferMode>(&limits)) {
             publish_ac_ev_power_limits(fill_ac_ev_power_limits(*ac_bpt_transfer_mode));
+        } else if (const auto* der_iec_transfer_mode = std::get_if<dt::DER_AC_CPDReqEnergyTransferMode>(&limits)) {
+            // todo(SL)
         }
     };
 
@@ -926,8 +928,11 @@ void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
         case types::iso15118::EnergyTransferMode::AC_BPT_DER:
             services.push_back(dt::ServiceCategory::AC_BPT);
             break;
-        case types::iso15118::EnergyTransferMode::AC_DER:
-            services.push_back(dt::ServiceCategory::AC_DER);
+        case types::iso15118::EnergyTransferMode::AC_DER_IEC:
+            services.push_back(dt::ServiceCategory::AC_DER_IEC);
+            break;
+        case types::iso15118::EnergyTransferMode::AC_DER_SAE:
+            services.push_back(dt::ServiceCategory::AC_DER_SAE);
             break;
         case types::iso15118::EnergyTransferMode::DC:
         case types::iso15118::EnergyTransferMode::DC_core:

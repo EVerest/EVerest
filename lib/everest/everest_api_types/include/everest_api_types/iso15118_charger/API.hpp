@@ -26,6 +26,8 @@ enum class EnergyTransferMode {
     AC_BPT,
     AC_BPT_DER,
     AC_DER,
+    AC_DER_IEC,
+    AC_DER_SAE,
     DC_BPT,
     DC_ACDP,
     DC_ACDP_BPT,
