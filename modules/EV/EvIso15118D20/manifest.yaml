@@ -8,7 +8,7 @@ config:
   evcc_id:
     description: EVCC identifier sent to the SECC.
     type: string
-    default: EVCPP000001
+    default: "02:00:00:00:00:01"
   response_timeout_ms:
     description: Response watchdog timeout in milliseconds.
     type: integer

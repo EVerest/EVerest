@@ -12,9 +12,6 @@
 using namespace iso15118;
 
 namespace {
-constexpr auto SESSION_HEADER =
-    message_20::Header{std::array<uint8_t, 8>{0x10, 0x34, 0xAB, 0x7A, 0x01, 0xF3, 0x95, 0x02}, 1691411798};
-
 message_20::ScheduleExchangeResponse make_response(message_20::datatypes::ResponseCode response_code,
                                                    message_20::datatypes::Processing processing) {
     message_20::ScheduleExchangeResponse res{};
@@ -26,14 +23,15 @@ message_20::ScheduleExchangeResponse make_response(message_20::datatypes::Respon
 } // namespace
 
 SCENARIO("ISO15118-20 EV ScheduleExchange sends initial Dynamic request on enter") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
 
     fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::ScheduleExchange>()};
 
-    const auto request_message = ctx.get_request<message_20::ScheduleExchangeRequest>();
+    const auto requests = drain_requests(state_helper.get_message_exchange());
+    const auto request_message = requests.get<message_20::ScheduleExchangeRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
     REQUIRE(std::holds_alternative<message_20::datatypes::Dynamic_SEReqControlMode>(request_message->control_mode));
@@ -41,7 +39,7 @@ SCENARIO("ISO15118-20 EV ScheduleExchange sends initial Dynamic request on enter
 
 SCENARIO("ISO15118-20 EV ScheduleExchange fires ev_power_ready and transitions to DC_CableCheck on Finished") {
     bool ev_power_ready_fired = false;
-    ev::d20::session::feedback::Callbacks callbacks{};
+    ev::feedback::Callbacks callbacks{};
     callbacks.ev_power_ready = [&ev_power_ready_fired]() { ev_power_ready_fired = true; };
 
     auto state_helper = FsmStateHelper(callbacks);
@@ -63,7 +61,7 @@ SCENARIO("ISO15118-20 EV ScheduleExchange fires ev_power_ready and transitions t
 
 SCENARIO("ISO15118-20 EV ScheduleExchange stays and resends on Ongoing without firing ev_power_ready") {
     bool ev_power_ready_fired = false;
-    ev::d20::session::feedback::Callbacks callbacks{};
+    ev::feedback::Callbacks callbacks{};
     callbacks.ev_power_ready = [&ev_power_ready_fired]() { ev_power_ready_fired = true; };
 
     auto state_helper = FsmStateHelper(callbacks);
@@ -75,7 +73,7 @@ SCENARIO("ISO15118-20 EV ScheduleExchange stays and resends on Ongoing without f
     // Drain the request emitted on enter() so the post-feed assertion proves feed()
     // emitted a *fresh* ScheduleExchangeRequest rather than observing the initial one.
     REQUIRE(state_helper.get_message_exchange().take_request().has_value());
-    REQUIRE_FALSE(ctx.get_request<message_20::ScheduleExchangeRequest>().has_value());
+    REQUIRE_FALSE(state_helper.get_message_exchange().has_request());
 
     state_helper.handle_response(
         make_response(message_20::datatypes::ResponseCode::OK, message_20::datatypes::Processing::Ongoing));
@@ -87,13 +85,14 @@ SCENARIO("ISO15118-20 EV ScheduleExchange stays and resends on Ongoing without f
     REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::ScheduleExchange);
     REQUIRE(ctx.is_session_stopped() == false);
 
-    const auto request_message = ctx.get_request<message_20::ScheduleExchangeRequest>();
+    const auto requests = drain_requests(state_helper.get_message_exchange());
+    const auto request_message = requests.get<message_20::ScheduleExchangeRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
 }
 
 SCENARIO("ISO15118-20 EV ScheduleExchange stops session on FAILED response") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
@@ -111,7 +110,7 @@ SCENARIO("ISO15118-20 EV ScheduleExchange stops session on FAILED response") {
 }
 
 SCENARIO("ISO15118-20 EV ScheduleExchange stops session on wrong variant") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
@@ -130,15 +129,13 @@ SCENARIO("ISO15118-20 EV ScheduleExchange stops session on wrong variant") {
 }
 
 SCENARIO("ISO15118-20 EV ScheduleExchange stops session on mismatched response session_id") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
 
     fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::ScheduleExchange>()};
 
-    constexpr auto WRONG_HEADER =
-        message_20::Header{std::array<uint8_t, 8>{0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00, 0x00, 0x00}, 1691411798};
     message_20::ScheduleExchangeResponse res{};
     res.header.session_id = WRONG_HEADER.session_id;
     res.response_code = message_20::datatypes::ResponseCode::OK;

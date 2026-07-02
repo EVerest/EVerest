@@ -12,7 +12,7 @@
 
 #include <iso15118/io/ipv6_endpoint.hpp>
 
-namespace iso15118::ev::io {
+namespace iso15118::ev::transport {
 
 /**
  * EV-side TCP data-path client.
@@ -114,4 +114,4 @@ private:
     std::unique_ptr<everest::lib::io::tcp::tcp_client> client;
 };
 
-} // namespace iso15118::ev::io
+} // namespace iso15118::ev::transport

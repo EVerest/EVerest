@@ -13,9 +13,6 @@
 using namespace iso15118;
 
 namespace {
-constexpr auto SESSION_HEADER =
-    message_20::Header{std::array<uint8_t, 8>{0x10, 0x34, 0xAB, 0x7A, 0x01, 0xF3, 0x95, 0x02}, 1691411798};
-
 message_20::DC_ChargeParameterDiscoveryResponse make_response(message_20::datatypes::ResponseCode code) {
     message_20::DC_ChargeParameterDiscoveryResponse res{};
     res.header.session_id = SESSION_HEADER.session_id;
@@ -35,7 +32,7 @@ ev::DcChargeParams make_params() {
 } // namespace
 
 SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery emits a DC request built from the DC params on enter") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     state_helper.set_dc_params(make_params());
     auto& ctx = state_helper.get_context();
@@ -43,7 +40,8 @@ SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery emits a DC request built fr
 
     fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::DC_ChargeParameterDiscovery>()};
 
-    const auto request_message = ctx.get_request<message_20::DC_ChargeParameterDiscoveryRequest>();
+    const auto requests = drain_requests(state_helper.get_message_exchange());
+    const auto request_message = requests.get<message_20::DC_ChargeParameterDiscoveryRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
 
@@ -57,7 +55,7 @@ SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery emits a DC request built fr
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery transitions to ScheduleExchange on OK") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
@@ -74,7 +72,7 @@ SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery transitions to ScheduleExch
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery stops session on FAILED response") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
@@ -91,7 +89,7 @@ SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery stops session on FAILED res
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery stops session on wrong variant") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
@@ -108,7 +106,7 @@ SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery stops session on wrong vari
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeParameterDiscovery stops session on mismatched response session_id") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
