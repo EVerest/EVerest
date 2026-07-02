@@ -3,15 +3,19 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include <everest/util/async/monitor.hpp>
+
 #include "config.hpp"
 #include <iso15118/d20/config.hpp>
 #include <iso15118/d20/control_event.hpp>
 #include <iso15118/d20/limits.hpp>
+#include <iso15118/io/connection_abstract.hpp>
 #include <iso15118/io/poll_manager.hpp>
 #include <iso15118/io/sdp_server.hpp>
 #include <iso15118/io/time.hpp>
@@ -22,6 +26,9 @@
 namespace iso15118 {
 
 struct TbdConfig {
+    /// `ssl` here is the INITIAL value only; the live config is owned by `m_ssl_config` after construction —
+    /// read it via `ssl_config_snapshot()`, never `config.ssl`. A future refactor moves `ssl` out of
+    /// `TbdConfig` entirely — see plans/2026-06-10-tls-multichain-structural-followup.md.
     config::SSLConfig ssl{};
     std::string interface_name;
     config::TlsNegotiationStrategy tls_negotiation_strategy{config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER};
@@ -30,10 +37,21 @@ struct TbdConfig {
 
 class TbdController {
 public:
-    TbdController(TbdConfig, session::feedback::Callbacks, d20::EvseSetupConfig);
+    // Creates the connection for sessions when the SDP server is disabled;
+    // defaults to a ConnectionPlain on the configured interface.
+    using ConnectionFactory =
+        std::function<std::unique_ptr<io::IConnection>(io::PollManager&, const std::string& interface_name)>;
+
+    TbdController(TbdConfig, session::feedback::Callbacks, d20::EvseSetupConfig,
+                  ConnectionFactory connection_factory = {});
     ~TbdController();
 
     void loop();
+    void tick();
+
+    bool has_active_session() const {
+        return session != nullptr;
+    }
 
     void shutdown();
 
@@ -50,6 +68,17 @@ public:
 
     void set_dlink_ready(bool ready);
 
+    /// Replaces the stored SSL config (thread-safe). Takes effect for the next incoming secure connection;
+    /// established connections are unaffected.
+    void set_ssl_config(config::SSLConfig new_config);
+
+    /// Returns a copy of the stored SSL config (thread-safe).
+    [[nodiscard]] config::SSLConfig ssl_config_snapshot() const;
+
+    /// The single seam every new secure connection reads its SSL config from, so a rotation via
+    /// `set_ssl_config()` is picked up by the next connection.
+    [[nodiscard]] config::SSLConfig connection_ssl_config() const;
+
 private:
     io::PollManager poll_manager;
     std::unique_ptr<io::SdpServer> sdp_server;
@@ -57,6 +86,10 @@ private:
     std::unique_ptr<Session> session;
 
     std::atomic_bool shutdown_active{false};
+    std::atomic_bool terminate_session_requested{false};
+
+    bool shutdown_signaled{false};
+    TimePoint next_event{};
 
     // callbacks for sdp server
     void handle_sdp_server_input();
@@ -72,6 +105,10 @@ private:
 
     static constexpr uint32_t V2G_COMMUNICATION_SETUP_TIMEOUT_MS{18000};
     std::optional<Timeout> communication_setup_timeout;
+
+    ConnectionFactory connection_factory;
+
+    mutable everest::lib::util::monitor<config::SSLConfig> m_ssl_config;
 };
 
 } // namespace iso15118

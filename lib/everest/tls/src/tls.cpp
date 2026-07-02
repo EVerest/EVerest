@@ -1153,6 +1153,17 @@ bool Server::init_certificates(const std::vector<certificate_config_t>& chain_fi
 
                 if (openssl::verify_chain(chain)) {
                     chains.emplace_back(std::move(chain));
+                } else {
+                    const auto subject = openssl::certificate_subject(chain.chain.leaf.get());
+                    std::string msg("chain verification failed, excluding chain (leaf:");
+                    for (const auto& item : subject) {
+                        msg += ' ';
+                        msg += item.first;
+                        msg += ':';
+                        msg += item.second;
+                    }
+                    msg += ')';
+                    log_warning(msg);
                 }
             } else {
                 const auto subject = openssl::certificate_subject(certs[0].get());
@@ -1165,6 +1176,11 @@ bool Server::init_certificates(const std::vector<certificate_config_t>& chain_fi
                 }
                 log_warning(msg);
             }
+        } else {
+            const auto* file = static_cast<const char*>(i.certificate_chain_file);
+            std::string msg("certificate chain file yielded no certificates: ");
+            msg += (file != nullptr) ? file : "<not set>";
+            log_warning(msg);
         }
     }
 

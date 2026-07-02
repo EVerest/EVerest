@@ -18,6 +18,9 @@
 
 #include "utils.hpp"
 
+#include <generated/types/evse_security.hpp>
+
+#include <iso15118/config.hpp>
 #include <iso15118/d20/config.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/tbd_controller.hpp>
@@ -100,6 +103,23 @@ private:
 
     void update_supported_vas_services();
     std::optional<size_t> get_vas_provider_index(uint16_t service_id);
+
+    /// Builds the base SSLConfig: backend, V2G/MO trust-anchor paths, and the module-level
+    /// TLS flags. Carries no certificate chains. Does not depend on leaf-certificate
+    /// availability (still queries evse_security for the V2G/MO verify files).
+    iso15118::config::SSLConfig build_base_ssl_config();
+
+    /// Builds the current SSLConfig: the base config plus the valid V2G certificate chains
+    /// queried from evse_security and mapped via map_valid_chains(). The chains vector is
+    /// empty when no usable chains are available.
+    iso15118::config::SSLConfig build_current_ssl_config();
+
+    /// Subscriber for evse_security::certificate_store_update. Reads this->controller under a
+    /// null guard; the controller is created once in ready() and never reset. Delegates to
+    /// charger::handle_certificate_store_update(), which gates on relevance, rebuilds the
+    /// SSLConfig, and applies it or preserves the last-good config; rebuild exceptions are
+    /// caught there so the subscriber thread survives RPC failures.
+    void on_certificate_store_update(const types::evse_security::CertificateStoreUpdate& event);
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
