@@ -93,6 +93,44 @@ bool is_set_read_only_allowed(const everest::config::Access& access, const std::
     const auto it = config_access.modules.find(target_module_id);
     return it != config_access.modules.end() and it->second.allow_set_read_only;
 }
+
+// Look up the parameter targeted by \p id. On success returns the parameter and its module's
+// access rules; on failure fills \p per_result.status_info with a human-readable reason and
+// returns nullopt (leaving the status enum untouched).
+std::optional<std::pair<everest::config::ConfigurationParameter*, everest::config::Access*>>
+find_parameter_or_explain(const everest::config::ConfigurationParameterIdentifier& id,
+                          everest::config::ModuleConfigurations& configurations,
+                          SetConfigPerParameterResult& per_result) {
+    auto lookup = get_parameter(id, configurations);
+    if (lookup.has_value()) {
+        return lookup;
+    }
+    if (configurations.find(id.module_id) == configurations.end()) {
+        per_result.status_info = fmt::format("Unknown target module: {}", id.module_id);
+    } else {
+        per_result.status_info =
+            fmt::format("Unknown parameter: {} in module: {}", id.configuration_parameter_name, id.module_id);
+    }
+    return std::nullopt;
+}
+
+// A change is "effective" -- and therefore worth recording in the update event and persisting --
+// when it was applied now or will be applied on the next restart.
+bool is_effective(SetConfigParameterResultEnum status) {
+    return status == SetConfigParameterResultEnum::Applied or
+           status == SetConfigParameterResultEnum::WillApplyOnRestart;
+}
+
+// Persist a change the module already accepted, logging (but not failing) on a storage error.
+void persist_accepted_change(everest::config::SqliteStorage& storage,
+                             const everest::config::ConfigurationParameterIdentifier& identifier,
+                             const everest::config::ConfigurationParameter& parameter, const std::string& value) {
+    const auto write_status = storage.write_configuration_parameter(identifier, parameter.characteristics, value);
+    if (write_status != everest::config::GetSetResponseStatus::OK) {
+        EVLOG_error << "ConfigServiceCore: Couldn't persist a configuration parameter change which was "
+                       "accepted by the module.";
+    }
+}
 } // namespace
 
 ConfigServiceCore::ConfigServiceCore(const ConfigParseSettings& parse_settings,
@@ -370,154 +408,28 @@ ConfigServiceCore::internal_set_config_parameters(int slot_id, const std::vector
 
     const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
     const bool modifies_active_slot = resolved_slot_id == active_slot_id_;
+    const bool modules_in_transient =
+        module_status_ != ActiveSlotStatus::Running and module_status_ != ActiveSlotStatus::Stopped;
 
-    const std::string& origin_module_id = origin.module_id.value_or("<external>");
-
-    result.parameter_results.emplace(
-        updates.size(), Everest::config::SetConfigPerParameterResult{SetConfigParameterResultEnum::DoesNotExist, ""});
+    SetConfigParameterResult result;
+    result.status = SetConfigParameterStatus::Ok;
+    result.parameter_results.emplace(updates.size(),
+                                     SetConfigPerParameterResult{SetConfigParameterResultEnum::DoesNotExist, ""});
 
     ConfigurationUpdate event;
     event.timestamp = now_rfc3339();
     event.slot_id = resolved_slot_id;
+    event.origin = origin;
 
     if (modifies_active_slot and modules_in_transient) {
+        // Modules are mid-transition; the caller should retry once they settle.
         result.status = SetConfigParameterStatus::ModulesInTransientState;
         result.parameter_results.emplace(
-            updates.size(), Everest::config::SetConfigPerParameterResult{SetConfigParameterResultEnum::RetryLater, ""});
-    } else if (modifies_active_slot and not modules_in_transient) {
-        for (size_t i = 0; i < updates.size(); ++i) {
-            const auto& update = updates[i];
-            SetConfigParameterResultEnum& result_enum = result.parameter_results.value()[i].status;
-            std::string& status_info = result.parameter_results.value()[i].status_info;
-
-            // does the parameter exist?
-            auto parameter_lookup_result = get_parameter(update.identifier, module_configs_);
-            if (not parameter_lookup_result.has_value()) {
-                if (module_configs_.find(update.identifier.module_id) == module_configs_.end()) {
-                    result.parameter_results.value()[i].status_info =
-                        fmt::format("Unknown target module: {}", update.identifier.module_id);
-                } else {
-                    result.parameter_results.value()[i].status_info =
-                        fmt::format("Unknown parameter: {} in module: {}",
-                                    update.identifier.configuration_parameter_name, update.identifier.module_id);
-                }
-                continue;
-            }
-            auto [parameter, parameter_access] = parameter_lookup_result.value();
-
-            // if applicable: set in module and mutate in memory at the same time
-            if (parameter->characteristics.mutability == everest::config::Mutability::ReadWrite and
-                modules_are_running) {
-                // If the callback is not defined (== cannot ask the modules), changes are rejected
-                if (not set_parameter_callback_) {
-                    result_enum = SetConfigParameterResultEnum::Rejected;
-                    EVLOG_error << "ConfigServiceCore: No callback registered for setting the configuration parameter "
-                                   "change in the module -> Rejecting.";
-                    break;
-                }
-                auto set_result = set_parameter_callback_(update.identifier, update.value);
-
-                switch (set_result) {
-                case SetParameterResponse::SetCallFailed:
-                    [[fallthrough]];
-                case SetParameterResponse::ModuleReplied_Rejected:
-                    result_enum = SetConfigParameterResultEnum::Rejected;
-                    status_info = "Rejected by module";
-                    continue;
-                case SetParameterResponse::ModuleReplied_Applied: {
-                    result_enum = SetConfigParameterResultEnum::Applied;
-                    // Module confirmed it immediately applied the value; mutate the in-memory state
-                    const auto parsed_value =
-                        everest::config::parse_config_value(parameter->characteristics.datatype, update.value);
-                    parameter->value = parsed_value;
-                    break;
-                }
-                case SetParameterResponse::ModuleReplied_RequiresRestart:
-                    result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
-                    break;
-                }
-            } else if (parameter->characteristics.mutability == everest::config::Mutability::ReadOnly and
-                       modules_are_running) {
-                if (is_set_read_only_allowed(*parameter_access, update.identifier.module_id)) {
-                    result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
-                } else {
-                    status_info = "Is a ReadOnly parameter";
-                    result_enum = SetConfigParameterResultEnum::Rejected;
-                }
-            } else {
-                // ReadOnly and WriteOnly don't go to the module at runtime
-                // ReadWrite also if no modules are running:
-                result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
-                // mutate the in-memory state
-                const auto parsed_value =
-                    everest::config::parse_config_value(parameter->characteristics.datatype, update.value);
-                parameter->value = parsed_value;
-            }
-
-            if (result_enum == SetConfigParameterResultEnum::Applied or
-                result_enum == SetConfigParameterResultEnum::WillApplyOnRestart) {
-                event.updates.push_back({update.identifier, update.value, result_enum});
-            }
-
-            if (result_enum == SetConfigParameterResultEnum::Applied or
-                result_enum == SetConfigParameterResultEnum::WillApplyOnRestart) {
-                const auto write_status = active_storage_->write_configuration_parameter(
-                    update.identifier, parameter->characteristics, update.value);
-                if (write_status != everest::config::GetSetResponseStatus::OK) {
-                    EVLOG_error << "ConfigServiceCore: Couldn't persist a configuration parameter change which was "
-                                   "accepted by the module.";
-                }
-            }
-        }
+            updates.size(), SetConfigPerParameterResult{SetConfigParameterResultEnum::RetryLater, ""});
+    } else if (modifies_active_slot) {
+        apply_active_slot_updates(updates, result, event);
     } else {
-        const auto slots = slot_manager_.list_slots();
-        const bool exists = std::any_of(slots.begin(), slots.end(),
-                                        [resolved_slot_id](const auto& s) { return s.id == resolved_slot_id; });
-        if (not exists) {
-            std::fill(result.parameter_results.value().begin(), result.parameter_results.value().end(),
-                      SetConfigPerParameterResult{SetConfigParameterResultEnum::DoesNotExist, "Slot does not exist"});
-            return result;
-        }
-
-        auto storage = make_storage(resolved_slot_id);
-        auto inactive_configuration = storage->get_module_configs();
-        if (inactive_configuration.status != everest::config::GenericResponseStatus::OK) {
-            std::fill(result.parameter_results.value().begin(), result.parameter_results.value().end(),
-                      SetConfigPerParameterResult{SetConfigParameterResultEnum::Rejected, ""});
-            return result;
-        }
-
-        for (size_t i = 0; i < updates.size(); ++i) {
-            const auto& update = updates[i];
-            SetConfigParameterResultEnum& result_enum = result.parameter_results.value()[i].status;
-
-            // does the parameter exist?
-            auto parameter_lookup_result = get_parameter(update.identifier, inactive_configuration.module_configs);
-            if (not parameter_lookup_result.has_value()) {
-                if (inactive_configuration.module_configs.find(update.identifier.module_id) ==
-                    inactive_configuration.module_configs.end()) {
-                    result.parameter_results.value()[i].status_info =
-                        fmt::format("Unknown target module: {}", update.identifier.module_id);
-                } else {
-                    result.parameter_results.value()[i].status_info =
-                        fmt::format("Unknown parameter: {} in module: {}",
-                                    update.identifier.configuration_parameter_name, update.identifier.module_id);
-                }
-                continue;
-            }
-            auto [parameter, parameter_access] = parameter_lookup_result.value();
-
-            const auto write_status =
-                storage->write_configuration_parameter(update.identifier, parameter->characteristics, update.value);
-            if (write_status == everest::config::GetSetResponseStatus::OK) {
-                result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
-                event.updates.push_back(
-                    {update.identifier, update.value, SetConfigParameterResultEnum::WillApplyOnRestart});
-            } else {
-                result_enum = SetConfigParameterResultEnum::Rejected;
-                continue;
-            }
-        }
+        apply_inactive_slot_updates(resolved_slot_id, updates, result, event);
     }
 
     if (not event.updates.empty()) {
@@ -529,6 +441,152 @@ ConfigServiceCore::internal_set_config_parameters(int slot_id, const std::vector
     }
 
     return result;
+}
+
+void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParameterUpdate>& updates,
+                                                  SetConfigParameterResult& result, ConfigurationUpdate& event) {
+    const bool modules_are_running = module_status_ == ActiveSlotStatus::Running;
+
+    struct AsyncParamCall {
+        size_t index;
+        everest::config::ConfigurationParameter* parameter;
+        std::future<SetParameterResponse> future;
+    };
+    std::vector<AsyncParamCall> pending_calls;
+
+    // First pass: apply everything we can decide locally, and dispatch ReadWrite changes to the modules.
+    for (size_t i = 0; i < updates.size(); ++i) {
+        const auto& update = updates[i];
+        auto& per_result = result.parameter_results.value()[i];
+        SetConfigParameterResultEnum& result_enum = per_result.status;
+
+        auto lookup = find_parameter_or_explain(update.identifier, module_configs_, per_result);
+        if (not lookup.has_value()) {
+            continue;
+        }
+        auto [parameter, parameter_access] = lookup.value();
+        const auto mutability = parameter->characteristics.mutability;
+
+        if (mutability == everest::config::Mutability::ReadWrite and modules_are_running) {
+            // The module must confirm the change; dispatch now and process the reply in the second pass.
+            if (not set_parameter_callback_) {
+                result_enum = SetConfigParameterResultEnum::Rejected;
+                EVLOG_error << "ConfigServiceCore: No callback registered for setting the configuration parameter "
+                               "change in the module -> Rejecting.";
+                break;
+            }
+            pending_calls.push_back({i, parameter, dispatch_set_parameter(update)});
+            continue;
+        }
+
+        if (mutability == everest::config::Mutability::ReadOnly and modules_are_running) {
+            if (is_set_read_only_allowed(*parameter_access, update.identifier.module_id)) {
+                result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
+            } else {
+                per_result.status_info = "Is a ReadOnly parameter";
+                result_enum = SetConfigParameterResultEnum::Rejected;
+            }
+        } else {
+            // ReadOnly/WriteOnly don't reach the module at runtime, and neither does anything while
+            // modules are stopped: persist for the next restart and update the in-memory copy.
+            result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
+            parameter->value = everest::config::parse_config_value(parameter->characteristics.datatype, update.value);
+        }
+
+        if (is_effective(result_enum)) {
+            event.updates.push_back({update.identifier, update.value, result_enum});
+            persist_accepted_change(*active_storage_, update.identifier, *parameter, update.value);
+        }
+    }
+
+    // Second pass: collect the module replies for the dispatched ReadWrite changes.
+    for (auto& call : pending_calls) {
+        const auto& update = updates[call.index];
+        auto& per_result = result.parameter_results.value()[call.index];
+        SetConfigParameterResultEnum& result_enum = per_result.status;
+
+        if (call.future.wait_for(std::chrono::seconds(3)) == std::future_status::timeout) {
+            result_enum = SetConfigParameterResultEnum::RetryLater;
+            per_result.status_info = "Timeout waiting for module to respond";
+            orphaned_futures_.push_back(std::move(call.future));
+            continue;
+        }
+
+        switch (call.future.get()) {
+        case SetParameterResponse::SetCallFailed:
+        case SetParameterResponse::ModuleReplied_Rejected:
+            result_enum = SetConfigParameterResultEnum::Rejected;
+            per_result.status_info = "Rejected by module";
+            continue;
+        case SetParameterResponse::ModuleReplied_Applied:
+            // Module confirmed it took effect immediately; mutate the in-memory copy.
+            result_enum = SetConfigParameterResultEnum::Applied;
+            call.parameter->value =
+                everest::config::parse_config_value(call.parameter->characteristics.datatype, update.value);
+            break;
+        case SetParameterResponse::ModuleReplied_RequiresRestart:
+            result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
+            break;
+        }
+
+        if (is_effective(result_enum)) {
+            event.updates.push_back({update.identifier, update.value, result_enum});
+            persist_accepted_change(*active_storage_, update.identifier, *call.parameter, update.value);
+        }
+    }
+}
+
+void ConfigServiceCore::apply_inactive_slot_updates(int slot_id, const std::vector<ConfigParameterUpdate>& updates,
+                                                    SetConfigParameterResult& result, ConfigurationUpdate& event) {
+    if (not slot_manager_.exists(slot_id)) {
+        std::fill(result.parameter_results.value().begin(), result.parameter_results.value().end(),
+                  SetConfigPerParameterResult{SetConfigParameterResultEnum::DoesNotExist, "Slot does not exist"});
+        return;
+    }
+
+    auto storage = make_storage(slot_id);
+    auto inactive_configuration = storage->get_module_configs();
+    if (inactive_configuration.status != everest::config::GenericResponseStatus::OK) {
+        std::fill(result.parameter_results.value().begin(), result.parameter_results.value().end(),
+                  SetConfigPerParameterResult{SetConfigParameterResultEnum::Rejected, ""});
+        return;
+    }
+
+    for (size_t i = 0; i < updates.size(); ++i) {
+        const auto& update = updates[i];
+        auto& per_result = result.parameter_results.value()[i];
+
+        auto lookup = find_parameter_or_explain(update.identifier, inactive_configuration.module_configs, per_result);
+        if (not lookup.has_value()) {
+            continue;
+        }
+        auto [parameter, parameter_access] = lookup.value();
+
+        const auto write_status =
+            storage->write_configuration_parameter(update.identifier, parameter->characteristics, update.value);
+        if (write_status == everest::config::GetSetResponseStatus::OK) {
+            per_result.status = SetConfigParameterResultEnum::WillApplyOnRestart;
+            event.updates.push_back({update.identifier, update.value, SetConfigParameterResultEnum::WillApplyOnRestart});
+        } else {
+            per_result.status = SetConfigParameterResultEnum::Rejected;
+        }
+    }
+}
+
+std::future<SetParameterResponse> ConfigServiceCore::dispatch_set_parameter(const ConfigParameterUpdate& update) {
+    auto call = [this, id = update.identifier, val = update.value]() { return set_parameter_callback_(id, val); };
+    if (spawn_threads_) {
+        return async_worker_pool_(std::move(call));
+    }
+    return std::async(std::launch::deferred, std::move(call));
+}
+
+void ConfigServiceCore::reap_orphaned_futures() {
+    orphaned_futures_.erase(std::remove_if(orphaned_futures_.begin(), orphaned_futures_.end(),
+                                           [](const std::future<SetParameterResponse>& f) {
+                                               return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+                                           }),
+                            orphaned_futures_.end());
 }
 
 GetConfigParametersResult ConfigServiceCore::get_config_parameters(

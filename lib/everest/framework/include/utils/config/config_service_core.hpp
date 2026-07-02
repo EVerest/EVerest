@@ -144,6 +144,17 @@ private:
     SetConfigParameterResult internal_set_config_parameters(int slot_id,
                                                             const std::vector<ConfigParameterUpdate>& updates,
                                                             const Origin& origin);
+    /// \brief Apply updates to the active slot: run module callbacks for live ReadWrite params,
+    /// persist the rest, and record accepted changes in \p event.
+    void apply_active_slot_updates(const std::vector<ConfigParameterUpdate>& updates, SetConfigParameterResult& result,
+                                   ConfigurationUpdate& event);
+    /// \brief Apply updates to a non-active slot by writing straight to its storage.
+    void apply_inactive_slot_updates(int slot_id, const std::vector<ConfigParameterUpdate>& updates,
+                                     SetConfigParameterResult& result, ConfigurationUpdate& event);
+    /// \brief Dispatch a single set-parameter callback (on the worker pool, or deferred in single-threaded mode).
+    std::future<SetParameterResponse> dispatch_set_parameter(const ConfigParameterUpdate& update);
+    /// \brief Drop orphaned (timed-out) futures that have since completed.
+    void reap_orphaned_futures();
     GetConfigParametersResult
     internal_get_config_parameters(int slot_id,
                                    const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters);
