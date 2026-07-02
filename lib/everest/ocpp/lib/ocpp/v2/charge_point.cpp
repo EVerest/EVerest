@@ -221,9 +221,10 @@ void ChargePoint::on_transaction_finished(const std::int32_t evse_id, const Date
                                           const TriggerReasonEnum trigger_reason,
                                           const std::optional<IdToken>& id_token,
                                           const std::optional<std::string>& signed_meter_value,
-                                          const ChargingStateEnum charging_state) {
+                                          const ChargingStateEnum charging_state,
+                                          const std::optional<SignedMeterValue>& start_signed_meter_value) {
     this->transaction->on_transaction_finished(evse_id, timestamp, meter_stop, reason, trigger_reason, id_token,
-                                               signed_meter_value, charging_state);
+                                               signed_meter_value, charging_state, start_signed_meter_value);
 }
 
 void ChargePoint::on_session_finished(const std::int32_t evse_id, const std::int32_t connector_id) {

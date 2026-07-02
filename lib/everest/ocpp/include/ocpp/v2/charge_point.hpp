@@ -175,12 +175,13 @@ public:
     /// \param reason
     /// \param id_token
     /// \param signed_meter_value
+    /// \param start_signed_meter_value
     /// \param charging_state
-    virtual void on_transaction_finished(const std::int32_t evse_id, const DateTime& timestamp,
-                                         const MeterValue& meter_stop, const ReasonEnum reason,
-                                         const TriggerReasonEnum trigger_reason, const std::optional<IdToken>& id_token,
-                                         const std::optional<std::string>& signed_meter_value,
-                                         const ChargingStateEnum charging_state) = 0;
+    virtual void on_transaction_finished(
+        const std::int32_t evse_id, const DateTime& timestamp, const MeterValue& meter_stop, const ReasonEnum reason,
+        const TriggerReasonEnum trigger_reason, const std::optional<IdToken>& id_token,
+        const std::optional<std::string>& signed_meter_value, const ChargingStateEnum charging_state,
+        const std::optional<SignedMeterValue>& start_signed_meter_value = std::nullopt) = 0;
 
     /// \brief Event handler that should be called when a session has finished
     /// \param evse_id
@@ -611,11 +612,11 @@ public:
                                 const std::optional<std::int32_t>& remote_start_id,
                                 const ChargingStateEnum charging_state) override;
 
-    void on_transaction_finished(const std::int32_t evse_id, const DateTime& timestamp, const MeterValue& meter_stop,
-                                 const ReasonEnum reason, const TriggerReasonEnum trigger_reason,
-                                 const std::optional<IdToken>& id_token,
-                                 const std::optional<std::string>& signed_meter_value,
-                                 const ChargingStateEnum charging_state) override;
+    void on_transaction_finished(
+        const std::int32_t evse_id, const DateTime& timestamp, const MeterValue& meter_stop, const ReasonEnum reason,
+        const TriggerReasonEnum trigger_reason, const std::optional<IdToken>& id_token,
+        const std::optional<std::string>& signed_meter_value, const ChargingStateEnum charging_state,
+        const std::optional<SignedMeterValue>& start_signed_meter_value = std::nullopt) override;
 
     void on_session_finished(const std::int32_t evse_id, const std::int32_t connector_id) override;
 

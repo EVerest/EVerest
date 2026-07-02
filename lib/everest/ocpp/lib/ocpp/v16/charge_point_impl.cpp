@@ -4439,7 +4439,8 @@ void ChargePointImpl::on_transaction_started(const std::int32_t& connector, cons
 void ChargePointImpl::on_transaction_stopped(const std::int32_t connector, const std::string& session_id,
                                              const Reason& reason, ocpp::DateTime timestamp, float energy_wh_import,
                                              std::optional<CiString<20>> id_tag_end,
-                                             std::optional<std::string> signed_meter_value) {
+                                             std::optional<std::string> signed_meter_value,
+                                             std::optional<std::string> start_signed_meter_value) {
     auto transaction = this->transaction_handler->get_transaction(connector);
     if (transaction == nullptr) {
         EVLOG_error << "Trying to stop a transaction that is unknown on connector: " << connector
@@ -4448,6 +4449,27 @@ void ChargePointImpl::on_transaction_stopped(const std::int32_t connector, const
     }
     if (connector <= 0 or connector > this->connectors.size()) {
         EVLOG_error << "Attempting to stop transaction for invalid connector id: " << connector;
+    }
+
+    if (start_signed_meter_value.has_value()) {
+        // Some meters only provide the start signed value at stop time.
+        // Add a new Transaction.Begin entry only if one does not yet exist
+        auto has_start_entry = false;
+        const auto existing_meter_values = transaction->get_meter_values();
+        for (const auto& mv : existing_meter_values) {
+            for (const auto& sv : mv.sampledValue) {
+                if (sv.format == ValueFormat::SignedData && sv.context == ReadingContext::Transaction_Begin) {
+                    has_start_entry = true;
+                    break;
+                }
+            }
+        }
+        if (!has_start_entry) {
+            const auto start_meter_value =
+                get_signed_meter_value(start_signed_meter_value.value(), ReadingContext::Transaction_Begin,
+                                       transaction->get_start_energy_wh()->timestamp);
+            transaction->add_meter_value(start_meter_value);
+        }
     }
 
     if (signed_meter_value) {

@@ -251,8 +251,13 @@ void OCPP::process_session_event(int32_t evse_id, const types::evse_manager::Ses
             // custom data transfer
             signed_meter_data.emplace(signed_meter_value.value().signed_meter_data);
         }
+        std::optional<std::string> start_signed_meter_data;
+        if (transaction_finished.start_signed_meter_value.has_value()) {
+            start_signed_meter_data.emplace(transaction_finished.start_signed_meter_value.value().signed_meter_data);
+        }
         this->charge_point->on_transaction_stopped(ocpp_connector_id, session_event.uuid, reason, timestamp,
-                                                   energy_Wh_import, id_tag_opt, signed_meter_data);
+                                                   energy_Wh_import, id_tag_opt, signed_meter_data,
+                                                   start_signed_meter_data);
         // always triggered by libocpp
     } else if (session_event.event == types::evse_manager::SessionEventEnum::SessionStarted) {
         EVLOG_info << "Connector#" << ocpp_connector_id << ": "
