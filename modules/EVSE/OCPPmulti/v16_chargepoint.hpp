@@ -105,7 +105,8 @@ public:
     void disconnect_websocket() override;
     void set_message_queue_resume_delay(std::chrono::seconds delay) override;
     bool restart() override;
-    void start(ocpp::v2::BootReasonEnum bootreason, bool start_connecting) override;
+    void start(ocpp::v2::BootReasonEnum bootreason, const std::set<std::string>& resuming_session_ids,
+               bool start_connecting) override;
     void stop() override;
 
     std::optional<ocpp::v2::DataTransferResponse>

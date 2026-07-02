@@ -134,7 +134,7 @@ protected:
         EXPECT_CALL(chargepoint, get_all_composite_schedules(600, _)).Times(1);
         EXPECT_CALL(chargepoint, set_message_queue_resume_delay(std::chrono::seconds(config.MessageQueueResumeDelay)))
             .Times(1);
-        EXPECT_CALL(chargepoint, start(_, false)).Times(1);
+        EXPECT_CALL(chargepoint, start(_, _, false)).Times(1);
         EXPECT_CALL(chargepoint, connect_websocket()).Times(1);
         ocpp->init();
         // ocpp.ready() waits for the EVSE managers to be ready

@@ -990,10 +990,10 @@ bool ChargePointV16::restart() {
     check_configured("restart");
     return m_charge_point->restart();
 }
-void ChargePointV16::start(ocpp::v2::BootReasonEnum bootreason, bool start_connecting) {
+void ChargePointV16::start(ocpp::v2::BootReasonEnum bootreason, const std::set<std::string>& resuming_session_ids,
+                           bool start_connecting) {
     check_configured("start");
-    // TODO(james-ctc): look into resuming sessions
-    m_charge_point->start({}, convert(bootreason), {}, start_connecting);
+    m_charge_point->start({}, convert(bootreason), resuming_session_ids, start_connecting);
 }
 void ChargePointV16::stop() {
     check_configured("stop");

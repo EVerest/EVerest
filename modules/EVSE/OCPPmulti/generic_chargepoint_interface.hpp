@@ -26,6 +26,7 @@
 #include <ocpp/v2/types.hpp>
 
 #include <cstdint>
+#include <set>
 #include <stdexcept>
 #include <string>
 
@@ -209,7 +210,10 @@ struct GenericChargePointInterface {
     virtual void disconnect_websocket() = 0;
     virtual void set_message_queue_resume_delay(std::chrono::seconds delay) = 0;
     virtual bool restart() = 0;
-    virtual void start(ocpp::v2::BootReasonEnum bootreason, bool start_connecting) = 0;
+    /// \param resuming_session_ids session ids of sessions that have been resumed (e.g. after power loss) and whose
+    /// transactions shall not be stopped on start (OCPP1.6 only, ignored for OCPP2.x)
+    virtual void start(ocpp::v2::BootReasonEnum bootreason, const std::set<std::string>& resuming_session_ids,
+                       bool start_connecting) = 0;
     virtual void stop() = 0;
 
     virtual std::optional<ocpp::v2::DataTransferResponse>
