@@ -38,12 +38,10 @@ SCENARIO("ISO15118-20 EV DC_CableCheck stays and resends on Ongoing") {
 
     fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::DC_CableCheck>()};
 
-    // Overwrite the post-enter request with a sentinel of a different type so the post-feed assertion
-    // proves a *fresh* DC_CableCheckRequest was emitted by feed(), not just the initial one.
-    const auto sentinel = message_20::AuthorizationRequest{message_20::Header{std::array<uint8_t, 8>{}, 0},
-                                                           message_20::datatypes::Authorization::EIM,
-                                                           message_20::datatypes::EIM_ASReqAuthorizationMode{}};
-    ctx.respond(sentinel);
+    // Consume the request emitted on enter() the way the reactor transmits it before the
+    // response arrives, so the post-feed assertion proves feed() emitted a *fresh*
+    // DC_CableCheckRequest rather than observing the initial one.
+    REQUIRE(state_helper.get_message_exchange().take_request().has_value());
     REQUIRE_FALSE(ctx.get_request<message_20::DC_CableCheckRequest>().has_value());
 
     const auto res = message_20::DC_CableCheckResponse{SESSION_HEADER, message_20::datatypes::ResponseCode::OK,
