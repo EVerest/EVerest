@@ -18,11 +18,16 @@
 #include <fmt/core.h>
 
 #include <conversions.hpp>
-#include <error_mapping.hpp>
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
 #include <everest/external_energy_limits/external_energy_limits.hpp>
+#include <everest/ocpp_module_common/v16/error_mapping.hpp>
 
 namespace module {
+
+// The MREC error mapping is shared with other OCPP modules via lib/everest/ocpp_module_common
+using ocpp_module_common::v16::CHARGE_X_MREC_VENDOR_ID;
+using ocpp_module_common::v16::MREC_ERROR_MAP;
+using ocpp_module_common::v16::OCPP_ERROR_MAP;
 
 // helper type for visitor
 template <class... Ts> struct overloaded : Ts... {
