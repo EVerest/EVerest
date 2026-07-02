@@ -118,6 +118,10 @@ void ConnectionPlain::handle_connect() {
         log_and_throw("Failed to accept4");
     }
 
+    if (not set_tcp_keepalive(accept_fd)) {
+        logf_warning("Failed to configure TCP keepalive on accepted connection");
+    }
+
     const auto address_name = sockaddr_in6_to_name(address);
 
     if (not address_name) {
