@@ -3866,6 +3866,18 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
         } catch (const std::out_of_range& e) {
             return ConfigurationStatus::Rejected;
         }
+    } else if (key == "RetryBackoffRandomRange") {
+        try {
+            auto [valid, retry_backoff_random_range] = is_positive_integer(value.get());
+            if (!valid) {
+                return ConfigurationStatus::Rejected;
+            }
+            this->setRetryBackoffRandomRange(retry_backoff_random_range);
+        } catch (const std::invalid_argument& e) {
+            return ConfigurationStatus::Rejected;
+        } catch (const std::out_of_range& e) {
+            return ConfigurationStatus::Rejected;
+        }
     } else if (key == "WaitForStopTransactionsOnResetTimeout") {
         try {
             auto [valid, wait_for_stop_transactions_on_reset_timeout] = is_positive_integer(value.get());
