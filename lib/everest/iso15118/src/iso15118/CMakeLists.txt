@@ -101,6 +101,11 @@ if(ISO15118_BUILD_EV_SIDE)
         ev/io/data_client.cpp
         ev/session.cpp
         ev/controller.cpp
+        ev/d20/state/service_discovery.cpp
+        ev/d20/state/service_detail.cpp
+        ev/d20/state/service_selection.cpp
+        ev/d20/state/schedule_exchange.cpp
+        ev/d20/state/dc_charge_loop.cpp
     )
 
     # Only the EV side uses everest::io.
