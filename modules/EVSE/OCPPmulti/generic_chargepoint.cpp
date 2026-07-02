@@ -17,7 +17,6 @@ void GenericChargePoint::check_configured(const std::string_view& fn) {
 }
 
 void GenericChargePoint::init(init_args_t& args) {
-    // TODO(james-ctc): how to share the database
 
     m_state = state_t::idle;
     m_charge_point_v16 = std::make_unique<ChargePointV16>(m_charge_point_callbacks, m_evse_security_interface);
