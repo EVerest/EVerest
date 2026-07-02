@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifndef OCPP_V2_CONVERSIONS_HPP
-#define OCPP_V2_CONVERSIONS_HPP
+#ifndef EVEREST_OCPP_MODULE_COMMON_CONVERSIONS_HPP
+#define EVEREST_OCPP_MODULE_COMMON_CONVERSIONS_HPP
 
 #include "ocpp/v2/messages/ChangeAvailability.hpp"
 #include "ocpp/v2/ocpp_enums.hpp"
@@ -26,7 +26,7 @@
 #include <ocpp/v2/messages/TransactionEvent.hpp>
 #include <ocpp/v2/messages/UpdateFirmware.hpp>
 
-namespace module {
+namespace ocpp_module_common {
 namespace conversions {
 /// \brief Converts a given types::system::FirmwareUpdateStatusEnum \p status to a ocpp::v2::FirmwareStatusEnum.
 ocpp::v2::FirmwareStatusEnum to_ocpp_firmware_status_enum(const types::system::FirmwareUpdateStatusEnum status);
@@ -301,6 +301,6 @@ types::ocpp::ChangeAvailabilityResponse
 to_everest_change_availability_response(const ocpp::v2::ChangeAvailabilityResponse& response);
 
 } // namespace conversions
-} // namespace module
+} // namespace ocpp_module_common
 
-#endif // OCPP_V2_CONVERSIONS_HPP
+#endif // EVEREST_OCPP_MODULE_COMMON_CONVERSIONS_HPP

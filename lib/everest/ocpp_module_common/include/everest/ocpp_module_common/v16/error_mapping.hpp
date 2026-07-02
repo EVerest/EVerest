@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifndef OCPP_ERROR_MAPPING_HPP
-#define OCPP_ERROR_MAPPING_HPP
+#ifndef EVEREST_OCPP_MODULE_COMMON_V16_ERROR_MAPPING_HPP
+#define EVEREST_OCPP_MODULE_COMMON_V16_ERROR_MAPPING_HPP
 
 #include <unordered_map>
 
 #include <ocpp/v16/ocpp_enums.hpp>
 
-namespace module {
+namespace ocpp_module_common::v16 {
 
 const std::string CHARGE_X_MREC_VENDOR_ID = "https://chargex.inl.gov";
 
@@ -43,6 +43,6 @@ const std::unordered_map<std::string, ocpp::v16::ChargePointErrorCode> OCPP_ERRO
     {"powermeter/CommunicationFault", ocpp::v16::ChargePointErrorCode::PowerMeterFailure},
 };
 
-} // namespace module
+} // namespace ocpp_module_common::v16
 
 #endif

@@ -14,7 +14,7 @@
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
 #include <utils/config_service.hpp>
 
-namespace module::device_model {
+namespace ocpp_module_common::device_model {
 class EverestDeviceModelStorage : public ocpp::v2::DeviceModelStorageInterface {
 public:
     EverestDeviceModelStorage(
@@ -85,4 +85,4 @@ private:
                                          const types::iso15118::EvInformation& ev_information);
     void init_everest_config();
 };
-} // namespace module::device_model
+} // namespace ocpp_module_common::device_model

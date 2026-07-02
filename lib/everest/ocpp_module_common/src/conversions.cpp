@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include <conversions.hpp>
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/logging.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
 
-namespace module {
+namespace ocpp_module_common {
 namespace conversions {
 ocpp::v2::FirmwareStatusEnum to_ocpp_firmware_status_enum(const types::system::FirmwareUpdateStatusEnum status) {
     switch (status) {
@@ -1932,4 +1932,4 @@ to_everest_change_availability_response(const ocpp::v2::ChangeAvailabilityRespon
 }
 
 } // namespace conversions
-} // namespace module
+} // namespace ocpp_module_common

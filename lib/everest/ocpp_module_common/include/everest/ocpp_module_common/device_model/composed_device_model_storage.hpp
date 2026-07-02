@@ -3,11 +3,11 @@
 
 #pragma once
 
-#include <device_model/everest_device_model_storage.hpp>
+#include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
 #include <ocpp/v2/device_model_storage_interface.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
 
-namespace module::device_model {
+namespace ocpp_module_common::device_model {
 
 using ComponentVariableSourceMap = std::map<ocpp::v2::Component, std::map<ocpp::v2::Variable, std::string>>;
 class ComposedDeviceModelStorage : public ocpp::v2::DeviceModelStorageInterface {
@@ -59,4 +59,4 @@ private:
     ///
     std::string get_variable_source(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
 };
-} // namespace module::device_model
+} // namespace ocpp_module_common::device_model

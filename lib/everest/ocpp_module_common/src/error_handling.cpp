@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include "error_handling.hpp"
+#include <everest/ocpp_module_common/error_handling.hpp>
 
 #include <everest/logging.hpp>
 #include <nlohmann/json.hpp>
@@ -8,7 +8,7 @@
 #include <fstream>
 #include <stdexcept>
 
-namespace module {
+namespace ocpp_module_common {
 
 const MREC_ERROR_MAP_TYPE MREC_ERROR_MAP = {
     {"connector_lock/MREC1ConnectorLockFailure", "CX001"},
@@ -125,4 +125,4 @@ ocpp::v2::EventData get_event_data(const Everest::error::Error& error, const boo
     return event_data;
 }
 
-} // namespace module
+} // namespace ocpp_module_common
