@@ -96,12 +96,17 @@ private:
     everest::config::SqliteConfigSlotManager slot_manager_;
     /// \brief Keepalive for the shared connection
     std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_;
-    int active_slot_id_{-1};
+    bool spawn_threads_;
+    std::shared_ptr<const everest::config::ModuleConfigurations> active_configs_ptr_;
+    int active_slot_id_{everest::config::SqliteStorage::DEFAULT_CONFIG_ID};
     ActiveSlotStatus module_status_{ActiveSlotStatus::Stopped};
 
     std::vector<std::function<void(const ActiveSlotUpdate&)>> active_slot_handlers_;
     std::vector<std::function<void(const ConfigurationUpdate&)>> config_update_handlers_;
 
+    // Actor infrastructure: worker_thread_ drains command_queue_ one task at a
+    // time, so all mutable state is touched by a single thread. See the
+    // "Threading model" comment at the top of config_service_core.cpp.
     everest::lib::util::thread_safe_queue<std::function<void()>> command_queue_;
     std::thread worker_thread_;
     std::atomic<bool> running_{false};
