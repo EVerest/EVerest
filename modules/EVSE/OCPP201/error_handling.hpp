@@ -26,13 +26,11 @@ extern const std::string PROBLEM_VARIABLE_NAME;
 /// parse, or is not a JSON object of string values.
 MREC_ERROR_MAP_TYPE load_mrec_error_map_overrides(const std::filesystem::path& file);
 
-/// \brief Returns simplified mapping from error origin to OCPP component based on evse and connector ids
-ocpp::v2::Component get_component_from_error(const Everest::error::Error& error);
-
 /// \brief Derives the EventData from the given \p error, \p cleared and \p event_id parameters. The
-/// techCode is looked up in \p error_map, falling back to \c error.type when no entry is present.
+/// techCode is looked up in \p error_map, falling back to \c error.type when no entry is present. The given
+/// \p component is reported as the source of the event.
 ocpp::v2::EventData get_event_data(const Everest::error::Error& error, bool cleared, int32_t event_id,
-                                   const MREC_ERROR_MAP_TYPE& error_map);
+                                   const MREC_ERROR_MAP_TYPE& error_map, const ocpp::v2::Component& component);
 } // namespace module
 
 #endif // OCPP201_ERROR_HANDLING_HPP

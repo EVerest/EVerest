@@ -679,6 +679,45 @@ EverestDeviceModelStorage::get_variable_attributes(const ocpp::v2::Component& co
     return this->device_model_storage->get_variable_attributes(component_id, variable_id, attribute_enum);
 }
 
+std::optional<ocpp::v2::Component>
+EverestDeviceModelStorage::get_component_for_module(const std::string& module_id,
+                                                    const std::string& implementation_id) const {
+    const auto module_config_it =
+        std::find_if(this->module_configs.begin(), this->module_configs.end(),
+                     [&module_id](const auto& entry) { return entry.first.module_id == module_id; });
+    if (module_config_it == this->module_configs.end()) {
+        return std::nullopt;
+    }
+
+    Component component;
+    component.name = module_config_it->first.module_type;
+    component.instance = module_id;
+
+    const auto mapping_it = this->mappings.find(module_id);
+    if (mapping_it == this->mappings.end()) {
+        return component;
+    }
+
+    auto mapping = mapping_it->second.module;
+    const auto implementation_mapping_it = mapping_it->second.implementations.find(implementation_id);
+    if (implementation_mapping_it != mapping_it->second.implementations.end() and
+        implementation_mapping_it->second.has_value()) {
+        mapping = implementation_mapping_it->second;
+    }
+
+    // in OCPP2.x the id and connectorId of the EVSEType must be > 0
+    if (mapping.has_value() and mapping->evse > 0) {
+        EVSE evse;
+        evse.id = mapping->evse;
+        if (mapping->connector.has_value() and mapping->connector.value() > 0) {
+            evse.connectorId = mapping->connector;
+        }
+        component.evse = evse;
+    }
+
+    return component;
+}
+
 ocpp::v2::SetVariableStatusEnum EverestDeviceModelStorage::set_variable_attribute_value(
     const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
     const ocpp::v2::AttributeEnum& attribute_enum, const std::string& value, const std::string& source) {

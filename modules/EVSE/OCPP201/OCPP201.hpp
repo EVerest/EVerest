@@ -165,6 +165,9 @@ private:
     void init_evse_subscriptions();
     void init_module_configuration();
     std::map<int32_t, int32_t> get_connector_structure();
+    /// \brief Resolves the OCPP component for the given \p error: the component of the origin module from the
+    /// device model if available, otherwise a simplified mapping based on the evse and connector ids of the origin
+    ocpp::v2::Component get_component_from_error(const Everest::error::Error& error) const;
     void process_session_event(const int32_t evse_id, const types::evse_manager::SessionEvent& session_event);
     void process_tx_event_effect(const int32_t evse_id, const TxEventEffect tx_event_effect,
                                  const types::evse_manager::SessionEvent& session_event);
