@@ -136,6 +136,21 @@ cmds:
       description: Returns an enum indicating whether the update was successful or not.
       type: string
       $ref: /evse_manager#/UpdateAllowedEnergyTransferModesResult
+  set_der_available:
+    description: >-
+      Declare whether DER directive support (a grid_support provider) is wired for this EVSE.
+      When true and the EVSE is export-capable, EvseManager folds the matching DER energy transfer
+      mode (AC_BPT_DER when also BPT-capable, otherwise AC_DER) into the set it advertises to
+      ISO 15118-20. This is a boot-time wiring fact, not the EV's runtime DER capability. Returns
+      NoHlc and does nothing if no HLC is present.
+    arguments:
+      available:
+        description: True if DER directive support is wired for this EVSE.
+        type: boolean
+    result:
+      description: Whether EvseManager accepted the update.
+      type: string
+      $ref: /evse_manager#/SetDerAvailableResult
 vars:
   session_event:
     description: Emits all events related to sessions

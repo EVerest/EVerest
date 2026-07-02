@@ -353,6 +353,19 @@ Take care especially with the power(watt) and time based hysteresis settings. Th
 actual use case to avoid relays wearing due too a lot of switching cycles. Consider also to limit the maximum
 number of switching cycles per charging session.
 
+DER (grid support) advertising
+==============================
+
+EvseManager exposes a ``set_der_available`` command that records, per EVSE, whether DER directive support
+(a ``grid_support`` provider) is wired for that EVSE. This is a boot-time wiring fact, typically asserted by the
+OCPP module from the presence of a ``grid_support`` connection, not the EV's runtime DER capability.
+
+When DER is available and HLC is enabled for the EVSE, EvseManager folds the matching ISO 15118-20 DER energy
+transfer mode into the set it advertises: ``AC_BPT_DER`` in place of ``AC_BPT`` when the EVSE also supports
+bidirectional power transfer (BPT), otherwise ``AC_DER``.
+
+The command returns ``NoHlc`` when no HLC is enabled (and does nothing), and ``Accepted`` otherwise.
+
 Error Handling
 ==============
 
