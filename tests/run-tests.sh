@@ -20,6 +20,7 @@ set -euo pipefail
 #
 # Options:
 #   -j N                 Parallel workers (default: nproc)
+#   -k EXPR              Only run tests matching the pytest -k expression
 #   --serial             Run tests serially
 #   --everest-prefix P   EVerest install prefix (default: <repo>/build/dist)
 #   --junitxml PATH      JUnit XML output (default: result.xml)
@@ -45,6 +46,7 @@ JUNITXML="result.xml"
 HTML="report.html"
 ISOLATION="${NETWORK_ISOLATION:-true}"
 SUITE=""
+FILTER=""
 
 usage() {
     sed -n '3,/^$/s/^# \?//p' "$0"
@@ -54,6 +56,7 @@ usage() {
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -j)                WORKERS="$2"; shift 2;;
+        -k)                FILTER="$2"; shift 2;;
         --serial)          SERIAL=true; shift;;
         --everest-prefix)  PREFIX="$2"; shift 2;;
         --junitxml)        JUNITXML="$2"; shift 2;;
@@ -128,6 +131,7 @@ else
 fi
 
 [[ -n "$ISOLATION_FLAG" ]] && PYTEST_ARGS+=("$ISOLATION_FLAG")
+[[ -n "$FILTER" ]] && PYTEST_ARGS+=(-k "$FILTER")
 
 # OCPP setup (certs + configs)
 setup_ocpp() {
