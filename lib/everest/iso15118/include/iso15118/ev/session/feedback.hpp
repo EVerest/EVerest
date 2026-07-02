@@ -20,6 +20,9 @@ struct Callbacks {
     std::function<void()> timed_out;
     std::function<void()> stopped;
     std::function<void(const d20::EVSESessionInfo&)> evse_session_info;
+    std::function<void()> ev_power_ready;
+    std::function<void()> dc_power_on;
+    std::function<void()> stop_from_charger;
 };
 
 } // namespace iso15118::ev::feedback
@@ -36,6 +39,9 @@ public:
     void timed_out() const;
     void stopped() const;
     void evse_session_info(const d20::EVSESessionInfo&) const;
+    void ev_power_ready() const;
+    void dc_power_on() const;
+    void stop_from_charger() const;
 
 private:
     feedback::Callbacks callbacks;

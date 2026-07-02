@@ -27,8 +27,8 @@ constexpr auto SDP_RETRY_INTERVAL = std::chrono::milliseconds(250);
 
 } // namespace
 
-Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_) :
-    config(std::move(config_)), feedback(callbacks_) {
+Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcChargeParams initial_dc_params) :
+    config(std::move(config_)), feedback(callbacks_), dc_params(std::move(initial_dc_params)) {
 
     // The SDP client is only needed when discovering the endpoint.
     if (config.discover) {
@@ -59,7 +59,7 @@ Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_) :
             return true;
         },
         reactor, SessionTiming{config.send_delay, config.response_timeout}, config.evcc_id,
-        config.advertised_app_protocols);
+        config.advertised_app_protocols, &dc_params);
 
     // The session can finish inside a timer callback (the response watchdog), so
     // the run loop can't poll is_finished() between events; let the session clear
@@ -215,6 +215,16 @@ void Controller::shutdown() {
     // event_fd, waking poll() so run() re-checks `online` and returns.
     online = false;
     reactor.add_action([]() {});
+}
+
+void Controller::update_present_soc(double present_soc) {
+    auto h = dc_params.handle();
+    (*h).present_soc = present_soc;
+}
+
+void Controller::update_present_voltage(float present_voltage) {
+    auto h = dc_params.handle();
+    (*h).present_voltage = present_voltage;
 }
 
 } // namespace iso15118::ev

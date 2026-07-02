@@ -22,8 +22,9 @@ namespace iso15118::ev {
 Session::Session(feedback::Callbacks callbacks, OutboundSend outbound_send_,
                  everest::lib::io::event::fd_event_handler& reactor_, SessionTiming timing_,
                  message_20::datatypes::Identifier evcc_id,
-                 std::vector<message_20::SupportedAppProtocol> advertised_app_protocols) :
-    context(std::move(callbacks), message_exchange, std::move(evcc_id), active_control_event),
+                 std::vector<message_20::SupportedAppProtocol> advertised_app_protocols,
+                 everest::lib::util::monitor<DcChargeParams>* dc_params) :
+    context(std::move(callbacks), message_exchange, std::move(evcc_id), active_control_event, dc_params),
     outbound_send(std::move(outbound_send_)),
     reactor(reactor_),
     timing(timing_) {

@@ -50,13 +50,15 @@ SCENARIO("ISO15118-20 EV DC_WeldingDetection transitions to SessionStop on OK re
     REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
     REQUIRE(ctx.is_session_stopped() == false);
 
-    // feed() queues the Finished welding request and hands off to SessionStop, whose
-    // enter() overwrites the single-slot exchange, so the pending request is that one.
-    REQUIRE_FALSE(ctx.get_request<message_20::DC_WeldingDetectionRequest>().has_value());
+    // No second (Finished) welding request is emitted: the only welding request is the
+    // Ongoing one from enter(). SessionStop::enter() queued a SessionStopRequest instead.
+    const auto welding_request = ctx.get_request<message_20::DC_WeldingDetectionRequest>();
+    REQUIRE(welding_request.has_value());
+    REQUIRE(welding_request->processing == message_20::datatypes::Processing::Ongoing);
 
-    const auto request_message = ctx.get_request<message_20::SessionStopRequest>();
-    REQUIRE(request_message.has_value());
-    REQUIRE(request_message->charging_session == message_20::datatypes::ChargingSession::Terminate);
+    const auto session_stop_request = ctx.get_request<message_20::SessionStopRequest>();
+    REQUIRE(session_stop_request.has_value());
+    REQUIRE(session_stop_request->charging_session == message_20::datatypes::ChargingSession::Terminate);
 }
 
 SCENARIO("ISO15118-20 EV DC_WeldingDetection stops session on FAILED response") {
