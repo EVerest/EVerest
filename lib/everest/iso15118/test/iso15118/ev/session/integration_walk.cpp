@@ -10,31 +10,37 @@
 // the proof that fsm::v2::FSM<d20::StateBase> drives evio's real EV states
 // unchanged through the implemented entry sequence.
 //
-// Achievable clean walk (each arrow = one injected response → one emitted request):
+// Clean DC walk to a graceful SessionStop (each arrow = one injected response →
+// one emitted request):
 //
-//   start()                         -> SupportedAppProtocolRequest
-//   SupportedAppProtocolResponse    -> SessionSetupRequest
-//   SessionSetupResponse            -> AuthorizationSetupRequest
-//   AuthorizationSetupResponse      -> AuthorizationRequest
+//   start()                              -> SupportedAppProtocolRequest
+//   SupportedAppProtocolResponse         -> SessionSetupRequest
+//   SessionSetupResponse                 -> AuthorizationSetupRequest
+//   AuthorizationSetupResponse           -> AuthorizationRequest
+//   AuthorizationResponse                -> ServiceDiscoveryRequest
+//   ServiceDiscoveryResponse             -> ServiceDetailRequest
+//   ServiceDetailResponse                -> ServiceSelectionRequest
+//   ServiceSelectionResponse             -> DC_ChargeParameterDiscoveryRequest
+//   DC_ChargeParameterDiscoveryResponse  -> ScheduleExchangeRequest
+//   ScheduleExchangeResponse(Finished)   -> DC_CableCheckRequest
+//   DC_CableCheckResponse(Finished)      -> DC_PreChargeRequest
+//   DC_PreChargeResponse(OK)             -> PowerDeliveryRequest(Start)
+//   PowerDeliveryResponse(OK)            -> DC_ChargeLoopRequest
+//   DC_ChargeLoopResponse(OK)            -> DC_ChargeLoopRequest (loop continues)
+//   DC_ChargeLoopResponse(OK, Terminate) -> PowerDeliveryRequest(Stop)
+//   PowerDeliveryResponse(OK)            -> DC_WeldingDetectionRequest
+//   DC_WeldingDetectionResponse(OK)      -> SessionStopRequest
+//   SessionStopResponse(OK)              -> session finishes cleanly
 //
-// i.e. SupportedAppProtocol -> SessionSetup -> AuthorizationSetup -> Authorization.
+// i.e. SupportedAppProtocol -> SessionSetup -> AuthorizationSetup -> Authorization
+// -> ServiceDiscovery -> ServiceDetail -> ServiceSelection -> DC_ChargeParameterDiscovery
+// -> ScheduleExchange -> DC_CableCheck -> DC_PreCharge -> PowerDelivery -> DC_ChargeLoop
+// -> PowerDelivery -> DC_WeldingDetection -> SessionStop.
 //
-// WHY THE WALK STOPS AT Authorization (intentional boundary, not a defect):
-//   1. Deferred breadth: the EV-side Authorization
-//      (state/authorization.cpp), DC_ChargeParameterDiscovery, and PowerDelivery
-//      states are unimplemented. Authorization::feed() returns {} on every event,
-//      so once the FSM is in Authorization it cannot self-advance from injected
-//      bytes alone. Driving further would require code that does not yet exist.
-//   2. Two user-approved PRE-EXISTING reds (single-slot MessageExchange + eager
-//      enter overwrite, NOT this plan's bug) block DC_PreCharge -> PowerDelivery
-//      and DC_WeldingDetection -> SessionStop. Those stay red by agreement.
-//
-// Therefore the test asserts exactly three byte-driven transitions and stops at
-// Authorization. It deliberately does NOT assert any transition the code cannot
-// make. Once parked in Authorization with no further response injected, the only
-// thing that ends the walk is the response watchdog (it feeds FAILED, which
-// Authorization::feed also ignores, then stops the session and fires timed_out);
-// no fifth request frame is ever emitted from bytes alone.
+// The DC_ChargeLoop iterates: a plain OK response re-emits a loop request; only the
+// SECC's Terminate notification breaks the loop, firing the stop_from_charger feedback
+// and driving PowerDelivery(Stop) -> DC_WeldingDetection -> SessionStop. The
+// SessionStopResponse ends the session cleanly (is_finished, not timed_out).
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -54,7 +60,18 @@
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
 #include <iso15118/message/common_types.hpp>
+#include <iso15118/message/dc_cable_check.hpp>
+#include <iso15118/message/dc_charge_loop.hpp>
+#include <iso15118/message/dc_charge_parameter_discovery.hpp>
+#include <iso15118/message/dc_pre_charge.hpp>
+#include <iso15118/message/dc_welding_detection.hpp>
+#include <iso15118/message/power_delivery.hpp>
+#include <iso15118/message/schedule_exchange.hpp>
+#include <iso15118/message/service_detail.hpp>
+#include <iso15118/message/service_discovery.hpp>
+#include <iso15118/message/service_selection.hpp>
 #include <iso15118/message/session_setup.hpp>
+#include <iso15118/message/session_stop.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/message/type.hpp>
 #include <iso15118/message/variant.hpp>
@@ -69,7 +86,7 @@ using namespace iso15118;
 using namespace std::chrono_literals;
 using namespace iso15118::ev::test;
 
-SCENARIO("EV pump drives evio states byte-by-byte to the Authorization boundary") {
+SCENARIO("EV pump drives evio states byte-by-byte through a full DC session to SessionStop") {
 
     GIVEN("A Session bound to a reactor with short send-delay and watchdog timers") {
 
@@ -82,9 +99,15 @@ SCENARIO("EV pump drives evio states byte-by-byte to the Authorization boundary"
 
         std::vector<std::vector<uint8_t>> captured;
         bool timed_out = false;
+        bool ev_power_ready = false;
+        bool dc_power_on = false;
+        bool stop_from_charger = false;
 
         ev::feedback::Callbacks callbacks{};
         callbacks.timed_out = [&timed_out]() { timed_out = true; };
+        callbacks.ev_power_ready = [&ev_power_ready]() { ev_power_ready = true; };
+        callbacks.dc_power_on = [&dc_power_on]() { dc_power_on = true; };
+        callbacks.stop_from_charger = [&stop_from_charger]() { stop_from_charger = true; };
 
         session::SessionLogger logger{nullptr};
 
@@ -149,9 +172,8 @@ SCENARIO("EV pump drives evio states byte-by-byte to the Authorization boundary"
             }
 
             // --- inject AuthorizationSetupResponse(OK, {EIM}) -> AuthorizationRequest ---
-            // This is the final byte-driven transition: AuthorizationSetup selects EIM,
-            // emits an EIM AuthorizationRequest, and transitions into the Authorization
-            // state. The walk stops here (see file header for the boundary rationale).
+            // AuthorizationSetup selects EIM, emits an EIM AuthorizationRequest, and
+            // transitions into the Authorization state.
             {
                 message_20::AuthorizationSetupResponse auth_setup_res{};
                 auth_setup_res.header.session_id = session_id;
@@ -163,47 +185,417 @@ SCENARIO("EV pump drives evio states byte-by-byte to the Authorization boundary"
                     frame_payload(io::v2gtp::PayloadType::Part20Main, serialize_msg(auth_setup_res)));
             }
 
-            THEN("the pump emits an EIM AuthorizationRequest and reaches the Authorization boundary") {
+            THEN("the pump emits an EIM AuthorizationRequest, then an AuthorizationResponse drives "
+                 "ServiceDiscovery") {
                 REQUIRE(pump_until(
                     reactor, [&]() { return captured.size() >= 4; }, 1s));
 
-                const auto& frame = captured.back();
-                REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20Main);
+                {
+                    const auto& frame = captured.back();
+                    REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20Main);
 
-                auto variant = decode_frame(frame);
-                const auto* request = variant.get_if<message_20::AuthorizationRequest>();
-                REQUIRE(request != nullptr);
+                    auto variant = decode_frame(frame);
+                    const auto* request = variant.get_if<message_20::AuthorizationRequest>();
+                    REQUIRE(request != nullptr);
 
-                // The request carries the established session id and selects EIM.
-                REQUIRE(request->header.session_id == session_id);
-                REQUIRE(request->selected_authorization_service == message_20::datatypes::Authorization::EIM);
-                REQUIRE(std::holds_alternative<message_20::datatypes::EIM_ASReqAuthorizationMode>(
-                    request->authorization_mode));
+                    // The request carries the established session id and selects EIM.
+                    REQUIRE(request->header.session_id == session_id);
+                    REQUIRE(request->selected_authorization_service == message_20::datatypes::Authorization::EIM);
+                    REQUIRE(std::holds_alternative<message_20::datatypes::EIM_ASReqAuthorizationMode>(
+                        request->authorization_mode));
+                }
 
-                // The session is still live: it walked three byte-driven transitions
+                // --- inject AuthorizationResponse(OK, Finished) -> ServiceDiscoveryRequest ---
+                // EIM returns OK + Finished on the first response, so Authorization::feed
+                // transitions to ServiceDiscovery, whose enter() emits the discovery request.
+                {
+                    message_20::AuthorizationResponse auth_res{};
+                    auth_res.header.session_id = session_id;
+                    auth_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    auth_res.evse_processing = message_20::datatypes::Processing::Finished;
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20Main, serialize_msg(auth_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 5; }, 1s));
+                {
+                    const auto& frame = captured.back();
+                    REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20Main);
+
+                    auto variant = decode_frame(frame);
+                    const auto* request = variant.get_if<message_20::ServiceDiscoveryRequest>();
+                    REQUIRE(request != nullptr);
+                    REQUIRE(request->header.session_id == session_id);
+                }
+
+                // --- inject ServiceDiscoveryResponse(OK, offering DC) -> ServiceDetailRequest ---
+                // ServiceDiscovery::feed confirms the DC energy service is offered and
+                // transitions to ServiceDetail, whose enter() emits a DC ServiceDetailRequest.
+                {
+                    message_20::ServiceDiscoveryResponse discovery_res{};
+                    discovery_res.header.session_id = session_id;
+                    discovery_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    discovery_res.energy_transfer_service_list = {{message_20::datatypes::ServiceCategory::DC, false}};
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20Main, serialize_msg(discovery_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 6; }, 1s));
+                {
+                    const auto& frame = captured.back();
+                    REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20Main);
+
+                    auto variant = decode_frame(frame);
+                    const auto* request = variant.get_if<message_20::ServiceDetailRequest>();
+                    REQUIRE(request != nullptr);
+                    REQUIRE(request->header.session_id == session_id);
+                    REQUIRE(request->service ==
+                            message_20::to_underlying_value(message_20::datatypes::ServiceCategory::DC));
+                }
+
+                // --- inject ServiceDetailResponse(OK, one param set) -> ServiceSelectionRequest ---
+                // ServiceDetail::feed picks the first parameter set and transitions to
+                // ServiceSelection, whose enter() emits a DC ServiceSelectionRequest.
+                {
+                    message_20::ServiceDetailResponse detail_res{};
+                    detail_res.header.session_id = session_id;
+                    detail_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    detail_res.service = message_20::to_underlying_value(message_20::datatypes::ServiceCategory::DC);
+                    detail_res.service_parameter_list = {message_20::datatypes::ParameterSet(1)};
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20Main, serialize_msg(detail_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 7; }, 1s));
+                {
+                    const auto& frame = captured.back();
+                    REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20Main);
+
+                    auto variant = decode_frame(frame);
+                    const auto* request = variant.get_if<message_20::ServiceSelectionRequest>();
+                    REQUIRE(request != nullptr);
+                    REQUIRE(request->header.session_id == session_id);
+                    REQUIRE(request->selected_energy_transfer_service.service_id ==
+                            message_20::datatypes::ServiceCategory::DC);
+                    REQUIRE(request->selected_energy_transfer_service.parameter_set_id == 1);
+                }
+
+                // The session is still live: it walked seven byte-driven transitions
                 // without finishing or timing out.
                 REQUIRE_FALSE(session.is_finished());
                 REQUIRE_FALSE(timed_out);
             }
 
-            THEN("no further request is produced past Authorization from injected bytes alone") {
-                // Reach the Authorization boundary first (the AuthorizationRequest is the
-                // fourth and final byte-driven frame).
+            THEN("the walk drives DC_ChargeParameterDiscovery, ScheduleExchange, DC_CableCheck, "
+                 "DC_PreCharge, PowerDelivery, DC_ChargeLoop, DC_WeldingDetection and reaches a clean SessionStop") {
+                // Reach the Authorization boundary first (fourth byte-driven frame).
                 REQUIRE(pump_until(
                     reactor, [&]() { return captured.size() >= 4; }, 1s));
-                const auto count_at_boundary = captured.size();
-                REQUIRE(count_at_boundary == 4);
 
-                // Authorization::feed() returns {} on every event (deferred breadth), so the
-                // FSM cannot self-advance from here. With no AuthorizationResponse injected,
-                // the only thing that can terminate the walk is the response watchdog
-                // (response_timeout = 100ms): it feeds FAILED, which Authorization::feed also
-                // ignores, then stops the session and fires timed_out. No fifth request frame
-                // is ever emitted. Pump past the watchdog deadline to prove exactly that.
+                // Drive Authorization -> ServiceDiscovery with an EIM AuthorizationResponse.
+                {
+                    message_20::AuthorizationResponse auth_res{};
+                    auth_res.header.session_id = session_id;
+                    auth_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    auth_res.evse_processing = message_20::datatypes::Processing::Finished;
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20Main, serialize_msg(auth_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 5; }, 1s));
+
+                // Drive ServiceDiscovery -> ServiceDetail with a DC-offering ServiceDiscoveryResponse.
+                {
+                    message_20::ServiceDiscoveryResponse discovery_res{};
+                    discovery_res.header.session_id = session_id;
+                    discovery_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    discovery_res.energy_transfer_service_list = {{message_20::datatypes::ServiceCategory::DC, false}};
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20Main, serialize_msg(discovery_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 6; }, 1s));
+
+                // Drive ServiceDetail -> ServiceSelection with a ServiceDetailResponse.
+                {
+                    message_20::ServiceDetailResponse detail_res{};
+                    detail_res.header.session_id = session_id;
+                    detail_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    detail_res.service = message_20::to_underlying_value(message_20::datatypes::ServiceCategory::DC);
+                    detail_res.service_parameter_list = {message_20::datatypes::ParameterSet(1)};
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20Main, serialize_msg(detail_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 7; }, 1s));
+
+                REQUIRE(captured.size() == 7);
+
+                // --- inject ServiceSelectionResponse(OK) -> DC_ChargeParameterDiscoveryRequest ---
+                // ServiceSelection::feed transitions into DC_ChargeParameterDiscovery, whose enter()
+                // emits a DC_CPDReqEnergyTransferMode request. The pump Session wires no DC-params
+                // monitor, so the limits are default/zero — assert only the request type and variant.
+                {
+                    message_20::ServiceSelectionResponse selection_res{};
+                    selection_res.header.session_id = session_id;
+                    selection_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20Main, serialize_msg(selection_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 8; }, 1s));
+                {
+                    const auto& frame = captured.back();
+                    REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20DC);
+
+                    auto variant = decode_frame(frame);
+                    const auto* request = variant.get_if<message_20::DC_ChargeParameterDiscoveryRequest>();
+                    REQUIRE(request != nullptr);
+                    REQUIRE(request->header.session_id == session_id);
+                    REQUIRE(std::holds_alternative<message_20::datatypes::DC_CPDReqEnergyTransferMode>(
+                        request->transfer_mode));
+                }
+
+                // --- inject DC_ChargeParameterDiscoveryResponse(OK) -> ScheduleExchangeRequest ---
+                // DC_ChargeParameterDiscovery::feed transitions into ScheduleExchange, whose enter()
+                // emits a minimal Dynamic ScheduleExchangeRequest.
+                {
+                    message_20::DC_ChargeParameterDiscoveryResponse discovery_res{};
+                    discovery_res.header.session_id = session_id;
+                    discovery_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    discovery_res.transfer_mode = message_20::datatypes::DC_CPDResEnergyTransferMode{};
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20DC, serialize_msg(discovery_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 9; }, 1s));
+                {
+                    const auto& frame = captured.back();
+                    REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20Main);
+
+                    auto variant = decode_frame(frame);
+                    const auto* request = variant.get_if<message_20::ScheduleExchangeRequest>();
+                    REQUIRE(request != nullptr);
+                    REQUIRE(request->header.session_id == session_id);
+                }
+
+                // --- inject ScheduleExchangeResponse(OK, Finished) -> DC_CableCheckRequest ---
+                // ScheduleExchange::feed fires ev_power_ready on a Finished response and transitions
+                // into DC_CableCheck, whose enter() emits a DC_CableCheckRequest.
+                REQUIRE_FALSE(ev_power_ready);
+                {
+                    message_20::ScheduleExchangeResponse schedule_res{};
+                    schedule_res.header.session_id = session_id;
+                    schedule_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    schedule_res.processing = message_20::datatypes::Processing::Finished;
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20Main, serialize_msg(schedule_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 10; }, 1s));
+                {
+                    const auto& frame = captured.back();
+                    REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20DC);
+
+                    auto variant = decode_frame(frame);
+                    const auto* request = variant.get_if<message_20::DC_CableCheckRequest>();
+                    REQUIRE(request != nullptr);
+                    REQUIRE(request->header.session_id == session_id);
+                }
+
+                // The Finished ScheduleExchangeResponse fired the ev_power_ready feedback.
+                REQUIRE(ev_power_ready);
+
+                // --- inject DC_CableCheckResponse(OK, Finished) -> DC_PreChargeRequest ---
+                // DC_CableCheck::feed transitions into DC_PreCharge on a Finished response, whose
+                // enter() emits a DC_PreChargeRequest(Ongoing).
+                {
+                    message_20::DC_CableCheckResponse cable_check_res{};
+                    cable_check_res.header.session_id = session_id;
+                    cable_check_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    cable_check_res.processing = message_20::datatypes::Processing::Finished;
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20DC, serialize_msg(cable_check_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 11; }, 1s));
+                {
+                    const auto& frame = captured.back();
+                    REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20DC);
+
+                    auto variant = decode_frame(frame);
+                    const auto* request = variant.get_if<message_20::DC_PreChargeRequest>();
+                    REQUIRE(request != nullptr);
+                    REQUIRE(request->header.session_id == session_id);
+                    REQUIRE(request->processing == message_20::datatypes::Processing::Ongoing);
+                }
+
+                // --- inject DC_PreChargeResponse(OK) -> PowerDeliveryRequest(Start) ---
+                // The pump Session wires no DC-params monitor, so the EV target voltage defaults to 0
+                // and the first OK response counts as in-tolerance: DC_PreCharge::feed fires dc_power_on
+                // and transitions into PowerDelivery, whose enter() emits a PowerDeliveryRequest(Start).
+                REQUIRE_FALSE(dc_power_on);
+                {
+                    message_20::DC_PreChargeResponse pre_charge_res{};
+                    pre_charge_res.header.session_id = session_id;
+                    pre_charge_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    pre_charge_res.present_voltage = message_20::datatypes::from_float(0.0f);
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20DC, serialize_msg(pre_charge_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 12; }, 1s));
+                {
+                    const auto& frame = captured.back();
+                    REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20Main);
+
+                    auto variant = decode_frame(frame);
+                    const auto* request = variant.get_if<message_20::PowerDeliveryRequest>();
+                    REQUIRE(request != nullptr);
+                    REQUIRE(request->header.session_id == session_id);
+                    REQUIRE(request->charge_progress == message_20::datatypes::Progress::Start);
+                }
+
+                // The in-tolerance DC_PreChargeResponse fired the dc_power_on feedback.
+                REQUIRE(dc_power_on);
+
+                // --- inject PowerDeliveryResponse(OK) -> DC_ChargeLoopRequest ---
+                // PowerDelivery(Start)::feed transitions into DC_ChargeLoop, whose enter()
+                // emits a Dynamic DC_ChargeLoopRequest.
+                {
+                    message_20::PowerDeliveryResponse power_delivery_res{};
+                    power_delivery_res.header.session_id = session_id;
+                    power_delivery_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20Main, serialize_msg(power_delivery_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 13; }, 1s));
+                {
+                    const auto& frame = captured.back();
+                    REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20DC);
+
+                    auto variant = decode_frame(frame);
+                    const auto* request = variant.get_if<message_20::DC_ChargeLoopRequest>();
+                    REQUIRE(request != nullptr);
+                    REQUIRE(request->header.session_id == session_id);
+                    REQUIRE(std::holds_alternative<message_20::datatypes::Dynamic_DC_CLReqControlMode>(
+                        request->control_mode));
+                }
+
+                // --- inject DC_ChargeLoopResponse(OK, no Terminate) -> DC_ChargeLoopRequest ---
+                // A plain OK response keeps the loop running: DC_ChargeLoop re-emits a fresh
+                // loop request and does NOT fire stop_from_charger.
+                REQUIRE_FALSE(stop_from_charger);
+                {
+                    message_20::DC_ChargeLoopResponse charge_loop_res{};
+                    charge_loop_res.header.session_id = session_id;
+                    charge_loop_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    charge_loop_res.control_mode = message_20::datatypes::Dynamic_DC_CLResControlMode{};
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20DC, serialize_msg(charge_loop_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 14; }, 1s));
+                {
+                    const auto& frame = captured.back();
+                    REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20DC);
+
+                    auto variant = decode_frame(frame);
+                    REQUIRE(variant.get_if<message_20::DC_ChargeLoopRequest>() != nullptr);
+                }
+                REQUIRE_FALSE(stop_from_charger);
+
+                // --- inject DC_ChargeLoopResponse(OK, Terminate) -> PowerDeliveryRequest(Stop) ---
+                // The SECC's Terminate notification breaks the loop: DC_ChargeLoop fires
+                // stop_from_charger and drives PowerDelivery(Stop).
+                {
+                    message_20::DC_ChargeLoopResponse charge_loop_res{};
+                    charge_loop_res.header.session_id = session_id;
+                    charge_loop_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    charge_loop_res.status =
+                        message_20::datatypes::EvseStatus{0, message_20::datatypes::EvseNotification::Terminate};
+                    charge_loop_res.control_mode = message_20::datatypes::Dynamic_DC_CLResControlMode{};
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20DC, serialize_msg(charge_loop_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 15; }, 1s));
+                {
+                    const auto& frame = captured.back();
+                    REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20Main);
+
+                    auto variant = decode_frame(frame);
+                    const auto* request = variant.get_if<message_20::PowerDeliveryRequest>();
+                    REQUIRE(request != nullptr);
+                    REQUIRE(request->header.session_id == session_id);
+                    REQUIRE(request->charge_progress == message_20::datatypes::Progress::Stop);
+                }
+
+                // The Terminate notification fired the stop_from_charger feedback.
+                REQUIRE(stop_from_charger);
+
+                // --- inject PowerDeliveryResponse(OK) -> DC_WeldingDetectionRequest ---
+                // PowerDelivery(Stop)::feed transitions into DC_WeldingDetection, whose enter()
+                // emits an Ongoing DC_WeldingDetectionRequest.
+                {
+                    message_20::PowerDeliveryResponse power_delivery_res{};
+                    power_delivery_res.header.session_id = session_id;
+                    power_delivery_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20Main, serialize_msg(power_delivery_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 16; }, 1s));
+                {
+                    const auto& frame = captured.back();
+                    REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20DC);
+
+                    auto variant = decode_frame(frame);
+                    const auto* request = variant.get_if<message_20::DC_WeldingDetectionRequest>();
+                    REQUIRE(request != nullptr);
+                    REQUIRE(request->header.session_id == session_id);
+                }
+
+                // --- inject DC_WeldingDetectionResponse(OK) -> SessionStopRequest ---
+                // DC_WeldingDetection::feed transitions into SessionStop, whose enter() emits a
+                // SessionStopRequest(Terminate). No second (Finished) welding request is emitted.
+                {
+                    message_20::DC_WeldingDetectionResponse welding_res{};
+                    welding_res.header.session_id = session_id;
+                    welding_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    welding_res.present_voltage = message_20::datatypes::from_float(0.0f);
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20DC, serialize_msg(welding_res)));
+                }
+                REQUIRE(pump_until(
+                    reactor, [&]() { return captured.size() >= 17; }, 1s));
+                {
+                    const auto& frame = captured.back();
+                    REQUIRE(header_payload_type(frame) == io::v2gtp::PayloadType::Part20Main);
+
+                    auto variant = decode_frame(frame);
+                    const auto* request = variant.get_if<message_20::SessionStopRequest>();
+                    REQUIRE(request != nullptr);
+                    REQUIRE(request->header.session_id == session_id);
+                    REQUIRE(request->charging_session == message_20::datatypes::ChargingSession::Terminate);
+                }
+
+                // --- inject SessionStopResponse(OK) -> session finishes cleanly ---
+                // SessionStop::feed marks the session stopped; no watchdog park (not timed_out).
+                {
+                    message_20::SessionStopResponse stop_res{};
+                    stop_res.header.session_id = session_id;
+                    stop_res.response_code = message_20::datatypes::ResponseCode::OK;
+                    session.on_bytes_received(
+                        frame_payload(io::v2gtp::PayloadType::Part20Main, serialize_msg(stop_res)));
+                }
                 REQUIRE(pump_until(
                     reactor, [&]() { return session.is_finished(); }, 1s));
-                REQUIRE(captured.size() == count_at_boundary); // no fifth request from bytes
-                REQUIRE(timed_out);                            // terminated by the watchdog, not a transition
+
+                REQUIRE(session.is_finished());
+                REQUIRE(stop_from_charger);
+                REQUIRE_FALSE(timed_out); // a clean SessionStop, not a watchdog park
             }
         }
     }

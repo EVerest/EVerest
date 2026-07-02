@@ -39,7 +39,7 @@ SCENARIO("ISO15118-20 EV PowerDelivery sends Finished + chosen progress on enter
     REQUIRE_FALSE(request_message->channel_selection.has_value());
 }
 
-SCENARIO("ISO15118-20 EV PowerDelivery stays on OK response") {
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_ChargeLoop on OK response") {
     const ev::d20::session::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = prime_context(state_helper);
@@ -53,8 +53,27 @@ SCENARIO("ISO15118-20 EV PowerDelivery stays on OK response") {
 
     const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
 
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeLoop);
+    REQUIRE(ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_WeldingDetection on Stop") {
+    const ev::d20::session::feedback::Callbacks callbacks{};
+    auto state_helper = FsmStateHelper(callbacks);
+    auto& ctx = prime_context(state_helper);
+
+    fsm::v2::FSM<ev::d20::StateBase> fsm{
+        ctx.create_state<ev::d20::state::PowerDelivery>(message_20::datatypes::Progress::Stop)};
+
+    const auto res =
+        message_20::PowerDeliveryResponse{SESSION_HEADER, message_20::datatypes::ResponseCode::OK, std::nullopt};
+    state_helper.handle_response(res);
+
+    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::DC_WeldingDetection);
     REQUIRE(ctx.is_session_stopped() == false);
 }
 
@@ -131,8 +150,8 @@ SCENARIO("ISO15118-20 EV PowerDelivery accepts OK_PowerToleranceConfirmed") {
 
     const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
 
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeLoop);
     REQUIRE(ctx.is_session_stopped() == false);
 }
 

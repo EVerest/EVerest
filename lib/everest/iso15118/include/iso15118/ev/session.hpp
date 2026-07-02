@@ -19,6 +19,7 @@
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/control_event.hpp>
 #include <iso15118/ev/d20/states.hpp>
+#include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 #include <iso15118/session/logger.hpp>
 
@@ -64,8 +65,9 @@ public:
     Session(feedback::Callbacks callbacks, OutboundSend outbound_send, session::SessionLogger& logger,
             everest::lib::io::event::fd_event_handler& reactor, SessionTiming timing,
             message_20::datatypes::Identifier evcc_id = "EVCCID00000",
-            std::vector<message_20::SupportedAppProtocol> advertised_app_protocols = {
-                {"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}});
+            std::vector<message_20::SupportedAppProtocol> advertised_app_protocols = {{"urn:iso:std:iso:15118:-20:DC",
+                                                                                       1, 0, 1, 1}},
+            everest::lib::util::monitor<DcChargeParams>* dc_params = nullptr);
 
     ~Session();
 

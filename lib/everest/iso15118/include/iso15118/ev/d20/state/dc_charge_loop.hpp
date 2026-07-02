@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
+#pragma once
+
+#include "../states.hpp"
+
+namespace iso15118::ev::d20::state {
+
+struct DC_ChargeLoop : public StateBase {
+public:
+    DC_ChargeLoop(Context& ctx) : StateBase(ctx, StateID::DC_ChargeLoop) {
+    }
+
+    void enter() final;
+    Result feed(Event) final;
+
+private:
+    bool m_stop_requested{false};
+};
+
+} // namespace iso15118::ev::d20::state

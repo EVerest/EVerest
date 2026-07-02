@@ -8,6 +8,7 @@
 
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/event/timer_fd.hpp>
+#include <everest/util/async/monitor.hpp>
 
 #include <iso15118/io/ipv6_endpoint.hpp>
 #include <iso15118/session/logger.hpp>
@@ -20,6 +21,7 @@
 // stack (which transitively pulls config/context/feedback) before the io
 // clients keeps `io::` resolving against `iso15118::io`.
 #include <iso15118/ev/config.hpp>
+#include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/session.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 
@@ -45,7 +47,7 @@ namespace iso15118::ev {
  */
 class Controller {
 public:
-    Controller(EvConfig config, feedback::Callbacks callbacks);
+    Controller(EvConfig config, feedback::Callbacks callbacks, DcChargeParams initial_dc_params = {});
 
     Controller(const Controller&) = delete;
     Controller& operator=(const Controller&) = delete;
@@ -79,6 +81,20 @@ public:
      */
     void shutdown();
 
+    /**
+     * @brief Update the live present-SoC exposed to the FSM (module thread).
+     * @details Locks the DC-params monitor and mutates only the live field; the
+     * static params are left untouched. Safe to call while the FSM reads snapshots.
+     */
+    void update_present_soc(double present_soc);
+
+    /**
+     * @brief Update the live present-voltage exposed to the FSM (module thread).
+     * @details Locks the DC-params monitor and mutates only the live field; the
+     * static params are left untouched. Safe to call while the FSM reads snapshots.
+     */
+    void update_present_voltage(float present_voltage);
+
 private:
     // Create the transport client matching @p security (plain TCP today; the TLS
     // branch is the single seam for a future libio TLS client), wire it to the
@@ -111,6 +127,12 @@ private:
     session::SessionLogger logger;
     std::optional<io::SdpClient> sdp_client;
     std::unique_ptr<io::DataClient> data_client;
+
+    // Module -> FSM DC-params channel. Declared before `session`: the Session's
+    // Context holds a pointer to it (passed as &dc_params at construction), so it
+    // must outlive the Session.
+    everest::lib::util::monitor<DcChargeParams> dc_params;
+
     std::unique_ptr<Session> session;
 };
 

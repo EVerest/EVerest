@@ -5,6 +5,7 @@
 #include <any>
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -19,9 +20,12 @@
 #include <iso15118/message/type.hpp>
 #include <iso15118/message/variant.hpp>
 
+#include <everest/util/async/monitor.hpp>
+
 #include <iso15118/ev/d20/control_event.hpp>
 #include <iso15118/ev/d20/evse_session_info.hpp>
 #include <iso15118/ev/d20/session_id.hpp>
+#include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 #include <iso15118/session/logger.hpp>
 
@@ -35,31 +39,36 @@ public:
     MessageExchange() = default;
 
     // Defer serialization to transmit time; also retain the typed request for get_request<Msg>.
+    // Requests queue in submission order so a state's request survives the next state's enter().
     template <typename Msg> void set_request(const Msg& msg) {
-        pending_serialize = [msg](io::StreamOutputView view) { return message_20::serialize(msg, view); };
-        out_type = message_20::PayloadTypeTrait<Msg>::type;
-        request_available = true;
-        request_type = message_20::TypeTrait<Msg>::type;
-        request_message = msg;
+        PendingRequest entry;
+        entry.serialize = [msg](io::StreamOutputView view) { return message_20::serialize(msg, view); };
+        entry.out_type = message_20::PayloadTypeTrait<Msg>::type;
+        entry.request_type = message_20::TypeTrait<Msg>::type;
+        entry.request_message = msg;
+        requests.push_back(std::move(entry));
     }
 
     bool has_request() const {
-        return request_available;
+        return not requests.empty();
     }
 
-    // Encode the pending request to EXI bytes; std::nullopt on no-request or encode failure.
+    // Encode the oldest pending request to EXI bytes; std::nullopt on no-request or encode failure.
     std::optional<std::pair<std::vector<uint8_t>, io::v2gtp::PayloadType>> take_request();
 
     template <typename Msg> std::optional<Msg> get_request() {
         static_assert(message_20::TypeTrait<Msg>::type != message_20::Type::None, "Unhandled type!");
-        if (message_20::TypeTrait<Msg>::type != request_type) {
-            return std::nullopt;
+        for (auto it = requests.rbegin(); it != requests.rend(); ++it) {
+            if (it->request_type != message_20::TypeTrait<Msg>::type) {
+                continue;
+            }
+            try {
+                return std::any_cast<Msg>(it->request_message);
+            } catch (const std::bad_any_cast&) {
+                return std::nullopt;
+            }
         }
-        try {
-            return std::any_cast<Msg>(request_message);
-        } catch (const std::bad_any_cast&) {
-            return std::nullopt;
-        }
+        return std::nullopt;
     }
 
     // Inbound (DECODE).
@@ -69,17 +78,25 @@ public:
 
 private:
     static constexpr std::size_t OUT_BUFFER_SIZE = 4096;
-    std::array<uint8_t, OUT_BUFFER_SIZE> out_buffer{};
-    std::function<std::size_t(io::StreamOutputView)> pending_serialize;
-    io::v2gtp::PayloadType out_type{io::v2gtp::PayloadType::Part20Main};
-    bool request_available{false};
 
-    // output: typed request retained for get_request<Msg> introspection.
-    message_20::Type request_type{message_20::Type::None};
-    std::any request_message;
+    struct PendingRequest {
+        std::function<std::size_t(io::StreamOutputView)> serialize;
+        io::v2gtp::PayloadType out_type{io::v2gtp::PayloadType::Part20Main};
+        // typed request retained for get_request<Msg> introspection.
+        message_20::Type request_type{message_20::Type::None};
+        std::any request_message;
+    };
+
+    // output: FIFO of pending requests, sent oldest-first across reactor passes.
+    std::deque<PendingRequest> requests;
 
     // input: decoded response.
     std::unique_ptr<message_20::Variant> response{nullptr};
+
+    // Must remain the LAST member: the cbv2g EXI encoder can write past the end
+    // of this buffer on an oversized payload, so keeping it at the object tail
+    // confines the overrun instead of corrupting an adjacent member.
+    std::array<uint8_t, OUT_BUFFER_SIZE> out_buffer{};
 };
 
 struct StateBase;
@@ -88,7 +105,8 @@ using BasePointerType = std::unique_ptr<StateBase>;
 class Context {
 public:
     Context(feedback::Callbacks feedback_callbacks, MessageExchange& message_exchange_, SessionLogger& logger,
-            message_20::datatypes::Identifier evcc_id_, const std::optional<ControlEvent>& current_control_event_);
+            message_20::datatypes::Identifier evcc_id_, const std::optional<ControlEvent>& current_control_event_,
+            everest::lib::util::monitor<DcChargeParams>* dc_params_ = nullptr);
 
     template <typename StateType, typename... Args> BasePointerType create_state(Args&&... args) {
         return std::make_unique<StateType>(*this, std::forward<Args>(args)...);
@@ -149,10 +167,18 @@ public:
         return session;
     }
 
+    // Locked-copy snapshot of the EV DC charge params (module -> FSM channel).
+    // Returns a default DcChargeParams when no monitor was wired in.
+    DcChargeParams get_dc_params() const {
+        if (dc_params == nullptr) {
+            return {};
+        }
+        auto h = dc_params->handle();
+        return *h;
+    }
+
     // Contains the EVSE received data
     EVSESessionInfo evse_session_info;
-
-    message_20::datatypes::RationalNumber dc_pre_charge_target_voltage{0, 0};
 
     // Advertised SupportedAppProtocol list (config-driven). Defaults to the single
     // ISO 15118-20 DC entry; the Session overwrites this from EvConfig. Only -20 is wired.
@@ -169,6 +195,11 @@ private:
     message_20::datatypes::Identifier evcc_id;
 
     const std::optional<ControlEvent>& current_control_event;
+
+    // Non-owning handle to the module -> FSM DC-params channel; null when unwired
+    // (many tests construct the Context directly). Non-const because acquiring the
+    // monitor lock mutates its mutex; read access is a locked-copy snapshot.
+    everest::lib::util::monitor<DcChargeParams>* dc_params;
 
     SessionId session{std::array<uint8_t, SessionId::ID_LENGTH>{}};
 

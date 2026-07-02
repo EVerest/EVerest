@@ -8,6 +8,7 @@
 #include <iso15118/ev/d20/state/session_stop.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/dc_welding_detection.hpp>
+#include <iso15118/message/session_stop.hpp>
 #include <iso15118/message/type.hpp>
 
 using namespace iso15118;
@@ -49,10 +50,15 @@ SCENARIO("ISO15118-20 EV DC_WeldingDetection transitions to SessionStop on OK re
     REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
     REQUIRE(ctx.is_session_stopped() == false);
 
-    // After response, a Finished request must have been enqueued.
-    const auto request_message = ctx.get_request<message_20::DC_WeldingDetectionRequest>();
-    REQUIRE(request_message.has_value());
-    REQUIRE(request_message->processing == message_20::datatypes::Processing::Finished);
+    // No second (Finished) welding request is emitted: the only welding request is the
+    // Ongoing one from enter(). SessionStop::enter() queued a SessionStopRequest instead.
+    const auto welding_request = ctx.get_request<message_20::DC_WeldingDetectionRequest>();
+    REQUIRE(welding_request.has_value());
+    REQUIRE(welding_request->processing == message_20::datatypes::Processing::Ongoing);
+
+    const auto session_stop_request = ctx.get_request<message_20::SessionStopRequest>();
+    REQUIRE(session_stop_request.has_value());
+    REQUIRE(session_stop_request->charging_session == message_20::datatypes::ChargingSession::Terminate);
 }
 
 SCENARIO("ISO15118-20 EV DC_WeldingDetection stops session on FAILED response") {

@@ -9,20 +9,19 @@
 namespace iso15118::ev::d20 {
 
 std::optional<std::pair<std::vector<uint8_t>, io::v2gtp::PayloadType>> MessageExchange::take_request() {
-    request_available = false;
-    auto serializer = std::move(pending_serialize);
-    pending_serialize = nullptr;
-
-    if (not serializer) {
+    if (requests.empty()) {
         // A precondition violation: the caller checks has_request() first. Surface it
         // as an error so it is not confused with an encode failure.
         logf_error("take_request called with no pending request");
         return std::nullopt;
     }
 
+    auto entry = std::move(requests.front());
+    requests.pop_front();
+
     try {
-        const auto size = serializer(io::StreamOutputView{out_buffer.data(), out_buffer.size()});
-        return std::make_pair(std::vector<uint8_t>(out_buffer.begin(), out_buffer.begin() + size), out_type);
+        const auto size = entry.serialize(io::StreamOutputView{out_buffer.data(), out_buffer.size()});
+        return std::make_pair(std::vector<uint8_t>(out_buffer.begin(), out_buffer.begin() + size), entry.out_type);
     } catch (const std::exception& e) {
         logf_error("EV request encode failed (buffer overflow or encode error, buffer=%zu bytes): %s",
                    out_buffer.size(), e.what());
@@ -53,13 +52,14 @@ message_20::Type MessageExchange::peek_response_type() const {
 }
 
 Context::Context(feedback::Callbacks feedback_callbacks, MessageExchange& message_exchange_, SessionLogger& logger,
-                 message_20::datatypes::Identifier evcc_id_,
-                 const std::optional<ControlEvent>& current_control_event_) :
+                 message_20::datatypes::Identifier evcc_id_, const std::optional<ControlEvent>& current_control_event_,
+                 everest::lib::util::monitor<DcChargeParams>* dc_params_) :
     feedback(std::move(feedback_callbacks)),
     log(logger),
     message_exchange(message_exchange_),
     evcc_id(std::move(evcc_id_)),
-    current_control_event(current_control_event_) {
+    current_control_event(current_control_event_),
+    dc_params(dc_params_) {
 }
 
 std::unique_ptr<message_20::Variant> Context::pull_response() {
