@@ -2,12 +2,15 @@
 # Copyright Pionix GmbH and Contributors to EVerest
 
 import pytest
+from copy import deepcopy
 from datetime import datetime, timezone
+from typing import Dict
 
 import traceback
 # fmt: off
 import logging
 
+from everest.testing.core_utils import EverestConfigAdjustmentStrategy
 from everest.testing.core_utils.controller.test_controller_interface import TestController
 
 from ocpp.v21 import call as call21
@@ -43,6 +46,17 @@ def validate_tx_event_with_evccid(meta_data, msg, expected):
     )
 
 
+class DelayOcppStartConfigurationAdjustment(EverestConfigAdjustmentStrategy):
+    # V2XChargingCtrlr/ISO15118Ctrlr values are projected from live EvseManager
+    # capabilities after boot; delay OCPP start so the projection settles before
+    # the chargepoint boots and reports them.
+    def adjust_everest_configuration(self, everest_config: Dict):
+        adjusted_config = deepcopy(everest_config)
+        adjusted_config["active_modules"]["ocpp"].setdefault(
+            "config_module", {})["DelayOcppStart"] = 3000
+        return adjusted_config
+
+
 @pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.asyncio
 @pytest.mark.ocpp_version("ocpp2.1")
@@ -59,6 +73,7 @@ def validate_tx_event_with_evccid(meta_data, msg, expected):
         ]
     )
 )
+@pytest.mark.everest_config_adaptions(DelayOcppStartConfigurationAdjustment())
 async def test_q01(
     central_system_v21: CentralSystem,
     test_controller: TestController,
@@ -236,6 +251,7 @@ async def test_q01(
         ]
     )
 )
+@pytest.mark.everest_config_adaptions(DelayOcppStartConfigurationAdjustment())
 async def test_rejected_q01(
     central_system_v21: CentralSystem,
     test_controller: TestController,
