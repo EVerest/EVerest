@@ -22,10 +22,17 @@
 #include <iso15118/io/sdp.hpp>
 #include <iso15118/io/sdp_packet.hpp>
 #include <iso15118/io/stream_view.hpp>
+#include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/message/type.hpp>
 #include <iso15118/message/variant.hpp>
 
 namespace iso15118::ev::test {
+
+// The single -20 DC entry an ev::Session advertises by default (mirrors the
+// EvConfig default); Session no longer defaults this, so ctor sites pass it here.
+inline std::vector<message_20::SupportedAppProtocol> default_advertised_app_protocols() {
+    return {{"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}};
+}
 
 // Frame a payload with the 8-byte V2GTP header, mirroring the framing the
 // Session itself uses (V2GTP20_WriteHeader + appended payload).

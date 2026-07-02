@@ -12,9 +12,6 @@
 using namespace iso15118;
 
 namespace {
-constexpr auto SESSION_HEADER =
-    message_20::Header{std::array<uint8_t, 8>{0x10, 0x34, 0xAB, 0x7A, 0x01, 0xF3, 0x95, 0x02}, 1691411798};
-
 ev::d20::Context& prime_context(FsmStateHelper& helper) {
     auto& ctx = helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
@@ -23,14 +20,15 @@ ev::d20::Context& prime_context(FsmStateHelper& helper) {
 } // namespace
 
 SCENARIO("ISO15118-20 EV PowerDelivery sends Finished + chosen progress on enter") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = prime_context(state_helper);
 
     fsm::v2::FSM<ev::d20::StateBase> fsm{
         ctx.create_state<ev::d20::state::PowerDelivery>(message_20::datatypes::Progress::Start)};
 
-    const auto request_message = ctx.get_request<message_20::PowerDeliveryRequest>();
+    const auto requests = drain_requests(state_helper.get_message_exchange());
+    const auto request_message = requests.get<message_20::PowerDeliveryRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
     REQUIRE(request_message->processing == message_20::datatypes::Processing::Finished);
@@ -40,7 +38,7 @@ SCENARIO("ISO15118-20 EV PowerDelivery sends Finished + chosen progress on enter
 }
 
 SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_ChargeLoop on OK response") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = prime_context(state_helper);
 
@@ -59,7 +57,7 @@ SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_ChargeLoop on OK respon
 }
 
 SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_WeldingDetection on Stop") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = prime_context(state_helper);
 
@@ -78,7 +76,7 @@ SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_WeldingDetection on Sto
 }
 
 SCENARIO("ISO15118-20 EV PowerDelivery stops session on FAILED response") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = prime_context(state_helper);
 
@@ -97,15 +95,13 @@ SCENARIO("ISO15118-20 EV PowerDelivery stops session on FAILED response") {
 }
 
 SCENARIO("ISO15118-20 EV PowerDelivery stops session on mismatched response session_id") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = prime_context(state_helper);
 
     fsm::v2::FSM<ev::d20::StateBase> fsm{
         ctx.create_state<ev::d20::state::PowerDelivery>(message_20::datatypes::Progress::Start)};
 
-    constexpr auto WRONG_HEADER =
-        message_20::Header{std::array<uint8_t, 8>{0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00, 0x00, 0x00}, 1691411798};
     const auto res =
         message_20::PowerDeliveryResponse{WRONG_HEADER, message_20::datatypes::ResponseCode::OK, std::nullopt};
     state_helper.handle_response(res);
@@ -118,7 +114,7 @@ SCENARIO("ISO15118-20 EV PowerDelivery stops session on mismatched response sess
 }
 
 SCENARIO("ISO15118-20 EV PowerDelivery stops session on wrong variant") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = prime_context(state_helper);
 
@@ -137,7 +133,7 @@ SCENARIO("ISO15118-20 EV PowerDelivery stops session on wrong variant") {
 }
 
 SCENARIO("ISO15118-20 EV PowerDelivery accepts OK_PowerToleranceConfirmed") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = prime_context(state_helper);
 
@@ -156,7 +152,7 @@ SCENARIO("ISO15118-20 EV PowerDelivery accepts OK_PowerToleranceConfirmed") {
 }
 
 SCENARIO("ISO15118-20 EV PowerDelivery accepts WARNING_StandbyNotAllowed") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = prime_context(state_helper);
 
@@ -175,7 +171,7 @@ SCENARIO("ISO15118-20 EV PowerDelivery accepts WARNING_StandbyNotAllowed") {
 }
 
 SCENARIO("ISO15118-20 EV PowerDelivery stops session on FAILED_ContactorError") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = prime_context(state_helper);
 
