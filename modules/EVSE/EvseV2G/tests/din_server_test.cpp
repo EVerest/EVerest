@@ -560,4 +560,77 @@ TEST_F(DinServerTest, din_validate_response_code_V2G_DC_665) {
     EXPECT_GE(given_response_code, min_expected_response_code);
 }
 
+class DinServerPowerDeliveryTest : public DinServerTest {
+protected:
+    void SetUp() override {
+        DinServerTest::SetUp();
+
+        exi_in->V2G_Message.Body.PowerDeliveryReq_isUsed = true;
+        init_din_PowerDeliveryReqType(&exi_in->V2G_Message.Body.PowerDeliveryReq);
+
+        exi_out->V2G_Message.Body.PowerDeliveryRes_isUsed = 1u;
+        init_din_PowerDeliveryResType(&exi_out->V2G_Message.Body.PowerDeliveryRes);
+
+        ctx->is_dc_charger = true;
+        ctx->current_v2g_msg = V2G_POWER_DELIVERY_MSG;
+        ctx->last_v2g_msg = V2G_CURRENT_DEMAND_MSG;
+        ctx->state = WAIT_FOR_CURRENTDEMAND_POWERDELIVERY;
+        ctx->evse_v2g_data.session_id = 0;
+        ctx->ev_v2g_data.received_session_id = 0;
+    }
+};
+
+TEST_F(DinServerPowerDeliveryTest, power_delivery_stop_sets_shutdown_status_code) {
+    // [IEC 61851-23:2023 CC.7.5.19] After the EV requested to stop the charging session
+    // (ReadyToChargeState = false), the PowerDeliveryRes and the subsequent WeldingDetectionRes
+    // shall report EVSE_Shutdown (or EVSE_UtilityInterruptEvent) instead of EVSE_Ready
+    exi_in->V2G_Message.Body.PowerDeliveryReq.ReadyToChargeState = 0;
+
+    ctx->evse_v2g_data.evse_status_code[PHASE_CHARGE] = din_DC_EVSEStatusCodeType_EVSE_Ready;
+    ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = din_DC_EVSEStatusCodeType_EVSE_NotReady;
+
+    EXPECT_EQ(states::handle_din_power_delivery(conn.get()), V2G_EVENT_NO_EVENT);
+
+    auto& res = exi_out->V2G_Message.Body.PowerDeliveryRes;
+    EXPECT_EQ(res.ResponseCode, din_responseCodeType_OK);
+    EXPECT_EQ(res.DC_EVSEStatus.EVSEStatusCode, din_DC_EVSEStatusCodeType_EVSE_Shutdown);
+    EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_WELDING], din_DC_EVSEStatusCodeType_EVSE_Shutdown);
+    EXPECT_EQ(ctx->state, WAIT_FOR_WELDINGDETECTION_SESSIONSTOP);
+    EXPECT_EQ(ctx->session.is_charging, false);
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_ERROR).size(), 0);
+}
+
+TEST_F(DinServerPowerDeliveryTest, power_delivery_stop_preserves_more_specific_status_code) {
+    // A more specific status code like EVSE_UtilityInterruptEvent must not be overwritten
+    // by EVSE_Shutdown when the EV requests to stop the charging session
+    exi_in->V2G_Message.Body.PowerDeliveryReq.ReadyToChargeState = 0;
+
+    ctx->evse_v2g_data.evse_status_code[PHASE_CHARGE] = din_DC_EVSEStatusCodeType_EVSE_UtilityInterruptEvent;
+    ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = din_DC_EVSEStatusCodeType_EVSE_UtilityInterruptEvent;
+
+    EXPECT_EQ(states::handle_din_power_delivery(conn.get()), V2G_EVENT_NO_EVENT);
+
+    auto& res = exi_out->V2G_Message.Body.PowerDeliveryRes;
+    EXPECT_EQ(res.DC_EVSEStatus.EVSEStatusCode, din_DC_EVSEStatusCodeType_EVSE_UtilityInterruptEvent);
+    EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_WELDING], din_DC_EVSEStatusCodeType_EVSE_UtilityInterruptEvent);
+}
+
+TEST_F(DinServerPowerDeliveryTest, power_delivery_start_keeps_ready_status_code) {
+    // A PowerDeliveryReq with ReadyToChargeState = true must not touch the status codes
+    exi_in->V2G_Message.Body.PowerDeliveryReq.ReadyToChargeState = 1;
+
+    ctx->last_v2g_msg = V2G_PRE_CHARGE_MSG;
+    ctx->state = WAIT_FOR_PRECHARGE_POWERDELIVERY;
+    ctx->evse_v2g_data.evse_status_code[PHASE_CHARGE] = din_DC_EVSEStatusCodeType_EVSE_Ready;
+    ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = din_DC_EVSEStatusCodeType_EVSE_NotReady;
+
+    EXPECT_EQ(states::handle_din_power_delivery(conn.get()), V2G_EVENT_NO_EVENT);
+
+    auto& res = exi_out->V2G_Message.Body.PowerDeliveryRes;
+    EXPECT_EQ(res.ResponseCode, din_responseCodeType_OK);
+    EXPECT_EQ(res.DC_EVSEStatus.EVSEStatusCode, din_DC_EVSEStatusCodeType_EVSE_Ready);
+    EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_WELDING], din_DC_EVSEStatusCodeType_EVSE_NotReady);
+    EXPECT_EQ(ctx->state, WAIT_FOR_CURRENTDEMAND);
+}
+
 } // namespace
