@@ -15,8 +15,9 @@ __pycache__/
 *.orig
 *.rej
 
-/modules
+/onfig/custom
 /lib
+**/Makefile
 /generated
 /applications
 **/CMakeFiles
@@ -27,7 +28,5 @@ __pycache__/
 /compile_commands.json
 /Doxyfile.doxygen-everest-core
 /ev-dev-tools_pip_install_local_installed_0.7.3
-/config/bringup/Makefile
-/config/nodered/Makefile
-/config/Makefile
 /release.json
+

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include "external_energy_node_API_client.hpp"
+#include "external_energy_node_client_API.hpp"
 
 namespace module {
 
-void external_energy_node_API_client::init() {
+void external_energy_node_client_API::init() {
     invoke_init(*p_main);
     invoke_init(*p_energy_grid);
 
@@ -16,7 +16,7 @@ void external_energy_node_API_client::init() {
     helper.init(comm_params);
 }
 
-void external_energy_node_API_client::ready() {
+void external_energy_node_client_API::ready() {
     invoke_ready(*p_main);
     invoke_ready(*p_energy_grid);
 

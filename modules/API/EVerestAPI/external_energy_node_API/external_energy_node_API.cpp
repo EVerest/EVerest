@@ -30,8 +30,8 @@ void external_energy_node_API::init() {
     helper.init(comm_params);
 
     // Subscribe to energy_flow_request from each local EnergyNode (EVSE nodes).
-    // On each update: merge the child, check L1 timeout, republish aggregate on
-    // the local Everest bus (for L0) and via ApiHelper topic (for L1 via bridge).
+    // On each update: merge the child, check external timeout, republish aggregate on
+    // the local Everest bus (for internal) and via ApiHelper topic (for external via bridge).
     for (auto& entry : r_energy_consumer) {
         entry->subscribe_energy_flow_request([this](types::energy::EnergyFlowRequest const& child) {
             std::lock_guard<std::mutex> lock(aggregate_mutex);
@@ -47,7 +47,7 @@ void external_energy_node_API::init() {
                 children.push_back(child);
             }
 
-            // Check L1 timeout
+            // Check external timeout
             if (config.timeout_s > 0 && external_active.load()) {
                 const auto elapsed =
                     std::chrono::duration_cast<std::chrono::seconds>(
@@ -56,11 +56,11 @@ void external_energy_node_API::init() {
                 if (elapsed >= config.timeout_s) {
                     external_active = false;
                     EVLOG_info << info.id
-                               << ": external L1 EnergyManager timed out — falling back to local L0";
+                               << ": external EnergyManager timed out — falling back to internal EnergyManager";
                 }
             }
 
-            // Publish to local Everest bus (L0 EnergyManager sees the aggregate)
+            // Publish to local Everest bus (internal EnergyManager sees the aggregate)
             p_energy_grid->publish_energy_flow_request(aggregate);
 
             // Publish to external via ApiHelper topic:
@@ -80,7 +80,7 @@ void external_energy_node_API::ready() {
     invoke_ready(*p_main);
     invoke_ready(*p_energy_grid);
 
-    // Publish an initial aggregate so both L0 and L1 see this server immediately.
+    // Publish an initial aggregate so both internal and external see this server immediately.
     {
         std::lock_guard<std::mutex> lock(aggregate_mutex);
         p_energy_grid->publish_energy_flow_request(aggregate);
@@ -92,14 +92,14 @@ void external_energy_node_API::ready() {
         }
     }
 
-    // Subscribe to enforce_limits commands from the L1 EnergyManager.
+    // Subscribe to enforce_limits commands from the external EnergyManager.
     // Arrives via ApiHelper topic:
     //   everest_api/1/external_energy_node/{id}/m2e/enforce_limits
     // EnforcedLimits has an API-type wrapper, so we use deserialize + to_internal_api.
     helper.subscribe_api_topic("enforce_limits", [this](std::string const& data) {
         API_types_ext::EnforcedLimits val;
         if (!deserialize(data, val)) {
-            EVLOG_warning << info.id << ": failed to deserialize enforce_limits from L1";
+            EVLOG_warning << info.id << ": failed to deserialize enforce_limits from external";
             return false;
         }
 
@@ -107,10 +107,10 @@ void external_energy_node_API::ready() {
 
         external_last_seen = std::chrono::steady_clock::now();
         if (!external_active.exchange(true)) {
-            EVLOG_info << info.id << ": external L1 EnergyManager connected";
+            EVLOG_info << info.id << ": external EnergyManager connected";
         }
 
-        // Route L1 limits to all child EnergyNodes (takes priority over L0).
+        // Route external limits to all child EnergyNodes (takes priority over internal).
         for (auto& entry : r_energy_consumer) {
             entry->call_enforce_limits(value);
         }

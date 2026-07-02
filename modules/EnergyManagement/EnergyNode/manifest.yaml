@@ -23,14 +23,6 @@ config:
     minimum: 1.0
     maximum: 1000.0
     default: 230.0
-  external_consumer_ids:
-    description: >-
-      Comma-separated list of module IDs declared in external_modules in the
-      config file. For each ID, this node subscribes to its energy_flow_request
-      on the external MQTT prefix and forwards enforce_limits back to it via
-      external MQTT. Empty string disables external bridging.
-    type: string
-    default: ""
   enhance_external_schedule:
     description: >-
       When enabled, calculates per-phase current limits from total_power_W
@@ -49,7 +41,7 @@ provides:
 requires:
   energy_consumer:
     interface: energy
-    min_connections: 0
+    min_connections: 1
     max_connections: 128
   powermeter:
     interface: powermeter
@@ -59,7 +51,6 @@ requires:
     interface: energy_price_information
     min_connections: 0
     max_connections: 1
-enable_external_mqtt: true
 metadata:
   license: https://opensource.org/licenses/Apache-2.0
   authors:

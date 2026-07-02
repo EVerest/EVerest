@@ -7,7 +7,6 @@
 #include <chrono>
 #include <date/date.h>
 #include <date/tz.h>
-#include <nlohmann/json.hpp>
 #include <string_view>
 #include <utils/date.hpp>
 
@@ -121,18 +120,8 @@ void energyImpl::publish_complete_energy_object(const EnergyState& state) {
         types::energy::EnergyFlowRequest energy_complete = energy_flow_request;
         merge_price_into_schedule(energy_complete.schedule_export, energy_pricing_schedule_export);
         publish_energy_flow_request(energy_complete);
-        // Mirror to external MQTT so cross-process peers can observe this node's subtree
-        if (!mod->external_consumers.empty()) {
-            mod->mqtt.publish(mod->info.id + "/energy_grid/var/energy_flow_request",
-                              nlohmann::json(energy_complete).dump());
-        }
     } else {
         publish_energy_flow_request(energy_flow_request);
-        // Mirror to external MQTT so cross-process peers can observe this node's subtree
-        if (!mod->external_consumers.empty()) {
-            mod->mqtt.publish(mod->info.id + "/energy_grid/var/energy_flow_request",
-                              nlohmann::json(energy_flow_request).dump());
-        }
     }
 }
 
@@ -186,33 +175,6 @@ void energyImpl::ready() {
     // publish own limits at least once
     publish_energy_flow_request(energy_state_handle->energy_flow_request);
     mod->signalExternalLimit.connect([this](types::energy::ExternalLimits& l) { set_external_limits(l); });
-
-    // Subscribe to energy_flow_request from each external consumer (running in a separate Everest process).
-    // When received, inject the request as a child of this node and republish the aggregated tree upstream.
-    for (const auto& consumer_id : mod->external_consumers) {
-        mod->mqtt.subscribe(consumer_id + "/energy_grid/var/energy_flow_request",
-                            [this, consumer_id](const std::string& msg) {
-                                try {
-                                    auto flow_request =
-                                        nlohmann::json::parse(msg).get<types::energy::EnergyFlowRequest>();
-                                    auto energy_state_handle = energy_state.handle();
-                                    auto& children = energy_state_handle->energy_flow_request.children;
-                                    auto it = std::find_if(children.begin(), children.end(),
-                                                           [&flow_request](const auto& child) {
-                                                               return child.uuid == flow_request.uuid;
-                                                           });
-                                    if (it != children.end()) {
-                                        *it = flow_request;
-                                    } else {
-                                        children.push_back(flow_request);
-                                    }
-                                    publish_complete_energy_object(*energy_state_handle);
-                                } catch (const std::exception& e) {
-                                    EVLOG_warning << "EnergyNode: failed to parse external energy_flow_request from "
-                                                  << consumer_id << ": " << e.what();
-                                }
-                            });
-    }
 }
 
 void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
@@ -221,21 +183,8 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
     // route to children if it is not for me
     // FIXME: this sends it to all children, we could do a lookup on which branch it actually is
     if (value.uuid != energy_state_handle->energy_flow_request.uuid) {
-        // Check if this enforce_limits targets an external consumer (cross-process routing via MQTT)
-        bool routed_external = false;
-        for (const auto& consumer_id : mod->external_consumers) {
-            if (value.uuid == consumer_id) {
-                mod->mqtt.publish(consumer_id + "/energy_grid/cmd/enforce_limits",
-                                  nlohmann::json(value).dump());
-                routed_external = true;
-                break;
-            }
-        }
-        // Route to local children (internal Everest bus) if not handled externally
-        if (!routed_external) {
-            for (auto& entry : mod->r_energy_consumer) {
-                entry->call_enforce_limits(value);
-            }
+        for (auto& entry : mod->r_energy_consumer) {
+            entry->call_enforce_limits(value);
         }
     }
 };

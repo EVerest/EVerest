@@ -10,7 +10,7 @@
 
 #include <generated/interfaces/generic_error/Implementation.hpp>
 
-#include "../external_energy_node_API_client.hpp"
+#include "../external_energy_node_client_API.hpp"
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
@@ -25,7 +25,7 @@ class generic_errorImpl : public generic_errorImplBase {
 public:
     generic_errorImpl() = delete;
     generic_errorImpl(Everest::ModuleAdapter* ev,
-                      const Everest::PtrContainer<external_energy_node_API_client>& mod,
+                      const Everest::PtrContainer<external_energy_node_client_API>& mod,
                       Conf& config) :
         generic_errorImplBase(ev, "main"), mod(mod), config(config){};
 
@@ -39,7 +39,7 @@ protected:
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
 
 private:
-    const Everest::PtrContainer<external_energy_node_API_client>& mod;
+    const Everest::PtrContainer<external_energy_node_client_API>& mod;
     const Conf& config;
 
     virtual void init() override;
