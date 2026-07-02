@@ -15,11 +15,11 @@
 
 #include <everest/io/event/fd_event_handler.hpp>
 
-#include <iso15118/ev/io/data_client.hpp>
+#include <iso15118/ev/transport/data_client.hpp>
 #include <iso15118/io/ipv6_endpoint.hpp>
 
 using everest::lib::io::event::fd_event_handler;
-using iso15118::ev::io::DataClient;
+using iso15118::ev::transport::DataClient;
 using iso15118::io::Ipv6EndPoint;
 
 namespace {

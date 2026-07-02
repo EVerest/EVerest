@@ -13,9 +13,6 @@ public:
 
     void enter() final;
     Result feed(Event) final;
-
-private:
-    bool m_stop_requested{false};
 };
 
 } // namespace iso15118::ev::d20::state

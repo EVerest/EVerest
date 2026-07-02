@@ -97,8 +97,6 @@ if(ISO15118_BUILD_EV_SIDE)
         ev/d20/state/dc_welding_detection.cpp
         ev/d20/state/session_stop.cpp
         ev/session/feedback.cpp
-        ev/io/sdp_client.cpp
-        ev/io/data_client.cpp
         ev/session.cpp
         ev/controller.cpp
         ev/d20/state/service_discovery.cpp
@@ -106,6 +104,8 @@ if(ISO15118_BUILD_EV_SIDE)
         ev/d20/state/service_selection.cpp
         ev/d20/state/schedule_exchange.cpp
         ev/d20/state/dc_charge_loop.cpp
+        ev/transport/sdp_client.cpp
+        ev/transport/data_client.cpp
     )
 endif()
 
