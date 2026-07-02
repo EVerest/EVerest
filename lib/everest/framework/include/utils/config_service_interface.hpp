@@ -35,7 +35,7 @@ enum class DeleteSlotStatus {
     Success,
     CannotDeleteActiveSlot,
     DoesNotExist,
-    Rejected
+    Failed
 };
 
 enum class SetConfigParameterResultEnum {

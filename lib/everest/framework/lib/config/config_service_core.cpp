@@ -6,6 +6,7 @@
 #include <optional>
 
 #include <date/tz.h>
+#include <fmt/format.h>
 #include <everest/logging.hpp>
 
 #include <everest/utils/yaml_loader.hpp>
@@ -15,6 +16,45 @@
 #include <utils/date.hpp>
 
 namespace Everest::config {
+
+// ============================================================================
+// Threading model: single-writer actor
+// ============================================================================
+//
+// All mutable state (module_configs_, active_slot_id_, module_status_,
+// active_storage_, the handler lists, set_parameter_callback_, ...) is owned by
+// a single "actor" thread running process_queue(), which executes queued tasks
+// one at a time. Because every mutation happens on that one thread, the
+// internal_* methods need no locks.
+//
+//   * Public methods just hand a lambda to post_to_actor() and wait for it.
+//   * internal_* methods hold the real logic, always run on the actor thread,
+//     and therefore call other internal_* methods directly -- never the public
+//     wrappers, which would deadlock (the actor would block on a task only it
+//     could run).
+//   * post_to_actor() (in the header) runs inline when spawn_threads_ == false
+//     (deterministic single-threaded mode used by tests), otherwise enqueues
+//     and blocks the caller on the result.
+//
+// Lock-free reads: get_active_module_configurations() bypasses the actor and
+// std::atomic_load()s the current immutable snapshot. The actor publishes a new
+// snapshot via std::atomic_store() on every change, so readers never block the
+// actor nor see a half-written config.
+//
+// Runtime module callbacks: set_config_parameters dispatches the (potentially
+// slow) module callback to async_worker_pool_ and then waits on the futures
+// with a timeout -- so the actor CAN block here for up to that timeout. In
+// practice a healthy module replies well within it; the bounded wait is a
+// deliberate trade-off, and any future that does time out is parked in
+// orphaned_futures_ (reaped on the next call) so the actor still returns.
+//
+// Event delivery: publish_*_update() copy the handler list and, in threaded
+// mode, run handlers on a detached thread, so handlers may call back into the
+// service without deadlocking the actor.
+//
+// Shutdown: ~ConfigServiceCore() clears running_, stops command_queue_ and
+// joins the worker thread.
+// ============================================================================
 
 namespace {
 std::string now_rfc3339() {
@@ -51,7 +91,7 @@ bool is_set_read_only_allowed(const everest::config::Access& access, const std::
         return true;
     }
     const auto it = config_access.modules.find(target_module_id);
-    return it != config_access.modules.end() && it->second.allow_set_read_only;
+    return it != config_access.modules.end() and it->second.allow_set_read_only;
 }
 } // namespace
 
@@ -93,13 +133,15 @@ void ConfigServiceCore::internal_reinitialize_from_db(bool force_reload) {
         return;
     }
     int new_active_slot_id = slot_manager_.get_next_boot_slot_id();
-    if ((new_active_slot_id != active_slot_id_) or force_reload) {
+    bool slot_changed = (new_active_slot_id != active_slot_id_);
+    if (slot_changed or force_reload) {
+        slot_changed = true;
         active_slot_id_ = new_active_slot_id;
         active_storage_ = make_storage(active_slot_id_);
     }
     // always reload module configuration in order to include possible WillApplyOnRestart changes
     reload_from_storage();
-    if (new_active_slot_id != active_slot_id_) {
+    if (slot_changed) {
         publish_active_slot_update();
     }
 }
@@ -130,7 +172,8 @@ void ConfigServiceCore::publish_config_update(const ConfigurationUpdate& update)
 
 // --- Active-slot in-memory access ---
 
-std::shared_ptr<const everest::config::ModuleConfigurations> ConfigServiceCore::get_active_module_configurations() const {
+std::shared_ptr<const everest::config::ModuleConfigurations>
+ConfigServiceCore::get_active_module_configurations() const {
     return std::atomic_load(&active_configs_ptr_);
 }
 
@@ -139,7 +182,8 @@ void ConfigServiceCore::reload_from_storage() {
         const auto resp = active_storage_->get_module_configs();
         if (resp.status == everest::config::GenericResponseStatus::OK) {
             module_configs_ = resp.module_configs;
-            std::atomic_store(&active_configs_ptr_, std::make_shared<const everest::config::ModuleConfigurations>(module_configs_));
+            std::atomic_store(&active_configs_ptr_,
+                              std::make_shared<const everest::config::ModuleConfigurations>(module_configs_));
         }
     }
 }
@@ -193,12 +237,12 @@ DeleteSlotStatus ConfigServiceCore::internal_delete_slot(int slot_id) {
     // Verify slot exists first
     const auto slots = slot_manager_.list_slots();
     const bool exists = std::any_of(slots.begin(), slots.end(), [slot_id](const auto& s) { return s.id == slot_id; });
-    if (!exists) {
+    if (not exists) {
         return DeleteSlotStatus::DoesNotExist;
     }
     const auto status = slot_manager_.delete_slot(slot_id);
     if (status != everest::config::GenericResponseStatus::OK) {
-        return DeleteSlotStatus::DoesNotExist;
+        return DeleteSlotStatus::Failed;
     }
     return DeleteSlotStatus::Success;
 }
@@ -213,7 +257,8 @@ DuplicateSlotResult ConfigServiceCore::internal_duplicate_slot(int slot_id, std:
 LoadFromYamlResult ConfigServiceCore::load_from_yaml(const std::string& raw_yaml,
                                                      std::optional<std::string> description,
                                                      std::optional<int> slot_id) {
-    return post_to_actor([this, raw_yaml, description, slot_id]() { return internal_load_from_yaml(raw_yaml, description, slot_id); });
+    return post_to_actor(
+        [this, raw_yaml, description, slot_id]() { return internal_load_from_yaml(raw_yaml, description, slot_id); });
 }
 LoadFromYamlResult ConfigServiceCore::internal_load_from_yaml(const std::string& raw_yaml,
                                                               std::optional<std::string> description,
@@ -221,12 +266,12 @@ LoadFromYamlResult ConfigServiceCore::internal_load_from_yaml(const std::string&
     int target_slot_id = slot_id.value_or(slot_manager_.next_slot_id());
 
     if (target_slot_id == active_slot_id_ and module_status_ != ActiveSlotStatus::Stopped) {
-        return {false, std::nullopt, "Cannot load YAML into the active slot"};
+        return {false, std::nullopt, "Cannot load YAML into the active slot when modules are running"};
     }
     bool into_new_slot = not slot_manager_.exists(target_slot_id);
     try {
         const auto json_config = Everest::load_yaml_from_string(raw_yaml);
-        if (!json_config.contains("active_modules")) {
+        if (not json_config.contains("active_modules")) {
             return {false, std::nullopt, "YAML does not contain an 'active_modules' section"};
         }
 
@@ -251,11 +296,10 @@ LoadFromYamlResult ConfigServiceCore::internal_load_from_yaml(const std::string&
                                                  description) != everest::config::GenericResponseStatus::OK) {
                 return {false, std::nullopt, "Failed to replace config slot"};
             }
-            // If the slot exists, overwrite its config with the new one
+            // overwrite its config with the new one
             auto storage = make_storage(target_slot_id);
 
             if (storage->replace_module_configs(module_configs) != everest::config::GenericResponseStatus::OK) {
-                slot_manager_.delete_slot(target_slot_id);
                 // Do nothing - if writing to an existing slot failed, we don't want to delete it;
                 return {false, std::nullopt, "Failed to write module configs to existing slot"};
             }
@@ -263,7 +307,7 @@ LoadFromYamlResult ConfigServiceCore::internal_load_from_yaml(const std::string&
 
         return {true, target_slot_id, ""};
     } catch (const std::exception& e) {
-        return {false, std::nullopt, std::string("Validation failed: ") + e.what()};
+        return {false, std::nullopt, fmt::format("Validation failed: {}", e.what())};
     }
 }
 
@@ -272,8 +316,6 @@ bool ConfigServiceCore::set_description(int slot_id, const std::string& descript
 }
 bool ConfigServiceCore::internal_set_description(int slot_id, const std::string& description) {
     if (slot_manager_.exists(slot_id)) {
-        auto slots = slot_manager_.list_slots();
-
         slot_manager_.update_description(slot_id, {description});
         return true;
     } else {
@@ -296,7 +338,7 @@ GetConfigurationResult ConfigServiceCore::internal_get_configuration(int slot_id
     const auto slots = slot_manager_.list_slots();
     const bool exists =
         std::any_of(slots.begin(), slots.end(), [resolved_slot_id](const auto& s) { return s.id == resolved_slot_id; });
-    if (!exists) {
+    if (not exists) {
         return {GetConfigurationStatus::SlotDoesNotExist, {}};
     }
 
@@ -311,11 +353,12 @@ GetConfigurationResult ConfigServiceCore::internal_get_configuration(int slot_id
 SetConfigParameterResult ConfigServiceCore::set_config_parameters(int slot_id,
                                                                   const std::vector<ConfigParameterUpdate>& updates,
                                                                   const Origin& origin) {
-    return post_to_actor([this, slot_id, updates, origin]() { return internal_set_config_parameters(slot_id, updates, origin); });
+    return post_to_actor(
+        [this, slot_id, updates, origin]() { return internal_set_config_parameters(slot_id, updates, origin); });
 }
-SetConfigParameterResult ConfigServiceCore::internal_set_config_parameters(int slot_id,
-                                                                  const std::vector<ConfigParameterUpdate>& updates,
-                                                                  const Origin& origin) {
+SetConfigParameterResult
+ConfigServiceCore::internal_set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates,
+                                                  const Origin& origin) {
     SetConfigParameterResult result;
     result.status = SetConfigParameterStatus::Ok;
     const bool modules_are_running = module_status_ == ActiveSlotStatus::Running;
@@ -427,7 +470,7 @@ SetConfigParameterResult ConfigServiceCore::internal_set_config_parameters(int s
         const auto slots = slot_manager_.list_slots();
         const bool exists = std::any_of(slots.begin(), slots.end(),
                                         [resolved_slot_id](const auto& s) { return s.id == resolved_slot_id; });
-        if (!exists) {
+        if (not exists) {
             std::fill(result.parameter_results.value().begin(), result.parameter_results.value().end(),
                       SetConfigPerParameterResult{SetConfigParameterResultEnum::DoesNotExist, "Slot does not exist"});
             return result;
@@ -451,11 +494,11 @@ SetConfigParameterResult ConfigServiceCore::internal_set_config_parameters(int s
                 if (inactive_configuration.module_configs.find(update.identifier.module_id) ==
                     inactive_configuration.module_configs.end()) {
                     result.parameter_results.value()[i].status_info =
-                        "Unknown target module: " + update.identifier.module_id;
+                        fmt::format("Unknown target module: {}", update.identifier.module_id);
                 } else {
                     result.parameter_results.value()[i].status_info =
-                        "Unknown parameter: " + update.identifier.configuration_parameter_name +
-                        " in module: " + update.identifier.module_id;
+                        fmt::format("Unknown parameter: {} in module: {}",
+                                    update.identifier.configuration_parameter_name, update.identifier.module_id);
                 }
                 continue;
             }
@@ -474,10 +517,11 @@ SetConfigParameterResult ConfigServiceCore::internal_set_config_parameters(int s
         }
     }
 
-    if (!event.updates.empty()) {
-            if (modifies_active_slot) {
-                std::atomic_store(&active_configs_ptr_, std::make_shared<const everest::config::ModuleConfigurations>(module_configs_));
-            }
+    if (not event.updates.empty()) {
+        if (modifies_active_slot) {
+            std::atomic_store(&active_configs_ptr_,
+                              std::make_shared<const everest::config::ModuleConfigurations>(module_configs_));
+        }
         publish_config_update(event);
     }
 
@@ -518,11 +562,13 @@ GetConfigParametersResult ConfigServiceCore::internal_get_config_parameters(
 // --- Push-event subscriptions ---
 
 void ConfigServiceCore::register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) {
-    post_to_actor([this, handler = std::move(handler)]() mutable { active_slot_handlers_.push_back(std::move(handler)); });
+    post_to_actor(
+        [this, handler = std::move(handler)]() mutable { active_slot_handlers_.push_back(std::move(handler)); });
 }
 
 void ConfigServiceCore::register_config_update_handler(std::function<void(const ConfigurationUpdate&)> handler) {
-    post_to_actor([this, handler = std::move(handler)]() mutable { config_update_handlers_.push_back(std::move(handler)); });
+    post_to_actor(
+        [this, handler = std::move(handler)]() mutable { config_update_handlers_.push_back(std::move(handler)); });
 }
 
 void ConfigServiceCore::register_set_runtime_parameter_handler(const SetParamCallback& callback) {
