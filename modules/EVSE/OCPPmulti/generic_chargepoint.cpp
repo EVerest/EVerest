@@ -60,9 +60,10 @@ bool GenericChargePoint::restart() {
     return m_active_ptr->restart();
 }
 
-void GenericChargePoint::start(ocpp::v2::BootReasonEnum bootreason, bool start_connecting) {
+void GenericChargePoint::start(ocpp::v2::BootReasonEnum bootreason, const std::set<std::string>& resuming_session_ids,
+                               bool start_connecting) {
     check_configured("start");
-    m_active_ptr->start(bootreason, start_connecting);
+    m_active_ptr->start(bootreason, resuming_session_ids, start_connecting);
 }
 
 void GenericChargePoint::stop() {

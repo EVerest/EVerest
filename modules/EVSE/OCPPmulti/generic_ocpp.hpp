@@ -182,6 +182,10 @@ private:
     EventQueue m_event_queue;
     MonitorList m_monitor_list;
 
+    // session ids of sessions that have been resumed by the EvseManager (e.g. after power loss);
+    // passed to the charge point on start() so matching transactions are not stopped (protected by m_member_mux)
+    std::set<std::string> m_resuming_session_ids;
+
     // Serialize + coalesce the charging-schedule recompute: it fires concurrently from the interval timer,
     // the libocpp message thread, and the K28 on_deadline/reaper callbacks.
     std::mutex recompute_mutex;

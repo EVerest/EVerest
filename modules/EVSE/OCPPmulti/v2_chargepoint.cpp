@@ -463,8 +463,11 @@ bool ChargePointV2::restart() {
     m_charge_point->start(ocpp::v2::BootReasonEnum::ApplicationReset, true);
     return true;
 }
-void ChargePointV2::start(ocpp::v2::BootReasonEnum bootreason, bool start_connecting) {
+void ChargePointV2::start(ocpp::v2::BootReasonEnum bootreason, const std::set<std::string>& resuming_session_ids,
+                          bool start_connecting) {
     check_configured("start");
+    // resuming_session_ids is not used for OCPP2.x: resumed transactions are restored via
+    // InternalCtrlr::ResumeTransactionsOnBoot and on_event_session_resumed()
     m_charge_point->start(bootreason, start_connecting);
 }
 void ChargePointV2::stop() {

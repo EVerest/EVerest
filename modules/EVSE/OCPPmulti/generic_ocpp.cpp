@@ -521,9 +521,14 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
 
     const auto boot_reason = to_ocpp_boot_reason(mv_requires.system.call_get_boot_reason());
     mv_charge_point.set_message_queue_resume_delay(std::chrono::seconds(mv_config.getMessageQueueResumeDelay()));
+    std::set<std::string> resuming_session_ids;
+    {
+        std::lock_guard lock(m_member_mux);
+        resuming_session_ids = m_resuming_session_ids;
+    }
     // we can now initialise the charge point's state machine. It reads the connector availability from the internal
     // database and potentially triggers enable/disable callbacks at the evse.
-    mv_charge_point.start(boot_reason, false);
+    mv_charge_point.start(boot_reason, resuming_session_ids, false);
     mv_started = true;
     EVLOG_info << "OCPP started";
 
@@ -1345,6 +1350,13 @@ void GenericOcpp::cb_service_renegotiation_supported(std::int32_t extensions_id,
 }
 
 void GenericOcpp::cb_session_event(std::int32_t evse_id, types::evse_manager::SessionEvent session_event) {
+    if (session_event.event == types::evse_manager::SessionEventEnum::SessionResumed) {
+        // collect resumed session ids so that start() can inform the charge point that these
+        // transactions shall not be stopped; the event itself is still queued/processed since
+        // OCPP2.x restores the transaction data in its session resumed handler
+        std::lock_guard lock(m_member_mux);
+        m_resuming_session_ids.insert(session_event.uuid);
+    }
     if (mv_started) {
         process_session_event(evse_id, session_event);
     } else {
