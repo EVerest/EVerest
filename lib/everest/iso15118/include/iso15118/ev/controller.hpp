@@ -13,20 +13,12 @@
 #include <iso15118/io/ipv6_endpoint.hpp>
 #include <iso15118/session/logger.hpp>
 
-// Order is load-bearing. The EV session/context/feedback headers reference the
-// V2G I/O types as unqualified `io::...`, which must resolve to
-// `iso15118::io::...`. The `ev/io/*` client headers open the sibling namespace
-// `iso15118::ev::io`; once it is visible, unqualified `io::` lookup from within
-// `iso15118::ev::*` finds that namespace first and fails. Including the session
-// stack (which transitively pulls config/context/feedback) before the io
-// clients keeps `io::` resolving against `iso15118::io`.
 #include <iso15118/ev/config.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/session.hpp>
 #include <iso15118/ev/session/feedback.hpp>
-
-#include <iso15118/ev/io/data_client.hpp>
-#include <iso15118/ev/io/sdp_client.hpp>
+#include <iso15118/ev/transport/data_client.hpp>
+#include <iso15118/ev/transport/sdp_client.hpp>
 
 namespace iso15118::ev {
 
@@ -34,7 +26,7 @@ namespace iso15118::ev {
  * EV-side entry point, mirroring the SECC \ref iso15118::TbdController.
  *
  * Owns the libio \ref everest::lib::io::event::fd_event_handler reactor, the
- * \ref io::SdpClient, and the \ref Session. The data-path client is created at
+ * \ref transport::SdpClient, and the \ref Session. The data-path client is created at
  * runtime from the SDP response's transport security (see \ref establish_data_path)
  * so plain-TCP and a future TLS client are selected per session; once created it
  * is wired to the Session's outbound-send seam and its rx callback feeds
@@ -72,6 +64,16 @@ public:
      * pumping; deliver_control_event is a no-op without an FSM).
      */
     void post_control_event(d20::ControlEvent event);
+
+    /**
+     * @brief Request a graceful EV-initiated stop of the charging session.
+     * @details Marshals a StopCharging control event onto the reactor thread (the
+     * FSM walks PowerDelivery(Stop) -> DC_WeldingDetection -> SessionStop) and arms
+     * a single-shot grace-period fallback that hard-stops the loop if the session
+     * has not finished in time. Unlike shutdown() this lets the session close down
+     * gracefully; the fallback bounds the wait.
+     */
+    void request_stop();
 
     /**
      * @brief Request the loop to stop.
@@ -118,6 +120,11 @@ private:
     // responds (on_found) or the setup timeout elapses. Periodic; disarmed on both.
     everest::lib::io::event::timer_fd sdp_retry;
 
+    // Grace-period fallback for request_stop(): registered on the reactor in loop(),
+    // armed only from request_stop()'s marshaled action. Hard-stops the loop if the
+    // graceful stop walk does not finish in time. Single-shot; disarmed on finish.
+    everest::lib::io::event::timer_fd stop_grace_timer;
+
     // Declaration order is load-bearing: the reactor outlives the clients that
     // register fds with it, and the logger outlives the Session that references
     // it. The data client is created at runtime (in establish_data_path) once the
@@ -125,8 +132,8 @@ private:
     // it lazily; both are held by unique_ptr and the Session is constructed last.
     everest::lib::io::event::fd_event_handler reactor;
     session::SessionLogger logger;
-    std::optional<io::SdpClient> sdp_client;
-    std::unique_ptr<io::DataClient> data_client;
+    std::optional<transport::SdpClient> sdp_client;
+    std::unique_ptr<transport::DataClient> data_client;
 
     // Module -> FSM DC-params channel. Declared before `session`: the Session's
     // Context holds a pointer to it (passed as &dc_params at construction), so it

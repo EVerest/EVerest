@@ -21,6 +21,8 @@
 #include <iso15118/ev/session/feedback.hpp>
 #include <iso15118/session/logger.hpp>
 
+#include "test_support.hpp"
+
 using namespace iso15118;
 using namespace std::chrono_literals;
 
@@ -120,7 +122,8 @@ SCENARIO("ISO15118-20 EV Session on_finished callback throwing does not escape")
                             logger,
                             reactor,
                             timing,
-                            "EVTESTID01"};
+                            "EVTESTID01",
+                            ev::test::default_advertised_app_protocols()};
 
         session.set_on_finished([&finished_count]() {
             ++finished_count;
@@ -178,6 +181,78 @@ SCENARIO("ISO15118-20 EV Controller post_control_event marshals onto the reactor
         WHEN("a control event is posted without ever running the loop") {
             THEN("the call marshals (no crash, no synchronous pump mutation) and returns") {
                 REQUIRE_NOTHROW(controller.post_control_event(ev::d20::StopCharging{true}));
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Controller request_stop marshals onto the reactor before the loop runs") {
+    // request_stop must be safe to call off the reactor thread before loop() runs:
+    // it only queues an action (deliver StopCharging + arm the grace timer), never
+    // touching pump/session/timer state synchronously.
+    GIVEN("A Controller built with discover=false and a fixed endpoint (no SdpClient)") {
+        iso15118::session::logging::set_session_log_callback(
+            [](std::size_t, const iso15118::session::logging::Event&) {});
+
+        ev::EvConfig config{};
+        config.interface_name = "lo";
+        config.discover = false;
+        config.send_delay = 5ms;
+        config.response_timeout = 100ms;
+
+        io::Ipv6EndPoint endpoint{};
+        endpoint.port = 15119;
+        endpoint.address[0] = htons(0x0001); // ::1-ish; never connected in this test
+        config.fixed_endpoint = endpoint;
+
+        ev::feedback::Callbacks callbacks{};
+        ev::Controller controller{config, callbacks};
+
+        WHEN("request_stop is called without ever running the loop") {
+            THEN("the call marshals (no crash, no synchronous pump mutation) and returns") {
+                REQUIRE_NOTHROW(controller.request_stop());
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Controller request_stop grace fallback hard-stops a stuck session") {
+    // With no SECC responding, the session never reaches the FSM, so a StopCharging
+    // control event has nothing to walk gracefully. request_stop arms a grace-period
+    // fallback (3x response_timeout) that must hard-stop the loop and fire stopped,
+    // well before the 18 s setup timeout.
+    GIVEN("A Controller running SDP discovery with no SECC present") {
+        iso15118::session::logging::set_session_log_callback(
+            [](std::size_t, const iso15118::session::logging::Event&) {});
+
+        ev::EvConfig config{};
+        config.interface_name = "lo";
+        config.discover = true;
+        config.send_delay = 5ms;
+        config.response_timeout = 50ms; // 3x = 150ms grace, well under the deadline
+
+        ev::feedback::Callbacks callbacks{};
+        std::atomic_bool stopped{false};
+        callbacks.stopped = [&stopped]() { stopped = true; };
+
+        ev::Controller controller{config, callbacks};
+
+        WHEN("loop() is run on a worker thread and request_stop() is called once") {
+            std::thread worker([&controller]() { controller.loop(); });
+
+            THEN("the grace fallback hard-stops the loop and fires the stopped callback") {
+                // Give loop() a moment to enter reactor.run() and register the grace
+                // timer, then request a graceful stop exactly once. Re-issuing would
+                // re-arm the single-shot timer and defer the fallback indefinitely.
+                std::this_thread::sleep_for(50ms);
+                controller.request_stop();
+
+                const auto deadline = std::chrono::steady_clock::now() + 5s;
+                while (not stopped and std::chrono::steady_clock::now() < deadline) {
+                    std::this_thread::sleep_for(5ms);
+                }
+                worker.join();
+                REQUIRE(stopped);
             }
         }
     }

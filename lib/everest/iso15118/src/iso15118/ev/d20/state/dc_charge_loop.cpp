@@ -62,7 +62,7 @@ void DC_ChargeLoop::enter() {
 Result DC_ChargeLoop::feed(Event ev) {
     if (ev == Event::CONTROL_MESSAGE) {
         if (const auto* stop = m_ctx.get_control_event<StopCharging>(); stop != nullptr and *stop) {
-            m_stop_requested = true;
+            m_ctx.set_stop_charging_requested(true);
         }
         return {};
     }
@@ -97,7 +97,7 @@ Result DC_ChargeLoop::feed(Event ev) {
         return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
     }
 
-    if (m_stop_requested) {
+    if (m_ctx.is_stop_charging_requested()) {
         return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
     }
 

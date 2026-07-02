@@ -70,7 +70,8 @@ SCENARIO("EV Session holds each request and transmits it after the send delay") 
                             logger,
                             reactor,
                             timing,
-                            "EVTESTID01"};
+                            "EVTESTID01",
+                            ev::test::default_advertised_app_protocols()};
 
         WHEN("start() is called") {
             session.start();
@@ -305,7 +306,8 @@ SCENARIO("EV Session holds each request and transmits it after the send delay") 
                             logger,
                             reactor,
                             timing,
-                            oversized_evcc_id};
+                            oversized_evcc_id,
+                            ev::test::default_advertised_app_protocols()};
         WHEN("the SAP exchange succeeds and the SessionSetupRequest fails to encode") {
             session.start();
             // The SAP request encodes fine (no evccid); transmit it.
@@ -354,7 +356,8 @@ SCENARIO("EV Session holds each request and transmits it after the send delay") 
                             logger,
                             reactor,
                             timing,
-                            "EVTESTID01"};
+                            "EVTESTID01",
+                            ev::test::default_advertised_app_protocols()};
         WHEN("a control event is delivered before start()") {
             // No FSM exists yet; this must be a no-op, not a crash.
             session.deliver_control_event(ev::d20::StopCharging{true});
@@ -416,7 +419,8 @@ SCENARIO("EV Session holds each request and transmits it after the send delay") 
                             logger,
                             reactor,
                             timing,
-                            "EVTESTID01"};
+                            "EVTESTID01",
+                            ev::test::default_advertised_app_protocols()};
 
         WHEN("start() runs and the response watchdog fires") {
             session.start();
@@ -473,7 +477,8 @@ SCENARIO("EV Session stops loudly when the outbound send is refused") {
                         logger,
                         reactor,
                         timing,
-                        "EVTESTID01"};
+                        "EVTESTID01",
+                        ev::test::default_advertised_app_protocols()};
     GIVEN("A Session whose outbound seam refuses the SAP request") {
         session.start();
 
@@ -518,7 +523,8 @@ SCENARIO("EV Session stops loudly when a state consumes a response without actin
                         logger,
                         reactor,
                         timing,
-                        "EVTESTID01"};
+                        "EVTESTID01",
+                        ev::test::default_advertised_app_protocols()};
     GIVEN("A Session walked to the Authorization state") {
         const message_20::datatypes::SessionId session_id{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
 

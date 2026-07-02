@@ -75,8 +75,12 @@ Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcCharg
 
     // The session can finish inside a timer callback (the response watchdog), so
     // the run loop can't poll is_finished() between events; let the session clear
-    // `online` directly when it ends.
-    session->set_on_finished([this]() { online = false; });
+    // `online` directly when it ends. Disarm the request_stop grace fallback on the
+    // same seam so a graceful finish leaves no stale timer armed.
+    session->set_on_finished([this]() {
+        online = false;
+        stop_grace_timer.disarm();
+    });
 }
 
 void Controller::establish_data_path(const iso15118::io::Ipv6EndPoint& endpoint,
@@ -105,7 +109,7 @@ void Controller::establish_data_path(const iso15118::io::Ipv6EndPoint& endpoint,
             logf_info(
                 "EV Controller: SECC advertised TLS capability; connecting over plain TCP (TLS not yet supported)");
         }
-        data_client = std::make_unique<io::DataClient>(reactor);
+        data_client = std::make_unique<transport::DataClient>(reactor);
 
         data_client->on_rx([this](const std::vector<uint8_t>& bytes) { session->on_bytes_received(bytes); });
 
@@ -161,6 +165,19 @@ void Controller::loop() {
         return;
     }
 
+    // Register the request_stop grace fallback here, on the reactor thread, before
+    // run(). request_stop() (called from the module command thread) only ARMS it from
+    // a marshaled action, keeping all reactor state on the reactor thread. Single-shot.
+    stop_grace_timer.set_single_shot(true);
+    if (not reactor.register_event_handler(&stop_grace_timer, [this]() {
+            logf_warning("EV Controller: graceful stop did not finish in time; hard-stopping");
+            online = false;
+        })) {
+        logf_error("EV Controller: failed to register the stop-grace timer; aborting");
+        feedback.stopped();
+        return;
+    }
+
     // Resolve the SECC endpoint and kick off the async connect chain; the single
     // reactor.run() below drives discovery -> connect -> session start.
     if (config.discover) {
@@ -188,7 +205,7 @@ void Controller::loop() {
         // The SDP response carries the SECC endpoint AND the transport security;
         // both drive the runtime data-client creation in establish_data_path. The
         // SECC has answered, so stop retransmitting the discovery request.
-        sdp_client->discover([this](io::SdpResponse response) {
+        sdp_client->discover([this](transport::SdpResponse response) {
             sdp_retry.disarm();
             establish_data_path(response.endpoint, response.security);
         });
@@ -218,6 +235,20 @@ void Controller::post_control_event(d20::ControlEvent event) {
         if (session) {
             session->deliver_control_event(event);
         }
+    });
+}
+
+void Controller::request_stop() {
+    // Marshal onto the reactor thread: never touch session/pump/timer state from the
+    // caller's thread. The action runs inside reactor.run_actions().
+    reactor.add_action([this]() {
+        if (session) {
+            session->deliver_control_event(d20::ControlEvent{d20::StopCharging{true}});
+        }
+        // Grace fallback: the graceful walk is PowerDelivery(Stop) ->
+        // DC_WeldingDetection -> SessionStop, three response round trips worst case, so
+        // bound the wait at 3x the response timeout before hard-stopping the loop.
+        stop_grace_timer.set_timeout(3 * config.response_timeout);
     });
 }
 

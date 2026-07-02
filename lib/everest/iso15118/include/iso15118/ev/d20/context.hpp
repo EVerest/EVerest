@@ -2,7 +2,6 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <any>
 #include <array>
 #include <cstdint>
 #include <deque>
@@ -38,14 +37,12 @@ class MessageExchange {
 public:
     MessageExchange() = default;
 
-    // Defer serialization to transmit time; also retain the typed request for get_request<Msg>.
-    // Requests queue in submission order so a state's request survives the next state's enter().
+    // Defer serialization to transmit time. Requests queue in submission order so a
+    // state's request survives the next state's enter().
     template <typename Msg> void set_request(const Msg& msg) {
         PendingRequest entry;
         entry.serialize = [msg](io::StreamOutputView view) { return message_20::serialize(msg, view); };
         entry.out_type = message_20::PayloadTypeTrait<Msg>::type;
-        entry.request_type = message_20::TypeTrait<Msg>::type;
-        entry.request_message = msg;
         requests.push_back(std::move(entry));
     }
 
@@ -55,21 +52,6 @@ public:
 
     // Encode the oldest pending request to EXI bytes; std::nullopt on no-request or encode failure.
     std::optional<std::pair<std::vector<uint8_t>, io::v2gtp::PayloadType>> take_request();
-
-    template <typename Msg> std::optional<Msg> get_request() {
-        static_assert(message_20::TypeTrait<Msg>::type != message_20::Type::None, "Unhandled type!");
-        for (auto it = requests.rbegin(); it != requests.rend(); ++it) {
-            if (it->request_type != message_20::TypeTrait<Msg>::type) {
-                continue;
-            }
-            try {
-                return std::any_cast<Msg>(it->request_message);
-            } catch (const std::bad_any_cast&) {
-                return std::nullopt;
-            }
-        }
-        return std::nullopt;
-    }
 
     // Inbound (DECODE).
     void set_response(std::unique_ptr<message_20::Variant> new_response);
@@ -82,9 +64,6 @@ private:
     struct PendingRequest {
         std::function<std::size_t(io::StreamOutputView)> serialize;
         io::v2gtp::PayloadType out_type{io::v2gtp::PayloadType::Part20Main};
-        // typed request retained for get_request<Msg> introspection.
-        message_20::Type request_type{message_20::Type::None};
-        std::any request_message;
     };
 
     // output: FIFO of pending requests, sent oldest-first across reactor passes.
@@ -105,7 +84,9 @@ using BasePointerType = std::unique_ptr<StateBase>;
 class Context {
 public:
     Context(feedback::Callbacks feedback_callbacks, MessageExchange& message_exchange_, SessionLogger& logger,
-            message_20::datatypes::Identifier evcc_id_, const std::optional<ControlEvent>& current_control_event_,
+            message_20::datatypes::Identifier evcc_id_,
+            std::vector<message_20::SupportedAppProtocol> advertised_app_protocols_,
+            const std::optional<ControlEvent>& current_control_event_,
             everest::lib::util::monitor<DcChargeParams>* dc_params_ = nullptr);
 
     template <typename StateType, typename... Args> BasePointerType create_state(Args&&... args) {
@@ -117,10 +98,6 @@ public:
 
     template <typename MessageType> void respond(const MessageType& msg) {
         message_exchange.set_request(msg);
-    }
-
-    template <typename Msg> std::optional<Msg> get_request() {
-        return message_exchange.get_request<Msg>();
     }
 
     // Control-event seam (mirrors iso15118::d20::Context). The pump owns the
@@ -141,6 +118,16 @@ public:
 
     bool is_session_stopped() const {
         return session_stopped;
+    }
+
+    // EV-initiated stop latch. Set once (in any state) and read by DC_ChargeLoop so
+    // a stop requested before that state is entered still drives PowerDelivery(Stop).
+    void set_stop_charging_requested(bool requested) {
+        stop_charging_requested = requested;
+    }
+
+    bool is_stop_charging_requested() const {
+        return stop_charging_requested;
     }
 
     void set_charger_cert_hash(std::optional<io::sha512_hash_t> hash) {
@@ -180,10 +167,9 @@ public:
     // Contains the EVSE received data
     EVSESessionInfo evse_session_info;
 
-    // Advertised SupportedAppProtocol list (config-driven). Defaults to the single
-    // ISO 15118-20 DC entry; the Session overwrites this from EvConfig. Only -20 is wired.
-    std::vector<message_20::SupportedAppProtocol> advertised_app_protocols{
-        {"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}};
+    // Advertised SupportedAppProtocol list, set from the ctor (config-driven via
+    // EvConfig). Read by the SupportedAppProtocol state. Only -20 is wired.
+    std::vector<message_20::SupportedAppProtocol> advertised_app_protocols;
 
     const iso15118::ev::Feedback feedback;
 
@@ -204,6 +190,8 @@ private:
     SessionId session{std::array<uint8_t, SessionId::ID_LENGTH>{}};
 
     bool session_stopped{false};
+
+    bool stop_charging_requested{false};
 
     std::optional<io::sha512_hash_t> charger_cert_hash{std::nullopt};
 

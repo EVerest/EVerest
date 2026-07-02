@@ -20,7 +20,7 @@ namespace {
 // Build a Context wired to the given DcChargeParams monitor (or nullptr).
 struct ContextFixture {
     explicit ContextFixture(everest::lib::util::monitor<ev::DcChargeParams>* dc_params) :
-        ctx(callbacks, msg_exch, logger, evcc_id, control_event, dc_params) {
+        ctx(callbacks, msg_exch, logger, evcc_id, advertised_app_protocols, control_event, dc_params) {
         iso15118::session::logging::set_session_log_callback(
             [](std::size_t, const iso15118::session::logging::Event&) {});
     }
@@ -38,6 +38,8 @@ struct ContextFixture {
     ev::d20::MessageExchange msg_exch{};
     iso15118::session::SessionLogger logger{this};
     message_20::datatypes::Identifier evcc_id{"EVTESTID01"};
+    std::vector<message_20::SupportedAppProtocol> advertised_app_protocols{
+        {"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}};
     std::optional<ev::d20::ControlEvent> control_event{};
     ev::d20::Context ctx;
 };

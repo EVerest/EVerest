@@ -16,7 +16,7 @@
 using namespace iso15118;
 
 SCENARIO("ISO15118-20 EV SessionSetup logging") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
 
@@ -46,7 +46,7 @@ SCENARIO("ISO15118-20 EV SessionSetup logging") {
 
 SCENARIO("ISO15118-20 EV session setup state transitions") {
 
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
 
     auto state_helper = FsmStateHelper(callbacks);
 
@@ -67,7 +67,8 @@ SCENARIO("ISO15118-20 EV session setup state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::AuthorizationSetup);
 
-            const auto request_message = ctx.get_request<message_20::AuthorizationSetupRequest>();
+            const auto requests = drain_requests(state_helper.get_message_exchange());
+            const auto request_message = requests.get<message_20::AuthorizationSetupRequest>();
             REQUIRE(request_message.has_value());
 
             const auto& authorization_setup_req = request_message.value();
@@ -105,7 +106,8 @@ SCENARIO("ISO15118-20 EV session setup state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeParameterDiscovery);
 
-            const auto request_message = ctx.get_request<message_20::DC_ChargeParameterDiscoveryRequest>();
+            const auto requests = drain_requests(state_helper.get_message_exchange());
+            const auto request_message = requests.get<message_20::DC_ChargeParameterDiscoveryRequest>();
             REQUIRE(request_message.has_value());
 
             const auto& dc_charge_param_discovery_req = request_message.value();

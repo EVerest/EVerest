@@ -52,8 +52,11 @@ message_20::Type MessageExchange::peek_response_type() const {
 }
 
 Context::Context(feedback::Callbacks feedback_callbacks, MessageExchange& message_exchange_, SessionLogger& logger,
-                 message_20::datatypes::Identifier evcc_id_, const std::optional<ControlEvent>& current_control_event_,
+                 message_20::datatypes::Identifier evcc_id_,
+                 std::vector<message_20::SupportedAppProtocol> advertised_app_protocols_,
+                 const std::optional<ControlEvent>& current_control_event_,
                  everest::lib::util::monitor<DcChargeParams>* dc_params_) :
+    advertised_app_protocols(std::move(advertised_app_protocols_)),
     feedback(std::move(feedback_callbacks)),
     log(logger),
     message_exchange(message_exchange_),

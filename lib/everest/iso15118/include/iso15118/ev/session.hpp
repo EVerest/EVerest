@@ -39,7 +39,7 @@ struct SessionTiming {
 /**
  * EV-side V2GTP frame pump with timer-driven, decoupled transmission.
  *
- * Bridges the raw byte data path (\ref io::DataClient) and the d20 FSM. It owns
+ * Bridges the raw byte data path (\ref transport::DataClient) and the d20 FSM. It owns
  * the \ref d20::MessageExchange, the \ref d20::Context, the FSM, and two
  * reactor-registered timers:
  *  - send-delay: when a request becomes pending (FSM-produced, or the first one
@@ -64,9 +64,8 @@ public:
 
     Session(feedback::Callbacks callbacks, OutboundSend outbound_send, session::SessionLogger& logger,
             everest::lib::io::event::fd_event_handler& reactor, SessionTiming timing,
-            message_20::datatypes::Identifier evcc_id = "EVCCID00000",
-            std::vector<message_20::SupportedAppProtocol> advertised_app_protocols = {{"urn:iso:std:iso:15118:-20:DC",
-                                                                                       1, 0, 1, 1}},
+            message_20::datatypes::Identifier evcc_id,
+            std::vector<message_20::SupportedAppProtocol> advertised_app_protocols,
             everest::lib::util::monitor<DcChargeParams>* dc_params = nullptr);
 
     ~Session();

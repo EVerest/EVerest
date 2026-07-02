@@ -15,7 +15,7 @@
 #include <iso15118/io/ipv6_endpoint.hpp>
 #include <iso15118/io/sdp.hpp>
 
-namespace iso15118::ev::io {
+namespace iso15118::ev::transport {
 
 /**
  * Parsed SDP response: the SECC's TCP/TLS endpoint plus the transport security
@@ -104,4 +104,4 @@ private:
     std::unique_ptr<everest::lib::io::udp::udp_unconnected_client> client;
 };
 
-} // namespace iso15118::ev::io
+} // namespace iso15118::ev::transport

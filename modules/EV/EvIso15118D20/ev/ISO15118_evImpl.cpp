@@ -199,8 +199,7 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
 void ISO15118_evImpl::handle_stop_charging() {
     auto h = session.handle();
     if ((*h).current) {
-        (*h).current->post_control_event(iso15118::ev::d20::ControlEvent{iso15118::ev::d20::StopCharging{true}});
-        (*h).current->shutdown();
+        (*h).current->request_stop();
     }
 }
 

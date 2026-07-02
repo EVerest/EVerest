@@ -25,14 +25,11 @@ Session::Session(feedback::Callbacks callbacks, OutboundSend outbound_send_, ses
                  std::vector<message_20::SupportedAppProtocol> advertised_app_protocols,
                  everest::lib::util::monitor<DcChargeParams>* dc_params) :
     log(logger),
-    context(std::move(callbacks), message_exchange, log, std::move(evcc_id), active_control_event, dc_params),
+    context(std::move(callbacks), message_exchange, log, std::move(evcc_id), std::move(advertised_app_protocols),
+            active_control_event, dc_params),
     outbound_send(std::move(outbound_send_)),
     reactor(reactor_),
     timing(timing_) {
-
-    // The SupportedAppProtocol state reads the advertised list off the Context;
-    // thread the config-supplied list onto it (defaults to the single -20 entry).
-    context.advertised_app_protocols = std::move(advertised_app_protocols);
 
     // Single-shot timers, re-armed on demand. Registering them on the reactor lets
     // their expiry be dispatched on the reactor thread alongside socket events.
@@ -137,6 +134,11 @@ void Session::deliver_control_event(const d20::ControlEvent& event) {
         // get_control_event<T>(), feed CONTROL_MESSAGE, then clear. Per-state handling
         // of CONTROL_MESSAGE is deferred; this lays the delivery mechanism.
         active_control_event = event;
+        // Latch a StopCharging request on the Context so it survives regardless of the
+        // FSM state at delivery time (the active event is cleared after this feed).
+        if (const auto* stop = std::get_if<d20::StopCharging>(&event); stop != nullptr and *stop) {
+            context.set_stop_charging_requested(true);
+        }
         if (fsm.has_value()) {
             fsm->feed(d20::Event::CONTROL_MESSAGE);
         }

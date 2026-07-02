@@ -16,9 +16,6 @@
 using namespace iso15118;
 
 namespace {
-constexpr auto SESSION_HEADER =
-    message_20::Header{std::array<uint8_t, 8>{0x10, 0x34, 0xAB, 0x7A, 0x01, 0xF3, 0x95, 0x02}, 1691411798};
-
 message_20::DC_ChargeLoopResponse make_res(message_20::datatypes::ResponseCode code,
                                            std::optional<message_20::datatypes::EvseStatus> status = std::nullopt) {
     message_20::DC_ChargeLoopResponse res;
@@ -33,7 +30,7 @@ message_20::DC_ChargeLoopResponse make_res(message_20::datatypes::ResponseCode c
 } // namespace
 
 SCENARIO("ISO15118-20 EV DC_ChargeLoop emits a Dynamic DC_ChargeLoopRequest on enter") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     ev::DcChargeParams params{};
     params.max_charge_power = 11000.0f;
@@ -47,7 +44,8 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop emits a Dynamic DC_ChargeLoopRequest on e
 
     fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::DC_ChargeLoop>()};
 
-    const auto request_message = ctx.get_request<message_20::DC_ChargeLoopRequest>();
+    const auto requests = drain_requests(state_helper.get_message_exchange());
+    const auto request_message = requests.get<message_20::DC_ChargeLoopRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
     REQUIRE(request_message->meter_info_requested == false);
@@ -63,7 +61,7 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop emits a Dynamic DC_ChargeLoopRequest on e
 
 SCENARIO("ISO15118-20 EV DC_ChargeLoop stays and re-emits a request on a non-Terminate response") {
     bool stop_from_charger_fired = false;
-    ev::d20::session::feedback::Callbacks callbacks{};
+    ev::feedback::Callbacks callbacks{};
     callbacks.stop_from_charger = [&stop_from_charger_fired]() { stop_from_charger_fired = true; };
     auto state_helper = FsmStateHelper(callbacks);
     ev::DcChargeParams params{};
@@ -84,14 +82,15 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop stays and re-emits a request on a non-Ter
     REQUIRE(stop_from_charger_fired == false);
 
     // A fresh loop request is queued so the session never consumes without producing.
-    const auto request_message = ctx.get_request<message_20::DC_ChargeLoopRequest>();
+    const auto requests = drain_requests(state_helper.get_message_exchange());
+    const auto request_message = requests.get<message_20::DC_ChargeLoopRequest>();
     REQUIRE(request_message.has_value());
-    REQUIRE_FALSE(ctx.get_request<message_20::PowerDeliveryRequest>().has_value());
+    REQUIRE_FALSE(requests.get<message_20::PowerDeliveryRequest>().has_value());
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeLoop continues on OK response with no EvseStatus") {
     bool stop_from_charger_fired = false;
-    ev::d20::session::feedback::Callbacks callbacks{};
+    ev::feedback::Callbacks callbacks{};
     callbacks.stop_from_charger = [&stop_from_charger_fired]() { stop_from_charger_fired = true; };
     auto state_helper = FsmStateHelper(callbacks);
     ev::DcChargeParams params{};
@@ -118,14 +117,15 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop continues on OK response with no EvseStat
     REQUIRE(ctx.is_session_stopped() == false);
 
     // A fresh loop request was emitted by feed().
-    const auto request_message = ctx.get_request<message_20::DC_ChargeLoopRequest>();
+    const auto requests = drain_requests(state_helper.get_message_exchange());
+    const auto request_message = requests.get<message_20::DC_ChargeLoopRequest>();
     REQUIRE(request_message.has_value());
-    REQUIRE_FALSE(ctx.get_request<message_20::PowerDeliveryRequest>().has_value());
+    REQUIRE_FALSE(requests.get<message_20::PowerDeliveryRequest>().has_value());
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeLoop continues on OK response with a non-Terminate notification") {
     bool stop_from_charger_fired = false;
-    ev::d20::session::feedback::Callbacks callbacks{};
+    ev::feedback::Callbacks callbacks{};
     callbacks.stop_from_charger = [&stop_from_charger_fired]() { stop_from_charger_fired = true; };
     auto state_helper = FsmStateHelper(callbacks);
     ev::DcChargeParams params{};
@@ -153,14 +153,15 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop continues on OK response with a non-Termi
     REQUIRE(ctx.is_session_stopped() == false);
 
     // A fresh loop request was emitted by feed(); no PowerDelivery transition.
-    const auto request_message = ctx.get_request<message_20::DC_ChargeLoopRequest>();
+    const auto requests = drain_requests(state_helper.get_message_exchange());
+    const auto request_message = requests.get<message_20::DC_ChargeLoopRequest>();
     REQUIRE(request_message.has_value());
-    REQUIRE_FALSE(ctx.get_request<message_20::PowerDeliveryRequest>().has_value());
+    REQUIRE_FALSE(requests.get<message_20::PowerDeliveryRequest>().has_value());
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeLoop fires stop_from_charger and drives PowerDelivery(Stop) on Terminate") {
     bool stop_from_charger_fired = false;
-    ev::d20::session::feedback::Callbacks callbacks{};
+    ev::feedback::Callbacks callbacks{};
     callbacks.stop_from_charger = [&stop_from_charger_fired]() { stop_from_charger_fired = true; };
     auto state_helper = FsmStateHelper(callbacks);
     ev::DcChargeParams params{};
@@ -183,14 +184,15 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop fires stop_from_charger and drives PowerD
     REQUIRE(ctx.is_session_stopped() == false);
 
     // PowerDelivery::enter() queued a PowerDeliveryRequest(Stop); no new loop request.
-    const auto pd_request = ctx.get_request<message_20::PowerDeliveryRequest>();
+    const auto requests = drain_requests(state_helper.get_message_exchange());
+    const auto pd_request = requests.get<message_20::PowerDeliveryRequest>();
     REQUIRE(pd_request.has_value());
     REQUIRE(pd_request->charge_progress == message_20::datatypes::Progress::Stop);
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeLoop defers an EV-initiated stop to the next response boundary") {
     bool stop_from_charger_fired = false;
-    ev::d20::session::feedback::Callbacks callbacks{};
+    ev::feedback::Callbacks callbacks{};
     callbacks.stop_from_charger = [&stop_from_charger_fired]() { stop_from_charger_fired = true; };
     auto state_helper = FsmStateHelper(callbacks);
     ev::DcChargeParams params{};
@@ -208,7 +210,8 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop defers an EV-initiated stop to the next r
 
     REQUIRE(control_result.transitioned() == false);
     REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeLoop);
-    REQUIRE_FALSE(ctx.get_request<message_20::PowerDeliveryRequest>().has_value());
+    const auto pre_stop_requests = drain_requests(state_helper.get_message_exchange());
+    REQUIRE_FALSE(pre_stop_requests.get<message_20::PowerDeliveryRequest>().has_value());
 
     // The next response boundary drives PowerDelivery(Stop) without a Terminate notification.
     state_helper.handle_response(make_res(message_20::datatypes::ResponseCode::OK));
@@ -218,13 +221,46 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop defers an EV-initiated stop to the next r
     REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
     REQUIRE(stop_from_charger_fired == false);
 
-    const auto pd_request = ctx.get_request<message_20::PowerDeliveryRequest>();
+    const auto requests = drain_requests(state_helper.get_message_exchange());
+    const auto pd_request = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(pd_request.has_value());
+    REQUIRE(pd_request->charge_progress == message_20::datatypes::Progress::Stop);
+}
+
+SCENARIO("ISO15118-20 EV DC_ChargeLoop honors a stop latch set before the state was entered") {
+    // The Context stop latch can be set (via Session::deliver_control_event) while the
+    // FSM is in an earlier state; DC_ChargeLoop must honor it on the next response even
+    // though it never saw the CONTROL_MESSAGE itself.
+    bool stop_from_charger_fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.stop_from_charger = [&stop_from_charger_fired]() { stop_from_charger_fired = true; };
+    auto state_helper = FsmStateHelper(callbacks);
+    ev::DcChargeParams params{};
+    params.present_voltage = 400.0f;
+    state_helper.set_dc_params(params);
+    auto& ctx = state_helper.get_context();
+    ctx.get_session().set_id(SESSION_HEADER.session_id);
+
+    // Latch the stop BEFORE DC_ChargeLoop is entered.
+    ctx.set_stop_charging_requested(true);
+
+    fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::DC_ChargeLoop>()};
+
+    state_helper.handle_response(make_res(message_20::datatypes::ResponseCode::OK));
+    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
+    REQUIRE(stop_from_charger_fired == false);
+
+    const auto requests = drain_requests(state_helper.get_message_exchange());
+    const auto pd_request = requests.get<message_20::PowerDeliveryRequest>();
     REQUIRE(pd_request.has_value());
     REQUIRE(pd_request->charge_progress == message_20::datatypes::Progress::Stop);
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeLoop stops session on FAILED response") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
@@ -241,7 +277,7 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop stops session on FAILED response") {
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeLoop stops session on wrong variant") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
@@ -260,15 +296,13 @@ SCENARIO("ISO15118-20 EV DC_ChargeLoop stops session on wrong variant") {
 }
 
 SCENARIO("ISO15118-20 EV DC_ChargeLoop stops session on mismatched response session_id") {
-    const ev::d20::session::feedback::Callbacks callbacks{};
+    const ev::feedback::Callbacks callbacks{};
     auto state_helper = FsmStateHelper(callbacks);
     auto& ctx = state_helper.get_context();
     ctx.get_session().set_id(SESSION_HEADER.session_id);
 
     fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::DC_ChargeLoop>()};
 
-    constexpr auto WRONG_HEADER =
-        message_20::Header{std::array<uint8_t, 8>{0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00, 0x00, 0x00}, 1691411798};
     auto res = make_res(message_20::datatypes::ResponseCode::OK);
     res.header = WRONG_HEADER;
     state_helper.handle_response(res);
