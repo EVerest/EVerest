@@ -13,6 +13,7 @@
 
 #include <ocpp/v16/charge_point_configuration.hpp>
 #include <ocpp/v16/charge_point_configuration_devicemodel.hpp>
+#include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
@@ -178,6 +179,9 @@ create_device_model_charge_point_configuration(const fs::path& ocpp_share_path,
                                                const DeviceModelInitializationContext& context) {
     auto device_model_storage = std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(context.database_path);
     auto device_model = std::make_unique<ocpp::v2::DeviceModel>(std::move(device_model_storage));
+
+    // One-time migration, mirroring the v2 path (ocpp::v2::ChargePoint::initialize)
+    ocpp::v2::NetworkConfigurationComponentVariables::migrate_from_blob_if_needed(*device_model);
 
     ocpp::v2::Ocpp16CustomConfigMappings custom_mappings;
     if (context.custom_mappings_path.has_value()) {
