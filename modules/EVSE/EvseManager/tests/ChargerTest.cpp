@@ -782,8 +782,8 @@ namespace module {
 
 // ----------------------------------------------------------------------------
 // IECStateMachine stub
-IECStateMachine::IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& r_bsp_,
-                                 bool lock_connector_in_state_b_) :
+IECStateMachine::IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& r_bsp_, bool lock_connector_in_state_b_,
+                                 bool use_authorized_) :
     r_bsp(r_bsp_) {
 }
 void IECStateMachine::process_bsp_event(const types::board_support_common::BspEvent& bsp_event) {
@@ -813,6 +813,9 @@ void IECStateMachine::enable(bool en) {
 }
 
 void IECStateMachine::connector_force_unlock() {
+}
+
+void IECStateMachine::set_authorized(bool a) {
 }
 
 const std::string cpevent_to_string(CPEvent e) {
