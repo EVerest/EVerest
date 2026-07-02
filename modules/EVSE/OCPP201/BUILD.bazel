@@ -114,6 +114,7 @@ cc_test(
     srcs = glob([
         "*.hpp",
         "device_model/*.hpp",
+        "grid_support/*.hpp",
         "ocpp_generic/*.hpp",
     ]) + [
         "error_handling.cpp",
