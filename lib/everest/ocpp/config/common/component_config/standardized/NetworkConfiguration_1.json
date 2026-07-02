@@ -15,8 +15,7 @@
       "attributes": [
         {
           "type": "Actual",
-          "mutability": "ReadWrite",
-          "value": "ws://localhost:9000"
+          "mutability": "ReadWrite"
         }
       ],
       "description": "OCPP CSMS URL",
@@ -102,8 +101,7 @@
       "attributes": [
         {
           "type": "Actual",
-          "mutability": "ReadWrite",
-          "value": "cp001"
+          "mutability": "ReadWrite"
         }
       ],
       "description": "Per-slot identity override",
@@ -121,8 +119,7 @@
       "attributes": [
         {
           "type": "Actual",
-          "mutability": "WriteOnly",
-          "value": "FFFFFFFFFFFFFFFF"
+          "mutability": "WriteOnly"
         }
       ],
       "description": "Per-slot basic auth password",
