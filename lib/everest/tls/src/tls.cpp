@@ -17,6 +17,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <net/if.h>
@@ -217,6 +218,12 @@ constexpr tls::Connection::result_t convert(ssl_result_t err) {
     }
 }
 
+/// error holds the drained OpenSSL error text; empty when there was no error
+struct ssl_op_result {
+    ssl_result_t rc;
+    std::string error;
+};
+
 /**
  * \brief wait for an event on a socket
  * \param[in] soc is the file descriptor/socket
@@ -268,7 +275,7 @@ int wait_for_loop(int soc, bool forWrite, std::int32_t timeout_ms) {
  * \param[out] readbytes number of bytes received
  * \returns the result of the operation
  */
-[[nodiscard]] ssl_result_t ssl_read(SSL* ctx, std::byte* buf, std::size_t num, std::size_t& readbytes);
+[[nodiscard]] ssl_op_result ssl_read(SSL* ctx, std::byte* buf, std::size_t num, std::size_t& readbytes);
 /**
  * \brief write user data to a SSL connection
  * \param[in] ctx is SSL connection data
@@ -277,25 +284,25 @@ int wait_for_loop(int soc, bool forWrite, std::int32_t timeout_ms) {
  * \param[out] writebytes number of bytes sent
  * \returns the result of the operation
  */
-[[nodiscard]] ssl_result_t ssl_write(SSL* ctx, const std::byte* buf, std::size_t num, std::size_t& writebytes);
+[[nodiscard]] ssl_op_result ssl_write(SSL* ctx, const std::byte* buf, std::size_t num, std::size_t& writebytes);
 /**
  * \brief accept an incoming SSL connection, runs the TLS handshake (sever)
  * \param[in] ctx is SSL connection data
  * \returns the result of the operation
  */
-[[nodiscard]] ssl_result_t ssl_accept(SSL* ctx);
+[[nodiscard]] ssl_op_result ssl_accept(SSL* ctx);
 /**
  * \brief start a SSL connection, runs the TLS handshake (client)
  * \param[in] ctx is SSL connection data
  * \returns the result of the operation
  */
-[[nodiscard]] ssl_result_t ssl_connect(SSL* ctx);
+[[nodiscard]] ssl_op_result ssl_connect(SSL* ctx);
 /**
  * \brief close a SSL connection
  * \param[in] ctx is SSL connection data
  * \returns the result of the operation
  */
-ssl_result_t ssl_shutdown(SSL* ctx);
+ssl_op_result ssl_shutdown(SSL* ctx);
 
 /// operation being performed
 enum class operation_t : std::uint8_t {
@@ -329,13 +336,35 @@ const char* operation_str(operation_t operation) {
 }
 
 /**
+ * \brief drain the per-thread OpenSSL error queue into a string
+ * \return "; "-joined error strings; empty when the queue was empty
+ * \note consumes the queue (ERR_get_error). Callers that also want the errors
+ *       logged should log from the returned string, since the queue is emptied.
+ */
+std::string drain_openssl_error_queue() {
+    std::string out;
+    unsigned long err{0};
+    char buf[256];
+    while ((err = ERR_get_error()) != 0) {
+        ERR_error_string_n(err, buf, sizeof(buf));
+        if (not out.empty()) {
+            out += "; ";
+        }
+        out += buf;
+    }
+    return out;
+}
+
+/**
  * \brief manage the result from a SSL operation
  * \param[in] ctx is SSL connection data
  * \param[in] res is the result of the SSL operation
- * \return result is the simplified result mapped from res
+ * \return the simplified result mapped from res plus the drained OpenSSL
+ *         error text (empty when there was no error)
  */
-ssl_result_t process_result(SSL* ctx, operation_t operation, const int res) {
+ssl_op_result process_result(SSL* ctx, operation_t operation, const int res) {
     ssl_error_t result{ssl_error_t::error};
+    std::string error;
 
     if (ctx != nullptr) {
         result = ssl_error_t::none; // success
@@ -350,13 +379,21 @@ ssl_result_t process_result(SSL* ctx, operation_t operation, const int res) {
                 break;
             case ssl_error_t::error_syscall:
                 // no further operation permitted on the connection
+                // Capture the queue before it is consumed; on a pure syscall
+                // failure the queue may be empty, so fall back to errno text.
+                error = drain_openssl_error_queue();
                 if (errno != 0) {
+                    if (error.empty()) {
+                        error = "SSL_ERROR_SYSCALL " + std::to_string(errno);
+                    }
                     log_error(operation_str(operation) + std::string("SSL_ERROR_SYSCALL ") + std::to_string(errno));
                 }
                 break;
             case ssl_error_t::error_ssl:
+                error = drain_openssl_error_queue();
                 if (operation != operation_t::ssl_shutdown) {
-                    log_error(operation_str(operation) + std::to_string(res) + " " + std::to_string(sslerr_raw));
+                    log_error(operation_str(operation) + std::to_string(res) + " " + std::to_string(sslerr_raw) + " " +
+                              error);
                 }
                 break;
             case ssl_error_t::error:
@@ -367,61 +404,173 @@ ssl_result_t process_result(SSL* ctx, operation_t operation, const int res) {
             case ssl_error_t::want_hello_cb:
             case ssl_error_t::want_x509_lookup:
             default:
-                log_error(operation_str(operation) + std::to_string(res) + " " + std::to_string(sslerr_raw));
+                error = drain_openssl_error_queue();
+                log_error(operation_str(operation) + std::to_string(res) + " " + std::to_string(sslerr_raw) + " " +
+                          error);
                 break;
             }
         }
     }
 
-    return convert(result);
+    return {convert(result), std::move(error)};
 }
 
-ssl_result_t ssl_read(SSL* ctx, std::byte* buf, const std::size_t num, std::size_t& readbytes) {
+ssl_op_result ssl_read(SSL* ctx, std::byte* buf, const std::size_t num, std::size_t& readbytes) {
     const auto res = SSL_read_ex(ctx, buf, num, &readbytes);
     return process_result(ctx, operation_t::ssl_read, res);
-};
-
-ssl_result_t ssl_write(SSL* ctx, const std::byte* buf, const std::size_t num, std::size_t& writebytes) {
-    const auto res = SSL_write_ex(ctx, buf, num, &writebytes);
-    return process_result(ctx, operation_t::ssl_read, res);
 }
 
-ssl_result_t ssl_accept(SSL* ctx) {
+ssl_op_result ssl_write(SSL* ctx, const std::byte* buf, const std::size_t num, std::size_t& writebytes) {
+    const auto res = SSL_write_ex(ctx, buf, num, &writebytes);
+    return process_result(ctx, operation_t::ssl_write, res);
+}
+
+ssl_op_result ssl_accept(SSL* ctx) {
     const auto res = SSL_accept(ctx);
     // 0 is handshake not successful (ssl_error_t::zero_return -> ssl_result_t::closed)
     // < 0 is other error
-    return process_result(ctx, operation_t::ssl_read, res);
+    return process_result(ctx, operation_t::ssl_accept, res);
 }
 
-ssl_result_t ssl_connect(SSL* ctx) {
+ssl_op_result ssl_connect(SSL* ctx) {
     const auto res = SSL_connect(ctx);
     // 0 is handshake not successful (ssl_error_t::zero_return -> ssl_result_t::closed)
     // < 0 is other error
-    return process_result(ctx, operation_t::ssl_read, res);
+    return process_result(ctx, operation_t::ssl_connect, res);
 }
 
-ssl_result_t ssl_shutdown(SSL* ctx) {
+ssl_op_result ssl_shutdown(SSL* ctx) {
     const auto res = SSL_shutdown(ctx);
-    return process_result(ctx, operation_t::ssl_read, res);
+    return process_result(ctx, operation_t::ssl_shutdown, res);
 }
 
 /**
- * \brief configure SSL context with certificates and keys
- * \param[in] is_server a server context is needed
- * \param[inout] ctx is SSL context data
- * \param[in] ciphersuites are the TLS 1.3 cipher suites,
- *            nullptr means use default, "" disables TSL 1.3
- * \param[in] cipher_list are the TLS 1.2 ciphers, nullptr means use default
- * \param[in] cert_config are one of more sets of key and certificates
- * \param[in] required when true, fail when cert_config is missing
- * \return true when successful
- * \note required will be true for a TLS server and can be false for a TLS client
+ * \brief run the SSL shutdown loop on a connection
+ * \param[in] ctx is SSL connection data
+ * \param[in] timeout_ms time to wait in milliseconds, -1 is wait forever, 0 is don't wait
+ * \param[inout] state connection state, updated as the shutdown progresses
+ * \return the result of the operation plus any drained OpenSSL error text
  */
-bool configure_ssl_ctx(bool is_server, SSL_CTX*& ctx, const char* ciphersuites, const char* cipher_list,
-                       const tls::Server::certificate_config_t& cert_config, bool required) {
+ssl_op_result drive_ssl_shutdown(SSL* ctx, int timeout_ms, tls::Connection::state_t& state) {
+    using state_t = tls::Connection::state_t;
+    ssl_op_result result{ssl_result_t::error, {}};
+
+    if (state == state_t::connected) {
+        bool loop{true};
+        while (loop) {
+            loop = false;
+            result = ssl_shutdown(ctx);
+            switch (result.rc) {
+            case ssl_result_t::closed:
+            case ssl_result_t::success:
+            case ssl_result_t::timeout:
+                state = state_t::closed;
+                break;
+            case ssl_result_t::want_read:
+            case ssl_result_t::want_write:
+                if (timeout_ms != 0) {
+                    const auto res = wait_for_loop(SSL_get_fd(ctx), result.rc == ssl_result_t::want_write, timeout_ms);
+                    loop = res > 0; // event received
+                    result.rc = ssl_result_t::timeout;
+                }
+                break;
+            case ssl_result_t::error:
+            case ssl_result_t::error_syscall:
+            default:
+                state = state_t::fault;
+                break;
+            }
+        }
+    }
+    return result;
+}
+
+/// guard and success-state semantics of an SSL operation driven by drive_ssl_op
+enum class ssl_op_kind : std::uint8_t {
+    transfer,  //!< read/write: runs on a connected connection
+    handshake, //!< accept/connect: runs on an idle connection, connected on success
+};
+
+/**
+ * \brief drive an SSL operation, waiting and retrying on want_read/want_write
+ * \param[in] ctx is SSL connection data
+ * \param[in] op performs the SSL operation
+ * \param[in] timeout_ms time to wait in milliseconds, -1 is wait forever, 0 is don't wait
+ * \param[in] shutdown_timeout_ms timeout for the best-effort shutdown on closed/error outcomes
+ * \param[in] kind see ssl_op_kind
+ * \param[inout] state connection state, updated as the operation progresses
+ * \param[out] last_error_out drained OpenSSL error text from the operation, empty when there was no error
+ * \return the API result of the operation
+ * \note on closed/error outcomes a best-effort shutdown runs; its error is
+ *       discarded so the operation's own error is preserved in last_error_out
+ */
+tls::Connection::result_t drive_ssl_op(SSL* ctx, const std::function<ssl_op_result()>& op, int timeout_ms,
+                                       int shutdown_timeout_ms, ssl_op_kind kind, tls::Connection::state_t& state,
+                                       std::string& last_error_out) {
+    using state_t = tls::Connection::state_t;
+    ssl_op_result result{ssl_result_t::error, {}};
+
+    const auto guard = (kind == ssl_op_kind::handshake) ? state_t::idle : state_t::connected;
+    if (state == guard) {
+        bool loop{true};
+        while (loop) {
+            loop = false;
+            result = op();
+            switch (result.rc) {
+            case ssl_result_t::success:
+                if (kind == ssl_op_kind::handshake) {
+                    state = state_t::connected;
+                }
+                break;
+            case ssl_result_t::timeout:
+                break;
+            case ssl_result_t::want_read:
+            case ssl_result_t::want_write:
+                if (timeout_ms != 0) {
+                    const auto res = wait_for_loop(SSL_get_fd(ctx), result.rc == ssl_result_t::want_write, timeout_ms);
+                    loop = res > 0; // event received
+                    result.rc = ssl_result_t::timeout;
+                }
+                break;
+            case ssl_result_t::error_syscall:
+                state = state_t::fault;
+                break;
+            case ssl_result_t::closed:
+                static_cast<void>(drive_ssl_shutdown(ctx, shutdown_timeout_ms, state));
+                break;
+            case ssl_result_t::error:
+            default:
+                static_cast<void>(drive_ssl_shutdown(ctx, shutdown_timeout_ms, state));
+                state = state_t::fault;
+                break;
+            }
+        }
+    }
+    last_error_out = std::move(result.error);
+    return convert(result.rc);
+}
+
+/// options controlling how configure_ssl_ctx builds an SSL context
+struct ssl_ctx_params {
+    bool is_server{false};             //!< a server context is needed
+    const char* ciphersuites{nullptr}; //!< TLS 1.3 cipher suites, nullptr means use default, "" disables TLS 1.3
+    const char* cipher_list{nullptr};  //!< TLS 1.2 ciphers, nullptr means use default
+    bool required{false};              //!< when true, fail when cert_config is missing (true for a TLS server)
+    bool enforce_tls_1_3{false};       //!< when true the context requires TLS 1.3 minimum and skips the
+                                       //!< TLS 1.2 cap; ignored for client contexts
+};
+
+/**
+ * \brief configure SSL context with certificates and keys
+ * \param[inout] ctx is SSL context data
+ * \param[in] cert_config are one of more sets of key and certificates
+ * \param[in] p options, see ssl_ctx_params
+ * \return true when successful
+ */
+bool configure_ssl_ctx(SSL_CTX*& ctx, const tls::Server::certificate_config_t& cert_config, const ssl_ctx_params& p) {
     bool result{true};
 
-    if (is_server) {
+    if (p.is_server) {
         OpenSSLProvider provider;
 
         const SSL_METHOD* method = TLS_server_method();
@@ -435,26 +584,40 @@ bool configure_ssl_ctx(bool is_server, SSL_CTX*& ctx, const char* ciphersuites, 
         log_error("server_init::SSL_CTX_new");
         result = false;
     } else {
-        if (SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION) == 0) {
+        const auto min_version = (p.is_server && p.enforce_tls_1_3) ? TLS1_3_VERSION : TLS1_2_VERSION;
+        if (SSL_CTX_set_min_proto_version(ctx, min_version) == 0) {
             log_error("SSL_CTX_set_min_proto_version");
             result = false;
         }
-        if ((ciphersuites != nullptr) && (ciphersuites[0] == '\0')) {
-            // no cipher suites configured - don't use TLS 1.3
-            // nullptr means use the defaults
+        if (p.is_server && p.enforce_tls_1_3) {
+            // Server is configured for TLS 1.3 only. We have already pinned
+            // SSL_CTX_set_min_proto_version to TLS1_3_VERSION above, so we do
+            // not also need to cap the max version. We do, however, want to
+            // disable the middlebox compatibility mode (RFC 8446 Appendix D.4),
+            // which makes the server emit a dummy ChangeCipherSpec record so
+            // the handshake looks like TLS 1.2 to legacy middleboxes — that
+            // workaround is unnecessary in the SECC use-case and would only
+            // confuse a strict 15118 EVCC.
+            SSL_CTX_clear_options(ctx, SSL_OP_ENABLE_MIDDLEBOX_COMPAT);
+        } else if ((p.ciphersuites != nullptr) && (p.ciphersuites[0] == '\0')) {
+            // Caller explicitly cleared the TLS 1.3 ciphersuite list, signalling
+            // "no TLS 1.3 ciphersuites configured". Cap the max protocol version
+            // at TLS 1.2 so the handshake cannot fall through to TLS 1.3 with no
+            // cipher available. (A nullptr ciphersuites string means "use the
+            // OpenSSL defaults" and is left alone.)
             if (SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION) == 0) {
                 log_error("SSL_CTX_set_max_proto_version");
                 result = false;
             }
         }
-        if (cipher_list != nullptr) {
-            if (SSL_CTX_set_cipher_list(ctx, cipher_list) == 0) {
+        if (p.cipher_list != nullptr) {
+            if (SSL_CTX_set_cipher_list(ctx, p.cipher_list) == 0) {
                 log_error("SSL_CTX_set_cipher_list");
                 result = false;
             }
         }
-        if (ciphersuites != nullptr) {
-            if (SSL_CTX_set_ciphersuites(ctx, ciphersuites) == 0) {
+        if (p.ciphersuites != nullptr) {
+            if (SSL_CTX_set_ciphersuites(ctx, p.ciphersuites) == 0) {
                 log_error("SSL_CTX_set_ciphersuites");
                 result = false;
             }
@@ -466,7 +629,7 @@ bool configure_ssl_ctx(bool is_server, SSL_CTX*& ctx, const char* ciphersuites, 
                 result = false;
             }
         } else {
-            if (required) {
+            if (p.required) {
                 result = false;
             }
         }
@@ -490,13 +653,45 @@ bool configure_ssl_ctx(bool is_server, SSL_CTX*& ctx, const char* ciphersuites, 
                 result = false;
             }
         } else {
-            if (required) {
+            if (p.required) {
                 result = false;
             }
         }
     }
 
     return result;
+}
+
+// Returns false only when the default-verify-paths fallback fails (init must abort);
+// a failed explicit load_verify_locations is logged but non-fatal, matching prior behavior.
+bool configure_verify_locations(SSL_CTX* ctx, const tls::Server::config_t& cfg) {
+    const bool have_primary = static_cast<const char*>(cfg.verify_locations_file) != nullptr ||
+                              static_cast<const char*>(cfg.verify_locations_path) != nullptr;
+    const bool have_explicit = have_primary || not cfg.verify_locations_additional_files.empty();
+    if (have_explicit) {
+        // Loaded whenever configured, even with verify_client == false, so the anchors
+        // are available for the TLS 1.3 verify-mode upgrade in handle_tls_1_3_verify_upgrade.
+        if (have_primary) {
+            if (SSL_CTX_load_verify_locations(ctx, cfg.verify_locations_file, cfg.verify_locations_path) != 1) {
+                log_error("SSL_CTX_load_verify_locations");
+            }
+        }
+        for (const auto& file : cfg.verify_locations_additional_files) {
+            if (static_cast<const char*>(file) != nullptr) {
+                if (SSL_CTX_load_verify_locations(ctx, file, nullptr) != 1) {
+                    log_error("SSL_CTX_load_verify_locations additional file");
+                }
+            }
+        }
+        return true;
+    }
+    if (not cfg.verify_client) {
+        if (SSL_CTX_set_default_verify_paths(ctx) != 1) {
+            log_error("SSL_CTX_set_default_verify_paths");
+            return false;
+        }
+    }
+    return true;
 }
 
 } // namespace
@@ -550,115 +745,28 @@ Connection::~Connection() = default;
 
 Connection::result_t Connection::read(std::byte* buf, std::size_t num, std::size_t& readbytes, int timeout_ms) {
     assert(m_context != nullptr);
-    ssl_result_t result{ssl_result_t::error};
-
-    if (m_state == state_t::connected) {
-        auto ctx = m_context->ctx.get();
-        bool loop{true};
-        while (loop) {
-            loop = false;
-            result = ssl_read(ctx, buf, num, readbytes);
-            switch (result) {
-            case ssl_result_t::success:
-            case ssl_result_t::timeout:
-                break;
-            case ssl_result_t::want_read:
-            case ssl_result_t::want_write:
-                if (timeout_ms != 0) {
-                    const auto res = ::wait_for_loop(SSL_get_fd(ctx), result == ssl_result_t::want_write, timeout_ms);
-                    loop = res > 0; // event received
-                    result = ssl_result_t::timeout;
-                }
-                break;
-            case ssl_result_t::error_syscall:
-                m_state = state_t::fault;
-                break;
-            case ssl_result_t::closed:
-                shutdown();
-                break;
-            case ssl_result_t::error:
-            default:
-                shutdown();
-                m_state = state_t::fault;
-                break;
-            }
-        }
-    }
-    return convert(result);
+    m_last_error.clear();
+    auto* ctx = m_context->ctx.get();
+    return drive_ssl_op(
+        ctx, [ctx, buf, num, &readbytes] { return ssl_read(ctx, buf, num, readbytes); }, timeout_ms, m_timeout_ms,
+        ssl_op_kind::transfer, m_state, m_last_error);
 }
 
 Connection::result_t Connection::write(const std::byte* buf, std::size_t num, std::size_t& writebytes, int timeout_ms) {
     assert(m_context != nullptr);
-    ssl_result_t result{ssl_result_t::error};
-
-    if (m_state == state_t::connected) {
-        auto ctx = m_context->ctx.get();
-        bool loop{true};
-        while (loop) {
-            loop = false;
-            result = ssl_write(ctx, buf, num, writebytes);
-            switch (result) {
-            case ssl_result_t::success:
-            case ssl_result_t::timeout:
-                break;
-            case ssl_result_t::want_read:
-            case ssl_result_t::want_write:
-                if (timeout_ms != 0) {
-                    const auto res = ::wait_for_loop(SSL_get_fd(ctx), result == ssl_result_t::want_write, timeout_ms);
-                    loop = res > 0; // event received
-                    result = ssl_result_t::timeout;
-                }
-                break;
-            case ssl_result_t::error_syscall:
-                m_state = state_t::fault;
-                break;
-            case ssl_result_t::closed:
-                shutdown();
-                break;
-            case ssl_result_t::error:
-            default:
-                shutdown();
-                m_state = state_t::fault;
-                break;
-            }
-        }
-    }
-    return convert(result);
+    m_last_error.clear();
+    auto* ctx = m_context->ctx.get();
+    return drive_ssl_op(
+        ctx, [ctx, buf, num, &writebytes] { return ssl_write(ctx, buf, num, writebytes); }, timeout_ms, m_timeout_ms,
+        ssl_op_kind::transfer, m_state, m_last_error);
 }
 
 Connection::result_t Connection::shutdown(int timeout_ms) {
     assert(m_context != nullptr);
-    ssl_result_t result{ssl_result_t::error};
-
-    if (m_state == state_t::connected) {
-        auto ctx = m_context->ctx.get();
-        bool loop{true};
-        while (loop) {
-            loop = false;
-            result = ssl_shutdown(ctx);
-            switch (result) {
-            case ssl_result_t::closed:
-            case ssl_result_t::success:
-            case ssl_result_t::timeout:
-                m_state = state_t::closed;
-                break;
-            case ssl_result_t::want_read:
-            case ssl_result_t::want_write:
-                if (timeout_ms != 0) {
-                    const auto res = ::wait_for_loop(SSL_get_fd(ctx), result == ssl_result_t::want_write, timeout_ms);
-                    loop = res > 0; // event received
-                    result = ssl_result_t::timeout;
-                }
-                break;
-            case ssl_result_t::error:
-            case ssl_result_t::error_syscall:
-            default:
-                m_state = state_t::fault;
-                break;
-            }
-        }
-    }
-    return convert(result);
+    m_last_error.clear();
+    auto result = drive_ssl_shutdown(m_context->ctx.get(), timeout_ms, m_state);
+    m_last_error = std::move(result.error);
+    return convert(result.rc);
 }
 
 Connection::result_t Connection::wait_for(result_t action, int timeout_ms) {
@@ -773,41 +881,27 @@ ServerConnection::~ServerConnection() {
 
 Connection::result_t ServerConnection::accept(int timeout_ms) {
     assert(m_context != nullptr);
-    ssl_result_t result{ssl_result_t::error};
+    m_last_error.clear();
+    auto* ctx = m_context->ctx.get();
+    return drive_ssl_op(
+        ctx, [ctx] { return ssl_accept(ctx); }, timeout_ms, m_timeout_ms, ssl_op_kind::handshake, m_state,
+        m_last_error);
+}
 
-    if (m_state == state_t::idle) {
-        auto ctx = m_context->ctx.get();
-        bool loop{true};
-        while (loop) {
-            loop = false;
-            result = ssl_accept(ctx);
-            switch (result) {
-            case ssl_result_t::success:
-                m_state = state_t::connected;
-                break;
-            case ssl_result_t::want_read:
-            case ssl_result_t::want_write:
-                if (timeout_ms != 0) {
-                    const auto res = ::wait_for_loop(SSL_get_fd(ctx), result == ssl_result_t::want_write, timeout_ms);
-                    loop = res > 0; // event received
-                    result = ssl_result_t::timeout;
-                }
-                break;
-            case ssl_result_t::error_syscall:
-                m_state = state_t::fault;
-                break;
-            case ssl_result_t::closed:
-                shutdown();
-                break;
-            case ssl_result_t::error:
-            default:
-                shutdown();
-                m_state = state_t::fault;
-                break;
-            }
-        }
+std::optional<std::array<std::uint8_t, 64>> ServerConnection::peer_certificate_sha512() const {
+    assert(m_context != nullptr);
+    SSL* ssl = m_context->ctx.get();
+    X509* peer = SSL_get0_peer_certificate(ssl);
+    if (peer == nullptr) {
+        return std::nullopt;
     }
-    return convert(result);
+    std::array<std::uint8_t, 64> out{};
+    unsigned int len{0};
+    const auto rc = X509_digest(peer, EVP_sha512(), out.data(), &len);
+    if (rc == 0 || len != out.size()) {
+        return std::nullopt;
+    }
+    return out;
 }
 
 void ServerConnection::wait_all_closed() {
@@ -831,41 +925,11 @@ ClientConnection::~ClientConnection() = default;
 
 Connection::result_t ClientConnection::connect(int timeout_ms) {
     assert(m_context != nullptr);
-    ssl_result_t result{ssl_result_t::error};
-
-    if (m_state == state_t::idle) {
-        auto ctx = m_context->ctx.get();
-        bool loop{true};
-        while (loop) {
-            loop = false;
-            result = ssl_connect(ctx);
-            switch (result) {
-            case ssl_result_t::success:
-                m_state = state_t::connected;
-                break;
-            case ssl_result_t::want_read:
-            case ssl_result_t::want_write:
-                if (timeout_ms != 0) {
-                    const auto res = ::wait_for_loop(SSL_get_fd(ctx), result == ssl_result_t::want_write, timeout_ms);
-                    loop = res > 0; // event received
-                    result = ssl_result_t::timeout;
-                }
-                break;
-            case ssl_result_t::error_syscall:
-                m_state = state_t::fault;
-                break;
-            case ssl_result_t::closed:
-                shutdown();
-                break;
-            case ssl_result_t::error:
-            default:
-                shutdown();
-                m_state = state_t::fault;
-                break;
-            }
-        }
-    }
-    return convert(result);
+    m_last_error.clear();
+    auto* ctx = m_context->ctx.get();
+    return drive_ssl_op(
+        ctx, [ctx] { return ssl_connect(ctx); }, timeout_ms, m_timeout_ms, ssl_op_kind::handshake, m_state,
+        m_last_error);
 }
 
 // ----------------------------------------------------------------------------
@@ -930,15 +994,64 @@ bool Server::init_socket(const config_t& cfg) {
     return result;
 }
 
+int Server::handle_tls_1_3_verify_upgrade(SSL* ssl, int* /*alert*/) {
+    // The verify upgrade only takes effect when the negotiated protocol will be
+    // TLS 1.3. Both sides must allow it: the client must advertise TLS 1.3 in
+    // supported_versions and the server must not have capped at TLS 1.2.
+    if (not m_verify_client_on_tls13) {
+        return SSL_CLIENT_HELLO_SUCCESS;
+    }
+    auto* ctx = SSL_get_SSL_CTX(ssl);
+    const auto server_max = (ctx != nullptr) ? SSL_CTX_get_max_proto_version(ctx) : 0;
+    if (server_max != 0 && server_max < TLS1_3_VERSION) {
+        return SSL_CLIENT_HELLO_SUCCESS;
+    }
+
+    const unsigned char* data{nullptr};
+    std::size_t datalen{0};
+
+    if (SSL_client_hello_get0_ext(ssl, TLSEXT_TYPE_supported_versions, &data, &datalen) == 1) {
+        if (openssl::is_tls_1_3(data, datalen)) {
+            log_info("Client supports TLS1.3: Change verify mode to SSL_VERIFY_PEER and "
+                     "SSL_VERIFY_FAIL_IF_NO_PEER_CERT");
+            SSL_set_verify(ssl, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, nullptr);
+        }
+    }
+
+    return SSL_CLIENT_HELLO_SUCCESS;
+}
+
+int Server::client_hello_cb_dispatch(SSL* ssl, int* alert, void* object) {
+    auto* self = static_cast<Server*>(object);
+    if (self == nullptr) {
+        return SSL_CLIENT_HELLO_SUCCESS;
+    }
+
+    if (const auto rc = self->handle_tls_1_3_verify_upgrade(ssl, alert); rc != SSL_CLIENT_HELLO_SUCCESS) {
+        return rc;
+    }
+    if (const auto rc = self->m_status_request_v2.handle_client_hello(ssl, alert); rc != SSL_CLIENT_HELLO_SUCCESS) {
+        return rc;
+    }
+    return SSL_CLIENT_HELLO_SUCCESS;
+}
+
 bool Server::init_ssl(const config_t& cfg) {
     assert(m_context != nullptr);
 
     bool result = (cfg.chains.size() > 0);
+    if (cfg.enforce_tls_1_3 && (static_cast<const char*>(cfg.ciphersuites) == nullptr || cfg.ciphersuites[0] == '\0')) {
+        // An enforce-TLS-1.3 server must pin its ciphersuites explicitly: "" would
+        // fail every handshake and nullptr would silently rely on OpenSSL defaults.
+        log_error("enforce_tls_1_3 requires a non-empty ciphersuites list");
+        result = false;
+    }
     SSL_CTX* ctx = nullptr;
 
     if (result) {
         // use the first server chain
-        result = configure_ssl_ctx(true, ctx, cfg.ciphersuites, cfg.cipher_list, cfg.chains[0], true);
+        const ssl_ctx_params params{true, cfg.ciphersuites, cfg.cipher_list, true, cfg.enforce_tls_1_3};
+        result = configure_ssl_ctx(ctx, cfg.chains[0], params);
         if (result) {
 
             if (cfg.tls_key_logging) {
@@ -960,36 +1073,20 @@ bool Server::init_ssl(const config_t& cfg) {
                 }
             }
 
-            int mode = SSL_VERIFY_NONE;
+            m_verify_client_on_tls13 = cfg.verify_client_on_tls13;
 
-            // TODO(james-ctc): verify may need to change based on TLS version
-            // 15118-2 mandates TLS 1.2 and no client certificate
-            // 15118-20 mandates TLS 1.3 and requires a client certificate
-            // There might be a requirement to support mutual authentication on
-            // TLS 1.2
-            //
-            // Potential solution is to provide optional mutual authentication
-            // for TLS 1.2 and mandatory mutual authentication for TLS 1.3
-            // SSL_set_verify() could be used in
-            // ServerStatusRequestV2::client_hello_cb
-            // TLS 1.3 has a post handshake flag SSL_VERIFY_POST_HANDSHAKE
-            // which might be a better approach
-
-            if (cfg.verify_client) {
-                mode = SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
-                if (SSL_CTX_load_verify_locations(ctx, cfg.verify_locations_file, cfg.verify_locations_path) != 1) {
-                    log_error("SSL_CTX_load_verify_locations");
-                }
-            } else {
-                if (SSL_CTX_set_default_verify_paths(ctx) != 1) {
-                    log_error("SSL_CTX_set_default_verify_paths");
-                    result = false;
-                }
-            }
+            // 15118-2 mandates TLS 1.2 and no client certificate; 15118-20 mandates TLS 1.3 and
+            // requires a client certificate. The dispatcher upgrades verify mode to require a peer
+            // certificate for TLS 1.3 connections in handle_tls_1_3_verify_upgrade so that TLS 1.2
+            // connections still honor cfg.verify_client below.
+            int mode = cfg.verify_client ? (SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT) : SSL_VERIFY_NONE;
+            result = result && configure_verify_locations(ctx, cfg);
             SSL_CTX_set_verify(ctx, mode, nullptr);
 
             result = result && m_status_request_v2.init_ssl(ctx);
             result = result && m_server_trusted_ca_keys.init_ssl(ctx);
+
+            SSL_CTX_set_client_hello_cb(ctx, &Server::client_hello_cb_dispatch, this);
         }
     }
 
@@ -1182,6 +1279,14 @@ void Server::wait_for_connection(const ConnectionHandler& handler) {
     }
 }
 
+Server::ConnectionPtr Server::wrap_accepted_fd(int soc, const char* ip, const char* service) {
+    if (m_context == nullptr) {
+        return nullptr;
+    }
+    return std::make_unique<ServerConnection>(m_context->ctx.get(), soc, ip, service, m_timeout_ms,
+                                              m_tls_key_interface);
+}
+
 void Server::configure_signal_handler(int interrupt_signal) {
     s_sig_int = interrupt_signal;
     struct sigaction action {};
@@ -1343,13 +1448,18 @@ bool Client::init(const config_t& cfg, const override_t& override) {
     m_timeout_ms = cfg.io_timeout_ms;
     m_trusted_ca_keys = cfg.trusted_ca_keys_data;
     SSL_CTX* ctx = nullptr;
-    const Server::certificate_config_t cert_config = {
-        cfg.certificate_chain_file,
-        nullptr,
-        cfg.private_key_file,
-        cfg.private_key_password,
-    };
-    auto result = configure_ssl_ctx(false, ctx, cfg.ciphersuites, cfg.cipher_list, cert_config, false);
+    Server::certificate_config_t cert_config{};
+    cert_config.certificate_chain_file = cfg.certificate_chain_file;
+    cert_config.private_key_file = cfg.private_key_file;
+    cert_config.private_key_password = cfg.private_key_password;
+    const ssl_ctx_params params{false, cfg.ciphersuites, cfg.cipher_list, false};
+    auto result = configure_ssl_ctx(ctx, cert_config, params);
+    if (result && cfg.min_proto_version != 0) {
+        if (SSL_CTX_set_min_proto_version(ctx, cfg.min_proto_version) == 0) {
+            log_error("SSL_CTX_set_min_proto_version");
+            result = false;
+        }
+    }
     if (result) {
         int mode = SSL_VERIFY_NONE;
 

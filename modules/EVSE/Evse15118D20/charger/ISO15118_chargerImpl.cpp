@@ -7,6 +7,7 @@
 #include "session_logger.hpp"
 #include "utils.hpp"
 
+#include <iso15118/config.hpp>
 #include <iso15118/io/logging.hpp>
 #include <iso15118/session/logger.hpp>
 
@@ -207,25 +208,28 @@ void ISO15118_chargerImpl::ready() {
     // TODO(mlitre): Should be updated once libiso supports service renegotiation
     this->mod->p_extensions->publish_service_renegotiation_supported(false);
 
-    const iso15118::TbdConfig tbd_config = {
-        {
-            iso15118::config::CertificateBackend::EVEREST_LAYOUT,
-            {},                                 ///< config_string
-            path_chain,                         ///< path_certificate_chain
-            certificate_info.key,               ///< path_certificate_key
-            certificate_info.password,          ///< private_key_password
-            v2g_root_cert_path,                 ///< path_certificate_v2g_root
-            mo_root_cert_path,                  ///< path_certificate_mo_root
-            mod->config.enable_ssl_logging,     ///< enable_ssl_logging
-            mod->config.enable_tls_key_logging, ///< enable_tls_key_logging
-            mod->config.enforce_tls_1_3,        ///< enforce_tls_1_3
-            mod->config.tls_key_logging_path,   ///< tls_key_logging_path
-        },
+    iso15118::config::SSLConfig ssl_for_controller{};
+    ssl_for_controller.backend = iso15118::config::CertificateBackend::EVEREST_LAYOUT;
+    ssl_for_controller.path_certificate_v2g_root = v2g_root_cert_path;
+    ssl_for_controller.path_certificate_mo_root = mo_root_cert_path;
+    ssl_for_controller.enable_ssl_logging = mod->config.enable_ssl_logging;
+    ssl_for_controller.enable_tls_key_logging = mod->config.enable_tls_key_logging;
+    ssl_for_controller.enforce_tls_1_3 = mod->config.enforce_tls_1_3;
+    ssl_for_controller.tls_key_logging_path = mod->config.tls_key_logging_path;
+    ssl_for_controller.chains.push_back(iso15118::config::ChainConfig{
+        path_chain,
+        certificate_info.key,
+        certificate_info.password,
+        {}, // ocsp_response_files — none for the single-chain leaf path
+    });
+
+    iso15118::TbdConfig tbd_config = {
+        std::move(ssl_for_controller),
         mod->config.device,
         convert_tls_negotiation_strategy(mod->config.tls_negotiation_strategy),
         mod->config.enable_sdp_server,
     };
-    const auto callbacks = create_callbacks();
+    auto callbacks = create_callbacks();
 
     setup_config.control_mobility_modes = fill_mobility_needs_modes_from_config(mod->config);
 
@@ -235,7 +239,7 @@ void ISO15118_chargerImpl::ready() {
 
     setup_config.selecting_sap_based_on_energy_service = mod->config.selecting_sap_based_on_energy_service;
 
-    controller = std::make_unique<iso15118::TbdController>(tbd_config, callbacks, setup_config);
+    controller = std::make_unique<iso15118::TbdController>(std::move(tbd_config), std::move(callbacks), setup_config);
 
     // if the vas providers report their supported vas services before the controller exists,
     // we need to update the controller with the supported vas services after instantiation
