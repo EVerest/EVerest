@@ -43,7 +43,7 @@ TEST_CASE("ConfigServiceCore Unit Tests", "[config_service_core]") {
     // Instantiate the core service
     ConfigServiceCore config_service(parse_settings, db);
 
-    SECTION("Loading YAML into a new slot") {
+    SECTION("YAML Loading: into a new slot") {
         std::string valid_yaml = R"(
 active_modules:
   dummy_module:
@@ -64,7 +64,7 @@ active_modules:
         REQUIRE(slots.size() >= 1);
     }
 
-    SECTION("Setting parameters for a running module") {
+    SECTION("Set Parameters: for a running module") {
         std::string valid_yaml = R"(
 active_modules:
   dummy_module:
@@ -80,7 +80,7 @@ active_modules:
         INFO(lfy_result.error_message);
         REQUIRE(lfy_result.success == true);
 
-        // Assume slot 0 was populated in setup
+        // load_from_yaml above (no explicit slot_id) populated slot 0
         config_service.mark_active_slot(0);
         config_service.reinitialize_from_db(true);
         auto config = config_service.get_configuration(0);
@@ -111,7 +111,7 @@ active_modules:
         REQUIRE(result.parameter_results->front().status == SetConfigParameterResultEnum::Applied);
     }
 
-    SECTION("Event listeners are triggered on state changes") {
+    SECTION("State Tracking: event listeners triggered on state changes") {
         bool listener_called = false;
         config_service.register_active_slot_update_handler([&listener_called](const ActiveSlotUpdate& update) {
             listener_called = true;
@@ -122,7 +122,7 @@ active_modules:
         REQUIRE(listener_called == true);
     }
 
-    SECTION("Handling ReadOnly parameters based on allow_set_read_only") {
+    SECTION("Set Parameters: ReadOnly handling based on allow_set_read_only") {
         // 1. Manually craft the module configurations to inject into the database
         everest::config::ModuleConfigurations mock_configs;
 
@@ -231,7 +231,7 @@ active_modules:
         REQUIRE(res2.success == true);
 
         // Verify initial state: next boot slot is 0
-        REQUIRE(config_service.get_next_boot_slot_id() == ConfigServiceInterface::ACTIVE_SLOT + 1); // 0
+        REQUIRE(config_service.get_next_boot_slot_id() == 0);
 
         // Test mark_active_slot
         bool listener_called = false;
@@ -391,7 +391,7 @@ active_modules:
         // Loading into active slot should fail
         auto res_active = config_service.load_from_yaml("active_modules: {}", "Active", 0);
         REQUIRE(res_active.success == false);
-        CHECK(res_active.error_message == "Cannot load YAML into the active slot");
+        CHECK(res_active.error_message == "Cannot load YAML into the active slot when modules are running");
     }
 
     SECTION("Edge Cases: set_config_parameters during transient states") {
@@ -510,7 +510,7 @@ active_modules:
         CHECK(result.parameter_results->front().status == SetConfigParameterResultEnum::Rejected);
     }
 
-    SECTION("Handling WriteOnly parameters and SetCallFailed") {
+    SECTION("Set Parameters: WriteOnly handling and SetCallFailed") {
         everest::config::ModuleConfigurations mock_configs;
         everest::config::ModuleConfig test_module;
         test_module.module_name = "TestModule";
@@ -564,7 +564,7 @@ active_modules:
         CHECK(result.parameter_results->at(1).status == SetConfigParameterResultEnum::Rejected);
     }
 
-    SECTION("Direct modification of an inactive slot") {
+    SECTION("Set Parameters: direct modification of an inactive slot") {
         everest::config::ModuleConfigurations mock_configs;
         everest::config::ModuleConfig inactive_module;
         inactive_module.module_name = "InactiveModule";
@@ -682,7 +682,7 @@ active_modules:
 
         // Register a callback that blocks for 5 seconds (longer than the 3-second timeout)
         config_service.register_set_runtime_parameter_handler(
-            [](const everest::config::ConfigurationParameterIdentifier& id, const std::string& val) {
+            [](const everest::config::ConfigurationParameterIdentifier&, const std::string&) {
                 std::this_thread::sleep_for(std::chrono::seconds(5));
                 return SetParameterResponse::ModuleReplied_Applied;
             });
@@ -736,7 +736,7 @@ active_modules:
         std::mutex mtx;
 
         config_service.register_set_runtime_parameter_handler(
-            [&](const everest::config::ConfigurationParameterIdentifier& id, const std::string& val) {
+            [&](const everest::config::ConfigurationParameterIdentifier&, const std::string&) {
                 int current = ++active_calls;
                 {
                     std::lock_guard<std::mutex> lk(mtx);
@@ -790,13 +790,13 @@ active_modules:
         for (int i = 0; i < num_threads; ++i) {
             threads.emplace_back([&config_service, i]() {
                 // Interleave reads and writes to ensure actor model handles it safely
-                auto cfg = config_service.get_configuration(0);
-                auto slots = config_service.list_all_slots();
+                (void)config_service.get_configuration(0);
+                (void)config_service.list_all_slots();
 
                 if (i % 2 == 0) {
                     config_service.set_description(0, "Updated Description " + std::to_string(i));
                 } else {
-                    auto active_cfg = config_service.get_active_module_configurations();
+                    (void)config_service.get_active_module_configurations();
                 }
             });
         }
