@@ -766,7 +766,6 @@ void GenericOcpp::visit_impl(std::int32_t evse_id, const powermeter_t& meter) {
     if (meter.meter) {
         EVLOG_info << "Processing queued meter value for evse_id: " << evse_id;
         mv_charge_point.on_meter_value(evse_id, meter.state_of_charge, meter.meter.value());
-        // TODO(james-ctc): is this update needed?
         if (meter.meter->power_W) {
             m_everest_device_model_storage->update_power(evse_id, meter.meter->power_W->total);
         }
@@ -1080,8 +1079,7 @@ ocpp::ReservationCheckStatus
 GenericOcpp::cb_is_reservation_for_token(std::int32_t evse_id, const ocpp::CiString<255>& idToken,
                                          const std::optional<ocpp::CiString<255>>& groupIdToken) {
 
-    // TODO(james-ctc): for v1.6 should evse_id be the connector or not specified?
-
+    // for v1.6 the incoming id is the OCPP1.6 connector id, which maps 1:1 to the EVerest evse_id
     auto reservation_status = types::reservation::ReservationCheckStatus::NotReserved;
 
     if (!mv_requires.reservation.empty() && mv_requires.reservation.at(0) != nullptr) {
