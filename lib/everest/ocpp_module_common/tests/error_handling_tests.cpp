@@ -3,13 +3,13 @@
 
 #include <gtest/gtest.h>
 
-#include <error_handling.hpp>
+#include <everest/ocpp_module_common/error_handling.hpp>
 
 #include <filesystem>
 #include <stdexcept>
 #include <string_view>
 
-namespace module {
+namespace ocpp_module_common {
 
 namespace {
 std::filesystem::path test_data_path(std::string_view name) {
@@ -41,4 +41,4 @@ INSTANTIATE_TEST_SUITE_P(LoadMrecErrorMapOverrides, LoadMrecErrorMapOverridesThr
                                            std::string_view{"invalid_array.json"},
                                            std::string_view{"invalid_value_number.json"}));
 
-} // namespace module
+} // namespace ocpp_module_common

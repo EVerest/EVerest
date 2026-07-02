@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include <device_model/composed_device_model_storage.hpp>
+#include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
 
 static constexpr auto VARIABLE_SOURCE_OCPP = "OCPP";
 
-namespace module::device_model {
+namespace ocpp_module_common::device_model {
 
 bool ComposedDeviceModelStorage::register_device_model_storage(
     std::string device_model_storage_id, std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> device_model_storage) {
@@ -147,7 +147,8 @@ bool ComposedDeviceModelStorage::create_network_configuration_slot_from_default_
     return it->second->create_network_configuration_slot_from_default_schema(new_slot);
 }
 
-std::string module::device_model::ComposedDeviceModelStorage::get_variable_source(const ocpp::v2::Component& component,
+std::string
+ocpp_module_common::device_model::ComposedDeviceModelStorage::get_variable_source(const ocpp::v2::Component& component,
                                                                                   const ocpp::v2::Variable& variable) {
     if (this->component_variable_source_map.find(component) == this->component_variable_source_map.end()) {
         return VARIABLE_SOURCE_OCPP; // default source
@@ -159,4 +160,4 @@ std::string module::device_model::ComposedDeviceModelStorage::get_variable_sourc
     return variable_map.at(variable);
 }
 
-} // namespace module::device_model
+} // namespace ocpp_module_common::device_model

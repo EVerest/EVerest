@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifndef OCPP201_ERROR_HANDLING_HPP
-#define OCPP201_ERROR_HANDLING_HPP
+#ifndef EVEREST_OCPP_MODULE_COMMON_ERROR_HANDLING_HPP
+#define EVEREST_OCPP_MODULE_COMMON_ERROR_HANDLING_HPP
 
 #include <ocpp/v2/ocpp_types.hpp>
 #include <utils/error.hpp>
@@ -10,7 +10,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace module {
+namespace ocpp_module_common {
 using MREC_ERROR_MAP_TYPE = std::unordered_map<std::string, std::string>;
 
 /// @brief The default map for MREC_ERROR codes.
@@ -33,6 +33,6 @@ ocpp::v2::Component get_component_from_error(const Everest::error::Error& error)
 /// techCode is looked up in \p error_map, falling back to \c error.type when no entry is present.
 ocpp::v2::EventData get_event_data(const Everest::error::Error& error, bool cleared, int32_t event_id,
                                    const MREC_ERROR_MAP_TYPE& error_map);
-} // namespace module
+} // namespace ocpp_module_common
 
-#endif // OCPP201_ERROR_HANDLING_HPP
+#endif // EVEREST_OCPP_MODULE_COMMON_ERROR_HANDLING_HPP

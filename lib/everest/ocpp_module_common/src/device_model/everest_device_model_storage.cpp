@@ -4,8 +4,8 @@
 #include <algorithm>
 #include <everest/logging.hpp>
 
-#include <device_model/definitions.hpp>
-#include <device_model/everest_device_model_storage.hpp>
+#include <everest/ocpp_module_common/device_model/definitions.hpp>
+#include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 
@@ -25,7 +25,7 @@ using ocpp::v2::ComponentKey;
 using ocpp::v2::DbVariableAttribute;
 using ocpp::v2::DeviceModelVariable;
 
-namespace module::device_model {
+namespace ocpp_module_common::device_model {
 ocpp::v2::DataEnum to_ocpp_data_enum(const everest::config::Datatype& data_type) {
     switch (data_type) {
     case everest::config::Datatype::Unknown:
@@ -778,4 +778,4 @@ bool EverestDeviceModelStorage::create_network_configuration_slot_from_default_s
     std::lock_guard<std::mutex> lock(device_model_mutex);
     return this->device_model_storage->create_network_configuration_slot_from_default_schema(new_slot);
 }
-} // namespace module::device_model
+} // namespace ocpp_module_common::device_model

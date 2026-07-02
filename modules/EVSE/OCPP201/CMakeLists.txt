@@ -19,6 +19,7 @@ target_link_libraries(${MODULE_NAME}
         everest::ocpp
         everest::ocpp_evse_security
         everest::ocpp_conversions
+        everest::ocpp_module_common
         everest::external_energy_limits
 )
 
@@ -40,16 +41,6 @@ target_sources(${MODULE_NAME}
 
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1
 # insert other things like install cmds etc here
-target_sources(${MODULE_NAME}
-    PRIVATE
-        "conversions.cpp"
-        "error_handling.cpp"
-        "transaction_handler.cpp"
-        "device_model/everest_device_model_storage.cpp"
-        "device_model/composed_device_model_storage.cpp"
-        "device_model/definitions.cpp"
-)
-
 if(EVEREST_CORE_BUILD_TESTING)
     add_subdirectory(tests)
 endif()
