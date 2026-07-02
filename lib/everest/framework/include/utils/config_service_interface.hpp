@@ -43,15 +43,13 @@ enum class SetConfigParameterResultEnum {
     WillApplyOnRestart,
     DoesNotExist,
     RetryLater,
-    AccessDenied,
     Rejected
 };
 
 enum class SetConfigParameterStatus {
     Ok,
     Error,
-    ModulesInTransientState,
-    AccessDenied
+    ModulesInTransientState
 };
 
 struct SetConfigPerParameterResult {

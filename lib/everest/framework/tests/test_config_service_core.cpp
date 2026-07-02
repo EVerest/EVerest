@@ -103,23 +103,56 @@ active_modules:
         ConfigParameterUpdate update{param_id, "accept_me", false};
         Origin origin{true, std::nullopt};
 
+        // Capture the published config update event to verify its contents
+        std::optional<ConfigurationUpdate> captured_event;
+        config_service.register_config_update_handler(
+            [&captured_event](const ConfigurationUpdate& event) { captured_event = event; });
+
         auto result = config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {update}, origin);
 
         REQUIRE(result.status == SetConfigParameterStatus::Ok);
         REQUIRE(result.parameter_results.has_value());
         INFO(result.parameter_results->front().status_info);
         REQUIRE(result.parameter_results->front().status == SetConfigParameterResultEnum::Applied);
+
+        // An applied change must publish a config update event carrying the correct data
+        REQUIRE(captured_event.has_value());
+        CHECK(captured_event->slot_id == 0); // ACTIVE_SLOT resolved to the active slot (0)
+        CHECK(captured_event->origin.external == true);
+        CHECK_FALSE(captured_event->origin.module_id.has_value());
+        REQUIRE(captured_event->updates.size() == 1);
+        CHECK(captured_event->updates.front().identifier.module_id == "dummy_module");
+        CHECK(captured_event->updates.front().identifier.configuration_parameter_name == "valid_config_entry");
+        CHECK(captured_event->updates.front().value == "accept_me");
+        CHECK(captured_event->updates.front().result == SetConfigParameterResultEnum::Applied);
     }
 
-    SECTION("State Tracking: event listeners triggered on state changes") {
-        bool listener_called = false;
-        config_service.register_active_slot_update_handler([&listener_called](const ActiveSlotUpdate& update) {
-            listener_called = true;
-            CHECK(update.status == ActiveSlotStatus::Starting);
-        });
+    SECTION("State Tracking: run-state transitions publish events with correct data") {
+        std::vector<ActiveSlotUpdate> events;
+        config_service.register_active_slot_update_handler(
+            [&events](const ActiveSlotUpdate& update) { events.push_back(update); });
 
+        // Drive the full run-state lifecycle; every call must publish exactly one event
         config_service.set_modules_starting();
-        REQUIRE(listener_called == true);
+        config_service.set_modules_running();
+        config_service.set_modules_stopping();
+        config_service.set_modules_stopped();
+        config_service.notice_cfg_validation_failed();
+        config_service.notice_module_restart_triggered();
+
+        const std::vector<ActiveSlotStatus> expected_statuses{
+            ActiveSlotStatus::Starting,     ActiveSlotStatus::Running,          ActiveSlotStatus::Stopping,
+            ActiveSlotStatus::Stopped,      ActiveSlotStatus::FailedToStart,    ActiveSlotStatus::RestartTriggered};
+
+        REQUIRE(events.size() == expected_statuses.size());
+        for (size_t i = 0; i < expected_statuses.size(); ++i) {
+            INFO("event index " << i);
+            CHECK(events[i].status == expected_statuses[i]);
+            // Run-state changes never move the slot: every event reports the default active slot 0
+            CHECK(events[i].active_slot_id == 0);
+            REQUIRE(events[i].next_boot_slot_id.has_value());
+            CHECK(events[i].next_boot_slot_id.value() == 0);
+        }
     }
 
     SECTION("Set Parameters: ReadOnly handling based on allow_set_read_only") {
@@ -451,27 +484,6 @@ active_modules:
         CHECK(config_service.get_active_slot_id() == 0);
     }
 
-    SECTION("State Tracking: remaining state change events") {
-        std::vector<ActiveSlotStatus> recorded_statuses;
-        config_service.register_active_slot_update_handler(
-            [&recorded_statuses](const ActiveSlotUpdate& update) { recorded_statuses.push_back(update.status); });
-
-        config_service.set_modules_stopping();
-        config_service.set_modules_stopped();
-        config_service.notice_cfg_validation_failed();
-        config_service.notice_module_restart_triggered();
-
-        // Starting and Running are tested elsewhere, so we check the 4 triggered above
-        // Note: The callback vector is appended to, so earlier tests might have added their own
-        // states if the service was not re-instantiated. We check the last 4.
-        REQUIRE(recorded_statuses.size() >= 4);
-        auto it = recorded_statuses.end() - 4;
-        CHECK(*it++ == ActiveSlotStatus::Stopping);
-        CHECK(*it++ == ActiveSlotStatus::Stopped);
-        CHECK(*it++ == ActiveSlotStatus::FailedToStart);
-        CHECK(*it++ == ActiveSlotStatus::RestartTriggered);
-    }
-
     SECTION("Edge Cases: set_config_parameters without registered callback") {
         everest::config::ModuleConfigurations mock_configs;
 
@@ -596,12 +608,28 @@ active_modules:
         ConfigParameterUpdate update{param_id, "new_value", false};
         Origin origin{false, "manager"};
 
+        // Capture the published config update event to verify its contents
+        std::optional<ConfigurationUpdate> captured_event;
+        config_service.register_config_update_handler(
+            [&captured_event](const ConfigurationUpdate& event) { captured_event = event; });
+
         auto result = config_service.set_config_parameters(target_slot, {update}, origin);
 
         // 4. Verify the result and database persistence
         REQUIRE(result.status == SetConfigParameterStatus::Ok);
         REQUIRE(result.parameter_results.has_value());
         CHECK(result.parameter_results->front().status == SetConfigParameterResultEnum::WillApplyOnRestart);
+
+        // The event must target the inactive slot and carry the originating identity
+        REQUIRE(captured_event.has_value());
+        CHECK(captured_event->slot_id == target_slot);
+        CHECK(captured_event->origin.external == false);
+        REQUIRE(captured_event->origin.module_id.has_value());
+        CHECK(captured_event->origin.module_id.value() == "manager");
+        REQUIRE(captured_event->updates.size() == 1);
+        CHECK(captured_event->updates.front().identifier.module_id == "inactive_module");
+        CHECK(captured_event->updates.front().value == "new_value");
+        CHECK(captured_event->updates.front().result == SetConfigParameterResultEnum::WillApplyOnRestart);
 
         auto get_res = config_service.get_config_parameters(target_slot, {param_id});
         REQUIRE(get_res.status == GetConfigurationStatus::Success);
@@ -652,6 +680,51 @@ active_modules:
         CHECK(inactive_result.parameter_results->front().status == SetConfigParameterResultEnum::DoesNotExist);
         CHECK(inactive_result.parameter_results->front().status_info ==
               "Unknown parameter: ghost_param in module: dummy_module");
+    }
+
+    SECTION("Event Publishing: no config update event when all updates are rejected") {
+        everest::config::ModuleConfigurations mock_configs;
+        everest::config::ModuleConfig dummy_module;
+        dummy_module.module_name = "DummyModule";
+        dummy_module.module_id = "dummy_module";
+
+        everest::config::ConfigurationParameter rw_param;
+        rw_param.name = "rw_param";
+        rw_param.value = "initial_value";
+        rw_param.characteristics.datatype = everest::config::Datatype::String;
+        rw_param.characteristics.mutability = everest::config::Mutability::ReadWrite;
+        dummy_module.configuration_parameters["!module"].push_back(rw_param);
+        mock_configs["dummy_module"] = dummy_module;
+
+        auto storage = std::make_unique<everest::config::SqliteStorage>(db, 0);
+        everest::config::SqliteConfigSlotManager slot_manager(db);
+        slot_manager.write_config_slot(0, "{}", std::nullopt, "Test Slot");
+        storage->write_module_configs(mock_configs);
+
+        config_service.mark_active_slot(0);
+        config_service.reinitialize_from_db(true);
+        config_service.set_modules_running();
+
+        // Module rejects every change, so nothing becomes effective
+        config_service.register_set_runtime_parameter_handler(
+            [](const everest::config::ConfigurationParameterIdentifier&, const std::string&) {
+                return SetParameterResponse::ModuleReplied_Rejected;
+            });
+
+        bool config_event_fired = false;
+        config_service.register_config_update_handler(
+            [&config_event_fired](const ConfigurationUpdate&) { config_event_fired = true; });
+
+        everest::config::ConfigurationParameterIdentifier param_id{"dummy_module", "rw_param", "!module"};
+        ConfigParameterUpdate update{param_id, "new_value", false};
+        Origin origin{false, "manager"};
+
+        auto result = config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {update}, origin);
+
+        REQUIRE(result.parameter_results.has_value());
+        REQUIRE(result.parameter_results->front().status == SetConfigParameterResultEnum::Rejected);
+        // With no effective updates, publish_config_update() must not be called
+        CHECK_FALSE(config_event_fired);
     }
 }
 
