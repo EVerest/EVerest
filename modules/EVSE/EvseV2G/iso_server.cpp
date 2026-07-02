@@ -229,6 +229,23 @@ static auto get_emergency_status_code(const struct v2g_context* ctx, uint8_t pha
         return static_cast<iso2_DC_EVSEStatusCodeType>(ctx->evse_v2g_data.evse_status_code[phase_type]);
 }
 
+/*!
+ * \brief set_dc_shutdown_status_code This function marks the remaining DC phases as shut down after the EV requested
+ * to stop the charging session, so that PowerDeliveryRes and WeldingDetectionRes report EVSE_Shutdown
+ * [IEC 61851-23:2023 CC.7.5.19]. More specific status codes like EVSE_UtilityInterruptEvent or EVSE_Malfunction are
+ * preserved.
+ * \param ctx points to the V2G context.
+ */
+static void set_dc_shutdown_status_code(struct v2g_context* ctx) {
+    for (const auto phase : {PHASE_CHARGE, PHASE_WELDING}) {
+        uint8_t& status_code = ctx->evse_v2g_data.evse_status_code[phase];
+        if ((status_code == iso2_DC_EVSEStatusCodeType_EVSE_NotReady) ||
+            (status_code == iso2_DC_EVSEStatusCodeType_EVSE_Ready)) {
+            status_code = iso2_DC_EVSEStatusCodeType_EVSE_Shutdown;
+        }
+    }
+}
+
 //=============================================
 //             Publishing request msg
 //=============================================
@@ -1588,6 +1605,7 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection* conn) {
             // state is checked by other module
             conn->ctx->p_charger->publish_ac_open_contactor(nullptr);
         } else {
+            set_dc_shutdown_status_code(conn->ctx);
             conn->ctx->p_charger->publish_current_demand_finished(nullptr);
             conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
         }
