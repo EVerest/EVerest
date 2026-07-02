@@ -1,0 +1,19 @@
+sequenceDiagram
+    autonumber
+    participant Runtime as EvSimRuntime
+    participant Ramp as RampInterpolator
+    participant Soc as SocIntegrator
+    participant Ctx as FsmContext
+    participant Iso as ISO15118_ev
+    participant E2M as e2m/ev_info
+
+    Note over Runtime,E2M: tick_fd fires every tick_interval_ms while Charging
+
+    Runtime->>Ramp: step(ctx, now)
+    Ramp->>Ctx: update charging_current_a
+    Ramp->>Ctx: set_desired_ac_params
+
+    Runtime->>Soc: step(ctx)
+    Soc->>Ctx: integrate power -> battery_charge_wh
+    Soc->>Iso: iso_update_soc(pct)
+    Soc->>E2M: publish ev_info

@@ -969,10 +969,9 @@ async def test_pwm_ac_session_paused_by_ev(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
-@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.xdist_group(name="ISO15118_SERIAL")
 @pytest.mark.everest_config_adaptions(AcConfigAdjustmentStrategy())
 @pytest.mark.everest_core_config("config-sil.yaml")
-@pytest.mark.skip("Currently fails because EV simulator session resuming is not stable yet")
 async def test_iso15118_ac_session_paused_by_ev(
     test_controller: TestController, everest_core: EverestCore
 ):
@@ -1002,10 +1001,9 @@ async def test_iso15118_ac_session_paused_by_ev(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
-@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.xdist_group(name="ISO15118_SERIAL")
 @pytest.mark.everest_core_config("config-sil-dc.yaml")
 @pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy())
-@pytest.mark.flaky(reruns=1)
 async def test_iso15118_dc_session_paused_by_ev(
     test_controller: TestController, everest_core: EverestCore
 ):

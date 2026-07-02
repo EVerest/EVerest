@@ -10,4 +10,7 @@ cc_everest_module(
         "rcd",
         "util",
     ],
+    deps = [
+        "//lib/everest/everest_api_types:everest_api_types",
+    ],
 )

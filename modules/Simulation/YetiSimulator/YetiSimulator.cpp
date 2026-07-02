@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "board_support/evse_board_supportImpl.hpp"
+#include "util/cp_signal.hpp"
 #include "util/state.hpp"
 #include "util/util.hpp"
 
 #include "util/errors.hpp"
+#include "util/raise_error_router.hpp"
+
+#include <everest_api_types/utilities/Topics.hpp>
+#include <everest_api_types/yeti_simulator/codec.hpp>
+
+#include <mutex>
 
 namespace module {
 
@@ -141,36 +148,96 @@ void YetiSimulator::init() {
 
     reset_module_state();
 
-    mqtt.subscribe(
-        "everest_external/nodered/" + std::to_string(config.connector_id) + "/carsim/error",
-        [this](const std::string& payload) {
-            const auto [raise, error_definition] = parse_error_type(payload);
+    // Build adapters once; used by both new versioned subscriptions and the
+    // legacy handler below.
+    yeti_sim_router::PeerAdapters peers;
+    peers.raise_board_support = [this](const Everest::error::Error& e) { p_board_support->raise_error(e); };
+    peers.clear_board_support = [this](const std::string& type, const std::string& sub_type) {
+        p_board_support->clear_error(type, sub_type);
+    };
+    peers.raise_connector_lock = [this](const Everest::error::Error& e) { p_connector_lock->raise_error(e); };
+    peers.clear_connector_lock = [this](const std::string& type, const std::string& sub_type) {
+        p_connector_lock->clear_error(type, sub_type);
+    };
+    peers.raise_rcd = [this](const Everest::error::Error& e) { p_rcd->raise_error(e); };
+    peers.clear_rcd = [this](const std::string& type, const std::string& sub_type) {
+        p_rcd->clear_error(type, sub_type);
+    };
+    peers.raise_powermeter = [this](const Everest::error::Error& e) { p_powermeter->raise_error(e); };
+    peers.clear_powermeter = [this](const std::string& type, const std::string& sub_type) {
+        p_powermeter->clear_error(type, sub_type);
+    };
+    peers.make_board_support_error = [this](const std::string& type, const std::string& sub_type,
+                                            const std::string& message, Everest::error::Severity sev) {
+        return p_board_support->error_factory->create_error(type, sub_type, message, sev);
+    };
+    peers.make_connector_lock_error = [this](const std::string& type, const std::string& sub_type,
+                                             const std::string& message, Everest::error::Severity sev) {
+        return p_connector_lock->error_factory->create_error(type, sub_type, message, sev);
+    };
+    peers.make_rcd_error = [this](const std::string& type, const std::string& sub_type, const std::string& message,
+                                  Everest::error::Severity sev) {
+        return p_rcd->error_factory->create_error(type, sub_type, message, sev);
+    };
+    peers.make_powermeter_error = [this](const std::string& type, const std::string& sub_type,
+                                         const std::string& message, Everest::error::Severity sev) {
+        return p_powermeter->error_factory->create_error(type, sub_type, message, sev);
+    };
 
-            if (not error_definition.has_value()) {
-                return;
-            }
-            if (error_definition->error_target == ErrorTarget::BoardSupport) {
-                const auto error =
-                    p_board_support->error_factory->create_error(error_definition->type, error_definition->sub_type,
-                                                                 error_definition->message, error_definition->severity);
-                forward_error(p_board_support, error, raise);
-            } else if (error_definition->error_target == ErrorTarget::ConnectorLock) {
-                const auto error = p_connector_lock->error_factory->create_error(
-                    error_definition->type, error_definition->sub_type, error_definition->message,
-                    error_definition->severity);
-            } else if (error_definition->error_target == ErrorTarget::Rcd) {
-                const auto error =
-                    p_rcd->error_factory->create_error(error_definition->type, error_definition->sub_type,
-                                                       error_definition->message, error_definition->severity);
-            } else if (error_definition->error_target == ErrorTarget::Powermeter) {
-                const auto error =
-                    p_powermeter->error_factory->create_error(error_definition->type, error_definition->sub_type,
-                                                              error_definition->message, error_definition->severity);
-                forward_error(p_powermeter, error, raise);
-            } else {
-                EVLOG_error << "No known ErrorTarget";
-            }
-        });
+    // Versioned m2e subscriptions.
+    everest::lib::API::Topics topics;
+    topics.setup(info.id, "yeti_simulator", 1);
+
+    mqtt.subscribe(topics.extern_to_everest("raise_error"), [peers](const std::string& payload) {
+        const auto cmd = everest::lib::API::V1_0::types::yeti_simulator::try_deserialize<
+            everest::lib::API::V1_0::types::yeti_simulator::RaiseError>(payload);
+        if (!cmd.has_value()) {
+            EVLOG_error << "yeti_simulator/raise_error decode failed, payload=" << payload;
+            return;
+        }
+        yeti_sim_router::route_raise(*cmd, peers);
+    });
+
+    mqtt.subscribe(topics.extern_to_everest("clear_error"), [peers](const std::string& payload) {
+        const auto cmd = everest::lib::API::V1_0::types::yeti_simulator::try_deserialize<
+            everest::lib::API::V1_0::types::yeti_simulator::ClearError>(payload);
+        if (!cmd.has_value()) {
+            EVLOG_error << "yeti_simulator/clear_error decode failed, payload=" << payload;
+            return;
+        }
+        yeti_sim_router::route_clear(*cmd, peers);
+    });
+
+    // Legacy error injection topic; kept for one-release migration window.
+    mqtt.subscribe("everest_external/nodered/" + std::to_string(config.connector_id) + "/carsim/error",
+                   [peers](const std::string& payload) {
+                       static std::once_flag legacy_warn;
+                       std::call_once(legacy_warn, [] {
+                           EVLOG_warning << "Deprecated topic carsim/error received. "
+                                            "Migrate to everest_api/1/yeti_simulator/<id>/m2e/raise_error.";
+                       });
+
+                       try {
+                           const auto [raise, error_definition] = parse_error_type(payload);
+
+                           if (not error_definition.has_value()) {
+                               return;
+                           }
+
+                           namespace api_ys = everest::lib::API::V1_0::types::yeti_simulator;
+                           if (raise) {
+                               api_ys::RaiseError cmd;
+                               cmd.type = error_definition->type;
+                               yeti_sim_router::route_raise(cmd, peers);
+                           } else {
+                               api_ys::ClearError cmd;
+                               cmd.type = error_definition->type;
+                               yeti_sim_router::route_clear(cmd, peers);
+                           }
+                       } catch (const std::exception& ex) {
+                           EVLOG_error << "carsim/error: failed to parse payload: " << ex.what();
+                       }
+                   });
 }
 
 void YetiSimulator::ready() {
@@ -380,6 +447,21 @@ void YetiSimulator::read_from_car() {
     const auto cpLo = module_state->pwm_voltage_lo;
     const auto cpHi = module_state->pwm_voltage_hi;
 
+    // Raise/clear the diode fault from the CP signal independently of the state
+    // classification, so it also clears once the negative half is restored while
+    // the car stays connected (not only on disconnect).
+    const auto diode_fault_active =
+        p_board_support->error_state_monitor->is_error_active(diode_fault.type, diode_fault.sub_type);
+    if (cp_signal::is_diode_fault(module_state->pwm_running, module_state->simulation_data.diode_fail, cpHi, cpLo)) {
+        if (not diode_fault_active) {
+            const auto error = p_board_support->error_factory->create_error(diode_fault.type, diode_fault.sub_type,
+                                                                            diode_fault.message, diode_fault.severity);
+            forward_error(p_board_support, error, true);
+        }
+    } else if (diode_fault_active) {
+        p_board_support->clear_error(diode_fault.type);
+    }
+
     // sth is wrong with negative signal
     if (module_state->pwm_running and not is_voltage_in_range(cpLo, -12.0)) {
         // CP-PE short or signal somehow gone
@@ -387,19 +469,10 @@ void YetiSimulator::read_from_car() {
             module_state->current_state = state::State::STATE_E;
             drawPower(0, 0, 0, 0);
         } else if (is_voltage_in_range(cpHi + cpLo, 0.0)) { // Diode fault
-            const auto error = p_board_support->error_factory->create_error(diode_fault.type, diode_fault.sub_type,
-                                                                            diode_fault.message, diode_fault.severity);
-            forward_error(p_board_support, error, true);
-
             drawPower(0, 0, 0, 0);
         }
     } else if (is_voltage_in_range(cpHi, 12.0)) {
         // +12V State A IDLE (open circuit)
-        // clear all errors that clear on disconnection
-        if (p_board_support->error_state_monitor->is_error_active(diode_fault.type, diode_fault.sub_type)) {
-            p_board_support->clear_error(diode_fault.type);
-        }
-
         module_state->current_state = state::State::STATE_A;
         drawPower(0, 0, 0, 0);
     } else if (is_voltage_in_range(cpHi, 9.0)) {
