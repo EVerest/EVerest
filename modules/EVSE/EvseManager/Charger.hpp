@@ -67,6 +67,11 @@ public:
         DC
     };
 
+    struct ReinitConfiguration {
+        std::string state_transition;
+        int duration;
+    };
+
     enum class EvseState {
         Disabled,
         Idle,
@@ -79,6 +84,7 @@ public:
         Finished,
         T_step_EF,
         T_step_X1,
+        Reinit,
         SwitchPhases
     };
 
@@ -104,7 +110,8 @@ public:
                bool ac_enforce_hlc, bool ac_with_soc_timeout, float soft_over_current_tolerance_percent,
                float soft_over_current_measurement_noise_A, const int switch_3ph1ph_delay_s,
                const std::string switch_3ph1ph_cp_state, const int soft_over_current_timeout_ms,
-               const int _state_F_after_fault_ms, const bool fail_on_powermeter_errors, const bool raise_mrec9,
+               const int _state_F_after_fault_ms, const int reinit_duration_ms, const std::string& reinit_method,
+               const bool fail_on_powermeter_errors, const bool raise_mrec9,
                const int sleep_before_enabling_pwm_hlc_mode_ms, const utils::SessionIdType session_id_type,
                const int hlc_charge_loop_without_energy_timeout_s);
 
@@ -118,6 +125,7 @@ public:
 
     // Returns active session_uuid. Returns empty string if not session is active
     std::string get_session_id() const;
+    void set_supports_cp_state_E(bool value);
 
     // call when in state WaitingForAuthentication
     void authorize(bool a, const types::authorization::ProvidedIdToken& token,
@@ -133,6 +141,7 @@ public:
 
     // trigger replug sequence while charging to switch number of phases
     bool switch_three_phases_while_charging(bool n);
+    bool start_reinit();
 
     bool pause_charging();
     bool resume_charging();
@@ -171,6 +180,7 @@ public:
     void request_error_sequence();
 
     void set_matching_started(bool m);
+    void set_slac_matched(bool matched);
 
     void notify_currentdemand_started();
     void reset_dc_enforce_target_limits_timer();
@@ -251,7 +261,10 @@ private:
     void update_pwm_now_if_changed_ampere(float duty_cycle);
     void update_pwm_max_every_5seconds_ampere(float duty_cycle);
     void cp_state_X1();
+    void cp_state_E();
     void cp_state_F();
+    void apply_configured_reinit_method();
+    void process_pending_reinit_request();
 
     void process_cp_events_independent(CPEvent cp_event);
     void process_cp_events_state(CPEvent cp_event);
@@ -290,8 +303,8 @@ private:
         bool contactor_open{true};
         bool hlc_charging_active{false};
         HlcTerminatePause hlc_charging_terminate_pause;
-        types::iso15118::DcEvseMaximumLimits current_evse_max_limits;
-        types::iso15118::DcEvseMinimumLimits current_evse_min_limits;
+        types::iso15118::DcEvseMaximumLimits current_evse_max_limits{0, 0, 0, std::nullopt, std::nullopt};
+        types::iso15118::DcEvseMinimumLimits current_evse_min_limits{0, 0, 0, std::nullopt, std::nullopt};
         bool pwm_running{false};
         std::optional<types::authorization::ProvidedIdToken>
             stop_transaction_id_token; // only set in case transaction was stopped locally
@@ -304,6 +317,7 @@ private:
         // set to true if auth is from PnC, otherwise to false (EIM)
         bool authorized_pnc;
         bool matching_started;
+        std::atomic_bool slac_matched{false};
         float max_current;
         std::chrono::time_point<std::chrono::steady_clock> max_current_valid_until;
         std::optional<double> max_current_cable;
@@ -327,6 +341,9 @@ private:
         bool contactor_welded{false};
         bool switch_3ph1ph_threephase{false};
         bool switch_3ph1ph_threephase_ongoing{false};
+        bool reinit_requested{false};
+        bool reinit_running{false};
+        ReinitConfiguration reinit_config{"CPStateF", 3000};
 
         std::optional<types::units_signed::SignedMeterValue> stop_signed_meter_value;
         std::optional<types::units_signed::SignedMeterValue> start_signed_meter_value;
@@ -345,12 +362,16 @@ private:
         ChargeMode charge_mode{0};
         // Delay when switching from 1ph to 3ph or 3ph to 1ph
         int switch_3ph1ph_delay_s{10};
-        // Use state F if true, otherwise use X1
-        bool switch_3ph1ph_cp_state_F{false};
+        // CP state to use while switching phases
+        std::string switch_3ph1ph_cp_state{"X1"};
         // Tolerate soft over current for given time
         int soft_over_current_timeout_ms{7000};
         // Switch to F for configured ms after a fatal error
         int state_F_after_fault_ms{300};
+        // Duration in milliseconds of the reinit state before returning to normal operation
+        int reinit_duration_ms{3000};
+        // CP state to use during reinitialization
+        std::string reinit_method{"CPStateF"};
         // Fail on powermeter errors
         bool fail_on_powermeter_errors;
         // Raise MREC9 authorization timeout error
@@ -367,10 +388,13 @@ private:
     // Used by different threads, but requires no complete state machine locking
     std::atomic<float> soft_over_current_tolerance_percent{10.};
     std::atomic<float> soft_over_current_measurement_noise_A{0.5};
+    std::atomic_bool supports_cp_state_E{false};
     // HLC uses 5 percent signalling. Used both for AC and DC modes.
     std::atomic_bool hlc_use_5percent_current_session;
     // HLC enabled in current AC session. This can change during the session if e.g. HLC fails.
     std::atomic_bool ac_hlc_enabled_current_session;
+    // HLC failed for the current plug-in session. AC falls back to nominal PWM after this.
+    std::atomic_bool hlc_failed{false};
 
     // This struct is only used from main loop thread
     struct InternalContext {
@@ -413,6 +437,8 @@ private:
         std::chrono::time_point<std::chrono::steady_clock> fatal_error_became_active;
         bool fatal_error_timer_running{false};
         bool dc_statistics_printed{false};
+        bool reinit_timer_active{false};
+        std::chrono::time_point<std::chrono::steady_clock> reinit_deadline;
 
         types::evse_manager::ChargingPausedEVSEReasons last_charging_paused_evse_reasons;
     } internal_context;

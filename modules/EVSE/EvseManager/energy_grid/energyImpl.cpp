@@ -172,6 +172,9 @@ types::energy::EvseState to_energy_evse_state(const Charger::EvseState charger_s
     case Charger::EvseState::T_step_X1:
         return types::energy::EvseState::PrepareCharging;
         break;
+    case Charger::EvseState::Reinit:
+        return types::energy::EvseState::PrepareCharging;
+        break;
     case Charger::EvseState::SwitchPhases:
         return types::energy::EvseState::Charging;
         break;
