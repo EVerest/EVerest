@@ -6,10 +6,12 @@
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/event/fd_event_register_interface.hpp>
 
+#include <cerrno>
 #include <cstdint>
 #include <functional>
 #include <queue>
 #include <string>
+#include <sys/socket.h>
 #include <vector>
 
 namespace everest::lib::io::tls {
@@ -104,7 +106,7 @@ protected:
             [this, fd](auto events) {
                 using namespace event;
                 if (events.count(poll_events::error) || events.count(poll_events::hungup)) {
-                    fail(m_socket.get_error());
+                    fail(resolve_poll_error(fd));
                     return;
                 }
                 if (not m_socket.handshake_complete()) {
@@ -185,9 +187,33 @@ protected:
     // would destroy the executing std::function (use-after-free) and resize the
     // pollfds vector mid-iteration, so defer it via add_action() (mirrors
     // generic_fd_event_client error_handler). Idempotent within a connection.
+    // Resolve the error code for an EPOLLERR/EPOLLHUP dispatch. The socket's
+    // own error is preferred; when it is 0 (a live connection that has not yet
+    // failed a TLS op, e.g. a peer RST after the handshake) fall back to the
+    // socket-level SO_ERROR, then to ECONNRESET for a pure hangup. Never resolves
+    // to 0, so the error callback is never invoked with a code every caller ignores.
+    int resolve_poll_error(int fd) const {
+        int err = m_socket.get_error();
+        if (err != 0) {
+            return err;
+        }
+        int so_error = 0;
+        socklen_t len = sizeof(so_error);
+        if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &len) == 0 && so_error != 0) {
+            return so_error;
+        }
+        return ECONNRESET;
+    }
+
     void fail(int error_code) {
         if (m_errored) {
             return;
+        }
+        // Backstop the invariant that the error callback never sees 0: shipped
+        // examples branch on `if (err != 0)`, so a 0 would be silently dropped
+        // while m_errored latches the endpoint dead.
+        if (error_code == 0) {
+            error_code = ECONNRESET;
         }
         m_errored = true;
         if (m_error) {

@@ -369,6 +369,80 @@ TEST(TlsClient, teardown_during_pending_connect_is_clean) {
     SUCCEED();
 }
 
+// P1: an EPOLLERR/EPOLLHUP on a live, post-handshake connection with no prior
+// TLS-op failure must deliver a NONZERO error code. A peer RST (SO_LINGER{1,0}
+// + close) after the handshake makes epoll report error/hungup while the socket
+// still holds a live connection and m_last_error is 0, so get_error() resolves
+// to 0. Every shipped example ignores the callback via `if (err != 0)`, so a 0
+// code silently strands the endpoint. The handler must observe a nonzero code.
+TEST(TlsClient, poll_error_delivers_nonzero_code) {
+    uint16_t bound_port = 0;
+    int listen_fd = make_listen_socket(bound_port);
+    ASSERT_GE(listen_fd, 0);
+    const std::string port_str = std::to_string(bound_port);
+
+    tls::Server server;
+    const auto state = server.init(make_server_config(listen_fd, port_str), nullptr);
+    ASSERT_NE(state, tls::Server::state_t::init_needed);
+
+    // Background server: accept, complete the handshake, read the client ping so
+    // the client is fully handshaked and armed for read, then RST.
+    std::thread server_thread([&]() {
+        sockaddr peer{};
+        socklen_t peer_len = sizeof(peer);
+        int accepted_fd = ::accept(listen_fd, &peer, &peer_len);
+        if (accepted_fd < 0) {
+            return;
+        }
+        char ip_buf[NI_MAXHOST] = "127.0.0.1";
+        char svc_buf[NI_MAXSERV] = "0";
+        ::getnameinfo(&peer, peer_len, ip_buf, sizeof ip_buf, svc_buf, sizeof svc_buf, NI_NUMERICHOST | NI_NUMERICSERV);
+        auto conn = server.wrap_accepted_fd(accepted_fd, ip_buf, svc_buf);
+        if (!conn) {
+            ::close(accepted_fd);
+            return;
+        }
+        if (conn->accept(2000) != tls::Connection::result_t::success) {
+            return;
+        }
+        std::byte buf[64]{};
+        std::size_t nread = 0;
+        (void)conn->read(buf, sizeof buf, nread, 2000);
+        // Zero-linger close discards the send queue and emits a RST instead of a
+        // graceful close_notify/FIN: the client sees EPOLLERR/EPOLLHUP with no
+        // readable TLS record. The BIO (BIO_CLOSE) closes accepted_fd on reset.
+        struct linger lo {
+            1, 0
+        };
+        ::setsockopt(accepted_fd, SOL_SOCKET, SO_LINGER, &lo, sizeof(lo));
+        conn.reset();
+    });
+
+    everest::lib::io::tls::tls_client client(make_client_config(), std::string("127.0.0.1"), bound_port, 2000);
+    everest::lib::io::event::fd_event_handler ev;
+
+    std::atomic<bool> got_error{false};
+    std::atomic<int> err_code{-1};
+    client.set_on_ready_action([&client]() {
+        everest::lib::io::tls::tls_client_socket::PayloadT msg = {'p', 'i', 'n', 'g'};
+        client.tx(msg);
+    });
+    client.set_error_handler([&](int err, std::string const&) {
+        err_code = err;
+        got_error = true;
+    });
+    ASSERT_TRUE(ev.register_event_handler(&client));
+
+    test::pump_until(
+        ev, [&] { return got_error.load(); }, 5s);
+
+    server_thread.join();
+    ::close(listen_fd);
+
+    ASSERT_TRUE(got_error) << "error handler never fired after a peer RST";
+    EXPECT_NE(err_code.load(), 0) << "error handler received code 0 on the poll-error (RST) path";
+}
+
 // Registering the same client twice without an intervening unregister must be
 // rejected, not re-run start(). fd_event_handler forwards an interface register
 // straight to register_events() with no interface-level dedup, so a second
