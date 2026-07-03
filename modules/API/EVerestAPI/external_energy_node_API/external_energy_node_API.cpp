@@ -37,10 +37,9 @@ void external_energy_node_API::init() {
             std::lock_guard<std::mutex> lock(aggregate_mutex);
 
             auto& children = aggregate.children;
-            auto it = std::find_if(children.begin(), children.end(),
-                                   [&child](const auto& c) {
-                                       return std::string_view{c.uuid} == std::string_view{child.uuid};
-                                   });
+            auto it = std::find_if(children.begin(), children.end(), [&child](const auto& c) {
+                return std::string_view{c.uuid} == std::string_view{child.uuid};
+            });
             if (it != children.end()) {
                 *it = child;
             } else {
@@ -49,10 +48,9 @@ void external_energy_node_API::init() {
 
             // Check external timeout
             if (config.timeout_s > 0 && external_active.load()) {
-                const auto elapsed =
-                    std::chrono::duration_cast<std::chrono::seconds>(
-                        std::chrono::steady_clock::now() - external_last_seen)
-                        .count();
+                const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() -
+                                                                                      external_last_seen)
+                                         .count();
                 if (elapsed >= config.timeout_s) {
                     external_active = false;
                     EVLOG_info << info.id

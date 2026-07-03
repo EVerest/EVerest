@@ -24,8 +24,7 @@ struct Conf {};
 class generic_errorImpl : public generic_errorImplBase {
 public:
     generic_errorImpl() = delete;
-    generic_errorImpl(Everest::ModuleAdapter* ev,
-                      const Everest::PtrContainer<external_energy_node_client_API>& mod,
+    generic_errorImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<external_energy_node_client_API>& mod,
                       Conf& config) :
         generic_errorImplBase(ev, "main"), mod(mod), config(config){};
 

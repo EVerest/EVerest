@@ -11,8 +11,8 @@
 #include "ld-ev.hpp"
 
 // headers for provided interface implementations
-#include <generated/interfaces/generic_error/Implementation.hpp>
 #include <generated/interfaces/energy/Implementation.hpp>
+#include <generated/interfaces/generic_error/Implementation.hpp>
 
 // headers for required interface implementations
 #include <generated/interfaces/energy/Interface.hpp>
@@ -47,8 +47,7 @@ public:
     external_energy_node_API(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
                              std::unique_ptr<generic_errorImplBase> p_main,
                              std::unique_ptr<energyImplBase> p_energy_grid,
-                             std::vector<std::unique_ptr<energyIntf>> r_energy_consumer,
-                             Conf& config) :
+                             std::vector<std::unique_ptr<energyIntf>> r_energy_consumer, Conf& config) :
         ModuleBase(info),
         mqtt(mqtt_provider),
         p_main(std::move(p_main)),
@@ -86,8 +85,7 @@ private:
     types::energy::EnergyFlowRequest aggregate;
 
     ev_API::CommCheckHandler<generic_errorImplBase> comm_check{"generic/CommunicationFault",
-                                                               ev_API::bridge_connection_lost_message,
-                                                               p_main};
+                                                               ev_API::bridge_connection_lost_message, p_main};
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

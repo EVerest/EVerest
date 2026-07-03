@@ -24,8 +24,7 @@ struct Conf {};
 class energyImpl : public energyImplBase {
 public:
     energyImpl() = delete;
-    energyImpl(Everest::ModuleAdapter* ev,
-               const Everest::PtrContainer<external_energy_node_client_API>& mod,
+    energyImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<external_energy_node_client_API>& mod,
                Conf& config) :
         energyImplBase(ev, "energy_grid"), mod(mod), config(config){};
 

@@ -52,8 +52,7 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
     try {
         using API_types_ext::serialize;
         using API_types_ext::to_external_api;
-        mod->mqtt.publish(mod->enforce_limits_topic,
-                            serialize(to_external_api(value)));
+        mod->mqtt.publish(mod->enforce_limits_topic, serialize(to_external_api(value)));
     } catch (const std::exception& e) {
         EVLOG_warning << "external_energy_node_client_API [" << mod->config.server_id
                       << "]: failed to publish enforce_limits: " << e.what();
