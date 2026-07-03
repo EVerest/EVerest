@@ -3,6 +3,7 @@ import pytest
 import pytest_asyncio
 import json
 import asyncio
+from queue import Empty
 from typing import Callable, Dict
 import paho.mqtt.client as mqtt
 from everest.testing.core_utils.probe_module import ProbeModule
@@ -173,3 +174,99 @@ async def test_api_cmds(everest_core: EverestCore, async_api_mqtt_handler: Async
         {'type': 'Soft'}
     )
     assert result == True
+
+
+def _drain_queue(queue):
+    """Remove any pending values so an assertion only sees fresh publications."""
+    try:
+        while True:
+            queue.get_nowait()
+    except Empty:
+        pass
+
+
+async def _publish_until_received(handler: AsyncApiMqttHandler, queue, topic: str, payload, deadline: float = 10.0, interval: float = 0.5):
+    """Publish a QoS0/non-retained payload repeatedly until the consumer queue yields a value.
+
+    Works around the race between the one-shot publish and the module's m2e subscription
+    setup without leaking retained state. Returns the first received value.
+    """
+    loop = asyncio.get_event_loop()
+    _drain_queue(queue)
+    end = loop.time() + deadline
+    while loop.time() < end:
+        await handler.publish(topic, json.dumps(payload))
+        try:
+            return await loop.run_in_executor(None, lambda: queue.get(timeout=interval))
+        except Empty:
+            continue
+    raise TimeoutError(f"no var value received on topic {topic}")
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_core_config('probe-system.yaml')
+async def test_configure_network_cmd(everest_core: EverestCore, async_api_mqtt_handler: AsyncApiMqttHandler, probe_module: ProbeModule):
+
+    mqtt_prefix = everest_core.mqtt_external_prefix
+    received = {}
+
+    # external agent answers the forwarded configure_network request with Processing
+    async def on_configure_network(payload: str):
+        request = json.loads(payload)
+        received['payload'] = request.get('payload')
+        response_topic = request['headers']['replyTo']
+        response_payload = {"status": "Processing"}
+        await async_api_mqtt_handler.publish(f"{mqtt_prefix}{response_topic}", json.dumps(response_payload))
+
+    async_api_mqtt_handler.register_handler(f"{everest_core.mqtt_external_prefix}everest_api/1/system/system_api/e2m/configure_network", on_configure_network)
+
+    result = await probe_module.call_command(
+        'system',
+        'configure_network',
+        {
+            'request': {
+                'request_id': 1,
+                'interface': 'Wired0'
+            }
+        }
+    )
+    assert result == {"status": "Processing"}
+    # verify the request survived internal->external serialization intact (real round-trip)
+    assert received['payload'] == {'request_id': 1, 'interface': 'Wired0'}
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_core_config('probe-system-fast-timeout.yaml')
+async def test_configure_network_not_supported_on_timeout(everest_core: EverestCore, async_api_mqtt_handler: AsyncApiMqttHandler, probe_module: ProbeModule):
+
+    # No e2m/configure_network handler registered -> the request times out after
+    # cfg_request_reply_to_s (=1s in this config) and degrades to NotSupported.
+    result = await probe_module.call_command(
+        'system',
+        'configure_network',
+        {
+            'request': {
+                'request_id': 7,
+                'interface': 'Wired0'
+            }
+        }
+    )
+    assert result == {"status": "NotSupported"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_core_config('probe-system.yaml')
+async def test_configure_network_status_var(everest_core: EverestCore, async_api_mqtt_handler: AsyncApiMqttHandler, probe_module: ProbeModule):
+
+    mqtt_prefix = everest_core.mqtt_external_prefix
+    topic = f"{mqtt_prefix}everest_api/1/system/system_api/m2e/configure_network_status"
+
+    queue = probe_module.subscribe_variable_to_queue('system', 'configure_network_status')
+
+    status_payload = {
+        "request_id": 42,
+        "status": "Ready",
+        "interface_address": "192.168.1.10"
+    }
+    result = await _publish_until_received(async_api_mqtt_handler, queue, topic, status_payload)
+    assert result == status_payload

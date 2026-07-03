@@ -533,4 +533,356 @@ void from_json(const json& j, BootReason& k) {
     throw std::out_of_range("Provided string " + s + " could not be converted to enum of type BootReason");
 }
 
+void to_json(json& j, const InterfaceClass& k) noexcept {
+    switch (k) {
+    case InterfaceClass::Wired0:
+        j = "Wired0";
+        return;
+    case InterfaceClass::Wired1:
+        j = "Wired1";
+        return;
+    case InterfaceClass::Wired2:
+        j = "Wired2";
+        return;
+    case InterfaceClass::Wired3:
+        j = "Wired3";
+        return;
+    case InterfaceClass::Wireless0:
+        j = "Wireless0";
+        return;
+    case InterfaceClass::Wireless1:
+        j = "Wireless1";
+        return;
+    case InterfaceClass::Wireless2:
+        j = "Wireless2";
+        return;
+    case InterfaceClass::Wireless3:
+        j = "Wireless3";
+        return;
+    case InterfaceClass::Any:
+        j = "Any";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::system::InterfaceClass";
+}
+void from_json(const json& j, InterfaceClass& k) {
+    std::string s = j;
+    if (s == "Wired0") {
+        k = InterfaceClass::Wired0;
+        return;
+    }
+    if (s == "Wired1") {
+        k = InterfaceClass::Wired1;
+        return;
+    }
+    if (s == "Wired2") {
+        k = InterfaceClass::Wired2;
+        return;
+    }
+    if (s == "Wired3") {
+        k = InterfaceClass::Wired3;
+        return;
+    }
+    if (s == "Wireless0") {
+        k = InterfaceClass::Wireless0;
+        return;
+    }
+    if (s == "Wireless1") {
+        k = InterfaceClass::Wireless1;
+        return;
+    }
+    if (s == "Wireless2") {
+        k = InterfaceClass::Wireless2;
+        return;
+    }
+    if (s == "Wireless3") {
+        k = InterfaceClass::Wireless3;
+        return;
+    }
+    if (s == "Any") {
+        k = InterfaceClass::Any;
+        return;
+    }
+
+    throw std::out_of_range("Provided string " + s + " could not be converted to enum of type InterfaceClass");
+}
+
+void to_json(json& j, const APNAuthenticationEnum& k) noexcept {
+    switch (k) {
+    case APNAuthenticationEnum::CHAP:
+        j = "CHAP";
+        return;
+    case APNAuthenticationEnum::NONE:
+        j = "NONE";
+        return;
+    case APNAuthenticationEnum::PAP:
+        j = "PAP";
+        return;
+    case APNAuthenticationEnum::AUTO:
+        j = "AUTO";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::system::APNAuthenticationEnum";
+}
+void from_json(const json& j, APNAuthenticationEnum& k) {
+    std::string s = j;
+    if (s == "CHAP") {
+        k = APNAuthenticationEnum::CHAP;
+        return;
+    }
+    if (s == "NONE") {
+        k = APNAuthenticationEnum::NONE;
+        return;
+    }
+    if (s == "PAP") {
+        k = APNAuthenticationEnum::PAP;
+        return;
+    }
+    if (s == "AUTO") {
+        k = APNAuthenticationEnum::AUTO;
+        return;
+    }
+
+    throw std::out_of_range("Provided string " + s + " could not be converted to enum of type APNAuthenticationEnum");
+}
+
+void to_json(json& j, const VPNTypeEnum& k) noexcept {
+    switch (k) {
+    case VPNTypeEnum::IKEv2:
+        j = "IKEv2";
+        return;
+    case VPNTypeEnum::IPSec:
+        j = "IPSec";
+        return;
+    case VPNTypeEnum::L2TP:
+        j = "L2TP";
+        return;
+    case VPNTypeEnum::PPTP:
+        j = "PPTP";
+        return;
+    case VPNTypeEnum::Other:
+        j = "Other";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::system::VPNTypeEnum";
+}
+void from_json(const json& j, VPNTypeEnum& k) {
+    std::string s = j;
+    if (s == "IKEv2") {
+        k = VPNTypeEnum::IKEv2;
+        return;
+    }
+    if (s == "IPSec") {
+        k = VPNTypeEnum::IPSec;
+        return;
+    }
+    if (s == "L2TP") {
+        k = VPNTypeEnum::L2TP;
+        return;
+    }
+    if (s == "PPTP") {
+        k = VPNTypeEnum::PPTP;
+        return;
+    }
+    if (s == "Other") {
+        k = VPNTypeEnum::Other;
+        return;
+    }
+
+    throw std::out_of_range("Provided string " + s + " could not be converted to enum of type VPNTypeEnum");
+}
+
+void to_json(json& j, const ConfigureNetworkStatusEnum& k) noexcept {
+    switch (k) {
+    case ConfigureNetworkStatusEnum::Ready:
+        j = "Ready";
+        return;
+    case ConfigureNetworkStatusEnum::Processing:
+        j = "Processing";
+        return;
+    case ConfigureNetworkStatusEnum::Failed:
+        j = "Failed";
+        return;
+    case ConfigureNetworkStatusEnum::Rejected:
+        j = "Rejected";
+        return;
+    case ConfigureNetworkStatusEnum::NotSupported:
+        j = "NotSupported";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::system::ConfigureNetworkStatusEnum";
+}
+void from_json(const json& j, ConfigureNetworkStatusEnum& k) {
+    std::string s = j;
+    if (s == "Ready") {
+        k = ConfigureNetworkStatusEnum::Ready;
+        return;
+    }
+    if (s == "Processing") {
+        k = ConfigureNetworkStatusEnum::Processing;
+        return;
+    }
+    if (s == "Failed") {
+        k = ConfigureNetworkStatusEnum::Failed;
+        return;
+    }
+    if (s == "Rejected") {
+        k = ConfigureNetworkStatusEnum::Rejected;
+        return;
+    }
+    if (s == "NotSupported") {
+        k = ConfigureNetworkStatusEnum::NotSupported;
+        return;
+    }
+
+    throw std::out_of_range("Provided string " + s +
+                            " could not be converted to enum of type ConfigureNetworkStatusEnum");
+}
+
+void to_json(json& j, const APN& k) noexcept {
+    j = json{
+        {"apn", k.apn},
+    };
+    if (k.apn_user_name) {
+        j["apn_user_name"] = k.apn_user_name.value();
+    }
+    if (k.apn_password) {
+        j["apn_password"] = k.apn_password.value();
+    }
+    if (k.sim_pin) {
+        j["sim_pin"] = k.sim_pin.value();
+    }
+    if (k.preferred_network) {
+        j["preferred_network"] = k.preferred_network.value();
+    }
+    if (k.use_only_preferred_network) {
+        j["use_only_preferred_network"] = k.use_only_preferred_network.value();
+    }
+    if (k.apn_authentication) {
+        j["apn_authentication"] = k.apn_authentication.value();
+    }
+}
+void from_json(const json& j, APN& k) {
+    k.apn = j.at("apn");
+
+    if (j.contains("apn_user_name")) {
+        k.apn_user_name.emplace(j.at("apn_user_name"));
+    }
+    if (j.contains("apn_password")) {
+        k.apn_password.emplace(j.at("apn_password"));
+    }
+    if (j.contains("sim_pin")) {
+        k.sim_pin.emplace(j.at("sim_pin"));
+    }
+    if (j.contains("preferred_network")) {
+        k.preferred_network.emplace(j.at("preferred_network"));
+    }
+    if (j.contains("use_only_preferred_network")) {
+        k.use_only_preferred_network.emplace(j.at("use_only_preferred_network"));
+    }
+    if (j.contains("apn_authentication")) {
+        k.apn_authentication.emplace(j.at("apn_authentication"));
+    }
+}
+
+void to_json(json& j, const VPN& k) noexcept {
+    j = json{
+        {"server", k.server},
+        {"type", k.type},
+    };
+    if (k.user) {
+        j["user"] = k.user.value();
+    }
+    if (k.group) {
+        j["group"] = k.group.value();
+    }
+    if (k.password) {
+        j["password"] = k.password.value();
+    }
+    if (k.key) {
+        j["key"] = k.key.value();
+    }
+}
+void from_json(const json& j, VPN& k) {
+    k.server = j.at("server");
+    k.type = j.at("type");
+
+    if (j.contains("user")) {
+        k.user.emplace(j.at("user"));
+    }
+    if (j.contains("group")) {
+        k.group.emplace(j.at("group"));
+    }
+    if (j.contains("password")) {
+        k.password.emplace(j.at("password"));
+    }
+    if (j.contains("key")) {
+        k.key.emplace(j.at("key"));
+    }
+}
+
+void to_json(json& j, const ConfigureNetworkRequest& k) noexcept {
+    j = json{
+        {"request_id", k.request_id},
+        {"interface", k.interface},
+    };
+    if (k.interface_name) {
+        j["interface_name"] = k.interface_name.value();
+    }
+    if (k.apn) {
+        j["apn"] = k.apn.value();
+    }
+    if (k.vpn) {
+        j["vpn"] = k.vpn.value();
+    }
+}
+void from_json(const json& j, ConfigureNetworkRequest& k) {
+    k.request_id = j.at("request_id");
+    k.interface = j.at("interface");
+
+    if (j.contains("interface_name")) {
+        k.interface_name.emplace(j.at("interface_name"));
+    }
+    if (j.contains("apn")) {
+        k.apn.emplace(j.at("apn"));
+    }
+    if (j.contains("vpn")) {
+        k.vpn.emplace(j.at("vpn"));
+    }
+}
+
+void to_json(json& j, const ConfigureNetworkResponse& k) noexcept {
+    j = json{
+        {"status", k.status},
+    };
+    if (k.interface_address) {
+        j["interface_address"] = k.interface_address.value();
+    }
+}
+void from_json(const json& j, ConfigureNetworkResponse& k) {
+    k.status = j.at("status");
+
+    if (j.contains("interface_address")) {
+        k.interface_address.emplace(j.at("interface_address"));
+    }
+}
+
+void to_json(json& j, const ConfigureNetworkStatus& k) noexcept {
+    j = json{
+        {"request_id", k.request_id},
+        {"status", k.status},
+    };
+    if (k.interface_address) {
+        j["interface_address"] = k.interface_address.value();
+    }
+}
+void from_json(const json& j, ConfigureNetworkStatus& k) {
+    k.request_id = j.at("request_id");
+    k.status = j.at("status");
+
+    if (j.contains("interface_address")) {
+        k.interface_address.emplace(j.at("interface_address"));
+    }
+}
+
 } // namespace everest::lib::API::V1_0::types::system

@@ -22,6 +22,15 @@ std::string serialize(LogStatus const& val) noexcept;
 std::string serialize(FirmwareUpdateMetadata const& val) noexcept;
 std::string serialize(FirmwareUpdateStatus const& val) noexcept;
 std::string serialize(ResetRequest const& val) noexcept;
+std::string serialize(InterfaceClass val) noexcept;
+std::string serialize(APNAuthenticationEnum val) noexcept;
+std::string serialize(VPNTypeEnum val) noexcept;
+std::string serialize(ConfigureNetworkStatusEnum val) noexcept;
+std::string serialize(APN const& val) noexcept;
+std::string serialize(VPN const& val) noexcept;
+std::string serialize(ConfigureNetworkRequest const& val) noexcept;
+std::string serialize(ConfigureNetworkResponse const& val) noexcept;
+std::string serialize(ConfigureNetworkStatus const& val) noexcept;
 
 std::ostream& operator<<(std::ostream& os, UpdateFirmwareResponse const& val);
 std::ostream& operator<<(std::ostream& os, UploadLogsStatus const& val);
@@ -36,6 +45,15 @@ std::ostream& operator<<(std::ostream& os, FirmwareUpdateMetadata const& val);
 std::ostream& operator<<(std::ostream& os, FirmwareUpdateStatus const& val);
 std::ostream& operator<<(std::ostream& os, UploadLogsResponse const& val);
 std::ostream& operator<<(std::ostream& os, ResetRequest const& val);
+std::ostream& operator<<(std::ostream& os, InterfaceClass const& val);
+std::ostream& operator<<(std::ostream& os, APNAuthenticationEnum const& val);
+std::ostream& operator<<(std::ostream& os, VPNTypeEnum const& val);
+std::ostream& operator<<(std::ostream& os, ConfigureNetworkStatusEnum const& val);
+std::ostream& operator<<(std::ostream& os, APN const& val);
+std::ostream& operator<<(std::ostream& os, VPN const& val);
+std::ostream& operator<<(std::ostream& os, ConfigureNetworkRequest const& val);
+std::ostream& operator<<(std::ostream& os, ConfigureNetworkResponse const& val);
+std::ostream& operator<<(std::ostream& os, ConfigureNetworkStatus const& val);
 
 #include <everest_api_types/utilities/deserialize_templates.inc>
 

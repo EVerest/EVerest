@@ -66,6 +66,42 @@ std::string serialize(ResetRequest const& val) noexcept {
     return utilities::dump_json(val);
 }
 
+std::string serialize(InterfaceClass val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(APNAuthenticationEnum val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(VPNTypeEnum val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(ConfigureNetworkStatusEnum val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(APN const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(VPN const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(ConfigureNetworkRequest const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(ConfigureNetworkResponse const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(ConfigureNetworkStatus const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
 std::ostream& operator<<(std::ostream& os, UpdateFirmwareResponse const& val) {
     os << serialize(val);
     return os;
@@ -131,6 +167,51 @@ std::ostream& operator<<(std::ostream& os, ResetRequest const& val) {
     return os;
 }
 
+std::ostream& operator<<(std::ostream& os, InterfaceClass const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, APNAuthenticationEnum const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, VPNTypeEnum const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, ConfigureNetworkStatusEnum const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, APN const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, VPN const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, ConfigureNetworkRequest const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, ConfigureNetworkResponse const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, ConfigureNetworkStatus const& val) {
+    os << serialize(val);
+    return os;
+}
+
 template <> UpdateFirmwareResponse deserialize(std::string_view val) {
     return utilities::parse_json<UpdateFirmwareResponse>(val);
 }
@@ -181,6 +262,42 @@ template <> FirmwareUpdateStatus deserialize(std::string_view val) {
 
 template <> ResetRequest deserialize(std::string_view val) {
     return utilities::parse_json<ResetRequest>(val);
+}
+
+template <> InterfaceClass deserialize(std::string_view val) {
+    return utilities::parse_json<InterfaceClass>(val);
+}
+
+template <> APNAuthenticationEnum deserialize(std::string_view val) {
+    return utilities::parse_json<APNAuthenticationEnum>(val);
+}
+
+template <> VPNTypeEnum deserialize(std::string_view val) {
+    return utilities::parse_json<VPNTypeEnum>(val);
+}
+
+template <> ConfigureNetworkStatusEnum deserialize(std::string_view val) {
+    return utilities::parse_json<ConfigureNetworkStatusEnum>(val);
+}
+
+template <> APN deserialize(std::string_view val) {
+    return utilities::parse_json<APN>(val);
+}
+
+template <> VPN deserialize(std::string_view val) {
+    return utilities::parse_json<VPN>(val);
+}
+
+template <> ConfigureNetworkRequest deserialize(std::string_view val) {
+    return utilities::parse_json<ConfigureNetworkRequest>(val);
+}
+
+template <> ConfigureNetworkResponse deserialize(std::string_view val) {
+    return utilities::parse_json<ConfigureNetworkResponse>(val);
+}
+
+template <> ConfigureNetworkStatus deserialize(std::string_view val) {
+    return utilities::parse_json<ConfigureNetworkStatus>(val);
 }
 
 } // namespace everest::lib::API::V1_0::types::system

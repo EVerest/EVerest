@@ -5,7 +5,8 @@ info:
   title: 'EVerest API definition for the system module'
   version: 1.0.0
   description: >-
-    API for EVerest API client implementing the system capabilities OTA update and log upload.
+    API for EVerest API client implementing the system capabilities OTA update, log upload
+    and network configuration.
 
   license:
     name: Apache-2.0
@@ -86,6 +87,16 @@ channels:
     messages:
       send_reply_get_boot_reason:
         $ref: '#/components/messages/send_reply_get_boot_reason'
+  receive_request_configure_network:
+    address: 'e2m/configure_network'
+    messages:
+      receive_request_configure_network:
+        $ref: '#/components/messages/receive_request_configure_network'
+  send_reply_configure_network:
+    address: null
+    messages:
+      send_reply_configure_network:
+        $ref: '#/components/messages/send_reply_configure_network'
 
   send_firmware_update_status:
     address: 'm2e/firmware_update_status'
@@ -97,6 +108,16 @@ channels:
     messages:
       send_log_status:
         $ref: '#/components/messages/send_log_status'
+  send_configure_network_status:
+    address: 'm2e/configure_network_status'
+    messages:
+      send_configure_network_status:
+        $ref: '#/components/messages/send_configure_network_status'
+  send_network_interfaces:
+    address: 'm2e/network_interfaces'
+    messages:
+      send_network_interfaces:
+        $ref: '#/components/messages/send_network_interfaces'
 
 
   receive_heartbeat:
@@ -210,6 +231,23 @@ operations:
     channel:
       $ref: '#/channels/send_reply_get_boot_reason'
     description: 'Direction: Module to EVerest'
+  receive_request_configure_network:
+    title: 'Request to configure a network interface'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_request_configure_network'
+    description: 'Direction: EVerest to Module'
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/send_reply_configure_network'
+  send_reply_configure_network:
+    title: 'Reply to configure network request'
+    action: send
+    channel:
+      $ref: '#/channels/send_reply_configure_network'
+    description: 'Direction: Module to EVerest'
 
   send_firmware_update_status:
     title: 'Send firmware update status'
@@ -222,6 +260,18 @@ operations:
     action: send
     channel:
       $ref: '#/channels/send_log_status'
+  send_configure_network_status:
+    title: 'Send configure network status'
+    action: send
+    channel:
+      $ref: '#/channels/send_configure_network_status'
+    description: 'Direction: Module to EVerest'
+  send_network_interfaces:
+    title: 'Send network interfaces inventory'
+    action: send
+    channel:
+      $ref: '#/channels/send_network_interfaces'
+    description: 'Direction: Module to EVerest'
 
 
   receive_heartbeat:
@@ -382,6 +432,41 @@ components:
         - summary: "Get boot reason"
           payload:
             "ApplicationReset"
+    receive_request_configure_network:
+      name: receive_request_configure_network
+      title: 'Request configure network'
+      summary: 'Request to prepare a network interface for use.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to. If this information is missing, the command will still be accepted, but no response will be sent.
+          payload:
+            $ref: '#/components/schemas/ConfigureNetworkRequest'
+    send_reply_configure_network:
+      name: send_reply_configure_network
+      title: 'Reply configure network'
+      summary: >-
+        Direct (synchronous) response to a configure network request. May answer
+        Processing and complete later via the configure_network_status var.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ConfigureNetworkResponse'
+      examples:
+        - summary: "Processing"
+          payload:
+            status: "Processing"
+        - summary: "Ready"
+          payload:
+            status: "Ready"
+            interface_address: "eth0"
     receive_allow_firmware_installation:
       name: receive_allow_firmware_installation
       title: 'Receive Allow firmware installation'
@@ -422,6 +507,19 @@ components:
           payload:
               log_status: "BadMessage"
               request_id: 0
+    send_configure_network_status:
+      name: send_configure_network_status
+      title: 'Send configure network status'
+      summary: Asynchronous final outcome of a configure network request that was answered with Processing
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ConfigureNetworkStatus'
+      examples:
+        - summary: "Configure network status"
+          payload:
+            request_id: 0
+            status: "Ready"
+            interface_address: "eth0"
 
 
     receive_heartbeat:
@@ -728,3 +826,170 @@ components:
     HeartBeatId:
       type: integer
       description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"
+
+    InterfaceClass:
+      description: >-
+        Network interface class a connection is bound to. Maps 1:1 to OCPP 2.x
+        OCPPInterfaceEnum but is protocol-neutral.
+      type: string
+      enum:
+        - Wired0
+        - Wired1
+        - Wired2
+        - Wired3
+        - Wireless0
+        - Wireless1
+        - Wireless2
+        - Wireless3
+        - Any
+    APNAuthenticationEnum:
+      description: APN authentication method
+      type: string
+      enum:
+        - CHAP
+        - NONE
+        - PAP
+        - AUTO
+    APN:
+      description: Access Point Name configuration for cellular interfaces
+      type: object
+      additionalProperties: false
+      required:
+        - apn
+      properties:
+        apn:
+          description: The Access Point Name as an URL
+          type: string
+        apn_user_name:
+          description: APN username
+          type: string
+        apn_password:
+          description: APN password
+          type: string
+        sim_pin:
+          description: SIM card pin code
+          type: string
+        preferred_network:
+          description: Preferred network, written to the SIM card
+          type: string
+        use_only_preferred_network:
+          description: Use only the preferred network
+          type: boolean
+        apn_authentication:
+          description: Authentication method
+          type: string
+          $ref: '#/components/schemas/APNAuthenticationEnum'
+    VPNTypeEnum:
+      description: Type of VPN
+      type: string
+      enum:
+        - IKEv2
+        - IPSec
+        - L2TP
+        - PPTP
+        - Other
+    VPN:
+      description: VPN configuration
+      type: object
+      additionalProperties: false
+      required:
+        - server
+        - type
+      properties:
+        server:
+          description: VPN server address
+          type: string
+        user:
+          description: VPN username, if required by the VPN type
+          type: string
+        group:
+          description: VPN group
+          type: string
+        password:
+          description: VPN password, if required by the VPN type
+          type: string
+        key:
+          description: VPN shared secret or key, if required by the VPN type
+          type: string
+        type:
+          description: Type of VPN
+          type: string
+          $ref: '#/components/schemas/VPNTypeEnum'
+    ConfigureNetworkRequest:
+      description: Request to prepare a network interface for use
+      type: object
+      additionalProperties: false
+      required:
+        - request_id
+        - interface
+      properties:
+        request_id:
+          description: Caller-chosen correlation id, echoed in configure_network_status
+          type: integer
+        interface:
+          description: Standardized interface class; the provider maps it to a concrete system interface
+          type: string
+          $ref: '#/components/schemas/InterfaceClass'
+        interface_name:
+          description: >-
+            Optional concrete system interface name (e.g. eth0, wwan0). If present it
+            overrides the provider's mapping of the interface class. Providers reject
+            unknown names (status Rejected).
+          type: string
+        apn:
+          description: Access Point Name configuration for cellular interfaces
+          type: object
+          $ref: '#/components/schemas/APN'
+        vpn:
+          description: VPN configuration
+          type: object
+          $ref: '#/components/schemas/VPN'
+    ConfigureNetworkStatusEnum:
+      description: |
+        Status of a configure network request:
+        - Ready: interface prepared, usable now.
+        - Processing: preparation started, final result follows on the configure_network_status var.
+        - Failed: preparation failed.
+        - Rejected: request invalid/refused (e.g. unknown interface_name or unmapped interface class).
+        - NotSupported: this provider does not implement network configuration (consumers fall back to legacy behavior).
+      type: string
+      enum:
+        - Ready
+        - Processing
+        - Failed
+        - Rejected
+        - NotSupported
+    ConfigureNetworkResponse:
+      description: Direct (synchronous) response to configure_network
+      type: object
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        status:
+          description: Status of the configure network request
+          type: string
+          $ref: '#/components/schemas/ConfigureNetworkStatusEnum'
+        interface_address:
+          description: >-
+            Interface name or IP address to bind to (present when status is Ready).
+          type: string
+    ConfigureNetworkStatus:
+      description: Asynchronous final outcome of a request answered with Processing
+      type: object
+      additionalProperties: false
+      required:
+        - request_id
+        - status
+      properties:
+        request_id:
+          description: Correlation id echoed from the ConfigureNetworkRequest
+          type: integer
+        status:
+          description: Final state, Ready or Failed
+          type: string
+          $ref: '#/components/schemas/ConfigureNetworkStatusEnum'
+        interface_address:
+          description: >-
+            Interface name or IP address to bind to (present when status is Ready)
+          type: string
