@@ -265,6 +265,14 @@ public:
     [[nodiscard]] int socket() const;
 
     /**
+     * \brief whether the connection was fully constructed
+     * \returns true when both the SSL object and its socket BIO were allocated.
+     *          When false the internal SSL/BIO allocation failed and the socket
+     *          fd was NOT adopted by a BIO_CLOSE owner, so the caller still owns it.
+     */
+    [[nodiscard]] bool is_valid() const;
+
+    /**
      * \brief number of decrypted bytes buffered in the TLS record layer
      * \returns bytes available to read() without a socket read, or 0 when
      *          there is no active SSL context
@@ -712,6 +720,11 @@ public:
         bool verify_server{true}; //!< verify the server certificate
         //!< when true, the peer certificate subject/SAN is matched against the SNI host via SSL_set1_host.
         //!< Only enforced when verify_server is also true (peer verification must be active); ignored otherwise.
+        //!<
+        //!< WARNING: the default (false) means chain-of-trust ONLY — a certificate signed by any trusted
+        //!< CA is accepted regardless of the host it was issued for. This is deliberate for ISO 15118 EVSE
+        //!< certificates, which carry no hostname. For hostname-bearing PKIs (backends/CSMS) set this to
+        //!< true so a cert issued for another host is rejected.
         bool verify_subject_name{false};
         bool status_request{false};    //!< include a status request extension in the client hello
         bool status_request_v2{false}; //!< include a status request v2 extension in the client hello
