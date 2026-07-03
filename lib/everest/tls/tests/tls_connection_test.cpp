@@ -1021,6 +1021,60 @@ TEST_F(TlsTest, Tls13NoMatchServesDefault) {
     EXPECT_EQ(subject["CN"], server_root_CN);
 }
 
+TEST_F(TlsTest, Tls13NoMatchSkipsUnverifiedDefault) {
+    // chains[0] is deliberately broken: its chain file holds only the leaf, so
+    // verify_chain() cannot build a path to the trust anchor (missing
+    // intermediate) and the chain is excluded at config time. The default
+    // served to no-match clients must be the first chain that PASSED
+    // verification - chains[1], alt leaf CN 11111111 - not the broken
+    // chains[0]; otherwise every no-match client is served a chain it cannot
+    // build a path for.
+    server_config.chains[0].certificate_chain_file = "server_cert.pem";
+    server_config.chains[0].ocsp_response_files = {"ocsp_response.der"};
+    server_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    server_config.enforce_tls_1_3 = true;
+    server_config.verify_client = true;
+    server_config.verify_locations_file = "client_root_cert.pem";
+
+    client_config.cipher_list = nullptr;
+    client_config.ciphersuites = "TLS_AES_256_GCM_SHA384";
+    client_config.min_proto_version = TLS1_3_VERSION;
+    client_config.certificate_chain_file = "client_chain.pem";
+    client_config.private_key_file = "client_priv.pem";
+    // Verify against chains[1]'s root because the first verified chain is
+    // expected to be served.
+    client_config.verify_locations_file = "alt_server_root_cert.pem";
+
+    std::map<std::string, std::string> subject;
+    auto client_handler_fn = [this, &subject](tls::Client::ConnectionPtr& connection) {
+        if (!connection) {
+            return;
+        }
+        // Inject a DN matching neither server chain's trust anchor. See
+        // Tls13MultiChainCertificateAuthorities for the ssl_context() pragma
+        // rationale.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+        SSL* ssl = connection->ssl_context();
+#pragma GCC diagnostic pop
+        ASSERT_NE(ssl, nullptr);
+        auto foreign_roots = openssl::load_certificates("client_root_cert.pem");
+        ASSERT_FALSE(foreign_roots.empty());
+        ASSERT_EQ(SSL_add1_to_CA_list(ssl, foreign_roots.front().get()), 1);
+
+        if (connection->connect() == result_t::success) {
+            this->set(ClientTest::flags_t::connected);
+            subject = openssl::certificate_subject(connection->peer_certificate());
+            (void)connection->shutdown();
+        }
+    };
+
+    start();
+    connect(client_handler_fn);
+    EXPECT_TRUE(is_set(flags_t::connected));
+    EXPECT_EQ(subject["CN"], alt_server_root_CN);
+}
+
 TEST_F(TlsTest, MixedVersionServerSelectsAltChain) {
     // One server offering both TLS 1.2 (cipher_list) and TLS 1.3
     // (ciphersuites). The SSL_version dispatch in the certificate callback

@@ -480,6 +480,10 @@ private:
     ConfigItem m_tls_key_interface{nullptr};
     bool m_verify_client_on_tls13{false};
     std::filesystem::path tls_key_log_file_path{};
+    //! index into config_t::chains of the first chain that passed verification in
+    //! init_certificates(); installed by init_ssl() as the SSL_CTX default so the
+    //! no-match fallback and select_default() agree. 0 when no chain verified.
+    std::size_t m_default_chain_index{0};
 
     /**
      * \brief initialise the server socket
