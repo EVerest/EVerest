@@ -466,9 +466,17 @@ int ServerTrustedCaKeys::apply_selection_locked(SSL* ssl, const std::lock_guard<
                     ": selected chain failed to apply and is the only/default chain");
         return 0;
     }
+    if (fallback == nullptr) {
+        // use_certificate_and_key() already called SSL_certs_clear(), so the connection
+        // has no certificate. With no default chain to fall back to, continuing would
+        // reach an opaque OpenSSL error mid-handshake; abort explicitly instead.
+        log_warning(std::string("terminating TLS handshake: ") + context_label +
+                    ": selected chain failed to apply and no default chain is available");
+        return 0;
+    }
     log_warning(std::string(context_label) + ": selected chain (" + leaf_subject_name(*selected) +
                 ") failed to apply; serving default chain");
-    if (fallback != nullptr && not use_certificate_and_key(ssl, *fallback)) {
+    if (not use_certificate_and_key(ssl, *fallback)) {
         log_warning(std::string("terminating TLS handshake: ") + context_label);
         return 0;
     }
