@@ -280,6 +280,42 @@ TEST(HandleCertStoreUpdate, CmdTimeoutFromRebuildIsSwallowedAndApplyNotCalled) {
     EXPECT_FALSE(apply_called);
 }
 
+TEST(ResyncSslConfig, PicksUpChainInstalledAfterInitialBuild) {
+    // Startup window: ready() built the initial config, then a V2G certificate
+    // install completed before the store-update subscription was registered. The
+    // one-shot re-sync must rebuild and serve the newly installed chain.
+    auto newly_installed = make_single_chain_config();
+    newly_installed.chains[0].path_certificate_chain = "/tmp/iso/installed-during-boot/chain.pem";
+
+    int apply_count = 0;
+    iso15118::config::SSLConfig applied{};
+
+    module::charger::resync_ssl_config([&]() { return newly_installed; },
+                                       [&](iso15118::config::SSLConfig cfg) {
+                                           ++apply_count;
+                                           applied = std::move(cfg);
+                                       });
+
+    ASSERT_EQ(apply_count, 1);
+    ASSERT_EQ(applied.chains.size(), 1u);
+    EXPECT_EQ(applied.chains[0].path_certificate_chain, "/tmp/iso/installed-during-boot/chain.pem");
+}
+
+TEST(ResyncSslConfig, EmptyRebuildPreservesLastGood) {
+    bool apply_called = false;
+    module::charger::resync_ssl_config([&]() -> iso15118::config::SSLConfig { return {}; },
+                                       [&](iso15118::config::SSLConfig) { apply_called = true; });
+    EXPECT_FALSE(apply_called);
+}
+
+TEST(ResyncSslConfig, CmdTimeoutFromRebuildIsSwallowedAndApplyNotCalled) {
+    bool apply_called = false;
+    EXPECT_NO_THROW(module::charger::resync_ssl_config(
+        [&]() -> iso15118::config::SSLConfig { throw Everest::CmdTimeout("evse_security RPC timed out"); },
+        [&](iso15118::config::SSLConfig) { apply_called = true; }));
+    EXPECT_FALSE(apply_called);
+}
+
 TEST(StartupEmptyChains, EnforceTlsThrows) {
     EXPECT_EQ(module::charger::decide_startup_empty_chains(iso15118::config::TlsNegotiationStrategy::ENFORCE_TLS),
               module::charger::StartupChainPolicy::Throw);
