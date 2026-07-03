@@ -27,8 +27,7 @@ namespace iso15118 {
 
 struct TbdConfig {
     /// `ssl` here is the INITIAL value only; the live config is owned by `m_ssl_config` after construction —
-    /// read it via `ssl_config_snapshot()`, never `config.ssl`. A future refactor moves `ssl` out of
-    /// `TbdConfig` entirely — see plans/2026-06-10-tls-multichain-structural-followup.md.
+    /// read it via `ssl_config_snapshot()`, never `config.ssl`.
     config::SSLConfig ssl{};
     std::string interface_name;
     config::TlsNegotiationStrategy tls_negotiation_strategy{config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER};
