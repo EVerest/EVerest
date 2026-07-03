@@ -5,6 +5,7 @@
 #include <everest/io/tls/tls_client.hpp>
 
 #include <atomic>
+#include <csignal>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -18,6 +19,11 @@ using tls_endpoint = tls_endpoint_base<tls_client_socket>;
 
 int main(int argc, char* argv[]) {
     std::cout << "TLS echo client example" << std::endl;
+
+    // OpenSSL writes through its socket BIO without MSG_NOSIGNAL, so a write to a
+    // peer-reset connection raises SIGPIPE. Every process using this layer must
+    // ignore it or a peer reset during tx() aborts the process.
+    std::signal(SIGPIPE, SIG_IGN);
 
     std::string host = "127.0.0.1";
     std::uint16_t port = 8443;

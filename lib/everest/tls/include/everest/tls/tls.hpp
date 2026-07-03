@@ -781,7 +781,8 @@ public:
      * \brief wrap an already-connecting TCP socket as a TLS client connection
      * \param[in] fd connected (or in-progress) TCP socket file descriptor
      * \param[in] host_for_sni hostname used for the peer-id / SNI slot (may be nullptr)
-     * \return ConnectionPtr that owns \p fd on success; nullptr if SSL_CTX is not initialised
+     * \return ConnectionPtr that owns \p fd on success; nullptr if the SSL_CTX is
+     *         not initialised or internal SSL/BIO allocation fails
      * \note Lets callers own the TCP connect path and hand the resulting fd to a
      *       configured Client (mirror of Server::wrap_accepted_fd).
      * \note A DNS \p host_for_sni is sent in the SNI extension; an IP literal is
