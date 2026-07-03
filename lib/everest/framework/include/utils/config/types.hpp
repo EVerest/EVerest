@@ -191,8 +191,8 @@ struct ConfigurationParameterCharacteristics {
     Datatype datatype = Datatype::Unknown;
     Mutability mutability = Mutability::ReadOnly;
     std::optional<std::string> unit;
-    std::optional<int32_t> min_value;
-    std::optional<int32_t> max_value;
+    std::optional<float> min_value;
+    std::optional<float> max_value;
 };
 
 inline bool operator==(const ConfigurationParameterCharacteristics& lhs,
