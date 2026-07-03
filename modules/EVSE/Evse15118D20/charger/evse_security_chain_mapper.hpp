@@ -48,12 +48,17 @@ enum class CertUpdateAction {
 /// \brief Decide whether to apply a rebuilt SSL config or preserve the last-good one.
 CertUpdateAction decide_certificate_store_update(const iso15118::config::SSLConfig& refreshed);
 
+/// \brief Rebuild the SSLConfig via \p rebuild and either forward it via \p apply or preserve
+/// the last-good config when the rebuild yields no chains. All exceptions thrown by \p rebuild
+/// (incl. Everest::CmdTimeout from the evse_security RPC) are caught and logged; nothing escapes,
+/// so the caller's thread survives RPC failures. Applying a config identical to the current one is
+/// harmless (apply is a single atomic write), so this is safe to invoke as a one-shot re-sync to
+/// close the startup window between the initial config build and store-update subscription.
+void resync_ssl_config(const std::function<iso15118::config::SSLConfig()>& rebuild,
+                       const std::function<void(iso15118::config::SSLConfig)>& apply);
+
 /// \brief Handles a certificate_store_update event: gates on
-/// is_relevant_certificate_store_update(), rebuilds the SSLConfig via \p rebuild, then either
-/// forwards it via \p apply or preserves the last-good config when the rebuild yields no chains.
-/// All exceptions thrown by \p rebuild (incl. Everest::CmdTimeout from the evse_security RPC)
-/// are caught and logged; nothing escapes, so the framework subscriber thread survives RPC
-/// failures.
+/// is_relevant_certificate_store_update(), then delegates to resync_ssl_config().
 void handle_certificate_store_update(const types::evse_security::CertificateStoreUpdate& event,
                                      const std::function<iso15118::config::SSLConfig()>& rebuild,
                                      const std::function<void(iso15118::config::SSLConfig)>& apply);
