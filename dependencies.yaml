@@ -146,12 +146,12 @@ grpc-extended-cpp-plugin:
 nlohmann_json:
   git: https://github.com/nlohmann/json
   git_tag: v3.12.0
-  cmake_condition: "EVEREST_BUILD_LIB_ocpp OR EVEREST_BUILD_LIB_framework OR EVEREST_BUILD_LIB_helpers"
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp OR EVEREST_BUILD_LIB_framework OR EVEREST_BUILD_LIB_helpers"
   options: ["JSON_BuildTests OFF", "JSON_MultipleHeaders ON"]
 nlohmann_json_schema_validator:
   git: https://github.com/pboettch/json-schema-validator
   git_tag: 2.4.0
-  cmake_condition: "EVEREST_BUILD_LIB_ocpp OR EVEREST_BUILD_LIB_framework"
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp OR EVEREST_BUILD_LIB_framework"
   options:
     [
       "JSON_VALIDATOR_INSTALL OFF",
@@ -184,3 +184,12 @@ libfmt:
       "FMT_INSTALL ON",
       "FMT_SYSTEM_HEADERS ON",
     ]
+pybind11:
+  git: https://github.com/pybind/pybind11.git
+  git_tag: v3.0.2
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_ENABLE_PY_SUPPORT AND EVEREST_BUILD_LIB_framework"
+  options: ["PYBIND11_TEST OFF", "PYBIND11_USE_CROSSCOMPILING ON"]
+pybind11_json:
+  git: https://github.com/pybind/pybind11_json.git
+  git_tag: 0.2.15
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_ENABLE_PY_SUPPORT AND EVEREST_BUILD_LIB_framework"
