@@ -22,15 +22,27 @@ SCENARIO("ISO15118-20 supported app protocol state transitions") {
     const std::vector<message_20::datatypes::Authorization> auth_services = {message_20::datatypes::Authorization::EIM};
     const d20::DcTransferLimits dc_limits;
     const d20::AcTransferLimits ac_limits;
+    // const d20::IecDerTransferLimits der_limits;
     const d20::DcTransferLimits powersupply_limits;
     const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
         {message_20::datatypes::ControlMode::Scheduled, message_20::datatypes::MobilityNeedsMode::ProvidedByEvcc}};
     const std::string custom_namespace = "urn:iso:std:iso:15118:-20:AABB";
 
-    const d20::EvseSetupConfig evse_setup{
-        evse_id,   supported_energy_services, auth_services,    vas_services, cert_install, dc_limits,
-        ac_limits, control_mobility_modes,    custom_namespace, std::nullopt, std::nullopt, powersupply_limits,
-        false};
+    const d20::EvseSetupConfig evse_setup{evse_id,
+                                          supported_energy_services,
+                                          auth_services,
+                                          vas_services,
+                                          cert_install,
+                                          dc_limits,
+                                          ac_limits,
+                                          std::nullopt,
+                                          control_mobility_modes,
+                                          custom_namespace,
+                                          std::nullopt,
+                                          std::nullopt,
+                                          std::nullopt,
+                                          powersupply_limits,
+                                          false};
 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
 

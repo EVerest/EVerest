@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
 
 #include <iso15118/io/connection_plain.hpp>
 #include <iso15118/io/connection_ssl.hpp>
@@ -177,6 +176,24 @@ void TbdController::set_dlink_ready(bool ready) {
         logf_info("V2G communication setup timeout started (%u ms)", V2G_COMMUNICATION_SETUP_TIMEOUT_MS);
     } else {
         communication_setup_timeout.reset();
+    }
+}
+
+// TODO(SL): For both functions the update does only work before a session is started.
+// During a session, the updated der functions will be considered in the next session
+void TbdController::update_supported_der_functions(iec::DERControlName der_control,
+                                                   const iec::DERControlFunction& function) {
+    auto& der_setup = evse_setup.der_setup_config.has_value() ? evse_setup.der_setup_config.value()
+                                                              : evse_setup.der_setup_config.emplace();
+
+    der_setup.supported_der_control_functions[der_control] = function;
+}
+
+void TbdController::update_unsupported_der_functions(iec::DERControlName der_control) {
+    if (evse_setup.der_setup_config.has_value()) {
+        logf_info("Removing supported DER control function: %u", static_cast<uint32_t>(der_control));
+        auto& der_setup = evse_setup.der_setup_config.value();
+        der_setup.supported_der_control_functions.erase(der_control);
     }
 }
 
