@@ -84,4 +84,14 @@ void tls_client_socket::close() {
     m_tcp.close();
 }
 
+std::function<void()> tls_client_socket::release_closer() {
+    // Post-wrap the connection's BIO owns the fd and m_tcp is already released;
+    // move the connection into a closer that drops it (SSL_free -> BIO_CLOSE) when
+    // run. m_tcp.close() is a no-op here (released) but stays defensive.
+    m_tcp.close();
+    // shared_ptr (not the move-only unique_ptr) so the closer is copy-constructible
+    // and fits std::function / the handler's task queue.
+    return [conn = std::shared_ptr<::tls::ClientConnection>(std::move(m_conn))]() mutable { conn.reset(); };
+}
+
 } // namespace everest::lib::io::tls

@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -529,6 +530,109 @@ TEST(TlsClient, drop_registered_endpoint_unregisters_fds) {
         << "tx-notify fd still registered after dropping the endpoint";
 
     release_server = true;
+    server_thread.join();
+    ::close(listen_fd);
+}
+
+// P3: fail() closes the connection fd but defers the handler removal by fd
+// number to run_actions(). If the close were synchronous, the fd number frees
+// while the deferred remove is still pending, so an accept in the same poll
+// batch could recycle it and the stale remove-by-number would then strand the
+// new connection. The fix keeps the fd number reserved until AFTER the handler
+// entry is removed: the close must be deferred alongside the removal, not run
+// synchronously inside the dispatch pass. Assert the fd is still open right
+// after fail() runs (before run_actions) and closed only afterwards.
+TEST(TlsClient, fail_defers_fd_close_until_after_unregister) {
+    uint16_t bound_port = 0;
+    int listen_fd = make_listen_socket(bound_port);
+    ASSERT_GE(listen_fd, 0);
+    const std::string port_str = std::to_string(bound_port);
+
+    tls::Server server;
+    ASSERT_NE(server.init(make_server_config(listen_fd, port_str), nullptr), tls::Server::state_t::init_needed);
+
+    // Server: accept + handshake + read the ping, then RST on demand so the test
+    // controls when the client's fail() path runs.
+    std::atomic<bool> release_rst{false};
+    std::thread server_thread([&]() {
+        sockaddr peer{};
+        socklen_t peer_len = sizeof(peer);
+        int accepted_fd = ::accept(listen_fd, &peer, &peer_len);
+        if (accepted_fd < 0) {
+            return;
+        }
+        char ip_buf[NI_MAXHOST] = "127.0.0.1";
+        char svc_buf[NI_MAXSERV] = "0";
+        ::getnameinfo(&peer, peer_len, ip_buf, sizeof ip_buf, svc_buf, sizeof svc_buf, NI_NUMERICHOST | NI_NUMERICSERV);
+        auto conn = server.wrap_accepted_fd(accepted_fd, ip_buf, svc_buf);
+        if (!conn) {
+            ::close(accepted_fd);
+            return;
+        }
+        if (conn->accept(2000) != tls::Connection::result_t::success) {
+            return;
+        }
+        std::byte buf[64]{};
+        std::size_t nread = 0;
+        (void)conn->read(buf, sizeof buf, nread, 2000);
+        while (!release_rst.load()) {
+            std::this_thread::sleep_for(10ms);
+        }
+        struct linger lo {
+            1, 0
+        };
+        ::setsockopt(accepted_fd, SOL_SOCKET, SO_LINGER, &lo, sizeof(lo));
+        conn.reset();
+    });
+
+    // Handler must outlive the endpoint.
+    everest::lib::io::event::fd_event_handler ev;
+    everest::lib::io::tls::testable_client client(make_client_config(), std::string("127.0.0.1"), bound_port, 2000);
+
+    std::atomic<bool> ready{false};
+    std::atomic<bool> got_error{false};
+    client.set_on_ready_action([&client, &ready]() {
+        everest::lib::io::tls::tls_client_socket::PayloadT msg = {'p', 'i', 'n', 'g'};
+        client.tx(msg);
+        ready = true;
+    });
+    client.set_error_handler([&got_error](int, std::string const&) { got_error = true; });
+    ASSERT_TRUE(ev.register_event_handler(&client));
+
+    // Drive to ready and capture the live connection fd (fail() will reset m_fd
+    // to -1 as it hands the fd off to the deferred teardown).
+    test::pump_until(
+        ev, [&] { return ready.load(); }, 5s);
+    ASSERT_TRUE(ready) << "handshake did not complete";
+    const int conn_fd = client.m_fd;
+    ASSERT_GE(conn_fd, 0);
+
+    // Trigger the RST and stop the loop on the exact poll that fires the error,
+    // before run_actions() drains the deferred teardown.
+    release_rst = true;
+    bool checked_open = false;
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (std::chrono::steady_clock::now() < deadline && !checked_open) {
+        ev.poll(50ms);
+        if (got_error.load()) {
+            // fail() has run in this dispatch pass. The fd must still be open: a
+            // synchronous close would have freed the number before the deferred
+            // remove_event_handler(fd) runs.
+            EXPECT_NE(::fcntl(conn_fd, F_GETFD), -1)
+                << "connection fd was closed synchronously in fail() (recycle race window)";
+            checked_open = true;
+        }
+        ev.run_actions();
+    }
+    ASSERT_TRUE(checked_open) << "error path never ran";
+
+    // After the deferred teardown ran, the fd is closed and its handler entry is
+    // gone (its number is re-registerable).
+    EXPECT_EQ(::fcntl(conn_fd, F_GETFD), -1) << "connection fd still open after run_actions()";
+    auto noop = [](auto&&) {};
+    EXPECT_TRUE(ev.register_event_handler(conn_fd, noop, everest::lib::io::event::poll_events::read))
+        << "connection fd still registered after the deferred teardown";
+
     server_thread.join();
     ::close(listen_fd);
 }

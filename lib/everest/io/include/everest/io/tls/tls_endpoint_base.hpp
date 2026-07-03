@@ -217,14 +217,26 @@ protected:
         }
         m_errored = true;
         if (m_error) {
-            // The socket's close() below clears the error text, so the handler
-            // must fire first.
             m_error(error_code, m_socket.get_error_string());
         }
-        m_socket.close();
         if (m_fd >= 0 && m_handler != nullptr) {
-            m_handler->add_action([handler = m_handler, fd = m_fd]() { handler->remove_event_handler(fd); });
+            // Defer BOTH the handler removal and the fd close, ordered
+            // remove-then-close, so the fd number stays reserved until it is out
+            // of the handler. A synchronous close would free the number while the
+            // deferred remove-by-number is still pending, letting an accept in the
+            // same poll batch recycle it and the stale remove strand it. The
+            // connection is moved into the action (never `this`-captured) so a
+            // destroyed endpoint cannot use-after-free.
+            auto close_conn = m_socket.release_closer();
+            m_handler->add_action([handler = m_handler, fd = m_fd, close_conn = std::move(close_conn)]() mutable {
+                handler->remove_event_handler(fd);
+                close_conn();
+            });
             m_fd = -1;
+        } else {
+            // No live connection fd (e.g. failure before the fd was armed): the
+            // socket can be closed synchronously.
+            m_socket.close();
         }
     }
 

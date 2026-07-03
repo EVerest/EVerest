@@ -46,6 +46,11 @@ public:
     int get_error() const;
     void close();
 
+    // Hand the connection (the fd's BIO_CLOSE owner) to a closer so the fd stays
+    // open until the closer runs; used by the endpoint to defer the close past the
+    // handler removal. No TLS shutdown is performed (the connection has faulted).
+    std::function<void()> release_closer();
+
     // tls_socket_base hooks (public so the base can call them without friendship).
     ::tls::Connection* connection() const;
     ::tls::Connection::result_t step_handshake(); // one non-blocking connect(0)
