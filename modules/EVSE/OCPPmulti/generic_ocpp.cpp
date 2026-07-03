@@ -12,6 +12,8 @@
 #include <ld-ev.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 
+#include <thread>
+
 namespace fs = std::filesystem;
 
 namespace {
@@ -573,6 +575,18 @@ void GenericOcpp::init_subscribe() {
     mv_requires.system.subscribe_firmware_update_status([this](auto arg) { cb_firmware_update_status(arg); });
     mv_requires.system.subscribe_log_status([this](auto arg) { cb_log_status(arg); });
 
+    mv_requires.system.subscribe_configure_network_status([this](const types::network::ConfigureNetworkStatus status) {
+        if (status.status != types::network::ConfigureNetworkStatusEnum::Ready) {
+            EVLOG_warning << "configure_network_status for request_id " << status.request_id << " reported "
+                          << types::network::configure_network_status_enum_to_string(status.status)
+                          << "; treating as failure";
+        }
+        ocpp::ConfigNetworkResult result{};
+        result.success = (status.status == types::network::ConfigureNetworkStatusEnum::Ready);
+        result.interface_address = status.interface_address;
+        fulfill_network_request(status.request_id, result);
+    });
+
     if (!mv_requires.reservation.empty() && mv_requires.reservation.at(0) != nullptr) {
         mv_requires.reservation.at(0)->subscribe_reservation_update([this](auto arg) { cb_reservation_update(arg); });
     }
@@ -858,12 +872,114 @@ GenericOcpp::cb_clear_display_message(const ocpp::v2::ClearDisplayMessageRequest
     return result;
 }
 
-std::future<ocpp::ConfigNetworkResult> GenericOcpp::cb_configure_network_connection_profile() {
+void GenericOcpp::fulfill_network_request(std::int32_t request_id, const ocpp::ConfigNetworkResult& result) {
+    std::promise<ocpp::ConfigNetworkResult> promise;
+    {
+        auto handle = mv_pending_network_config_requests.handle();
+        auto it = handle->find(request_id);
+        if (it == handle->end()) {
+            EVLOG_debug << "no pending network request for id " << request_id << " - late/orphaned";
+            return;
+        }
+        promise = std::move(it->second.promise);
+        handle->erase(it);
+    }
+    // set_value outside the lock
+    promise.set_value(result);
+}
+
+void GenericOcpp::drain_pending_network_config_requests() {
+    std::vector<std::promise<ocpp::ConfigNetworkResult>> pending;
+    {
+        auto handle = mv_pending_network_config_requests.handle();
+        for (auto& [request_id, request] : *handle) {
+            pending.push_back(std::move(request.promise));
+        }
+        handle->clear();
+    }
+    for (auto& promise : pending) {
+        ocpp::ConfigNetworkResult result{};
+        result.success = false;
+        promise.set_value(result); // set_value outside the lock, like fulfill_network_request
+    }
+}
+
+std::future<ocpp::ConfigNetworkResult> GenericOcpp::cb_configure_network_connection_profile(
+    std::int32_t configuration_slot, const ocpp::v2::NetworkConnectionProfile& network_connection_profile) {
     std::promise<ocpp::ConfigNetworkResult> promise;
     std::future<ocpp::ConfigNetworkResult> future = promise.get_future();
-    ocpp::ConfigNetworkResult result;
-    result.success = true;
-    promise.set_value(result);
+
+    if (mv_shutting_down.load()) {
+        ocpp::ConfigNetworkResult result{};
+        result.success = false;
+        promise.set_value(result);
+        return future;
+    }
+
+    // Drop any still-pending attempt for the same slot, fulfilling it with failure rather than just
+    // erasing: libocpp may still be waiting on that future, and a broken promise would throw in get().
+    std::int32_t request_id;
+    std::vector<std::promise<ocpp::ConfigNetworkResult>> stale_promises;
+    {
+        auto handle = mv_pending_network_config_requests.handle();
+        for (auto it = handle->begin(); it != handle->end();) {
+            if (it->second.configuration_slot == configuration_slot) {
+                stale_promises.push_back(std::move(it->second.promise));
+                it = handle->erase(it);
+            } else {
+                ++it;
+            }
+        }
+        request_id = mv_next_network_config_request_id++;
+        (*handle)[request_id] = PendingNetworkConfigRequest{configuration_slot, std::move(promise)};
+    }
+    for (auto& stale : stale_promises) {
+        ocpp::ConfigNetworkResult result{};
+        result.success = false;
+        stale.set_value(result); // set_value outside the lock, like fulfill_network_request
+    }
+
+    try {
+        const auto request =
+            module::conversions::to_everest_configure_network_request(request_id, network_connection_profile);
+        const auto response = mv_requires.system.call_configure_network(request);
+
+        ocpp::ConfigNetworkResult result{};
+        bool fulfill = true;
+        switch (response.status) {
+        case types::network::ConfigureNetworkStatusEnum::Ready:
+            result.success = true;
+            result.interface_address = response.interface_address;
+            break;
+        case types::network::ConfigureNetworkStatusEnum::Failed:
+        case types::network::ConfigureNetworkStatusEnum::Rejected:
+            result.success = false;
+            break;
+        case types::network::ConfigureNetworkStatusEnum::NotSupported:
+            // legacy parity: connect as before, no interface_address
+            result.success = true;
+            break;
+        case types::network::ConfigureNetworkStatusEnum::Processing:
+            // Provider returns Processing promptly; the status-var subscription fulfills the promise later.
+            fulfill = false;
+            break;
+        default:
+            result.success = false;
+            EVLOG_error << "Unexpected configure_network status for slot " << configuration_slot << " (request_id "
+                        << request_id << ")";
+            break;
+        }
+        if (fulfill) {
+            fulfill_network_request(request_id, result);
+        }
+    } catch (const std::exception& e) {
+        EVLOG_error << "call_configure_network threw for slot " << configuration_slot << " (request_id " << request_id
+                    << ", " << e.what() << ")";
+        ocpp::ConfigNetworkResult result{};
+        result.success = false;
+        fulfill_network_request(request_id, result);
+    }
+
     return future;
 }
 
@@ -1734,7 +1850,10 @@ void GenericOcpp::shutdown() {
     mv_shutting_down.store(true);
     charging_schedules_timer_stop();
     grid_support_heartbeat_timer_stop();
-    std::lock_guard<std::mutex> lock(recompute_mutex);
+    { std::lock_guard<std::mutex> lock(recompute_mutex); }
+
+    // Unblock any ConnectivityManager thread waiting on a pending configure_network future.
+    drain_pending_network_config_requests();
 }
 
 bool GenericOcpp::ocpp_2_selected() const {

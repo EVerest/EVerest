@@ -10,6 +10,7 @@ target_sources(${TEST_TARGET_NAME}
     error_handling_tests.cpp
     everest_device_model_storage_test.cpp
     grid_support_conversions_test.cpp
+    network_conversions_test.cpp
     transaction_handler_tests.cpp
 )
 

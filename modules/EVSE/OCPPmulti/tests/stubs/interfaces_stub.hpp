@@ -17,6 +17,7 @@
 
 #include <list>
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace stubs {
@@ -120,6 +121,8 @@ private:
     void publish_fn(const std::string& interface, const std::string& variable, int instance, const json& value);
 
     var_cb_list_t m_subscribe_var_callbacks;
+    // guarded by m_cmd_response_mutex: commands may be invoked from module threads concurrently
+    std::mutex m_cmd_response_mutex;
     std::list<json> m_cmd_response_list;
 
 protected:
@@ -155,6 +158,7 @@ protected:
     virtual std::optional<json> reservation_call_exists_reservation(const Requirement& req, const json& args);
     virtual std::optional<json> reservation_call_reserve_now(const Requirement& req, const json& args);
     virtual std::optional<json> system_call_allow_firmware_installation(const Requirement& req, const json& args);
+    virtual std::optional<json> system_call_configure_network(const Requirement& req, const json& args);
     virtual std::optional<json> system_call_get_boot_reason(const Requirement& req, const json& args);
     virtual std::optional<json> system_call_is_reset_allowed(const Requirement& req, const json& args);
     virtual std::optional<json> system_call_reset(const Requirement& req, const json& args);
