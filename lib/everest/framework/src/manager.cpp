@@ -28,6 +28,7 @@
 #include <framework/everest.hpp>
 #include <framework/runtime.hpp>
 #include <utils/config.hpp>
+#include <utils/date.hpp>
 #include <utils/mqtt_abstraction.hpp>
 #include <utils/status_fifo.hpp>
 
@@ -630,6 +631,8 @@ int boot(const po::variables_map& vm) {
     }
 
     Logging::init(ms.runtime_settings.logging_config_file.string());
+
+    Date::preload_tzdb();
 
     EVLOG_info << "  \033[0;1;35;95m_\033[0;1;31;91m__\033[0;1;33;93m__\033[0;1;32;92m__\033[0;1;36;96m_\033[0m      "
                   "\033[0;1;31;91m_\033[0;1;33;93m_\033[0m                \033[0;1;36;96m_\033[0m   ";
