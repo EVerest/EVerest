@@ -802,6 +802,12 @@ int Connection::socket() const {
     return m_context->soc;
 }
 
+bool Connection::is_valid() const {
+    // soc_bio is the BIO_CLOSE owner of the fd; it is null only when SSL_new or
+    // BIO_new_socket failed in the ctor, in which case the fd was never adopted.
+    return m_context != nullptr && m_context->soc_bio != nullptr;
+}
+
 std::size_t Connection::pending() const {
     return (m_context && m_context->ctx) ? static_cast<std::size_t>(SSL_pending(m_context->ctx.get())) : 0;
 }
@@ -1347,8 +1353,15 @@ Server::ConnectionPtr Server::wrap_accepted_fd(int soc, const char* ip, const ch
     if ((m_context == nullptr) || (m_context->ctx == nullptr)) {
         return nullptr;
     }
-    return std::make_unique<ServerConnection>(m_context->ctx.get(), soc, ip, service, m_timeout_ms,
-                                              m_tls_key_interface);
+    auto conn =
+        std::make_unique<ServerConnection>(m_context->ctx.get(), soc, ip, service, m_timeout_ms, m_tls_key_interface);
+    if (!conn->is_valid()) {
+        // Internal SSL/BIO allocation failed: no BIO_CLOSE owner took the fd.
+        // Return null and leave the fd to the caller, which closes it on the null
+        // path (closing here would double-close the caller's fd).
+        return nullptr;
+    }
+    return conn;
 }
 
 void Server::configure_signal_handler(int interrupt_signal) {
@@ -1655,8 +1668,16 @@ Client::ConnectionPtr Client::wrap_connecting_fd(int fd, const char* host_for_sn
     if (m_context == nullptr) {
         return nullptr;
     }
-    return std::make_unique<ClientConnection>(m_context->ctx.get(), fd, (host_for_sni != nullptr) ? host_for_sni : "",
-                                              "", m_timeout_ms, m_verify_subject_name);
+    auto conn =
+        std::make_unique<ClientConnection>(m_context->ctx.get(), fd, (host_for_sni != nullptr) ? host_for_sni : "", "",
+                                           m_timeout_ms, m_verify_subject_name);
+    if (!conn->is_valid()) {
+        // Internal SSL/BIO allocation failed: no BIO_CLOSE owner took the fd.
+        // Return null and leave the fd to the caller (tls_client_socket keeps its
+        // tcp_socket ownership on the null path and closes it there).
+        return nullptr;
+    }
+    return conn;
 }
 
 Client::override_t Client::default_overrides() {
