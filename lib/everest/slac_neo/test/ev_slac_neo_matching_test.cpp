@@ -1373,8 +1373,9 @@ bool test_parm_req_attempts_config_controls_retry_count() {
     }
 
     const auto count_parm_req = [&harness]() {
-        return static_cast<int>(std::count_if(harness.sent_messages.begin(), harness.sent_messages.end(),
-                                              [](messages::HomeplugMessage const& m) { return is_cm_slac_parm_req(m); }));
+        return static_cast<int>(
+            std::count_if(harness.sent_messages.begin(), harness.sent_messages.end(),
+                          [](messages::HomeplugMessage const& m) { return is_cm_slac_parm_req(m); }));
     };
 
     harness.machine.trigger_matching();

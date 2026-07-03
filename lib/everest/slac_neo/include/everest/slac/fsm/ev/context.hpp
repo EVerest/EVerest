@@ -83,13 +83,9 @@ struct SessionParameters {
 };
 
 struct Context {
-    static constexpr MacAddress BROADCAST_MAC = {
-        defs::BROADCAST_MAC_ADDRESS[0],
-        defs::BROADCAST_MAC_ADDRESS[1],
-        defs::BROADCAST_MAC_ADDRESS[2],
-        defs::BROADCAST_MAC_ADDRESS[3],
-        defs::BROADCAST_MAC_ADDRESS[4],
-        defs::BROADCAST_MAC_ADDRESS[5]};
+    static constexpr MacAddress BROADCAST_MAC = {defs::BROADCAST_MAC_ADDRESS[0], defs::BROADCAST_MAC_ADDRESS[1],
+                                                 defs::BROADCAST_MAC_ADDRESS[2], defs::BROADCAST_MAC_ADDRESS[3],
+                                                 defs::BROADCAST_MAC_ADDRESS[4], defs::BROADCAST_MAC_ADDRESS[5]};
     static constexpr MacAddress EV_PLC_MAC = {0x00, 0xB0, 0x52, 0x00, 0x00, 0x01};
 
     explicit Context(ContextCallbacks const& callbacks_, MacAddress const& ev_host_mac_) :
