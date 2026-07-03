@@ -27,7 +27,7 @@ public:
     tls_server(tls_server&&) = delete;
     tls_server& operator=(tls_server const&) = delete;
     tls_server& operator=(tls_server&&) = delete;
-    ~tls_server() override = default;
+    ~tls_server() override;
 
 private:
     void start(event::fd_event_handler& handler) override;

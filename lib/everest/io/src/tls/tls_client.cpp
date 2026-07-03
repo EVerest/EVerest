@@ -58,6 +58,15 @@ void tls_client::stop() {
 }
 
 tls_client::~tls_client() {
+    // Backstop for a drop while still registered (the README's "connections.clear()"
+    // teardown): remove the connection fd, tx-notify and m_connected synchronously
+    // so no this-capturing lambda is left in the handler to dispatch into a freed
+    // object. unregister_event_handler routes through unregister_events()/stop(),
+    // which also joins the worker. A no-op after an explicit unregister (m_handler
+    // is then null).
+    if (m_handler != nullptr) {
+        m_handler->unregister_event_handler(this);
+    }
     // Backstop for any path that destroys without stop(): the worker must not
     // outlive *this (it captures this and writes m_connect_ok / m_connected).
     if (m_worker.joinable()) {
