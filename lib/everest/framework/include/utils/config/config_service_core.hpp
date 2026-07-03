@@ -90,13 +90,11 @@ public:
     void notice_module_restart_triggered() override;
 
 private:
-    std::shared_ptr<const everest::config::ModuleConfigurations> active_configs_ptr_;
     everest::config::ModuleConfigurations module_configs_;
     ConfigParseSettings parse_settings_;
     everest::config::SqliteConfigSlotManager slot_manager_;
     /// \brief Keepalive for the shared connection
     std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_;
-    bool spawn_threads_;
     std::shared_ptr<const everest::config::ModuleConfigurations> active_configs_ptr_;
     int active_slot_id_{everest::config::SqliteStorage::DEFAULT_CONFIG_ID};
     int next_boot_slot_id_{everest::config::SqliteStorage::DEFAULT_CONFIG_ID};
@@ -152,10 +150,6 @@ private:
     /// \brief Apply updates to a non-active slot by writing straight to its storage.
     void apply_inactive_slot_updates(int slot_id, const std::vector<ConfigParameterUpdate>& updates,
                                      SetConfigParameterResult& result, ConfigurationUpdate& event);
-    /// \brief Dispatch a single set-parameter callback (on the worker pool, or deferred in single-threaded mode).
-    std::future<SetParameterResponse> dispatch_set_parameter(const ConfigParameterUpdate& update);
-    /// \brief Drop orphaned (timed-out) futures that have since completed.
-    void reap_orphaned_futures();
     GetConfigParametersResult
     internal_get_config_parameters(int slot_id,
                                    const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters);
