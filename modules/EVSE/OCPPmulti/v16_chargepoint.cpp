@@ -4,12 +4,14 @@
 #include "v16_chargepoint.hpp"
 
 #include "charge_point_config_factory_v16.hpp"
-#include <conversions_v16.hpp>
-#include <everest/ocpp_module_common/conversions.hpp>
-#include <everest/ocpp_module_common/v16/error_mapping.hpp>
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
+#include <everest/ocpp_module_common/v16/conversions.hpp>
+#include <everest/ocpp_module_common/v16/error_mapping.hpp>
 
 #include <utility>
+
+namespace conversions_v16 = ocpp_module_common::v16::conversions;
 
 namespace {
 
@@ -636,7 +638,7 @@ ChargePointV16::cb_signed_update_firmware(const ocpp::v16::SignedUpdateFirmwareR
 }
 
 bool ChargePointV16::cb_stop_transaction(std::int32_t connector, ocpp::v16::Reason reason) {
-    const auto stop_reason = module::conversions_v16::to_everest_stop_transaction_reason(reason);
+    const auto stop_reason = conversions_v16::to_everest_stop_transaction_reason(reason);
     const auto res = m_callbacks_ptr->cb_stop_transaction(connector, stop_reason);
     return res == ocpp::v2::RequestStartStopStatusEnum::Accepted;
 }
@@ -1248,7 +1250,7 @@ ChargePointV16::on_event_session_started(std::int32_t evse_id, std::int32_t conn
     const auto session_started = session_event.session_started.value();
     const auto cid = ocpp_connector_id(m_connector_mapping, evse_id, session_event.connector_id);
     m_charge_point->on_session_started(cid, session_event.uuid,
-                                       module::conversions_v16::to_ocpp_session_started_reason(session_started.reason),
+                                       conversions_v16::to_ocpp_session_started_reason(session_started.reason),
                                        session_started.logging_path);
     return {};
 }
@@ -1268,7 +1270,7 @@ void ChargePointV16::on_event_transaction_finished(std::int32_t evse_id, std::in
 
     auto reason = ocpp::v16::Reason::Other;
     if (transaction_finished.reason.has_value()) {
-        reason = module::conversions_v16::to_ocpp_reason(transaction_finished.reason.value());
+        reason = conversions_v16::to_ocpp_reason(transaction_finished.reason.value());
     }
     std::optional<ocpp::CiString<20>> id_tag_opt = std::nullopt;
     if (transaction_finished.id_tag.has_value()) {
@@ -1350,13 +1352,13 @@ void ChargePointV16::on_meter_value(std::int32_t evse_id, std::optional<float> s
                                     const types::powermeter::Powermeter& power_meter) {
     check_configured("on_meter_value");
     ocpp::Measurement measurement;
-    measurement.power_meter = module::conversions_v16::to_ocpp_power_meter(power_meter);
+    measurement.power_meter = conversions_v16::to_ocpp_power_meter(power_meter);
     if (soc) {
         // soc is present, so add this to the measurement
         measurement.soc_Percent = ocpp::StateOfCharge{soc.value()};
     }
     if (power_meter.temperatures.has_value()) {
-        measurement.temperature_C = module::conversions_v16::to_ocpp_temperatures(power_meter.temperatures.value());
+        measurement.temperature_C = conversions_v16::to_ocpp_temperatures(power_meter.temperatures.value());
     }
     m_charge_point->on_meter_values(evse_id, measurement);
 }
@@ -1394,10 +1396,9 @@ void ChargePointV16::on_session_started(std::int32_t evse_id, std::int32_t conne
     check_configured("on_session_started");
     if (session_event.session_started) {
         const auto& session_started = session_event.session_started.value();
-        m_charge_point->on_session_started(
-            evse_id, session_event.uuid,
-            module::conversions_v16::to_ocpp_session_started_reason(session_started.reason),
-            session_started.logging_path);
+        m_charge_point->on_session_started(evse_id, session_event.uuid,
+                                           conversions_v16::to_ocpp_session_started_reason(session_started.reason),
+                                           session_started.logging_path);
     }
 }
 
@@ -1425,7 +1426,7 @@ void ChargePointV16::on_transaction_finished(std::int32_t evse_id, const std::st
         found_token = id_token->idToken;
     }
 
-    const auto v16_reason = module::conversions_v16::to_ocpp_reason(reason);
+    const auto v16_reason = conversions_v16::to_ocpp_reason(reason);
 
     m_charge_point->on_transaction_stopped(evse_id, session_id, v16_reason, timestamp, found_meter_end, found_token,
                                            signed_meter_value);
