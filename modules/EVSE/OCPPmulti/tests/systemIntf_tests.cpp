@@ -9,13 +9,20 @@
 //   reset:                         <used>
 //   set_system_time:               <used>
 //   get_boot_reason:               <used> (tested in GenericOcppTester, init)
+//   configure_network:             <used>
 //
 // vars:
 //   firmware_update_status:        <used>
 //   log_status:                    <used>
+//   configure_network_status:      <used>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
+#include <chrono>
+#include <future>
+#include <mutex>
+#include <thread>
 
 #include <generic_ocpp.hpp>
 
@@ -23,12 +30,32 @@
 #include "generic_chargepoint_interface.hpp"
 #include "ocpp/common/types.hpp"
 #include "ocpp/v2/messages/GetLog.hpp"
+#include "ocpp/v2/messages/SetNetworkProfile.hpp"
 #include "ocpp/v2/messages/UpdateFirmware.hpp"
 #include "ocpp/v2/ocpp_enums.hpp"
 #include "stubs/generic_ocpp_stub.hpp"
 
 namespace {
 using namespace stubs;
+
+// Bounded poll for a condition that may be satisfied from a subscription callback.
+bool wait_for_condition(const std::function<bool()>& condition,
+                        std::chrono::milliseconds timeout = std::chrono::milliseconds(5000)) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (condition()) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return condition();
+}
+
+ocpp::v2::NetworkConnectionProfile network_profile(const ocpp::v2::OCPPInterfaceEnum iface) {
+    ocpp::v2::NetworkConnectionProfile profile{};
+    profile.ocppInterface = iface;
+    return profile;
+}
 
 TEST_F(GenericOcppRequiresTester, callUpdateFirmware) {
     // call_update_firmware() used in cb_update_firmware_request()
@@ -238,6 +265,154 @@ TEST_F(GenericOcppRequiresTester, subscribeLogStatus) {
     interfaces->publish(0, "log_status", update);
     update.log_status = LogStatusEnum::Idle;
     interfaces->publish(0, "log_status", update);
+}
+
+// ----------------------------------------------------------------------------
+// configure_network: cb_configure_network_connection_profile() delegates to call_configure_network()
+// synchronously; a Processing answer defers the outcome to the configure_network_status var subscription.
+// Discipline: queue cmd results BEFORE invoking the cb.
+
+class ConfigureNetworkTester : public GenericOcppRequiresTester {
+protected:
+    void SetUp() override {
+        GenericOcppRequiresTester::SetUp();
+        interfaces->subscribe_var("system", "call_configure_network",
+                                  [this](const auto&, const auto&, const auto& data) {
+                                      std::lock_guard<std::mutex> lock(m_mutex);
+                                      m_received.push_back(data);
+                                  });
+    }
+
+    std::size_t received_count() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_received.size();
+    }
+
+    json received_request(std::size_t index) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_received.at(index).at("request");
+    }
+
+    std::mutex m_mutex;
+    std::vector<json> m_received;
+};
+
+TEST_F(ConfigureNetworkTester, callConfigureNetworkReady) {
+    // Ready direct answer resolves the future successfully and forwards the interface address
+
+    interfaces->add_cmd_result(R"({"status":"Ready","interface_address":"192.168.5.1"})"_json);
+
+    auto future = ocpp->cb_configure_network_connection_profile(1, network_profile(ocpp::v2::OCPPInterfaceEnum::Any));
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    const auto result = future.get();
+    EXPECT_TRUE(result.success);
+    ASSERT_TRUE(result.interface_address.has_value());
+    EXPECT_EQ(result.interface_address.value(), "192.168.5.1");
+
+    ASSERT_EQ(received_count(), 1);
+    const auto request = received_request(0);
+    EXPECT_GT(request.at("request_id").get<std::int32_t>(), 0);
+    EXPECT_EQ(request.at("interface").get<std::string>(), "Any");
+}
+
+TEST_F(ConfigureNetworkTester, callConfigureNetworkFailedAndRejected) {
+    // Failed and Rejected both resolve the future as unsuccessful, without an interface address
+
+    for (const auto* status : {R"({"status":"Failed"})", R"({"status":"Rejected"})"}) {
+        interfaces->add_cmd_result(json::parse(status));
+
+        auto future =
+            ocpp->cb_configure_network_connection_profile(1, network_profile(ocpp::v2::OCPPInterfaceEnum::Wired0));
+
+        ASSERT_EQ(future.wait_for(std::chrono::seconds(5)), std::future_status::ready) << status;
+        const auto result = future.get();
+        EXPECT_FALSE(result.success) << status;
+        EXPECT_FALSE(result.interface_address.has_value()) << status;
+    }
+}
+
+TEST_F(ConfigureNetworkTester, callConfigureNetworkNotSupportedStillSucceeds) {
+    // NotSupported (the stub default when no cmd result is queued) keeps legacy parity: success, no address
+
+    auto future =
+        ocpp->cb_configure_network_connection_profile(1, network_profile(ocpp::v2::OCPPInterfaceEnum::Wired0));
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    const auto result = future.get();
+    EXPECT_TRUE(result.success);
+    EXPECT_FALSE(result.interface_address.has_value());
+}
+
+TEST_F(ConfigureNetworkTester, callConfigureNetworkProcessingThenStatusVar) {
+    // Processing keeps the future pending; a status var with a foreign request_id is ignored (late/orphaned
+    // no-op); the matching request_id resolves it
+
+    interfaces->add_cmd_result(R"({"status":"Processing"})"_json);
+
+    auto future =
+        ocpp->cb_configure_network_connection_profile(1, network_profile(ocpp::v2::OCPPInterfaceEnum::Wired0));
+
+    ASSERT_TRUE(wait_for_condition([this] { return received_count() >= 1; }));
+    const auto request_id = received_request(0).at("request_id").get<std::int32_t>();
+
+    EXPECT_EQ(future.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+
+    interfaces->publish(0, "configure_network_status", json{{"request_id", request_id + 1000}, {"status", "Ready"}});
+    EXPECT_EQ(future.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+
+    interfaces->publish(0, "configure_network_status",
+                        json{{"request_id", request_id}, {"status", "Ready"}, {"interface_address", "10.1.2.3"}});
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    const auto result = future.get();
+    EXPECT_TRUE(result.success);
+    ASSERT_TRUE(result.interface_address.has_value());
+    EXPECT_EQ(result.interface_address.value(), "10.1.2.3");
+}
+
+TEST_F(ConfigureNetworkTester, callConfigureNetworkSameSlotDropsStaleRequest) {
+    // A re-request for the same slot resolves the still-pending previous attempt as failed (not a broken
+    // promise) and registers a fresh request_id; the new attempt is the only one a status var can fulfill
+
+    interfaces->add_cmd_result(R"({"status":"Processing"})"_json);
+    interfaces->add_cmd_result(R"({"status":"Processing"})"_json);
+
+    constexpr std::int32_t SLOT = 7;
+    auto first =
+        ocpp->cb_configure_network_connection_profile(SLOT, network_profile(ocpp::v2::OCPPInterfaceEnum::Wired0));
+    auto second =
+        ocpp->cb_configure_network_connection_profile(SLOT, network_profile(ocpp::v2::OCPPInterfaceEnum::Wired0));
+
+    // the dedup happens synchronously in the second invocation
+    ASSERT_EQ(first.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    const auto stale = first.get();
+    EXPECT_FALSE(stale.success);
+
+    ASSERT_TRUE(wait_for_condition([this] { return received_count() >= 2; }));
+    const auto id_a = received_request(0).at("request_id").get<std::int32_t>();
+    const auto id_b = received_request(1).at("request_id").get<std::int32_t>();
+    ASSERT_NE(id_a, id_b);
+    // ids increase monotonically; the pending attempt is the later (higher) one.
+    const auto pending_id = std::max(id_a, id_b);
+
+    interfaces->publish(0, "configure_network_status", json{{"request_id", pending_id}, {"status", "Ready"}});
+    ASSERT_EQ(second.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    EXPECT_TRUE(second.get().success);
+}
+
+TEST_F(ConfigureNetworkTester, callConfigureNetworkInvalidStatusYieldsFailure) {
+    // An unparseable command result throws inside the callback; the catch path resolves the future
+    // as failed instead of leaking a broken promise
+
+    interfaces->add_cmd_result(R"({"status":"Bogus"})"_json);
+
+    auto future =
+        ocpp->cb_configure_network_connection_profile(1, network_profile(ocpp::v2::OCPPInterfaceEnum::Wired0));
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    const auto result = future.get();
+    EXPECT_FALSE(result.success);
+    EXPECT_FALSE(result.interface_address.has_value());
 }
 
 } // namespace

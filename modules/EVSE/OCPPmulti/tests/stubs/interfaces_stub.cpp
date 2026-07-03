@@ -813,6 +813,33 @@ std::optional<json> ModuleAdapter::system_call_reset(const Requirement& req, con
     return {};
 }
 
+std::optional<json> ModuleAdapter::system_call_configure_network(const Requirement& req, const json& args) {
+    // system interface
+    // configure_network:
+    //   description: >-
+    //     Request preparation of the given network interface (e.g. modem/APN/VPN bring-up). May answer directly
+    //     with Ready/Failed/Rejected, or with Processing, in which case the final outcome is published on the
+    //     configure_network_status var with the same request_id. Providers without network-configuration support
+    //     return NotSupported.
+    //   arguments:
+    //     request:
+    //       description: The network configuration request
+    //       type: object
+    //       $ref: /network#/ConfigureNetworkRequest
+    //   result:
+    //     description: Direct response to the configuration request
+    //     type: object
+    //     $ref: /network#/ConfigureNetworkResponse
+
+    EVLOG_debug << "Call configure_network: " << args.dump();
+    publish_fn("system", "call_configure_network", args);
+    auto result = get_cmd_response(R"({"status":"NotSupported"})"_json);
+    if (result) {
+        EVLOG_debug << "result:               " << result.value().dump();
+    }
+    return result;
+}
+
 std::optional<json> ModuleAdapter::system_call_set_system_time(const Requirement& req, const json& args) {
     // system interface
     // set_system_time:
@@ -966,6 +993,7 @@ ModuleAdapter::ModuleAdapter() : m_error_type_map(std::make_shared<Everest::erro
     m_call_implementations.insert({"cancel_reservation", &ModuleAdapter::reservation_call_cancel_reservation});
     m_call_implementations.insert(
         {"clear_display_message", &ModuleAdapter::display_message_call_clear_display_message});
+    m_call_implementations.insert({"configure_network", &ModuleAdapter::system_call_configure_network});
     m_call_implementations.insert({"data_transfer", &ModuleAdapter::ocpp_data_transfer_call_data_transfer});
     m_call_implementations.insert({"enable_disable", &ModuleAdapter::evse_manager_call_enable_disable});
     m_call_implementations.insert({"exists_reservation", &ModuleAdapter::reservation_call_exists_reservation});
@@ -1088,6 +1116,7 @@ std::shared_ptr<Everest::config::ConfigServiceClient> ModuleAdapter::get_config_
 
 std::optional<json> ModuleAdapter::get_cmd_response(const std::optional<json>& default_response) {
     auto result = default_response;
+    std::lock_guard<std::mutex> lock(m_cmd_response_mutex);
     if (!m_cmd_response_list.empty()) {
         result = m_cmd_response_list.front();
         m_cmd_response_list.pop_front();
@@ -1124,6 +1153,7 @@ void ModuleAdapter::publish(const Requirement& req, const std::string& fn, json 
 }
 
 void ModuleAdapter::add_cmd_result(const json& data) {
+    std::lock_guard<std::mutex> lock(m_cmd_response_mutex);
     m_cmd_response_list.push_back(data);
 }
 
