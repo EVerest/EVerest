@@ -46,14 +46,26 @@ is driven internally on the loop by the class — no handshake hooks or
 unregisters from the handler. As with the server side, the `fd_event_handler`
 must outlive the client.
 
-`host_for_sni` is sent in the TLS SNI extension. Setting
-`tls.verify_subject_name = true` additionally opts into RFC-6125 hostname
-verification: the server certificate's SAN/CN is matched against `host_for_sni`
-(not the TCP connect target). Hostname verification is only enforced when
-`tls.verify_server` is also true; with an IP-literal target and no matching SAN,
-leave `verify_subject_name` at its default (`false`).
+A DNS `host_for_sni` is sent in the TLS SNI extension; an IP literal is not (RFC
+6066). Setting `tls.verify_subject_name = true` additionally pins the peer
+certificate to `host_for_sni` — a DNS name via RFC-6125 SAN/CN matching, an IP
+literal via IP-SAN matching — not to the TCP connect target. Pinning is only
+enforced when `tls.verify_server` is also true; with an IP-literal target and no
+matching SAN, leave `verify_subject_name` at its default (`false`).
 
 See `examples/test_tls_client.cpp` for a complete event-loop-driven client example.
+
+### Threading and signals
+
+`tx()` and its queue are loop-thread-oriented: `tx()` enqueues a payload and wakes
+the loop through an internal `event_fd`. The queue itself is not synchronized, so
+call `tx()` only from the loop thread (e.g. from the rx handler or the on-ready
+action), never from another thread.
+
+OpenSSL drives its socket BIO through `write()` without `MSG_NOSIGNAL`, so a write
+to a peer-reset connection raises `SIGPIPE`. Processes using this layer must
+install `signal(SIGPIPE, SIG_IGN)` (the examples and the test main do); otherwise
+a peer reset during `tx()` aborts the process.
 
 Example binaries live in `lib/everest/io/examples/`:
  - `test_tls_server` — `tls_listener` + `tls_server` event-loop echo demo
