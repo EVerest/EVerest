@@ -138,9 +138,11 @@ public:
     /// not stop transactions with this session_id even in case it has an internal database entry for this session and
     /// it hasnt been stopped yet. Its ignored if this vector contains session_ids that are unknown to libocpp.
     ///  \return
+    /// \param start_connecting if true (default) the websocket connection is initiated as part of start(). If false
+    /// connecting is deferred until an explicit connect_websocket() call.
     bool start(const std::map<int, ChargePointStatus>& connector_status_map = {},
                BootReasonEnum bootreason = BootReasonEnum::PowerUp,
-               const std::set<std::string>& resuming_session_ids = {});
+               const std::set<std::string>& resuming_session_ids = {}, bool start_connecting = true);
 
     /// \brief Restarts the ChargePoint if it has been stopped before. The ChargePoint is reinitialized, connects to the
     /// websocket and starts to communicate OCPP messages again
