@@ -65,6 +65,22 @@ cmds:
       description: Returns the boot reason of the system
       type: string
       $ref: /system#/BootReason
+  configure_network:
+    description: >-
+      Request preparation of the given network interface (e.g. modem/APN/VPN
+      bring-up). May answer directly with Ready/Failed/Rejected, or with
+      Processing, in which case the final outcome is published on the
+      configure_network_status var with the same request_id. Providers without
+      network-configuration support return NotSupported.
+    arguments:
+      request:
+        description: The network configuration request
+        type: object
+        $ref: /network#/ConfigureNetworkRequest
+    result:
+      description: Direct response; Processing defers the outcome to the status var
+      type: object
+      $ref: /network#/ConfigureNetworkResponse
 vars:
   firmware_update_status:
     description: Describes the current status of a firmware update of the system
@@ -74,5 +90,9 @@ vars:
     description: Describes the current status of log upload of the system
     type: object
     $ref: /system#/LogStatus
+  configure_network_status:
+    description: Asynchronous outcome of a configure_network request previously answered with Processing.
+    type: object
+    $ref: /network#/ConfigureNetworkStatus
 errors:
   - reference: /errors/system

@@ -557,5 +557,12 @@ types::system::BootReason systemImpl::handle_get_boot_reason() {
     return types::system::string_to_boot_reason(final_reason);
 }
 
+types::network::ConfigureNetworkResponse
+systemImpl::handle_configure_network(types::network::ConfigureNetworkRequest& request) {
+    types::network::ConfigureNetworkResponse response;
+    response.status = types::network::ConfigureNetworkStatusEnum::NotSupported;
+    return response;
+}
+
 } // namespace main
 } // namespace module

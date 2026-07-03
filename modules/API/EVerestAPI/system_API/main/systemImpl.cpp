@@ -81,5 +81,12 @@ types::system::BootReason systemImpl::handle_get_boot_reason() {
     return generic_request_reply(default_respone, ev_API::internal::empty_payload, "get_boot_reason");
 }
 
+types::network::ConfigureNetworkResponse
+systemImpl::handle_configure_network(types::network::ConfigureNetworkRequest& request) {
+    types::network::ConfigureNetworkResponse response;
+    response.status = types::network::ConfigureNetworkStatusEnum::NotSupported;
+    return response;
+}
+
 } // namespace main
 } // namespace module
