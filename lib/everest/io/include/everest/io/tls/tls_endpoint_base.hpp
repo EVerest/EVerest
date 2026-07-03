@@ -41,7 +41,9 @@ public:
 
     // Enqueue a payload and arm POLLOUT. Payloads enqueued before the handshake
     // completes are held in the queue and flushed once it does; tx() only
-    // rejects after the endpoint has errored.
+    // rejects after the endpoint has errored. Loop-thread only: the queue is not
+    // synchronized, so call tx() from the loop thread (rx handler / on-ready
+    // action), never from another thread.
     bool tx(PayloadT const& payload) {
         if (m_errored) {
             return false;
