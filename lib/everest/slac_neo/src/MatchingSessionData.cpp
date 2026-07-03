@@ -106,7 +106,7 @@ bool MatchingSessionData::validate_message(messages::cm_slac_parm_req const& msg
     return true;
 }
 
-bool MatchingSessionData::validate_message(messages::cm_start_atten_char_ind const& msg) {
+bool MatchingSessionData::validate_message(messages::cm_start_atten_char_ind const& msg) const {
     if (msg.application_type not_eq slac::defs::COMMON_APPLICATION_TYPE) {
         return false;
     }
@@ -120,6 +120,12 @@ bool MatchingSessionData::validate_message(messages::cm_start_atten_char_ind con
         return false;
     }
     if (msg.resp_type not_eq slac::defs::CM_SLAC_PARM_CNF_RESP_TYPE) {
+        return false;
+    }
+    if (not wire_equal(msg.forwarding_sta, ev_mac)) {
+        return false;
+    }
+    if (not wire_equal(msg.run_id, run_id)) {
         return false;
     }
 

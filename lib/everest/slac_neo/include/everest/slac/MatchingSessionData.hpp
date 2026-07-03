@@ -33,7 +33,7 @@ struct MatchingSessionData {
     bool validate_message(messages::cm_slac_match_req const& msg) const;
     bool validate_message(messages::cm_atten_profile_ind const& msg) const;
     static bool validate_message(messages::cm_slac_parm_req const& msg);
-    static bool validate_message(messages::cm_start_atten_char_ind const& msg);
+    bool validate_message(messages::cm_start_atten_char_ind const& msg) const;
     static bool validate_message(messages::cm_mnbc_sound_ind const& msg);
 
     messages::cm_slac_parm_cnf create_cm_slac_parm_cnf();

@@ -88,6 +88,7 @@ messages::HomeplugMessage create_cm_start_atten_char_ind(EvMac const& ev_mac, Ru
     msg.num_sounds = defs::CM_SLAC_PARM_CNF_NUM_SOUNDS;
     msg.timeout = defs::CM_SLAC_PARM_CNF_TIMEOUT;
     msg.resp_type = defs::CM_SLAC_PARM_CNF_RESP_TYPE;
+    std::copy(ev_mac.begin(), ev_mac.end(), msg.forwarding_sta);
     std::copy(run_id.begin(), run_id.end(), msg.run_id);
 
     messages::HomeplugMessage message;
@@ -744,6 +745,72 @@ bool test_different_ev_mac_creates_new_session() {
     }
 
     return true;
+}
+
+bool test_start_atten_char_only_advances_matching_session() {
+    const char* test_name = "test_start_atten_char_only_advances_matching_session";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+
+    Context ctx(callbacks);
+    configure_common(ctx);
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    // Two concurrent matching sessions, distinct EV MAC and run_id.
+    EvMac ev_mac_a = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x01};
+    EvMac ev_mac_b = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x02};
+    auto run_id_a = fill_run_id(0x10);
+    auto run_id_b = fill_run_id(0x60);
+
+    const auto initial_parm = count_slac_parm_cnf(sent_messages);
+    machine.message(create_cm_slac_parm_req(ev_mac_a, run_id_a));
+    machine.message(create_cm_slac_parm_req(ev_mac_b, run_id_b));
+    if (!wait_for_parm_cnf_count(sent_messages, initial_parm + 2, machine, 200)) {
+        return assert_true(false, test_name, "did not emit CM_SLAC_PARM.CNF for both requests");
+    }
+    if (!assert_true(ctx.status.session_count == 2, test_name, "expected two active sessions")) {
+        return false;
+    }
+
+    // Deliver a single CM_START_ATTEN_CHAR.IND that identifies session A only.
+    const auto initial_atten = count_cm_atten_char_ind(sent_messages);
+    machine.message(create_cm_start_atten_char_ind(ev_mac_a, run_id_a));
+
+    // Sound session A to completion: it must emit exactly one CM_ATTEN_CHAR.IND, addressed to A.
+    for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
+        machine.message(create_cm_atten_profile_ind(ev_mac_a, static_cast<uint8_t>(0xA0 + i)));
+    }
+    if (!wait_for_atten_char_ind_count(sent_messages, initial_atten + 1, machine, 700)) {
+        return assert_true(false, test_name, "session A did not emit CM_ATTEN_CHAR.IND");
+    }
+    messages::cm_atten_char_ind atten_char{};
+    if (!get_last_cm_atten_char_ind(sent_messages, atten_char)) {
+        return assert_true(false, test_name, "could not read CM_ATTEN_CHAR.IND");
+    }
+    if (!assert_true(std::equal(ev_mac_a.begin(), ev_mac_a.end(), atten_char.source_address), test_name,
+                     "CM_ATTEN_CHAR.IND was not addressed to session A")) {
+        return false;
+    }
+
+    // Session B never received its own START_ATTEN, so it must still be waiting and ignore sound
+    // profiles: no further CM_ATTEN_CHAR.IND may be emitted. With the bug, A's START_ATTEN advanced
+    // B too, and these profiles would finalize B into a second CM_ATTEN_CHAR.IND.
+    for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
+        machine.message(create_cm_atten_profile_ind(ev_mac_b, static_cast<uint8_t>(0xB0 + i)));
+    }
+    return assert_true(assert_stays_at_count(initial_atten + 1, sent_messages, machine, 150), test_name,
+                       "session B advanced on another session's CM_START_ATTEN_CHAR.IND");
 }
 
 bool test_matching_sessions_respect_max_matching_sessions() {
@@ -1795,7 +1862,7 @@ bool test_matched_qualcomm_link_status_rejects_only_negative_cnf() {
 } // namespace
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 26>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 27>{
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_same_session",
                        test_duplicate_cm_slac_parm_req_restarts_same_session),
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_inflight_session",
@@ -1805,6 +1872,8 @@ int main() {
                        test_short_cm_slac_param_req_does_not_create_session),
         std::make_pair("test_different_run_id_creates_new_session", test_different_run_id_creates_new_session),
         std::make_pair("test_different_ev_mac_creates_new_session", test_different_ev_mac_creates_new_session),
+        std::make_pair("test_start_atten_char_only_advances_matching_session",
+                       test_start_atten_char_only_advances_matching_session),
         std::make_pair("test_matching_sessions_respect_max_matching_sessions",
                        test_matching_sessions_respect_max_matching_sessions),
         std::make_pair("test_invalid_max_matching_sessions_is_clamped", test_invalid_max_matching_sessions_is_clamped),
