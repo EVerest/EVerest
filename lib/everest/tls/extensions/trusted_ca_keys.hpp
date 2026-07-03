@@ -234,13 +234,16 @@ public:
                                   void* object);
 
     /**
-     * \brief the OpenSSL callback for the trusted_ca_keys extension
-     * \param[in] ctx the connection context
+     * \brief OpenSSL certificate callback driving chain selection for both the
+     *        TLS 1.2 trusted_ca_keys and TLS 1.3 certificate_authorities features
+     * \param[in] ssl the connection context
      * \param[in] arg A ServerTrustedCaKeys object
      * \return success = 1, error = zero or negative
      *
-     * Calls select() and select_default() after acquiring the mutex to ensure
-     * that calls to update() don't invalidate the pointers.
+     * Branches on SSL_version(): select() for TLS 1.2 and below,
+     * select_by_dn_list() for TLS 1.3. The chosen chain is applied via
+     * apply_selection_locked() (which may fall back to select_default()), all
+     * under the mutex so calls to update() don't invalidate the pointers.
      */
     static int handle_certificate_cb(Ssl* ssl, void* arg);
 
