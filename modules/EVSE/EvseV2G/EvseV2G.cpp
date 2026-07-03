@@ -151,8 +151,20 @@ void EvseV2G::wait_for_shutdown() {
     }
 }
 
+std::string EvseV2G::network_device_label() const {
+    // When "device: auto" is configured, and the interface name is resolved, this returns
+    // the resolved interface name. Fall back to config.device if still unresolved.
+    if (v2g_ctx != nullptr && v2g_ctx->if_name != nullptr) {
+        const std::string resolved = v2g_ctx->if_name;
+        if (!resolved.empty() && resolved != "auto") {
+            return resolved;
+        }
+    }
+    return config.device;
+}
+
 void EvseV2G::report_network_startup_failure(const std::string& reason) {
-    const auto message = "Device " + config.device + ": " + reason;
+    const auto message = "Device " + network_device_label() + ": " + reason;
 
     if (startup_fault_message == message) {
         if (!startup_fault_raised && p_charger->error_factory && p_charger->error_manager) {
@@ -181,7 +193,7 @@ void EvseV2G::clear_network_startup_failure() {
         return;
     }
 
-    dlog(DLOG_LEVEL_INFO, "V2G network startup recovered: Device %s is available", config.device.c_str());
+    dlog(DLOG_LEVEL_INFO, "V2G network startup recovered: Device %s is available", network_device_label().c_str());
     startup_fault_message.clear();
 
     if (startup_fault_raised && p_charger->error_manager) {

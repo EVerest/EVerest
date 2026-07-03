@@ -83,6 +83,7 @@ private:
     void wait_for_shutdown();
     void report_network_startup_failure(const std::string& reason);
     void clear_network_startup_failure();
+    std::string network_device_label() const;
     std::string startup_fault_message;
     bool startup_fault_raised{false};
     tls::Server tls_server;
