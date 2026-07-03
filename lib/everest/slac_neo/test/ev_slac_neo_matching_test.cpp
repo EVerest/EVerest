@@ -1362,10 +1362,48 @@ bool test_timeout_failure_reaches_failed_state() {
     return true;
 }
 
+bool test_parm_req_attempts_config_controls_retry_count() {
+    const char* test_name = "test_parm_req_attempts_config_controls_retry_count";
+
+    TestHarness harness{};
+    harness.ctx.slac_config.parm_req_timeout_ms = 1;
+    harness.ctx.slac_config.parm_req_attempts = 3;
+    if (!init_unmatched(harness, test_name)) {
+        return false;
+    }
+
+    const auto count_parm_req = [&harness]() {
+        return static_cast<int>(std::count_if(harness.sent_messages.begin(), harness.sent_messages.end(),
+                                              [](messages::HomeplugMessage const& m) { return is_cm_slac_parm_req(m); }));
+    };
+
+    harness.machine.trigger_matching();
+    // The first CM_SLAC_PARM.REQ is sent immediately on trigger_matching.
+    if (!assert_true(count_parm_req() == 1, test_name, "trigger_matching did not emit the first CM_SLAC_PARM.REQ")) {
+        return false;
+    }
+
+    // Drive timeout-based retries until the FSM exhausts the attempts and fails.
+    const auto unmatched_before = count_state(harness.state_messages, "UNMATCHED");
+    for (int i = 0; i < 50 && count_state(harness.state_messages, "UNMATCHED") == unmatched_before; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        harness.machine.update();
+    }
+
+    if (!assert_true(has_warning(harness.warning_messages, "EV MSM entered failed"), test_name,
+                     "did not reach failed state after exhausting parm_req_attempts")) {
+        return false;
+    }
+    // Exactly parm_req_attempts transmissions must have been emitted: not fewer (retries must fire),
+    // not more (must stop and fail once the configured budget is spent).
+    return assert_true(count_parm_req() == 3, test_name,
+                       "number of CM_SLAC_PARM.REQ transmissions did not match configured parm_req_attempts");
+}
+
 } // namespace
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 18>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 19>{
         std::make_pair("test_trigger_matching_emits_single_parm_request",
                        test_trigger_matching_emits_single_parm_request),
         std::make_pair("test_trigger_matching_immediately_after_reset_emits_single_parm_request",
@@ -1395,6 +1433,8 @@ int main() {
                        test_short_cm_set_key_cnf_is_ignored_in_wait_set_key_cnf),
         std::make_pair("test_reset_after_matched_returns_to_unmatched", test_reset_after_matched_returns_to_unmatched),
         std::make_pair("test_timeout_failure_reaches_failed_state", test_timeout_failure_reaches_failed_state),
+        std::make_pair("test_parm_req_attempts_config_controls_retry_count",
+                       test_parm_req_attempts_config_controls_retry_count),
     };
 
     int failed_count = 0;

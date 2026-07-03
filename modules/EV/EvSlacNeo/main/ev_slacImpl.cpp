@@ -177,6 +177,14 @@ void ev_slacImpl::configure_fsm_context() {
                       << "'; clamping set_key_timeout_ms to 1 ms";
         fsm_ctx->slac_config.set_key_timeout_ms = 1;
     }
+
+    if (config.parm_req_attempts > 0) {
+        fsm_ctx->slac_config.parm_req_attempts = config.parm_req_attempts;
+    } else {
+        EVLOG_warning << kModuleLogPrefix << "Invalid parm_req_attempts value '" << config.parm_req_attempts
+                      << "'; clamping parm_req_attempts to 1";
+        fsm_ctx->slac_config.parm_req_attempts = 1;
+    }
 }
 
 bool ev_slacImpl::create_fsm_controller() {

@@ -45,6 +45,9 @@ inline constexpr int RUN_ID_LEN = 8;
 // FIXME (aw): where to put these iso15118/3 consts?
 inline constexpr int C_EV_START_ATTEN_CHAR_INDS = 3;
 inline constexpr int C_EV_MATCH_RETRY = 2;
+// The ISO norm value for CM_SLAC_PARM.REQ retries (C_EV_MATCH_RETRY) proved insufficient in the field,
+// so the legacy EV stack retried up to this many times. Kept as the default for behavioral parity.
+inline constexpr int C_EV_PARM_REQ_ATTEMPTS = 100;
 inline constexpr int C_EV_MATCH_MNBC = 10;
 inline constexpr int TP_EV_BATCH_MSG_INTERVAL_MS =
     40; // 20ms - 50ms, interval between start_atten_char and mnbc_sound msgs
