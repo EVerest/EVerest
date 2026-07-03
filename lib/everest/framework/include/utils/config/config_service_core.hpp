@@ -99,6 +99,7 @@ private:
     bool spawn_threads_;
     std::shared_ptr<const everest::config::ModuleConfigurations> active_configs_ptr_;
     int active_slot_id_{everest::config::SqliteStorage::DEFAULT_CONFIG_ID};
+    int next_boot_slot_id_{everest::config::SqliteStorage::DEFAULT_CONFIG_ID};
     ActiveSlotStatus module_status_{ActiveSlotStatus::Stopped};
 
     std::vector<std::function<void(const ActiveSlotUpdate&)>> active_slot_handlers_;

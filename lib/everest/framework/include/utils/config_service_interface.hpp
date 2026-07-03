@@ -43,6 +43,7 @@ enum class SetConfigParameterResultEnum {
     WillApplyOnRestart,
     DoesNotExist,
     RetryLater,
+    AccessDenied,
     Rejected
 };
 
@@ -68,7 +69,8 @@ struct SetConfigParameterResult {
 
 enum class GetConfigurationStatus {
     Success,
-    SlotDoesNotExist
+    SlotDoesNotExist,
+    Failed
 };
 
 enum class ActiveSlotStatus {
