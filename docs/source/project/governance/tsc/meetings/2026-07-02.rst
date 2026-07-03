@@ -10,7 +10,7 @@ Voting Members
 ~~~~~~~~~~~~~~
 
 - [x] (Chair) Marco Möller [Pionix]
-- [ ] Cornelius Claussen [Pionix] -> vote delgated to Marco
+- [ ] Cornelius Claussen [Pionix] -> vote delegated to Marco
 - [x] Kai-Uwe Hermann [Pionix]
 - [x] Piet Gömpel [Pionix]
 - [x] Moritz Barsnick [Chargebyte]
@@ -30,7 +30,7 @@ Agenda
 - Highlights of the month
 - EVerest Development Updates
 - Community Proposals
-    - Deprication & Experimental Policy
+    - Deprecation & Experimental Label Policy
     - New Rules on AI contributions
 - What Else
     - recap
