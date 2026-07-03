@@ -133,7 +133,9 @@ void persist_accepted_change(ec::SqliteStorage& storage, const ec::Configuration
 
 ConfigServiceCore::ConfigServiceCore(const ConfigParseSettings& parse_settings,
                                      std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection) :
-    parse_settings_(parse_settings), slot_manager_(db_connection), db_(std::move(db_connection)),
+    parse_settings_(parse_settings),
+    slot_manager_(db_connection),
+    db_(std::move(db_connection)),
     next_boot_slot_id_(slot_manager_.get_next_boot_slot_id()) {
     active_configs_ptr_ = std::make_shared<const ec::ModuleConfigurations>();
 
@@ -390,15 +392,12 @@ ConfigServiceCore::internal_set_config_parameters(int slot_id, const std::vector
     SetConfigParameterResult result;
     result.status = SetConfigParameterStatus::Ok;
     const bool modules_are_running = module_status_ == ActiveSlotStatus::Running;
-    const bool modules_in_transient =
-        (module_status_ != ActiveSlotStatus::Running and module_status_ != ActiveSlotStatus::Stopped);
 
     const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
     const bool modifies_active_slot = resolved_slot_id == active_slot_id_;
     const bool modules_in_transient =
         module_status_ != ActiveSlotStatus::Running and module_status_ != ActiveSlotStatus::Stopped;
 
-    SetConfigParameterResult result;
     result.status = SetConfigParameterStatus::Ok;
     result.parameter_results.emplace(updates.size(),
                                      SetConfigPerParameterResult{SetConfigParameterResultEnum::DoesNotExist, ""});
@@ -433,14 +432,6 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
                                                   SetConfigParameterResult& result, ConfigurationUpdate& event) {
     const bool modules_are_running = module_status_ == ActiveSlotStatus::Running;
 
-    struct AsyncParamCall {
-        size_t index;
-        ec::ConfigurationParameter* parameter;
-        std::future<SetParameterResponse> future;
-    };
-    std::vector<AsyncParamCall> pending_calls;
-
-    // First pass: apply everything we can decide locally, and dispatch ReadWrite changes to the modules.
     for (size_t i = 0; i < updates.size(); ++i) {
         const auto& update = updates[i];
         auto& per_result = result.parameter_results.value()[i];
@@ -454,18 +445,34 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
         const auto mutability = parameter->characteristics.mutability;
 
         if (mutability == ec::Mutability::ReadWrite and modules_are_running) {
-            // The module must confirm the change; dispatch now and process the reply in the second pass.
+            // The module must confirm the change
             if (not set_parameter_callback_) {
                 result_enum = SetConfigParameterResultEnum::Rejected;
                 EVLOG_error << "ConfigServiceCore: No callback registered for setting the configuration parameter "
                                "change in the module -> Rejecting.";
                 break;
             }
-            pending_calls.push_back({i, parameter, dispatch_set_parameter(update)});
-            continue;
-        }
+            auto set_result = set_parameter_callback_(update.identifier, update.value);
 
-        if (mutability == ec::Mutability::ReadOnly and modules_are_running) {
+            switch (set_result) {
+            case SetParameterResponse::SetCallFailed:
+                [[fallthrough]];
+            case SetParameterResponse::ModuleReplied_Rejected:
+                result_enum = SetConfigParameterResultEnum::Rejected;
+                per_result.status_info = "Rejected by module";
+                continue;
+            case SetParameterResponse::ModuleReplied_Applied: {
+                result_enum = SetConfigParameterResultEnum::Applied;
+                // Module confirmed it immediately applied the value; mutate the in-memory state
+                const auto parsed_value = ec::parse_config_value(parameter->characteristics.datatype, update.value);
+                parameter->value = parsed_value;
+                break;
+            }
+            case SetParameterResponse::ModuleReplied_RequiresRestart:
+                result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
+                break;
+            }
+        } else if (mutability == ec::Mutability::ReadOnly and modules_are_running) {
             if (is_set_read_only_allowed(*parameter_access, update.identifier.module_id)) {
                 result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
             } else {
@@ -482,41 +489,6 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
         if (is_effective(result_enum)) {
             event.updates.push_back({update.identifier, update.value, result_enum});
             persist_accepted_change(*active_storage_, update.identifier, *parameter, update.value);
-        }
-    }
-
-    // Second pass: collect the module replies for the dispatched ReadWrite changes.
-    for (auto& call : pending_calls) {
-        const auto& update = updates[call.index];
-        auto& per_result = result.parameter_results.value()[call.index];
-        SetConfigParameterResultEnum& result_enum = per_result.status;
-
-        if (call.future.wait_for(std::chrono::seconds(3)) == std::future_status::timeout) {
-            result_enum = SetConfigParameterResultEnum::RetryLater;
-            per_result.status_info = "Timeout waiting for module to respond";
-            orphaned_futures_.push_back(std::move(call.future));
-            continue;
-        }
-
-        switch (call.future.get()) {
-        case SetParameterResponse::SetCallFailed:
-        case SetParameterResponse::ModuleReplied_Rejected:
-            result_enum = SetConfigParameterResultEnum::Rejected;
-            per_result.status_info = "Rejected by module";
-            continue;
-        case SetParameterResponse::ModuleReplied_Applied:
-            // Module confirmed it took effect immediately; mutate the in-memory copy.
-            result_enum = SetConfigParameterResultEnum::Applied;
-            call.parameter->value = ec::parse_config_value(call.parameter->characteristics.datatype, update.value);
-            break;
-        case SetParameterResponse::ModuleReplied_RequiresRestart:
-            result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
-            break;
-        }
-
-        if (is_effective(result_enum)) {
-            event.updates.push_back({update.identifier, update.value, result_enum});
-            persist_accepted_change(*active_storage_, update.identifier, *call.parameter, update.value);
         }
     }
 }
@@ -557,22 +529,6 @@ void ConfigServiceCore::apply_inactive_slot_updates(int slot_id, const std::vect
             per_result.status = SetConfigParameterResultEnum::Rejected;
         }
     }
-}
-
-std::future<SetParameterResponse> ConfigServiceCore::dispatch_set_parameter(const ConfigParameterUpdate& update) {
-    auto call = [this, id = update.identifier, val = update.value]() { return set_parameter_callback_(id, val); };
-    if (spawn_threads_) {
-        return async_worker_pool_(std::move(call));
-    }
-    return std::async(std::launch::deferred, std::move(call));
-}
-
-void ConfigServiceCore::reap_orphaned_futures() {
-    orphaned_futures_.erase(std::remove_if(orphaned_futures_.begin(), orphaned_futures_.end(),
-                                           [](const std::future<SetParameterResponse>& f) {
-                                               return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
-                                           }),
-                            orphaned_futures_.end());
 }
 
 GetConfigParametersResult
