@@ -41,10 +41,10 @@ public:
             return true;
         default:
             m_last_error = errno_from_result(res);
-            // reset_connection() destroys the Connection; capture its OpenSSL
-            // error text first.
             m_last_error_text = c->last_error();
-            self().reset_connection();
+            // Keep the Connection (and its fd) alive; the endpoint's fail() defers
+            // the close so the fd number stays reserved until it is unregistered.
+            m_failed = true;
             return false;
         }
     }
@@ -83,7 +83,7 @@ public:
         default:
             m_last_error = errno_from_result(res);
             m_last_error_text = c->last_error();
-            self().reset_connection();
+            m_failed = true;
             return false;
         }
     }
@@ -124,13 +124,13 @@ public:
         default:
             m_last_error = errno_from_result(res);
             m_last_error_text = c->last_error();
-            self().reset_connection();
+            m_failed = true;
             return false;
         }
     }
 
     bool is_open() const {
-        return self().connection() != nullptr;
+        return not m_failed and self().connection() != nullptr;
     }
 
     int get_fd() const {
@@ -155,6 +155,7 @@ public:
         self().reset_connection();
         m_desired = event::poll_events::read;
         m_handshake_done = false;
+        m_failed = false;
         m_last_error_text.clear();
     }
 
@@ -175,12 +176,17 @@ protected:
     void reset_error_state() {
         m_last_error = 0;
         m_last_error_text.clear();
+        m_failed = false;
     }
 
     event::poll_events m_desired{event::poll_events::read};
     int m_last_error{0};
     std::string m_last_error_text;
     bool m_handshake_done{false};
+    // Set on a terminal TLS result. The Connection is kept alive (so its fd stays
+    // open) until the endpoint's fail() defers the close; is_open() reports the
+    // socket as closed so the endpoint routes through fail().
+    bool m_failed{false};
 };
 
 } // namespace everest::lib::io::tls

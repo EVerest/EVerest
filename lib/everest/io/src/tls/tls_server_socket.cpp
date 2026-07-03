@@ -27,4 +27,12 @@ void tls_server_socket::reset_connection() {
     m_conn.reset();
 }
 
+std::function<void()> tls_server_socket::release_closer() {
+    // Move the accepted connection into a closer that drops it (SSL_free ->
+    // BIO_CLOSE) when run, keeping the fd open until then. shared_ptr (not the
+    // move-only unique_ptr) so the closer is copy-constructible and fits
+    // std::function / the handler's task queue.
+    return [conn = std::shared_ptr<::tls::ServerConnection>(std::move(m_conn))]() mutable { conn.reset(); };
+}
+
 } // namespace everest::lib::io::tls

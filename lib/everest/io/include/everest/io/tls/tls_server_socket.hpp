@@ -5,6 +5,7 @@
 #include <everest/io/tls/tls_socket_base.hpp>
 #include <everest/tls/tls.hpp>
 
+#include <functional>
 #include <memory>
 
 namespace everest::lib::io::tls {
@@ -31,6 +32,11 @@ public:
     ::tls::Connection* connection() const;
     ::tls::Connection::result_t step_handshake(); // one non-blocking accept(0)
     void reset_connection();
+
+    // Hand the connection (the fd's BIO_CLOSE owner) to a closer so the fd stays
+    // open until the closer runs; used by the endpoint to defer the close past the
+    // handler removal. No TLS shutdown is performed (the connection has faulted).
+    std::function<void()> release_closer();
 
 private:
     std::unique_ptr<::tls::ServerConnection> m_conn;
