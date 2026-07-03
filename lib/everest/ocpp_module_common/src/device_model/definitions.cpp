@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include <device_model/definitions.hpp>
+#include <everest/ocpp_module_common/device_model/definitions.hpp>
 #include <optional>
 
 #include <ocpp/v2/ocpp_types.hpp>

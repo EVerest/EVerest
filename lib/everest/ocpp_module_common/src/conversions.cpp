@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include <conversions.hpp>
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/logging.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
 
-namespace module {
+namespace ocpp_module_common {
 namespace conversions {
 ocpp::v2::FirmwareStatusEnum to_ocpp_firmware_status_enum(const types::system::FirmwareUpdateStatusEnum status) {
     switch (status) {
@@ -1215,6 +1215,18 @@ types::iso15118::Status to_everest_iso15118_status(const ocpp::v2::Iso15118EVCer
     throw std::out_of_range("Could not convert Iso15118EVCertificateStatusEnum"); // this should never happen
 }
 
+types::iso15118::CertificateActionEnum
+to_everest_certificate_action_enum(const ocpp::v2::CertificateActionEnum action) {
+    switch (action) {
+    case ocpp::v2::CertificateActionEnum::Install:
+        return types::iso15118::CertificateActionEnum::Install;
+    case ocpp::v2::CertificateActionEnum::Update:
+        return types::iso15118::CertificateActionEnum::Update;
+    }
+    throw std::out_of_range(
+        "Could not convert ocpp::v2::CertificateActionEnum to types::iso15118::CertificateActionEnum");
+}
+
 types::ocpp::DataTransferStatus to_everest_data_transfer_status(ocpp::v2::DataTransferStatusEnum status) {
     switch (status) {
     case ocpp::v2::DataTransferStatusEnum::Accepted:
@@ -1933,4 +1945,4 @@ to_everest_change_availability_response(const ocpp::v2::ChangeAvailabilityRespon
 }
 
 } // namespace conversions
-} // namespace module
+} // namespace ocpp_module_common

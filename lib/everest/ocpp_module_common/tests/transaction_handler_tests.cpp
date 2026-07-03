@@ -3,9 +3,9 @@
 
 #include <gtest/gtest.h>
 
-#include <transaction_handler.hpp>
+#include <everest/ocpp_module_common/transaction_handler.hpp>
 
-namespace module {
+namespace ocpp_module_common {
 
 class TransactionHandlerTest : public ::testing::Test {
 
@@ -130,4 +130,4 @@ TEST_F(TransactionHandlerTest, test_invalid_params) {
     ASSERT_THROW(transaction_handler.add_transaction_data(3, transaction_data()), std::out_of_range);
 }
 
-} // namespace module
+} // namespace ocpp_module_common

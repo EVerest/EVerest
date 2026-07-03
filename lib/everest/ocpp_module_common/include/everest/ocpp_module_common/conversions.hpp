@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifndef OCPP_V2_CONVERSIONS_HPP
-#define OCPP_V2_CONVERSIONS_HPP
+
+#pragma once
 
 #include "ocpp/v2/messages/ChangeAvailability.hpp"
 #include "ocpp/v2/ocpp_enums.hpp"
@@ -26,7 +26,7 @@
 #include <ocpp/v2/messages/TransactionEvent.hpp>
 #include <ocpp/v2/messages/UpdateFirmware.hpp>
 
-namespace module {
+namespace ocpp_module_common {
 namespace conversions {
 /// \brief Converts a given types::system::FirmwareUpdateStatusEnum \p status to a ocpp::v2::FirmwareStatusEnum.
 ocpp::v2::FirmwareStatusEnum to_ocpp_firmware_status_enum(const types::system::FirmwareUpdateStatusEnum status);
@@ -146,6 +146,10 @@ types::system::FirmwareUpdateRequest to_everest_firmware_update_request(const oc
 
 /// \brief Converts a given ocpp::v2::Iso15118EVCertificateStatusEnum \p status to a types::iso15118::Status.
 types::iso15118::Status to_everest_iso15118_status(const ocpp::v2::Iso15118EVCertificateStatusEnum& status);
+
+/// \brief Converts a given ocpp::v2::CertificateActionEnum \p action to a
+/// types::iso15118::CertificateActionEnum.
+types::iso15118::CertificateActionEnum to_everest_certificate_action_enum(const ocpp::v2::CertificateActionEnum action);
 
 /// \brief Converts a given ocpp::v2::DataTransferStatusEnum \p status to a types::ocpp::DataTransferStatus.
 types::ocpp::DataTransferStatus to_everest_data_transfer_status(ocpp::v2::DataTransferStatusEnum status);
@@ -301,6 +305,4 @@ types::ocpp::ChangeAvailabilityResponse
 to_everest_change_availability_response(const ocpp::v2::ChangeAvailabilityResponse& response);
 
 } // namespace conversions
-} // namespace module
-
-#endif // OCPP_V2_CONVERSIONS_HPP
+} // namespace ocpp_module_common

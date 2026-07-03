@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#pragma once
+
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 
 using ocpp::v2::EVSE;

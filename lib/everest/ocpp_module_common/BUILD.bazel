@@ -1,0 +1,41 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
+
+cc_library(
+    name = "ocpp_module_common",
+    srcs = glob(["src/**/*.cpp"]),
+    hdrs = glob(["include/**/*.hpp"]),
+    copts = [
+        "-std=c++17",
+        "-Wimplicit-fallthrough",
+        "-Wno-error=switch-enum",  # boost.date_time 1.87.0 has incomplete switch statements
+    ],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//interfaces:interfaces_lib",
+        "//lib/everest/conversions/ocpp:ocpp_conversions",
+        "//lib/everest/framework:framework",
+        "//lib/everest/ocpp:libocpp",
+        "//types:types_lib",
+    ],
+)
+
+cc_test(
+    name = "ocpp_module_common_tests",
+    srcs = [
+        "tests/error_handling_tests.cpp",
+        "tests/transaction_handler_tests.cpp",
+    ],
+    data = glob(["tests/data/*.json"]),
+    linkstatic = True,
+    local_defines = [
+        'TEST_DATA_DIR=\\"lib/everest/ocpp_module_common/tests/data\\"',
+    ],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":ocpp_module_common",
+        "@com_github_nlohmann_json//:json",
+        "@googletest//:gtest_main",
+    ],
+)

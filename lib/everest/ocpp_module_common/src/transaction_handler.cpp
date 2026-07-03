@@ -2,9 +2,9 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <algorithm>
-#include <transaction_handler.hpp>
+#include <everest/ocpp_module_common/transaction_handler.hpp>
 
-namespace module {
+namespace ocpp_module_common {
 
 TransactionHandler::TransactionHandler(const int32_t nr_of_evses, const std::set<TxStartStopPoint>& tx_start_points,
                                        const std::set<TxStartStopPoint>& tx_stop_points) :
@@ -63,11 +63,11 @@ std::shared_ptr<TransactionData> TransactionHandler::get_transaction_data(const 
 }
 
 int TransactionHandler::get_evse_id(const std::string& transaction_id) {
-    const auto& found =
-        std::find_if(this->evse_id_transaction_data_map.cbegin(), this->evse_id_transaction_data_map.cend(),
-                     [transaction_id](const std::pair<const int, std::shared_ptr<module::TransactionData>>& it) {
-                         return it.second != nullptr and it.second->session_id == transaction_id;
-                     });
+    const auto& found = std::find_if(
+        this->evse_id_transaction_data_map.cbegin(), this->evse_id_transaction_data_map.cend(),
+        [transaction_id](const std::pair<const int, std::shared_ptr<ocpp_module_common::TransactionData>>& it) {
+            return it.second != nullptr and it.second->session_id == transaction_id;
+        });
     return found != this->evse_id_transaction_data_map.cend() ? found->first : -1;
 }
 
@@ -120,4 +120,4 @@ bool TransactionHandler::should_transaction_stop(const int32_t evse_id) {
     return false;
 }
 
-} // namespace module
+} // namespace ocpp_module_common

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2022 Pionix GmbH and Contributors to EVerest
 #include "auth_token_validatorImpl.hpp"
-#include <conversions.hpp>
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <ocpp/common/types.hpp>
 #include <ocpp/v16/ocpp_enums.hpp>
@@ -45,7 +44,7 @@ auth_token_validatorImpl::validate_pnc_request(const types::authorization::Provi
             for (const auto& certificate_hash_data : provided_token.iso15118CertificateHashData.value()) {
                 ocpp::v2::OCSPRequestData v2_certificate_hash_data;
                 v2_certificate_hash_data.hashAlgorithm =
-                    conversions::to_ocpp_hash_algorithm_enum(certificate_hash_data.hashAlgorithm);
+                    ocpp_module_common::conversions::to_ocpp_hash_algorithm_enum(certificate_hash_data.hashAlgorithm);
                 v2_certificate_hash_data.issuerKeyHash = certificate_hash_data.issuerKeyHash;
                 v2_certificate_hash_data.issuerNameHash = certificate_hash_data.issuerNameHash;
                 v2_certificate_hash_data.responderURL = certificate_hash_data.responderURL;
@@ -61,11 +60,11 @@ auth_token_validatorImpl::validate_pnc_request(const types::authorization::Provi
             provided_token.id_token.value, provided_token.certificate, iso15118_certificate_hash_data_opt);
 
         validation_result.authorization_status =
-            conversions::to_everest_authorization_status(authorize_response.idTokenInfo.status);
+            ocpp_module_common::conversions::to_everest_authorization_status(authorize_response.idTokenInfo.status);
         validation_result.evse_ids = authorize_response.idTokenInfo.evseId;
         if (authorize_response.certificateStatus.has_value()) {
-            validation_result.certificate_status.emplace(
-                conversions::to_everest_certificate_status(authorize_response.certificateStatus.value()));
+            validation_result.certificate_status.emplace(ocpp_module_common::conversions::to_everest_certificate_status(
+                authorize_response.certificateStatus.value()));
         }
         if (authorize_response.idTokenInfo.cacheExpiryDateTime.has_value()) {
             validation_result.expiry_time.emplace(
