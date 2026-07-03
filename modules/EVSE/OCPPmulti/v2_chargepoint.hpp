@@ -6,7 +6,7 @@
 #include "generic_chargepoint_interface.hpp"
 
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
-#include <transaction_handler.hpp>
+#include <everest/ocpp_module_common/transaction_handler.hpp>
 
 namespace ocpp_multi {
 

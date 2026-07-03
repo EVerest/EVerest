@@ -9,7 +9,6 @@ get_target_property(GENERATED_INCLUDE_DIR generate_cpp_files EVEREST_GENERATED_I
 target_include_directories(${TEST_TARGET_NAME} PUBLIC
     .
     ..
-    ../common
     ${TESTS_INCLUDE_DIR}
     ${GENERATED_INCLUDE_DIR}
     ${CMAKE_BINARY_DIR}/generated/modules/${MODULE_NAME}
@@ -49,14 +48,8 @@ target_sources(${TEST_TARGET_NAME}
 
     ../generic_ocpp.cpp
     ../v16_chargepoint.cpp
-    ../common/device_model/composed_device_model_storage.cpp
-    ../common/device_model/definitions.cpp
-    ../common/device_model/everest_device_model_storage.cpp
-    ../common/charge_point_config_factory_v16.cpp
-    ../common/conversions.cpp
-    ../common/conversions_v16.cpp
-    ../common/error_handling.cpp
-    ../common/transaction_handler.cpp
+    ../charge_point_config_factory_v16.cpp
+    ../conversions_v16.cpp
 )
 
 target_compile_definitions(${TEST_TARGET_NAME}
@@ -70,6 +63,7 @@ target_link_libraries(${TEST_TARGET_NAME}
     everest::ocpp
     everest::ocpp_conversions
     everest::ocpp_evse_security
+    everest::ocpp_module_common
     GTest::gmock
     GTest::gtest
 )

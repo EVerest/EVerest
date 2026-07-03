@@ -36,9 +36,9 @@
 #include <ocpp/v2/messages/UnlockConnector.hpp>
 #include <ocpp/v2/messages/UpdateFirmware.hpp>
 
-#include <device_model/everest_device_model_storage.hpp>
-#include <error_handling.hpp>
-#include <transaction_handler.hpp>
+#include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
+#include <everest/ocpp_module_common/error_handling.hpp>
+#include <everest/ocpp_module_common/transaction_handler.hpp>
 
 #include <mutex>
 #include <queue>

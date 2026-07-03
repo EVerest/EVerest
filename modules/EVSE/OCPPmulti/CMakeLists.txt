@@ -24,15 +24,8 @@ target_sources(${MODULE_NAME}
 # insert other things like install cmds etc here
 target_sources(${MODULE_NAME}
     PRIVATE
-    common/device_model/composed_device_model_storage.cpp
-    common/device_model/definitions.cpp
-    common/device_model/everest_device_model_storage.cpp
-
-    common/conversions.cpp
-    common/conversions_v16.cpp
-    common/charge_point_config_factory_v16.cpp
-    common/error_handling.cpp
-    common/transaction_handler.cpp
+    conversions_v16.cpp
+    charge_point_config_factory_v16.cpp
 
     generic_chargepoint.cpp
     generic_ocpp.cpp
@@ -45,10 +38,7 @@ target_link_libraries(${MODULE_NAME}
     everest::ocpp
     everest::ocpp_conversions
     everest::ocpp_evse_security
-)
-target_include_directories(${MODULE_NAME}
-    PRIVATE
-    common
+    everest::ocpp_module_common
 )
 
 if(EVEREST_CORE_BUILD_TESTING)

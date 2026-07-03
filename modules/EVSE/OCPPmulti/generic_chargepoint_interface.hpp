@@ -3,8 +3,10 @@
 
 #pragma once
 
-#include <device_model/everest_device_model_storage.hpp>
-#include <transaction_handler.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
+#include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
+#include <everest/ocpp_module_common/error_handling.hpp>
+#include <everest/ocpp_module_common/transaction_handler.hpp>
 
 #include <generated/interfaces/charger_information/Interface.hpp>
 #include <generated/interfaces/evse_manager/Interface.hpp>
@@ -29,6 +31,26 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+
+namespace module {
+
+// Shared OCPP module support code lives in lib/everest/ocpp_module_common;
+// pull the names into the module namespace to keep call sites unchanged.
+namespace conversions = ocpp_module_common::conversions;
+namespace device_model = ocpp_module_common::device_model;
+using ocpp_module_common::EVSE_MANAGER_INOPERATIVE_ERROR;
+using ocpp_module_common::get_component_from_error;
+using ocpp_module_common::get_event_data;
+using ocpp_module_common::load_mrec_error_map_overrides;
+using ocpp_module_common::MREC_ERROR_MAP;
+using ocpp_module_common::MREC_ERROR_MAP_TYPE;
+using ocpp_module_common::TransactionData;
+using ocpp_module_common::TransactionHandler;
+using ocpp_module_common::TxEvent;
+using ocpp_module_common::TxEventEffect;
+using ocpp_module_common::TxStartStopPoint;
+
+} // namespace module
 
 namespace ocpp_multi {
 
