@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -24,9 +25,11 @@
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
+#include <configuration_api.hpp>
 #include <everest/logging.hpp>
 #include <framework/everest.hpp>
 #include <framework/runtime.hpp>
+#include <lifecycle_api.hpp>
 #include <utils/config.hpp>
 #include <utils/config/config_service_core.hpp>
 #include <utils/config/slot_manager.hpp>
@@ -761,6 +764,23 @@ int Manager::run() {
 
     auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core_);
 
+    config_service_core_->register_set_runtime_parameter_handler(
+        [&config_service](const everest::config::ConfigurationParameterIdentifier& cfg_param_id,
+                          const std::string& value) {
+            const auto result = config_service->cmd_set_cfg_param(cfg_param_id, value);
+            if (result) {
+                if (result->status == Everest::config::SetResponseStatus::Accepted) {
+                    return Everest::config::SetParameterResponse::ModuleReplied_Applied;
+                } else if (result->status == Everest::config::SetResponseStatus::RebootRequired) {
+                    return Everest::config::SetParameterResponse::ModuleReplied_RequiresRestart;
+                } else {
+                    return Everest::config::SetParameterResponse::ModuleReplied_Rejected;
+                }
+            } else {
+                return Everest::config::SetParameterResponse::SetCallFailed;
+            }
+        });
+
     register_state_transition_handler([this](ManagerState from, ManagerState to) {
         if (to == ManagerState::Running) {
             config_service_core_->set_modules_running();
@@ -774,6 +794,68 @@ int Manager::run() {
             config_service_core_->set_modules_starting();
         }
     });
+
+    bool cfg_api_rw = false;
+    std::unique_ptr<Everest::api::configuration::ConfigurationAPI> configuration_api;
+    if (cfg_api_active) {
+        cfg_api_rw = vm_["configuration-api"].as<std::string>() == "rw";
+        if (cfg_api_rw) {
+            EVLOG_info << "Starting ConfigurationAPI in read-write mode";
+        } else {
+            EVLOG_info << "Starting ConfigurationAPI in read-only mode";
+        }
+        configuration_api = std::make_unique<Everest::api::configuration::ConfigurationAPI>(
+            *mqtt_abstraction, *config_service_core_, not cfg_api_rw);
+    }
+
+    bool lfc_api_rw = false;
+    std::unique_ptr<Everest::api::lifecycle::LifecycleAPI> lifecycle_api;
+    if (lfc_api_active) {
+        lfc_api_rw = vm_["lifecycle-api"].as<std::string>() == "rw";
+        if (lfc_api_rw) {
+            EVLOG_info << "Starting LifecycleAPI in read-write mode";
+        } else {
+            EVLOG_info << "Starting LifecycleAPI in read-only mode";
+        }
+        lifecycle_api = std::make_unique<Everest::api::lifecycle::LifecycleAPI>(
+            *mqtt_abstraction, *config_service_core_,
+            configuration_api ? (cfg_api_rw ? Everest::api::lifecycle::ConfigurationApiStatus::AvailableRW
+                                            : Everest::api::lifecycle::ConfigurationApiStatus::AvailableRO)
+                              : Everest::api::lifecycle::ConfigurationApiStatus::NotAvailable,
+            not lfc_api_rw,
+            [this, &mqtt_abstraction, &ms]() {
+                Everest::api::lifecycle::StopModulesResult ret = Everest::api::lifecycle::StopModulesResult::Rejected;
+                if (is_idle()) {
+                    ret = Everest::api::lifecycle::StopModulesResult::NoModulesToStop;
+                } else if (are_modules_started()) {
+                    handle_initiate_graceful_shutdown(std::chrono::steady_clock::now(), false, nullptr,
+                                                      *mqtt_abstraction, ms);
+                    ret = Everest::api::lifecycle::StopModulesResult::Stopping;
+                }
+                return ret;
+            },
+            [this, &runtime_ctx, &mqtt_abstraction, &ms]() {
+                Everest::api::lifecycle::RestartModulesResult ret =
+                    Everest::api::lifecycle::RestartModulesResult::Rejected;
+                if (are_modules_started()) {
+                    shutdown_cause_ = ShutdownCause::Restart;
+                    ret = Everest::api::lifecycle::RestartModulesResult::Restarting;
+                    config_service_core_->notice_module_restart_triggered();
+                    handle_initiate_graceful_shutdown(std::chrono::steady_clock::now(), false, nullptr,
+                                                      *mqtt_abstraction, ms);
+                } else if (is_idle()) {
+                    ret = Everest::api::lifecycle::RestartModulesResult::Starting;
+                    if (reload_and_update_context(runtime_ctx)) {
+                        module_handles_ = handle_start_modules(runtime_ctx);
+                        EVLOG_info << "Modules restart initiated with reloaded configuration.";
+                    } else {
+                        config_service_core_->notice_cfg_validation_failed();
+                        EVLOG_error << "Failed to reload the configuration, staying in Idle.";
+                    }
+                }
+                return ret;
+            });
+    }
 
     if (not boot_into_idle and runtime_ctx_has_valid_config) {
         module_handles_ = handle_start_modules(runtime_ctx);
@@ -1395,6 +1477,10 @@ int main(int argc, char* argv[]) {
     desc.add_options()("config", po::value<std::string>(),
                        "Full path to a config file.  If the file does not exist and has no extension, it will be "
                        "looked up in the default config directory");
+    desc.add_options()("configuration-api", po::value<std::string>()->implicit_value("ro"),
+                       "Start the ConfigurationAPI (append '=rw' for read-write)");
+    desc.add_options()("lifecycle-api", po::value<std::string>()->implicit_value("ro"),
+                       "Start the lifecycle_API (append '=rw' for read-write)");
     desc.add_options()(
         "db", po::value<std::string>(),
         "Full path to the configuration database file. Required. "
