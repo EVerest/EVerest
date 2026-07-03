@@ -240,6 +240,13 @@ void ISO15118_chargerImpl::ready() {
     mod->r_security->subscribe_certificate_store_update(
         [this](const types::evse_security::CertificateStoreUpdate& event) { on_certificate_store_update(event); });
 
+    // Close the startup window: a V2G certificate install completing between the initial config
+    // build above and the subscription registration would otherwise be served only at the next
+    // store update. Rebuild+apply once through the same idempotent path.
+    module::charger::resync_ssl_config(
+        [this] { return build_current_ssl_config(); },
+        [this](iso15118::config::SSLConfig cfg) { controller->set_ssl_config(std::move(cfg)); });
+
     // if the vas providers report their supported vas services before the controller exists,
     // we need to update the controller with the supported vas services after instantiation
     {

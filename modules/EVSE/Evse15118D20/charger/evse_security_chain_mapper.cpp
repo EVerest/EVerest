@@ -85,34 +85,36 @@ CertUpdateAction decide_certificate_store_update(const iso15118::config::SSLConf
     return refreshed.chains.empty() ? CertUpdateAction::PreserveLastGood : CertUpdateAction::Apply;
 }
 
+void resync_ssl_config(const std::function<iso15118::config::SSLConfig()>& rebuild,
+                       const std::function<void(iso15118::config::SSLConfig)>& apply) {
+    try {
+        auto refreshed = rebuild();
+        switch (decide_certificate_store_update(refreshed)) {
+        case CertUpdateAction::PreserveLastGood:
+            EVLOG_error << "SSL config refresh produced no usable V2G certificate chains; "
+                           "preserving last-good SSL config";
+            return;
+        case CertUpdateAction::Apply:
+            EVLOG_info << "SSL config refresh: applying SSL config with " << refreshed.chains.size() << " chain(s)";
+            apply(std::move(refreshed));
+            return;
+        }
+    } catch (const Everest::CmdTimeout& e) {
+        EVLOG_error << "SSL config refresh: evse_security RPC timed out; keeping last-good SSL config. "
+                       "New V2G certificates will NOT be served until the next refresh: "
+                    << e.what();
+    } catch (const std::exception& e) {
+        EVLOG_error << "SSL config refresh failed; keeping last-good SSL config: " << e.what();
+    }
+}
+
 void handle_certificate_store_update(const types::evse_security::CertificateStoreUpdate& event,
                                      const std::function<iso15118::config::SSLConfig()>& rebuild,
                                      const std::function<void(iso15118::config::SSLConfig)>& apply) {
     if (not is_relevant_certificate_store_update(event)) {
         return;
     }
-
-    try {
-        auto refreshed = rebuild();
-        switch (decide_certificate_store_update(refreshed)) {
-        case CertUpdateAction::PreserveLastGood:
-            EVLOG_error << "certificate_store_update produced no usable V2G certificate chains; "
-                           "preserving last-good SSL config";
-            return;
-        case CertUpdateAction::Apply:
-            EVLOG_info << "certificate_store_update: applying SSL config with " << refreshed.chains.size()
-                       << " chain(s)";
-            apply(std::move(refreshed));
-            return;
-        }
-    } catch (const Everest::CmdTimeout& e) {
-        EVLOG_error << "certificate_store_update: evse_security RPC timed out; keeping last-good SSL config. "
-                       "New V2G certificates will NOT be served until the next store update: "
-                    << e.what();
-    } catch (const std::exception& e) {
-        EVLOG_error << "certificate_store_update: SSL config refresh failed; keeping last-good SSL config: "
-                    << e.what();
-    }
+    resync_ssl_config(rebuild, apply);
 }
 
 StartupChainPolicy decide_startup_empty_chains(iso15118::config::TlsNegotiationStrategy strategy) {
