@@ -10,6 +10,7 @@
 // not rely on tls_test having run first under ctest, so this binary
 // regenerates the fixtures itself.
 
+#include <csignal>
 #include <cstdlib>
 #include <iostream>
 #include <linux/limits.h>
@@ -18,6 +19,11 @@
 #include <gtest/gtest.h>
 
 int main(int argc, char** argv) {
+    // OpenSSL drives its socket BIO through write() without MSG_NOSIGNAL, so a
+    // write to a peer-reset connection raises SIGPIPE and kills the process.
+    // Every OpenSSL client must ignore it; production EVerest processes do the
+    // same. Without this the RST-teardown tests would abort on SIGPIPE.
+    std::signal(SIGPIPE, SIG_IGN);
     if (std::system("./pki.sh") != 0) {
         std::cerr << "Problem creating test certificates and keys" << std::endl;
         char buf[PATH_MAX];
