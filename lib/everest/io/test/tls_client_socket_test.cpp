@@ -171,6 +171,15 @@ namespace everest::lib::io::tls {
 struct testable_client_socket : tls_client_socket {
     using tls_client_socket::m_tcp;
 };
+
+// Test seam: re-expose the endpoint's registered fds and socket so the teardown
+// tests can confirm the handler entries are gone and the connection state.
+struct testable_client : tls_client {
+    using tls_client::tls_client;
+    using tls_endpoint_base<tls_client_socket>::m_fd;
+    using tls_endpoint_base<tls_client_socket>::m_socket;
+    using tls_endpoint_base<tls_client_socket>::m_tx_notify;
+};
 } // namespace everest::lib::io::tls
 
 // After connect() wraps the connected TCP fd, the connection's BIO is the
@@ -282,9 +291,10 @@ TEST(TlsClient, HandshakeAndExchange) {
     });
 
     // Client side: construct, attach handlers, register on the loop and drive it.
-    everest::lib::io::tls::tls_client client(make_client_config(), std::string("127.0.0.1"), bound_port, 2000);
-
+    // The handler must outlive the endpoint (the client dtor unregisters from the
+    // handler), so declare it first.
     everest::lib::io::event::fd_event_handler ev;
+    everest::lib::io::tls::tls_client client(make_client_config(), std::string("127.0.0.1"), bound_port, 2000);
 
     std::atomic<bool> running{true};
     std::atomic<bool> ready_fired{false};
@@ -418,8 +428,10 @@ TEST(TlsClient, poll_error_delivers_nonzero_code) {
         conn.reset();
     });
 
-    everest::lib::io::tls::tls_client client(make_client_config(), std::string("127.0.0.1"), bound_port, 2000);
+    // The handler must outlive the endpoint (the client dtor unregisters from the
+    // handler), so declare it first.
     everest::lib::io::event::fd_event_handler ev;
+    everest::lib::io::tls::tls_client client(make_client_config(), std::string("127.0.0.1"), bound_port, 2000);
 
     std::atomic<bool> got_error{false};
     std::atomic<int> err_code{-1};
@@ -441,6 +453,84 @@ TEST(TlsClient, poll_error_delivers_nonzero_code) {
 
     ASSERT_TRUE(got_error) << "error handler never fired after a peer RST";
     EXPECT_NE(err_code.load(), 0) << "error handler received code 0 on the poll-error (RST) path";
+}
+
+// P2: dropping a still-registered endpoint (the README's documented teardown,
+// "connections.clear()") must not leave its this-capturing lambdas registered
+// in the handler. The destructor must unregister the connection fd and the
+// tx-notify eventfd; otherwise the handler keeps stale entries referencing a
+// freed object. After the drop, re-registering those fd numbers must succeed
+// (a stale entry makes the map's exists() guard reject the register).
+TEST(TlsClient, drop_registered_endpoint_unregisters_fds) {
+    uint16_t bound_port = 0;
+    int listen_fd = make_listen_socket(bound_port);
+    ASSERT_GE(listen_fd, 0);
+    const std::string port_str = std::to_string(bound_port);
+
+    tls::Server server;
+    ASSERT_NE(server.init(make_server_config(listen_fd, port_str), nullptr), tls::Server::state_t::init_needed);
+
+    // Server: accept + handshake, then hold the connection open until released so
+    // the client stays live while it is dropped.
+    std::atomic<bool> release_server{false};
+    std::thread server_thread([&]() {
+        sockaddr peer{};
+        socklen_t peer_len = sizeof(peer);
+        int accepted_fd = ::accept(listen_fd, &peer, &peer_len);
+        if (accepted_fd < 0) {
+            return;
+        }
+        char ip_buf[NI_MAXHOST] = "127.0.0.1";
+        char svc_buf[NI_MAXSERV] = "0";
+        ::getnameinfo(&peer, peer_len, ip_buf, sizeof ip_buf, svc_buf, sizeof svc_buf, NI_NUMERICHOST | NI_NUMERICSERV);
+        auto conn = server.wrap_accepted_fd(accepted_fd, ip_buf, svc_buf);
+        if (!conn) {
+            ::close(accepted_fd);
+            return;
+        }
+        if (conn->accept(2000) != tls::Connection::result_t::success) {
+            return;
+        }
+        while (!release_server.load()) {
+            std::this_thread::sleep_for(10ms);
+        }
+        conn->shutdown(0);
+    });
+
+    everest::lib::io::event::fd_event_handler ev;
+    int conn_fd = -1;
+    int notify_fd = -1;
+    {
+        everest::lib::io::tls::testable_client client(make_client_config(), std::string("127.0.0.1"), bound_port, 2000);
+        std::atomic<bool> ready{false};
+        client.set_on_ready_action([&ready]() { ready = true; });
+        ASSERT_TRUE(ev.register_event_handler(&client));
+        test::pump_until(
+            ev, [&] { return ready.load(); }, 5s);
+        ASSERT_TRUE(ready) << "handshake did not complete before the drop";
+        conn_fd = client.m_fd;
+        notify_fd = client.m_tx_notify.get_raw_fd();
+        ASSERT_GE(conn_fd, 0);
+        ASSERT_GE(notify_fd, 0);
+        // Drop WITHOUT unregister at the closing brace.
+    }
+
+    // Nothing here opens new fds, so conn_fd / notify_fd stay closed-but-unclaimed;
+    // driving the loop after the drop must not crash.
+    for (int i = 0; i < 5; ++i) {
+        ev.poll(10ms);
+        ev.run_actions();
+    }
+
+    auto noop = [](auto&&) {};
+    EXPECT_TRUE(ev.register_event_handler(conn_fd, noop, everest::lib::io::event::poll_events::read))
+        << "connection fd still registered after dropping the endpoint";
+    EXPECT_TRUE(ev.register_event_handler(notify_fd, noop, everest::lib::io::event::poll_events::read))
+        << "tx-notify fd still registered after dropping the endpoint";
+
+    release_server = true;
+    server_thread.join();
+    ::close(listen_fd);
 }
 
 // Registering the same client twice without an intervening unregister must be

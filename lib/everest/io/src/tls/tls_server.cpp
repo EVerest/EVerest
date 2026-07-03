@@ -22,4 +22,14 @@ void tls_server::stop() {
     m_socket.close();
 }
 
+tls_server::~tls_server() {
+    // Backstop for a drop while still registered (the README's "connections.clear()"
+    // teardown): remove the connection fd and tx-notify synchronously so no
+    // this-capturing lambda is left in the handler. A no-op after an explicit
+    // unregister (m_handler is then null).
+    if (m_handler != nullptr) {
+        m_handler->unregister_event_handler(this);
+    }
+}
+
 } // namespace everest::lib::io::tls
