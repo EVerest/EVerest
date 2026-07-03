@@ -24,7 +24,6 @@ target_sources(${MODULE_NAME}
 # insert other things like install cmds etc here
 target_sources(${MODULE_NAME}
     PRIVATE
-    conversions_v16.cpp
     charge_point_config_factory_v16.cpp
 
     generic_chargepoint.cpp
