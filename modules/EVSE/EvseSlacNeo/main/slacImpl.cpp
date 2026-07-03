@@ -24,6 +24,20 @@ namespace api_telemetry = everest::lib::API::V1_0::types::telemetry;
 template <typename T> nlohmann::json to_telemetry_json(std::string const& value) {
     return api_telemetry::deserialize<T>(value);
 }
+
+// Converts the library's framework-agnostic D3State into the generated slac interface enum.
+// The mapping is total: D3State and types::slac::State share the same three matching states.
+types::slac::State to_interface_state(everest::lib::slac::D3State state) {
+    switch (state) {
+    case everest::lib::slac::D3State::Matching:
+        return types::slac::State::MATCHING;
+    case everest::lib::slac::D3State::Matched:
+        return types::slac::State::MATCHED;
+    case everest::lib::slac::D3State::Unmatched:
+        return types::slac::State::UNMATCHED;
+    }
+    return types::slac::State::UNMATCHED;
+}
 } // namespace
 
 slacImpl::slacImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<EvseSlacNeo>& mod, Conf& config) :
@@ -179,13 +193,7 @@ void slacImpl::configure_callbacks() {
 
     callbacks.signal_dlink_ready = [this](bool value) { publish_dlink_ready(value); };
 
-    callbacks.signal_state = [this](const std::string& value) {
-        try {
-            publish_state(types::slac::string_to_state(value));
-        } catch (const std::exception& e) {
-            EVLOG_error << fmt::format("Tried to publish unknown SLAC state '{}'. Error: {}", value, e.what());
-        }
-    };
+    callbacks.signal_state = [this](everest::lib::slac::D3State value) { publish_state(to_interface_state(value)); };
 
     callbacks.signal_error_routine_request = [this]() { publish_request_error_routine(nullptr); };
 

@@ -35,9 +35,13 @@ void Context::signal_error_routine_request() {
     }
 }
 
-void Context::signal_state(const std::string& state) {
+void Context::publish_slac_state() {
+    if (last_published_d3_state.has_value() && *last_published_d3_state == status.d3_state) {
+        return;
+    }
+    last_published_d3_state = status.d3_state;
     if (callbacks.signal_state) {
-        callbacks.signal_state(state);
+        callbacks.signal_state(status.d3_state);
     }
 }
 

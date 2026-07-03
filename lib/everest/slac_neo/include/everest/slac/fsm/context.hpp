@@ -6,6 +6,7 @@
 #include "everest/slac/slac_messages.hpp"
 #include <array>
 #include <functional>
+#include <optional>
 #include <string>
 
 #include <everest/slac/EvseSlacConfig.hpp>
@@ -136,7 +137,7 @@ template <> struct MMV<messages::lumissil::nscm_get_d_link_status_cnf> {
 
 struct ContextCallbacks {
     std::function<bool(messages::HomeplugMessage&)> send_raw_slac{nullptr};
-    std::function<void(const std::string&)> signal_state{nullptr};
+    std::function<void(D3State)> signal_state{nullptr};
     std::function<void(bool)> signal_dlink_ready{nullptr};
     std::function<void()> signal_error_routine_request{nullptr};
     std::function<void(const std::string&)> signal_ev_mac_address_parm_req{nullptr};
@@ -185,7 +186,9 @@ struct Context {
     void signal_cm_slac_match_cnf(const uint8_t* ev_mac);
     void signal_dlink_ready(bool value);
     void signal_error_routine_request();
-    void signal_state(const std::string& state);
+    // Publishes the coarse public SLAC state (D3State) to the consumer, deriving it from status.d3_state.
+    // Deduplicates consecutive identical states so a single logical transition emits at most one signal.
+    void publish_slac_state();
     void clear_match_confirm_cache();
     void cache_match_confirm_message(messages::cm_slac_match_cnf const& match_confirm_message, uint8_t const* ev_mac,
                                      uint8_t const* evse_mac, uint8_t const* run_id);
@@ -207,6 +210,8 @@ struct Context {
 
 private:
     const ContextCallbacks& callbacks;
+    // Last D3State handed to signal_state, used to suppress duplicate publications.
+    std::optional<D3State> last_published_d3_state{};
 };
 
 } // namespace everest::lib::slac::fsm::evse

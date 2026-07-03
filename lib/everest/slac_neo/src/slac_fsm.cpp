@@ -190,6 +190,11 @@ struct slac_fsm::Impl {
 };
 
 void slac_fsm::event_post_processing() {
+    // Publish the public SLAC state after every processed event. The state machine keeps
+    // ctx.status.d3_state current in each on_entry; publish_slac_state() deduplicates, so this
+    // emits exactly one signal per logical transition regardless of telemetry configuration.
+    ctx.publish_slac_state();
+
     auto print = ctx.slac_config.print_state_transitions;
     auto telemetry = ctx.slac_config.provide_telemetry;
 

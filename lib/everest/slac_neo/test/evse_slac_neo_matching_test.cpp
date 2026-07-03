@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <net/ethernet.h>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -991,6 +992,119 @@ bool test_matching_uses_session_nmk_when_debug_disabled() {
                        "CM_SLAC_MATCH.CNF did not use configured session NMK");
 }
 
+bool test_signal_state_published_through_full_match() {
+    const char* test_name = "test_signal_state_published_through_full_match";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    std::vector<D3State> published_states;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+    callbacks.signal_state = [&published_states](D3State state) { published_states.push_back(state); };
+
+    Context ctx(callbacks);
+    configure_common(ctx);
+    fill_session_nmk(ctx, 0x33);
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x03};
+    auto run_id = fill_run_id(0x33);
+    if (!perform_full_match_sequence(ctx, sent_messages, machine, ev_mac, run_id, SlacState::Matched, 700)) {
+        return false;
+    }
+
+    // The slac/state interface variable is only observable via signal_state. Unmatched, Matching and
+    // Matched must each publish, mirroring the legacy EvseSlac behavior.
+    const auto first_index = [&published_states](D3State value) -> long {
+        for (std::size_t i = 0; i < published_states.size(); ++i) {
+            if (published_states[i] == value) {
+                return static_cast<long>(i);
+            }
+        }
+        return -1;
+    };
+    const auto unmatched_at = first_index(D3State::Unmatched);
+    const auto matching_at = first_index(D3State::Matching);
+    const auto matched_at = first_index(D3State::Matched);
+
+    if (!assert_true(unmatched_at >= 0, test_name, "UNMATCHED was never published")) {
+        return false;
+    }
+    if (!assert_true(matching_at >= 0, test_name, "MATCHING was never published")) {
+        return false;
+    }
+    if (!assert_true(matched_at >= 0, test_name, "MATCHED was never published")) {
+        return false;
+    }
+    if (!assert_true(unmatched_at < matching_at && matching_at < matched_at, test_name,
+                     "published states are not ordered UNMATCHED -> MATCHING -> MATCHED")) {
+        return false;
+    }
+    return assert_true(published_states.back() == D3State::Matched, test_name,
+                       "final published state after a successful match is not MATCHED");
+}
+
+bool test_signal_state_stays_matching_during_wait_for_link() {
+    const char* test_name = "test_signal_state_stays_matching_during_wait_for_link";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    std::vector<D3State> published_states;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+    callbacks.signal_state = [&published_states](D3State state) { published_states.push_back(state); };
+    callbacks.signal_ev_mac_address_match_cnf = [](const std::string&) {};
+
+    Context ctx(callbacks);
+    configure_common(ctx);
+    configure_wait_for_link(ctx);
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x08};
+    auto run_id = fill_run_id(0x88);
+    // With link detection enabled the FSM goes Matching -> WaitForLink (awaiting the PLC link) before
+    // Matched. WaitForLink is still part of an in-progress match, so the public state must remain
+    // MATCHING and must never dip back to UNMATCHED while waiting for the link.
+    if (!perform_full_match_sequence(ctx, sent_messages, machine, ev_mac, run_id, SlacState::WaitForLink, 700)) {
+        return false;
+    }
+
+    if (!assert_true(not published_states.empty(), test_name, "no SLAC state was published")) {
+        return false;
+    }
+    if (!assert_true(published_states.back() == D3State::Matching, test_name,
+                     "public state is not MATCHING while waiting for link")) {
+        return false;
+    }
+    // Once MATCHING has been published, it must not be followed by UNMATCHED during the link wait.
+    bool seen_matching = false;
+    for (auto const state : published_states) {
+        if (state == D3State::Matching) {
+            seen_matching = true;
+        } else if (seen_matching && state == D3State::Unmatched) {
+            return assert_true(false, test_name, "public state dipped to UNMATCHED during WaitForLink");
+        }
+    }
+    return true;
+}
+
 bool test_waitforlink_retry_from_same_ev_and_run_id_resends_cnf() {
     const char* test_name = "test_waitforlink_retry_from_same_ev_and_run_id_resends_cnf";
     ContextCallbacks callbacks{};
@@ -1681,7 +1795,7 @@ bool test_matched_qualcomm_link_status_rejects_only_negative_cnf() {
 } // namespace
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 24>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 26>{
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_same_session",
                        test_duplicate_cm_slac_parm_req_restarts_same_session),
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_inflight_session",
@@ -1698,6 +1812,10 @@ int main() {
                        test_debug_simulate_failed_matching_uses_wrong_nmk),
         std::make_pair("test_matching_uses_session_nmk_when_debug_disabled",
                        test_matching_uses_session_nmk_when_debug_disabled),
+        std::make_pair("test_signal_state_published_through_full_match",
+                       test_signal_state_published_through_full_match),
+        std::make_pair("test_signal_state_stays_matching_during_wait_for_link",
+                       test_signal_state_stays_matching_during_wait_for_link),
         std::make_pair("test_waitforlink_retry_from_same_ev_and_run_id_resends_cnf",
                        test_waitforlink_retry_from_same_ev_and_run_id_resends_cnf),
         std::make_pair("test_waitforlink_retry_from_different_src_does_not_resend_cnf",
