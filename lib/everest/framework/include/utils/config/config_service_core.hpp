@@ -39,10 +39,10 @@ class ConfigServiceCore : public ConfigServiceInterface {
 public:
     /// \param parse_settings Parse settings used to validate incoming YAML configs (paths to schemas, modules, etc.).
     /// \param db_connection  Shared, already-migrated SQLite connection (from open_config_database()).
-    /// \param spawn_threads  Whether to use background threads for async/actor tasks (default true).
+    /// \param stop_fn        Callback to stop running modules (optional stub).
+    /// \param restart_fn     Callback to restart modules (optional stub).
     ConfigServiceCore(const ConfigParseSettings& parse_settings,
-                      std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection,
-                      bool spawn_threads = true);
+                      std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection);
     ~ConfigServiceCore() override;
 
     // --- Re-initialize configuration ---
@@ -90,7 +90,6 @@ public:
     void notice_module_restart_triggered() override;
 
 private:
-    bool spawn_threads_;
     std::shared_ptr<const everest::config::ModuleConfigurations> active_configs_ptr_;
     everest::config::ModuleConfigurations module_configs_;
     ConfigParseSettings parse_settings_;
@@ -112,15 +111,6 @@ private:
     template <typename Func>
     auto post_to_actor(Func&& f) {
         using ReturnType = std::invoke_result_t<Func>;
-        if (!spawn_threads_) {
-            if constexpr (std::is_void_v<ReturnType>) {
-                f();
-                return;
-            } else {
-                return f();
-            }
-        }
-
         auto promise = std::make_shared<std::promise<ReturnType>>();
         auto future = promise->get_future();
         command_queue_.push([promise, f = std::forward<Func>(f)]() mutable {
@@ -164,8 +154,6 @@ private:
     std::unique_ptr<everest::config::SqliteStorage> active_storage_;
 
     SetParamCallback set_parameter_callback_;
-
-    std::vector<std::future<SetParameterResponse>> orphaned_futures_;
 };
 
 } // namespace Everest::config
