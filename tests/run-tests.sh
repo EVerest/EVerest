@@ -25,6 +25,7 @@ set -euo pipefail
 #   --junitxml PATH      JUnit XML output (default: result.xml)
 #   --html PATH          HTML report output (default: report.html)
 #   --no-isolation       Disable network isolation
+#   --                   Pass remaining args directly to pytest (e.g. -x -vv)
 #   -h, --help           Show this help
 #
 # Environment variables:
@@ -45,6 +46,7 @@ JUNITXML="result.xml"
 HTML="report.html"
 ISOLATION="${NETWORK_ISOLATION:-true}"
 SUITE=""
+EXTRA_PYTEST_ARGS=()
 
 usage() {
     sed -n '3,/^$/s/^# \?//p' "$0"
@@ -59,6 +61,7 @@ while [[ $# -gt 0 ]]; do
         --junitxml)        JUNITXML="$2"; shift 2;;
         --html)            HTML="$2"; shift 2;;
         --no-isolation)    ISOLATION=false; shift;;
+        --)                shift; EXTRA_PYTEST_ARGS+=("$@"); break;;
         -h|--help)         usage;;
         -*)                echo "Unknown option: $1" >&2; exit 1;;
         *)                 SUITE="$1"; shift;;
@@ -129,6 +132,10 @@ fi
 
 [[ -n "$ISOLATION_FLAG" ]] && PYTEST_ARGS+=("$ISOLATION_FLAG")
 
+if [[ ${#EXTRA_PYTEST_ARGS[@]} -gt 0 ]]; then
+    echo "Pytest passthrough args: ${EXTRA_PYTEST_ARGS[*]}"
+fi
+
 # OCPP setup (certs + configs)
 setup_ocpp() {
     local aux_dir="$SCRIPT_DIR/ocpp_tests/test_sets/everest-aux"
@@ -148,6 +155,7 @@ case "$SUITE" in
         setup_ocpp
 
         "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
+            "${EXTRA_PYTEST_ARGS[@]}" \
             --junitxml="$JUNITXML" --html="$HTML" \
             core_tests/*.py \
             framework_tests/*.py \
@@ -160,6 +168,7 @@ case "$SUITE" in
     integration)
         cd "$SCRIPT_DIR"
         "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
+            "${EXTRA_PYTEST_ARGS[@]}" \
             --junitxml="$JUNITXML" --html="$HTML" \
             core_tests/*.py \
             framework_tests/*.py \
@@ -169,6 +178,7 @@ case "$SUITE" in
     core)
         cd "$SCRIPT_DIR"
         "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
+            "${EXTRA_PYTEST_ARGS[@]}" \
             --junitxml="$JUNITXML" --html="$HTML" \
             core_tests/*.py
         ;;
@@ -176,6 +186,7 @@ case "$SUITE" in
     framework)
         cd "$SCRIPT_DIR"
         "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
+            "${EXTRA_PYTEST_ARGS[@]}" \
             --junitxml="$JUNITXML" --html="$HTML" \
             framework_tests/*.py
         ;;
@@ -183,6 +194,7 @@ case "$SUITE" in
     asyncapi)
         cd "$SCRIPT_DIR"
         "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
+            "${EXTRA_PYTEST_ARGS[@]}" \
             --junitxml="$JUNITXML" --html="$HTML" \
             async_api_tests/*.py
         ;;
@@ -191,6 +203,7 @@ case "$SUITE" in
         setup_ocpp
         cd "$SCRIPT_DIR"
         "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
+            "${EXTRA_PYTEST_ARGS[@]}" \
             --junitxml="$JUNITXML" --html="$HTML" \
             ocpp_tests/test_sets/ocpp16/*.py \
             ocpp_tests/test_sets/ocpp201/*.py \
@@ -201,6 +214,7 @@ case "$SUITE" in
         setup_ocpp
         cd "$SCRIPT_DIR"
         "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
+            "${EXTRA_PYTEST_ARGS[@]}" \
             --junitxml="$JUNITXML" --html="$HTML" \
             ocpp_tests/test_sets/ocpp16/*.py
         ;;
@@ -209,6 +223,7 @@ case "$SUITE" in
         setup_ocpp
         cd "$SCRIPT_DIR"
         "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
+            "${EXTRA_PYTEST_ARGS[@]}" \
             --junitxml="$JUNITXML" --html="$HTML" \
             ocpp_tests/test_sets/ocpp201/*.py
         ;;
@@ -217,6 +232,7 @@ case "$SUITE" in
         setup_ocpp
         cd "$SCRIPT_DIR"
         "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
+            "${EXTRA_PYTEST_ARGS[@]}" \
             --junitxml="$JUNITXML" --html="$HTML" \
             ocpp_tests/test_sets/ocpp21/*.py
         ;;
