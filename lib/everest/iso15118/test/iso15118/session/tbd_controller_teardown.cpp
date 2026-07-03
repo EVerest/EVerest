@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <memory>
 #include <optional>
 
@@ -148,7 +148,7 @@ SCENARIO("Data-link loss reaps a never-connected session") {
     }
 }
 
-SCENARIO("A stale terminate flag does not kill the next session") {
+SCENARIO("A terminate racing session creation wins over the fresh session") {
     iso15118::session::logging::set_session_log_callback([](std::size_t, const auto&) {});
 
     bool terminate_signaled = false;
@@ -162,20 +162,34 @@ SCENARIO("A stale terminate flag does not kill the next session") {
     MockConnectionFactory factory;
     auto controller = make_controller(callbacks, factory);
 
-    GIVEN("a terminate flag raised before any session exists") {
+    GIVEN("a session that exists when a data-link terminate is raised") {
+        controller.tick();
+        REQUIRE(factory.calls == 1);
+        factory.last->fire(iso15118::io::ConnectionEvent::ACCEPTED);
+
+        // A terminate raised while the session is live (as a dlink drop racing an
+        // SDP-created session would) must not be swallowed.
         controller.set_dlink_ready(false);
+        terminate_signaled = false;
 
-        WHEN("the loop ticks twice, creating a fresh session") {
-            controller.tick();
-            REQUIRE(factory.last != nullptr);
-            factory.last->fire(iso15118::io::ConnectionEvent::ACCEPTED);
-
-            terminate_signaled = false;
+        WHEN("the loop ticks") {
             controller.tick();
 
-            THEN("the fresh session survives") {
-                REQUIRE_FALSE(terminate_signaled);
-                REQUIRE(controller.has_active_session());
+            THEN("the session is reaped and a subsequent request creates a fresh one") {
+                REQUIRE(terminate_signaled);
+                REQUIRE(factory.calls == 2);
+
+                AND_WHEN("the fresh session is accepted and the loop ticks again") {
+                    factory.last->fire(iso15118::io::ConnectionEvent::ACCEPTED);
+                    terminate_signaled = false;
+                    controller.tick();
+
+                    THEN("the recovered session survives") {
+                        REQUIRE_FALSE(terminate_signaled);
+                        REQUIRE(controller.has_active_session());
+                        REQUIRE(factory.calls == 2);
+                    }
+                }
             }
         }
     }

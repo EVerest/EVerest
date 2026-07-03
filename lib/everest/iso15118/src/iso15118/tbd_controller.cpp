@@ -225,6 +225,9 @@ void TbdController::handle_sdp_server_input() {
     }
 
     if (session) {
+        // A reconnect SDP arriving in the same poll cycle as a pending teardown
+        // is dropped here; the EVCC retransmits its SDP request (~250 ms) and
+        // recovers.
         logf_warning("Ignoring sdp request message because a session is already created and running");
         return;
     }
@@ -265,9 +268,13 @@ void TbdController::handle_sdp_server_input() {
     const auto ipv6_endpoint = connection->get_public_endpoint();
 
     session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup), callbacks, pause_ctx);
-    terminate_session_requested.store(false);
     communication_setup_timeout.reset();
 
+    // Deliberately do not clear terminate_session_requested here. A data-link
+    // loss that races this session creation must win: tick() consumes the flag
+    // and reaps whatever session exists, fresh or not. The EVCC retransmits its
+    // SDP request (~250 ms) so a session torn down this way recovers, whereas
+    // swallowing the flag would strand a session on a dead link.
     sdp_server->send_response(request, ipv6_endpoint);
 }
 
