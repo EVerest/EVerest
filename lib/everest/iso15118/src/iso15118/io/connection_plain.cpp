@@ -3,6 +3,7 @@
 #include <iso15118/io/connection_plain.hpp>
 
 #include <cassert>
+#include <cerrno>
 #include <chrono>
 #include <cinttypes>
 #include <cstring>
@@ -99,13 +100,18 @@ ReadResult ConnectionPlain::read(uint8_t* buf, size_t len) {
         return {did_block, static_cast<size_t>(read_result)};
     }
 
-    // should be an error
-    if (errno != EAGAIN) {
-        // in case the error is not due to blocking, log it
-        logf_error("ConnectionPlain::read failed with error code: %d", errno);
+    // read_result < 0: distinguish a genuine would-block from a fatal error.
+    // EAGAIN/EWOULDBLOCK/EINTR mean "retry"; anything else (ECONNRESET, or
+    // ETIMEDOUT from the TCP keepalive, ...) is terminal, so report it as a
+    // closed connection. Otherwise the level-triggered poll would spin on the
+    // dead socket until the 60 s sequence timeout instead of tearing the
+    // session down within one tick.
+    if (errno == EAGAIN or errno == EWOULDBLOCK or errno == EINTR) {
+        return {true, 0, false};
     }
 
-    return {did_block, 0};
+    logf_warning("ConnectionPlain::read failed with error code: %d", errno);
+    return {false, 0, true};
 }
 
 void ConnectionPlain::handle_connect() {

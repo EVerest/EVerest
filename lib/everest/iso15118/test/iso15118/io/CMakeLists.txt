@@ -18,6 +18,12 @@ add_executable(test_socket_keepalive socket_keepalive.cpp)
 target_link_libraries(test_socket_keepalive PRIVATE iso15118 Catch2::Catch2WithMain)
 catch_discover_tests(test_socket_keepalive)
 
+add_executable(test_connection_plain connection_plain.cpp)
+target_link_libraries(test_connection_plain PRIVATE iso15118 Catch2::Catch2WithMain)
+catch_discover_tests(test_connection_plain
+    PROPERTIES RESOURCE_LOCK iso15118_tls_port_50000
+)
+
 add_executable(connection_openssl_test)
 add_custom_command(
     TARGET connection_openssl_test POST_BUILD
