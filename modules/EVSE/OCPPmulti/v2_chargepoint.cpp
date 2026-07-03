@@ -3,9 +3,9 @@
 
 #include "v2_chargepoint.hpp"
 
-#include <conversions.hpp>
-#include <device_model/composed_device_model_storage.hpp>
-#include <error_handling.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
+#include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
+#include <everest/ocpp_module_common/error_handling.hpp>
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 
 namespace {

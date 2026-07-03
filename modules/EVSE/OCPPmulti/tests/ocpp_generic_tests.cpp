@@ -4,7 +4,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <conversions.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
 #include <generic_ocpp.hpp>
 #include <optional>
 

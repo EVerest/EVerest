@@ -4,9 +4,9 @@
 #include "v16_chargepoint.hpp"
 
 #include "charge_point_config_factory_v16.hpp"
-#include <conversions.hpp>
 #include <conversions_v16.hpp>
-#include <error_mapping.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
+#include <everest/ocpp_module_common/v16/error_mapping.hpp>
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 
 #include <utility>
@@ -751,12 +751,12 @@ ocpp::v16::ErrorInfo ChargePointV16::convert_error(const Everest::error::Error& 
 
     // MREC mapping
     const auto mrec_it =
-        std::find_if(module::MREC_ERROR_MAP.begin(), module::MREC_ERROR_MAP.end(),
+        std::find_if(ocpp_module_common::v16::MREC_ERROR_MAP.begin(), ocpp_module_common::v16::MREC_ERROR_MAP.end(),
                      [error_type](const auto& entry) { return error_type.find(entry.first) != std::string::npos; });
-    if (mrec_it != module::MREC_ERROR_MAP.end()) {
+    if (mrec_it != ocpp_module_common::v16::MREC_ERROR_MAP.end()) {
         // update the result
         result.error_code = mrec_it->second.first;
-        result.vendor_id = module::CHARGE_X_MREC_VENDOR_ID;
+        result.vendor_id = ocpp_module_common::v16::CHARGE_X_MREC_VENDOR_ID;
         result.vendor_error_code = mrec_it->second.second;
         incomplete = false;
     }
@@ -764,11 +764,11 @@ ocpp::v16::ErrorInfo ChargePointV16::convert_error(const Everest::error::Error& 
     // OCPP mapping
     if (incomplete) {
         const auto ocpp_it =
-            std::find_if(module::OCPP_ERROR_MAP.begin(), module::OCPP_ERROR_MAP.end(),
+            std::find_if(ocpp_module_common::v16::OCPP_ERROR_MAP.begin(), ocpp_module_common::v16::OCPP_ERROR_MAP.end(),
                          [error_type](const auto& entry) { return error_type.find(entry.first) != std::string::npos; });
 
         // is OCPP error
-        if (ocpp_it != module::OCPP_ERROR_MAP.end()) {
+        if (ocpp_it != ocpp_module_common::v16::OCPP_ERROR_MAP.end()) {
             // update the result
             result.error_code = ocpp_it->second;
             incomplete = false;
