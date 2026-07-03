@@ -105,12 +105,13 @@ TEST(TlsServer, HandshakeAndExchange) {
     auto conn = server.wrap_accepted_fd(accepted_fd, ip_buf, svc_buf);
     ASSERT_TRUE(conn) << "wrap_accepted_fd returned nullptr";
 
-    everest::lib::io::tls::tls_server srv(std::move(conn));
-
     // -----------------------------------------------------------------------
     // 5. Drive the loop: handshake (accept(0)) + large rx drain + tx echo.
     // -----------------------------------------------------------------------
+    // The handler must outlive the endpoint (its dtor unregisters from the
+    // handler), so declare it first.
     everest::lib::io::event::fd_event_handler ev;
+    everest::lib::io::tls::tls_server srv(std::move(conn));
 
     std::atomic<bool> rx_fired{false};
     std::vector<std::uint8_t> in_buf;
