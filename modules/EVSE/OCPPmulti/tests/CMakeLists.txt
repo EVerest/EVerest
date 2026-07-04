@@ -48,6 +48,7 @@ target_sources(${TEST_TARGET_NAME}
 
     ../generic_ocpp.cpp
     ../v16_chargepoint.cpp
+    ../v16_conversions.cpp
     ../charge_point_config_factory_v16.cpp
 )
 
