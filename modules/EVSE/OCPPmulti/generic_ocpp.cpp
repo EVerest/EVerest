@@ -728,7 +728,7 @@ void GenericOcpp::ready_transaction_handler() {
 
     const auto tx_stop_point_request_value = mv_charge_point.get_tx_stop_point();
     if (tx_stop_point_request_value) {
-        auto tx_stop_point_csl = tx_stop_point_request_value.value(); // contains comma seperated list of TxStartPoints
+        auto tx_stop_point_csl = tx_stop_point_request_value.value(); // contains comma seperated list of TxStopPoints
         tx_stop_points = get_tx_start_stop_points(tx_stop_point_csl);
         EVLOG_info << "TxStopPoints from device model: " << tx_stop_point_csl;
     }
@@ -909,8 +909,6 @@ ocpp::v2::DataTransferResponse GenericOcpp::cb_data_transfer(const ocpp::v2::Dat
     ocpp::v2::DataTransferResponse response{};
     if (mv_requires.data_transfer.empty()) {
         EVLOG_error << "data_transfer called with no configured connections";
-        // TestOcpp201DataTransferIntegration::test_p1_no_callback
-        // expects UnknownVendorId rather than Rejected
         response.status = ocpp::v2::DataTransferStatusEnum::UnknownVendorId;
     } else {
         using namespace module::conversions;
