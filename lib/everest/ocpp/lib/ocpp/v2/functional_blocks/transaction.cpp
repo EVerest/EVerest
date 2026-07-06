@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include "ocpp/v2/ocpp_enums.hpp"
+#include "ocpp/v2/ocpp_types.hpp"
 #include <ocpp/v2/functional_blocks/transaction.hpp>
 
 #include <ocpp/common/connectivity_manager.hpp>
@@ -17,6 +19,8 @@
 
 #include <ocpp/v2/messages/GetTransactionStatus.hpp>
 #include <ocpp/v2/messages/TransactionEvent.hpp>
+#include <optional>
+#include <unistd.h>
 
 namespace ocpp::v2 {
 TransactionBlock::TransactionBlock(
@@ -98,7 +102,8 @@ void TransactionBlock::on_transaction_finished(const std::int32_t evse_id, const
                                                const TriggerReasonEnum trigger_reason,
                                                const std::optional<IdToken>& id_token,
                                                const std::optional<std::string>& /*signed_meter_value*/,
-                                               const ChargingStateEnum charging_state) {
+                                               const ChargingStateEnum charging_state,
+                                               const std::optional<SignedMeterValue>& start_signed_meter_value) {
     auto& evse_handle = this->context.evse_manager.get_evse(evse_id);
     auto& enhanced_transaction = evse_handle.get_transaction();
     if (enhanced_transaction == nullptr) {
@@ -129,6 +134,36 @@ void TransactionBlock::on_transaction_finished(const std::int32_t evse_id, const
         }
     } catch (const everest::db::Exception& e) {
         EVLOG_warning << "Could not get metervalues of transaction: " << e.what();
+    }
+
+    // If the meter only returns a start_signed_meter_value once the transaction stops we inject it here
+    // Otherwise the one recorded on transaction start will be kept
+    if (start_signed_meter_value.has_value() &&
+        this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::SampledDataSignReadings)
+            .value_or(false)) {
+
+        if (!meter_values.has_value()) {
+            meter_values.emplace(std::vector<MeterValue>{});
+        }
+
+        SampledValue* begin_sampled_value =
+            utils::find_sampled_value_by_context(meter_values.value(), ReadingContextEnum::Transaction_Begin);
+
+        if (begin_sampled_value == nullptr) {
+            // No suitable SampledValue was found. Construct one to store the start signed meter value in
+            meter_values->emplace_back();
+            MeterValue& mv = meter_values->back();
+            mv.timestamp = timestamp;
+            mv.sampledValue.emplace_back();
+            begin_sampled_value = &mv.sampledValue.back();
+            begin_sampled_value->context = ReadingContextEnum::Transaction_Begin;
+            begin_sampled_value->measurand = MeasurandEnum::Energy_Active_Import_Register;
+        }
+
+        // Attach our start_signed_meter_value to the (found or created) sampled value if none had been recorded before
+        if (!begin_sampled_value->signedMeterValue.has_value()) {
+            begin_sampled_value->signedMeterValue = start_signed_meter_value;
+        }
     }
 
     // E07.FR.02 The field idToken is provided when the authorization of the transaction has been ended

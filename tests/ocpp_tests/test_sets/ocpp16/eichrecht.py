@@ -14,6 +14,14 @@ from everest_test_utils import get_everest_config_path_str, OcppTestConfiguratio
 
 from ocpp.v16 import call, call_result
 
+from copy import deepcopy
+from typing import Dict
+
+from everest.testing.core_utils._configuration.everest_configuration_strategies.everest_configuration_strategy import \
+    EverestConfigAdjustmentStrategy
+from everest.testing.core_utils._configuration.everest_configuration_strategies.yeti_simulator_disable_meter_transaction_start_strategy import \
+    YetiSimulatorDisableMeterTransactionStartStrategy
+
 
 @pytest.mark.asyncio
 @pytest.mark.everest_core_config(
@@ -132,6 +140,7 @@ async def test_meter_public_key(
         {"status": "Rejected"}
     )
 
+
 @pytest.mark.asyncio
 @pytest.mark.everest_core_config(
     get_everest_config_path_str("everest-config-two-connectors.yaml")
@@ -194,6 +203,85 @@ async def test_meter_signed_meter_values(
         for mv in meter_values_msg.meter_value
         for sv in mv['sampled_value']
     ), "Initial signed meter value not found in MeterValues"
+
+    test_controller.plug_out()
+
+    # expect StopTransaction.req
+    stop_transaction_msg: call.StopTransaction = call.StopTransaction(
+        **await wait_for_and_validate(  # pyright: ignore[reportCallIssue]
+            test_utility,
+            charge_point_v16,
+            "StopTransaction",
+            {},
+        )
+    )
+
+    # verify start and stop signed meter values (order independent)
+    assert stop_transaction_msg is not None
+    assert stop_transaction_msg.transaction_data is not None
+    start_sv = None
+    stop_sv = None
+    for mv in stop_transaction_msg.transaction_data:
+        for sv in mv['sampled_value']:
+            if sv['context'] == 'Transaction.Begin':
+                assert start_sv is None, "transaction_data contains multiple start signed meter values"
+                start_sv = sv
+            elif sv['context'] == 'Transaction.End':
+                assert stop_sv is None, "transaction_data contains multiple stop signed meter values"
+                stop_sv = sv
+
+    assert start_sv is not None, "Start signed meter value not found"
+    assert start_sv['value'] == "test start value"
+    assert start_sv['format'] == 'SignedData'
+
+    assert stop_sv is not None, "Stop signed meter value not found"
+    assert stop_sv['value'] == "test stop value"
+    assert stop_sv['format'] == 'SignedData'
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_core_config(
+    get_everest_config_path_str("everest-config-two-connectors.yaml")
+)
+@pytest.mark.everest_config_adaptions(YetiSimulatorDisableMeterTransactionStartStrategy())
+async def test_meter_signed_meter_values_no_start(
+    charge_point_v16: ChargePoint16, test_utility: TestUtility, test_controller: TestController, test_config: OcppTestConfiguration,
+):
+    test_controller.plug_in(1)
+
+    assert test_config.authorization_info is not None
+    test_controller.swipe(test_config.authorization_info.valid_id_tag_1)
+    # expect authorize.req
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "Authorize",
+        {}
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StartTransaction",
+        {},
+    )
+
+    # expect StatusNotification with status charging
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        {}
+    )
+
+    # Assert that no MeterValues message is sent when the meter transaction starts
+    assert not await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "MeterValues",
+        {},
+        timeout=5,
+    ), "No MeterValues message should be sent at transaction start when dummy_meter_value_send_on_transaction_start is disabled"
 
     test_controller.plug_out()
 

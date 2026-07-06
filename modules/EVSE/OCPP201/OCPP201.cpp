@@ -1469,10 +1469,16 @@ void OCPP201::process_tx_event_effect(const int32_t evse_id, const TxEventEffect
         transaction_data->meter_value = conversions::to_ocpp_meter_value(get_meter_value(session_event),
                                                                          ocpp::v2::ReadingContextEnum::Transaction_End,
                                                                          get_signed_meter_value(session_event));
+        std::optional<ocpp::v2::SignedMeterValue> start_signed_meter_value;
+        if (session_event.transaction_finished.has_value() &&
+            session_event.transaction_finished.value().start_signed_meter_value.has_value()) {
+            start_signed_meter_value = conversions::to_ocpp_signed_meter_value(
+                session_event.transaction_finished.value().start_signed_meter_value.value());
+        }
         this->charge_point->on_transaction_finished(evse_id, transaction_data->timestamp, transaction_data->meter_value,
                                                     transaction_data->stop_reason, transaction_data->trigger_reason,
                                                     transaction_data->id_token, std::nullopt,
-                                                    transaction_data->charging_state);
+                                                    transaction_data->charging_state, start_signed_meter_value);
         this->transaction_handler->reset_transaction_data(evse_id);
     }
 }
