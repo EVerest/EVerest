@@ -16,13 +16,10 @@ public:
     static bool supports_tpm_key_creation();
     static bool supports_custom_key_creation();
 
-public:
     static bool generate_key(const KeyGenerationInfo& key_info, KeyHandle_ptr& out_key);
 
-public:
     static std::vector<X509Handle_ptr> load_certificates(const std::string& data, const EncodingFormat encoding);
 
-public:
     static std::string x509_to_string(X509Handle* handle);
     static std::string x509_get_responder_url(X509Handle* handle);
     static std::string x509_get_key_hash(X509Handle* handle);
@@ -46,7 +43,6 @@ public:
     static CertificateSignRequestResult x509_generate_csr(const CertificateSigningRequestInfo& csr_info,
                                                           std::string& out_csr);
 
-public:
     static bool digest_file_sha256(const fs::path& path, std::vector<std::uint8_t>& out_digest);
 
     static bool base64_decode_to_bytes(const std::string& base64_string, std::vector<std::uint8_t>& out_decoded);

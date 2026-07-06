@@ -19,7 +19,7 @@ X509Wrapper::X509Wrapper(const fs::path& file, const EncodingFormat encoding) {
     }
 
     fsstd::ifstream read(file, std::ios::binary);
-    std::string certificate((std::istreambuf_iterator<char>(read)), std::istreambuf_iterator<char>());
+    const std::string certificate((std::istreambuf_iterator<char>(read)), std::istreambuf_iterator<char>());
 
     auto loaded = CryptoSupplier::load_certificates(certificate, encoding);
     if (loaded.size() != 1) {
@@ -69,12 +69,10 @@ X509Wrapper::X509Wrapper(const X509Wrapper& other) :
 #endif
 }
 
-X509Wrapper::~X509Wrapper() {
-}
-
 bool X509Wrapper::operator==(const X509Wrapper& other) const {
-    if (this == &other)
+    if (this == &other) {
         return true;
+    }
 
     return CryptoSupplier::x509_is_equal(get(), other.get());
 }
@@ -91,8 +89,9 @@ void X509Wrapper::update_validity() {
 
 bool X509Wrapper::is_child(const X509Wrapper& parent) const {
     // A certif can't be it's own parent, use is_selfsigned if that is intended (operator ==)
-    if (*this == parent)
+    if (*this == parent) {
         return false;
+    }
 
     return CryptoSupplier::x509_is_child(get(), parent.get());
 }
@@ -129,8 +128,9 @@ std::optional<fs::path> X509Wrapper::get_file() const {
 }
 
 void X509Wrapper::set_file(fs::path& path) {
-    if (fs::is_directory(path))
+    if (fs::is_directory(path)) {
         throw std::logic_error("X509 wrapper set_file must only be used for files, not directories!");
+    }
 
     file = path;
 }
@@ -138,9 +138,8 @@ void X509Wrapper::set_file(fs::path& path) {
 X509CertificateSource X509Wrapper::get_source() const {
     if (file.has_value()) {
         return X509CertificateSource::FILE;
-    } else {
-        return X509CertificateSource::STRING;
     }
+    return X509CertificateSource::STRING;
 }
 
 X509* X509Wrapper::get_x509_raw() const {
@@ -163,10 +162,8 @@ std::string X509Wrapper::get_serial_number() const {
 std::string X509Wrapper::get_issuer_key_hash() const {
     if (is_selfsigned()) {
         return get_key_hash();
-    } else {
-        // See 'OCPP 2.0.1 Spec: 2.6. CertificateHashDataType'
-        throw std::logic_error("get_issuer_key_hash must only be used on self-signed certs");
-    }
+    } // See 'OCPP 2.0.1 Spec: 2.6. CertificateHashDataType'
+    throw std::logic_error("get_issuer_key_hash must only be used on self-signed certs");
 }
 
 std::string X509Wrapper::get_key_hash() const {

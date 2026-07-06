@@ -24,9 +24,9 @@ std::vector<X509Wrapper> X509CertificateHierarchy::collect_descendants(const X50
         // If we found the certificate
         if (node.certificate == top) {
             // Collect all descendants
-            if (node.children.size()) {
+            if (!node.children.empty()) {
                 for_each_descendant(
-                    [&](const X509Node& descendant, int depth) { descendants.push_back(descendant.certificate); },
+                    [&](const X509Node& descendant, int /*depth*/) { descendants.push_back(descendant.certificate); },
                     node);
             }
 
@@ -52,9 +52,10 @@ std::vector<X509Wrapper> X509CertificateHierarchy::collect_top(const X509Wrapper
         // Iterate all the descendants of the root until we find the leaf level
         for_each_descendant(
             [&](const X509Node& node, int depth) {
-                if (depth < found_depth)
+                if (depth < found_depth) {
                     // Collect all owned
                     top_nodes.push_back(node.certificate);
+                }
             },
             *root, 1);
 
@@ -72,7 +73,7 @@ bool X509CertificateHierarchy::get_certificate_hash(const X509Wrapper& certifica
 
     // Search for certificate in the hierarchy and return the hash
     CertificateHashData hash;
-    bool found;
+    bool found = false;
 
     for_each([&](const X509Node& node) {
         if (node.certificate == certificate && node.hash.has_value()) {
@@ -134,7 +135,7 @@ std::optional<X509Wrapper> X509CertificateHierarchy::find_certificate_root(const
 std::optional<std::pair<const X509Node*, int>>
 X509CertificateHierarchy::find_certificate_root_node(const X509Wrapper& leaf) {
     const X509Node* root_ptr = nullptr;
-    int found_depth;
+    int found_depth = 0;
 
     for (const auto& root : hierarchy) {
         if (root.state.is_selfsigned) {
@@ -150,8 +151,9 @@ X509CertificateHierarchy::find_certificate_root_node(const X509Wrapper& leaf) {
         }
     }
 
-    if (root_ptr)
+    if (root_ptr != nullptr) {
         return std::make_pair(root_ptr, found_depth);
+    }
 
     return std::nullopt;
 }
@@ -179,8 +181,9 @@ std::optional<X509Wrapper> X509CertificateHierarchy::find_certificate(const Cert
         return true;
     });
 
-    if (certificate)
+    if (certificate != nullptr) {
         return *certificate;
+    }
 
     return std::nullopt;
 }
@@ -203,17 +206,19 @@ std::string X509CertificateHierarchy::to_debug_string() {
     std::stringstream str;
 
     for (const auto& root : hierarchy) {
-        if (root.state.is_selfsigned)
+        if (root.state.is_selfsigned) {
             str << "* [ROOT]";
-        else
+        } else {
             str << "+ [ORPH]";
+        }
 
         str << ' ' << root.certificate.get_common_name() << std::endl;
 
         for_each_descendant(
             [&](const X509Node& node, int depth) {
-                while (depth-- > 0)
+                while (depth-- > 0) {
                     str << "---";
+                }
 
                 str << ' ' << node.certificate.get_common_name() << std::endl;
             },
@@ -321,16 +326,18 @@ void X509CertificateHierarchy::insert(X509Wrapper&& inserted_certificate) {
 } // End insert
 
 void X509CertificateHierarchy::prune() {
-    if (hierarchy.size() <= 1)
+    if (hierarchy.size() <= 1) {
         return;
+    }
 
     for (int i = 0; i < hierarchy.size(); ++i) {
         // Possible orphan
         auto& orphan = hierarchy[i];
 
-        bool is_orphan = (orphan.state.is_selfsigned) == 0 && (orphan.state.is_orphan == 0);
-        if (is_orphan == false)
+        const bool is_orphan = (orphan.state.is_selfsigned) == 0 && (orphan.state.is_orphan == 0);
+        if (is_orphan == false) {
             continue;
+        }
 
         // Found a non-permanent orphan, search for a issuer
         bool found_issuer = false;
@@ -362,7 +369,7 @@ void X509CertificateHierarchy::prune() {
 X509CertificateHierarchy X509CertificateHierarchy::build_hierarchy(std::vector<X509Wrapper>& certificates) {
     X509CertificateHierarchy ordered;
 
-    while (certificates.size()) {
+    while (!certificates.empty()) {
         ordered.insert(std::move(certificates.back()));
         certificates.pop_back();
     }

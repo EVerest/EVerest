@@ -56,7 +56,7 @@ option(LIBEVSE_CRYPTO_SUPPLIER_OPENSSL "Default OpenSSL cryptography supplier" O
 option(ENFORCE_CERT_PROFILES "Enable certificate profile enforcement" ON)
 # dependencies
 if (LIBEVSE_CRYPTO_SUPPLIER_OPENSSL)
-    find_package(OpenSSL 3 REQUIRED) 			 
+    find_package(OpenSSL 3 REQUIRED)
 endif()
 
 add_subdirectory(lib)

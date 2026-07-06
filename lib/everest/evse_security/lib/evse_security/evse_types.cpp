@@ -94,12 +94,15 @@ std::string hash_algorithm_to_string(HashAlgorithm e) {
 };
 
 HashAlgorithm string_to_hash_algorithm(const std::string& s) {
-    if (s == "SHA256")
+    if (s == "SHA256") {
         return HashAlgorithm::SHA256;
-    else if (s == "SHA384")
+    }
+    if (s == "SHA384") {
         return HashAlgorithm::SHA384;
-    else if (s == "SHA512")
+    }
+    if (s == "SHA512") {
         return HashAlgorithm::SHA512;
+    }
 
     throw std::out_of_range("Could not convert string to HashAlgorithm");
 }
@@ -153,6 +156,7 @@ std::string get_installed_certificates_status_to_string(GetInstalledCertificates
     }
 };
 
+namespace {
 std::string get_key_pair_status_to_string(GetCertificateInfoStatus e) {
     switch (e) {
     case GetCertificateInfoStatus::Accepted:
@@ -169,6 +173,7 @@ std::string get_key_pair_status_to_string(GetCertificateInfoStatus e) {
         throw std::out_of_range("Could not convert GetCertificateInfoStatus to string");
     }
 };
+} // namespace
 
 } // namespace conversions
 
