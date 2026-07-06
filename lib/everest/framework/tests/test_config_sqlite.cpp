@@ -22,7 +22,7 @@ ModuleConfigurations get_example_module_configs() {
     module_config.telemetry_config = TelemetryConfig(1);
 
     Fulfillment fulfillment;
-    fulfillment.module_id = "module_id1";
+    fulfillment.module_id = "example_module";
     fulfillment.implementation_id = "implementation_id1";
     fulfillment.requirement = {"requirement_id1", 0};
     module_config.connections.insert({"connection1", {fulfillment}});

@@ -17,19 +17,6 @@ namespace everest::config {
 
 namespace fs = std::filesystem;
 
-namespace {
-/// \brief RAII helper to safely enable and disable foreign keys within a scope.
-struct FkGuard {
-    ConnectionInterface& db;
-    explicit FkGuard(ConnectionInterface& db) : db(db) {
-        db.execute_statement("PRAGMA foreign_keys = ON;");
-    }
-    ~FkGuard() {
-        db.execute_statement("PRAGMA foreign_keys = OFF;");
-    }
-};
-} // namespace
-
 SqliteConfigSlotManager::SqliteConfigSlotManager(const std::filesystem::path& db_path,
                                                  const std::filesystem::path& migrations_path) {
     db = std::make_shared<Connection>(db_path);
@@ -130,7 +117,6 @@ SqliteConfigSlotManager::update_config_slot(int slot_id, const std::string& conf
                                             const std::optional<std::string>& description) {
     GenericResponseStatus ret = GenericResponseStatus::Failed;
     if (exists(slot_id)) {
-        auto transaction = this->db->begin_transaction();
         auto meta_stmt =
             this->db->new_statement("UPDATE CONFIG_META SET CONFIG_DUMP = @config_dump, CONFIG_FILE_PATH "
                                     "= @config_file_path, DESCRIPTION = @description WHERE ID = @config_id");
@@ -149,7 +135,6 @@ SqliteConfigSlotManager::update_config_slot(int slot_id, const std::string& conf
         }
 
         if (meta_stmt->step() == SQLITE_DONE) {
-            transaction->commit();
             ret = GenericResponseStatus::OK;
         }
     }
@@ -160,7 +145,6 @@ GenericResponseStatus SqliteConfigSlotManager::update_description(int slot_id,
                                                                   const std::optional<std::string>& description) {
     GenericResponseStatus ret = GenericResponseStatus::Failed;
     if (exists(slot_id)) {
-        auto transaction = this->db->begin_transaction();
         auto meta_stmt =
             this->db->new_statement("UPDATE CONFIG_META SET DESCRIPTION = @description WHERE ID = @config_id");
 
@@ -172,7 +156,6 @@ GenericResponseStatus SqliteConfigSlotManager::update_description(int slot_id,
         }
 
         if (meta_stmt->step() == SQLITE_DONE) {
-            transaction->commit();
             ret = GenericResponseStatus::OK;
         }
     }
@@ -200,8 +183,7 @@ std::vector<SlotInfo> SqliteConfigSlotManager::list_slots() {
 DuplicateSlotResult SqliteConfigSlotManager::duplicate_slot(int source_slot_id,
                                                             std::optional<std::string> description) {
     try {
-        FkGuard fk_guard(*this->db);
-        auto transaction = this->db->begin_transaction();
+        auto transaction = db->begin_transaction_with_deferred_fkeys();
 
         if (not exists(source_slot_id)) {
             return {false, std::nullopt};
@@ -353,11 +335,24 @@ GenericResponseStatus SqliteConfigSlotManager::set_next_boot_slot_id(int slot_id
 }
 
 GenericResponseStatus SqliteConfigSlotManager::delete_slot(int slot_id) {
+    if (not exists(slot_id)) {
+        // deleting a non-existing slot is a no-op
+        return GenericResponseStatus::OK;
+    }
     try {
-        FkGuard fk_guard(*this->db);
-        auto stmt = this->db->new_statement("DELETE FROM CONFIG WHERE ID = @config_id;");
-        stmt->bind_int("@config_id", slot_id);
-        stmt->step();
+        auto transaction = db->begin_transaction_with_enforced_fkeys();
+
+        {
+            const std::string sql = "DELETE FROM CONFIG WHERE ID = ?;";
+            auto stmt = this->db->new_statement(sql);
+            stmt->bind_int(1, slot_id);
+            if (stmt->step() != SQLITE_DONE) {
+                return GenericResponseStatus::Failed;
+            }
+        }
+
+        transaction->commit();
+
         return GenericResponseStatus::OK;
     } catch (const std::exception& e) {
         EVLOG_error << "Failed to delete slot with id " << slot_id << ": " << e.what();

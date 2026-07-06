@@ -89,14 +89,17 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
             slot_mgr.delete_slot(boot_slot_id);
             // Seed the database: parse() enriched module_configs with manifest metadata needed for storage writes.
             const auto& module_config = mgr_config->get_module_configurations();
-            slot_mgr.write_config_slot(boot_slot_id, nlohmann::json(module_config).dump(), ms.config_file,
-                                       std::nullopt);
-            if (db_storage->write_module_configs(module_config) != everest::config::GenericResponseStatus::Failed) {
-                EVLOG_info << "Module configs written to database successfully";
-                bs.module_configs_initialized = true;
+            if (slot_mgr.write_config_slot(boot_slot_id, nlohmann::json(module_config).dump(), ms.config_file,
+                                           std::nullopt) == everest::config::GenericResponseStatus::OK) {
+                if (db_storage->write_module_configs(module_config) != everest::config::GenericResponseStatus::Failed) {
+                    EVLOG_info << "Module configs written to database successfully";
+                    bs.module_configs_initialized = true;
+                } else {
+                    EVLOG_warning << "Failed to write module configs to database";
+                    slot_mgr.delete_slot(boot_slot_id);
+                }
             } else {
-                EVLOG_warning << "Failed to write module configs to database";
-                slot_mgr.delete_slot(boot_slot_id);
+                EVLOG_error << "Could not write config slot " << boot_slot_id;
             }
         }
     }
