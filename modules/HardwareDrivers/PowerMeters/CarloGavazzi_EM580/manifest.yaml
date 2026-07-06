@@ -53,7 +53,11 @@ provides:
         maximum: 60000
         default: 1000
       device_state_read_interval_ms:
-        description: Interval in milliseconds between reading the device state bitfield (used for VendorError reporting). Default 10000 ms (once per 10 seconds). Allowed range 500-60000 ms.
+        description: >-
+          Interval in milliseconds between reading the device state bitfield (VendorError
+          reporting) and, when monitor_transaction_state is enabled, the OCMF transaction
+          state while a transaction is active. Default 10000 ms (once per 10 seconds).
+          Allowed range 500-60000 ms.
         type: integer
         minimum: 500
         maximum: 60000
@@ -65,6 +69,14 @@ provides:
           - binary
           - der
         default: binary
+      monitor_transaction_state:
+        description: >-
+          When enabled, reads the OCMF state at device_state_read_interval_ms
+          while a transaction is active. If the device reports READY (transaction closed on
+          the meter side, e.g. after a brief power loss), raises powermeter/VendorError so
+          the charging session can be stopped when fail_on_powermeter_errors is enabled in the EvseManager module.
+        type: boolean
+        default: false
 requires:
   modbus:
     interface: serial_communication_hub

@@ -53,6 +53,11 @@ public:
 
     virtual transport::DataVector fetch(std::int32_t address, std::uint16_t register_count) = 0;
     virtual void write_multiple_registers(std::int32_t address, const std::vector<std::uint16_t>& data) = 0;
+
+    virtual void enter_initial_connection_mode() {
+    }
+    virtual void mark_normal_operation_mode() {
+    }
 };
 
 /**
@@ -91,12 +96,7 @@ private:
         while (infinite_retries || attempt <= max_retries) {
             try {
                 auto result = std::forward<Func>(func)();
-                // First successful call - switch to normal mode
-                bool was_initial = m_initial_connection_mode.exchange(false);
-                // Clear CommunicationFault error if communication is restored
-                // Only clear if we're not in initial connection mode (i.e., we've had
-                // at least one successful operation)
-                if (m_clear_error_handler && !was_initial) {
+                if (!m_initial_connection_mode.load() && m_clear_error_handler) {
                     m_clear_error_handler();
                 }
                 return result;
@@ -157,12 +157,7 @@ private:
         while (infinite_retries || attempt <= max_retries) {
             try {
                 std::forward<Func>(func)();
-                // First successful call - switch to normal mode
-                bool was_initial = m_initial_connection_mode.exchange(false);
-                // Clear CommunicationFault error if communication is restored
-                // Only clear if we're not in initial connection mode (i.e., we've had
-                // at least one successful operation)
-                if (m_clear_error_handler && !was_initial) {
+                if (!m_initial_connection_mode.load() && m_clear_error_handler) {
                     m_clear_error_handler();
                 }
                 return;
@@ -242,6 +237,14 @@ public:
 
     transport::DataVector fetch(std::int32_t address, std::uint16_t register_count) override;
     void write_multiple_registers(std::int32_t address, const std::vector<std::uint16_t>& data) override;
+
+    void enter_initial_connection_mode() override {
+        m_initial_connection_mode.store(true);
+    }
+
+    void mark_normal_operation_mode() override {
+        m_initial_connection_mode.store(false);
+    }
 };
 
 } // namespace transport
