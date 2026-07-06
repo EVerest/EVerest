@@ -16,8 +16,8 @@ void ServiceDiscovery::enter() {
 
     message_20::ServiceDiscoveryRequest req;
     setup_header(req.header, m_ctx.get_session());
-    req.supported_service_ids = message_20::datatypes::ServiceIdList{
-        message_20::to_underlying_value(message_20::datatypes::ServiceCategory::DC)};
+    req.supported_service_ids =
+        message_20::datatypes::ServiceIdList{message_20::to_underlying_value(m_ctx.selected_service())};
     m_ctx.respond(req);
 }
 
@@ -33,12 +33,13 @@ Result ServiceDiscovery::feed(Event ev) {
         return {};
     }
 
+    const auto requested = m_ctx.selected_service();
     const auto& services = res->energy_transfer_service_list;
-    const auto dc_offered = std::any_of(services.begin(), services.end(), [](const auto& service) {
-        return service.service_id == message_20::datatypes::ServiceCategory::DC;
-    });
-    if (not dc_offered) {
-        logf_error("ServiceDiscoveryResponse does not offer the DC energy transfer service");
+    const auto offered = std::any_of(services.begin(), services.end(),
+                                     [requested](const auto& service) { return service.service_id == requested; });
+    if (not offered) {
+        logf_error("ServiceDiscoveryResponse does not offer the requested energy transfer service: %d",
+                   static_cast<int>(message_20::to_underlying_value(requested)));
         m_ctx.stop_session();
         return {};
     }
