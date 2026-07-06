@@ -51,6 +51,9 @@ struct EvConfig {
     std::vector<message_20::SupportedAppProtocol> advertised_app_protocols{
         {"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}};
 
+    // Energy service for this session; advertised_app_protocols must carry the matching SAP namespace.
+    message_20::datatypes::ServiceCategory energy_service{message_20::datatypes::ServiceCategory::DC};
+
     // Delay between a request becoming ready and being transmitted; events may replace it
     // within that window. Zero makes Ongoing re-poll states flood the SECC at reactor speed.
     std::chrono::milliseconds send_delay{DEFAULT_SEND_DELAY};

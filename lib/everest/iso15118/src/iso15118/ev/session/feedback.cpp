@@ -41,4 +41,12 @@ void Feedback::stop_from_charger() const {
     call_if_available(callbacks.stop_from_charger);
 }
 
+void Feedback::ac_limits(const message_20::datatypes::AC_CPDResEnergyTransferMode& mode) const {
+    call_if_available(callbacks.ac_limits, mode);
+}
+
+void Feedback::ac_target_power(const message_20::datatypes::Dynamic_AC_CLResControlMode& mode) const {
+    call_if_available(callbacks.ac_target_power, mode);
+}
+
 } // namespace iso15118::ev
