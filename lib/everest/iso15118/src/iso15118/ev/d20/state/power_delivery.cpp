@@ -4,9 +4,11 @@
 
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
+#include <iso15118/ev/d20/state/ac_charge_loop.hpp>
 #include <iso15118/ev/d20/state/dc_charge_loop.hpp>
 #include <iso15118/ev/d20/state/dc_welding_detection.hpp>
 #include <iso15118/ev/d20/state/power_delivery.hpp>
+#include <iso15118/ev/d20/state/session_stop.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/power_delivery.hpp>
 
@@ -44,10 +46,17 @@ Result PowerDelivery::feed(Event ev) {
     }
 
     using Progress = message_20::datatypes::Progress;
+    const bool is_ac = m_ctx.selected_service() == message_20::datatypes::ServiceCategory::AC;
     switch (m_charge_progress) {
     case Progress::Start:
+        if (is_ac) {
+            return m_ctx.create_state<AC_ChargeLoop>();
+        }
         return m_ctx.create_state<DC_ChargeLoop>();
     case Progress::Stop:
+        if (is_ac) {
+            return m_ctx.create_state<SessionStop>();
+        }
         return m_ctx.create_state<DC_WeldingDetection>();
     case Progress::Standby:
         logf_info("PowerDelivery Standby accepted; staying in PowerDelivery");

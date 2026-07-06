@@ -2,6 +2,7 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
+#include <iso15118/ev/d20/state/ac_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/dc_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/service_selection.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
@@ -14,7 +15,7 @@ void ServiceSelection::enter() {
 
     message_20::ServiceSelectionRequest req;
     setup_header(req.header, m_ctx.get_session());
-    req.selected_energy_transfer_service = {message_20::datatypes::ServiceCategory::DC, m_parameter_set_id};
+    req.selected_energy_transfer_service = {m_ctx.selected_service(), m_parameter_set_id};
     m_ctx.respond(req);
 }
 
@@ -28,6 +29,12 @@ Result ServiceSelection::feed(Event ev) {
     const auto* res = expect_response<message_20::ServiceSelectionResponse>(m_ctx, *variant);
     if (res == nullptr) {
         return {};
+    }
+
+    const auto service = m_ctx.selected_service();
+
+    if (service == message_20::datatypes::ServiceCategory::AC) {
+        return m_ctx.create_state<AC_ChargeParameterDiscovery>();
     }
 
     return m_ctx.create_state<DC_ChargeParameterDiscovery>();

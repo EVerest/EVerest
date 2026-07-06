@@ -41,8 +41,12 @@ private:
 
 } // namespace
 
-Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcChargeParams initial_dc_params) :
-    config(std::move(config_)), feedback(callbacks_), dc_params(std::move(initial_dc_params)) {
+Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcChargeParams initial_dc_params,
+                       AcChargeParams initial_ac_params) :
+    config(std::move(config_)),
+    feedback(callbacks_),
+    dc_params(std::move(initial_dc_params)),
+    ac_params(std::move(initial_ac_params)) {
 
     // Resolve the egress interface up front; an unusable interface is fatal.
     if (not io::check_and_update_interface(config.interface_name)) {
@@ -54,12 +58,8 @@ Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcCharg
         sdp_client.emplace(config.interface_name, config.advertised_security);
     }
 
-    // Wire the Session's outbound seam. The data client does not exist yet (it is
-    // created in establish_data_path once the transport security is known), so the
-    // lambda dereferences it lazily; by the time the first frame is sent (from
-    // session->start(), invoked on connect) the client is in place. The Session
-    // keeps its own copy of the callbacks (for v2g_message); the Controller wraps a
-    // separate copy in its own Feedback for connected / stopped.
+    // The data client is created later, in establish_data_path, so this dereferences it
+    // lazily; it exists by the time the first frame is sent on connect.
     session = std::make_unique<Session>(
         callbacks_,
         [this](std::vector<uint8_t> frame) {
@@ -77,7 +77,7 @@ Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcCharg
             return true;
         },
         reactor, SessionTiming{config.send_delay, config.response_timeout}, config.evcc_id,
-        config.advertised_app_protocols, &dc_params);
+        config.advertised_app_protocols, &dc_params, &ac_params, config.energy_service);
 
     // The session can finish inside a timer callback, so the run loop cannot poll for it.
     session->set_on_finished([this]() {
@@ -301,6 +301,11 @@ void Controller::update_present_soc(double present_soc) {
 void Controller::update_present_voltage(float present_voltage) {
     auto h = dc_params.handle();
     (*h).present_voltage = present_voltage;
+}
+
+void Controller::update_present_active_power(float present_active_power) {
+    auto h = ac_params.handle();
+    (*h).present_active_power = present_active_power;
 }
 
 } // namespace iso15118::ev
