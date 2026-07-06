@@ -14,7 +14,6 @@ void ocpp_data_transferImpl::ready() {
 
 types::ocpp::DataTransferResponse
 ocpp_data_transferImpl::handle_data_transfer(types::ocpp::DataTransferRequest& request) {
-    // your code for cmd data_transfer goes here
     return mod->m_ocpp.handle_data_transfer(request);
 }
 
