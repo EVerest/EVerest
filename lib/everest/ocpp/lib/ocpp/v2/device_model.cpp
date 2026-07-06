@@ -196,7 +196,7 @@ bool validate_value(const VariableCharacteristics& characteristics, const std::s
         if (!is_decimal_number(value)) {
             return false;
         }
-        const float f = std::stof(value);
+        const double f = std::stod(value);
 
         if (allow_zero and f == 0) {
             return true;

@@ -162,7 +162,7 @@ void ChargePoint::on_transaction_started(const std::int32_t& connector, const st
 }
 
 void ChargePoint::on_transaction_stopped(const std::int32_t connector, const std::string& session_id,
-                                         const Reason& reason, ocpp::DateTime timestamp, float energy_wh_import,
+                                         const Reason& reason, ocpp::DateTime timestamp, double energy_wh_import,
                                          std::optional<CiString<20>> id_tag_end,
                                          std::optional<std::string> signed_meter_value) {
     this->charge_point->on_transaction_stopped(connector, session_id, reason, timestamp, energy_wh_import, id_tag_end,

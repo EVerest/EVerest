@@ -77,11 +77,11 @@ void conform_validity_periods(ChargingProfile& profile) {
 /// \brief Check if a float value is non-finite (infinity or NaN)
 template <typename T> bool non_finite(const T& value) = delete;
 
-template <> constexpr bool non_finite<float>(const float& value) {
+template <> constexpr bool non_finite<double>(const double& value) {
     return !std::isfinite(value);
 }
 
-template <> constexpr bool non_finite<std::optional<float>>(const std::optional<float>& value) {
+template <> constexpr bool non_finite<std::optional<double>>(const std::optional<double>& value) {
     return !std::isfinite(value.value_or(0.0));
 }
 
@@ -452,7 +452,7 @@ ProfileValidationResultEnum SmartCharging::validate_setpoint_within_limit_range(
             if (!period.setpoint.has_value()) {
                 continue;
             }
-            const float sp = period.setpoint.value();
+            const double sp = period.setpoint.value();
             if ((period.limit.has_value() && sp > period.limit.value()) ||
                 (period.dischargeLimit.has_value() && sp < period.dischargeLimit.value())) {
                 return ProfileValidationResultEnum::ChargingSchedulePeriodSetpointOutOfRange;
@@ -664,10 +664,10 @@ ProfileValidationResultEnum SmartCharging::conform_and_validate_profile(Charging
 namespace {
 struct CompositeScheduleConfig {
     std::vector<ChargingProfilePurposeEnum> purposes_to_ignore;
-    float current_limit{};
-    float power_limit{};
+    double current_limit{};
+    double power_limit{};
     std::int32_t default_number_phases{};
-    float supply_voltage{};
+    double supply_voltage{};
 
     CompositeScheduleConfig(DeviceModelAbstract& device_model, bool is_offline) :
         purposes_to_ignore{utils::get_purposes_to_ignore(
@@ -675,11 +675,11 @@ struct CompositeScheduleConfig {
                 .value_or(""),
             is_offline)} {
 
-        this->current_limit = static_cast<float>(
+        this->current_limit = static_cast<double>(
             device_model.get_optional_value<int>(ControllerComponentVariables::CompositeScheduleDefaultLimitAmps)
                 .value_or(DEFAULT_LIMIT_AMPS));
 
-        this->power_limit = static_cast<float>(
+        this->power_limit = static_cast<double>(
             device_model.get_optional_value<int>(ControllerComponentVariables::CompositeScheduleDefaultLimitWatts)
                 .value_or(DEFAULT_LIMIT_WATTS));
 
@@ -687,7 +687,7 @@ struct CompositeScheduleConfig {
             device_model.get_optional_value<int>(ControllerComponentVariables::CompositeScheduleDefaultNumberPhases)
                 .value_or(DEFAULT_AND_MAX_NUMBER_PHASES);
 
-        this->supply_voltage = static_cast<float>(
+        this->supply_voltage = static_cast<double>(
             device_model.get_optional_value<int>(ControllerComponentVariables::SupplyVoltage).value_or(LOW_VOLTAGE));
     }
 };
@@ -1730,9 +1730,9 @@ CurrentPhaseType SmartCharging::get_current_phase_type(const std::optional<EvseI
 
 bool are_limits_and_setpoints_of_operation_mode_correct(const LimitsSetpointsForOperationMode& limits_setpoints,
                                                         const LimitSetpointType& type,
-                                                        const std::optional<float>& limit,
-                                                        const std::optional<float>& limit_L2,
-                                                        const std::optional<float>& limit_L3) {
+                                                        const std::optional<double>& limit,
+                                                        const std::optional<double>& limit_L2,
+                                                        const std::optional<double>& limit_L3) {
     if ((limits_setpoints.required.count(type) > 0 && !limit.has_value()) ||
         ((limit.has_value() || limit_L2.has_value() || limit_L3.has_value()) &&
          limits_setpoints.required.count(type) == 0 && limits_setpoints.optional.count(type) == 0)) {
@@ -1773,16 +1773,16 @@ bool check_limits_and_setpoints(const ChargingSchedulePeriod& charging_schedule_
 bool all_setpoints_signs_equal(const ChargingSchedulePeriod& charging_schedule_period) {
     if (charging_schedule_period.setpoint != std::nullopt && (charging_schedule_period.setpoint_L2 != std::nullopt ||
                                                               (charging_schedule_period.setpoint_L3 != std::nullopt))) {
-        if ((charging_schedule_period.setpoint.value() > 0.0F &&
+        if ((charging_schedule_period.setpoint.value() > 0.0 &&
              ((charging_schedule_period.setpoint_L2.has_value() &&
-               charging_schedule_period.setpoint_L2.value() < 0.0F) ||
+               charging_schedule_period.setpoint_L2.value() < 0.0) ||
               (charging_schedule_period.setpoint_L3.has_value() &&
-               charging_schedule_period.setpoint_L3.value() < 0.0F))) ||
-            (charging_schedule_period.setpoint.value() < 0.0F &&
+               charging_schedule_period.setpoint_L3.value() < 0.0))) ||
+            (charging_schedule_period.setpoint.value() < 0.0 &&
              ((charging_schedule_period.setpoint_L2.has_value() &&
-               charging_schedule_period.setpoint_L2.value() > 0.0F) ||
+               charging_schedule_period.setpoint_L2.value() > 0.0) ||
               (charging_schedule_period.setpoint_L3.has_value() &&
-               charging_schedule_period.setpoint_L3.value() > 0.0F)))) {
+               charging_schedule_period.setpoint_L3.value() > 0.0)))) {
             return false;
         }
     }

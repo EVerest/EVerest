@@ -434,9 +434,9 @@ private: // Functions
 ///
 bool are_limits_and_setpoints_of_operation_mode_correct(const LimitsSetpointsForOperationMode& limits_setpoints,
                                                         const ocpp::v2::LimitSetpointType& type,
-                                                        const std::optional<float>& limit,
-                                                        const std::optional<float>& limit_L2,
-                                                        const std::optional<float>& limit_L3);
+                                                        const std::optional<double>& limit,
+                                                        const std::optional<double>& limit_L2,
+                                                        const std::optional<double>& limit_L3);
 
 ///
 /// \brief Check if operation mode for the charging profile purpose is correct.

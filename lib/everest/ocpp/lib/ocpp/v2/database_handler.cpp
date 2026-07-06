@@ -529,7 +529,7 @@ std::vector<MeterValue> DatabaseHandler::transaction_metervalues_get_all(const s
         while ((status = select_stmt2->step()) == SQLITE_ROW) {
             SampledValue sampled_value;
 
-            sampled_value.value = clamp_to<float>(select_stmt2->column_double(1));
+            sampled_value.value = select_stmt2->column_double(1);
             sampled_value.context = context;
 
             if (select_stmt2->column_type(2) == SQLITE_INTEGER) {
@@ -1086,7 +1086,7 @@ CiString<20> DatabaseHandler::get_charging_limit_source_for_profile(const int pr
 void DatabaseHandler::insert_or_update_der_control(const std::string& control_id, bool is_default,
                                                    const std::string& control_type, bool is_superseded,
                                                    int32_t priority, const std::optional<std::string>& start_time,
-                                                   const std::optional<float>& duration,
+                                                   const std::optional<double>& duration,
                                                    const std::string& control_json) {
     // UPSERT (not INSERT OR REPLACE) preserves STARTED_NOTIFIED and PENDING_SUPERSEDE_ID
     // across re-sets of the same controlId; otherwise duplicate NotifyDERStartStop fires.
@@ -1116,7 +1116,7 @@ void DatabaseHandler::insert_or_update_der_control(const std::string& control_id
         stmt->bind_null("@start_time");
     }
     if (duration.has_value()) {
-        stmt->bind_double("@duration", static_cast<double>(duration.value()));
+        stmt->bind_double("@duration", duration.value());
     } else {
         stmt->bind_null("@duration");
     }

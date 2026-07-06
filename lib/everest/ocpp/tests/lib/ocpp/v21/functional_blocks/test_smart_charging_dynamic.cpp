@@ -207,7 +207,7 @@ TEST_F(SmartChargingTestV21, K28FR05_DynUpdateTime_PersistsAcrossDbRestart) {
 
 namespace {
 
-ChargingProfile make_dynamic_profile(std::int32_t profile_id, float setpoint_value) {
+ChargingProfile make_dynamic_profile(std::int32_t profile_id, double setpoint_value) {
     auto periods = create_charging_schedule_periods(0, 1, 1, std::nullopt);
     periods.at(0).operationMode = OperationModeEnum::CentralSetpoint;
     periods.at(0).setpoint = setpoint_value;
@@ -360,7 +360,7 @@ TEST_F(SmartChargingTestV21, K28_UpdateDynamicSchedule_AllFieldsUnset_SkipsCallb
 
     auto stored_initial = database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID);
     ASSERT_EQ(stored_initial.size(), 1);
-    const float initial_setpoint =
+    const double initial_setpoint =
         stored_initial.front().chargingSchedule.at(0).chargingSchedulePeriod.at(0).setpoint.value_or(0.0f);
     const auto initial_dyn_update_time = stored_initial.front().dynUpdateTime.value().to_time_point();
 
@@ -767,7 +767,7 @@ TEST_F(SmartChargingTestV21, K28FR08_PullResponse_RejectedStatus_NoOp) {
 
     auto stored_initial = database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID);
     ASSERT_EQ(stored_initial.size(), 1);
-    const float initial_setpoint =
+    const double initial_setpoint =
         stored_initial.front().chargingSchedule.at(0).chargingSchedulePeriod.at(0).setpoint.value_or(0.0f);
 
     ASSERT_EQ(message_id_future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
@@ -981,7 +981,7 @@ TEST_F(SmartChargingTestV21, K28FR13_DynamicProfile_ExpiredByDuration_SkippedInC
 namespace {
 
 // True if any period of the composite schedule carries the given setpoint value.
-bool composite_contains_setpoint(const EnhancedCompositeSchedule& schedule, float setpoint) {
+bool composite_contains_setpoint(const EnhancedCompositeSchedule& schedule, double setpoint) {
     for (const auto& period : schedule.chargingSchedulePeriod) {
         if (period.setpoint.has_value() && period.setpoint.value() == setpoint) {
             return true;
@@ -1000,7 +1000,7 @@ bool composite_contains_setpoint(const EnhancedCompositeSchedule& schedule, floa
 TEST_F(SmartChargingTestV21, K28FR13_DynamicProfile_ExpiredByDuration_AbsentFromGetCompositeSchedule) {
     enable_dynamic_profiles(device_model);
 
-    constexpr float dynamic_setpoint = 10000.0f;
+    constexpr double dynamic_setpoint = 10000.0;
 
     // A CentralSetpoint TxDefaultProfile only contributes its setpoint to the composite while a
     // transaction is active on the EVSE (see CompositeScheduleTestFixtureV21.setpoint_tx_profile).
@@ -1685,7 +1685,7 @@ TEST_F(SmartChargingTestV21, K28FR08_PullResponse_FutureThrows_NoOp) {
     ASSERT_EQ(stored_initial.size(), 1u);
     ASSERT_FALSE(stored_initial.front().chargingSchedule.empty());
     ASSERT_FALSE(stored_initial.front().chargingSchedule.at(0).chargingSchedulePeriod.empty());
-    const float initial_setpoint =
+    const double initial_setpoint =
         stored_initial.front().chargingSchedule.at(0).chargingSchedulePeriod.at(0).setpoint.value_or(0.0f);
 
     ASSERT_EQ(first_dispatched_future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
@@ -1744,7 +1744,7 @@ TEST_F(SmartChargingTestV21, K28FR08_PullResponse_UnexpectedMessageType_NoOp) {
 
     auto stored_initial = database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID);
     ASSERT_EQ(stored_initial.size(), 1u);
-    const float initial_setpoint =
+    const double initial_setpoint =
         stored_initial.front().chargingSchedule.at(0).chargingSchedulePeriod.at(0).setpoint.value_or(0.0f);
 
     ASSERT_EQ(first_dispatched_future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
@@ -1804,7 +1804,7 @@ TEST_F(SmartChargingTestV21, K28FR08_PullResponse_MalformedPayload_NoOp) {
 
     auto stored_initial = database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID);
     ASSERT_EQ(stored_initial.size(), 1u);
-    const float initial_setpoint =
+    const double initial_setpoint =
         stored_initial.front().chargingSchedule.at(0).chargingSchedulePeriod.at(0).setpoint.value_or(0.0f);
 
     ASSERT_EQ(first_dispatched_future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
@@ -2044,7 +2044,7 @@ TEST_F(SmartChargingTestV21, Reaper_SingleThread_HandlesManyDuePulls) {
     enable_dynamic_profiles(device_model);
 
     constexpr int profile_count = 8;
-    constexpr float applied_setpoint = 6543.0f;
+    constexpr double applied_setpoint = 6543.0;
 
     EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _))
         .WillRepeatedly(

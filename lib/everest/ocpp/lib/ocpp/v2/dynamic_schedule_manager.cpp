@@ -187,8 +187,8 @@ DynamicScheduleManager::ApplyResult DynamicScheduleManager::apply_update(Chargin
                                                                          const ChargingScheduleUpdate& update,
                                                                          std::int32_t evse_id,
                                                                          const CiString<20>& charging_limit_source) {
-    static constexpr std::pair<std::optional<float> ChargingScheduleUpdate::*,
-                               std::optional<float> ChargingSchedulePeriod::*>
+    static constexpr std::pair<std::optional<double> ChargingScheduleUpdate::*,
+                               std::optional<double> ChargingSchedulePeriod::*>
         K28_UPDATE_FIELDS[] = {
             {&ChargingScheduleUpdate::limit, &ChargingSchedulePeriod::limit},
             {&ChargingScheduleUpdate::limit_L2, &ChargingSchedulePeriod::limit_L2},

@@ -1940,7 +1940,7 @@ static double get_cable_check_voltage(double ev_max_cpd, double evse_max_cpd) {
 
 double EvseManager::get_emergency_over_voltage_threshold() {
 
-    float ev_max_voltage = 500.;
+    double ev_max_voltage = 500.;
 
     if (ev_info.maximum_voltage_limit.has_value()) {
         ev_max_voltage = ev_info.maximum_voltage_limit.value();
@@ -2144,7 +2144,7 @@ void EvseManager::cable_check() {
             std::this_thread::sleep_for(100ms);
         }
 
-        float ev_max_voltage = 500.;
+        double ev_max_voltage = 500.;
 
         if (ev_info.maximum_voltage_limit.has_value()) {
             EVLOG_info << "EV reports " << ev_info.maximum_voltage_limit.value() << " V as maximum voltage";

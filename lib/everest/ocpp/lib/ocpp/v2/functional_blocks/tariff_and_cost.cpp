@@ -87,7 +87,7 @@ void TariffAndCost::handle_cost_and_tariff(const TransactionEventResponse& respo
 
         if (original_message.meterValue.has_value()) {
             const auto& meter_value = original_message.meterValue.value();
-            std::optional<float> max_meter_value;
+            std::optional<double> max_meter_value;
             for (const MeterValue& mv : meter_value) {
                 auto it = std::find_if(mv.sampledValue.begin(), mv.sampledValue.end(), [](const SampledValue& value) {
                     return value.measurand == MeasurandEnum::Energy_Active_Import_Register and !value.phase.has_value();

@@ -214,11 +214,11 @@ TEST_F(IsabellenhuetteIemDcrControllerTest, test_get_metervalue) {
     EXPECT_EQ(tmp_transaction_active, false);
     EXPECT_EQ(tmp_status, "0x0000, 0x00000000, 0x00, 0x00");
     EXPECT_EQ(tmp_powermeter.timestamp, "2024-12-15T22:42:28,000+0200");
-    EXPECT_THAT(tmp_powermeter.energy_Wh_import.total, testing::FloatEq(1040));
-    EXPECT_THAT(tmp_powermeter.energy_Wh_export->total, testing::FloatEq(2503));
-    EXPECT_THAT(tmp_powermeter.power_W->total, testing::FloatEq(300.0));
-    EXPECT_THAT(tmp_powermeter.current_A->DC.value(), testing::FloatEq(5.0));
-    EXPECT_THAT(tmp_powermeter.voltage_V->DC.value(), testing::FloatEq(60.1));
+    EXPECT_THAT(tmp_powermeter.energy_Wh_import.total, testing::DoubleEq(1040));
+    EXPECT_THAT(tmp_powermeter.energy_Wh_export->total, testing::DoubleEq(2503));
+    EXPECT_THAT(tmp_powermeter.power_W->total, testing::DoubleEq(300.0));
+    EXPECT_THAT(tmp_powermeter.current_A->DC.value(), testing::DoubleEq(5.0));
+    EXPECT_THAT(tmp_powermeter.voltage_V->DC.value(), testing::DoubleEq(60.1));
     EXPECT_THAT(tmp_powermeter.meter_id.value(), "1ISA0200000001");
 }
 

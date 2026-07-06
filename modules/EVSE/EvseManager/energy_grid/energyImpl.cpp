@@ -523,7 +523,7 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
             // FIXME: multiply by conversion_efficiency here!
             if (value.limits_root_side.total_power_W.has_value() and
                 value.limits_root_side.ac_max_current_A.has_value()) {
-                float watt_leave_side = value.limits_root_side.total_power_W.value().value;
+                double watt_leave_side = value.limits_root_side.total_power_W.value().value;
                 float ampere_root_side = value.limits_root_side.ac_max_current_A.value().value;
 
                 auto ev_info = mod->get_ev_info();
@@ -562,7 +562,7 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
                     evse_min_limits.evse_minimum_discharge_current_limit =
                         powersupply_capabilities.min_import_current_A;
 
-                    float total_current{0.0};
+                    double total_current{0.0};
 
                     if (target_voltage > 10) {
                         // we use target_voltage here to calculate current limit.
