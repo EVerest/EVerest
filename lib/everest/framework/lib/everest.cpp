@@ -279,9 +279,8 @@ void Everest::register_on_ready_handler(const std::function<void()>& handler) {
 
 void Everest::register_on_shutdown_handler(const std::function<void()>& handler) {
     BOOST_LOG_FUNCTION();
-    if (handler != nullptr) {
-        this->on_shutdown = std::make_unique<std::function<void()>>(handler);
-    }
+
+    this->on_shutdown = std::make_unique<std::function<void()>>(handler);
 }
 
 std::optional<ModuleTierMappings> Everest::get_3_tier_model_mapping() {
