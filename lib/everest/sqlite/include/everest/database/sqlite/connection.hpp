@@ -51,6 +51,12 @@ public:
     /// \note This function can block until the previous transaction is finished.
     [[nodiscard]] virtual std::unique_ptr<TransactionInterface> begin_transaction() = 0;
 
+    /// \brief Same as begin_transaction() but with foreign_keys constraints enabled
+    [[nodiscard]] virtual std::unique_ptr<TransactionInterface> begin_transaction_with_enforced_fkeys() = 0;
+
+    /// \brief Same as begin_transaction_with_enforced_fkeys() but with foreign_keys constraints enabled (deferred)
+    [[nodiscard]] virtual std::unique_ptr<TransactionInterface> begin_transaction_with_deferred_fkeys() = 0;
+
     /// \brief Immediately executes \p statement. Returns true if succeeded.
     virtual bool execute_statement(const std::string& statement) = 0;
 
@@ -92,6 +98,8 @@ public:
     bool close_connection() override;
 
     [[nodiscard]] std::unique_ptr<TransactionInterface> begin_transaction() override;
+    [[nodiscard]] std::unique_ptr<TransactionInterface> begin_transaction_with_enforced_fkeys() override;
+    [[nodiscard]] std::unique_ptr<TransactionInterface> begin_transaction_with_deferred_fkeys() override;
 
     bool execute_statement(const std::string& statement) override;
     std::unique_ptr<StatementInterface> new_statement(const std::string& sql) override;

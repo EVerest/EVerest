@@ -22,31 +22,70 @@ class DatabaseTransaction : public TransactionInterface {
 private:
     Connection& database;
     std::unique_lock<std::timed_mutex> mutex;
+    bool is_active = false;
 
 public:
-    DatabaseTransaction(Connection& database, std::unique_lock<std::timed_mutex> mutex) :
+    DatabaseTransaction(Connection& database, std::unique_lock<std::timed_mutex> mutex, bool fkeys_enabled = false,
+                        bool fkeys_deferred = false) :
         database{database}, mutex{std::move(mutex)} {
-        this->database.execute_statement("BEGIN TRANSACTION");
+        // "PRAGMA foreign_keys" is a no-op inside a transaction: SQLite only honours it while no
+        // BEGIN/SAVEPOINT is pending. It must therefore be set *before* BEGIN, otherwise foreign
+        // key enforcement (and ON DELETE CASCADE) is silently skipped for this transaction.
+        if (fkeys_enabled) {
+            if (!this->database.execute_statement("PRAGMA foreign_keys = ON;")) {
+                throw QueryExecutionException("Failed to enable foreign keys");
+            }
+        }
+
+        if (!this->database.execute_statement("BEGIN TRANSACTION")) {
+            throw QueryExecutionException("Failed to begin transaction");
+        }
+        is_active = true;
+
+        // "PRAGMA defer_foreign_keys", unlike foreign_keys, is valid inside a transaction and
+        // resets automatically at COMMIT/ROLLBACK. It postpones enforcement (enabled above) to
+        // commit time, allowing constraints to be broken temporarily within the transaction.
+        if (fkeys_enabled && fkeys_deferred) {
+            if (!this->database.execute_statement("PRAGMA defer_foreign_keys = ON;")) {
+                // Let the destructor handle the rollback.
+                throw QueryExecutionException("Failed to defer foreign keys");
+            }
+        }
     }
+    DatabaseTransaction(const DatabaseTransaction&) = delete;
+    DatabaseTransaction& operator=(const DatabaseTransaction&) = delete;
 
     // Will by default rollback the transaction if destructed
     ~DatabaseTransaction() override {
-        if (this->mutex.owns_lock()) {
-            this->rollback();
+        if (is_active) {
+            if (!this->database.execute_statement("ROLLBACK TRANSACTION")) {
+                EVLOG_critical << "Failed to rollback transaction in destructor. Database may be in an inconsistent "
+                                  "state: "
+                               << this->database.get_error_message();
+            }
         }
     }
 
     void commit() override {
-        const auto retval = this->database.execute_statement("COMMIT TRANSACTION");
+        if (!is_active) {
+            return;
+        }
+        is_active = false;
+        const bool success = this->database.execute_statement("COMMIT TRANSACTION");
         this->mutex.unlock();
-        if (not retval) {
+        if (!success) {
             throw QueryExecutionException(this->database.get_error_message());
         }
     }
+
     void rollback() override {
-        const auto retval = this->database.execute_statement("ROLLBACK TRANSACTION");
+        if (!is_active) {
+            return;
+        }
+        is_active = false;
+        const bool success = this->database.execute_statement("ROLLBACK TRANSACTION");
         this->mutex.unlock();
-        if (not retval) {
+        if (!success) {
             throw QueryExecutionException(this->database.get_error_message());
         }
     }
@@ -161,6 +200,14 @@ const char* Connection::get_error_message() {
 
 std::unique_ptr<TransactionInterface> Connection::begin_transaction() {
     return std::make_unique<DatabaseTransaction>(*this, std::unique_lock(this->transaction_mutex));
+}
+
+std::unique_ptr<TransactionInterface> Connection::begin_transaction_with_enforced_fkeys() {
+    return std::make_unique<DatabaseTransaction>(*this, std::unique_lock(this->transaction_mutex), true);
+}
+
+std::unique_ptr<TransactionInterface> Connection::begin_transaction_with_deferred_fkeys() {
+    return std::make_unique<DatabaseTransaction>(*this, std::unique_lock(this->transaction_mutex), true, true);
 }
 
 std::unique_ptr<StatementInterface> Connection::new_statement(const std::string& sql) {

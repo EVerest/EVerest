@@ -7,6 +7,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     test_connection.cpp
     test_database_schema_updater.cpp
     test_sqlite_statement.cpp
+    test_transaction.cpp
 )
 
 target_include_directories(${TEST_TARGET_NAME} PRIVATE
