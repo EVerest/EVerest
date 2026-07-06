@@ -2,6 +2,10 @@
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "transport.hpp"
+
+#include <fmt/core.h>
+#include <utils/exceptions.hpp>
+
 #include <string>
 
 // Modbus protocol limits:
@@ -12,6 +16,31 @@ constexpr std::uint16_t MAX_READ_REGISTERS_PER_MESSAGE = 125;
 constexpr std::uint16_t MAX_WRITE_REGISTERS_PER_MESSAGE = 123;
 
 namespace transport {
+
+namespace {
+
+types::serial_comm_hub_requests::Result call_modbus_read(serial_communication_hubIntf& serial_hub, int device_id,
+                                                         int read_address, std::uint16_t register_to_read) {
+    try {
+        return serial_hub.call_modbus_read_input_registers(device_id, read_address, register_to_read);
+    } catch (const Everest::CmdTimeout& e) {
+        throw ModbusTimeoutException(
+            fmt::format("Modbus read timeout: SerialCommHub command timed out ({})", e.what()));
+    }
+}
+
+types::serial_comm_hub_requests::StatusCodeEnum call_modbus_write(serial_communication_hubIntf& serial_hub,
+                                                                  int device_id, int write_address,
+                                                                  types::serial_comm_hub_requests::VectorUint16& data) {
+    try {
+        return serial_hub.call_modbus_write_multiple_registers(device_id, write_address, data);
+    } catch (const Everest::CmdTimeout& e) {
+        throw ModbusTimeoutException(
+            fmt::format("Modbus write timeout: SerialCommHub command timed out ({})", e.what()));
+    }
+}
+
+} // namespace
 
 transport::DataVector SerialCommHubTransport::fetch(std::int32_t address, std::uint16_t register_count) {
     return retry_with_config([this, address, register_count]() {
@@ -26,9 +55,8 @@ transport::DataVector SerialCommHubTransport::fetch(std::int32_t address, std::u
                                                        ? MAX_READ_REGISTERS_PER_MESSAGE
                                                        : remaining_register_to_read;
 
-            types::serial_comm_hub_requests::Result serial_com_hub_result =
-                m_serial_hub.call_modbus_read_input_registers(static_cast<int>(m_device_id),
-                                                              static_cast<int>(read_address), register_to_read);
+            types::serial_comm_hub_requests::Result serial_com_hub_result = call_modbus_read(
+                m_serial_hub, static_cast<int>(m_device_id), static_cast<int>(read_address), register_to_read);
 
             // Check for communication errors
             if (serial_com_hub_result.status_code == types::serial_comm_hub_requests::StatusCodeEnum::Timeout) {
@@ -94,9 +122,9 @@ void SerialCommHubTransport::write_multiple_registers(std::int32_t address, cons
                 data_raw.data.push_back(data[offset + i]);
             }
 
-            types::serial_comm_hub_requests::StatusCodeEnum status = m_serial_hub.call_modbus_write_multiple_registers(
-                static_cast<int>(m_device_id), static_cast<int>(write_address + static_cast<std::int32_t>(offset)),
-                data_raw);
+            types::serial_comm_hub_requests::StatusCodeEnum status =
+                call_modbus_write(m_serial_hub, static_cast<int>(m_device_id),
+                                  static_cast<int>(write_address + static_cast<std::int32_t>(offset)), data_raw);
 
             if (status == types::serial_comm_hub_requests::StatusCodeEnum::Timeout) {
                 throw transport::ModbusTimeoutException("Modbus write timeout: Packet receive timeout");

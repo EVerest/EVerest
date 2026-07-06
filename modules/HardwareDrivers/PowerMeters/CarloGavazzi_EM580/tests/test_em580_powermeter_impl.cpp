@@ -184,7 +184,7 @@ TEST(EM580PowermeterImpl, StopTransactionEmptyIdWithoutPendingClosedTransactionC
     EXPECT_EQ(transport_ptr->write_calls().size(), 1U);
 }
 
-TEST(EM580PowermeterImpl, StartTransactionSpuriousReadyStateDoesCleanupAndNoTransactionWrites) {
+TEST(EM580PowermeterImpl, StartTransactionReadyStateCleansUpAndStartsNewTransaction) {
     static Everest::PtrContainer<module::CarloGavazzi_EM580> dummy_mod;
     auto conf = make_test_conf();
     module::main::powermeterImpl impl(nullptr, dummy_mod, conf);
@@ -200,9 +200,14 @@ TEST(EM580PowermeterImpl, StartTransactionSpuriousReadyStateDoesCleanupAndNoTran
     transport->push_fetch_response(em580::registers::MODBUS_OCMF_STATE_SIZE_ADDRESS, 1, u16_be(1));
     transport->push_fetch_response(em580::registers::MODBUS_OCMF_STATE_FILE_ADDRESS, 1,
                                    bytes("OCMF|{\"TT\":\"x<=>12345678-1234-5678-1234-567812345678\"}|{}"));
+    transport->push_fetch_response(em580::registers::MODBUS_SIGNED_MAP_ADDRESS,
+                                   em580::registers::MODBUS_SIGNED_MAP_WORD_COUNT_256,
+                                   zero_bytes_for_words(em580::registers::MODBUS_SIGNED_MAP_WORD_COUNT_256));
 
     auto* transport_ptr = transport.get();
     module::main::powermeterImpl::TestAccess::set_modbus_transport(impl, std::move(transport));
+    module::main::powermeterImpl::TestAccess::set_signed_map_word_count(
+        impl, em580::registers::MODBUS_SIGNED_MAP_WORD_COUNT_256);
 
     types::powermeter::TransactionReq req{};
     req.evse_id = "DE*TEST*EVSE01";
@@ -217,9 +222,8 @@ TEST(EM580PowermeterImpl, StartTransactionSpuriousReadyStateDoesCleanupAndNoTran
     const auto resp = module::main::powermeterImpl::TestAccess::start_transaction(impl, req);
     EXPECT_EQ(resp.status, types::powermeter::TransactionRequestStatus::OK);
 
-    // Only the cleanup confirm write should happen here (no transaction register
-    // writes).
-    EXPECT_EQ(transport_ptr->write_calls().size(), 1U);
+    // Cleanup confirm write + 10 transaction start writes.
+    EXPECT_EQ(transport_ptr->write_calls().size(), 11U);
     EXPECT_EQ(transport_ptr->write_calls()[0].address, em580::registers::MODBUS_OCMF_STATE_ADDRESS);
 }
 
@@ -240,4 +244,44 @@ TEST(EM580PowermeterImpl, StopTransactionUnknownIdReturnsErrorAndNoWrites) {
     ASSERT_TRUE(resp.error.has_value());
     EXPECT_EQ(*resp.error, "No open transaction or unknown transaction id");
     EXPECT_TRUE(transport_ptr->write_calls().empty());
+}
+
+TEST(EM580PowermeterImpl, MonitorTransactionStateReadyWhileActiveSetsPendingClosed) {
+    static Everest::PtrContainer<module::CarloGavazzi_EM580> dummy_mod;
+    auto conf = make_test_conf();
+    conf.monitor_transaction_state = true;
+    module::main::powermeterImpl impl(nullptr, dummy_mod, conf);
+
+    module::main::powermeterImpl::TestAccess::set_transaction_id(impl, "12345678-1234-5678-1234-567812345678");
+    EXPECT_FALSE(module::main::powermeterImpl::TestAccess::pending_closed_transaction(impl));
+
+    module::main::powermeterImpl::TestAccess::monitor_transaction_ocmf_state(impl,
+                                                                             em580::registers::MODBUS_OCMF_STATE_READY);
+
+    EXPECT_TRUE(module::main::powermeterImpl::TestAccess::pending_closed_transaction(impl));
+}
+
+TEST(EM580PowermeterImpl, MonitorTransactionStateReadyWhileInactiveIsIgnored) {
+    static Everest::PtrContainer<module::CarloGavazzi_EM580> dummy_mod;
+    auto conf = make_test_conf();
+    conf.monitor_transaction_state = true;
+    module::main::powermeterImpl impl(nullptr, dummy_mod, conf);
+
+    module::main::powermeterImpl::TestAccess::monitor_transaction_ocmf_state(impl,
+                                                                             em580::registers::MODBUS_OCMF_STATE_READY);
+
+    EXPECT_FALSE(module::main::powermeterImpl::TestAccess::pending_closed_transaction(impl));
+}
+
+TEST(EM580PowermeterImpl, MonitorTransactionStateDisabledWhileActiveIsIgnored) {
+    static Everest::PtrContainer<module::CarloGavazzi_EM580> dummy_mod;
+    auto conf = make_test_conf();
+    conf.monitor_transaction_state = false;
+    module::main::powermeterImpl impl(nullptr, dummy_mod, conf);
+
+    module::main::powermeterImpl::TestAccess::set_transaction_id(impl, "12345678-1234-5678-1234-567812345678");
+    module::main::powermeterImpl::TestAccess::monitor_transaction_ocmf_state(impl,
+                                                                             em580::registers::MODBUS_OCMF_STATE_READY);
+
+    EXPECT_FALSE(module::main::powermeterImpl::TestAccess::pending_closed_transaction(impl));
 }
