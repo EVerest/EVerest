@@ -17,6 +17,7 @@
 
 #include <everest/util/async/monitor.hpp>
 
+#include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/config.hpp>
 #include <iso15118/ev/controller.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
@@ -74,6 +75,9 @@ private:
         bool shutting_down{false};
         iso15118::ev::Controller* current{nullptr};
         iso15118::ev::DcChargeParams dc_params;
+        iso15118::ev::AcChargeParams ac_params;
+        iso15118::message_20::datatypes::ServiceCategory energy_service{
+            iso15118::message_20::datatypes::ServiceCategory::DC};
     };
 
     everest::lib::util::monitor<SessionState> session;
@@ -81,7 +85,7 @@ private:
 
     void session_worker();
     void run_one_session();
-    iso15118::ev::EvConfig make_ev_config() const;
+    iso15118::ev::EvConfig make_ev_config(iso15118::message_20::datatypes::ServiceCategory energy_service) const;
     iso15118::ev::feedback::Callbacks make_callbacks();
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };

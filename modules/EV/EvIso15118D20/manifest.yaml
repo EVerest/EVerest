@@ -15,6 +15,14 @@ config:
     type: integer
     minimum: 1
     default: 20000
+  ac_max_charge_power_w:
+    description: Advertised AC maximum charge power in watts.
+    type: number
+    default: 11040
+  ac_min_charge_power_w:
+    description: Advertised AC minimum charge power in watts.
+    type: number
+    default: 1380
 provides:
   ev:
     interface: ISO15118_ev
