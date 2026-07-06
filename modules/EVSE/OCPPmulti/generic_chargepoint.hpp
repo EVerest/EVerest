@@ -43,6 +43,10 @@ public:
         m_mode = new_mode;
     }
 
+    // stop and destroy the version implementations (joins libocpp threads); call before the
+    // GenericChargePointCallbacks sink is destroyed so no callback can fire into it afterwards
+    void shutdown();
+
     void connect_websocket() override;
     void disconnect_websocket() override;
     void set_message_queue_resume_delay(std::chrono::seconds delay) override;

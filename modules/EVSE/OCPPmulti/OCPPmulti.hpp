@@ -151,6 +151,11 @@ public:
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
+
+    // members destruct in reverse order, i.e. m_ocpp (the callback sink) before m_charge_point
+    // (the callback source); tear down libocpp first so no callback fires into a dead GenericOcpp
+    ~OCPPmulti();
+
     ConfigAccess m_config{config};
     ocpp_multi::GenericChargePoint m_charge_point{m_ocpp, *r_security};
     ocpp_multi::GenericOcpp m_ocpp{

@@ -3,6 +3,8 @@
 
 #include "generic_chargepoint.hpp"
 
+#include <everest/logging.hpp>
+
 namespace ocpp_multi {
 
 // ----------------------------------------------------------------------------
@@ -37,6 +39,20 @@ void GenericChargePoint::init(init_args_t& args) {
     }
 
     m_active_ptr->init(args);
+}
+
+void GenericChargePoint::shutdown() {
+    if (m_active_ptr != nullptr) {
+        try {
+            m_active_ptr->stop();
+        } catch (const std::exception& e) {
+            EVLOG_warning << "Stopping charge point during shutdown failed: " << e.what();
+        }
+    }
+    m_active_ptr = nullptr;
+    m_state = state_t::idle;
+    m_charge_point_v16.reset();
+    m_charge_point_v2.reset();
 }
 
 void GenericChargePoint::connect_websocket() {

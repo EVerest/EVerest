@@ -69,6 +69,10 @@ std::string ConfigAccess::getUserConfigPath() const {
     return m_config.UserConfigPath;
 }
 
+OCPPmulti::~OCPPmulti() {
+    m_charge_point.shutdown();
+}
+
 void OCPPmulti::init() {
     // no code should be in the init methods
     // invoke_init(*p_ocpp16);
