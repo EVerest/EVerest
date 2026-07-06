@@ -10,7 +10,7 @@
 
 using namespace iso15118;
 
-SCENARIO("EV d20 Context encodes a request that round-trips back to the same message") {
+SCENARIO("ISO15118-20 EV Context encodes a request that round-trips back to the same message") {
 
     GIVEN("An EV d20 Context with an empty MessageExchange") {
 

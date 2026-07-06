@@ -1,24 +1,52 @@
 .. _everest_modules_handwritten_EvIso15118D20:
 
-..  This file is a placeholder for optional multiple files
-    handwritten documentation for the EvIso15118D20 module.
-    
-..  This handwritten documentation is optional. In case
-    you do not want to write it, you can delete the doc/ directory.
+EvIso15118D20
+=============
 
-..  The documentation can be written in reStructuredText,
-    and will be converted to HTML and PDF by Sphinx.
-    This index.rst file is the entry point for the module documentation.
+EV-side ISO 15118-20 EVCC built on the ``libiso15118`` ``ev::Controller``. It
+provides the ``ISO15118_ev`` interface (the same interface as ``PyEvJosev``), so
+it is a drop-in software-in-the-loop (SIL) replacement for the Python EVCC when
+driving a DC ISO 15118-20 session against a SECC such as ``Evse15118D20``.
 
-..  Use underlined-only headlines inside this document (highest-level
-    sub-section headline should use "=" characters)
+Configuration
+-------------
 
-..  The content of this file will be included in the auto-generated HTML
-    page for the module. You can link to it using the following
-    reference: everest_modules_EvIso15118D20.
+.. list-table::
+   :header-rows: 1
+   :widths: 25 15 60
 
-.. *******************************************
-.. EvIso15118D20
-.. *******************************************
+   * - Option
+     - Default
+     - Description
+   * - ``device``
+     - ``eth0``
+     - Ethernet device used for high-level communication. ``auto`` lets the
+       library pick a usable IPv6 interface.
+   * - ``evcc_id``
+     - ``02:00:00:00:00:01``
+     - EVCC identifier sent to the SECC (MAC-address format).
+   * - ``response_timeout_ms``
+     - ``20000``
+     - Response watchdog timeout in milliseconds.
 
-C++ ISO 15118-20 EVCC built on libiso15118 ev::Controller (SIL alternative to PyEvJosev).
+M0 limitations
+--------------
+
+This is an early (M0) implementation with a deliberately narrow scope:
+
+- **DC only.** ``start_charging`` rejects non-DC energy-transfer modes; AC, WPT,
+  and MCS sessions are not supported.
+- **No TLS.** The session advertises ``NO_TRANSPORT_SECURITY``; Plug & Charge and
+  TLS are out of scope.
+- **No pause/resume.** ``pause_charging`` is a no-op.
+- **No BPT / SAE.** Bidirectional power transfer (``set_bpt_dc_params``) and
+  SAE J2847/2 (``enable_sae_j2847_v2g_v2h``) are not implemented.
+
+Threading
+---------
+
+A single worker thread, started from ``ready()``, runs one V2G session at a time.
+``start_charging`` hands a request to the worker; the worker constructs the
+``ev::Controller`` and runs its event loop until the session ends, then waits for
+the next request. Session state is guarded by a ``monitor`` so command handlers
+and the worker coordinate safely, including during module teardown.

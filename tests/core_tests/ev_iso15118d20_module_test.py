@@ -73,6 +73,8 @@ async def wait_for_call(mock: Mock, timeout: float = 30.0):
 @pytest.mark.everest_core_config("config-sil-dc-d20-evcpp.yaml")
 @pytest.mark.everest_config_adaptions(
     *_ev_config_adaptions(
+        # sleep 1: let the modules reach steady state before SLAC matching starts.
+        # sleep 3: hold the DC session in the charge loop briefly before stopping.
         "sleep 1;iso_wait_slac_matched;iso_start_v2g_session DC;"
         "sleep 3;iso_stop_charging;iso_wait_v2g_session_stopped;unplug"
     )
@@ -85,9 +87,6 @@ async def test_ev_iso15118d20_dc_session(
     Observes both sides of the V2G link via a two-connection probe:
       - charger.evcc_id and charger.selected_protocol (SECC view of the EVCC)
       - ev.v2g_session_finished (EVCC view of session completion)
-
-    With empty Impl stubs this fails because start_charging never connects the EV,
-    so the SECC never sees an EVCC and the session never finishes. T4 turns it GREEN.
     """
     test_controller.start()
     probe_module = ProbeModule(everest_core.get_runtime_session())
@@ -131,6 +130,8 @@ async def test_ev_iso15118d20_dc_session(
 @pytest.mark.everest_core_config("config-sil-dc-d20-evcpp.yaml")
 @pytest.mark.everest_config_adaptions(
     *_ev_config_adaptions(
+        # sleep 1: let the modules reach steady state before SLAC matching starts.
+        # The rest of the chain is event-gated (iso_wait_*), so no further sleeps.
         "sleep 1;iso_wait_slac_matched;iso_start_v2g_session DC;"
         "iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 10;"
         "iso_wait_v2g_session_stopped;unplug"
