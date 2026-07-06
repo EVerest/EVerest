@@ -834,6 +834,9 @@ GenericChargePointInterface::SessionResult
 ChargePointV16::on_event_session_started(std::int32_t evse_id, std::int32_t connector_id,
                                          const types::evse_manager::SessionEvent& session_event) {
     check_configured("on_event_session_started");
+    if (!session_event.session_started.has_value()) {
+        throw std::runtime_error("SessionEvent SessionStarted does not contain session_started context");
+    }
     const auto session_started = session_event.session_started.value();
     const auto cid = ocpp_connector_id(m_connector_mapping, evse_id, session_event.connector_id);
     m_charge_point->on_session_started(cid, session_event.uuid,
@@ -850,6 +853,9 @@ void ChargePointV16::on_event_switching_phases(std::int32_t evse_id, std::int32_
 void ChargePointV16::on_event_transaction_finished(std::int32_t evse_id, std::int32_t connector_id,
                                                    const types::evse_manager::SessionEvent& session_event) {
     check_configured("on_event_transaction_finished");
+    if (!session_event.transaction_finished.has_value()) {
+        throw std::runtime_error("SessionEvent TransactionFinished does not contain transaction_finished context");
+    }
     const auto transaction_finished = session_event.transaction_finished.value();
     const auto timestamp = ocpp_conversions::to_ocpp_datetime_or_now(session_event.timestamp);
     const auto energy_Wh_import = transaction_finished.meter_value.energy_Wh_import.total;
@@ -881,6 +887,9 @@ GenericChargePointInterface::SessionResult
 ChargePointV16::on_event_transaction_started(std::int32_t evse_id, std::int32_t connector_id,
                                              const types::evse_manager::SessionEvent& session_event) {
     check_configured("on_event_transaction_started");
+    if (!session_event.transaction_started.has_value()) {
+        throw std::runtime_error("SessionEvent TransactionStarted does not contain transaction_started context");
+    }
     const auto transaction_started = session_event.transaction_started.value();
 
     const auto timestamp = ocpp_conversions::to_ocpp_datetime_or_now(session_event.timestamp);

@@ -858,7 +858,7 @@ ChargePointV2::on_event_transaction_started(std::int32_t evse_id, std::int32_t c
             result = tx_event == module::TxEvent::EV_CONNECTED;
         }
     } else {
-        throw std::runtime_error("SessionEvent TransactionStarted does not contain session_started context");
+        throw std::runtime_error("SessionEvent TransactionStarted does not contain transaction_started context");
     }
 
     return result;
