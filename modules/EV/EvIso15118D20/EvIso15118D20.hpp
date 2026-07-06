@@ -25,6 +25,19 @@ struct Conf {
     int response_timeout_ms;
     double ac_max_charge_power_w;
     double ac_min_charge_power_w;
+    bool der_over_frequency_watt_mode;
+    bool der_under_frequency_watt_mode;
+    bool der_volt_watt_mode;
+    bool der_volt_var_mode;
+    bool der_watt_var_mode;
+    bool der_watt_cos_phi_mode;
+    bool der_dso_q_setpoint_provision;
+    bool der_dso_cos_phi_setpoint_provision;
+    bool der_dc_injection_restriction;
+    bool der_zero_current_mode;
+    bool der_over_voltage_fault_ride_through_mode;
+    bool der_under_voltage_fault_ride_through_mode;
+    bool der_stop_on_unsupported_functions;
 };
 
 class EvIso15118D20 : public Everest::ModuleBase {

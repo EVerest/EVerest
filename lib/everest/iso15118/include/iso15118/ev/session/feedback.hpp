@@ -8,6 +8,7 @@
 #include <iso15118/io/ipv6_endpoint.hpp>
 #include <iso15118/message/ac_charge_loop.hpp>
 #include <iso15118/message/ac_charge_parameter_discovery.hpp>
+#include <iso15118/message/ac_der_iec_charge_loop.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/type.hpp>
 
@@ -26,6 +27,7 @@ struct Callbacks {
     std::function<void()> stop_from_charger;
     std::function<void(const message_20::datatypes::AC_CPDResEnergyTransferMode&)> ac_limits;
     std::function<void(const message_20::datatypes::Dynamic_AC_CLResControlMode&)> ac_target_power;
+    std::function<void(const message_20::datatypes::DER_Dynamic_AC_CLResControlMode&)> der_control;
 };
 
 } // namespace iso15118::ev::feedback
@@ -46,6 +48,7 @@ public:
     void stop_from_charger() const;
     void ac_limits(const message_20::datatypes::AC_CPDResEnergyTransferMode&) const;
     void ac_target_power(const message_20::datatypes::Dynamic_AC_CLResControlMode&) const;
+    void der_control(const message_20::datatypes::DER_Dynamic_AC_CLResControlMode&) const;
 
 private:
     feedback::Callbacks callbacks;
