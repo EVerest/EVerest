@@ -17,6 +17,19 @@ namespace everest::config {
 
 namespace fs = std::filesystem;
 
+namespace {
+/// \brief RAII helper to safely enable and disable foreign keys within a scope.
+struct FkGuard {
+    ConnectionInterface& db;
+    explicit FkGuard(ConnectionInterface& db) : db(db) {
+        db.execute_statement("PRAGMA foreign_keys = ON;");
+    }
+    ~FkGuard() {
+        db.execute_statement("PRAGMA foreign_keys = OFF;");
+    }
+};
+} // namespace
+
 SqliteConfigSlotManager::SqliteConfigSlotManager(const std::filesystem::path& db_path,
                                                  const std::filesystem::path& migrations_path) {
     db = std::make_shared<Connection>(db_path);
@@ -187,7 +200,7 @@ std::vector<SlotInfo> SqliteConfigSlotManager::list_slots() {
 DuplicateSlotResult SqliteConfigSlotManager::duplicate_slot(int source_slot_id,
                                                             std::optional<std::string> description) {
     try {
-        this->db->execute_statement("PRAGMA foreign_keys = ON;");
+        FkGuard fk_guard(*this->db);
         auto transaction = this->db->begin_transaction();
 
         if (not exists(source_slot_id)) {
@@ -200,22 +213,28 @@ DuplicateSlotResult SqliteConfigSlotManager::duplicate_slot(int source_slot_id,
         {
             auto s = this->db->new_statement("INSERT INTO CONFIG (ID) VALUES (?);");
             s->bind_int(1, new_id);
-            s->step();
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
         }
 
         // Copy CONFIG_META (override DESCRIPTION if provided)
         {
             auto s = this->db->new_statement(
                 "INSERT INTO CONFIG_META (ID, LAST_UPDATED, CONFIG_DUMP, CONFIG_FILE_PATH, DESCRIPTION) "
-                "SELECT ?, LAST_UPDATED, CONFIG_DUMP, CONFIG_FILE_PATH, ? FROM CONFIG_META WHERE ID = ?;");
+                "SELECT ?, ?, CONFIG_DUMP, CONFIG_FILE_PATH, ? FROM CONFIG_META WHERE ID = ?;");
             s->bind_int(1, new_id);
+            const auto last_updated = Everest::Date::to_rfc3339(date::utc_clock::now());
+            s->bind_text(2, last_updated);
             if (description.has_value()) {
-                s->bind_text(2, description.value());
+                s->bind_text(3, description.value());
             } else {
-                s->bind_null(2);
+                s->bind_null(3);
             }
-            s->bind_int(3, source_slot_id);
-            s->step();
+            s->bind_int(4, source_slot_id);
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
         }
 
         // Copy MODULE
@@ -225,7 +244,9 @@ DuplicateSlotResult SqliteConfigSlotManager::duplicate_slot(int source_slot_id,
                 "SELECT ?, ID, NAME, STANDALONE, CAPABILITIES FROM MODULE WHERE CONFIG_ID = ?;");
             s->bind_int(1, new_id);
             s->bind_int(2, source_slot_id);
-            s->step();
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
         }
 
         // Copy MODULE_FULFILLMENT
@@ -237,7 +258,9 @@ DuplicateSlotResult SqliteConfigSlotManager::duplicate_slot(int source_slot_id,
                 "FROM MODULE_FULFILLMENT WHERE CONFIG_ID = ?;");
             s->bind_int(1, new_id);
             s->bind_int(2, source_slot_id);
-            s->step();
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
         }
 
         // Copy MODULE_TIER_MAPPING
@@ -248,7 +271,9 @@ DuplicateSlotResult SqliteConfigSlotManager::duplicate_slot(int source_slot_id,
                 "FROM MODULE_TIER_MAPPING WHERE CONFIG_ID = ?;");
             s->bind_int(1, new_id);
             s->bind_int(2, source_slot_id);
-            s->step();
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
         }
 
         // Copy CONFIGURATION
@@ -261,7 +286,9 @@ DuplicateSlotResult SqliteConfigSlotManager::duplicate_slot(int source_slot_id,
                 "MUTABILITY_ID, DATATYPE_ID, UNIT, SOURCE FROM CONFIGURATION WHERE CONFIG_ID = ?;");
             s->bind_int(1, new_id);
             s->bind_int(2, source_slot_id);
-            s->step();
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
         }
 
         // Copy CONFIG_ACCESS
@@ -273,7 +300,9 @@ DuplicateSlotResult SqliteConfigSlotManager::duplicate_slot(int source_slot_id,
                 "FROM CONFIG_ACCESS WHERE CONFIG_ID = ?;");
             s->bind_int(1, new_id);
             s->bind_int(2, source_slot_id);
-            s->step();
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
         }
 
         // Copy MODULE_CONFIG_ACCESS
@@ -285,11 +314,12 @@ DuplicateSlotResult SqliteConfigSlotManager::duplicate_slot(int source_slot_id,
                 "FROM MODULE_CONFIG_ACCESS WHERE CONFIG_ID = ?;");
             s->bind_int(1, new_id);
             s->bind_int(2, source_slot_id);
-            s->step();
+            if (s->step() != SQLITE_DONE) {
+                return {false, std::nullopt};
+            }
         }
 
         transaction->commit();
-        this->db->execute_statement("PRAGMA foreign_keys = OFF;");
         return {true, new_id};
     } catch (const std::exception& e) {
         EVLOG_error << "Failed to duplicate slot " << source_slot_id << ": " << e.what();
@@ -324,12 +354,10 @@ GenericResponseStatus SqliteConfigSlotManager::set_next_boot_slot_id(int slot_id
 
 GenericResponseStatus SqliteConfigSlotManager::delete_slot(int slot_id) {
     try {
-        // Enable foreign keys so ON DELETE CASCADE propagates from SETTING to all dependent tables.
-        this->db->execute_statement("PRAGMA foreign_keys = ON;");
+        FkGuard fk_guard(*this->db);
         auto stmt = this->db->new_statement("DELETE FROM CONFIG WHERE ID = @config_id;");
         stmt->bind_int("@config_id", slot_id);
         stmt->step();
-        this->db->execute_statement("PRAGMA foreign_keys = OFF;");
         return GenericResponseStatus::OK;
     } catch (const std::exception& e) {
         EVLOG_error << "Failed to delete slot with id " << slot_id << ": " << e.what();
