@@ -18,6 +18,9 @@
 #include <ocpp/v2/messages/UnlockConnector.hpp>
 #include <ocpp/v2/messages/UpdateFirmware.hpp>
 
+#include <ocpp/v21/functional_blocks/der_control.hpp>
+#include <ocpp/v21/messages/SetDERControl.hpp>
+
 namespace ocpp::v2 {
 struct Callbacks {
     /// @addtogroup ocpp201_callbacks OCPP 2.0.1 callbacks
@@ -188,6 +191,11 @@ struct Callbacks {
     std::optional<std::function<bool(const std::vector<ocpp::v2::EnergyTransferModeEnum> allowed_energy_transfer_modes,
                                      const CiString<36> transaction_id)>>
         update_allowed_energy_transfer_modes_callback;
+
+    /// \brief Carries the full set of currently-active DER controls, emitted after every accepted transition.
+    /// The provider replaces its applied set wholesale from this argument rather than tracking transitions.
+    std::optional<std::function<void(const std::vector<ocpp::v21::SetDERControlRequest>& active_controls)>>
+        der_active_directives_callback;
 
     /// @} // End group
 };

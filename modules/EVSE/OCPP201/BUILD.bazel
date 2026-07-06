@@ -79,6 +79,10 @@ genrule(
 # OCPP201 module
 cc_everest_module(
     name = "OCPP201",
+    srcs = [
+        "grid_support/grid_support_state.cpp",
+        "grid_support/grid_support_state.hpp",
+    ],
     data = [":ocpp201_config_files"],
     impls = IMPLS,
     deps = [
@@ -98,6 +102,7 @@ cc_test(
     name = "OCPP201_tests",
     srcs = glob([
         "*.hpp",
+        "grid_support/*.hpp",
         "ocpp_generic/*.hpp",
     ]) + [
         "generated/modules/OCPP201/ld-ev.hpp",

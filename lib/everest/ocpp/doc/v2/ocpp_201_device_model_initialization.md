@@ -55,3 +55,13 @@ one of the required Variables is not there.
 
 This also implies, that if you write code that needs a required `Variable`, when trying to get that variable with 
 `DeviceModel::get_value(...)`, you should first check if the Component that Variable belongs to is `Available`.
+
+## DER control: construct-on-enable
+
+The DER functional block (`ocpp::v21::DERControl`) follows a stricter variant of the `Available`-gated pattern above. It is
+**not** constructed eagerly during `ChargePoint` initialization. Instead, `ChargePoint` registers a device-model variable
+listener on the `DCDERCtrlr` / `ACDERCtrlr` `Available` variable and builds the DER block lazily the first time either flips
+to `true`, whether at startup (if a component is already `Available`) or later at runtime via `SetVariables`. Integrators who
+need DER control active from the start must ensure at least one of `DCDERCtrlr.Available` / `ACDERCtrlr.Available` is `true` in
+the device model; otherwise the DER block stays unbuilt and DER messages are answered with `NotImplemented` until a component
+is enabled.

@@ -12,7 +12,9 @@ target_include_directories(${TEST_TARGET_NAME} PUBLIC
 
 target_sources(${TEST_TARGET_NAME}
     PRIVATE
+    grid_support_state_test.cpp
     ocpp_conversions_test.cpp
+    ../grid_support/grid_support_state.cpp
 )
 
 target_link_libraries(${TEST_TARGET_NAME}

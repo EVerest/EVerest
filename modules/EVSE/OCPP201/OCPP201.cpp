@@ -14,6 +14,8 @@
 #include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
 #include <ocpp/v2/utils.hpp>
+#include <ocpp/v21/messages/NotifyDERAlarm.hpp>
+#include <ocpp/v21/messages/SetDERControl.hpp>
 
 namespace {
 void update_evcc_id_token(ocpp::v2::IdToken& id_token, const std::string& evcc_id,
@@ -474,6 +476,16 @@ void OCPP201::init() {
                     }
                 }
             });
+    }
+
+    // Capability payloads carry their own evse_id and alarms are station-level, so subscribe on every
+    // connection and forward regardless of which one raised the update.
+    for (const auto& grid_support : this->r_grid_support) {
+        grid_support->subscribe_capability([this](types::grid_support::EVSECapability evse_capability) {
+            this->on_grid_support_capability(evse_capability);
+        });
+        grid_support->subscribe_alarm(
+            [this](types::grid_support::GridAlarm alarm) { this->on_grid_support_alarm(alarm); });
     }
 
     this->init_evse_subscriptions();
@@ -990,6 +1002,25 @@ void OCPP201::ready() {
         }
     };
 
+    callbacks.der_active_directives_callback =
+        [this](const std::vector<ocpp::v21::SetDERControlRequest>& active_controls) {
+            if (this->r_grid_support.empty()) {
+                return;
+            }
+
+            const auto received_at = ocpp::DateTime().to_rfc3339();
+            auto directives = module::conversions::translate_active_controls(
+                active_controls, [&received_at](const ocpp::v21::SetDERControlRequest& control) {
+                    return module::conversions::to_grid_support_directive(control, "ocpp", received_at);
+                });
+
+            {
+                auto state_handle = this->grid_support_state.handle();
+                state_handle->set_active_directives(std::move(directives));
+            }
+            this->push_active_directive_sets();
+        };
+
     {
         auto ready_handle = this->evse_ready_map.handle();
         ready_handle.wait([this, &ready_handle]() {
@@ -1024,10 +1055,17 @@ void OCPP201::ready() {
     composed_device_model_storage->register_device_model_storage("OCPP", std::move(libocpp_device_model_storage));
     composed_device_model_storage->register_device_model_storage("EVEREST", this->everest_device_model_storage);
 
+    this->init_grid_support_routing();
+
     this->charge_point = std::make_unique<ocpp::v2::ChargePoint>(
         evse_connector_structure, std::move(composed_device_model_storage), this->ocpp_share_path.string(),
         this->config.CoreDatabasePath, sql_init_path.string(), this->config.MessageLogPath,
         std::make_shared<EvseSecurity>(*this->r_security), callbacks);
+
+    if (not this->r_grid_support.empty()) {
+        this->flush_pending_grid_support();
+        this->grid_support_heartbeat_timer_start();
+    }
 
     // publish charging schedules at least once on startup
     charging_schedules_callback();
@@ -1190,6 +1228,206 @@ void OCPP201::charging_schedules_timer_start() {
 
 void OCPP201::charging_schedules_timer_stop() {
     charging_schedules_timer.stop();
+}
+
+OCPP201::DerEnableResult OCPP201::apply_der_capability(int32_t evse_id,
+                                                       const types::grid_support::DERCapability& capability) {
+    DerEnableResult result;
+
+    // Handle per access: set_variables/on_der_republish re-enter der_active_directives_callback (self-deadlock).
+    {
+        auto state_handle = this->grid_support_state.handle();
+        state_handle->set_capability(evse_id, capability);
+    }
+
+    const auto collect_rejected =
+        [](const std::map<ocpp::v2::SetVariableData, ocpp::v2::SetVariableResult>& set_results) {
+            std::string rejected_details;
+            for (const auto& [data, set_result] : set_results) {
+                if (set_result.attributeStatus != ocpp::v2::SetVariableStatusEnum::Accepted) {
+                    if (not rejected_details.empty()) {
+                        rejected_details += ", ";
+                    }
+                    rejected_details +=
+                        set_result.variable.name.get() + "=" +
+                        ocpp::v2::conversions::set_variable_status_enum_to_string(set_result.attributeStatus);
+                }
+            }
+            return rejected_details;
+        };
+
+    const auto reject = [&](const std::string& rejected_details) {
+        EVLOG_error << "Rejecting set_capability for EVSE " << evse_id
+                    << ": device model rejected DER capability variables: " << rejected_details;
+        auto state_handle = this->grid_support_state.handle();
+        state_handle->unregister(evse_id);
+        result.accepted = false;
+        result.rejected_details = rejected_details;
+    };
+
+    // Phase 1: config variables only (no Available). A partial rejection here never enables the component.
+    const auto config_rejected = collect_rejected(this->charge_point->set_variables(
+        module::device_model::to_der_ctrlr_config_set_variables(evse_id, capability), "internal"));
+    if (not config_rejected.empty()) {
+        reject(config_rejected);
+        return result;
+    }
+
+    // Phase 2: the single Available="true" write that enables the DER block.
+    const auto available_rejected = collect_rejected(this->charge_point->set_variables(
+        {module::device_model::to_der_ctrlr_available_set_variable(evse_id, capability)}, "internal"));
+    if (not available_rejected.empty()) {
+        reject(available_rejected);
+        return result;
+    }
+
+    this->charge_point->on_der_republish_active_directives();
+
+    std::vector<types::grid_support::GridAlarm> pending_alarms;
+    {
+        auto state_handle = this->grid_support_state.handle();
+        state_handle->set_alarms_live();
+        pending_alarms = state_handle->take_pending_alarms();
+    }
+    for (const auto& alarm : pending_alarms) {
+        try {
+            this->charge_point->on_der_alarm(module::conversions::to_ocpp_notify_der_alarm(alarm));
+        } catch (const std::invalid_argument& e) {
+            EVLOG_error << "Buffered DER alarm dropped: " << e.what();
+        }
+    }
+
+    result.accepted = true;
+    return result;
+}
+
+void OCPP201::flush_pending_grid_support() {
+    std::vector<std::pair<int32_t, types::grid_support::DERCapability>> pending;
+    {
+        auto state_handle = this->grid_support_state.handle();
+        state_handle->set_capabilities_live();
+        pending = state_handle->take_pending_capabilities();
+    }
+    for (const auto& [pending_evse_id, pending_capability] : pending) {
+        const auto enable_result = this->apply_der_capability(pending_evse_id, pending_capability);
+        if (not enable_result.accepted) {
+            EVLOG_error << "Buffered DER capability for EVSE " << pending_evse_id
+                        << " rejected on flush (consumer already received Accepted, not re-notified): "
+                        << enable_result.rejected_details;
+        }
+    }
+}
+
+void OCPP201::push_active_directive_sets() {
+    if (this->r_grid_support.empty()) {
+        return;
+    }
+
+    std::vector<types::grid_support::ActiveDirectiveSet> snapshots;
+    {
+        auto state_handle = this->grid_support_state.handle();
+        const auto evses = state_handle->registered_evses();
+        snapshots.reserve(evses.size());
+        for (const auto evse_id : evses) {
+            snapshots.push_back(state_handle->build_active_set(evse_id));
+        }
+    }
+    for (const auto& snapshot : snapshots) {
+        auto* const target = this->grid_support_for_evse(snapshot.evse_id);
+        if (target == nullptr) {
+            continue;
+        }
+        const auto response = target->call_set_active_directives(snapshot);
+        if (not response.accepted) {
+            EVLOG_warning << "DER device rejected active directives for EVSE " << snapshot.evse_id
+                          << (response.reason.has_value() ? ": " + response.reason.value() : "");
+        }
+    }
+}
+
+void OCPP201::init_grid_support_routing() {
+    if (this->r_grid_support.empty()) {
+        return;
+    }
+    for (const auto& grid_support : this->r_grid_support) {
+        const auto mapping = grid_support->get_mapping();
+        if (not mapping.has_value()) {
+            EVLOG_error << "grid_support connection on module " << grid_support->module_id
+                        << " has no evse mapping; excluding it from DER routing";
+            continue;
+        }
+        const auto [it, inserted] = this->grid_support_by_evse.emplace(mapping->evse, grid_support.get());
+        if (not inserted) {
+            EVLOG_error << "grid_support connection on module " << grid_support->module_id << " maps evse "
+                        << mapping->evse << " already served by another connection; keeping the first";
+        }
+    }
+}
+
+grid_supportIntf* OCPP201::grid_support_for_evse(int32_t evse_id) const {
+    const auto it = this->grid_support_by_evse.find(evse_id);
+    if (it != this->grid_support_by_evse.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+void OCPP201::grid_support_heartbeat_timer_callback() {
+    this->push_active_directive_sets();
+}
+
+void OCPP201::grid_support_heartbeat_timer_start() {
+    if (config.grid_support_heartbeat_s > 0) {
+        const auto grid_support_heartbeat_callback = [this]() { grid_support_heartbeat_timer_callback(); };
+        grid_support_heartbeat_timer.interval(grid_support_heartbeat_callback,
+                                              std::chrono::seconds(config.grid_support_heartbeat_s));
+    }
+}
+
+void OCPP201::grid_support_heartbeat_timer_stop() {
+    grid_support_heartbeat_timer.stop();
+}
+
+void OCPP201::on_grid_support_capability(const types::grid_support::EVSECapability& evse_capability) {
+    const auto evse_id = evse_capability.evse_id;
+    const auto& capability = evse_capability.capability;
+
+    if (not capability.ac.has_value() and not capability.dc.has_value()) {
+        EVLOG_warning << "Ignoring DER capability for EVSE " << evse_id << ": no inverter class declared";
+        return;
+    }
+
+    // Route on the flag under the handle (charge_point read races flush); deliver only after releasing it.
+    {
+        auto state_handle = this->grid_support_state.handle();
+        if (not state_handle->capabilities_live()) {
+            state_handle->buffer_pending_capability(evse_id, capability);
+            return;
+        }
+    }
+
+    const auto enable_result = this->apply_der_capability(evse_id, capability);
+    if (not enable_result.accepted) {
+        EVLOG_error << "Rejecting DER capability for EVSE " << evse_id
+                    << ": device model rejected DER capability variables: " << enable_result.rejected_details;
+    }
+}
+
+void OCPP201::on_grid_support_alarm(const types::grid_support::GridAlarm& alarm) {
+    // Same rule as on_grid_support_capability; alarms_live implies charge_point exists.
+    {
+        auto state_handle = this->grid_support_state.handle();
+        if (not state_handle->alarms_live()) {
+            state_handle->buffer_pending_alarm(alarm);
+            return;
+        }
+    }
+
+    try {
+        this->charge_point->on_der_alarm(module::conversions::to_ocpp_notify_der_alarm(alarm));
+    } catch (const std::invalid_argument& e) {
+        EVLOG_warning << "Rejecting DER alarm: " << e.what();
+    }
 }
 
 void OCPP201::init_evse_subscriptions() {

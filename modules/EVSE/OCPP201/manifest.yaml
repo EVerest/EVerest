@@ -77,6 +77,10 @@ config:
       built-in defaults. Leave empty to use only the defaults.
     type: string
     default: ''
+  grid_support_heartbeat_s:
+    description: Interval (seconds) at which the current active DER directive set is republished per EVSE. 0 disables the heartbeat.
+    type: integer
+    default: 60
 provides:
   auth_validator:
     description: Validates the provided token using CSMS, AuthorizationList or AuthorizationCache
@@ -128,6 +132,10 @@ requires:
     max_connections: 1
   extensions_15118:
     interface: iso15118_extensions
+    min_connections: 0
+    max_connections: 128
+  grid_support:
+    interface: grid_support
     min_connections: 0
     max_connections: 128
 enable_external_mqtt: true
