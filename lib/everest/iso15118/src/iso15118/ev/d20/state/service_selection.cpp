@@ -34,7 +34,8 @@ Result ServiceSelection::feed(Event ev) {
 
     const auto service = m_ctx.selected_service();
 
-    if (service == message_20::datatypes::ServiceCategory::AC) {
+    if (service == message_20::datatypes::ServiceCategory::AC or
+        service == message_20::datatypes::ServiceCategory::AC_BPT) {
         return m_ctx.create_state<AC_ChargeParameterDiscovery>();
     }
 
@@ -42,7 +43,14 @@ Result ServiceSelection::feed(Event ev) {
         return m_ctx.create_state<AC_DER_IEC_ChargeParameterDiscovery>();
     }
 
-    return m_ctx.create_state<DC_ChargeParameterDiscovery>();
+    if (service == message_20::datatypes::ServiceCategory::DC or
+        service == message_20::datatypes::ServiceCategory::DC_BPT) {
+        return m_ctx.create_state<DC_ChargeParameterDiscovery>();
+    }
+
+    logf_error("selected service category is not supported by the EV");
+    m_ctx.stop_session();
+    return {};
 }
 
 } // namespace iso15118::ev::d20::state

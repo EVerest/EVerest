@@ -58,6 +58,36 @@ SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_WeldingDetection on Sto
     REQUIRE(primed.ctx.is_session_stopped() == false);
 }
 
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_ChargeLoop on OK response for DC_BPT") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto seed_dc_bpt = [](FsmStateHelper& helper) {
+        helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::DC_BPT);
+    };
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, seed_dc_bpt, Progress::Start};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to DC_WeldingDetection on Stop for DC_BPT") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto seed_dc_bpt = [](FsmStateHelper& helper) {
+        helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::DC_BPT);
+    };
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, seed_dc_bpt, Progress::Stop};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_WeldingDetection);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
 SCENARIO("ISO15118-20 EV PowerDelivery transitions to AC_ChargeLoop on OK response for AC") {
     const ev::feedback::Callbacks callbacks{};
     const auto seed_ac = [](FsmStateHelper& helper) {
@@ -79,6 +109,36 @@ SCENARIO("ISO15118-20 EV PowerDelivery transitions to SessionStop on Stop for AC
         helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::AC);
     };
     PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, seed_ac, Progress::Stop};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to AC_ChargeLoop on OK response for AC_BPT") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto seed_ac_bpt = [](FsmStateHelper& helper) {
+        helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::AC_BPT);
+    };
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, seed_ac_bpt, Progress::Start};
+
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery transitions to SessionStop on Stop for AC_BPT") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto seed_ac_bpt = [](FsmStateHelper& helper) {
+        helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::AC_BPT);
+    };
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, seed_ac_bpt, Progress::Stop};
 
     primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
