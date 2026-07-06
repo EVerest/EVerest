@@ -16,7 +16,7 @@ void AuthorizationSetup::enter() {
 
     message_20::AuthorizationSetupRequest req;
     setup_header(req.header, m_ctx.get_session());
-    m_ctx.respond(req);
+    m_ctx.send_request(req);
 }
 
 Result AuthorizationSetup::feed(Event ev) {

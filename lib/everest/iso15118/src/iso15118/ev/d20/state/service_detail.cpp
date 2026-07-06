@@ -117,7 +117,7 @@ void ServiceDetail::enter() {
     message_20::ServiceDetailRequest req;
     setup_header(req.header, m_ctx.get_session());
     req.service = message_20::to_underlying_value(m_ctx.selected_service());
-    m_ctx.respond(req);
+    m_ctx.send_request(req);
 }
 
 Result ServiceDetail::feed(Event ev) {

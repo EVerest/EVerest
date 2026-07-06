@@ -38,7 +38,7 @@ void Authorization::enter() {
         return;
     }
 
-    m_ctx.respond(make_request(m_ctx));
+    m_ctx.send_request(make_request(m_ctx));
 }
 
 Result Authorization::feed(Event ev) {
@@ -54,7 +54,7 @@ Result Authorization::feed(Event ev) {
     }
 
     if (res->evse_processing == message_20::datatypes::Processing::Ongoing) {
-        m_ctx.respond(make_request(m_ctx));
+        m_ctx.send_request(make_request(m_ctx));
         return {};
     }
 

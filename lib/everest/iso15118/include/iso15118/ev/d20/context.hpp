@@ -110,7 +110,7 @@ public:
     std::unique_ptr<message_20::Variant> pull_response();
     message_20::Type peek_response_type() const;
 
-    template <typename MessageType> void respond(const MessageType& msg) {
+    template <typename MessageType> void send_request(const MessageType& msg) {
         message_exchange.set_request(msg);
     }
 

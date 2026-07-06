@@ -22,7 +22,7 @@ message_20::DC_WeldingDetectionRequest make_request(const SessionId& session,
 } // namespace
 
 void DC_WeldingDetection::enter() {
-    m_ctx.respond(make_request(m_ctx.get_session(), message_20::datatypes::Processing::Ongoing));
+    m_ctx.send_request(make_request(m_ctx.get_session(), message_20::datatypes::Processing::Ongoing));
 }
 
 Result DC_WeldingDetection::feed(Event ev) {

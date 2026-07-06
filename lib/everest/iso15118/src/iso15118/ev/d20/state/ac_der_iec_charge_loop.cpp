@@ -54,7 +54,7 @@ message_20::DER_AC_ChargeLoopRequest make_request(const SessionId& session, cons
 
 void AC_DER_IEC_ChargeLoop::enter() {
     m_ctx.log.enter_state("AC_DER_IEC_ChargeLoop");
-    m_ctx.respond(make_request(m_ctx.get_session(), m_ctx.get_ac_params()));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params()));
 }
 
 Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
@@ -101,7 +101,7 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
     }
 
     m_ctx.feedback.der_control(directive);
-    m_ctx.respond(make_request(m_ctx.get_session(), m_ctx.get_ac_params()));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params()));
     return {};
 }
 

@@ -64,7 +64,7 @@ message_20::AC_ChargeLoopRequest make_request(const SessionId& session, const Ac
 
 void AC_ChargeLoop::enter() {
     m_ctx.log.enter_state("AC_ChargeLoop");
-    m_ctx.respond(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.selected_service()));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.selected_service()));
 }
 
 Result AC_ChargeLoop::feed(Event ev) {
@@ -100,7 +100,7 @@ Result AC_ChargeLoop::feed(Event ev) {
     }
 
     m_ctx.feedback.ac_target_power(*mode);
-    m_ctx.respond(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.selected_service()));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.selected_service()));
     return {};
 }
 

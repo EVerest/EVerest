@@ -32,7 +32,7 @@ message_20::ScheduleExchangeRequest make_request(const SessionId& session) {
 
 void ScheduleExchange::enter() {
     m_ctx.log.enter_state("ScheduleExchange");
-    m_ctx.respond(make_request(m_ctx.get_session()));
+    m_ctx.send_request(make_request(m_ctx.get_session()));
 }
 
 Result ScheduleExchange::feed(Event ev) {
@@ -59,7 +59,7 @@ Result ScheduleExchange::feed(Event ev) {
     }
 
     // Processing::Ongoing: re-send the request and stay.
-    m_ctx.respond(make_request(m_ctx.get_session()));
+    m_ctx.send_request(make_request(m_ctx.get_session()));
     return {};
 }
 

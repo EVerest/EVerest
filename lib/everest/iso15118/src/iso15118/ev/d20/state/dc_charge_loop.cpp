@@ -53,7 +53,7 @@ message_20::DC_ChargeLoopRequest make_request(const SessionId& session, const Dc
 
 void DC_ChargeLoop::enter() {
     m_ctx.log.enter_state("DC_ChargeLoop");
-    m_ctx.respond(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_service()));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_service()));
 }
 
 Result DC_ChargeLoop::feed(Event ev) {
@@ -88,7 +88,7 @@ Result DC_ChargeLoop::feed(Event ev) {
         return m_ctx.create_state<PowerDelivery>(dt::Progress::Stop);
     }
 
-    m_ctx.respond(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_service()));
+    m_ctx.send_request(make_request(m_ctx.get_session(), m_ctx.get_dc_params(), m_ctx.selected_service()));
     return {};
 }
 
