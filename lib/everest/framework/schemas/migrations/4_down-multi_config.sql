@@ -8,6 +8,19 @@ PRAGMA foreign_keys = OFF;
 -- Determine the config to keep (lowest ID = the original pre-migration config).
 -- We work backwards through the dependency chain so we don't violate constraints.
 
+
+-- 10. MUTABILITY and DATATYPE
+INSERT OR REPLACE INTO MUTABILITY (ID, MUTABILITY) VALUES 
+  (1, "WriteOnly"),
+  (2, "ReadWrite");
+INSERT
+  OR REPLACE INTO DATATYPE VALUES 
+  (0, "string"),
+  (1, "decimal"),
+  (2, "integer"),
+  (3, "boolean");
+DELETE FROM DATATYPE WHERE ID=4;
+
 -- 8. MODULE_CONFIG_ACCESS
 CREATE TABLE MODULE_CONFIG_ACCESS_NEW (
     MODULE_ID           TEXT,
