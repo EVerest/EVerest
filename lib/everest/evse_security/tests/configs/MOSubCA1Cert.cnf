@@ -12,5 +12,4 @@ domainComponent			= MO
 basicConstraints		= critical,CA:true,pathlen:1
 keyUsage				= critical,keyCertSign,cRLSign
 subjectKeyIdentifier	= hash
-authorityKeyIdentifier	= keyid:always
 authorityInfoAccess = OCSP;URI:https://www.example.com/, caIssuers;URI:https://www.example.com/Intermediate-CA.cer

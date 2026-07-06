@@ -5,7 +5,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
-#include <openssl/x509.h>
+
 #include <evse_security/crypto/interface/crypto_types.hpp>
 #include <evse_security/evse_types.hpp>
 #include <evse_security/utils/evse_filesystem_types.hpp>
@@ -33,21 +33,19 @@ public:
     X509Wrapper(const X509Wrapper& other);
     X509Wrapper(X509Wrapper&& other) = default;
 
-    ~X509Wrapper();
+    ~X509Wrapper() = default;
 
-public:
     /// @brief Returns true if this certificate is the child of the provided parent
     bool is_child(const X509Wrapper& parent) const;
 
     /// @brief Returns true if this certificate is self-signed
     bool is_selfsigned() const;
 
-public:
     /// @brief Gets x509 raw handle
     inline X509Handle* get() const {
         return x509.get();
     }
-    X509* get_x509_raw() const;
+
     /// @brief Gets valid_in
     /// @return seconds until certificate is valid; if > 0 cert is not yet valid
     int64_t get_valid_in() const;
@@ -117,7 +115,6 @@ public:
     /// @brief If the certificate has expired
     bool is_expired() const;
 
-public:
     X509Wrapper& operator=(X509Wrapper&& other) = default;
 
     /// @return true if the two certificates are the same
@@ -131,7 +128,6 @@ public:
 private:
     void update_validity();
 
-private:
     X509Handle_ptr x509;   // X509 wrapper object
     std::int64_t valid_in; // seconds; if > 0 cert is not yet valid, negative value means past, positive is in future
     std::int64_t valid_to; // seconds; if < 0 cert has expired, negative value means past, positive is in future
@@ -139,9 +135,7 @@ private:
     // Relevant file in which this certificate resides
     std::optional<fs::path> file;
 
-#ifdef DEBUG_MODE_EVSE_SECURITY
     std::string debug_common_name;
-#endif
 };
 
 } // namespace evse_security

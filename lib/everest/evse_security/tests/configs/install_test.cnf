@@ -9,8 +9,7 @@ countryName				= DE
 domainComponent			= V2G
 
 [ext]
-basicConstraints		= critical,CA:true,pathlen:2
+basicConstraints		= critical,CA:true
 keyUsage				= critical,keyCertSign,cRLSign
 subjectKeyIdentifier	= hash
-authorityKeyIdentifier	= keyid:always
 

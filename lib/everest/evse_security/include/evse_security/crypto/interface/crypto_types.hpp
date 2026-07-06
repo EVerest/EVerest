@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <evse_security/utils/evse_filesystem_types.hpp>
+
 #include <chrono>
 #include <memory>
 #include <optional>
@@ -10,6 +12,7 @@
 
 namespace evse_security {
 
+// NOLINTNEXTLINE(cert-int09-c, readability-enum-initial-value): prefer implicit initialization for readability
 enum class CryptoKeyType {
     EC_prime256v1, // Default EC. P-256, ~equiv to rsa 3072
     EC_secp384r1,  // P-384, ~equiv to rsa 7680
@@ -45,10 +48,10 @@ struct KeyGenerationInfo {
     bool generate_on_custom;
 
     /// @brief If we should export the public key to a file
-    std::optional<std::string> public_key_file;
+    std::optional<fs::path> public_key_file;
 
     /// @brief If we should export the private key to a file
-    std::optional<std::string> private_key_file;
+    std::optional<fs::path> private_key_file;
     /// @brief If we should have a pass for the private key file
     std::optional<std::string> private_key_pass;
 };
@@ -73,8 +76,7 @@ public:
 };
 
 struct CryptoHandle {
-    virtual ~CryptoHandle() {
-    }
+    virtual ~CryptoHandle() = default;
 };
 
 /// @brief Handle abstraction to crypto lib X509 certificate
