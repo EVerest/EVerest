@@ -58,7 +58,12 @@ std::int32_t get_ocpp_connector_id(const ocpp_multi::GenericChargePointInterface
             const auto evse_id = evse->id;
             const auto connector = evse->connectorId.value();
             result = mapping.at(evse_id).at(connector);
-        } catch (...) {
+        } catch (const std::bad_optional_access&) {
+            EVLOG_warning << "No connectorId provided for evse " << evse->id << "; cannot map to an OCPP1.6 connector";
+            result = -1;
+        } catch (const std::out_of_range&) {
+            EVLOG_warning << "No OCPP1.6 connector mapping for evse " << evse->id << ", connector "
+                          << (evse->connectorId ? std::to_string(evse->connectorId.value()) : "<none>");
             result = -1;
         }
     }

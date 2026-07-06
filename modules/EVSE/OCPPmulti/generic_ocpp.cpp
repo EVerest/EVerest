@@ -529,7 +529,12 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     // we can now initialise the charge point's state machine. It reads the connector availability from the internal
     // database and potentially triggers enable/disable callbacks at the evse.
     mv_charge_point.start(boot_reason, resuming_session_ids, false);
-    mv_started = true;
+    {
+        // flip under m_member_mux: pairs with enqueue_if_not_started() so no event can be
+        // queued after this point (ready_event_queue() below drains the final queue state)
+        std::lock_guard lock(m_member_mux);
+        mv_started = true;
+    }
     EVLOG_info << "OCPP started";
 
     // Signal to EVSEs to start their internal state machines
@@ -581,6 +586,7 @@ void GenericOcpp::init_evse_maps() {
         }
     }
 
+    std::lock_guard lock(m_member_mux);
     for (std::size_t evse_id = 1; evse_id <= n_managers; evse_id++) {
         m_evse_hardware_capabilities_map[evse_id] = types::evse_board_support::HardwareCapabilities{};
         m_evse_supported_energy_transfer_modes[evse_id] = {};
@@ -655,28 +661,33 @@ void GenericOcpp::ready_event_queue() {
     for (auto& [evse_id, evse_event_queue] : to_process) {
         while (!evse_event_queue.empty()) {
             auto& queued_event = evse_event_queue.front();
-            std::visit(
-                [this, evse_id](auto&& arg) {
-                    using TYPE = std::decay_t<decltype(arg)>;
+            try {
+                std::visit(
+                    [this, evse_id](auto&& arg) {
+                        using TYPE = std::decay_t<decltype(arg)>;
 
-                    if constexpr (std::is_same_v<types::evse_manager::SessionEvent, TYPE>) {
-                        visit_impl(evse_id, arg);
-                    } else if constexpr (std::is_same_v<EventInfo, TYPE>) {
-                        visit_impl(evse_id, arg);
-                    } else if constexpr (std::is_same_v<powermeter_t, TYPE>) {
-                        visit_impl(evse_id, arg);
-                    } else if constexpr (std::is_same_v<types::system::FirmwareUpdateStatus, TYPE>) {
-                        visit_impl(evse_id, arg);
-                    } else if constexpr (std::is_same_v<types::system::LogStatus, TYPE>) {
-                        visit_impl(evse_id, arg);
-                    } else if constexpr (std::is_same_v<std::monostate, TYPE>) {
-                    } else {
-                        // all items should have handlers
-                        // some compilers trigger this so commenting out for now
-                        // static_assert(false);
-                    }
-                },
-                queued_event);
+                        if constexpr (std::is_same_v<types::evse_manager::SessionEvent, TYPE>) {
+                            visit_impl(evse_id, arg);
+                        } else if constexpr (std::is_same_v<EventInfo, TYPE>) {
+                            visit_impl(evse_id, arg);
+                        } else if constexpr (std::is_same_v<powermeter_t, TYPE>) {
+                            visit_impl(evse_id, arg);
+                        } else if constexpr (std::is_same_v<types::system::FirmwareUpdateStatus, TYPE>) {
+                            visit_impl(evse_id, arg);
+                        } else if constexpr (std::is_same_v<types::system::LogStatus, TYPE>) {
+                            visit_impl(evse_id, arg);
+                        } else if constexpr (std::is_same_v<std::monostate, TYPE>) {
+                        } else {
+                            // all items should have handlers
+                            // some compilers trigger this so commenting out for now
+                            // static_assert(false);
+                        }
+                    },
+                    queued_event);
+            } catch (const std::exception& e) {
+                // a bad queued event must not take down OCPP for every EVSE
+                EVLOG_error << "Failed to process queued event for evse_id " << evse_id << ": " << e.what();
+            }
             evse_event_queue.pop();
         }
     }
@@ -932,11 +943,8 @@ void GenericOcpp::cb_error_cleared_handler(const Everest::error::Error& error) {
     if (error.type != EVSE_MANAGER_INOPERATIVE_ERROR) {
         auto event_data = convert_error(error);
         event_data.event_cleared = true;
-        if (mv_started) {
+        if (!enqueue_if_not_started(event_data.evse_id, event_data)) {
             mv_charge_point.on_event(event_data);
-        } else {
-            std::lock_guard lock(m_member_mux);
-            m_event_queue[event_data.evse_id].emplace(event_data);
         }
     }
 }
@@ -948,11 +956,8 @@ void GenericOcpp::cb_error_handler(const Everest::error::Error& error) {
     if (error.type != EVSE_MANAGER_INOPERATIVE_ERROR) {
         auto event_data = convert_error(error);
         event_data.event_cleared = false;
-        if (mv_started) {
+        if (!enqueue_if_not_started(event_data.evse_id, event_data)) {
             mv_charge_point.on_event(event_data);
-        } else {
-            std::lock_guard lock(m_member_mux);
-            m_event_queue[event_data.evse_id].emplace(event_data);
         }
     }
 }
@@ -977,12 +982,9 @@ void GenericOcpp::cb_fault_cleared_handler(std::int32_t evse_id, const Everest::
 
     auto event_data = convert_error(error);
     event_data.event_cleared = true;
-    if (mv_started) {
+    if (!enqueue_if_not_started(event_data.evse_id, event_data)) {
         mv_charge_point.on_event(event_data);
         mv_charge_point.on_fault_cleared(evse_id, get_connector_id_from_error(error));
-    } else {
-        std::lock_guard lock(m_member_mux);
-        m_event_queue[event_data.evse_id].emplace(event_data);
     }
 }
 
@@ -991,28 +993,22 @@ void GenericOcpp::cb_fault_handler(std::int32_t evse_id, const Everest::error::E
 
     auto event_data = convert_error(error);
     event_data.event_cleared = false;
-    if (mv_started) {
+    if (!enqueue_if_not_started(event_data.evse_id, event_data)) {
         mv_charge_point.on_event(event_data);
         mv_charge_point.on_faulted(evse_id, get_connector_id_from_error(error));
-    } else {
-        std::lock_guard lock(m_member_mux);
-        m_event_queue[event_data.evse_id].emplace(event_data);
     }
 }
 
 void GenericOcpp::cb_firmware_update_status(types::system::FirmwareUpdateStatus status) {
     using namespace module::conversions;
 
-    if (mv_started) {
+    if (!enqueue_if_not_started(0, status)) {
         const auto disable_connectors_during_install =
             !status.firmware_update_metadata.has_value() ||
             status.firmware_update_metadata.value().disable_connectors_during_install.value_or(true);
         mv_charge_point.on_firmware_update_status_notification(
             status.request_id, to_ocpp_firmware_status_enum(status.firmware_update_status),
             disable_connectors_during_install);
-    } else {
-        std::lock_guard lock(m_member_mux);
-        m_event_queue[0].emplace(status);
     }
 }
 
@@ -1070,6 +1066,7 @@ ocpp::v2::GetLogResponse GenericOcpp::cb_get_log_request(const types::system::Up
 
 void GenericOcpp::cb_hw_capabilities(std::int32_t evse_id,
                                      const types::evse_board_support::HardwareCapabilities& hw_capabilities) {
+    std::lock_guard lock(m_member_mux);
     m_evse_hardware_capabilities_map[evse_id] = hw_capabilities;
 }
 
@@ -1143,12 +1140,9 @@ void GenericOcpp::cb_iso15118_certificate_request(std::int32_t extensions_id,
 void GenericOcpp::cb_log_status(types::system::LogStatus status) {
     using namespace module::conversions;
 
-    if (mv_started) {
+    if (!enqueue_if_not_started(0, status)) {
         mv_charge_point.on_log_status_notification(to_ocpp_upload_logs_status_enum(status.log_status),
                                                    status.request_id);
-    } else {
-        std::lock_guard lock(m_member_mux);
-        m_event_queue[0].emplace(status);
     }
 }
 
@@ -1191,23 +1185,17 @@ void GenericOcpp::cb_powermeter(std::int32_t evse_id, const types::powermeter::P
         }
     }
 
-    if (mv_started) {
+    if (!enqueue_if_not_started(evse_id, std::move(meter))) {
         mv_charge_point.on_meter_value(evse_id, meter.state_of_charge, meter.meter.value());
         if (power_meter.power_W) {
             m_everest_device_model_storage->update_power(evse_id, power_meter.power_W->total);
         }
-    } else {
-        std::lock_guard lock(m_member_mux);
-        m_event_queue[evse_id].emplace(std::move(meter));
     }
 }
 
 void GenericOcpp::cb_powermeter_public_key_ocmf(std::int32_t evse_id, const std::string& public_key) {
-    if (mv_started) {
+    if (!enqueue_if_not_started(evse_id, powermeter_t{{}, {}, public_key})) {
         (void)mv_charge_point.set_powermeter_public_key(evse_id, public_key);
-    } else {
-        std::lock_guard lock(m_member_mux);
-        m_event_queue[evse_id].emplace(powermeter_t{{}, {}, public_key});
     }
 }
 
@@ -1273,8 +1261,14 @@ ocpp::v2::ReserveNowStatusEnum GenericOcpp::cb_reserve_now(const ocpp::v2::Reser
             reservation.parent_id_token = request.groupIdToken.value().idToken;
         }
         if (request.connectorType.has_value()) {
-            reservation.connector_type =
-                types::evse_manager::string_to_connector_type_enum(request.connectorType.value());
+            try {
+                reservation.connector_type =
+                    types::evse_manager::string_to_connector_type_enum(request.connectorType.value());
+            } catch (const std::out_of_range&) {
+                // CSMS-controlled input; must not throw into libocpp's message thread
+                EVLOG_warning << "ReserveNow rejected: unknown connector type: " << request.connectorType.value();
+                return ocpp::v2::ReserveNowStatusEnum::Rejected;
+            }
         }
         const auto revervation_result = mv_requires.reservation.at(0)->call_reserve_now(reservation);
         result = to_ocpp_reservation_status(revervation_result);
@@ -1338,6 +1332,7 @@ void GenericOcpp::cb_security_event(const ocpp::CiString<50>& event_type,
 void GenericOcpp::cb_service_renegotiation_supported(std::int32_t extensions_id, bool service_renegotiation_supported) {
     const auto& mapping = mv_requires.extensions_15118.at(extensions_id)->get_mapping();
     if (mapping.has_value()) {
+        std::lock_guard lock(m_member_mux);
         m_evse_service_renegotiation_supported[mapping->evse] = service_renegotiation_supported;
     } else {
         EVLOG_warning << "ISO15118 Extension interface mapping not set! Not retrieving 'Service "
@@ -1353,13 +1348,11 @@ void GenericOcpp::cb_session_event(std::int32_t evse_id, types::evse_manager::Se
         std::lock_guard lock(m_member_mux);
         m_resuming_session_ids.insert(session_event.uuid);
     }
-    if (mv_started) {
-        process_session_event(evse_id, session_event);
-    } else {
+    if (enqueue_if_not_started(evse_id, session_event)) {
         EVLOG_info << "OCPP not fully initialised, but received a session event on evse_id: " << evse_id
                    << " that will be queued up: " << session_event.event;
-        std::lock_guard lock(m_member_mux);
-        m_event_queue[evse_id].emplace(session_event);
+    } else {
+        process_session_event(evse_id, session_event);
     }
 }
 
@@ -1454,6 +1447,7 @@ GenericOcpp::cb_stop_transaction(std::int32_t evse_id, types::evse_manager::Stop
 
 void GenericOcpp::cb_supported_energy_transfer_modes(
     std::int32_t evse_id, const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes) {
+    std::lock_guard lock(m_member_mux);
     m_evse_supported_energy_transfer_modes[evse_id] = supported_energy_transfer_modes;
 }
 
@@ -1827,6 +1821,16 @@ GenericOcpp::get_connector_structure() {
 void GenericOcpp::process_session_event(std::int32_t evse_id, const types::evse_manager::SessionEvent& session_event) {
     const auto connector_id = session_event.connector_id.value_or(1);
     std::lock_guard lock(m_session_event_mutex);
+    try {
+        process_session_event_impl(evse_id, connector_id, session_event);
+    } catch (const std::exception& e) {
+        EVLOG_error << "Failed to process session event " << session_event.event << " on evse_id " << evse_id
+                    << ", connector_id " << connector_id << " (session " << session_event.uuid << "): " << e.what();
+    }
+}
+
+void GenericOcpp::process_session_event_impl(std::int32_t evse_id, std::int32_t connector_id,
+                                             const types::evse_manager::SessionEvent& session_event) {
     switch (session_event.event) {
     case types::evse_manager::SessionEventEnum::Authorized:
         mv_charge_point.on_event_authorised(evse_id, connector_id, session_event);

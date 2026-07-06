@@ -168,7 +168,7 @@ private:
     // needs to be thread safe - used by v2_chargepoint and this object
     std::unique_ptr<module::TransactionHandler> m_transaction_handler;
 
-    // these need protecting - used in device model storage and this object
+    // protected by m_member_mux - used in device model storage and this object
     std::map<std::int32_t, types::evse_board_support::HardwareCapabilities> m_evse_hardware_capabilities_map;
     std::map<std::int32_t, std::vector<types::iso15118::EnergyTransferMode>> m_evse_supported_energy_transfer_modes;
     std::map<std::int32_t, bool> m_evse_service_renegotiation_supported;
@@ -190,6 +190,21 @@ private:
     // the libocpp message thread, and the K28 on_deadline/reaper callbacks.
     std::mutex recompute_mutex;
     std::atomic_bool recompute_pending{false};
+
+    // Queue the event if OCPP hasn't started yet. Gate is re-checked under m_member_mux so a
+    // concurrent ready() (which flips mv_started under the same lock before draining) can't
+    // strand the event in a queue that is never drained again.
+    template <typename EventT> bool enqueue_if_not_started(std::int32_t evse_id, EventT&& event) {
+        if (mv_started) {
+            return false;
+        }
+        std::lock_guard lock(m_member_mux);
+        if (mv_started) {
+            return false;
+        }
+        m_event_queue[evse_id].emplace(std::forward<EventT>(event));
+        return true;
+    }
 
 public:
     using ConfigServiceClient = std::shared_ptr<Everest::config::ConfigServiceClient>;
@@ -397,6 +412,8 @@ protected:
     void process_reservation_end(std::int32_t evse_id, std::int32_t connector_id);
     void process_reserved(std::int32_t evse_id, std::int32_t connector_id);
     void process_session_event(std::int32_t evse_id, const types::evse_manager::SessionEvent& session_event);
+    void process_session_event_impl(std::int32_t evse_id, std::int32_t connector_id,
+                                    const types::evse_manager::SessionEvent& session_event);
     void process_session_finished(std::int32_t evse_id, std::int32_t connector_id,
                                   const types::evse_manager::SessionEvent& session_event);
     void process_session_resumed(std::int32_t evse_id, std::int32_t connector_id,
