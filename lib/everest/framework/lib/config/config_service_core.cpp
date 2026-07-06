@@ -253,14 +253,17 @@ SetActiveSlotStatus ConfigServiceCore::internal_mark_active_slot(int slot_id) {
         return SetActiveSlotStatus::NoChangeRequired;
     }
     if (not slot_manager_.exists(slot_id)) {
+        EVLOG_warning << "Failed to mark slot " << slot_id << " as active: slot does not exist.";
         return SetActiveSlotStatus::DoesNotExist;
     }
     const auto status = slot_manager_.set_next_boot_slot_id(slot_id);
     if (status != ec::GenericResponseStatus::OK) {
+        EVLOG_error << "Failed to mark slot " << slot_id << " as active in database.";
         return SetActiveSlotStatus::Failed;
     }
     next_boot_slot_id_ = slot_id;
     publish_active_slot_update();
+    EVLOG_info << "Successfully marked slot " << slot_id << " as active for next boot.";
     return SetActiveSlotStatus::Success;
 }
 
@@ -269,15 +272,19 @@ DeleteSlotStatus ConfigServiceCore::delete_slot(int slot_id) {
 }
 DeleteSlotStatus ConfigServiceCore::internal_delete_slot(int slot_id) {
     if (slot_id == active_slot_id_ or slot_id == next_boot_slot_id_) {
+        EVLOG_warning << "Failed to delete slot " << slot_id << ": cannot delete the active or next boot slot.";
         return DeleteSlotStatus::CannotDeleteActiveSlot;
     }
     if (not slot_manager_.exists(slot_id)) {
+        EVLOG_warning << "Failed to delete slot " << slot_id << ": slot does not exist.";
         return DeleteSlotStatus::DoesNotExist;
     }
     const auto status = slot_manager_.delete_slot(slot_id);
     if (status != ec::GenericResponseStatus::OK) {
+        EVLOG_error << "Failed to delete slot " << slot_id << " from database.";
         return DeleteSlotStatus::Failed;
     }
+    EVLOG_info << "Successfully deleted slot " << slot_id << ".";
     return DeleteSlotStatus::Success;
 }
 
@@ -285,7 +292,14 @@ DuplicateSlotResult ConfigServiceCore::duplicate_slot(int slot_id, std::optional
     return post_to_actor([this, slot_id, description]() { return internal_duplicate_slot(slot_id, description); });
 }
 DuplicateSlotResult ConfigServiceCore::internal_duplicate_slot(int slot_id, std::optional<std::string> description) {
-    return slot_manager_.duplicate_slot(slot_id, std::move(description));
+    auto result = slot_manager_.duplicate_slot(slot_id, description);
+    if (result.success) {
+        EVLOG_info << "Successfully duplicated slot " << slot_id << " to new slot " << result.slot_id.value_or(-1)
+                   << " with description: " << description.value_or("<none>");
+    } else {
+        EVLOG_error << "Failed to duplicate slot " << slot_id << ".";
+    }
+    return result;
 }
 
 LoadFromYamlResult ConfigServiceCore::load_from_yaml(const std::string& raw_yaml,
@@ -300,13 +314,17 @@ LoadFromYamlResult ConfigServiceCore::internal_load_from_yaml(const std::string&
     int target_slot_id = slot_id.value_or(slot_manager_.next_slot_id());
 
     if (target_slot_id == active_slot_id_ and module_status_ != ActiveSlotStatus::Stopped) {
-        return {false, std::nullopt, "Cannot load YAML into the active slot when modules are running"};
+        const char* err_msg = "Cannot load YAML into the active slot when modules are running";
+        EVLOG_warning << "Failed to load from YAML into slot " << target_slot_id << ": " << err_msg;
+        return {false, std::nullopt, err_msg};
     }
     const bool into_new_slot = not slot_manager_.exists(target_slot_id);
     try {
         const auto json_config = Everest::load_yaml_from_string(raw_yaml);
         if (not json_config.contains("active_modules")) {
-            return {false, std::nullopt, "YAML does not contain an 'active_modules' section"};
+            const char* err_msg = "YAML does not contain an 'active_modules' section";
+            EVLOG_warning << "Failed to load from YAML into slot " << target_slot_id << ": " << err_msg;
+            return {false, std::nullopt, err_msg};
         }
 
         // Validate against manifests, interfaces and requirements; enriches configs with manifest metadata.
@@ -316,32 +334,43 @@ LoadFromYamlResult ConfigServiceCore::internal_load_from_yaml(const std::string&
         if (into_new_slot) {
             if (slot_manager_.write_config_slot(target_slot_id, nlohmann::json(module_configs).dump(), std::nullopt,
                                                 description) != ec::GenericResponseStatus::OK) {
-                return {false, std::nullopt, "Failed to create new config slot"};
+                const char* err_msg = "Failed to create new config slot";
+                EVLOG_error << "Failed to load from YAML into slot " << target_slot_id << ": " << err_msg;
+                return {false, std::nullopt, err_msg};
             }
 
             auto storage = make_storage(target_slot_id);
 
             if (storage->write_module_configs(module_configs) != ec::GenericResponseStatus::OK) {
                 slot_manager_.delete_slot(target_slot_id);
-                return {false, std::nullopt, "Failed to write module configs to new slot"};
+                const char* err_msg = "Failed to write module configs to new slot";
+                EVLOG_error << "Failed to load from YAML into slot " << target_slot_id << ": " << err_msg;
+                return {false, std::nullopt, err_msg};
             }
         } else {
             if (slot_manager_.update_config_slot(target_slot_id, nlohmann::json(module_configs).dump(), std::nullopt,
                                                  description) != ec::GenericResponseStatus::OK) {
-                return {false, std::nullopt, "Failed to replace config slot"};
+                const char* err_msg = "Failed to replace config slot";
+                EVLOG_error << "Failed to load from YAML into slot " << target_slot_id << ": " << err_msg;
+                return {false, std::nullopt, err_msg};
             }
             // overwrite its config with the new one
             auto storage = make_storage(target_slot_id);
 
             if (storage->replace_module_configs(module_configs) != ec::GenericResponseStatus::OK) {
                 // Do nothing - if writing to an existing slot failed, we don't want to delete it;
-                return {false, std::nullopt, "Failed to write module configs to existing slot"};
+                const char* err_msg = "Failed to write module configs to existing slot";
+                EVLOG_error << "Failed to load from YAML into slot " << target_slot_id << ": " << err_msg;
+                return {false, std::nullopt, err_msg};
             }
         }
 
+        EVLOG_info << "Successfully loaded from YAML into slot " << target_slot_id << ".";
         return {true, target_slot_id, ""};
     } catch (const std::exception& e) {
-        return {false, std::nullopt, fmt::format("Validation failed: {}", e.what())};
+        std::string err_msg = fmt::format("Validation failed: {}", e.what());
+        EVLOG_error << "Failed to load from YAML into slot " << target_slot_id << ": " << err_msg;
+        return {false, std::nullopt, err_msg};
     }
 }
 
@@ -350,9 +379,15 @@ bool ConfigServiceCore::set_description(int slot_id, const std::string& descript
 }
 bool ConfigServiceCore::internal_set_description(int slot_id, const std::string& description) {
     if (slot_manager_.exists(slot_id)) {
-        slot_manager_.update_description(slot_id, {description});
-        return true;
+        if (slot_manager_.update_description(slot_id, {description}) == ec::GenericResponseStatus::OK) {
+            EVLOG_info << "Successfully set description for slot " << slot_id << ".";
+            return true;
+        } else {
+            EVLOG_error << "Failed to set description for slot " << slot_id << " in database.";
+            return false;
+        }
     } else {
+        EVLOG_warning << "Failed to set description for slot " << slot_id << ": slot does not exist.";
         return false;
     }
 }
@@ -423,6 +458,11 @@ ConfigServiceCore::internal_set_config_parameters(int slot_id, const std::vector
             std::atomic_store(&active_configs_ptr_, std::make_shared<const ec::ModuleConfigurations>(module_configs_));
         }
         publish_config_update(event);
+        EVLOG_info << "Successfully set " << event.updates.size() << " of " << updates.size()
+                   << " config parameter(s) for slot " << resolved_slot_id << ".";
+    } else if (!updates.empty()) {
+        EVLOG_error << "Failed to set any config parameters for slot " << resolved_slot_id
+                    << "; all updates were rejected or invalid.";
     }
 
     return result;
