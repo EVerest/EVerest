@@ -49,7 +49,9 @@ Result ScheduleExchange::feed(Event ev) {
 
     if (res->processing == message_20::datatypes::Processing::Finished) {
         m_ctx.feedback.ev_power_ready();
-        if (m_ctx.selected_service() == message_20::datatypes::ServiceCategory::AC) {
+        const auto service = m_ctx.selected_service();
+        if (service == message_20::datatypes::ServiceCategory::AC or
+            service == message_20::datatypes::ServiceCategory::AC_DER_IEC) {
             return m_ctx.create_state<PowerDelivery>(message_20::datatypes::Progress::Start);
         }
         return m_ctx.create_state<DC_CableCheck>();

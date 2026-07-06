@@ -31,10 +31,11 @@ public:
     FsmStateHelper(
         const ev::feedback::Callbacks& callbacks,
         std::vector<message_20::SupportedAppProtocol> protocols = {{"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}},
-        message_20::datatypes::ServiceCategory requested_service = message_20::datatypes::ServiceCategory::DC) :
+        message_20::datatypes::ServiceCategory requested_service = message_20::datatypes::ServiceCategory::DC,
+        ev::DerControlFunctions der_control_functions = {}, bool der_stop_on_unsupported_functions = true) :
         advertised_app_protocols(std::move(protocols)),
         ctx(callbacks, msg_exch, evcc_id, advertised_app_protocols, control_event, dc_params, ac_params,
-            requested_service) {
+            requested_service, der_control_functions, der_stop_on_unsupported_functions) {
     }
 
     ev::d20::Context& get_context();

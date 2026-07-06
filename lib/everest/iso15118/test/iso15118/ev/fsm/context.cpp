@@ -8,7 +8,9 @@
 
 #include "helper.hpp"
 
+#include <iso15118/d20/der_functions.hpp>
 #include <iso15118/ev/ac_charge_params.hpp>
+#include <iso15118/ev/der_control_functions.hpp>
 
 using namespace iso15118;
 
@@ -89,6 +91,76 @@ SCENARIO("ISO15118-20 EV Context tracks the selected energy service") {
 
         THEN("selected_service() defaults to AC") {
             REQUIRE(ctx.selected_service() == message_20::datatypes::ServiceCategory::AC);
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV DerControlFunctions to_bitset maps flags to DERControlName positions") {
+    using iso15118::iec::DERControlName;
+
+    GIVEN("A DerControlFunctions with the two DSO setpoint flags set") {
+        ev::DerControlFunctions functions{};
+        functions.dso_q_setpoint_provision = true;
+        functions.dso_cos_phi_setpoint_provision = true;
+
+        const auto bits = functions.to_bitset();
+
+        THEN("Exactly the DSO setpoint bit positions are set") {
+            REQUIRE(bits.count() == 2);
+            REQUIRE(bits.test(static_cast<size_t>(DERControlName::DSOQSetpointProvision)));
+            REQUIRE(bits.test(static_cast<size_t>(DERControlName::DSOCosPhiSetpointProvision)));
+            REQUIRE_FALSE(bits.test(static_cast<size_t>(DERControlName::OverFrequencyWattMode)));
+        }
+    }
+
+    GIVEN("A DerControlFunctions with the first and last flags set") {
+        ev::DerControlFunctions functions{};
+        functions.over_frequency_watt_mode = true;
+        functions.under_voltage_fault_ride_through_mode = true;
+
+        const auto bits = functions.to_bitset();
+
+        THEN("The bit positions match the enum head and tail") {
+            REQUIRE(bits.test(static_cast<size_t>(DERControlName::OverFrequencyWattMode)));
+            REQUIRE(bits.test(static_cast<size_t>(DERControlName::UnderVoltageFaultRideThroughMode)));
+            REQUIRE(bits.count() == 2);
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Context exposes the configured DER supported functions") {
+    using iso15118::iec::DERControlName;
+
+    const ev::feedback::Callbacks callbacks{};
+
+    GIVEN("A Context constructed with DSO setpoint DER support") {
+        ev::DerControlFunctions functions{};
+        functions.dso_q_setpoint_provision = true;
+        functions.dso_cos_phi_setpoint_provision = true;
+
+        FsmStateHelper helper{callbacks,
+                              {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}},
+                              message_20::datatypes::ServiceCategory::AC_DER_IEC,
+                              functions,
+                              false};
+        auto& ctx = helper.get_context();
+
+        THEN("der_supported_functions() equals the configured bitset") {
+            REQUIRE(ctx.der_supported_functions() == functions.to_bitset());
+        }
+
+        THEN("der_stop_on_unsupported_functions() reflects the ctor argument") {
+            REQUIRE(ctx.der_stop_on_unsupported_functions() == false);
+        }
+
+        WHEN("a negotiated mask is recorded") {
+            std::bitset<ev::DER_CONTROL_FUNCTION_COUNT> negotiated{};
+            negotiated.set(static_cast<size_t>(DERControlName::DSOQSetpointProvision));
+            ctx.set_der_negotiated_functions(negotiated);
+
+            THEN("der_negotiated_functions() returns it") {
+                REQUIRE(ctx.der_negotiated_functions() == negotiated);
+            }
         }
     }
 }

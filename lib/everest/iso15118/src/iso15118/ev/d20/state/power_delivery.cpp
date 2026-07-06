@@ -5,6 +5,7 @@
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/state/ac_charge_loop.hpp>
+#include <iso15118/ev/d20/state/ac_der_iec_charge_loop.hpp>
 #include <iso15118/ev/d20/state/dc_charge_loop.hpp>
 #include <iso15118/ev/d20/state/dc_welding_detection.hpp>
 #include <iso15118/ev/d20/state/power_delivery.hpp>
@@ -46,15 +47,21 @@ Result PowerDelivery::feed(Event ev) {
     }
 
     using Progress = message_20::datatypes::Progress;
-    const bool is_ac = m_ctx.selected_service() == message_20::datatypes::ServiceCategory::AC;
+    using ServiceCategory = message_20::datatypes::ServiceCategory;
+    const auto service = m_ctx.selected_service();
+    const bool is_ac = service == ServiceCategory::AC;
+    const bool is_ac_der_iec = service == ServiceCategory::AC_DER_IEC;
     switch (m_charge_progress) {
     case Progress::Start:
+        if (is_ac_der_iec) {
+            return m_ctx.create_state<AC_DER_IEC_ChargeLoop>();
+        }
         if (is_ac) {
             return m_ctx.create_state<AC_ChargeLoop>();
         }
         return m_ctx.create_state<DC_ChargeLoop>();
     case Progress::Stop:
-        if (is_ac) {
+        if (is_ac or is_ac_der_iec) {
             return m_ctx.create_state<SessionStop>();
         }
         return m_ctx.create_state<DC_WeldingDetection>();
