@@ -212,10 +212,10 @@ SCENARIO("ISO15118-20 EV Context encodes a request that round-trips back to the 
         auto& ctx = helper.get_context();
         auto& mx = helper.get_message_exchange();
 
-        WHEN("The Context responds with a SessionSetupRequest") {
+        WHEN("The Context sends a SessionSetupRequest") {
 
             message_20::SessionSetupRequest req{message_20::Header{}, "EVTESTID01"};
-            ctx.respond(req);
+            ctx.send_request(req);
 
             THEN("The MessageExchange holds a pending request") {
                 REQUIRE(mx.has_request());
