@@ -34,6 +34,7 @@ struct Conf {
     int device_state_read_interval_ms;
     int communication_error_pause_delay_s;
     std::string public_key_format;
+    bool monitor_transaction_state;
 };
 
 class powermeterImpl : public powermeterImplBase {
@@ -59,11 +60,22 @@ public:
         }
 
         static void set_pending_closed_transaction(powermeterImpl& self, bool pending) {
-            self.m_pending_closed_transaction = pending;
+            self.m_pending_closed_transaction.store(pending);
+        }
+
+        static bool pending_closed_transaction(const powermeterImpl& self) {
+            return self.m_pending_closed_transaction.load();
+        }
+
+        static void monitor_transaction_ocmf_state(powermeterImpl& self, std::uint16_t ocmf_state) {
+            self.monitor_transaction_ocmf_state(ocmf_state);
         }
 
         static void set_transaction_id(powermeterImpl& self, std::string transaction_id) {
-            self.m_transaction_id = std::move(transaction_id);
+            {
+                std::lock_guard<std::mutex> lock(self.m_transaction_mutex);
+                self.m_transaction_id = std::move(transaction_id);
+            }
             self.m_transaction_active.store(true);
         }
 
@@ -110,7 +122,8 @@ private:
 
     std::atomic_bool m_transaction_active{false};
     std::atomic_bool m_pending_time_sync{false};
-    bool m_pending_closed_transaction{false};
+    std::atomic_bool m_pending_closed_transaction{false};
+    std::mutex m_transaction_mutex;
 
     // Background threads (started in ready(), joined on destruction)
     std::atomic_bool stop_requested_{false};
@@ -130,6 +143,10 @@ private:
     void read_firmware_versions();
     void read_serial_number();
     void read_transaction_state_and_id();
+    [[nodiscard]] std::uint16_t read_ocmf_state();
+    void apply_ocmf_state_on_configure(std::uint16_t ocmf_state);
+    void monitor_transaction_ocmf_state(std::uint16_t ocmf_state);
+    void clear_ocmf_transaction_closed_error();
     std::string read_ocmf_file();
     void synchronize_time();
     void set_timezone(int offset_minutes);
