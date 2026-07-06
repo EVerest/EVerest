@@ -10,22 +10,7 @@ namespace iso15118::ev::d20::state {
 
 namespace {
 
-using ResponseCode = message_20::datatypes::ResponseCode;
-
 constexpr uint16_t MAX_SUPPORTING_POINTS = 12;
-
-bool check_response_code(ResponseCode response_code) {
-    switch (response_code) {
-    case ResponseCode::OK:
-        return true;
-    case ResponseCode::FAILED_SequenceError:
-    case ResponseCode::FAILED_UnknownSession:
-        return false;
-    default:
-        logf_warning("Unexpected response code received: %d", static_cast<int>(response_code));
-        return iso15118::ev::d20::check_response_code(response_code);
-    }
-}
 
 message_20::ScheduleExchangeRequest make_request(const SessionId& session) {
     message_20::ScheduleExchangeRequest req;
@@ -56,22 +41,8 @@ Result ScheduleExchange::feed(Event ev) {
 
     const auto variant = m_ctx.pull_response();
 
-    const auto res = variant->get_if<message_20::ScheduleExchangeResponse>();
+    const auto* res = expect_response<message_20::ScheduleExchangeResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        logf_error("Expected ScheduleExchangeResponse, got code type id: %d", static_cast<int>(variant->get_type()));
-        m_ctx.stop_session(true);
-        return {};
-    }
-
-    if (res->header.session_id != m_ctx.get_session().get_id()) {
-        logf_error("ScheduleExchangeResponse session_id does not match current session");
-        m_ctx.stop_session(true);
-        return {};
-    }
-
-    if (not check_response_code(res->response_code)) {
-        logf_error("ScheduleExchangeResponse rejected with response_code: %d", static_cast<int>(res->response_code));
-        m_ctx.stop_session(true);
         return {};
     }
 
@@ -80,7 +51,7 @@ Result ScheduleExchange::feed(Event ev) {
         return m_ctx.create_state<DC_CableCheck>();
     }
 
-    // Processing::Ongoing — re-send the request and stay.
+    // Processing::Ongoing: re-send the request and stay.
     m_ctx.respond(make_request(m_ctx.get_session()));
     return {};
 }

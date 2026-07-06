@@ -17,10 +17,6 @@ void Feedback::v2g_message(message_20::Type type) const {
     call_if_available(callbacks.v2g_message, type);
 }
 
-void Feedback::session_setup_response(const message_20::SessionSetupResponse& response) const {
-    call_if_available(callbacks.session_setup_response, response);
-}
-
 void Feedback::timed_out() const {
     call_if_available(callbacks.timed_out);
 }

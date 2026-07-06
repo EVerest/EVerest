@@ -15,18 +15,28 @@
 
 using namespace iso15118;
 
-SCENARIO("ISO15118-20 EV DC_PreCharge sends initial Starting request on enter") {
-    const ev::feedback::Callbacks callbacks{};
-    auto state_helper = FsmStateHelper(callbacks);
+namespace {
+using message_20::datatypes::ResponseCode;
+
+// DC_PreCharge reads target_voltage from the DC params to size its request and its
+// in-tolerance check.
+const auto seed_target_400 = [](FsmStateHelper& helper) {
     ev::DcChargeParams params{};
     params.target_voltage = 400.0f;
-    state_helper.set_dc_params(params);
-    auto& ctx = state_helper.get_context();
-    ctx.get_session().set_id(SESSION_HEADER.session_id);
+    helper.set_dc_params(params);
+};
 
-    fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::DC_PreCharge>()};
+message_20::DC_PreChargeResponse make_response(const message_20::Header& header, ResponseCode code,
+                                               message_20::datatypes::RationalNumber present_voltage) {
+    return message_20::DC_PreChargeResponse{header, code, present_voltage};
+}
+} // namespace
 
-    const auto requests = drain_requests(state_helper.get_message_exchange());
+SCENARIO("ISO15118-20 EV DC_PreCharge sends initial Starting request on enter") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::DC_PreCharge> primed{callbacks, seed_target_400};
+
+    const auto requests = primed.take_requests();
     const auto request_message = requests.get<message_20::DC_PreChargeRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
@@ -38,36 +48,30 @@ SCENARIO("ISO15118-20 EV DC_PreCharge fires dc_power_on and transitions to Power
     bool dc_power_on_fired = false;
     ev::feedback::Callbacks callbacks{};
     callbacks.dc_power_on = [&dc_power_on_fired]() { dc_power_on_fired = true; };
-    auto state_helper = FsmStateHelper(callbacks);
-    ev::DcChargeParams params{};
-    params.target_voltage = 400.0f;
-    state_helper.set_dc_params(params);
-    auto& ctx = state_helper.get_context();
-    ctx.get_session().set_id(SESSION_HEADER.session_id);
+    PrimedState<ev::d20::state::DC_PreCharge> primed{callbacks, seed_target_400};
 
-    fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::DC_PreCharge>()};
+    // enter() queues an Ongoing DC_PreChargeRequest; a Finished one is never emitted.
+    {
+        const auto enter_requests = primed.take_requests();
+        const auto pre_charge_request = enter_requests.get<message_20::DC_PreChargeRequest>();
+        REQUIRE(pre_charge_request.has_value());
+        REQUIRE(pre_charge_request->processing == message_20::datatypes::Processing::Ongoing);
+    }
 
     // SECC reports present voltage in tolerance of the 400 V target.
-    const auto res = message_20::DC_PreChargeResponse{SESSION_HEADER, message_20::datatypes::ResponseCode::OK,
-                                                      message_20::datatypes::from_float(400.0f)};
-    state_helper.handle_response(res);
-
-    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, message_20::datatypes::from_float(400.0f)));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
 
     REQUIRE(dc_power_on_fired == true);
     REQUIRE(result.transitioned() == true);
-    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
-    REQUIRE(ctx.is_session_stopped() == false);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
 
-    // The transition itself signals "finished". feed() emits no new precharge request:
-    // the only DC_PreChargeRequest is the Ongoing one from enter() — never a Finished one.
-    const auto requests = drain_requests(state_helper.get_message_exchange());
+    // The transition itself signals "finished". PowerDelivery::enter() queued a
+    // PowerDeliveryRequest(Start); no new precharge request was emitted by feed().
+    const auto requests = primed.take_requests();
+    REQUIRE_FALSE(requests.get<message_20::DC_PreChargeRequest>().has_value());
 
-    const auto pre_charge_request = requests.get<message_20::DC_PreChargeRequest>();
-    REQUIRE(pre_charge_request.has_value());
-    REQUIRE(pre_charge_request->processing == message_20::datatypes::Processing::Ongoing);
-
-    // PowerDelivery::enter() queued a PowerDeliveryRequest(Start).
     const auto pd_request = requests.get<message_20::PowerDeliveryRequest>();
     REQUIRE(pd_request.has_value());
     REQUIRE(pd_request->charge_progress == message_20::datatypes::Progress::Start);
@@ -77,108 +81,50 @@ SCENARIO("ISO15118-20 EV DC_PreCharge resends Ongoing request when voltage not i
     bool dc_power_on_fired = false;
     ev::feedback::Callbacks callbacks{};
     callbacks.dc_power_on = [&dc_power_on_fired]() { dc_power_on_fired = true; };
-    auto state_helper = FsmStateHelper(callbacks);
-    ev::DcChargeParams params{};
-    params.target_voltage = 400.0f;
-    state_helper.set_dc_params(params);
-    auto& ctx = state_helper.get_context();
-    ctx.get_session().set_id(SESSION_HEADER.session_id);
+    PrimedState<ev::d20::state::DC_PreCharge> primed{callbacks, seed_target_400};
 
-    fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::DC_PreCharge>()};
-
-    // SECC reports present voltage far below the 400 V target — precharge not complete.
-    const auto res = message_20::DC_PreChargeResponse{SESSION_HEADER, message_20::datatypes::ResponseCode::OK,
-                                                      message_20::datatypes::from_float(100.0f)};
-    state_helper.handle_response(res);
-
-    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+    // SECC reports present voltage far below the 400 V target; precharge not complete.
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, message_20::datatypes::from_float(100.0f)));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
 
     REQUIRE(dc_power_on_fired == false);
     REQUIRE(result.transitioned() == false);
-    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::DC_PreCharge);
-    REQUIRE(ctx.is_session_stopped() == false);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_PreCharge);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
 
     // A single Ongoing DC_PreChargeRequest is re-emitted; no PowerDelivery transition.
-    const auto requests = drain_requests(state_helper.get_message_exchange());
+    const auto requests = primed.take_requests();
     const auto request_message = requests.get<message_20::DC_PreChargeRequest>();
     REQUIRE(request_message.has_value());
     REQUIRE(request_message->processing == message_20::datatypes::Processing::Ongoing);
     REQUIRE_FALSE(requests.get<message_20::PowerDeliveryRequest>().has_value());
 }
 
-SCENARIO("ISO15118-20 EV DC_PreCharge stops session on FAILED response") {
-    const ev::feedback::Callbacks callbacks{};
-    auto state_helper = FsmStateHelper(callbacks);
-    auto& ctx = state_helper.get_context();
-    ctx.get_session().set_id(SESSION_HEADER.session_id);
-
-    fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::DC_PreCharge>()};
-
-    const auto res = message_20::DC_PreChargeResponse{SESSION_HEADER, message_20::datatypes::ResponseCode::FAILED,
-                                                      message_20::datatypes::RationalNumber{0, 0}};
-    state_helper.handle_response(res);
-
-    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::DC_PreCharge);
-    REQUIRE(ctx.is_session_stopped() == true);
-}
-
-SCENARIO("ISO15118-20 EV DC_PreCharge stops session on wrong variant") {
-    const ev::feedback::Callbacks callbacks{};
-    auto state_helper = FsmStateHelper(callbacks);
-    auto& ctx = state_helper.get_context();
-    ctx.get_session().set_id(SESSION_HEADER.session_id);
-
-    fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::DC_PreCharge>()};
-
-    const auto wrong = message_20::AuthorizationResponse{SESSION_HEADER, message_20::datatypes::ResponseCode::OK,
-                                                         message_20::datatypes::Processing::Finished};
-    state_helper.handle_response(wrong);
-
-    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::DC_PreCharge);
-    REQUIRE(ctx.is_session_stopped() == true);
-}
-
-SCENARIO("ISO15118-20 EV DC_PreCharge stops session on mismatched response session_id") {
-    const ev::feedback::Callbacks callbacks{};
-    auto state_helper = FsmStateHelper(callbacks);
-    auto& ctx = state_helper.get_context();
-    ctx.get_session().set_id(SESSION_HEADER.session_id);
-
-    fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::DC_PreCharge>()};
-
-    const auto res = message_20::DC_PreChargeResponse{WRONG_HEADER, message_20::datatypes::ResponseCode::OK,
-                                                      message_20::datatypes::RationalNumber{0, 0}};
-    state_helper.handle_response(res);
-
-    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
-
-    REQUIRE(result.transitioned() == false);
-    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::DC_PreCharge);
-    REQUIRE(ctx.is_session_stopped() == true);
-}
-
 SCENARIO("ISO15118-20 EV DC_PreCharge stops session on FAILED_UnknownSession") {
+    // State-specific rejection beyond the shared triple.
     const ev::feedback::Callbacks callbacks{};
-    auto state_helper = FsmStateHelper(callbacks);
-    auto& ctx = state_helper.get_context();
-    ctx.get_session().set_id(SESSION_HEADER.session_id);
+    PrimedState<ev::d20::state::DC_PreCharge> primed{callbacks, no_seed};
 
-    fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::DC_PreCharge>()};
-
-    const auto res =
-        message_20::DC_PreChargeResponse{SESSION_HEADER, message_20::datatypes::ResponseCode::FAILED_UnknownSession,
-                                         message_20::datatypes::RationalNumber{0, 0}};
-    state_helper.handle_response(res);
-
-    const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::FAILED_UnknownSession,
+                                         message_20::datatypes::RationalNumber{0, 0}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
 
     REQUIRE(result.transitioned() == false);
-    REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::DC_PreCharge);
-    REQUIRE(ctx.is_session_stopped() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_PreCharge);
+    REQUIRE(primed.ctx.is_session_stopped() == true);
+}
+
+SCENARIO("ISO15118-20 EV DC_PreCharge rejects malformed responses") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto make_fsm = [](FsmStateHelper& helper) {
+        auto& ctx = helper.get_context();
+        ctx.get_session().set_id(SESSION_HEADER.session_id);
+        return fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::DC_PreCharge>()};
+    };
+    const auto make_ok = [](const message_20::Header& header) {
+        return make_response(header, ResponseCode::OK, message_20::datatypes::RationalNumber{0, 0});
+    };
+    const auto wrong = message_20::AuthorizationResponse{SESSION_HEADER, ResponseCode::OK,
+                                                         message_20::datatypes::Processing::Finished};
+    check_rejection_paths(callbacks, ev::d20::StateID::DC_PreCharge, make_fsm, make_ok, wrong);
 }
