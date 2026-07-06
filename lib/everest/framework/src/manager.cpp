@@ -1091,8 +1091,12 @@ Manager::load_and_validate_config(const ManagerSettings& ms,
     return config;
 }
 
-std::unique_ptr<MQTTAbstraction> Manager::create_and_connect_mqtt(const ManagerSettings& ms) const {
+std::unique_ptr<MQTTAbstraction> Manager::create_and_connect_mqtt(const ManagerSettings& ms,
+                                                                  std::optional<LwtCfg> lwt_cfg) const {
     auto mqtt_abstraction = make_mqtt_abstraction(ms.mqtt_settings);
+    if (lwt_cfg.has_value()) {
+        mqtt_abstraction->set_lwt(lwt_cfg.value().topic, lwt_cfg.value().data);
+    }
     if (!mqtt_abstraction->connect()) {
         if (not ms.mqtt_settings.uses_socket()) {
             EVLOG_error << fmt::format("Cannot connect to MQTT broker at {}:{}", ms.mqtt_settings.broker_host,
