@@ -21,6 +21,7 @@
 
 #include <everest/util/async/monitor.hpp>
 
+#include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/d20/control_event.hpp>
 #include <iso15118/ev/d20/evse_session_info.hpp>
 #include <iso15118/ev/d20/session_id.hpp>
@@ -94,7 +95,9 @@ public:
             message_20::datatypes::Identifier evcc_id_,
             std::vector<message_20::SupportedAppProtocol> advertised_app_protocols_,
             const std::optional<ControlEvent>& current_control_event_,
-            everest::lib::util::monitor<DcChargeParams>& dc_params_);
+            everest::lib::util::monitor<DcChargeParams>& dc_params_,
+            everest::lib::util::monitor<AcChargeParams>& ac_params_,
+            message_20::datatypes::ServiceCategory requested_service_);
 
     template <typename StateType, typename... Args> BasePointerType create_state(Args&&... args) {
         return std::make_unique<StateType>(*this, std::forward<Args>(args)...);
@@ -167,6 +170,22 @@ public:
         return *h;
     }
 
+    // Locked-copy snapshot of the EV AC charge params (module -> FSM channel).
+    AcChargeParams get_ac_params() const {
+        auto h = ac_params.handle();
+        return *h;
+    }
+
+    // Energy service the EV drives this session. Defaults to the service requested
+    // at construction and is refined once ServiceSelection negotiates.
+    message_20::datatypes::ServiceCategory selected_service() const {
+        return selected_service_;
+    }
+
+    void set_selected_service(message_20::datatypes::ServiceCategory service) {
+        selected_service_ = service;
+    }
+
     // EVSE-reported session data, populated by AuthorizationSetup and read by the
     // Authorization states.
     EVSESessionInfo& get_evse_session_info() {
@@ -193,6 +212,11 @@ private:
     // Module -> FSM DC-params channel. Non-const because acquiring the monitor lock
     // mutates its mutex; read access is a locked-copy snapshot.
     everest::lib::util::monitor<DcChargeParams>& dc_params;
+
+    // Module -> FSM AC-params channel; same locked-copy-snapshot contract as dc_params.
+    everest::lib::util::monitor<AcChargeParams>& ac_params;
+
+    message_20::datatypes::ServiceCategory selected_service_;
 
     EVSESessionInfo evse_session_info;
 

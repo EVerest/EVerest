@@ -23,10 +23,13 @@ Session::Session(feedback::Callbacks callbacks, OutboundSend outbound_send_, ses
                  everest::lib::io::event::fd_event_handler& reactor_, SessionTiming timing_,
                  message_20::datatypes::Identifier evcc_id,
                  std::vector<message_20::SupportedAppProtocol> advertised_app_protocols,
-                 everest::lib::util::monitor<DcChargeParams>* dc_params) :
+                 everest::lib::util::monitor<DcChargeParams>* dc_params,
+                 everest::lib::util::monitor<AcChargeParams>* ac_params,
+                 message_20::datatypes::ServiceCategory energy_service) :
     log(logger),
     context(std::move(callbacks), message_exchange, log, std::move(evcc_id), std::move(advertised_app_protocols),
-            active_control_event, (dc_params != nullptr) ? *dc_params : owned_dc_params),
+            active_control_event, (dc_params != nullptr) ? *dc_params : owned_dc_params,
+            (ac_params != nullptr) ? *ac_params : owned_ac_params, energy_service),
     outbound_send(std::move(outbound_send_)),
     reactor(reactor_),
     timing(timing_) {
@@ -227,7 +230,7 @@ void Session::transmit_pending() {
         return;
     }
 
-    const auto& [payload, payload_type] = *taken;
+    const auto& [payload, payload_type] = taken.value();
 
     std::vector<uint8_t> frame(io::SdpPacket::V2GTP_HEADER_SIZE + payload.size());
     V2GTP20_WriteHeader(frame.data(), static_cast<uint32_t>(payload.size()), static_cast<uint16_t>(payload_type));

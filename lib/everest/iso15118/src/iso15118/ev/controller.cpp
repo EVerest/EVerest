@@ -38,11 +38,13 @@ std::uintptr_t next_session_log_id() {
 
 } // namespace
 
-Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcChargeParams initial_dc_params) :
+Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcChargeParams initial_dc_params,
+                       AcChargeParams initial_ac_params) :
     config(std::move(config_)),
     feedback(callbacks_),
     logger(reinterpret_cast<void*>(next_session_log_id())),
-    dc_params(std::move(initial_dc_params)) {
+    dc_params(std::move(initial_dc_params)),
+    ac_params(std::move(initial_ac_params)) {
 
     // Resolve the egress interface up front; an unusable interface is fatal.
     if (not io::check_and_update_interface(config.interface_name)) {
@@ -78,7 +80,7 @@ Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcCharg
             return true;
         },
         logger, reactor, SessionTiming{config.send_delay, config.response_timeout}, config.evcc_id,
-        config.advertised_app_protocols, &dc_params);
+        config.advertised_app_protocols, &dc_params, &ac_params, config.energy_service);
 
     // The session can finish inside a timer callback (the response watchdog), so
     // the run loop can't poll is_finished() between events; let the session clear
@@ -296,6 +298,11 @@ void Controller::update_present_soc(double present_soc) {
 void Controller::update_present_voltage(float present_voltage) {
     auto h = dc_params.handle();
     (*h).present_voltage = present_voltage;
+}
+
+void Controller::update_present_active_power(float present_active_power) {
+    auto h = ac_params.handle();
+    (*h).present_active_power = present_active_power;
 }
 
 } // namespace iso15118::ev

@@ -12,6 +12,7 @@
 
 #include <everest/util/async/monitor.hpp>
 #include <everest/util/fsm/fsm.hpp>
+#include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/states.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
@@ -28,11 +29,13 @@ inline constexpr auto WRONG_HEADER =
 
 class FsmStateHelper {
 public:
-    FsmStateHelper(const ev::feedback::Callbacks& callbacks,
-                   std::vector<message_20::SupportedAppProtocol> protocols = {{"urn:iso:std:iso:15118:-20:DC", 1, 0, 1,
-                                                                               1}}) :
+    FsmStateHelper(
+        const ev::feedback::Callbacks& callbacks,
+        std::vector<message_20::SupportedAppProtocol> protocols = {{"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}},
+        message_20::datatypes::ServiceCategory requested_service = message_20::datatypes::ServiceCategory::DC) :
         advertised_app_protocols(std::move(protocols)),
-        ctx(callbacks, msg_exch, logger, evcc_id, advertised_app_protocols, control_event, dc_params) {
+        ctx(callbacks, msg_exch, logger, evcc_id, advertised_app_protocols, control_event, dc_params, ac_params,
+            requested_service) {
         // Install a no-op session log callback so SessionLogger::event() does not throw bad_function_call
         // when state enter() invokes m_ctx.log.enter_state(...). Tests that need to capture log output
         // override this callback themselves and reset it at the end of the test case.
@@ -74,6 +77,17 @@ public:
         return dc_params;
     }
 
+    // Seed the module -> FSM AcChargeParams channel before creating a state.
+    void set_ac_params(const ev::AcChargeParams& params) {
+        auto h = ac_params.handle();
+        *h = params;
+    }
+
+    // Direct access to the module -> FSM AcChargeParams channel.
+    everest::lib::util::monitor<ev::AcChargeParams>& get_ac_params_monitor() {
+        return ac_params;
+    }
+
     // Set the active control event the Context reads via get_control_event<T>().
     void set_control_event(const ev::d20::ControlEvent& event) {
         control_event = event;
@@ -87,6 +101,8 @@ private:
     ev::d20::MessageExchange msg_exch{};
 
     everest::lib::util::monitor<ev::DcChargeParams> dc_params{ev::DcChargeParams{}};
+
+    everest::lib::util::monitor<ev::AcChargeParams> ac_params{ev::AcChargeParams{}};
 
     iso15118::session::SessionLogger logger{this};
 

@@ -2,6 +2,7 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/state/dc_cable_check.hpp>
+#include <iso15118/ev/d20/state/power_delivery.hpp>
 #include <iso15118/ev/d20/state/schedule_exchange.hpp>
 #include <iso15118/ev/detail/d20/context_helper.hpp>
 #include <iso15118/message/schedule_exchange.hpp>
@@ -48,6 +49,9 @@ Result ScheduleExchange::feed(Event ev) {
 
     if (res->processing == message_20::datatypes::Processing::Finished) {
         m_ctx.feedback.ev_power_ready();
+        if (m_ctx.selected_service() == message_20::datatypes::ServiceCategory::AC) {
+            return m_ctx.create_state<PowerDelivery>(message_20::datatypes::Progress::Start);
+        }
         return m_ctx.create_state<DC_CableCheck>();
     }
 

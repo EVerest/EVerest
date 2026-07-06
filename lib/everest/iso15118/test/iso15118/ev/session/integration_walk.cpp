@@ -37,12 +37,15 @@
 // and driving PowerDelivery(Stop) -> DC_WeldingDetection -> SessionStop. The
 // SessionStopResponse ends the session cleanly (is_finished, not timed_out).
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
 #include <cstdint>
 #include <vector>
 
+#include <iso15118/message/ac_charge_loop.hpp>
+#include <iso15118/message/ac_charge_parameter_discovery.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
 #include <iso15118/message/common_types.hpp>
@@ -71,11 +74,33 @@ using namespace iso15118::ev::test;
 
 namespace {
 
+using message_20::datatypes::ControlMode;
+using message_20::datatypes::ParameterSet;
 using message_20::datatypes::Processing;
 using message_20::datatypes::ResponseCode;
 using PT = io::v2gtp::PayloadType;
 
 constexpr message_20::datatypes::SessionId WALK_SESSION_ID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
+
+// AC constants seeded into the fixture: MAX/MIN asserted on the AC_CPD request,
+// PRESENT_ACTIVE_POWER asserted on the AC_ChargeLoopRequest, TARGET_ACTIVE_POWER
+// injected in the response and observed via the ac_target_power flag.
+constexpr float AC_MAX_CHARGE_POWER = 22000.0f;
+constexpr float AC_MIN_CHARGE_POWER = 1000.0f;
+constexpr float AC_PRESENT_ACTIVE_POWER = 5000.0f;
+constexpr float AC_TARGET_ACTIVE_POWER = 7000.0f;
+
+// A ServiceDetail parameter set carrying a named ControlMode, mirroring the SECC's
+// EXI encoding the EV honest-selects on. The ServiceDetail state requires a Dynamic
+// set to advance.
+ParameterSet make_param_set(uint16_t id, ControlMode control_mode) {
+    ParameterSet set{};
+    set.id = id;
+    set.parameter.push_back({"Connector", static_cast<int32_t>(1)});
+    set.parameter.push_back({"ControlMode", static_cast<int32_t>(control_mode)});
+    set.parameter.push_back({"EVSENominalVoltage", static_cast<int32_t>(230)});
+    return set;
+}
 
 // Walk an ev::Session from start() through the first DC_ChargeLoopRequest by injecting
 // canned response frames, asserting the request emitted at each step and the feedback
@@ -148,7 +173,7 @@ message_20::datatypes::SessionId walk_to_dc_charge_loop(SessionFixture& fx) {
     detail_res.header.session_id = sid;
     detail_res.response_code = ResponseCode::OK;
     detail_res.service = message_20::to_underlying_value(message_20::datatypes::ServiceCategory::DC);
-    detail_res.service_parameter_list = {message_20::datatypes::ParameterSet(1)};
+    detail_res.service_parameter_list = {make_param_set(1, ControlMode::Dynamic)};
     {
         const auto req = inject_then_expect<message_20::ServiceSelectionRequest>(
             fx, "ServiceDetail -> ServiceSelection", detail_res, PT::Part20Main);
@@ -266,6 +291,183 @@ void walk_stop_to_finish(SessionFixture& fx, const message_20::datatypes::Sessio
     REQUIRE_FALSE(fx.timed_out);
 }
 
+// Walk an AC-configured ev::Session from start() through the first AC_ChargeLoopRequest,
+// asserting the emitted request at each step and the feedback fired along the way. The
+// energy service routes past the DC-only states: ScheduleExchange -> PowerDelivery(Start)
+// -> AC_ChargeLoop, never DC_CableCheck/DC_PreCharge. Returns the established session id.
+message_20::datatypes::SessionId walk_to_ac_charge_loop(SessionFixture& fx) {
+    const auto sid = WALK_SESSION_ID;
+
+    // start() -> SupportedAppProtocolRequest advertising the -20:AC entry (schema id 1).
+    fx.session.start();
+    REQUIRE(run_reactor_until(
+        fx.reactor, [&]() { return fx.captured.size() >= 1; }, 1s));
+    REQUIRE(decode_frame(fx.captured.back()).get_if<message_20::SupportedAppProtocolRequest>() != nullptr);
+
+    // SupportedAppProtocolResponse(schema 1) -> SessionSetupRequest.
+    inject_then_expect<message_20::SessionSetupRequest>(
+        fx, "SAP -> SessionSetup",
+        message_20::SupportedAppProtocolResponse{
+            message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation, 1},
+        PT::SAP);
+
+    // SessionSetupResponse -> AuthorizationSetupRequest.
+    message_20::SessionSetupResponse setup_res{};
+    setup_res.response_code = ResponseCode::OK_NewSessionEstablished;
+    setup_res.header.session_id = sid;
+    setup_res.evseid = "DE*PNX*E12345";
+    inject_then_expect<message_20::AuthorizationSetupRequest>(fx, "SessionSetup -> AuthorizationSetup", setup_res,
+                                                              PT::Part20Main);
+
+    // AuthorizationSetupResponse(OK, {EIM}) -> AuthorizationRequest (selects EIM).
+    message_20::AuthorizationSetupResponse auth_setup_res{};
+    auth_setup_res.header.session_id = sid;
+    auth_setup_res.response_code = ResponseCode::OK;
+    auth_setup_res.authorization_services = {message_20::datatypes::Authorization::EIM};
+    auth_setup_res.certificate_installation_service = false;
+    auth_setup_res.authorization_mode = message_20::datatypes::EIM_ASResAuthorizationMode{};
+    {
+        const auto req = inject_then_expect<message_20::AuthorizationRequest>(fx, "AuthorizationSetup -> Authorization",
+                                                                              auth_setup_res, PT::Part20Main);
+        REQUIRE(req.selected_authorization_service == message_20::datatypes::Authorization::EIM);
+        REQUIRE(std::holds_alternative<message_20::datatypes::EIM_ASReqAuthorizationMode>(req.authorization_mode));
+    }
+
+    // AuthorizationResponse(OK, Finished) -> ServiceDiscoveryRequest.
+    message_20::AuthorizationResponse auth_res{};
+    auth_res.header.session_id = sid;
+    auth_res.response_code = ResponseCode::OK;
+    auth_res.evse_processing = Processing::Finished;
+    inject_then_expect<message_20::ServiceDiscoveryRequest>(fx, "Authorization -> ServiceDiscovery", auth_res,
+                                                            PT::Part20Main);
+
+    // ServiceDiscoveryResponse(OK, offering AC service id 1) -> ServiceDetailRequest(service=AC).
+    message_20::ServiceDiscoveryResponse discovery_res{};
+    discovery_res.header.session_id = sid;
+    discovery_res.response_code = ResponseCode::OK;
+    discovery_res.energy_transfer_service_list = {{message_20::datatypes::ServiceCategory::AC, false}};
+    {
+        const auto req = inject_then_expect<message_20::ServiceDetailRequest>(fx, "ServiceDiscovery -> ServiceDetail",
+                                                                              discovery_res, PT::Part20Main);
+        REQUIRE(req.service == message_20::to_underlying_value(message_20::datatypes::ServiceCategory::AC));
+    }
+
+    // ServiceDetailResponse(OK, a Dynamic parameter set) -> ServiceSelectionRequest.
+    message_20::ServiceDetailResponse detail_res{};
+    detail_res.header.session_id = sid;
+    detail_res.response_code = ResponseCode::OK;
+    detail_res.service = message_20::to_underlying_value(message_20::datatypes::ServiceCategory::AC);
+    detail_res.service_parameter_list = {make_param_set(9, ControlMode::Dynamic)};
+    {
+        const auto req = inject_then_expect<message_20::ServiceSelectionRequest>(
+            fx, "ServiceDetail -> ServiceSelection", detail_res, PT::Part20Main);
+        REQUIRE(req.selected_energy_transfer_service.service_id == message_20::datatypes::ServiceCategory::AC);
+        REQUIRE(req.selected_energy_transfer_service.parameter_set_id == 9);
+    }
+
+    // ServiceSelectionResponse(OK) -> AC_ChargeParameterDiscoveryRequest carrying the seeded limits.
+    message_20::ServiceSelectionResponse selection_res{};
+    selection_res.header.session_id = sid;
+    selection_res.response_code = ResponseCode::OK;
+    {
+        const auto req = inject_then_expect<message_20::AC_ChargeParameterDiscoveryRequest>(
+            fx, "ServiceSelection -> AC_ChargeParameterDiscovery", selection_res, PT::Part20Main);
+        REQUIRE(req.header.session_id == sid);
+        const auto* mode = std::get_if<message_20::datatypes::AC_CPDReqEnergyTransferMode>(&req.transfer_mode);
+        REQUIRE(mode != nullptr);
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_charge_power) ==
+                Catch::Approx(AC_MAX_CHARGE_POWER));
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_charge_power) ==
+                Catch::Approx(AC_MIN_CHARGE_POWER));
+    }
+
+    // AC_ChargeParameterDiscoveryResponse(OK) -> ScheduleExchangeRequest; fires ac_limits.
+    REQUIRE_FALSE(fx.ac_limits);
+    message_20::AC_ChargeParameterDiscoveryResponse cpd_res{};
+    cpd_res.header.session_id = sid;
+    cpd_res.response_code = ResponseCode::OK;
+    {
+        message_20::datatypes::AC_CPDResEnergyTransferMode mode{};
+        mode.max_charge_power = message_20::datatypes::from_float(AC_MAX_CHARGE_POWER);
+        mode.min_charge_power = message_20::datatypes::from_float(AC_MIN_CHARGE_POWER);
+        mode.nominal_frequency = message_20::datatypes::from_float(50.0f);
+        cpd_res.transfer_mode = mode;
+    }
+    {
+        const auto req = inject_then_expect<message_20::ScheduleExchangeRequest>(
+            fx, "AC_ChargeParameterDiscovery -> ScheduleExchange", cpd_res, PT::Part20AC);
+        REQUIRE(req.header.session_id == sid);
+    }
+    REQUIRE(fx.ac_limits);
+
+    // ScheduleExchangeResponse(OK, Finished) -> PowerDeliveryRequest(Start); fires ev_power_ready.
+    // The Start progress (not a DC_CableCheckRequest) is the AC routing assertion.
+    REQUIRE_FALSE(fx.ev_power_ready);
+    message_20::ScheduleExchangeResponse schedule_res{};
+    schedule_res.header.session_id = sid;
+    schedule_res.response_code = ResponseCode::OK;
+    schedule_res.processing = Processing::Finished;
+    {
+        const auto req = inject_then_expect<message_20::PowerDeliveryRequest>(
+            fx, "ScheduleExchange -> PowerDelivery(Start)", schedule_res, PT::Part20Main);
+        REQUIRE(req.header.session_id == sid);
+        REQUIRE(req.charge_progress == message_20::datatypes::Progress::Start);
+    }
+    REQUIRE(fx.ev_power_ready);
+
+    // PowerDeliveryResponse(OK) -> AC_ChargeLoopRequest (Dynamic control mode). No target
+    // setpoint has arrived yet, so ac_target_power has not fired.
+    REQUIRE_FALSE(fx.ac_target_power);
+    message_20::PowerDeliveryResponse power_delivery_res{};
+    power_delivery_res.header.session_id = sid;
+    power_delivery_res.response_code = ResponseCode::OK;
+    {
+        const auto req = inject_then_expect<message_20::AC_ChargeLoopRequest>(fx, "PowerDelivery -> AC_ChargeLoop",
+                                                                              power_delivery_res, PT::Part20Main);
+        REQUIRE(req.header.session_id == sid);
+        REQUIRE(std::holds_alternative<message_20::datatypes::Dynamic_AC_CLReqControlMode>(req.control_mode));
+        const auto& mode = std::get<message_20::datatypes::Dynamic_AC_CLReqControlMode>(req.control_mode);
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode.present_active_power) ==
+                Catch::Approx(AC_PRESENT_ACTIVE_POWER));
+    }
+    REQUIRE_FALSE(fx.ac_target_power);
+
+    return sid;
+}
+
+// Drive PowerDelivery(Stop) -> SessionStop -> clean finish from an emitted
+// PowerDeliveryRequest(Stop). AC skips WeldingDetection, so the request expected
+// after the PowerDelivery(Stop) response is SessionStop, not DC_WeldingDetection.
+void walk_ac_stop_to_finish(SessionFixture& fx, const message_20::datatypes::SessionId& sid) {
+    message_20::PowerDeliveryResponse power_delivery_res{};
+    power_delivery_res.header.session_id = sid;
+    power_delivery_res.response_code = ResponseCode::OK;
+    {
+        const auto req = inject_then_expect<message_20::SessionStopRequest>(fx, "PowerDelivery(Stop) -> SessionStop",
+                                                                            power_delivery_res, PT::Part20Main);
+        REQUIRE(req.header.session_id == sid);
+        REQUIRE(req.charging_session == message_20::datatypes::ChargingSession::Terminate);
+    }
+
+    message_20::SessionStopResponse stop_res{};
+    stop_res.header.session_id = sid;
+    stop_res.response_code = ResponseCode::OK;
+    fx.session.on_bytes_received(frame_payload(PT::Part20Main, serialize_msg(stop_res)));
+    REQUIRE(run_reactor_until(
+        fx.reactor, [&]() { return fx.session.is_finished(); }, 1s));
+    REQUIRE(fx.session.is_finished());
+    REQUIRE_FALSE(fx.timed_out);
+}
+
+// Seeded AC charge params the AC_CPD/AC_ChargeLoop requests are built from.
+ev::AcChargeParams ac_seed_params() {
+    ev::AcChargeParams p{};
+    p.max_charge_power = AC_MAX_CHARGE_POWER;
+    p.min_charge_power = AC_MIN_CHARGE_POWER;
+    p.present_active_power = AC_PRESENT_ACTIVE_POWER;
+    return p;
+}
+
 } // namespace
 
 SCENARIO("ISO15118-20 EV Session drives the states byte-by-byte through a full DC session to SessionStop") {
@@ -341,6 +543,103 @@ SCENARIO("ISO15118-20 EV Session drives a graceful EV-initiated stop from an act
 
             THEN("the loop breaks into PowerDelivery(Stop) and walks to a clean SessionStop") {
                 walk_stop_to_finish(fx, sid);
+                REQUIRE_FALSE(fx.stop_from_charger);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Session drives the states byte-by-byte through a full AC session to SessionStop") {
+
+    GIVEN("An AC-configured Session bound to a reactor with short send-delay and watchdog timers") {
+        SessionFixture fx{"EVTESTID01",
+                       ev::SessionTiming{5ms, 100ms},
+                       ev::DcChargeParams{},
+                       default_advertised_ac_app_protocols(),
+                       message_20::datatypes::ServiceCategory::AC,
+                       ac_seed_params()};
+
+        WHEN("the session is walked to an active AC_ChargeLoop and the SECC then signals Terminate") {
+            const auto sid = walk_to_ac_charge_loop(fx);
+
+            // The walk reached the charge loop past the DC-only states without finishing.
+            REQUIRE(fx.captured.size() == 11);
+            REQUIRE_FALSE(fx.session.is_finished());
+            REQUIRE_FALSE(fx.timed_out);
+
+            // AC_ChargeLoopResponse(OK, Dynamic target) -> AC_ChargeLoopRequest; fires ac_target_power.
+            REQUIRE_FALSE(fx.ac_target_power);
+            message_20::AC_ChargeLoopResponse loop_ok{};
+            loop_ok.header.session_id = sid;
+            loop_ok.response_code = ResponseCode::OK;
+            {
+                message_20::datatypes::Dynamic_AC_CLResControlMode mode{};
+                mode.target_active_power = message_20::datatypes::from_float(AC_TARGET_ACTIVE_POWER);
+                loop_ok.control_mode = mode;
+            }
+            inject_then_expect<message_20::AC_ChargeLoopRequest>(fx, "AC_ChargeLoop OK -> AC_ChargeLoop", loop_ok,
+                                                                 PT::Part20AC);
+            REQUIRE(fx.ac_target_power);
+            REQUIRE_FALSE(fx.stop_from_charger);
+
+            // AC_ChargeLoopResponse(OK, Terminate) -> PowerDeliveryRequest(Stop); fires stop_from_charger.
+            message_20::AC_ChargeLoopResponse loop_terminate{};
+            loop_terminate.header.session_id = sid;
+            loop_terminate.response_code = ResponseCode::OK;
+            loop_terminate.status =
+                message_20::datatypes::EvseStatus{0, message_20::datatypes::EvseNotification::Terminate};
+            loop_terminate.control_mode = message_20::datatypes::Dynamic_AC_CLResControlMode{};
+            {
+                const auto req = inject_then_expect<message_20::PowerDeliveryRequest>(
+                    fx, "AC_ChargeLoop Terminate -> PowerDelivery(Stop)", loop_terminate, PT::Part20AC);
+                REQUIRE(req.header.session_id == sid);
+                REQUIRE(req.charge_progress == message_20::datatypes::Progress::Stop);
+            }
+            REQUIRE(fx.stop_from_charger);
+
+            THEN("PowerDelivery(Stop) walks straight to SessionStop, skipping WeldingDetection") {
+                walk_ac_stop_to_finish(fx, sid);
+                REQUIRE(fx.stop_from_charger);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Session drives a graceful EV-initiated stop from an active AC_ChargeLoop") {
+    // A StopCharging control event delivered through Session::deliver_control_event
+    // is recorded on the Context and, on the next AC_ChargeLoopResponse, drives
+    // PowerDelivery(Stop) -> SessionStop without any SECC Terminate notification.
+    GIVEN("An AC-configured Session walked to an active AC_ChargeLoop") {
+        SessionFixture fx{"EVTESTID01",
+                       ev::SessionTiming{5ms, 100ms},
+                       ev::DcChargeParams{},
+                       default_advertised_ac_app_protocols(),
+                       message_20::datatypes::ServiceCategory::AC,
+                       ac_seed_params()};
+        const auto sid = walk_to_ac_charge_loop(fx);
+
+        WHEN("a StopCharging control event is delivered and the next OK loop response arrives") {
+            // The EV requests a stop mid-loop; the SECC has NOT sent Terminate.
+            fx.session.deliver_control_event(ev::d20::StopCharging{true});
+
+            message_20::AC_ChargeLoopResponse loop_ok{};
+            loop_ok.header.session_id = sid;
+            loop_ok.response_code = ResponseCode::OK;
+            {
+                message_20::datatypes::Dynamic_AC_CLResControlMode mode{};
+                mode.target_active_power = message_20::datatypes::from_float(AC_TARGET_ACTIVE_POWER);
+                loop_ok.control_mode = mode;
+            }
+            {
+                const auto req = inject_then_expect<message_20::PowerDeliveryRequest>(
+                    fx, "EV-initiated stop -> PowerDelivery(Stop)", loop_ok, PT::Part20AC);
+                REQUIRE(req.charge_progress == message_20::datatypes::Progress::Stop);
+            }
+            // The EV drove the stop; the SECC-Terminate feedback must NOT have fired.
+            REQUIRE_FALSE(fx.stop_from_charger);
+
+            THEN("the loop breaks into PowerDelivery(Stop) and walks to a clean SessionStop") {
+                walk_ac_stop_to_finish(fx, sid);
                 REQUIRE_FALSE(fx.stop_from_charger);
             }
         }

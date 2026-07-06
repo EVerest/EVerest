@@ -6,7 +6,10 @@ EvIso15118D20
 EV-side ISO 15118-20 EVCC built on the ``libiso15118`` ``ev::Controller``. It
 provides the ``ISO15118_ev`` interface (the same interface as ``PyEvJosev``), so
 it is a drop-in software-in-the-loop (SIL) replacement for the Python EVCC when
-driving a DC ISO 15118-20 session against a SECC such as ``Evse15118D20``.
+driving a DC or AC ISO 15118-20 session against a SECC such as ``Evse15118D20``.
+
+AC support covers the Dynamic control mode over plain TCP with external
+identification means (EIM) authorization.
 
 Configuration
 -------------
@@ -28,14 +31,20 @@ Configuration
    * - ``response_timeout_ms``
      - ``20000``
      - Response watchdog timeout in milliseconds.
+   * - ``ac_max_charge_power_w``
+     - ``11040``
+     - Advertised AC maximum charge power in watts.
+   * - ``ac_min_charge_power_w``
+     - ``1380``
+     - Advertised AC minimum charge power in watts.
 
-M0 limitations
---------------
+Limitations
+-----------
 
-This is an early (M0) implementation with a deliberately narrow scope:
+The implementation has a deliberately narrow scope:
 
-- **DC only.** ``start_charging`` rejects non-DC energy-transfer modes; AC, WPT,
-  and MCS sessions are not supported.
+- **DC and AC only.** ``start_charging`` accepts DC and AC single/three-phase
+  energy-transfer modes; WPT and MCS sessions are not supported.
 - **No TLS.** The session advertises ``NO_TRANSPORT_SECURITY``; Plug & Charge and
   TLS are out of scope.
 - **No pause/resume.** ``pause_charging`` is a no-op.

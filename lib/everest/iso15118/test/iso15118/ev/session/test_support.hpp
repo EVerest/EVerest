@@ -32,6 +32,7 @@
 #include <iso15118/message/type.hpp>
 #include <iso15118/message/variant.hpp>
 
+#include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/session.hpp>
 #include <iso15118/ev/session/feedback.hpp>
@@ -45,6 +46,11 @@ using namespace std::chrono_literals;
 // EvConfig default); Session no longer defaults this, so ctor sites pass it here.
 inline std::vector<message_20::SupportedAppProtocol> default_advertised_app_protocols() {
     return {{"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}};
+}
+
+// The single -20 AC entry an AC-configured ev::Session advertises.
+inline std::vector<message_20::SupportedAppProtocol> default_advertised_ac_app_protocols() {
+    return {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}};
 }
 
 // Frame a payload with the 8-byte V2GTP header, mirroring the framing the
@@ -99,11 +105,16 @@ bool run_reactor_until(everest::lib::io::event::fd_event_handler& reactor, Predi
 // behavior takes effect when the Session next reaches the seam.
 class SessionFixture {
 public:
-    explicit SessionFixture(message_20::datatypes::Identifier evcc_id = "EVTESTID01",
-                         SessionTiming timing = SessionTiming{5ms, 100ms}, DcChargeParams params = default_params()) :
+    explicit SessionFixture(
+        message_20::datatypes::Identifier evcc_id = "EVTESTID01", SessionTiming timing = SessionTiming{5ms, 100ms},
+        DcChargeParams params = default_params(),
+        std::vector<message_20::SupportedAppProtocol> protocols = default_advertised_app_protocols(),
+        message_20::datatypes::ServiceCategory energy_service = message_20::datatypes::ServiceCategory::DC,
+        AcChargeParams ac_seed = AcChargeParams{}) :
         dc_params(std::move(params)),
-        session(make_callbacks(), make_send(), logger, reactor, timing, std::move(evcc_id),
-                default_advertised_app_protocols(), &dc_params) {
+        ac_params(std::move(ac_seed)),
+        session(make_callbacks(), make_send(), logger, reactor, timing, std::move(evcc_id), std::move(protocols),
+                &dc_params, &ac_params, energy_service) {
         // A no-op session log sink so a state's enter() logging never throws bad_function_call.
         session::logging::set_session_log_callback([](std::size_t, const session::logging::Event&) {});
     }
@@ -121,6 +132,8 @@ public:
     bool ev_power_ready = false;
     bool dc_power_on = false;
     bool stop_from_charger = false;
+    bool ac_limits = false;
+    bool ac_target_power = false;
 
     // Outbound seam observation / control.
     int send_attempts = 0;
@@ -150,6 +163,10 @@ private:
         cb.ev_power_ready = [this]() { ev_power_ready = true; };
         cb.dc_power_on = [this]() { dc_power_on = true; };
         cb.stop_from_charger = [this]() { stop_from_charger = true; };
+        cb.ac_limits = [this](const message_20::datatypes::AC_CPDResEnergyTransferMode&) { ac_limits = true; };
+        cb.ac_target_power = [this](const message_20::datatypes::Dynamic_AC_CLResControlMode&) {
+            ac_target_power = true;
+        };
         return cb;
     }
 
@@ -166,6 +183,7 @@ private:
 
     session::SessionLogger logger{nullptr};
     everest::lib::util::monitor<DcChargeParams> dc_params;
+    everest::lib::util::monitor<AcChargeParams> ac_params;
 
 public:
     Session session;

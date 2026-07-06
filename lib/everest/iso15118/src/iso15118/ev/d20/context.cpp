@@ -55,13 +55,17 @@ Context::Context(feedback::Callbacks feedback_callbacks, MessageExchange& messag
                  message_20::datatypes::Identifier evcc_id_,
                  std::vector<message_20::SupportedAppProtocol> advertised_app_protocols_,
                  const std::optional<ControlEvent>& current_control_event_,
-                 everest::lib::util::monitor<DcChargeParams>& dc_params_) :
+                 everest::lib::util::monitor<DcChargeParams>& dc_params_,
+                 everest::lib::util::monitor<AcChargeParams>& ac_params_,
+                 message_20::datatypes::ServiceCategory requested_service_) :
     feedback(std::move(feedback_callbacks)),
     log(logger),
     message_exchange(message_exchange_),
     evcc_id(std::move(evcc_id_)),
     current_control_event(current_control_event_),
     dc_params(dc_params_),
+    ac_params(ac_params_),
+    selected_service_(requested_service_),
     advertised_app_protocols(std::move(advertised_app_protocols_)) {
 }
 

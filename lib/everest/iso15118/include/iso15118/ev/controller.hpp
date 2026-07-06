@@ -13,6 +13,7 @@
 #include <iso15118/io/ipv6_endpoint.hpp>
 #include <iso15118/session/logger.hpp>
 
+#include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/config.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
 #include <iso15118/ev/session.hpp>
@@ -39,7 +40,8 @@ namespace iso15118::ev {
  */
 class Controller {
 public:
-    Controller(EvConfig config, feedback::Callbacks callbacks, DcChargeParams initial_dc_params = {});
+    Controller(EvConfig config, feedback::Callbacks callbacks, DcChargeParams initial_dc_params = {},
+               AcChargeParams initial_ac_params = {});
 
     Controller(const Controller&) = delete;
     Controller& operator=(const Controller&) = delete;
@@ -99,6 +101,13 @@ public:
      */
     void update_present_voltage(float present_voltage);
 
+    /**
+     * @brief Update the live present-active-power exposed to the FSM (module thread).
+     * @details Locks the AC-params monitor and mutates only the live field; the
+     * static params are left untouched. Safe to call while the FSM reads snapshots.
+     */
+    void update_present_active_power(float present_active_power);
+
 private:
     // Create the transport client matching @p security (plain TCP today; the TLS
     // branch is the single seam for a future libio TLS client), wire it to the
@@ -153,6 +162,10 @@ private:
     // Context holds a reference to it (passed as &dc_params at construction), so it
     // must outlive the Session.
     everest::lib::util::monitor<DcChargeParams> dc_params;
+
+    // Module -> FSM AC-params channel; same lifetime constraint as dc_params (the
+    // Session's Context references it), so it stays in this declaration-order group.
+    everest::lib::util::monitor<AcChargeParams> ac_params;
 
     std::unique_ptr<Session> session;
 };

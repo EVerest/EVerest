@@ -85,7 +85,8 @@ ISO15118_evImpl::~ISO15118_evImpl() {
     }
 }
 
-iso15118::ev::EvConfig ISO15118_evImpl::make_ev_config() const {
+iso15118::ev::EvConfig
+ISO15118_evImpl::make_ev_config(iso15118::message_20::datatypes::ServiceCategory energy_service) const {
     iso15118::ev::EvConfig ev_config;
 
     // ev::Controller resolves the interface name (including "auto") and throws on failure;
@@ -95,6 +96,11 @@ iso15118::ev::EvConfig ISO15118_evImpl::make_ev_config() const {
     ev_config.response_timeout = std::chrono::milliseconds(mod->config.response_timeout_ms);
     ev_config.advertised_security = iso15118::io::v2gtp::Security::NO_TRANSPORT_SECURITY;
     ev_config.discover = true;
+
+    ev_config.energy_service = energy_service;
+    if (energy_service == iso15118::message_20::datatypes::ServiceCategory::AC) {
+        ev_config.advertised_app_protocols = {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}};
+    }
 
     return ev_config;
 }
@@ -122,6 +128,26 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
 
     callbacks.stop_from_charger = [this] { publish_stop_from_charger(nullptr); };
 
+    callbacks.ac_limits = [](const iso15118::message_20::datatypes::AC_CPDResEnergyTransferMode& limits) {
+        namespace dt = iso15118::message_20::datatypes;
+        EVLOG_info << "EvIso15118D20: AC EVSE limits: max charge power "
+                   << dt::from_RationalNumber(limits.max_charge_power) << " W, min charge power "
+                   << dt::from_RationalNumber(limits.min_charge_power) << " W";
+    };
+
+    callbacks.ac_target_power = [this](const iso15118::message_20::datatypes::Dynamic_AC_CLResControlMode& control) {
+        namespace dt = iso15118::message_20::datatypes;
+        types::iso15118::AcTargetPower target;
+        target.target_active_power = dt::from_RationalNumber(control.target_active_power);
+        if (control.target_active_power_L2) {
+            target.target_active_power_L2 = dt::from_RationalNumber(*control.target_active_power_L2);
+        }
+        if (control.target_active_power_L3) {
+            target.target_active_power_L3 = dt::from_RationalNumber(*control.target_active_power_L3);
+        }
+        publish_ac_evse_target_power(target);
+    };
+
     return callbacks;
 }
 
@@ -143,16 +169,22 @@ void ISO15118_evImpl::session_worker() {
 
 void ISO15118_evImpl::run_one_session() {
     try {
-        iso15118::ev::DcChargeParams cached_params;
+        iso15118::ev::DcChargeParams cached_dc_params;
+        iso15118::ev::AcChargeParams cached_ac_params;
+        iso15118::message_20::datatypes::ServiceCategory energy_service{
+            iso15118::message_20::datatypes::ServiceCategory::DC};
         {
             auto h = session.handle();
             // teardown or a stop in the requested window (phase reset to idle) beat us here
             if ((*h).shutting_down || (*h).phase != SessionPhase::requested) {
                 return;
             }
-            cached_params = (*h).dc_params;
+            cached_dc_params = (*h).dc_params;
+            cached_ac_params = (*h).ac_params;
+            energy_service = (*h).energy_service;
         }
-        iso15118::ev::Controller controller(make_ev_config(), make_callbacks(), cached_params);
+        iso15118::ev::Controller controller(make_ev_config(energy_service), make_callbacks(), cached_dc_params,
+                                            cached_ac_params);
         // declared after the controller, so it runs before ~Controller on every
         // exit path, clearing the off-thread pointer while the object is still alive
         ScopeGuard clear_current{[this] {
@@ -179,17 +211,31 @@ void ISO15118_evImpl::run_one_session() {
 bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode& EnergyTransferMode,
                                             types::iso15118::SelectedPaymentOption& SelectedPaymentOption,
                                             double& DepartureTime, double& EAmount) {
-    EVLOG_info << "EvIso15118D20: start_charging requested (DC-only M0; negotiation arguments ignored)";
+    EVLOG_info << "EvIso15118D20: start_charging requested (negotiation arguments ignored)";
+
+    auto energy_service = iso15118::message_20::datatypes::ServiceCategory::DC;
+    bool three_phase = false;
     switch (EnergyTransferMode) {
     case types::iso15118::EnergyTransferMode::DC:
+    case types::iso15118::EnergyTransferMode::DC_core:
+    case types::iso15118::EnergyTransferMode::DC_extended:
     case types::iso15118::EnergyTransferMode::DC_BPT:
     case types::iso15118::EnergyTransferMode::DC_ACDP:
     case types::iso15118::EnergyTransferMode::DC_ACDP_BPT:
+        energy_service = iso15118::message_20::datatypes::ServiceCategory::DC;
+        break;
+    case types::iso15118::EnergyTransferMode::AC_single_phase_core:
+        energy_service = iso15118::message_20::datatypes::ServiceCategory::AC;
+        three_phase = false;
+        break;
+    case types::iso15118::EnergyTransferMode::AC_three_phase_core:
+        energy_service = iso15118::message_20::datatypes::ServiceCategory::AC;
+        three_phase = true;
         break;
     default:
-        EVLOG_warning << "EvIso15118D20: rejecting start_charging with non-DC EnergyTransferMode '"
+        EVLOG_warning << "EvIso15118D20: rejecting start_charging with unsupported EnergyTransferMode '"
                       << types::iso15118::energy_transfer_mode_to_string(EnergyTransferMode)
-                      << "'; this module is DC-only (M0)";
+                      << "'; only DC and AC single/three-phase are supported";
         return false;
     }
     {
@@ -197,6 +243,12 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
         if ((*h).phase != SessionPhase::idle) {
             EVLOG_warning << "EvIso15118D20: a session is already active; ignoring start_charging";
             return false;
+        }
+        (*h).energy_service = energy_service;
+        if (energy_service == iso15118::message_20::datatypes::ServiceCategory::AC) {
+            (*h).ac_params.max_charge_power = static_cast<float>(mod->config.ac_max_charge_power_w);
+            (*h).ac_params.min_charge_power = static_cast<float>(mod->config.ac_min_charge_power_w);
+            (*h).ac_params.three_phase = three_phase;
         }
         (*h).phase = SessionPhase::requested;
     }
