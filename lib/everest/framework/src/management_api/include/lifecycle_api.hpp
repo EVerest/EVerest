@@ -38,6 +38,13 @@ enum class RestartModulesResult {
 
 class LifecycleAPI {
 public:
+    struct Lwt {
+        static std::string get_data();
+        static std::string get_topic();
+
+        static const ev_API::Topics topics;
+    };
+
     LifecycleAPI(MQTTAbstraction& mqtt_abstraction, ::Everest::config::ConfigServiceInterface& config_service,
                  ConfigurationApiStatus config_api_availability, bool readonly = true,
                  std::function<StopModulesResult()> stop_fn = {},
@@ -47,7 +54,6 @@ private:
     MQTTAbstraction& m_mqtt_abstraction;
     ::Everest::config::ConfigServiceInterface& m_config_service;
 
-    ev_API::Topics m_topics;
     ConfigurationApiStatus m_config_api_availability;
     const bool m_readonly;
     ::Everest::config::ActiveSlotStatus m_last_module_status{::Everest::config::ActiveSlotStatus::Stopped};
