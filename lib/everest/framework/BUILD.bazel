@@ -164,7 +164,3 @@ cc_binary(
         "@libcap",
     ],
 )
-
-exports_files([
-    "dependencies.yaml",
-])
