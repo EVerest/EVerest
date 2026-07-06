@@ -16,6 +16,13 @@ namespace iso15118 {
 
 static constexpr auto POLL_MANAGER_TIMEOUT_MS = 50;
 
+TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_, d20::EvseSetupConfig setup_) :
+    TbdController(std::move(config_), std::move(callbacks_), std::move(setup_),
+                  [](io::PollManager& poll_manager_, const std::string& interface_name_) {
+                      return std::make_unique<io::ConnectionPlain>(poll_manager_, interface_name_);
+                  }) {
+}
+
 TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_, d20::EvseSetupConfig setup_,
                              ConnectionFactory connection_factory_) :
     config(std::move(config_)),
@@ -23,12 +30,6 @@ TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks cal
     evse_setup(std::move(setup_)),
     interface_name(config.interface_name),
     connection_factory(std::move(connection_factory_)) {
-
-    if (not connection_factory) {
-        connection_factory = [](io::PollManager& poll_manager_, const std::string& interface_name_) {
-            return std::make_unique<io::ConnectionPlain>(poll_manager_, interface_name_);
-        };
-    }
 
     const auto result_interface_check = io::check_and_update_interface(interface_name);
     if (result_interface_check) {

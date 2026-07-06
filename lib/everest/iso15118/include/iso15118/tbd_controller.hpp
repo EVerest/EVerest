@@ -32,13 +32,12 @@ struct TbdConfig {
 
 class TbdController {
 public:
-    // Creates the connection for sessions when the SDP server is disabled;
-    // defaults to a ConnectionPlain on the configured interface.
+    // Creates the connection for sessions when the SDP server is disabled.
     using ConnectionFactory =
         std::function<std::unique_ptr<io::IConnection>(io::PollManager&, const std::string& interface_name)>;
 
-    TbdController(TbdConfig, session::feedback::Callbacks, d20::EvseSetupConfig,
-                  ConnectionFactory connection_factory = {});
+    TbdController(TbdConfig, session::feedback::Callbacks, d20::EvseSetupConfig);
+    TbdController(TbdConfig, session::feedback::Callbacks, d20::EvseSetupConfig, ConnectionFactory);
     ~TbdController();
 
     void loop();
