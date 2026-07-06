@@ -38,6 +38,11 @@ struct Conf {
     bool der_over_voltage_fault_ride_through_mode;
     bool der_under_voltage_fault_ride_through_mode;
     bool der_stop_on_unsupported_functions;
+    double ac_max_discharge_power_w;
+    double ac_min_discharge_power_w;
+    double dc_max_discharge_power_w;
+    double dc_min_discharge_power_w;
+    double dc_max_discharge_current_a;
 };
 
 class EvIso15118D20 : public Everest::ModuleBase {

@@ -75,6 +75,7 @@ private:
         bool shutting_down{false};
         iso15118::ev::Controller* current{nullptr};
         iso15118::ev::DcChargeParams dc_params;
+        bool bpt_dc_params_set{false};
         iso15118::ev::AcChargeParams ac_params;
         iso15118::message_20::datatypes::ServiceCategory energy_service{
             iso15118::message_20::datatypes::ServiceCategory::DC};
