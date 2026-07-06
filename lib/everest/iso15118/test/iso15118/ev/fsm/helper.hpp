@@ -32,10 +32,11 @@ public:
     FsmStateHelper(
         const ev::feedback::Callbacks& callbacks,
         std::vector<message_20::SupportedAppProtocol> protocols = {{"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}},
-        message_20::datatypes::ServiceCategory requested_service = message_20::datatypes::ServiceCategory::DC) :
+        message_20::datatypes::ServiceCategory requested_service = message_20::datatypes::ServiceCategory::DC,
+        ev::DerControlFunctions der_control_functions = {}, bool der_stop_on_unsupported_functions = true) :
         advertised_app_protocols(std::move(protocols)),
         ctx(callbacks, msg_exch, logger, evcc_id, advertised_app_protocols, control_event, dc_params, ac_params,
-            requested_service) {
+            requested_service, der_control_functions, der_stop_on_unsupported_functions) {
         // Install a no-op session log callback so SessionLogger::event() does not throw bad_function_call
         // when state enter() invokes m_ctx.log.enter_state(...). Tests that need to capture log output
         // override this callback themselves and reset it at the end of the test case.

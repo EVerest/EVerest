@@ -25,11 +25,13 @@ Session::Session(feedback::Callbacks callbacks, OutboundSend outbound_send_, ses
                  std::vector<message_20::SupportedAppProtocol> advertised_app_protocols,
                  everest::lib::util::monitor<DcChargeParams>* dc_params,
                  everest::lib::util::monitor<AcChargeParams>* ac_params,
-                 message_20::datatypes::ServiceCategory energy_service) :
+                 message_20::datatypes::ServiceCategory energy_service, DerControlFunctions der_control_functions,
+                 bool der_stop_on_unsupported_functions) :
     log(logger),
     context(std::move(callbacks), message_exchange, log, std::move(evcc_id), std::move(advertised_app_protocols),
             active_control_event, (dc_params != nullptr) ? *dc_params : owned_dc_params,
-            (ac_params != nullptr) ? *ac_params : owned_ac_params, energy_service),
+            (ac_params != nullptr) ? *ac_params : owned_ac_params, energy_service, der_control_functions,
+            der_stop_on_unsupported_functions),
     outbound_send(std::move(outbound_send_)),
     reactor(reactor_),
     timing(timing_) {

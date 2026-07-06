@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <exception>
+#include <sstream>
 #include <utility>
 
 #include <iso15118/io/logging.hpp>
@@ -98,8 +99,26 @@ ISO15118_evImpl::make_ev_config(iso15118::message_20::datatypes::ServiceCategory
     ev_config.discover = true;
 
     ev_config.energy_service = energy_service;
-    if (energy_service == iso15118::message_20::datatypes::ServiceCategory::AC) {
+    if (energy_service == iso15118::message_20::datatypes::ServiceCategory::AC ||
+        energy_service == iso15118::message_20::datatypes::ServiceCategory::AC_DER_IEC) {
         ev_config.advertised_app_protocols = {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}};
+    }
+
+    if (energy_service == iso15118::message_20::datatypes::ServiceCategory::AC_DER_IEC) {
+        auto& functions = ev_config.der_control_functions;
+        functions.over_frequency_watt_mode = mod->config.der_over_frequency_watt_mode;
+        functions.under_frequency_watt_mode = mod->config.der_under_frequency_watt_mode;
+        functions.volt_watt_mode = mod->config.der_volt_watt_mode;
+        functions.volt_var_mode = mod->config.der_volt_var_mode;
+        functions.watt_var_mode = mod->config.der_watt_var_mode;
+        functions.watt_cos_phi_mode = mod->config.der_watt_cos_phi_mode;
+        functions.dso_q_setpoint_provision = mod->config.der_dso_q_setpoint_provision;
+        functions.dso_cos_phi_setpoint_provision = mod->config.der_dso_cos_phi_setpoint_provision;
+        functions.dc_injection_restriction = mod->config.der_dc_injection_restriction;
+        functions.zero_current_mode = mod->config.der_zero_current_mode;
+        functions.over_voltage_fault_ride_through_mode = mod->config.der_over_voltage_fault_ride_through_mode;
+        functions.under_voltage_fault_ride_through_mode = mod->config.der_under_voltage_fault_ride_through_mode;
+        ev_config.der_stop_on_unsupported_functions = mod->config.der_stop_on_unsupported_functions;
     }
 
     return ev_config;
@@ -146,6 +165,23 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
             target.target_active_power_L3 = dt::from_RationalNumber(*control.target_active_power_L3);
         }
         publish_ac_evse_target_power(target);
+    };
+
+    // ISO15118_ev has no DER variable; log the directive rather than publish it
+    callbacks.der_control = [](const iso15118::message_20::datatypes::DER_Dynamic_AC_CLResControlMode& control) {
+        namespace dt = iso15118::message_20::datatypes;
+        std::ostringstream line;
+        line << "EvIso15118D20: DER directive: target active power "
+             << dt::from_RationalNumber(control.target_active_power) << " W";
+        if (control.dso_q_setpoint) {
+            line << ", DSO Q setpoint " << dt::from_RationalNumber(control.dso_q_setpoint->dso_q_setpoint_value)
+                 << " var";
+        }
+        if (control.dso_cos_phi_setpoint) {
+            line << ", DSO cos phi setpoint "
+                 << dt::from_RationalNumber(control.dso_cos_phi_setpoint->dso_cos_phi_setpoint_value);
+        }
+        EVLOG_info << line.str();
     };
 
     return callbacks;
@@ -219,9 +255,6 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
     case types::iso15118::EnergyTransferMode::DC:
     case types::iso15118::EnergyTransferMode::DC_core:
     case types::iso15118::EnergyTransferMode::DC_extended:
-    case types::iso15118::EnergyTransferMode::DC_BPT:
-    case types::iso15118::EnergyTransferMode::DC_ACDP:
-    case types::iso15118::EnergyTransferMode::DC_ACDP_BPT:
         energy_service = iso15118::message_20::datatypes::ServiceCategory::DC;
         break;
     case types::iso15118::EnergyTransferMode::AC_single_phase_core:
@@ -232,10 +265,15 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
         energy_service = iso15118::message_20::datatypes::ServiceCategory::AC;
         three_phase = true;
         break;
+    case types::iso15118::EnergyTransferMode::AC_DER_IEC:
+        // AC_DER_IEC carries no phase count; assume a three-phase inverter relay
+        energy_service = iso15118::message_20::datatypes::ServiceCategory::AC_DER_IEC;
+        three_phase = true;
+        break;
     default:
         EVLOG_warning << "EvIso15118D20: rejecting start_charging with unsupported EnergyTransferMode '"
                       << types::iso15118::energy_transfer_mode_to_string(EnergyTransferMode)
-                      << "'; only DC and AC single/three-phase are supported";
+                      << "'; only DC, AC single/three-phase and AC DER IEC are supported";
         return false;
     }
     {
@@ -245,7 +283,9 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
             return false;
         }
         (*h).energy_service = energy_service;
-        if (energy_service == iso15118::message_20::datatypes::ServiceCategory::AC) {
+        const bool is_ac = energy_service == iso15118::message_20::datatypes::ServiceCategory::AC ||
+                           energy_service == iso15118::message_20::datatypes::ServiceCategory::AC_DER_IEC;
+        if (is_ac) {
             (*h).ac_params.max_charge_power = static_cast<float>(mod->config.ac_max_charge_power_w);
             (*h).ac_params.min_charge_power = static_cast<float>(mod->config.ac_min_charge_power_w);
             (*h).ac_params.three_phase = three_phase;

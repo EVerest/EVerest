@@ -53,6 +53,15 @@ inline std::vector<message_20::SupportedAppProtocol> default_advertised_ac_app_p
     return {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}};
 }
 
+// The DER control functions the fixture declares support for by default: the two DSO
+// setpoint functions (mirroring the module manifest defaults).
+inline DerControlFunctions default_der_control_functions() {
+    DerControlFunctions functions{};
+    functions.dso_q_setpoint_provision = true;
+    functions.dso_cos_phi_setpoint_provision = true;
+    return functions;
+}
+
 // Frame a payload with the 8-byte V2GTP header, mirroring the framing the
 // Session itself uses (V2GTP20_WriteHeader + appended payload).
 inline std::vector<uint8_t> frame_payload(io::v2gtp::PayloadType payload_type, const std::vector<uint8_t>& payload) {
@@ -88,7 +97,7 @@ inline message_20::Variant decode_frame(const std::vector<uint8_t>& frame) {
 // budget elapses. Returns the final predicate value.
 template <typename Predicate>
 bool run_reactor_until(everest::lib::io::event::fd_event_handler& reactor, Predicate predicate,
-                std::chrono::milliseconds budget) {
+                       std::chrono::milliseconds budget) {
     const auto deadline = std::chrono::steady_clock::now() + budget;
     while (not predicate() and std::chrono::steady_clock::now() < deadline) {
         reactor.poll(std::chrono::milliseconds{1});
@@ -110,11 +119,13 @@ public:
         DcChargeParams params = default_params(),
         std::vector<message_20::SupportedAppProtocol> protocols = default_advertised_app_protocols(),
         message_20::datatypes::ServiceCategory energy_service = message_20::datatypes::ServiceCategory::DC,
-        AcChargeParams ac_seed = AcChargeParams{}) :
+        AcChargeParams ac_seed = AcChargeParams{},
+        DerControlFunctions der_control_functions = default_der_control_functions(),
+        bool der_stop_on_unsupported_functions = true) :
         dc_params(std::move(params)),
         ac_params(std::move(ac_seed)),
         session(make_callbacks(), make_send(), logger, reactor, timing, std::move(evcc_id), std::move(protocols),
-                &dc_params, &ac_params, energy_service) {
+                &dc_params, &ac_params, energy_service, der_control_functions, der_stop_on_unsupported_functions) {
         // A no-op session log sink so a state's enter() logging never throws bad_function_call.
         session::logging::set_session_log_callback([](std::size_t, const session::logging::Event&) {});
     }
@@ -134,6 +145,7 @@ public:
     bool stop_from_charger = false;
     bool ac_limits = false;
     bool ac_target_power = false;
+    bool der_control = false;
 
     // Outbound seam observation / control.
     int send_attempts = 0;
@@ -167,6 +179,7 @@ private:
         cb.ac_target_power = [this](const message_20::datatypes::Dynamic_AC_CLResControlMode&) {
             ac_target_power = true;
         };
+        cb.der_control = [this](const message_20::datatypes::DER_Dynamic_AC_CLResControlMode&) { der_control = true; };
         return cb;
     }
 

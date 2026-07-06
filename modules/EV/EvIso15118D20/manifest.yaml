@@ -21,6 +21,58 @@ config:
     description: Advertised AC minimum charge power in watts.
     type: number
     default: 1380
+  der_over_frequency_watt_mode:
+    description: Declare support for the IEC OverFrequencyWattMode DER control function.
+    type: boolean
+    default: false
+  der_under_frequency_watt_mode:
+    description: Declare support for the IEC UnderFrequencyWattMode DER control function.
+    type: boolean
+    default: false
+  der_volt_watt_mode:
+    description: Declare support for the IEC VoltWattMode DER control function.
+    type: boolean
+    default: false
+  der_volt_var_mode:
+    description: Declare support for the IEC VoltVarMode DER control function.
+    type: boolean
+    default: false
+  der_watt_var_mode:
+    description: Declare support for the IEC WattVarMode DER control function.
+    type: boolean
+    default: false
+  der_watt_cos_phi_mode:
+    description: Declare support for the IEC WattCosPhiMode DER control function.
+    type: boolean
+    default: false
+  der_dso_q_setpoint_provision:
+    description: Declare support for the IEC DSOQSetpointProvision DER control function.
+    type: boolean
+    default: true
+  der_dso_cos_phi_setpoint_provision:
+    description: Declare support for the IEC DSOCosPhiSetpointProvision DER control function.
+    type: boolean
+    default: true
+  der_dc_injection_restriction:
+    description: Declare support for the IEC DCInjectionRestriction DER control function.
+    type: boolean
+    default: false
+  der_zero_current_mode:
+    description: Declare support for the IEC ZeroCurrentMode DER control function.
+    type: boolean
+    default: false
+  der_over_voltage_fault_ride_through_mode:
+    description: Declare support for the IEC OverVoltageFaultRideThroughMode DER control function.
+    type: boolean
+    default: false
+  der_under_voltage_fault_ride_through_mode:
+    description: Declare support for the IEC UnderVoltageFaultRideThroughMode DER control function.
+    type: boolean
+    default: false
+  der_stop_on_unsupported_functions:
+    description: Stop the session if no AC_DER_IEC parameter set fits the supported DER functions.
+    type: boolean
+    default: true
 provides:
   ev:
     interface: ISO15118_ev

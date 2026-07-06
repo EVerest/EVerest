@@ -12,6 +12,8 @@
 #include <iso15118/message/common_types.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
 
+#include <iso15118/ev/der_control_functions.hpp>
+
 namespace iso15118::ev {
 
 // Default re-poll cadence for Ongoing FSM states (e.g. DC_CableCheck): non-zero so
@@ -64,6 +66,16 @@ struct EvConfig {
     // How long to wait for a response after a request is sent before the session
     // is failed (the response watchdog).
     std::chrono::milliseconds response_timeout{20000};
+
+    // IEC DER control functions the EV declares support for; negotiated against the
+    // SECC's AC_DER_IEC parameter sets in ServiceDetail. Only used for AC_DER_IEC.
+    DerControlFunctions der_control_functions{};
+
+    // true  -> stop the session when no offered AC_DER_IEC Dynamic set is a subset of
+    //          der_control_functions.
+    // false -> select the first Dynamic set anyway and warn about the unsupported
+    //          functions.
+    bool der_stop_on_unsupported_functions{true};
 };
 
 } // namespace iso15118::ev

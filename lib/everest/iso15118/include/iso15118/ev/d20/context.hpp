@@ -21,11 +21,14 @@
 
 #include <everest/util/async/monitor.hpp>
 
+#include <bitset>
+
 #include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/d20/control_event.hpp>
 #include <iso15118/ev/d20/evse_session_info.hpp>
 #include <iso15118/ev/d20/session_id.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
+#include <iso15118/ev/der_control_functions.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 #include <iso15118/session/logger.hpp>
 
@@ -97,7 +100,8 @@ public:
             const std::optional<ControlEvent>& current_control_event_,
             everest::lib::util::monitor<DcChargeParams>& dc_params_,
             everest::lib::util::monitor<AcChargeParams>& ac_params_,
-            message_20::datatypes::ServiceCategory requested_service_);
+            message_20::datatypes::ServiceCategory requested_service_, DerControlFunctions der_control_functions_ = {},
+            bool der_stop_on_unsupported_functions_ = true);
 
     template <typename StateType, typename... Args> BasePointerType create_state(Args&&... args) {
         return std::make_unique<StateType>(*this, std::forward<Args>(args)...);
@@ -186,6 +190,28 @@ public:
         selected_service_ = service;
     }
 
+    // IEC DER control functions the EV supports (config-driven), matched against the
+    // SECC's AC_DER_IEC parameter sets in ServiceDetail.
+    std::bitset<DER_CONTROL_FUNCTION_COUNT> der_supported_functions() const {
+        return der_supported_functions_;
+    }
+
+    // true -> stop the session when no offered AC_DER_IEC Dynamic set is a subset of
+    // the supported functions; false -> select the first Dynamic set and warn.
+    bool der_stop_on_unsupported_functions() const {
+        return der_stop_on_unsupported_functions_;
+    }
+
+    // Negotiated functions for the selected AC_DER_IEC parameter set (offered mask AND
+    // supported mask). Set by ServiceDetail, read by AC_DER_IEC_ChargeLoop.
+    void set_der_negotiated_functions(std::bitset<DER_CONTROL_FUNCTION_COUNT> functions) {
+        der_negotiated_functions_ = functions;
+    }
+
+    std::bitset<DER_CONTROL_FUNCTION_COUNT> der_negotiated_functions() const {
+        return der_negotiated_functions_;
+    }
+
     // EVSE-reported session data, populated by AuthorizationSetup and read by the
     // Authorization states.
     EVSESessionInfo& get_evse_session_info() {
@@ -217,6 +243,12 @@ private:
     everest::lib::util::monitor<AcChargeParams>& ac_params;
 
     message_20::datatypes::ServiceCategory selected_service_;
+
+    std::bitset<DER_CONTROL_FUNCTION_COUNT> der_supported_functions_{};
+
+    bool der_stop_on_unsupported_functions_{true};
+
+    std::bitset<DER_CONTROL_FUNCTION_COUNT> der_negotiated_functions_{};
 
     EVSESessionInfo evse_session_info;
 

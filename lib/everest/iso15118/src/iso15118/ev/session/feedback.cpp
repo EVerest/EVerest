@@ -49,4 +49,8 @@ void Feedback::ac_target_power(const message_20::datatypes::Dynamic_AC_CLResCont
     call_if_available(callbacks.ac_target_power, mode);
 }
 
+void Feedback::der_control(const message_20::datatypes::DER_Dynamic_AC_CLResControlMode& mode) const {
+    call_if_available(callbacks.der_control, mode);
+}
+
 } // namespace iso15118::ev

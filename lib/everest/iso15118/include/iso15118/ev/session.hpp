@@ -21,6 +21,7 @@
 #include <iso15118/ev/d20/control_event.hpp>
 #include <iso15118/ev/d20/states.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
+#include <iso15118/ev/der_control_functions.hpp>
 #include <iso15118/ev/session/feedback.hpp>
 #include <iso15118/session/logger.hpp>
 
@@ -69,7 +70,8 @@ public:
             std::vector<message_20::SupportedAppProtocol> advertised_app_protocols,
             everest::lib::util::monitor<DcChargeParams>* dc_params = nullptr,
             everest::lib::util::monitor<AcChargeParams>* ac_params = nullptr,
-            message_20::datatypes::ServiceCategory energy_service = message_20::datatypes::ServiceCategory::DC);
+            message_20::datatypes::ServiceCategory energy_service = message_20::datatypes::ServiceCategory::DC,
+            DerControlFunctions der_control_functions = {}, bool der_stop_on_unsupported_functions = true);
 
     ~Session();
 

@@ -80,7 +80,8 @@ Controller::Controller(EvConfig config_, feedback::Callbacks callbacks_, DcCharg
             return true;
         },
         logger, reactor, SessionTiming{config.send_delay, config.response_timeout}, config.evcc_id,
-        config.advertised_app_protocols, &dc_params, &ac_params, config.energy_service);
+        config.advertised_app_protocols, &dc_params, &ac_params, config.energy_service, config.der_control_functions,
+        config.der_stop_on_unsupported_functions);
 
     // The session can finish inside a timer callback (the response watchdog), so
     // the run loop can't poll is_finished() between events; let the session clear
