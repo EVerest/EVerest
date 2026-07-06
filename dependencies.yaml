@@ -187,9 +187,9 @@ libfmt:
 pybind11:
   git: https://github.com/pybind/pybind11.git
   git_tag: v3.0.2
-  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_ENABLE_PY_SUPPORT AND EVEREST_BUILD_LIB_framework"
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR (EVEREST_ENABLE_PY_SUPPORT AND EVEREST_BUILD_LIB_framework)"
   options: ["PYBIND11_TEST OFF", "PYBIND11_USE_CROSSCOMPILING ON"]
 pybind11_json:
   git: https://github.com/pybind/pybind11_json.git
   git_tag: 0.2.15
-  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_ENABLE_PY_SUPPORT AND EVEREST_BUILD_LIB_framework"
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR (EVEREST_ENABLE_PY_SUPPORT AND EVEREST_BUILD_LIB_framework)"
