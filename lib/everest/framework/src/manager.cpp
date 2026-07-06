@@ -718,7 +718,15 @@ int Manager::run() {
     // create StatusFifo object
     auto status_fifo = StatusFifo::create_from_path(vm_["status-fifo"].as<std::string>());
 
-    auto mqtt_abstraction = create_and_connect_mqtt(ms);
+    std::unique_ptr<MQTTAbstraction> mqtt_abstraction;
+    if (lfc_api_active) {
+        LwtCfg lwt_cfg;
+        lwt_cfg.topic = Everest::api::lifecycle::LifecycleAPI::Lwt::get_topic();
+        lwt_cfg.data = Everest::api::lifecycle::LifecycleAPI::Lwt::get_data();
+        mqtt_abstraction = create_and_connect_mqtt(ms, std::optional<LwtCfg>{lwt_cfg});
+    } else {
+        mqtt_abstraction = create_and_connect_mqtt(ms, std::nullopt);
+    }
     if (!mqtt_abstraction) {
         return EXIT_FAILURE;
     }
@@ -956,8 +964,11 @@ Manager::load_and_validate_config(const ManagerSettings& ms,
     return config;
 }
 
-std::unique_ptr<MQTTAbstraction> Manager::create_and_connect_mqtt(const ManagerSettings& ms) const {
+std::unique_ptr<MQTTAbstraction> Manager::create_and_connect_mqtt(const ManagerSettings& ms, std::optional<LwtCfg> lwt_cfg) const {
     auto mqtt_abstraction = make_mqtt_abstraction(ms.mqtt_settings);
+    if (lwt_cfg.has_value()) {
+        mqtt_abstraction->set_lwt(lwt_cfg.value().topic, lwt_cfg.value().data);
+    }
     if (!mqtt_abstraction->connect()) {
         if (not ms.mqtt_settings.uses_socket()) {
             EVLOG_error << fmt::format("Cannot connect to MQTT broker at {}:{}", ms.mqtt_settings.broker_host,

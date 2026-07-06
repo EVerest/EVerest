@@ -39,20 +39,32 @@ to_configuration_api_availability(const ::Everest::api::lifecycle::Configuration
 namespace Everest::api::lifecycle {
 using ev_API::deserialize;
 
+const ev_API::Topics LifecycleAPI::Lwt::topics = [] {
+    ev_API::Topics topics;
+    topics.setup("_unused_", "lifecycle", 0);
+    return topics;
+}();
+
+std::string LifecycleAPI::Lwt::get_data() {
+    API_types_ext::ExecutionStatusUpdateNotice lwt_status_update{};
+    lwt_status_update.everest_running = false;
+    return serialize(lwt_status_update);
+}
+
+std::string LifecycleAPI::Lwt::get_topic() {
+    return topics.nonmodule_to_extern("status");
+}
 
 LifecycleAPI::LifecycleAPI(MQTTAbstraction& mqtt_abstraction, ::Everest::config::ConfigServiceInterface& config_service,
                            ConfigurationApiStatus config_api_availability, bool readonly,
                            std::function<StopModulesResult()> stop_fn,
                            std::function<RestartModulesResult()> restart_fn) :
     m_mqtt_abstraction(mqtt_abstraction),
-    // TODO(CB): If we don't need m_config_service anymore, remove it (but maybe we want to publish the active_slot id?)
     m_config_service(config_service),
     m_config_api_availability(config_api_availability),
     m_readonly(readonly),
     stop_fn_(std::move(stop_fn)),
     restart_fn_(std::move(restart_fn)) {
-
-    m_topics.setup("_unused_", "lifecycle", 0);
 
     generate_api_cmd_stop_modules();
     generate_api_cmd_start_modules();
@@ -175,7 +187,7 @@ void LifecycleAPI::generate_api_var_status() {
 
 void LifecycleAPI::publish_execution_status(const std::string& tstamp,
                                             API_types_ext::ModuleExecutionStatusEnum module_status) {
-    static const auto topic = m_topics.nonmodule_to_extern("status");
+    static const auto topic = Lwt::topics.nonmodule_to_extern("status");
     static const auto cfg_api_availability = to_configuration_api_availability(m_config_api_availability);
 
     API_types_ext::ExecutionStatusUpdateNotice exec_status_update{};
@@ -190,7 +202,7 @@ void LifecycleAPI::publish_execution_status(const std::string& tstamp,
 }
 
 void LifecycleAPI::subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish) {
-    auto topic = m_topics.extern_to_nonmodule(var);
+    auto topic = Lwt::topics.extern_to_nonmodule(var);
     auto handler = std::make_shared<TypedHandler>(
         HandlerType::ExternalMQTT, std::make_shared<Handler>([=](std::string const& topic, nlohmann::json data) {
             try {
