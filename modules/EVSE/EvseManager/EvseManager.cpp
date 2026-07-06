@@ -631,6 +631,9 @@ void EvseManager::ready() {
                     if (internal_over_voltage_monitor) {
                         internal_over_voltage_monitor->update_voltage(voltage_V);
                     }
+                    if (voltage_plausibility_monitor) {
+                        voltage_plausibility_monitor->update_over_voltage_monitor_voltage(voltage_V);
+                    }
                 });
             }
 
@@ -875,12 +878,6 @@ void EvseManager::ready() {
                 if (not r_over_voltage_monitor.empty()) {
                     r_over_voltage_monitor[0]->call_set_limits(get_emergency_over_voltage_threshold(),
                                                                get_error_over_voltage_threshold());
-                    // Subscribe to voltage measurements from over_voltage_monitor for plausibility check
-                    r_over_voltage_monitor[0]->subscribe_voltage_measurement_V([this](float voltage_V) {
-                        if (voltage_plausibility_monitor) {
-                            voltage_plausibility_monitor->update_over_voltage_monitor_voltage(voltage_V);
-                        }
-                    });
                 }
                 if (internal_over_voltage_monitor) {
                     internal_over_voltage_monitor->set_limits(get_emergency_over_voltage_threshold(),
