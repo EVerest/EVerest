@@ -370,7 +370,7 @@
       "characteristics": {
         "supportsMonitoring": false,
         "dataType": "OptionList",
-        "valuesList": "OCPP20,OCPP201,OCPP21"
+        "valuesList": "OCPP16,OCPP20,OCPP201,OCPP21"
       },
       "attributes": [
         {

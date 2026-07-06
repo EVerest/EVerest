@@ -1140,7 +1140,7 @@ bool ChargePointImpl::init(const std::map<int, ChargePointStatus>& connector_sta
 }
 
 bool ChargePointImpl::start(const std::map<int, ChargePointStatus>& connector_status_map, BootReasonEnum bootreason,
-                            const std::set<std::string>& resuming_session_ids) {
+                            const std::set<std::string>& resuming_session_ids, bool start_connecting) {
     if (!this->initialized) {
         init(connector_status_map, resuming_session_ids);
     }
@@ -1149,7 +1149,9 @@ bool ChargePointImpl::start(const std::map<int, ChargePointStatus>& connector_st
     this->publish_default_price(true);
     this->connectivity_manager->set_message_callback(
         [this](const std::string& message) { this->message_callback(message); });
-    this->connectivity_manager->connect();
+    if (start_connecting && !this->connectivity_manager->is_websocket_connected()) {
+        this->connectivity_manager->connect();
+    }
     this->boot_notification();
     this->call_set_connection_timeout();
 
