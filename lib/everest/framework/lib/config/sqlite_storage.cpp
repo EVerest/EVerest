@@ -21,6 +21,7 @@ const std::string& default_module_implementation_id() {
     static const std::string DEFAULT_MODULE_IMPLEMENTATION_ID = "!module";
     return DEFAULT_MODULE_IMPLEMENTATION_ID;
 }
+
 } // namespace
 
 /// \brief Helper for accessing the column indices of the CONFIGURATION table
@@ -114,7 +115,7 @@ GenericResponseStatus SqliteStorage::write_module_configs(const ModuleConfigurat
                                    " does not exist. A slot must be created first.");
         }
 
-        auto transaction = this->db->begin_transaction();
+        auto transaction = db->begin_transaction_with_deferred_fkeys();
 
         auto response = write_module_config_items(module_configs);
 
@@ -135,7 +136,7 @@ GenericResponseStatus SqliteStorage::replace_module_configs(const ModuleConfigur
                                    " does not exist. A slot must be created first.");
         }
 
-        auto transaction = this->db->begin_transaction();
+        auto transaction = db->begin_transaction_with_deferred_fkeys();
 
         delete_module_config_items();
 
@@ -296,27 +297,21 @@ SqliteStorage::get_configuration_parameter(const ConfigurationParameterIdentifie
             ConfigurationParameter configuration_parameter;
             configuration_parameter.name = identifier.configuration_parameter_name;
 
-            EVLOG_error << "got parameter " << identifier.configuration_parameter_name;
-
             const auto value_str = stmt->column_text(0);
             ConfigurationParameterCharacteristics characteristics;
 
-            EVLOG_error << "    converting mutability" << identifier.configuration_parameter_name;
             characteristics.mutability = static_cast<Mutability>(stmt->column_int(1));
-
-            EVLOG_error << "    converting characteristics" << identifier.configuration_parameter_name;
             characteristics.datatype = static_cast<Datatype>(stmt->column_int(2));
             characteristics.unit = stmt->column_text_nullable(3);
             configuration_parameter.characteristics = characteristics;
             configuration_parameter.value = parse_config_value(characteristics.datatype, value_str);
             response.configuration_parameter = configuration_parameter;
 
-            EVLOG_error << "    done";
             return response;
         }
     } catch (const std::exception& e) {
         EVLOG_error << "Failed to get config value with module_id: " << identifier.module_id
-                    << " and config_parameter_name: " << identifier.configuration_parameter_name;
+                    << " and config_parameter_name: " << identifier.configuration_parameter_name << ": " << e.what();
         response.status = GetSetResponseStatus::Failed;
         return response;
     }
