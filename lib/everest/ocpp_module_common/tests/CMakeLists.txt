@@ -8,6 +8,8 @@ add_executable(${TEST_TARGET_NAME})
 target_sources(${TEST_TARGET_NAME}
     PRIVATE
     error_handling_tests.cpp
+    everest_device_model_storage_test.cpp
+    grid_support_conversions_test.cpp
     transaction_handler_tests.cpp
 )
 

@@ -6,6 +6,7 @@
 
 #include <everest/ocpp_module_common/device_model/definitions.hpp>
 #include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
+#include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 
@@ -123,6 +124,20 @@ ComponentKey get_iso15118_component_key(const int32_t evse_id) {
 ComponentKey get_connected_ev_component_key(const int32_t evse_id) {
     ComponentKey component;
     component.name = "ConnectedEV";
+    component.evse_id = evse_id;
+    return component;
+}
+
+ComponentKey get_dc_der_ctrlr_component_key(const int32_t evse_id) {
+    ComponentKey component;
+    component.name = "DCDERCtrlr";
+    component.evse_id = evse_id;
+    return component;
+}
+
+ComponentKey get_ac_der_ctrlr_component_key(const int32_t evse_id) {
+    ComponentKey component;
+    component.name = "ACDERCtrlr";
     component.evse_id = evse_id;
     return component;
 }
@@ -258,6 +273,34 @@ std::vector<DeviceModelVariable> build_connected_ev_variables() {
     return connected_ev_variables;
 }
 
+// DC DER controller variables, provisioned disabled (Available=false). Every variable
+// the config/available builders may write on the DC path must be defined here, else the write targets an
+// unknown variable and is rejected.
+std::vector<DeviceModelVariable> build_dc_der_ctrlr_variables() {
+    std::vector<DeviceModelVariable> variables;
+    variables.push_back(make_variable(ocpp::v2::DERComponentVariables::Available.name,
+                                      DERDefinitions::Characteristics::Available, "false",
+                                      ocpp::v2::MutabilityEnum::ReadWrite));
+    variables.push_back(make_variable(ocpp::v2::DERComponentVariables::ModesSupported.name,
+                                      DERDefinitions::Characteristics::ModesSupported, ""));
+    for (const auto& name : DERDefinitions::DecimalVariableNames) {
+        variables.push_back(make_variable(name, DERDefinitions::Characteristics::Decimal));
+    }
+    for (const auto& name : DERDefinitions::InverterStringVariableNames) {
+        variables.push_back(make_variable(name, DERDefinitions::Characteristics::InverterString));
+    }
+    return variables;
+}
+
+// AC DER controller variables: only Available and ModesSupported. The nameplate scalars live exclusively
+// on the DC component (matching to_der_ctrlr_config_set_variables).
+std::vector<DeviceModelVariable> build_ac_der_ctrlr_variables() {
+    return {make_variable(ocpp::v2::DERComponentVariables::Available.name, DERDefinitions::Characteristics::Available,
+                          "false", ocpp::v2::MutabilityEnum::ReadWrite),
+            make_variable(ocpp::v2::DERComponentVariables::ModesSupported.name,
+                          DERDefinitions::Characteristics::ModesSupported, "")};
+}
+
 std::string get_everest_config_value(const everest::config::ModuleConfigurationParameters& module_config,
                                      const std::string& impl, const std::string& config_key) {
     const auto& config = module_config.at(impl);
@@ -328,7 +371,142 @@ std::string build_supported_protocol_string(const std::string& uri, const int32_
     return uri + ',' + std::to_string(major) + ',' + std::to_string(minor);
 }
 
+ocpp::v2::SetVariableData make_set_variable_data(const ocpp::v2::ComponentVariable& component_variable,
+                                                 const std::string& value) {
+    ocpp::v2::SetVariableData data;
+    data.component = component_variable.component;
+    if (component_variable.variable) {
+        data.variable = component_variable.variable.value();
+    }
+    data.attributeValue = value;
+    return data;
+}
+
 } // anonymous namespace
+
+std::optional<std::pair<ocpp::v2::ComponentKey, std::vector<DeviceModelVariable>>> build_der_ctrlr_component_config(
+    int32_t evse_id, const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes) {
+    const auto supports_mode = [&](const types::iso15118::EnergyTransferMode mode) {
+        return std::find(supported_energy_transfer_modes.cbegin(), supported_energy_transfer_modes.cend(), mode) !=
+               supported_energy_transfer_modes.cend();
+    };
+    const bool is_dc_evse =
+        std::any_of(supported_energy_transfer_modes.cbegin(), supported_energy_transfer_modes.cend(),
+                    [](const types::iso15118::EnergyTransferMode& mode) {
+                        return mode == types::iso15118::EnergyTransferMode::DC_core or
+                               mode == types::iso15118::EnergyTransferMode::DC_extended or
+                               mode == types::iso15118::EnergyTransferMode::DC_combo_core or
+                               mode == types::iso15118::EnergyTransferMode::DC_unique or
+                               mode == types::iso15118::EnergyTransferMode::DC or
+                               mode == types::iso15118::EnergyTransferMode::DC_BPT or
+                               mode == types::iso15118::EnergyTransferMode::DC_ACDP or
+                               mode == types::iso15118::EnergyTransferMode::DC_ACDP_BPT;
+                    });
+    const bool dc_der_capable = supports_mode(types::iso15118::EnergyTransferMode::DC_BPT) or
+                                supports_mode(types::iso15118::EnergyTransferMode::DC_ACDP_BPT);
+    const bool ac_der_capable = supports_mode(types::iso15118::EnergyTransferMode::AC_DER_IEC) or
+                                supports_mode(types::iso15118::EnergyTransferMode::AC_DER_SAE) or
+                                supports_mode(types::iso15118::EnergyTransferMode::AC_BPT_DER);
+    if (is_dc_evse and dc_der_capable) {
+        return std::make_pair(get_dc_der_ctrlr_component_key(evse_id), build_dc_der_ctrlr_variables());
+    } else if (ac_der_capable) {
+        return std::make_pair(get_ac_der_ctrlr_component_key(evse_id), build_ac_der_ctrlr_variables());
+    }
+    return std::nullopt;
+}
+
+ocpp::v2::SetVariableData to_der_ctrlr_available_set_variable(const int32_t evse_id,
+                                                              const types::grid_support::DERCapability& capability) {
+    const auto get_component_variable = capability.dc.has_value()
+                                            ? &ocpp::v2::DERComponentVariables::get_dc_component_variable
+                                            : &ocpp::v2::DERComponentVariables::get_ac_component_variable;
+    return make_set_variable_data(get_component_variable(evse_id, ocpp::v2::DERComponentVariables::Available), "true");
+}
+
+std::vector<ocpp::v2::SetVariableData>
+to_der_ctrlr_config_set_variables(const int32_t evse_id, const types::grid_support::DERCapability& capability) {
+    std::vector<ocpp::v2::SetVariableData> result;
+
+    using ComponentVariableGetter = ocpp::v2::ComponentVariable (*)(const std::int32_t, const ocpp::v2::Variable&);
+    const ComponentVariableGetter get_component_variable =
+        capability.dc.has_value() ? &ocpp::v2::DERComponentVariables::get_dc_component_variable
+                                  : &ocpp::v2::DERComponentVariables::get_ac_component_variable;
+
+    const auto named_variable = [&](const std::string& name) {
+        ocpp::v2::Variable variable;
+        variable.name = name;
+        return get_component_variable(evse_id, variable);
+    };
+
+    std::string modes_csv;
+    for (const auto& directive_type : capability.supported_types) {
+        if (not modes_csv.empty()) {
+            modes_csv += ",";
+        }
+        modes_csv += types::grid_support::directive_type_to_string(directive_type);
+    }
+    result.push_back(make_set_variable_data(
+        get_component_variable(evse_id, ocpp::v2::DERComponentVariables::ModesSupported), modes_csv));
+
+    // Nameplate scalars below exist only on the DC component (DCDERCtrlr_1.json); emit on DC path only.
+    if (not capability.dc) {
+        return result;
+    }
+
+    const auto& nameplate = capability.nameplate;
+    const auto emit_float = [&](const std::string& name, const float value) {
+        result.push_back(make_set_variable_data(named_variable(name), std::to_string(value)));
+    };
+    const auto emit_string = [&](const std::string& name, const std::string& value) {
+        result.push_back(make_set_variable_data(named_variable(name), value));
+    };
+
+    emit_float("MaxW", nameplate.max_w_W);
+    emit_float("MaxVA", nameplate.max_va_VA);
+    if (nameplate.max_var_over_excited_var) {
+        emit_float("MaxVar", nameplate.max_var_over_excited_var.value());
+    }
+    if (nameplate.max_var_under_excited_var) {
+        emit_float("MaxVarNeg", nameplate.max_var_under_excited_var.value());
+    }
+    if (nameplate.max_charge_w_W) {
+        emit_float("MaxChargeRateW", nameplate.max_charge_w_W.value());
+    }
+
+    const auto& dc = capability.dc.value();
+    if (dc.device_info) {
+        const auto& info = dc.device_info.value();
+        if (info.manufacturer) {
+            emit_string("InverterManufacturer", info.manufacturer.value());
+        }
+        if (info.model) {
+            emit_string("InverterModel", info.model.value());
+        }
+        if (info.sw_version) {
+            emit_string("InverterSwVersion", info.sw_version.value());
+        }
+        if (info.hw_version) {
+            emit_string("InverterHwVersion", info.hw_version.value());
+        }
+    }
+    if (dc.over_excited_pf) {
+        emit_float("OverExcitedPF", dc.over_excited_pf.value());
+    }
+    if (dc.under_excited_pf) {
+        emit_float("UnderExcitedPF", dc.under_excited_pf.value());
+    }
+    if (dc.over_excited_w) {
+        emit_float("OverExcitedW", dc.over_excited_w.value());
+    }
+    if (dc.under_excited_w) {
+        emit_float("UnderExcitedW", dc.under_excited_w.value());
+    }
+    if (dc.reactive_susceptance) {
+        emit_float("ReactiveSusceptance", dc.reactive_susceptance.value());
+    }
+
+    return result;
+}
 
 EverestDeviceModelStorage::EverestDeviceModelStorage(
     const std::vector<std::unique_ptr<evse_managerIntf>>& r_evse_manager,
@@ -376,6 +554,11 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
 
         const auto connected_ev_component_key = get_connected_ev_component_key(evse_info.id);
         component_configs[connected_ev_component_key] = build_connected_ev_variables();
+
+        auto der_ctrlr_config = build_der_ctrlr_component_config(evse_info.id, supported_energy_transfer_modes);
+        if (der_ctrlr_config.has_value()) {
+            component_configs[der_ctrlr_config->first] = std::move(der_ctrlr_config->second);
+        }
     }
     for (const auto& extension : r_extensions_15118) {
         auto mapping = extension->get_mapping();

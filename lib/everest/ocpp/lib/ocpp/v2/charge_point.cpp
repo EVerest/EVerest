@@ -183,6 +183,25 @@ void ChargePoint::on_firmware_update_status_notification(std::int32_t request_id
                                                                   disable_connectors_during_install);
 }
 
+void ChargePoint::on_der_alarm(const ocpp::v21::NotifyDERAlarmRequest& request) {
+    auto handle = this->der_control.handle();
+    if (*handle != nullptr) {
+        (*handle)->notify_der_alarm(request);
+    } else {
+        EVLOG_warning << "on_der_alarm called but DER functional block is not available; ignoring";
+    }
+}
+
+void ChargePoint::on_der_republish_active_directives() {
+    auto handle = this->der_control.handle();
+    if (*handle != nullptr) {
+        (*handle)->republish_active_directives();
+    } else {
+        EVLOG_warning
+            << "on_der_republish_active_directives called but DER functional block is not available; ignoring";
+    }
+}
+
 void ChargePoint::connect_websocket(std::optional<std::int32_t> network_profile_slot) {
     this->connectivity_manager->connect(network_profile_slot);
 }
@@ -572,6 +591,17 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
         *this->message_dispatcher, *this->device_model, *this->connectivity_manager, *this->evse_manager,
         *this->database_handler, *this->evse_security, *this->component_state_manager, this->ocpp_version);
 
+    this->device_model->register_variable_listener(
+        [this](const std::unordered_map<std::int64_t, VariableMonitoringMeta>& /*monitors*/, const Component& component,
+               const Variable& variable, const VariableCharacteristics& /*characteristics*/,
+               const VariableAttribute& /*attribute*/, const std::string& /*value_previous*/,
+               const std::string& value_current) {
+            if ((component.name == "DCDERCtrlr" || component.name == "ACDERCtrlr") && variable.name == "Available" &&
+                value_current == "true") {
+                this->build_der_control_if_enabled();
+            }
+        });
+
     this->data_transfer = std::make_unique<DataTransfer>(
         *this->functional_block_context, this->callbacks.data_transfer_callback, DEFAULT_WAIT_FOR_FUTURE_TIMEOUT);
     this->security = std::make_unique<Security>(*this->functional_block_context, *this->logging, this->ocsp_updater,
@@ -673,29 +703,41 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
             *this->functional_block_context, this->callbacks.update_allowed_energy_transfer_modes_callback);
     }
 
-    // Check if any EVSE supports DER control (DC or AC DERCtrlr)
-    const bool der_available =
-        std::any_of(evse_connector_structure.begin(), evse_connector_structure.end(), [this](const auto& entry) {
-            const auto& [evse, connectors] = entry;
-            return this->device_model
-                       ->get_optional_value<bool>(
-                           DERComponentVariables::get_dc_component_variable(evse, DERComponentVariables::Available))
-                       .value_or(false) ||
-                   this->device_model
-                       ->get_optional_value<bool>(
-                           DERComponentVariables::get_ac_component_variable(evse, DERComponentVariables::Available))
-                       .value_or(false);
-        });
-
-    if (der_available) {
-        this->der_control = std::make_unique<v21::DERControl>(*this->functional_block_context);
-    }
+    this->build_der_control_if_enabled();
 
     Variable field_length = {"FieldLength"};
     field_length.instance = "Get15118EVCertificateResponse.exiResponse";
     this->device_model->set_value(ControllerComponents::OCPPCommCtrlr, field_length, AttributeEnum::Actual,
                                   std::to_string(ISO15118_GET_EV_CERTIFICATE_EXI_RESPONSE_SIZE),
                                   VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL, true);
+}
+
+void ChargePoint::build_der_control_if_enabled() {
+    auto handle = this->der_control.handle();
+    if (*handle != nullptr) {
+        return;
+    }
+
+    const auto number_of_evses = static_cast<std::int32_t>(this->evse_manager->get_number_of_evses());
+    bool der_available = false;
+    for (std::int32_t evse = 1; evse <= number_of_evses; evse++) {
+        if (this->device_model
+                ->get_optional_value<bool>(
+                    DERComponentVariables::get_dc_component_variable(evse, DERComponentVariables::Available))
+                .value_or(false) ||
+            this->device_model
+                ->get_optional_value<bool>(
+                    DERComponentVariables::get_ac_component_variable(evse, DERComponentVariables::Available))
+                .value_or(false)) {
+            der_available = true;
+            break;
+        }
+    }
+
+    if (der_available) {
+        *handle = std::make_unique<v21::DERControl>(*this->functional_block_context,
+                                                    this->callbacks.der_active_directives_callback);
+    }
 }
 
 OcspUpdater ChargePoint::make_ocsp_updater() {
@@ -812,13 +854,15 @@ void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message
             break;
         case MessageType::SetDERControl:
         case MessageType::GetDERControl:
-        case MessageType::ClearDERControl:
-            if (this->der_control != nullptr) {
-                this->der_control->handle_message(message);
+        case MessageType::ClearDERControl: {
+            auto handle = this->der_control.handle();
+            if (*handle != nullptr) {
+                (*handle)->handle_message(message);
             } else {
                 send_not_implemented_error(message.uniqueId, message.messageTypeId);
             }
             break;
+        }
         case MessageType::Authorize:
         case MessageType::AuthorizeResponse:
         case MessageType::BootNotification:

@@ -8,13 +8,45 @@
 #include <generated/interfaces/evse_manager/Interface.hpp>
 #include <generated/interfaces/iso15118_extensions/Interface.hpp>
 #include <generated/types/evse_board_support.hpp>
+#include <generated/types/grid_support.hpp>
+#include <generated/types/iso15118.hpp>
 #include <generated/types/powermeter.hpp>
 
 #include <ocpp/v2/device_model_storage_interface.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
+#include <ocpp/v2/init_device_model_db.hpp>
 #include <utils/config_service.hpp>
 
 namespace ocpp_module_common::device_model {
+
+/// \brief Builds the DER controller component config for a single EVSE from its supported energy transfer modes.
+///
+/// DER-capable iff it advertises a DER/bidirectional mode: AC_DER_IEC/AC_DER_SAE/AC_BPT_DER for AC, DC_BPT/DC_ACDP_BPT
+/// for DC. AC vs DC is chosen from the presence of any DC_* mode. The component is provisioned disabled
+/// (Available "false", ReadWrite) with empty ModesSupported, for the consumer to enable at runtime.
+///
+/// \returns The (ComponentKey, variables) pair for a DCDERCtrlr/ACDERCtrlr component, or std::nullopt if
+///          the EVSE is not DER-capable.
+std::optional<std::pair<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>>
+build_der_ctrlr_component_config(
+    int32_t evse_id, const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes);
+
+/// \brief Builds the device-model SetVariableData vector that configures (but does not enable) the DER
+///        controller for a given DER \p capability on EVSE \p evse_id.
+/// \details Emits ModesSupported and, on the DC path (capability.dc set), best-effort nameplate scalars and
+///          inverter strings. The nameplate scalars exist only on the DC component; no ACDERCtrlr nameplate
+///          variables exist. The enabling Available write is deliberately kept separate (see
+///          to_der_ctrlr_available_set_variable) so the consumer can apply config first and enable only if
+///          everything was accepted.
+std::vector<ocpp::v2::SetVariableData>
+to_der_ctrlr_config_set_variables(int32_t evse_id, const types::grid_support::DERCapability& capability);
+
+/// \brief Builds the single Available="true" write that enables the DER controller for a given DER
+///        \p capability on EVSE \p evse_id.
+/// \details Targets the DCDERCtrlr component when capability.dc is set, ACDERCtrlr otherwise.
+ocpp::v2::SetVariableData to_der_ctrlr_available_set_variable(int32_t evse_id,
+                                                              const types::grid_support::DERCapability& capability);
+
 class EverestDeviceModelStorage : public ocpp::v2::DeviceModelStorageInterface {
 public:
     EverestDeviceModelStorage(

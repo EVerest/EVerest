@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/logging.hpp>
 #include <everest/ocpp_module_common/conversions.hpp>
+#include <ocpp/v2/ctrlr_component_variables.hpp>
+#include <ocpp/v21/messages/NotifyDERAlarm.hpp>
+#include <ocpp/v21/messages/SetDERControl.hpp>
 
 namespace ocpp_module_common {
 namespace conversions {
@@ -1967,6 +1974,318 @@ to_everest_change_availability_response(const ocpp::v2::ChangeAvailabilityRespon
         result.status_info = to_everest_status_info(response.statusInfo.value());
     }
     return result;
+}
+
+types::grid_support::DirectiveType to_grid_support_directive_type(const ocpp::v2::DERControlEnum control_type) {
+    switch (control_type) {
+    case ocpp::v2::DERControlEnum::EnterService:
+        return types::grid_support::DirectiveType::EnterService;
+    case ocpp::v2::DERControlEnum::FreqDroop:
+        return types::grid_support::DirectiveType::FreqDroop;
+    case ocpp::v2::DERControlEnum::FreqWatt:
+        return types::grid_support::DirectiveType::FreqWatt;
+    case ocpp::v2::DERControlEnum::FixedPFAbsorb:
+        return types::grid_support::DirectiveType::FixedPFAbsorb;
+    case ocpp::v2::DERControlEnum::FixedPFInject:
+        return types::grid_support::DirectiveType::FixedPFInject;
+    case ocpp::v2::DERControlEnum::FixedVar:
+        return types::grid_support::DirectiveType::FixedVar;
+    case ocpp::v2::DERControlEnum::Gradients:
+        return types::grid_support::DirectiveType::Gradients;
+    case ocpp::v2::DERControlEnum::HFMustTrip:
+        return types::grid_support::DirectiveType::HFMustTrip;
+    case ocpp::v2::DERControlEnum::HFMayTrip:
+        return types::grid_support::DirectiveType::HFMayTrip;
+    case ocpp::v2::DERControlEnum::HVMustTrip:
+        return types::grid_support::DirectiveType::HVMustTrip;
+    case ocpp::v2::DERControlEnum::HVMomCess:
+        return types::grid_support::DirectiveType::HVMomCess;
+    case ocpp::v2::DERControlEnum::HVMayTrip:
+        return types::grid_support::DirectiveType::HVMayTrip;
+    case ocpp::v2::DERControlEnum::LimitMaxDischarge:
+        return types::grid_support::DirectiveType::LimitMaxDischarge;
+    case ocpp::v2::DERControlEnum::LFMustTrip:
+        return types::grid_support::DirectiveType::LFMustTrip;
+    case ocpp::v2::DERControlEnum::LVMustTrip:
+        return types::grid_support::DirectiveType::LVMustTrip;
+    case ocpp::v2::DERControlEnum::LVMomCess:
+        return types::grid_support::DirectiveType::LVMomCess;
+    case ocpp::v2::DERControlEnum::LVMayTrip:
+        return types::grid_support::DirectiveType::LVMayTrip;
+    case ocpp::v2::DERControlEnum::PowerMonitoringMustTrip:
+        return types::grid_support::DirectiveType::PowerMonitoringMustTrip;
+    case ocpp::v2::DERControlEnum::VoltVar:
+        return types::grid_support::DirectiveType::VoltVar;
+    case ocpp::v2::DERControlEnum::VoltWatt:
+        return types::grid_support::DirectiveType::VoltWatt;
+    case ocpp::v2::DERControlEnum::WattPF:
+        return types::grid_support::DirectiveType::WattPF;
+    case ocpp::v2::DERControlEnum::WattVar:
+        return types::grid_support::DirectiveType::WattVar;
+    }
+    throw std::out_of_range("Could not convert DERControlEnum to DirectiveType");
+}
+
+ocpp::v2::GridEventFaultEnum to_ocpp_grid_event_fault(const types::grid_support::GridEventFault fault) {
+    switch (fault) {
+    case types::grid_support::GridEventFault::CurrentImbalance:
+        return ocpp::v2::GridEventFaultEnum::CurrentImbalance;
+    case types::grid_support::GridEventFault::LocalEmergency:
+        return ocpp::v2::GridEventFaultEnum::LocalEmergency;
+    case types::grid_support::GridEventFault::LowInputPower:
+        return ocpp::v2::GridEventFaultEnum::LowInputPower;
+    case types::grid_support::GridEventFault::OverCurrent:
+        return ocpp::v2::GridEventFaultEnum::OverCurrent;
+    case types::grid_support::GridEventFault::OverFrequency:
+        return ocpp::v2::GridEventFaultEnum::OverFrequency;
+    case types::grid_support::GridEventFault::OverVoltage:
+        return ocpp::v2::GridEventFaultEnum::OverVoltage;
+    case types::grid_support::GridEventFault::PhaseRotation:
+        return ocpp::v2::GridEventFaultEnum::PhaseRotation;
+    case types::grid_support::GridEventFault::RemoteEmergency:
+        return ocpp::v2::GridEventFaultEnum::RemoteEmergency;
+    case types::grid_support::GridEventFault::UnderFrequency:
+        return ocpp::v2::GridEventFaultEnum::UnderFrequency;
+    case types::grid_support::GridEventFault::UnderVoltage:
+        return ocpp::v2::GridEventFaultEnum::UnderVoltage;
+    case types::grid_support::GridEventFault::VoltageImbalance:
+        return ocpp::v2::GridEventFaultEnum::VoltageImbalance;
+    }
+    throw std::out_of_range("Could not convert GridEventFault");
+}
+
+namespace {
+
+types::grid_support::DERUnit to_grid_support_der_unit(const ocpp::v2::DERUnitEnum unit) {
+    switch (unit) {
+    case ocpp::v2::DERUnitEnum::Not_Applicable:
+        return types::grid_support::DERUnit::Not_Applicable;
+    case ocpp::v2::DERUnitEnum::PctMaxW:
+        return types::grid_support::DERUnit::PctMaxW;
+    case ocpp::v2::DERUnitEnum::PctMaxVar:
+        return types::grid_support::DERUnit::PctMaxVar;
+    case ocpp::v2::DERUnitEnum::PctWAvail:
+        return types::grid_support::DERUnit::PctWAvail;
+    case ocpp::v2::DERUnitEnum::PctVarAvail:
+        return types::grid_support::DERUnit::PctVarAvail;
+    case ocpp::v2::DERUnitEnum::PctEffectiveV:
+        return types::grid_support::DERUnit::PctEffectiveV;
+    }
+    throw std::out_of_range("Could not convert DERUnitEnum");
+}
+
+types::grid_support::PowerDuringCessation
+to_grid_support_power_during_cessation(const ocpp::v2::PowerDuringCessationEnum value) {
+    switch (value) {
+    case ocpp::v2::PowerDuringCessationEnum::Active:
+        return types::grid_support::PowerDuringCessation::Active;
+    case ocpp::v2::PowerDuringCessationEnum::Reactive:
+        return types::grid_support::PowerDuringCessation::Reactive;
+    }
+    throw std::out_of_range("Could not convert PowerDuringCessationEnum");
+}
+
+types::grid_support::DERCurve to_grid_support_curve(const ocpp::v2::DERCurve& curve) {
+    types::grid_support::DERCurve result;
+    result.y_unit = to_grid_support_der_unit(curve.yUnit);
+    result.curve_data.reserve(curve.curveData.size());
+    for (const auto& point : curve.curveData) {
+        result.curve_data.push_back(types::grid_support::DERCurvePoint{point.x, point.y});
+    }
+    if (curve.hysteresis) {
+        types::grid_support::Hysteresis hysteresis;
+        hysteresis.hysteresis_high = curve.hysteresis->hysteresisHigh;
+        hysteresis.hysteresis_low = curve.hysteresis->hysteresisLow;
+        hysteresis.hysteresis_delay = curve.hysteresis->hysteresisDelay;
+        hysteresis.hysteresis_gradient = curve.hysteresis->hysteresisGradient;
+        result.hysteresis = hysteresis;
+    }
+    if (curve.reactivePowerParams) {
+        types::grid_support::ReactivePowerParams params;
+        params.v_ref = curve.reactivePowerParams->vRef;
+        params.autonomous_v_ref_enable = curve.reactivePowerParams->autonomousVRefEnable;
+        params.autonomous_v_ref_time_constant = curve.reactivePowerParams->autonomousVRefTimeConstant;
+        result.reactive_power_params = params;
+    }
+    if (curve.voltageParams) {
+        types::grid_support::VoltageParams params;
+        params.hv_10min_mean_value = curve.voltageParams->hv10MinMeanValue;
+        params.hv_10min_mean_trip_delay = curve.voltageParams->hv10MinMeanTripDelay;
+        if (curve.voltageParams->powerDuringCessation) {
+            params.power_during_cessation =
+                to_grid_support_power_during_cessation(curve.voltageParams->powerDuringCessation.value());
+        }
+        result.voltage_params = params;
+    }
+    result.response_time = curve.responseTime;
+    return result;
+}
+
+types::grid_support::EnterServiceParams to_grid_support_enter_service(const ocpp::v2::EnterService& enter_service) {
+    types::grid_support::EnterServiceParams result;
+    result.high_voltage = enter_service.highVoltage;
+    result.low_voltage = enter_service.lowVoltage;
+    result.high_freq = enter_service.highFreq;
+    result.low_freq = enter_service.lowFreq;
+    result.delay = enter_service.delay;
+    result.random_delay = enter_service.randomDelay;
+    result.ramp_rate = enter_service.rampRate;
+    return result;
+}
+
+types::grid_support::FreqDroopParams to_grid_support_freq_droop(const ocpp::v2::FreqDroop& freq_droop) {
+    types::grid_support::FreqDroopParams result;
+    result.over_freq = freq_droop.overFreq;
+    result.under_freq = freq_droop.underFreq;
+    result.over_droop = freq_droop.overDroop;
+    result.under_droop = freq_droop.underDroop;
+    result.response_time = freq_droop.responseTime;
+    return result;
+}
+
+types::grid_support::FixedPFParams to_grid_support_fixed_pf(const ocpp::v2::FixedPF& fixed_pf) {
+    types::grid_support::FixedPFParams result;
+    result.displacement = fixed_pf.displacement;
+    result.excitation = fixed_pf.excitation;
+    return result;
+}
+
+types::grid_support::FixedVarParams to_grid_support_fixed_var(const ocpp::v2::FixedVar& fixed_var) {
+    types::grid_support::FixedVarParams result;
+    result.setpoint = fixed_var.setpoint;
+    result.unit = to_grid_support_der_unit(fixed_var.unit);
+    return result;
+}
+
+types::grid_support::GradientParams to_grid_support_gradient(const ocpp::v2::Gradient& gradient) {
+    types::grid_support::GradientParams result;
+    result.gradient = gradient.gradient;
+    result.soft_gradient = gradient.softGradient;
+    return result;
+}
+
+types::grid_support::LimitMaxDischargeParams
+to_grid_support_limit_max_discharge(const ocpp::v2::LimitMaxDischarge& limit) {
+    types::grid_support::LimitMaxDischargeParams result;
+    result.pct_max_discharge_power = limit.pctMaxDischargePower;
+    if (limit.powerMonitoringMustTrip) {
+        result.power_monitoring_must_trip = to_grid_support_curve(limit.powerMonitoringMustTrip.value());
+    }
+    return result;
+}
+
+} // namespace
+
+types::grid_support::Directive to_grid_support_directive(const ocpp::v21::SetDERControlRequest& request,
+                                                         const std::string& source, const std::string& received_at) {
+    types::grid_support::Directive directive;
+    directive.id = request.controlId.get();
+    directive.directive_type = to_grid_support_directive_type(request.controlType);
+    directive.is_default = request.isDefault;
+    directive.source = source;
+    directive.received_at = received_at;
+
+    const auto apply_schedule = [&directive, &request](std::int32_t priority,
+                                                       const std::optional<ocpp::DateTime>& start_time,
+                                                       const std::optional<float>& duration) {
+        directive.priority = priority;
+        if (start_time) {
+            directive.start_time = start_time->to_rfc3339();
+        }
+        if (duration) {
+            const float v = duration.value();
+            if (not std::isfinite(v) or v < 0.0F) {
+                EVLOG_warning << "SetDERControlRequest controlId=" << request.controlId.get()
+                              << " has non-finite/negative duration " << v
+                              << "; treating as unbounded (duration_s unset)";
+            } else {
+                directive.duration_s =
+                    static_cast<int>(std::clamp<long long>(std::llround(v), 0, std::numeric_limits<int>::max()));
+            }
+        }
+    };
+
+    // Populate from whichever OCPP optional is set; fixedPFAbsorb/fixedPFInject both map to fixed_pf.
+    if (request.curve) {
+        apply_schedule(request.curve->priority, request.curve->startTime, request.curve->duration);
+        directive.curve = to_grid_support_curve(request.curve.value());
+    } else if (request.enterService) {
+        directive.priority = request.enterService->priority;
+        directive.enter_service = to_grid_support_enter_service(request.enterService.value());
+    } else if (request.freqDroop) {
+        apply_schedule(request.freqDroop->priority, request.freqDroop->startTime, request.freqDroop->duration);
+        directive.freq_droop = to_grid_support_freq_droop(request.freqDroop.value());
+    } else if (request.fixedPFAbsorb) {
+        apply_schedule(request.fixedPFAbsorb->priority, request.fixedPFAbsorb->startTime,
+                       request.fixedPFAbsorb->duration);
+        directive.fixed_pf = to_grid_support_fixed_pf(request.fixedPFAbsorb.value());
+    } else if (request.fixedPFInject) {
+        apply_schedule(request.fixedPFInject->priority, request.fixedPFInject->startTime,
+                       request.fixedPFInject->duration);
+        directive.fixed_pf = to_grid_support_fixed_pf(request.fixedPFInject.value());
+    } else if (request.fixedVar) {
+        apply_schedule(request.fixedVar->priority, request.fixedVar->startTime, request.fixedVar->duration);
+        directive.fixed_var = to_grid_support_fixed_var(request.fixedVar.value());
+    } else if (request.gradient) {
+        directive.priority = request.gradient->priority;
+        directive.gradient = to_grid_support_gradient(request.gradient.value());
+    } else if (request.limitMaxDischarge) {
+        apply_schedule(request.limitMaxDischarge->priority, request.limitMaxDischarge->startTime,
+                       request.limitMaxDischarge->duration);
+        directive.limit_max_discharge = to_grid_support_limit_max_discharge(request.limitMaxDischarge.value());
+    } else {
+        // No payload: the 6 ISO-only trip/fault types are parameter-free; anything else lost its payload.
+        directive.priority = 0;
+        EVLOG_warning << "SetDERControlRequest controlId=" << request.controlId.get()
+                      << " controlType=" << static_cast<int>(request.controlType)
+                      << " carried no recognized payload; emitting payload-less Directive (priority=0)";
+    }
+
+    return directive;
+}
+
+std::vector<types::grid_support::Directive> translate_active_controls(
+    const std::vector<ocpp::v21::SetDERControlRequest>& controls,
+    const std::function<types::grid_support::Directive(const ocpp::v21::SetDERControlRequest&)>& translate) {
+    std::vector<types::grid_support::Directive> directives;
+    directives.reserve(controls.size());
+    for (const auto& control : controls) {
+        try {
+            directives.push_back(translate(control));
+        } catch (const std::out_of_range& e) {
+            EVLOG_error << "Skipping DER control controlId=" << control.controlId.get()
+                        << " controlType=" << static_cast<int>(control.controlType) << ": no DirectiveType mapping ("
+                        << e.what() << ")";
+            continue;
+        }
+    }
+    return directives;
+}
+
+ocpp::v21::NotifyDERAlarmRequest to_ocpp_notify_der_alarm(const types::grid_support::GridAlarm& alarm) {
+    if (not alarm.directive_type.has_value()) {
+        throw std::invalid_argument("GridAlarm.directive_type is required to build a NotifyDERAlarmRequest "
+                                    "(OCPP mandates controlType)");
+    }
+
+    ocpp::v21::NotifyDERAlarmRequest request;
+    const auto control_type = to_ocpp_der_control(alarm.directive_type.value());
+    if (not control_type.has_value()) {
+        throw std::invalid_argument("GridAlarm.directive_type has no OCPP controlType mapping (ISO-only value)");
+    }
+    request.controlType = control_type.value();
+    request.gridEventFault = to_ocpp_grid_event_fault(alarm.fault);
+    request.alarmEnded = alarm.alarm_ended;
+    try {
+        request.timestamp = ocpp::DateTime(alarm.timestamp);
+    } catch (const std::exception& e) {
+        throw std::invalid_argument("GridAlarm.timestamp could not be parsed as an RFC3339 date-time: \"" +
+                                    alarm.timestamp + "\" (" + e.what() + ")");
+    }
+    if (alarm.extra_info) {
+        request.extraInfo = alarm.extra_info.value();
+    }
+    return request;
 }
 
 } // namespace conversions
