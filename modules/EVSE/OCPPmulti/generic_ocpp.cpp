@@ -1240,6 +1240,8 @@ void GenericOcpp::cb_reservation_update(types::reservation::ReservationUpdateSta
             mv_charge_point.on_reservation_status(status.reservation_id,
                                                   to_ocpp_reservation_update_status_enum(status.reservation_status));
         } catch (const std::out_of_range& e) {
+            EVLOG_error << "Failed to update status of reservation " << status.reservation_id
+                        << "; the CSMS may still consider it active: " << e.what();
         }
     }
 }
