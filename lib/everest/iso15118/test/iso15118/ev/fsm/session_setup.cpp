@@ -35,7 +35,7 @@ SCENARIO("ISO15118-20 EV session setup state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::AuthorizationSetup);
 
-            const auto requests = drain_requests(state_helper.get_message_exchange());
+            const auto requests = take_all_requests(state_helper.get_message_exchange());
             const auto request_message = requests.get<message_20::AuthorizationSetupRequest>();
             REQUIRE(request_message.has_value());
 
@@ -74,7 +74,7 @@ SCENARIO("ISO15118-20 EV session setup state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeParameterDiscovery);
 
-            const auto requests = drain_requests(state_helper.get_message_exchange());
+            const auto requests = take_all_requests(state_helper.get_message_exchange());
             const auto request_message = requests.get<message_20::DC_ChargeParameterDiscoveryRequest>();
             REQUIRE(request_message.has_value());
 
@@ -112,7 +112,7 @@ SCENARIO("ISO15118-20 EV session setup state transitions") {
 
         THEN("Check if session is stopped.") {
             REQUIRE(result.transitioned() == false);
-            REQUIRE(result.FeedResult::operator bool() == false);
+            REQUIRE_FALSE(result);
             REQUIRE(ctx.is_session_stopped() == true);
         }
     }
@@ -146,7 +146,7 @@ SCENARIO("ISO15118-20 EV session setup state transitions") {
 
         THEN("Check if session is stopped.") {
             REQUIRE(result.transitioned() == false);
-            REQUIRE(result.FeedResult::operator bool() == false);
+            REQUIRE_FALSE(result);
             REQUIRE(ctx.is_session_stopped() == true);
         }
     }

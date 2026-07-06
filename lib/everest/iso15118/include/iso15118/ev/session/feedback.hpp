@@ -14,7 +14,6 @@ namespace iso15118::ev::feedback {
 struct Callbacks {
     std::function<void(const io::Ipv6EndPoint&)> connected;
     std::function<void(message_20::Type)> v2g_message;
-    std::function<void(const message_20::SessionSetupResponse&)> session_setup_response;
     // Fired when the response watchdog expires (a sent request got no response in
     // time). Distinct from stopped, which fires on every session end.
     std::function<void()> timed_out;
@@ -35,7 +34,6 @@ public:
 
     void connected(const io::Ipv6EndPoint&) const;
     void v2g_message(message_20::Type) const;
-    void session_setup_response(const message_20::SessionSetupResponse&) const;
     void timed_out() const;
     void stopped() const;
     void evse_session_info(const d20::EVSESessionInfo&) const;
