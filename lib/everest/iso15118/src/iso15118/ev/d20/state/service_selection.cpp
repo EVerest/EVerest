@@ -17,7 +17,7 @@ void ServiceSelection::enter() {
     message_20::ServiceSelectionRequest req;
     setup_header(req.header, m_ctx.get_session());
     req.selected_energy_transfer_service = {m_ctx.selected_service(), m_parameter_set_id};
-    m_ctx.respond(req);
+    m_ctx.send_request(req);
 }
 
 Result ServiceSelection::feed(Event ev) {

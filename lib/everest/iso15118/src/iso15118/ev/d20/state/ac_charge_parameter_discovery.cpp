@@ -51,7 +51,7 @@ void AC_ChargeParameterDiscovery::enter() {
         req.transfer_mode = mode;
     }
 
-    m_ctx.respond(req);
+    m_ctx.send_request(req);
 }
 
 Result AC_ChargeParameterDiscovery::feed(Event ev) {
