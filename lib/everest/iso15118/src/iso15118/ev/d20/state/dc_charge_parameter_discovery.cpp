@@ -47,7 +47,7 @@ void DC_ChargeParameterDiscovery::enter() {
         req.transfer_mode = mode;
     }
 
-    m_ctx.respond(req);
+    m_ctx.send_request(req);
 }
 
 Result DC_ChargeParameterDiscovery::feed(Event ev) {

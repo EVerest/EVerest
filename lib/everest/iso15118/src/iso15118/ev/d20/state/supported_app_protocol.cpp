@@ -21,7 +21,7 @@ void SupportedAppProtocol::enter() {
         req.app_protocol.push_back(ap);
     }
 
-    m_ctx.respond(req);
+    m_ctx.send_request(req);
 }
 
 Result SupportedAppProtocol::feed(Event ev) {
