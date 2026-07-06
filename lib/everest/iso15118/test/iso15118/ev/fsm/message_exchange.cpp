@@ -52,40 +52,41 @@ SCENARIO("ISO15118-20 EV MessageExchange serializes requests") {
     }
 }
 
-SCENARIO("ISO15118-20 EV MessageExchange emits queued requests in FIFO order") {
+SCENARIO("ISO15118-20 EV MessageExchange holds a single request and guards the slot") {
 
     ev::d20::MessageExchange msg_exch{};
 
-    GIVEN("A SessionSetupRequest queued before a DC_PreChargeRequest") {
+    GIVEN("A SessionSetupRequest set as the pending request") {
         message_20::SessionSetupRequest setup{};
         setup.header.session_id = {0x10, 0x34, 0xAB, 0x7A, 0x01, 0xF3, 0x95, 0x02};
         setup.evccid = "EVEREST_EV";
 
-        message_20::DC_PreChargeRequest pre_charge{};
-        pre_charge.processing = message_20::datatypes::Processing::Finished;
-        pre_charge.present_voltage = {4000, -1};
-        pre_charge.target_voltage = {4000, -1};
-
         msg_exch.set_request(setup);
-        msg_exch.set_request(pre_charge);
 
-        WHEN("the requests are taken and round-trip-decoded") {
-            const auto first = msg_exch.take_request();
-            const auto second = msg_exch.take_request();
+        THEN("a second set_request on the occupied slot throws (depth-<=1 invariant)") {
+            message_20::DC_PreChargeRequest pre_charge{};
+            pre_charge.processing = message_20::datatypes::Processing::Finished;
+            REQUIRE_THROWS_AS(msg_exch.set_request(pre_charge), std::logic_error);
+        }
 
-            THEN("they decode oldest-first: SessionSetupRequest then DC_PreChargeRequest") {
-                REQUIRE(first.has_value());
-                REQUIRE(second.has_value());
-                REQUIRE(msg_exch.has_request() == false);
+        WHEN("the request is taken, the slot is free for the next one") {
+            REQUIRE(msg_exch.take_request().has_value());
+            REQUIRE(msg_exch.has_request() == false);
 
-                message_20::Variant first_decoded{first->second,
-                                                  io::StreamInputView{first->first.data(), first->first.size()}};
-                REQUIRE(first_decoded.get_if<message_20::SessionSetupRequest>() != nullptr);
-                REQUIRE(first_decoded.get_if<message_20::DC_PreChargeRequest>() == nullptr);
+            message_20::DC_PreChargeRequest pre_charge{};
+            pre_charge.processing = message_20::datatypes::Processing::Finished;
+            pre_charge.present_voltage = {4000, -1};
+            pre_charge.target_voltage = {4000, -1};
 
-                message_20::Variant second_decoded{second->second,
-                                                   io::StreamInputView{second->first.data(), second->first.size()}};
-                const auto* pre_charge_decoded = second_decoded.get_if<message_20::DC_PreChargeRequest>();
+            msg_exch.set_request(pre_charge);
+
+            THEN("the newly set request round-trip-decodes back to a DC_PreChargeRequest") {
+                const auto taken = msg_exch.take_request();
+                REQUIRE(taken.has_value());
+
+                message_20::Variant decoded{taken->second,
+                                            io::StreamInputView{taken->first.data(), taken->first.size()}};
+                const auto* pre_charge_decoded = decoded.get_if<message_20::DC_PreChargeRequest>();
                 REQUIRE(pre_charge_decoded != nullptr);
                 REQUIRE(pre_charge_decoded->processing == message_20::datatypes::Processing::Finished);
             }

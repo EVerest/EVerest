@@ -11,22 +11,6 @@
 
 namespace iso15118::ev::d20::state {
 
-namespace {
-
-using ResponseCode = message_20::datatypes::ResponseCode;
-
-bool check_response_code(ResponseCode response_code) {
-    switch (response_code) {
-    case ResponseCode::OK:
-        return true;
-    default:
-        logf_warning("Unexpected response code received: %d", static_cast<int>(response_code));
-        return iso15118::ev::d20::check_response_code(response_code);
-    }
-}
-
-} // namespace
-
 void ServiceDiscovery::enter() {
     m_ctx.log.enter_state("ServiceDiscovery");
 
@@ -44,22 +28,8 @@ Result ServiceDiscovery::feed(Event ev) {
 
     const auto variant = m_ctx.pull_response();
 
-    const auto res = variant->get_if<message_20::ServiceDiscoveryResponse>();
+    const auto* res = expect_response<message_20::ServiceDiscoveryResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        logf_error("Expected ServiceDiscoveryResponse, got code type id: %d", static_cast<int>(variant->get_type()));
-        m_ctx.stop_session(true);
-        return {};
-    }
-
-    if (res->header.session_id != m_ctx.get_session().get_id()) {
-        logf_error("ServiceDiscoveryResponse session_id does not match current session");
-        m_ctx.stop_session(true);
-        return {};
-    }
-
-    if (not check_response_code(res->response_code)) {
-        logf_error("ServiceDiscoveryResponse rejected with response_code: %d", static_cast<int>(res->response_code));
-        m_ctx.stop_session(true);
         return {};
     }
 
@@ -69,7 +39,7 @@ Result ServiceDiscovery::feed(Event ev) {
     });
     if (not dc_offered) {
         logf_error("ServiceDiscoveryResponse does not offer the DC energy transfer service");
-        m_ctx.stop_session(true);
+        m_ctx.stop_session();
         return {};
     }
 

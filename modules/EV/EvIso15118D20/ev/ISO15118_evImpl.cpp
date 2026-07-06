@@ -7,7 +7,6 @@
 #include <exception>
 #include <utility>
 
-#include <iso15118/detail/io/socket_helper.hpp>
 #include <iso15118/io/logging.hpp>
 #include <iso15118/io/sdp.hpp>
 #include <iso15118/session/logger.hpp>
@@ -89,19 +88,12 @@ ISO15118_evImpl::~ISO15118_evImpl() {
 iso15118::ev::EvConfig ISO15118_evImpl::make_ev_config() const {
     iso15118::ev::EvConfig ev_config;
 
-    std::string interface_name = mod->config.device;
-    if (not iso15118::io::check_and_update_interface(interface_name)) {
-        EVLOG_error << "EvIso15118D20: no usable IPv6 interface for device '" << mod->config.device << "'";
-    }
-    ev_config.interface_name = interface_name;
-
+    // ev::Controller resolves the interface name (including "auto") and throws on failure;
+    // run_one_session()'s catch reports it.
+    ev_config.interface_name = mod->config.device;
     ev_config.evcc_id = mod->config.evcc_id;
     ev_config.response_timeout = std::chrono::milliseconds(mod->config.response_timeout_ms);
     ev_config.advertised_security = iso15118::io::v2gtp::Security::NO_TRANSPORT_SECURITY;
-
-    if (not mod->config.fixed_endpoint.empty()) {
-        EVLOG_warning << "EvIso15118D20: fixed_endpoint is configured but not yet supported; using SDP discovery";
-    }
     ev_config.discover = true;
 
     return ev_config;
@@ -114,10 +106,6 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
 
     callbacks.v2g_message = [](iso15118::message_20::Type type) {
         EVLOG_debug << "EvIso15118D20: V2G message " << static_cast<int>(type);
-    };
-
-    callbacks.session_setup_response = [](const iso15118::message_20::SessionSetupResponse&) {
-        EVLOG_debug << "EvIso15118D20: SessionSetupResponse received";
     };
 
     callbacks.evse_session_info = [](const iso15118::ev::d20::EVSESessionInfo&) {
@@ -158,6 +146,10 @@ void ISO15118_evImpl::run_one_session() {
         iso15118::ev::DcChargeParams cached_params;
         {
             auto h = session.handle();
+            // teardown or a stop in the requested window (phase reset to idle) beat us here
+            if ((*h).shutting_down || (*h).phase != SessionPhase::requested) {
+                return;
+            }
             cached_params = (*h).dc_params;
         }
         iso15118::ev::Controller controller(make_ev_config(), make_callbacks(), cached_params);
@@ -169,6 +161,10 @@ void ISO15118_evImpl::run_one_session() {
         }};
         {
             auto h = session.handle();
+            // re-confirm under the lock: teardown or a cancel may have landed during construction
+            if ((*h).shutting_down || (*h).phase != SessionPhase::requested) {
+                return;
+            }
             (*h).current = &controller;
             (*h).phase = SessionPhase::running;
         }
@@ -184,6 +180,18 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
                                             types::iso15118::SelectedPaymentOption& SelectedPaymentOption,
                                             double& DepartureTime, double& EAmount) {
     EVLOG_info << "EvIso15118D20: start_charging requested (DC-only M0; negotiation arguments ignored)";
+    switch (EnergyTransferMode) {
+    case types::iso15118::EnergyTransferMode::DC:
+    case types::iso15118::EnergyTransferMode::DC_BPT:
+    case types::iso15118::EnergyTransferMode::DC_ACDP:
+    case types::iso15118::EnergyTransferMode::DC_ACDP_BPT:
+        break;
+    default:
+        EVLOG_warning << "EvIso15118D20: rejecting start_charging with non-DC EnergyTransferMode '"
+                      << types::iso15118::energy_transfer_mode_to_string(EnergyTransferMode)
+                      << "'; this module is DC-only (M0)";
+        return false;
+    }
     {
         auto h = session.handle();
         if ((*h).phase != SessionPhase::idle) {
@@ -197,9 +205,20 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
 }
 
 void ISO15118_evImpl::handle_stop_charging() {
-    auto h = session.handle();
-    if ((*h).current) {
-        (*h).current->request_stop();
+    bool cancelled = false;
+    {
+        auto h = session.handle();
+        if ((*h).current) {
+            (*h).current->request_stop();
+        } else if ((*h).phase == SessionPhase::requested) {
+            // stop arrived before the worker constructed the controller; cancel the
+            // pending session so run_one_session() skips it under the lock
+            (*h).phase = SessionPhase::idle;
+            cancelled = true;
+        }
+    }
+    if (cancelled) {
+        session.notify_all();
     }
 }
 
@@ -213,6 +232,24 @@ void ISO15118_evImpl::handle_set_fault() {
 
 void ISO15118_evImpl::handle_set_dc_params(types::iso15118::DcEvParameters& EvParameters) {
     EVLOG_info << "EvIso15118D20: set_dc_params";
+
+    std::string missing;
+    const auto note_missing = [&missing](const char* name, bool present) {
+        if (not present) {
+            missing.append(missing.empty() ? "" : ", ").append(name);
+        }
+    };
+    note_missing("max_power_limit", EvParameters.max_power_limit.has_value());
+    note_missing("max_current_limit", EvParameters.max_current_limit.has_value());
+    note_missing("max_voltage_limit", EvParameters.max_voltage_limit.has_value());
+    note_missing("energy_capacity", EvParameters.energy_capacity.has_value());
+    note_missing("target_voltage", EvParameters.target_voltage.has_value());
+    note_missing("target_current", EvParameters.target_current.has_value());
+    if (not missing.empty()) {
+        // absent fields fold to 0 and would advertise a 0 W limit to the SECC
+        EVLOG_warning << "EvIso15118D20: set_dc_params missing " << missing << "; defaulting to 0";
+    }
+
     auto h = session.handle();
     auto& params = (*h).dc_params;
     params.max_charge_power = EvParameters.max_power_limit.value_or(0.0f);

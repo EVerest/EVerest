@@ -11,35 +11,34 @@ namespace iso15118::ev::d20::state {
 
 namespace {
 
-using ResponseCode = message_20::datatypes::ResponseCode;
-
-bool check_response_code(ResponseCode response_code) {
-    switch (response_code) {
-    case ResponseCode::OK:
-        return true;
-    default:
-        logf_warning("Unexpected response code received: %d", static_cast<int>(response_code));
-        return iso15118::ev::d20::check_response_code(response_code);
-    }
-}
-
-bool resend_request(Context& ctx) {
-    if (ctx.evse_session_info.auth_services.empty()) {
-        logf_error("No authorization services available to resend AuthorizationRequest. Abort the session.");
-        return false;
-    }
+// Build an AuthorizationRequest from the service the EVSE offered (chosen in
+// AuthorizationSetup). The EV serializer only emits an EIM mode today, but the
+// selected service is preserved so the SECC sees the intended choice.
+message_20::AuthorizationRequest make_request(Context& ctx) {
     message_20::AuthorizationRequest req;
     setup_header(req.header, ctx.get_session());
-    req.selected_authorization_service = ctx.evse_session_info.auth_services.front();
-    req.authorization_mode = message_20::datatypes::EIM_ASReqAuthorizationMode{};
-    ctx.respond(req);
-    return true;
+    req.selected_authorization_service = ctx.get_evse_session_info().auth_services.front();
+    if (req.selected_authorization_service == message_20::datatypes::Authorization::PnC) {
+        // TODO(mlitre): Fill in the PnC authorization mode data.
+        req.authorization_mode = message_20::datatypes::PnC_ASReqAuthorizationMode{};
+    } else {
+        req.authorization_mode = message_20::datatypes::EIM_ASReqAuthorizationMode{};
+    }
+    return req;
 }
 
 } // namespace
 
 void Authorization::enter() {
     m_ctx.log.enter_state("Authorization");
+
+    if (m_ctx.get_evse_session_info().auth_services.empty()) {
+        logf_error("No authorization services available to send AuthorizationRequest. Abort the session.");
+        m_ctx.stop_session();
+        return;
+    }
+
+    m_ctx.respond(make_request(m_ctx));
 }
 
 Result Authorization::feed(Event ev) {
@@ -49,30 +48,13 @@ Result Authorization::feed(Event ev) {
 
     const auto variant = m_ctx.pull_response();
 
-    const auto res = variant->get_if<message_20::AuthorizationResponse>();
+    const auto* res = expect_response<message_20::AuthorizationResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        logf_error("Expected AuthorizationResponse, got code type id: %d", static_cast<int>(variant->get_type()));
-        m_ctx.stop_session(true);
-        return {};
-    }
-
-    if (res->header.session_id != m_ctx.get_session().get_id()) {
-        logf_error("AuthorizationResponse session_id does not match current session");
-        m_ctx.stop_session(true);
-        return {};
-    }
-
-    if (not check_response_code(res->response_code)) {
-        logf_error("AuthorizationResponse rejected with response_code: %d", static_cast<int>(res->response_code));
-        m_ctx.stop_session(true);
         return {};
     }
 
     if (res->evse_processing == message_20::datatypes::Processing::Ongoing) {
-        if (not resend_request(m_ctx)) {
-            m_ctx.stop_session(true);
-            return {};
-        }
+        m_ctx.respond(make_request(m_ctx));
         return {};
     }
 

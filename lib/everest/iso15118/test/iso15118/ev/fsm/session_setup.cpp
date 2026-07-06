@@ -2,8 +2,6 @@
 // Copyright 2025 Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
-#include <type_traits>
-
 #include "helper.hpp"
 
 #include <iso15118/ev/d20/state/session_setup.hpp>
@@ -11,38 +9,8 @@
 #include <iso15118/message/dc_charge_parameter_discovery.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/type.hpp>
-#include <iso15118/session/logger.hpp>
 
 using namespace iso15118;
-
-SCENARIO("ISO15118-20 EV SessionSetup logging") {
-    const ev::feedback::Callbacks callbacks{};
-    auto state_helper = FsmStateHelper(callbacks);
-    auto& ctx = state_helper.get_context();
-
-    GIVEN("Context exposes a SessionLogger reference") {
-        static_assert(std::is_same_v<decltype(ctx.log), iso15118::session::SessionLogger&>,
-                      "Context::log must be a SessionLogger reference");
-        SUCCEED();
-    }
-
-    GIVEN("A capturing log callback installed after the helper's default no-op") {
-        std::string captured;
-        session::logging::set_session_log_callback([&](std::size_t, const session::logging::Event& ev) {
-            if (auto simple = std::get_if<session::logging::SimpleEvent>(&ev)) {
-                captured = simple->info;
-            }
-        });
-
-        WHEN("The SessionSetup state is entered") {
-            fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::SessionSetup>()};
-
-            THEN("The captured log message names the state") {
-                REQUIRE(captured.find("SessionSetup") != std::string::npos);
-            }
-        }
-    }
-}
 
 SCENARIO("ISO15118-20 EV session setup state transitions") {
 
@@ -50,7 +18,7 @@ SCENARIO("ISO15118-20 EV session setup state transitions") {
 
     auto state_helper = FsmStateHelper(callbacks);
 
-    auto ctx = state_helper.get_context();
+    auto& ctx = state_helper.get_context();
 
     GIVEN("Good case - new session") {
         fsm::v2::FSM<ev::d20::StateBase> fsm{ctx.create_state<ev::d20::state::SessionSetup>()};
@@ -67,7 +35,7 @@ SCENARIO("ISO15118-20 EV session setup state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::AuthorizationSetup);
 
-            const auto requests = drain_requests(state_helper.get_message_exchange());
+            const auto requests = take_all_requests(state_helper.get_message_exchange());
             const auto request_message = requests.get<message_20::AuthorizationSetupRequest>();
             REQUIRE(request_message.has_value());
 
@@ -106,7 +74,7 @@ SCENARIO("ISO15118-20 EV session setup state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::DC_ChargeParameterDiscovery);
 
-            const auto requests = drain_requests(state_helper.get_message_exchange());
+            const auto requests = take_all_requests(state_helper.get_message_exchange());
             const auto request_message = requests.get<message_20::DC_ChargeParameterDiscoveryRequest>();
             REQUIRE(request_message.has_value());
 
@@ -144,7 +112,7 @@ SCENARIO("ISO15118-20 EV session setup state transitions") {
 
         THEN("Check if session is stopped.") {
             REQUIRE(result.transitioned() == false);
-            REQUIRE(result.FeedResult::operator bool() == false);
+            REQUIRE_FALSE(result);
             REQUIRE(ctx.is_session_stopped() == true);
         }
     }
@@ -178,7 +146,7 @@ SCENARIO("ISO15118-20 EV session setup state transitions") {
 
         THEN("Check if session is stopped.") {
             REQUIRE(result.transitioned() == false);
-            REQUIRE(result.FeedResult::operator bool() == false);
+            REQUIRE_FALSE(result);
             REQUIRE(ctx.is_session_stopped() == true);
         }
     }

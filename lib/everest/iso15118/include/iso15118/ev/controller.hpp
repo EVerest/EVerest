@@ -47,10 +47,10 @@ public:
     Controller& operator=(Controller&&) = delete;
 
     /**
-     * @brief Resolve the SECC endpoint, connect, and pump the reactor.
+     * @brief Resolve the SECC endpoint, connect, and run the reactor.
      * @details If config.discover, runs SDP discovery to learn the endpoint;
      * otherwise uses config.fixed_endpoint. Then connects the data client,
-     * starts the session on connect, and pumps the reactor until the session is
+     * starts the session on connect, and runs the reactor until the session is
      * finished or a bounded deadline elapses. Fires feedback.connected on
      * endpoint resolution and feedback.stopped before returning.
      */
@@ -59,9 +59,9 @@ public:
     /**
      * @brief Deliver a control event into the session from another thread.
      * @details Marshals onto the reactor thread (add_action): the event is fed to
-     * the Session there, never touching pump/session state directly off-thread.
+     * the Session there, never touching session state directly off-thread.
      * Safe to call before the session starts (the action runs once the reactor is
-     * pumping; deliver_control_event is a no-op without an FSM).
+     * running; deliver_control_event is a no-op without an FSM).
      */
     void post_control_event(d20::ControlEvent event);
 
@@ -77,9 +77,11 @@ public:
 
     /**
      * @brief Request the loop to stop.
-     * @details Clears `online` and wakes the reactor (an empty action) so a
-     * run() blocked in poll() returns on the next iteration. Single-session: this
-     * is a flag + wake, not a teardown of the session.
+     * @details Records a stop request, clears `online`, and wakes the reactor (an
+     * empty action) so a run() blocked in poll() returns on the next iteration.
+     * Valid at ANY point in the object lifetime: called before loop(), the recorded stop
+     * makes loop() return without arming the reactor; called during, the wake ends
+     * run(). Single-session: this is a flag + wake, not a teardown of the session.
      */
     void shutdown();
 
@@ -103,13 +105,25 @@ private:
     // session, and connect to @p endpoint, starting the session on connect.
     void establish_data_path(const iso15118::io::Ipv6EndPoint& endpoint, iso15118::io::v2gtp::Security security);
 
-    const EvConfig config;
+    // Reactor exception boundary: run @p f, on any throw log against @p op and clear
+    // `online` so run() returns (poll_impl has no try/catch). Defined in the .cpp.
+    template <typename F> void guarded(const char* op, F&& f);
+
+    // Fold the loop() setup-failure blocks: log @p reason and fire stopped once.
+    void abort_loop(const char* reason);
+
+    EvConfig config;
     const Feedback feedback;
 
     // Cleared from the reactor to stop run(): by the session when it finishes, by
     // the setup timeout if discovery/connect never completes, by a connect failure,
     // or by shutdown().
     std::atomic_bool online{false};
+
+    // Set by shutdown(); honored by loop() so a stop issued before loop() runs
+    // is not clobbered by loop()'s `online = true`. Makes shutdown() valid at any
+    // point in the object lifetime.
+    std::atomic_bool stop_requested{false};
 
     // Bounds the pre-session phase (SDP discovery + TCP connect) only; disarmed
     // once the session starts, after which the session's own response watchdog
@@ -136,7 +150,7 @@ private:
     std::unique_ptr<transport::DataClient> data_client;
 
     // Module -> FSM DC-params channel. Declared before `session`: the Session's
-    // Context holds a pointer to it (passed as &dc_params at construction), so it
+    // Context holds a reference to it (passed as &dc_params at construction), so it
     // must outlive the Session.
     everest::lib::util::monitor<DcChargeParams> dc_params;
 

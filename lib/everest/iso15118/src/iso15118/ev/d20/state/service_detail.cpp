@@ -9,22 +9,6 @@
 
 namespace iso15118::ev::d20::state {
 
-namespace {
-
-using ResponseCode = message_20::datatypes::ResponseCode;
-
-bool check_response_code(ResponseCode response_code) {
-    switch (response_code) {
-    case ResponseCode::OK:
-        return true;
-    default:
-        logf_warning("Unexpected response code received: %d", static_cast<int>(response_code));
-        return iso15118::ev::d20::check_response_code(response_code);
-    }
-}
-
-} // namespace
-
 void ServiceDetail::enter() {
     m_ctx.log.enter_state("ServiceDetail");
 
@@ -41,28 +25,14 @@ Result ServiceDetail::feed(Event ev) {
 
     const auto variant = m_ctx.pull_response();
 
-    const auto res = variant->get_if<message_20::ServiceDetailResponse>();
+    const auto* res = expect_response<message_20::ServiceDetailResponse>(m_ctx, *variant);
     if (res == nullptr) {
-        logf_error("Expected ServiceDetailResponse, got code type id: %d", static_cast<int>(variant->get_type()));
-        m_ctx.stop_session(true);
-        return {};
-    }
-
-    if (res->header.session_id != m_ctx.get_session().get_id()) {
-        logf_error("ServiceDetailResponse session_id does not match current session");
-        m_ctx.stop_session(true);
-        return {};
-    }
-
-    if (not check_response_code(res->response_code)) {
-        logf_error("ServiceDetailResponse rejected with response_code: %d", static_cast<int>(res->response_code));
-        m_ctx.stop_session(true);
         return {};
     }
 
     if (res->service_parameter_list.empty()) {
         logf_error("ServiceDetailResponse carries no parameter sets");
-        m_ctx.stop_session(true);
+        m_ctx.stop_session();
         return {};
     }
 

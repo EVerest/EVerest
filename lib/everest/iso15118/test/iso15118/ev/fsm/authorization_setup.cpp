@@ -17,7 +17,7 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
 
     auto state_helper = FsmStateHelper(callbacks);
 
-    auto ctx = state_helper.get_context();
+    auto& ctx = state_helper.get_context();
 
     GIVEN("Good case - authorization setup response with OK and EIM") {
 
@@ -39,7 +39,7 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::Authorization);
 
-            const auto requests = drain_requests(state_helper.get_message_exchange());
+            const auto requests = take_all_requests(state_helper.get_message_exchange());
             const auto request_message = requests.get<message_20::AuthorizationRequest>();
             REQUIRE(request_message.has_value());
 
@@ -73,7 +73,7 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
             REQUIRE(result.transitioned() == true);
             REQUIRE(fsm.get_current_state_id() == ev::d20::StateID::Authorization);
 
-            const auto requests = drain_requests(state_helper.get_message_exchange());
+            const auto requests = take_all_requests(state_helper.get_message_exchange());
             const auto request_message = requests.get<message_20::AuthorizationRequest>();
             REQUIRE(request_message.has_value());
 
@@ -87,7 +87,7 @@ SCENARIO("ISO15118-20 EV authorization setup state transitions") {
                 std::holds_alternative<message_20::datatypes::EIM_ASReqAuthorizationMode>(request.authorization_mode));
         }
     }
-    // TODO(RB): Add more test cases (bad response codes, unsupported authorization modes,
+    // TODO(mlitre): Add more test cases (bad response codes, unsupported authorization modes,
     // more than one authorization mode, certificate installation service, etc)
 
     GIVEN("Bad case - authorization setup response with FAILED and EIM") {

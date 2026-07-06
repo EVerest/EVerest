@@ -42,7 +42,9 @@ template <> void convert(const AuthorizationRequest& in, iso20_AuthorizationReqT
 
     cb_convert_enum(in.selected_authorization_service, out.SelectedAuthorizationService);
 
-    // Todo(rb): add pnc
+    // TODO(rb): always emits EIM, ignoring in.authorization_mode; a PnC selection still
+    // serializes as EIM. Encode PnC_AReqAuthorizationMode when in.authorization_mode holds
+    // it (pinned by the "OK and PnC" characterization test in fsm/authorization_setup.cpp).
     out.EIM_AReqAuthorizationMode_isUsed = true;
 }
 

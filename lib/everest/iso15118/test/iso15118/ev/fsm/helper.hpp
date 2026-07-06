@@ -5,7 +5,10 @@
 #include <array>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include <everest/util/async/monitor.hpp>
 #include <everest/util/fsm/fsm.hpp>
@@ -25,8 +28,11 @@ inline constexpr auto WRONG_HEADER =
 
 class FsmStateHelper {
 public:
-    FsmStateHelper(const ev::feedback::Callbacks& callbacks) :
-        ctx(callbacks, msg_exch, logger, evcc_id, advertised_app_protocols, control_event, &dc_params) {
+    FsmStateHelper(const ev::feedback::Callbacks& callbacks,
+                   std::vector<message_20::SupportedAppProtocol> protocols = {{"urn:iso:std:iso:15118:-20:DC", 1, 0, 1,
+                                                                               1}}) :
+        advertised_app_protocols(std::move(protocols)),
+        ctx(callbacks, msg_exch, logger, evcc_id, advertised_app_protocols, control_event, dc_params) {
         // Install a no-op session log callback so SessionLogger::event() does not throw bad_function_call
         // when state enter() invokes m_ctx.log.enter_state(...). Tests that need to capture log output
         // override this callback themselves and reset it at the end of the test case.
@@ -47,6 +53,12 @@ public:
     }
 
     template <typename ResponseType> void handle_response(const ResponseType& response) {
+        // Mirror the Session: by the time a response arrives, the request the current
+        // state queued in enter() has already been transmitted (the single request
+        // slot emptied). Take it here so the next state's enter() finds a free slot.
+        while (msg_exch.has_request()) {
+            msg_exch.take_request();
+        }
         msg_exch.set_response(std::make_unique<message_20::Variant>(response));
     }
 
@@ -54,6 +66,12 @@ public:
     void set_dc_params(const ev::DcChargeParams& params) {
         auto h = dc_params.handle();
         *h = params;
+    }
+
+    // Direct access to the module -> FSM DcChargeParams channel (for tests that mutate
+    // live fields through the monitor handle or observe it under concurrency).
+    everest::lib::util::monitor<ev::DcChargeParams>& get_dc_params_monitor() {
+        return dc_params;
     }
 
     // Set the active control event the Context reads via get_control_event<T>().
@@ -80,7 +98,7 @@ private:
     ev::d20::Context ctx;
 };
 
-// The EV's pending requests, decoded the way the pump transmits them: each is popped
+// The EV's pending requests, decoded the way the Session transmits them: each is popped
 // via MessageExchange::take_request() and its EXI bytes round-trip-decoded. Asserting
 // on a decoded request proves it actually serializes, not that a retained copy matches.
 class DecodedRequests {
@@ -118,4 +136,75 @@ private:
 };
 
 // Pop and decode every pending request from the exchange (destructive, FIFO).
-DecodedRequests drain_requests(ev::d20::MessageExchange& msg_exch);
+DecodedRequests take_all_requests(ev::d20::MessageExchange& msg_exch);
+
+// A no-op context seed: the default for states that only need the primed session id.
+inline const auto no_seed = [](FsmStateHelper&) {};
+
+// A primed FSM fixture: owns the state helper, primes the session id to SESSION_HEADER
+// (so response echoes line up), runs `seed(helper)` for per-state context (auth
+// services, DcChargeParams, cert hashes) BEFORE the state is entered, then enters
+// State with any forwarded ctor args. Access the FSM/context/exchange via the public
+// members; the entry request queued by State::enter() is already pending.
+template <typename State> struct PrimedState {
+    template <typename Seed, typename... Args>
+    PrimedState(const ev::feedback::Callbacks& callbacks, Seed seed, Args&&... args) :
+        helper(callbacks), ctx(helper.get_context()), fsm(seed_and_enter(seed, std::forward<Args>(args)...)) {
+    }
+
+    template <typename ResponseType> void handle_response(const ResponseType& response) {
+        helper.handle_response(response);
+    }
+
+    DecodedRequests take_requests() {
+        return take_all_requests(helper.get_message_exchange());
+    }
+
+    auto feed(ev::d20::Event event) {
+        return fsm.feed(event);
+    }
+
+    FsmStateHelper helper;
+    ev::d20::Context& ctx;
+    fsm::v2::FSM<ev::d20::StateBase> fsm;
+
+private:
+    template <typename Seed, typename... Args> ev::d20::BasePointerType seed_and_enter(Seed& seed, Args&&... args) {
+        ctx.get_session().set_id(SESSION_HEADER.session_id);
+        seed(helper);
+        return ctx.create_state<State>(std::forward<Args>(args)...);
+    }
+};
+
+// The three structurally-identical rejection checks shared by every response-consuming
+// state: it stops the session (and stays put) on a FAILED response code, on a
+// wrong-variant response, and on a response whose session id does not echo the EV's.
+// `make_fsm(helper)` seeds a freshly constructed helper and returns the entered FSM;
+// `make_ok(header)` builds the state's otherwise-valid OK response for a given header
+// (its response_code is overwritten to FAILED for that case). Sections keep per-case
+// failure granularity.
+template <typename MakeFsm, typename MakeOk, typename WrongVariant>
+void check_rejection_paths(const ev::feedback::Callbacks& callbacks, ev::d20::StateID expected_id, MakeFsm make_fsm,
+                           MakeOk make_ok, const WrongVariant& wrong_variant) {
+    const auto run = [&](const auto& response) {
+        FsmStateHelper helper{callbacks};
+        auto fsm = make_fsm(helper);
+        helper.handle_response(response);
+        const auto result = fsm.feed(ev::d20::Event::V2GTP_MESSAGE);
+        REQUIRE(result.transitioned() == false);
+        REQUIRE(fsm.get_current_state_id() == expected_id);
+        REQUIRE(helper.get_context().is_session_stopped() == true);
+    };
+
+    SECTION("stops the session on a FAILED response code") {
+        auto res = make_ok(SESSION_HEADER);
+        res.response_code = message_20::datatypes::ResponseCode::FAILED;
+        run(res);
+    }
+    SECTION("stops the session on a wrong-variant response") {
+        run(wrong_variant);
+    }
+    SECTION("stops the session on a mismatched response session_id") {
+        run(make_ok(WRONG_HEADER));
+    }
+}

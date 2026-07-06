@@ -20,7 +20,7 @@ namespace iso15118::ev::transport {
  * Wraps a libio \ref everest::lib::io::tcp::tcp_client to carry the raw V2GTP
  * byte stream to the SECC after \ref SdpClient has discovered its endpoint.
  * The connection is established asynchronously by libio (a detached thread),
- * so the owning reactor must be pumped for the on-connected callback and the
+ * so the owning reactor must be run for the on-connected callback and the
  * I/O to fire.
  *
  * This class exposes the raw bytes only; V2GTP framing lives in
@@ -52,7 +52,7 @@ public:
      * and registers it with the reactor. The connection runs asynchronously;
      * @p on_connected is invoked once when the client becomes ready, while
      * @p on_failed is invoked once on a connect or socket failure. Both
-     * one-shot latches are reset on every @ref connect, so each call gets a
+     * one-shot flags are reset on every @ref connect, so each call gets a
      * fresh single fire of whichever outcome occurs.
      *
      * A second @ref connect tears down any prior registration first, so a
@@ -101,7 +101,7 @@ public:
     bool register_events(everest::lib::io::event::fd_event_handler& handler);
 
 private:
-    // Fire on_failed at most once per connect; latched by failed_fired.
+    // Fire on_failed at most once per connect; guarded by failed_fired.
     void fire_failed();
 
     everest::lib::io::event::fd_event_handler& handler;

@@ -26,7 +26,7 @@ Session::Session(feedback::Callbacks callbacks, OutboundSend outbound_send_, ses
                  everest::lib::util::monitor<DcChargeParams>* dc_params) :
     log(logger),
     context(std::move(callbacks), message_exchange, log, std::move(evcc_id), std::move(advertised_app_protocols),
-            active_control_event, dc_params),
+            active_control_event, (dc_params != nullptr) ? *dc_params : owned_dc_params),
     outbound_send(std::move(outbound_send_)),
     reactor(reactor_),
     timing(timing_) {
@@ -49,13 +49,26 @@ void Session::set_on_finished(std::function<void()> on_finished_) {
     on_finished = std::move(on_finished_);
 }
 
-void Session::start() {
-    // The Controller invokes start() from the data client's on-connected callback,
-    // which runs on the reactor thread (no try/catch around it). The FSM ctor enters
-    // the initial SupportedAppProtocol state (enter() -> respond()/set_request()),
-    // any of which can throw; an escape would kill the reactor thread and the
-    // session would neither finish nor signal. Stop loudly and finish instead.
+template <typename F> void Session::guarded(const char* op, F&& f) {
+    // Single reactor exception boundary. Every reactor-reachable callback reaches
+    // state code (or a consumer callback) that can throw, and the reactor's poll_impl
+    // has no try/catch: an escape would kill the reactor thread, so the session would
+    // neither finish nor signal. Stop loudly on any throw, then finish unconditionally.
     try {
+        f();
+    } catch (const std::exception& e) {
+        logf_error("EV %s failed (%s); stopping the session", op, e.what());
+        context.stop_session();
+    } catch (...) {
+        logf_error("EV %s failed (non-std exception); stopping the session", op);
+        context.stop_session();
+    }
+
+    check_finished();
+}
+
+void Session::start() {
+    guarded("session start", [this]() {
         // Lazily construct the FSM here: its constructor enters the initial
         // SupportedAppProtocol state, which queues the SAP request. Holding it back to
         // start() makes start() the trigger for producing the first request.
@@ -64,15 +77,7 @@ void Session::start() {
         // Uniform timing: the first request is held for the send delay too (connect is
         // treated like any other "request ready" trigger).
         arm_send_delay();
-    } catch (const std::exception& e) {
-        logf_error("EV failed to start the session (%s); stopping the session", e.what());
-        context.stop_session(true);
-    } catch (...) {
-        logf_error("EV start: non-std exception; stopping the session");
-        context.stop_session(true);
-    }
-
-    check_finished();
+    });
 }
 
 void Session::on_bytes_received(const std::vector<uint8_t>& bytes) {
@@ -86,7 +91,7 @@ void Session::on_bytes_received(const std::vector<uint8_t>& bytes) {
         if (state == io::SdpPacket::State::INVALID_HEADER or state == io::SdpPacket::State::PAYLOAD_TOO_LONG) {
             logf_error("EV received a malformed V2GTP frame (SdpPacket state %d); stopping the session",
                        static_cast<int>(state));
-            context.stop_session(true);
+            context.stop_session();
             check_finished();
             return true;
         }
@@ -126,15 +131,19 @@ void Session::on_bytes_received(const std::vector<uint8_t>& bytes) {
 }
 
 void Session::deliver_control_event(const d20::ControlEvent& event) {
-    // The Controller marshals control events onto the reactor thread (via
-    // add_action), which has no try/catch: the FSM feed reaches state code that can
-    // throw, so an escape would kill the reactor thread. Stop loudly and finish.
-    try {
+    guarded("control-event delivery", [&]() {
         // Apply-before-feed: set the active event so states can read it via
-        // get_control_event<T>(), feed CONTROL_MESSAGE, then clear. Per-state handling
-        // of CONTROL_MESSAGE is deferred; this lays the delivery mechanism.
+        // get_control_event<T>(), feed CONTROL_MESSAGE, then clear it on every path
+        // (including a throw) so a stale event cannot leak into a later feed.
         active_control_event = event;
-        // Latch a StopCharging request on the Context so it survives regardless of the
+        struct ClearOnExit {
+            std::optional<d20::ControlEvent>& ev;
+            ~ClearOnExit() {
+                ev.reset();
+            }
+        } clear_on_exit{active_control_event};
+
+        // Record a StopCharging request on the Context so it survives regardless of the
         // FSM state at delivery time (the active event is cleared after this feed).
         if (const auto* stop = std::get_if<d20::StopCharging>(&event); stop != nullptr and *stop) {
             context.set_stop_charging_requested(true);
@@ -142,20 +151,10 @@ void Session::deliver_control_event(const d20::ControlEvent& event) {
         if (fsm.has_value()) {
             fsm->feed(d20::Event::CONTROL_MESSAGE);
         }
-        active_control_event.reset();
         if (message_exchange.has_request()) {
             arm_send_delay();
         }
-    } catch (const std::exception& e) {
-        active_control_event.reset();
-        logf_error("EV failed to deliver a control event (%s); stopping the session", e.what());
-        context.stop_session(true);
-    } catch (...) {
-        active_control_event.reset();
-        logf_error("EV deliver_control_event: non-std exception; stopping the session");
-        context.stop_session(true);
-    }
-    check_finished();
+    });
 }
 
 void Session::handle_complete_frame() {
@@ -168,10 +167,8 @@ void Session::handle_complete_frame() {
 
     // set_response / peek_response_type and the state code reached by feed() can throw
     // (MessageExchange runtime_errors, Variant "Illegal message type access",
-    // std::bad_alloc). on_bytes_received runs straight from the reactor's poll_impl,
-    // which has no try/catch, so an escaping throw would kill the reactor thread and
-    // the session would neither finish nor signal. Stop loudly and finish instead.
-    try {
+    // std::bad_alloc); guarded() stops loudly and finishes on any escape.
+    guarded("V2G response handling", [this]() {
         auto variant = std::make_unique<message_20::Variant>(
             packet.get_payload_type(), io::StreamInputView{packet.get_payload_buffer(), packet.get_payload_length()});
 
@@ -192,17 +189,9 @@ void Session::handle_complete_frame() {
             // armed, so the session would hang silently. Stop loudly instead.
             logf_warning("EV: state consumed a response without producing a request or stopping; "
                          "stopping the session");
-            context.stop_session(true);
+            context.stop_session();
         }
-    } catch (const std::exception& e) {
-        logf_error("EV failed to process a V2G response (%s); stopping the session", e.what());
-        context.stop_session(true);
-    } catch (...) {
-        logf_error("EV handle_complete_frame: non-std exception; stopping the session");
-        context.stop_session(true);
-    }
-
-    check_finished();
+    });
 }
 
 void Session::arm_send_delay() {
@@ -213,10 +202,12 @@ void Session::arm_send_delay() {
                                                         : send_delay_timer.set_timeout(timing.send_delay);
 
     // A failed arm of the send-delay timer means the pending request never
-    // transmits: a silent hang. Stop the session loudly instead.
+    // transmits: a silent hang. Stop the session loudly instead. The request stays
+    // queued but can never be sent, so mark it unsendable to unwedge is_finished().
     if (not armed) {
         logf_error("EV failed to arm the send-delay timer; stopping the session");
-        context.stop_session(true);
+        pending_request_unsendable = true;
+        context.stop_session();
         check_finished();
     }
 }
@@ -231,7 +222,7 @@ void Session::transmit_pending() {
     const auto taken = message_exchange.take_request();
     if (not taken.has_value()) {
         logf_error("EV request encoding failed; stopping the session");
-        context.stop_session(true);
+        context.stop_session();
         check_finished();
         return;
     }
@@ -247,7 +238,7 @@ void Session::transmit_pending() {
     // response timeout. Stop loudly instead.
     if (not outbound_send(std::move(frame))) {
         logf_error("EV failed to send the request frame; stopping the session");
-        context.stop_session(true);
+        context.stop_session();
         check_finished();
         return;
     }
@@ -257,66 +248,40 @@ void Session::transmit_pending() {
     if (not context.is_session_stopped()) {
         if (not watchdog_timer.set_timeout(timing.response_timeout)) {
             logf_error("EV failed to arm the response watchdog; stopping the session");
-            context.stop_session(true);
+            context.stop_session();
             check_finished();
         }
     }
 }
 
 void Session::on_send_delay_expired() {
-    // Timer callbacks run from the reactor's poll_impl, which has no try/catch:
-    // transmit_pending serializes the pending request (take_request already swallows
-    // encode failures), but any other escaping throw would kill the reactor thread.
-    // Stop loudly and finish instead.
-    try {
-        transmit_pending();
-    } catch (const std::exception& e) {
-        logf_error("EV failed to transmit the pending request (%s); stopping the session", e.what());
-        context.stop_session(true);
-    } catch (...) {
-        logf_error("EV on_send_delay_expired: non-std exception; stopping the session");
-        context.stop_session(true);
-    }
-
-    check_finished();
+    guarded("send-delay expiry", [this]() { transmit_pending(); });
 }
 
 void Session::on_watchdog_expired() {
     // No response arrived in time: the session is over regardless of what the FSM does.
-    context.stop_session(true);
+    context.stop_session();
 
-    // The FSM feed reaches state code that can throw, and this runs from the reactor's
-    // poll_impl which has no try/catch. Guard only the FSM feed (and the re-arm of any
-    // final message it produces) so a throw there cannot kill the reactor thread.
-    try {
-        // Let a state react (future states may emit a SessionStop).
+    // Let a state react (future states may emit a SessionStop) and flush any final
+    // message it produces before finishing.
+    guarded("watchdog FSM handling", [this]() {
         if (fsm.has_value()) {
             fsm->feed(d20::Event::FAILED);
         }
-
-        // A state may have produced a final message in response to FAILED; flush it
-        // before finishing.
         if (message_exchange.has_request()) {
             arm_send_delay();
         }
-    } catch (const std::exception& e) {
-        logf_error("EV watchdog FSM handling threw (%s); stopping the session", e.what());
-    } catch (...) {
-        logf_error("EV on_watchdog_expired: non-std exception; stopping the session");
-    }
+    });
 
-    // Signal the timeout exactly once, on every path. timed_out() invokes a
-    // consumer-supplied callback that can throw; keeping it outside the try means it is
-    // never re-run from the catch (which would double-fire it and let a re-throw escape
-    // the catch). A throw here propagates once, as the encode/decode paths do.
-    context.feedback.timed_out();
-
-    check_finished();
+    // Signal the timeout exactly once. timed_out() invokes a consumer-supplied
+    // callback that can throw; a separate guarded step fires it regardless of the FSM
+    // handling above and keeps a throw from escaping into the reactor's poll_impl.
+    guarded("timed-out feedback", [this]() { context.feedback.timed_out(); });
 }
 
 void Session::check_finished() {
     if (is_finished() and not finished_signalled) {
-        // Latch BEFORE the callback so it fires at most once even if it throws: a
+        // Set the flag BEFORE the callback so it fires at most once even if it throws: a
         // re-entry could otherwise double-fire it. on_finished is owner-supplied
         // (the Controller clears `online`) and runs on the reactor thread, which has
         // no try/catch, so guard it the way the other reactor-reachable seams are.
@@ -334,7 +299,9 @@ void Session::check_finished() {
 }
 
 bool Session::is_finished() const {
-    return context.is_session_stopped() and not message_exchange.has_request();
+    // Finished once stopped with nothing left to flush. A request that can never
+    // transmit (send-delay arm failed) must not keep the session wedged open.
+    return context.is_session_stopped() and (pending_request_unsendable or not message_exchange.has_request());
 }
 
 } // namespace iso15118::ev

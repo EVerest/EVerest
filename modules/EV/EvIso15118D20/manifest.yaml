@@ -13,12 +13,6 @@ config:
     description: Response watchdog timeout in milliseconds.
     type: integer
     default: 20000
-  fixed_endpoint:
-    description: >-
-      Reserved for a future fixed-endpoint escape hatch; NOT yet implemented in
-      M0 — SDP discovery is always used.
-    type: string
-    default: ""
 provides:
   ev:
     interface: ISO15118_ev

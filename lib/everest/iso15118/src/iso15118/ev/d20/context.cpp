@@ -9,15 +9,15 @@
 namespace iso15118::ev::d20 {
 
 std::optional<std::pair<std::vector<uint8_t>, io::v2gtp::PayloadType>> MessageExchange::take_request() {
-    if (requests.empty()) {
+    if (not request.has_value()) {
         // A precondition violation: the caller checks has_request() first. Surface it
         // as an error so it is not confused with an encode failure.
         logf_error("take_request called with no pending request");
         return std::nullopt;
     }
 
-    auto entry = std::move(requests.front());
-    requests.pop_front();
+    auto entry = std::move(request.value());
+    request.reset();
 
     try {
         const auto size = entry.serialize(io::StreamOutputView{out_buffer.data(), out_buffer.size()});
@@ -55,14 +55,14 @@ Context::Context(feedback::Callbacks feedback_callbacks, MessageExchange& messag
                  message_20::datatypes::Identifier evcc_id_,
                  std::vector<message_20::SupportedAppProtocol> advertised_app_protocols_,
                  const std::optional<ControlEvent>& current_control_event_,
-                 everest::lib::util::monitor<DcChargeParams>* dc_params_) :
-    advertised_app_protocols(std::move(advertised_app_protocols_)),
+                 everest::lib::util::monitor<DcChargeParams>& dc_params_) :
     feedback(std::move(feedback_callbacks)),
     log(logger),
     message_exchange(message_exchange_),
     evcc_id(std::move(evcc_id_)),
     current_control_event(current_control_event_),
-    dc_params(dc_params_) {
+    dc_params(dc_params_),
+    advertised_app_protocols(std::move(advertised_app_protocols_)) {
 }
 
 std::unique_ptr<message_20::Variant> Context::pull_response() {

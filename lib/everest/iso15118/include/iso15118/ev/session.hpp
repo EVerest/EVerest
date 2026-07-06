@@ -37,7 +37,7 @@ struct SessionTiming {
 };
 
 /**
- * EV-side V2GTP frame pump with timer-driven, decoupled transmission.
+ * EV-side V2GTP frame engine with timer-driven, decoupled transmission.
  *
  * Bridges the raw byte data path (\ref transport::DataClient) and the d20 FSM. It owns
  * the \ref d20::MessageExchange, the \ref d20::Context, the FSM, and two
@@ -51,7 +51,7 @@ struct SessionTiming {
  *    stops the session and fires the \c timed_out feedback.
  *
  * Both the outbound-send seam (a \c std::function) and the reactor injection
- * keep the pump unit-testable: a test pumps a real reactor with short timers,
+ * keep the session unit-testable: a test runs a real reactor with short timers,
  * captures emitted frames and injects responses via \ref on_bytes_received.
  */
 class Session {
@@ -116,13 +116,23 @@ private:
     void on_watchdog_expired();
     void check_finished();
 
+    // Reactor exception boundary: run @p f, on any throw log against @p op and
+    // stop the session (poll_impl has no try/catch), then run check_finished()
+    // unconditionally. Defined in the .cpp. Every reactor-reachable callback routes
+    // through this so a throwing consumer cannot kill the reactor thread.
+    template <typename F> void guarded(const char* op, F&& f);
+
     // Declaration order matters: the MessageExchange, logger, and the control-event
     // optional are referenced by the Context, so they must outlive it (declared
-    // before it). The pump OWNS the control-event optional the Context holds by
+    // before it). The Session OWNS the control-event optional the Context holds by
     // reference (default-initialized to std::nullopt).
     d20::MessageExchange message_exchange;
     session::SessionLogger& log;
     std::optional<d20::ControlEvent> active_control_event;
+    // Fallback DC-params channel used when the owner wires none (e.g. session tests that
+    // never reach a DC state). The Context requires a live monitor reference; declared
+    // before context so it outlives the reference the Context holds.
+    everest::lib::util::monitor<DcChargeParams> owned_dc_params{DcChargeParams{}};
     d20::Context context;
 
     OutboundSend outbound_send;
@@ -134,6 +144,10 @@ private:
 
     std::function<void()> on_finished;
     bool finished_signalled{false};
+
+    // Set when the send-delay timer could not be armed: the pending request can
+    // never transmit, so is_finished() must not keep waiting on it being sent.
+    bool pending_request_unsendable{false};
 
     // The FSM constructs by calling its initial state's enter() in its
     // constructor (fsm.hpp). Holding it lazily defers the SupportedAppProtocol

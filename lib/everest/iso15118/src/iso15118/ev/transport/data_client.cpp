@@ -134,7 +134,7 @@ bool DataClient::register_events(everest::lib::io::event::fd_event_handler& hand
     if (not ok) {
         // Keep the invariant "client non-null <=> registered": a half-registered
         // client must not survive, or a later send() would pass its non-null
-        // guard and buffer bytes into a client the reactor never pumps.
+        // guard and buffer bytes into a client the reactor never runs.
         logf_error("Failed to register the TCP data client with the event handler");
         client.reset();
         return false;

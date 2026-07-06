@@ -4,10 +4,10 @@
 
 #include <array>
 #include <cstdint>
-#include <deque>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -37,20 +37,27 @@ class MessageExchange {
 public:
     MessageExchange() = default;
 
-    // Defer serialization to transmit time. Requests queue in submission order so a
-    // state's request survives the next state's enter().
+    // Defer serialization to transmit time. Exactly one request may be pending: the
+    // session takes it (take_request) before the next response arrives, so depth is
+    // always <= 1. A state that queues a request while one is still pending is a
+    // protocol violation; throwing turns it into a loud session stop at the session's
+    // reactor boundary rather than two requests on the wire.
     template <typename Msg> void set_request(const Msg& msg) {
+        if (request.has_value()) {
+            throw std::logic_error("EV request slot already occupied: a state produced a request while a previous "
+                                   "one is still pending");
+        }
         PendingRequest entry;
         entry.serialize = [msg](io::StreamOutputView view) { return message_20::serialize(msg, view); };
         entry.out_type = message_20::PayloadTypeTrait<Msg>::type;
-        requests.push_back(std::move(entry));
+        request = std::move(entry);
     }
 
     bool has_request() const {
-        return not requests.empty();
+        return request.has_value();
     }
 
-    // Encode the oldest pending request to EXI bytes; std::nullopt on no-request or encode failure.
+    // Encode the pending request to EXI bytes; std::nullopt on no-request or encode failure.
     std::optional<std::pair<std::vector<uint8_t>, io::v2gtp::PayloadType>> take_request();
 
     // Inbound (DECODE).
@@ -66,8 +73,8 @@ private:
         io::v2gtp::PayloadType out_type{io::v2gtp::PayloadType::Part20Main};
     };
 
-    // output: FIFO of pending requests, sent oldest-first across reactor passes.
-    std::deque<PendingRequest> requests;
+    // output: single pending request, taken by the session before the next response.
+    std::optional<PendingRequest> request;
 
     // input: decoded response.
     std::unique_ptr<message_20::Variant> response{nullptr};
@@ -87,7 +94,7 @@ public:
             message_20::datatypes::Identifier evcc_id_,
             std::vector<message_20::SupportedAppProtocol> advertised_app_protocols_,
             const std::optional<ControlEvent>& current_control_event_,
-            everest::lib::util::monitor<DcChargeParams>* dc_params_ = nullptr);
+            everest::lib::util::monitor<DcChargeParams>& dc_params_);
 
     template <typename StateType, typename... Args> BasePointerType create_state(Args&&... args) {
         return std::make_unique<StateType>(*this, std::forward<Args>(args)...);
@@ -100,7 +107,7 @@ public:
         message_exchange.set_request(msg);
     }
 
-    // Control-event seam (mirrors iso15118::d20::Context). The pump owns the
+    // Control-event seam (mirrors iso15118::d20::Context). The Session owns the
     // optional and feeds CONTROL_MESSAGE; states read the active event by type.
     template <typename T> T const* get_control_event() {
         if (not current_control_event.has_value()) {
@@ -112,15 +119,15 @@ public:
         return &std::get<T>(*current_control_event);
     }
 
-    void stop_session(bool stop) {
-        session_stopped = stop;
+    void stop_session() {
+        session_stopped = true;
     }
 
     bool is_session_stopped() const {
         return session_stopped;
     }
 
-    // EV-initiated stop latch. Set once (in any state) and read by DC_ChargeLoop so
+    // EV-initiated stop flag. Set once (in any state) and read by DC_ChargeLoop so
     // a stop requested before that state is entered still drives PowerDelivery(Stop).
     void set_stop_charging_requested(bool requested) {
         stop_charging_requested = requested;
@@ -155,21 +162,22 @@ public:
     }
 
     // Locked-copy snapshot of the EV DC charge params (module -> FSM channel).
-    // Returns a default DcChargeParams when no monitor was wired in.
     DcChargeParams get_dc_params() const {
-        if (dc_params == nullptr) {
-            return {};
-        }
-        auto h = dc_params->handle();
+        auto h = dc_params.handle();
         return *h;
     }
 
-    // Contains the EVSE received data
-    EVSESessionInfo evse_session_info;
+    // EVSE-reported session data, populated by AuthorizationSetup and read by the
+    // Authorization states.
+    EVSESessionInfo& get_evse_session_info() {
+        return evse_session_info;
+    }
 
     // Advertised SupportedAppProtocol list, set from the ctor (config-driven via
     // EvConfig). Read by the SupportedAppProtocol state. Only -20 is wired.
-    std::vector<message_20::SupportedAppProtocol> advertised_app_protocols;
+    const std::vector<message_20::SupportedAppProtocol>& get_advertised_app_protocols() const {
+        return advertised_app_protocols;
+    }
 
     const iso15118::ev::Feedback feedback;
 
@@ -182,10 +190,13 @@ private:
 
     const std::optional<ControlEvent>& current_control_event;
 
-    // Non-owning handle to the module -> FSM DC-params channel; null when unwired
-    // (many tests construct the Context directly). Non-const because acquiring the
-    // monitor lock mutates its mutex; read access is a locked-copy snapshot.
-    everest::lib::util::monitor<DcChargeParams>* dc_params;
+    // Module -> FSM DC-params channel. Non-const because acquiring the monitor lock
+    // mutates its mutex; read access is a locked-copy snapshot.
+    everest::lib::util::monitor<DcChargeParams>& dc_params;
+
+    EVSESessionInfo evse_session_info;
+
+    std::vector<message_20::SupportedAppProtocol> advertised_app_protocols;
 
     SessionId session{std::array<uint8_t, SessionId::ID_LENGTH>{}};
 

@@ -2,31 +2,44 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
-// Shared helpers for the reactor-pump EV session integration tests
-// (session_pump, integration_walk). These drive an ev::Session by framing and
-// injecting V2GTP bytes and pumping a real fd_event_handler reactor. This is the
-// reactor-pump concern; the FSM-unit fixture (fsm/helper.hpp) is separate.
+// Shared helpers for the reactor-driven EV session integration tests
+// (session_reactor, integration_walk). These drive an ev::Session by framing and
+// injecting V2GTP bytes and running a real fd_event_handler reactor. This is the
+// reactor-integration concern; the FSM-unit fixture (fsm/helper.hpp) is separate.
 
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include <arpa/inet.h>
 
+#include <catch2/catch_test_macros.hpp>
+
 #include <cbv2g/exi_v2gtp.h>
 
 #include <everest/io/event/fd_event_handler.hpp>
+#include <everest/util/async/monitor.hpp>
 
 #include <iso15118/io/sdp.hpp>
 #include <iso15118/io/sdp_packet.hpp>
 #include <iso15118/io/stream_view.hpp>
+#include <iso15118/message/common_types.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/message/type.hpp>
 #include <iso15118/message/variant.hpp>
 
+#include <iso15118/ev/dc_charge_params.hpp>
+#include <iso15118/ev/session.hpp>
+#include <iso15118/ev/session/feedback.hpp>
+#include <iso15118/session/logger.hpp>
+
 namespace iso15118::ev::test {
+
+using namespace std::chrono_literals;
 
 // The single -20 DC entry an ev::Session advertises by default (mirrors the
 // EvConfig default); Session no longer defaults this, so ctor sites pass it here.
@@ -65,10 +78,10 @@ inline message_20::Variant decode_frame(const std::vector<uint8_t>& frame) {
                                io::StreamInputView{frame.data() + io::SdpPacket::V2GTP_HEADER_SIZE, payload_len}};
 }
 
-// Pump the reactor (driving the Session's timers) until a predicate holds or a
+// Run the reactor (driving the Session's timers) until a predicate holds or a
 // budget elapses. Returns the final predicate value.
 template <typename Predicate>
-bool pump_until(everest::lib::io::event::fd_event_handler& reactor, Predicate predicate,
+bool run_reactor_until(everest::lib::io::event::fd_event_handler& reactor, Predicate predicate,
                 std::chrono::milliseconds budget) {
     const auto deadline = std::chrono::steady_clock::now() + budget;
     while (not predicate() and std::chrono::steady_clock::now() < deadline) {
@@ -76,6 +89,104 @@ bool pump_until(everest::lib::io::event::fd_event_handler& reactor, Predicate pr
         reactor.run_actions();
     }
     return predicate();
+}
+
+// Owns everything a reactor session test needs: the reactor, the captured outbound
+// frames, the feedback flags, the logger, the DC-params channel and the ev::Session.
+// Replaces the ~20-line construction block the session tests otherwise copy-paste. The
+// wired callbacks and outbound seam capture `this` and read the mutable config members
+// live, so tests set `refuse_send` / `timed_out_throws` after construction and the
+// behavior takes effect when the Session next reaches the seam.
+class SessionFixture {
+public:
+    explicit SessionFixture(message_20::datatypes::Identifier evcc_id = "EVTESTID01",
+                         SessionTiming timing = SessionTiming{5ms, 100ms}, DcChargeParams params = default_params()) :
+        dc_params(std::move(params)),
+        session(make_callbacks(), make_send(), logger, reactor, timing, std::move(evcc_id),
+                default_advertised_app_protocols(), &dc_params) {
+        // A no-op session log sink so a state's enter() logging never throws bad_function_call.
+        session::logging::set_session_log_callback([](std::size_t, const session::logging::Event&) {});
+    }
+
+    ~SessionFixture() {
+        session::logging::set_session_log_callback([](std::size_t, const session::logging::Event&) {});
+    }
+
+    everest::lib::io::event::fd_event_handler reactor;
+    std::vector<std::vector<uint8_t>> captured;
+
+    // Feedback flags, set by the wired callbacks.
+    bool timed_out = false;
+    int timed_out_count = 0;
+    bool ev_power_ready = false;
+    bool dc_power_on = false;
+    bool stop_from_charger = false;
+
+    // Outbound seam observation / control.
+    int send_attempts = 0;
+    bool refuse_send = false;
+
+    // When set, the timed_out callback throws after bumping its count (pins one-shot delivery).
+    bool timed_out_throws = false;
+
+private:
+    static DcChargeParams default_params() {
+        // A realistic precharge target so DC_PreCharge completes on an in-tolerance
+        // present voltage rather than a degenerate 0 V match.
+        DcChargeParams p{};
+        p.target_voltage = 400.0f;
+        return p;
+    }
+
+    feedback::Callbacks make_callbacks() {
+        feedback::Callbacks cb{};
+        cb.timed_out = [this]() {
+            ++timed_out_count;
+            timed_out = true;
+            if (timed_out_throws) {
+                throw std::runtime_error("consumer timed_out callback failure");
+            }
+        };
+        cb.ev_power_ready = [this]() { ev_power_ready = true; };
+        cb.dc_power_on = [this]() { dc_power_on = true; };
+        cb.stop_from_charger = [this]() { stop_from_charger = true; };
+        return cb;
+    }
+
+    Session::OutboundSend make_send() {
+        return [this](std::vector<uint8_t> frame) {
+            ++send_attempts;
+            if (refuse_send) {
+                return false;
+            }
+            captured.push_back(std::move(frame));
+            return true;
+        };
+    }
+
+    session::SessionLogger logger{nullptr};
+    everest::lib::util::monitor<DcChargeParams> dc_params;
+
+public:
+    Session session;
+};
+
+// One walk step: inject a serialized response frame, run the reactor until the Session emits one more
+// request, and assert that request decodes as ExpectedReq. Returns the decoded request
+// for field-level assertions. `step` labels the step so a failure inside the shared
+// REQUIREs still localizes.
+template <typename ExpectedReq, typename ResponseMsg>
+ExpectedReq inject_then_expect(SessionFixture& fx, const char* step, const ResponseMsg& response,
+                               io::v2gtp::PayloadType response_type) {
+    INFO("walk step: " << step);
+    const auto before = fx.captured.size();
+    fx.session.on_bytes_received(frame_payload(response_type, serialize_msg(response)));
+    REQUIRE(run_reactor_until(
+        fx.reactor, [&]() { return fx.captured.size() > before; }, 1s));
+    auto variant = decode_frame(fx.captured.back());
+    const auto* request = variant.get_if<ExpectedReq>();
+    REQUIRE(request != nullptr);
+    return *request;
 }
 
 } // namespace iso15118::ev::test
