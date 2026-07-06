@@ -98,10 +98,15 @@ ISO15118_evImpl::make_ev_config(iso15118::message_20::datatypes::ServiceCategory
     ev_config.advertised_security = iso15118::io::v2gtp::Security::NO_TRANSPORT_SECURITY;
     ev_config.discover = true;
 
+    namespace dt = iso15118::message_20::datatypes;
     ev_config.energy_service = energy_service;
-    if (energy_service == iso15118::message_20::datatypes::ServiceCategory::AC ||
-        energy_service == iso15118::message_20::datatypes::ServiceCategory::AC_DER_IEC) {
+    const bool ac_family = energy_service == dt::ServiceCategory::AC || energy_service == dt::ServiceCategory::AC_BPT ||
+                           energy_service == dt::ServiceCategory::AC_DER_IEC;
+    const bool dc_family = energy_service == dt::ServiceCategory::DC || energy_service == dt::ServiceCategory::DC_BPT;
+    if (ac_family) {
         ev_config.advertised_app_protocols = {{"urn:iso:std:iso:15118:-20:AC", 1, 0, 1, 1}};
+    } else if (dc_family) {
+        ev_config.advertised_app_protocols = {{"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}};
     }
 
     if (energy_service == iso15118::message_20::datatypes::ServiceCategory::AC_DER_IEC) {
@@ -152,6 +157,20 @@ iso15118::ev::feedback::Callbacks ISO15118_evImpl::make_callbacks() {
         EVLOG_info << "EvIso15118D20: AC EVSE limits: max charge power "
                    << dt::from_RationalNumber(limits.max_charge_power) << " W, min charge power "
                    << dt::from_RationalNumber(limits.min_charge_power) << " W";
+    };
+
+    callbacks.ac_bpt_limits = [](const iso15118::message_20::datatypes::BPT_AC_CPDResEnergyTransferMode& limits) {
+        namespace dt = iso15118::message_20::datatypes;
+        EVLOG_info << "EvIso15118D20: AC BPT EVSE limits: max discharge power "
+                   << dt::from_RationalNumber(limits.max_discharge_power) << " W, min discharge power "
+                   << dt::from_RationalNumber(limits.min_discharge_power) << " W";
+    };
+
+    callbacks.dc_bpt_limits = [](const iso15118::message_20::datatypes::BPT_DC_CPDResEnergyTransferMode& limits) {
+        namespace dt = iso15118::message_20::datatypes;
+        EVLOG_info << "EvIso15118D20: DC BPT EVSE limits: max discharge power "
+                   << dt::from_RationalNumber(limits.max_discharge_power) << " W, min discharge power "
+                   << dt::from_RationalNumber(limits.min_discharge_power) << " W";
     };
 
     callbacks.ac_target_power = [this](const iso15118::message_20::datatypes::Dynamic_AC_CLResControlMode& control) {
@@ -265,6 +284,14 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
         energy_service = iso15118::message_20::datatypes::ServiceCategory::AC;
         three_phase = true;
         break;
+    case types::iso15118::EnergyTransferMode::AC_BPT:
+        // AC_BPT carries no phase count; assume a three-phase inverter relay
+        energy_service = iso15118::message_20::datatypes::ServiceCategory::AC_BPT;
+        three_phase = true;
+        break;
+    case types::iso15118::EnergyTransferMode::DC_BPT:
+        energy_service = iso15118::message_20::datatypes::ServiceCategory::DC_BPT;
+        break;
     case types::iso15118::EnergyTransferMode::AC_DER_IEC:
         // AC_DER_IEC carries no phase count; assume a three-phase inverter relay
         energy_service = iso15118::message_20::datatypes::ServiceCategory::AC_DER_IEC;
@@ -273,7 +300,7 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
     default:
         EVLOG_warning << "EvIso15118D20: rejecting start_charging with unsupported EnergyTransferMode '"
                       << types::iso15118::energy_transfer_mode_to_string(EnergyTransferMode)
-                      << "'; only DC, AC single/three-phase and AC DER IEC are supported";
+                      << "'; only DC, DC BPT, AC single/three-phase, AC BPT and AC DER IEC are supported";
         return false;
     }
     {
@@ -283,12 +310,23 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
             return false;
         }
         (*h).energy_service = energy_service;
-        const bool is_ac = energy_service == iso15118::message_20::datatypes::ServiceCategory::AC ||
-                           energy_service == iso15118::message_20::datatypes::ServiceCategory::AC_DER_IEC;
+        namespace dt = iso15118::message_20::datatypes;
+        const bool is_ac = energy_service == dt::ServiceCategory::AC || energy_service == dt::ServiceCategory::AC_BPT ||
+                           energy_service == dt::ServiceCategory::AC_DER_IEC;
         if (is_ac) {
             (*h).ac_params.max_charge_power = static_cast<float>(mod->config.ac_max_charge_power_w);
             (*h).ac_params.min_charge_power = static_cast<float>(mod->config.ac_min_charge_power_w);
             (*h).ac_params.three_phase = three_phase;
+        }
+        if (energy_service == dt::ServiceCategory::AC_BPT) {
+            (*h).ac_params.max_discharge_power = static_cast<float>(mod->config.ac_max_discharge_power_w);
+            (*h).ac_params.min_discharge_power = static_cast<float>(mod->config.ac_min_discharge_power_w);
+        }
+        if (energy_service == dt::ServiceCategory::DC_BPT and not(*h).bpt_dc_params_set) {
+            // set_bpt_dc_params discharge limits win; config knobs are the fallback
+            (*h).dc_params.max_discharge_power = static_cast<float>(mod->config.dc_max_discharge_power_w);
+            (*h).dc_params.min_discharge_power = static_cast<float>(mod->config.dc_min_discharge_power_w);
+            (*h).dc_params.max_discharge_current = static_cast<float>(mod->config.dc_max_discharge_current_a);
         }
         (*h).phase = SessionPhase::requested;
     }
@@ -353,7 +391,42 @@ void ISO15118_evImpl::handle_set_dc_params(types::iso15118::DcEvParameters& EvPa
 }
 
 void ISO15118_evImpl::handle_set_bpt_dc_params(types::iso15118::DcEvBPTParameters& EvBPTParameters) {
-    EVLOG_info << "EvIso15118D20: set_bpt_dc_params: deferred to M1+";
+    EVLOG_info << "EvIso15118D20: set_bpt_dc_params";
+
+    std::string missing;
+    const auto note_missing = [&missing](const char* name, bool present) {
+        if (not present) {
+            missing.append(missing.empty() ? "" : ", ").append(name);
+        }
+    };
+    note_missing("discharge_max_power_limit", EvBPTParameters.discharge_max_power_limit.has_value());
+    note_missing("discharge_max_current_limit", EvBPTParameters.discharge_max_current_limit.has_value());
+    if (not missing.empty()) {
+        EVLOG_warning << "EvIso15118D20: set_bpt_dc_params missing " << missing
+                      << "; keeping configured discharge knobs";
+    }
+
+    // discharge_target_current / discharge_minimal_soc are not consumed by the -20
+    // Dynamic BPT request (reverse power flow is driven by SECC targets); log only
+    if (EvBPTParameters.discharge_target_current) {
+        EVLOG_debug << "EvIso15118D20: ignoring discharge_target_current " << *EvBPTParameters.discharge_target_current
+                    << " A (SECC-target-driven)";
+    }
+    if (EvBPTParameters.discharge_minimal_soc) {
+        EVLOG_debug << "EvIso15118D20: ignoring discharge_minimal_soc " << *EvBPTParameters.discharge_minimal_soc
+                    << " % (SECC-target-driven)";
+    }
+
+    // command values override the config knobs seeded at start_charging
+    auto h = session.handle();
+    (*h).bpt_dc_params_set = true;
+    auto& params = (*h).dc_params;
+    if (EvBPTParameters.discharge_max_power_limit) {
+        params.max_discharge_power = static_cast<float>(*EvBPTParameters.discharge_max_power_limit);
+    }
+    if (EvBPTParameters.discharge_max_current_limit) {
+        params.max_discharge_current = static_cast<float>(*EvBPTParameters.discharge_max_current_limit);
+    }
 }
 
 void ISO15118_evImpl::handle_enable_sae_j2847_v2g_v2h() {

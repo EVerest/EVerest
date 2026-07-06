@@ -51,6 +51,25 @@ SCENARIO("ISO15118-20 EV ScheduleExchange fires ev_power_ready and transitions t
     REQUIRE(primed.ctx.is_session_stopped() == false);
 }
 
+SCENARIO(
+    "ISO15118-20 EV ScheduleExchange fires ev_power_ready and transitions to DC_CableCheck on Finished for DC_BPT") {
+    bool ev_power_ready_fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.ev_power_ready = [&ev_power_ready_fired]() { ev_power_ready_fired = true; };
+    const auto seed_dc_bpt = [](FsmStateHelper& helper) {
+        helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::DC_BPT);
+    };
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, seed_dc_bpt};
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, Processing::Finished));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(ev_power_ready_fired == true);
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_CableCheck);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
 SCENARIO("ISO15118-20 EV ScheduleExchange fires ev_power_ready and transitions to PowerDelivery on Finished for AC") {
     bool ev_power_ready_fired = false;
     ev::feedback::Callbacks callbacks{};
@@ -59,6 +78,25 @@ SCENARIO("ISO15118-20 EV ScheduleExchange fires ev_power_ready and transitions t
         helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::AC);
     };
     PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, seed_ac};
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, Processing::Finished));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(ev_power_ready_fired == true);
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+}
+
+SCENARIO(
+    "ISO15118-20 EV ScheduleExchange fires ev_power_ready and transitions to PowerDelivery on Finished for AC_BPT") {
+    bool ev_power_ready_fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.ev_power_ready = [&ev_power_ready_fired]() { ev_power_ready_fired = true; };
+    const auto seed_ac_bpt = [](FsmStateHelper& helper) {
+        helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::AC_BPT);
+    };
+    PrimedState<ev::d20::state::ScheduleExchange> primed{callbacks, seed_ac_bpt};
 
     primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, Processing::Finished));
     const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);

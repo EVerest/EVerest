@@ -51,6 +51,7 @@ Result ScheduleExchange::feed(Event ev) {
         m_ctx.feedback.ev_power_ready();
         const auto service = m_ctx.selected_service();
         if (service == message_20::datatypes::ServiceCategory::AC or
+            service == message_20::datatypes::ServiceCategory::AC_BPT or
             service == message_20::datatypes::ServiceCategory::AC_DER_IEC) {
             return m_ctx.create_state<PowerDelivery>(message_20::datatypes::Progress::Start);
         }

@@ -144,6 +144,8 @@ public:
     bool dc_power_on = false;
     bool stop_from_charger = false;
     bool ac_limits = false;
+    bool ac_bpt_limits = false;
+    bool dc_bpt_limits = false;
     bool ac_target_power = false;
     bool der_control = false;
 
@@ -176,6 +178,12 @@ private:
         cb.dc_power_on = [this]() { dc_power_on = true; };
         cb.stop_from_charger = [this]() { stop_from_charger = true; };
         cb.ac_limits = [this](const message_20::datatypes::AC_CPDResEnergyTransferMode&) { ac_limits = true; };
+        cb.ac_bpt_limits = [this](const message_20::datatypes::BPT_AC_CPDResEnergyTransferMode&) {
+            ac_bpt_limits = true;
+        };
+        cb.dc_bpt_limits = [this](const message_20::datatypes::BPT_DC_CPDResEnergyTransferMode&) {
+            dc_bpt_limits = true;
+        };
         cb.ac_target_power = [this](const message_20::datatypes::Dynamic_AC_CLResControlMode&) {
             ac_target_power = true;
         };

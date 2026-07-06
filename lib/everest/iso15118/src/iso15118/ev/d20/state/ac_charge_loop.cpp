@@ -13,13 +13,7 @@ namespace {
 
 namespace dt = message_20::datatypes;
 
-message_20::AC_ChargeLoopRequest make_request(const SessionId& session, const AcChargeParams& params) {
-    message_20::AC_ChargeLoopRequest req;
-    setup_header(req.header, session);
-    req.meter_info_requested = false;
-    req.display_parameters = std::nullopt;
-
-    dt::Dynamic_AC_CLReqControlMode mode;
+void fill_dynamic_charge(dt::Dynamic_AC_CLReqControlMode& mode, const AcChargeParams& params) {
     mode.departure_time = std::nullopt;
     mode.target_energy_request = {0, 0};
     mode.max_energy_request = {0, 0};
@@ -36,7 +30,32 @@ message_20::AC_ChargeLoopRequest make_request(const SessionId& session, const Ac
         mode.present_active_power_L2 = mode.present_active_power;
         mode.present_active_power_L3 = mode.present_active_power;
     }
-    req.control_mode = mode;
+}
+
+message_20::AC_ChargeLoopRequest make_request(const SessionId& session, const AcChargeParams& params,
+                                              dt::ServiceCategory service) {
+    message_20::AC_ChargeLoopRequest req;
+    setup_header(req.header, session);
+    req.meter_info_requested = false;
+    req.display_parameters = std::nullopt;
+
+    if (service == dt::ServiceCategory::AC_BPT) {
+        dt::BPT_Dynamic_AC_CLReqControlMode mode;
+        fill_dynamic_charge(mode, params);
+        mode.max_discharge_power = dt::from_float(params.max_discharge_power);
+        mode.min_discharge_power = dt::from_float(params.min_discharge_power);
+        if (params.three_phase) {
+            mode.max_discharge_power_L2 = mode.max_discharge_power;
+            mode.max_discharge_power_L3 = mode.max_discharge_power;
+            mode.min_discharge_power_L2 = mode.min_discharge_power;
+            mode.min_discharge_power_L3 = mode.min_discharge_power;
+        }
+        req.control_mode = mode;
+    } else {
+        dt::Dynamic_AC_CLReqControlMode mode;
+        fill_dynamic_charge(mode, params);
+        req.control_mode = mode;
+    }
 
     return req;
 }
@@ -45,7 +64,7 @@ message_20::AC_ChargeLoopRequest make_request(const SessionId& session, const Ac
 
 void AC_ChargeLoop::enter() {
     m_ctx.log.enter_state("AC_ChargeLoop");
-    m_ctx.respond(make_request(m_ctx.get_session(), m_ctx.get_ac_params()));
+    m_ctx.respond(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.selected_service()));
 }
 
 Result AC_ChargeLoop::feed(Event ev) {
@@ -60,7 +79,10 @@ Result AC_ChargeLoop::feed(Event ev) {
         return {};
     }
 
-    const auto* mode = std::get_if<dt::Dynamic_AC_CLResControlMode>(&res->control_mode);
+    const dt::Dynamic_AC_CLResControlMode* mode =
+        (m_ctx.selected_service() == dt::ServiceCategory::AC_BPT)
+            ? std::get_if<dt::BPT_Dynamic_AC_CLResControlMode>(&res->control_mode)
+            : std::get_if<dt::Dynamic_AC_CLResControlMode>(&res->control_mode);
     if (mode == nullptr) {
         logf_error("AC_ChargeLoopResponse offers a control mode the EV did not request");
         m_ctx.stop_session();
@@ -78,7 +100,7 @@ Result AC_ChargeLoop::feed(Event ev) {
     }
 
     m_ctx.feedback.ac_target_power(*mode);
-    m_ctx.respond(make_request(m_ctx.get_session(), m_ctx.get_ac_params()));
+    m_ctx.respond(make_request(m_ctx.get_session(), m_ctx.get_ac_params(), m_ctx.selected_service()));
     return {};
 }
 

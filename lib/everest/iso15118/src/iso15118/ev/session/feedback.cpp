@@ -45,6 +45,14 @@ void Feedback::ac_limits(const message_20::datatypes::AC_CPDResEnergyTransferMod
     call_if_available(callbacks.ac_limits, mode);
 }
 
+void Feedback::ac_bpt_limits(const message_20::datatypes::BPT_AC_CPDResEnergyTransferMode& mode) const {
+    call_if_available(callbacks.ac_bpt_limits, mode);
+}
+
+void Feedback::dc_bpt_limits(const message_20::datatypes::BPT_DC_CPDResEnergyTransferMode& mode) const {
+    call_if_available(callbacks.dc_bpt_limits, mode);
+}
+
 void Feedback::ac_target_power(const message_20::datatypes::Dynamic_AC_CLResControlMode& mode) const {
     call_if_available(callbacks.ac_target_power, mode);
 }

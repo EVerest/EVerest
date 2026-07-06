@@ -13,6 +13,13 @@ identification means (EIM) authorization. The AC DER IEC service is also
 negotiated (assuming a three-phase inverter relay); received DER directives are
 logged only, as ``ISO15118_ev`` has no DER variable to publish them on.
 
+Bidirectional power transfer (BPT) is negotiated for both AC_BPT and DC_BPT in
+Dynamic control mode. The advertised discharge limits come from the ``*_discharge_*``
+config knobs; ``set_bpt_dc_params`` overrides the DC discharge power and current at
+runtime. AC_BPT assumes a three-phase inverter relay. Reverse power flow itself is
+driven entirely by the SECC's target-power directives; the EVSE's advertised
+discharge limits are logged for visibility.
+
 Configuration
 -------------
 
@@ -78,6 +85,21 @@ Configuration
    * - ``der_stop_on_unsupported_functions``
      - ``true``
      - Stop the session if no AC_DER_IEC parameter set fits the supported DER functions.
+   * - ``ac_max_discharge_power_w``
+     - ``11040``
+     - Advertised AC maximum discharge power in watts (BPT).
+   * - ``ac_min_discharge_power_w``
+     - ``1380``
+     - Advertised AC minimum discharge power in watts (BPT).
+   * - ``dc_max_discharge_power_w``
+     - ``150000``
+     - Advertised DC maximum discharge power in watts (BPT).
+   * - ``dc_min_discharge_power_w``
+     - ``0``
+     - Advertised DC minimum discharge power in watts (BPT).
+   * - ``dc_max_discharge_current_a``
+     - ``300``
+     - Advertised DC maximum discharge current in amperes (BPT).
 
 DER control function negotiation
 --------------------------------
@@ -99,16 +121,18 @@ Limitations
 
 The implementation has a deliberately narrow scope:
 
-- **DC and AC only.** ``start_charging`` accepts DC, AC single/three-phase, and
-  AC DER IEC energy-transfer modes; WPT and MCS sessions are not supported.
+- **DC and AC only.** ``start_charging`` accepts DC, DC BPT, AC single/three-phase,
+  AC BPT, and AC DER IEC energy-transfer modes; WPT and MCS sessions are not
+  supported.
 - **DER directives are log-only.** AC DER IEC directives (target active power,
   DSO Q and cos phi setpoints) are logged, not published, pending an interface
   variable. The three-phase inverter relay use case is assumed.
 - **No TLS.** The session advertises ``NO_TRANSPORT_SECURITY``; Plug & Charge and
   TLS are out of scope.
 - **No pause/resume.** ``pause_charging`` is a no-op.
-- **No BPT / SAE.** Bidirectional power transfer (``set_bpt_dc_params``) and
-  SAE J2847/2 (``enable_sae_j2847_v2g_v2h``) are not implemented.
+- **Dynamic BPT only.** BPT is negotiated in Dynamic control mode; reverse power
+  flow follows SECC targets. SAE J2847/2 (``enable_sae_j2847_v2g_v2h``) is not
+  implemented.
 
 Threading
 ---------

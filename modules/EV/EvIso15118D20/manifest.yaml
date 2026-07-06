@@ -73,6 +73,26 @@ config:
     description: Stop the session if no AC_DER_IEC parameter set fits the supported DER functions.
     type: boolean
     default: true
+  ac_max_discharge_power_w:
+    description: Advertised AC maximum discharge power in watts (BPT).
+    type: number
+    default: 11040
+  ac_min_discharge_power_w:
+    description: Advertised AC minimum discharge power in watts (BPT).
+    type: number
+    default: 1380
+  dc_max_discharge_power_w:
+    description: Advertised DC maximum discharge power in watts (BPT).
+    type: number
+    default: 150000
+  dc_min_discharge_power_w:
+    description: Advertised DC minimum discharge power in watts (BPT).
+    type: number
+    default: 0
+  dc_max_discharge_current_a:
+    description: Advertised DC maximum discharge current in amperes (BPT).
+    type: number
+    default: 300
 provides:
   ev:
     interface: ISO15118_ev

@@ -39,6 +39,30 @@ const auto seed_present_5000 = [](FsmStateHelper& helper) {
     helper.set_ac_params(p);
 };
 
+// A BPT session seeded with discharge limits alongside the charge params.
+const auto seed_bpt_present_5000 = [](FsmStateHelper& helper) {
+    helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::AC_BPT);
+    ev::AcChargeParams p{};
+    p.max_charge_power = 11000.0f;
+    p.min_charge_power = 1000.0f;
+    p.max_discharge_power = 9000.0f;
+    p.min_discharge_power = 500.0f;
+    p.present_active_power = 5000.0f;
+    helper.set_ac_params(p);
+};
+
+message_20::AC_ChargeLoopResponse make_bpt_res(const message_20::Header& header, ResponseCode code,
+                                               std::optional<message_20::datatypes::EvseStatus> status = std::nullopt) {
+    message_20::AC_ChargeLoopResponse res;
+    res.header = header;
+    res.response_code = code;
+    res.status = status;
+    message_20::datatypes::BPT_Dynamic_AC_CLResControlMode mode{};
+    mode.target_active_power = message_20::datatypes::from_float(7000.0f);
+    res.control_mode = mode;
+    return res;
+}
+
 // A stop_from_charger observer wired into the callbacks. Also records whether
 // ac_target_power fired, so stop paths can prove no setpoint was pushed.
 struct StopObserver {
@@ -267,6 +291,170 @@ SCENARIO("ISO15118-20 EV AC_ChargeLoop stops the session on a BPT_Dynamic contro
     REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
     REQUIRE(primed.ctx.is_session_stopped() == true);
     REQUIRE(fired == false);
+}
+
+SCENARIO("ISO15118-20 EV AC_ChargeLoop emits a BPT_Dynamic request with discharge limits for a BPT session") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto seed_single = [](FsmStateHelper& helper) {
+        helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::AC_BPT);
+        ev::AcChargeParams p{};
+        p.max_charge_power = 11000.0f;
+        p.min_charge_power = 1000.0f;
+        p.max_discharge_power = 9000.0f;
+        p.min_discharge_power = 500.0f;
+        p.present_active_power = 5000.0f;
+        p.three_phase = false;
+        helper.set_ac_params(p);
+    };
+    PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, seed_single};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::AC_ChargeLoopRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(
+        std::holds_alternative<message_20::datatypes::BPT_Dynamic_AC_CLReqControlMode>(request_message->control_mode));
+    const auto& mode = std::get<message_20::datatypes::BPT_Dynamic_AC_CLReqControlMode>(request_message->control_mode);
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_charge_power) == Catch::Approx(11000.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_charge_power) == Catch::Approx(1000.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.present_active_power) == Catch::Approx(5000.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.max_discharge_power) == Catch::Approx(9000.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(mode.min_discharge_power) == Catch::Approx(500.0f));
+    // v2x energy request fields are deliberately omitted.
+    REQUIRE_FALSE(mode.max_v2x_energy_request.has_value());
+    REQUIRE_FALSE(mode.min_v2x_energy_request.has_value());
+    // Single-phase: no per-phase discharge fields.
+    REQUIRE_FALSE(mode.max_discharge_power_L2.has_value());
+    REQUIRE_FALSE(mode.max_discharge_power_L3.has_value());
+    REQUIRE_FALSE(mode.min_discharge_power_L2.has_value());
+    REQUIRE_FALSE(mode.min_discharge_power_L3.has_value());
+}
+
+SCENARIO("ISO15118-20 EV AC_ChargeLoop mirrors BPT discharge limits to L2/L3 when three_phase") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto seed_three = [](FsmStateHelper& helper) {
+        helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::AC_BPT);
+        ev::AcChargeParams p{};
+        p.max_charge_power = 11000.0f;
+        p.min_charge_power = 1000.0f;
+        p.max_discharge_power = 9000.0f;
+        p.min_discharge_power = 500.0f;
+        p.present_active_power = 5000.0f;
+        p.three_phase = true;
+        helper.set_ac_params(p);
+    };
+    PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, seed_three};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::AC_ChargeLoopRequest>();
+    REQUIRE(request_message.has_value());
+    const auto& mode = std::get<message_20::datatypes::BPT_Dynamic_AC_CLReqControlMode>(request_message->control_mode);
+    REQUIRE(mode.max_discharge_power_L2.has_value());
+    REQUIRE(mode.max_discharge_power_L3.has_value());
+    REQUIRE(mode.min_discharge_power_L2.has_value());
+    REQUIRE(mode.min_discharge_power_L3.has_value());
+    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.max_discharge_power_L2) == Catch::Approx(9000.0f));
+    REQUIRE(message_20::datatypes::from_RationalNumber(*mode.min_discharge_power_L3) == Catch::Approx(500.0f));
+}
+
+SCENARIO("ISO15118-20 EV AC_ChargeLoop fires ac_target_power on a BPT_Dynamic response for a BPT session") {
+    float reported = 0.0f;
+    bool fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.ac_target_power = [&](const message_20::datatypes::Dynamic_AC_CLResControlMode& mode) {
+        fired = true;
+        reported = message_20::datatypes::from_RationalNumber(mode.target_active_power);
+    };
+    PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, seed_bpt_present_5000};
+
+    primed.handle_response(make_bpt_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(fired == true);
+    REQUIRE(reported == Catch::Approx(7000.0f));
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
+}
+
+SCENARIO("ISO15118-20 EV AC_ChargeLoop stops a BPT session on a plain Dynamic reply it never requested") {
+    bool fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.ac_target_power = [&](const message_20::datatypes::Dynamic_AC_CLResControlMode&) { fired = true; };
+    PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, seed_bpt_present_5000};
+
+    primed.handle_response(make_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == true);
+    REQUIRE(fired == false);
+}
+
+SCENARIO("ISO15118-20 EV AC_ChargeLoop stops a BPT session on a Scheduled reply it never requested") {
+    bool fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.ac_target_power = [&](const message_20::datatypes::Dynamic_AC_CLResControlMode&) { fired = true; };
+    PrimedState<ev::d20::state::AC_ChargeLoop> primed{callbacks, seed_bpt_present_5000};
+
+    auto res = make_bpt_res(SESSION_HEADER, ResponseCode::OK);
+    res.control_mode = message_20::datatypes::Scheduled_AC_CLResControlMode{};
+    primed.handle_response(res);
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::AC_ChargeLoop);
+    REQUIRE(primed.ctx.is_session_stopped() == true);
+    REQUIRE(fired == false);
+}
+
+SCENARIO("ISO15118-20 EV AC_ChargeLoop fires stop_from_charger and drives PowerDelivery(Stop) on Terminate for BPT") {
+    StopObserver obs;
+    PrimedState<ev::d20::state::AC_ChargeLoop> primed{obs.callbacks, seed_bpt_present_5000};
+
+    primed.handle_response(
+        make_bpt_res(SESSION_HEADER, ResponseCode::OK,
+                     message_20::datatypes::EvseStatus{0, message_20::datatypes::EvseNotification::Terminate}));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(obs.fired == true);
+    REQUIRE(obs.ac_target_fired == false);
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+
+    const auto requests = primed.take_requests();
+    const auto pd_request = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(pd_request.has_value());
+    REQUIRE(pd_request->charge_progress == message_20::datatypes::Progress::Stop);
+}
+
+SCENARIO("ISO15118-20 EV AC_ChargeLoop honors a stop request set before the state was entered for AC_BPT") {
+    StopObserver obs;
+    const auto seed_latched_stop = [](FsmStateHelper& helper) {
+        helper.get_context().set_selected_service(message_20::datatypes::ServiceCategory::AC_BPT);
+        ev::AcChargeParams p{};
+        p.max_charge_power = 11000.0f;
+        p.min_charge_power = 1000.0f;
+        p.max_discharge_power = 9000.0f;
+        p.min_discharge_power = 500.0f;
+        p.present_active_power = 5000.0f;
+        helper.set_ac_params(p);
+        helper.get_context().set_stop_charging_requested(true);
+    };
+    PrimedState<ev::d20::state::AC_ChargeLoop> primed{obs.callbacks, seed_latched_stop};
+
+    primed.handle_response(make_bpt_res(SESSION_HEADER, ResponseCode::OK));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
+    REQUIRE(obs.fired == false);
+    REQUIRE(obs.ac_target_fired == false);
+
+    const auto requests = primed.take_requests();
+    const auto pd_request = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(pd_request.has_value());
+    REQUIRE(pd_request->charge_progress == message_20::datatypes::Progress::Stop);
 }
 
 SCENARIO("ISO15118-20 EV AC_ChargeLoop rejects malformed responses") {
