@@ -5,6 +5,7 @@
 -- Removes the single-row restriction so multiple configs can coexist.
 -- Adds CONFIG_ID scoping to MODULE and all its child tables, with cascading deletes
 -- rooted at CONFIG so that deleting a CONFIG row removes everything belonging to it.
+-- fix Mutability and Datatype tables
 
 PRAGMA foreign_keys = OFF;
 
@@ -137,4 +138,15 @@ CREATE TABLE BOOT_CONFIG (
 );
 INSERT INTO BOOT_CONFIG (NEXT_BOOT_SLOT_ID) VALUES (0);
 
+-- 10. MUTABILITY and DATATYPE: Fix ordering to match the framework library enum definition.
+INSERT OR REPLACE INTO MUTABILITY (ID, MUTABILITY) VALUES 
+  (1, "ReadWrite"),
+  (2, "WriteOnly");
+INSERT
+  OR REPLACE INTO DATATYPE VALUES 
+  (0, "unknown"),
+  (1, "string"),
+  (2, "decimal"),
+  (3, "integer"),
+  (4, "boolean");
 PRAGMA foreign_keys = ON;
