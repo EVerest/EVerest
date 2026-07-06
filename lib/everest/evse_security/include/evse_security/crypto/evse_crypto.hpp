@@ -8,6 +8,6 @@
 #ifdef LIBEVSE_CRYPTO_SUPPLIER_OPENSSL
 #include <evse_security/crypto/openssl/openssl_crypto_supplier.hpp>
 namespace evse_security {
-typedef OpenSSLSupplier CryptoSupplier; // Define others with the same 'CryptoSupplier' name
+using CryptoSupplier = OpenSSLSupplier; // Define others with the same 'CryptoSupplier' name
 }
 #endif

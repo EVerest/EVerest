@@ -13,7 +13,7 @@
 namespace evse_security::filesystem_utils {
 
 bool is_subdirectory(const fs::path& base, const fs::path& subdir) {
-    fs::path relativePath = fs::relative(subdir, base);
+    const fs::path relativePath = fs::relative(subdir, base);
     return !relativePath.empty();
 }
 
@@ -56,9 +56,10 @@ bool create_file_if_nonexistent(const fs::path& file_path) {
 
     try {
         if (!fs::exists(file_path)) {
-            std::ofstream file(file_path);
+            const fsstd::ofstream file(file_path);
             return true;
-        } else if (fs::is_directory(file_path)) {
+        }
+        if (fs::is_directory(file_path)) {
             EVLOG_error << "Attempting to create file over existing directory: " << file_path;
             return false;
         }
@@ -82,11 +83,9 @@ bool create_file_or_dir_if_nonexistent(const fs::path& path) {
                 std::ofstream new_file(path.c_str());
                 new_file.close();
                 return true;
-            } else {
-                // Else create a directory
-                fs::create_directories(path);
-                return true;
-            }
+            } // Else create a directory
+            fs::create_directories(path);
+            return true;
         }
     } catch (const std::exception& e) {
         EVLOG_error << "Error while creating dir/file: " << e.what();
@@ -102,7 +101,7 @@ bool write_to_file(const fs::path& file_path, const std::string& data, std::ios:
             EVLOG_error << "Error opening file: " << file_path;
             return false;
         }
-        fs.write(data.c_str(), data.size());
+        fs.write(data.c_str(), static_cast<std::ptrdiff_t>(data.size()));
 
         if (!fs) {
             EVLOG_error << "Error writing to file: " << file_path;
@@ -119,7 +118,7 @@ bool write_to_file(const fs::path& file_path, const std::string& data, std::ios:
 
 bool process_file(const fs::path& file_path, size_t buffer_size,
                   std::function<bool(const std::uint8_t*, std::size_t, bool last_chunk)>&& func) {
-    std::ifstream file(file_path, std::ios::binary);
+    fsstd::ifstream file(file_path, std::ios::binary);
 
     if (!file) {
         EVLOG_error << "Error opening file: " << file_path;
@@ -129,7 +128,8 @@ bool process_file(const fs::path& file_path, size_t buffer_size,
     std::vector<std::uint8_t> buffer(buffer_size);
     bool interupted = false;
 
-    while (file.read(reinterpret_cast<char*>(buffer.data()), buffer_size)) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed for API usage
+    while (file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::ptrdiff_t>(buffer_size))) {
         interupted = func(buffer.data(), buffer_size, false);
 
         if (interupted) {
@@ -139,7 +139,7 @@ bool process_file(const fs::path& file_path, size_t buffer_size,
 
     // Process the remaining bytes
     if (interupted == false) {
-        size_t remaining = file.gcount();
+        const size_t remaining = file.gcount();
         func(buffer.data(), remaining, true);
     }
 
@@ -156,7 +156,7 @@ std::string get_random_file_name(const std::string& extension) {
     std::ostringstream buff;
 
     auto now = std::chrono::system_clock::now();
-    std::time_t time = std::chrono::system_clock::to_time_t(now);
+    const std::time_t time = std::chrono::system_clock::to_time_t(now);
     buff << std::put_time(std::gmtime(&time), "M%m_D%d_Y%Y_H%H_M%M_S%S_") << "i" << std::to_string(++increment) << "_r"
          << distribution(generator) << extension;
 
@@ -166,7 +166,7 @@ std::string get_random_file_name(const std::string& extension) {
 bool read_hash_from_file(const fs::path& file_path, CertificateHashData& out_hash) {
     if (file_path.extension() == CERT_HASH_EXTENSION) {
         try {
-            std::ifstream hs(file_path);
+            fsstd::ifstream hs(file_path);
             std::string algo;
 
             hs >> algo;

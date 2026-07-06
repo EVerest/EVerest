@@ -25,14 +25,13 @@ public:
     /// @brief  If creation from a custom provider is supported
     static bool supports_custom_key_creation();
 
-public: // Key utilities
+    // Key utilities
     static bool generate_key(const KeyGenerationInfo& generation_info, KeyHandle_ptr& out_key);
 
-public:
     /// @brief Loads all certificates from the string data that can contain multiple cetifs
     static std::vector<X509Handle_ptr> load_certificates(const std::string& data, const EncodingFormat encoding);
 
-public: // X509 certificate utilities
+    // X509 certificate utilities
     static std::string x509_to_string(X509Handle* handle);
     static std::string x509_get_responder_url(X509Handle* handle);
     static std::string x509_get_key_hash(X509Handle* handle);
@@ -76,7 +75,7 @@ public: // X509 certificate utilities
     static CertificateSignRequestResult x509_generate_csr(const CertificateSigningRequestInfo& generation_info,
                                                           std::string& out_csr);
 
-public: // Digesting/decoding utils
+    // Digesting/decoding utils
     static bool digest_file_sha256(const fs::path& path, std::vector<std::uint8_t>& out_digest);
 
     static bool base64_decode_to_bytes(const std::string& base64_string, std::vector<std::uint8_t>& out_decoded);

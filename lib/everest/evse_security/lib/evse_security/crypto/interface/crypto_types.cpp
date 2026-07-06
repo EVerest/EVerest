@@ -22,6 +22,8 @@ std::string get_certificate_sign_request_result_to_string(CertificateSignRequest
         return "ExtensionsError";
     case CertificateSignRequestResult::SigningError:
         return "SigningError";
+    case CertificateSignRequestResult::Unknown:
+        break;
     }
 
     throw std::out_of_range("No known string conversion for provided enum of type CertificateSignRequestResult");
