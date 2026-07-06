@@ -16,6 +16,8 @@ struct AcChargeParams {
     // Static: advertised limits.
     float max_charge_power{0.0f};
     float min_charge_power{0.0f};
+    float max_discharge_power{0.0f};
+    float min_discharge_power{0.0f};
 
     // Drives whether the optional L2/L3 phase limits are emitted.
     bool three_phase{false};

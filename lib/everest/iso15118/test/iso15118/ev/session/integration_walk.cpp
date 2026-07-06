@@ -95,6 +95,21 @@ constexpr float AC_MIN_CHARGE_POWER = 1000.0f;
 constexpr float AC_PRESENT_ACTIVE_POWER = 5000.0f;
 constexpr float AC_TARGET_ACTIVE_POWER = 7000.0f;
 
+// Discharge limits seeded for the AC_BPT walk; asserted on the AC_BPT CPD and
+// charge-loop requests.
+constexpr float AC_MAX_DISCHARGE_POWER = 15000.0f;
+constexpr float AC_MIN_DISCHARGE_POWER = 500.0f;
+
+// DC limits seeded into the DC_BPT fixture; charge fields drive the plain DC
+// request slice, discharge fields the BPT extension.
+constexpr float DC_MAX_CHARGE_POWER = 50000.0f;
+constexpr float DC_MAX_CHARGE_CURRENT = 125.0f;
+constexpr float DC_MAX_VOLTAGE = 900.0f;
+constexpr float DC_MIN_VOLTAGE = 200.0f;
+constexpr float DC_MAX_DISCHARGE_POWER = 30000.0f;
+constexpr float DC_MIN_DISCHARGE_POWER = 1000.0f;
+constexpr float DC_MAX_DISCHARGE_CURRENT = 80.0f;
+
 // A ServiceDetail parameter set carrying a named ControlMode, mirroring the SECC's
 // EXI encoding the EV honest-selects on. The ServiceDetail state requires a Dynamic
 // set to advance.
@@ -647,6 +662,370 @@ message_20::DER_AC_ChargeLoopResponse make_der_loop_res(const message_20::dataty
 }
 
 // Walk an AC_DER_IEC-configured ev::Session from start() up to the emitted
+ev::AcChargeParams ac_bpt_seed_params() {
+    auto p = ac_seed_params();
+    p.max_discharge_power = AC_MAX_DISCHARGE_POWER;
+    p.min_discharge_power = AC_MIN_DISCHARGE_POWER;
+    return p;
+}
+
+// DC charge params seeded with charge and discharge fields for the DC_BPT walk.
+// target_voltage matches the injected DC_PreChargeResponse present voltage so
+// precharge converges in one step, mirroring the plain-DC walk.
+ev::DcChargeParams dc_bpt_seed_params() {
+    ev::DcChargeParams p{};
+    p.max_charge_power = DC_MAX_CHARGE_POWER;
+    p.max_charge_current = DC_MAX_CHARGE_CURRENT;
+    p.max_voltage = DC_MAX_VOLTAGE;
+    p.min_voltage = DC_MIN_VOLTAGE;
+    p.max_discharge_power = DC_MAX_DISCHARGE_POWER;
+    p.min_discharge_power = DC_MIN_DISCHARGE_POWER;
+    p.max_discharge_current = DC_MAX_DISCHARGE_CURRENT;
+    p.target_voltage = 400.0f;
+    return p;
+}
+
+// Walk an AC_BPT-configured ev::Session from start() through the first BPT AC_ChargeLoop
+// request. Service id 5 routes through AC parameter-discovery and charge-loop states with
+// the BPT request variants, past the DC-only path exactly like plain AC:
+// ScheduleExchange -> PowerDelivery(Start) -> AC_ChargeLoop (BPT). Returns the session id.
+message_20::datatypes::SessionId walk_to_ac_bpt_charge_loop(SessionFixture& fx) {
+    const auto sid = WALK_SESSION_ID;
+    using SC = message_20::datatypes::ServiceCategory;
+
+    fx.session.start();
+    REQUIRE(run_reactor_until(
+        fx.reactor, [&]() { return fx.captured.size() >= 1; }, 1s));
+    REQUIRE(decode_frame(fx.captured.back()).get_if<message_20::SupportedAppProtocolRequest>() != nullptr);
+
+    inject_then_expect<message_20::SessionSetupRequest>(
+        fx, "SAP -> SessionSetup",
+        message_20::SupportedAppProtocolResponse{
+            message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation, 1},
+        PT::SAP);
+
+    message_20::SessionSetupResponse setup_res{};
+    setup_res.response_code = ResponseCode::OK_NewSessionEstablished;
+    setup_res.header.session_id = sid;
+    setup_res.evseid = "DE*PNX*E12345";
+    inject_then_expect<message_20::AuthorizationSetupRequest>(fx, "SessionSetup -> AuthorizationSetup", setup_res,
+                                                              PT::Part20Main);
+
+    message_20::AuthorizationSetupResponse auth_setup_res{};
+    auth_setup_res.header.session_id = sid;
+    auth_setup_res.response_code = ResponseCode::OK;
+    auth_setup_res.authorization_services = {message_20::datatypes::Authorization::EIM};
+    auth_setup_res.certificate_installation_service = false;
+    auth_setup_res.authorization_mode = message_20::datatypes::EIM_ASResAuthorizationMode{};
+    inject_then_expect<message_20::AuthorizationRequest>(fx, "AuthorizationSetup -> Authorization", auth_setup_res,
+                                                         PT::Part20Main);
+
+    message_20::AuthorizationResponse auth_res{};
+    auth_res.header.session_id = sid;
+    auth_res.response_code = ResponseCode::OK;
+    auth_res.evse_processing = Processing::Finished;
+    inject_then_expect<message_20::ServiceDiscoveryRequest>(fx, "Authorization -> ServiceDiscovery", auth_res,
+                                                            PT::Part20Main);
+
+    // ServiceDiscoveryResponse offering the AC_BPT service (id 5) -> ServiceDetailRequest.
+    message_20::ServiceDiscoveryResponse discovery_res{};
+    discovery_res.header.session_id = sid;
+    discovery_res.response_code = ResponseCode::OK;
+    discovery_res.energy_transfer_service_list = {{SC::AC_BPT, false}};
+    {
+        const auto req = inject_then_expect<message_20::ServiceDetailRequest>(fx, "ServiceDiscovery -> ServiceDetail",
+                                                                              discovery_res, PT::Part20Main);
+        REQUIRE(req.service == message_20::to_underlying_value(SC::AC_BPT));
+    }
+
+    // ServiceDetailResponse with a Dynamic parameter set -> ServiceSelectionRequest.
+    message_20::ServiceDetailResponse detail_res{};
+    detail_res.header.session_id = sid;
+    detail_res.response_code = ResponseCode::OK;
+    detail_res.service = message_20::to_underlying_value(SC::AC_BPT);
+    detail_res.service_parameter_list = {make_param_set(5, ControlMode::Dynamic)};
+    {
+        const auto req = inject_then_expect<message_20::ServiceSelectionRequest>(
+            fx, "ServiceDetail -> ServiceSelection", detail_res, PT::Part20Main);
+        REQUIRE(req.selected_energy_transfer_service.service_id == SC::AC_BPT);
+        REQUIRE(req.selected_energy_transfer_service.parameter_set_id == 5);
+    }
+
+    // ServiceSelectionResponse(OK) -> AC_ChargeParameterDiscoveryRequest carrying the BPT
+    // request variant with the seeded charge and discharge limits.
+    message_20::ServiceSelectionResponse selection_res{};
+    selection_res.header.session_id = sid;
+    selection_res.response_code = ResponseCode::OK;
+    {
+        const auto req = inject_then_expect<message_20::AC_ChargeParameterDiscoveryRequest>(
+            fx, "ServiceSelection -> AC_ChargeParameterDiscovery", selection_res, PT::Part20Main);
+        REQUIRE(req.header.session_id == sid);
+        const auto* mode = std::get_if<message_20::datatypes::BPT_AC_CPDReqEnergyTransferMode>(&req.transfer_mode);
+        REQUIRE(mode != nullptr);
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_charge_power) ==
+                Catch::Approx(AC_MAX_CHARGE_POWER));
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_power) ==
+                Catch::Approx(AC_MAX_DISCHARGE_POWER));
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_discharge_power) ==
+                Catch::Approx(AC_MIN_DISCHARGE_POWER));
+    }
+
+    // BPT AC_ChargeParameterDiscoveryResponse(OK) -> ScheduleExchangeRequest; fires ac_bpt_limits.
+    REQUIRE_FALSE(fx.ac_bpt_limits);
+    message_20::AC_ChargeParameterDiscoveryResponse cpd_res{};
+    cpd_res.header.session_id = sid;
+    cpd_res.response_code = ResponseCode::OK;
+    {
+        message_20::datatypes::BPT_AC_CPDResEnergyTransferMode mode{};
+        mode.max_charge_power = message_20::datatypes::from_float(AC_MAX_CHARGE_POWER);
+        mode.min_charge_power = message_20::datatypes::from_float(AC_MIN_CHARGE_POWER);
+        mode.nominal_frequency = message_20::datatypes::from_float(50.0f);
+        mode.max_discharge_power = message_20::datatypes::from_float(AC_MAX_DISCHARGE_POWER);
+        mode.min_discharge_power = message_20::datatypes::from_float(AC_MIN_DISCHARGE_POWER);
+        cpd_res.transfer_mode = mode;
+    }
+    {
+        const auto req = inject_then_expect<message_20::ScheduleExchangeRequest>(
+            fx, "AC_ChargeParameterDiscovery -> ScheduleExchange", cpd_res, PT::Part20AC);
+        REQUIRE(req.header.session_id == sid);
+    }
+    REQUIRE(fx.ac_bpt_limits);
+    REQUIRE_FALSE(fx.ac_limits);
+
+    // ScheduleExchangeResponse(OK, Finished) -> PowerDeliveryRequest(Start); the Start
+    // progress (not a DC_CableCheckRequest) is the AC routing assertion.
+    message_20::ScheduleExchangeResponse schedule_res{};
+    schedule_res.header.session_id = sid;
+    schedule_res.response_code = ResponseCode::OK;
+    schedule_res.processing = Processing::Finished;
+    {
+        const auto req = inject_then_expect<message_20::PowerDeliveryRequest>(
+            fx, "ScheduleExchange -> PowerDelivery(Start)", schedule_res, PT::Part20Main);
+        REQUIRE(req.charge_progress == message_20::datatypes::Progress::Start);
+    }
+
+    // PowerDeliveryResponse(OK) -> AC_ChargeLoopRequest carrying the BPT Dynamic control mode.
+    message_20::PowerDeliveryResponse power_delivery_res{};
+    power_delivery_res.header.session_id = sid;
+    power_delivery_res.response_code = ResponseCode::OK;
+    {
+        const auto req = inject_then_expect<message_20::AC_ChargeLoopRequest>(fx, "PowerDelivery -> AC_ChargeLoop",
+                                                                              power_delivery_res, PT::Part20Main);
+        REQUIRE(req.header.session_id == sid);
+        const auto* mode = std::get_if<message_20::datatypes::BPT_Dynamic_AC_CLReqControlMode>(&req.control_mode);
+        REQUIRE(mode != nullptr);
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->present_active_power) ==
+                Catch::Approx(AC_PRESENT_ACTIVE_POWER));
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_power) ==
+                Catch::Approx(AC_MAX_DISCHARGE_POWER));
+    }
+
+    return sid;
+}
+
+// A BPT AC_ChargeLoopResponse carrying a BPT Dynamic control mode with a target set so the
+// ac_target_power feedback (reading the base Dynamic slice) is meaningful.
+message_20::AC_ChargeLoopResponse make_ac_bpt_loop_res(const message_20::datatypes::SessionId& sid) {
+    message_20::AC_ChargeLoopResponse res{};
+    res.header.session_id = sid;
+    res.response_code = ResponseCode::OK;
+    message_20::datatypes::BPT_Dynamic_AC_CLResControlMode mode{};
+    mode.target_active_power = message_20::datatypes::from_float(AC_TARGET_ACTIVE_POWER);
+    res.control_mode = mode;
+    return res;
+}
+
+// Walk a DC_BPT-configured ev::Session from start() through the first BPT DC_ChargeLoop
+// request. Service id 6 uses the BPT request variants for parameter discovery and the
+// charge loop; cable-check and precharge stay the plain DC requests: ScheduleExchange ->
+// DC_CableCheck -> DC_PreCharge -> PowerDelivery(Start) -> DC_ChargeLoop (BPT).
+message_20::datatypes::SessionId walk_to_dc_bpt_charge_loop(SessionFixture& fx) {
+    const auto sid = WALK_SESSION_ID;
+    using SC = message_20::datatypes::ServiceCategory;
+
+    fx.session.start();
+    REQUIRE(run_reactor_until(
+        fx.reactor, [&]() { return fx.captured.size() >= 1; }, 1s));
+    REQUIRE(decode_frame(fx.captured.back()).get_if<message_20::SupportedAppProtocolRequest>() != nullptr);
+
+    inject_then_expect<message_20::SessionSetupRequest>(
+        fx, "SAP -> SessionSetup",
+        message_20::SupportedAppProtocolResponse{
+            message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation, 1},
+        PT::SAP);
+
+    message_20::SessionSetupResponse setup_res{};
+    setup_res.response_code = ResponseCode::OK_NewSessionEstablished;
+    setup_res.header.session_id = sid;
+    setup_res.evseid = "DE*PNX*E12345";
+    inject_then_expect<message_20::AuthorizationSetupRequest>(fx, "SessionSetup -> AuthorizationSetup", setup_res,
+                                                              PT::Part20Main);
+
+    message_20::AuthorizationSetupResponse auth_setup_res{};
+    auth_setup_res.header.session_id = sid;
+    auth_setup_res.response_code = ResponseCode::OK;
+    auth_setup_res.authorization_services = {message_20::datatypes::Authorization::EIM};
+    auth_setup_res.certificate_installation_service = false;
+    auth_setup_res.authorization_mode = message_20::datatypes::EIM_ASResAuthorizationMode{};
+    inject_then_expect<message_20::AuthorizationRequest>(fx, "AuthorizationSetup -> Authorization", auth_setup_res,
+                                                         PT::Part20Main);
+
+    message_20::AuthorizationResponse auth_res{};
+    auth_res.header.session_id = sid;
+    auth_res.response_code = ResponseCode::OK;
+    auth_res.evse_processing = Processing::Finished;
+    inject_then_expect<message_20::ServiceDiscoveryRequest>(fx, "Authorization -> ServiceDiscovery", auth_res,
+                                                            PT::Part20Main);
+
+    // ServiceDiscoveryResponse offering the DC_BPT service (id 6) -> ServiceDetailRequest.
+    message_20::ServiceDiscoveryResponse discovery_res{};
+    discovery_res.header.session_id = sid;
+    discovery_res.response_code = ResponseCode::OK;
+    discovery_res.energy_transfer_service_list = {{SC::DC_BPT, false}};
+    {
+        const auto req = inject_then_expect<message_20::ServiceDetailRequest>(fx, "ServiceDiscovery -> ServiceDetail",
+                                                                              discovery_res, PT::Part20Main);
+        REQUIRE(req.service == message_20::to_underlying_value(SC::DC_BPT));
+    }
+
+    // ServiceDetailResponse with a Dynamic parameter set -> ServiceSelectionRequest.
+    message_20::ServiceDetailResponse detail_res{};
+    detail_res.header.session_id = sid;
+    detail_res.response_code = ResponseCode::OK;
+    detail_res.service = message_20::to_underlying_value(SC::DC_BPT);
+    detail_res.service_parameter_list = {make_param_set(6, ControlMode::Dynamic)};
+    {
+        const auto req = inject_then_expect<message_20::ServiceSelectionRequest>(
+            fx, "ServiceDetail -> ServiceSelection", detail_res, PT::Part20Main);
+        REQUIRE(req.selected_energy_transfer_service.service_id == SC::DC_BPT);
+        REQUIRE(req.selected_energy_transfer_service.parameter_set_id == 6);
+    }
+
+    // ServiceSelectionResponse(OK) -> DC_ChargeParameterDiscoveryRequest carrying the BPT
+    // request variant with the seeded charge and discharge limits.
+    message_20::ServiceSelectionResponse selection_res{};
+    selection_res.header.session_id = sid;
+    selection_res.response_code = ResponseCode::OK;
+    {
+        const auto req = inject_then_expect<message_20::DC_ChargeParameterDiscoveryRequest>(
+            fx, "ServiceSelection -> DC_ChargeParameterDiscovery", selection_res, PT::Part20Main);
+        REQUIRE(req.header.session_id == sid);
+        const auto* mode = std::get_if<message_20::datatypes::BPT_DC_CPDReqEnergyTransferMode>(&req.transfer_mode);
+        REQUIRE(mode != nullptr);
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_charge_power) ==
+                Catch::Approx(DC_MAX_CHARGE_POWER));
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_charge_current) ==
+                Catch::Approx(DC_MAX_CHARGE_CURRENT));
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_voltage) == Catch::Approx(DC_MAX_VOLTAGE));
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_voltage) == Catch::Approx(DC_MIN_VOLTAGE));
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_power) ==
+                Catch::Approx(DC_MAX_DISCHARGE_POWER));
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->min_discharge_power) ==
+                Catch::Approx(DC_MIN_DISCHARGE_POWER));
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_current) ==
+                Catch::Approx(DC_MAX_DISCHARGE_CURRENT));
+    }
+
+    // BPT DC_ChargeParameterDiscoveryResponse(OK) -> ScheduleExchangeRequest; fires dc_bpt_limits.
+    REQUIRE_FALSE(fx.dc_bpt_limits);
+    message_20::DC_ChargeParameterDiscoveryResponse cpd_res{};
+    cpd_res.header.session_id = sid;
+    cpd_res.response_code = ResponseCode::OK;
+    {
+        message_20::datatypes::BPT_DC_CPDResEnergyTransferMode mode{};
+        mode.max_charge_power = message_20::datatypes::from_float(DC_MAX_CHARGE_POWER);
+        mode.min_charge_power = message_20::datatypes::from_float(0.0f);
+        mode.max_charge_current = message_20::datatypes::from_float(DC_MAX_CHARGE_CURRENT);
+        mode.min_charge_current = message_20::datatypes::from_float(0.0f);
+        mode.max_voltage = message_20::datatypes::from_float(DC_MAX_VOLTAGE);
+        mode.min_voltage = message_20::datatypes::from_float(DC_MIN_VOLTAGE);
+        mode.max_discharge_power = message_20::datatypes::from_float(DC_MAX_DISCHARGE_POWER);
+        mode.min_discharge_power = message_20::datatypes::from_float(DC_MIN_DISCHARGE_POWER);
+        mode.max_discharge_current = message_20::datatypes::from_float(DC_MAX_DISCHARGE_CURRENT);
+        mode.min_discharge_current = message_20::datatypes::from_float(0.0f);
+        cpd_res.transfer_mode = mode;
+    }
+    {
+        const auto req = inject_then_expect<message_20::ScheduleExchangeRequest>(
+            fx, "DC_ChargeParameterDiscovery -> ScheduleExchange", cpd_res, PT::Part20DC);
+        REQUIRE(req.header.session_id == sid);
+    }
+    REQUIRE(fx.dc_bpt_limits);
+    REQUIRE_FALSE(fx.ac_bpt_limits);
+
+    // ScheduleExchangeResponse(OK, Finished) -> DC_CableCheckRequest.
+    message_20::ScheduleExchangeResponse schedule_res{};
+    schedule_res.header.session_id = sid;
+    schedule_res.response_code = ResponseCode::OK;
+    schedule_res.processing = Processing::Finished;
+    {
+        const auto req = inject_then_expect<message_20::DC_CableCheckRequest>(fx, "ScheduleExchange -> DC_CableCheck",
+                                                                              schedule_res, PT::Part20Main);
+        REQUIRE(req.header.session_id == sid);
+    }
+
+    // DC_CableCheckResponse(OK, Finished) -> DC_PreChargeRequest(Ongoing).
+    message_20::DC_CableCheckResponse cable_check_res{};
+    cable_check_res.header.session_id = sid;
+    cable_check_res.response_code = ResponseCode::OK;
+    cable_check_res.processing = Processing::Finished;
+    {
+        const auto req = inject_then_expect<message_20::DC_PreChargeRequest>(fx, "DC_CableCheck -> DC_PreCharge",
+                                                                             cable_check_res, PT::Part20DC);
+        REQUIRE(req.header.session_id == sid);
+        REQUIRE(req.processing == Processing::Ongoing);
+    }
+
+    // DC_PreChargeResponse(OK, in-tolerance) -> PowerDeliveryRequest(Start).
+    message_20::DC_PreChargeResponse pre_charge_res{};
+    pre_charge_res.header.session_id = sid;
+    pre_charge_res.response_code = ResponseCode::OK;
+    pre_charge_res.present_voltage = message_20::datatypes::from_float(400.0f);
+    {
+        const auto req = inject_then_expect<message_20::PowerDeliveryRequest>(
+            fx, "DC_PreCharge -> PowerDelivery(Start)", pre_charge_res, PT::Part20DC);
+        REQUIRE(req.header.session_id == sid);
+        REQUIRE(req.charge_progress == message_20::datatypes::Progress::Start);
+    }
+
+    // PowerDeliveryResponse(OK) -> DC_ChargeLoopRequest carrying the BPT Dynamic control mode.
+    message_20::PowerDeliveryResponse power_delivery_res{};
+    power_delivery_res.header.session_id = sid;
+    power_delivery_res.response_code = ResponseCode::OK;
+    {
+        const auto req = inject_then_expect<message_20::DC_ChargeLoopRequest>(fx, "PowerDelivery -> DC_ChargeLoop",
+                                                                              power_delivery_res, PT::Part20Main);
+        REQUIRE(req.header.session_id == sid);
+        const auto* mode = std::get_if<message_20::datatypes::BPT_Dynamic_DC_CLReqControlMode>(&req.control_mode);
+        REQUIRE(mode != nullptr);
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_power) ==
+                Catch::Approx(DC_MAX_DISCHARGE_POWER));
+        REQUIRE(message_20::datatypes::from_RationalNumber(mode->max_discharge_current) ==
+                Catch::Approx(DC_MAX_DISCHARGE_CURRENT));
+    }
+
+    return sid;
+}
+
+// A BPT DC_ChargeLoopResponse carrying a BPT Dynamic control mode. The DC loop fires no
+// per-response feedback; the variant match is what advances the walk.
+message_20::DC_ChargeLoopResponse make_dc_bpt_loop_res(const message_20::datatypes::SessionId& sid) {
+    message_20::DC_ChargeLoopResponse res{};
+    res.header.session_id = sid;
+    res.response_code = ResponseCode::OK;
+    message_20::datatypes::BPT_Dynamic_DC_CLResControlMode mode{};
+    mode.max_charge_power = message_20::datatypes::from_float(DC_MAX_CHARGE_POWER);
+    mode.min_charge_power = message_20::datatypes::from_float(0.0f);
+    mode.max_charge_current = message_20::datatypes::from_float(DC_MAX_CHARGE_CURRENT);
+    mode.max_voltage = message_20::datatypes::from_float(DC_MAX_VOLTAGE);
+    mode.min_voltage = message_20::datatypes::from_float(DC_MIN_VOLTAGE);
+    mode.max_discharge_power = message_20::datatypes::from_float(DC_MAX_DISCHARGE_POWER);
+    mode.min_discharge_power = message_20::datatypes::from_float(DC_MIN_DISCHARGE_POWER);
+    mode.max_discharge_current = message_20::datatypes::from_float(DC_MAX_DISCHARGE_CURRENT);
+    res.control_mode = mode;
+    return res;
+}
+
 // ServiceDetailRequest, so a scenario can then inject a tailored ServiceDetailResponse.
 message_20::datatypes::SessionId walk_to_ac_der_iec_service_detail(SessionFixture& fx) {
     const auto sid = WALK_SESSION_ID;
@@ -949,6 +1328,87 @@ SCENARIO("ISO15118-20 EV Session stops cleanly when the only AC_DER_IEC set dema
                 REQUIRE(fx.session.is_finished());
                 REQUIRE_FALSE(fx.timed_out);
                 REQUIRE(fx.captured.size() == before);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Session drives a full AC_BPT session through the BPT charge loop to SessionStop") {
+
+    GIVEN("An AC_BPT-configured Session bound to a reactor with short send-delay and watchdog timers") {
+        SessionFixture fx{"EVTESTID01",
+                       ev::SessionTiming{5ms, 100ms},
+                       ev::DcChargeParams{},
+                       default_advertised_ac_app_protocols(),
+                       message_20::datatypes::ServiceCategory::AC_BPT,
+                       ac_bpt_seed_params()};
+
+        WHEN("the session is walked to an active BPT AC_ChargeLoop and the SECC then signals Terminate") {
+            const auto sid = walk_to_ac_bpt_charge_loop(fx);
+
+            REQUIRE(fx.captured.size() == 11);
+            REQUIRE_FALSE(fx.session.is_finished());
+            REQUIRE_FALSE(fx.timed_out);
+
+            // BPT AC_ChargeLoopResponse(OK, Dynamic target) -> AC_ChargeLoopRequest; fires ac_target_power.
+            REQUIRE_FALSE(fx.ac_target_power);
+            inject_then_expect<message_20::AC_ChargeLoopRequest>(fx, "AC_ChargeLoop OK -> AC_ChargeLoop",
+                                                                 make_ac_bpt_loop_res(sid), PT::Part20AC);
+            REQUIRE(fx.ac_target_power);
+            REQUIRE_FALSE(fx.stop_from_charger);
+
+            // BPT AC_ChargeLoopResponse(OK, Terminate) -> PowerDeliveryRequest(Stop); fires stop_from_charger.
+            auto loop_terminate = make_ac_bpt_loop_res(sid);
+            loop_terminate.status =
+                message_20::datatypes::EvseStatus{0, message_20::datatypes::EvseNotification::Terminate};
+            {
+                const auto req = inject_then_expect<message_20::PowerDeliveryRequest>(
+                    fx, "AC_ChargeLoop Terminate -> PowerDelivery(Stop)", loop_terminate, PT::Part20AC);
+                REQUIRE(req.charge_progress == message_20::datatypes::Progress::Stop);
+            }
+            REQUIRE(fx.stop_from_charger);
+
+            THEN("PowerDelivery(Stop) walks straight to SessionStop, skipping WeldingDetection") {
+                walk_ac_stop_to_finish(fx, sid);
+                REQUIRE(fx.stop_from_charger);
+            }
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 EV Session drives a full DC_BPT session through the BPT charge loop to SessionStop") {
+
+    GIVEN("A DC_BPT-configured Session bound to a reactor with short send-delay and watchdog timers") {
+        SessionFixture fx{"EVTESTID01", ev::SessionTiming{5ms, 100ms}, dc_bpt_seed_params(),
+                       default_advertised_app_protocols(), message_20::datatypes::ServiceCategory::DC_BPT};
+
+        WHEN("the session is walked to an active BPT DC_ChargeLoop and the SECC then signals Terminate") {
+            const auto sid = walk_to_dc_bpt_charge_loop(fx);
+
+            REQUIRE(fx.captured.size() == 13);
+            REQUIRE_FALSE(fx.session.is_finished());
+            REQUIRE_FALSE(fx.timed_out);
+
+            // BPT DC_ChargeLoopResponse(OK, no Terminate) -> DC_ChargeLoopRequest (loop continues).
+            REQUIRE_FALSE(fx.stop_from_charger);
+            inject_then_expect<message_20::DC_ChargeLoopRequest>(fx, "DC_ChargeLoop OK -> DC_ChargeLoop",
+                                                                 make_dc_bpt_loop_res(sid), PT::Part20DC);
+            REQUIRE_FALSE(fx.stop_from_charger);
+
+            // BPT DC_ChargeLoopResponse(OK, Terminate) -> PowerDeliveryRequest(Stop); fires stop_from_charger.
+            auto loop_terminate = make_dc_bpt_loop_res(sid);
+            loop_terminate.status =
+                message_20::datatypes::EvseStatus{0, message_20::datatypes::EvseNotification::Terminate};
+            {
+                const auto req = inject_then_expect<message_20::PowerDeliveryRequest>(
+                    fx, "DC_ChargeLoop Terminate -> PowerDelivery(Stop)", loop_terminate, PT::Part20DC);
+                REQUIRE(req.charge_progress == message_20::datatypes::Progress::Stop);
+            }
+            REQUIRE(fx.stop_from_charger);
+
+            THEN("PowerDelivery(Stop) walks through DC_WeldingDetection to a clean SessionStop") {
+                walk_stop_to_finish(fx, sid);
+                REQUIRE(fx.stop_from_charger);
             }
         }
     }
