@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <boost/program_options/variables_map.hpp>
 #include <chrono>
 #include <cstdint>
@@ -274,9 +275,11 @@ private:
 
     const boost::program_options::variables_map& vm_;
     bool recover_module_crashes_{false};
-    ManagerState state_{ManagerState::Idle};
+    // state_ and sigint_received_ are also accessed from the module-ready handler running on the
+    // message-dispatch thread (see handle_start_modules), hence atomic.
+    std::atomic<ManagerState> state_{ManagerState::Idle};
     ShutdownCause shutdown_cause_{ShutdownCause::None};
-    bool sigint_received_{false};
+    std::atomic<bool> sigint_received_{false};
     std::uint8_t unexpected_module_exit_count_{0};
     std::optional<std::chrono::steady_clock::time_point> shutdown_start_time_;
     std::optional<std::chrono::steady_clock::time_point> force_terminate_start_time_;

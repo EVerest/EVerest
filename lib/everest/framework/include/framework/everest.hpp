@@ -210,7 +210,8 @@ public:
     /// Receiving the shutdown signal stops all module communication: after the registered handler
     /// has returned, the MQTT connection is disconnected, so no further variable publications or
     /// command calls are sent or received. Commands still waiting for their result at that point
-    /// fail with a Shutdown exception.
+    /// fail with a Shutdown exception. Commands invoked from within the handler itself are still
+    /// processed normally. An empty \p handler is ignored.
     ///
     void register_on_shutdown_handler(const std::function<void()>& handler);
 
@@ -236,6 +237,7 @@ private:
     std::atomic<bool> ready_received;
     std::atomic<bool> ready_processed;
     std::atomic<bool> shutdown_received;
+    std::atomic<bool> shutdown_processed;
     std::chrono::seconds remote_cmd_res_timeout;
     bool validate_data_with_schema;
     std::unique_ptr<std::function<void()>> on_ready;

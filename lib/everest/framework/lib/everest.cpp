@@ -49,6 +49,7 @@ Everest::Everest(std::string module_id_, const Config& config_, bool validate_da
     ready_received(false),
     ready_processed(false),
     shutdown_received(false),
+    shutdown_processed(false),
     remote_cmd_res_timeout(remote_cmd_res_timeout_seconds),
     validate_data_with_schema(validate_data_with_schema),
     mqtt_everest_prefix(mqtt_abstraction->get_everest_prefix()),
@@ -280,6 +281,11 @@ void Everest::register_on_ready_handler(const std::function<void()>& handler) {
 void Everest::register_on_shutdown_handler(const std::function<void()>& handler) {
     BOOST_LOG_FUNCTION();
 
+    if (!handler) {
+        // an empty handler would throw std::bad_function_call when invoked on shutdown;
+        // leave on_shutdown unset so the "no shutdown handler registered" warning path is taken
+        return;
+    }
     this->on_shutdown = std::make_unique<std::function<void()>>(handler);
 }
 
@@ -430,15 +436,16 @@ json Everest::call_cmd(const Requirement& req, const std::string& cmd_name, cons
     std::future_status res_future_status = std::future_status::deferred;
     do {
         res_future_status = res_future.wait_for(remote_cmd_res_timeout_step);
-    } while (!this->shutdown_received &&
+    } while (!this->shutdown_processed &&
              (res_future_status == std::future_status::deferred ||
               (res_future_status == std::future_status::timeout && std::chrono::steady_clock::now() < res_wait)));
 
-    if (this->shutdown_received) {
-        // Once the shutdown signal has been received, module communication is stopped (MQTT is
-        // disconnected after the shutdown handler ran), so the pending command result can never
-        // arrive. Throw to unwind the caller blocked on this command instead of letting it run
-        // into the command timeout.
+    if (res_future_status != std::future_status::ready && this->shutdown_processed) {
+        // Once the shutdown handler has returned, module communication is stopped (MQTT is
+        // disconnected), so a still-pending command result can never arrive. Throw to unwind the
+        // caller blocked on this command instead of letting it run into the command timeout.
+        // A result that already arrived is used normally, and commands called from within the
+        // shutdown handler itself (before shutdown_processed is set) are still processed.
         EVLOG_AND_THROW(Shutdown(fmt::format(
             "Shutting down while waiting for result of {}->{}()",
             this->config.printable_identifier(connection.module_id, connection.implementation_id), cmd_name)));
@@ -915,6 +922,9 @@ void Everest::handle_shutdown(const json& data) {
         EVLOG_warning << "No shutdown handler registered for module " << this->module_id;
     }
 
+    // only after the shutdown handler has returned communication is cut; commands issued from
+    // within the handler are processed normally, pending commands fail with Shutdown from here on
+    this->shutdown_processed = true;
     this->mqtt_abstraction->disconnect();
 }
 

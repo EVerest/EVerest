@@ -285,7 +285,7 @@ int setup_signal_fd() {
     sigaddset(&mask, SIGINT);
     sigaddset(&mask, SIGTERM);
     if (sigprocmask(SIG_BLOCK, &mask, NULL) == -1) {
-        return EXIT_FAILURE;
+        return -1;
     }
 
     return signalfd(-1, &mask, 0);

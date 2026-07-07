@@ -545,7 +545,8 @@ std::optional<int> Manager::handle_finish_crash_recovery(RuntimeContext& ctx, Ma
     cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
     reset_shutdown_state();
 
-    if (recover_module_crashes_) {
+    // Stay idle only when the user has not requested a stop via SIGINT/SIGTERM.
+    if (recover_module_crashes_ && !sigint_received_) {
         transition_to(ManagerState::Idle);
         EVLOG_info << "Crash recovery completed, manager is idle after module shutdown. Send SIGINT/SIGTERM to stop.";
         return std::nullopt;
@@ -869,7 +870,7 @@ void Manager::transition_to(ManagerState new_state) {
         return;
     }
     EVLOG_info << "Manager state transition: " << state_to_string(state_) << " -> " << state_to_string(new_state);
-    const auto old_state = state_;
+    const ManagerState old_state = state_;
     state_ = new_state;
     for (const auto& handler : state_transition_handlers_) {
         handler(old_state, new_state);
@@ -945,7 +946,12 @@ std::map<pid_t, std::string> Manager::handle_start_modules(const RuntimeContext&
             continue;
         }
 
-        auto module_it = modules_ready_.emplace(module_id, ModuleReadyInfo{}).first;
+        // ready handlers registered in earlier loop iterations may already fire on the
+        // message-dispatch thread and iterate modules_ready_, so structural changes need the lock
+        auto module_it = [&] {
+            const std::lock_guard<std::mutex> lock(modules_ready_mutex_);
+            return modules_ready_.emplace(module_id, ModuleReadyInfo{}).first;
+        }();
 
         std::vector<std::string> capabilities =
             module_configurations.at(module_id).capabilities.value_or(std::vector<std::string>{});
@@ -1016,9 +1022,13 @@ std::map<pid_t, std::string> Manager::handle_start_modules(const RuntimeContext&
         };
 
         const std::string ready_topic = fmt::format("{}/ready", config.mqtt_module_prefix(module_id));
-        module_it->second.ready_token =
+        auto ready_token =
             std::make_shared<TypedHandler>(HandlerType::ModuleReady, std::make_shared<Handler>(module_ready_handler));
-        mqtt_abstraction.register_handler(ready_topic, module_it->second.ready_token, QOS::QOS2);
+        {
+            const std::lock_guard<std::mutex> lock(modules_ready_mutex_);
+            module_it->second.ready_token = ready_token;
+        }
+        mqtt_abstraction.register_handler(ready_topic, ready_token, QOS::QOS2);
 
         if (std::any_of(standalone_modules.begin(), standalone_modules.end(),
                         [module_id](const auto& element) { return element == module_id; })) {
@@ -1077,7 +1087,8 @@ Manager::LifecycleAdvanceResult Manager::advance_lifecycle_state_if_ready(Runtim
     // after a timeout-triggered force shutdown.
     if (in_shutdown_flow && module_handles_.empty() && state_ != ManagerState::ShutdownFinalizing) {
         transition_to(ManagerState::ShutdownFinalizing);
-        if (crash_in_progress && recover_module_crashes_ &&
+        // A SIGINT/SIGTERM during a crash drain means the user wants to stop; do not auto-restart.
+        if (crash_in_progress && recover_module_crashes_ && !sigint_received_ &&
             unexpected_module_exit_count_ <= MAX_UNEXPECTED_MODULE_RESTARTS) {
             EVLOG_warning << fmt::format(
                 "Unexpected module exit recovery attempt {}/{}. Reloading config and restarting "
@@ -1166,7 +1177,11 @@ std::optional<int> Manager::handle_signal(int signo, RuntimeContext& ctx, Manage
     if (!sigint_received_) {
         EVLOG_info << "SIGINT/SIGTERM received";
         sigint_received_ = true;
-        shutdown_cause_ = ShutdownCause::Normal;
+        // Do not downgrade an in-progress crash drain to a normal shutdown: finalization keys the
+        // exit code off shutdown_cause_, and a crash must stay visible as EXIT_FAILURE.
+        if (shutdown_cause_ != ShutdownCause::Crash) {
+            shutdown_cause_ = ShutdownCause::Normal;
+        }
         shutdown_start_time_ = std::chrono::steady_clock::now();
         force_terminate_start_time_ = std::nullopt;
         force_kill_sent_ = false;
@@ -1263,21 +1278,24 @@ bool Manager::handle_waitpid_event(int& wstatus, RuntimeContext& ctx, ManagerAdm
 std::optional<int> Manager::handle_controller_ipc_poll(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
                                                        const std::string& prefix_opt) {
     bool modules_started = are_modules_started();
-    bool restart_requested = is_restart_requested();
+    const bool restart_already_requested = is_restart_requested();
+    bool restart_requested = restart_already_requested;
     if (const auto exit_from_panel = admin_panel.poll_controller_ipc(restart_requested, modules_started,
                                                                      ctx.mqtt_abstraction, ctx.ms, prefix_opt)) {
         return *exit_from_panel;
     }
 
-    // Keep RestartRequested while modules are draining; this preserves restart intent
-    // for advance_lifecycle_state_if_ready() once all children have exited.
-    if (restart_requested) {
+    // Only act on the transition into RestartRequested; the state itself preserves the restart
+    // intent for advance_lifecycle_state_if_ready() once all children have exited.
+    if (restart_requested && !restart_already_requested) {
         shutdown_cause_ = ShutdownCause::Restart;
         transition_to(ManagerState::RestartRequested);
-    }
-    // This also enables timeout/fallback handling if one or more modules do not exit after MQTT shutdown.
-    if (restart_requested && !module_handles_.empty()) {
-        shutdown_start_time_ = std::chrono::steady_clock::now();
+        // Arm the graceful-shutdown deadline once so timeout/fallback handling covers modules
+        // that do not exit after the MQTT shutdown publish. Re-arming on subsequent loop
+        // iterations would push the force-terminate deadline back forever.
+        if (!module_handles_.empty()) {
+            shutdown_start_time_ = std::chrono::steady_clock::now();
+        }
     }
 
     return std::nullopt;
