@@ -314,20 +314,23 @@ ocpp::v16::GetLogResponse ChargePointV16::cb_upload_logs(ocpp::v16::GetLogReques
 }
 
 void ChargePointV16::cb_variable_listener(const ocpp::v16::KeyValue& key_value) {
-    if (m_variable_listener != nullptr) {
-        const auto it = m_monitor_map.find(key_value.key);
-        if (it != m_monitor_map.end()) {
-            // check we have the component and variable values for this variable
-            std::string value;
-            if (key_value.value) {
-                value = key_value.value.value();
-                m_variable_listener(it->second.first, it->second.second, value);
-            }
-        } else {
-            EVLOG_warning << "cb_variable_listener: no mapping for " << key_value.key;
+    listener_t listener{nullptr};
+    std::optional<std::pair<ocpp::v2::Component, ocpp::v2::Variable>> mapping;
+    {
+        auto monitors = m_variable_monitors.handle();
+        listener = monitors->listener;
+        const auto it = monitors->map.find(key_value.key);
+        if (it != monitors->map.end()) {
+            mapping = it->second;
         }
-    } else {
+    }
+    if (listener == nullptr) {
         EVLOG_warning << "cb_variable_listener: no listener configured";
+    } else if (!mapping.has_value()) {
+        EVLOG_warning << "cb_variable_listener: no mapping for " << key_value.key;
+    } else if (key_value.value.has_value()) {
+        // invoke outside the lock
+        listener(mapping->first, mapping->second, key_value.value.value());
     }
 }
 
@@ -878,9 +881,13 @@ void ChargePointV16::on_event_transaction_finished(std::int32_t evse_id, std::in
         // custom data transfer
         signed_meter_data.emplace(signed_meter_value.value().signed_meter_data);
     }
+    std::optional<std::string> start_signed_meter_data;
+    if (transaction_finished.start_signed_meter_value.has_value()) {
+        start_signed_meter_data.emplace(transaction_finished.start_signed_meter_value.value().signed_meter_data);
+    }
     const auto cid = ocpp_connector_id(m_connector_mapping, evse_id, session_event.connector_id);
     m_charge_point->on_transaction_stopped(cid, session_event.uuid, reason, timestamp, energy_Wh_import, id_tag_opt,
-                                           signed_meter_data);
+                                           signed_meter_data, start_signed_meter_data);
 }
 
 GenericChargePointInterface::SessionResult
@@ -1024,8 +1031,9 @@ void ChargePointV16::on_transaction_finished(std::int32_t evse_id, const std::st
 
     const auto v16_reason = conversions_v16::to_ocpp_reason(reason);
 
+    // start signed meter value is not part of the generic interface signature
     m_charge_point->on_transaction_stopped(evse_id, session_id, v16_reason, timestamp, found_meter_end, found_token,
-                                           signed_meter_value);
+                                           signed_meter_value, std::nullopt);
 }
 
 void ChargePointV16::on_transaction_started(
@@ -1068,14 +1076,19 @@ void ChargePointV16::register_variable_listener(const ocpp::v2::Component& compo
                                                 const ocpp::v2::Variable& variable, listener_t listener) {
     check_configured("register_variable_listener");
     const std::string key = variable.name;
-    if (m_variable_listener == nullptr && listener != nullptr && !key.empty()) {
-        m_variable_listener = std::move(listener);
+    if (key.empty()) {
+        return;
     }
-    if (!key.empty()) {
-        m_monitor_map.insert_or_assign(key, std::make_pair(component, variable));
-        m_charge_point->register_configuration_key_changed_callback(
-            key, [this](auto&&... args) { cb_variable_listener(args...); });
+    {
+        auto monitors = m_variable_monitors.handle();
+        if (monitors->listener == nullptr && listener != nullptr) {
+            monitors->listener = std::move(listener);
+        }
+        monitors->map.insert_or_assign(key, std::make_pair(component, variable));
     }
+    // register outside the lock: libocpp may fire the callback synchronously
+    m_charge_point->register_configuration_key_changed_callback(
+        key, [this](auto&&... args) { cb_variable_listener(args...); });
 }
 
 bool ChargePointV16::set_powermeter_public_key(std::int32_t connector, const std::string& public_key_pem) {

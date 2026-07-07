@@ -7,6 +7,7 @@
 #include "ocpp/v2/ocpp_types.hpp"
 
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
+#include <everest/util/async/monitor.hpp>
 #include <ocpp/v16/charge_point_configuration_interface.hpp>
 
 namespace ocpp_multi {
@@ -19,8 +20,13 @@ private:
     std::unique_ptr<ocpp::v16::ChargePointConfigurationInterface> m_charge_point_configuration;
     std::unique_ptr<ocpp::v16::ChargePoint> m_charge_point;
     ocpp_multi::GenericChargePointCallbacks* m_callbacks_ptr{nullptr};
-    listener_t m_variable_listener{nullptr};
-    key_monitor_map_t m_monitor_map;
+
+    struct variable_monitors_t {
+        listener_t listener{nullptr};
+        key_monitor_map_t map;
+    };
+    // written from command threads (register_variable_listener), read from libocpp callback thread
+    everest::lib::util::monitor<variable_monitors_t> m_variable_monitors;
     ConnectorStructureV16 m_connector_mapping;
 
     struct config_info_t {

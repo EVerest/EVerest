@@ -258,8 +258,10 @@ void ChargePointV2::cb_variable_listener(
     const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
     const ocpp::v2::VariableCharacteristics& characteristics, const ocpp::v2::VariableAttribute& attribute,
     const std::string& value_previous, const std::string& value_current) {
-    if (m_variable_listener != nullptr) {
-        m_variable_listener(component, variable, value_current);
+    // copy under lock, invoke outside
+    const listener_t listener = *m_variable_listener.handle();
+    if (listener != nullptr) {
+        listener(component, variable, value_current);
     }
 }
 
@@ -962,8 +964,16 @@ void ChargePointV2::on_unavailable(std::int32_t evse_id, std::int32_t connector_
 void ChargePointV2::register_variable_listener(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
                                                listener_t listener) {
     check_configured("register_variable_listener");
-    if (m_variable_listener == nullptr && listener != nullptr) {
-        m_variable_listener = std::move(listener);
+    bool registered = false;
+    {
+        auto handle = m_variable_listener.handle();
+        if (*handle == nullptr && listener != nullptr) {
+            *handle = std::move(listener);
+            registered = true;
+        }
+    }
+    if (registered) {
+        // register outside the lock: libocpp may fire the callback synchronously
         m_charge_point->register_variable_listener([this](auto&&... args) { cb_variable_listener(args...); });
     }
 }

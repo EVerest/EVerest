@@ -7,6 +7,7 @@
 
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
+#include <everest/util/async/monitor.hpp>
 
 namespace ocpp_multi {
 
@@ -17,7 +18,8 @@ private:
     std::shared_ptr<EvseSecurity> m_evse_security;
     ocpp_multi::GenericChargePointCallbacks* m_callbacks_ptr{nullptr};
     std::unique_ptr<ocpp::v2::ChargePoint> m_charge_point;
-    listener_t m_variable_listener{nullptr};
+    // written from command threads (register_variable_listener), read from libocpp callback thread
+    everest::lib::util::monitor<listener_t> m_variable_listener;
 
     void check_configured(const std::string_view& fn);
     ocpp::v2::Callbacks configure_callbacks();
