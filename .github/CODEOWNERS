@@ -31,7 +31,7 @@
 
 # modules
 /modules/API/ @hikinggrass @pietfried @corneliusclaussen @djchhp @SebaLukas @james-ctc @cburandt @florinmihut
-/modules/API/RpcApi/ @FaHaGit @barsnick
+/modules/API/RpcApi/ @FaHaGit @barsnick @corneliusclaussen @hikinggrass @pietfried @SebaLukas @mlitre
 /modules/EnergyManagement/EEBUS/ @mlitre @andistorm @hikinggrass
 /modules/EnergyManagement/EnergyManager/ @corneliusclaussen @hikinggrass @pietfried
 /modules/EnergyManagement/EnergyNode/ @corneliusclaussen @hikinggrass @pietfried
