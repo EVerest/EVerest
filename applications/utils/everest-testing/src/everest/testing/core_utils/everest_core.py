@@ -113,6 +113,7 @@ class EverestCore:
                  prefix_path: Path,
                  config_path: Path = None,
                  standalone_module: Optional[Union[str, List[str]]] = None,
+                 manager_extra_args: Optional[List[str]] = None,
                  everest_configuration_adjustment_strategies: Optional[
                      List[EverestConfigAdjustmentStrategy]] = None,
                  tmp_path: Optional[Path] = None) -> None:
@@ -169,6 +170,7 @@ class EverestCore:
         self.all_modules_started_event = threading.Event()
 
         self._standalone_module = standalone_module
+        self._manager_extra_args = manager_extra_args or []
 
     def _manager_subprocess_env(self) -> Dict[str, str]:
         """Environment for the manager child: redirects gcov output when instrumentation is on."""
@@ -224,6 +226,9 @@ class EverestCore:
                 standalone_module = [standalone_module]
             for s in standalone_module:
                 args.extend(['--standalone', s])
+
+        if self._manager_extra_args:
+            args.extend(self._manager_extra_args)
 
         logging.info(" ".join(args))
 

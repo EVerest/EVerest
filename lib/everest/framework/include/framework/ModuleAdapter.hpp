@@ -44,7 +44,7 @@ struct ModuleBase;
 class ImplementationBase {
 public:
     friend class ModuleAdapter; // for accessing gather_cmds
-    friend class ModuleBase;    // for accessing init. ready & shutdown
+    friend class ModuleBase;    // for accessing init, ready & shutdown
     virtual ~ImplementationBase() = default;
 
 private:

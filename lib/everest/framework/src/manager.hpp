@@ -81,10 +81,12 @@ struct ModuleShutdownInfo {
 ///   `ShutdownRequested`, then immediately → `CrashShutdownInProgress` for that path.
 /// - The same drain / timeout / force-terminate machinery as normal shutdown applies while children
 ///   remain.
-/// - When all children are gone: → `ShutdownFinalizing`. If crash recovery is still allowed (see
-///   `MAX_UNEXPECTED_MODULE_RESTARTS` in `manager.cpp`), the manager reloads config and goes back to
-///   **`StartingModules`** via `handle_restart_modules_after_shutdown()`. If the restart cap is exceeded,
-///   it finishes crash cleanup and → **`Idle`** instead of restarting again.
+/// - When all children are gone: → `ShutdownFinalizing`. If `--recover-module-crashes` was passed
+///   on the command line and crash recovery is still allowed (see `MAX_UNEXPECTED_MODULE_RESTARTS`
+///   in `manager.cpp`), the manager reloads config and goes back to **`StartingModules`** via
+///   `handle_restart_modules_after_shutdown()`. If the restart cap is exceeded with recovery enabled,
+///   it finishes crash cleanup and → **`Idle`**. Without `--recover-module-crashes` (default), the
+///   manager shuts down remaining modules gracefully and then **exits** the process.
 ///
 /// ### Admin “restart modules”
 ///
@@ -110,8 +112,9 @@ struct ModuleShutdownInfo {
 /// ### Expected vs exceptional transitions
 ///
 /// **Expected:** linear startup; clean idle shutdown after SIGINT; controlled restart after admin
-/// request; bounded crash recovery restart loop; timeout escalation only when modules miss their
-/// shutdown deadline.
+/// request; optional bounded crash recovery restart loop when `--recover-module-crashes` is set;
+/// manager exit after unexpected module exit when that flag is omitted; timeout escalation only
+/// when modules miss their shutdown deadline.
 ///
 /// **Worth noting:** transitions are applied from the main loop (`waitpid`, lifecycle advance,
 /// controller IPC, signal polling, shutdown timer). Re-entrancy is avoided by keeping shared state
@@ -278,7 +281,10 @@ private:
 
     /// \brief Finalize crash-recovery shutdown path.
     /// \param ctx Runtime dependencies for the current run.
-    void handle_finish_crash_recovery(RuntimeContext& ctx);
+    /// \param admin_panel Controller IPC/process integration helper.
+    /// \return EXIT_FAILURE when manager exits after crash (default), std::nullopt when staying idle
+    ///         (`--recover-module-crashes` and restart cap exceeded).
+    std::optional<int> handle_finish_crash_recovery(RuntimeContext& ctx, ManagerAdminPanel& admin_panel);
 
     /// \brief Start graceful shutdown and publish shutdown topic when required.
     /// \param module_exited_time Timestamp used as shutdown start reference.
@@ -334,6 +340,7 @@ private:
                                           ManagerAdminPanel& admin_panel);
 
     const boost::program_options::variables_map& vm_;
+    bool recover_module_crashes_{false};
     ManagerState state_{ManagerState::Idle};
     ShutdownCause shutdown_cause_{ShutdownCause::None};
     bool sigint_received_{false};

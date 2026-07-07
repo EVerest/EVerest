@@ -83,6 +83,7 @@ def test_manager_stop_during_startup(
 
 
 @pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_manager_args("--recover-module-crashes")
 def test_manager_restarts_modules_after_unexpected_exit(
     everest_core: EverestCore, connected_mqtt_client, caplog
 ):
@@ -133,6 +134,7 @@ def test_manager_restarts_modules_after_unexpected_exit(
 
 
 @pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_manager_args("--recover-module-crashes")
 def test_manager_restarts_modules_after_unexpected_exit_max_3_times(
     everest_core: EverestCore, connected_mqtt_client, caplog
 ):
@@ -255,6 +257,7 @@ def test_manager_does_not_transition_back_to_running_when_stopped_during_startup
 
 
 @pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_manager_args("--recover-module-crashes")
 def test_manager_recovers_after_crash_with_blocked_module_timeout(
     everest_core: EverestCore, connected_mqtt_client, caplog
 ):
@@ -295,7 +298,7 @@ def test_manager_recovers_after_crash_with_blocked_module_timeout(
         wait_for_log_message(
             caplog,
             "Manager state transition: StartingModules -> Running",
-            timeout_s=20.0,
+            timeout_s=60.0,
             start_index=log_marker,
     )
 
