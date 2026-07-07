@@ -174,13 +174,6 @@ config:
       - Only2
     default: Only2
 provides:
-  # probably not needed
-  # integration test
-  # message_queue.py::test_security_event_delivery_after_reconnect
-  # expects it
-  # main:
-  #   description: This is a OCPP 1.6 charge point
-  #   interface: ocpp_1_6_charge_point
   auth_validator:
     description: Validates the provided token using CSMS, AuthorizationList or AuthorizationCache
     interface: auth_token_validator
