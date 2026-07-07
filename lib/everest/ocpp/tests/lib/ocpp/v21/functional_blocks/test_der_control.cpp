@@ -139,6 +139,16 @@ protected:
         req.curve = curve;
         return req;
     }
+
+    // Flip ACDERCtrlr.Available for EVSE 1 to true. The AC config
+    // (tests/config/v2/ACDERCtrlr_1.json) lists only FreqDroop in ModesSupported, so a
+    // control type absent from that list exercises the AC accept-all path.
+    void enable_ac_der() {
+        const auto cv = DERComponentVariables::get_ac_component_variable(1, DERComponentVariables::Available);
+        ASSERT_EQ(this->device_model->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "true",
+                                                "TEST", true),
+                  SetVariableStatusEnum::Accepted);
+    }
 };
 
 // --- Message dispatch tests ---
@@ -173,6 +183,41 @@ TEST_F(DERControlTest, SetDERControl_UnsupportedType_ReturnsNotSupported) {
     EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
         auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<SetDERControlResponse>();
         EXPECT_EQ(response.status, DERControlStatusEnum::NotSupported);
+    }));
+
+    der_control.handle_message(msg);
+}
+
+// --- AC accept-all: a type absent from every ModesSupported list is still supported
+//     once ACDERCtrlr.Available is true, because the EV's capabilities are unknown
+//     until it is plugged in. ---
+
+TEST_F(DERControlTest, SetDERControl_UnsupportedType_AcDerAvailable_Accepted) {
+    enable_ac_der();
+    DERControl der_control(functional_block_context);
+
+    SetDERControlRequest req;
+    req.isDefault = true;
+    req.controlId = "ctrl-ac-hfmusttrip";
+    req.controlType = DERControlEnum::HFMustTrip; // Not in any ModesSupported list
+    DERCurve curve;
+    curve.priority = 0;
+    curve.yUnit = DERUnitEnum::Not_Applicable;
+    DERCurvePoints p1;
+    p1.x = 62.0f;
+    p1.y = 1.0f;
+    curve.curveData = {p1};
+    req.curve = curve;
+
+    auto msg = make_set_der_control_msg(req);
+
+    EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(_, _, _))
+        .WillOnce(Return(std::vector<std::string>{}));
+    EXPECT_CALL(database_handler_mock, insert_or_update_der_control(_, _, _, _, _, _, _, _)).Times(1);
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<SetDERControlResponse>();
+        EXPECT_EQ(response.status, DERControlStatusEnum::Accepted);
     }));
 
     der_control.handle_message(msg);
@@ -461,6 +506,28 @@ TEST_F(DERControlTest, GetDERControl_UnsupportedType_NotSupported) {
     der_control.handle_message(msg);
 }
 
+// AC accept-all: unsupported controlType is treated as supported when ACDERCtrlr.Available.
+TEST_F(DERControlTest, GetDERControl_UnsupportedType_AcDerAvailable_NotFound) {
+    enable_ac_der();
+    DERControl der_control(functional_block_context);
+
+    GetDERControlRequest req;
+    req.requestId = 2;
+    req.controlType = DERControlEnum::HFMustTrip; // Not in any ModesSupported list
+
+    auto msg = make_get_der_control_msg(req);
+
+    EXPECT_CALL(database_handler_mock, get_der_controls_matching_criteria(_, _, _))
+        .WillOnce(Return(std::vector<std::string>{}));
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<GetDERControlResponse>();
+        EXPECT_EQ(response.status, DERControlStatusEnum::NotFound);
+    }));
+
+    der_control.handle_message(msg);
+}
+
 // R04.FR.33 - No filters → returns all, sends ReportDERControl
 TEST_F(DERControlTest, GetDERControl_NoFilters_ReturnsAll) {
     DERControl der_control(functional_block_context);
@@ -596,6 +663,30 @@ TEST_F(DERControlTest, ClearDERControl_UnsupportedType_NotSupported) {
     EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
         auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<ClearDERControlResponse>();
         EXPECT_EQ(response.status, DERControlStatusEnum::NotSupported);
+    }));
+
+    der_control.handle_message(msg);
+}
+
+// AC accept-all: unsupported controlType is treated as supported when ACDERCtrlr.Available,
+// so the clear reaches the DB (and reports NotFound when nothing matches).
+TEST_F(DERControlTest, ClearDERControl_UnsupportedType_AcDerAvailable_NotFound) {
+    enable_ac_der();
+    DERControl der_control(functional_block_context);
+
+    ClearDERControlRequest req;
+    req.isDefault = true;
+    req.controlType = DERControlEnum::HFMustTrip; // Not in any ModesSupported list
+
+    auto msg = make_clear_der_control_msg(req);
+
+    EXPECT_CALL(database_handler_mock,
+                delete_der_controls_matching_criteria(true, std::optional<std::string>("HFMustTrip")))
+        .WillOnce(Return(0));
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<ClearDERControlResponse>();
+        EXPECT_EQ(response.status, DERControlStatusEnum::NotFound);
     }));
 
     der_control.handle_message(msg);
