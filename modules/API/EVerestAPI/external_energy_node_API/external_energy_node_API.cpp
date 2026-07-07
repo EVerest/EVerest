@@ -3,7 +3,6 @@
 #include "external_energy_node_API.hpp"
 
 #include <algorithm>
-#include <nlohmann/json.hpp>
 #include <string_view>
 
 #include <everest_api_types/energy/codec.hpp>
@@ -13,6 +12,8 @@
 namespace module {
 namespace API_types_ext = API_types::energy;
 
+using API_types_ext::serialize;
+using API_types_ext::to_external_api;
 using ev_API::deserialize;
 
 void external_energy_node_API::init() {
@@ -20,23 +21,55 @@ void external_energy_node_API::init() {
     invoke_init(*p_energy_grid);
 
     // Initialise aggregate UUID from module id
-    aggregate.uuid = info.id;
-    aggregate.node_type = types::energy::NodeType::Generic;
+    {
+        auto agg = aggregate.handle();
+        agg->uuid = info.id;
+        agg->node_type = types::energy::NodeType::Generic;
+    }
 
     // Initialise ApiHelper — registers heartbeat and communication-check parameters.
     API_types_entry::CommunicationParameters comm_params{};
     comm_params.heartbeat_period_ms = config.cfg_heartbeat_interval_ms;
     comm_params.communication_check_period_s = config.cfg_communication_check_to_s;
     helper.init(comm_params);
+}
 
+void external_energy_node_API::ready() {
+    invoke_ready(*p_main);
+    invoke_ready(*p_energy_grid);
+
+    generate_api_var_energy_flow_request();
+    generate_api_cmd_enforce_limits();
+
+    // Publish an initial aggregate so both internal and external see this server immediately.
+    {
+        auto agg = aggregate.handle();
+        p_energy_grid->publish_energy_flow_request(*agg);
+        try {
+            const auto topic = helper.get_topics().everest_to_extern("energy_flow_request");
+            mqtt_v.publish(topic, serialize(to_external_api(*agg)));
+        } catch (const std::exception& e) {
+            EVLOG_warning << info.id << ": failed to publish initial energy_flow_request: " << e.what();
+        }
+    }
+
+    helper.generate_api_var_communication_check(&comm_check);
+
+    comm_check.start(config.cfg_communication_check_to_s);
+    helper.setup_heartbeat_generator(&comm_check, config.cfg_heartbeat_interval_ms);
+
+    helper.publish_ready_beacon();
+}
+
+void external_energy_node_API::generate_api_var_energy_flow_request() {
     // Subscribe to energy_flow_request from each local EnergyNode (EVSE nodes).
     // On each update: merge the child, check external timeout, republish aggregate on
     // the local Everest bus (for internal) and via ApiHelper topic (for external via bridge).
     for (auto& entry : r_energy_consumer) {
         entry->subscribe_energy_flow_request([this](types::energy::EnergyFlowRequest const& child) {
-            std::lock_guard<std::mutex> lock(aggregate_mutex);
+            auto agg = aggregate.handle();
 
-            auto& children = aggregate.children;
+            auto& children = agg->children;
             auto it = std::find_if(children.begin(), children.end(), [&child](const auto& c) {
                 return std::string_view{c.uuid} == std::string_view{child.uuid};
             });
@@ -59,14 +92,13 @@ void external_energy_node_API::init() {
             }
 
             // Publish to local Everest bus (internal EnergyManager sees the aggregate)
-            p_energy_grid->publish_energy_flow_request(aggregate);
+            p_energy_grid->publish_energy_flow_request(*agg);
 
             // Publish to external via ApiHelper topic:
             //   everest_api/1/external_energy_node/{id}/e2m/energy_flow_request
-            // EnergyFlowRequest has no API-type wrapper, so we use EVerest's native JSON.
             try {
                 const auto topic = helper.get_topics().everest_to_extern("energy_flow_request");
-                mqtt_v.publish(topic, nlohmann::json(aggregate).dump());
+                mqtt_v.publish(topic, serialize(to_external_api(*agg)));
             } catch (const std::exception& e) {
                 EVLOG_warning << info.id << ": failed to publish energy_flow_request: " << e.what();
             }
@@ -74,26 +106,10 @@ void external_energy_node_API::init() {
     }
 }
 
-void external_energy_node_API::ready() {
-    invoke_ready(*p_main);
-    invoke_ready(*p_energy_grid);
-
-    // Publish an initial aggregate so both internal and external see this server immediately.
-    {
-        std::lock_guard<std::mutex> lock(aggregate_mutex);
-        p_energy_grid->publish_energy_flow_request(aggregate);
-        try {
-            const auto topic = helper.get_topics().everest_to_extern("energy_flow_request");
-            mqtt_v.publish(topic, nlohmann::json(aggregate).dump());
-        } catch (const std::exception& e) {
-            EVLOG_warning << info.id << ": failed to publish initial energy_flow_request: " << e.what();
-        }
-    }
-
+void external_energy_node_API::generate_api_cmd_enforce_limits() {
     // Subscribe to enforce_limits commands from the external EnergyManager.
     // Arrives via ApiHelper topic:
     //   everest_api/1/external_energy_node/{id}/m2e/enforce_limits
-    // EnforcedLimits has an API-type wrapper, so we use deserialize + to_internal_api.
     helper.subscribe_api_topic("enforce_limits", [this](std::string const& data) {
         API_types_ext::EnforcedLimits val;
         if (!deserialize(data, val)) {
@@ -114,13 +130,6 @@ void external_energy_node_API::ready() {
         }
         return true;
     });
-
-    helper.generate_api_var_communication_check(&comm_check);
-
-    comm_check.start(config.cfg_communication_check_to_s);
-    helper.setup_heartbeat_generator(&comm_check, config.cfg_heartbeat_interval_ms);
-
-    helper.publish_ready_beacon();
 }
 
 } // namespace module

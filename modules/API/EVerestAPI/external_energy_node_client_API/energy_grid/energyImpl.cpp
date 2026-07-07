@@ -2,8 +2,6 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "energyImpl.hpp"
 
-#include <nlohmann/json.hpp>
-
 #include <everest_api_types/energy/codec.hpp>
 #include <everest_api_types/energy/wrapper.hpp>
 #include <everest_api_types/utilities/Topics.hpp>
@@ -13,6 +11,9 @@ namespace energy_grid {
 
 namespace ev_API = everest::lib::API;
 namespace API_types_ext = ev_API::V1_0::types::energy;
+
+using API_types_ext::to_internal_api;
+using ev_API::deserialize;
 
 void energyImpl::init() {
     // Nothing to do at init — MQTT subscriptions require the framework to be ready.
@@ -28,16 +29,15 @@ void energyImpl::ready() {
     // Subscribe to the server's published energy_flow_request (e2m = Everest to Machine).
     // Republish on the local Everest bus so the site-level EnergyNode sees the cluster
     // as a normal energy_consumer child.
-    // EnergyFlowRequest has no API-type wrapper, so we use EVerest's native JSON.
     const auto flow_req_topic = server_topics.everest_to_extern("energy_flow_request");
     mod->mqtt.subscribe(flow_req_topic, [this](const std::string& msg) {
-        try {
-            auto flow = nlohmann::json::parse(msg).get<types::energy::EnergyFlowRequest>();
-            publish_energy_flow_request(flow);
-        } catch (const std::exception& e) {
+        API_types_ext::EnergyFlowRequest val;
+        if (!deserialize(msg, val)) {
             EVLOG_warning << "external_energy_node_client_API [" << mod->config.server_id
-                          << "]: failed to parse energy_flow_request: " << e.what();
+                          << "]: failed to deserialize energy_flow_request";
+            return;
         }
+        publish_energy_flow_request(to_internal_api(val));
     });
 
     // Store the enforce_limits topic for use in handle_enforce_limits.

@@ -1,1 +1,2 @@
 generic/API.hpp,RequestReply
+energy/API.hpp,EnergyFlowRequest

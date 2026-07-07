@@ -21,10 +21,10 @@
 // insert your custom include headers here
 #include <atomic>
 #include <chrono>
-#include <mutex>
 #include <string>
 #include <vector>
 
+#include <everest/util/async/monitor.hpp>
 #include <everest_api_module_helpers/ApiHelper.hpp>
 #include <everest_api_types/entrypoint/API.hpp>
 
@@ -80,9 +80,11 @@ private:
     void init();
     void ready();
 
+    void generate_api_var_energy_flow_request();
+    void generate_api_cmd_enforce_limits();
+
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
-    std::mutex aggregate_mutex;
-    types::energy::EnergyFlowRequest aggregate;
+    everest::lib::util::monitor<types::energy::EnergyFlowRequest> aggregate;
 
     ev_API::CommCheckHandler<generic_errorImplBase> comm_check{"generic/CommunicationFault",
                                                                ev_API::bridge_connection_lost_message, p_main};
