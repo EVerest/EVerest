@@ -82,6 +82,10 @@ Result PowerDelivery::feed(Event ev) {
                 return {};
             }
 
+            if (m_ctx.session.is_ac_der_iec_charger()) {
+                return m_ctx.create_state<AC_DER_IEC_ChargeLoop>();
+            }
+
             return m_ctx.create_state<AC_ChargeLoop>();
         }
 
