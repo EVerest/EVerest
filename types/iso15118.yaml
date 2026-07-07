@@ -124,6 +124,14 @@ types:
       - AcChargeLoopRes
       - AcChargeParameterDiscoveryReq
       - AcChargeParameterDiscoveryRes
+      - AcDerChargeParameterDiscoveryReq
+      - AcDerChargeParameterDiscoveryRes
+      - AcDerChargeLoopReq
+      - AcDerChargeLoopRes
+      - AcDerSaeChargeParameterDiscoveryReq
+      - AcDerSaeChargeParameterDiscoveryRes
+      - AcDerSaeChargeLoopReq
+      - AcDerSaeChargeLoopRes
       - DcCableCheckReq
       - DcCableCheckRes
       - DcChargeLoopReq

@@ -117,6 +117,22 @@ constexpr types::iso15118::V2gMessageId convert_v2g_message_type(iso15118::messa
         return Id::AcChargeLoopReq;
     case Type::AC_ChargeLoopRes:
         return Id::AcChargeLoopRes;
+    case Type::DER_AC_ChargeParameterDiscoveryReq:
+        return Id::AcDerChargeParameterDiscoveryReq;
+    case Type::DER_AC_ChargeParameterDiscoveryRes:
+        return Id::AcDerChargeParameterDiscoveryRes;
+    case Type::DER_AC_ChargeLoopReq:
+        return Id::AcDerChargeLoopReq;
+    case Type::DER_AC_ChargeLoopRes:
+        return Id::AcDerChargeLoopRes;
+    case Type::DER_SAE_AC_ChargeParameterDiscoveryReq:
+        return Id::AcDerSaeChargeParameterDiscoveryReq;
+    case Type::DER_SAE_AC_ChargeParameterDiscoveryRes:
+        return Id::AcDerSaeChargeParameterDiscoveryRes;
+    case Type::DER_SAE_AC_ChargeLoopReq:
+        return Id::AcDerSaeChargeLoopReq;
+    case Type::DER_SAE_AC_ChargeLoopRes:
+        return Id::AcDerSaeChargeLoopRes;
     }
 
     return Id::UnknownMessage;
