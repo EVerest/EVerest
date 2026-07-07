@@ -23,7 +23,6 @@ public:
 private:
     GenericChargePointCallbacks& m_charge_point_callbacks;
     evse_securityIntf& m_evse_security_interface;
-    ocpp::v2::Callbacks m_callbacks;
 
     std::atomic<modes_t> m_mode{modes_t::prefer_ocpp_2};
     state_t m_state{state_t::idle};
