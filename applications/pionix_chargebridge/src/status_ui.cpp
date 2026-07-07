@@ -31,8 +31,7 @@ constexpr std::size_t STATUS_MESSAGE_MAX_LENGTH = 1024;
 // cursor is over the component, so several scrollers can coexist.
 class ScrollerBase : public ftxui::ComponentBase {
 public:
-    explicit ScrollerBase(ftxui::Component child, bool stick_to_bottom = false) :
-        stick_to_bottom_(stick_to_bottom) {
+    explicit ScrollerBase(ftxui::Component child, bool stick_to_bottom = false) : stick_to_bottom_(stick_to_bottom) {
         Add(std::move(child));
     }
 
@@ -178,8 +177,9 @@ status_ui::status_ui(status_ui_options options, std::vector<std::string> cb_name
     m_log_capacity = std::max(m_options.status_message_lines, k_min_scrollback);
 
     if (m_terminal_active()) {
-        utilities::set_print_error_sink(
-            [this](std::string device, std::string message) { publish_message(std::move(device), std::move(message)); });
+        utilities::set_print_error_sink([this](std::string device, std::string message) {
+            publish_message(std::move(device), std::move(message));
+        });
     }
 }
 
@@ -422,8 +422,7 @@ void status_ui::run_terminal_loop() {
         auto axis_label = [](float value) {
             return std::to_string(static_cast<long>(std::lround(static_cast<double>(value))));
         };
-        auto header =
-            hbox({text(title) | bold, text(" [" + unit + "]") | dim, filler(), text("now=" + now) | bold});
+        auto header = hbox({text(title) | bold, text(" [" + unit + "]") | dim, filler(), text("now=" + now) | bold});
         auto yaxis = vbox({
                          text(axis_label(vmax)) | dim | align_right,
                          filler(),
@@ -431,8 +430,8 @@ void status_ui::run_terminal_loop() {
                      }) |
                      size(HEIGHT, EQUAL, k_spark_height) | size(WIDTH, EQUAL, k_axis_width);
         auto body = hbox({yaxis, separator(), spark(data, vmin, vmax) | flex});
-        auto footer = hbox({text("") | size(WIDTH, EQUAL, k_axis_width + 1), text("oldest") | dim, filler(),
-                            text("now") | dim});
+        auto footer =
+            hbox({text("") | size(WIDTH, EQUAL, k_axis_width + 1), text("oldest") | dim, filler(), text("now") | dim});
         return vbox({header, body, footer});
     };
 
@@ -498,7 +497,7 @@ void status_ui::run_terminal_loop() {
         cells.push_back(glyph(row.heartbeat) | hcenter | size(WIDTH, EQUAL, k_glyph_width));
         cells.push_back(glyph(row.io) | hcenter | size(WIDTH, EQUAL, k_glyph_width));
         cells.push_back((row.mcu_resets.has_value() ? styled(std::to_string(*row.mcu_resets), Color::White, false)
-                                                     : styled("-", Color::GrayDark, false)) |
+                                                    : styled("-", Color::GrayDark, false)) |
                         hcenter | size(WIDTH, EQUAL, k_rst_width));
         auto line = row_with_separators(std::move(cells));
         if (entry.active) {
@@ -520,10 +519,9 @@ void status_ui::run_terminal_loop() {
         if (m_status_rows.empty()) {
             return window(text("Instance"), text("no instances configured")) | flex;
         }
-        const std::size_t idx =
-            (m_selected_row >= 0 && m_selected_row < static_cast<int>(m_status_rows.size()))
-                ? static_cast<std::size_t>(m_selected_row)
-                : 0;
+        const std::size_t idx = (m_selected_row >= 0 && m_selected_row < static_cast<int>(m_status_rows.size()))
+                                    ? static_cast<std::size_t>(m_selected_row)
+                                    : 0;
         auto const& row = m_status_rows[idx];
 
         auto series = collect_plottable_series(row.telemetry, row.adc, row.gpio, row.io_telemetry);
@@ -657,8 +655,7 @@ void status_ui::run_terminal_loop() {
             const std::string child_prefix = filter_name + "/";
             for (auto const& entry : m_log_messages) {
                 auto const& device = entry.first;
-                const bool matches = filter_name.empty() || device == filter_name ||
-                                     device.rfind(child_prefix, 0) == 0;
+                const bool matches = filter_name.empty() || device == filter_name || device.rfind(child_prefix, 0) == 0;
                 if (matches) {
                     shown.push_back(entry.second);
                 }
@@ -745,8 +742,8 @@ void status_ui::run_terminal_loop() {
         return vbox({
                    text("Set name prefix") | bold,
                    separator(),
-                   hbox({text("Name (max 8 chars): "),
-                         name_input->Render() | inverted | size(WIDTH, GREATER_THAN, 12)}),
+                   hbox(
+                       {text("Name (max 8 chars): "), name_input->Render() | inverted | size(WIDTH, GREATER_THAN, 12)}),
                    text("Stored locally — not yet sent to the MCU (protocol pending).") | dim,
                    separator(),
                    hbox({filler(), set_button->Render(), text("  "), cancel_button->Render()}),

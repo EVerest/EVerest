@@ -96,9 +96,16 @@ void print_status_table(const chargebridge_status& s, std::ostream& os) {
     constexpr std::size_t W = 12;
 
     const std::vector<Field> bool_fields{
-        {"discovered", s.discovered}, {"connected", s.connected}, {"can0", s.can0}, {"serial1", s.serial1},
-        {"serial2", s.serial2},       {"serial3", s.serial3},     {"plc", s.plc},   {"bsp", s.bsp},
-        {"heartbeat", s.heartbeat},   {"io", s.io},
+        {"discovered", s.discovered},
+        {"connected", s.connected},
+        {"can0", s.can0},
+        {"serial1", s.serial1},
+        {"serial2", s.serial2},
+        {"serial3", s.serial3},
+        {"plc", s.plc},
+        {"bsp", s.bsp},
+        {"heartbeat", s.heartbeat},
+        {"io", s.io},
     };
     const std::vector<NumericField> numeric_fields{
         {"mcu_resets", s.mcu_resets},

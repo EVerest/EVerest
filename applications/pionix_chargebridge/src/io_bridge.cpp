@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
 
+#include <algorithm>
 #include <charge_bridge/io_bridge.hpp>
 #include <charge_bridge/utilities/logging.hpp>
 #include <charge_bridge/utilities/platform_utils.hpp>
 #include <charge_bridge/utilities/string.hpp>
-#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -63,8 +63,7 @@ io_bridge::io_bridge(io_config const& config, everest::lib::io::event::event_fd&
             m_ws28_receive_topic + "#", [this](auto&, auto const& payload) { dispatch_ws28(payload); },
             everest::lib::io::mqtt::mqtt_client::QoS::at_most_once);
         m_mqtt.subscribe(
-            m_ws28_anim_receive_topic + "#",
-            [this](auto&, auto const& payload) { dispatch_ws28_anim(payload); },
+            m_ws28_anim_receive_topic + "#", [this](auto&, auto const& payload) { dispatch_ws28_anim(payload); },
             everest::lib::io::mqtt::mqtt_client::QoS::at_most_once);
     });
 
@@ -254,9 +253,9 @@ void io_bridge::dispatch_ws28_anim(everest::lib::io::mqtt::mqtt_client::message 
 
     // style name -> Ws28AnimStyle value (must match the enum in ws28_led.hpp / the comment in
     // cb_management.h). Names are also accepted as a plain integer.
-    static const std::vector<std::string> style_names = {
-        "static", "blink",   "breathe",       "wipe",    "theater",  "scanner",
-        "comet",  "rainbow", "rainbow_chase", "sparkle", "gradient", "fire"};
+    static const std::vector<std::string> style_names = {"static",        "blink",   "breathe",  "wipe",
+                                                         "theater",       "scanner", "comet",    "rainbow",
+                                                         "rainbow_chase", "sparkle", "gradient", "fire"};
 
     // "RRGGBB" hex -> packed bytes; returns false on a malformed colour.
     auto parse_color = [](std::string const& s, uint8_t& r, uint8_t& g, uint8_t& b) -> bool {
@@ -457,8 +456,8 @@ void io_bridge::handle_udp_rx(everest::lib::io::udp::udp_payload const& payload)
     }
     auto const entry_count = data.data.telemetry.number_of_entries;
     if (entry_count > CB_TELEMETRY_MAX_ENTRIES || size != fixed_prefix + entry_count * entry_size) {
-        std::cout << "INVALID TELEMETRY in UDP RX of IO: entries=" << static_cast<int>(entry_count)
-                  << " size=" << size << std::endl;
+        std::cout << "INVALID TELEMETRY in UDP RX of IO: entries=" << static_cast<int>(entry_count) << " size=" << size
+                  << std::endl;
         return;
     }
 

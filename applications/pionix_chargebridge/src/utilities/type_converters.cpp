@@ -381,7 +381,6 @@ bool decode_CbAdcMode(c4::yml::ConstNodeRef const& node, CbAdcMode& rhs) {
     return false;
 }
 
-
 bool decode_RelayConfig(c4::yml::ConstNodeRef const& node, RelayConfig& rhs) {
     using ryml::ConstNodeRef;
 
@@ -487,7 +486,6 @@ bool decode_CbAdcConfig(c4::yml::ConstNodeRef const& node, CbAdcConfig& rhs) {
 
     return true;
 }
-
 
 namespace EXT_API = everest::lib::API;
 namespace EXT_API_BSP = EXT_API::V1_0::types::evse_board_support;
