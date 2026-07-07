@@ -51,7 +51,7 @@ def wait_for_log_message(caplog, needle: str, timeout_s: float = 20.0, start_ind
     raise TimeoutError(f"Timeout waiting for log message containing '{needle}'.")
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 def test_manager_stop_during_startup(
     everest_core: EverestCore, connected_mqtt_client, caplog
 ):
@@ -82,7 +82,7 @@ def test_manager_stop_during_startup(
         wait_for_log_message(caplog, "SIGINT/SIGTERM received", timeout_s=20.0, start_index=log_marker)
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 @pytest.mark.everest_manager_args("--recover-module-crashes")
 def test_manager_restarts_modules_after_unexpected_exit(
     everest_core: EverestCore, connected_mqtt_client, caplog
@@ -133,7 +133,7 @@ def test_manager_restarts_modules_after_unexpected_exit(
     )
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 @pytest.mark.everest_manager_args("--recover-module-crashes")
 def test_manager_restarts_modules_after_unexpected_exit_max_3_times(
     everest_core: EverestCore, connected_mqtt_client, caplog
@@ -225,7 +225,7 @@ def test_manager_restarts_modules_after_unexpected_exit_max_3_times(
         )
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 def test_manager_does_not_transition_back_to_running_when_stopped_during_startup(
     everest_core: EverestCore, caplog
 ):
@@ -256,7 +256,7 @@ def test_manager_does_not_transition_back_to_running_when_stopped_during_startup
     ), "Manager must not transition back to Running after shutdown was requested during startup."
 
 
-@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_core_config("config-sil-manager-lifecycle.yaml")
 @pytest.mark.everest_manager_args("--recover-module-crashes")
 def test_manager_recovers_after_crash_with_blocked_module_timeout(
     everest_core: EverestCore, connected_mqtt_client, caplog

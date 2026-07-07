@@ -73,12 +73,7 @@ struct ModuleStartInfo {
 
 namespace {
 
-// File-local helpers and spawn/runtime utilities.
-// Keep these outside Manager when they are stateless, process-exec focused, and
-// not part of manager state-machine behavior:
-// - wait status formatting/inspection
-// - module process environment setup and exec wrappers
-// - module spawning helpers
+// File-local helpers for wait-status inspection, module process environment setup and module spawning.
 
 /// \brief Convert a wait status code to a compact readable string.
 std::string format_wait_status(int status) {
@@ -415,7 +410,7 @@ ConfigBootMode parse_config_boot_mode(const std::string& config_opt, const std::
     throw std::logic_error("Could not parse config boot source, this should never happen.");
 }
 
-/// \brief Disconnect MQTT and perform manager process cleanup.
+/// \brief Disconnect from MQTT; last cleanup step before the manager exits.
 void cleanup(MQTTAbstraction& mqtt_abstraction) {
     mqtt_abstraction.disconnect();
 }
@@ -473,6 +468,24 @@ void print_shutdown_message(const std::optional<std::chrono::steady_clock::time_
 
 // ---- State/event handlers ---------------------------------------------------
 
+std::string Manager::format_unclean_exits() const {
+    std::string bad_modules;
+    for (const auto& info : shutdown_info_) {
+        if (!is_clean_exit(info.wstatus)) {
+            bad_modules += fmt::format(" {} ({})", info.id, format_wait_status(info.wstatus));
+        }
+    }
+    return bad_modules;
+}
+
+void Manager::reset_shutdown_state() {
+    shutdown_info_.clear();
+    shutdown_start_time_ = std::nullopt;
+    shutdown_cause_ = ShutdownCause::None;
+    force_terminate_start_time_ = std::nullopt;
+    force_kill_sent_ = false;
+}
+
 void Manager::handle_restart_modules_after_shutdown(RuntimeContext& ctx) {
     // Cleanup with the OLD config before the reload below. Required because this function is also
     // called from advance_lifecycle_state_if_ready() (crash-with-restart path) which does not go
@@ -481,22 +494,12 @@ void Manager::handle_restart_modules_after_shutdown(RuntimeContext& ctx) {
 
     ctx.config = std::make_shared<ManagerConfig>(ctx.ms);
     module_handles_ = handle_start_modules(ctx);
-    shutdown_cause_ = ShutdownCause::None;
-    shutdown_start_time_ = std::nullopt;
-    force_terminate_start_time_ = std::nullopt;
-    force_kill_sent_ = false;
-    shutdown_info_.clear();
+    reset_shutdown_state();
     EVLOG_info << "Modules restart initiated with reloaded configuration.";
 }
 
 std::optional<int> Manager::handle_finish_normal_shutdown(RuntimeContext& ctx, ManagerAdminPanel& admin_panel) {
-    std::string bad_modules;
-    for (const auto& shutdown_info_entry : shutdown_info_) {
-        if (!is_clean_exit(shutdown_info_entry.wstatus)) {
-            bad_modules +=
-                fmt::format(" {} ({})", shutdown_info_entry.id, format_wait_status(shutdown_info_entry.wstatus));
-        }
-    }
+    const std::string bad_modules = format_unclean_exits();
     // Cleanup module state while MQTT is still connected (must be before cleanup() in Exiting path).
     cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
     if (sigint_received_) {
@@ -509,9 +512,7 @@ std::optional<int> Manager::handle_finish_normal_shutdown(RuntimeContext& ctx, M
         }
         admin_panel.shutdown_controller();
         cleanup(ctx.mqtt_abstraction);
-        shutdown_cause_ = ShutdownCause::None;
-        force_terminate_start_time_ = std::nullopt;
-        force_kill_sent_ = false;
+        reset_shutdown_state();
         transition_to(ManagerState::Exiting);
         return EXIT_SUCCESS;
     }
@@ -519,11 +520,7 @@ std::optional<int> Manager::handle_finish_normal_shutdown(RuntimeContext& ctx, M
     if (!bad_modules.empty()) {
         EVLOG_warning << "Modules that did not shut down cleanly:" << bad_modules;
     }
-    shutdown_info_.clear();
-    shutdown_start_time_ = std::nullopt;
-    shutdown_cause_ = ShutdownCause::None;
-    force_terminate_start_time_ = std::nullopt;
-    force_kill_sent_ = false;
+    reset_shutdown_state();
     transition_to(ManagerState::Idle);
     EVLOG_info << "Manager is idle after module shutdown. Send SIGINT/SIGTERM to stop.";
     return std::nullopt;
@@ -535,12 +532,7 @@ std::optional<int> Manager::handle_finish_crash_recovery(RuntimeContext& ctx, Ma
                                        std::chrono::steady_clock::now() - shutdown_start_time_.value())
                                        .count()
                                  : 0;
-    std::string bad_modules;
-    for (const auto& info : shutdown_info_) {
-        if (!is_clean_exit(info.wstatus)) {
-            bad_modules += fmt::format(" {} ({})", info.id, format_wait_status(info.wstatus));
-        }
-    }
+    const std::string bad_modules = format_unclean_exits();
     if (bad_modules.empty()) {
         EVLOG_info << fmt::format("All {} modules shut down gracefully after crash [{}ms].", shutdown_info_.size(),
                                   duration_ms);
@@ -551,11 +543,7 @@ std::optional<int> Manager::handle_finish_crash_recovery(RuntimeContext& ctx, Ma
     }
 
     cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
-    shutdown_info_.clear();
-    shutdown_start_time_ = std::nullopt;
-    shutdown_cause_ = ShutdownCause::None;
-    force_terminate_start_time_ = std::nullopt;
-    force_kill_sent_ = false;
+    reset_shutdown_state();
 
     if (recover_module_crashes_) {
         transition_to(ManagerState::Idle);
@@ -583,16 +571,17 @@ std::optional<int> Manager::handle_finalize_shutdown_transition(RuntimeContext& 
 }
 
 void Manager::handle_initiate_graceful_shutdown(const std::chrono::steady_clock::time_point& module_exited_time,
-                                                bool publish_when_sigint_received, const std::string* info_log,
+                                                bool publish_when_sigint_received,
+                                                const std::optional<std::string>& info_log,
                                                 MQTTAbstraction& mqtt_abstraction, const ManagerSettings& ms) {
     if (is_in_shutdown_flow_state() or is_idle()) {
         return;
     }
     transition_to(ManagerState::ShutdownRequested);
     shutdown_start_time_ = module_exited_time;
-    if (publish_when_sigint_received || not sigint_received_) {
-        if (info_log != nullptr) {
-            EVLOG_critical << *info_log;
+    if (publish_when_sigint_received or not sigint_received_) {
+        if (info_log.has_value()) {
+            EVLOG_critical << info_log.value();
         }
         mqtt_abstraction.publish(fmt::format("{}shutdown", ms.mqtt_settings.everest_prefix), std::string("true"),
                                  QOS::QOS2, false);
@@ -1148,7 +1137,7 @@ bool Manager::handle_child_exit(pid_t pid, int wstatus, RuntimeContext& ctx, Man
         ++unexpected_module_exit_count_;
         const auto shutdown_info_log = "Module " + fmt::format(TERMINAL_STYLE_BLUE, "{}", module_name) +
                                        " exited unexpectedly, signaling remaining modules to shut down gracefully...";
-        handle_initiate_graceful_shutdown(module_exited_time, true, &shutdown_info_log, ctx.mqtt_abstraction, ctx.ms);
+        handle_initiate_graceful_shutdown(module_exited_time, true, shutdown_info_log, ctx.mqtt_abstraction, ctx.ms);
         transition_to(ManagerState::CrashShutdownInProgress);
         shutdown_info_.push_back({module_name, wstatus});
         return true;

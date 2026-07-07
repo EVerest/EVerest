@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -50,7 +51,7 @@ public:
 private:
     bool available = false;
     int signal_fd = -1;
-    struct pollfd pollfds[1];
+    std::array<struct pollfd, 1> pollfds;
 };
 
 } // namespace Everest::system

@@ -435,6 +435,10 @@ json Everest::call_cmd(const Requirement& req, const std::string& cmd_name, cons
               (res_future_status == std::future_status::timeout && std::chrono::steady_clock::now() < res_wait)));
 
     if (this->shutdown_received) {
+        // Once the shutdown signal has been received, module communication is stopped (MQTT is
+        // disconnected after the shutdown handler ran), so the pending command result can never
+        // arrive. Throw to unwind the caller blocked on this command instead of letting it run
+        // into the command timeout.
         EVLOG_AND_THROW(Shutdown(fmt::format(
             "Shutting down while waiting for result of {}->{}()",
             this->config.printable_identifier(connection.module_id, connection.implementation_id), cmd_name)));
@@ -891,22 +895,12 @@ void Everest::handle_ready(const json& data) {
     // this->heartbeat_thread = std::thread(&Everest::heartbeat, this);
 }
 
-/// \brief Shutdown handler for shutting down the module
+/// \brief Shutdown handler for shutting down the module. Any message on the shutdown topic triggers
+/// the shutdown; the payload is only logged (it may carry the shutdown cause in the future).
 void Everest::handle_shutdown(const json& data) {
     BOOST_LOG_FUNCTION();
 
     EVLOG_debug << fmt::format("handle_shutdown: {}", data.dump());
-
-    bool shutdown = false;
-
-    if (data.is_boolean()) {
-        shutdown = data.get<bool>();
-    }
-
-    // ignore non-truish shutdown signals
-    if (!shutdown) {
-        return;
-    }
 
     if (this->shutdown_received) {
         EVLOG_warning << "Ignoring repeated everest shutdown signal!";

@@ -1,15 +1,9 @@
-%% EVerest manager — ManagerState lifecycle (Mermaid conversion of ManagerLifecycleStateMachine.puml)
-%% Narrative: lib/everest/framework/src/manager.hpp
+%% EVerest manager — ManagerState lifecycle state machine
+%% Narrative: lib/everest/framework/docs/ManagerLifecycle.md
 %% Transitions / timeouts: lib/everest/framework/src/manager.cpp
 %%
 %% Render: GitHub/GitLab markdown fenced block, VS Code Mermaid preview, or:
 %%   npx -y @mermaid-js/mermaid-cli -i ManagerLifecycleStateMachine.mmd -o ManagerLifecycleStateMachine.svg
-%%
-%% Conversion notes vs PlantUML:
-%% - Composite regions (Startup / Shutdown / Finalize) are supported.
-%% - Per-edge stroke color matching source state fill is not supported; states use classDef fills instead.
-%% - Multi-line creole labels and bottom legend are replaced by shorter edge labels + comments here.
-%% - Orthogonal routing and skinparam theming are not available.
 
 stateDiagram-v2
     direction TB

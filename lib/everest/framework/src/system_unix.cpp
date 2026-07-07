@@ -305,7 +305,7 @@ std::optional<uint32_t> SignalPolling::poll_signal() {
         return std::nullopt;
     }
     std::optional<uint32_t> received_signal = std::nullopt;
-    auto poll_retval = poll(pollfds, 1, SIGNAL_POLL_TIMEOUT_MS);
+    auto poll_retval = poll(pollfds.data(), pollfds.size(), SIGNAL_POLL_TIMEOUT_MS);
     if (poll_retval > 0) {
         struct signalfd_siginfo siginfo;
         auto read_retval = read(signal_fd, &siginfo, sizeof(siginfo));

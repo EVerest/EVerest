@@ -207,6 +207,11 @@ public:
     ///
     /// \brief registers a callback \p handler that is called when the global shutdown signal is received via mqtt
     ///
+    /// Receiving the shutdown signal stops all module communication: after the registered handler
+    /// has returned, the MQTT connection is disconnected, so no further variable publications or
+    /// command calls are sent or received. Commands still waiting for their result at that point
+    /// fail with a Shutdown exception.
+    ///
     void register_on_shutdown_handler(const std::function<void()>& handler);
 
     ///
