@@ -70,8 +70,6 @@ charge_bridge::charge_bridge(charge_bridge_config const& config,
                              std::function<void(utilities::chargebridge_status)> status_sink,
                              std::function<void(utilities::chargebridge_status)> tick_sink) :
     m_status_sink(std::move(status_sink)), m_tick_sink(std::move(tick_sink)), m_config(config) {
-    std::cout << "CB CONSTRUCT" << std::endl;
-
     m_endpoint_intent = parse_endpoint_intent(config.cb_remote);
 }
 
@@ -99,7 +97,7 @@ discovery_device_type charge_bridge::mdns_device_type() const {
 std::set<std::string> charge_bridge::select_discovery_interfaces() const {
     std::set<std::string> available_interfaces;
     try {
-        for (auto const& item : everest::lib::io::socket::get_all_interaces()) {
+        for (auto const& item : everest::lib::io::socket::get_all_interfaces()) {
             available_interfaces.insert(item.name);
         }
     } catch (std::exception const&) {
@@ -466,14 +464,14 @@ void charge_bridge::manage(everest::lib::io::event::fd_event_handler& handler, s
 
     m_event_handler->add_action([this]() {
         if (m_config.telemetry.has_value()) {
-            m_1s_tick.disarm();
             m_mqtt = std::make_unique<everest::lib::io::mqtt::mqtt_client>(mqtt_reconnect_timeout_ms);
             m_mqtt->connect(m_config.telemetry->mqtt_bind, m_config.telemetry->mqtt_remote,
                             m_config.telemetry->mqtt_port, m_config.telemetry->mqtt_ping_interval_ms);
-
-            m_mqtt->set_callback_connect(
-                [this](auto&, auto, auto, auto const&) { m_1s_tick.set_timeout(std::chrono::seconds(1)); });
         }
+        // Drive the 1s status/telemetry tick regardless of telemetry config or broker reachability,
+        // so the status report and the terminal UI's live readouts refresh even with telemetry
+        // disabled or the MQTT broker down. (timer_fd is periodic, so a single arm keeps it firing.)
+        m_1s_tick.set_timeout(std::chrono::seconds(1));
         // Register the manage events (readiness notifier + tick) regardless of telemetry, so the
         // status report is produced even when telemetry/MQTT is disabled. The MQTT fd itself is only
         // registered when the telemetry client exists (see register_manage_events).
@@ -485,7 +483,7 @@ void charge_bridge::manage(everest::lib::io::event::fd_event_handler& handler, s
     }
 
     using clock = std::chrono::steady_clock;
-    auto action = [this](charge_bridge_status& current_status, int& error_count,
+    auto action = [this](auto& status_handle, charge_bridge_status& current_status, int& error_count,
                          std::optional<clock::time_point>& next_connect_retry_time, std::future<bool>& startup_runtime,
                          bool& startup_runtime_in_progress,
                          std::optional<clock::time_point>& discovery_attempt_deadline,
@@ -576,7 +574,21 @@ void charge_bridge::manage(everest::lib::io::event::fd_event_handler& handler, s
                 return;
             }
 
-            if (update_firmware(m_force_firmware_update)) {
+            // update_firmware() blocks (connection probe, and potentially a multi-minute firmware
+            // upload) and does not touch the guarded status. Release the monitor lock across it so
+            // get_status() on the shared event-loop thread — and therefore every other bridge
+            // instance — is not stalled for the duration. current_status stays valid; only the lock
+            // is dropped and re-acquired.
+            status_handle.unlock();
+            bool firmware_ok = false;
+            try {
+                firmware_ok = update_firmware(m_force_firmware_update);
+            } catch (...) {
+                status_handle.lock();
+                throw;
+            }
+            status_handle.lock();
+            if (firmware_ok) {
                 if (not m_internal_runtime_started) {
                     startup_runtime = start_internal_runtime();
                     startup_runtime_in_progress = true;
@@ -677,7 +689,7 @@ void charge_bridge::manage(everest::lib::io::event::fd_event_handler& handler, s
             return false;
         };
         while (run.load()) {
-            action(*handle, error_count, next_connect_retry_time, startup_runtime, startup_runtime_in_progress,
+            action(handle, *handle, error_count, next_connect_retry_time, startup_runtime, startup_runtime_in_progress,
                    discovery_attempt_deadline, discovery_retry_time, stop_runtime, runtime_stop_in_progress);
             if (handle->discovery_pending && is_mdns_endpoint()) {
                 auto wait_timeout =

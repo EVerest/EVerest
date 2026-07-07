@@ -384,14 +384,6 @@ void io_bridge::send_ws28_anim_udp() {
     }
 }
 
-void io_bridge::handle_error_timer() {
-    if (m_udp_on_error) {
-        if (m_udp) {
-            m_udp->reset();
-        }
-    }
-}
-
 void io_bridge::handle_heartbeat_timer() {
     send_udp();
 }
@@ -413,6 +405,12 @@ void io_bridge::handle_udp_rx(everest::lib::io::udp::udp_payload const& payload)
                 std::uint16_t len = dbg.data.length;
                 if (len > CB_DEBUG_UART_LINE_MAX) {
                     len = CB_DEBUG_UART_LINE_MAX;
+                }
+                // Never trust the declared length past what actually arrived: a truncated or crafted
+                // packet must not append uninitialized filler bytes to the reassembly buffer.
+                auto const received_text = copy_n - hdr;
+                if (len > received_text) {
+                    len = static_cast<std::uint16_t>(received_text);
                 }
                 // Reassemble the byte stream and emit one log entry per complete line. Route through
                 // print_info (not raw std::cout) so each line lands in the terminal UI's message

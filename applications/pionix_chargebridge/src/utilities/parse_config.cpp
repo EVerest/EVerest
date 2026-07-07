@@ -257,6 +257,14 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         });
     }
 
+    // The section was renamed "gpio" -> "io". Reject the old name explicitly: silently ignoring it
+    // would leave c.io unset and send a zeroed GPIO config to the MCU (all pins disabled, IO MQTT
+    // topics dead) with no warning.
+    if (not config.find_child(ryml::to_csubstr("gpio")).invalid()) {
+        std::cerr << "Config error: the 'gpio' section was renamed to 'io'; please update the config" << std::endl;
+        throw std::runtime_error("");
+    }
+
     // Combined GPIO + ADC bridge: a single "io" config section drives one bridge that both
     // writes GPIO outputs and republishes the GPIO inputs + ADC values from the combined packet.
     get_block("io", c.io, [&](auto& cfg, auto const& main) {
@@ -375,11 +383,6 @@ charge_bridge_config set_config_placeholders(charge_bridge_config const& src, ch
     if (result.io.has_value()) {
         result.io->cb = result.cb_name;
         result.io->cb_remote = ip;
-    }
-
-    if (result.heartbeat.has_value()) {
-        result.heartbeat->cb_remote = ip;
-        result.heartbeat->cb = result.cb_name;
     }
 
     return result;

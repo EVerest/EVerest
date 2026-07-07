@@ -51,13 +51,6 @@ std::ostream& operator<<(std::ostream& s, color c) {
 
 namespace {
 
-class null_buffer : public std::streambuf {
-public:
-    int overflow(int c) override {
-        return c;
-    }
-};
-
 using print_error_sink_storage = print_error_sink;
 
 everest::lib::util::monitor<print_error_sink_storage> print_error_sink_monitor{print_error_sink{}};
@@ -127,26 +120,24 @@ std::string print_error_prefix_plain(std::string const& device, std::string cons
     oss << "[ " << std::left << std::setw(13) << unit << " ] " << std::left << std::setw(20) << device << " ";
     if (status == -1) {
         oss << "WARNING ";
-    } else {
+    } else if (status != 0) {
         oss << "ERROR ( " << status << " ) ";
     }
+    // status == 0 is a success/recovery line: just the prefix, no ERROR/WARNING marker.
 
     return oss.str();
 }
 
 std::string print_error_prefix_ansi(std::string const& device, std::string const& unit, color level, int status) {
     std::ostringstream oss;
-    if (status == 0) {
-        return {};
-    }
-
     oss << "[ " << level << std::setw(13) << std::left << unit << color::terminal << " ] " << color::unit
         << std::setw(20) << device << color::terminal << " ";
     if (status == -1) {
         oss << color::standard << "WARNING ";
-    } else {
+    } else if (status != 0) {
         oss << color::standard << "ERROR ( " << status << " ) ";
     }
+    // status == 0 is a success/recovery line: the (green) prefix only, no ERROR/WARNING marker.
 
     return oss.str();
 }
@@ -183,20 +174,12 @@ inline std::ostream& capture_print_info(std::string const& device, std::string c
     return capture_stream;
 }
 
-inline std::ostream& null_stream() {
-    static null_buffer buffer;
-    static std::ostream stream(&buffer);
-    return stream;
-}
-
 std::ostream& print_error(std::string const& device, std::string const& unit, int status) {
     // clang-format off
     auto ctrl =
         status == 0 ? color::success :
         status == -1 ? color::warning:
         color::error;
-
-    if (status == 0 ){ return null_stream(); }
 
     if (current_print_error_sink()) {
         return capture_print_error(device, unit, status);

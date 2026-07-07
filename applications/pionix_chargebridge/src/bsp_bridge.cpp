@@ -69,8 +69,15 @@ void bsp_bridge::create_udp_client(std::string const& remote, uint16_t remote_po
     m_udp_ready = false;
     m_udp_on_error = false;
     m_udp->set_rx_handler([this](auto const& data, auto&) {
+        // The datagram must carry exactly one fixed-size packet. Drop anything else: a larger
+        // datagram would otherwise overflow the stack struct, a shorter one would leave it
+        // partially uninitialized and publish garbage CP state. (UDP is unauthenticated, so this
+        // is reachable from any local sender.)
+        if (data.size() != sizeof(evse_bsp_cb_to_host)) {
+            return;
+        }
         evse_bsp_cb_to_host msg;
-        std::memcpy(&msg, data.buffer.data(), data.size());
+        std::memcpy(&msg, data.buffer.data(), sizeof(msg));
         m_cp_state = cp_state_to_string(msg.cp_state);
         m_api.set_cb_message(msg);
     });

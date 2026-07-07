@@ -9,6 +9,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 #include <charge_bridge/utilities/print_status.hpp>
@@ -174,19 +175,27 @@ void print_status_log(const chargebridge_status& s, std::ostream& os) {
     const bool all_good = s.connected && good(s.discovered) && good(s.can0) && good(s.serial1) && good(s.serial2) &&
                           good(s.serial3) && good(s.plc) && good(s.bsp) && good(s.heartbeat) && good(s.io);
 
+    // Log mode is auto-selected when stdout is not a TTY, so colorize only when stdout actually is a
+    // terminal. Otherwise the ANSI escapes pollute log files / journald and break downstream parsing.
+    static const bool use_color = ::isatty(STDOUT_FILENO) != 0;
+    auto col = [](char const* code) { return use_color ? code : ""; };
+
     // Mirror the "[ <unit> ] <device>  <details>" style of print_error, with the unit colored red while
     // not everything is connected and green once all services are up. This gives a single line that
     // turns green when the previously-red "Waiting…" conditions are resolved.
-    const char* unit_color = all_good ? ansi::green : ansi::red;
+    const char* unit_color = col(all_good ? ansi::green : ansi::red);
     const char* unit_text = all_good ? "CONNECTED" : "CONNECTING";
 
-    os << "[ " << unit_color << std::left << std::setw(13) << unit_text << ansi::reset << " ] " << ansi::bold_bright_white
-       << std::left << std::setw(20) << escape_kv_string(s.cb_name) << ansi::reset << " ";
+    os << "[ " << unit_color << std::left << std::setw(13) << unit_text << col(ansi::reset) << " ] "
+       << col(ansi::bold_bright_white) << std::left << std::setw(20) << escape_kv_string(s.cb_name) << col(ansi::reset)
+       << " ";
 
     // Each service is colored green (OK) / red (ERROR) / gray (N/A).
-    auto col_bool = [](bool ok) { return std::string(ok ? ansi::green : ansi::red) + (ok ? "OK" : "ERROR") + ansi::reset; };
-    auto field = [&col_bool](std::optional<bool> const& v) {
-        return v.has_value() ? col_bool(*v) : std::string(ansi::gray) + "N/A" + ansi::reset;
+    auto col_bool = [&col](bool ok) {
+        return std::string(col(ok ? ansi::green : ansi::red)) + (ok ? "OK" : "ERROR") + col(ansi::reset);
+    };
+    auto field = [&col, &col_bool](std::optional<bool> const& v) {
+        return v.has_value() ? col_bool(*v) : std::string(col(ansi::gray)) + "N/A" + col(ansi::reset);
     };
 
     os << "discovered=" << field(s.discovered) << " ";

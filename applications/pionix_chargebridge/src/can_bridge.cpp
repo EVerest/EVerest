@@ -3,6 +3,7 @@
 #include <charge_bridge/can_bridge.hpp>
 #include <charge_bridge/utilities/logging.hpp>
 #include <chrono>
+#include <cstddef>
 #include <cstring>
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/netlink/vcan_netlink_manager.hpp>
@@ -22,8 +23,10 @@ void msg_cb_to_host(cb_can_message const& src, everest::lib::io::can::socket_can
     tar.set_can_id_with_flags(src.can_id, src.can_flags & CanFlags_EFF, src.can_flags & CanFlags_RTR,
                               src.can_flags & CanFlags_ERR);
     tar.len8_dlc = 0;
-    tar.payload.resize(src.dlc);
-    std::memcpy(tar.payload.data(), src.data, src.dlc);
+    // dlc is wire data: clamp to the data array size so a bogus value can't over-read past src.data.
+    auto const len = std::min<std::size_t>(src.dlc, sizeof(src.data));
+    tar.payload.resize(len);
+    std::memcpy(tar.payload.data(), src.data, len);
 }
 
 void msg_host_to_cb(everest::lib::io::can::socket_can::ClientPayloadT const& src, cb_can_message& tar) {
@@ -106,9 +109,17 @@ can_bridge::can_bridge(can_bridge_config const& config, everest::lib::io::event:
 void can_bridge::create_udp_client(std::string const& remote, uint16_t remote_port) {
     m_udp = std::make_unique<everest::lib::io::udp::udp_client>(remote, remote_port, default_udp_timeout_ms);
     m_udp->set_rx_handler([this](auto const& data, auto&) {
+        // The MCU may omit trailing data bytes (see cb_can_message: "data bytes at the end may be
+        // omitted"), so the datagram can be shorter than the full struct but must at least cover the
+        // fixed header. Zero-init and copy only the bytes actually received to avoid reading past
+        // the receive buffer.
+        static constexpr auto header_size = offsetof(cb_can_message, data);
+        if (data.size() < header_size || data.size() > sizeof(cb_can_message)) {
+            return;
+        }
         everest::lib::io::can::socket_can::ClientPayloadT pl;
-        cb_can_message msg;
-        std::memcpy(&msg, data.buffer.data(), sizeof(cb_can_message));
+        cb_can_message msg = cb_can_message_set_zero;
+        std::memcpy(&msg, data.buffer.data(), data.size());
 
         msg_cb_to_host(msg, pl);
         if (is_data_msg(msg)) {

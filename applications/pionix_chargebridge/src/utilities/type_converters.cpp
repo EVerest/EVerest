@@ -410,8 +410,16 @@ bool decode_SafetyConfig(c4::yml::ConstNodeRef const& node, SafetyConfig& rhs) {
 
     rhs.pp_mode = decode<decltype(rhs.pp_mode)>(node, "pp_mode");
     rhs.cp_avg_ms = decode<decltype(rhs.cp_avg_ms)>(node, "cp_avg_ms", 10);
-    rhs.temperature_limit_C =
-        decode<decltype(rhs.temperature_limit_C)>(node, "temperature_limit_C", 0);
+    // The key was renamed temperature_limit_pt1000_C -> temperature_limit_C. Reject the old key
+    // explicitly instead of silently ignoring it: it would otherwise decode to the default 0
+    // (over-temperature protection disabled), so an upgraded config that still sets the old key
+    // would be silently stripped of a safety feature with no warning. A config that intentionally
+    // wants the limit off can still set temperature_limit_C: 0.
+    if (not node.find_child("temperature_limit_pt1000_C").invalid()) {
+        throw charge_bridge::utilities::yml_node_error(
+            node, "safety::temperature_limit_pt1000_C was renamed to temperature_limit_C; please update the config");
+    }
+    rhs.temperature_limit_C = decode<decltype(rhs.temperature_limit_C)>(node, "temperature_limit_C", 0);
     rhs.inverted_emergency_input = decode<decltype(rhs.inverted_emergency_input)>(node, "inverted_emergency_input", 0);
     rhs.enable_stop_charging_input =
         decode<decltype(rhs.enable_stop_charging_input)>(node, "enable_stop_charging_input", 1);

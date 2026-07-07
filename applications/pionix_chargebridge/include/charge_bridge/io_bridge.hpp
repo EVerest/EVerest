@@ -57,7 +57,6 @@ public:
     std::optional<io_state> latest_io() const;
 
 private:
-    void handle_error_timer();
     void handle_heartbeat_timer();
     void handle_ready();
     void create_udp_client(std::string const& remote, uint16_t remote_port);
