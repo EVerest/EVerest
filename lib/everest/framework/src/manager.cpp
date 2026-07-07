@@ -42,6 +42,11 @@ namespace fs = std::filesystem;
 using namespace Everest;
 
 const auto PARENT_DIED_SIGNAL = SIGTERM;
+// While no shutdown/force-kill deadline is running the main loop only has to react to signals
+// (SIGINT/SIGTERM/SIGCHLD wake the signal fd poll immediately), so it can block for a long time
+// instead of ticking every SIGNAL_POLL_TIMEOUT_MS.
+const auto IDLE_SIGNAL_POLL_TIMEOUT_MS = 60000;
+const auto SIGNAL_POLL_TIMEOUT_MS = 50;
 const auto SHUTDOWN_TIMEOUT_MS = 5000;
 const auto FORCE_KILL_GRACE_TIMEOUT_MS = 5000;
 const std::uint8_t MAX_UNEXPECTED_MODULE_RESTARTS = 3;
@@ -1301,9 +1306,20 @@ std::optional<int> Manager::handle_controller_ipc_poll(RuntimeContext& ctx, Mana
     return std::nullopt;
 }
 
+int Manager::signal_poll_timeout_ms() const {
+    if (is_in_shutdown_flow_state()) {
+        // shutdown/force-kill deadlines are checked from the main loop
+        return SIGNAL_POLL_TIMEOUT_MS;
+    }
+    return IDLE_SIGNAL_POLL_TIMEOUT_MS;
+}
+
 std::optional<int> Manager::handle_signal_poll(system::SignalPolling& signal_polling, RuntimeContext& ctx,
                                                ManagerAdminPanel& admin_panel) {
-    const auto signal_received = signal_polling.poll_signal();
+    // a readable controller IPC socket also ends the poll, so controller requests are serviced
+    // promptly on the next loop iteration even during a long idle poll
+    const auto signal_received =
+        signal_polling.poll_signal(signal_poll_timeout_ms(), admin_panel.controller_ipc_fd().value_or(-1));
     if (!signal_received.has_value()) {
         return std::nullopt;
     }

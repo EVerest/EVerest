@@ -273,6 +273,10 @@ private:
     std::optional<int> handle_signal_poll(Everest::system::SignalPolling& signal_polling, RuntimeContext& ctx,
                                           ManagerAdminPanel& admin_panel);
 
+    /// \brief Main-loop signal poll timeout: short while deadlines are running or controller IPC
+    ///        needs polling, long otherwise (SIGINT/SIGTERM/SIGCHLD wake the poll immediately).
+    int signal_poll_timeout_ms() const;
+
     const boost::program_options::variables_map& vm_;
     bool recover_module_crashes_{false};
     // state_ and sigint_received_ are also accessed from the module-ready handler running on the

@@ -33,6 +33,10 @@ struct ManagerAdminPanel {
     std::optional<int> poll_controller_ipc(bool& restart_modules, bool& modules_started, Everest::MQTTAbstraction& mqtt,
                                            const Everest::ManagerSettings& ms, const std::string& prefix_opt);
 
+    /// File descriptor of the controller IPC socket, usable as an extra wakeup fd for the
+    /// manager main-loop poll. nullopt when the admin panel is disabled or not initialized.
+    std::optional<int> controller_ipc_fd() const;
+
 private:
 #ifdef ENABLE_ADMIN_PANEL
     struct Impl;

@@ -45,6 +45,10 @@ struct ControllerHandle {
         return controller_ipc::receive_message(socket_fd);
     }
 
+    int fd() const {
+        return socket_fd;
+    }
+
     const pid_t pid;
 
 private:
@@ -205,6 +209,17 @@ std::optional<int> ManagerAdminPanel::poll_controller_ipc(bool& restart_modules,
     static_cast<void>(mqtt);
     static_cast<void>(ms);
     static_cast<void>(prefix_opt);
+    return std::nullopt;
+#endif
+}
+
+std::optional<int> ManagerAdminPanel::controller_ipc_fd() const {
+#ifdef ENABLE_ADMIN_PANEL
+    if (not impl) {
+        return std::nullopt;
+    }
+    return impl->handle.fd();
+#else
     return std::nullopt;
 #endif
 }

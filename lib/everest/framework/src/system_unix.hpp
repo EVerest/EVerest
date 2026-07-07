@@ -46,12 +46,16 @@ class SignalPolling {
 public:
     SignalPolling();
 
-    std::optional<uint32_t> poll_signal();
+    /// \brief Wait up to \p timeout_ms for a blocked signal (SIGINT/SIGTERM/SIGCHLD) to arrive.
+    ///        When \p extra_wakeup_fd is not -1, the poll also returns (with std::nullopt) as soon
+    ///        as that fd becomes readable, so the caller can service it without waiting for the
+    ///        timeout.
+    /// \return The received signal number, or std::nullopt on timeout/extra fd wakeup.
+    std::optional<uint32_t> poll_signal(int timeout_ms, int extra_wakeup_fd = -1);
 
 private:
     bool available = false;
     int signal_fd = -1;
-    std::array<struct pollfd, 1> pollfds;
 };
 
 } // namespace Everest::system
