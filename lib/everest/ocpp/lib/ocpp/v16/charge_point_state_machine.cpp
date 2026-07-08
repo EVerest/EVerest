@@ -8,6 +8,8 @@
 #include <stdexcept>
 #include <utility>
 
+#define REPORT_CLEARED_ERRORS false
+
 namespace ocpp {
 namespace v16 {
 
@@ -233,11 +235,15 @@ bool ChargePointFSM::handle_error_cleared(const std::string uuid) {
         return false;
     }
 
-    this->active_errors.erase(uuid);
+    auto node = this->active_errors.extract(uuid);
 
     // dont report StatusNotification if still "Faulted"
+    auto state = this->state;
     if (this->is_faulted()) {
-        return false;
+        if (!REPORT_CLEARED_ERRORS) {
+            return false;
+        }
+        state = FSMState::Faulted;
     }
 
     // defaults if no errors are active anymore
@@ -246,20 +252,33 @@ bool ChargePointFSM::handle_error_cleared(const std::string uuid) {
     std::optional<CiString<255>> vendor_id;
     std::optional<CiString<50>> vendor_error_code;
 
-    // report the latest error if there are still errors active
+    if (REPORT_CLEARED_ERRORS && !node.empty()) {
+        // Report the cleared error as resolved
+        auto cleared_error = std::move(node.mapped());
+        if (cleared_error.vendor_error_code.has_value()) {
+            info =
+                std::string("Error ") + std::string(cleared_error.vendor_error_code.value()) + std::string(" resolved");
+        }
+        vendor_id = cleared_error.vendor_id;
+        vendor_error_code = cleared_error.vendor_error_code;
+    }
+
+    // Report the latest error (code) if there are still errors active
     if (not this->active_errors.empty()) {
         const auto latest_error_opt = this->get_latest_error();
         if (latest_error_opt.has_value()) {
             const auto& latest_error = latest_error_opt.value();
             error_code = latest_error.error_code;
-            info = latest_error.info;
-            vendor_id = latest_error.vendor_id;
-            vendor_error_code = latest_error.vendor_error_code;
+            if (!REPORT_CLEARED_ERRORS) {
+                info = latest_error.info;
+                vendor_id = latest_error.vendor_id;
+                vendor_error_code = latest_error.vendor_error_code;
+            }
         }
     }
 
     // Send a StatusNotification.req
-    status_notification_callback(this->state, error_code, DateTime(), info, vendor_id, vendor_error_code);
+    status_notification_callback(state, error_code, DateTime(), info, vendor_id, vendor_error_code);
 
     return true;
 }
