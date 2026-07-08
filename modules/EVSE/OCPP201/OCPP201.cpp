@@ -1055,7 +1055,7 @@ void OCPP201::ready() {
     composed_device_model_storage->register_device_model_storage("OCPP", std::move(libocpp_device_model_storage));
     composed_device_model_storage->register_device_model_storage("EVEREST", this->everest_device_model_storage);
 
-    this->init_grid_support_routing();
+    this->init_grid_support_routing(evse_connector_structure);
 
     this->charge_point = std::make_unique<ocpp::v2::ChargePoint>(
         evse_connector_structure, std::move(composed_device_model_storage), this->ocpp_share_path.string(),
@@ -1345,10 +1345,7 @@ void OCPP201::push_active_directive_sets() {
     }
 }
 
-void OCPP201::init_grid_support_routing() {
-    if (this->r_grid_support.empty()) {
-        return;
-    }
+void OCPP201::init_grid_support_routing(const std::map<int32_t, int32_t>& evse_connector_structure) {
     for (const auto& grid_support : this->r_grid_support) {
         const auto mapping = grid_support->get_mapping();
         if (not mapping.has_value()) {
@@ -1360,6 +1357,13 @@ void OCPP201::init_grid_support_routing() {
         if (not inserted) {
             EVLOG_error << "grid_support connection on module " << grid_support->module_id << " maps evse "
                         << mapping->evse << " already served by another connection; keeping the first";
+        }
+    }
+
+    for (const auto& [evse_id, connector_count] : evse_connector_structure) {
+        if (this->grid_support_by_evse.find(evse_id) == this->grid_support_by_evse.end()) {
+            this->everest_device_model_storage->disable_der(evse_id);
+            EVLOG_info << "No grid_support connection for EVSE " << evse_id << ": DER controller disabled";
         }
     }
 }

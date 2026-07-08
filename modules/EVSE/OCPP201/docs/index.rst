@@ -122,6 +122,10 @@ At startup the module pre-provisions an ``ACDERCtrlr`` or ``DCDERCtrlr`` device-
 energy-transfer modes) with ``Available=false`` and an empty ``ModesSupported`` for every DER-capable EVSE, so no static
 device-model JSON is required for the DER controllers.
 
+Also at startup, any EVSE without a wired grid_support connection has its DER controller forced to ``Available=false``,
+even if a previous run persisted it as enabled. This prevents the CSMS from seeing DER as available after the
+grid_support wiring is removed from the configuration.
+
 The device declares its inverter capability through the ``capability`` variable. The module stores the capability, sets the
 component ``Available=true`` and writes ``ModesSupported`` through the device model (which lazily constructs the libocpp DER
 block), then pushes the current active directives filtered to the declared control types, so a freshly connected device

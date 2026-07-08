@@ -235,8 +235,10 @@ private:
     std::map<int32_t, grid_supportIntf*> grid_support_by_evse;
 
     /// \brief Populate grid_support_by_evse from the connections' framework mappings. Every connection
-    /// must carry a mapping; an unmapped connection is logged and excluded.
-    void init_grid_support_routing();
+    /// must carry a mapping; an unmapped connection is logged and excluded. Any EVSE without a wired
+    /// grid_support connection has its DER controller forced to Available=false, clearing any value a
+    /// previous run persisted.
+    void init_grid_support_routing(const std::map<int32_t, int32_t>& evse_connector_structure);
 
     /// \brief Resolve the grid_support connection mapped to \p evse_id, or nullptr if none.
     grid_supportIntf* grid_support_for_evse(int32_t evse_id) const;

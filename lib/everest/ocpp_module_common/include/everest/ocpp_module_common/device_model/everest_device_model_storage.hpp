@@ -47,6 +47,12 @@ to_der_ctrlr_config_set_variables(int32_t evse_id, const types::grid_support::DE
 ocpp::v2::SetVariableData to_der_ctrlr_available_set_variable(int32_t evse_id,
                                                               const types::grid_support::DERCapability& capability);
 
+/// \brief Forces the DER controller (DCDERCtrlr and ACDERCtrlr) of \p evse_id to Available "false" in \p storage.
+/// \details Writes "false" to the Available Actual attribute only when its current value is "true"; absent
+///          components/variables and values already not "true" are skipped silently. Used at startup to clear a
+///          persisted Available "true" on an EVSE that no longer has a wired grid_support connection.
+void disable_der_ctrlr(ocpp::v2::DeviceModelStorageInterface& storage, int32_t evse_id);
+
 class EverestDeviceModelStorage : public ocpp::v2::DeviceModelStorageInterface {
 public:
     EverestDeviceModelStorage(
@@ -89,6 +95,9 @@ public:
 
     /// \bried Updates the VehicleId variable for the ConnectedEV component
     void update_connected_ev_vehicle_id(const int32_t evse_id, const std::string& vehicle_id);
+
+    /// \brief Forces the DER controller (DC or AC) of \p evse_id to Available "false", if present.
+    void disable_der(const int32_t evse_id);
 
 private:
     const std::vector<std::unique_ptr<evse_managerIntf>>& r_evse_manager;
