@@ -94,7 +94,6 @@ config:
     default: 1
   EnableExternalWebsocketControl:
     description: >-
-      OCPP 1.6
       If true websocket can be disconnected and connected externally. This parameter is for debug and testing purposes.
     type: boolean
     default: false
@@ -105,12 +104,6 @@ config:
       like EVSE and Connector that are closely related to EVerest and therefore not owned and managed by libocpp.
     type: string
     default: everest_device_model_storage.db
-  EnableExternalWebsocketControl:
-    description: >-
-      OCPP 2.0.1
-      If true websocket can be disconnected and connected externally. This parameter is for debug and testing purposes.
-    type: boolean
-    default: false
   MessageLogPath:
     description: >-
       OCPP 1.6
