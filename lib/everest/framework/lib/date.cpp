@@ -1,9 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2022 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+#include <charconv>
+#include <exception>
+#include <string_view>
+
+#include <everest/logging.hpp>
 #include <utils/date.hpp>
 
 namespace Everest {
 namespace Date {
+
+void preload_tzdb() {
+    try {
+        date::get_tzdb();
+    } catch (const std::exception& e) {
+        EVLOG_warning << "tzdb preload failed; timestamps may be unreliable: " << e.what();
+    }
+}
 
 std::string to_rfc3339(const std::chrono::time_point<date::utc_clock>& t) {
     return date::format("%FT%TZ", std::chrono::time_point_cast<std::chrono::milliseconds>(t));

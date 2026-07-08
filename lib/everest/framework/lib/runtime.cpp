@@ -3,6 +3,7 @@
 
 #include <framework/runtime.hpp>
 #include <utils/config/storage_sqlite.hpp>
+#include <utils/date.hpp>
 #include <utils/error.hpp>
 #include <utils/error/error_factory.hpp>
 #include <utils/error/error_json.hpp>
@@ -447,6 +448,8 @@ int ModuleLoader::initialize() {
         return EXIT_FAILURE;
     }
     Logging::init(this->logging_config_file.string(), this->module_id);
+
+    Date::preload_tzdb();
 
     const auto start_time = std::chrono::system_clock::now();
 
