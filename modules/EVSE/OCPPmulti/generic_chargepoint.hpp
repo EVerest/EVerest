@@ -21,7 +21,7 @@ public:
     };
 
 private:
-    GenericChargePointCallbacks& m_charge_point_callbacks;
+    GenericChargePointCallbacks* m_charge_point_callbacks{nullptr};
     evse_securityIntf& m_evse_security_interface;
 
     std::atomic<modes_t> m_mode{modes_t::prefer_ocpp_2};
@@ -33,8 +33,12 @@ private:
     void check_configured(const std::string_view& fn);
 
 public:
-    explicit GenericChargePoint(GenericChargePointCallbacks& callbacks, evse_securityIntf& security) :
-        m_charge_point_callbacks(callbacks), m_evse_security_interface(security) {
+    explicit GenericChargePoint(evse_securityIntf& security) : m_evse_security_interface(security) {
+    }
+
+    // must be called before init()
+    void set_callbacks(GenericChargePointCallbacks& callbacks) {
+        m_charge_point_callbacks = &callbacks;
     }
 
     void init(init_args_t& args) override;

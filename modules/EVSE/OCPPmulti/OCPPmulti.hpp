@@ -157,7 +157,7 @@ public:
     ~OCPPmulti();
 
     ConfigAccess m_config{config};
-    ocpp_multi::GenericChargePoint m_charge_point{m_ocpp, *r_security};
+    ocpp_multi::GenericChargePoint m_charge_point{*r_security};
     ocpp_multi::GenericOcpp m_ocpp{
         m_charge_point,
         info,

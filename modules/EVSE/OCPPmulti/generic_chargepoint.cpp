@@ -20,9 +20,13 @@ void GenericChargePoint::check_configured(const std::string_view& fn) {
 
 void GenericChargePoint::init(init_args_t& args) {
 
+    if (m_charge_point_callbacks == nullptr) {
+        throw NotConfigured("GenericChargePoint::init: callbacks not set");
+    }
+
     m_state = state_t::idle;
-    m_charge_point_v16 = std::make_unique<ChargePointV16>(m_charge_point_callbacks, m_evse_security_interface);
-    m_charge_point_v2 = std::make_unique<ChargePointV2>(m_charge_point_callbacks, m_evse_security_interface);
+    m_charge_point_v16 = std::make_unique<ChargePointV16>(*m_charge_point_callbacks, m_evse_security_interface);
+    m_charge_point_v2 = std::make_unique<ChargePointV2>(*m_charge_point_callbacks, m_evse_security_interface);
 
     switch (m_mode) {
     case modes_t::ocpp_1_6_only:

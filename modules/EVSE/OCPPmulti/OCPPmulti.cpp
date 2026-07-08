@@ -108,6 +108,8 @@ void OCPPmulti::init() {
     }
 
     m_ocpp.set_mode(mode);
+    // both members are fully constructed here; safe to bind m_ocpp as the callback sink
+    m_charge_point.set_callbacks(m_ocpp);
     m_ocpp.init();
 }
 
