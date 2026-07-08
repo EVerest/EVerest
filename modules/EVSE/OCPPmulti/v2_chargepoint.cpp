@@ -884,7 +884,7 @@ void ChargePointV2::on_fault_cleared(std::int32_t evse_id, std::int32_t connecto
     m_charge_point->on_fault_cleared(evse_id, connector_id);
 }
 void ChargePointV2::on_faulted(std::int32_t evse_id, std::int32_t connector_id) {
-    check_configured("on_fault_cleared");
+    check_configured("on_faulted");
     m_charge_point->on_faulted(evse_id, connector_id);
 }
 void ChargePointV2::on_firmware_update_status_notification(std::int32_t request_id,
