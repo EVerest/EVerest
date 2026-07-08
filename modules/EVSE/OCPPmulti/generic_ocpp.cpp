@@ -4,6 +4,7 @@
 #include "generic_ocpp.hpp"
 #include "everest/logging.hpp"
 #include "ocpp/common/types.hpp"
+#include "ocpp/common/utils.hpp"
 
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/external_energy_limits/external_energy_limits.hpp>
@@ -64,14 +65,7 @@ std::set<module::TxStartStopPoint> get_tx_start_stop_points(const std::string& t
     using namespace module;
 
     std::set<TxStartStopPoint> tx_start_stop_points;
-    std::vector<std::string> csv;
-    std::string str;
-    std::stringstream ss(tx_start_stop_point_csl);
-    while (std::getline(ss, str, ',')) {
-        csv.push_back(str);
-    }
-
-    for (const auto& tx_start_stop_point : csv) {
+    for (const auto& tx_start_stop_point : ocpp::split_string(tx_start_stop_point_csl, ',', true)) {
         if (tx_start_stop_point == "ParkingBayOccupancy") {
             tx_start_stop_points.insert(TxStartStopPoint::ParkingBayOccupancy);
         } else if (tx_start_stop_point == "EVConnected") {
