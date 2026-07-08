@@ -195,11 +195,11 @@ private:
     // concurrent ready() (which flips mv_started under the same lock before draining) can't
     // strand the event in a queue that is never drained again.
     template <typename EventT> bool enqueue_if_not_started(std::int32_t evse_id, EventT&& event) {
-        if (mv_started) {
+        if (mv_started.load()) {
             return false;
         }
         std::lock_guard lock(m_member_mux);
-        if (mv_started) {
+        if (mv_started.load()) {
             return false;
         }
         m_event_queue[evse_id].emplace(std::forward<EventT>(event));

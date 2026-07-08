@@ -165,7 +165,7 @@ types::authorization::ValidationResult
 GenericOcpp::handle_validate_token(const types::authorization::ProvidedIdToken& provided_token) {
     types::authorization::ValidationResult validation_result;
 
-    if (mv_started) {
+    if (mv_started.load()) {
         const auto response = mv_charge_point.validate_token(provided_token);
         validation_result = module::conversions::to_everest_validation_result(response);
     } else {
@@ -181,7 +181,7 @@ types::ocpp::DataTransferResponse GenericOcpp::handle_data_transfer(const types:
 
     types::ocpp::DataTransferResponse response{};
 
-    if (mv_started) {
+    if (mv_started.load()) {
         ocpp::v2::DataTransferRequest ocpp_request = to_ocpp_data_transfer_request(request);
         auto ocpp_response = mv_charge_point.data_transfer_req(ocpp_request);
 
@@ -203,7 +203,7 @@ bool GenericOcpp::handle_stop() {
     // No OCPP messages will be stored and sent after a restart.
 
     bool result{false};
-    if (mv_started) {
+    if (mv_started.load()) {
         std::lock_guard lock(m_chargepoint_state_mutex);
         charging_schedules_timer_stop();
         mv_charge_point.stop();
@@ -219,7 +219,7 @@ bool GenericOcpp::handle_restart() {
     // stop call.
 
     bool result{false};
-    if (mv_started) {
+    if (mv_started.load()) {
         std::lock_guard lock(m_chargepoint_state_mutex);
         charging_schedules_timer_start();
         result = mv_charge_point.restart();
@@ -230,7 +230,7 @@ bool GenericOcpp::handle_restart() {
 }
 
 void GenericOcpp::handle_security_event(const types::ocpp::SecurityEvent& event) {
-    if (mv_started) {
+    if (mv_started.load()) {
         std::optional<ocpp::DateTime> timestamp;
         if (event.timestamp.has_value()) {
             timestamp = ocpp_conversions::to_ocpp_datetime_or_now(event.timestamp.value());
@@ -252,7 +252,7 @@ GenericOcpp::handle_get_variables(const std::vector<types::ocpp::GetVariableRequ
 
     std::vector<types::ocpp::GetVariableResult> results;
 
-    if (mv_started) {
+    if (mv_started.load()) {
         const auto _requests = to_ocpp_get_variable_data_vector(requests);
         const auto response = mv_charge_point.get_variables(_requests);
         results = to_everest_get_variable_result_vector(response);
@@ -278,7 +278,7 @@ GenericOcpp::handle_set_variables(const std::vector<types::ocpp::SetVariableRequ
 
     std::vector<types::ocpp::SetVariableResult> results;
 
-    if (mv_started) {
+    if (mv_started.load()) {
         const auto _requests = to_ocpp_set_variable_data_vector(requests);
         const auto response_v2 = mv_charge_point.set_variables(_requests, source);
         results = to_everest_set_variable_result_vector(response_v2);
@@ -305,7 +305,7 @@ GenericOcpp::handle_change_availability(const types::ocpp::ChangeAvailabilityReq
     ocpp::v2::ChangeAvailabilityResponse result;
     result.status = ChangeAvailabilityStatusEnum::Rejected;
 
-    if (mv_started) {
+    if (mv_started.load()) {
         const auto ocpp_request = to_ocpp_change_availability_request(request);
         result = mv_charge_point.on_change_availability(ocpp_request);
     } else {
@@ -318,7 +318,7 @@ GenericOcpp::handle_change_availability(const types::ocpp::ChangeAvailabilityReq
 void GenericOcpp::handle_monitor_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) {
     using namespace module::conversions;
 
-    if (mv_started) {
+    if (mv_started.load()) {
         std::lock_guard lock(m_member_mux);
 
         // register_variable_listener needs to support OCPP 1.6 and 2.x
@@ -485,7 +485,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
         // flip under m_member_mux: pairs with enqueue_if_not_started() so no event can be
         // queued after this point (ready_event_queue() below drains the final queue state)
         std::lock_guard lock(m_member_mux);
-        mv_started = true;
+        mv_started.store(true);
     }
     EVLOG_info << "OCPP started";
 
@@ -784,7 +784,7 @@ bool GenericOcpp::cb_cancel_reservation(std::int32_t reservation_id) {
 void GenericOcpp::cb_charging_needs(std::int32_t extensions_id, const types::iso15118::ChargingNeeds& charging_needs) {
     using namespace module::conversions;
 
-    if (mv_started) {
+    if (mv_started.load()) {
         const auto& mapping = mv_requires.extensions_15118.at(extensions_id)->get_mapping();
         if (mapping.has_value()) {
             try {
@@ -915,7 +915,7 @@ void GenericOcpp::cb_error_handler(const Everest::error::Error& error) {
 }
 
 void GenericOcpp::cb_ev_info(std::int32_t evse_id, const types::evse_manager::EVInfo& ev_info) {
-    if (mv_started) {
+    if (mv_started.load()) {
         if (ev_info.soc.has_value()) {
             mv_evse_soc_map.handle()->at(evse_id) = ev_info.soc;
         }
@@ -1080,7 +1080,7 @@ void GenericOcpp::cb_iso15118_certificate_request(std::int32_t extensions_id,
                                                   const types::iso15118::RequestExiStreamSchema& certificate_request) {
     using namespace module::conversions;
 
-    if (mv_started) {
+    if (mv_started.load()) {
         // response is via cb_iso15118_certificate_response()
         mv_charge_point.on_get_15118_ev_certificate_request(extensions_id,
                                                             to_ocpp_get_15118_certificate_request(certificate_request));
