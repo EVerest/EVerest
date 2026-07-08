@@ -222,6 +222,7 @@ void ISO15118_chargerImpl::ready() {
             mod->config.tls_key_logging_path,   ///< tls_key_logging_path
         },
         mod->config.device,
+        static_cast<uint16_t>(mod->config.tcp_port),
         convert_tls_negotiation_strategy(mod->config.tls_negotiation_strategy),
         mod->config.enable_sdp_server,
     };

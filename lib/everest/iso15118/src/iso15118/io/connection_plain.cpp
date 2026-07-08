@@ -18,7 +18,7 @@ namespace iso15118::io {
 
 static constexpr auto DEFAULT_SOCKET_BACKLOG = 4;
 
-ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, const std::string& interface_name) :
+ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, const std::string& interface_name, uint16_t tcp_port) :
     poll_manager(poll_manager_) {
     sockaddr_in6 address;
     if (not get_first_sockaddr_in6_for_interface(interface_name, address)) {
@@ -27,7 +27,7 @@ ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, const std::string& 
     }
 
     // setup end point information
-    end_point.port = 50000;
+    end_point.port = tcp_port;
     memcpy(&end_point.address, &address.sin6_addr, sizeof(address.sin6_addr));
 
     fd = socket(AF_INET6, SOCK_STREAM, 0);

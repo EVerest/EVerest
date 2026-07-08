@@ -59,7 +59,6 @@ struct SSLContext {
 namespace {
 
 constexpr auto DEFAULT_SOCKET_BACKLOG = 4;
-constexpr auto TLS_PORT = 50000;
 constexpr auto NAME_LENGTH = 256;
 
 int ssl_keylog_server_index{-1};
@@ -302,7 +301,7 @@ SSL_CTX* init_ssl(const config::SSLConfig& ssl_config) {
 } // namespace
 
 ConnectionSSL::ConnectionSSL(PollManager& poll_manager_, const std::string& interface_name_,
-                             const config::SSLConfig& ssl_config) :
+                             const config::SSLConfig& ssl_config, uint16_t tcp_port) :
     poll_manager(poll_manager_), ssl(std::make_unique<SSLContext>()) {
 
     ssl->interface_name = interface_name_;
@@ -323,7 +322,7 @@ ConnectionSSL::ConnectionSSL(PollManager& poll_manager_, const std::string& inte
         log_and_throw(msg.c_str());
     }
 
-    end_point.port = TLS_PORT;
+    end_point.port = tcp_port;
     memcpy(&end_point.address, &address.sin6_addr, sizeof(address.sin6_addr));
 
     const auto address_name = sockaddr_in6_to_name(address);

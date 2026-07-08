@@ -47,7 +47,7 @@ void TbdController::loop() {
     bool shutdown_signaled{false};
 
     if (not config.enable_sdp_server) {
-        auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
+        auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, interface_name, config.tcp_port);
         session =
             std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup), callbacks, pause_ctx);
     }
@@ -94,7 +94,8 @@ void TbdController::loop() {
                 session.reset();
 
                 if (not shutdown_active.load() and not config.enable_sdp_server) {
-                    auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
+                    auto connection =
+                        std::make_unique<io::ConnectionPlain>(poll_manager, interface_name, config.tcp_port);
                     session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup),
                                                         callbacks, pause_ctx);
                 }
@@ -234,9 +235,9 @@ void TbdController::handle_sdp_server_input() {
     auto connection = [this](bool secure_connection) -> std::unique_ptr<io::IConnection> {
         try {
             if (secure_connection) {
-                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, config.ssl);
+                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, config.ssl, config.tcp_port);
             }
-            return std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
+            return std::make_unique<io::ConnectionPlain>(poll_manager, interface_name, config.tcp_port);
         } catch (const std::runtime_error& e) {
             logf_error("%s", e.what());
             return nullptr;

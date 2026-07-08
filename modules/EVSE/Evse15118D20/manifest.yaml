@@ -44,6 +44,11 @@ config:
       Enable the built-in SDP server
     type: boolean
     default: true
+  tcp_port:
+    description: >-
+      TCP port used for ISO 15118-20 session communication
+    type: integer
+    default: 50000
   supported_dynamic_mode:
     description: The EVSE should support dynamic mode
     type: boolean
