@@ -7,6 +7,7 @@
 #include <everest/ocpp_module_common/conversions.hpp>
 #include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
+#include <ocpp/v2/device_model_helpers.hpp>
 
 namespace {
 
@@ -266,39 +267,48 @@ void ChargePointV2::cb_variable_listener(
     }
 }
 
+namespace {
+// device model read via the virtual get_variables (same underlying read as ChargePoint::request_value<T>)
+template <typename T>
+std::optional<T> get_device_model_value(ocpp::v2::ChargePointInterface& charge_point,
+                                        const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
+                                        ocpp::v2::AttributeEnum attribute_enum) {
+    ocpp::v2::GetVariableData data;
+    data.component = component_id;
+    data.variable = variable_id;
+    data.attributeType = attribute_enum;
+    const auto results = charge_point.get_variables({data});
+    std::optional<T> res;
+    if (!results.empty() && results.front().attributeStatus == ocpp::v2::GetVariableStatusEnum::Accepted &&
+        results.front().attributeValue.has_value()) {
+        try {
+            res = ocpp::v2::to_specific_type<T>(results.front().attributeValue.value().get());
+        } catch (const std::exception&) {
+            // not convertible: treat as absent (matches request_value<T> behaviour)
+        }
+    }
+    return res;
+}
+} // namespace
+
 std::optional<bool> ChargePointV2::get_bool(const ocpp::v2::Component& component_id,
                                             const ocpp::v2::Variable& variable_id,
                                             ocpp::v2::AttributeEnum attribute_enum) {
     check_configured("get_bool");
-    const auto result = m_charge_point->request_value<bool>(component_id, variable_id, attribute_enum);
-    std::optional<bool> res;
-    if (result.status == ocpp::v2::GetVariableStatusEnum::Accepted) {
-        res = result.value;
-    }
-    return res;
+    return get_device_model_value<bool>(*m_charge_point, component_id, variable_id, attribute_enum);
 }
 
 std::optional<std::int32_t> ChargePointV2::get_int32(const ocpp::v2::Component& component_id,
                                                      const ocpp::v2::Variable& variable_id,
                                                      ocpp::v2::AttributeEnum attribute_enum) {
     check_configured("get_int32");
-    const auto result = m_charge_point->request_value<std::int32_t>(component_id, variable_id, attribute_enum);
-    std::optional<std::int32_t> res;
-    if (result.status == ocpp::v2::GetVariableStatusEnum::Accepted) {
-        res = result.value;
-    }
-    return res;
+    return get_device_model_value<std::int32_t>(*m_charge_point, component_id, variable_id, attribute_enum);
 }
 std::optional<std::string> ChargePointV2::get_string(const ocpp::v2::Component& component_id,
                                                      const ocpp::v2::Variable& variable_id,
                                                      ocpp::v2::AttributeEnum attribute_enum) {
     check_configured("get_string");
-    const auto result = m_charge_point->request_value<std::string>(component_id, variable_id, attribute_enum);
-    std::optional<std::string> res;
-    if (result.status == ocpp::v2::GetVariableStatusEnum::Accepted) {
-        res = result.value;
-    }
-    return res;
+    return get_device_model_value<std::string>(*m_charge_point, component_id, variable_id, attribute_enum);
 }
 
 void ChargePointV2::process_tx_event_effect(std::int32_t evse_id, module::TxEventEffect tx_event_effect,

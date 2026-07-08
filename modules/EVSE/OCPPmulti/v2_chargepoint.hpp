@@ -17,12 +17,12 @@ private:
 
     std::shared_ptr<EvseSecurity> m_evse_security;
     ocpp_multi::GenericChargePointCallbacks* m_callbacks_ptr{nullptr};
-    std::unique_ptr<ocpp::v2::ChargePoint> m_charge_point;
+    // interface type so unit tests can inject a mock; init() creates the real ocpp::v2::ChargePoint
+    std::unique_ptr<ocpp::v2::ChargePointInterface> m_charge_point;
     // written from command threads (register_variable_listener), read from libocpp callback thread
     everest::lib::util::monitor<listener_t> m_variable_listener;
 
     void check_configured(const std::string_view& fn);
-    ocpp::v2::Callbacks configure_callbacks();
 
     void cb_default_price(const std::vector<ocpp::DisplayMessageContent>& messages);
     ocpp::v2::GetLogResponse cb_get_log_request(const ocpp::v2::GetLogRequest& request);
@@ -174,6 +174,13 @@ public:
                   const std::string& source) override;
 
     ocpp::v2::AuthorizeResponse validate_token(const types::authorization::ProvidedIdToken& provided_token) override;
+
+protected:
+    // Access for unit tests
+    ocpp::v2::Callbacks configure_callbacks();
+    void set_charge_point(std::unique_ptr<ocpp::v2::ChargePointInterface> charge_point) {
+        m_charge_point = std::move(charge_point);
+    }
 };
 
 } // namespace ocpp_multi

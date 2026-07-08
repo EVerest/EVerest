@@ -41,6 +41,7 @@ target_sources(${TEST_TARGET_NAME}
     generic_ocpp_tests.cpp
     main.cpp
     v16_chargepoint_tests.cpp
+    v2_chargepoint_tests.cpp
 
     everest/logging.cpp
     stubs/chargepoint_stub.cpp
@@ -49,6 +50,7 @@ target_sources(${TEST_TARGET_NAME}
     ../generic_ocpp.cpp
     ../v16_chargepoint.cpp
     ../v16_conversions.cpp
+    ../v2_chargepoint.cpp
     ../charge_point_config_factory_v16.cpp
 )
 
