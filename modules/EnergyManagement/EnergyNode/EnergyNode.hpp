@@ -10,6 +10,8 @@
 
 #include "ld-ev.hpp"
 
+#include <string>
+
 // headers for provided interface implementations
 #include <generated/interfaces/energy/Implementation.hpp>
 #include <generated/interfaces/external_energy_limits/Implementation.hpp>
@@ -31,6 +33,7 @@ struct Conf {
     int phase_count;
     double nominal_voltage_V;
     bool enhance_external_schedule;
+    std::string phase_rotation;
 };
 
 class EnergyNode : public Everest::ModuleBase {

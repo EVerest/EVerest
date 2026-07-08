@@ -3,6 +3,7 @@
 
 #include "energyImpl.hpp"
 #include "energy_schedule_utils.hpp"
+#include "phase_rotation_utils.hpp"
 #include <algorithm>
 #include <chrono>
 #include <date/date.h>
@@ -48,7 +49,9 @@ void energyImpl::init() {
         mod->r_powermeter[0]->subscribe_powermeter([this](types::powermeter::Powermeter const& p) {
             EVLOG_debug << "Incoming powermeter readings: " << p;
             auto energy_state_handle = energy_state.handle();
-            energy_state_handle->energy_flow_request.energy_usage_root = p;
+            auto rotated = p;
+            apply_phase_rotation(rotated, mod->config.phase_rotation);
+            energy_state_handle->energy_flow_request.energy_usage_root = rotated;
             publish_complete_energy_object(*energy_state_handle);
         });
     }

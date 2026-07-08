@@ -31,6 +31,20 @@ config:
       the external schedules. Uses nominal_voltage_V for calculations.
     type: boolean
     default: false
+  phase_rotation:
+    description: >-
+      Corrects for a physical L1/L2/L3 wiring rotation at this node's powermeter
+      by remapping its per-phase voltage/current/power/energy/VAR values before
+      they are used in the energy flow request. 123 means no rotation, i.e.
+      reported L1/L2/L3 already matches grid L1/L2/L3. 312 means reported L1 is
+      grid L2, reported L2 is grid L3, reported L3 is grid L1. 231 means reported
+      L1 is grid L3, reported L2 is grid L1, reported L3 is grid L2.
+    type: string
+    enum:
+      - '123'
+      - '312'
+      - '231'
+    default: '123'
 provides:
   energy_grid:
     description: This is the chain interface to build the energy supply tree

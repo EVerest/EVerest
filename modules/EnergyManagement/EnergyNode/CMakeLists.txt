@@ -27,6 +27,7 @@ target_sources(${MODULE_NAME}
 target_sources(${MODULE_NAME}
     PRIVATE
         "energy_grid/energy_schedule_utils.cpp"
+        "energy_grid/phase_rotation_utils.cpp"
 )
 
 # Add tests subdirectory

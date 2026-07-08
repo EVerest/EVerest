@@ -23,6 +23,7 @@ target_include_directories(${TEST_TARGET_NAME} PUBLIC
 target_sources(${TEST_TARGET_NAME} PRIVATE
     energy_node_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../energy_grid/energy_schedule_utils.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../energy_grid/phase_rotation_utils.cpp
 )
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE
