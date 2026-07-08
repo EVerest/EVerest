@@ -41,7 +41,7 @@ SCENARIO("ISO15118-20 der iec ac charge parameter discovery state transitions") 
 
     d20::DcTransferLimits powersupply_limits;
 
-    d20::DerSetupConfig der_setup_config;
+    d20::DerIecSetupConfig der_setup_config;
     der_setup_config.grid_connection_mode = iec::GridConnectionMode::GridConnected;
     der_setup_config.operating_mode = iec::OperatingMode::GridFollowing;
 
@@ -185,11 +185,11 @@ SCENARIO("ISO15118-20 der iec ac charge parameter discovery state transitions") 
     GIVEN("Good Case - Some DER functions selected (finished)") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_IEC_ChargeParameterDiscovery>()};
 
-        ctx.session_config.der_setup_config.supported_der_control_functions.clear();
+        ctx.session_config.der_iec_setup_config.supported_der_control_functions.clear();
 
-        ctx.session_config.der_setup_config.supported_der_control_functions[iec::DERControlName::ZeroCurrentMode] =
+        ctx.session_config.der_iec_setup_config.supported_der_control_functions[iec::DERControlName::ZeroCurrentMode] =
             iec::ZeroCurrent{std::nullopt, std::nullopt, std::nullopt, std::nullopt, true, 200, false, 0};
-        ctx.session_config.der_setup_config
+        ctx.session_config.der_iec_setup_config
             .supported_der_control_functions[iec::DERControlName::DCInjectionRestriction] =
             iec::MaximumLevelDCInjection{450};
 
