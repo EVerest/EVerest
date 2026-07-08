@@ -23,8 +23,8 @@ std::string serialize(ScheduleSetpointEntry const& val) noexcept;
 std::string serialize(ExternalLimits const& val) noexcept;
 std::string serialize(EnforcedLimits const& val) noexcept;
 std::string serialize(CapabilityLimits const& val) noexcept;
-std::string serialize(NodeType const& val) noexcept;
-std::string serialize(EvseState const& val) noexcept;
+std::string serialize(NodeType val) noexcept;
+std::string serialize(EvseState val) noexcept;
 std::string serialize(OptimizerTarget const& val) noexcept;
 std::string serialize(EnergyFlowRequest const& val) noexcept;
 
@@ -41,8 +41,8 @@ std::ostream& operator<<(std::ostream& os, ScheduleSetpointEntry const& val);
 std::ostream& operator<<(std::ostream& os, ExternalLimits const& val);
 std::ostream& operator<<(std::ostream& os, EnforcedLimits const& val);
 std::ostream& operator<<(std::ostream& os, CapabilityLimits const& val);
-std::ostream& operator<<(std::ostream& os, NodeType const& val);
-std::ostream& operator<<(std::ostream& os, EvseState const& val);
+std::ostream& operator<<(std::ostream& os, NodeType val);
+std::ostream& operator<<(std::ostream& os, EvseState val);
 std::ostream& operator<<(std::ostream& os, OptimizerTarget const& val);
 std::ostream& operator<<(std::ostream& os, EnergyFlowRequest const& val);
 

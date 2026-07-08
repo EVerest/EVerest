@@ -62,11 +62,11 @@ std::string serialize(CapabilityLimits const& val) noexcept {
     return utilities::dump_json(val);
 }
 
-std::string serialize(NodeType const& val) noexcept {
+std::string serialize(NodeType val) noexcept {
     return utilities::dump_json(val);
 }
 
-std::string serialize(EvseState const& val) noexcept {
+std::string serialize(EvseState val) noexcept {
     return utilities::dump_json(val);
 }
 
@@ -143,12 +143,12 @@ std::ostream& operator<<(std::ostream& os, CapabilityLimits const& val) {
     return os;
 }
 
-std::ostream& operator<<(std::ostream& os, NodeType const& val) {
+std::ostream& operator<<(std::ostream& os, NodeType val) {
     os << serialize(val);
     return os;
 }
 
-std::ostream& operator<<(std::ostream& os, EvseState const& val) {
+std::ostream& operator<<(std::ostream& os, EvseState val) {
     os << serialize(val);
     return os;
 }
