@@ -508,6 +508,33 @@ to_der_ctrlr_config_set_variables(const int32_t evse_id, const types::grid_suppo
     return result;
 }
 
+void disable_der_ctrlr(ocpp::v2::DeviceModelStorageInterface& storage, const int32_t evse_id) {
+    const auto force_unavailable = [&](const ocpp::v2::ComponentVariable& component_variable) {
+        if (not component_variable.variable.has_value()) {
+            return;
+        }
+        const auto& variable = component_variable.variable.value();
+        const auto attribute =
+            storage.get_variable_attribute(component_variable.component, variable, ocpp::v2::AttributeEnum::Actual);
+        if (not attribute.has_value()) {
+            return;
+        }
+        if (not attribute.value().value.has_value()) {
+            return;
+        }
+        // Only clear a persisted Available="true"; leave any other value untouched.
+        if (attribute.value().value.value().get() != "true") {
+            return;
+        }
+        storage.set_variable_attribute_value(component_variable.component, variable, ocpp::v2::AttributeEnum::Actual,
+                                             "false", VARIABLE_SOURCE_EVEREST);
+    };
+    force_unavailable(ocpp::v2::DERComponentVariables::get_dc_component_variable(
+        evse_id, ocpp::v2::DERComponentVariables::Available));
+    force_unavailable(ocpp::v2::DERComponentVariables::get_ac_component_variable(
+        evse_id, ocpp::v2::DERComponentVariables::Available));
+}
+
 EverestDeviceModelStorage::EverestDeviceModelStorage(
     const std::vector<std::unique_ptr<evse_managerIntf>>& r_evse_manager,
     const std::vector<std::unique_ptr<iso15118_extensionsIntf>>& r_extensions_15118,
@@ -831,6 +858,11 @@ void EverestDeviceModelStorage::update_connected_ev_vehicle_id(const int32_t evs
     this->device_model_storage->set_variable_attribute_value(
         connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleId, ocpp::v2::AttributeEnum::Actual,
         vehicle_id, VARIABLE_SOURCE_EVEREST);
+}
+
+void EverestDeviceModelStorage::disable_der(const int32_t evse_id) {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    disable_der_ctrlr(*this->device_model_storage, evse_id);
 }
 
 void EverestDeviceModelStorage::update_power(const int32_t evse_id, const float total_power_active_import) {

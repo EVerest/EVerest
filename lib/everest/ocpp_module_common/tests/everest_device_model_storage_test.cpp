@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <map>
 #include <optional>
 #include <vector>
 
@@ -12,6 +14,7 @@
 #include <generated/types/iso15118.hpp>
 
 #include <ocpp/v2/ctrlr_component_variables.hpp>
+#include <ocpp/v2/device_model_storage_sqlite.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 
@@ -234,6 +237,95 @@ TEST(EverestDeviceModelStorageDerTest, AcCapabilityUsesAcComponent) {
     EXPECT_EQ(available.variable.name.get(), "Available");
     EXPECT_EQ(available.component.name.get(), "ACDERCtrlr");
     EXPECT_EQ(available.attributeValue.get(), "true");
+}
+
+namespace dm = ocpp_module_common::device_model;
+
+std::filesystem::path make_temp_db_path(const std::string& tag) {
+    auto path = std::filesystem::temp_directory_path() / ("ocpp_module_common_der_disable_" + tag + ".db");
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    return path;
+}
+
+// Builds a device model DB at db_path holding a single DER controller for evse_id, derived from modes.
+void init_db_with_der_ctrlr(const std::filesystem::path& db_path, const int32_t evse_id,
+                            const std::vector<etm::EnergyTransferMode>& modes) {
+    const auto der = dm::build_der_ctrlr_component_config(evse_id, modes);
+    ASSERT_TRUE(der.has_value());
+    std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>> component_configs;
+    component_configs[der->first] = der->second;
+    ocpp::v2::InitDeviceModelDb init_db(db_path, DEVICE_MODEL_MIGRATIONS_DIR);
+    init_db.initialize_database(component_configs, true);
+    init_db.close_connection();
+}
+
+std::optional<std::string> read_der_available(ocpp::v2::DeviceModelStorageInterface& storage,
+                                              const ocpp::v2::ComponentVariable& cv) {
+    const auto attr =
+        storage.get_variable_attribute(cv.component, cv.variable.value(), ocpp::v2::AttributeEnum::Actual);
+    if (not attr.has_value() or not attr->value.has_value()) {
+        return std::nullopt;
+    }
+    return attr->value.value().get();
+}
+
+// disable_der_ctrlr forces a persisted DCDERCtrlr Available "true" back to "false".
+TEST(EverestDeviceModelStorageDisableDerTest, DcDerCtrlrForcedToUnavailable) {
+    const auto db_path = make_temp_db_path("dc");
+    init_db_with_der_ctrlr(db_path, 1, {etm::EnergyTransferMode::DC_extended, etm::EnergyTransferMode::DC_BPT});
+
+    ocpp::v2::DeviceModelStorageSqlite storage(db_path);
+    const auto cv =
+        ocpp::v2::DERComponentVariables::get_dc_component_variable(1, ocpp::v2::DERComponentVariables::Available);
+    ASSERT_TRUE(cv.variable.has_value());
+
+    ASSERT_EQ(storage.set_variable_attribute_value(cv.component, cv.variable.value(), ocpp::v2::AttributeEnum::Actual,
+                                                   "true", "EVEREST"),
+              ocpp::v2::SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(read_der_available(storage, cv), "true");
+
+    dm::disable_der_ctrlr(storage, 1);
+
+    EXPECT_EQ(read_der_available(storage, cv), "false");
+}
+
+// disable_der_ctrlr forces a persisted ACDERCtrlr Available "true" back to "false".
+TEST(EverestDeviceModelStorageDisableDerTest, AcDerCtrlrForcedToUnavailable) {
+    const auto db_path = make_temp_db_path("ac");
+    init_db_with_der_ctrlr(db_path, 1,
+                           {etm::EnergyTransferMode::AC_single_phase_core, etm::EnergyTransferMode::AC_BPT_DER});
+
+    ocpp::v2::DeviceModelStorageSqlite storage(db_path);
+    const auto cv =
+        ocpp::v2::DERComponentVariables::get_ac_component_variable(1, ocpp::v2::DERComponentVariables::Available);
+    ASSERT_TRUE(cv.variable.has_value());
+
+    ASSERT_EQ(storage.set_variable_attribute_value(cv.component, cv.variable.value(), ocpp::v2::AttributeEnum::Actual,
+                                                   "true", "EVEREST"),
+              ocpp::v2::SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(read_der_available(storage, cv), "true");
+
+    dm::disable_der_ctrlr(storage, 1);
+
+    EXPECT_EQ(read_der_available(storage, cv), "false");
+}
+
+// An EVSE with no DER component is a silent no-op: no throw, nothing created.
+TEST(EverestDeviceModelStorageDisableDerTest, NoDerCtrlrIsSilentNoOp) {
+    const auto db_path = make_temp_db_path("noder");
+    // The DB only holds a DER controller for evse 1; evse 2 has none.
+    init_db_with_der_ctrlr(db_path, 1, {etm::EnergyTransferMode::DC_extended, etm::EnergyTransferMode::DC_BPT});
+
+    ocpp::v2::DeviceModelStorageSqlite storage(db_path);
+    EXPECT_NO_THROW(dm::disable_der_ctrlr(storage, 2));
+
+    const auto dc_cv =
+        ocpp::v2::DERComponentVariables::get_dc_component_variable(2, ocpp::v2::DERComponentVariables::Available);
+    EXPECT_FALSE(read_der_available(storage, dc_cv).has_value());
+    const auto ac_cv =
+        ocpp::v2::DERComponentVariables::get_ac_component_variable(2, ocpp::v2::DERComponentVariables::Available);
+    EXPECT_FALSE(read_der_available(storage, ac_cv).has_value());
 }
 
 } // namespace
