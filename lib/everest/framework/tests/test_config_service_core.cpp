@@ -241,7 +241,7 @@ active_modules:
         REQUIRE(strict_result.status == SetConfigParameterStatus::Ok);
         REQUIRE(strict_result.parameter_results.has_value());
         // Since allow_set_read_only is false, it is rejected immediately
-        CHECK(strict_result.parameter_results->front().status == SetConfigParameterResultEnum::Rejected);
+        CHECK(strict_result.parameter_results->front().status == SetConfigParameterResultEnum::AccessDenied);
         CHECK(strict_result.parameter_results->front().status_info == "Is a ReadOnly parameter");
     }
 
