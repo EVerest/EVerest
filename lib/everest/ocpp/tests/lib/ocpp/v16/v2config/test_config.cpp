@@ -176,6 +176,25 @@ TEST(V2Mapping, V2ToV16) {
     EXPECT_EQ(cv->second.instance, "ChargingProfiles");
 }
 
+TEST(V2Mapping, SwitchSecurityProfileConnectionTimeout) {
+    using namespace ocpp::v16::keys;
+    using namespace ocpp::v2;
+
+    auto res = convert_v2(valid_keys::SwitchSecurityProfileConnectionTimeout);
+    ASSERT_TRUE(res);
+    auto component = std::get<Component>(res.value());
+    auto variable = std::get<Variable>(res.value());
+    EXPECT_EQ(component.name, "OCPP16LegacyCtrlr");
+    EXPECT_EQ(variable.name, "SwitchSecurityProfileConnectionTimeout");
+
+    Component comp;
+    comp.name = "OCPP16LegacyCtrlr";
+    Variable var;
+    var.name = "SwitchSecurityProfileConnectionTimeout";
+    auto rev = convert_v2(comp, var, ocpp::v2::AttributeEnum::Actual);
+    EXPECT_EQ(rev, "SwitchSecurityProfileConnectionTimeout");
+}
+
 // Tests for get_all_key_value() with maxLimit keys.
 // These keys map to VariableCharacteristics.maxLimit rather than VariableAttribute,
 // so they are populated via a separate code path in get_all_key_value().

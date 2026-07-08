@@ -9,7 +9,6 @@ set(TLS_TEST_FILES
         alt_openssl-pki.conf
         iso_pkey.asn1
         openssl-pki.conf
-        ocsp_response.der
         pki.sh
 )
 

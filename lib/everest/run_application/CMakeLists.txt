@@ -46,3 +46,7 @@ if (DISABLE_EDM)
         TYPE STATIC
     )
 endif()
+
+if (BUILD_TESTING)
+    add_subdirectory(tests)
+endif()

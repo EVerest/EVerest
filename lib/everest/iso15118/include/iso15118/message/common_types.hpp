@@ -3,10 +3,10 @@
 #pragma once
 
 #include <array>
+#include <bitset>
 #include <cstdint>
 #include <optional>
 #include <string>
-#include <vector>
 
 #include <everest/util/vector/fixed_vector.hpp>
 
@@ -102,7 +102,8 @@ enum class ServiceCategory : uint16_t {
     DC_ACDP_BPT = 7,
     MCS = 8,
     MCS_BPT = 9,
-    AC_DER = 10,
+    AC_DER_IEC = 10,
+    AC_DER_SAE = 11,
     Internet = 65,
     ParkingStatus = 66,
 };
@@ -218,6 +219,10 @@ struct AcBptParameterList : AcParameterList {
     BptChannel bpt_channel;
     GeneratorMode generator_mode;
     GridCodeIslandingDetectionMethod grid_code_detection_method;
+};
+
+struct AcDerParameterList : AcParameterList {
+    std::bitset<12> der_control_functions;
 };
 
 struct DcParameterList {

@@ -149,5 +149,7 @@ active_modules:
           implementation_id: powermeter
   system:
     module: System
+    config_module:
+      ResetDelay: 1
 
 x-module-layout: {}

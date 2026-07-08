@@ -34,7 +34,7 @@ discovery::discovery(discovery_device_type type) : m_type(type) {
     using namespace std::chrono_literals;
     m_timer.set_timeout(1s);
 
-    for (auto const& item : everest::lib::io::socket::get_all_interaces()) {
+    for (auto const& item : everest::lib::io::socket::get_all_interfaces()) {
         add_client(item.name);
     }
 }
@@ -44,7 +44,7 @@ discovery::discovery(discovery_device_type type, std::set<std::string> const& in
     using namespace std::chrono_literals;
     m_timer.set_timeout(1s);
 
-    for (auto const& item : everest::lib::io::socket::get_all_interaces()) {
+    for (auto const& item : everest::lib::io::socket::get_all_interfaces()) {
         if (not interfaces.empty()) {
             if (interfaces.count(item.name) == 1 and excluding) {
                 continue;

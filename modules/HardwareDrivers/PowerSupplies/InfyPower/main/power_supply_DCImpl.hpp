@@ -16,6 +16,7 @@
 // insert your custom include headers here
 #include <atomic>
 #include <memory>
+#include <mutex>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -58,10 +59,21 @@ private:
     std::atomic<double> exportCurrentLimit{0.};
     std::atomic<double> minImportVoltage{0.};
     std::atomic<double> importCurrentLimit{0.};
+
+    // caps is written only on the CAN rx thread (sigslot callbacks) and read on the
+    // command thread (handle_setExport/ImportVoltageCurrent), so it must be guarded.
+    mutable std::mutex caps_mutex;
     types::power_supply_DC::Capabilities caps;
 
+    // Serializes the command handlers (setMode/setExport/setImportVoltageCurrent) so a
+    // single "compute + push to modules" sequence cannot interleave when the same handler
+    // runs concurrently on the command thread and the CAN rx thread (settings restore).
+    std::mutex command_mutex;
+
     bool firsttime{true};
-    uint8_t last_module_count{0};
+    // last_module_count has a single writer (CAN rx thread) and is read on the command
+    // thread, so atomic access is sufficient.
+    std::atomic<uint8_t> last_module_count{0};
     uint8_t throttle_cnt{0};
 
     // Error handling helpers

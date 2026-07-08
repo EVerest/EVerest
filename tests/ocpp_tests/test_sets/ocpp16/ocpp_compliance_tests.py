@@ -6497,6 +6497,7 @@ async def test_chargepoint_update_security_profile(
         [
             ("Internal", "RetryBackoffRandomRange", 1),
             ("Internal", "RetryBackoffWaitMinimum", 2),
+            ("Internal", "SwitchSecurityProfileConnectionTimeout", 5)
         ]
     )
 )
@@ -6882,9 +6883,104 @@ async def test_signed_update_firmware(
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
+        "StatusNotification",
+        call.StatusNotification(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.unavailable
+        ),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
         "SignedFirmwareStatusNotification",
         call.SignedFirmwareStatusNotification(FirmwareStatus.installing, 1),
     )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "SignedFirmwareStatusNotification",
+        call.SignedFirmwareStatusNotification(FirmwareStatus.installed, 1),
+    )
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="FTP")
+async def test_signed_update_firmware_keep_connectors_available(
+    test_config: OcppTestConfiguration,
+    charge_point_v16: ChargePoint16,
+    test_utility: TestUtility,
+    ftp_server,
+):
+    logging.info("######### test_signed_update_firmware_keep_connectors_available #########")
+
+    certificate = open(test_config.certificate_info.mf_root_ca).read()
+
+    await charge_point_v16.install_certificate_req(
+        certificate_type=CertificateUse.manufacturer_root_certificate,
+        certificate=certificate,
+    )
+
+    os.system(
+        f"curl -T {Path(__file__).parent.parent / test_config.firmware_info.update_file_keep_connectors_available} ftp://{getpass.getuser()}:12345@localhost:{ftp_server.port}"
+    )
+
+    location = f"ftp://{getpass.getuser()}:12345@localhost:{ftp_server.port}/firmware_update_keep_connectors_available.pnx"
+    retrieve_date_time = datetime.now(timezone.utc)
+    mf_root_ca = open(test_config.certificate_info.mf_root_ca).read()
+    fw_signature = open(test_config.firmware_info.update_file_keep_connectors_available_signature).read()
+
+    firmware = {
+        "location": location,
+        "retrieveDateTime": retrieve_date_time.isoformat(),
+        "signingCertificate": mf_root_ca,
+        "signature": fw_signature,
+    }
+
+    await charge_point_v16.signed_update_firmware_req(request_id=1, firmware=firmware)
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "SignedUpdateFirmware",
+        call_result.SignedUpdateFirmware(UpdateFirmwareStatus.accepted),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "SignedFirmwareStatusNotification",
+        call.SignedFirmwareStatusNotification(FirmwareStatus.downloading, 1),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "SignedFirmwareStatusNotification",
+        call.SignedFirmwareStatusNotification(FirmwareStatus.downloaded, 1),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "SignedFirmwareStatusNotification",
+        call.SignedFirmwareStatusNotification(
+            FirmwareStatus.signature_verified, 1
+        ),
+    )
+
+    # Verify that the connectors are not made unavailable.
+    # Drop the message buffer so that no StatusNotification sent before this point causes a test failure.
+    test_utility.messages.clear()
+    test_utility.forbidden_actions.append("StatusNotification")
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "SignedFirmwareStatusNotification",
+        call.SignedFirmwareStatusNotification(FirmwareStatus.installing, 1),
+    )
+
+    test_utility.forbidden_actions.remove("StatusNotification")
 
     assert await wait_for_and_validate(
         test_utility,
@@ -6922,7 +7018,7 @@ async def test_get_security_configuration_keys(
         "DisableSecurityEventNotifications",
         "SupportedFileTransferProtocols"
     ])
-    
+
     assert response.configuration_key[0]["key"] == "AdditionalRootCertificateCheck"
     assert response.configuration_key[0]["value"] == "false"
     assert response.configuration_key[1]["key"] == "CertificateSignedMaxChainSize"

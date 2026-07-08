@@ -78,8 +78,12 @@ void ErrorManagerReq::on_error_raised(const Error& error) {
         database->get_errors({ErrorFilter(TypeFilter(error.type)), ErrorFilter(SubTypeFilter(error.sub_type)),
                               ErrorFilter(OriginFilter(error.origin))});
     if (!errors.empty()) {
-        // Error is already raised, ignoring identical new error
-        // FIXME: can we prevent this from happening in the first place?
+        std::stringstream ss;
+        ss << "Error is already raised, type: " << error.type << ", sub_type: ";
+        ss << error.sub_type << ", origin: " << error.origin.module_id << "/";
+        ss << error.origin.implementation_id << ", ignored.";
+        ss << std::endl << "Error object: " << nlohmann::json(error).dump(2);
+        EVLOG_error << ss.str();
         return;
     }
     database->add_error(std::make_shared<Error>(error));

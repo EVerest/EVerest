@@ -523,6 +523,10 @@ components:
             Id of the request. Use the request_id from the corresponding
             FirmwareUpdateRequest.
           type: integer
+        firmware_update_metadata:
+          description: Metadata about the firmware update
+          type: object
+          $ref: '#/components/schemas/FirmwareUpdateMetadata'
     FirmwareUpdateStatusEnum:
       description: |
         State describing the current download/upload status of a firmware update of the system:
@@ -556,6 +560,14 @@ components:
         - InstallVerificationFailed
         - InvalidSignature
         - SignatureVerified
+    FirmwareUpdateMetadata:
+      description: Type carrying metadata about a firmware update
+      type: object
+      properties:
+        disable_connectors_during_install:
+          description: Whether all connectors should be made unavailable (disabled) for the duration of the firmware install
+          type: boolean
+          default: true
     LogStatusEnum:
       description: |
         State describing the current status of log upload of the system:
@@ -715,4 +727,4 @@ components:
 
     HeartBeatId:
       type: integer
-      description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached" 
+      description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"

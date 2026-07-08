@@ -70,6 +70,12 @@ using LogStatus_External = LogStatus;
 LogStatus_Internal to_internal_api(LogStatus_External const& val);
 LogStatus_External to_external_api(LogStatus_Internal const& val);
 
+using FirmwareUpdateMetadata_Internal = ::types::system::FirmwareUpdateMetadata;
+using FirmwareUpdateMetadata_External = FirmwareUpdateMetadata;
+
+FirmwareUpdateMetadata_Internal to_internal_api(FirmwareUpdateMetadata_External const& val);
+FirmwareUpdateMetadata_External to_external_api(FirmwareUpdateMetadata_Internal const& val);
+
 using FirmwareUpdateStatus_Internal = ::types::system::FirmwareUpdateStatus;
 using FirmwareUpdateStatus_External = FirmwareUpdateStatus;
 

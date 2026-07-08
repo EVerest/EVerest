@@ -235,6 +235,19 @@ void ISO15118_chargerImpl::ready() {
 
     setup_config.selecting_sap_based_on_energy_service = mod->config.selecting_sap_based_on_energy_service;
 
+    // TODO(ml): hardcoded safe DER limits; populate real limits from the grid_support interface once available.
+    // der_setup_config is intentionally left unset: libiso15118 defaults it to {GridFollowing, GridConnected},
+    // which is exactly the minimal IEC setup we want.
+    {
+        const auto& services = setup_config.supported_energy_services;
+        if (std::find(services.begin(), services.end(), dt::ServiceCategory::AC_DER_IEC) != services.end()) {
+            auto& der_limits = setup_config.der_limits.emplace();
+            der_limits.nominal_charge_power = dt::from_float(11000);
+            der_limits.nominal_discharge_power = dt::from_float(11000);
+            der_limits.max_discharge_power = dt::from_float(11000);
+        }
+    }
+
     controller = std::make_unique<iso15118::TbdController>(tbd_config, callbacks, setup_config);
 
     // if the vas providers report their supported vas services before the controller exists,
@@ -437,6 +450,8 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
             publish_ac_ev_power_limits(fill_ac_ev_power_limits(*ac_transfer_mode));
         } else if (const auto* ac_bpt_transfer_mode = std::get_if<dt::BPT_AC_CPDReqEnergyTransferMode>(&limits)) {
             publish_ac_ev_power_limits(fill_ac_ev_power_limits(*ac_bpt_transfer_mode));
+        } else if (const auto* der_iec_transfer_mode = std::get_if<dt::DER_AC_CPDReqEnergyTransferMode>(&limits)) {
+            publish_ac_ev_power_limits(fill_ac_ev_power_limits(*der_iec_transfer_mode));
         }
     };
 
@@ -475,6 +490,23 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
                 ev_dynamic_values.min_v2x_energy_request =
                     convert_from_optional(bpt_dynamic_mode->min_v2x_energy_request);
                 publish_ac_ev_dynamic_control_mode(ev_dynamic_values);
+            } else if (const auto* der_scheduled_mode =
+                           std::get_if<dt::DER_Scheduled_AC_CLReqControlMode>(ac_control_mode)) {
+                publish_ac_ev_power_limits(fill_ac_ev_power_limits(*der_scheduled_mode));
+                publish_ac_ev_present_powers(fill_ac_ev_present_power_values(*der_scheduled_mode));
+                // TODO(ml): reactive-power fields and grid_event_condition are not yet surfaced.
+            } else if (const auto* der_dynamic_mode =
+                           std::get_if<dt::DER_Dynamic_AC_CLReqControlMode>(ac_control_mode)) {
+                publish_ac_ev_power_limits(fill_ac_ev_power_limits(*der_dynamic_mode));
+                publish_ac_ev_present_powers(fill_ac_ev_present_power_values(*der_dynamic_mode));
+                auto ev_dynamic_values = fill_ac_ev_dynamic_control_mode(*der_dynamic_mode);
+                ev_dynamic_values.max_v2x_energy_request =
+                    convert_from_optional(der_dynamic_mode->max_v2x_energy_request);
+                ev_dynamic_values.min_v2x_energy_request =
+                    convert_from_optional(der_dynamic_mode->min_v2x_energy_request);
+                publish_ac_ev_dynamic_control_mode(ev_dynamic_values);
+                // TODO(ml): reactive-power fields, grid_event_condition and
+                // session_total_discharge_energy_available are not yet surfaced.
             }
         } else if (const auto* display_parameters = std::get_if<dt::DisplayParameters>(&ac_charge_loop_req)) {
             publish_display_parameters(convert_display_parameters(*display_parameters));
@@ -926,8 +958,11 @@ void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
         case types::iso15118::EnergyTransferMode::AC_BPT_DER:
             services.push_back(dt::ServiceCategory::AC_BPT);
             break;
-        case types::iso15118::EnergyTransferMode::AC_DER:
-            services.push_back(dt::ServiceCategory::AC_DER);
+        case types::iso15118::EnergyTransferMode::AC_DER_IEC:
+            services.push_back(dt::ServiceCategory::AC_DER_IEC);
+            break;
+        case types::iso15118::EnergyTransferMode::AC_DER_SAE:
+            services.push_back(dt::ServiceCategory::AC_DER_SAE);
             break;
         case types::iso15118::EnergyTransferMode::DC:
         case types::iso15118::EnergyTransferMode::DC_core:

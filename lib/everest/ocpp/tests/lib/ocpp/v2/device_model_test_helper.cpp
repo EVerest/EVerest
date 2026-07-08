@@ -212,7 +212,29 @@ bool DeviceModelTestHelper::set_variable_attribute_value_null(const std::string&
 
 void DeviceModelTestHelper::create_device_model_db() {
     InitDeviceModelDb db(this->database_path, this->migration_files_path);
-    const auto component_configs = get_all_component_configs(this->config_path);
+    auto component_configs = get_all_component_configs(this->config_path);
+
+    DeviceModelVariable supported_operation_modes;
+    supported_operation_modes.name = "SupportedOperationModes";
+    VariableCharacteristics characteristics;
+    characteristics.dataType = DataEnum::MemberList;
+    characteristics.supportsMonitoring = false;
+    supported_operation_modes.characteristics = characteristics;
+    DbVariableAttribute supported_operation_modes_attribute;
+    supported_operation_modes_attribute.variable_attribute.mutability = MutabilityEnum::ReadWrite;
+    supported_operation_modes_attribute.variable_attribute.value =
+        "ChargingOnly,CentralSetpoint,ExternalSetpoint,ExternalLimits,CentralFrequency,LocalFrequency,"
+        "LocalLoadBalancing,Idle";
+    supported_operation_modes_attribute.variable_attribute.type = AttributeEnum::Actual;
+    supported_operation_modes.attributes = std::vector<DbVariableAttribute>{supported_operation_modes_attribute};
+    const std::vector<DeviceModelVariable> v2x_variables{supported_operation_modes};
+    for (const std::int32_t evse_id : {1, 2}) {
+        ComponentKey v2x_ctrl;
+        v2x_ctrl.name = "V2XChargingCtrlr";
+        v2x_ctrl.evse_id = evse_id;
+        component_configs.insert(std::make_pair(v2x_ctrl, v2x_variables));
+    }
+
     db.initialize_database(component_configs, true);
 }
 

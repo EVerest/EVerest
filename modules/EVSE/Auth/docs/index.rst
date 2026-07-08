@@ -12,13 +12,31 @@ or parent id token is presented to stop a transaction. In addition, the module i
 reservations and matching them with incoming tokens.
 
 The module contains the logic to select a connector for incoming tokens (e.g. by waiting for a car plug in, user
-interface, random selection, etc.). Currently two selection algorithms are implemented and described in 
-`Selection Algorithm`_.
+interface, random selection, etc.). The algorithm is configurable via the ``selection_algorithm`` config key, which
+accepts four values; three of them (``FindFirst``, ``PlugEvents`` and ``PlugEventsLIFO``) are implemented. The
+available algorithms are described in `Selection Algorithm`_.
 
-The following flow diagram describes how an incoming token is handled by the module.
+The following flow diagram gives a simplified overview of how an incoming token is handled by the module.
 
-.. image:: token_handling.drawio.svg
-   :alt: TokenHandling
+.. mermaid::
+
+    flowchart TD
+        A[Token received] --> B[Validate the token]
+        B --> C{Token valid?}
+        C -- no --> RJ[["Rejected"]]
+        C -- yes --> D{"Should the token stop<br/>an ongoing transaction?"}
+        D -- yes --> E[Stop the transaction]
+        E --> RS[["Transaction stopped"]]
+        D -- no --> F["Select an available connector<br/>using the configured algorithm"]
+        F -- "none available or timeout" --> RJ
+        F -- selected --> G[Authorize the connector]
+        G --> RA[["Authorized"]]
+
+.. note::
+
+    The diagram above is simplified to show the essential flow. It omits some details, such as whether the token was
+    already validated by the provider, reservation matching, the distinction between master-pass-group and
+    parent-id-token stops, and authorization being withdrawn while waiting for a plug in.
 
 .. note::
     
@@ -32,7 +50,9 @@ This module provides implementations for the `reservation` and the `auth` interf
 
 It requires connections to module(s) implementing the `token_provider`, `token_validator` and `evse_manager` interfaces.
 
-The following diagram shows how it integrates with other EVerest modules.
+The following diagram shows how it integrates with other EVerest modules. A token provider supplies a token, a
+token validator checks it, and the Auth module then authorizes the selected connector at the corresponding EVSE
+manager.
 
 .. image:: everest_integration.drawio.svg
    :alt: Integration
@@ -44,41 +64,89 @@ Selection Algorithm
 ===================
 
 The selection algorithm contains the logic to select one connector for an incoming token. The algorithm can be
-specified within the module config using the key `selection_algorithm`. In case the charging station has only 
-one connector, the selection of a connector is pretty straight-forward because there is only one that is 
-available. The selection algorithm becomes relevant in case the Auth module manages authorization requests 
-for multiple connectors. 
+specified within the module config using the key ``selection_algorithm``. When only a single EVSE/connector is
+referenced by the request, that connector is selected immediately regardless of the configured algorithm
+(single-EVSE fast path). The selection algorithm only becomes relevant when the Auth module manages authorization
+requests for multiple connectors.
 
-Three options for the selection are available: 
+Four values are accepted for ``selection_algorithm``:
 
+* FindFirst (default)
 * PlugEvents
-* FindFirst
-* UserInput
-
-PlugEvents
-----------
-
-The following flow chart describes how a connector is selected using the `PlugEvents` algorithm.
-
-.. image:: plug_events_selection_algorithm.drawio.svg
-   :alt: SelectionAlgorithm
-
-.. note::
-    
-    In case a user authorizes first and no EV is connected to the charger to initiate a SessionStarted event the 
-    processing thread waits for a SessionStarted event to select the respective connector. A Plug-In timeout may 
-    occur, which will require a subsequent initiation of authorization to start a charging session.
+* PlugEventsLIFO
+* UserInput (not yet implemented)
 
 FindFirst
 ---------
 
-The `FindFirst` selection method simply selects the first available connector that has no active transaction.
-This method attempts to select a connector immediately.
+``FindFirst`` is the **default** selection algorithm. It is non-blocking. If a referenced EVSE already has a pending
+plug-in (the earliest one, if several referenced EVSEs are plugged in) and that EVSE has no active transaction, it is
+selected. Otherwise the first referenced EVSE that is available, in the order the connectors are referenced, is
+selected. If no referenced EVSE qualifies, the request is not satisfied; the algorithm returns without waiting or
+blocking.
+
+PlugEvents
+----------
+
+The following flow chart describes how a connector is selected using the ``PlugEvents`` algorithm.
+
+.. mermaid::
+
+    flowchart TD
+        A[Token referencing one or more connectors] --> B{Only one referenced connector?}
+        B -- yes --> C["Select it immediately<br/>single-EVSE fast path"]
+        B -- no --> D{"A referenced connector already has an EV plugged in?"}
+        D -- yes --> E["Select the connector waiting longest<br/>among referenced connectors (first-in, first-out)"]
+        D -- no --> F["Wait up to connection_timeout for<br/>an EV to be plugged in"]
+        F -- "plug-in occurred" --> G{Authorization withdrawn during the wait?}
+        G -- no --> E
+        G -- yes --> I[["Interrupted"]]
+        F -- "timeout elapsed" --> H[["Reject (TimeOut)"]]
+
+If a referenced EVSE already has an EV plugged in, it is selected. Otherwise ``PlugEvents`` blocks for up to
+``connection_timeout`` seconds waiting for an EV to be plugged in, and then selects a referenced EVSE where that
+happened. If the wait times out, the request is rejected. If authorization is withdrawn during the wait, the wait is
+interrupted.
+
+When more than one referenced EVSE has plugged in, selection is **first-in, first-out** (FIFO): the EVSE whose
+plug-in has been pending longest is chosen, *not* the one that plugged in most recently. For example, if connector 1
+plugs in, then connector 2 plugs in, and an authorization request referencing both connectors arrives afterwards,
+connector 1 is selected because its plug-in occurred first. A plug-in stops being a candidate once it is consumed by
+an authorization, times out, or its session ends. If you want the opposite (most recent) behavior, use
+``PlugEventsLIFO`` instead.
+
+.. note::
+
+    If a user authorizes first while no EV is plugged in, the module waits for an EV to be plugged in before it
+    selects the connector. A plug-in timeout may occur, which will require the user to start authorization again to
+    begin a charging session.
+
+PlugEventsLIFO
+--------------
+
+``PlugEventsLIFO`` behaves exactly like ``PlugEvents`` — it waits for an EV to be plugged in and is subject to the
+same ``connection_timeout``, timeout and withdrawal behavior — but when more than one referenced EVSE has plugged in
+it makes the opposite choice: it selects the EVSE that plugged in **most recently** (last-in, first-out) instead of
+the earliest. Reusing the earlier example, if connector 1 plugs in, then connector 2 plugs in, and an authorization
+request referencing both connectors arrives afterwards, ``PlugEventsLIFO`` selects connector 2 (the most recent
+plug-in), whereas ``PlugEvents`` would select connector 1.
 
 UserInput
 ---------
 
-Not yet implemented.
+The ``UserInput`` algorithm is not yet implemented. Configuring it will cause the module to report an error when it
+needs to select a connector, so it should not be used.
+
+Connector State Machine
+=======================
+
+The Auth module tracks the lifecycle of each connector with a small state machine. It models how a
+connector transitions between being available, occupied by a transaction, unavailable (disabled) and
+faulted, so that the module knows which connectors can be authorized at any time. The diagram below
+shows the six states and the events that drive the transitions.
+
+.. image:: state_chart.drawio.svg
+   :alt: Connector state machine
 
 Plug&Charge Authorization
 =========================

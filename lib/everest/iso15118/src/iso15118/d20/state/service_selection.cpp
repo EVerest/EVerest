@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/ac_charge_parameter_discovery.hpp>
+#include <iso15118/d20/state/ac_der_iec_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/dc_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/service_selection.hpp>
 
@@ -137,12 +138,16 @@ Result ServiceSelection::feed(Event ev) {
         logf_info("Requested info about ServiceID: %d", req->service);
 
         using Service = dt::ServiceCategory;
-        const std::vector<uint16_t> energy_services{
-            message_20::to_underlying_value(Service::AC),          message_20::to_underlying_value(Service::DC),
-            message_20::to_underlying_value(Service::WPT),         message_20::to_underlying_value(Service::DC_ACDP),
-            message_20::to_underlying_value(Service::AC_BPT),      message_20::to_underlying_value(Service::DC_BPT),
-            message_20::to_underlying_value(Service::DC_ACDP_BPT), message_20::to_underlying_value(Service::MCS),
-            message_20::to_underlying_value(Service::MCS_BPT)};
+        const std::vector<uint16_t> energy_services{message_20::to_underlying_value(Service::AC),
+                                                    message_20::to_underlying_value(Service::DC),
+                                                    message_20::to_underlying_value(Service::WPT),
+                                                    message_20::to_underlying_value(Service::DC_ACDP),
+                                                    message_20::to_underlying_value(Service::AC_BPT),
+                                                    message_20::to_underlying_value(Service::DC_BPT),
+                                                    message_20::to_underlying_value(Service::DC_ACDP_BPT),
+                                                    message_20::to_underlying_value(Service::MCS),
+                                                    message_20::to_underlying_value(Service::MCS_BPT),
+                                                    message_20::to_underlying_value(Service::AC_DER_IEC)};
 
         std::optional<dt::ServiceParameterList> custom_vas_parameters{std::nullopt};
 
@@ -200,6 +205,9 @@ Result ServiceSelection::feed(Event ev) {
 
         if (m_ctx.session.is_ac_charger()) {
             return m_ctx.create_state<AC_ChargeParameterDiscovery>();
+        }
+        if (m_ctx.session.is_ac_der_iec_charger()) {
+            return m_ctx.create_state<AC_DER_IEC_ChargeParameterDiscovery>();
         }
         if (m_ctx.session.is_dc_charger()) {
             return m_ctx.create_state<DC_ChargeParameterDiscovery>();

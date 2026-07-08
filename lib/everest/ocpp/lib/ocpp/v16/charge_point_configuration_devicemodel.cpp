@@ -4,6 +4,7 @@
 #include <everest/logging.hpp>
 #include <ocpp/common/cistring.hpp>
 #include <ocpp/common/utils.hpp>
+#include <ocpp/common/websocket/websocket_uri.hpp>
 #include <ocpp/v16/charge_point_configuration_devicemodel.hpp>
 #include <ocpp/v16/known_keys.hpp>
 #include <ocpp/v16/ocpp_types.hpp>
@@ -685,6 +686,17 @@ ChargePointConfigurationDeviceModel::setInternalStopTransactionIfUnlockNotSuppor
 ChargePointConfigurationDeviceModel::SetResult
 ChargePointConfigurationDeviceModel::setInternalSupplyVoltage(const std::string& value) {
     return set_value_check(isPositiveInteger, *storage, keys::valid_keys::SupplyVoltage, value);
+}
+
+ChargePointConfigurationDeviceModel::SetResult
+ChargePointConfigurationDeviceModel::setInternalSwitchSecurityProfileConnectionTimeout(const std::string& value) {
+    if (not getSwitchSecurityProfileConnectionTimeout().has_value()) {
+        return SetResult::UnknownVariable;
+    }
+    if (not isPositiveInteger(value) or std::stoi(value) < 1) {
+        return SetResult::Rejected;
+    }
+    return set_value_check(*storage, keys::valid_keys::SwitchSecurityProfileConnectionTimeout, value);
 }
 
 ChargePointConfigurationDeviceModel::SetResult
@@ -1801,6 +1813,10 @@ std::optional<int32_t> ChargePointConfigurationDeviceModel::getSupplyVoltage() {
     return get_optional<std::int32_t>(*storage, keys::valid_keys::SupplyVoltage);
 }
 
+std::optional<std::int32_t> ChargePointConfigurationDeviceModel::getSwitchSecurityProfileConnectionTimeout() {
+    return get_optional<std::int32_t>(*storage, keys::valid_keys::SwitchSecurityProfileConnectionTimeout);
+}
+
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getPublicKeyKeyValue(const std::uint32_t connector_id) {
     std::optional<KeyValue> result;
     const auto max = getNumberOfConnectors();
@@ -2081,6 +2097,10 @@ std::optional<KeyValue> ChargePointConfigurationDeviceModel::getSupplyVoltageKey
     return get_key_value_optional(*storage, keys::valid_keys::SupplyVoltage);
 }
 
+std::optional<KeyValue> ChargePointConfigurationDeviceModel::getSwitchSecurityProfileConnectionTimeoutKeyValue() {
+    return get_key_value_optional(*storage, keys::valid_keys::SwitchSecurityProfileConnectionTimeout);
+}
+
 void ChargePointConfigurationDeviceModel::setAllowChargingProfileWithoutStartSchedule(bool allow) {
     setInternalAllowChargingProfileWithoutStartSchedule(to_string(allow));
 }
@@ -2165,6 +2185,11 @@ void ChargePointConfigurationDeviceModel::setStopTransactionIfUnlockNotSupported
 
 void ChargePointConfigurationDeviceModel::setSupplyVoltage(std::int32_t supply_voltage) {
     setInternalSupplyVoltage(std::to_string(supply_voltage));
+}
+
+void ChargePointConfigurationDeviceModel::setSwitchSecurityProfileConnectionTimeout(
+    std::int32_t switch_security_profile_connection_timeout) {
+    setInternalSwitchSecurityProfileConnectionTimeout(std::to_string(switch_security_profile_connection_timeout));
 }
 
 void ChargePointConfigurationDeviceModel::setVerifyCsmsAllowWildcards(bool verify_csms_allow_wildcards) {
@@ -3306,6 +3331,9 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
             break;
         case keys::valid_keys::SupplyVoltage:
             result = convert(setInternalSupplyVoltage(value_str));
+            break;
+        case keys::valid_keys::SwitchSecurityProfileConnectionTimeout:
+            result = convert(setInternalSwitchSecurityProfileConnectionTimeout(value_str));
             break;
         case keys::valid_keys::VerifyCsmsAllowWildcards:
             result = convert(setInternalVerifyCsmsAllowWildcards(value_str));

@@ -55,6 +55,7 @@
         "ConnectorEvseIds": "DE*PNX*100001,DE*PNX*100002",
         "AllowChargingProfileWithoutStartSchedule": false,
         "WaitForStopTransactionsOnResetTimeout": 60,
+        "SwitchSecurityProfileConnectionTimeout": 30,
         "QueueAllMessages": true,
         "MessageTypesDiscardForQueueing": "Heartbeat",
         "MessageQueueSizeThreshold": 5000,

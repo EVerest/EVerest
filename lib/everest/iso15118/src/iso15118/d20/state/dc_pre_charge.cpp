@@ -66,7 +66,11 @@ Result DC_PreCharge::feed(Event ev) {
             return {};
         }
 
-        return m_ctx.create_state<PowerDelivery>();
+        if (req->processing == dt::Processing::Finished) {
+            return m_ctx.create_state<PowerDelivery>();
+        }
+
+        return {};
 
     } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);

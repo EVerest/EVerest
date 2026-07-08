@@ -49,6 +49,7 @@ enum class TokenValidationStatus {
 enum class SelectionAlgorithm {
     UserInput,
     PlugEvents,
+    PlugEventsLIFO,
     FindFirst,
 };
 

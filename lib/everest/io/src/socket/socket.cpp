@@ -705,7 +705,7 @@ std::string get_interface_address(std::string const& name) {
     throw std::runtime_error("Interface: " + name + " not found or has no IPv4");
 }
 
-std::vector<if_info> get_all_interaces() {
+std::vector<if_info> get_all_interfaces() {
     struct ifaddrs* ifaddr{nullptr};
     struct ifaddrs* ifa{nullptr};
     if (getifaddrs(&ifaddr) == -1) {

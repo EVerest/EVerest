@@ -18,10 +18,10 @@ namespace iso15118::d20::state {
 
 constexpr auto ISO20_DC_NAMESPACE = "urn:iso:std:iso:15118:-20:DC";
 constexpr auto ISO20_AC_NAMESPACE = "urn:iso:std:iso:15118:-20:AC";
-// constexpr auto ISO20_DER_IEC_NAMESPACE = "urn:iso:std:iso:15118:-20:AC-DER-IEC";
-// constexpr auto ISO20_DER_SAE_NAMESPACE = "urn:iso:std:iso:15118:-20:AC-DER-SAE";
+constexpr auto ISO20_DER_IEC_NAMESPACE = "urn:iso:std:iso:15118:-20:AC-DER-IEC";
+constexpr auto ISO20_DER_SAE_NAMESPACE = "urn:iso:std:iso:15118:-20:AC-DER-SAE";
 
-constexpr std::array AcNamespaces = {ISO20_AC_NAMESPACE};
+constexpr std::array AcNamespaces = {ISO20_AC_NAMESPACE, ISO20_DER_IEC_NAMESPACE, ISO20_DER_SAE_NAMESPACE};
 
 using ResponseCode = message_20::SupportedAppProtocolResponse::ResponseCode;
 
@@ -121,7 +121,7 @@ Result SupportedAppProtocol::feed(Event ev) {
                     m_ctx.feedback.selected_protocol("ISO15118-20:DC");
                 } else if (std::find(AcNamespaces.begin(), AcNamespaces.end(), protocol.protocol_namespace) !=
                            AcNamespaces.end()) {
-                    m_ctx.feedback.selected_protocol("ISO15118-20:AC");
+                    m_ctx.feedback.selected_protocol("ISO15118-20:AC and similar");
                 } else if (m_ctx.session_config.custom_protocol.has_value() and
                            m_ctx.session_config.custom_protocol.value() == protocol.protocol_namespace) {
                     m_ctx.feedback.selected_protocol(m_ctx.session_config.custom_protocol.value());

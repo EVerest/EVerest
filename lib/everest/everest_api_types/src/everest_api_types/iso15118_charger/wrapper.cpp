@@ -104,7 +104,10 @@ EnergyTransferMode_Internal to_internal_api(EnergyTransferMode_External const& v
     case SrcT::AC_BPT_DER:
         return TarT::AC_BPT_DER;
     case SrcT::AC_DER:
-        return TarT::AC_DER;
+    case SrcT::AC_DER_IEC:
+        return TarT::AC_DER_IEC;
+    case SrcT::AC_DER_SAE:
+        return TarT::AC_DER_SAE;
     case SrcT::DC_BPT:
         return TarT::DC_BPT;
     case SrcT::DC_ACDP:
@@ -148,8 +151,10 @@ EnergyTransferMode_External to_external_api(EnergyTransferMode_Internal const& v
         return TarT::AC_BPT;
     case SrcT::AC_BPT_DER:
         return TarT::AC_BPT_DER;
-    case SrcT::AC_DER:
-        return TarT::AC_DER;
+    case SrcT::AC_DER_IEC:
+        return TarT::AC_DER_IEC;
+    case SrcT::AC_DER_SAE:
+        return TarT::AC_DER_SAE;
     case SrcT::DC_BPT:
         return TarT::DC_BPT;
     case SrcT::DC_ACDP:

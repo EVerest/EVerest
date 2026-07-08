@@ -32,6 +32,7 @@
 #include <generated/interfaces/over_voltage_monitor/Interface.hpp>
 #include <generated/interfaces/power_supply_DC/Interface.hpp>
 #include <generated/interfaces/powermeter/Interface.hpp>
+#include <generated/interfaces/slac/Interface.hpp>
 #include <sigslot/signal.hpp>
 
 #include "Timeout.hpp"
@@ -67,6 +68,7 @@ public:
                            const std::vector<std::unique_ptr<isolation_monitorIntf>>& _r_imd,
                            const std::vector<std::unique_ptr<power_supply_DCIntf>>& _r_powersupply,
                            const std::vector<std::unique_ptr<powermeterIntf>>& _r_powermeter,
+                           const std::vector<std::unique_ptr<slacIntf>>& _r_slac,
                            const std::vector<std::unique_ptr<over_voltage_monitorIntf>>& _r_over_voltage_monitor,
                            bool _inoperative_error_use_vendor_id);
 
@@ -116,6 +118,7 @@ private:
     const std::vector<std::unique_ptr<isolation_monitorIntf>>& r_imd;
     const std::vector<std::unique_ptr<power_supply_DCIntf>>& r_powersupply;
     const std::vector<std::unique_ptr<powermeterIntf>>& r_powermeter;
+    const std::vector<std::unique_ptr<slacIntf>>& r_slac;
     const std::vector<std::unique_ptr<over_voltage_monitorIntf>>& r_over_voltage_monitor;
     const bool inoperative_error_use_vendor_id;
 };

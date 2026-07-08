@@ -329,7 +329,12 @@ private:
                                  std::unique_lock<std::mutex>& lk);
     bool is_authorization_withdrawn(const std::vector<int>& selected_evses, const IdToken& id_token);
 
-    int get_latest_plugin(const std::vector<int>& evse_ids);
+    /// \brief Returns the referenced evse from \p evse_ids whose EV plugged in first (the earliest plug in still
+    /// pending in the plug in queue), or -1 if none of the referenced evses has a pending plug in.
+    int get_oldest_plugin(const std::vector<int>& evse_ids);
+    /// \brief Returns the referenced evse from \p evse_ids whose EV plugged in most recently, or -1 if none of the
+    /// referenced evses has a pending plug in.
+    int get_last_plugin(const std::vector<int>& evse_ids);
     void notify_evse(int evse_id, const ProvidedIdToken& provided_token, const ValidationResult& validation_result,
                      std::unique_lock<std::mutex>& lk);
     Identifier get_identifier(const ValidationResult& validation_result, const std::string& id_token,

@@ -1072,7 +1072,8 @@ public:
                 (override));
     MOCK_METHOD(void, on_transaction_finished,
                 (std::int32_t, const DateTime&, const MeterValue&, ReasonEnum, TriggerReasonEnum,
-                 const std::optional<IdToken>&, const std::optional<std::string>&, ChargingStateEnum),
+                 const std::optional<IdToken>&, const std::optional<std::string>&, ChargingStateEnum,
+                 const std::optional<SignedMeterValue>&),
                 (override));
     MOCK_METHOD(void, transaction_event_req,
                 (const TransactionEventEnum&, const DateTime&, const Transaction&, const TriggerReasonEnum&,

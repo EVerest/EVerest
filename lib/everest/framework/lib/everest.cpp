@@ -746,10 +746,21 @@ void Everest::subscribe_global_all_errors(const error::ErrorCallback& raise_call
         const json provides = this->config.get_manifests().at(module_name).at("provides");
         for (const auto& impl : provides.items()) {
             const std::string& impl_id = impl.key();
-            const std::string error_topic = fmt::format("{}/error/#", this->config.mqtt_prefix(module_id, impl_id));
-            const std::shared_ptr<TypedHandler> error_token =
-                std::make_shared<TypedHandler>(HandlerType::SubscribeError, std::make_shared<Handler>(error_handler));
-            this->mqtt_abstraction->register_handler(error_topic, error_token, QOS::QOS2);
+
+            const auto& interface_definition = this->config.get_interface_definition(
+                std::string(this->config.get_interfaces().at(module_name).at(impl_id)));
+            for (const auto& error_namespace_it : interface_definition.at("errors").items()) {
+                const auto& error_namespace = error_namespace_it.key();
+                for (const auto& error_name_it : error_namespace_it.value().items()) {
+                    const auto& error_name = error_name_it.key();
+                    const std::string error_type = error_namespace + "/" + error_name;
+                    const std::string error_topic =
+                        fmt::format("{}/error/{}", this->config.mqtt_prefix(module_id, impl_id), error_type);
+                    const std::shared_ptr<TypedHandler> error_token = std::make_shared<TypedHandler>(
+                        HandlerType::SubscribeError, std::make_shared<Handler>(error_handler));
+                    this->mqtt_abstraction->register_handler(error_topic, error_token, QOS::QOS2);
+                }
+            }
         }
     }
 }

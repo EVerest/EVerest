@@ -50,6 +50,13 @@ std::vector<MeterValue> get_meter_values_with_measurands_applied(
 ///
 MeterValue set_meter_value_reading_context(const MeterValue& meter_value, const ReadingContextEnum reading_context);
 
+/// \brief Searches \p meter_values for the first SampledValue with the given \p reading_context that is suitable to
+/// carry a signed meter value (already has a signedMeterValue set or measures Energy_Active_Import_Register).
+/// \param meter_values the meter values to search
+/// \param reading_context the ReadingContext the SampledValue is matched against
+/// \return pointer to the matching SampledValue inside the passed meter_values. nullptr if no match was found
+SampledValue* find_sampled_value_by_context(std::vector<MeterValue>& meter_values, ReadingContextEnum reading_context);
+
 /// \brief Returns the given \p str hashed using SHA256
 /// \param str
 /// \return

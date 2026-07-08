@@ -76,8 +76,10 @@ set(LIBOCPP_TEST_INCLUDE_COMMON_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/common/types.cp
 set(LIBOCPP_TEST_INCLUDE_V2_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/v16/ocpp_enums.cpp   # This is currently still needed but might be removed in the future.
                                       ${LIBOCPP_LIB_PATH}/ocpp/v16/known_keys.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v16/charge_point_configuration_base.cpp
+                                      ${LIBOCPP_LIB_PATH}/ocpp/v16/charge_point_configuration_connectivity.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v16/utils.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v16/messages/StopTransaction.cpp
+                                      ${LIBOCPP_LIB_PATH}/ocpp/common/websocket/websocket_uri.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/types.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/ocpp_types.cpp

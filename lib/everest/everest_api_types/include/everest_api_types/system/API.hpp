@@ -100,9 +100,14 @@ struct LogStatus {
     int32_t request_id;
 };
 
+struct FirmwareUpdateMetadata {
+    std::optional<bool> disable_connectors_during_install;
+};
+
 struct FirmwareUpdateStatus {
     FirmwareUpdateStatusEnum firmware_update_status;
     int32_t request_id;
+    std::optional<FirmwareUpdateMetadata> firmware_update_metadata;
 };
 
 struct ResetRequest {

@@ -13,7 +13,7 @@ jobs:
     uses: ./.github/workflows/job_setup-env.yml
     with:
       runner: ubuntu-24.04
-      ref_everest_ci: v1.5.5
+      ref_everest_ci: v1.6.0
 
 
   build-build-kit:

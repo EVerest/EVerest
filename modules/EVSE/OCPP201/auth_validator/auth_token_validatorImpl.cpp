@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include <conversions.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
 #include <generated/interfaces/ISO15118_charger/Implementation.hpp>
 #include <generated/types/session_cost.hpp>
 #include <ocpp/v2/messages/Authorize.hpp>

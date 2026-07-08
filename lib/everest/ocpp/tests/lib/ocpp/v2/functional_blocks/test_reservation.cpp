@@ -168,7 +168,7 @@ protected: // Functions
     }
 
 protected: // Members
-    ConnectivityManagerMock connectivity_manager;
+    ocpp::ConnectivityManagerMock connectivity_manager;
     ocpp::v2::DatabaseHandlerMock database_handler;
     ocpp::EvseSecurityMock evse_security;
     ComponentStateManagerMock component_state_manager;

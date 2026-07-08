@@ -13,10 +13,6 @@
 
 #include "fsm_controller.hpp"
 
-static std::promise<void> module_ready;
-// FIXME (aw): this is ugly, but due to the design of the auto-generated module skeleton ..
-static std::unique_ptr<FSMController> fsm_ctrl{nullptr};
-
 namespace module {
 namespace main {
 
@@ -28,19 +24,6 @@ static std::string mac_to_ascii(const std::string& mac_binary) {
 }
 
 void slacImpl::init() {
-    // setup evse fsm thread
-    std::thread(&slacImpl::run, this).detach();
-}
-
-void slacImpl::ready() {
-    // let the waiting run thread go
-    module_ready.set_value();
-}
-
-void slacImpl::run() {
-    // wait until ready
-    module_ready.get_future().get();
-
     if (config.startup_delay_ms > 0) {
         EVLOG_info << "Delaying SLAC startup by " << config.startup_delay_ms << "ms";
         std::this_thread::sleep_for(std::chrono::milliseconds(config.startup_delay_ms));
@@ -48,7 +31,6 @@ void slacImpl::run() {
     }
 
     // initialize slac i/o
-    SlacIO slac_io;
     try {
         slac_io.init(config.device);
     } catch (const std::exception& e) {
@@ -60,12 +42,11 @@ void slacImpl::run() {
     }
 
     // setup callbacks
-    slac::fsm::evse::ContextCallbacks callbacks;
-    callbacks.send_raw_slac = [&slac_io](slac::messages::HomeplugMessage& msg) { slac_io.send(msg); };
+    fsm_ctx.callbacks.send_raw_slac = [this](slac::messages::HomeplugMessage& msg) { slac_io.send(msg); };
 
-    callbacks.signal_dlink_ready = [this](bool value) { publish_dlink_ready(value); };
+    fsm_ctx.callbacks.signal_dlink_ready = [this](bool value) { publish_dlink_ready(value); };
 
-    callbacks.signal_state = [this](const std::string& value) {
+    fsm_ctx.callbacks.signal_state = [this](const std::string& value) {
         try {
             publish_state(types::slac::string_to_state(value));
         } catch (const std::exception& e) {
@@ -73,22 +54,25 @@ void slacImpl::run() {
         }
     };
 
-    callbacks.signal_error_routine_request = [this]() { publish_request_error_routine(nullptr); };
+    fsm_ctx.callbacks.signal_error_routine_request = [this]() { publish_request_error_routine(nullptr); };
 
-    callbacks.log_debug = [](const std::string& text) { EVLOG_debug << text; };
-    callbacks.log_info = [](const std::string& text) { EVLOG_info << text; };
-    callbacks.log_warn = [](const std::string& text) { EVLOG_warning << text; };
-    callbacks.log_error = [](const std::string& text) { EVLOG_error << text; };
+    fsm_ctx.callbacks.log_debug = [](const std::string& text) { EVLOG_debug << text; };
+    fsm_ctx.callbacks.log_info = [](const std::string& text) { EVLOG_info << text; };
+    fsm_ctx.callbacks.log_warn = [](const std::string& text) { EVLOG_warning << text; };
+    fsm_ctx.callbacks.log_error = [](const std::string& text) { EVLOG_error << text; };
 
     if (config.publish_mac_on_first_parm_req) {
-        callbacks.signal_ev_mac_address_parm_req = [this](const std::string& mac) { publish_ev_mac_address(mac); };
+        fsm_ctx.callbacks.signal_ev_mac_address_parm_req = [this](const std::string& mac) {
+            publish_ev_mac_address(mac);
+        };
     }
 
     if (config.publish_mac_on_match_cnf) {
-        callbacks.signal_ev_mac_address_match_cnf = [this](const std::string& mac) { publish_ev_mac_address(mac); };
+        fsm_ctx.callbacks.signal_ev_mac_address_match_cnf = [this](const std::string& mac) {
+            publish_ev_mac_address(mac);
+        };
     }
 
-    auto fsm_ctx = slac::fsm::evse::Context(callbacks);
     fsm_ctx.slac_config.set_key_timeout_ms = config.set_key_timeout_ms;
     fsm_ctx.slac_config.slac_init_timeout_ms = config.slac_init_timeout_ms;
     fsm_ctx.slac_config.ac_mode_five_percent = config.ac_mode_five_percent;
@@ -118,17 +102,29 @@ void slacImpl::run() {
     // MMTYPE and logs "Received non-expected SLAC message of type 0xA14E" per frame, which
     // adds RX/log load. Drop it pre-FSM. Other MMTYPEs (incl. CM_SET_KEY.CNF, CM_ATTEN_PROFILE.IND)
     // pass through unchanged.
-    slac_io.run([](slac::messages::HomeplugMessage& msg) {
+    slac_io.run([this](slac::messages::HomeplugMessage& msg) {
+        if (not fsm_ctrl) {
+            return;
+        }
+
         if (msg.get_mmtype() == slac::defs::qualcomm::MMTYPE_VS_ATTENUATION_CHARACTERISTICS) {
             return;
         }
         fsm_ctrl->signal_new_slac_message(msg);
     });
+}
 
-    fsm_ctrl->run();
+void slacImpl::ready() {
+    if (fsm_ctrl) {
+        fsm_ctrl->run();
+    }
 }
 
 void slacImpl::handle_reset(bool& enable) {
+    if (not fsm_ctrl) {
+        return;
+    }
+
     // FIXME (aw): the enable could be used for power saving etc, but it is not implemented yet
     // CC: as power saving is not implemented, we actually don't need to reset at beginning of session (enable=true): At
     // start of everest it is being reset once and then it is enough to reset at the end of each session. This saves
@@ -140,14 +136,25 @@ void slacImpl::handle_reset(bool& enable) {
 };
 
 void slacImpl::handle_enter_bcd() {
+    if (not fsm_ctrl) {
+        return;
+    }
+
     fsm_ctrl->signal_enter_bcd();
 };
 
 void slacImpl::handle_leave_bcd() {
+    if (not fsm_ctrl) {
+        return;
+    }
+
     fsm_ctrl->signal_leave_bcd();
 };
 
 void slacImpl::handle_dlink_terminate() {
+    if (not fsm_ctrl) {
+        return;
+    }
     // With receiving a D-LINK_TERMINATE.request from HLE, the communication node
     // shall leave the logical network within TP_match_leave. All parameters related
     // to the current link shall be set to the default value and shall change to the status "Unmatched".
@@ -156,6 +163,9 @@ void slacImpl::handle_dlink_terminate() {
 };
 
 void slacImpl::handle_dlink_error() {
+    if (not fsm_ctrl) {
+        return;
+    }
     // The D-LINK_ERROR.request requests lower layers to terminate the data link and restart the matching
     // process by a control pilot transition through state E (on EVSE side this should be state F though)
     // CP signal is handled by EvseManager, so we just need to reset the SLAC state machine here.
@@ -165,6 +175,9 @@ void slacImpl::handle_dlink_error() {
 };
 
 void slacImpl::handle_dlink_pause() {
+    if (not fsm_ctrl) {
+        return;
+    }
     // The D-LINK_PAUSE.request requests lower layers to enter a power saving mode. While being in this
     // mode, the state will be kept to "Matched".
     // So we don't need to do anything here as we do not support low power mode to power down the PLC modem.

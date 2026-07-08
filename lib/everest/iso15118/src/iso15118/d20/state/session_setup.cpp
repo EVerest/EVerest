@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include <iso15118/d20/state/ac_charge_parameter_discovery.hpp>
+#include <iso15118/d20/state/ac_der_iec_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/authorization_setup.hpp>
 #include <iso15118/d20/state/dc_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/session_setup.hpp>
@@ -140,6 +141,9 @@ Result SessionSetup::feed(Event ev) {
             }
             if (m_ctx.session.is_dc_charger()) {
                 return m_ctx.create_state<DC_ChargeParameterDiscovery>();
+            }
+            if (m_ctx.session.is_ac_der_iec_charger()) {
+                return m_ctx.create_state<AC_DER_IEC_ChargeParameterDiscovery>();
             }
 
             // TODO(sl): Error handling

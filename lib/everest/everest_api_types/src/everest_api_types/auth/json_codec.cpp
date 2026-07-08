@@ -243,6 +243,9 @@ void to_json(json& j, SelectionAlgorithm const& k) noexcept {
     case SelectionAlgorithm::PlugEvents:
         j = "PlugEvents";
         return;
+    case SelectionAlgorithm::PlugEventsLIFO:
+        j = "PlugEventsLIFO";
+        return;
     case SelectionAlgorithm::FindFirst:
         j = "FindFirst";
         return;
@@ -259,6 +262,10 @@ void from_json(const json& j, SelectionAlgorithm& k) {
     }
     if (s == "PlugEvents") {
         k = SelectionAlgorithm::PlugEvents;
+        return;
+    }
+    if (s == "PlugEventsLIFO") {
+        k = SelectionAlgorithm::PlugEventsLIFO;
         return;
     }
     if (s == "FindFirst") {

@@ -523,10 +523,21 @@ bool AuthHandler::equals_master_pass_group_id(const std::optional<types::authori
     return is_equal_case_insensitive(parent_id_token.value().value, this->master_pass_group_id.value());
 }
 
-int AuthHandler::get_latest_plugin(const std::vector<int>& evse_ids) {
+int AuthHandler::get_oldest_plugin(const std::vector<int>& evse_ids) {
+    // plug ins are appended to the back of the queue, so iterating from the front returns the earliest plug in first
     for (const auto evse_id : this->plug_in_queue) {
         if (std::find(evse_ids.begin(), evse_ids.end(), evse_id) != evse_ids.end()) {
             return evse_id;
+        }
+    }
+    return -1;
+}
+
+int AuthHandler::get_last_plugin(const std::vector<int>& evse_ids) {
+    // plug ins are appended to the back of the queue, so iterating from the back returns the most recent plug in first
+    for (auto it = this->plug_in_queue.rbegin(); it != this->plug_in_queue.rend(); ++it) {
+        if (std::find(evse_ids.begin(), evse_ids.end(), *it) != evse_ids.end()) {
+            return *it;
         }
     }
     return -1;
@@ -542,16 +553,25 @@ AuthHandler::SelectEvseResult AuthHandler::select_evse(const std::vector<int>& s
         return result;
     }
 
-    if (this->selection_algorithm == SelectionAlgorithm::PlugEvents) {
+    if (this->selection_algorithm == SelectionAlgorithm::PlugEvents ||
+        this->selection_algorithm == SelectionAlgorithm::PlugEventsLIFO) {
+        // Both algorithms wait for a plug in and then select a plugged in evse based on plug in order. PlugEvents
+        // selects the earliest pending plug in among the referenced evses, PlugEventsLIFO the most recent one.
+        const auto select_plugged_in_evse = [this, &selected_evses]() {
+            return this->selection_algorithm == SelectionAlgorithm::PlugEventsLIFO
+                       ? this->get_last_plugin(selected_evses)
+                       : this->get_oldest_plugin(selected_evses);
+        };
+
         // locks all referenced evses for this request. Subsequent requests referencing one or more of the locked
         // evses are blocked until handle_token returns
-        if (this->get_latest_plugin(selected_evses) == -1) {
+        if (select_plugged_in_evse() == -1) {
             // no EV has been plugged in yet at the referenced evses
             EVLOG_debug << "No evse in authorization queue. Waiting for a plug in...";
             // blocks until respective plugin for evse occurred or until timeout
             if (!this->cv.wait_for(lk, std::chrono::seconds(this->connection_timeout),
-                                   [this, selected_evses, id_token] {
-                                       return this->get_latest_plugin(selected_evses) != -1 ||
+                                   [this, selected_evses, id_token, select_plugged_in_evse] {
+                                       return select_plugged_in_evse() != -1 ||
                                               this->is_authorization_withdrawn(selected_evses, id_token);
                                    })) {
                 result.status = SelectEvseReturnStatus::TimeOut;
@@ -564,17 +584,17 @@ AuthHandler::SelectEvseResult AuthHandler::select_evse(const std::vector<int>& s
             result.status = SelectEvseReturnStatus::Interrupted;
         } else {
             result.status = SelectEvseReturnStatus::EvseSelected;
-            result.evse_id = this->get_latest_plugin(selected_evses);
+            result.evse_id = select_plugged_in_evse();
         }
 
         return result;
     } else if (this->selection_algorithm == SelectionAlgorithm::FindFirst) {
         EVLOG_debug << "SelectionAlgorithm FindFirst: Selecting first available evse without an active transaction";
-        const auto selected_evse_id = this->get_latest_plugin(selected_evses);
+        const auto selected_evse_id = this->get_oldest_plugin(selected_evses);
         if (selected_evse_id != -1 and !this->evses.at(selected_evse_id)->transaction_active) {
             // an EV has been plugged in yet at the referenced evses
             result.status = SelectEvseReturnStatus::EvseSelected;
-            result.evse_id = this->get_latest_plugin(selected_evses);
+            result.evse_id = this->get_oldest_plugin(selected_evses);
             return result;
         } else {
             // no EV has been plugged in yet at the referenced evses; choosing the first one where no

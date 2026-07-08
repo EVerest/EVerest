@@ -42,7 +42,7 @@ protected:
     DeviceModelTestHelper device_model_test_helper;
     MockMessageDispatcher mock_dispatcher;
     DeviceModel* device_model;
-    NiceMock<ConnectivityManagerMock> connectivity_manager;
+    NiceMock<ocpp::ConnectivityManagerMock> connectivity_manager;
     NiceMock<DatabaseHandlerMock> database_handler_mock;
     ocpp::EvseSecurityMock evse_security;
     EvseManagerFake evse_manager;

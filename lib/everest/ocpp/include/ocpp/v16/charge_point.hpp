@@ -4,6 +4,7 @@
 #define OCPP_V16_CHARGE_POINT_HPP
 
 #include <ocpp/common/cistring.hpp>
+#include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/common/evse_security.hpp>
 #include <ocpp/common/evse_security_impl.hpp>
 #include <ocpp/common/support_older_cpp_versions.hpp>
@@ -77,6 +78,15 @@ public:
         const std::optional<SecurityConfiguration> security_configuration = std::nullopt,
         const std::function<void(const std::string& message, MessageDirection direction)>& message_callback = nullptr);
 
+    /// \brief Constructor that allows providing a \p connectivity_manager .
+    explicit ChargePoint(
+        ChargePointConfigurationInterface& cfg, const fs::path& share_path, const fs::path& database_path,
+        const fs::path& sql_init_path, const fs::path& message_log_path,
+        const std::shared_ptr<EvseSecurity> evse_security,
+        std::shared_ptr<ocpp::ConnectivityManagerInterface> connectivity_manager,
+        const std::optional<SecurityConfiguration> security_configuration = std::nullopt,
+        const std::function<void(const std::string& message, MessageDirection direction)>& message_callback = nullptr);
+
     virtual ~ChargePoint();
 
     /// @}  // End constructors 1.6 group
@@ -128,9 +138,11 @@ public:
     /// not stop transactions with this session_id even in case it has an internal database entry for this session and
     /// it hasnt been stopped yet. Its ignored if this vector contains session_ids that are unknown to libocpp.
     ///  \return
+    /// \param start_connecting if true (default) the websocket connection is initiated as part of start(). If false
+    /// connecting is deferred until an explicit connect_websocket() call.
     bool start(const std::map<int, ChargePointStatus>& connector_status_map = {},
                BootReasonEnum bootreason = BootReasonEnum::PowerUp,
-               const std::set<std::string>& resuming_session_ids = {});
+               const std::set<std::string>& resuming_session_ids = {}, bool start_connecting = true);
 
     /// \brief Restarts the ChargePoint if it has been stopped before. The ChargePoint is reinitialized, connects to the
     /// websocket and starts to communicate OCPP messages again
@@ -155,6 +167,21 @@ public:
 
     /// \brief Disconnects the the websocket connection to the CSMS if it is connected
     void disconnect_websocket();
+
+    /// \brief Notifies the charge point that the websocket is connected. This allows an external owner of an injected
+    /// ConnectivityManager to drive the charge point's websocket lifecycle (mirroring ocpp::v2::ChargePointInterface).
+    void on_websocket_connected(const int configuration_slot,
+                                const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
+                                const ocpp::OcppProtocolVersion ocpp_version);
+
+    /// \brief Notifies the charge point that the websocket is disconnected. This allows an external owner of an
+    /// injected ConnectivityManager to drive the charge point's websocket lifecycle
+    void on_websocket_disconnected(const int configuration_slot,
+                                   const ocpp::v2::NetworkConnectionProfile& network_connection_profile);
+
+    /// \brief Notifies the charge point that the websocket connection failed. This allows an external owner of an
+    /// injected ConnectivityManager to drive the charge point's websocket lifecycle
+    void on_websocket_connection_failed(ocpp::ConnectionFailedReason reason);
 
     /// \brief Calls the set_connection_timeout_callback that can be registered. This function is used to notify an
     /// Authorization mechanism about a changed ConnectionTimeout configuration key.
@@ -293,9 +320,11 @@ public:
     /// \param energy_wh_import stop meter value in Wh
     /// \param id_tag_end
     /// \param signed_meter_value e.g. in OCMF format
+    /// \param start_signed_meter_value e.g. in OCMF format
     void on_transaction_stopped(const std::int32_t connector, const std::string& session_id, const Reason& reason,
                                 ocpp::DateTime timestamp, float energy_wh_import,
-                                std::optional<CiString<20>> id_tag_end, std::optional<std::string> signed_meter_value);
+                                std::optional<CiString<20>> id_tag_end, std::optional<std::string> signed_meter_value,
+                                std::optional<std::string> start_signed_meter_value);
 
     /// \brief This function should be called when EV indicates that it suspends charging on the given \p connector
     /// \param connector
@@ -348,8 +377,11 @@ public:
     /// \param request_id A \p request_id of -1 indicates a FirmwareStatusNotification.req, else a
     /// SignedFirmwareUpdateStatusNotification.req .
     /// \param firmware_update_status The \p firmware_update_status
+    /// \param disable_connectors_during_install By default, all connectors will be disabled before installing the
+    /// firmware update. Setting this parameter to false will keep the connectors available during the update.
     void on_firmware_update_status_notification(std::int32_t request_id,
-                                                const ocpp::FirmwareStatusNotification firmware_update_status);
+                                                const ocpp::FirmwareStatusNotification firmware_update_status,
+                                                const bool disable_connectors_during_install = true);
 
     /// \brief This function must be called when a reservation is started at the given \p connector .
     /// \param connector

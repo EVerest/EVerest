@@ -17,7 +17,7 @@ struct AC_ChargeLoop : public StateBase {
     Result feed(Event) final;
 
 private:
-    float target_frequency{0};
+    std::optional<float> target_frequency; // TODO(SL): Adding updating feature
     bool stop{false};
     bool pause{false};
 
@@ -25,7 +25,7 @@ private:
     AcTargetPower target_powers{};
     AcPresentPower present_powers{};
 
-    bool first_entry_in_charge_loop{false};
+    bool first_entry_in_charge_loop{true};
 };
 
 } // namespace iso15118::d20::state

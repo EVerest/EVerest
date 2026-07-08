@@ -90,6 +90,14 @@ private:
     ///
     void check_required_variables();
 
+    /// \brief Resolve the identity for \p slot.
+    /// Per-slot Identity overrides SecurityCtrlr.Identity (B09.FR.16-18).
+    std::string resolve_identity(std::int32_t slot);
+
+    /// \brief Resolve the basic-auth password for \p slot.
+    /// Per-slot BasicAuthPassword overrides the global BasicAuthPassword (B09.FR.26-28).
+    std::optional<std::string> resolve_basic_auth_password(std::int32_t slot);
+
 public:
     /// \brief Constructor for the device model
     /// \param device_model_storage_interface pointer to a device model interface class
@@ -149,6 +157,23 @@ public:
     }
 
     void check_integrity(const std::map<std::int32_t, std::int32_t>& evse_connector_structure) override;
+
+    // ConnectivityManagerConfiguration interface
+    std::string get_network_configuration_priority() override;
+    void set_network_configuration_priority(const std::string& priority, const std::string& source) override;
+    std::optional<ocpp::v2::NetworkConnectionProfile> read_network_connection_profile(std::int32_t slot) override;
+    bool write_network_connection_profile(std::int32_t slot, const ocpp::v2::NetworkConnectionProfile& profile,
+                                          const std::string& source) override;
+    void clear_network_connection_profile(std::int32_t slot) override;
+    bool get_allow_security_level_zero_connections() override;
+    std::int32_t get_security_profile() override;
+    std::optional<std::int32_t> get_network_config_timeout() override;
+    std::optional<WebsocketConnectionOptions> get_websocket_connection_options(std::int32_t slot) override;
+    void set_active_security_profile(std::int32_t security_profile, const std::string& source) override;
+    void set_active_network_profile_slot(std::int32_t slot, const std::string& source) override;
+    void set_per_slot_ocpp_version(std::int32_t slot, const std::string& version, const std::string& source) override;
+    void set_security_ctrl_security_profile(std::int32_t security_profile, const std::string& source) override;
+    void set_security_ctrl_identity(const std::string& identity, const std::string& source) override;
 };
 
 } // namespace v2

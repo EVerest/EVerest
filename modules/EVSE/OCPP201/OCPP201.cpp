@@ -7,12 +7,12 @@
 
 #include <websocketpp_utils/uri.hpp>
 
-#include <conversions.hpp>
-#include <device_model/composed_device_model_storage.hpp>
-#include <error_handling.hpp>
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/external_energy_limits/external_energy_limits.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
+#include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
+#include <everest/ocpp_module_common/error_handling.hpp>
 #include <ocpp/v2/utils.hpp>
 
 namespace {
@@ -434,8 +434,12 @@ void OCPP201::init() {
 
     r_system->subscribe_firmware_update_status([this](const types::system::FirmwareUpdateStatus status) {
         if (this->started) {
+            auto disable_connectors_during_install =
+                !status.firmware_update_metadata.has_value() ||
+                status.firmware_update_metadata.value().disable_connectors_during_install.value_or(true);
             this->charge_point->on_firmware_update_status_notification(
-                status.request_id, conversions::to_ocpp_firmware_status_enum(status.firmware_update_status));
+                status.request_id, conversions::to_ocpp_firmware_status_enum(status.firmware_update_status),
+                disable_connectors_during_install);
         } else {
             std::scoped_lock lock(this->session_event_mutex);
             this->event_queue[0].push(status);
@@ -1124,9 +1128,13 @@ void OCPP201::ready() {
             } else if (std::holds_alternative<types::system::FirmwareUpdateStatus>(queued_event)) {
                 const auto fw_update_status = std::get<types::system::FirmwareUpdateStatus>(queued_event);
                 EVLOG_info << "Processing queued firmware update status";
+                auto disable_connectors_during_install =
+                    !fw_update_status.firmware_update_metadata.has_value() ||
+                    fw_update_status.firmware_update_metadata.value().disable_connectors_during_install.value_or(true);
                 this->charge_point->on_firmware_update_status_notification(
                     fw_update_status.request_id,
-                    conversions::to_ocpp_firmware_status_enum(fw_update_status.firmware_update_status));
+                    conversions::to_ocpp_firmware_status_enum(fw_update_status.firmware_update_status),
+                    disable_connectors_during_install);
             } else if (std::holds_alternative<types::system::LogStatus>(queued_event)) {
                 const auto log_status = std::get<types::system::LogStatus>(queued_event);
                 EVLOG_info << "Processing queued log status";
@@ -1461,10 +1469,16 @@ void OCPP201::process_tx_event_effect(const int32_t evse_id, const TxEventEffect
         transaction_data->meter_value = conversions::to_ocpp_meter_value(get_meter_value(session_event),
                                                                          ocpp::v2::ReadingContextEnum::Transaction_End,
                                                                          get_signed_meter_value(session_event));
+        std::optional<ocpp::v2::SignedMeterValue> start_signed_meter_value;
+        if (session_event.transaction_finished.has_value() &&
+            session_event.transaction_finished.value().start_signed_meter_value.has_value()) {
+            start_signed_meter_value = conversions::to_ocpp_signed_meter_value(
+                session_event.transaction_finished.value().start_signed_meter_value.value());
+        }
         this->charge_point->on_transaction_finished(evse_id, transaction_data->timestamp, transaction_data->meter_value,
                                                     transaction_data->stop_reason, transaction_data->trigger_reason,
                                                     transaction_data->id_token, std::nullopt,
-                                                    transaction_data->charging_state);
+                                                    transaction_data->charging_state, start_signed_meter_value);
         this->transaction_handler->reset_transaction_data(evse_id);
     }
 }

@@ -1222,6 +1222,72 @@ TEST_F(ReservationHandlerTest, store_load_reservations) {
     EXPECT_EQ(r.reservation_id_to_reservation_timeout_timer_map.size(), 2);
 }
 
+TEST_F(ReservationHandlerTest, store_load_evse_specific_reservation_without_global) {
+    // Regression test: an EVSE-specific reservation made without any subsequent global
+    // reservation (or cancellation) must still be persisted. Previously store_reservations()
+    // was only called from the global-reservation branch, so a standalone EVSE-specific
+    // reservation was silently lost across a restart.
+    add_connector(0, 0, types::evse_manager::ConnectorTypeEnum::cCCS2, this->evses);
+    add_connector(0, 1, types::evse_manager::ConnectorTypeEnum::cType2, this->evses);
+    add_connector(1, 0, types::evse_manager::ConnectorTypeEnum::cCCS2, this->evses);
+    add_connector(1, 1, types::evse_manager::ConnectorTypeEnum::cType2, this->evses);
+
+    r.load_reservations();
+    EXPECT_TRUE(r.evse_reservations.empty());
+    EXPECT_TRUE(r.global_reservations.empty());
+
+    // Only an EVSE-specific reservation, with no global reservation to trigger a store.
+    EXPECT_EQ(r.make_reservation(1, create_reservation(types::evse_manager::ConnectorTypeEnum::cCCS2)),
+              ReservationResult::Accepted);
+    EXPECT_EQ(r.evse_reservations.size(), 1);
+    EXPECT_TRUE(r.global_reservations.empty());
+
+    // Simulate a restart: drop in-memory state and reload from storage.
+    r.evse_reservations.clear();
+    r.reservation_id_to_reservation_timeout_timer_map.clear();
+    EXPECT_TRUE(r.evse_reservations.empty());
+
+    r.load_reservations();
+
+    // The EVSE-specific reservation must be restored from storage.
+    EXPECT_EQ(r.evse_reservations.size(), 1);
+    EXPECT_EQ(r.reservation_id_to_reservation_timeout_timer_map.size(), 1);
+}
+
+TEST_F(ReservationHandlerTest, cancelled_reservation_not_resurrected_after_reload) {
+    // Regression test: cancelling the last reservation must clear the stored
+    // state. Previously store_reservations() skipped writing when the set was
+    // empty, leaving the stale entry on disk so the cancelled reservation was
+    // resurrected on the next load_reservations().
+    add_connector(0, 0, types::evse_manager::ConnectorTypeEnum::cCCS2, this->evses);
+    add_connector(0, 1, types::evse_manager::ConnectorTypeEnum::cType2, this->evses);
+    add_connector(1, 0, types::evse_manager::ConnectorTypeEnum::cCCS2, this->evses);
+    add_connector(1, 1, types::evse_manager::ConnectorTypeEnum::cType2, this->evses);
+
+    r.load_reservations();
+    EXPECT_TRUE(r.evse_reservations.empty());
+
+    // Reservation id 0 (create_reservation starts numbering at 0).
+    EXPECT_EQ(r.make_reservation(1, create_reservation(types::evse_manager::ConnectorTypeEnum::cCCS2)),
+              ReservationResult::Accepted);
+    EXPECT_EQ(r.evse_reservations.size(), 1);
+
+    // Cancel the only reservation.
+    r.cancel_reservation(0, false, ReservationEndReason::Cancelled);
+    EXPECT_TRUE(r.evse_reservations.empty());
+
+    // Simulate a restart: drop in-memory state and reload from storage.
+    r.evse_reservations.clear();
+    r.global_reservations.clear();
+    r.reservation_id_to_reservation_timeout_timer_map.clear();
+
+    r.load_reservations();
+
+    // The cancelled reservation must NOT come back.
+    EXPECT_TRUE(r.evse_reservations.empty());
+    EXPECT_TRUE(r.global_reservations.empty());
+}
+
 TEST_F(ReservationHandlerTest, store_load_reservations_connector_unavailable) {
     add_connector(0, 0, types::evse_manager::ConnectorTypeEnum::cCCS2, this->evses);
     add_connector(0, 1, types::evse_manager::ConnectorTypeEnum::cType2, this->evses);

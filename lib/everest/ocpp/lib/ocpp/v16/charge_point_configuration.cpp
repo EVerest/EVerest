@@ -11,6 +11,7 @@
 
 #include <ocpp/common/schemas.hpp>
 #include <ocpp/common/utils.hpp>
+#include <ocpp/common/websocket/websocket_uri.hpp>
 #include <ocpp/v16/charge_point_configuration.hpp>
 #include <ocpp/v16/types.hpp>
 #include <ocpp/v16/utils.hpp>
@@ -453,6 +454,34 @@ void ChargePointConfiguration::setSupplyVoltage(std::int32_t supply_voltage) {
     if (this->getSupplyVoltage().has_value()) {
         this->config["Internal"]["SupplyVoltage"] = supply_voltage;
         this->setInUserConfig("Internal", "SupplyVoltage", supply_voltage);
+    }
+}
+
+std::optional<std::int32_t> ChargePointConfiguration::getSwitchSecurityProfileConnectionTimeout() {
+    if (this->config["Internal"].contains("SwitchSecurityProfileConnectionTimeout")) {
+        return this->config["Internal"]["SwitchSecurityProfileConnectionTimeout"];
+    }
+    return std::nullopt;
+}
+
+std::optional<KeyValue> ChargePointConfiguration::getSwitchSecurityProfileConnectionTimeoutKeyValue() {
+    const auto opt_value = this->getSwitchSecurityProfileConnectionTimeout();
+    if (opt_value.has_value()) {
+        KeyValue kv;
+        kv.key = "SwitchSecurityProfileConnectionTimeout";
+        kv.readonly = false;
+        kv.value = std::to_string(opt_value.value());
+        return kv;
+    }
+    return std::nullopt;
+}
+
+void ChargePointConfiguration::setSwitchSecurityProfileConnectionTimeout(
+    std::int32_t switch_security_profile_connection_timeout) {
+    if (this->getSwitchSecurityProfileConnectionTimeout().has_value()) {
+        this->config["Internal"]["SwitchSecurityProfileConnectionTimeout"] = switch_security_profile_connection_timeout;
+        this->setInUserConfig("Internal", "SwitchSecurityProfileConnectionTimeout",
+                              switch_security_profile_connection_timeout);
     }
 }
 
@@ -3213,6 +3242,9 @@ std::optional<KeyValue> ChargePointConfiguration::get(const CiString<50>& key) {
     if (key == "SupplyVoltage") {
         return this->getSupplyVoltageKeyValue();
     }
+    if (key == "SwitchSecurityProfileConnectionTimeout") {
+        return this->getSwitchSecurityProfileConnectionTimeoutKeyValue();
+    }
     if (key == "WebsocketPingPayload") {
         return this->getWebsocketPingPayloadKeyValue();
     }
@@ -3834,6 +3866,18 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
         } catch (const std::out_of_range& e) {
             return ConfigurationStatus::Rejected;
         }
+    } else if (key == "RetryBackoffRandomRange") {
+        try {
+            auto [valid, retry_backoff_random_range] = is_positive_integer(value.get());
+            if (!valid) {
+                return ConfigurationStatus::Rejected;
+            }
+            this->setRetryBackoffRandomRange(retry_backoff_random_range);
+        } catch (const std::invalid_argument& e) {
+            return ConfigurationStatus::Rejected;
+        } catch (const std::out_of_range& e) {
+            return ConfigurationStatus::Rejected;
+        }
     } else if (key == "WaitForStopTransactionsOnResetTimeout") {
         try {
             auto [valid, wait_for_stop_transactions_on_reset_timeout] = is_positive_integer(value.get());
@@ -3989,6 +4033,22 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
                 return ConfigurationStatus::Rejected;
             }
             this->setSupplyVoltage(_value);
+        } catch (const std::invalid_argument& e) {
+            return ConfigurationStatus::Rejected;
+        } catch (const std::out_of_range& e) {
+            return ConfigurationStatus::Rejected;
+        }
+    } else if (key == "SwitchSecurityProfileConnectionTimeout") {
+        if (not this->getSwitchSecurityProfileConnectionTimeout().has_value()) {
+            return ConfigurationStatus::NotSupported;
+        }
+        try {
+            const auto [valid, _value] = is_positive_integer(value.get());
+            // The schema declares minimum 1
+            if (not valid or _value < 1) {
+                return ConfigurationStatus::Rejected;
+            }
+            this->setSwitchSecurityProfileConnectionTimeout(_value);
         } catch (const std::invalid_argument& e) {
             return ConfigurationStatus::Rejected;
         } catch (const std::out_of_range& e) {

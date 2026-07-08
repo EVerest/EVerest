@@ -1,5 +1,6 @@
 target_include_directories(libocpp_unit_tests PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/mocks
 )
 
 target_sources(libocpp_unit_tests PRIVATE
@@ -26,6 +27,7 @@ target_sources(libocpp_unit_tests PRIVATE
         test_message_queue.cpp
         test_charge_point_state_machine.cpp
         test_composite_schedule.cpp
+        test_charge_point_connectivity.cpp
         test_config_validation.cpp
         utils_tests.cpp
         test_configuration.cpp

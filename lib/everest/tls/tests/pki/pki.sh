@@ -69,6 +69,20 @@ client_chain=client_chain.pem
 generate
 generate alt_
 
+# OCSP response for server cert — generated fresh so it never has a stale nextUpdate
+echo "Generate ocsp_response.der"
+_ocsp_serial=$(openssl x509 -in "${server_cert}" -serial -noout | cut -d= -f2)
+_ocsp_expiry=$(date -u -d '+3650 days' '+%y%m%d%H%M%SZ')
+printf 'V\t%s\t\t%s\tunknown\t/CN=server\n' "$_ocsp_expiry" "$_ocsp_serial" > _ocsp_index.txt
+openssl ocsp -issuer "${server_ca_cert}" -cert "${server_cert}" -no_nonce -reqout _ocsp_req.der
+openssl ocsp \
+    -index _ocsp_index.txt \
+    -rsigner "${server_ca_cert}" -rkey "${server_ca_priv}" \
+    -CA "${server_ca_cert}" \
+    -reqin _ocsp_req.der -ndays 3650 \
+    -respout ocsp_response.der
+rm -f _ocsp_index.txt _ocsp_req.der
+
 # cross signed intermediate certificate
 echo "Generate cross_ca"
 openssl req \

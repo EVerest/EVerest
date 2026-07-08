@@ -29,6 +29,7 @@ generate_config_run_script(
     ADDITIONAL_ARGUMENTS --recover-module-crashes
 )
 
+generate_config_run_script(CONFIG eebus)
 
 add_subdirectory(bringup)
 

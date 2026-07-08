@@ -19,7 +19,7 @@ SCENARIO("Power delivery state handling") {
         req.processing = dt::Processing::Ongoing;
         req.charge_progress = dt::Progress::Start;
 
-        const auto res = d20::state::handle_request(req, d20::Session(), false);
+        const auto res = d20::state::handle_request(req, d20::Session(), false, false);
 
         THEN("ResponseCode: FAILED_UnknownSession, mandatory fields should be set") {
             REQUIRE(res.response_code == dt::ResponseCode::FAILED_UnknownSession);
@@ -36,7 +36,7 @@ SCENARIO("Power delivery state handling") {
         req.processing = dt::Processing::Ongoing;
         req.charge_progress = dt::Progress::Standby;
 
-        const auto res = d20::state::handle_request(req, session, false);
+        const auto res = d20::state::handle_request(req, session, false, false);
 
         // Right now standby ist not supported
 
@@ -70,13 +70,32 @@ SCENARIO("Power delivery state handling") {
         req.processing = dt::Processing::Ongoing;
         req.charge_progress = dt::Progress::Start;
 
-        const auto res = d20::state::handle_request(req, session, true);
+        const auto res = d20::state::handle_request(req, session, true, false);
 
         THEN("ResponseCode: FAILED_ContactorError, mandatory fields should be set") {
             REQUIRE(res.response_code == dt::ResponseCode::FAILED_ContactorError);
             REQUIRE(res.status.has_value() == false);
         }
     } // TODO(sl): AC stuff
+
+    GIVEN("Good case - shutdown requested") {
+        d20::Session session = d20::Session();
+
+        message_20::PowerDeliveryRequest req;
+        req.header.session_id = session.get_id();
+        req.header.timestamp = 1691411798;
+
+        req.processing = dt::Processing::Ongoing;
+        req.charge_progress = dt::Progress::Start;
+
+        const auto res = d20::state::handle_request(req, session, false, true);
+
+        THEN("ResponseCode: OK") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            REQUIRE(res.status.has_value());
+            REQUIRE(res.status.value().notification == message_20::datatypes::EvseNotification::Terminate);
+        }
+    }
 
     // GIVEN("Bad Case - sequence error") {} // TODO(sl): not here
 

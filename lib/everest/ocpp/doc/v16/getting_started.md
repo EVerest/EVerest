@@ -212,7 +212,7 @@ Some general notes: the "connector" parameter of some of the callbacks refers to
 
   can be used to notify libocpp of a log status notification
 
-- on_firmware_update_status_notification(std::int32_t request_id, std::string firmware_update_status)
+- on_firmware_update_status_notification(std::int32_t request_id, std::string firmware_update_status, bool disable_connectors_during_install = true)
 
   can be used to notify libocpp of a firmware update status notification
 

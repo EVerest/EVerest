@@ -144,6 +144,10 @@ const std::map<std::string, std::string> full_vars_california_pricing = {
     {"Language", "en"},
 };
 
+const std::map<std::string, std::string> full_vars_internal = {
+    {"SwitchSecurityProfileConnectionTimeout", "30"},
+};
+
 using MemoryStorage = ocpp::v16::stubs::MemoryStorage;
 MemoryStorage::Storage vars_internal;
 MemoryStorage::Storage vars_core;
@@ -277,6 +281,7 @@ MemoryStorage::MemoryStorage() {
 
 void MemoryStorage::apply_full_config() {
     vars_california_pricing.insert(full_vars_california_pricing.begin(), full_vars_california_pricing.end());
+    vars_internal.insert(full_vars_internal.begin(), full_vars_internal.end());
 }
 
 std::optional<MemoryStorage::Storage::iterator> MemoryStorage::locate_v16(const std::string& name) const {

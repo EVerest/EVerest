@@ -19,6 +19,7 @@ std::string serialize(FirmwareUpdateRequest const& val) noexcept;
 std::string serialize(UploadLogsRequest const& val) noexcept;
 std::string serialize(UploadLogsResponse const& val) noexcept;
 std::string serialize(LogStatus const& val) noexcept;
+std::string serialize(FirmwareUpdateMetadata const& val) noexcept;
 std::string serialize(FirmwareUpdateStatus const& val) noexcept;
 std::string serialize(ResetRequest const& val) noexcept;
 
@@ -31,6 +32,7 @@ std::ostream& operator<<(std::ostream& os, BootReason const& val);
 std::ostream& operator<<(std::ostream& os, FirmwareUpdateRequest const& val);
 std::ostream& operator<<(std::ostream& os, UploadLogsRequest const& val);
 std::ostream& operator<<(std::ostream& os, LogStatus const& val);
+std::ostream& operator<<(std::ostream& os, FirmwareUpdateMetadata const& val);
 std::ostream& operator<<(std::ostream& os, FirmwareUpdateStatus const& val);
 std::ostream& operator<<(std::ostream& os, UploadLogsResponse const& val);
 std::ostream& operator<<(std::ostream& os, ResetRequest const& val);

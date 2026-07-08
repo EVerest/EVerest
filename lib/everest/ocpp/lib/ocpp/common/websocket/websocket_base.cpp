@@ -183,7 +183,7 @@ void WebsocketBase::set_websocket_ping_interval(std::int32_t ping_interval_s, st
                     pong_elapsed_s += PING_TIMER_INTERVAL;
 
                     // We have waited more than we should for the pong response
-                    if (pong_elapsed_s > this->connection_options.pong_timeout_s) {
+                    if (pong_elapsed_s >= this->connection_options.pong_timeout_s) {
                         on_pong_timeout("Pong not received from server!");
 
                         // Always clear ping value on a fail
@@ -200,7 +200,7 @@ void WebsocketBase::set_websocket_ping_interval(std::int32_t ping_interval_s, st
                 } else { // We need to see if we have to send the ping
                     ping_elapsed_s += PING_TIMER_INTERVAL;
 
-                    if (ping_elapsed_s > this->connection_options.ping_interval_s) {
+                    if (ping_elapsed_s >= this->connection_options.ping_interval_s) {
                         // Set the ping flag before sending it out
                         ping_cleared.store(false);
                         this->ping();

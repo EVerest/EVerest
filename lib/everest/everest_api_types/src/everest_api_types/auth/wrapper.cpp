@@ -212,6 +212,8 @@ SelectionAlgorithm_Internal to_internal_api(SelectionAlgorithm_External const& v
         return TarT::UserInput;
     case SrcT::PlugEvents:
         return TarT::PlugEvents;
+    case SrcT::PlugEventsLIFO:
+        return TarT::PlugEventsLIFO;
     case SrcT::FindFirst:
         return TarT::FindFirst;
     }
@@ -225,6 +227,8 @@ SelectionAlgorithm_External to_external_api(SelectionAlgorithm_Internal const& v
         return TarT::UserInput;
     case SrcT::PlugEvents:
         return TarT::PlugEvents;
+    case SrcT::PlugEventsLIFO:
+        return TarT::PlugEventsLIFO;
     case SrcT::FindFirst:
         return TarT::FindFirst;
     }
