@@ -28,6 +28,8 @@ namespace module {
 
 struct Conf {
     std::string device;
+    int tcp_port;
+    int tls_port;
     bool supported_DIN70121;
     bool supported_ISO15118_2;
     std::string tls_security;

@@ -54,6 +54,8 @@ void ISO15118_chargerImpl::init() {
 
     v2g_ctx->tls_key_logging = mod->config.tls_key_logging;
     v2g_ctx->tls_key_logging_path = mod->config.tls_key_logging_path;
+    v2g_ctx->tcp_port = static_cast<uint16_t>(mod->config.tcp_port);
+    v2g_ctx->tls_port = static_cast<uint16_t>(mod->config.tls_port);
 
     if (mod->config.tls_key_logging == true) {
         dlog(DLOG_LEVEL_DEBUG, "tls-key-logging enabled (path: %s)", mod->config.tls_key_logging_path.c_str());

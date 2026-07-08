@@ -294,6 +294,8 @@ struct v2g_context* v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase,
     /* interface from config file or options */
     ctx->if_name = "eth1";
 
+    ctx->tcp_port = 61341;
+    ctx->tls_port = 64109;
     ctx->network_read_timeout = 1000;
     ctx->network_read_timeout_tls = 5000;
 
