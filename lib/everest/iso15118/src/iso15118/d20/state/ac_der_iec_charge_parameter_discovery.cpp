@@ -323,12 +323,13 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
 
         m_ctx.session_ev_info.ev_transfer_limits.emplace<dt::DER_AC_CPDReqEnergyTransferMode>(req->transfer_mode);
 
+        // TODO(SL): Should be not a problem but maybe its better to assign the values directly
         const auto operating_mode =
-            static_cast<dt::OperatingMode>(m_ctx.session_config.der_setup_config.operating_mode);
+            static_cast<dt::OperatingMode>(m_ctx.session_config.der_iec_setup_config.operating_mode);
         const auto grid_connection_mode =
-            static_cast<dt::GridConnectionMode>(m_ctx.session_config.der_setup_config.grid_connection_mode);
+            static_cast<dt::GridConnectionMode>(m_ctx.session_config.der_iec_setup_config.grid_connection_mode);
 
-        const auto& der_functions = m_ctx.session_config.der_setup_config.supported_der_control_functions;
+        const auto& der_functions = m_ctx.session_config.der_iec_setup_config.supported_der_control_functions;
         const auto& selected_services = m_ctx.session.get_selected_services();
 
         const auto der_control = create_der_control(selected_services.selected_der_control_functions, der_functions);
