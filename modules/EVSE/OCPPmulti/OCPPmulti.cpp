@@ -74,6 +74,8 @@ OCPPmulti::~OCPPmulti() {
 }
 
 void OCPPmulti::init() {
+    EVLOG_warning << "This OCPPmulti module is currently experimental! Configuration parameters and the integration in "
+                     "EVerest may change without further notice";
     // no code should be in the init methods
     // invoke_init(*p_ocpp16);
     // invoke_init(*p_auth_validator);
