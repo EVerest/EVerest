@@ -111,7 +111,8 @@ set the capabilities as needed.
 
 According to the standard, port 15118 is used for SDP messages.
 :ref:`EvseV2G <everest_modules_EvseV2G>`  uses the following ports: TCP (61341), TLS (64109).
-:ref:`Evse15118D20 <everest_modules_Evse15118D20>` integrates libiso15118 which uses port 50000 for TCP and TLS1.2/1.3.
+:ref:`Evse15118D20 <everest_modules_Evse15118D20>` integrates libiso15118 and uses the configured
+``tcp_port`` value for TCP and TLS1.2/1.3. The default is ``50000``.
 
 General (non-EVerest-related) security aspects
 ====================================================================

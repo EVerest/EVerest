@@ -11,7 +11,7 @@ namespace iso15118::io {
 
 class ConnectionPlain : public IConnection {
 public:
-    ConnectionPlain(PollManager&, const std::string& interface_name);
+    ConnectionPlain(PollManager&, const std::string& interface_name, uint16_t tcp_port);
     ConnectionPlain(PollManager&, int connected_fd, const std::optional<sha512_hash_t>& vehicle_cert_hash);
 
     void set_event_callback(const ConnectionEventCallback&) final;
