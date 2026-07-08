@@ -2,7 +2,6 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <bitset>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -30,7 +29,7 @@ struct BptSetupConfig {
     std::optional<message_20::datatypes::GridCodeIslandingDetectionMethod> grid_code_detection_method;
 };
 
-struct DerSetupConfig {
+struct DerIecSetupConfig {
     std::map<iec::DERControlName, iec::DERControlFunction> supported_der_control_functions;
     iec::OperatingMode operating_mode;
     iec::GridConnectionMode grid_connection_mode;
@@ -49,7 +48,7 @@ struct EvseSetupConfig {
     std::optional<std::string> custom_protocol{std::nullopt};
     std::optional<AcSetupConfig> ac_setup_config{std::nullopt};
     std::optional<BptSetupConfig> bpt_setup_config{std::nullopt};
-    std::optional<DerSetupConfig> der_setup_config{std::nullopt};
+    std::optional<DerIecSetupConfig> der_iec_setup_config{std::nullopt};
     d20::DcTransferLimits powersupply_limits;
     bool selecting_sap_based_on_energy_service{false};
 };
@@ -81,7 +80,7 @@ struct SessionConfig {
     DcTransferLimits dc_limits;
     AcTransferLimits ac_limits;
 
-    DerSetupConfig der_setup_config;
+    DerIecSetupConfig der_iec_setup_config;
     std::optional<IecDerTransferLimits> der_iec_limits;
 
     DcTransferLimits powersupply_limits;

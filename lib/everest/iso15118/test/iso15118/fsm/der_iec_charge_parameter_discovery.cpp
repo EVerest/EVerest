@@ -41,7 +41,7 @@ SCENARIO("ISO15118-20 der iec ac charge parameter discovery state transitions") 
 
     d20::DcTransferLimits powersupply_limits;
 
-    d20::DerSetupConfig der_setup_config;
+    d20::DerIecSetupConfig der_setup_config;
     der_setup_config.grid_connection_mode = iec::GridConnectionMode::GridConnected;
     der_setup_config.operating_mode = iec::OperatingMode::GridFollowing;
 

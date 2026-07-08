@@ -270,7 +270,7 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
         const auto selected_dso_cos_phi =
             selected_der_control_functions.test(static_cast<size_t>(iec::DERControlName::DSOCosPhiSetpointProvision));
 
-        const auto& der_functions = m_ctx.session_config.der_setup_config.supported_der_control_functions;
+        const auto& der_functions = m_ctx.session_config.der_iec_setup_config.supported_der_control_functions;
 
         if (selected_dsoq and der_functions.find(iec::DERControlName::DSOQSetpointProvision) != der_functions.end()) {
             const auto& func_dso_q_setpoint = der_functions.at(iec::DERControlName::DSOQSetpointProvision);
