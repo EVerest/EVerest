@@ -29,6 +29,14 @@ private:
     everest::lib::util::monitor<variable_monitors_t> m_variable_monitors;
     ConnectorStructureV16 m_connector_mapping;
 
+    struct evse_connector_t {
+        std::int32_t evse_id;      // EVerest EVSE id
+        std::int32_t connector_id; // EVerest connector id within that EVSE
+    };
+    // reverse of m_connector_mapping: OCPP 1.6 connector id -> EVerest EVSE/connector.
+    // Filled in init(), read-only afterwards.
+    std::map<std::int32_t, evse_connector_t> m_ocpp_connector_to_evse;
+
     struct config_info_t {
         const std::string& chargepoint_config_path;
         const std::string& message_log_path;
@@ -48,20 +56,21 @@ private:
     void check_configured(const std::string_view& fn);
     void configure_callbacks();
     void configure_data_model(const config_info_t& config);
+    std::optional<evse_connector_t> evse_from_ocpp_connector(std::int32_t ocpp_connector_id) const;
 
     void cb_boot_notification_response(const ocpp::v16::BootNotificationResponse& boot_notification_response);
     void cb_connection_state_changed(bool is_connected);
     ocpp::v16::DataTransferResponse cb_data_transfer(const ocpp::v16::DataTransferRequest& request);
     void cb_default_price(const ocpp::TariffMessage& message);
-    bool cb_disable_evse(std::int32_t connector);
-    bool cb_enable_evse(std::int32_t connector);
+    bool cb_disable_evse(std::int32_t ocpp_connector_id);
+    bool cb_enable_evse(std::int32_t ocpp_connector_id);
     void cb_generic_configuration_key_changed(const ocpp::v16::KeyValue& key_value);
     bool cb_is_reset_allowed(const ocpp::v16::ResetType& reset_type);
-    ocpp::ReservationCheckStatus cb_is_token_reserved_for_connector(std::int32_t connector,
+    ocpp::ReservationCheckStatus cb_is_token_reserved_for_connector(std::int32_t ocpp_connector_id,
                                                                     const std::string& id_token);
     void cb_provide_token(const std::string& id_token, std::vector<std::int32_t> referenced_connectors,
                           bool prevalidated);
-    ocpp::v16::ReservationStatus cb_reserve_now(std::int32_t reservation_id, std::int32_t connector,
+    ocpp::v16::ReservationStatus cb_reserve_now(std::int32_t reservation_id, std::int32_t ocpp_connector_id,
                                                 ocpp::DateTime expiryDate, ocpp::CiString<20> idTag,
                                                 std::optional<ocpp::CiString<20>> parent_id);
     void cb_reset(const ocpp::v16::ResetType& reset_type);
@@ -70,13 +79,14 @@ private:
     ocpp::v16::DataTransferResponse cb_set_display_message(const std::vector<ocpp::DisplayMessage>& messages);
     void cb_set_system_time(const std::string& system_time);
     ocpp::v16::UpdateFirmwareStatusEnumType cb_signed_update_firmware(ocpp::v16::SignedUpdateFirmwareRequest msg);
-    bool cb_stop_transaction(std::int32_t connector, ocpp::v16::Reason reason);
+    bool cb_stop_transaction(std::int32_t ocpp_connector_id, ocpp::v16::Reason reason);
     ocpp::v16::DataTransferResponse cb_tariff_message(const ocpp::TariffMessage& message);
-    void cb_transaction_started(std::int32_t connector, const std::string& session_id);
-    void cb_transaction_stopped(std::int32_t connector, const std::string& session_id, std::int32_t transaction_id);
-    void cb_transaction_updated(std::int32_t connector, const std::string& session_id, std::int32_t transaction_id,
-                                const ocpp::v16::IdTagInfo& id_tag_info);
-    ocpp::v16::UnlockStatus cb_unlock_connector(std::int32_t connector);
+    void cb_transaction_started(std::int32_t ocpp_connector_id, const std::string& session_id);
+    void cb_transaction_stopped(std::int32_t ocpp_connector_id, const std::string& session_id,
+                                std::int32_t transaction_id);
+    void cb_transaction_updated(std::int32_t ocpp_connector_id, const std::string& session_id,
+                                std::int32_t transaction_id, const ocpp::v16::IdTagInfo& id_tag_info);
+    ocpp::v16::UnlockStatus cb_unlock_connector(std::int32_t ocpp_connector_id);
     void cb_update_firmware(ocpp::v16::UpdateFirmwareRequest msg);
     ocpp::v16::GetLogResponse cb_upload_diagnostics(const ocpp::v16::GetDiagnosticsRequest& request);
     ocpp::v16::GetLogResponse cb_upload_logs(ocpp::v16::GetLogRequest request);
