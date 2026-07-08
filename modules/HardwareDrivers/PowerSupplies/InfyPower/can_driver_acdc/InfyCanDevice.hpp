@@ -107,6 +107,9 @@ private:
     void handle_module_count_packet(const std::vector<uint8_t>& payload);
     void handle_simple_telemetry_update(uint8_t source_address, const std::vector<uint8_t>& payload,
                                         uint8_t command_number);
+
+    /// (Re-)add a configured module to the active set in FIXED_ADDRESS mode after receiving telemetry from it.
+    void mark_module_active(uint8_t source_address);
     void check_and_signal_error_status_change(uint8_t source_address,
                                               const can_packet_acdc::PowerModuleStatus& new_status,
                                               const can_packet_acdc::PowerModuleStatus& old_status);

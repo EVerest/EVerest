@@ -116,6 +116,7 @@ void InfyCanDevice::rx_handler(uint32_t can_id, const std::vector<uint8_t>& payl
         telemetry.status = status;
         // using status message to set the last_update time
         telemetry.last_update = std::chrono::steady_clock::now();
+        mark_module_active(source_address); // keep active set in sync with the liveness heartbeat
     } break;
     case can_packet_acdc::ReadModuleVIAfterDiode::CMD_ID: {
         handle_simple_telemetry_update(source_address, payload, command_number);
@@ -339,19 +340,23 @@ void InfyCanDevice::handle_simple_telemetry_update(uint8_t source_address, const
         EVLOG_info << format_module_id(source_address) << ": capabilities: " << caps.max_voltage << "V / "
                    << caps.min_voltage << "V, " << caps.max_current << "A, power " << caps.rated_power << "W";
         signalCapabilitiesUpdate(telemetries);
-
-        // Consider the module active again if we previously lost it due to communication timeout.
-        // This is only relevant in FIXED_ADDRESS mode, GROUP_DISCOVERY uses `ReadModuleCount` responses instead.
-        if (operating_mode == OperatingMode::FIXED_ADDRESS) {
-            std::lock_guard<std::mutex> lock(active_modules_mutex);
-            if (std::find(active_module_addresses.begin(), active_module_addresses.end(), source_address) ==
-                active_module_addresses.end()) {
-                active_module_addresses.push_back(source_address);
-                EVLOG_info << format_module_id(source_address)
-                           << ": Module added to active modules based on capabilities response.";
-            }
-        }
+        mark_module_active(source_address);
     } break;
+    }
+}
+
+void InfyCanDevice::mark_module_active(uint8_t source_address) {
+    // In FIXED_ADDRESS mode the active set is driven purely by received telemetry: any message from a
+    // configured module means it is alive, so (re-)add it if it had been dropped after a comm timeout.
+    // GROUP_DISCOVERY derives the active set from ReadModuleCount responses instead.
+    if (operating_mode != OperatingMode::FIXED_ADDRESS) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(active_modules_mutex);
+    if (std::find(active_module_addresses.begin(), active_module_addresses.end(), source_address) ==
+        active_module_addresses.end()) {
+        active_module_addresses.push_back(source_address);
+        EVLOG_info << format_module_id(source_address) << ": module re-activated after receiving telemetry.";
     }
 }
 
