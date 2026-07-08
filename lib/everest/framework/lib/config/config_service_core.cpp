@@ -517,7 +517,7 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
                 result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
             } else {
                 per_result.status_info = "Is a ReadOnly parameter";
-                result_enum = SetConfigParameterResultEnum::Rejected;
+                result_enum = SetConfigParameterResultEnum::AccessDenied;
             }
         } else {
             // ReadOnly/WriteOnly don't reach the module at runtime, and neither does anything while
