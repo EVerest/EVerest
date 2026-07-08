@@ -8,12 +8,15 @@
 #include <everest/ocpp_module_common/error_handling.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
 
-#include <generated/interfaces/charger_information/Interface.hpp>
-#include <generated/interfaces/evse_manager/Interface.hpp>
-#include <generated/interfaces/iso15118_extensions/Interface.hpp>
-#include <generated/interfaces/reservation/Interface.hpp>
-#include <generated/interfaces/session_cost/Interface.hpp>
-#include <generated/interfaces/system/Interface.hpp>
+#include <generated/types/authorization.hpp>
+#include <generated/types/charger_information.hpp>
+#include <generated/types/evse_board_support.hpp>
+#include <generated/types/evse_manager.hpp>
+#include <generated/types/iso15118.hpp>
+#include <generated/types/powermeter.hpp>
+#include <generated/types/reservation.hpp>
+#include <generated/types/session_cost.hpp>
+#include <generated/types/system.hpp>
 #include <ocpp/v16/charge_point.hpp>
 #include <ocpp/v16/messages/GetConfiguration.hpp>
 #include <ocpp/v2/charge_point.hpp>
