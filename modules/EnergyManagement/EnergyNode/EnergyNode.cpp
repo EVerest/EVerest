@@ -6,12 +6,10 @@ namespace module {
 
 void EnergyNode::init() {
     invoke_init(*p_energy_grid);
-    invoke_init(*p_external_limits);
 }
 
 void EnergyNode::ready() {
     invoke_ready(*p_energy_grid);
-    invoke_ready(*p_external_limits);
 }
 
 } // namespace module
