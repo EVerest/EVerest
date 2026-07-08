@@ -146,6 +146,7 @@ ocpp::v2::EnhancedChargingSchedulePeriod convert(const ocpp::v16::EnhancedChargi
     result.startPeriod = value.startPeriod;
     result.limit = value.limit;
     result.stackLevel = value.stackLevel;
+    result.numberPhases = value.numberPhases;
     // TODO(james-ctc): periodTransformed need handling
     return result;
 }
