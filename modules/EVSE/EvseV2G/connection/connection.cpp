@@ -33,8 +33,6 @@
 #include <everest/util/misc/change_tracker.hpp>
 
 #define DEFAULT_SOCKET_BACKLOG        3
-#define DEFAULT_TCP_PORT              61341
-#define DEFAULT_TLS_PORT              64109
 #define ERROR_SESSION_ALREADY_STARTED 2
 #define CLIENT_FIN_TIMEOUT            3000
 
@@ -257,7 +255,7 @@ int connection_init(struct v2g_context* v2g_ctx, std::string* failure_detail) {
          * hand out a port which is not "range compatible".
          * To fulfill the ISO15118 standard, we simply try to bind to static port numbers.
          */
-        v2g_ctx->local_tcp_addr->sin6_port = htons(DEFAULT_TCP_PORT);
+        v2g_ctx->local_tcp_addr->sin6_port = htons(v2g_ctx->tcp_port);
         v2g_ctx->tcp_socket = connection_create_socket(v2g_ctx->local_tcp_addr);
         if (v2g_ctx->tcp_socket < 0) {
             set_failure_detail(failure_detail,
@@ -291,7 +289,7 @@ int connection_init(struct v2g_context* v2g_ctx, std::string* failure_detail) {
         char buffer[INET6_ADDRSTRLEN];
 
         /* see comment above for reason */
-        v2g_ctx->local_tls_addr->sin6_port = htons(DEFAULT_TLS_PORT);
+        v2g_ctx->local_tls_addr->sin6_port = htons(v2g_ctx->tls_port);
 
         v2g_ctx->tls_socket.fd = connection_create_socket(v2g_ctx->local_tls_addr);
         if (v2g_ctx->tls_socket.fd < 0) {
