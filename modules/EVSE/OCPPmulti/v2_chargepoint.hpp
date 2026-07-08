@@ -90,8 +90,6 @@ public:
     void on_authorized(std::int32_t evse_id, std::int32_t connector_id, const ocpp::v2::IdToken& id_token) override;
     ocpp::v2::ChangeAvailabilityResponse
     on_change_availability(const ocpp::v2::ChangeAvailabilityRequest& request) override;
-    bool on_charging_state_changed(std::uint32_t evse_id, ocpp::v2::ChargingStateEnum charging_state,
-                                   ocpp::v2::TriggerReasonEnum trigger_reason) override;
     void on_enabled(std::int32_t evse_id, std::int32_t connector_id) override;
     void on_ev_charging_needs(const ocpp::v2::NotifyEVChargingNeedsRequest& request) override;
     void on_event(const EventInfo& event) override;
@@ -140,30 +138,9 @@ public:
     void on_meter_value(std::int32_t evse_id, std::optional<float> soc,
                         const types::powermeter::Powermeter& power_meter) override;
     void on_reservation_status(std::int32_t reservation_id, ocpp::v2::ReservationUpdateStatusEnum status) override;
-    void on_reservation_cleared(std::int32_t evse_id, std::int32_t connector_id) override;
-    void on_reserved(std::int32_t evse_id, std::int32_t connector_id) override;
     void on_security_event(const ocpp::CiString<50>& event_type, const std::optional<ocpp::CiString<255>>& tech_info,
                            const std::optional<bool>& critical,
                            const std::optional<ocpp::DateTime>& timestamp) override;
-    void on_session_finished(std::int32_t evse_id, std::int32_t connector_id,
-                             const types::evse_manager::SessionEvent& session_event) override;
-    void on_session_started(std::int32_t evse_id, std::int32_t connector_id,
-                            const types::evse_manager::SessionEvent& session_event) override;
-    void on_transaction_finished(std::int32_t evse_id, const std::string& session_id, const ocpp::DateTime& timestamp,
-                                 const ocpp::v2::MeterValue& meter_stop,
-                                 types::evse_manager::StopTransactionReason reason,
-                                 ocpp::v2::TriggerReasonEnum trigger_reason,
-                                 const std::optional<ocpp::v2::IdToken>& id_token,
-                                 const std::optional<std::string>& signed_meter_value,
-                                 ocpp::v2::ChargingStateEnum charging_state) override;
-    void on_transaction_started(std::int32_t evse_id, std::int32_t connector_id, const std::string& session_id,
-                                const ocpp::DateTime& timestamp, ocpp::v2::TriggerReasonEnum trigger_reason,
-                                const ocpp::v2::MeterValue& meter_start,
-                                const std::optional<ocpp::v2::IdToken>& id_token,
-                                const std::optional<ocpp::v2::IdToken>& group_id_token,
-                                const std::optional<std::int32_t>& reservation_id,
-                                const std::optional<std::int32_t>& remote_start_id,
-                                ocpp::v2::ChargingStateEnum charging_state) override;
     void on_unavailable(std::int32_t evse_id, std::int32_t connector_id) override;
 
     void register_variable_listener(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,

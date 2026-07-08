@@ -160,12 +160,6 @@ GenericChargePoint::on_change_availability(const ocpp::v2::ChangeAvailabilityReq
     return m_active_ptr->on_change_availability(request);
 }
 
-bool GenericChargePoint::on_charging_state_changed(std::uint32_t evse_id, ocpp::v2::ChargingStateEnum charging_state,
-                                                   ocpp::v2::TriggerReasonEnum trigger_reason) {
-    check_configured("on_charging_state_changed");
-    return m_active_ptr->on_charging_state_changed(evse_id, charging_state, trigger_reason);
-}
-
 void GenericChargePoint::on_enabled(std::int32_t evse_id, std::int32_t connector_id) {
     check_configured("on_enabled");
     m_active_ptr->on_enabled(evse_id, connector_id);
@@ -305,55 +299,12 @@ void GenericChargePoint::on_reservation_status(std::int32_t reservation_id,
     m_active_ptr->on_reservation_status(reservation_id, status);
 }
 
-void GenericChargePoint::on_reservation_cleared(std::int32_t evse_id, std::int32_t connector_id) {
-    check_configured("on_reservation_cleared");
-    m_active_ptr->on_reservation_cleared(evse_id, connector_id);
-}
-
-void GenericChargePoint::on_reserved(std::int32_t evse_id, std::int32_t connector_id) {
-    check_configured("on_reserved");
-    m_active_ptr->on_reserved(evse_id, connector_id);
-}
-
 void GenericChargePoint::on_security_event(const ocpp::CiString<50>& event_type,
                                            const std::optional<ocpp::CiString<255>>& tech_info,
                                            const std::optional<bool>& critical,
                                            const std::optional<ocpp::DateTime>& timestamp) {
     check_configured("on_security_event");
     m_active_ptr->on_security_event(event_type, tech_info, critical, timestamp);
-}
-
-void GenericChargePoint::on_session_finished(std::int32_t evse_id, std::int32_t connector_id,
-                                             const types::evse_manager::SessionEvent& session_event) {
-    check_configured("on_session_finished");
-    m_active_ptr->on_session_finished(evse_id, connector_id, session_event);
-}
-
-void GenericChargePoint::on_session_started(std::int32_t evse_id, std::int32_t connector_id,
-                                            const types::evse_manager::SessionEvent& session_event) {
-    check_configured("on_session_started");
-    m_active_ptr->on_session_started(evse_id, connector_id, session_event);
-}
-
-void GenericChargePoint::on_transaction_finished(
-    std::int32_t evse_id, const std::string& session_id, const ocpp::DateTime& timestamp,
-    const ocpp::v2::MeterValue& meter_stop, types::evse_manager::StopTransactionReason reason,
-    ocpp::v2::TriggerReasonEnum trigger_reason, const std::optional<ocpp::v2::IdToken>& id_token,
-    const std::optional<std::string>& signed_meter_value, ocpp::v2::ChargingStateEnum charging_state) {
-    check_configured("on_transaction_finished");
-    m_active_ptr->on_transaction_finished(evse_id, session_id, timestamp, meter_stop, reason, trigger_reason, id_token,
-                                          signed_meter_value, charging_state);
-}
-
-void GenericChargePoint::on_transaction_started(
-    std::int32_t evse_id, std::int32_t connector_id, const std::string& session_id, const ocpp::DateTime& timestamp,
-    ocpp::v2::TriggerReasonEnum trigger_reason, const ocpp::v2::MeterValue& meter_start,
-    const std::optional<ocpp::v2::IdToken>& id_token, const std::optional<ocpp::v2::IdToken>& group_id_token,
-    const std::optional<std::int32_t>& reservation_id, const std::optional<std::int32_t>& remote_start_id,
-    ocpp::v2::ChargingStateEnum charging_state) {
-    check_configured("on_transaction_started");
-    m_active_ptr->on_transaction_started(evse_id, connector_id, session_id, timestamp, trigger_reason, meter_start,
-                                         id_token, group_id_token, reservation_id, remote_start_id, charging_state);
 }
 
 void GenericChargePoint::on_unavailable(std::int32_t evse_id, std::int32_t connector_id) {

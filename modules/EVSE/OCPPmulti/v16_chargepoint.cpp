@@ -781,34 +781,6 @@ ChargePointV16::on_change_availability(const ocpp::v2::ChangeAvailabilityRequest
     return result;
 }
 
-bool ChargePointV16::on_charging_state_changed(std::uint32_t evse_id, ocpp::v2::ChargingStateEnum charging_state,
-                                               ocpp::v2::TriggerReasonEnum trigger_reason) {
-    check_configured("on_charging_state_changed");
-    bool result{false};
-    switch (charging_state) {
-    case ocpp::v2::ChargingStateEnum::Charging:
-        m_charge_point->on_resume_charging(evse_id);
-        result = true;
-        break;
-
-    case ocpp::v2::ChargingStateEnum::SuspendedEV:
-        m_charge_point->on_suspend_charging_ev(evse_id);
-        result = true;
-        break;
-
-    case ocpp::v2::ChargingStateEnum::SuspendedEVSE:
-        m_charge_point->on_suspend_charging_evse(evse_id);
-        result = true;
-        break;
-
-    case ocpp::v2::ChargingStateEnum::EVConnected:
-    case ocpp::v2::ChargingStateEnum::Idle:
-    default:
-        break;
-    }
-    return result;
-}
-
 void ChargePointV16::on_enabled(std::int32_t evse_id, std::int32_t connector_id) {
     check_configured("on_enabled");
     m_charge_point->on_enabled(evse_id);
@@ -1031,101 +1003,12 @@ void ChargePointV16::on_reservation_status(std::int32_t reservation_id, ocpp::v2
     // not used in OCPP 1.6
 }
 
-void ChargePointV16::on_reservation_cleared(std::int32_t evse_id, std::int32_t connector_id) {
-    check_configured("on_reservation_cleared");
-    m_charge_point->on_reservation_end(evse_id);
-}
-
-void ChargePointV16::on_reserved(std::int32_t evse_id, std::int32_t connector_id) {
-    check_configured("on_reserved");
-    m_charge_point->on_reservation_start(evse_id);
-}
-
 void ChargePointV16::on_security_event(const ocpp::CiString<50>& event_type,
                                        const std::optional<ocpp::CiString<255>>& tech_info,
                                        const std::optional<bool>& critical,
                                        const std::optional<ocpp::DateTime>& timestamp) {
     check_configured("on_security_event");
     m_charge_point->on_security_event(event_type, tech_info, critical, timestamp);
-}
-
-void ChargePointV16::on_session_finished(std::int32_t evse_id, std::int32_t connector_id,
-                                         const types::evse_manager::SessionEvent& session_event) {
-    check_configured("on_session_finished");
-    m_charge_point->on_session_stopped(evse_id, session_event.uuid);
-}
-
-void ChargePointV16::on_session_started(std::int32_t evse_id, std::int32_t connector_id,
-                                        const types::evse_manager::SessionEvent& session_event) {
-    check_configured("on_session_started");
-    if (session_event.session_started) {
-        const auto& session_started = session_event.session_started.value();
-        m_charge_point->on_session_started(evse_id, session_event.uuid,
-                                           conversions_v16::to_ocpp_session_started_reason(session_started.reason),
-                                           session_started.logging_path);
-    }
-}
-
-void ChargePointV16::on_transaction_finished(std::int32_t evse_id, const std::string& session_id,
-                                             const ocpp::DateTime& timestamp, const ocpp::v2::MeterValue& meter_stop,
-                                             types::evse_manager::StopTransactionReason reason,
-                                             ocpp::v2::TriggerReasonEnum trigger_reason,
-                                             const std::optional<ocpp::v2::IdToken>& id_token,
-                                             const std::optional<std::string>& signed_meter_value,
-                                             ocpp::v2::ChargingStateEnum charging_state) {
-    check_configured("on_transaction_finished");
-
-    std::string found_token{};
-    double found_meter_end{0.};
-
-    for (const auto& entry : meter_stop.sampledValue) {
-        if (entry.measurand.value_or(ocpp::v2::MeasurandEnum::Frequency) ==
-            ocpp::v2::MeasurandEnum::Energy_Active_Import_Register) {
-            found_meter_end = entry.value;
-            break;
-        }
-    }
-
-    if (id_token) {
-        found_token = id_token->idToken;
-    }
-
-    const auto v16_reason = conversions_v16::to_ocpp_reason(reason);
-
-    // start signed meter value is not part of the generic interface signature
-    m_charge_point->on_transaction_stopped(evse_id, session_id, v16_reason, timestamp, found_meter_end, found_token,
-                                           signed_meter_value, std::nullopt);
-}
-
-void ChargePointV16::on_transaction_started(
-    std::int32_t evse_id, std::int32_t connector_id, const std::string& session_id, const ocpp::DateTime& timestamp,
-    ocpp::v2::TriggerReasonEnum trigger_reason, const ocpp::v2::MeterValue& meter_start,
-    const std::optional<ocpp::v2::IdToken>& id_token, const std::optional<ocpp::v2::IdToken>& group_id_token,
-    const std::optional<std::int32_t>& reservation_id, const std::optional<std::int32_t>& remote_start_id,
-    ocpp::v2::ChargingStateEnum charging_state) {
-    check_configured("on_transaction_started");
-
-    std::string found_token{};
-    std::string found_signed_meter_value{};
-    double found_meter_start{0.};
-
-    for (const auto& entry : meter_start.sampledValue) {
-        if (entry.measurand.value_or(ocpp::v2::MeasurandEnum::Frequency) ==
-            ocpp::v2::MeasurandEnum::Energy_Active_Import_Register) {
-            found_meter_start = entry.value;
-            if (entry.signedMeterValue) {
-                found_signed_meter_value = entry.signedMeterValue->signedMeterData;
-            }
-            break;
-        }
-    }
-
-    if (id_token) {
-        found_token = id_token->idToken;
-    }
-
-    m_charge_point->on_transaction_started(evse_id, session_id, found_token, found_meter_start, reservation_id,
-                                           timestamp, found_signed_meter_value);
 }
 
 void ChargePointV16::on_unavailable(std::int32_t evse_id, std::int32_t connector_id) {

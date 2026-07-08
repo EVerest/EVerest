@@ -550,11 +550,6 @@ ChargePointV2::on_change_availability(const ocpp::v2::ChangeAvailabilityRequest&
     check_configured("on_change_availability");
     return m_charge_point->on_change_availability(request);
 }
-bool ChargePointV2::on_charging_state_changed(std::uint32_t evse_id, ocpp::v2::ChargingStateEnum charging_state,
-                                              ocpp::v2::TriggerReasonEnum trigger_reason) {
-    check_configured("on_charging_state_changed");
-    return m_charge_point->on_charging_state_changed(evse_id, charging_state, trigger_reason);
-}
 void ChargePointV2::on_enabled(std::int32_t evse_id, std::int32_t connector_id) {
     check_configured("on_enabled");
     m_charge_point->on_enabled(evse_id, connector_id);
@@ -923,52 +918,12 @@ void ChargePointV2::on_reservation_status(std::int32_t reservation_id, ocpp::v2:
     check_configured("on_reservation_status");
     m_charge_point->on_reservation_status(reservation_id, status);
 }
-void ChargePointV2::on_reservation_cleared(std::int32_t evse_id, std::int32_t connector_id) {
-    check_configured("on_reservation_cleared");
-    m_charge_point->on_reservation_cleared(evse_id, connector_id);
-}
-void ChargePointV2::on_reserved(std::int32_t evse_id, std::int32_t connector_id) {
-    check_configured("on_reserved");
-    m_charge_point->on_reserved(evse_id, connector_id);
-}
 void ChargePointV2::on_security_event(const ocpp::CiString<50>& event_type,
                                       const std::optional<ocpp::CiString<255>>& tech_info,
                                       const std::optional<bool>& critical,
                                       const std::optional<ocpp::DateTime>& timestamp) {
     check_configured("on_security_event");
     m_charge_point->on_security_event(event_type, tech_info, critical, timestamp);
-}
-void ChargePointV2::on_session_finished(std::int32_t evse_id, std::int32_t connector_id,
-                                        const types::evse_manager::SessionEvent& session_event) {
-    check_configured("on_session_finished");
-    m_charge_point->on_session_finished(evse_id, connector_id);
-}
-void ChargePointV2::on_session_started(std::int32_t evse_id, std::int32_t connector_id,
-                                       const types::evse_manager::SessionEvent& session_event) {
-    check_configured("on_session_started");
-    m_charge_point->on_session_started(evse_id, connector_id);
-}
-void ChargePointV2::on_transaction_finished(std::int32_t evse_id, const std::string& session_id,
-                                            const ocpp::DateTime& timestamp, const ocpp::v2::MeterValue& meter_stop,
-                                            types::evse_manager::StopTransactionReason reason,
-                                            ocpp::v2::TriggerReasonEnum trigger_reason,
-                                            const std::optional<ocpp::v2::IdToken>& id_token,
-                                            const std::optional<std::string>& signed_meter_value,
-                                            ocpp::v2::ChargingStateEnum charging_state) {
-    check_configured("on_transaction_finished");
-    const auto v2_reason = module::conversions::to_ocpp_reason(reason);
-    m_charge_point->on_transaction_finished(evse_id, timestamp, meter_stop, v2_reason, trigger_reason, id_token,
-                                            signed_meter_value, charging_state);
-}
-void ChargePointV2::on_transaction_started(
-    std::int32_t evse_id, std::int32_t connector_id, const std::string& session_id, const ocpp::DateTime& timestamp,
-    ocpp::v2::TriggerReasonEnum trigger_reason, const ocpp::v2::MeterValue& meter_start,
-    const std::optional<ocpp::v2::IdToken>& id_token, const std::optional<ocpp::v2::IdToken>& group_id_token,
-    const std::optional<std::int32_t>& reservation_id, const std::optional<std::int32_t>& remote_start_id,
-    ocpp::v2::ChargingStateEnum charging_state) {
-    check_configured("on_transaction_started");
-    m_charge_point->on_transaction_started(evse_id, connector_id, session_id, timestamp, trigger_reason, meter_start,
-                                           id_token, group_id_token, reservation_id, remote_start_id, charging_state);
 }
 void ChargePointV2::on_unavailable(std::int32_t evse_id, std::int32_t connector_id) {
     check_configured("on_unavailable");
