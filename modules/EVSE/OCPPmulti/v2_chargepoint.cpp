@@ -232,6 +232,7 @@ ChargePointV2::cb_remote_start_transaction(const ocpp::v2::RequestStartTransacti
     ocpp_multi::GenericChargePointCallbacks::IdToken token;
     token.token = request.idToken;
     token.prevalidated = !authorize_remote_start;
+    token.group_id_token = request.groupIdToken;
     token.evse_id = request.evseId;
     token.request_id = request.remoteStartId;
     m_callbacks_ptr->cb_provide_token(token);
@@ -325,14 +326,17 @@ void ChargePointV2::process_tx_event_effect(std::int32_t evse_id, module::TxEven
             transaction_data->meter_value =
                 to_ocpp_meter_value(get_meter_value(session_event), ocpp::v2::ReadingContextEnum::Transaction_End,
                                     get_signed_meter_value(session_event));
-            auto stop_reason = ocpp::v2::ReasonEnum::Other;
-            if (session_event.transaction_finished && session_event.transaction_finished->reason) {
-                stop_reason = module::conversions::to_ocpp_reason(session_event.transaction_finished->reason.value());
+            std::optional<ocpp::v2::SignedMeterValue> start_signed_meter_value;
+            if (session_event.transaction_finished.has_value() &&
+                session_event.transaction_finished.value().start_signed_meter_value.has_value()) {
+                start_signed_meter_value = to_ocpp_signed_meter_value(
+                    session_event.transaction_finished.value().start_signed_meter_value.value());
             }
+            // stop_reason was set by the session event handlers (e.g. StoppedByEV, EVDisconnected, Remote)
             m_charge_point->on_transaction_finished(evse_id, transaction_data->timestamp, transaction_data->meter_value,
-                                                    stop_reason, transaction_data->trigger_reason,
+                                                    transaction_data->stop_reason, transaction_data->trigger_reason,
                                                     transaction_data->id_token, std::nullopt,
-                                                    transaction_data->charging_state);
+                                                    transaction_data->charging_state, start_signed_meter_value);
             m_callbacks_ptr->transaction_reset(evse_id);
         }
     }
