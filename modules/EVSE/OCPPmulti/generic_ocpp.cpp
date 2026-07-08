@@ -28,54 +28,6 @@ constexpr const auto TX_STOP_POINT_VAR_NAME = "TxStopPoint";
 constexpr std::int32_t LOWEST_SETPOINT_PRIORITY = 1000;
 constexpr std::int32_t HIGHEST_SETPOINT_PRIORITY = 0;
 
-auto convert(ocpp::v2::CertificateActionEnum value) {
-    types::iso15118::CertificateActionEnum result{};
-    switch (value) {
-    case ocpp::v2::CertificateActionEnum::Install:
-        result = types::iso15118::CertificateActionEnum::Install;
-        break;
-    case ocpp::v2::CertificateActionEnum::Update:
-    default:
-        result = types::iso15118::CertificateActionEnum::Update;
-        break;
-    }
-    return result;
-}
-
-auto convert(ocpp::v2::MessageFormatEnum value) {
-    types::text_message::MessageFormat result{};
-    switch (value) {
-    case ocpp::v2::MessageFormatEnum::ASCII:
-        result = types::text_message::MessageFormat::ASCII;
-        break;
-    case ocpp::v2::MessageFormatEnum::HTML:
-        result = types::text_message::MessageFormat::HTML;
-        break;
-    case ocpp::v2::MessageFormatEnum::URI:
-        result = types::text_message::MessageFormat::URI;
-        break;
-    case ocpp::v2::MessageFormatEnum::QRCODE:
-        result = types::text_message::MessageFormat::QRCODE;
-        break;
-    case ocpp::v2::MessageFormatEnum::UTF8:
-    default:
-        result = types::text_message::MessageFormat::UTF8;
-        break;
-    }
-    return result;
-}
-
-auto convert(const std::optional<ocpp::v2::Tariff>& value) {
-    std::vector<types::text_message::MessageContent> result;
-    if (value && value->description && !value->description->empty()) {
-        result.reserve(value->description->size());
-        for (const auto& item : value->description.value()) {
-            result.push_back({item.content, convert(item.format), item.language});
-        }
-    }
-    return result;
-}
-
 std::optional<ocpp::v2::IdToken> get_authorised_id_token(const types::evse_manager::SessionEvent& session_event) {
     using namespace module::conversions;
 
@@ -1021,7 +973,7 @@ void GenericOcpp::cb_get_15118_ev_certificate_response(std::int32_t connector_id
     // transform response, inject action, send to associated EvseManager
     types::iso15118::ResponseExiStreamStatus everest_response;
     everest_response.status = to_everest_iso15118_status(response.status);
-    everest_response.certificate_action = convert(certificate_action);
+    everest_response.certificate_action = to_everest_certificate_action_enum(certificate_action);
     if (not response.exiResponse.get().empty()) {
         // since exi_response is an optional in the EVerest type we only set it when not empty
         everest_response.exi_response = response.exiResponse.get();
