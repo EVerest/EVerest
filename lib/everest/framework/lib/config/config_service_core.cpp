@@ -271,6 +271,12 @@ DeleteSlotStatus ConfigServiceCore::delete_slot(int slot_id) {
     return post_to_actor([this, slot_id]() { return internal_delete_slot(slot_id); });
 }
 DeleteSlotStatus ConfigServiceCore::internal_delete_slot(int slot_id) {
+    if (slot_id == active_slot_id_ and active_slot_id_ != next_boot_slot_id_ and
+        module_status_ == ActiveSlotStatus::Stopped) {
+            active_slot_id_ = next_boot_slot_id_;
+            internal_reinitialize_from_db(true);
+            EVLOG_warning << "Switched the active slot to the next boot slot (" << active_slot_id_ << ") and deleted the old one.";
+    }
     if (slot_id == active_slot_id_ or slot_id == next_boot_slot_id_) {
         EVLOG_warning << "Failed to delete slot " << slot_id << ": cannot delete the active or next boot slot.";
         return DeleteSlotStatus::CannotDeleteActiveSlot;
