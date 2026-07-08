@@ -121,8 +121,11 @@ TEST(RunApplication, AccumulateOutputFalseStreamsWithoutRetaining) {
 #ifdef __linux__
 namespace {
 
-// Return the pid of a running process whose cmdline contains needle, or -1 if none.
-pid_t find_process_with_arg(const std::string& needle) {
+// Return the pid of a running process one of whose argv tokens exactly equals arg, or -1 if none.
+// Exact-token (not substring) matching keeps concurrent instances of this test from mistaking each
+// other's sleeper for their own: /proc is host-global, so a shared or prefix-overlapping needle
+// would collide when ctest runs test binaries in parallel.
+pid_t find_process_with_arg(const std::string& arg) {
     DIR* proc = opendir("/proc");
     if (proc == nullptr) {
         return -1;
@@ -138,10 +141,29 @@ pid_t find_process_with_arg(const std::string& needle) {
         if (!cmdline) {
             continue;
         }
-        std::string content((std::istreambuf_iterator<char>(cmdline)), std::istreambuf_iterator<char>());
-        std::replace(content.begin(), content.end(), '\0', ' '); // cmdline is NUL-separated
-        if (content.find(needle) != std::string::npos) {
-            found = static_cast<pid_t>(pid);
+        std::string content;
+        try {
+            // A racing process can exit mid-read; libstdc++ then throws ios_base::failure (ESRCH)
+            // from filebuf::underflow. Treat any such pid as gone rather than failing the test.
+            content.assign((std::istreambuf_iterator<char>(cmdline)), std::istreambuf_iterator<char>());
+        } catch (const std::exception&) {
+            continue;
+        }
+        // cmdline is a sequence of NUL-terminated argv tokens; compare each one exactly.
+        std::size_t start = 0;
+        while (start < content.size()) {
+            const std::size_t nul = content.find('\0', start);
+            const std::size_t token_end = (nul == std::string::npos) ? content.size() : nul;
+            if (content.compare(start, token_end - start, arg) == 0) {
+                found = static_cast<pid_t>(pid);
+                break;
+            }
+            if (nul == std::string::npos) {
+                break;
+            }
+            start = nul + 1;
+        }
+        if (found != -1) {
             break;
         }
     }
@@ -163,9 +185,10 @@ bool wait_until(const std::function<bool()>& pred, std::chrono::milliseconds tim
 } // namespace
 
 TEST(RunApplication, KillChildOnParentDeathReapsChildWhenParentDies) {
-    // A unique sleep duration lets us pinpoint exactly this grandchild in /proc.
-    const std::string unique_arg = "314159";
-    const std::string needle = "/usr/bin/sleep " + unique_arg;
+    // Per-process-unique sleep duration lets us pinpoint exactly this test's grandchild in the
+    // host-global /proc even when ctest runs this binary concurrently. The large base keeps the
+    // sleeper alive well past the test regardless of the pid's magnitude.
+    const std::string needle = "314159." + std::to_string(::getpid());
     ASSERT_EQ(find_process_with_arg(needle), -1) << "a stale sleeper is present before the test";
 
     const pid_t child = fork();
@@ -175,7 +198,7 @@ TEST(RunApplication, KillChildOnParentDeathReapsChildWhenParentDies) {
         RunOptions opts;
         opts.accumulation = RetainNone{};
         opts.kill_child_on_parent_death = true;
-        run_application("/usr/bin/sleep", {unique_arg}, opts);
+        run_application("/usr/bin/sleep", {needle}, opts);
         _exit(0);
     }
 
