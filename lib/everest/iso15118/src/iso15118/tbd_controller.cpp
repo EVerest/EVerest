@@ -213,16 +213,16 @@ void TbdController::set_dlink_ready(bool ready) {
 void TbdController::update_supported_der_functions(iec::DERControlName der_control,
                                                    const iec::DERControlFunction& function) {
     auto s = evse_setup.handle();
-    auto& der_setup = s->der_setup_config.has_value() ? s->der_setup_config.value() : s->der_setup_config.emplace();
+    auto& der_setup = s->der_iec_setup_config.has_value() ? s->der_iec_setup_config.value() : s->der_iec_setup_config.emplace();
 
     der_setup.supported_der_control_functions[der_control] = function;
 }
 
 void TbdController::update_unsupported_der_functions(iec::DERControlName der_control) {
     auto s = evse_setup.handle();
-    if (s->der_setup_config.has_value()) {
+    if (s->der_iec_setup_config.has_value()) {
         logf_info("Removing supported DER control function: %u", static_cast<uint32_t>(der_control));
-        auto& der_setup = s->der_setup_config.value();
+        auto& der_setup = s->der_iec_setup_config.value();
         der_setup.supported_der_control_functions.erase(der_control);
     }
 }
