@@ -718,6 +718,8 @@ types:
       - DC_ACDP_BPT
       - MCS
       - MCS_BPT
+      - AC_DER_IEC
+      - AC_DER_SAE
       - Internet
       - ParkingStatus
   Connector:
