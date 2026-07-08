@@ -297,7 +297,7 @@ void ChargePointV16::cb_transaction_stopped(const std::int32_t ocpp_connector_id
     event.eventType = ocpp::v2::TransactionEventEnum::Ended;
     event.evse = {evse->evse_id, evse->connector_id};
     event.transactionInfo.transactionId = session_id;
-    event.seqNo = transaction_id; // TODO(james-ctc): this mapping is incorrect
+    // event.seqNo = 0; seqNo does not exist in OCPP1.6
     m_callbacks_ptr->cb_transaction_event(event);
 }
 
@@ -312,7 +312,7 @@ void ChargePointV16::cb_transaction_updated(const std::int32_t ocpp_connector_id
     event.eventType = ocpp::v2::TransactionEventEnum::Updated;
     event.evse = {evse->evse_id, evse->connector_id};
     event.transactionInfo.transactionId = session_id;
-    event.seqNo = transaction_id; // TODO(james-ctc): this mapping is incorrect
+    // event.seqNo = 0; seqNo does not exist in OCPP1.6
 
     ocpp::v2::TransactionEventResponse event_response;
     if (id_tag_info.parentIdTag) {
