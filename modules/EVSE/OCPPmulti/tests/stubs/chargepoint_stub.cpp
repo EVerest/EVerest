@@ -26,9 +26,9 @@ constexpr const auto PNC_ENABLED_COMPONENT_NAME = "ISO15118Ctrlr";
 constexpr const auto PNC_ENABLED_VAR_NAME = "PnCEnabled";
 constexpr const auto SETPOINT_PRIORITY_COMPONENT_NAME = "SmartChargingCtrlr";
 constexpr const auto SETPOINT_PRIORITY_VAR_NAME = "SetpointPriority";
-constexpr const auto TX_START_POINT_COMPONENT_NAME = "SmartChargingCtrlr";
+constexpr const auto TX_START_POINT_COMPONENT_NAME = "TxCtrlr";
 constexpr const auto TX_START_POINT_VAR_NAME = "TxStartPoint";
-constexpr const auto TX_STOP_POINT_COMPONENT_NAME = "SmartChargingCtrlr";
+constexpr const auto TX_STOP_POINT_COMPONENT_NAME = "TxCtrlr";
 constexpr const auto TX_STOP_POINT_VAR_NAME = "TxStopPoint";
 
 inline std::string gen_key(const std::string& component_id, const std::string& variable_id,

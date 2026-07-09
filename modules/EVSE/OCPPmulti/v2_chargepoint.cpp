@@ -522,11 +522,11 @@ std::optional<std::string> ChargePointV2::get_master_pass_group_id() {
                       ocpp::v2::AttributeEnum::Actual);
 }
 std::optional<std::string> ChargePointV2::get_tx_start_point() {
-    return get_string(ocpp::v2::ControllerComponents::SmartChargingCtrlr, {TX_START_POINT_VAR_NAME},
+    return get_string(ocpp::v2::ControllerComponents::TxCtrlr, {TX_START_POINT_VAR_NAME},
                       ocpp::v2::AttributeEnum::Actual);
 }
 std::optional<std::string> ChargePointV2::get_tx_stop_point() {
-    return get_string(ocpp::v2::ControllerComponents::SmartChargingCtrlr, {TX_STOP_POINT_VAR_NAME},
+    return get_string(ocpp::v2::ControllerComponents::TxCtrlr, {TX_STOP_POINT_VAR_NAME},
                       ocpp::v2::AttributeEnum::Actual);
 }
 
