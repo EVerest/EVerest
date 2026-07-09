@@ -75,6 +75,9 @@ target_sources(iso15118
         message/ac_der_sae_charge_loop.cpp
         message/ac_der_sae_types.cpp
 
+        message/din/variant.cpp
+        message/din/msg_data_types.cpp
+
         tbd_controller.cpp    
 )
 
@@ -82,6 +85,7 @@ target_link_libraries(iso15118
     PUBLIC
         # FIXME (aw): would be nice if we could make this private!
         cbv2g::tp
+        cbv2g::din
         cbv2g::iso20
         everest::util
     PRIVATE
