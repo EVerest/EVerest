@@ -141,10 +141,13 @@ struct GenericChargePointCallbacks {
         const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes) = 0;
     virtual void cb_tariff_message(const types::session_cost::TariffMessage& message) = 0;
     virtual void cb_time_sync(const ocpp::DateTime& current_time) = 0;
-    virtual void cb_transaction_event(const ocpp::v2::TransactionEventRequest& transaction_event) = 0;
-    virtual void
-    cb_transaction_event_response(const ocpp::v2::TransactionEventRequest& transaction_event,
-                                  const ocpp::v2::TransactionEventResponse& transaction_event_response) = 0;
+    /// transaction_id: CSMS-assigned transaction id; differs from transactionInfo.transactionId (the session id) in
+    /// 1.6 mode and is unset while not yet assigned
+    virtual void cb_transaction_event(const ocpp::v2::TransactionEventRequest& transaction_event,
+                                      const std::optional<std::string>& transaction_id) = 0;
+    virtual void cb_transaction_event_response(const ocpp::v2::TransactionEventRequest& transaction_event,
+                                               const ocpp::v2::TransactionEventResponse& transaction_event_response,
+                                               const std::optional<std::string>& transaction_id) = 0;
     virtual ocpp::v2::UnlockConnectorResponse cb_unlock_connector(std::int32_t evse_id, std::int32_t connector_id) = 0;
     virtual bool cb_update_allowed_energy_transfer_modes(
         const std::vector<ocpp::v2::EnergyTransferModeEnum>& allowed_energy_transfer_modes,

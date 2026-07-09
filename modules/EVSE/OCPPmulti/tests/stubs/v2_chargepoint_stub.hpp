@@ -193,10 +193,14 @@ struct GenericChargePointCallbacksMock : public ocpp_multi::GenericChargePointCa
                 (override));
     MOCK_METHOD(void, cb_tariff_message, (const types::session_cost::TariffMessage& message), (override));
     MOCK_METHOD(void, cb_time_sync, (const ocpp::DateTime& current_time), (override));
-    MOCK_METHOD(void, cb_transaction_event, (const ocpp::v2::TransactionEventRequest& transaction_event), (override));
+    MOCK_METHOD(void, cb_transaction_event,
+                (const ocpp::v2::TransactionEventRequest& transaction_event,
+                 const std::optional<std::string>& transaction_id),
+                (override));
     MOCK_METHOD(void, cb_transaction_event_response,
                 (const ocpp::v2::TransactionEventRequest& transaction_event,
-                 const ocpp::v2::TransactionEventResponse& transaction_event_response),
+                 const ocpp::v2::TransactionEventResponse& transaction_event_response,
+                 const std::optional<std::string>& transaction_id),
                 (override));
     MOCK_METHOD(ocpp::v2::UnlockConnectorResponse, cb_unlock_connector,
                 (std::int32_t evse_id, std::int32_t connector_id), (override));

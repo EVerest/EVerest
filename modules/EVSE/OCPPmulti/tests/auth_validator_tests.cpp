@@ -96,12 +96,12 @@ TEST_F(GenericOcppProvidesTester, publishValidateResultUpdate) {
     interfaces->subscribe_var("auth_validator", "validate_result_update",
                               [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response);
+    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response, "transactionId");
     EXPECT_TRUE(received.empty());
 
     transaction_event.evse = EVSE{1, 0};
     transaction_event_response.idTokenInfo = IdTokenInfo{AuthorizationStatusEnum::Accepted};
-    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response);
+    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response, "transactionId");
 
     ASSERT_EQ(received.size(), 1);
     EXPECT_EQ(

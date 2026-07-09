@@ -283,7 +283,8 @@ void ChargePointV16::cb_transaction_started(const std::int32_t ocpp_connector_id
     event.eventType = ocpp::v2::TransactionEventEnum::Started;
     event.evse = {evse->evse_id, evse->connector_id};
     event.transactionInfo.transactionId = session_id;
-    m_callbacks_ptr->cb_transaction_event(event);
+    // the numeric OCPP1.6 transaction id is not assigned yet at this point
+    m_callbacks_ptr->cb_transaction_event(event, std::nullopt);
 }
 
 void ChargePointV16::cb_transaction_stopped(const std::int32_t ocpp_connector_id, const std::string& session_id,
@@ -298,7 +299,7 @@ void ChargePointV16::cb_transaction_stopped(const std::int32_t ocpp_connector_id
     event.evse = {evse->evse_id, evse->connector_id};
     event.transactionInfo.transactionId = session_id;
     // event.seqNo = 0; seqNo does not exist in OCPP1.6
-    m_callbacks_ptr->cb_transaction_event(event);
+    m_callbacks_ptr->cb_transaction_event(event, std::to_string(transaction_id));
 }
 
 void ChargePointV16::cb_transaction_updated(const std::int32_t ocpp_connector_id, const std::string& session_id,
@@ -313,6 +314,7 @@ void ChargePointV16::cb_transaction_updated(const std::int32_t ocpp_connector_id
     event.evse = {evse->evse_id, evse->connector_id};
     event.transactionInfo.transactionId = session_id;
     // event.seqNo = 0; seqNo does not exist in OCPP1.6
+    m_callbacks_ptr->cb_transaction_event(event, std::to_string(transaction_id));
 
     ocpp::v2::TransactionEventResponse event_response;
     if (id_tag_info.parentIdTag) {
@@ -323,7 +325,7 @@ void ChargePointV16::cb_transaction_updated(const std::int32_t ocpp_connector_id
         event_response.idTokenInfo = token;
     }
 
-    m_callbacks_ptr->cb_transaction_event_response(event, event_response);
+    m_callbacks_ptr->cb_transaction_event_response(event, event_response, std::to_string(transaction_id));
 }
 
 ocpp::v16::UnlockStatus ChargePointV16::cb_unlock_connector(std::int32_t ocpp_connector_id) {

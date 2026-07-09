@@ -367,9 +367,11 @@ protected:
         const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes) override;
     void cb_tariff_message(const types::session_cost::TariffMessage& message) override;
     void cb_time_sync(const ocpp::DateTime& current_time) override;
-    void cb_transaction_event(const ocpp::v2::TransactionEventRequest& transaction_event) override;
+    void cb_transaction_event(const ocpp::v2::TransactionEventRequest& transaction_event,
+                              const std::optional<std::string>& transaction_id) override;
     void cb_transaction_event_response(const ocpp::v2::TransactionEventRequest& transaction_event,
-                                       const ocpp::v2::TransactionEventResponse& transaction_event_response) override;
+                                       const ocpp::v2::TransactionEventResponse& transaction_event_response,
+                                       const std::optional<std::string>& transaction_id) override;
     ocpp::v2::UnlockConnectorResponse cb_unlock_connector(std::int32_t evse_id, std::int32_t connector_id) override;
     bool cb_update_allowed_energy_transfer_modes(
         const std::vector<ocpp::v2::EnergyTransferModeEnum>& allowed_energy_transfer_modes,
