@@ -95,6 +95,9 @@ int main() {
     evse_config.control_mobility_modes.emplace_back<d20::ControlMobilityNeedsModes>(
         {dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedByEvcc});
 
+    evse_config.ac_setup_config.emplace<d20::AcSetupConfig>(
+        {230, {dt::AcConnector::SinglePhase, dt::AcConnector::ThreePhase}});
+
     controller = std::make_unique<TbdController>(std::move(config), std::move(callbacks), std::move(evse_config));
 
     // Start loop in a separate thread
