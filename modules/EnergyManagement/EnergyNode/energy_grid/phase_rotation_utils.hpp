@@ -21,7 +21,7 @@ namespace energy_grid {
  */
 void apply_phase_rotation(types::powermeter::Powermeter& powermeter, const std::string& phase_rotation);
 
-  } // namespace energy_grid
+} // namespace energy_grid
 } // namespace module
 
 #endif // ENERGY_PHASE_ROTATION_UTILS_HPP
