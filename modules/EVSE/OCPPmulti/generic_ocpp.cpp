@@ -1254,6 +1254,7 @@ void GenericOcpp::cb_reset(const std::optional<const std::int32_t>& evse_id, Res
         if (do_reset) {
             // small delay before stopping the charge point to make sure all responses are received
             std::this_thread::sleep_for(std::chrono::seconds(mv_config.getResetStopDelay()));
+            this->mv_charge_point.stop();
             mv_requires.system.call_reset(r_type, scheduled);
         }
     }
