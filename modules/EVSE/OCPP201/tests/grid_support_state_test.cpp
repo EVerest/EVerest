@@ -251,4 +251,70 @@ TEST(GridSupportState, AlarmsBufferedBeforeFlipTakenAfterFlip) {
     EXPECT_EQ(taken.at(1).fault, gs::GridEventFault::UnderFrequency);
 }
 
+// capability_for returns the stored capability for a registered EVSE and nullopt for an unknown one.
+TEST(GridSupportState, CapabilityForReturnsStoredCapability) {
+    module::GridSupportState state;
+    constexpr int32_t evse_id = 1;
+
+    state.set_capability(evse_id, make_capability({gs::DirectiveType::VoltVar}));
+
+    const auto stored = state.capability_for(evse_id);
+    ASSERT_TRUE(stored.has_value());
+    ASSERT_EQ(stored->supported_types.size(), 1u);
+    EXPECT_EQ(stored->supported_types.at(0), gs::DirectiveType::VoltVar);
+
+    EXPECT_FALSE(state.capability_for(99).has_value());
+}
+
+// set_enabled(false) keeps the EVSE registered but empties its built set; set_enabled(true) restores it.
+TEST(GridSupportState, SetEnabledFalseEmptiesBuildActiveSet) {
+    module::GridSupportState state;
+    constexpr int32_t evse_id = 1;
+
+    state.set_capability(evse_id, make_capability({gs::DirectiveType::VoltVar}));
+    state.set_active_directives({make_directive("d-voltvar", gs::DirectiveType::VoltVar)});
+
+    state.set_enabled(evse_id, false);
+    const auto disabled = state.build_active_set(evse_id);
+    EXPECT_EQ(disabled.evse_id, evse_id);
+    EXPECT_TRUE(disabled.directives.empty());
+    // Disabling must not destroy the stored capability; the rollback path relies on it.
+    EXPECT_TRUE(state.capability_for(evse_id).has_value());
+
+    state.set_enabled(evse_id, true);
+    const auto enabled = state.build_active_set(evse_id);
+    ASSERT_EQ(enabled.directives.size(), 1u);
+    EXPECT_EQ(enabled.directives.at(0).id, "d-voltvar");
+}
+
+// A freshly registered EVSE is enabled by default; no set_enabled call is needed to build a non-empty set.
+TEST(GridSupportState, EvseDefaultsEnabled) {
+    module::GridSupportState state;
+    constexpr int32_t evse_id = 2;
+
+    state.set_capability(evse_id, make_capability({gs::DirectiveType::VoltVar}));
+    state.set_active_directives({make_directive("d-voltvar", gs::DirectiveType::VoltVar)});
+
+    const auto active = state.build_active_set(evse_id);
+    ASSERT_EQ(active.directives.size(), 1u);
+    EXPECT_EQ(active.directives.at(0).id, "d-voltvar");
+}
+
+// unregister clears the disabled flag, so a re-registered EVSE comes back enabled.
+TEST(GridSupportState, UnregisterClearsDisabledFlag) {
+    module::GridSupportState state;
+    constexpr int32_t evse_id = 3;
+
+    state.set_capability(evse_id, make_capability({gs::DirectiveType::VoltVar}));
+    state.set_enabled(evse_id, false);
+    state.unregister(evse_id);
+
+    state.set_capability(evse_id, make_capability({gs::DirectiveType::VoltVar}));
+    state.set_active_directives({make_directive("d-voltvar", gs::DirectiveType::VoltVar)});
+
+    const auto active = state.build_active_set(evse_id);
+    ASSERT_EQ(active.directives.size(), 1u);
+    EXPECT_EQ(active.directives.at(0).id, "d-voltvar");
+}
+
 } // namespace

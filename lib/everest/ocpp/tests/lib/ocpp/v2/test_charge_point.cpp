@@ -84,6 +84,8 @@ public:
         v2x_ctrl.evse_id = 2;
         component_configs.insert(std::make_pair(v2x_ctrl, variables));
 
+        // ACDERCtrlr on an in-range EVSE: Available is a ReadOnly capability flag fixed true, Enabled is the
+        // ReadWrite runtime gate defaulting false. The DER block must stay unbuilt until Enabled flips true.
         std::vector<DeviceModelVariable> ac_der_variables;
         DeviceModelVariable ac_der_available;
         ac_der_available.name = "Available";
@@ -92,14 +94,26 @@ public:
         ac_der_available_characteristics.supportsMonitoring = false;
         ac_der_available.characteristics = ac_der_available_characteristics;
         DbVariableAttribute ac_der_available_attribute;
-        ac_der_available_attribute.variable_attribute.mutability = MutabilityEnum::ReadWrite;
-        ac_der_available_attribute.variable_attribute.value = "false";
+        ac_der_available_attribute.variable_attribute.mutability = MutabilityEnum::ReadOnly;
+        ac_der_available_attribute.variable_attribute.value = "true";
         ac_der_available_attribute.variable_attribute.type = AttributeEnum::Actual;
         ac_der_available.attributes = std::vector<DbVariableAttribute>{ac_der_available_attribute};
         ac_der_variables.push_back(ac_der_available);
+        DeviceModelVariable ac_der_enabled;
+        ac_der_enabled.name = "Enabled";
+        VariableCharacteristics ac_der_enabled_characteristics;
+        ac_der_enabled_characteristics.dataType = DataEnum::boolean;
+        ac_der_enabled_characteristics.supportsMonitoring = false;
+        ac_der_enabled.characteristics = ac_der_enabled_characteristics;
+        DbVariableAttribute ac_der_enabled_attribute;
+        ac_der_enabled_attribute.variable_attribute.mutability = MutabilityEnum::ReadWrite;
+        ac_der_enabled_attribute.variable_attribute.value = "false";
+        ac_der_enabled_attribute.variable_attribute.type = AttributeEnum::Actual;
+        ac_der_enabled.attributes = std::vector<DbVariableAttribute>{ac_der_enabled_attribute};
+        ac_der_variables.push_back(ac_der_enabled);
         ComponentKey ac_der_ctrl;
         ac_der_ctrl.name = "ACDERCtrlr";
-        ac_der_ctrl.evse_id = 3;
+        ac_der_ctrl.evse_id = 2;
         component_configs.insert(std::make_pair(ac_der_ctrl, ac_der_variables));
 
         db.initialize_database(component_configs, true);
@@ -543,21 +557,24 @@ TEST_F(ChargePointCommonTestFixtureV2, DERComponentPresentRequiresActiveDirectiv
     configure_callbacks_with_mocks();
 
     // EVSE 1 (DC DER present): unset callback invalid, set callback valid.
+    std::map<std::int32_t, std::int32_t> evse_connector_structure_dc_der;
+    evse_connector_structure_dc_der.insert_or_assign(1, 1);
     callbacks.der_active_directives_callback = std::nullopt;
-    EXPECT_FALSE(callbacks.all_callbacks_valid(device_model, evse_connector_structure));
+    EXPECT_FALSE(callbacks.all_callbacks_valid(device_model, evse_connector_structure_dc_der));
 
     callbacks.der_active_directives_callback = [](const std::vector<ocpp::v21::SetDERControlRequest>&) {};
-    EXPECT_TRUE(callbacks.all_callbacks_valid(device_model, evse_connector_structure));
+    EXPECT_TRUE(callbacks.all_callbacks_valid(device_model, evse_connector_structure_dc_der));
 
-    // EVSE 2 (no DER): absent callback is valid.
+    // EVSE 4 (no DER component): absent callback is valid.
     std::map<std::int32_t, std::int32_t> evse_connector_structure_no_der;
-    evse_connector_structure_no_der.insert_or_assign(2, 1);
+    evse_connector_structure_no_der.insert_or_assign(4, 1);
     callbacks.der_active_directives_callback = std::nullopt;
     EXPECT_TRUE(callbacks.all_callbacks_valid(device_model, evse_connector_structure_no_der));
 
-    // EVSE 3 (AC DER only): same presence requirement via the AC term of der_present.
+    // EVSE 2 (AC DER only): same presence requirement via the AC term of der_present. Presence gates on the
+    // Available variable existing, so Enabled==false does not hide it.
     std::map<std::int32_t, std::int32_t> evse_connector_structure_ac_der;
-    evse_connector_structure_ac_der.insert_or_assign(3, 1);
+    evse_connector_structure_ac_der.insert_or_assign(2, 1);
     callbacks.der_active_directives_callback = std::nullopt;
     EXPECT_FALSE(callbacks.all_callbacks_valid(device_model, evse_connector_structure_ac_der));
 
@@ -874,14 +891,16 @@ TEST_F(ChargePointFunctionalityTestFixtureV2, OnDerAlarm_WhenDerControlAbsent_No
     EXPECT_NO_FATAL_FAILURE(charge_point->on_der_alarm(req));
 }
 
-// The DER block is built only once a component reports Available==true. EVSE 1's DC DER component defaults
-// to false, so SetDERControl gets NotImplemented at first and a CALLRESULT after Available flips true.
-TEST_F(ChargePointFunctionalityTestFixtureV2, SetDERControl_BuildsBlockWhenAvailableFlipsTrue) {
+// The DER block is built only once a component reports Enabled==true. EVSE 2's AC DER component is
+// Available==true but Enabled==false at construction, so SetDERControl gets NotImplemented at first and a
+// CALLRESULT after Enabled flips true.
+TEST_F(ChargePointFunctionalityTestFixtureV2, SetDERControl_BuildsBlockWhenEnabledFlipsTrue) {
     ocpp::v21::SetDERControlRequest req;
     req.isDefault = false;
     req.controlId = "ctrl-lifecycle";
-    // HFMustTrip is not in DCDERCtrlr_1.json's ModesSupported, so once the block exists it answers with a
-    // CALLRESULT (NotSupported) without touching the DER database tables.
+    // Once the block exists the request is accepted: EVSE 2's AC DER component is enabled by then and AC
+    // admission accepts all control types. The persisted control is deleted at the end of the test because
+    // the handler database is file-backed and shared across tests.
     req.controlType = DERControlEnum::HFMustTrip;
     DERCurve curve;
     curve.priority = 0;
@@ -896,7 +915,7 @@ TEST_F(ChargePointFunctionalityTestFixtureV2, SetDERControl_BuildsBlockWhenAvail
         return request_to_enhanced_message<ocpp::v21::SetDERControlRequest, MessageType::SetDERControl>(req);
     };
 
-    // Available==false at construction: block absent, response is a NotImplemented CALLERROR.
+    // Enabled==false at construction: block absent, response is a NotImplemented CALLERROR.
     this->sent_messages.clear();
     charge_point->handle_message(build_message());
     ASSERT_FALSE(this->sent_messages.empty());
@@ -904,9 +923,9 @@ TEST_F(ChargePointFunctionalityTestFixtureV2, SetDERControl_BuildsBlockWhenAvail
     EXPECT_EQ(error_response.at(MESSAGE_TYPE_ID).get<MessageTypeId>(), MessageTypeId::CALLERROR);
     EXPECT_EQ(error_response.at(CALLERROR_ERROR_CODE).get<std::string>(), "NotImplemented");
 
-    // Flip Available true: the registered variable listener builds the block.
-    const auto der_available_cv = DERComponentVariables::get_dc_component_variable(1, DERComponentVariables::Available);
-    this->device_model->set_value(der_available_cv.component, der_available_cv.variable.value(), AttributeEnum::Actual,
+    // Flip Enabled true: the registered variable listener builds the block.
+    const auto der_enabled_cv = DERComponentVariables::get_ac_component_variable(2, DERComponentVariables::Enabled);
+    this->device_model->set_value(der_enabled_cv.component, der_enabled_cv.variable.value(), AttributeEnum::Actual,
                                   "true", "internal", true);
 
     // Same SetDERControl now reaches the block and is answered with a CALLRESULT (not NotImplemented).
@@ -915,22 +934,73 @@ TEST_F(ChargePointFunctionalityTestFixtureV2, SetDERControl_BuildsBlockWhenAvail
     ASSERT_FALSE(this->sent_messages.empty());
     const auto& result_response = this->sent_messages.back();
     EXPECT_EQ(result_response.at(MESSAGE_TYPE_ID).get<MessageTypeId>(), MessageTypeId::CALLRESULT);
+
+    auto cleanup_handler = create_database_handler();
+    cleanup_handler->open_connection();
+    cleanup_handler->delete_der_control("ctrl-lifecycle");
 }
 
-// When the DER block is built (here lazily, once a DER component reports Available==true), it self-emits
+// When the DER block is built (here lazily, once a DER component reports Enabled==true), it self-emits
 // the current active set so the provider learns the standing state. The DER_CONTROLS table is empty at
 // startup, so the initial emit carries an empty set.
 TEST_F(ChargePointFunctionalityTestFixtureV2, DerBlockBuild_EmitsInitialActiveSet) {
-    // EVSE 1's DC DER component defaults to Available==false, so no block (and no emit) yet at construction.
+    // EVSE 2's AC DER component is Available==true but Enabled==false, so no block (and no emit) yet at
+    // construction.
     ASSERT_EQ(this->der_active_directives_emit_count, 0);
 
-    // Flip Available true: the registered variable listener builds the block, which self-emits its
+    // Flip Enabled true: the registered variable listener builds the block, which self-emits its
     // initial (empty) active set.
-    const auto der_available_cv = DERComponentVariables::get_dc_component_variable(1, DERComponentVariables::Available);
-    this->device_model->set_value(der_available_cv.component, der_available_cv.variable.value(), AttributeEnum::Actual,
+    const auto der_enabled_cv = DERComponentVariables::get_ac_component_variable(2, DERComponentVariables::Enabled);
+    this->device_model->set_value(der_enabled_cv.component, der_enabled_cv.variable.value(), AttributeEnum::Actual,
                                   "true", "internal", true);
 
     EXPECT_EQ(this->der_active_directives_emit_count, 1);
     EXPECT_TRUE(this->last_der_active_directives.empty());
+}
+
+// Available==true alone must not build the DER block at boot: the Enabled gate (false here) keeps it unbuilt.
+TEST_F(ChargePointFunctionalityTestFixtureV2, DerBlock_NotBuiltAtBoot_WhenAvailableTrueButEnabledFalse) {
+    // EVSE 2's AC DER component is Available==true, Enabled==false at construction. No block, no emit.
+    EXPECT_EQ(this->der_active_directives_emit_count, 0);
+
+    ocpp::v21::SetDERControlRequest req;
+    req.isDefault = false;
+    req.controlId = "ctrl-boot-gate";
+    req.controlType = DERControlEnum::HFMustTrip;
+    DERCurve curve;
+    curve.priority = 0;
+    curve.yUnit = DERUnitEnum::Not_Applicable;
+    DERCurvePoints p1;
+    p1.x = 0.0f;
+    p1.y = 0.0f;
+    curve.curveData = {p1};
+    req.curve = curve;
+
+    this->sent_messages.clear();
+    charge_point->handle_message(
+        request_to_enhanced_message<ocpp::v21::SetDERControlRequest, MessageType::SetDERControl>(req));
+    ASSERT_FALSE(this->sent_messages.empty());
+    const auto& error_response = this->sent_messages.back();
+    EXPECT_EQ(error_response.at(MESSAGE_TYPE_ID).get<MessageTypeId>(), MessageTypeId::CALLERROR);
+    EXPECT_EQ(error_response.at(CALLERROR_ERROR_CODE).get<std::string>(), "NotImplemented");
+}
+
+// Strict opt-in: a DER component with Available==true but no Enabled variable stays disabled, so the
+// block is not built at boot (Enabled.value_or(false)).
+TEST_F(ChargePointConstructorTestFixtureV2, DerBlock_NotBuiltAtBoot_WhenNoEnabledVariable) {
+    configure_callbacks_with_mocks();
+
+    // EVSE 1's DC DER component (from DCDERCtrlr_1.json) has no Enabled variable. Flip its Available true
+    // before construction; the missing Enabled must keep the block unbuilt.
+    const auto dc_available_cv = DERComponentVariables::get_dc_component_variable(1, DERComponentVariables::Available);
+    this->device_model->set_value(dc_available_cv.component, dc_available_cv.variable.value(), AttributeEnum::Actual,
+                                  "true", "internal", true);
+
+    ASSERT_EQ(this->der_active_directives_emit_count, 0);
+
+    ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler,
+                                       create_message_queue(database_handler), "/tmp", evse_security, callbacks);
+
+    EXPECT_EQ(this->der_active_directives_emit_count, 0);
 }
 } // namespace ocpp::v2

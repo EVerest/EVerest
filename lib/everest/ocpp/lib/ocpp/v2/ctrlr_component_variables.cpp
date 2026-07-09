@@ -1529,6 +1529,7 @@ ComponentVariable get_component_variable(const std::int32_t evse_id, const Varia
 namespace DERComponentVariables {
 
 const Variable Available = {"Available"};
+const Variable Enabled = {"Enabled"};
 const Variable ModesSupported = {"ModesSupported"};
 
 ComponentVariable get_dc_component_variable(const std::int32_t evse_id, const Variable& variable) {

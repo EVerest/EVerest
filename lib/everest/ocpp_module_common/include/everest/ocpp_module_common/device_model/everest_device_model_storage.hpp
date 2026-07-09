@@ -21,9 +21,10 @@ namespace ocpp_module_common::device_model {
 
 /// \brief Builds the DER controller component config for a single EVSE from its supported energy transfer modes.
 ///
-/// DER-capable iff it advertises a DER/bidirectional mode: AC_DER_IEC/AC_DER_SAE/AC_BPT_DER for AC, DC_BPT/DC_ACDP_BPT
-/// for DC. AC vs DC is chosen from the presence of any DC_* mode. The component is provisioned disabled
-/// (Available "false", ReadWrite) with empty ModesSupported, for the consumer to enable at runtime.
+/// DER-capable if it advertises a DER/bidirectional mode: AC_DER_IEC/AC_DER_SAE/AC_BPT_DER for AC, DC_BPT/DC_ACDP_BPT
+/// for DC. AC vs DC is chosen from the presence of any DC_* mode. The component is provisioned with Available "true"
+/// (ReadOnly, marking static presence) and Enabled "true" (ReadWrite, the CSMS runtime control) with empty
+/// ModesSupported.
 ///
 /// \returns The (ComponentKey, variables) pair for a DCDERCtrlr/ACDERCtrlr component, or std::nullopt if
 ///          the EVSE is not DER-capable.
@@ -35,22 +36,16 @@ build_der_ctrlr_component_config(
 ///        controller for a given DER \p capability on EVSE \p evse_id.
 /// \details Emits ModesSupported and, on the DC path (capability.dc set), best-effort nameplate scalars and
 ///          inverter strings. The nameplate scalars exist only on the DC component; no ACDERCtrlr nameplate
-///          variables exist. The enabling Available write is deliberately kept separate (see
-///          to_der_ctrlr_available_set_variable) so the consumer can apply config first and enable only if
-///          everything was accepted.
+///          variables exist. This writes config variables only and never enables the component.
 std::vector<ocpp::v2::SetVariableData>
 to_der_ctrlr_config_set_variables(int32_t evse_id, const types::grid_support::DERCapability& capability);
 
-/// \brief Builds the single Available="true" write that enables the DER controller for a given DER
-///        \p capability on EVSE \p evse_id.
-/// \details Targets the DCDERCtrlr component when capability.dc is set, ACDERCtrlr otherwise.
-ocpp::v2::SetVariableData to_der_ctrlr_available_set_variable(int32_t evse_id,
-                                                              const types::grid_support::DERCapability& capability);
-
-/// \brief Forces the DER controller (DCDERCtrlr and ACDERCtrlr) of \p evse_id to Available "false" in \p storage.
-/// \details Writes "false" to the Available Actual attribute only when its current value is "true"; absent
-///          components/variables and values already not "true" are skipped silently. Used at startup to clear a
-///          persisted Available "true" on an EVSE that no longer has a wired grid_support connection.
+/// \brief Forces the DER controller (DCDERCtrlr and ACDERCtrlr) of \p evse_id to Available "false" and
+///        Enabled "false" in \p storage.
+/// \details Writes "false" to the Available and Enabled Actual attributes only when the current value is
+///          "true"; absent components/variables and values already not "true" are skipped silently. The
+///          only-clear-"true" guard preserves a CSMS-written Enabled "false" and its source across an
+///          unwire/rewire cycle. Used at startup on an EVSE that no longer has a wired grid_support connection.
 void disable_der_ctrlr(ocpp::v2::DeviceModelStorageInterface& storage, int32_t evse_id);
 
 class EverestDeviceModelStorage : public ocpp::v2::DeviceModelStorageInterface {
@@ -96,7 +91,7 @@ public:
     /// \bried Updates the VehicleId variable for the ConnectedEV component
     void update_connected_ev_vehicle_id(const int32_t evse_id, const std::string& vehicle_id);
 
-    /// \brief Forces the DER controller (DC or AC) of \p evse_id to Available "false", if present.
+    /// \brief Forces the DER controller (DC or AC) of \p evse_id to Available "false" and Enabled "false", if present.
     void disable_der(const int32_t evse_id);
 
 private:

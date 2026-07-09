@@ -312,18 +312,27 @@ bool DERControl::is_control_type_supported(v2::DERControlEnum control_type) cons
     const auto& evse_manager = this->context.evse_manager;
 
     for (int32_t evse_id = 1; evse_id <= static_cast<int32_t>(evse_manager.get_number_of_evses()); evse_id++) {
-        auto ac_mode = DERComponentVariables::get_ac_component_variable(evse_id, DERComponentVariables::Available);
-        auto is_ac_der = this->context.device_model.get_optional_value<bool>(ac_mode);
+        // A missing Available or Enabled variable means disabled: DER admission is strictly opt-in.
+        auto ac_available_cv =
+            DERComponentVariables::get_ac_component_variable(evse_id, DERComponentVariables::Available);
+        auto ac_enabled_cv = DERComponentVariables::get_ac_component_variable(evse_id, DERComponentVariables::Enabled);
         // Exception is made for AC as we do not know what control types the EV supports, so we accept all
-        if (is_ac_der.has_value() && is_ac_der.value()) {
+        if (this->context.device_model.get_optional_value<bool>(ac_available_cv).value_or(false) &&
+            this->context.device_model.get_optional_value<bool>(ac_enabled_cv).value_or(false)) {
             return true;
         }
 
-        auto dc_modes_cv =
-            DERComponentVariables::get_dc_component_variable(evse_id, DERComponentVariables::ModesSupported);
-        auto dc_modes = this->context.device_model.get_optional_value<std::string>(dc_modes_cv);
-        if (dc_modes.has_value() && mode_list_contains(dc_modes.value(), control_type_str)) {
-            return true;
+        auto dc_available_cv =
+            DERComponentVariables::get_dc_component_variable(evse_id, DERComponentVariables::Available);
+        auto dc_enabled_cv = DERComponentVariables::get_dc_component_variable(evse_id, DERComponentVariables::Enabled);
+        if (this->context.device_model.get_optional_value<bool>(dc_available_cv).value_or(false) &&
+            this->context.device_model.get_optional_value<bool>(dc_enabled_cv).value_or(false)) {
+            auto dc_modes_cv =
+                DERComponentVariables::get_dc_component_variable(evse_id, DERComponentVariables::ModesSupported);
+            auto dc_modes = this->context.device_model.get_optional_value<std::string>(dc_modes_cv);
+            if (dc_modes.has_value() && mode_list_contains(dc_modes.value(), control_type_str)) {
+                return true;
+            }
         }
     }
     return false;

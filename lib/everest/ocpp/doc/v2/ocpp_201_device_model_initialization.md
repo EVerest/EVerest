@@ -58,10 +58,15 @@ This also implies, that if you write code that needs a required `Variable`, when
 
 ## DER control: construct-on-enable
 
-The DER functional block (`ocpp::v21::DERControl`) follows a stricter variant of the `Available`-gated pattern above. It is
-**not** constructed eagerly during `ChargePoint` initialization. Instead, `ChargePoint` registers a device-model variable
-listener on the `DCDERCtrlr` / `ACDERCtrlr` `Available` variable and builds the DER block lazily the first time either flips
-to `true`, whether at startup (if a component is already `Available`) or later at runtime via `SetVariables`. Integrators who
-need DER control active from the start must ensure at least one of `DCDERCtrlr.Available` / `ACDERCtrlr.Available` is `true` in
-the device model; otherwise the DER block stays unbuilt and DER messages are answered with `NotImplemented` until a component
-is enabled.
+The DER functional block (`ocpp::v21::DERControl`) follows a stricter variant of the `Available`-gated pattern above.
+Admission and block construction are strictly opt-in. It is **not** constructed eagerly during `ChargePoint`
+initialization. A component counts as active only when `Available == true` **and** `Enabled == true`, evaluated per EVSE.
+Both variables are read with `value_or(false)`, so a missing `Available` or `Enabled` variable means disabled. Static
+device-model configs must therefore define `Enabled` (typically `"true"`) alongside `Available` for the DER block to build
+at boot; a config that defines only `Available` leaves the block unbuilt. DC directive admission likewise requires
+`Available == true` (in addition to `Enabled` and `ModesSupported`). The lazy construction path still exists for
+components enabled later at runtime: `ChargePoint` registers a device-model variable listener on the `DCDERCtrlr` /
+`ACDERCtrlr` `Available` and `Enabled` variables and builds the DER block the first time a component of either type
+becomes active via `SetVariables`. Integrators who need DER control active from the start must ensure at least one EVSE
+has an active `DCDERCtrlr` / `ACDERCtrlr` component; otherwise the DER block stays unbuilt and DER messages are answered
+with `NotImplemented` until a component is enabled.

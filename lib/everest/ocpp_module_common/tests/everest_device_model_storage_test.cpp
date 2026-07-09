@@ -33,7 +33,8 @@ const ocpp::v2::DeviceModelVariable* find_variable(const std::vector<ocpp::v2::D
     return nullptr;
 }
 
-// AC_BPT_DER generates an ACDERCtrlr, provisioned disabled (Available "false"/ReadWrite, empty ModesSupported).
+// AC_BPT_DER generates an ACDERCtrlr with static presence (Available "true"/ReadOnly) and a runtime
+// Enabled control (provisioned "true"/ReadWrite), empty ModesSupported.
 TEST(EverestDeviceModelStorageDerTest, AcDerCapableEvseGeneratesAcDerCtrlr) {
     constexpr int32_t evse_id = 1;
     const std::vector<etm::EnergyTransferMode> modes{etm::EnergyTransferMode::AC_single_phase_core,
@@ -50,9 +51,18 @@ TEST(EverestDeviceModelStorageDerTest, AcDerCapableEvseGeneratesAcDerCtrlr) {
     ASSERT_EQ(available->attributes.size(), 1u);
     const auto& available_attr = available->attributes.at(0).variable_attribute;
     ASSERT_TRUE(available_attr.value.has_value());
-    EXPECT_EQ(available_attr.value.value().get(), "false");
+    EXPECT_EQ(available_attr.value.value().get(), "true");
     ASSERT_TRUE(available_attr.mutability.has_value());
-    EXPECT_EQ(available_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadWrite);
+    EXPECT_EQ(available_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadOnly);
+
+    const auto* enabled = find_variable(config->second, ocpp::v2::DERComponentVariables::Enabled.name);
+    ASSERT_NE(enabled, nullptr);
+    ASSERT_EQ(enabled->attributes.size(), 1u);
+    const auto& enabled_attr = enabled->attributes.at(0).variable_attribute;
+    ASSERT_TRUE(enabled_attr.value.has_value());
+    EXPECT_EQ(enabled_attr.value.value().get(), "true");
+    ASSERT_TRUE(enabled_attr.mutability.has_value());
+    EXPECT_EQ(enabled_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadWrite);
 
     const auto* modes_supported = find_variable(config->second, ocpp::v2::DERComponentVariables::ModesSupported.name);
     ASSERT_NE(modes_supported, nullptr);
@@ -79,9 +89,18 @@ TEST(EverestDeviceModelStorageDerTest, DcDerCapableEvseGeneratesDcDerCtrlr) {
     ASSERT_EQ(available->attributes.size(), 1u);
     const auto& available_attr = available->attributes.at(0).variable_attribute;
     ASSERT_TRUE(available_attr.value.has_value());
-    EXPECT_EQ(available_attr.value.value().get(), "false");
+    EXPECT_EQ(available_attr.value.value().get(), "true");
     ASSERT_TRUE(available_attr.mutability.has_value());
-    EXPECT_EQ(available_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadWrite);
+    EXPECT_EQ(available_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadOnly);
+
+    const auto* enabled = find_variable(config->second, ocpp::v2::DERComponentVariables::Enabled.name);
+    ASSERT_NE(enabled, nullptr);
+    ASSERT_EQ(enabled->attributes.size(), 1u);
+    const auto& enabled_attr = enabled->attributes.at(0).variable_attribute;
+    ASSERT_TRUE(enabled_attr.value.has_value());
+    EXPECT_EQ(enabled_attr.value.value().get(), "true");
+    ASSERT_TRUE(enabled_attr.mutability.has_value());
+    EXPECT_EQ(enabled_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadWrite);
 
     const auto* modes_supported = find_variable(config->second, ocpp::v2::DERComponentVariables::ModesSupported.name);
     ASSERT_NE(modes_supported, nullptr);
@@ -108,9 +127,18 @@ TEST(EverestDeviceModelStorageDerTest, DcDerWinsOverAcDerWhenBothPresent) {
     ASSERT_EQ(available->attributes.size(), 1u);
     const auto& available_attr = available->attributes.at(0).variable_attribute;
     ASSERT_TRUE(available_attr.value.has_value());
-    EXPECT_EQ(available_attr.value.value().get(), "false");
+    EXPECT_EQ(available_attr.value.value().get(), "true");
     ASSERT_TRUE(available_attr.mutability.has_value());
-    EXPECT_EQ(available_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadWrite);
+    EXPECT_EQ(available_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadOnly);
+
+    const auto* enabled = find_variable(config->second, ocpp::v2::DERComponentVariables::Enabled.name);
+    ASSERT_NE(enabled, nullptr);
+    ASSERT_EQ(enabled->attributes.size(), 1u);
+    const auto& enabled_attr = enabled->attributes.at(0).variable_attribute;
+    ASSERT_TRUE(enabled_attr.value.has_value());
+    EXPECT_EQ(enabled_attr.value.value().get(), "true");
+    ASSERT_TRUE(enabled_attr.mutability.has_value());
+    EXPECT_EQ(enabled_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadWrite);
 
     const auto* modes_supported = find_variable(config->second, ocpp::v2::DERComponentVariables::ModesSupported.name);
     ASSERT_NE(modes_supported, nullptr);
@@ -138,9 +166,18 @@ TEST(EverestDeviceModelStorageDerTest, NonDcDerWithBareAcDerGeneratesAcDerCtrlr)
     ASSERT_EQ(available->attributes.size(), 1u);
     const auto& available_attr = available->attributes.at(0).variable_attribute;
     ASSERT_TRUE(available_attr.value.has_value());
-    EXPECT_EQ(available_attr.value.value().get(), "false");
+    EXPECT_EQ(available_attr.value.value().get(), "true");
     ASSERT_TRUE(available_attr.mutability.has_value());
-    EXPECT_EQ(available_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadWrite);
+    EXPECT_EQ(available_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadOnly);
+
+    const auto* enabled = find_variable(config->second, ocpp::v2::DERComponentVariables::Enabled.name);
+    ASSERT_NE(enabled, nullptr);
+    ASSERT_EQ(enabled->attributes.size(), 1u);
+    const auto& enabled_attr = enabled->attributes.at(0).variable_attribute;
+    ASSERT_TRUE(enabled_attr.value.has_value());
+    EXPECT_EQ(enabled_attr.value.value().get(), "true");
+    ASSERT_TRUE(enabled_attr.mutability.has_value());
+    EXPECT_EQ(enabled_attr.mutability.value(), ocpp::v2::MutabilityEnum::ReadWrite);
 
     const auto* modes_supported = find_variable(config->second, ocpp::v2::DERComponentVariables::ModesSupported.name);
     ASSERT_NE(modes_supported, nullptr);
@@ -172,9 +209,9 @@ const ocpp::v2::SetVariableData* find_set_variable(const std::vector<ocpp::v2::S
     return nullptr;
 }
 
-// DC config emits ModesSupported and nameplate scalars but never the enabling Available write; the
-// Available write is a separate single SetVariableData targeting the DCDERCtrlr component.
-TEST(EverestDeviceModelStorageDerTest, DcCapabilityEmitsConfigAndSeparateAvailable) {
+// DC config emits ModesSupported and nameplate scalars but never the enabling Enabled write; the
+// Enabled write is a separate single SetVariableData targeting the DCDERCtrlr component.
+TEST(EverestDeviceModelStorageDerTest, DcCapabilityEmitsConfigAndSeparateEnabled) {
     gs::DERCapability capability;
     capability.supported_types = {gs::DirectiveType::VoltVar, gs::DirectiveType::FreqDroop};
     capability.nameplate.max_w_W = 11000.0f;
@@ -188,8 +225,8 @@ TEST(EverestDeviceModelStorageDerTest, DcCapabilityEmitsConfigAndSeparateAvailab
 
     const auto config = ocpp_module_common::device_model::to_der_ctrlr_config_set_variables(1, capability);
 
-    // Config carries no enabling Available write.
-    EXPECT_EQ(find_set_variable(config, "Available"), nullptr);
+    // Config carries no enabling Enabled write.
+    EXPECT_EQ(find_set_variable(config, "Enabled"), nullptr);
 
     const auto* modes = find_set_variable(config, "ModesSupported");
     ASSERT_NE(modes, nullptr);
@@ -199,14 +236,9 @@ TEST(EverestDeviceModelStorageDerTest, DcCapabilityEmitsConfigAndSeparateAvailab
     const auto* manufacturer = find_set_variable(config, "InverterManufacturer");
     ASSERT_NE(manufacturer, nullptr);
     EXPECT_EQ(manufacturer->attributeValue.get(), "Acme");
-
-    const auto available = ocpp_module_common::device_model::to_der_ctrlr_available_set_variable(1, capability);
-    EXPECT_EQ(available.variable.name.get(), "Available");
-    EXPECT_EQ(available.component.name.get(), "DCDERCtrlr");
-    EXPECT_EQ(available.attributeValue.get(), "true");
 }
 
-// AC config emits only ModesSupported (no enabling Available, no nameplate scalars); the Available write
+// AC config emits only ModesSupported (no enabling Enabled, no nameplate scalars); the Enabled write
 // targets the ACDERCtrlr component.
 TEST(EverestDeviceModelStorageDerTest, AcCapabilityUsesAcComponent) {
     gs::DERCapability capability;
@@ -220,8 +252,8 @@ TEST(EverestDeviceModelStorageDerTest, AcCapabilityUsesAcComponent) {
 
     const auto config = ocpp_module_common::device_model::to_der_ctrlr_config_set_variables(2, capability);
 
-    // Config carries no enabling Available write.
-    EXPECT_EQ(find_set_variable(config, "Available"), nullptr);
+    // Config carries no enabling Enabled write.
+    EXPECT_EQ(find_set_variable(config, "Enabled"), nullptr);
 
     const auto* modes = find_set_variable(config, "ModesSupported");
     ASSERT_NE(modes, nullptr);
@@ -232,11 +264,6 @@ TEST(EverestDeviceModelStorageDerTest, AcCapabilityUsesAcComponent) {
     EXPECT_EQ(find_set_variable(config, "MaxW"), nullptr);
     EXPECT_EQ(find_set_variable(config, "MaxVA"), nullptr);
     EXPECT_EQ(find_set_variable(config, "InverterManufacturer"), nullptr);
-
-    const auto available = ocpp_module_common::device_model::to_der_ctrlr_available_set_variable(2, capability);
-    EXPECT_EQ(available.variable.name.get(), "Available");
-    EXPECT_EQ(available.component.name.get(), "ACDERCtrlr");
-    EXPECT_EQ(available.attributeValue.get(), "true");
 }
 
 namespace dm = ocpp_module_common::device_model;
@@ -270,45 +297,82 @@ std::optional<std::string> read_der_available(ocpp::v2::DeviceModelStorageInterf
     return attr->value.value().get();
 }
 
-// disable_der_ctrlr forces a persisted DCDERCtrlr Available "true" back to "false".
+// disable_der_ctrlr forces both a persisted DCDERCtrlr Available "true" and Enabled "true" back to "false".
 TEST(EverestDeviceModelStorageDisableDerTest, DcDerCtrlrForcedToUnavailable) {
     const auto db_path = make_temp_db_path("dc");
     init_db_with_der_ctrlr(db_path, 1, {etm::EnergyTransferMode::DC_extended, etm::EnergyTransferMode::DC_BPT});
 
     ocpp::v2::DeviceModelStorageSqlite storage(db_path);
-    const auto cv =
+    const auto available_cv =
         ocpp::v2::DERComponentVariables::get_dc_component_variable(1, ocpp::v2::DERComponentVariables::Available);
-    ASSERT_TRUE(cv.variable.has_value());
+    const auto enabled_cv =
+        ocpp::v2::DERComponentVariables::get_dc_component_variable(1, ocpp::v2::DERComponentVariables::Enabled);
+    ASSERT_TRUE(available_cv.variable.has_value());
+    ASSERT_TRUE(enabled_cv.variable.has_value());
 
-    ASSERT_EQ(storage.set_variable_attribute_value(cv.component, cv.variable.value(), ocpp::v2::AttributeEnum::Actual,
-                                                   "true", "EVEREST"),
+    ASSERT_EQ(storage.set_variable_attribute_value(available_cv.component, available_cv.variable.value(),
+                                                   ocpp::v2::AttributeEnum::Actual, "true", "EVEREST"),
               ocpp::v2::SetVariableStatusEnum::Accepted);
-    ASSERT_EQ(read_der_available(storage, cv), "true");
+    ASSERT_EQ(storage.set_variable_attribute_value(enabled_cv.component, enabled_cv.variable.value(),
+                                                   ocpp::v2::AttributeEnum::Actual, "true", "EVEREST"),
+              ocpp::v2::SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(read_der_available(storage, available_cv), "true");
+    ASSERT_EQ(read_der_available(storage, enabled_cv), "true");
 
     dm::disable_der_ctrlr(storage, 1);
 
-    EXPECT_EQ(read_der_available(storage, cv), "false");
+    EXPECT_EQ(read_der_available(storage, available_cv), "false");
+    EXPECT_EQ(read_der_available(storage, enabled_cv), "false");
 }
 
-// disable_der_ctrlr forces a persisted ACDERCtrlr Available "true" back to "false".
+// disable_der_ctrlr forces both a persisted ACDERCtrlr Available "true" and Enabled "true" back to "false".
 TEST(EverestDeviceModelStorageDisableDerTest, AcDerCtrlrForcedToUnavailable) {
     const auto db_path = make_temp_db_path("ac");
     init_db_with_der_ctrlr(db_path, 1,
                            {etm::EnergyTransferMode::AC_single_phase_core, etm::EnergyTransferMode::AC_BPT_DER});
 
     ocpp::v2::DeviceModelStorageSqlite storage(db_path);
-    const auto cv =
+    const auto available_cv =
         ocpp::v2::DERComponentVariables::get_ac_component_variable(1, ocpp::v2::DERComponentVariables::Available);
-    ASSERT_TRUE(cv.variable.has_value());
+    const auto enabled_cv =
+        ocpp::v2::DERComponentVariables::get_ac_component_variable(1, ocpp::v2::DERComponentVariables::Enabled);
+    ASSERT_TRUE(available_cv.variable.has_value());
+    ASSERT_TRUE(enabled_cv.variable.has_value());
 
-    ASSERT_EQ(storage.set_variable_attribute_value(cv.component, cv.variable.value(), ocpp::v2::AttributeEnum::Actual,
-                                                   "true", "EVEREST"),
+    ASSERT_EQ(storage.set_variable_attribute_value(available_cv.component, available_cv.variable.value(),
+                                                   ocpp::v2::AttributeEnum::Actual, "true", "EVEREST"),
               ocpp::v2::SetVariableStatusEnum::Accepted);
-    ASSERT_EQ(read_der_available(storage, cv), "true");
+    ASSERT_EQ(storage.set_variable_attribute_value(enabled_cv.component, enabled_cv.variable.value(),
+                                                   ocpp::v2::AttributeEnum::Actual, "true", "EVEREST"),
+              ocpp::v2::SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(read_der_available(storage, available_cv), "true");
+    ASSERT_EQ(read_der_available(storage, enabled_cv), "true");
 
     dm::disable_der_ctrlr(storage, 1);
 
-    EXPECT_EQ(read_der_available(storage, cv), "false");
+    EXPECT_EQ(read_der_available(storage, available_cv), "false");
+    EXPECT_EQ(read_der_available(storage, enabled_cv), "false");
+}
+
+// The guard only overwrites a persisted "true": an Enabled already at "false" (e.g. a CSMS-written
+// disable) is left untouched so its source marker survives an unwire/rewire cycle.
+TEST(EverestDeviceModelStorageDisableDerTest, EnabledAlreadyFalseLeftUntouched) {
+    const auto db_path = make_temp_db_path("enabled_false");
+    init_db_with_der_ctrlr(db_path, 1, {etm::EnergyTransferMode::DC_extended, etm::EnergyTransferMode::DC_BPT});
+
+    ocpp::v2::DeviceModelStorageSqlite storage(db_path);
+    const auto enabled_cv =
+        ocpp::v2::DERComponentVariables::get_dc_component_variable(1, ocpp::v2::DERComponentVariables::Enabled);
+    ASSERT_TRUE(enabled_cv.variable.has_value());
+
+    ASSERT_EQ(storage.set_variable_attribute_value(enabled_cv.component, enabled_cv.variable.value(),
+                                                   ocpp::v2::AttributeEnum::Actual, "false", "CSMS"),
+              ocpp::v2::SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(read_der_available(storage, enabled_cv), "false");
+
+    dm::disable_der_ctrlr(storage, 1);
+
+    EXPECT_EQ(read_der_available(storage, enabled_cv), "false");
 }
 
 // An EVSE with no DER component is a silent no-op: no throw, nothing created.

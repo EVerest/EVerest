@@ -4,6 +4,8 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -26,9 +28,17 @@ public:
     /// \brief Store the latest declared DER capability for \p evse_id, registering the EVSE.
     void set_capability(int32_t evse_id, const types::grid_support::DERCapability& capability);
 
+    /// \brief The last registered capability for \p evse_id (ignores the pending buffer), or nullopt if
+    /// unregistered. Lets a caller snapshot the accepted capability before an overwrite, to roll back on reject.
+    std::optional<types::grid_support::DERCapability> capability_for(int32_t evse_id) const;
+
     /// \brief Unregister \p evse_id, undoing a speculative registration when the enabling write is
-    /// rejected. No-op if not registered.
+    /// rejected. No-op if not registered. Also clears any disabled flag.
     void unregister(int32_t evse_id);
+
+    /// \brief Enable or disable directive delivery for \p evse_id. For a registered EVSE, disabling does
+    /// not unregister it, but build_active_set carries zero directives, so the push clears the device.
+    void set_enabled(int32_t evse_id, bool enabled);
 
     /// \brief Replace the cached active directive set (the last set libocpp pushed). Stored by move.
     void set_active_directives(std::vector<types::grid_support::Directive> directives);
@@ -71,6 +81,8 @@ public:
 private:
     // Unguarded by design: every access goes through OCPP201's monitor<GridSupportState> handle (class doc).
     std::map<int32_t, types::grid_support::DERCapability> capability_by_evse;
+    // EVSEs whose DERCtrlr the CSMS disabled: still registered, but build_active_set yields no directives.
+    std::set<int32_t> disabled_evses;
     // Capabilities buffered until flush_pending_grid_support() empties this at ready(); last write per EVSE
     // wins. Distinct from capability_by_evse: entries here have not yet enabled DER on their EVSE.
     std::map<int32_t, types::grid_support::DERCapability> pending_capability_by_evse;

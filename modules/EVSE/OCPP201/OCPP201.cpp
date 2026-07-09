@@ -735,6 +735,22 @@ void OCPP201::ready() {
             for (const auto& evse_manager : this->r_evse_manager) {
                 evse_manager->call_set_plug_and_charge_configuration(pnc_config);
             }
+        } else if ((set_variable_data.component.name == "DCDERCtrlr" ||
+                    set_variable_data.component.name == "ACDERCtrlr") and
+                   set_variable_data.variable.name.get() == "Enabled" and
+                   set_variable_data.attributeType.value_or(ocpp::v2::AttributeEnum::Actual) ==
+                       ocpp::v2::AttributeEnum::Actual) {
+            if (not set_variable_data.component.evse.has_value()) {
+                EVLOG_warning << "DER Enabled write without an EVSE id; ignoring";
+                return;
+            }
+            const auto evse_id = set_variable_data.component.evse.value().id;
+            const auto enabled = set_variable_data.attributeValue.get() == "true";
+            {
+                auto state_handle = this->grid_support_state.handle();
+                state_handle->set_enabled(evse_id, enabled);
+            }
+            this->push_active_directive_sets();
         }
     };
 
@@ -1005,6 +1021,7 @@ void OCPP201::ready() {
     callbacks.der_active_directives_callback =
         [this](const std::vector<ocpp::v21::SetDERControlRequest>& active_controls) {
             if (this->r_grid_support.empty()) {
+                EVLOG_warning << "Dropping DER active directives: no grid_support interface connection configured";
                 return;
             }
 
@@ -1062,11 +1079,6 @@ void OCPP201::ready() {
         this->config.CoreDatabasePath, sql_init_path.string(), this->config.MessageLogPath,
         std::make_shared<EvseSecurity>(*this->r_security), callbacks);
 
-    if (not this->r_grid_support.empty()) {
-        this->flush_pending_grid_support();
-        this->grid_support_heartbeat_timer_start();
-    }
-
     // publish charging schedules at least once on startup
     charging_schedules_callback();
     charging_schedules_timer_start();
@@ -1119,6 +1131,12 @@ void OCPP201::ready() {
 
     const auto boot_reason = conversions::to_ocpp_boot_reason(this->r_system->call_get_boot_reason());
     this->charge_point->set_message_queue_resume_delay(std::chrono::seconds(this->config.MessageQueueResumeDelay));
+
+    if (not this->r_grid_support.empty()) {
+        this->flush_pending_grid_support();
+        this->grid_support_heartbeat_timer_start();
+    }
+
     // we can now initialize the charge point's state machine. It reads the connector availability from the internal
     // database and potentially triggers enable/disable callbacks at the evse.
     this->charge_point->start(boot_reason, false);
@@ -1230,13 +1248,15 @@ void OCPP201::charging_schedules_timer_stop() {
     charging_schedules_timer.stop();
 }
 
-OCPP201::DerEnableResult OCPP201::apply_der_capability(int32_t evse_id,
-                                                       const types::grid_support::DERCapability& capability) {
-    DerEnableResult result;
+OCPP201::DerApplyResult OCPP201::apply_der_capability(int32_t evse_id,
+                                                      const types::grid_support::DERCapability& capability) {
+    DerApplyResult result;
 
     // Handle per access: set_variables/on_der_republish re-enter der_active_directives_callback (self-deadlock).
+    std::optional<types::grid_support::DERCapability> previous;
     {
         auto state_handle = this->grid_support_state.handle();
+        previous = state_handle->capability_for(evse_id);
         state_handle->set_capability(evse_id, capability);
     }
 
@@ -1257,27 +1277,38 @@ OCPP201::DerEnableResult OCPP201::apply_der_capability(int32_t evse_id,
         };
 
     const auto reject = [&](const std::string& rejected_details) {
-        EVLOG_error << "Rejecting set_capability for EVSE " << evse_id
-                    << ": device model rejected DER capability variables: " << rejected_details;
-        auto state_handle = this->grid_support_state.handle();
-        state_handle->unregister(evse_id);
+        if (previous.has_value()) {
+            EVLOG_error << "Rejecting set_capability for EVSE " << evse_id
+                        << ": device model rejected DER capability variables: " << rejected_details
+                        << "; rolling back to last accepted capability";
+            {
+                auto state_handle = this->grid_support_state.handle();
+                state_handle->set_capability(evse_id, *previous);
+            }
+            // Best-effort restore of the previous config variables. Enabled stays untouched: the EVSE
+            // keeps running its previous accepted config.
+            // Variables the rejected capability wrote but the previous one does not define keep their new values.
+            const auto rollback_rejected = collect_rejected(this->charge_point->set_variables(
+                module::device_model::to_der_ctrlr_config_set_variables(evse_id, *previous), "internal"));
+            if (not rollback_rejected.empty()) {
+                EVLOG_warning << "DER capability rollback for EVSE " << evse_id
+                              << " partially rejected: " << rollback_rejected;
+            }
+        } else {
+            EVLOG_error << "Rejecting set_capability for EVSE " << evse_id
+                        << ": device model rejected DER capability variables: " << rejected_details;
+            auto state_handle = this->grid_support_state.handle();
+            state_handle->unregister(evse_id);
+        }
         result.accepted = false;
         result.rejected_details = rejected_details;
     };
 
-    // Phase 1: config variables only (no Available). A partial rejection here never enables the component.
+    // Config variables only (no Available/Enabled): a partial rejection leaves the component state untouched.
     const auto config_rejected = collect_rejected(this->charge_point->set_variables(
         module::device_model::to_der_ctrlr_config_set_variables(evse_id, capability), "internal"));
     if (not config_rejected.empty()) {
         reject(config_rejected);
-        return result;
-    }
-
-    // Phase 2: the single Available="true" write that enables the DER block.
-    const auto available_rejected = collect_rejected(this->charge_point->set_variables(
-        {module::device_model::to_der_ctrlr_available_set_variable(evse_id, capability)}, "internal"));
-    if (not available_rejected.empty()) {
-        reject(available_rejected);
         return result;
     }
 
@@ -1309,11 +1340,11 @@ void OCPP201::flush_pending_grid_support() {
         pending = state_handle->take_pending_capabilities();
     }
     for (const auto& [pending_evse_id, pending_capability] : pending) {
-        const auto enable_result = this->apply_der_capability(pending_evse_id, pending_capability);
-        if (not enable_result.accepted) {
+        const auto apply_result = this->apply_der_capability(pending_evse_id, pending_capability);
+        if (not apply_result.accepted) {
             EVLOG_error << "Buffered DER capability for EVSE " << pending_evse_id
                         << " rejected on flush (consumer already received Accepted, not re-notified): "
-                        << enable_result.rejected_details;
+                        << apply_result.rejected_details;
         }
     }
 }
@@ -1410,10 +1441,10 @@ void OCPP201::on_grid_support_capability(const types::grid_support::EVSECapabili
         }
     }
 
-    const auto enable_result = this->apply_der_capability(evse_id, capability);
-    if (not enable_result.accepted) {
+    const auto apply_result = this->apply_der_capability(evse_id, capability);
+    if (not apply_result.accepted) {
         EVLOG_error << "Rejecting DER capability for EVSE " << evse_id
-                    << ": device model rejected DER capability variables: " << enable_result.rejected_details;
+                    << ": device model rejected DER capability variables: " << apply_result.rejected_details;
     }
 }
 

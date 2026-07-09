@@ -119,19 +119,44 @@ EVSE's connection through the **set_active_directives** command. When libocpp ap
 expires a DER control, the snapshot is rebuilt and re-sent for every registered EVSE on its own connection.
 
 At startup the module pre-provisions an ``ACDERCtrlr`` or ``DCDERCtrlr`` device-model component (chosen by the EVSE's
-energy-transfer modes) with ``Available=false`` and an empty ``ModesSupported`` for every DER-capable EVSE, so no static
-device-model JSON is required for the DER controllers.
+energy-transfer modes) for every DER-capable EVSE, so no static device-model JSON is required for the DER controllers. The
+component is provisioned with ``Available="true"`` (``ReadOnly``, marking the presence of a DER controller for the EVSE),
+``Enabled="true"`` (``ReadWrite``, the runtime control the CSMS toggles; the module no longer toggles it), and an empty
+``ModesSupported``. A wired DER-capable EVSE is therefore enabled from boot without any runtime write. A CSMS-written
+``Enabled="false"`` persists across reboots: re-provisioning only overwrites same-origin or default-source values, and the
+module never force-enables at runtime.
 
-Also at startup, any EVSE without a wired grid_support connection has its DER controller forced to ``Available=false``,
-even if a previous run persisted it as enabled. This prevents the CSMS from seeing DER as available after the
-grid_support wiring is removed from the configuration.
+Also at startup, any EVSE without a wired grid_support connection has both ``Available`` and ``Enabled`` on its DER
+controller forced to ``"false"`` (each only when the persisted value is ``"true"``, which preserves a CSMS-written
+``"false"`` and its source). This prevents the CSMS from seeing DER as available after the grid_support wiring is removed
+from the configuration. Restoration happens through provisioning on the next boot where the EVSE is wired.
 
-The device declares its inverter capability through the ``capability`` variable. The module stores the capability, sets the
-component ``Available=true`` and writes ``ModesSupported`` through the device model (which lazily constructs the libocpp DER
-block), then pushes the current active directives filtered to the declared control types, so a freshly connected device
-immediately learns its active set. The device reports grid event faults through the ``alarm`` variable, which is forwarded
-to the CSMS as a **NotifyDERAlarm.req**. Capability and alarm updates received before the charge point is initialized are
-queued and replayed once the charge point is ready.
+The device declares its inverter capability through the ``capability`` variable. The module stores the capability, writes
+its config variables (``ModesSupported`` and the DC nameplate values) through the device model, and republishes the
+current active directives filtered to the declared control types, so a freshly connected device immediately learns its
+active set. The capability handler no longer flips ``Enabled``; the libocpp DER block is already built at boot through
+provisioning.
+
+If the device model rejects a capability re-report, the module rolls back to the last accepted capability: the stored state
+is restored and its config variables are re-applied best-effort, while ``Enabled`` is left untouched. An EVSE whose very
+first capability is rejected is unregistered.
+
+In the AC IEC EV-as-DER relay case, the wired grid_support provider publishes no ``capability`` (capabilities only come
+from a device in the DC and AC SAE cases). An EVSE that advertises an AC IEC relay energy-transfer mode (``AC_DER_IEC`` or
+``AC_BPT_DER``, not ``AC_DER_SAE``) is covered by the provisioned ``Enabled="true"``: it publishes no capability and needs
+no ``ModesSupported`` list, and is admitted through the libocpp AC accept-all path while the controller is ``Available``
+and ``Enabled``, because the EV's real capabilities are unknown before plugin. A later capability publication still applies
+its config on top, and the CSMS ``Enabled`` toggle applies unchanged.
+
+The CSMS may write the ``Enabled`` variable (``ReadWrite``). Writing ``Enabled="false"`` makes the module push an empty
+directive replacement set to that EVSE, so the device clears the EV's curves; libocpp then reports ``NotSupported`` for a
+**SetDERControl.req** whose mode no enabled EVSE supports. Writing ``Enabled="true"`` republishes the filtered active set
+for that EVSE. Alarms are not gated by ``Enabled``.
+
+The device reports grid event faults through the ``alarm`` variable, which is forwarded to the CSMS as a
+**NotifyDERAlarm.req**. Alarms raised before the backend has accepted a capability for any EVSE are buffered and delivered
+once the first capability is accepted; if no capability is ever accepted, the buffered alarms are dropped. Capability and
+alarm updates received before the charge point is initialized are queued and replayed once the charge point is ready.
 
 The configuration parameter **grid_support_heartbeat_s** sets the interval (in seconds) at which the current active
 directive set is re-sent for every registered EVSE. A value of ``0`` disables the heartbeat; the set is then sent only when

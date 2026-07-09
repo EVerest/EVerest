@@ -12,8 +12,25 @@ void GridSupportState::set_capability(int32_t evse_id, const types::grid_support
     capability_by_evse[evse_id] = capability;
 }
 
+std::optional<types::grid_support::DERCapability> GridSupportState::capability_for(int32_t evse_id) const {
+    const auto it = capability_by_evse.find(evse_id);
+    if (it == capability_by_evse.end()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
 void GridSupportState::unregister(int32_t evse_id) {
     capability_by_evse.erase(evse_id);
+    disabled_evses.erase(evse_id);
+}
+
+void GridSupportState::set_enabled(int32_t evse_id, bool enabled) {
+    if (enabled) {
+        disabled_evses.erase(evse_id);
+    } else {
+        disabled_evses.insert(evse_id);
+    }
 }
 
 void GridSupportState::set_active_directives(std::vector<types::grid_support::Directive> directives) {
@@ -26,6 +43,9 @@ types::grid_support::ActiveDirectiveSet GridSupportState::build_active_set(int32
 
     const auto capability_it = capability_by_evse.find(evse_id);
     if (capability_it == capability_by_evse.end()) {
+        return set;
+    }
+    if (disabled_evses.count(evse_id) != 0) {
         return set;
     }
     const auto& supported = capability_it->second.supported_types;

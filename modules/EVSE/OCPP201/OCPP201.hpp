@@ -149,42 +149,6 @@ public:
     void charging_schedules_timer_callback();
     void charging_schedules_timer_start();
     void charging_schedules_timer_stop();
-
-    everest::lib::util::monitor<GridSupportState> grid_support_state;
-    void grid_support_heartbeat_timer_callback();
-    void grid_support_heartbeat_timer_start();
-    void grid_support_heartbeat_timer_stop();
-
-    /// \brief Snapshot each registered EVSE's active directive set under one state handle, then push each to
-    /// the grid_support consumer after releasing the handle. No-op when no consumer is connected.
-    void push_active_directive_sets();
-
-    /// \brief Outcome of enabling DER for one EVSE via apply_der_capability.
-    struct DerEnableResult {
-        bool accepted{false};
-        /// \brief Per-variable rejection details when accepted is false; empty when accepted.
-        std::string rejected_details;
-    };
-
-    /// \brief Enable DER for \p evse_id from \p capability. Shared path for both the live set_capability
-    /// handler and the ready() flush of pre-construction buffered capabilities.
-    ///
-    /// Registers the EVSE before the enabling device-model write (so the block's construction-time emit
-    /// reaches it) and unregisters on rejection. Requires charge_point != nullptr.
-    DerEnableResult apply_der_capability(int32_t evse_id, const types::grid_support::DERCapability& capability);
-
-    /// \brief Flip capabilities live and empty the pre-construction buffered DER capabilities into libocpp
-    /// at ready(). Alarms go live per-EVSE on their first successful enable (see apply_der_capability), so
-    /// this does not touch the alarm buffer. Only meaningful when a grid_support consumer is connected.
-    void flush_pending_grid_support();
-
-    /// \brief Handle a DER capability published by the grid_support provider for one EVSE. Buffers until the
-    /// charge point exists, then enables DER via apply_der_capability.
-    void on_grid_support_capability(const types::grid_support::EVSECapability& evse_capability);
-
-    /// \brief Forward a grid alarm raised by the grid_support provider to the CSMS. Buffers until the charge
-    /// point exists.
-    void on_grid_support_alarm(const types::grid_support::GridAlarm& alarm);
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
@@ -199,6 +163,45 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
+    everest::lib::util::monitor<GridSupportState> grid_support_state;
+    void grid_support_heartbeat_timer_callback();
+    void grid_support_heartbeat_timer_start();
+    void grid_support_heartbeat_timer_stop();
+
+    /// \brief Snapshot each registered EVSE's active directive set under one state handle, then push each to
+    /// the grid_support consumer after releasing the handle. No-op when no consumer is connected.
+    void push_active_directive_sets();
+
+    /// \brief Outcome of applying a DER capability for one EVSE via apply_der_capability.
+    struct DerApplyResult {
+        bool accepted{false};
+        /// \brief Per-variable rejection details when accepted is false; empty when accepted.
+        std::string rejected_details;
+    };
+
+    /// \brief Apply the DER capability config for \p evse_id from \p capability. Shared path for both the
+    /// live set_capability handler and the ready() flush of pre-construction buffered capabilities.
+    ///
+    /// Registers the EVSE before the device-model write (so a republish emit reaches it). On rejection: if
+    /// the EVSE already had an accepted capability, rolls back to it (restoring its config variables,
+    /// leaving Enabled untouched); otherwise unregisters the EVSE.
+    /// Requires charge_point != nullptr.
+    DerApplyResult apply_der_capability(int32_t evse_id, const types::grid_support::DERCapability& capability);
+
+    /// \brief Flip capabilities live and empty the pre-construction buffered DER capabilities into libocpp
+    /// at ready(). Alarms go live per-EVSE on their first successfully applied capability (see
+    /// apply_der_capability), so this does not touch the alarm buffer. Only meaningful when a grid_support
+    /// consumer is connected.
+    void flush_pending_grid_support();
+
+    /// \brief Handle a DER capability published by the grid_support provider for one EVSE. Buffers until the
+    /// charge point exists, then applies it via apply_der_capability.
+    void on_grid_support_capability(const types::grid_support::EVSECapability& evse_capability);
+
+    /// \brief Forward a grid alarm raised by the grid_support provider to the CSMS. Buffers until the charge
+    /// point exists.
+    void on_grid_support_alarm(const types::grid_support::GridAlarm& alarm);
+
     std::shared_ptr<device_model::EverestDeviceModelStorage> everest_device_model_storage;
     std::unique_ptr<TransactionHandler> transaction_handler;
     Everest::SteadyTimer charging_schedules_timer;

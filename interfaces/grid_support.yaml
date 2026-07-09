@@ -33,9 +33,6 @@ vars:
     description: >-
       Grid event alarm raised by the device. alarm_ended=false marks the
       condition turning on, alarm_ended=true marks it clearing/turning off.
-      Forwarded upstream by the protocol backend. Alarms published before the
-      backend has accepted a capability for any EVSE are buffered and delivered
-      once the first capability is accepted; if no capability is ever accepted,
-      buffered alarms are never delivered.
+      Forwarded upstream by the protocol backend.
     type: object
     $ref: /grid_support#/GridAlarm

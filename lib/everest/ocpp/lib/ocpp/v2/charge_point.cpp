@@ -596,8 +596,8 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
                const Variable& variable, const VariableCharacteristics& /*characteristics*/,
                const VariableAttribute& /*attribute*/, const std::string& /*value_previous*/,
                const std::string& value_current) {
-            if ((component.name == "DCDERCtrlr" || component.name == "ACDERCtrlr") && variable.name == "Available" &&
-                value_current == "true") {
+            if ((component.name == "DCDERCtrlr" || component.name == "ACDERCtrlr") &&
+                (variable.name == "Enabled" || variable.name == "Available") && value_current == "true") {
                 this->build_der_control_if_enabled();
             }
         });
@@ -718,17 +718,30 @@ void ChargePoint::build_der_control_if_enabled() {
         return;
     }
 
+    // A DER component is active if Available==true and Enabled==true. A missing variable means disabled:
+    // static configs must define Enabled (typically "true") for the block to build.
     const auto number_of_evses = static_cast<std::int32_t>(this->evse_manager->get_number_of_evses());
     bool der_available = false;
     for (std::int32_t evse = 1; evse <= number_of_evses; evse++) {
-        if (this->device_model
+        const bool dc_active =
+            this->device_model
                 ->get_optional_value<bool>(
                     DERComponentVariables::get_dc_component_variable(evse, DERComponentVariables::Available))
-                .value_or(false) ||
+                .value_or(false) &&
+            this->device_model
+                ->get_optional_value<bool>(
+                    DERComponentVariables::get_dc_component_variable(evse, DERComponentVariables::Enabled))
+                .value_or(false);
+        const bool ac_active =
             this->device_model
                 ->get_optional_value<bool>(
                     DERComponentVariables::get_ac_component_variable(evse, DERComponentVariables::Available))
-                .value_or(false)) {
+                .value_or(false) &&
+            this->device_model
+                ->get_optional_value<bool>(
+                    DERComponentVariables::get_ac_component_variable(evse, DERComponentVariables::Enabled))
+                .value_or(false);
+        if (dc_active || ac_active) {
             der_available = true;
             break;
         }
