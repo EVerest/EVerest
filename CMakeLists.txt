@@ -106,8 +106,10 @@ option(BUILD_DEV_TESTS "Build dev tests" OFF)
 if(NOT EVEREST_LIBS_ONLY)
     ev_setup_cmake_variables_python_wheel()
     option(${PROJECT_NAME}_INSTALL_EV_CLI_IN_PYTHON_VENV "Install ev-cli in python venv instead of using system" ON)
-    set(${PROJECT_NAME}_PYTHON_VENV_PATH "${CMAKE_BINARY_DIR}/venv" CACHE PATH "Path to python venv")
+endif()
 
+if(NOT EVEREST_LIBS_ONLY OR NOT DISABLE_EDM)
+    set(${PROJECT_NAME}_PYTHON_VENV_PATH "${CMAKE_BINARY_DIR}/venv" CACHE PATH "Path to python venv")
     ev_setup_python_executable(
         USE_PYTHON_VENV ${${PROJECT_NAME}_USE_PYTHON_VENV}
         PYTHON_VENV_PATH ${${PROJECT_NAME}_PYTHON_VENV_PATH}
