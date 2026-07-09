@@ -144,7 +144,8 @@ private:
     using EventQueue =
         std::map<std::int32_t,
                  std::queue<std::variant<std::monostate, types::evse_manager::SessionEvent, EventInfo, powermeter_t,
-                                         types::system::FirmwareUpdateStatus, types::system::LogStatus>>>;
+                                         types::system::FirmwareUpdateStatus, types::system::LogStatus,
+                                         types::reservation::ReservationUpdateStatus>>>;
 
     // member variables that don't require a mutex
     GenericChargePointInterface& mv_charge_point;
@@ -295,6 +296,7 @@ protected:
     void visit_impl(std::int32_t evse_id, const powermeter_t& meter);
     void visit_impl(std::int32_t evse_id, const types::system::FirmwareUpdateStatus& fw_update_status);
     void visit_impl(std::int32_t evse_id, const types::system::LogStatus& log_status);
+    void visit_impl(std::int32_t evse_id, const types::reservation::ReservationUpdateStatus& status);
 
     // ------------------------------------------------------------------------
     // GenericChargePointCallbacks

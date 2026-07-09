@@ -622,6 +622,8 @@ void GenericOcpp::ready_event_queue() {
                             visit_impl(evse_id, arg);
                         } else if constexpr (std::is_same_v<types::system::LogStatus, TYPE>) {
                             visit_impl(evse_id, arg);
+                        } else if constexpr (std::is_same_v<types::reservation::ReservationUpdateStatus, TYPE>) {
+                            visit_impl(evse_id, arg);
                         } else if constexpr (std::is_same_v<std::monostate, TYPE>) {
                         } else {
                             // all items should have handlers
@@ -748,6 +750,18 @@ void GenericOcpp::visit_impl(std::int32_t evse_id, const types::system::LogStatu
     EVLOG_info << "Processing queued log status";
     mv_charge_point.on_log_status_notification(to_ocpp_upload_logs_status_enum(log_status.log_status),
                                                log_status.request_id);
+}
+
+void GenericOcpp::visit_impl(std::int32_t evse_id, const types::reservation::ReservationUpdateStatus& status) {
+    using namespace module::conversions;
+    EVLOG_info << "Processing queued reservation status update for reservation " << status.reservation_id;
+    try {
+        mv_charge_point.on_reservation_status(status.reservation_id,
+                                              to_ocpp_reservation_update_status_enum(status.reservation_status));
+    } catch (const std::out_of_range& e) {
+        EVLOG_error << "Failed to update status of reservation " << status.reservation_id
+                    << "; the CSMS may still consider it active: " << e.what();
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -1175,19 +1189,13 @@ void GenericOcpp::cb_provide_token(const IdToken& id_token) {
 }
 
 void GenericOcpp::cb_reservation_update(types::reservation::ReservationUpdateStatus status) {
-    using namespace module::conversions;
-
     if (status.reservation_status == types::reservation::Reservation_status::Expired ||
         status.reservation_status == types::reservation::Reservation_status::Removed) {
         EVLOG_debug << "Received reservation status update for reservation " << status.reservation_id << ": "
                     << (status.reservation_status == types::reservation::Reservation_status::Expired ? "Expired"
                                                                                                      : "Removed");
-        try {
-            mv_charge_point.on_reservation_status(status.reservation_id,
-                                                  to_ocpp_reservation_update_status_enum(status.reservation_status));
-        } catch (const std::out_of_range& e) {
-            EVLOG_error << "Failed to update status of reservation " << status.reservation_id
-                        << "; the CSMS may still consider it active: " << e.what();
+        if (!enqueue_if_not_started(0, status)) {
+            visit_impl(0, status);
         }
     }
 }
