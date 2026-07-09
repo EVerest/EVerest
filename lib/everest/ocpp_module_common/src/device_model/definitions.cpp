@@ -156,6 +156,13 @@ const VariableCharacteristics Available = [] {
     return var;
 }();
 
+const VariableCharacteristics Enabled = [] {
+    VariableCharacteristics var;
+    var.dataType = DataEnum::boolean;
+    var.supportsMonitoring = false;
+    return var;
+}();
+
 const VariableCharacteristics ModesSupported = [] {
     VariableCharacteristics var;
     var.dataType = DataEnum::MemberList;

@@ -451,6 +451,7 @@ void clear_slot_in_device_model(DeviceModelInterface& dm, int32_t slot);
 
 namespace DERComponentVariables {
 extern const Variable Available;
+extern const Variable Enabled;
 extern const Variable ModesSupported;
 ComponentVariable get_dc_component_variable(const std::int32_t evse_id, const Variable& variable);
 ComponentVariable get_ac_component_variable(const std::int32_t evse_id, const Variable& variable);

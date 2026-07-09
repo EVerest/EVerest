@@ -54,8 +54,11 @@ protected:
     std::atomic<ocpp::OcppProtocolVersion> ocpp_version;
     FunctionalBlockContext functional_block_context;
 
-    DERControlTest() :
-        device_model_test_helper(),
+    DERControlTest() : DERControlTest(true) {
+    }
+
+    explicit DERControlTest(bool seed_der_enabled) :
+        device_model_test_helper(DEVICE_MODEL_DB_IN_MEMORY_PATH, MIGRATION_FILES_PATH, CONFIG_PATH, seed_der_enabled),
         mock_dispatcher(),
         device_model(device_model_test_helper.get_device_model()),
         connectivity_manager(),
@@ -74,6 +77,12 @@ protected:
         ON_CALL(database_handler_mock, begin_transaction()).WillByDefault(Invoke([] {
             return std::make_unique<::testing::NiceMock<TransactionMock>>();
         }));
+
+        // DC admission gates on Available; the test config ships it false.
+        const auto dc_available_cv =
+            DERComponentVariables::get_dc_component_variable(1, DERComponentVariables::Available);
+        device_model->set_value(dc_available_cv.component, dc_available_cv.variable.value(), AttributeEnum::Actual,
+                                "true", "TEST", true);
     }
 
     // DCDERCtrlr values for EVSE 1 come from the test-only DER config at
@@ -150,6 +159,22 @@ protected:
         ASSERT_EQ(this->device_model->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "true",
                                                 "TEST", true),
                   SetVariableStatusEnum::Accepted);
+    }
+
+    SetDERControlRequest make_hf_must_trip_request(const std::string& control_id) {
+        SetDERControlRequest req;
+        req.isDefault = true;
+        req.controlId = control_id;
+        req.controlType = DERControlEnum::HFMustTrip; // Not in the DC ModesSupported
+        DERCurve curve;
+        curve.priority = 0;
+        curve.yUnit = DERUnitEnum::Not_Applicable;
+        DERCurvePoints p1;
+        p1.x = 62.0f;
+        p1.y = 1.0f;
+        curve.curveData = {p1};
+        req.curve = curve;
+        return req;
     }
 };
 
@@ -247,6 +272,156 @@ TEST_F(DERControlTest, SetDERControl_NewDefault_Accepted) {
     EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
         auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<SetDERControlResponse>();
         EXPECT_EQ(response.status, DERControlStatusEnum::Accepted);
+    }));
+
+    der_control.handle_message(msg);
+}
+
+// --- R04.FR.01: Admission skips DER EVSEs whose Enabled variable is "false" ---
+
+// Fixture alias for tests that flip the seeded Enabled variable on the DCDERCtrlr and ACDERCtrlr EVSE 1
+// components. The base fixture seeds Enabled "true" by default; a missing Enabled variable means disabled.
+class DERControlEnabledTest : public DERControlTest {
+protected:
+    void set_dc_der_enabled(int32_t evse_id, const std::string& value) {
+        const auto cv = DERComponentVariables::get_dc_component_variable(evse_id, DERComponentVariables::Enabled);
+        device_model->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, value, "test", true);
+    }
+
+    void set_ac_der_enabled(int32_t evse_id, const std::string& value) {
+        const auto cv = DERComponentVariables::get_ac_component_variable(evse_id, DERComponentVariables::Enabled);
+        device_model->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, value, "test", true);
+    }
+};
+
+// Fixture without the seeded Enabled variable: strict opt-in, absent Enabled admits nothing.
+class DERControlAbsentEnabledTest : public DERControlTest {
+protected:
+    DERControlAbsentEnabledTest() : DERControlTest(false) {
+    }
+};
+
+TEST_F(DERControlEnabledTest, SetDERControl_EvseDisabled_ReturnsNotSupported) {
+    set_dc_der_enabled(1, "false");
+
+    DERControl der_control(functional_block_context);
+    auto req = make_freq_droop_request("ctrl-disabled", true, 0);
+    auto msg = make_set_der_control_msg(req);
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<SetDERControlResponse>();
+        EXPECT_EQ(response.status, DERControlStatusEnum::NotSupported);
+    }));
+
+    der_control.handle_message(msg);
+}
+
+TEST_F(DERControlEnabledTest, SetDERControl_EvseReEnabled_Accepted) {
+    set_dc_der_enabled(1, "true");
+
+    DERControl der_control(functional_block_context);
+    auto req = make_freq_droop_request("ctrl-reenabled", true, 0);
+    auto msg = make_set_der_control_msg(req);
+
+    EXPECT_CALL(database_handler_mock,
+                get_der_controls_matching_criteria(std::optional<bool>(true), std::optional<std::string>("FreqDroop"),
+                                                   std::optional<std::string>(std::nullopt)))
+        .WillOnce(Return(std::vector<std::string>{}));
+    EXPECT_CALL(database_handler_mock,
+                insert_or_update_der_control("ctrl-reenabled", true, "FreqDroop", false, 0, _, _, _))
+        .Times(1);
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<SetDERControlResponse>();
+        EXPECT_EQ(response.status, DERControlStatusEnum::Accepted);
+    }));
+
+    der_control.handle_message(msg);
+}
+
+// The AC accept-all admission is gated per EVSE on Enabled: an available but disabled ACDERCtrlr must not
+// accept a control type no enabled component supports.
+TEST_F(DERControlEnabledTest, SetDERControl_AcAvailableButDisabled_ReturnsNotSupported) {
+    enable_ac_der();
+    set_ac_der_enabled(1, "false");
+
+    DERControl der_control(functional_block_context);
+    auto msg = make_set_der_control_msg(make_hf_must_trip_request("ctrl-ac-disabled"));
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<SetDERControlResponse>();
+        EXPECT_EQ(response.status, DERControlStatusEnum::NotSupported);
+    }));
+
+    der_control.handle_message(msg);
+}
+
+// With the ACDERCtrlr available and explicitly enabled, the accept-all admission fires for a control type
+// absent from the DC ModesSupported.
+TEST_F(DERControlEnabledTest, SetDERControl_AcAvailableAndEnabled_AcceptsUnlistedType) {
+    enable_ac_der();
+    set_ac_der_enabled(1, "true");
+
+    DERControl der_control(functional_block_context);
+    auto msg = make_set_der_control_msg(make_hf_must_trip_request("ctrl-ac-enabled"));
+
+    EXPECT_CALL(database_handler_mock,
+                get_der_controls_matching_criteria(std::optional<bool>(true), std::optional<std::string>("HFMustTrip"),
+                                                   std::optional<std::string>(std::nullopt)))
+        .WillOnce(Return(std::vector<std::string>{}));
+    EXPECT_CALL(database_handler_mock,
+                insert_or_update_der_control("ctrl-ac-enabled", true, "HFMustTrip", false, 0, _, _, _))
+        .Times(1);
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<SetDERControlResponse>();
+        EXPECT_EQ(response.status, DERControlStatusEnum::Accepted);
+    }));
+
+    der_control.handle_message(msg);
+}
+
+// DC admission requires Available: ModesSupported and Enabled alone do not admit.
+TEST_F(DERControlEnabledTest, SetDERControl_DcUnavailable_ReturnsNotSupported) {
+    const auto cv = DERComponentVariables::get_dc_component_variable(1, DERComponentVariables::Available);
+    ASSERT_EQ(device_model->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "false", "TEST", true),
+              SetVariableStatusEnum::Accepted);
+
+    DERControl der_control(functional_block_context);
+    auto req = make_freq_droop_request("ctrl-dc-unavailable", true, 0);
+    auto msg = make_set_der_control_msg(req);
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<SetDERControlResponse>();
+        EXPECT_EQ(response.status, DERControlStatusEnum::NotSupported);
+    }));
+
+    der_control.handle_message(msg);
+}
+
+TEST_F(DERControlAbsentEnabledTest, SetDERControl_DcNoEnabledVariable_ReturnsNotSupported) {
+    DERControl der_control(functional_block_context);
+    auto req = make_freq_droop_request("ctrl-dc-no-enabled", true, 0);
+    auto msg = make_set_der_control_msg(req);
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<SetDERControlResponse>();
+        EXPECT_EQ(response.status, DERControlStatusEnum::NotSupported);
+    }));
+
+    der_control.handle_message(msg);
+}
+
+// The AC accept-all path also requires an explicit Enabled "true".
+TEST_F(DERControlAbsentEnabledTest, SetDERControl_AcNoEnabledVariable_ReturnsNotSupported) {
+    enable_ac_der();
+
+    DERControl der_control(functional_block_context);
+    auto msg = make_set_der_control_msg(make_hf_must_trip_request("ctrl-ac-no-enabled"));
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<SetDERControlResponse>();
+        EXPECT_EQ(response.status, DERControlStatusEnum::NotSupported);
     }));
 
     der_control.handle_message(msg);

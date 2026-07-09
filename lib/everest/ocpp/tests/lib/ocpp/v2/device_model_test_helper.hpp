@@ -32,9 +32,13 @@ namespace v2 {
 
 class DeviceModelTestHelper {
 public:
+    /// \param seed_der_ctrlr_enabled  When true, seed a DCDERCtrlr EVSE 1 `Enabled` variable (ReadWrite boolean,
+    ///                                initial "true"). The shipped DER config carries no `Enabled` variable, so tests
+    ///                                that need to flip it must opt in here; leaving it false keeps the absent-variable
+    ///                                path intact for existing tests.
     explicit DeviceModelTestHelper(const std::string& database_path = DEVICE_MODEL_DB_IN_MEMORY_PATH,
                                    const std::string& migration_files_path = MIGRATION_FILES_PATH,
-                                   const std::string& config_path = CONFIG_PATH);
+                                   const std::string& config_path = CONFIG_PATH, bool seed_der_ctrlr_enabled = false);
     DeviceModel* get_device_model();
 
     ///
@@ -102,6 +106,7 @@ private:
     const std::string& database_path;
     const std::string& migration_files_path;
     const std::string& config_path;
+    bool seed_der_ctrlr_enabled;
 
     // Connection as member so the database keeps open and is not destroyed (because this is an in memory
     // database).

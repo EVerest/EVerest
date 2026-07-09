@@ -273,13 +273,17 @@ std::vector<DeviceModelVariable> build_connected_ev_variables() {
     return connected_ev_variables;
 }
 
-// DC DER controller variables, provisioned disabled (Available=false). Every variable
-// the config/available builders may write on the DC path must be defined here, else the write targets an
-// unknown variable and is rejected.
+// DC DER controller variables: Available marks static presence (provisioned "true", ReadOnly) and Enabled
+// is the CSMS runtime control (provisioned "true", ReadWrite). Every variable the config/enable builders may
+// write
+// on the DC path must be defined here, else the write targets an unknown variable and is rejected.
 std::vector<DeviceModelVariable> build_dc_der_ctrlr_variables() {
     std::vector<DeviceModelVariable> variables;
     variables.push_back(make_variable(ocpp::v2::DERComponentVariables::Available.name,
-                                      DERDefinitions::Characteristics::Available, "false",
+                                      DERDefinitions::Characteristics::Available, "true",
+                                      ocpp::v2::MutabilityEnum::ReadOnly));
+    variables.push_back(make_variable(ocpp::v2::DERComponentVariables::Enabled.name,
+                                      DERDefinitions::Characteristics::Enabled, "true",
                                       ocpp::v2::MutabilityEnum::ReadWrite));
     variables.push_back(make_variable(ocpp::v2::DERComponentVariables::ModesSupported.name,
                                       DERDefinitions::Characteristics::ModesSupported, ""));
@@ -292,11 +296,14 @@ std::vector<DeviceModelVariable> build_dc_der_ctrlr_variables() {
     return variables;
 }
 
-// AC DER controller variables: only Available and ModesSupported. The nameplate scalars live exclusively
-// on the DC component (matching to_der_ctrlr_config_set_variables).
+// AC DER controller variables: Available (static presence, ReadOnly), Enabled (CSMS runtime control, provisioned
+// "true", ReadWrite) and ModesSupported. The nameplate scalars live exclusively on the DC component
+// (matching to_der_ctrlr_config_set_variables).
 std::vector<DeviceModelVariable> build_ac_der_ctrlr_variables() {
     return {make_variable(ocpp::v2::DERComponentVariables::Available.name, DERDefinitions::Characteristics::Available,
-                          "false", ocpp::v2::MutabilityEnum::ReadWrite),
+                          "true", ocpp::v2::MutabilityEnum::ReadOnly),
+            make_variable(ocpp::v2::DERComponentVariables::Enabled.name, DERDefinitions::Characteristics::Enabled,
+                          "true", ocpp::v2::MutabilityEnum::ReadWrite),
             make_variable(ocpp::v2::DERComponentVariables::ModesSupported.name,
                           DERDefinitions::Characteristics::ModesSupported, "")};
 }
@@ -415,14 +422,6 @@ std::optional<std::pair<ocpp::v2::ComponentKey, std::vector<DeviceModelVariable>
     return std::nullopt;
 }
 
-ocpp::v2::SetVariableData to_der_ctrlr_available_set_variable(const int32_t evse_id,
-                                                              const types::grid_support::DERCapability& capability) {
-    const auto get_component_variable = capability.dc.has_value()
-                                            ? &ocpp::v2::DERComponentVariables::get_dc_component_variable
-                                            : &ocpp::v2::DERComponentVariables::get_ac_component_variable;
-    return make_set_variable_data(get_component_variable(evse_id, ocpp::v2::DERComponentVariables::Available), "true");
-}
-
 std::vector<ocpp::v2::SetVariableData>
 to_der_ctrlr_config_set_variables(const int32_t evse_id, const types::grid_support::DERCapability& capability) {
     std::vector<ocpp::v2::SetVariableData> result;
@@ -509,7 +508,7 @@ to_der_ctrlr_config_set_variables(const int32_t evse_id, const types::grid_suppo
 }
 
 void disable_der_ctrlr(ocpp::v2::DeviceModelStorageInterface& storage, const int32_t evse_id) {
-    const auto force_unavailable = [&](const ocpp::v2::ComponentVariable& component_variable) {
+    const auto force_false = [&](const ocpp::v2::ComponentVariable& component_variable) {
         if (not component_variable.variable.has_value()) {
             return;
         }
@@ -522,17 +521,22 @@ void disable_der_ctrlr(ocpp::v2::DeviceModelStorageInterface& storage, const int
         if (not attribute.value().value.has_value()) {
             return;
         }
-        // Only clear a persisted Available="true"; leave any other value untouched.
+        // Only clear a persisted Available/Enabled="true"; leave any other value untouched (preserves the
+        // source marker of a CSMS-written Enabled="false" across an unwire/rewire cycle).
         if (attribute.value().value.value().get() != "true") {
             return;
         }
         storage.set_variable_attribute_value(component_variable.component, variable, ocpp::v2::AttributeEnum::Actual,
                                              "false", VARIABLE_SOURCE_EVEREST);
     };
-    force_unavailable(ocpp::v2::DERComponentVariables::get_dc_component_variable(
-        evse_id, ocpp::v2::DERComponentVariables::Available));
-    force_unavailable(ocpp::v2::DERComponentVariables::get_ac_component_variable(
-        evse_id, ocpp::v2::DERComponentVariables::Available));
+    force_false(ocpp::v2::DERComponentVariables::get_dc_component_variable(evse_id,
+                                                                           ocpp::v2::DERComponentVariables::Available));
+    force_false(ocpp::v2::DERComponentVariables::get_ac_component_variable(evse_id,
+                                                                           ocpp::v2::DERComponentVariables::Available));
+    force_false(
+        ocpp::v2::DERComponentVariables::get_dc_component_variable(evse_id, ocpp::v2::DERComponentVariables::Enabled));
+    force_false(
+        ocpp::v2::DERComponentVariables::get_ac_component_variable(evse_id, ocpp::v2::DERComponentVariables::Enabled));
 }
 
 EverestDeviceModelStorage::EverestDeviceModelStorage(

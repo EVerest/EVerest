@@ -47,6 +47,7 @@ extern const VariableCharacteristics SupportedOperationModes;
 namespace DERDefinitions {
 namespace Characteristics {
 extern const VariableCharacteristics Available;
+extern const VariableCharacteristics Enabled;
 extern const VariableCharacteristics ModesSupported;
 extern const VariableCharacteristics Decimal;
 extern const VariableCharacteristics InverterString;
