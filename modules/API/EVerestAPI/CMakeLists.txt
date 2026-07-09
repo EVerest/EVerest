@@ -1,6 +1,7 @@
 ev_add_module(auth_consumer_API)
 ev_add_module(auth_token_provider_API)
 ev_add_module(auth_token_validator_API)
+ev_add_module(charger_information_consumer_API)
 ev_add_module(dc_external_derate_consumer_API)
 ev_add_module(display_message_API)
 ev_add_module(error_history_consumer_API)
