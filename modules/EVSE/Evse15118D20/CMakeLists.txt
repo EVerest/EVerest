@@ -10,6 +10,8 @@ ev_setup_cpp_module()
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
 target_sources(${MODULE_NAME}
     PRIVATE
+        charger/der_setup.cpp
+        charger/grid_event.cpp
         charger/session_logger.cpp
         charger/utils.cpp
 )
@@ -24,8 +26,12 @@ target_sources(${MODULE_NAME}
     PRIVATE
         "charger/ISO15118_chargerImpl.cpp"
         "extensions/iso15118_extensionsImpl.cpp"
+        "grid_support/grid_supportImpl.cpp"
 )
 
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1
 # insert other things like install cmds etc here
+if(EVEREST_CORE_BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1

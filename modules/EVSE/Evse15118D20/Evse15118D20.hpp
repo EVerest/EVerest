@@ -12,6 +12,7 @@
 
 // headers for provided interface implementations
 #include <generated/interfaces/ISO15118_charger/Implementation.hpp>
+#include <generated/interfaces/grid_support/Implementation.hpp>
 #include <generated/interfaces/iso15118_extensions/Implementation.hpp>
 
 // headers for required interface implementations
@@ -20,6 +21,11 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
+#include <optional>
+
+#include <everest/util/async/monitor.hpp>
+
+#include <generated/types/grid_support.hpp>
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -46,23 +52,27 @@ public:
     Evse15118D20() = delete;
     Evse15118D20(const ModuleInfo& info, std::unique_ptr<ISO15118_chargerImplBase> p_charger,
                  std::unique_ptr<iso15118_extensionsImplBase> p_extensions,
-                 std::unique_ptr<evse_securityIntf> r_security,
+                 std::unique_ptr<grid_supportImplBase> p_grid_support, std::unique_ptr<evse_securityIntf> r_security,
                  std::vector<std::unique_ptr<ISO15118_vasIntf>> r_iso15118_vas, Conf& config) :
         ModuleBase(info),
         p_charger(std::move(p_charger)),
         p_extensions(std::move(p_extensions)),
+        p_grid_support(std::move(p_grid_support)),
         r_security(std::move(r_security)),
         r_iso15118_vas(std::move(r_iso15118_vas)),
         config(config){};
 
     const std::unique_ptr<ISO15118_chargerImplBase> p_charger;
     const std::unique_ptr<iso15118_extensionsImplBase> p_extensions;
+    const std::unique_ptr<grid_supportImplBase> p_grid_support;
     const std::unique_ptr<evse_securityIntf> r_security;
     const std::vector<std::unique_ptr<ISO15118_vasIntf>> r_iso15118_vas;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
+    void set_active_der_directives(const types::grid_support::ActiveDirectiveSet& directives);
+    std::optional<types::grid_support::ActiveDirectiveSet> get_active_der_directives() const;
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
@@ -77,6 +87,7 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
+    mutable everest::lib::util::monitor<std::optional<types::grid_support::ActiveDirectiveSet>> active_der_directives;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

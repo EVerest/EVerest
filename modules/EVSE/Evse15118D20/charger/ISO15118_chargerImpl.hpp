@@ -16,6 +16,7 @@
 #include <bitset>
 #include <mutex>
 
+#include "grid_event.hpp"
 #include "utils.hpp"
 
 #include <iso15118/d20/config.hpp>
@@ -100,6 +101,14 @@ private:
 
     void update_supported_vas_services();
     std::optional<size_t> get_vas_provider_index(uint16_t service_id);
+
+    // EV grid-event fault detector; outlives sessions (reset at SETUP_FINISHED), touched only by the charger thread.
+    GridEventEdgeDetector grid_event_detector;
+    void publish_grid_event(uint8_t condition);
+
+    // EV-negotiated DER control functions from ServiceSelection; read at ChargeParameterDiscovery to
+    // surface ev_supported_dercontrol. Reset at SETUP_FINISHED; touched only by the charger thread.
+    std::bitset<12> ev_selected_der_control_functions;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

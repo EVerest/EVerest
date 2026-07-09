@@ -88,6 +88,12 @@ provides:
     description: >-
       This interface is used to share data between ISO15118 and OCPP modules
       to support the requirements of the OCPP protocol
+  grid_support:
+    interface: grid_support
+    description: >-
+      Raises grid alarms from EV grid-event conditions and accepts active DER
+      directives. Directive application to the EV is not yet wired; DER
+      capability is not published by this module.
 requires:
   security:
     interface: evse_security

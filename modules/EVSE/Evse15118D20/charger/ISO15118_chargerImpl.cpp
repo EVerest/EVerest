@@ -4,8 +4,12 @@
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
+#include "der_setup.hpp"
+#include "grid_event.hpp"
 #include "session_logger.hpp"
 #include "utils.hpp"
+
+#include <utils/date.hpp>
 
 #include <iso15118/io/logging.hpp>
 #include <iso15118/session/logger.hpp>
@@ -239,16 +243,12 @@ void ISO15118_chargerImpl::ready() {
 
     setup_config.selecting_sap_based_on_energy_service = mod->config.selecting_sap_based_on_energy_service;
 
-    // TODO(ml): hardcoded safe DER limits; populate real limits from the grid_support interface once available.
-    // der_setup_config is intentionally left unset: libiso15118 defaults it to {GridFollowing, GridConnected},
-    // which is exactly the minimal IEC setup we want.
+    // IEC DER limits pass through from ac_limits. Applying DER control directives to the EV is handled
+    // separately by the DER control-function relay.
     {
         const auto& services = setup_config.supported_energy_services;
         if (std::find(services.begin(), services.end(), dt::ServiceCategory::AC_DER_IEC) != services.end()) {
-            auto& der_limits = setup_config.der_limits.emplace();
-            der_limits.nominal_charge_power = dt::from_float(11000);
-            der_limits.nominal_discharge_power = dt::from_float(11000);
-            der_limits.max_discharge_power = dt::from_float(11000);
+            setup_config.der_limits = build_iec_der_transfer_limits(setup_config.ac_limits);
         }
     }
 
@@ -306,6 +306,40 @@ std::optional<size_t> ISO15118_chargerImpl::get_vas_provider_index(uint16_t serv
     return std::nullopt; // Service ID not found in any provider's list
 }
 
+void ISO15118_chargerImpl::publish_grid_event(uint8_t condition) {
+    const auto edge = grid_event_detector.peek(condition);
+
+    if (edge.transition == Transition::None) {
+        grid_event_detector.commit(condition);
+        return;
+    }
+
+    // A grid fault must never throw out of the V2G session thread; commit only after publish succeeds.
+    try {
+        types::grid_support::GridAlarm alarm{};
+        alarm.fault = edge.fault.value();
+        alarm.alarm_ended = (edge.transition == Transition::Falling);
+        alarm.timestamp = Everest::Date::to_rfc3339(date::utc_clock::now());
+        // TODO: set alarm.directive_type from a grid_event_condition to directive_type mapping once defined.
+
+        if (edge.transition == Transition::Rising) {
+            EVLOG_warning << "EV reported grid-event fault (condition " << static_cast<unsigned>(condition) << ")";
+        } else {
+            EVLOG_info << "EV grid-event fault cleared (condition " << static_cast<unsigned>(condition) << ")";
+        }
+
+        mod->p_grid_support->publish_alarm(alarm);
+
+        // Publish succeeded: advance the fault state.
+        grid_event_detector.commit(condition);
+    } catch (const std::exception& e) {
+        const auto direction = (edge.transition == Transition::Rising) ? "rising" : "falling";
+        EVLOG_error << "grid-event alarm publish failed (condition " << static_cast<unsigned>(condition) << ", "
+                    << direction << "): " << e.what();
+        // Not committed: a persisting condition is re-peeked and retried next iteration.
+    }
+}
+
 iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() {
 
     using ScheduleControlModeDC = dt::Scheduled_DC_CLReqControlMode;
@@ -326,77 +360,83 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
         publish_dc_ev_target_voltage_current({target_voltage, 0});
     };
 
-    callbacks.notify_ev_charging_needs =
-        [this](const dt::ServiceCategory& service_category, const std::optional<dt::AcConnector>& ac_connector,
-               const dt::ControlMode& control_mode, const dt::MobilityNeedsMode& mobility_needs_mode,
-               const feedback::EvseTransferLimits& evse_limits, const feedback::EvTransferLimits& ev_limits,
-               const feedback::EvSEControlMode& ev_control_mode,
-               const std::vector<dt::ServiceCategory>& ev_energy_services) {
-            // Everest types sent to OCPP
+    callbacks.notify_ev_charging_needs = [this](const dt::ServiceCategory& service_category,
+                                                const std::optional<dt::AcConnector>& ac_connector,
+                                                const dt::ControlMode& control_mode,
+                                                const dt::MobilityNeedsMode& mobility_needs_mode,
+                                                const feedback::EvseTransferLimits& evse_limits,
+                                                const feedback::EvTransferLimits& ev_limits,
+                                                const feedback::EvSEControlMode& ev_control_mode,
+                                                const std::vector<dt::ServiceCategory>& ev_energy_services) {
+        types::iso15118::ChargingNeeds charging_needs;
 
-            types::iso15118::ChargingNeeds charging_needs;
-
-            charging_needs.requested_energy_transfer = get_energy_transfer_mode(service_category, ac_connector);
-            if (!ev_energy_services.empty()) {
-                charging_needs.available_energy_transfer = std::vector<types::iso15118::EnergyTransferMode>{};
-                charging_needs.available_energy_transfer->reserve(ev_energy_services.size());
-                for (const auto& energy_transfer : ev_energy_services) {
-                    charging_needs.available_energy_transfer->emplace_back(
-                        get_energy_transfer_mode(energy_transfer, std::nullopt));
-                }
+        charging_needs.requested_energy_transfer = get_energy_transfer_mode(service_category, ac_connector);
+        if (!ev_energy_services.empty()) {
+            charging_needs.available_energy_transfer = std::vector<types::iso15118::EnergyTransferMode>{};
+            charging_needs.available_energy_transfer->reserve(ev_energy_services.size());
+            for (const auto& energy_transfer : ev_energy_services) {
+                charging_needs.available_energy_transfer->emplace_back(
+                    get_energy_transfer_mode(energy_transfer, std::nullopt));
             }
+        }
 
-            if (control_mode == dt::ControlMode::Scheduled) {
-                charging_needs.control_mode = types::iso15118::ControlMode::ScheduledControl;
-            } else if (control_mode == dt::ControlMode::Dynamic) {
-                charging_needs.control_mode = types::iso15118::ControlMode::DynamicControl;
-            } else {
-                EVLOG_error << "Invalid value received for control mode! Not sending 'ChargingNeeds'.";
-                return;
+        if (control_mode == dt::ControlMode::Scheduled) {
+            charging_needs.control_mode = types::iso15118::ControlMode::ScheduledControl;
+        } else if (control_mode == dt::ControlMode::Dynamic) {
+            charging_needs.control_mode = types::iso15118::ControlMode::DynamicControl;
+        } else {
+            EVLOG_error << "Invalid value received for control mode! Not sending 'ChargingNeeds'.";
+            return;
+        }
+
+        if (mobility_needs_mode == dt::MobilityNeedsMode::ProvidedByEvcc) {
+            charging_needs.mobility_needs_mode = types::iso15118::MobilityNeedsMode::EVCC;
+        } else if (mobility_needs_mode == dt::MobilityNeedsMode::ProvidedBySecc) {
+            charging_needs.mobility_needs_mode = types::iso15118::MobilityNeedsMode::EVCC_SECC;
+        } else {
+            EVLOG_error << "Invalid value received for mobility needs mode! Not sending 'ChargingNeeds'.";
+            return;
+        }
+
+        types::iso15118::V2XChargingParameters& v2x_charging_parameters =
+            charging_needs.v2x_charging_parameters.emplace();
+
+        if (const auto* dc_evse_limits = std::get_if<iso15118::d20::DcTransferLimits>(&evse_limits)) {
+            if (const auto* dc_ev_limits = std::get_if<dt::DC_CPDReqEnergyTransferMode>(&ev_limits)) {
+                fill_v2x_charging_parameters(v2x_charging_parameters, *dc_evse_limits, *dc_ev_limits);
+            } else if (const auto* dc_ev_limits = std::get_if<dt::BPT_DC_CPDReqEnergyTransferMode>(&ev_limits)) {
+                fill_v2x_charging_parameters(v2x_charging_parameters, *dc_evse_limits, *dc_ev_limits);
             }
-
-            if (mobility_needs_mode == dt::MobilityNeedsMode::ProvidedByEvcc) {
-                charging_needs.mobility_needs_mode = types::iso15118::MobilityNeedsMode::EVCC;
-            } else if (mobility_needs_mode == dt::MobilityNeedsMode::ProvidedBySecc) {
-                charging_needs.mobility_needs_mode = types::iso15118::MobilityNeedsMode::EVCC_SECC;
-            } else {
-                EVLOG_error << "Invalid value received for mobility needs mode! Not sending 'ChargingNeeds'.";
-                return;
+        } else if (const auto* ac_evse_limits = std::get_if<iso15118::d20::AcTransferLimits>(&evse_limits)) {
+            if (const auto* ac_ev_limits = std::get_if<dt::AC_CPDReqEnergyTransferMode>(&ev_limits)) {
+                fill_v2x_charging_parameters(v2x_charging_parameters, *ac_evse_limits, *ac_ev_limits);
+            } else if (const auto* ac_ev_limits = std::get_if<dt::BPT_AC_CPDReqEnergyTransferMode>(&ev_limits)) {
+                fill_v2x_charging_parameters(v2x_charging_parameters, *ac_evse_limits, *ac_ev_limits);
+            } else if (const auto* der_ac_ev_limits = std::get_if<dt::DER_AC_CPDReqEnergyTransferMode>(&ev_limits)) {
+                // AC_DER_IEC: reuse the AC base-class slice for v2x params; DER limits go to der_charging_parameters.
+                fill_v2x_charging_parameters(v2x_charging_parameters, *ac_evse_limits,
+                                             static_cast<const dt::AC_CPDReqEnergyTransferMode&>(*der_ac_ev_limits));
+                charging_needs.der_charging_parameters = to_der_charging_parameters(*der_ac_ev_limits);
+                charging_needs.der_charging_parameters->ev_supported_dercontrol =
+                    map_ev_supported_der_controls(ev_selected_der_control_functions);
             }
+        } else {
+            EVLOG_error << "Invalid type received for EVSE limits! Not sending 'ChargingNeeds'.";
+            return;
+        }
 
-            // For dash20 the data we will publish will be the v2xChargingParameters
-            types::iso15118::V2XChargingParameters& v2x_charging_parameters =
-                charging_needs.v2x_charging_parameters.emplace();
+        if (const auto* ev_se_control_mode = std::get_if<dt::Scheduled_SEReqControlMode>(&ev_control_mode)) {
+            fill_v2x_charging_parameters(v2x_charging_parameters, *ev_se_control_mode);
+        } else if (const auto* ev_se_control_mode = std::get_if<dt::Dynamic_SEReqControlMode>(&ev_control_mode)) {
+            fill_v2x_charging_parameters(v2x_charging_parameters, *ev_se_control_mode);
+        } else {
+            EVLOG_error << "Invalid type received for EV Control Mode! Not sending 'ChargingNeeds'.";
+            return;
+        }
 
-            if (const auto* dc_evse_limits = std::get_if<iso15118::d20::DcTransferLimits>(&evse_limits)) {
-                if (const auto* dc_ev_limits = std::get_if<dt::DC_CPDReqEnergyTransferMode>(&ev_limits)) {
-                    fill_v2x_charging_parameters(v2x_charging_parameters, *dc_evse_limits, *dc_ev_limits);
-                } else if (const auto* dc_ev_limits = std::get_if<dt::BPT_DC_CPDReqEnergyTransferMode>(&ev_limits)) {
-                    fill_v2x_charging_parameters(v2x_charging_parameters, *dc_evse_limits, *dc_ev_limits);
-                }
-            } else if (const auto* ac_evse_limits = std::get_if<iso15118::d20::AcTransferLimits>(&evse_limits)) {
-                if (const auto* ac_ev_limits = std::get_if<dt::AC_CPDReqEnergyTransferMode>(&ev_limits)) {
-                    fill_v2x_charging_parameters(v2x_charging_parameters, *ac_evse_limits, *ac_ev_limits);
-                } else if (const auto* ac_ev_limits = std::get_if<dt::BPT_AC_CPDReqEnergyTransferMode>(&ev_limits)) {
-                    fill_v2x_charging_parameters(v2x_charging_parameters, *ac_evse_limits, *ac_ev_limits);
-                }
-            } else {
-                EVLOG_error << "Invalid type received for EVSE limits! Not sending 'ChargingNeeds'.";
-                return;
-            }
-
-            if (const auto* ev_se_control_mode = std::get_if<dt::Scheduled_SEReqControlMode>(&ev_control_mode)) {
-                fill_v2x_charging_parameters(v2x_charging_parameters, *ev_se_control_mode);
-            } else if (const auto* ev_se_control_mode = std::get_if<dt::Dynamic_SEReqControlMode>(&ev_control_mode)) {
-                fill_v2x_charging_parameters(v2x_charging_parameters, *ev_se_control_mode);
-            } else {
-                EVLOG_error << "Invalid type received for EV Control Mode! Not sending 'ChargingNeeds'.";
-                return;
-            }
-
-            // Publish charging needs through the extensions
-            this->mod->p_extensions->publish_charging_needs(charging_needs);
-        };
+        // Publish charging needs through the extensions
+        this->mod->p_extensions->publish_charging_needs(charging_needs);
+    };
 
     callbacks.dc_charge_loop_req = [this](const feedback::DcChargeLoopReq& dc_charge_loop_req) {
         if (const auto* dc_control_mode = std::get_if<feedback::DcReqControlMode>(&dc_charge_loop_req)) {
@@ -498,7 +538,8 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
                            std::get_if<dt::DER_Scheduled_AC_CLReqControlMode>(ac_control_mode)) {
                 publish_ac_ev_power_limits(fill_ac_ev_power_limits(*der_scheduled_mode));
                 publish_ac_ev_present_powers(fill_ac_ev_present_power_values(*der_scheduled_mode));
-                // TODO(ml): reactive-power fields and grid_event_condition are not yet surfaced.
+                publish_grid_event(der_scheduled_mode->grid_event_condition);
+                // TODO(ml): reactive-power fields are not yet surfaced.
             } else if (const auto* der_dynamic_mode =
                            std::get_if<dt::DER_Dynamic_AC_CLReqControlMode>(ac_control_mode)) {
                 publish_ac_ev_power_limits(fill_ac_ev_power_limits(*der_dynamic_mode));
@@ -509,8 +550,9 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
                 ev_dynamic_values.min_v2x_energy_request =
                     convert_from_optional(der_dynamic_mode->min_v2x_energy_request);
                 publish_ac_ev_dynamic_control_mode(ev_dynamic_values);
-                // TODO(ml): reactive-power fields, grid_event_condition and
-                // session_total_discharge_energy_available are not yet surfaced.
+                publish_grid_event(der_dynamic_mode->grid_event_condition);
+                // TODO(ml): reactive-power fields and session_total_discharge_energy_available are
+                // not yet surfaced.
             }
         } else if (const auto* display_parameters = std::get_if<dt::DisplayParameters>(&ac_charge_loop_req)) {
             publish_display_parameters(convert_display_parameters(*display_parameters));
@@ -532,6 +574,10 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
             publish_current_demand_started(nullptr);
             break;
         case Signal::SETUP_FINISHED:
+            // Reset so a fault held from a prior session does not dedup a genuine new one.
+            grid_event_detector.reset();
+            // Clear the prior session's negotiated DER controls; the next session renegotiates them.
+            ev_selected_der_control_functions.reset();
             publish_v2g_setup_finished(nullptr);
             break;
         case Signal::START_CABLE_CHECK:
@@ -574,6 +620,9 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
     callbacks.selected_protocol = [this](const std::string& protocol) { publish_selected_protocol(protocol); };
 
     callbacks.selected_service_parameters = [this](const iso15118::d20::SelectedServiceParameters& parameters) {
+        // Captured for ChargeParameterDiscovery to surface DERChargingParameters.ev_supported_dercontrol.
+        ev_selected_der_control_functions = parameters.selected_der_control_functions;
+
         types::iso15118::SelectedServiceParameters selected_parameters{};
 
         if (parameters.selected_energy_service == dt::ServiceCategory::AC) {
