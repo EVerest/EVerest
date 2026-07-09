@@ -70,7 +70,7 @@ bool run_resetting_client(std::atomic<bool>& reset_done) {
     }
 
     const std::array<uint8_t, 8> payload{};
-    (void)::write(fd, payload.data(), payload.size());
+    [[maybe_unused]] auto res = ::write(fd, payload.data(), payload.size());
     // Give the server kernel time to buffer the bytes so they are still unread
     // when the abortive close arrives.
     std::this_thread::sleep_for(100ms);
