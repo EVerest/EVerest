@@ -70,6 +70,7 @@ std::string ConfigAccess::getUserConfigPath() const {
 }
 
 OCPPmulti::~OCPPmulti() {
+    m_ocpp.shutdown();
     m_charge_point.shutdown();
 }
 

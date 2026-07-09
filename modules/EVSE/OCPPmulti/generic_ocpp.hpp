@@ -158,6 +158,7 @@ private:
     std::atomic<std::int32_t> mv_event_id_counter{0};
     std::atomic<ocpp::OcppProtocolVersion> mv_ocpp_protocol_version{ocpp::OcppProtocolVersion::Unknown};
     std::atomic_bool mv_started{false};
+    std::atomic_bool mv_shutting_down{false};
 
     everest::lib::util::monitor<std::map<std::int32_t, std::string>> mv_evse_evcc_id;
     everest::lib::util::monitor<std::map<std::int32_t, bool>> mv_evse_ready_map;
@@ -246,6 +247,10 @@ public:
 
     void init();
     void ready(const ConfigServiceClient& client);
+
+    // Quiesce our own callers (schedule timer, recompute, command handlers) so nothing calls into the
+    // charge point while it is being destroyed. Must be called before GenericChargePoint::shutdown().
+    void shutdown();
 
     void connect_websocket() {
         mv_charge_point.connect_websocket();

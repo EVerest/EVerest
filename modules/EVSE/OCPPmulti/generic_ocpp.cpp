@@ -1306,6 +1306,10 @@ void GenericOcpp::cb_session_event(std::int32_t evse_id, types::evse_manager::Se
 }
 
 void GenericOcpp::cb_set_charging_profiles() {
+    // shutdown() has gated us; a stray timer/libocpp fire must not touch mv_charge_point during teardown.
+    if (mv_shutting_down.load()) {
+        return;
+    }
     // Single-flight + coalesce: the recompute body publishes schedules within EVerest and applies the
     // external limits. It now fires concurrently from the interval timer, the libocpp message thread,
     // and the K28 on_deadline/reaper callbacks, so serialize it here (the convergence point) — concurrent
@@ -1323,6 +1327,12 @@ void GenericOcpp::cb_set_charging_profiles() {
         {
             try {
                 std::lock_guard guard(recompute_mutex, std::adopt_lock);
+                // Re-check under the lock: shutdown() sets the flag then drains this mutex, so a fire
+                // that slipped past the check above cannot start a recompute once teardown has begun.
+                if (mv_shutting_down.load()) {
+                    recompute_pending.store(false);
+                    return;
+                }
                 while (recompute_pending.exchange(false)) {
                     const auto composite_schedule_unit =
                         get_unit_or_default(mv_config.getRequestCompositeScheduleUnit());
@@ -1659,6 +1669,16 @@ void GenericOcpp::charging_schedules_timer_start() {
 
 void GenericOcpp::charging_schedules_timer_stop() {
     m_charging_schedules_timer.stop();
+}
+
+void GenericOcpp::shutdown() {
+    // Order matters. Set the gates first: mv_started stops command handlers and event enqueue,
+    // mv_shutting_down stops the schedule recompute. Then stop the interval timer, then block on
+    // recompute_mutex to wait out any recompute already inside mv_charge_point.
+    mv_started.store(false);
+    mv_shutting_down.store(true);
+    charging_schedules_timer_stop();
+    std::lock_guard<std::mutex> lock(recompute_mutex);
 }
 
 std::optional<types::energy::ScheduleReqEntry>
