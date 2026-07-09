@@ -9,6 +9,7 @@
 
 #include <arpa/inet.h>
 
+#include <iso15118/d20/state/session_setup.hpp>
 #include <iso15118/d20/state/supported_app_protocol.hpp>
 
 #include <iso15118/detail/helper.hpp>
@@ -18,7 +19,9 @@ namespace iso15118 {
 static constexpr auto SESSION_IDLE_TIMEOUT_MS = 5000;
 static constexpr auto MIN_RESPONSE_INTERVAL_MS = 100; // minimum time between two response messages
 
-static void log_sdp_packet(const iso15118::io::SdpPacket& sdp) {
+namespace {
+
+void log_sdp_packet(const iso15118::io::SdpPacket& sdp) {
     static constexpr auto ESCAPED_BYTE_CHAR_COUNT = 4;
     auto payload_string_buffer = std::make_unique<char[]>(sdp.get_payload_length() * ESCAPED_BYTE_CHAR_COUNT + 1);
     for (std::size_t i = 0; i < sdp.get_payload_length(); ++i) {
@@ -30,7 +33,7 @@ static void log_sdp_packet(const iso15118::io::SdpPacket& sdp) {
                         payload_string_buffer.get());
 }
 
-static std::unique_ptr<message_20::Variant> make_variant_from_packet(const iso15118::io::SdpPacket& packet) {
+std::unique_ptr<message_20::Variant> make_variant_from_packet(const iso15118::io::SdpPacket& packet) {
     return std::make_unique<message_20::Variant>(
         packet.get_payload_type(), io::StreamInputView{packet.get_payload_buffer(), packet.get_payload_length()});
 }
@@ -119,7 +122,7 @@ V2GTPReadResult read_single_v2gtp_packet(io::IConnection& connection, io::SdpPac
     return V2GTPReadResult::complete;
 }
 
-static size_t setup_response_header(uint8_t* buffer, iso15118::io::v2gtp::PayloadType payload_type, size_t size) {
+size_t setup_response_header(uint8_t* buffer, iso15118::io::v2gtp::PayloadType payload_type, size_t size) {
     buffer[0] = iso15118::io::SDP_PROTOCOL_VERSION;
     buffer[1] = iso15118::io::SDP_INVERSE_PROTOCOL_VERSION;
 
@@ -134,12 +137,20 @@ static size_t setup_response_header(uint8_t* buffer, iso15118::io::v2gtp::Payloa
 
     return size + iso15118::io::SdpPacket::V2GTP_HEADER_SIZE;
 }
+} // namespace
 
 Session::Session(std::unique_ptr<io::IConnection> connection_, d20::SessionConfig session_config,
                  const session::feedback::Callbacks& callbacks, std::optional<d20::PauseContext>& pause_ctx) :
+    Session(std::move(connection_), std::move(session_config), callbacks, pause_ctx, false) {
+}
+
+Session::Session(std::unique_ptr<io::IConnection> connection_, d20::SessionConfig session_config,
+                 const session::feedback::Callbacks& callbacks, std::optional<d20::PauseContext>& pause_ctx,
+                 bool skip_app_protocol_negotiation) :
     connection(std::move(connection_)),
     ctx(callbacks, std::move(session_config), pause_ctx, active_control_event, message_exchange, timeouts),
-    fsm(ctx.create_state<d20::state::SupportedAppProtocol>()) {
+    fsm(skip_app_protocol_negotiation ? ctx.create_state<d20::state::SessionSetup>(true)
+                                      : ctx.create_state<d20::state::SupportedAppProtocol>()) {
 
     next_session_event = offset_time_point_by_ms(get_current_time_point(), SESSION_IDLE_TIMEOUT_MS);
     connection->set_event_callback([this](io::ConnectionEvent event) { this->handle_connection_event(event); });

@@ -131,7 +131,7 @@ Result SupportedAppProtocol::feed(Event ev) {
                 }
             }
         }
-        return m_ctx.create_state<SessionSetup>();
+        return m_ctx.create_state<SessionSetup>(false);
     }
     logf_warning("Expected SupportedAppProtocolReq! But code type id: %d", variant->get_type());
 

@@ -34,6 +34,8 @@ class Session {
 public:
     Session(std::unique_ptr<io::IConnection>, d20::SessionConfig, const session::feedback::Callbacks&,
             std::optional<d20::PauseContext>&);
+    Session(std::unique_ptr<io::IConnection>, d20::SessionConfig, const session::feedback::Callbacks&,
+            std::optional<d20::PauseContext>&, bool skip_app_protocol_negotiation);
     ~Session();
 
     TimePoint const& poll();
