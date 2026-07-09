@@ -68,4 +68,22 @@ TEST(GenericOcppTester, init) {
     EXPECT_EQ(received[1], json{});
 }
 
+TEST_F(GenericOcppProvidesTester, errorTypeNotRemapped) {
+    // the error type must reach the chargepoint implementations unmodified: the v16
+    // error-code map and the v2 map_error() lookup are keyed on the full type
+    using ::testing::_;
+
+    std::optional<ocpp_multi::GenericChargePointInterface::EventInfo> event;
+    EXPECT_CALL(chargepoint, on_event(_)).WillOnce([&event](const auto& arg) { event = arg; });
+
+    Everest::error::Error error;
+    error.type = "evse_board_support/MREC2GroundFailure";
+    ocpp->cb_error_handler(error);
+
+    ASSERT_TRUE(event.has_value());
+    ASSERT_TRUE(event->error.has_value());
+    EXPECT_EQ(event->error->type, "evse_board_support/MREC2GroundFailure");
+    EXPECT_FALSE(event->event_cleared);
+}
+
 } // namespace

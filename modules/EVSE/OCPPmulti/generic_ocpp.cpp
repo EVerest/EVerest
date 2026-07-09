@@ -341,27 +341,10 @@ void GenericOcpp::handle_monitor_variables(const std::vector<types::ocpp::Compon
 GenericOcpp::EventInfo GenericOcpp::convert_error(const Everest::error::Error& error) {
     using namespace module;
 
-    // Error                    V16
-    // type (string)            ChargePointErrorCode
-    // sub_type (string)
-    // message (string)
-    // origin (object)
-    // vendor_id (string)       CHARGE_X_MREC_VENDOR_ID
-    // severity (enum)
-    // timestamp (timepoint)
-    // uuid (UUID)              uuid.uuid
-    // state (enum)
-    //                          is_fault{false}
-    //                          info{}
-    //                          vendor_error_code{mapping}
-
     EventInfo event_data{};
     event_data.event_id = mv_event_id_counter++;
     event_data.evse_id = get_component_from_error(error).evse.value_or(ocpp::v2::EVSE{0}).id;
     event_data.error = error;
-    if (const auto it = mv_mrec_error_map.find(error.type); it != mv_mrec_error_map.end()) {
-        event_data.error->type = it->second;
-    }
     event_data.event_cleared = true;
     return event_data;
 }

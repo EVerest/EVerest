@@ -214,7 +214,7 @@ public:
     GenericOcpp(GenericChargePointInterface& charge_point, const ModuleInfo& info, ConfigInterface& config,
                 const provides_t& provides, const requires_t& requires) :
         mv_charge_point(charge_point), mv_info(info), mv_config(config), mv_provides(provides), mv_requires(requires) {
-        // loaded before error subscriptions exist so cb_error_handler never sees an empty map
+        // loaded before the charge point starts so map_error() never sees an empty map
         const auto map_path = mv_config.getCustomMrecErrorMapPath();
         mv_mrec_error_map =
             (map_path.empty()) ? module::MREC_ERROR_MAP : module::load_mrec_error_map_overrides(map_path);
