@@ -4,6 +4,7 @@
 
 #include <everest_api_types/energy/codec.hpp>
 #include <everest_api_types/energy/wrapper.hpp>
+#include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/utilities/Topics.hpp>
 
 namespace module {
@@ -11,6 +12,7 @@ namespace energy_grid {
 
 namespace ev_API = everest::lib::API;
 namespace API_types_ext = ev_API::V1_0::types::energy;
+namespace API_generic = ev_API::V1_0::types::generic;
 
 using API_types_ext::to_internal_api;
 using ev_API::deserialize;
@@ -42,6 +44,24 @@ void energyImpl::ready() {
 
     // Store the enforce_limits topic for use in handle_enforce_limits.
     mod->enforce_limits_topic = server_topics.extern_to_everest("enforce_limits");
+
+    // Communication-check handshake.
+    // Neither module publishes communication_check on its own; each side's ApiHelper only
+    // raises the initial CommunicationFault and waits for a communication_check on its own
+    // m2e topic to clear it. The client knows both namespaces (its own via helper, the
+    // server's via server_id), so it drives both directions: whenever the server's heartbeat
+    // arrives — proof the bridged link is alive — echo a communication_check to
+    //   - the server's m2e topic  (clears the server's CommunicationFault, over the bridge)
+    //   - this client's own m2e topic (clears this client's CommunicationFault, locally)
+    const auto server_heartbeat_topic = server_topics.everest_to_extern("heartbeat");
+    const auto server_comm_check_topic = server_topics.extern_to_everest("communication_check");
+    const auto local_comm_check_topic = mod->helper.get_topics().extern_to_everest("communication_check");
+    mod->mqtt.subscribe(server_heartbeat_topic,
+                        [this, server_comm_check_topic, local_comm_check_topic](const std::string&) {
+                            const auto payload = API_generic::serialize(true);
+                            mod->mqtt.publish(server_comm_check_topic, payload);
+                            mod->mqtt.publish(local_comm_check_topic, payload);
+                        });
 }
 
 void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
