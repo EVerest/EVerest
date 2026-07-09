@@ -1,13 +1,13 @@
 SUMMARY = "Canonical libwebsockets.org websocket library"
 HOMEPAGE = "https://libwebsockets.org/"
-LICENSE = "MIT & Zlib & BSD-3-Clause & Apache-2.0"
+LICENSE = "MIT & Zlib & BSD-3-Clause & Apache-2.0 & OFL-1.1"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=b5d391cc7929bcba238f9ba6805f7574"
 
 DEPENDS = "zlib"
 DEPENDS:append:class-native = " libcap-native"
 
 S = "${WORKDIR}/git"
-SRCREV = "85c6f7959fd40d8aaf7a50be3c9b75f08389a01c"
+SRCREV = "fbb0baf6af9c4324f0f1591734c78b0089b599d4"
 SRC_URI = "git://github.com/warmcat/libwebsockets.git;protocol=https;branch=v4.5-stable"
 
 UPSTREAM_CHECK_URI = "https://github.com/warmcat/${BPN}/releases"
@@ -15,20 +15,18 @@ UPSTREAM_CHECK_GITTAGREGEX = "v(?P<pver>\d+(\.\d+)+)"
 
 inherit cmake pkgconfig
 
-PACKAGECONFIG ?= "libuv libcap client server http2 ssl streamcompress ${@bb.utils.filter('DISTRO_FEATURES', 'ipv6', d)}"
+PACKAGECONFIG ?= "libuv client server http2 ssl ${@bb.utils.filter('DISTRO_FEATURES', 'ipv6', d)}"
 PACKAGECONFIG[client] = "-DLWS_WITHOUT_CLIENT=OFF,-DLWS_WITHOUT_CLIENT=ON,"
-PACKAGECONFIG[examples] = "-DLWS_WITH_MINIMAL_EXAMPLES=ON,-DLWS_WITH_MINIMAL_EXAMPLES=OFF,"
 PACKAGECONFIG[http2] = "-DLWS_WITH_HTTP2=ON,-DLWS_WITH_HTTP2=OFF,"
 PACKAGECONFIG[ipv6] = "-DLWS_IPV6=ON,-DLWS_IPV6=OFF,"
-PACKAGECONFIG[libcap] = "-DLWS_WITH_LIBCAP=ON,-DLWS_WITH_LIBCAP=OFF,libcap"
 PACKAGECONFIG[libevent] = "-DLWS_WITH_LIBEVENT=ON,-DLWS_WITH_LIBEVENT=OFF,libevent"
 PACKAGECONFIG[libev] = "-DLWS_WITH_LIBEV=ON,-DLWS_WITH_LIBEV=OFF,libev"
 PACKAGECONFIG[libuv] = "-DLWS_WITH_LIBUV=ON,-DLWS_WITH_LIBUV=OFF,libuv"
 PACKAGECONFIG[server] = "-DLWS_WITHOUT_SERVER=OFF,-DLWS_WITHOUT_SERVER=ON,"
-PACKAGECONFIG[ssl] = "-DLWS_WITH_SSL=ON,-DLWS_WITH_SSL=OFF,openssl"
+PACKAGECONFIG[ssl] = "-DLWS_WITH_SSL=ON,-DLWS_WITH_SSL=OFF,openssl libcap"
 PACKAGECONFIG[static] = "-DLWS_WITH_STATIC=ON,-DLWS_WITH_STATIC=OFF -DLWS_LINK_TESTAPPS_DYNAMIC=ON,"
-PACKAGECONFIG[streamcompress] = "-DLWS_WITH_HTTP_STREAM_COMPRESSION=ON,-DLWS_WITH_HTTP_STREAM_COMPRESSION=OFF,zlib"
 PACKAGECONFIG[systemd] = "-DLWS_WITH_SDEVENT=ON,-DLWS_WITH_SDEVENT=OFF,systemd"
+PACKAGECONFIG[examples] = "-DLWS_WITH_MINIMAL_EXAMPLES=ON,-DLWS_WITH_MINIMAL_EXAMPLES=OFF"
 
 python __anonymous() {
   if bb.utils.contains('PACKAGECONFIG', 'systemd', True, False, d) and not bb.utils.contains('DISTRO_FEATURES', 'systemd', True, False, d):
@@ -37,9 +35,16 @@ python __anonymous() {
 
 EXTRA_OECMAKE += " \
     -DLIB_SUFFIX=${@d.getVar('baselib').replace('lib', '')} \
+    -DLWS_WITHOUT_TESTAPPS=ON \
 "
 
+do_compile:prepend() {
+    sed -i -e 's|/etc/ssl|${RECIPE_SYSROOT_NATIVE}/etc/ssl|g' ${S}/lib/tls/CMakeLists.txt
+}
+
 do_install:append() {
+    sed -i -e 's|${STAGING_BASELIBDIR}/libcap.so|cap|g' ${D}${libdir}/cmake/libwebsockets/libwebsockets-config.cmake
+    sed -i -e 's|${STAGING_BASELIBDIR}/libcap.so|cap|g' ${D}${libdir}/cmake/libwebsockets/LibwebsocketsTargets.cmake
     sed -i -e 's|${STAGING_LIBDIR}/libcrypto.so|crypto|g' ${D}${libdir}/cmake/libwebsockets/LibwebsocketsTargets.cmake
     sed -i -e 's|${STAGING_LIBDIR}/libssl.so|ssl|g' ${D}${libdir}/cmake/libwebsockets/LibwebsocketsTargets.cmake
     sed -i -e 's|${STAGING_LIBDIR}/libuv.so|uv|g' ${D}${libdir}/cmake/libwebsockets/LibwebsocketsTargets.cmake
