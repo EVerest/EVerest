@@ -35,6 +35,18 @@ Project & Community
 
       Explanation of what constitutes a breaking change in EVerest.
 
+   .. grid-item-card:: Deprecation Policy
+      :link: releases/deprecation-policy
+      :link-type: doc
+
+      How EVerest deprecates public API components and what guarantees integrators can rely on.
+
+   .. grid-item-card:: Active Deprecation Index
+      :link: releases/deprecation-index
+      :link-type: doc
+
+      The current list of deprecated public API components, removal timelines, and migration guides.
+
    .. grid-item-card:: Security Policy
       :link: governance/security
       :link-type: doc
@@ -59,3 +71,5 @@ Project & Community
     governance/tsc/index
     releases/releases-and-versioning
     releases/breaking-changes
+    releases/deprecation-policy
+    releases/deprecation-index
