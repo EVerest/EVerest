@@ -9,6 +9,7 @@
 
 using namespace ocpp::v16;
 using ::testing::_;
+using ::testing::InSequence;
 
 class MockStatusNotificationCallback {
 public:
@@ -135,4 +136,25 @@ TEST_F(ChargePointStateMachineTest, HandleErrorCleared__NonFault__StillActive) {
     EXPECT_EQ(latest_error.value().error_code, ChargePointErrorCode::ConnectorLockFailure);
 
     state_machine->handle_error_cleared("uuid1");
+}
+
+TEST_F(ChargePointStateMachineTest, HandleErrorCleared__MultipleFaults__OutOfOrder) {
+    ErrorInfo error_info_1("uuid1", ChargePointErrorCode::ConnectorLockFailure, false);
+    ErrorInfo error_info_2("uuid2", ChargePointErrorCode::GroundFailure, true);
+    ErrorInfo error_info_3("uuid3", ChargePointErrorCode::EVCommunicationError, false);
+
+    InSequence seq;
+    EXPECT_CALL(mock_callback, Call(FSMState::Available, ChargePointErrorCode::ConnectorLockFailure, _, _, _, _));
+    EXPECT_CALL(mock_callback, Call(FSMState::Faulted, ChargePointErrorCode::GroundFailure, _, _, _, _));
+    EXPECT_CALL(mock_callback, Call(FSMState::Faulted, ChargePointErrorCode::EVCommunicationError, _, _, _, _));
+    EXPECT_CALL(mock_callback, Call(FSMState::Faulted, ChargePointErrorCode::EVCommunicationError, _, _, _, _));
+    EXPECT_CALL(mock_callback, Call(FSMState::Faulted, ChargePointErrorCode::GroundFailure, _, _, _, _));
+    EXPECT_CALL(mock_callback, Call(FSMState::Available, ChargePointErrorCode::NoError, _, _, _, _));
+
+    state_machine->handle_error(error_info_1);
+    state_machine->handle_error(error_info_2);
+    state_machine->handle_error(error_info_3);
+    state_machine->handle_error_cleared(error_info_1.uuid);
+    state_machine->handle_error_cleared(error_info_3.uuid);
+    state_machine->handle_error_cleared(error_info_2.uuid);
 }

@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <utility>
 
-#define REPORT_CLEARED_ERRORS false
+#define REPORT_CLEARED_ERRORS true
 
 namespace ocpp {
 namespace v16 {
