@@ -69,7 +69,6 @@ for root, dirs, files in os.walk(code_path):
         generator = FileTestGenerator(
             file_to_test, write_path, across_file_generator, code_path, license_header,
             get_single_deny_list(deny_lists, file_to_test))
-        generator.generate_code()
         generators.append(generator)
 if not api_files_found:
     raise FileNotFoundError(

@@ -10,7 +10,7 @@ from valuegenerator import ValueGenerator
 class StructHelper(Helper):
     w = Helper.regex_whitespaces
     default_value = r"\{[A-z:_<>0-9\.]+\}?"
-    regex_single_field = r"([A-z:_<>0-9]+" + w + Helper.regex_field_or_class_name + \
+    regex_single_field = r"((?:[A-z:_<>0-9]+" + w + r")+" + Helper.regex_field_or_class_name + \
         r"(" + r"\{[A-z:_<>0-9\.]+\}?" + r")?" + r";)" + w
     regex_fields = r"(" + w + regex_single_field + r")*"
 
@@ -47,8 +47,10 @@ class StructHelper(Helper):
         for field in self.get_fields():
             if ("std::optional" not in field) == mandatory:
                 split = re.split(Helper.regex_whitespaces, field)
-                assert split.__len__() == 2
-                a.append((split[0], split[1]))
+                assert len(split) >= 2
+                type_string = " ".join(split[:-1])
+                field_name = split[-1]
+                a.append((type_string, field_name))
         return a
 
     def get_fields_optional(self):
