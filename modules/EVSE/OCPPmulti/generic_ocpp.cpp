@@ -377,13 +377,6 @@ void GenericOcpp::init() {
         }
     }
 
-    {
-        std::lock_guard lock(m_member_mux);
-        const auto map_path = mv_config.getCustomMrecErrorMapPath();
-        mv_mrec_error_map =
-            (map_path.empty()) ? module::MREC_ERROR_MAP : module::load_mrec_error_map_overrides(map_path);
-    }
-
     init_check_energy_sink();
     init_evse_maps();
     init_subscribe();
