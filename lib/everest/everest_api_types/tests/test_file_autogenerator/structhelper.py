@@ -84,9 +84,21 @@ class StructHelper(Helper):
         if signature_only:
             return code + ");\n"
         token = "generated_object"
-        code += ") { \n" + self.get_type() + " " + token + ";\n"
-        code += self.generate_set_fields(self.get_fields_mandatory(), token) + "if (set_optional_fields) {"
-        code += self.generate_set_fields(self.get_fields_optional(), token) + "}\n" + "return " + token + ";\n" + "}\n"
+        code += ") {\n"
+        code += "    thread_local static int depth = 0;\n"
+        code += "    depth++;\n"
+        code += "    " + self.get_type() + " " + token + "{};\n"
+        code += "    if (depth > 2) {\n"
+        code += "        depth--;\n"
+        code += "        return " + token + ";\n"
+        code += "    }\n"
+        code += self.generate_set_fields(self.get_fields_mandatory(), token)
+        code += "    if (set_optional_fields) {\n"
+        code += self.generate_set_fields(self.get_fields_optional(), token)
+        code += "    }\n"
+        code += "    depth--;\n"
+        code += "    return " + token + ";\n"
+        code += "}\n"
         return code
 
     def get_code_verify_function(self, signature_only=False):
