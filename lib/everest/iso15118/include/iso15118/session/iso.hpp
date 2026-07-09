@@ -34,7 +34,7 @@ struct SessionState {
 class Session {
 public:
     Session(std::unique_ptr<io::IConnection>, d20::SessionConfig, const session::feedback::Callbacks&,
-            std::optional<d20::PauseContext>&);
+            std::optional<d20::PauseContext>&, bool selected_d20_namespace);
     ~Session();
 
     TimePoint const& poll();

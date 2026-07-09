@@ -26,6 +26,10 @@ struct TbdConfig {
     std::string interface_name;
     config::TlsNegotiationStrategy tls_negotiation_strategy{config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER};
     bool enable_sdp_server{true};
+    bool selected_d20_namespace{false}; // When set, skips the default SAP namespace selection. Only effective when
+                                        // sdp_server is disabled (enable_sdp_server=false). If not set, the library
+                                        // will use its default namespace selection logic.
+                                        // TODO(SL): Extending with DIN and D2
 };
 
 class TbdController {
