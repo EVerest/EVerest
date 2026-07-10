@@ -77,6 +77,7 @@ target_sources(iso15118
 
         message/din/variant.cpp
         message/din/msg_data_types.cpp
+        message/din/service_discovery.cpp
 
         tbd_controller.cpp    
 )

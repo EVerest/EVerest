@@ -43,8 +43,8 @@ void handle_v2g(VariantAccess& va) {
         return;
     }
 
-    if (doc.V2G_Message.Body.SessionSetupReq_isUsed) {
-        insert_type(va, doc.V2G_Message.Body.SessionSetupReq, doc.V2G_Message.Header);
+    if (doc.V2G_Message.Body.ServiceDiscoveryReq_isUsed) {
+        insert_type(va, doc.V2G_Message.Body.ServiceDiscoveryReq, doc.V2G_Message.Header);
     } else {
         va.error = "chosen message type unhandled";
     }

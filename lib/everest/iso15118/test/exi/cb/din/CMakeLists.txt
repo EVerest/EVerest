@@ -10,3 +10,4 @@ function(create_exi_test_target NAME)
     catch_discover_tests(test_exi_din_${NAME})
 endfunction()
 
+create_exi_test_target(service_discovery)
