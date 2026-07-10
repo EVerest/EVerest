@@ -1333,11 +1333,32 @@ OCPP201::DerApplyResult OCPP201::apply_der_capability(int32_t evse_id,
 }
 
 void OCPP201::flush_pending_grid_support() {
+    // Persisted DERCtrlr Enabled for evse_id (AC then DC controller), or nullopt if it has no DER controller.
+    const auto read_persisted_der_enabled = [this](int32_t evse_id) -> std::optional<bool> {
+        for (const auto& component_variable : {ocpp::v2::DERComponentVariables::get_ac_component_variable(
+                                                   evse_id, ocpp::v2::DERComponentVariables::Enabled),
+                                               ocpp::v2::DERComponentVariables::get_dc_component_variable(
+                                                   evse_id, ocpp::v2::DERComponentVariables::Enabled)}) {
+            const auto response = this->charge_point->request_value<bool>(
+                component_variable.component, component_variable.variable.value(), ocpp::v2::AttributeEnum::Actual);
+            if (response.status == ocpp::v2::GetVariableStatusEnum::Accepted and response.value.has_value()) {
+                return response.value.value();
+            }
+        }
+        return std::nullopt;
+    };
+
     std::vector<std::pair<int32_t, types::grid_support::DERCapability>> pending;
     {
         auto state_handle = this->grid_support_state.handle();
         state_handle->set_capabilities_live();
         pending = state_handle->take_pending_capabilities();
+        for (const auto& [evse_id, capability] : pending) {
+            const auto enabled = read_persisted_der_enabled(evse_id);
+            if (enabled.has_value()) {
+                state_handle->set_enabled(evse_id, enabled.value());
+            }
+        }
     }
     for (const auto& [pending_evse_id, pending_capability] : pending) {
         const auto apply_result = this->apply_der_capability(pending_evse_id, pending_capability);
