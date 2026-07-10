@@ -737,9 +737,7 @@ int Manager::run() {
     std::vector<std::string> standalone_modules;
     std::vector<std::string> ignored_modules;
 
-    RuntimeContext runtime_ctx{
-        config, *mqtt_abstraction, standalone_modules, ignored_modules, ms, status_fifo, retain_topics,
-    };
+    RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules, ms, status_fifo, retain_topics};
 
     bool runtime_ctx_has_valid_config = reload_and_update_context(runtime_ctx);
 
@@ -966,7 +964,8 @@ Manager::load_and_validate_config(const ManagerSettings& ms,
     return config;
 }
 
-std::unique_ptr<MQTTAbstraction> Manager::create_and_connect_mqtt(const ManagerSettings& ms, std::optional<LwtCfg> lwt_cfg) const {
+std::unique_ptr<MQTTAbstraction> Manager::create_and_connect_mqtt(const ManagerSettings& ms,
+                                                                  std::optional<LwtCfg> lwt_cfg) const {
     auto mqtt_abstraction = make_mqtt_abstraction(ms.mqtt_settings);
     if (lwt_cfg.has_value()) {
         mqtt_abstraction->set_lwt(lwt_cfg.value().topic, lwt_cfg.value().data);
@@ -988,11 +987,19 @@ std::unique_ptr<MQTTAbstraction> Manager::create_and_connect_mqtt(const ManagerS
 
 std::vector<std::string> Manager::collect_standalone_modules(const ManagerConfig& config) const {
     std::vector<std::string> standalone_modules;
+    const auto& module_configurations = config.get_module_configurations();
+
     if (vm_.count("standalone")) {
-        standalone_modules = vm_["standalone"].as<std::vector<std::string>>();
+        // Make sure to only list existing modules and each only once
+        for (const auto& module_id : vm_["standalone"].as<std::vector<std::string>>()) {
+            if (module_configurations.find(module_id) != module_configurations.end() &&
+                std::find(standalone_modules.begin(), standalone_modules.end(), module_id) ==
+                    standalone_modules.end()) {
+                standalone_modules.push_back(module_id);
+            }
+        }
     }
 
-    const auto& module_configurations = config.get_module_configurations();
     for (const auto& [module_id, module_config] : module_configurations) {
         if (!module_config.standalone) {
             continue;
