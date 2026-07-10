@@ -836,7 +836,8 @@ int Manager::run() {
                 if (is_idle()) {
                     ret = Everest::api::lifecycle::StopModulesResult::NoModulesToStop;
                 } else if (are_modules_started()) {
-                    handle_initiate_graceful_shutdown(std::chrono::steady_clock::now(), false, nullptr,
+                    const auto shutdown_info_log = "LifecycleAPI requested stopping the modules.";
+                    handle_initiate_graceful_shutdown(std::chrono::steady_clock::now(), false, shutdown_info_log,
                                                       *mqtt_abstraction, ms);
                     ret = Everest::api::lifecycle::StopModulesResult::Stopping;
                 }
@@ -849,7 +850,8 @@ int Manager::run() {
                     shutdown_cause_ = ShutdownCause::Restart;
                     ret = Everest::api::lifecycle::RestartModulesResult::Restarting;
                     config_service_core_->notice_module_restart_triggered();
-                    handle_initiate_graceful_shutdown(std::chrono::steady_clock::now(), false, nullptr,
+                    const auto shutdown_info_log = "LifecycleAPI requested restart of the modules.";
+                    handle_initiate_graceful_shutdown(std::chrono::steady_clock::now(), false, std::nullopt,
                                                       *mqtt_abstraction, ms);
                 } else if (is_idle()) {
                     ret = Everest::api::lifecycle::RestartModulesResult::Starting;
