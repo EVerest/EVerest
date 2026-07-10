@@ -1,0 +1,60 @@
+EVerest TSC Meeting - 26 March 2026
+======================================
+
+
+Attendance
+----------
+
+
+Voting Members
+~~~~~~~~~~~~~~
+
+- [x] (Chair) Marco Möller [Pionix]
+- [ ] Cornelius Claussen [Pionix] -> vote delegated to Marco
+- [x] Kai-Uwe Hermann [Pionix]
+- [x] Piet Gömpel [Pionix]
+- [x] Moritz Barsnick [Chargebyte]
+- [x] Holger Rapp [Qwello]
+- [ ] S. Shankari [NREL]
+
+
+Other Attendees
+~~~~~~~~~~~~~~~
+- Martin Litre [Pionix]
+- several others
+
+
+Agenda
+------
+
+- Highlights of the month
+- EVerest Development Updates
+- Community Proposals
+    - Deprecation & Experimental Label Policy
+    - New Rules on AI contributions
+- What Else
+    - recap
+    - Recap CPO Forum
+    - Upcoming Events
+    - Next TSC
+- Open discussion (not recorded)
+
+
+Action Items
+------------
+- Send out recording and slides to EVerest mailing list
+- update TSC roles and members in github
+
+
+Recording:
+----------
+- `https://youtu.be/J3zZFYO6YEM <https://youtu.be/J3zZFYO6YEM>`_
+
+
+Notes
+-----
+Decisions:
+- Deprecation & Experimental Label Policy proposal got accepted!
+
+Other:
+- 
