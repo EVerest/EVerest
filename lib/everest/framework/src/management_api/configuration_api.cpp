@@ -329,7 +329,9 @@ void ConfigurationAPI::subscribe_api_topic(std::string const& var, ParseAndPubli
     auto handler = std::make_shared<TypedHandler>(
         HandlerType::ExternalMQTT, std::make_shared<Handler>([=](std::string const& topic, nlohmann::json data) {
             try {
-                if (not parse_and_publish(data)) {
+                // explicitly convert the json to std::string to make sure a null json is handled correctly
+                std::string data_s = data.is_string() ? data.get<std::string>() : data.dump();
+                if (not parse_and_publish(data_s)) {
                     EVLOG_warning << "Invalid data: Deserialization failed.\n" << topic << "\n" << data;
                 }
             } catch (const std::exception& e) {
