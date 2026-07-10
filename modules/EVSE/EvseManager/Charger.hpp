@@ -126,6 +126,7 @@ public:
 
     bool get_authorized_pnc();
     bool get_authorized_eim();
+    bool get_transaction_active();
 
     // this indicates the charger is done with all of its t_step_XX routines and HLC can now also start charging
     bool get_authorized_eim_ready_for_hlc();

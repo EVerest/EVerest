@@ -1401,8 +1401,8 @@ bool Charger::start_transaction() {
     }
 
     store->store_session(shared_context.session_uuid);
-    signal_transaction_started_event(shared_context.id_token);
     shared_context.flag_transaction_active = true;
+    signal_transaction_started_event(shared_context.id_token);
     return true;
 }
 
@@ -1558,6 +1558,11 @@ bool Charger::get_authorized_pnc() {
 bool Charger::get_authorized_eim() {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_get_authorized_eim);
     return (shared_context.flag_authorized and not shared_context.authorized_pnc);
+}
+
+bool Charger::get_transaction_active() {
+    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_get_transaction_active);
+    return shared_context.flag_transaction_active;
 }
 
 bool Charger::get_authorized_pnc_ready_for_hlc() {
