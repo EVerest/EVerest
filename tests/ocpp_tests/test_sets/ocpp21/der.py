@@ -59,6 +59,7 @@ from ocpp.v21.datatypes import (
     DERCurveType,
     DERCurvePointsType,
     GetVariableDataType,
+    SetVariableDataType,
     ComponentType,
     VariableType,
     EVSEType,
@@ -828,3 +829,111 @@ async def test_get_emits_report_der_control(
         "ReportDERControl",
         {"requestId": 104},
     )
+
+
+# -----------------------------------------------------------------------------
+# A CSMS DER disable survives a reboot.
+#
+# DERCtrlr Enabled=false persists in the device model, but the module's in-memory
+# disable state must be restored on boot, or a persisted directive is re-pushed to
+# a disabled EVSE after restart.
+# -----------------------------------------------------------------------------
+
+@grid_support_markers
+async def test_der_disable_survives_reboot(
+    central_system_v21: CentralSystem,
+    test_controller: TestController,
+    test_utility: TestUtility,
+    probe_grid_support: ProbeModule,
+    everest_core,
+):
+    """A CSMS DER disable survives a reboot: after Enabled=false and a restart,
+    a previously-persisted directive is not re-pushed to the disabled device.
+
+    Enable DER, set a default directive, disable via SetVariables Enabled=false
+    (the device is cleared), reboot, re-declare the capability, and assert the
+    device does not get the persisted directive back.
+    """
+    pushed = provide_grid_support(probe_grid_support)
+    probe_grid_support.start()
+    await probe_grid_support.wait_to_be_ready()
+
+    charge_point_v21 = await central_system_v21.wait_for_chargepoint(
+        wait_for_bootnotification=True
+    )
+
+    await enable_der(probe_grid_support, charge_point_v21)
+
+    r_set = await charge_point_v21.set_der_control_req(
+        is_default=True,
+        control_id="ctrl-reboot",
+        control_type=DERControlEnumType.freq_droop,
+        freq_droop=FREQ_DROOP,
+    )
+    assert r_set is not None and r_set.status == DERControlStatusEnumType.accepted
+
+    # The directive reaches the enabled device.
+    drain(pushed)
+    assert "FreqDroop" in latest_directive_types(pushed)
+
+    # CSMS disables the DER controller; the device is cleared.
+    disable = await charge_point_v21.set_variables_req(
+        set_variable_data=[
+            SetVariableDataType(
+                attribute_value="false",
+                attribute_type=AttributeEnumType.actual,
+                component=ComponentType(
+                    name="DCDERCtrlr", evse=EVSEType(id=DER_EVSE_ID)
+                ),
+                variable=VariableType(name="Enabled"),
+            )
+        ]
+    )
+    assert disable.set_variable_result[0]["attribute_status"] == "Accepted"
+    drain(pushed)
+    assert "FreqDroop" not in latest_directive_types(pushed)
+
+    # Reboot: only the process bounces; the device model DB (Enabled=false and the
+    # persisted directive) survives.
+    test_controller.stop()
+    await asyncio.sleep(1)
+    test_controller.start()
+
+    # The restarted manager waits for the standalone probe, whose C++ module is
+    # bound to the pre-reboot manager, so re-create it against the new session
+    # before waiting for the charge point.
+    probe_after = ProbeModule(everest_core.get_runtime_session())
+    pushed = provide_grid_support(probe_after)
+    probe_after.start()
+    await probe_after.wait_to_be_ready()
+
+    charge_point_v21 = await central_system_v21.wait_for_chargepoint(
+        wait_for_bootnotification=True
+    )
+
+    # The device re-declares its capability, re-registering the EVSE so the module
+    # pushes its active set again.
+    await enable_der(probe_after, charge_point_v21)
+
+    # The persisted directive must not return: the DER block is gated on the
+    # persisted Enabled=false, so the disabled EVSE receives an empty set.
+    drain(pushed)
+    assert "FreqDroop" not in latest_directive_types(pushed)
+
+    # Re-enabling proves the directive was persisted and merely suppressed: once
+    # Enabled=true, the stored control is rebuilt and pushed to the device again.
+    reenable = await charge_point_v21.set_variables_req(
+        set_variable_data=[
+            SetVariableDataType(
+                attribute_value="true",
+                attribute_type=AttributeEnumType.actual,
+                component=ComponentType(
+                    name="DCDERCtrlr", evse=EVSEType(id=DER_EVSE_ID)
+                ),
+                variable=VariableType(name="Enabled"),
+            )
+        ]
+    )
+    assert reenable.set_variable_result[0]["attribute_status"] == "Accepted"
+    drain(pushed)
+    assert "FreqDroop" in latest_directive_types(pushed)
