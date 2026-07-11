@@ -57,6 +57,8 @@ EVSEStateEnum evse_manager_session_event_to_evse_state(types::evse_manager::Sess
         [[fallthrough]];
     case Event::Deauthorized:
         [[fallthrough]];
+    case Event::StoppingTransaction:
+        [[fallthrough]];
     default:
         return EVSEStateEnum::Unknown;
     }

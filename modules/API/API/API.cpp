@@ -160,6 +160,8 @@ void SessionInfo::update_state(const types::evse_manager::SessionEvent event) {
     case Event::SessionFinished:
         this->state = State::Unplugged;
         break;
+    case Event::StoppingTransaction:
+        break;
     default:
         break;
     }
