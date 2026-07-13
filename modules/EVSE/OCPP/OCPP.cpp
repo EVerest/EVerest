@@ -71,7 +71,7 @@ static ocpp::v16::ErrorInfo get_error_info(const Everest::error::Error& error) {
     if (ocpp_it != OCPP_ERROR_MAP.end()) {
         // lambda to create OCPP error info
         auto make_ocpp_error_info = [&](ocpp::v16::ChargePointErrorCode code) {
-            return ocpp::v16::ErrorInfo{uuid, code, false, std::nullopt};
+            return ocpp::v16::ErrorInfo{uuid, code, false, std::nullopt, error.message};
         };
         return make_ocpp_error_info(ocpp_it->second);
     }
