@@ -381,14 +381,22 @@ void systemImpl::install_signed_firmware(const types::system::FirmwareUpdateRequ
                             return CmdControl::Continue;
                         });
         if (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::Installed) {
-            if (!this->mod->r_store.empty()) {
-                this->mod->r_store.at(0)->call_store(boot_reason_key,
-                                                     boot_reason_to_string(types::system::BootReason::FirmwareUpdate));
-            }
+            if (this->mod->config.ResetAfterUpdate) {
+                firmware_status.firmware_update_status = types::system::FirmwareUpdateStatusEnum::InstallRebooting;
+                this->publish_firmware_update_status(firmware_status);
 
-            auto reset_type = types::system::ResetType::Hard;
-            bool firmware_installation_running_copy = this->firmware_installation_running;
-            this->handle_reset(reset_type, firmware_installation_running_copy);
+                if (!this->mod->r_store.empty()) {
+                    this->mod->r_store.at(0)->call_store(
+                        boot_reason_key, boot_reason_to_string(types::system::BootReason::FirmwareUpdate));
+                }
+
+                auto reset_type = types::system::ResetType::Hard;
+                bool firmware_installation_running_copy = this->firmware_installation_running;
+                this->handle_reset(reset_type, firmware_installation_running_copy);
+            } else {
+                EVLOG_info << "Firmware installed but ResetAfterUpdate is false - skipping reset.";
+                this->firmware_installation_running = false;
+            }
         } else {
             // Installation finished without reaching Installed, so no reset is triggered.
             // Clear the flag so that a subsequent firmware update request is not rejected

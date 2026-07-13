@@ -11,6 +11,8 @@ import pytest
 from everest.testing.core_utils.controller.test_controller_interface import (
     TestController,
 )
+from everest.testing.core_utils._configuration.everest_configuration_strategies.disable_reset_after_update_strategy import \
+    DisableResetAfterUpdateStrategy
 
 # fmt: off
 
@@ -6973,8 +6975,16 @@ async def test_signed_update_firmware(
         call.SignedFirmwareStatusNotification(FirmwareStatus.installed, 1),
     )
 
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "SignedFirmwareStatusNotification",
+        call.SignedFirmwareStatusNotification(FirmwareStatus.install_rebooting, 1),
+    )
+
 @pytest.mark.asyncio
 @pytest.mark.xdist_group(name="FTP")
+@pytest.mark.everest_config_adaptions(DisableResetAfterUpdateStrategy())
 async def test_signed_update_firmware_keep_connectors_available(
     test_config: OcppTestConfiguration,
     charge_point_v16: ChargePoint16,

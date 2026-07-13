@@ -12,6 +12,8 @@ import pytest
 from everest.testing.core_utils.controller.test_controller_interface import (
     TestController,
 )
+from everest.testing.core_utils._configuration.everest_configuration_strategies.disable_reset_after_update_strategy import \
+    DisableResetAfterUpdateStrategy
 
 sys.path.append(os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../..")))
@@ -125,10 +127,18 @@ async def test_L01_secure_firmware_update_disable_connectors(
         {"status": "Installed", "requestId": 1},
     )
 
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "FirmwareStatusNotification",
+        {"status": "InstallRebooting", "requestId": 1},
+    )
+
 
 @pytest.mark.asyncio
 @pytest.mark.ocpp_version("ocpp2.0.1")
 @pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.everest_config_adaptions(DisableResetAfterUpdateStrategy())
 @pytest.mark.xdist_group(name="FTP")
 async def test_L01_secure_firmware_update_keep_connectors_available(
     test_config: OcppTestConfiguration,
