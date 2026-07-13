@@ -4,6 +4,7 @@
 #include "v16_chargepoint.hpp"
 
 #include "charge_point_config_factory_v16.hpp"
+#include "ocpp_module_common_aliases.hpp"
 #include "v16_conversions.hpp"
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/ocpp_module_common/conversions.hpp>

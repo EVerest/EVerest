@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <everest/ocpp_module_common/conversions.hpp>
 #include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
@@ -34,26 +33,6 @@
 #include <set>
 #include <stdexcept>
 #include <string>
-
-namespace module {
-
-// Shared OCPP module support code lives in lib/everest/ocpp_module_common;
-// pull the names into the module namespace to keep call sites unchanged.
-namespace conversions = ocpp_module_common::conversions;
-namespace device_model = ocpp_module_common::device_model;
-using ocpp_module_common::EVSE_MANAGER_INOPERATIVE_ERROR;
-using ocpp_module_common::get_component_from_error;
-using ocpp_module_common::get_event_data;
-using ocpp_module_common::load_mrec_error_map_overrides;
-using ocpp_module_common::MREC_ERROR_MAP;
-using ocpp_module_common::MREC_ERROR_MAP_TYPE;
-using ocpp_module_common::TransactionData;
-using ocpp_module_common::TransactionHandler;
-using ocpp_module_common::TxEvent;
-using ocpp_module_common::TxEventEffect;
-using ocpp_module_common::TxStartStopPoint;
-
-} // namespace module
 
 namespace ocpp_multi {
 
@@ -161,9 +140,10 @@ struct GenericChargePointCallbacks {
 
     virtual bool map_error(const std::string& error, std::string& updated_error) = 0;
     virtual void transaction_add(std::int32_t evse_id,
-                                 const std::shared_ptr<module::TransactionData>& transaction_data) = 0;
-    virtual std::shared_ptr<module::TransactionData> transaction_data(std::int32_t evse_id) = 0;
-    virtual module::TxEventEffect transaction_event(std::int32_t evse_id, module::TxEvent tx_event) = 0;
+                                 const std::shared_ptr<ocpp_module_common::TransactionData>& transaction_data) = 0;
+    virtual std::shared_ptr<ocpp_module_common::TransactionData> transaction_data(std::int32_t evse_id) = 0;
+    virtual ocpp_module_common::TxEventEffect transaction_event(std::int32_t evse_id,
+                                                                ocpp_module_common::TxEvent tx_event) = 0;
     virtual void transaction_reset(std::int32_t evse_id) = 0;
     virtual void update_evcc_id_token(std::int32_t evse, ocpp::v2::IdToken& id_token) = 0;
 };
@@ -221,7 +201,7 @@ struct GenericChargePointInterface {
         fs::path v2_device_model_database_path;
         ConnectorStructure evse_connector_structure;
         ConnectorStructureV16 connector_mapping;
-        std::shared_ptr<module::device_model::EverestDeviceModelStorage> everest_device_model;
+        std::shared_ptr<ocpp_module_common::device_model::EverestDeviceModelStorage> everest_device_model;
         std::string v16_device_model_config_mappings;
         std::int32_t v16_ocpp16_network_config_slot;
         bool v16_enable_legacy_config_migration;

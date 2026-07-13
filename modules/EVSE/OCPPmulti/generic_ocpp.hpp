@@ -4,6 +4,7 @@
 #pragma once
 
 #include "generic_chargepoint_interface.hpp"
+#include "ocpp_module_common_aliases.hpp"
 
 #include <generated/interfaces/auth/Interface.hpp>
 #include <generated/interfaces/auth_token_provider/Implementation.hpp>

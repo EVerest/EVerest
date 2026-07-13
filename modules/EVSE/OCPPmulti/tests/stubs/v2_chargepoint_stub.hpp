@@ -8,6 +8,7 @@
 
 #include <generic_chargepoint_interface.hpp>
 #include <ocpp/v2/charge_point.hpp>
+#include <ocpp_module_common_aliases.hpp>
 
 namespace stubs {
 

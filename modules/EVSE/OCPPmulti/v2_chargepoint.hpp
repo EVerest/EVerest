@@ -4,6 +4,7 @@
 #pragma once
 
 #include "generic_chargepoint_interface.hpp"
+#include "ocpp_module_common_aliases.hpp"
 
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
