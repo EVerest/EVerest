@@ -107,6 +107,26 @@ channels:
     messages:
       receive_charging_schedules:
         $ref: '#/components/messages/receive_charging_schedules'
+  send_request_get_is_connected:
+    address: 'm2e/is_connected/get'
+    messages:
+      send_request_get_is_connected:
+        $ref: '#/components/messages/send_request_get_is_connected'
+  receive_reply_get_is_connected:
+    address: null
+    messages:
+      receive_reply_get_is_connected:
+        $ref: '#/components/messages/receive_reply_get_is_connected'
+  send_request_get_charging_schedules:
+    address: 'm2e/charging_schedules/get'
+    messages:
+      send_request_get_charging_schedules:
+        $ref: '#/components/messages/send_request_get_charging_schedules'
+  receive_reply_get_charging_schedules:
+    address: null
+    messages:
+      receive_reply_get_charging_schedules:
+        $ref: '#/components/messages/receive_reply_get_charging_schedules'
   receive_ocpp_message:
     address: e2m/ocpp_message
     messages:
@@ -234,6 +254,44 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_charging_schedules'
+  send_request_get_is_connected:
+    title: 'Request current Is Connected'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_is_connected'
+    description: >-
+      Request the most recently published (latched) Is Connected.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, no reply will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_is_connected'
+  receive_reply_get_is_connected:
+    title: 'Reply to get Is Connected request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_is_connected'
+  send_request_get_charging_schedules:
+    title: 'Request current Charging Schedules'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_charging_schedules'
+    description: >-
+      Request the most recently published (latched) Charging Schedules.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, no reply will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_charging_schedules'
+  receive_reply_get_charging_schedules:
+    title: 'Reply to get Charging Schedules request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_charging_schedules'
   receive_ocpp_message:
     title: Receive ocpp message
     action: receive
@@ -498,6 +556,66 @@ components:
         The duration of the composite schedules is controlled by
         PublishChargingScheduleDurationS (OCPP 2.x) and
         RequestCompositeScheduleDurationS (OCPP 1.6)
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ChargingSchedules'
+    send_request_get_is_connected:
+      name: send_request_get_is_connected
+      title: 'Request current Is Connected'
+      summary: 'Request the most recently published (latched) Is Connected.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_is_connected:
+      name: receive_reply_get_is_connected
+      title: 'Reply to get Is Connected request'
+      summary: 'The most recently published Is Connected.'
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ConnectedStatus'
+    send_request_get_charging_schedules:
+      name: send_request_get_charging_schedules
+      title: 'Request current Charging Schedules'
+      summary: 'Request the most recently published (latched) Charging Schedules.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_charging_schedules:
+      name: receive_reply_get_charging_schedules
+      title: 'Reply to get Charging Schedules request'
+      summary: 'The most recently published Charging Schedules.'
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ChargingSchedules'

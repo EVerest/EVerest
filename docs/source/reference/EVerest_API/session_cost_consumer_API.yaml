@@ -44,6 +44,36 @@ channels:
     messages:
       session_cost:
         $ref: '#/components/messages/receive_session_cost'
+  send_request_get_default_price:
+    address: 'm2e/default_price/get'
+    messages:
+      send_request_get_default_price:
+        $ref: '#/components/messages/send_request_get_default_price'
+  receive_reply_get_default_price:
+    address: null
+    messages:
+      receive_reply_get_default_price:
+        $ref: '#/components/messages/receive_reply_get_default_price'
+  send_request_get_tariff_message:
+    address: 'm2e/tariff_message/get'
+    messages:
+      send_request_get_tariff_message:
+        $ref: '#/components/messages/send_request_get_tariff_message'
+  receive_reply_get_tariff_message:
+    address: null
+    messages:
+      receive_reply_get_tariff_message:
+        $ref: '#/components/messages/receive_reply_get_tariff_message'
+  send_request_get_session_cost:
+    address: 'm2e/session_cost/get'
+    messages:
+      send_request_get_session_cost:
+        $ref: '#/components/messages/send_request_get_session_cost'
+  receive_reply_get_session_cost:
+    address: null
+    messages:
+      receive_reply_get_session_cost:
+        $ref: '#/components/messages/receive_reply_get_session_cost'
 
 
   receive_heartbeat:
@@ -88,6 +118,63 @@ operations:
       Published periodically during a session and once when it ends.
       Contains session cost broken down into chunks, current and upcoming
       pricing, and optional display messages.
+  send_request_get_default_price:
+    title: 'Request current Default Price'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_default_price'
+    description: >-
+      Request the most recently published (latched) Default Price.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, no reply will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_default_price'
+  receive_reply_get_default_price:
+    title: 'Reply to get Default Price request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_default_price'
+  send_request_get_tariff_message:
+    title: 'Request current Tariff Message'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_tariff_message'
+    description: >-
+      Request the most recently published (latched) Tariff Message.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, no reply will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_tariff_message'
+  receive_reply_get_tariff_message:
+    title: 'Reply to get Tariff Message request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_tariff_message'
+  send_request_get_session_cost:
+    title: 'Request current Session Cost'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_session_cost'
+    description: >-
+      Request the most recently published (latched) Session Cost.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, no reply will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_session_cost'
+  receive_reply_get_session_cost:
+    title: 'Reply to get Session Cost request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_session_cost'
 
 
   receive_heartbeat:
@@ -123,6 +210,96 @@ components:
       name: receive_session_cost
       title: 'Receive session cost'
       summary: 'Running or final cost of a charging session'
+      contentType: application/json
+      payload:
+        $ref: 'session_cost_API.yaml#/components/schemas/SessionCost'
+    send_request_get_default_price:
+      name: send_request_get_default_price
+      title: 'Request current Default Price'
+      summary: 'Request the most recently published (latched) Default Price.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_default_price:
+      name: receive_reply_get_default_price
+      title: 'Reply to get Default Price request'
+      summary: 'The most recently published Default Price.'
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DefaultPrice'
+    send_request_get_tariff_message:
+      name: send_request_get_tariff_message
+      title: 'Request current Tariff Message'
+      summary: 'Request the most recently published (latched) Tariff Message.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_tariff_message:
+      name: receive_reply_get_tariff_message
+      title: 'Reply to get Tariff Message request'
+      summary: 'The most recently published Tariff Message.'
+      contentType: application/json
+      payload:
+        $ref: 'session_cost_API.yaml#/components/schemas/TariffMessage'
+    send_request_get_session_cost:
+      name: send_request_get_session_cost
+      title: 'Request current Session Cost'
+      summary: 'Request the most recently published (latched) Session Cost.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_session_cost:
+      name: receive_reply_get_session_cost
+      title: 'Reply to get Session Cost request'
+      summary: 'The most recently published Session Cost.'
       contentType: application/json
       payload:
         $ref: 'session_cost_API.yaml#/components/schemas/SessionCost'

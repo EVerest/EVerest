@@ -49,6 +49,16 @@ channels:
     messages:
       receive_plug_temperature_C:
         $ref: "#/components/messages/receive_plug_temperature_C"
+  send_request_get_plug_temperature_C:
+    address: 'm2e/plug_temperature_C/get'
+    messages:
+      send_request_get_plug_temperature_C:
+        $ref: '#/components/messages/send_request_get_plug_temperature_C'
+  receive_reply_get_plug_temperature_C:
+    address: null
+    messages:
+      receive_reply_get_plug_temperature_C:
+        $ref: '#/components/messages/receive_reply_get_plug_temperature_C'
 
 
   receive_heartbeat:
@@ -76,6 +86,25 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_plug_temperature_C'
+  send_request_get_plug_temperature_C:
+    title: 'Request current Plug Temperature C'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_plug_temperature_C'
+    description: >-
+      Request the most recently published (latched) Plug Temperature C.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, no reply will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_plug_temperature_C'
+  receive_reply_get_plug_temperature_C:
+    title: 'Reply to get Plug Temperature C request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_plug_temperature_C'
 
 
   receive_heartbeat:
@@ -113,6 +142,36 @@ components:
       name: receive_plug_temperature_C
       title: Receive the plug temperature
       summary: Current temperature of the plug in degree celsius
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/PlugTemperature'
+    send_request_get_plug_temperature_C:
+      name: send_request_get_plug_temperature_C
+      title: 'Request current Plug Temperature C'
+      summary: 'Request the most recently published (latched) Plug Temperature C.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_plug_temperature_C:
+      name: receive_reply_get_plug_temperature_C
+      title: 'Reply to get Plug Temperature C request'
+      summary: 'The most recently published Plug Temperature C.'
       contentType: application/json
       payload:
         $ref: '#/components/schemas/PlugTemperature'

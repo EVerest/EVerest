@@ -124,6 +124,16 @@ channels:
     messages:
       receive_evse_id:
         $ref: '#/components/messages/receive_evse_id'
+  send_request_get_evse_id:
+    address: 'm2e/evse_id/get'
+    messages:
+      send_request_get_evse_id:
+        $ref: '#/components/messages/send_request_get_evse_id'
+  receive_reply_get_evse_id:
+    address: null
+    messages:
+      receive_reply_get_evse_id:
+        $ref: '#/components/messages/receive_reply_get_evse_id'
   receive_hw_capabilities:
     address: 'e2m/hw_capabilities'
     messages:
@@ -366,6 +376,25 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_evse_id'
+  send_request_get_evse_id:
+    title: 'Request current EVSE ID'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_evse_id'
+    description: >-
+      Request the most recently published (latched) EVSE ID.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, no reply will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_evse_id'
+  receive_reply_get_evse_id:
+    title: 'Reply to get EVSE ID request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_evse_id'
   receive_hw_capabilities:
     title: 'Receive hardware capabilites and limits'
     action: receive
@@ -718,6 +747,36 @@ components:
       name: receive_evse_id
       title: 'Receive EVSE ID'
       summary: 'EVSE ID'
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EvseId'
+    send_request_get_evse_id:
+      name: send_request_get_evse_id
+      title: 'Request current EVSE ID'
+      summary: 'Request the most recently published (latched) EVSE ID.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_evse_id:
+      name: receive_reply_get_evse_id
+      title: 'Reply to get EVSE ID request'
+      summary: 'The most recently published EVSE ID.'
       contentType: application/json
       payload:
         $ref: '#/components/schemas/EvseId'
