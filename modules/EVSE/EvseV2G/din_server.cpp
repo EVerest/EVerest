@@ -675,7 +675,7 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
  * \param conn is the structure with the V2G msg pair.
  * \return Returns the next V2G-event.
  */
-static enum v2g_event handle_din_power_delivery(struct v2g_connection* conn) {
+enum v2g_event states::handle_din_power_delivery(struct v2g_connection* conn) {
     struct din_PowerDeliveryReqType* req = &conn->exi_in.dinEXIDocument->V2G_Message.Body.PowerDeliveryReq;
     struct din_PowerDeliveryResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.PowerDeliveryRes;
     enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
@@ -684,6 +684,16 @@ static enum v2g_event handle_din_power_delivery(struct v2g_connection* conn) {
     publish_din_power_delivery_req(conn->ctx, req);
 
     if (req->ReadyToChargeState == (int)0) {
+        /* The EV requested to stop the charging session. Mark the remaining phases as shut down, so that
+         * PowerDeliveryRes and WeldingDetectionRes report EVSE_Shutdown [IEC 61851-23:2023 CC.7.5.19]. More
+         * specific status codes like EVSE_UtilityInterruptEvent or EVSE_Malfunction are preserved. */
+        for (const auto phase : {PHASE_CHARGE, PHASE_WELDING}) {
+            uint8_t& status_code = conn->ctx->evse_v2g_data.evse_status_code[phase];
+            if ((status_code == din_DC_EVSEStatusCodeType_EVSE_NotReady) ||
+                (status_code == din_DC_EVSEStatusCodeType_EVSE_Ready)) {
+                status_code = din_DC_EVSEStatusCodeType_EVSE_Shutdown;
+            }
+        }
         conn->ctx->p_charger->publish_current_demand_finished(nullptr);
         conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
         conn->ctx->session.is_charging = false;
@@ -1076,7 +1086,7 @@ enum v2g_event din_handle_request(v2g_connection* conn) {
         }
         exi_out->V2G_Message.Body.PowerDeliveryRes_isUsed = 1u;
         init_din_PowerDeliveryResType(&exi_out->V2G_Message.Body.PowerDeliveryRes);
-        next_v2g_event = handle_din_power_delivery(conn);
+        next_v2g_event = states::handle_din_power_delivery(conn);
     } else if (exi_in->V2G_Message.Body.ChargingStatusReq_isUsed) {
         dlog(DLOG_LEVEL_TRACE, "ChargingStatus request is not supported in DIN 70121");
         conn->ctx->current_v2g_msg = V2G_UNKNOWN_MSG;
