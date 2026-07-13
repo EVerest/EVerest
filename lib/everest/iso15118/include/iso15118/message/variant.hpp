@@ -2,8 +2,7 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
+#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -18,21 +17,19 @@ namespace iso15118::message_20 {
 
 class Variant {
 public:
-    using CustomDeleter = void (*)(void*);
+    using CustomDeleter = std::function<void(void*)>;
     Variant(io::v2gtp::PayloadType, const io::StreamInputView&);
-    template <typename MessageType> Variant(const MessageType& in) {
+    template <typename MessageType>
+    explicit Variant(const MessageType& in_) :
+        data(new MessageType, [](void* ptr) { delete static_cast<MessageType*>(ptr); }),
+        type(message_20::TypeTrait<MessageType>::type) {
         static_assert(TypeTrait<MessageType>::type != Type::None, "Unhandled type!");
-
-        data = new MessageType;
-        *static_cast<MessageType*>(data) = in;
-        custom_deleter = [](void* ptr) { delete static_cast<MessageType*>(ptr); };
-        type = message_20::TypeTrait<MessageType>::type;
+        *static_cast<MessageType*>(data.get()) = in_;
     }
-    ~Variant();
+    ~Variant() = default;
 
-    Type get_type() const;
-
-    const std::string& get_error() const;
+    [[nodiscard]] Type get_type() const;
+    [[nodiscard]] const std::string& get_error() const;
 
     template <typename T> const T& get() const {
         static_assert(TypeTrait<T>::type != Type::None, "Unhandled type!");
@@ -40,7 +37,7 @@ public:
             throw std::runtime_error("Illegal message type access");
         }
 
-        return *static_cast<T*>(data);
+        return *static_cast<T*>(data.get());
     }
 
     template <typename T> T const* get_if() const {
@@ -49,12 +46,11 @@ public:
             return nullptr;
         }
 
-        return static_cast<T*>(data);
+        return static_cast<T*>(data.get());
     }
 
 private:
-    CustomDeleter custom_deleter{nullptr};
-    void* data{nullptr};
+    std::unique_ptr<void, CustomDeleter> data;
     Type type{Type::None};
     std::string error;
 };
