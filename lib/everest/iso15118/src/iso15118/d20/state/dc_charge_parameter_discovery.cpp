@@ -86,7 +86,7 @@ handle_request(const message_20::DC_ChargeParameterDiscoveryRequest& req, const 
 }
 
 void DC_ChargeParameterDiscovery::enter() {
-    m_ctx.log.enter_state("DC_ChargeParameterDiscovery");
+    logf_debug("Enter state: DC_ChargeParameterDiscovery");
 }
 
 Result DC_ChargeParameterDiscovery::feed(Event ev) {
@@ -142,7 +142,7 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
 
         return {};
     } else {
-        m_ctx.log("expected DC_ChargeParameterDiscovery! But code type id: %d", variant->get_type());
+        logf_warning("Expected DC_ChargeParameterDiscovery! But code type id: %d", variant->get_type());
         m_ctx.session_stopped = true;
 
         // Sequence Error

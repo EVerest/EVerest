@@ -186,7 +186,7 @@ message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetail
 }
 
 void ServiceDetail::enter() {
-    m_ctx.log.enter_state("ServiceDetail");
+    logf_debug("Enter state: ServiceDetail");
 }
 
 Result ServiceDetail::feed(Event ev) {
@@ -253,7 +253,7 @@ Result ServiceDetail::feed(Event ev) {
 
         return {};
     } else {
-        m_ctx.log("expected ServiceDetailReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected ServiceDetailReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

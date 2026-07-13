@@ -19,7 +19,6 @@
 #include <iso15118/io/time.hpp>
 
 #include <iso15118/session/feedback.hpp>
-#include <iso15118/session/logger.hpp>
 
 #include <iso15118/d20/timeout.hpp>
 
@@ -50,7 +49,6 @@ public:
 
 private:
     std::unique_ptr<io::IConnection> connection;
-    session::SessionLogger log;
 
     SessionState state;
     // input buffer

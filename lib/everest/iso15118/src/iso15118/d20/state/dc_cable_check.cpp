@@ -31,7 +31,7 @@ message_20::DC_CableCheckResponse handle_request(const message_20::DC_CableCheck
 }
 
 void DC_CableCheck::enter() {
-    m_ctx.log.enter_state("DC_CableCheck");
+    logf_debug("Enter state: DC_CableCheck");
 }
 
 Result DC_CableCheck::feed(Event ev) {
@@ -82,7 +82,7 @@ Result DC_CableCheck::feed(Event ev) {
 
         return {};
     } else {
-        m_ctx.log("expected DC_CableCheckReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected DC_CableCheckReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

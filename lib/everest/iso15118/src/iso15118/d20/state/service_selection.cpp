@@ -123,7 +123,7 @@ message_20::ServiceSelectionResponse handle_request(const message_20::ServiceSel
 }
 
 void ServiceSelection::enter() {
-    m_ctx.log.enter_state("ServiceSelection");
+    logf_debug("Enter state: ServiceSelection");
 }
 
 Result ServiceSelection::feed(Event ev) {
@@ -212,8 +212,8 @@ Result ServiceSelection::feed(Event ev) {
         if (m_ctx.session.is_dc_charger()) {
             return m_ctx.create_state<DC_ChargeParameterDiscovery>();
         }
-        m_ctx.log("expected selected_energy_service AC, AC_BPT, DC, DC_BPT, MCS, MCS_BPT! But code type id: %d",
-                  static_cast<int>(selected_energy_service));
+        logf_warning("Expected selected_energy_service AC, AC_BPT, DC, DC_BPT, MCS, MCS_BPT! But code type id: %d",
+                     static_cast<int>(selected_energy_service));
 
         m_ctx.session_stopped = true;
         return {};
@@ -226,7 +226,7 @@ Result ServiceSelection::feed(Event ev) {
 
         return {};
     } else {
-        m_ctx.log("expected ServiceDetailReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected ServiceDetailReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

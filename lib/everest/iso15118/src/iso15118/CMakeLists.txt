@@ -21,7 +21,6 @@ target_sources(iso15118
 
         session/feedback.cpp
         session/iso.cpp
-        session/logger.cpp
 
         d20/context.cpp
         d20/context_helper.cpp

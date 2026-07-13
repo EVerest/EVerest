@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <memory>
-#include <optional>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <iso15118/d20/config.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/session/iso.hpp>
-#include <iso15118/session/logger.hpp>
 #include <iso15118/tbd_controller.hpp>
 
 #include "mock_connection.hpp"
@@ -66,8 +64,6 @@ void arm_deferred_response(iso15118::TbdController& controller, MockConnection& 
 } // namespace
 
 SCENARIO("Data-link loss tears down the active session") {
-    iso15118::session::logging::set_session_log_callback([](std::size_t, const auto&) {});
-
     bool terminate_signaled = false;
     iso15118::session::feedback::Callbacks callbacks;
     callbacks.signal = [&](iso15118::session::feedback::Signal s) {
@@ -96,8 +92,6 @@ SCENARIO("Data-link loss tears down the active session") {
 }
 
 SCENARIO("Data-link loss tears down a session with a deferred response") {
-    iso15118::session::logging::set_session_log_callback([](std::size_t, const auto&) {});
-
     iso15118::session::feedback::Callbacks callbacks;
     callbacks.signal = [](auto) {};
 
@@ -120,8 +114,6 @@ SCENARIO("Data-link loss tears down a session with a deferred response") {
 }
 
 SCENARIO("Data-link loss reaps a never-connected session") {
-    iso15118::session::logging::set_session_log_callback([](std::size_t, const auto&) {});
-
     bool terminate_signaled = false;
     iso15118::session::feedback::Callbacks callbacks;
     callbacks.signal = [&](iso15118::session::feedback::Signal s) {
@@ -149,8 +141,6 @@ SCENARIO("Data-link loss reaps a never-connected session") {
 }
 
 SCENARIO("A terminate racing session creation wins over the fresh session") {
-    iso15118::session::logging::set_session_log_callback([](std::size_t, const auto&) {});
-
     bool terminate_signaled = false;
     iso15118::session::feedback::Callbacks callbacks;
     callbacks.signal = [&](iso15118::session::feedback::Signal s) {
