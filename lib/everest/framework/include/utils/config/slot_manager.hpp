@@ -62,7 +62,7 @@ public:
     GenericResponseStatus update_config_slot(int slot_id, const std::string& config_dump,
                                              const std::optional<std::filesystem::path>& config_file_path,
                                              const std::optional<std::string>& description);
-    /// \brief Updates an existing configuration slot'S description
+    /// \brief Updates an existing configuration slot's description
     /// Optionals without a value will set the corresponding value to NULL in the DB
     /// \param slot_id Id of the slot; must not exist yet
     /// \param description Arbitrary text

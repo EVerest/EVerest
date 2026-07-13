@@ -266,13 +266,12 @@ Response handle_set_request(const SetRequest& set_request, const std::string& or
             break;
         case Everest::config::SetConfigParameterResultEnum::DoesNotExist:
             response.status = ResponseStatus::Error;
-            break;
-        case Everest::config::SetConfigParameterResultEnum::Rejected:
-            // TODO(CB) : commented, because the test failed otherwise - correct?
-            response.status = ResponseStatus::Ok;
             response.status_info =
                 fmt::format("Config parameter {} not found in module {}",
                             set_request.identifier.configuration_parameter_name, set_request.identifier.module_id);
+            break;
+        case Everest::config::SetConfigParameterResultEnum::Rejected:
+            response.status = ResponseStatus::Ok;
             break;
         default:
             set_response.status = SetResponseStatus::Rejected;

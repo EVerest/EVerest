@@ -33,25 +33,13 @@ namespace Everest::config {
 //     and therefore call other internal_* methods directly -- never the public
 //     wrappers, which would deadlock (the actor would block on a task only it
 //     could run).
-//   * post_to_actor() (in the header) runs inline when spawn_threads_ == false
-//     (deterministic single-threaded mode used by tests), otherwise enqueues
-//     and blocks the caller on the result.
 //
 // Lock-free reads: get_active_module_configurations() bypasses the actor and
 // std::atomic_load()s the current immutable snapshot. The actor publishes a new
 // snapshot via std::atomic_store() on every change, so readers never block the
 // actor nor see a half-written config.
 //
-// Runtime module callbacks: set_config_parameters dispatches the (potentially
-// slow) module callback to async_worker_pool_ and then waits on the futures
-// with a timeout -- so the actor CAN block here for up to that timeout. In
-// practice a healthy module replies well within it; the bounded wait is a
-// deliberate trade-off, and any future that does time out is parked in
-// orphaned_futures_ (reaped on the next call) so the actor still returns.
-//
-// Event delivery: publish_*_update() copy the handler list and, in threaded
-// mode, run handlers on a detached thread, so handlers may call back into the
-// service without deadlocking the actor.
+// Runtime module callbacks are processed sequentially.
 //
 // Shutdown: ~ConfigServiceCore() clears running_, stops command_queue_ and
 // joins the worker thread.
@@ -155,9 +143,15 @@ ConfigServiceCore::~ConfigServiceCore() {
 
 void ConfigServiceCore::process_queue() {
     while (running_) {
-        auto task = command_queue_.wait_and_pop();
-        if (task) {
-            (*task)();
+        try {
+            auto task = command_queue_.wait_and_pop();
+            if (task) {
+                (*task)();
+            }
+        } catch (const std::exception& e) {
+            EVLOG_error << "Caught exception in process_queue(): " << e.what();
+        } catch (...) {
+            EVLOG_error << "Caught non-std::exception in process_queue().";
         }
     }
 }
@@ -432,7 +426,6 @@ ConfigServiceCore::internal_set_config_parameters(int slot_id, const std::vector
                                                   const Origin& origin) {
     SetConfigParameterResult result;
     result.status = SetConfigParameterStatus::Ok;
-    const bool modules_are_running = module_status_ == ActiveSlotStatus::Running;
 
     const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
     const bool modifies_active_slot = resolved_slot_id == active_slot_id_;

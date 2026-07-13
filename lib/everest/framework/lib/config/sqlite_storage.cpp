@@ -466,7 +466,7 @@ GenericResponseStatus SqliteStorage::write_module_config_items(const ModuleConfi
                     EVLOG_error << "Failed to write configuration parameter for module: " << module_id
                                 << ", param: " << identifier.configuration_parameter_name;
                 } else {
-                    EVLOG_debug << "Written configuration parameter for modul: " << module_id
+                    EVLOG_debug << "Written configuration parameter for module: " << module_id
                                 << ", impl_id: " << impl_id << ", param: " << identifier.configuration_parameter_name;
                 }
             }

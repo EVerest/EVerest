@@ -423,10 +423,10 @@ void adl_serializer<everest::config::ConfigurationParameterCharacteristics>::fro
         c.unit = j.at("unit").get<std::string>();
     }
     if (j.contains("min_value")) {
-        c.min_value = j.at("min_value").get<int32_t>();
+        c.min_value = j.at("min_value").get<float>();
     }
     if (j.contains("max_value")) {
-        c.max_value = j.at("max_value").get<int32_t>();
+        c.max_value = j.at("max_value").get<float>();
     }
 }
 

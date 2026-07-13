@@ -117,11 +117,15 @@ private:
         auto promise = std::make_shared<std::promise<ReturnType>>();
         auto future = promise->get_future();
         command_queue_.push([promise, f = std::forward<Func>(f)]() mutable {
-            if constexpr (std::is_void_v<ReturnType>) {
-                f();
-                promise->set_value();
-            } else {
-                promise->set_value(f());
+            try {
+                if constexpr (std::is_void_v<ReturnType>) {
+                    f();
+                    promise->set_value();
+                } else {
+                    promise->set_value(f());
+                }
+            } catch (...) {
+                promise->set_exception(std::current_exception());
             }
         });
         return future.get();
