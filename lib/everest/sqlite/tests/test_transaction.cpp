@@ -122,10 +122,19 @@ TEST_F(TransactionTest, SequentialTransactionsReuseConnection) {
 }
 
 TEST_F(TransactionTest, NonDeferredTransactionRejectsOutOfOrderInsert) {
-    auto transaction = db->begin_transaction();
+    auto transaction = db->begin_transaction_with_enforced_fkeys();
     // Without deferred foreign keys the constraint is checked immediately, so
     // inserting a child before its parent must fail.
     EXPECT_FALSE(try_insert_child(1, 42));
+    transaction->rollback();
+}
+
+TEST_F(TransactionTest, PlainTransactionDoesNotEnforceFkeys) {
+    // Foreign key enforcement is per-transaction: even though the fixture (or a
+    // previous fkeys-enforcing transaction) enabled the pragma on the connection,
+    // a plain transaction must not enforce constraints.
+    auto transaction = db->begin_transaction();
+    EXPECT_TRUE(try_insert_child(1, 42));
     transaction->rollback();
 }
 
@@ -150,10 +159,16 @@ TEST_F(TransactionTest, DeferredFkeysStillEnforcedAtCommit) {
     ASSERT_TRUE(try_insert_child(1, 99));
     EXPECT_THROW(transaction->commit(), QueryExecutionException);
 
-    // The failed commit leaves the underlying transaction open; roll it back
-    // directly so the fixture can tear down cleanly.
-    db->execute_statement("ROLLBACK TRANSACTION");
+    // The failed commit must resolve the transaction itself (rollback) before
+    // releasing the connection, so no pending transaction may remain.
+    EXPECT_FALSE(db->has_pending_transaction());
     EXPECT_EQ(count_rows("child"), 0);
+
+    // The connection must be immediately usable for a follow-up transaction.
+    auto next_transaction = db->begin_transaction();
+    insert_parent(1);
+    next_transaction->commit();
+    EXPECT_EQ(count_rows("parent"), 1);
 }
 
 } // namespace everest::db::sqlite

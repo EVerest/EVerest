@@ -48,6 +48,7 @@ public:
     virtual bool close_connection() = 0;
 
     /// \brief Start a transaction on the database. Returns an object holding the transaction.
+    ///        Foreign key constraints are not enforced within this transaction.
     /// \note This function can block until the previous transaction is finished.
     [[nodiscard]] virtual std::unique_ptr<TransactionInterface> begin_transaction() = 0;
 
@@ -105,6 +106,9 @@ public:
     std::unique_ptr<StatementInterface> new_statement(const std::string& sql) override;
 
     const char* get_error_message() override;
+
+    /// \brief Returns true while a transaction is open on this connection (autocommit disabled).
+    [[nodiscard]] bool has_pending_transaction() const;
 
     bool clear_table(const std::string& table) override;
 
