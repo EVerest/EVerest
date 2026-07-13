@@ -111,21 +111,19 @@ void patch_number_of_connectors(
     constexpr auto number_of_connectors_var = "NumberOfConnectors";
 
     for (auto& [component_key, variables] : component_configs) {
-        if (component_key.name != legacy_ctrlr_name) {
-            continue;
-        }
-        for (auto& variable : variables) {
-            if (variable.name != number_of_connectors_var) {
-                continue;
-            }
-            for (auto& attribute : variable.attributes) {
-                if (attribute.variable_attribute.type == ocpp::v2::AttributeEnum::Actual) {
-                    attribute.value_source = "OCPP16Config";
-                    attribute.variable_attribute.value = std::to_string(n_evse);
+        if (component_key.name == legacy_ctrlr_name) {
+            for (auto& variable : variables) {
+                if (variable.name == number_of_connectors_var) {
+                    for (auto& attribute : variable.attributes) {
+                        if (attribute.variable_attribute.type == ocpp::v2::AttributeEnum::Actual) {
+                            attribute.value_source = "OCPP16Config";
+                            attribute.variable_attribute.value = std::to_string(n_evse);
+                        }
+                    }
+                    variable.default_actual_value = std::to_string(n_evse);
+                    return;
                 }
             }
-            variable.default_actual_value = std::to_string(n_evse);
-            return;
         }
     }
 
