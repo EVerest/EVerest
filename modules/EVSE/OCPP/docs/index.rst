@@ -346,9 +346,11 @@ This module currently deviates from the MREC specification in the following poin
 * Simultaneous errors: MREC requires reporting simultaneous errors by reporting them in a single **StatusNotification.req** by separating 
   the information of the fields **vendorId** and **info** by a semicolon. This module sends one **StatusNotification.req** per individual error 
   because of the limited maximum characters of the **info** field.
-* MREC requires always using the value **Faulted** for the **status** field when reporting an error. The OCPP1.6 specification defines the 
-  **Faulted** value as follows: "When a Charge Point or connector has reported an error and is not available for energy delivery.  
+* MREC requires always using the value **Faulted** for the **status** field when reporting an error. The OCPP1.6 specification defines the
+  **Faulted** value as follows: "When a Charge Point or connector has reported an error and is not available for energy delivery.
   (Inoperative)." This module, therefore, only reports **Faulted** when the Charge Point is not available for energy delivery.
+
+  When an MREC error is raised, the EVerest error message is written to the ``info`` property instead of ``vendorId``.
 
 Energy Management and Smart Charging Integration
 ================================================
