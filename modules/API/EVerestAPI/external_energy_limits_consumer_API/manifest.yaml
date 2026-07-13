@@ -8,6 +8,10 @@ config:
     description: "Interval between two heartbeat messages send by the API. Values <= 0 disable heartbeat."
     type: integer
     default: 1000
+  latch_variable_values:
+    description: "Cache the latest value of each published variable and reply to '<var>/get' requests with the cached value."
+    type: boolean
+    default: true
 
 provides:
   main:

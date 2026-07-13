@@ -40,37 +40,11 @@ void session_cost_consumer_API::ready() {
 }
 
 auto session_cost_consumer_API::forward_and_cache_api_var(std::string const& var) {
-    using namespace API_types_ext;
-    using namespace API_generic;
-    const auto topic = helper.get_topics().everest_to_extern(var);
-
-    if (config.latch_variable_values) {
-        helper.subscribe_api_topic(var + "/get", [this, topic](std::string const& data) {
-            API_generic::RequestReply msg;
-            if (deserialize(data, msg)) {
-                if (serialized_variables_cache.count(topic) > 0) {
-                    mqtt.publish(msg.replyTo, serialized_variables_cache[topic]);
-                } else {
-                    EVLOG_info << "No latched value for '" << topic << "' to return";
-                }
-                return true;
-            }
-            return false;
-        });
-    }
-
-    return [this, topic](auto const& val) {
-        try {
-            auto&& external = to_external_api(val);
-            auto&& payload = serialize(external);
-            serialized_variables_cache[topic] = payload;
-            mqtt.publish(topic, payload);
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Variable: '" << topic << "' failed with -> " << e.what();
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Cannot convert internal to external or serialize it.\n" << topic;
-        }
-    };
+    return helper.forward_and_cache_api_var(var, config.latch_variable_values, [](auto const& val) {
+        using namespace API_types_ext;
+        using namespace API_generic;
+        return serialize(to_external_api(val));
+    });
 }
 
 void session_cost_consumer_API::generate_api_var_tariff_message() {

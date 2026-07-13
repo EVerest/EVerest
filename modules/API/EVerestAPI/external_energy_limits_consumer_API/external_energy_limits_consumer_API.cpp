@@ -28,11 +28,23 @@ void external_energy_limits_consumer_API::ready() {
     invoke_ready(*p_main);
 
     generate_api_cmd_set_external_limits();
+    generate_api_var_capabilities();
 
     helper.generate_api_var_communication_check(&comm_check);
     comm_check.start(config.cfg_communication_check_to_s);
     helper.setup_heartbeat_generator(&comm_check, config.cfg_heartbeat_interval_ms);
     helper.publish_ready_beacon();
+}
+
+auto external_energy_limits_consumer_API::forward_and_cache_api_var(std::string const& var) {
+    return helper.forward_and_cache_api_var(var, config.latch_variable_values, [](auto const& val) {
+        using namespace API_types_ext;
+        return serialize(to_external_api(val));
+    });
+}
+
+void external_energy_limits_consumer_API::generate_api_var_capabilities() {
+    r_energy_node->subscribe_capabilities(forward_and_cache_api_var("capabilities"));
 }
 
 void external_energy_limits_consumer_API::generate_api_cmd_set_external_limits() {

@@ -93,8 +93,6 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
-    std::map<std::string, std::string> serialized_variables_cache;
-
     auto forward_and_cache_api_var(std::string const& var);
 
     void generate_api_cmd_get_evse();
