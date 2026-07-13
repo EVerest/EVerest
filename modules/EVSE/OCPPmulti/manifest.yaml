@@ -83,15 +83,6 @@ config:
       If empty, only built-in mappings are used.
     type: string
     default: ""
-  Ocpp16NetworkConfigSlot:
-    description: >-
-      OCPP 1.6
-      NetworkConfiguration slot number that OCPP 1.6 connection details (CentralSystemURI, SecurityProfile,
-      AuthorizationKey, HostName, ChargePointId) are migrated to during the one-time device model migration.
-      Any existing attribute values in the target slot are overwritten.
-      Set to 0 to skip migration of network connection details entirely.
-    type: integer
-    default: 1
   EnableExternalWebsocketControl:
     description: >-
       If true websocket can be disconnected and connected externally. This parameter is for debug and testing purposes.
@@ -119,6 +110,27 @@ config:
       some OCTT test cases require that the first message after a reconnect is sent by the CSMS.
     type: integer
     default: 0
+  Mode:
+    description: >-
+      OCPP 1.6
+      OCPP 2.0.1
+      The operational mode of the module
+    type: string
+    enum:
+      - Prefer1.6
+      - Prefer2
+      - Only1.6
+      - Only2
+    default: Only2
+  Ocpp16NetworkConfigSlot:
+    description: >-
+      OCPP 1.6
+      NetworkConfiguration slot number that OCPP 1.6 connection details (CentralSystemURI, SecurityProfile,
+      AuthorizationKey, HostName, ChargePointId) are migrated to during the one-time device model migration.
+      Any existing attribute values in the target slot are overwritten.
+      Set to 0 to skip migration of network connection details entirely.
+    type: integer
+    default: 1
   RequestCompositeScheduleDurationS:
     description: >-
       OCPP 1.6 (called PublishChargingScheduleDurationS)
@@ -154,18 +166,6 @@ config:
       written to the user config file.
     type: string
     default: user_config.json
-  Mode:
-    description: >-
-      OCPP 1.6
-      OCPP 2.0.1
-      The operational mode of the module
-    type: string
-    enum:
-      - Prefer1.6
-      - Prefer2
-      - Only1.6
-      - Only2
-    default: Only2
 provides:
   auth_validator:
     description: Validates the provided token using CSMS, AuthorizationList or AuthorizationCache
