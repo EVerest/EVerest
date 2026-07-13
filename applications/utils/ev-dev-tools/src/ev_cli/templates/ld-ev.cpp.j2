@@ -42,6 +42,9 @@ static Everest::PtrContainer<{{info.class_name }}> mod_ptr {};
 {% if impl.rwconfig|length > 0 %}
 static {{ impl.id }}::RwConf {{ impl.id }}_rwconfig;
 static {{ impl.id }}::Conf {{ impl.id }}_config({{ impl.id }}_rwconfig);
+// pointer to the concrete implementation, set in everest_register(), so config change
+// handlers can be registered without casting the module's base class pointer
+static {{ impl.id }}::{{ impl.class_name }}* {{ impl.id }}_impl_p{nullptr};
 {% else %}
 static {{ impl.id }}::Conf {{ impl.id }}_config;
 {% endif %}
@@ -107,21 +110,15 @@ void LdEverest::init(ModuleConfigs module_configs, const ModuleInfo& mod_info) {
     auto config_client = adapter.get_config_service_client();
     {% set config_client_was_created.value = true %}
     {% endif %}
-    // as the module only holds a pointer to the base class of the implementation, it has to be casted to the
-    // concrete implementation here
-    auto impl_p = static_cast<module::{{ impl.type }}::{{ impl.class_name }}*>(mod_ptr->p_{{ impl.id }}.get());
     if (config_client) {
     {% endif %}
-        // Cast to the specialized implementation class, as the required header is included in this cpp file
-        // and we know which type this pointer points to
         config_client->register_config_change_handler("{{ impl.id }}", "{{ item.name }}",
-            [impl_p](const std::string& new_value) -> Everest::config::ConfigChangeResult {
+            [](const std::string& new_value) -> Everest::config::ConfigChangeResult {
     {% if item.cpp_type == "std::string" %}
-                // return mod_ptr->p_{{ impl.id }}->on_{{ item.name }}_changed(new_value);
-                return impl_p->on_{{ item.name }}_changed(new_value);
+                return {{ impl.id }}_impl_p->on_{{ item.name }}_changed(new_value);
     {% else %}
                 const auto typed_value = conversions::ConfigFromString<{{ item.cpp_type }}>(new_value);
-                return impl_p->on_{{ item.name }}_changed(typed_value);
+                return {{ impl.id }}_impl_p->on_{{ item.name }}_changed(typed_value);
     {% endif %}
             });
     {% if loop.last %}
@@ -177,6 +174,7 @@ std::vector<Everest::cmd> everest_register(const RequirementInitialization& requ
     {% for impl in provides %}
     {% if impl.rwconfig|length > 0 %}
     auto p_{{ impl.id }} = std::make_unique<{{ impl.id }}::{{ impl.class_name }}>(&adapter, mod_ptr, {{ impl.id }}_config, {{ impl.id }}_rwconfig);
+    {{ impl.id }}_impl_p = p_{{ impl.id }}.get();
     {% else %}
     auto p_{{ impl.id }} = std::make_unique<{{ impl.id }}::{{ impl.class_name }}>(&adapter, mod_ptr, {{ impl.id }}_config);
     {% endif %}
