@@ -449,7 +449,10 @@ components:
           description: The subtype of the error
           type: string
         message:
-          description: Addition information about the error
+          description: |-
+            Optional additional information about the error
+            OCPP 1.6: Sets `info` on MREC errors and `vendorId` otherwise
+            OCPP 2.x: Sets `techInfo`
           type: string
 
     CommunicationCheck:
