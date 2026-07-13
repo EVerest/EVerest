@@ -55,15 +55,7 @@ class FsmStateHelper {
 public:
     FsmStateHelper(const d20::SessionConfig& config, std::optional<d20::PauseContext>& pause_ctx_,
                    const session::feedback::Callbacks& callbacks) :
-        log(this), ctx(callbacks, log, config, pause_ctx_, active_control_event, msg_exch, timeouts) {
-
-        session::logging::set_session_log_callback([](std::size_t, const session::logging::Event& event) {
-            if (const auto* simple_event = std::get_if<session::logging::SimpleEvent>(&event)) {
-                printf("log(session: simple event): %s\n", simple_event->info.c_str());
-            } else {
-                printf("log(session): not decoded\n");
-            }
-        });
+        ctx(callbacks, config, pause_ctx_, active_control_event, msg_exch, timeouts) {
 
         io::set_logging_callback([](LogLevel level, std::string message) {
             printf("log(%d): %s\n", static_cast<int>(level), message.c_str());
@@ -86,8 +78,6 @@ private:
 
     d20::MessageExchange msg_exch{output_stream_view};
     std::optional<d20::ControlEvent> active_control_event;
-
-    session::SessionLogger log;
 
     d20::Timeouts timeouts;
 

@@ -33,11 +33,6 @@ void log_sdp_packet(const iso15118::io::SdpPacket& sdp) {
                         payload_string_buffer.get());
 }
 
-void log_packet_from_car(const iso15118::io::SdpPacket& packet, session::SessionLogger& logger) {
-    logger.exi(static_cast<uint16_t>(packet.get_payload_type()), packet.get_payload_buffer(),
-               packet.get_payload_length(), session::logging::ExiMessageDirection::FROM_EV);
-}
-
 std::unique_ptr<message_20::Variant> make_variant_from_packet(const iso15118::io::SdpPacket& packet) {
     return std::make_unique<message_20::Variant>(
         packet.get_payload_type(), io::StreamInputView{packet.get_payload_buffer(), packet.get_payload_length()});
@@ -130,8 +125,7 @@ Session::Session(std::unique_ptr<io::IConnection> connection_, d20::SessionConfi
                  const session::feedback::Callbacks& callbacks, std::optional<d20::PauseContext>& pause_ctx,
                  bool selected_d20_namespace) :
     connection(std::move(connection_)),
-    log(this),
-    ctx(callbacks, log, std::move(session_config), pause_ctx, active_control_event, message_exchange, timeouts),
+    ctx(callbacks, std::move(session_config), pause_ctx, active_control_event, message_exchange, timeouts),
     fsm(selected_d20_namespace ? ctx.create_state<d20::state::SessionSetup>()
                                : ctx.create_state<d20::state::SupportedAppProtocol>()) {
 
@@ -212,7 +206,6 @@ TimePoint const& Session::poll() {
     // check for complete sdp packet
     if (packet.is_complete()) {
         // FIXME (aw): this event loop only acts on new packets, seems to be enough for now ...
-        log_packet_from_car(packet, log);
 
         message_exchange.set_request(make_variant_from_packet(packet));
 
@@ -287,10 +280,6 @@ void Session::send_response() {
     last_response_tx_time = get_current_time_point();
 
     timeouts.start_timeout(d20::TimeoutType::SEQUENCE, d20::TIMEOUT_SEQUENCE);
-
-    // FIXME (aw): this is hacky ...
-    log.exi(static_cast<uint16_t>(stored_payload_type), response_buffer + io::SdpPacket::V2GTP_HEADER_SIZE,
-            payload_size, session::logging::ExiMessageDirection::TO_EV);
 
     ctx.feedback.v2g_message(stored_response_type);
 }

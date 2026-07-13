@@ -26,7 +26,7 @@ message_20::DC_WeldingDetectionResponse handle_request(const message_20::DC_Weld
 }
 
 void DC_WeldingDetection::enter() {
-    m_ctx.log.enter_state("DC_WeldingDetection");
+    logf_debug("Enter state: DC_WeldingDetection");
 }
 
 Result DC_WeldingDetection::feed(Event ev) {
@@ -92,7 +92,7 @@ Result DC_WeldingDetection::feed(Event ev) {
 
         return {};
     } else {
-        m_ctx.log("expected DC_WeldingDetection! But code type id: %d", variant->get_type());
+        logf_warning("Expected DC_WeldingDetection! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

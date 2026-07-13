@@ -124,7 +124,7 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
 }
 
 void ServiceDiscovery::enter() {
-    m_ctx.log.enter_state("ServiceDiscovery");
+    logf_debug("Enter state: ServiceDiscovery");
 }
 
 Result ServiceDiscovery::feed(Event ev) {
@@ -162,7 +162,7 @@ Result ServiceDiscovery::feed(Event ev) {
 
         return {};
     } else {
-        m_ctx.log("expected ServiceDiscoveryReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected ServiceDiscoveryReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();
