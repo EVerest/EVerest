@@ -139,9 +139,9 @@ cmds:
   set_der_available:
     description: >-
       Declare whether DER directive support (a grid_support provider) is wired for this EVSE.
-      When true and the EVSE is export-capable, EvseManager advertises the AC_DER_IEC energy
-      transfer mode to ISO 15118-20 (alongside AC_BPT). This is a boot-time wiring fact, not the
-      EV's runtime DER capability. Returns NoHlc and does nothing if no HLC is present.
+      When true and the EVSE is export-capable, EvseManager advertises the ISO 15118-20 AC_DER_IEC
+      energy transfer mode. This is a boot-time wiring fact, not the EV's runtime DER capability.
+      Returns NoHlc and does nothing if no HLC is present.
     arguments:
       available:
         description: True if DER directive support is wired for this EVSE.
