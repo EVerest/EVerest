@@ -78,6 +78,14 @@ enum class PaymentOption : uint8_t {
     ExternalPayment,
 };
 
+enum class EvseProcessing {
+    Finished,
+    Ongoing,
+};
+
+using GenChallenge = std::string;
+using IDREF = std::string;
+
 struct Notification {
     FaultCode fault_code;
     std::optional<std::string> fault_msg{std::nullopt};
