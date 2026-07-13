@@ -288,6 +288,9 @@ protected:
     void ready_module_configuration();
     void ready_transaction_handler();
 
+    // every Event alternative needs an overload; a missing one is a compile error
+    void visit_impl(std::int32_t, const std::monostate&) {
+    }
     void visit_impl(std::int32_t evse_id, const types::evse_manager::SessionEvent& session_event);
     void visit_impl(std::int32_t evse_id, const EventInfo& event);
     void visit_impl(std::int32_t evse_id, const powermeter_t& meter);

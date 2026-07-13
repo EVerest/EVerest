@@ -459,12 +459,9 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     // we can now initialise the charge point's state machine. It reads the connector availability from the internal
     // database and potentially triggers enable/disable callbacks at the evse.
     mv_charge_point.start(boot_reason, resuming_session_ids, false);
-    {
-        // flip under m_member_mux: pairs with enqueue_if_not_started() so no event can be
-        // queued after this point (ready_event_queue() below drains the final queue state)
-        std::lock_guard lock(m_member_mux);
-        mv_started.store(true);
-    }
+    // flip the enqueue gate and drain the queue; done before signalling external ready so that
+    // older queued events stay ahead of live-path events emitted after the flip
+    ready_event_queue();
     EVLOG_info << "OCPP started";
 
     // Signal to EVSEs to start their internal state machines
@@ -477,9 +474,6 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     std::this_thread::sleep_for(std::chrono::milliseconds(mv_config.getDelayOcppStart()));
     // start OCPP connection
     mv_charge_point.connect_websocket();
-
-    // process any queued events
-    ready_event_queue();
 }
 
 void GenericOcpp::init_check_energy_sink() {
@@ -583,43 +577,17 @@ void GenericOcpp::ready_event_queue() {
 
     EventQueue to_process;
     {
+        // flip under m_member_mux
         std::lock_guard lock(m_member_mux);
+        mv_started.store(true);
         to_process = std::move(m_event_queue);
+        m_event_queue.clear();
     }
 
-    // process event queue
     for (auto& [evse_id, evse_event_queue] : to_process) {
         while (!evse_event_queue.empty()) {
-            auto& queued_event = evse_event_queue.front();
-            try {
-                std::visit(
-                    [this, evse_id](auto&& arg) {
-                        using TYPE = std::decay_t<decltype(arg)>;
-
-                        if constexpr (std::is_same_v<types::evse_manager::SessionEvent, TYPE>) {
-                            visit_impl(evse_id, arg);
-                        } else if constexpr (std::is_same_v<EventInfo, TYPE>) {
-                            visit_impl(evse_id, arg);
-                        } else if constexpr (std::is_same_v<powermeter_t, TYPE>) {
-                            visit_impl(evse_id, arg);
-                        } else if constexpr (std::is_same_v<types::system::FirmwareUpdateStatus, TYPE>) {
-                            visit_impl(evse_id, arg);
-                        } else if constexpr (std::is_same_v<types::system::LogStatus, TYPE>) {
-                            visit_impl(evse_id, arg);
-                        } else if constexpr (std::is_same_v<types::reservation::ReservationUpdateStatus, TYPE>) {
-                            visit_impl(evse_id, arg);
-                        } else if constexpr (std::is_same_v<std::monostate, TYPE>) {
-                        } else {
-                            // all items should have handlers
-                            // some compilers trigger this so commenting out for now
-                            // static_assert(false);
-                        }
-                    },
-                    queued_event);
-            } catch (const std::exception& e) {
-                // a bad queued event must not take down OCPP for every EVSE
-                EVLOG_error << "Failed to process queued event for evse_id " << evse_id << ": " << e.what();
-            }
+            // dispatch via the visit_impl overload set
+            std::visit([this, evse_id](const auto& arg) { visit_impl(evse_id, arg); }, evse_event_queue.front());
             evse_event_queue.pop();
         }
     }
@@ -629,9 +597,9 @@ bool GenericOcpp::enqueue_if_not_started(std::int32_t evse_id, Event event) {
     if (mv_started.load()) {
         return false;
     }
-    // Re-check under m_member_mux: ready() flips mv_started under the same lock before draining
-    // (see ready()), so this pairing guarantees a concurrent start can't strand the event in a
-    // queue that is never drained again.
+    // Re-check under m_member_mux: ready_event_queue() flips mv_started and captures the queue
+    // in one critical section, so a concurrent start can't strand the event in a queue that is
+    // never drained again.
     std::lock_guard lock(m_member_mux);
     if (mv_started.load()) {
         return false;
