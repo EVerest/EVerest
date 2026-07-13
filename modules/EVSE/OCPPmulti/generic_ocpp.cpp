@@ -852,6 +852,9 @@ ocpp::v2::DataTransferResponse GenericOcpp::cb_data_transfer(const ocpp::v2::Dat
     ocpp::v2::DataTransferResponse response{};
     if (mv_requires.data_transfer.empty()) {
         EVLOG_error << "data_transfer called with no configured connections";
+        // If the data_transfer requirement is not fullfiled we reply with UnknownVendorId
+        // Rejected is reserved for "Message has been accepted but the contained request is rejected" according
+        // to the OCPP spec (similar definition through all protocol versions)
         response.status = ocpp::v2::DataTransferStatusEnum::UnknownVendorId;
     } else {
         using namespace module::conversions;
