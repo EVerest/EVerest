@@ -142,11 +142,10 @@ private:
         std::optional<std::string> public_key;
     };
 
-    using EventQueue =
-        std::map<std::int32_t,
-                 std::queue<std::variant<std::monostate, types::evse_manager::SessionEvent, EventInfo, powermeter_t,
-                                         types::system::FirmwareUpdateStatus, types::system::LogStatus,
-                                         types::reservation::ReservationUpdateStatus>>>;
+    using Event = std::variant<std::monostate, types::evse_manager::SessionEvent, EventInfo, powermeter_t,
+                               types::system::FirmwareUpdateStatus, types::system::LogStatus,
+                               types::reservation::ReservationUpdateStatus>;
+    using EventQueue = std::map<std::int32_t, std::queue<Event>>;
 
     // member variables that don't require a mutex
     GenericChargePointInterface& mv_charge_point;
@@ -194,20 +193,8 @@ private:
     std::mutex recompute_mutex;
     std::atomic_bool recompute_pending{false};
 
-    // Queue the event if OCPP hasn't started yet. Gate is re-checked under m_member_mux so a
-    // concurrent ready() (which flips mv_started under the same lock before draining) can't
-    // strand the event in a queue that is never drained again.
-    template <typename EventT> bool enqueue_if_not_started(std::int32_t evse_id, EventT&& event) {
-        if (mv_started.load()) {
-            return false;
-        }
-        std::lock_guard lock(m_member_mux);
-        if (mv_started.load()) {
-            return false;
-        }
-        m_event_queue[evse_id].emplace(std::forward<EventT>(event));
-        return true;
-    }
+    // Queue the event if OCPP hasn't started yet; returns true when it was queued.
+    bool enqueue_if_not_started(std::int32_t evse_id, Event event);
 
 public:
     using ConfigServiceClient = std::shared_ptr<Everest::config::ConfigServiceClient>;

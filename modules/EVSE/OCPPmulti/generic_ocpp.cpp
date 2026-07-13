@@ -617,6 +617,21 @@ void GenericOcpp::ready_event_queue() {
     }
 }
 
+bool GenericOcpp::enqueue_if_not_started(std::int32_t evse_id, Event event) {
+    if (mv_started.load()) {
+        return false;
+    }
+    // Re-check under m_member_mux: ready() flips mv_started under the same lock before draining
+    // (see ready()), so this pairing guarantees a concurrent start can't strand the event in a
+    // queue that is never drained again.
+    std::lock_guard lock(m_member_mux);
+    if (mv_started.load()) {
+        return false;
+    }
+    m_event_queue[evse_id].emplace(std::move(event));
+    return true;
+}
+
 void GenericOcpp::ready_module_configuration() {
     const auto ev_connection_timeout = mv_charge_point.get_ev_connection_timeout();
     if (ev_connection_timeout) {
