@@ -352,8 +352,9 @@ DER (grid support) advertising
 ==============================
 
 EvseManager exposes a ``set_der_available`` command that records, per EVSE, whether DER directive support
-(a ``grid_support`` provider) is wired for that EVSE. This is a boot-time fact asserted by the OCPP
-module from the presence of a ``grid_support`` connection; the EV's runtime DER capability is never sent here.
+(a ``grid_support`` provider) is wired for that EVSE. This is a boot-time fact asserted by whichever module
+provides the ``grid_support`` connection (the OCPP module is one such provider, asserting it from the presence
+of a ``grid_support`` connection); the EV's runtime DER capability is never sent here.
 
 When DER is available and the EVSE is export-capable (its hardware capabilities report a non-zero export
 current and at least one export phase), EvseManager folds the ISO 15118-20 ``AC_DER_IEC`` energy transfer mode
