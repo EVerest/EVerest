@@ -236,8 +236,9 @@ public:
     void init();
     void ready(const ConfigServiceClient& client);
 
-    // Quiesce our own callers (schedule timer, recompute, command handlers) so nothing calls into the
-    // charge point while it is being destroyed. Must be called before GenericChargePoint::shutdown().
+    // Gate our own callers before GenericChargePoint::shutdown() so they avoid calling into the
+    // charge point: command handlers return failure responses where applicable or become no-ops,
+    // events are queued, and any in-flight schedule recompute is waited out.
     void shutdown();
 
     void connect_websocket() {

@@ -1651,9 +1651,8 @@ void GenericOcpp::charging_schedules_timer_stop() {
 }
 
 void GenericOcpp::shutdown() {
-    // Order matters. Set the gates first: mv_started stops command handlers and event enqueue,
-    // mv_shutting_down stops the schedule recompute. Then stop the interval timer, then block on
-    // recompute_mutex to wait out any recompute already inside mv_charge_point.
+    // Order matters: set both gates before stopping the timer, then block on recompute_mutex to
+    // wait out a recompute already inside mv_charge_point.
     mv_started.store(false);
     mv_shutting_down.store(true);
     charging_schedules_timer_stop();
