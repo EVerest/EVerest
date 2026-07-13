@@ -459,8 +459,8 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     // we can now initialise the charge point's state machine. It reads the connector availability from the internal
     // database and potentially triggers enable/disable callbacks at the evse.
     mv_charge_point.start(boot_reason, resuming_session_ids, false);
-    // flip the enqueue gate and drain the queue; done before signalling external ready so that
-    // older queued events stay ahead of live-path events emitted after the flip
+    // drain queued events, then open the live path: mv_started flips only once the queue is
+    // observed empty, so queued events always stay ahead of live-path events
     ready_event_queue();
     EVLOG_info << "OCPP started";
 
@@ -575,20 +575,25 @@ void GenericOcpp::ready_event_queue() {
     using namespace module;
     using namespace module::conversions;
 
-    EventQueue to_process;
-    {
-        // flip under m_member_mux
-        std::lock_guard lock(m_member_mux);
-        mv_started.store(true);
-        to_process = std::move(m_event_queue);
-        m_event_queue.clear();
-    }
+    // Drain in rounds
+    while (true) {
+        EventQueue to_process;
+        {
+            std::lock_guard lock(m_member_mux);
+            if (m_event_queue.empty()) {
+                mv_started.store(true);
+                break;
+            }
+            to_process = std::move(m_event_queue);
+            m_event_queue.clear();
+        }
 
-    for (auto& [evse_id, evse_event_queue] : to_process) {
-        while (!evse_event_queue.empty()) {
-            // dispatch via the visit_impl overload set
-            std::visit([this, evse_id](const auto& arg) { visit_impl(evse_id, arg); }, evse_event_queue.front());
-            evse_event_queue.pop();
+        for (auto& [evse_id, evse_event_queue] : to_process) {
+            while (!evse_event_queue.empty()) {
+                // dispatch via the visit_impl overload set
+                std::visit([this, evse_id](const auto& arg) { visit_impl(evse_id, arg); }, evse_event_queue.front());
+                evse_event_queue.pop();
+            }
         }
     }
 }
@@ -597,9 +602,9 @@ bool GenericOcpp::enqueue_if_not_started(std::int32_t evse_id, Event event) {
     if (mv_started.load()) {
         return false;
     }
-    // Re-check under m_member_mux: ready_event_queue() flips mv_started and captures the queue
-    // in one critical section, so a concurrent start can't strand the event in a queue that is
-    // never drained again.
+    // Re-check under m_member_mux: ready_event_queue() only flips mv_started in the critical
+    // section that observes the queue empty, so a concurrent start can't strand the event in a
+    // queue that is never drained again.
     std::lock_guard lock(m_member_mux);
     if (mv_started.load()) {
         return false;
