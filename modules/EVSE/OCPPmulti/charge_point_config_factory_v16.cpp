@@ -54,7 +54,7 @@ struct DeviceModelInitializationContext {
     fs::path migration_files_path;
     fs::path component_config_path;
     std::optional<fs::path> custom_mappings_path;
-    int32_t ocpp16_network_config_slot{1};
+    std::int32_t ocpp16_network_config_slot{1};
 };
 
 DeviceModelInitializationContext resolve_device_model_initialization_context(const fs::path& ocpp_share_path,
@@ -105,7 +105,8 @@ DeviceModelInitializationContext resolve_device_model_initialization_context(con
 
 /// \brief Overrides the OCPP 1.6 NumberOfConnectors device-model value with the actual number of connected EVSEs.
 void patch_number_of_connectors(
-    std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>& component_configs, int32_t n_evse) {
+    std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>& component_configs,
+    std::int32_t n_evse) {
     constexpr auto legacy_ctrlr_name = "OCPP16LegacyCtrlr";
     constexpr auto number_of_connectors_var = "NumberOfConnectors";
 
@@ -132,7 +133,7 @@ void patch_number_of_connectors(
                   << " in component configs; NumberOfConnectors may not match the number of connected EVSEs.";
 }
 
-void initialize_device_model_direct(const DeviceModelInitializationContext& context, int32_t n_evse) {
+void initialize_device_model_direct(const DeviceModelInitializationContext& context, std::int32_t n_evse) {
     EVLOG_info << "Updating device model database from component configs.";
     auto component_configs = ocpp::v2::get_all_component_configs(context.component_config_path);
     ocpp::v2::ensure_ocpp16_legacy_ctrlr(component_configs);
@@ -143,7 +144,7 @@ void initialize_device_model_direct(const DeviceModelInitializationContext& cont
 
 void initialize_device_model_with_migration(const fs::path& ocpp_share_path, const fs::path& user_config_path,
                                             const std::string& charge_point_config_json,
-                                            const DeviceModelInitializationContext& context, int32_t n_evse) {
+                                            const DeviceModelInitializationContext& context, std::int32_t n_evse) {
     if (ocpp::v2::InitDeviceModelDb(context.database_path, context.migration_files_path).is_db_initialized()) {
         EVLOG_info << "Device model database already initialized. Skipping migration, updating from component configs.";
         initialize_device_model_direct(context, n_evse);
@@ -197,7 +198,7 @@ create_device_model_charge_point_configuration(const fs::path& ocpp_share_path,
 /// Requires \p configured_config_path to exist, applies \p n_evse to the connector count, and overlays the
 /// user config (creating an empty one if missing).
 std::string load_charge_point_config_json(const fs::path& configured_config_path, const fs::path& user_config_path,
-                                          int32_t n_evse) {
+                                          std::int32_t n_evse) {
     if (!fs::exists(configured_config_path)) {
         EVLOG_AND_THROW(Everest::EverestConfigError(
             fmt::format("ChargePointConfigPath '{}' does not exist (required as the OCPP1.6 device model migration "
@@ -235,7 +236,7 @@ std::string load_charge_point_config_json(const fs::path& configured_config_path
 
 std::unique_ptr<ocpp::v16::ChargePointConfigurationInterface>
 create_charge_point_configuration(const fs::path& ocpp_share_path, const Ocpp16DeviceModelParams& config,
-                                  int32_t n_evse) {
+                                  std::int32_t n_evse) {
     const auto context = resolve_device_model_initialization_context(ocpp_share_path, config);
 
     const bool db_initialized =
