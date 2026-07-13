@@ -100,7 +100,7 @@ active_modules:
             });
 
         everest::config::ConfigurationParameterIdentifier param_id{"dummy_module", "valid_config_entry", "!module"};
-        ConfigParameterUpdate update{param_id, "accept_me", false};
+        ConfigParameterUpdate update{param_id, "accept_me"};
         Origin origin{true, std::nullopt};
 
         // Capture the published config update event to verify its contents
@@ -221,7 +221,7 @@ active_modules:
 
         // --- Verify flexible module behavior ---
         everest::config::ConfigurationParameterIdentifier flex_id{"flexible_module", "ro_param", "!module"};
-        ConfigParameterUpdate flex_update{flex_id, "new_value", false};
+        ConfigParameterUpdate flex_update{flex_id, "new_value"};
 
         auto flex_result =
             config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {flex_update}, origin);
@@ -233,7 +233,7 @@ active_modules:
 
         // --- Verify strict module behavior ---
         everest::config::ConfigurationParameterIdentifier strict_id{"strict_module", "ro_param", "!module"};
-        ConfigParameterUpdate strict_update{strict_id, "new_value", false};
+        ConfigParameterUpdate strict_update{strict_id, "new_value"};
 
         auto strict_result =
             config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {strict_update}, origin);
@@ -262,6 +262,8 @@ active_modules:
         REQUIRE(res1.success == true);
         auto res2 = config_service.load_from_yaml(valid_yaml, "Slot 2", 2);
         REQUIRE(res2.success == true);
+
+        config_service.set_modules_running();
 
         // Verify initial state: next boot slot is 0
         REQUIRE(config_service.get_next_boot_slot_id() == 0);
@@ -433,7 +435,7 @@ active_modules:
         config_service.set_modules_starting(); // Transient state
 
         everest::config::ConfigurationParameterIdentifier param_id{"dummy_module", "some_param", "!module"};
-        ConfigParameterUpdate update{param_id, "new_value", false};
+        ConfigParameterUpdate update{param_id, "new_value"};
         Origin origin{false, "manager"};
 
         auto result = config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {update}, origin);
@@ -512,7 +514,7 @@ active_modules:
         // Intentionally omit: config_service.register_set_runtime_parameter_handler(...)
 
         everest::config::ConfigurationParameterIdentifier param_id{"dummy_module", "rw_param", "!module"};
-        ConfigParameterUpdate update{param_id, "new_value", false};
+        ConfigParameterUpdate update{param_id, "new_value"};
         Origin origin{false, "manager"};
 
         auto result = config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {update}, origin);
@@ -563,8 +565,8 @@ active_modules:
             });
 
         Origin origin{false, "manager"};
-        ConfigParameterUpdate wo_update{{"test_module", "wo_param", "!module"}, "new", false};
-        ConfigParameterUpdate rw_update{{"test_module", "rw_fail_param", "!module"}, "new", false};
+        ConfigParameterUpdate wo_update{{"test_module", "wo_param", "!module"}, "new"};
+        ConfigParameterUpdate rw_update{{"test_module", "rw_fail_param", "!module"}, "new"};
 
         auto result =
             config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {wo_update, rw_update}, origin);
@@ -605,7 +607,7 @@ active_modules:
 
         // 3. Update the parameter in the INACTIVE slot (Slot 3)
         everest::config::ConfigurationParameterIdentifier param_id{"inactive_module", "inactive_param", "!module"};
-        ConfigParameterUpdate update{param_id, "new_value", false};
+        ConfigParameterUpdate update{param_id, "new_value"};
         Origin origin{false, "manager"};
 
         // Capture the published config update event to verify its contents
@@ -655,7 +657,7 @@ active_modules:
         config_service.set_modules_running();
 
         everest::config::ConfigurationParameterIdentifier unknown_id{"dummy_module", "ghost_param", "!module"};
-        ConfigParameterUpdate update{unknown_id, "ghost_value", false};
+        ConfigParameterUpdate update{unknown_id, "ghost_value"};
         Origin origin{false, "manager"};
 
         // 1. Target the active slot
@@ -716,7 +718,7 @@ active_modules:
             [&config_event_fired](const ConfigurationUpdate&) { config_event_fired = true; });
 
         everest::config::ConfigurationParameterIdentifier param_id{"dummy_module", "rw_param", "!module"};
-        ConfigParameterUpdate update{param_id, "new_value", false};
+        ConfigParameterUpdate update{param_id, "new_value"};
         Origin origin{false, "manager"};
 
         auto result = config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {update}, origin);
@@ -798,7 +800,7 @@ active_modules:
 
         std::thread slow_thread([&]() {
             everest::config::ConfigurationParameterIdentifier param_id{"dummy_module", "valid_config_entry", "!module"};
-            ConfigParameterUpdate update{param_id, "slow_val", false};
+            ConfigParameterUpdate update{param_id, "slow_val"};
             Origin origin{false, "manager"};
             config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {update}, origin);
         });
