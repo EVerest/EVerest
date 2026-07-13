@@ -313,20 +313,28 @@ void GenericOcpp::handle_monitor_variables(const std::vector<types::ocpp::Compon
     using namespace module::conversions;
 
     if (mv_started.load()) {
-        std::lock_guard lock(m_member_mux);
-
         // register_variable_listener needs to support OCPP 1.6 and 2.x
         // for 1.6 every variable needs to be separately registered
         // for 2.0 only a single register is required
         // charge point implementations take care of these differences
 
-        // add variables to monitor list
+        std::vector<MonitorListEntry> entries;
+        entries.reserve(component_variables.size());
         for (const auto& cv : component_variables) {
-            // failures to insert are likely to be the same variable being
-            // requested again
-            const auto component = to_ocpp_component(cv.component);
-            const auto variable = to_ocpp_variable(cv.variable);
-            (void)m_monitor_list.emplace(component, variable);
+            entries.emplace_back(to_ocpp_component(cv.component), to_ocpp_variable(cv.variable));
+        }
+
+        {
+            // failures to insert are likely to
+            // be the same variable being requested again
+            std::lock_guard lock(m_member_mux);
+            for (const auto& entry : entries) {
+                (void)m_monitor_list.insert(entry);
+            }
+        }
+
+        // register outside m_member_mux
+        for (const auto& [component, variable] : entries) {
             mv_charge_point.register_variable_listener(component, variable,
                                                        [this](auto&&... args) { cb_variable_monitor(args...); });
         }
@@ -1136,7 +1144,7 @@ void GenericOcpp::cb_powermeter(std::int32_t evse_id, const types::powermeter::P
         }
     }
 
-    if (!enqueue_if_not_started(evse_id, std::move(meter))) {
+    if (!enqueue_if_not_started(evse_id, meter)) {
         mv_charge_point.on_meter_value(evse_id, meter.state_of_charge, meter.meter.value());
         if (power_meter.power_W) {
             m_everest_device_model_storage->update_power(evse_id, power_meter.power_W->total);
