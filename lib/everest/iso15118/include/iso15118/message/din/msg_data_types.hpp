@@ -73,6 +73,11 @@ enum class FaultCode {
     UnknownError,
 };
 
+enum PaymentOption {
+    Contract,
+    ExternalPayment,
+};
+
 struct Notification {
     FaultCode fault_code;
     std::optional<std::string> fault_msg{std::nullopt};
