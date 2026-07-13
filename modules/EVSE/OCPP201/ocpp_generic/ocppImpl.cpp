@@ -138,11 +138,13 @@ void ocppImpl::handle_monitor_variables(std::vector<types::ocpp::ComponentVariab
     } else {
         std::lock_guard lock(monitor_list_mutex);
 
-        if (monitor_list.empty()) {
-            // register a handler
+        // guard with a flag, not monitor_list.empty(): a first call with an empty list would
+        // otherwise register the handler again on the next call
+        if (!variable_listener_registered) {
             mod->charge_point->register_variable_listener(
                 [this](auto&, const Component& component, const Variable& variable, auto&, auto&, auto&,
                        const std::string& value) { variable_changed(component, variable, value); });
+            variable_listener_registered = true;
         }
 
         // add variables to monitor list
