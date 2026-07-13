@@ -184,12 +184,12 @@ bool ChargePointV16::cb_is_reset_allowed(const ocpp::v16::ResetType& reset_type)
 
 ocpp::ReservationCheckStatus ChargePointV16::cb_is_token_reserved_for_connector(const std::int32_t ocpp_connector_id,
                                                                                 const std::string& id_token) {
-    const auto evse = evse_from_ocpp_connector(ocpp_connector_id);
-    if (!evse) {
-        return ocpp::ReservationCheckStatus::NotReserved;
+    auto status = ocpp::ReservationCheckStatus::NotReserved;
+    if (const auto evse = evse_from_ocpp_connector(ocpp_connector_id)) {
+        const ocpp::CiString<255> token{id_token};
+        status = m_callbacks_ptr->cb_is_reservation_for_token(evse->evse_id, token, std::nullopt);
     }
-    const ocpp::CiString<255> token{id_token};
-    return m_callbacks_ptr->cb_is_reservation_for_token(evse->evse_id, token, std::nullopt);
+    return status;
 }
 
 void ChargePointV16::cb_provide_token(const std::string& id_token, std::vector<std::int32_t> referenced_connectors,
@@ -258,13 +258,13 @@ ChargePointV16::cb_signed_update_firmware(const ocpp::v16::SignedUpdateFirmwareR
 }
 
 bool ChargePointV16::cb_stop_transaction(std::int32_t ocpp_connector_id, ocpp::v16::Reason reason) {
-    const auto evse = evse_from_ocpp_connector(ocpp_connector_id);
-    if (!evse) {
-        return false;
+    bool accepted = false;
+    if (const auto evse = evse_from_ocpp_connector(ocpp_connector_id)) {
+        const auto stop_reason = conversions_v16::to_everest_stop_transaction_reason(reason);
+        const auto res = m_callbacks_ptr->cb_stop_transaction(evse->evse_id, stop_reason);
+        accepted = res == ocpp::v2::RequestStartStopStatusEnum::Accepted;
     }
-    const auto stop_reason = conversions_v16::to_everest_stop_transaction_reason(reason);
-    const auto res = m_callbacks_ptr->cb_stop_transaction(evse->evse_id, stop_reason);
-    return res == ocpp::v2::RequestStartStopStatusEnum::Accepted;
+    return accepted;
 }
 
 ocpp::v16::DataTransferResponse ChargePointV16::cb_tariff_message(const ocpp::TariffMessage& message) {
@@ -276,65 +276,59 @@ ocpp::v16::DataTransferResponse ChargePointV16::cb_tariff_message(const ocpp::Ta
 }
 
 void ChargePointV16::cb_transaction_started(const std::int32_t ocpp_connector_id, const std::string& session_id) {
-    const auto evse = evse_from_ocpp_connector(ocpp_connector_id);
-    if (!evse) {
-        return;
+    if (const auto evse = evse_from_ocpp_connector(ocpp_connector_id)) {
+        ocpp::v2::TransactionEventRequest event;
+        event.eventType = ocpp::v2::TransactionEventEnum::Started;
+        event.evse = {evse->evse_id, evse->connector_id};
+        event.transactionInfo.transactionId = session_id;
+        // the numeric OCPP1.6 transaction id is not assigned yet at this point
+        m_callbacks_ptr->cb_transaction_event(event, std::nullopt);
     }
-    ocpp::v2::TransactionEventRequest event;
-    event.eventType = ocpp::v2::TransactionEventEnum::Started;
-    event.evse = {evse->evse_id, evse->connector_id};
-    event.transactionInfo.transactionId = session_id;
-    // the numeric OCPP1.6 transaction id is not assigned yet at this point
-    m_callbacks_ptr->cb_transaction_event(event, std::nullopt);
 }
 
 void ChargePointV16::cb_transaction_stopped(const std::int32_t ocpp_connector_id, const std::string& session_id,
                                             const std::int32_t transaction_id) {
     EVLOG_info << "Transaction stopped at OCPP1.6 connector: " << ocpp_connector_id << ", session_id: " << session_id;
-    const auto evse = evse_from_ocpp_connector(ocpp_connector_id);
-    if (!evse) {
-        return;
+    if (const auto evse = evse_from_ocpp_connector(ocpp_connector_id)) {
+        ocpp::v2::TransactionEventRequest event;
+        event.eventType = ocpp::v2::TransactionEventEnum::Ended;
+        event.evse = {evse->evse_id, evse->connector_id};
+        event.transactionInfo.transactionId = session_id;
+        // event.seqNo = 0; seqNo does not exist in OCPP1.6
+        m_callbacks_ptr->cb_transaction_event(event, std::to_string(transaction_id));
     }
-    ocpp::v2::TransactionEventRequest event;
-    event.eventType = ocpp::v2::TransactionEventEnum::Ended;
-    event.evse = {evse->evse_id, evse->connector_id};
-    event.transactionInfo.transactionId = session_id;
-    // event.seqNo = 0; seqNo does not exist in OCPP1.6
-    m_callbacks_ptr->cb_transaction_event(event, std::to_string(transaction_id));
 }
 
 void ChargePointV16::cb_transaction_updated(const std::int32_t ocpp_connector_id, const std::string& session_id,
                                             const std::int32_t transaction_id,
                                             const ocpp::v16::IdTagInfo& id_tag_info) {
-    const auto evse = evse_from_ocpp_connector(ocpp_connector_id);
-    if (!evse) {
-        return;
-    }
-    ocpp::v2::TransactionEventRequest event;
-    event.eventType = ocpp::v2::TransactionEventEnum::Updated;
-    event.evse = {evse->evse_id, evse->connector_id};
-    event.transactionInfo.transactionId = session_id;
-    // event.seqNo = 0; seqNo does not exist in OCPP1.6
-    m_callbacks_ptr->cb_transaction_event(event, std::to_string(transaction_id));
+    if (const auto evse = evse_from_ocpp_connector(ocpp_connector_id)) {
+        ocpp::v2::TransactionEventRequest event;
+        event.eventType = ocpp::v2::TransactionEventEnum::Updated;
+        event.evse = {evse->evse_id, evse->connector_id};
+        event.transactionInfo.transactionId = session_id;
+        // event.seqNo = 0; seqNo does not exist in OCPP1.6
+        m_callbacks_ptr->cb_transaction_event(event, std::to_string(transaction_id));
 
-    ocpp::v2::TransactionEventResponse event_response;
-    if (id_tag_info.parentIdTag) {
-        ocpp::v2::IdTokenInfo token;
-        token.status = convert(id_tag_info.status);
-        token.cacheExpiryDateTime = id_tag_info.expiryDate;
-        token.groupIdToken = {static_cast<std::string>(id_tag_info.parentIdTag.value()), "ISO14443"};
-        event_response.idTokenInfo = token;
-    }
+        ocpp::v2::TransactionEventResponse event_response;
+        if (id_tag_info.parentIdTag) {
+            ocpp::v2::IdTokenInfo token;
+            token.status = convert(id_tag_info.status);
+            token.cacheExpiryDateTime = id_tag_info.expiryDate;
+            token.groupIdToken = {static_cast<std::string>(id_tag_info.parentIdTag.value()), "ISO14443"};
+            event_response.idTokenInfo = token;
+        }
 
-    m_callbacks_ptr->cb_transaction_event_response(event, event_response, std::to_string(transaction_id));
+        m_callbacks_ptr->cb_transaction_event_response(event, event_response, std::to_string(transaction_id));
+    }
 }
 
 ocpp::v16::UnlockStatus ChargePointV16::cb_unlock_connector(std::int32_t ocpp_connector_id) {
-    const auto evse = evse_from_ocpp_connector(ocpp_connector_id);
-    if (!evse) {
-        return ocpp::v16::UnlockStatus::NotSupported;
+    auto status = ocpp::v16::UnlockStatus::NotSupported;
+    if (const auto evse = evse_from_ocpp_connector(ocpp_connector_id)) {
+        status = convert(m_callbacks_ptr->cb_unlock_connector(evse->evse_id, evse->connector_id));
     }
-    return (convert(m_callbacks_ptr->cb_unlock_connector(evse->evse_id, evse->connector_id)));
+    return status;
 }
 
 void ChargePointV16::cb_update_firmware(const ocpp::v16::UpdateFirmwareRequest msg) {
@@ -1023,19 +1017,18 @@ void ChargePointV16::register_variable_listener(const ocpp::v2::Component& compo
                                                 const ocpp::v2::Variable& variable, listener_t listener) {
     check_configured("register_variable_listener");
     const std::string key = variable.name;
-    if (key.empty()) {
-        return;
-    }
-    {
-        auto monitors = m_variable_monitors.handle();
-        if (monitors->listener == nullptr && listener != nullptr) {
-            monitors->listener = std::move(listener);
+    if (!key.empty()) {
+        {
+            auto monitors = m_variable_monitors.handle();
+            if (monitors->listener == nullptr && listener != nullptr) {
+                monitors->listener = std::move(listener);
+            }
+            monitors->map.insert_or_assign(key, std::make_pair(component, variable));
         }
-        monitors->map.insert_or_assign(key, std::make_pair(component, variable));
+        // register outside the lock: libocpp may fire the callback synchronously
+        m_charge_point->register_configuration_key_changed_callback(
+            key, [this](auto&&... args) { cb_variable_listener(args...); });
     }
-    // register outside the lock: libocpp may fire the callback synchronously
-    m_charge_point->register_configuration_key_changed_callback(
-        key, [this](auto&&... args) { cb_variable_listener(args...); });
 }
 
 bool ChargePointV16::set_powermeter_public_key(std::int32_t connector, const std::string& public_key_pem) {
