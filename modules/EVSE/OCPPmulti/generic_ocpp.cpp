@@ -1769,87 +1769,82 @@ void GenericOcpp::process_session_event(std::int32_t evse_id, const types::evse_
     const auto connector_id = session_event.connector_id.value_or(1);
     std::lock_guard lock(m_session_event_mutex);
     try {
-        process_session_event_impl(evse_id, connector_id, session_event);
+        switch (session_event.event) {
+        case types::evse_manager::SessionEventEnum::Authorized:
+            mv_charge_point.on_event_authorised(evse_id, connector_id, session_event);
+            break;
+        case types::evse_manager::SessionEventEnum::ChargingPausedEV:
+            mv_charge_point.on_event_charging_paused_ev(evse_id, connector_id, session_event);
+            break;
+        case types::evse_manager::SessionEventEnum::ChargingPausedEVSE:
+            mv_charge_point.on_event_charging_paused_evse(evse_id, connector_id, session_event);
+            break;
+        case types::evse_manager::SessionEventEnum::ChargingStarted:
+            mv_charge_point.on_event_charging_started(evse_id, connector_id, session_event);
+            break;
+        case types::evse_manager::SessionEventEnum::Deauthorized:
+            mv_charge_point.on_event_deauthorised(evse_id, connector_id, session_event);
+            break;
+        case types::evse_manager::SessionEventEnum::Disabled:
+            mv_charge_point.on_event_disabled(evse_id, connector_id, session_event);
+            break;
+        case types::evse_manager::SessionEventEnum::Enabled:
+            mv_charge_point.on_event_enabled(evse_id, connector_id, session_event);
+            break;
+        case types::evse_manager::SessionEventEnum::PluginTimeout:
+            mv_charge_point.on_event_plugin_timeout(evse_id, connector_id, session_event);
+            break;
+        case types::evse_manager::SessionEventEnum::ReservationEnd:
+            mv_charge_point.on_event_reservation_end(evse_id, connector_id, session_event);
+            break;
+        case types::evse_manager::SessionEventEnum::ReservationStart:
+            mv_charge_point.on_event_reservation_start(evse_id, connector_id, session_event);
+            break;
+        case types::evse_manager::SessionEventEnum::SessionFinished:
+            mv_evse_soc_map.handle()->at(evse_id).reset();
+            mv_evse_evcc_id.handle()->at(evse_id) = "";
+            mv_charge_point.on_event_session_finished(evse_id, connector_id, session_event);
+            m_everest_device_model_storage->update_connected_ev_available(evse_id, false);
+            break;
+        case types::evse_manager::SessionEventEnum::SessionResumed:
+            mv_charge_point.on_event_session_resumed(evse_id, connector_id, session_event);
+            break;
+        case types::evse_manager::SessionEventEnum::SessionStarted:
+            if (mv_charge_point.on_event_session_started(evse_id, connector_id, session_event)) {
+                m_everest_device_model_storage->update_connected_ev_available(evse_id, true);
+            }
+            break;
+        case types::evse_manager::SessionEventEnum::SwitchingPhases:
+            mv_charge_point.on_event_switching_phases(evse_id, connector_id, session_event);
+            break;
+        case types::evse_manager::SessionEventEnum::TransactionFinished:
+            mv_charge_point.on_event_transaction_finished(evse_id, connector_id, session_event);
+            break;
+        case types::evse_manager::SessionEventEnum::TransactionStarted:
+            if (mv_charge_point.on_event_transaction_started(evse_id, connector_id, session_event)) {
+                m_everest_device_model_storage->update_connected_ev_available(evse_id, true);
+            }
+            break;
+
+        // explicitly ignore the following session events for now
+        // TODO(kai): implement
+        case types::evse_manager::SessionEventEnum::AuthRequired:
+        case types::evse_manager::SessionEventEnum::ChargingFinished:
+        case types::evse_manager::SessionEventEnum::PrepareCharging:
+        case types::evse_manager::SessionEventEnum::StoppingCharging:
+            break;
+        }
+
+        // process authorised event which will inititate a TransactionEvent(Updated) message in case the token has not
+        // yet been authorised by the CSMS
+        auto authorized_id_token = get_authorised_id_token(session_event);
+        if (authorized_id_token.has_value()) {
+            update_evcc_id_token(evse_id, authorized_id_token.value());
+            mv_charge_point.on_authorized(evse_id, connector_id, authorized_id_token.value());
+        }
     } catch (const std::exception& e) {
         EVLOG_error << "Failed to process session event " << session_event.event << " on evse_id " << evse_id
                     << ", connector_id " << connector_id << " (session " << session_event.uuid << "): " << e.what();
-    }
-}
-
-void GenericOcpp::process_session_event_impl(std::int32_t evse_id, std::int32_t connector_id,
-                                             const types::evse_manager::SessionEvent& session_event) {
-    switch (session_event.event) {
-    case types::evse_manager::SessionEventEnum::Authorized:
-        mv_charge_point.on_event_authorised(evse_id, connector_id, session_event);
-        break;
-    case types::evse_manager::SessionEventEnum::ChargingPausedEV:
-        mv_charge_point.on_event_charging_paused_ev(evse_id, connector_id, session_event);
-        break;
-    case types::evse_manager::SessionEventEnum::ChargingPausedEVSE:
-        mv_charge_point.on_event_charging_paused_evse(evse_id, connector_id, session_event);
-        break;
-    case types::evse_manager::SessionEventEnum::ChargingStarted:
-        mv_charge_point.on_event_charging_started(evse_id, connector_id, session_event);
-        break;
-    case types::evse_manager::SessionEventEnum::Deauthorized:
-        mv_charge_point.on_event_deauthorised(evse_id, connector_id, session_event);
-        break;
-    case types::evse_manager::SessionEventEnum::Disabled:
-        mv_charge_point.on_event_disabled(evse_id, connector_id, session_event);
-        break;
-    case types::evse_manager::SessionEventEnum::Enabled:
-        mv_charge_point.on_event_enabled(evse_id, connector_id, session_event);
-        break;
-    case types::evse_manager::SessionEventEnum::PluginTimeout:
-        mv_charge_point.on_event_plugin_timeout(evse_id, connector_id, session_event);
-        break;
-    case types::evse_manager::SessionEventEnum::ReservationEnd:
-        mv_charge_point.on_event_reservation_end(evse_id, connector_id, session_event);
-        break;
-    case types::evse_manager::SessionEventEnum::ReservationStart:
-        mv_charge_point.on_event_reservation_start(evse_id, connector_id, session_event);
-        break;
-    case types::evse_manager::SessionEventEnum::SessionFinished:
-        mv_evse_soc_map.handle()->at(evse_id).reset();
-        mv_evse_evcc_id.handle()->at(evse_id) = "";
-        mv_charge_point.on_event_session_finished(evse_id, connector_id, session_event);
-        m_everest_device_model_storage->update_connected_ev_available(evse_id, false);
-        break;
-    case types::evse_manager::SessionEventEnum::SessionResumed:
-        mv_charge_point.on_event_session_resumed(evse_id, connector_id, session_event);
-        break;
-    case types::evse_manager::SessionEventEnum::SessionStarted:
-        if (mv_charge_point.on_event_session_started(evse_id, connector_id, session_event)) {
-            m_everest_device_model_storage->update_connected_ev_available(evse_id, true);
-        }
-        break;
-    case types::evse_manager::SessionEventEnum::SwitchingPhases:
-        mv_charge_point.on_event_switching_phases(evse_id, connector_id, session_event);
-        break;
-    case types::evse_manager::SessionEventEnum::TransactionFinished:
-        mv_charge_point.on_event_transaction_finished(evse_id, connector_id, session_event);
-        break;
-    case types::evse_manager::SessionEventEnum::TransactionStarted:
-        if (mv_charge_point.on_event_transaction_started(evse_id, connector_id, session_event)) {
-            m_everest_device_model_storage->update_connected_ev_available(evse_id, true);
-        }
-        break;
-
-    // explicitly ignore the following session events for now
-    // TODO(kai): implement
-    case types::evse_manager::SessionEventEnum::AuthRequired:
-    case types::evse_manager::SessionEventEnum::ChargingFinished:
-    case types::evse_manager::SessionEventEnum::PrepareCharging:
-    case types::evse_manager::SessionEventEnum::StoppingCharging:
-        break;
-    }
-
-    // process authorised event which will inititate a TransactionEvent(Updated) message in case the token has not
-    // yet been authorised by the CSMS
-    auto authorized_id_token = get_authorised_id_token(session_event);
-    if (authorized_id_token.has_value()) {
-        update_evcc_id_token(evse_id, authorized_id_token.value());
-        mv_charge_point.on_authorized(evse_id, connector_id, authorized_id_token.value());
     }
 }
 

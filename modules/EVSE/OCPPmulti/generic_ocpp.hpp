@@ -417,8 +417,6 @@ protected:
     void process_reservation_end(std::int32_t evse_id, std::int32_t connector_id);
     void process_reserved(std::int32_t evse_id, std::int32_t connector_id);
     void process_session_event(std::int32_t evse_id, const types::evse_manager::SessionEvent& session_event);
-    void process_session_event_impl(std::int32_t evse_id, std::int32_t connector_id,
-                                    const types::evse_manager::SessionEvent& session_event);
     void process_session_finished(std::int32_t evse_id, std::int32_t connector_id,
                                   const types::evse_manager::SessionEvent& session_event);
     void process_session_resumed(std::int32_t evse_id, std::int32_t connector_id,
