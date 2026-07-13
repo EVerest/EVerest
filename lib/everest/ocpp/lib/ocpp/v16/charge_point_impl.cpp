@@ -4677,7 +4677,7 @@ void ChargePointImpl::on_firmware_update_status_notification(std::int32_t reques
                 request_id, false, disable_connectors_during_install);
         } else {
             this->firmware_status_notification(
-                ocpp::conversions::firmware_status_notification_to_firmware_status(firmware_update_status),
+                ocpp::conversions::firmware_status_notification_to_firmware_status(firmware_update_status), false,
                 disable_connectors_during_install);
         }
     } catch (const std::out_of_range& e) {

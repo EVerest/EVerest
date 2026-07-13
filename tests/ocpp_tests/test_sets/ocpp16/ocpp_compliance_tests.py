@@ -4302,6 +4302,15 @@ async def test_firmware_update_download_install(
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
+        "StatusNotification",
+        call.StatusNotification(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.unavailable
+        ),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
         "FirmwareStatusNotification",
         call.DiagnosticsStatusNotification(FirmwareStatus.installing),
     )
@@ -4311,6 +4320,67 @@ async def test_firmware_update_download_install(
         charge_point_v16,
         "FirmwareStatusNotification",
         call.DiagnosticsStatusNotification(FirmwareStatus.installed),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        call.StatusNotification(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.available
+        ),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="FTP")
+async def test_firmware_update_download_install_keep_connectors_available(
+    charge_point_v16: ChargePoint16, test_utility: TestUtility, ftp_server, test_config
+):
+    logging.info(
+        "######### test_firmware_update_download_install_keep_connectors_available #########"
+    )
+
+    retrieve_date = datetime.now(timezone.utc)
+    location = f"ftp://{getpass.getuser()}:12345@localhost:{ftp_server.port}/firmware_update.pnx#disable_connectors_during_install=false"
+
+    await charge_point_v16.update_firmware_req(
+        location=location, retrieve_date=retrieve_date.isoformat()
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "FirmwareStatusNotification",
+        call.FirmwareStatusNotification(FirmwareStatus.downloading),
+    )
+
+    # Verify that the connectors are not made unavailable.
+    # Drop the message buffer so that no StatusNotification sent before this point causes a test failure.
+    test_utility.messages.clear()
+    test_utility.forbidden_actions.append("StatusNotification")
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "FirmwareStatusNotification",
+        call.FirmwareStatusNotification(FirmwareStatus.downloaded),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "FirmwareStatusNotification",
+        call.FirmwareStatusNotification(FirmwareStatus.installing),
+    )
+
+    test_utility.forbidden_actions.remove("StatusNotification")
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "FirmwareStatusNotification",
+        call.FirmwareStatusNotification(FirmwareStatus.installed),
     )
 
 
