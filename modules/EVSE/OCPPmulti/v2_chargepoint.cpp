@@ -197,6 +197,28 @@ ocpp::v2::TriggerReasonEnum stop_reason_to_trigger_reason_enum(const ocpp::v2::R
     }
 }
 
+// device model read via the virtual get_variables (same underlying read as ChargePoint::request_value<T>)
+template <typename T>
+std::optional<T> get_device_model_value(ocpp::v2::ChargePointInterface& charge_point,
+                                        const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
+                                        ocpp::v2::AttributeEnum attribute_enum) {
+    ocpp::v2::GetVariableData data;
+    data.component = component_id;
+    data.variable = variable_id;
+    data.attributeType = attribute_enum;
+    const auto results = charge_point.get_variables({data});
+    std::optional<T> res;
+    if (!results.empty() && results.front().attributeStatus == ocpp::v2::GetVariableStatusEnum::Accepted &&
+        results.front().attributeValue.has_value()) {
+        try {
+            res = ocpp::v2::to_specific_type<T>(results.front().attributeValue.value().get());
+        } catch (const std::exception&) {
+            // not convertible: treat as absent (matches request_value<T> behaviour)
+        }
+    }
+    return res;
+}
+
 } // namespace
 
 namespace ocpp_multi {
@@ -266,30 +288,6 @@ void ChargePointV2::cb_variable_listener(
         listener(component, variable, value_current);
     }
 }
-
-namespace {
-// device model read via the virtual get_variables (same underlying read as ChargePoint::request_value<T>)
-template <typename T>
-std::optional<T> get_device_model_value(ocpp::v2::ChargePointInterface& charge_point,
-                                        const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
-                                        ocpp::v2::AttributeEnum attribute_enum) {
-    ocpp::v2::GetVariableData data;
-    data.component = component_id;
-    data.variable = variable_id;
-    data.attributeType = attribute_enum;
-    const auto results = charge_point.get_variables({data});
-    std::optional<T> res;
-    if (!results.empty() && results.front().attributeStatus == ocpp::v2::GetVariableStatusEnum::Accepted &&
-        results.front().attributeValue.has_value()) {
-        try {
-            res = ocpp::v2::to_specific_type<T>(results.front().attributeValue.value().get());
-        } catch (const std::exception&) {
-            // not convertible: treat as absent (matches request_value<T> behaviour)
-        }
-    }
-    return res;
-}
-} // namespace
 
 std::optional<bool> ChargePointV2::get_bool(const ocpp::v2::Component& component_id,
                                             const ocpp::v2::Variable& variable_id,
