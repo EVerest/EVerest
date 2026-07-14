@@ -8,8 +8,6 @@
 #include <stdexcept>
 #include <utility>
 
-#define REPORT_CLEARED_ERRORS true
-
 namespace ocpp {
 namespace v16 {
 
@@ -153,9 +151,11 @@ ErrorInfo::ErrorInfo(const std::string uuid, const ChargePointErrorCode error_co
     }
 }
 
-ChargePointFSM::ChargePointFSM(const StatusNotificationCallback& status_notification_callback_,
-                               FSMState initial_state) :
-    status_notification_callback(status_notification_callback_), state(initial_state) {
+ChargePointFSM::ChargePointFSM(const StatusNotificationCallback& status_notification_callback_, FSMState initial_state,
+                               bool report_cleared_errors) :
+    status_notification_callback(status_notification_callback_),
+    state(initial_state),
+    report_cleared_errors(report_cleared_errors) {
 }
 
 FSMState ChargePointFSM::get_state() {
@@ -240,7 +240,7 @@ bool ChargePointFSM::handle_error_cleared(const std::string uuid) {
     // dont report StatusNotification if still "Faulted"
     auto state = this->state;
     if (this->is_faulted()) {
-        if (!REPORT_CLEARED_ERRORS) {
+        if (!this->report_cleared_errors) {
             return false;
         }
         state = FSMState::Faulted;
@@ -252,7 +252,7 @@ bool ChargePointFSM::handle_error_cleared(const std::string uuid) {
     std::optional<CiString<255>> vendor_id;
     std::optional<CiString<50>> vendor_error_code;
 
-    if (REPORT_CLEARED_ERRORS && !node.empty()) {
+    if (this->report_cleared_errors && !node.empty()) {
         // Report the cleared error as resolved
         auto cleared_error = std::move(node.mapped());
         if (cleared_error.vendor_error_code.has_value()) {
@@ -269,7 +269,7 @@ bool ChargePointFSM::handle_error_cleared(const std::string uuid) {
         if (latest_error_opt.has_value()) {
             const auto& latest_error = latest_error_opt.value();
             error_code = latest_error.error_code;
-            if (!REPORT_CLEARED_ERRORS) {
+            if (!this->report_cleared_errors) {
                 info = latest_error.info;
                 vendor_id = latest_error.vendor_id;
                 vendor_error_code = latest_error.vendor_error_code;
@@ -302,7 +302,8 @@ void ChargePointFSM::trigger_status_notification() {
     }
 }
 
-ChargePointStates::ChargePointStates(const ConnectorStatusCallback& callback) : connector_status_callback(callback) {
+ChargePointStates::ChargePointStates(const ConnectorStatusCallback& callback, bool report_cleared_errors) :
+    connector_status_callback(callback), report_cleared_errors(report_cleared_errors) {
 }
 
 void ChargePointStates::reset(std::map<int, ChargePointStatus> connector_status_map) {
@@ -326,7 +327,7 @@ void ChargePointStates::reset(std::map<int, ChargePointStatus> connector_status_
                     this->connector_status_callback(0, error_code, status, timestamp, info, vendor_id,
                                                     vendor_error_code);
                 },
-                initial_state);
+                initial_state, report_cleared_errors);
         } else {
             state_machines.emplace_back(
                 [this, connector_id](ChargePointStatus status, ChargePointErrorCode error_code,
@@ -336,7 +337,7 @@ void ChargePointStates::reset(std::map<int, ChargePointStatus> connector_status_
                     this->connector_status_callback(clamp_to<int>(connector_id), error_code, status, timestamp, info,
                                                     vendor_id, vendor_error_code);
                 },
-                initial_state);
+                initial_state, report_cleared_errors);
         }
     }
 }

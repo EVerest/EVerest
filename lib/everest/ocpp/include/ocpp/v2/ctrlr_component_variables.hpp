@@ -349,6 +349,7 @@ extern const ComponentVariable SupportedLanguages;
 extern const ComponentVariable CustomMultiLanguageMessages;
 extern const ComponentVariable Language;
 extern const ComponentVariable WaitForSetUserPriceTimeout;
+extern const ComponentVariable ReportClearedErrors;
 } // namespace ControllerComponentVariables
 
 namespace EvseComponentVariables {

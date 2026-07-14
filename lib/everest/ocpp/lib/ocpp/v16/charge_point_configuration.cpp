@@ -999,6 +999,27 @@ std::optional<KeyValue> ChargePointConfiguration::getQueueAllMessagesKeyValue() 
     return queue_all_messages_kv;
 }
 
+std::optional<bool> ChargePointConfiguration::getReportClearedErrors() {
+    std::optional<bool> report_cleared_errors = std::nullopt;
+    if (this->config["Internal"].contains("ReportClearedErrors")) {
+        report_cleared_errors.emplace(this->config["Internal"]["ReportClearedErrors"]);
+    }
+    return report_cleared_errors;
+}
+
+std::optional<KeyValue> ChargePointConfiguration::getReportClearedErrorsKeyValue() {
+    std::optional<KeyValue> report_cleared_errors_kv = std::nullopt;
+    auto report_cleared_errors = this->getReportClearedErrors();
+    if (report_cleared_errors.has_value()) {
+        KeyValue kv;
+        kv.key = "ReportClearedErrors";
+        kv.readonly = true;
+        kv.value.emplace(ocpp::conversions::bool_to_string(report_cleared_errors.value()));
+        report_cleared_errors_kv.emplace(kv);
+    }
+    return report_cleared_errors_kv;
+}
+
 std::optional<std::string> ChargePointConfiguration::getMessageTypesDiscardForQueueing() {
     if (this->config["Internal"].contains("MessageTypesDiscardForQueueing")) {
         return this->config["Internal"]["MessageTypesDiscardForQueueing"];
@@ -3292,6 +3313,9 @@ std::optional<KeyValue> ChargePointConfiguration::get(const CiString<50>& key) {
     }
     if (key == "QueueAllMessages") {
         return this->getQueueAllMessagesKeyValue();
+    }
+    if (key == "ReportClearedErrors") {
+        return this->getReportClearedErrorsKeyValue();
     }
     if (key == "MessageTypesDiscardForQueueing") {
         return this->getMessageTypesDiscardForQueueingKeyValue();

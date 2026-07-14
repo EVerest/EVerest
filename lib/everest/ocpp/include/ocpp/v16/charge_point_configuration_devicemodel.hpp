@@ -188,6 +188,7 @@ public:
     std::optional<std::string> getSeccLeafSubjectOrganization() override;
     std::optional<bool> getAllowChargingProfileWithoutStartSchedule() override;
     std::optional<bool> getQueueAllMessages() override;
+    std::optional<bool> getReportClearedErrors() override;
     std::optional<int> getMessageQueueSizeThreshold() override;
     std::optional<std::int32_t> getCompositeScheduleDefaultLimitAmps() override;
     std::optional<std::int32_t> getCompositeScheduleDefaultLimitWatts() override;
@@ -245,6 +246,7 @@ public:
     std::optional<KeyValue> getMessageQueueSizeThresholdKeyValue() override;
     std::optional<KeyValue> getPublicKeyKeyValue(std::uint32_t connector_id) override;
     std::optional<KeyValue> getQueueAllMessagesKeyValue() override;
+    std::optional<KeyValue> getReportClearedErrorsKeyValue() override;
     std::optional<KeyValue> getSeccLeafSubjectCommonNameKeyValue() override;
     std::optional<KeyValue> getSeccLeafSubjectCountryKeyValue() override;
     std::optional<KeyValue> getSeccLeafSubjectOrganizationKeyValue() override;

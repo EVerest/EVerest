@@ -468,6 +468,22 @@
             ],
             "description": "Test-only OCPP 1.6 custom key mapped",
             "type": "string"
+        },
+        "ReportClearedErrors": {
+            "variable_name": "ReportClearedErrors",
+            "characteristics": {
+                "supportsMonitoring": true,
+                "dataType": "boolean"
+            },
+            "attributes": [
+                {
+                    "type": "Actual",
+                    "mutability": "ReadOnly"
+                }
+            ],
+            "description": "Enables sending a StatusNotification.req with information about cleared errors, even when the connector remains faulted.",
+            "default": false,
+            "type": "boolean"
         }
     },
     "required": [
