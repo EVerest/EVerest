@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <mutex>
 #include <nlohmann/json_fwd.hpp>
 #include <optional>
 #include <string>
@@ -52,6 +53,9 @@ private:
 
     std::ofstream logfile_csv;
     std::ofstream logfile_html;
+    // Serialises concurrent output() writes from the EVSE/CAR/SYS event
+    // threads; std::ofstream::operator<< is not thread-safe.
+    std::mutex output_mutex;
     mqtt_publish_ftor mqtt;
 };
 

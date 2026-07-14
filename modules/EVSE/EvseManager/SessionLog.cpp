@@ -193,6 +193,7 @@ void SessionLog::car(bool iso15118, const std::string& msg, const std::string& x
 
 void SessionLog::output(unsigned int typ, bool iso15118, const std::string& msg, const std::string& xml,
                         const std::string& xml_hex, const std::string& xml_base64, const std::string& json_str) {
+    const std::lock_guard<std::mutex> lock(output_mutex);
     if (enabled && session_active) {
         std::string ts = Everest::Date::to_rfc3339(date::utc_clock::now());
 
