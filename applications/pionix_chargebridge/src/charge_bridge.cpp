@@ -465,6 +465,8 @@ void charge_bridge::manage(everest::lib::io::event::fd_event_handler& handler, s
     m_event_handler->add_action([this]() {
         if (m_config.telemetry.has_value()) {
             m_mqtt = std::make_unique<everest::lib::io::mqtt::mqtt_client>(mqtt_reconnect_timeout_ms);
+            // Required before connect() so m_connected is set on CONNACK; else publish() drops all.
+            m_mqtt->set_callback_connect([](auto&, auto, auto, auto const&) {});
             m_mqtt->connect(m_config.telemetry->mqtt_bind, m_config.telemetry->mqtt_remote,
                             m_config.telemetry->mqtt_port, m_config.telemetry->mqtt_ping_interval_ms);
         }
