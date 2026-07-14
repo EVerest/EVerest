@@ -25,7 +25,6 @@ genrule(
     outs = cpp_headers,
     srcs = interface_srcs + [
         "//lib/everest/framework/schemas:schemas",
-        "//lib/everest/framework:dependencies.yaml",
         "@everest-core//types",
         "@everest-core//errors",
         "@everest-core//:MODULE.bazel",
@@ -37,7 +36,7 @@ genrule(
 $(location //applications/utils/ev-dev-tools:ev-cli) interface generate-headers \
     --work-dir `dirname $(location @everest-core//:MODULE.bazel)` \
     --everest-dir `dirname $(location @everest-core//:MODULE.bazel)` \
-    --schemas-dir `dirname $(location //lib/everest/framework:dependencies.yaml)`/schemas \
+    --schemas-dir `dirname $(location @everest-core//:MODULE.bazel)`/lib/everest/framework/schemas \
     --disable-clang-format \
     --output-dir `dirname $(location {some_output})`/..
 """.format(

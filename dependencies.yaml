@@ -18,7 +18,7 @@ pugixml:
 libwebsockets:
   git: https://github.com/warmcat/libwebsockets.git
   git_tag: v4.5.2
-  cmake_condition: "NOT EVEREST_LIBS_ONLY"
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp OR EVEREST_ENABLE_ADMIN_PANEL_BACKEND"
   options:
     - CMAKE_POLICY_VERSION_MINIMUM 3.5
     - CMAKE_POLICY_DEFAULT_CMP0077 NEW
@@ -57,18 +57,19 @@ libcurl:
   git: https://github.com/curl/curl.git
   git_tag: curl-8_18_0
   cmake_condition: "EVEREST_DEPENDENCY_ENABLED_LIBCURL"
-  options: [
-    "BUILD_EXAMPLES OFF",
-    "BUILD_LIBCURL_DOCS OFF",
-    "BUILD_MISC_DOCS OFF",
-    "BUILD_TESTING OFF",
-    "CURL_BROTLI OFF",
-    "CURL_DISABLE_LDAP ON",
-    "CURL_USE_LIBPSL OFF",
-    "CURL_USE_LIBSSH2 OFF",
-    "ENABLE_CURL_MANUAL OFF",
-    "USE_NGHTTP2 OFF",
-  ]
+  options:
+    [
+      "BUILD_EXAMPLES OFF",
+      "BUILD_LIBCURL_DOCS OFF",
+      "BUILD_MISC_DOCS OFF",
+      "BUILD_TESTING OFF",
+      "CURL_BROTLI OFF",
+      "CURL_DISABLE_LDAP ON",
+      "CURL_USE_LIBPSL OFF",
+      "CURL_USE_LIBSSH2 OFF",
+      "ENABLE_CURL_MANUAL OFF",
+      "USE_NGHTTP2 OFF",
+    ]
 
 # Josev
 Josev:
@@ -87,7 +88,7 @@ ftxui:
   cmake_condition: "EVEREST_DEPENDENCY_ENABLED_FTXUI"
 # Linux_Systemd_Rauc module
 sdbus-cpp:
-  git:  https://github.com/Kistler-Group/sdbus-cpp.git
+  git: https://github.com/Kistler-Group/sdbus-cpp.git
   git_tag: v2.2.1
   cmake_condition: "EVEREST_DEPENDENCY_ENABLED_SDBUS_CPP"
   options: ["CMAKE_POSITION_INDEPENDENT_CODE ON"]
@@ -96,27 +97,29 @@ gtest:
   # GoogleTest now follows the Abseil Live at Head philosophy. We recommend updating to the latest commit in the main branch as often as possible.
   git: https://github.com/google/googletest.git
   git_tag: release-1.12.1
-  cmake_condition: "EVEREST_CORE_BUILD_TESTING"
+  cmake_condition: "EVEREST_CORE_BUILD_TESTING OR LIBEVSE_SECURITY_BUILD_TESTING OR EVEREST_FRAMEWORK_BUILD_TESTING OR EVEREST_LIBLOG_BUILD_TESTING OR EVEREST_SQLITE_BUILD_TESTING OR LIBOCPP_BUILD_TESTING OR LIBTIMER_BUILD_TESTING"
 catch2:
   git: https://github.com/catchorg/Catch2.git
-  git_tag: v3.9.0
-  cmake_condition: "EVEREST_CORE_BUILD_TESTING"
+  git_tag: v3.10.0
+  cmake_condition: "EVEREST_CORE_BUILD_TESTING OR CB_V2G_BUILD_TESTS OR EVEREST_FRAMEWORK_BUILD_TESTING OR IEEE2030_BUILD_TESTING OR ISO15118_BUILD_TESTING"
 # everest/io library
 mosquitto:
   git: https://github.com/eclipse-mosquitto/mosquitto
   git_tag: v2.0.22
   cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_io OR EVEREST_BUILD_LIB_framework"
   options:
-  - DOCUMENTATION OFF
-  - WITH_BROKER OFF
-  - WITH_APPS OFF
-  - WITH_PLUGINS OFF
-  - WITH_TESTS OFF
+    - DOCUMENTATION OFF
+    - WITH_BROKER OFF
+    - WITH_APPS OFF
+    - WITH_PLUGINS OFF
+    - WITH_TESTS OFF
 # everest/yaml library
 ryml:
   git: https://github.com/biojppm/rapidyaml
   git_tag: v0.10.0
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_yaml OR EVEREST_BUILD_LIB_framework OR EVEREST_BUILD_LIB_ocpp"
   options: ["CMAKE_POSITION_INDEPENDENT_CODE ON"]
+
 grpc:
   git: https://github.com/grpc/grpc.git
   git_tag: v1.71.0
@@ -138,3 +141,55 @@ grpc-extended-cpp-plugin:
   git: https://github.com/EVerest/grpc-extended-cpp-plugin.git
   git_tag: v0.2.0
   cmake_condition: "EVEREST_DEPENDENCY_ENABLED_GRPC_EXTENDED_CPP_PLUGIN AND ENABLE_GRPC_GENERATOR AND GRPC_GENERATOR_EDM"
+
+# Shared library dependencies
+nlohmann_json:
+  git: https://github.com/nlohmann/json
+  git_tag: v3.12.0
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp OR EVEREST_BUILD_LIB_framework OR EVEREST_BUILD_LIB_helpers"
+  options: ["JSON_BuildTests OFF", "JSON_MultipleHeaders ON"]
+nlohmann_json_schema_validator:
+  git: https://github.com/pboettch/json-schema-validator
+  git_tag: 2.4.0
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp OR EVEREST_BUILD_LIB_framework"
+  options:
+    [
+      "JSON_VALIDATOR_INSTALL OFF",
+      "JSON_VALIDATOR_BUILD_TESTS OFF",
+      "JSON_VALIDATOR_BUILD_EXAMPLES OFF",
+      "JSON_VALIDATOR_BUILD_SHARED_LIBS ON",
+      "JSON_VALIDATOR_SHARED_LIBS ON",
+    ]
+date:
+  git: https://github.com/HowardHinnant/date.git
+  git_tag: v3.0.4
+  cmake_condition: "EVEREST_BUILD_LIB_timer OR EVEREST_BUILD_LIB_ocpp OR EVEREST_BUILD_LIB_framework"
+  options:
+    [
+      "BUILD_TZ_LIB ON",
+      "HAS_REMOTE_API 0",
+      "USE_AUTOLOAD 0",
+      "USE_SYSTEM_TZ_DB ON",
+      "BUILD_SHARED_LIBS ON",
+    ]
+libfmt:
+  git: https://github.com/fmtlib/fmt.git
+  git_tag: 12.1.0
+  cmake_condition: "EVEREST_BUILD_LIB_framework OR EVEREST_BUILD_LIB_helpers OR EVEREST_BUILD_LIB_run_application"
+  options:
+    [
+      "FMT_TEST OFF",
+      "FMT_DOC OFF",
+      "BUILD_SHARED_LIBS ON",
+      "FMT_INSTALL ON",
+      "FMT_SYSTEM_HEADERS ON",
+    ]
+pybind11:
+  git: https://github.com/pybind/pybind11.git
+  git_tag: v3.0.2
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR (EVEREST_ENABLE_PY_SUPPORT AND EVEREST_BUILD_LIB_framework)"
+  options: ["PYBIND11_TEST OFF", "PYBIND11_USE_CROSSCOMPILING ON"]
+pybind11_json:
+  git: https://github.com/pybind/pybind11_json.git
+  git_tag: 0.2.15
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR (EVEREST_ENABLE_PY_SUPPORT AND EVEREST_BUILD_LIB_framework)"

@@ -8,6 +8,7 @@ set_target_properties(everest_util PROPERTIES
   VERSION 0.0.1
 )
 
+target_compile_features(everest_util INTERFACE cxx_std_17)
 
 target_include_directories(everest_util
     INTERFACE

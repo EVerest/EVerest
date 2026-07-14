@@ -1,3 +1,7 @@
+if(DISABLE_EDM)
+    find_package(fmt REQUIRED)
+endif()
+
 add_executable(evse_slac_test)
 target_sources(evse_slac_test
     PRIVATE

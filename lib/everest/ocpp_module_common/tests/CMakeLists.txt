@@ -1,3 +1,7 @@
+if(DISABLE_EDM)
+    find_package(nlohmann_json REQUIRED)
+endif()
+
 set(TEST_TARGET_NAME ocpp_module_common_tests)
 add_executable(${TEST_TARGET_NAME})
 
