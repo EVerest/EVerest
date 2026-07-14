@@ -48,6 +48,7 @@ bool evse_bsp_api::register_events(everest::lib::io::event::fd_event_handler& ha
     return
         handler.register_event_handler(&m_capabilities_timer, [this](auto&) {
             send_capabilities();
+            handle_pp_type2(cb_status.pp_state_type2);
         });
     // clang-format on
 }
@@ -503,6 +504,7 @@ void evse_bsp_api::handle_everest_connection_state() {
         if (status) {
             utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 0) << "EVerest connected" << std::endl;
             send_capabilities();
+            handle_pp_type2(cb_status.pp_state_type2);
         } else {
             utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 1) << "Waiting for EVerest...." << std::endl;
             host_status.allow_power_on = 0;
