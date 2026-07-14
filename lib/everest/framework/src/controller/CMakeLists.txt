@@ -19,6 +19,7 @@ add_executable(controller
     transpile_config.cpp
     ${PROJECT_SOURCE_DIR}/lib/formatter.cpp
     ${PROJECT_SOURCE_DIR}/lib/yaml_loader.cpp
+    ${PROJECT_SOURCE_DIR}/lib/date.cpp
 )
 
 target_include_directories(controller PRIVATE
@@ -39,6 +40,7 @@ target_link_libraries(controller
         everest::log
 
         ryml::ryml
+        date::date-tz
 
         ${STD_FILESYSTEM_COMPAT_LIB}
 )
