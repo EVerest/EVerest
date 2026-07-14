@@ -227,12 +227,20 @@ void evse_bsp_api::handle_pp_type2(std::uint8_t data) {
     case PpState_Type2_STATE_FAULT:
         // Raise error check state
         bc_ampacity_valid = false;
-        send_raise_error(API_BSP::ErrorEnum::MREC23ProximityFault, "", "Proximity Pilot Fault State");
+        if (not m_pp_fault_raised) {
+            send_raise_error(API_BSP::ErrorEnum::MREC23ProximityFault, "", "Proximity Pilot Fault State");
+            m_pp_fault_raised = true;
+        }
         break;
     default:
         bc_ampacity_valid = false;
     }
     if (bc_ampacity_valid) {
+        // Firmware reports a non-fault state again: clear a previously raised proximity fault
+        if (m_pp_fault_raised) {
+            send_clear_error(API_BSP::ErrorEnum::MREC23ProximityFault, "", "");
+            m_pp_fault_raised = false;
+        }
         send_ac_pp_amapcity(bc_ampacity);
     }
 }
@@ -504,6 +512,9 @@ void evse_bsp_api::handle_everest_connection_state() {
         if (status) {
             utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 0) << "EVerest connected" << std::endl;
             send_capabilities();
+            // A freshly (re)started EVerest lost any previously raised error: re-raise an
+            // active proximity fault instead of assuming it is still known.
+            m_pp_fault_raised = false;
             handle_pp_type2(cb_status.pp_state_type2);
         } else {
             utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 1) << "Waiting for EVerest...." << std::endl;

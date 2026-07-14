@@ -93,6 +93,7 @@ private:
     bool everest_connected{false};
     bool m_cb_connected{false};
     bool m_bc_initial_comm_check{true};
+    bool m_pp_fault_raised{false};
     std::string m_cb_identifier;
     std::chrono::steady_clock::time_point last_everest_heartbeat;
 
