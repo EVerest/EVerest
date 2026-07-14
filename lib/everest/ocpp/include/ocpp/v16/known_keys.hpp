@@ -174,6 +174,8 @@ namespace ocpp::v16::keys {
     mapping(WaitForStopTransactionsOnResetTimeout, WaitForStopTransactionsOnResetTimeout) \
     mapping(SwitchSecurityProfileConnectionTimeout, SwitchSecurityProfileConnectionTimeout) \
     mapping(StopTransactionIfUnlockNotSupported, StopTransactionIfUnlockNotSupported) \
+    mapping(RejectRemoteStartTransactionWithoutConnectorId, RejectRemoteStartTransactionWithoutConnectorId) \
+    mapping(RemoteStartTransactionWithoutConnectorIdFindFirst, RemoteStartTransactionWithoutConnectorIdFindFirst) \
     mapping(MeterPublicKeys, MeterPublicKeys) \
     mapping(DisableSecurityEventNotifications, DisableSecurityEventNotifications) \
     mapping(ISO15118CertificateManagementEnabled, ISO15118CertificateManagementEnabled) \
@@ -278,6 +280,8 @@ namespace ocpp::v16::keys {
     key(Internal, MeterType) \
     key(Internal, OcspRequestInterval) \
     key(Internal, QueueAllMessages) \
+    key(Internal, RejectRemoteStartTransactionWithoutConnectorId) \
+    key(Internal, RemoteStartTransactionWithoutConnectorIdFindFirst) \
     key(Internal, RetryBackoffRandomRange) \
     key(Internal, RetryBackoffRepeatTimes) \
     key(Internal, RetryBackoffWaitMinimum) \

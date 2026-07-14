@@ -146,6 +146,8 @@ const std::map<std::string, std::string> full_vars_california_pricing = {
 
 const std::map<std::string, std::string> full_vars_internal = {
     {"SwitchSecurityProfileConnectionTimeout", "30"},
+    {"RejectRemoteStartTransactionWithoutConnectorId", "false"},
+    {"RemoteStartTransactionWithoutConnectorIdFindFirst", "false"},
 };
 
 using MemoryStorage = ocpp::v16::stubs::MemoryStorage;

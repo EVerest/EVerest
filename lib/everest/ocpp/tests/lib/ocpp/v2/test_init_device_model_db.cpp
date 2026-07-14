@@ -1235,6 +1235,12 @@ TEST_F(InitDeviceModelDbTest, patch_with_ocpp16_full_config_maps_values) {
     EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt,
                                     "StopTransactionIfUnlockNotSupported", std::nullopt, AttributeEnum::Actual,
                                     "false"));
+    EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt,
+                                    "RejectRemoteStartTransactionWithoutConnectorId", std::nullopt,
+                                    AttributeEnum::Actual, "true"));
+    EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt,
+                                    "RemoteStartTransactionWithoutConnectorIdFindFirst", std::nullopt,
+                                    AttributeEnum::Actual, "true"));
     EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt, "MeterPublicKeys",
                                     std::nullopt, AttributeEnum::Actual, "PUBLIC_KEY_1,PUBLIC_KEY_2"));
     EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt,

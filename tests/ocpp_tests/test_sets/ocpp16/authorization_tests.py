@@ -33,6 +33,7 @@ from everest.testing.ocpp_utils.fixtures import charge_point_v16
 from everest.testing.ocpp_utils.central_system import CentralSystem
 from everest.testing.ocpp_utils.charge_point_v16 import ChargePoint16
 from everest_test_utils import *
+from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP16ConfigAdjustment
 from validations import (validate_standard_start_transaction,
                                validate_standard_stop_transaction,
                                validate_remote_start_stop_transaction,
@@ -1205,6 +1206,110 @@ async def test_remote_start_transaction_no_connector(
         "StartTransaction",
         call.StartTransaction(
             2, test_config.authorization_info.valid_id_tag_2, 0, ""
+        ),
+        validate_standard_start_transaction,
+    )
+
+
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP16ConfigAdjustment(
+        [
+            ("Internal", "RejectRemoteStartTransactionWithoutConnectorId", True),
+            ("Internal", "RemoteStartTransactionWithoutConnectorIdFindFirst", True),
+        ]
+    )
+)
+@pytest.mark.asyncio
+async def test_remote_start_transaction_no_connector_rejected(
+    test_config: OcppTestConfiguration,
+    charge_point_v16: ChargePoint16,
+    test_utility: TestUtility,
+    test_controller: TestController,
+):
+    # with RejectRemoteStartTransactionWithoutConnectorId set, a request
+    # without a connector id is rejected; it takes precedence over
+    # RemoteStartTransactionWithoutConnectorIdFindFirst, which is also set here
+    await charge_point_v16.remote_start_transaction_req(
+        id_tag=test_config.authorization_info.valid_id_tag_1
+    )
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "RemoteStartTransaction",
+        call_result.RemoteStartTransaction(RemoteStartStopStatus.rejected),
+        validate_remote_start_stop_transaction,
+    )
+
+    test_utility.messages.clear()
+
+    # a request with a connector id is still accepted
+    await charge_point_v16.remote_start_transaction_req(
+        id_tag=test_config.authorization_info.valid_id_tag_1, connector_id=1
+    )
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "RemoteStartTransaction",
+        call_result.RemoteStartTransaction(RemoteStartStopStatus.accepted),
+        validate_remote_start_stop_transaction,
+    )
+
+
+@pytest.mark.everest_core_config(
+    get_everest_config_path_str("everest-config-two-connectors.yaml")
+)
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP16ConfigAdjustment(
+        [("Internal", "RemoteStartTransactionWithoutConnectorIdFindFirst", True)]
+    )
+)
+@pytest.mark.asyncio
+async def test_remote_start_transaction_no_connector_find_first(
+    test_config: OcppTestConfiguration,
+    charge_point_v16: ChargePoint16,
+    test_utility: TestUtility,
+    test_controller: TestController,
+):
+    # with RemoteStartTransactionWithoutConnectorIdFindFirst set, a request
+    # without a connector id only references the first connector that is
+    # available for a remote start
+    await charge_point_v16.remote_start_transaction_req(
+        id_tag=test_config.authorization_info.valid_id_tag_1
+    )
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "RemoteStartTransaction",
+        call_result.RemoteStartTransaction(RemoteStartStopStatus.accepted),
+        validate_remote_start_stop_transaction,
+    )
+
+    # the remote start token only references connector 1, so plugging in at
+    # connector 2 must not start a transaction
+    test_utility.forbidden_actions.append("StartTransaction")
+
+    test_controller.plug_in(connector_id=2)
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        call.StatusNotification(
+            2, ChargePointErrorCode.no_error, ChargePointStatus.preparing
+        ),
+    )
+
+    test_utility.forbidden_actions.clear()
+
+    # plugging in at connector 1 starts the transaction
+    test_controller.plug_in(connector_id=1)
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StartTransaction",
+        call.StartTransaction(
+            1, test_config.authorization_info.valid_id_tag_1, 0, ""
         ),
         validate_standard_start_transaction,
     )

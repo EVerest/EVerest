@@ -165,6 +165,8 @@ The implementation in code (for example `known_keys` conversion logic and patchi
 | 118 | `WaitForSetUserPriceTimeout` | VariableAttribute | `OCPP16LegacyCtrlr` | `WaitForSetUserPriceTimeout` | `Actual` |
 | 119 | `NumberOfConnectors` | VariableAttribute | `OCPP16LegacyCtrlr` | `NumberOfConnectors` | `Actual` |
 | 120 | `ConnectorEvseIds` | VariableAttribute | `OCPP16LegacyCtrlr` | `ConnectorEvseIds` | `Actual` |
+| 121 | `RejectRemoteStartTransactionWithoutConnectorId` | VariableAttribute | `OCPP16LegacyCtrlr` | `RejectRemoteStartTransactionWithoutConnectorId` | `Actual` |
+| 122 | `RemoteStartTransactionWithoutConnectorIdFindFirst` | VariableAttribute | `OCPP16LegacyCtrlr` | `RemoteStartTransactionWithoutConnectorIdFindFirst` | `Actual` |
 
 
 ## Network Connection Profile
@@ -173,14 +175,14 @@ Keys in this section target the active connection slot. The component is `Networ
 
 | ID | OCPP1.6 key | Mapping type | Component | Variable | Target field |
 | ---: | --- | --- | --- | --- | --- |
-| 121 | `HostName` | VariableAttribute | `NetworkConfiguration[1]` | `HostName` | `Actual` |
-| 122 | `CentralSystemURI` | VariableAttribute | `NetworkConfiguration[1]` | `OcppCsmsUrl` | `Actual` |
-| 123 | `SecurityProfile` | VariableAttribute | `NetworkConfiguration[1]` | `SecurityProfile` | `Actual` |
-| 124 | `AuthorizationKey` | VariableAttribute | `NetworkConfiguration[1]` | `BasicAuthPassword` | `Actual` |
-| 125 | `ChargePointId` | VariableAttribute | `NetworkConfiguration[1]` | `Identity` | `Actual` |
+| 123 | `HostName` | VariableAttribute | `NetworkConfiguration[1]` | `HostName` | `Actual` |
+| 124 | `CentralSystemURI` | VariableAttribute | `NetworkConfiguration[1]` | `OcppCsmsUrl` | `Actual` |
+| 125 | `SecurityProfile` | VariableAttribute | `NetworkConfiguration[1]` | `SecurityProfile` | `Actual` |
+| 126 | `AuthorizationKey` | VariableAttribute | `NetworkConfiguration[1]` | `BasicAuthPassword` | `Actual` |
+| 127 | `ChargePointId` | VariableAttribute | `NetworkConfiguration[1]` | `Identity` | `Actual` |
 
 ## Keys without a direct mapping
 
 | ID | OCPP1.6 key | Mapping type | Component | Variable | Target field |
 | ---: | --- | --- | --- | --- | --- |
-| 126 | `SupportedMeasurands` | VariableCharacteristics | `*` | `Measurands` | `valuesList` |
+| 128 | `SupportedMeasurands` | VariableCharacteristics | `*` | `Measurands` | `valuesList` |

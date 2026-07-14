@@ -320,6 +320,16 @@
             "type": "boolean",
             "readOnly": false
         },
+        "RejectRemoteStartTransactionWithoutConnectorId": {
+            "$comment": "If set to true, RemoteStartTransaction.req messages that do not contain a connectorId are rejected.",
+            "type": "boolean",
+            "readOnly": false
+        },
+        "RemoteStartTransactionWithoutConnectorIdFindFirst": {
+            "$comment": "If set to true, RemoteStartTransaction.req messages that do not contain a connectorId only reference the first connector available for remote start instead of all connectors. RejectRemoteStartTransactionWithoutConnectorId takes precedence over this key.",
+            "type": "boolean",
+            "readOnly": false
+        },
         "WaitForStopTransactionsOnResetTimeout": {
             "$comment": "Specifies the timeout that is used when transactions are stopped because of a Reset.req . If timeout exceeds, the reset callback is executed even if StopTransaction.conf messages not yet received for transactions that have been active.",
             "type": "integer",

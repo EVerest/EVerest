@@ -54,6 +54,8 @@
         "SeccLeafSubjectOrganization": "Pionix",
         "ConnectorEvseIds": "DE*PNX*100001,DE*PNX*100002",
         "AllowChargingProfileWithoutStartSchedule": false,
+        "RejectRemoteStartTransactionWithoutConnectorId": false,
+        "RemoteStartTransactionWithoutConnectorIdFindFirst": false,
         "WaitForStopTransactionsOnResetTimeout": 60,
         "SwitchSecurityProfileConnectionTimeout": 30,
         "QueueAllMessages": true,
