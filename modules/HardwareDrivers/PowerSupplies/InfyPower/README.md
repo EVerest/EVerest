@@ -387,7 +387,6 @@ candump can0 | grep F0
 
 ## References
 
-- [InfyPower V1.13 CAN Protocol Documentation](https://drive.google.com/file/d/1bZ9Pr7JD_ichvKmLmh8eVnZi0CdSr0xF/view?usp=drive_link) - Complete protocol specification
 - [EVerest power_supply_DC Interface](https://everest.github.io/) - Standardized interface documentation
 - [Linux SocketCAN Documentation](https://www.kernel.org/doc/html/latest/networking/can.html) - CAN bus programming guide
 
