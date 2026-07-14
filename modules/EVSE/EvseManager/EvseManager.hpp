@@ -407,6 +407,7 @@ private:
 
     static constexpr double CABLECHECK_CURRENT_LIMIT{2};
     static constexpr double CABLECHECK_INSULATION_FAULT_RESISTANCE_OHM{100000.};
+    static constexpr double CABLECHECK_MCS_INSULATION_FAULT_RESISTANCE_OHM{125000.};
     static constexpr double CABLECHECK_SAFE_VOLTAGE{60.};
     static constexpr int CABLECHECK_SELFTEST_TIMEOUT{30};
 
