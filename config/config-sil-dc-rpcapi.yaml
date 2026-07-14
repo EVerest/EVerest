@@ -6,8 +6,8 @@ active_modules:
       tls_security: allow
     connections:
       security:
-        - module_id: evse_security
-          implementation_id: main
+      - module_id: evse_security
+        implementation_id: main
   iso15118_car:
     module: PyEvJosev
     config_module:
@@ -30,26 +30,26 @@ active_modules:
       hack_allow_bpt_with_iso2: true
     connections:
       bsp:
-        - module_id: yeti_driver
-          implementation_id: board_support
+      - module_id: yeti_driver
+        implementation_id: board_support
       powermeter_car_side:
-        - module_id: powersupply_dc
-          implementation_id: powermeter
+      - module_id: powersupply_dc
+        implementation_id: powermeter
       slac:
-        - module_id: slac
-          implementation_id: evse
+      - module_id: slac
+        implementation_id: evse
       hlc:
-        - module_id: iso15118_charger
-          implementation_id: charger
+      - module_id: iso15118_charger
+        implementation_id: charger
       powersupply_DC:
-        - module_id: powersupply_dc
-          implementation_id: main
+      - module_id: powersupply_dc
+        implementation_id: main
       imd:
-        - module_id: imd
-          implementation_id: main
+      - module_id: imd
+        implementation_id: main
       over_voltage_monitor:
-        - module_id: ovm
-          implementation_id: main
+      - module_id: ovm
+        implementation_id: main
   powersupply_dc:
     module: DCSupplySimulator
   yeti_driver:
@@ -71,27 +71,24 @@ active_modules:
         simulate_error_delay: 5
     connections:
       power_supply:
-        - module_id: powersupply_dc
-          implementation_id: main
+      - module_id: powersupply_dc
+        implementation_id: main
   ev_manager:
-    module: EvManager
+    module: EvSimulator
     config_module:
       connector_id: 1
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
       dc_target_current: 20
       dc_target_voltage: 400
     connections:
       ev_board_support:
-        - module_id: yeti_driver
-          implementation_id: ev_board_support
+      - module_id: yeti_driver
+        implementation_id: ev_board_support
       ev:
-        - module_id: iso15118_car
-          implementation_id: ev
+      - module_id: iso15118_car
+        implementation_id: ev
       slac:
-        - module_id: slac
-          implementation_id: ev
+      - module_id: slac
+        implementation_id: ev
   auth:
     module: Auth
     config_module:
@@ -99,14 +96,14 @@ active_modules:
       selection_algorithm: FindFirst
     connections:
       token_provider:
-        - module_id: token_provider
-          implementation_id: main
+      - module_id: token_provider
+        implementation_id: main
       token_validator:
-        - module_id: token_validator
-          implementation_id: main
+      - module_id: token_validator
+        implementation_id: main
       evse_manager:
-        - module_id: evse_manager
-          implementation_id: evse
+      - module_id: evse_manager
+        implementation_id: evse
   token_provider:
     module: DummyTokenProvider
     config_implementation:
@@ -114,8 +111,8 @@ active_modules:
         token: TOKEN1
     connections:
       evse:
-        - module_id: evse_manager
-          implementation_id: evse
+      - module_id: evse_manager
+        implementation_id: evse
   token_validator:
     module: DummyTokenValidator
     config_implementation:
@@ -135,8 +132,8 @@ active_modules:
       debug: false
     connections:
       energy_trunk:
-        - module_id: grid_connection_point
-          implementation_id: energy_grid
+      - module_id: grid_connection_point
+        implementation_id: energy_grid
   grid_connection_point:
     module: EnergyNode
     mapping:
@@ -148,11 +145,11 @@ active_modules:
     connections:
       price_information: []
       energy_consumer:
-        - module_id: api_sink_evsemgr
-          implementation_id: energy_grid
+      - module_id: api_sink_evsemgr
+        implementation_id: energy_grid
       powermeter:
-        - module_id: yeti_driver
-          implementation_id: powermeter
+      - module_id: yeti_driver
+        implementation_id: powermeter
   api_sink_evsemgr:
     module: EnergyNode
     mapping:
@@ -163,18 +160,18 @@ active_modules:
       phase_count: 3
     connections:
       energy_consumer:
-        - module_id: evse_manager
-          implementation_id: energy_grid
+      - module_id: evse_manager
+        implementation_id: energy_grid
   api:
     module: RpcApi
     config_module:
       websocket_port: 8080
     connections:
       evse_manager:
-        - module_id: evse_manager
-          implementation_id: evse
+      - module_id: evse_manager
+        implementation_id: evse
       evse_energy_sink:
-        - module_id: grid_connection_point
-          implementation_id: external_limits
-        - module_id: api_sink_evsemgr
-          implementation_id: external_limits
+      - module_id: grid_connection_point
+        implementation_id: external_limits
+      - module_id: api_sink_evsemgr
+        implementation_id: external_limits

@@ -54,6 +54,13 @@ target_sources(everest_api_types
   src/everest_api_types/ev_board_support/json_codec.cpp
   src/everest_api_types/ev_board_support/wrapper.cpp
 
+  src/everest_api_types/ev_simulator/codec.cpp
+  src/everest_api_types/ev_simulator/json_codec.cpp
+  src/everest_api_types/ev_simulator/wrapper.cpp
+
+  src/everest_api_types/yeti_simulator/codec.cpp
+  src/everest_api_types/yeti_simulator/json_codec.cpp
+
   src/everest_api_types/evse_board_support/codec.cpp
   src/everest_api_types/evse_board_support/json_codec.cpp
   src/everest_api_types/evse_board_support/wrapper.cpp

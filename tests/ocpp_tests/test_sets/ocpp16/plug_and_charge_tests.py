@@ -63,7 +63,7 @@ class TestPlugAndCharge:
         )
 
         await asyncio.sleep(3)
-        test_controller.plug_in_ac_iso()
+        test_controller.plug_in_ac_iso(payment_type="contract")
 
         assert await wait_for_and_validate(
             test_utility,
@@ -150,7 +150,7 @@ class TestPlugAndCharge:
         )
 
         await asyncio.sleep(3)
-        test_controller.plug_in_ac_iso()
+        test_controller.plug_in_ac_iso(payment_type="contract")
 
         assert await wait_for_and_validate(
             test_utility,
@@ -237,7 +237,7 @@ class TestPlugAndCharge:
             central_system_v16.chargepoint
         )
 
-        test_controller.plug_in_ac_iso()
+        test_controller.plug_in_ac_iso(payment_type="contract")
         # expect authorize.req
         r: call.DataTransfer = call.DataTransfer(
             **await wait_for_and_validate(
@@ -336,7 +336,7 @@ class TestPlugAndCharge:
             central_system_v16.chargepoint
         )
 
-        test_controller.plug_in_ac_iso()
+        test_controller.plug_in_ac_iso(payment_type="contract")
         test_utility.messages.clear()
         test_utility.forbidden_actions.append("Authorize")
         test_utility.forbidden_actions.append("StartTransaction")
@@ -400,7 +400,7 @@ class TestPlugAndCharge:
             central_system_v16.chargepoint
         )
 
-        test_controller.plug_in_ac_iso()
+        test_controller.plug_in_ac_iso(payment_type="contract")
         test_utility.messages.clear()
         test_utility.forbidden_actions.append("Authorize")
         test_utility.forbidden_actions.append("StartTransaction")
@@ -556,7 +556,7 @@ class TestPlugAndCharge:
         test_utility.forbidden_actions.append("StartTransaction")
 
         # plug in first
-        test_controller.plug_in_ac_iso()
+        test_controller.plug_in_ac_iso(payment_type="contract")
 
         # expect StatusNotification with status preparing
         assert await wait_for_and_validate(

@@ -1,0 +1,13 @@
+stateDiagram-v2
+    direction TB
+
+    [*] --> Plugged
+
+    Plugged --> Charging : BspMeasurement 7<duty<97
+
+    Charging --> ChargingPwmPaused : BspMeasurement duty<=7 or >=97
+    ChargingPwmPaused --> Charging : BspMeasurement 7<duty<97
+
+    Charging --> [*] : StopSession / Unplug
+    Charging --> Faulted : InjectFault
+    ChargingPwmPaused --> Faulted : InjectFault

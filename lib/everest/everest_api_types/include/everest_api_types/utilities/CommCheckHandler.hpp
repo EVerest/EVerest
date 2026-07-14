@@ -63,6 +63,27 @@ public:
 
     ~CommCheckHandlerBase() {
         check_active.store(false);
+        // Wake the check thread out of comm_check_value.wait_for so it observes
+        // the cleared check_active flag and exits its loop. Without this, the
+        // handler thread stays parked in wait_for until the next timeout tick
+        // and a joinable std::thread member destructor would invoke
+        // std::terminate.
+        comm_check_value.set(false);
+        stop_heartbeat();
+        if (handler.joinable()) {
+            handler.join();
+        }
+    }
+
+    // Stops the heartbeat thread (if any) and joins it. Idempotent and safe to
+    // call from a module destructor before any other teardown so the heartbeat
+    // action cannot observe a half-destroyed enclosing module. Also invoked
+    // unconditionally by ~CommCheckHandlerBase.
+    void stop_heartbeat() {
+        heartbeat_active.store(false);
+        if (heartbeat_handler.joinable()) {
+            heartbeat_handler.join();
+        }
     }
 
     void set_value(bool value) {
