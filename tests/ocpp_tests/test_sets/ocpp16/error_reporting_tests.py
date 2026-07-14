@@ -13,6 +13,7 @@ from everest.testing.ocpp_utils.charge_point_utils import TestUtility, wait_for_
 from everest_test_utils import get_everest_config_path_str
 from everest.testing.core_utils._configuration.everest_configuration_strategies.evse_board_support_api_configuration_strategy import \
     EvseBoardSupportApiConfigAdjustment
+from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP16ConfigAdjustment
 
 from ocpp.v16.enums import ChargePointErrorCode
 
@@ -81,6 +82,9 @@ async def _validate_inoperative_cleared(
     get_everest_config_path_str("everest-config-sil-ocpp.yaml")
 )
 @pytest.mark.everest_config_adaptions(EvseBoardSupportApiConfigAdjustment())
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP16ConfigAdjustment([("Internal", "ReportClearedErrors", True)])
+)
 async def test_mrec_error_with_message_sets_status_notification_info(
     charge_point_v16: ChargePoint16,
     test_utility: TestUtility,
@@ -140,6 +144,9 @@ async def test_mrec_error_with_message_sets_status_notification_info(
     get_everest_config_path_str("everest-config-sil-ocpp.yaml")
 )
 @pytest.mark.everest_config_adaptions(EvseBoardSupportApiConfigAdjustment())
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP16ConfigAdjustment([("Internal", "ReportClearedErrors", True)])
+)
 async def test_mrec_error_without_message_is_unchanged_from_baseline(
     charge_point_v16: ChargePoint16,
     test_utility: TestUtility,
@@ -197,6 +204,9 @@ async def test_mrec_error_without_message_is_unchanged_from_baseline(
     get_everest_config_path_str("everest-config-sil-ocpp.yaml")
 )
 @pytest.mark.everest_config_adaptions(EvseBoardSupportApiConfigAdjustment())
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP16ConfigAdjustment([("Internal", "ReportClearedErrors", True)])
+)
 async def test_non_mrec_error_with_message_is_unchanged_from_baseline(
     charge_point_v16: ChargePoint16,
     test_utility: TestUtility,
@@ -255,6 +265,9 @@ async def test_non_mrec_error_with_message_is_unchanged_from_baseline(
     get_everest_config_path_str("everest-config-sil-ocpp.yaml")
 )
 @pytest.mark.everest_config_adaptions(EvseBoardSupportApiConfigAdjustment())
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP16ConfigAdjustment([("Internal", "ReportClearedErrors", True)])
+)
 async def test_mrec_error_with_overlong_message_is_truncated(
     charge_point_v16: ChargePoint16,
     test_utility: TestUtility,
@@ -305,3 +318,76 @@ async def test_mrec_error_with_overlong_message_is_truncated(
     )
 
     assert await _validate_inoperative_cleared(test_utility, charge_point_v16, MREC_ERROR_TYPE)
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_core_config(
+    get_everest_config_path_str("everest-config-sil-ocpp.yaml")
+)
+@pytest.mark.everest_config_adaptions(EvseBoardSupportApiConfigAdjustment())
+async def test_mrec_error_cleared_reports_nothing_while_still_faulted_by_default(
+    charge_point_v16: ChargePoint16,
+    test_utility: TestUtility,
+    test_controller: TestController,
+):
+    """ReportClearedErrors defaults to false: no ocpp_config_adaptions marker is applied here."""
+    logging.info("######### test_mrec_error_cleared_reports_nothing_while_still_faulted_by_default #########")
+
+    test_controller.publish(
+        _raise_error_topic(test_controller),
+        json.dumps({"type": MREC_ERROR_TYPE, "message": "test error message"}),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        {
+            "connector_id": 1,
+            "error_code": ChargePointErrorCode.ground_failure,
+            "vendor_id": MREC_VENDOR_ID,
+            "vendor_error_code": MREC_VENDOR_ERROR_CODE,
+        },
+    )
+
+    # The ground fault also renders the EVSE inoperative, keeping the connector Faulted
+    assert await _validate_inoperative_raised(
+        test_utility, charge_point_v16, f"evse_board_support/{MREC_ERROR_TYPE}", MREC_ERROR_TYPE
+    )
+
+    test_utility.messages.clear()
+
+    test_controller.publish(
+        _clear_error_topic(test_controller),
+        json.dumps({"type": MREC_ERROR_TYPE}),
+    )
+
+    # The cleared error should not be reported, because the connector remains faulted
+    # until the internal evse_manager/Inoperative error also clears
+    assert not await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        {
+            "connector_id": 1,
+            "info": MREC_CLEARED_INFO,
+            "vendor_id": MREC_VENDOR_ID,
+            "vendor_error_code": MREC_VENDOR_ERROR_CODE,
+        },
+        timeout=5,
+    ), "No cleared-error StatusNotification should be sent while the connector is still Faulted and ReportClearedErrors is disabled"
+
+    # Clearing the inoperative error returns the connector to NoError
+    # There is no synthetic `info` value because ReportClearedErrors is false
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        {
+            "connector_id": 1,
+            "error_code": ChargePointErrorCode.no_error,
+            "info": None,
+            "vendor_id": None,
+            "vendor_error_code": None,
+        },
+    )
