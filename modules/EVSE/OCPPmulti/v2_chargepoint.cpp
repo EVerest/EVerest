@@ -431,6 +431,10 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
         return m_callbacks_ptr->cb_update_allowed_energy_transfer_modes(args...);
     };
     callbacks.ocpp_messages_callback = [this](auto&&... args) { m_callbacks_ptr->cb_ocpp_messages(args...); };
+    // Always forwarded; GenericOcpp drops the directives when no grid_support connection is wired.
+    callbacks.der_active_directives_callback = [this](const auto& active_controls) {
+        m_callbacks_ptr->cb_der_active_directives(active_controls);
+    };
     return callbacks;
 }
 
@@ -916,6 +920,16 @@ void ChargePointV2::on_meter_value(std::int32_t evse_id, std::optional<float> so
         meter_value.sampledValue.push_back(sampled_soc_value);
     }
     m_charge_point->on_meter_value(evse_id, meter_value);
+}
+
+void ChargePointV2::on_der_alarm(const ocpp::v21::NotifyDERAlarmRequest& request) {
+    check_configured("on_der_alarm");
+    m_charge_point->on_der_alarm(request);
+}
+
+void ChargePointV2::on_der_republish_active_directives() {
+    check_configured("on_der_republish_active_directives");
+    m_charge_point->on_der_republish_active_directives();
 }
 
 void ChargePointV2::on_reservation_status(std::int32_t reservation_id, ocpp::v2::ReservationUpdateStatusEnum status) {

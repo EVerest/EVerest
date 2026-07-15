@@ -28,6 +28,8 @@
 #include <ocpp/v2/ocpp_enums.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 #include <ocpp/v2/types.hpp>
+#include <ocpp/v21/messages/NotifyDERAlarm.hpp>
+#include <ocpp/v21/messages/SetDERControl.hpp>
 
 #include <cstdint>
 #include <set>
@@ -73,6 +75,8 @@ struct GenericChargePointCallbacks {
     virtual void cb_connection_state_changed(bool is_connected, ocpp::OcppProtocolVersion protocol_version) = 0;
     virtual ocpp::v2::DataTransferResponse cb_data_transfer(const ocpp::v2::DataTransferRequest& request) = 0;
     virtual void cb_default_price(const types::session_cost::DefaultPrice& messages) = 0;
+    /// \brief Carries the full set of currently-active DER controls, emitted after every accepted transition.
+    virtual void cb_der_active_directives(const std::vector<ocpp::v21::SetDERControlRequest>& active_controls) = 0;
     virtual void cb_ev_info(std::int32_t evse_id, const types::evse_manager::EVInfo& ev_info) = 0;
     virtual void cb_fault_cleared_handler(std::int32_t evse_id, const Everest::error::Error& error) = 0;
     virtual void cb_fault_handler(std::int32_t evse_id, const Everest::error::Error& error) = 0;
@@ -282,6 +286,11 @@ struct GenericChargePointInterface {
     virtual void on_log_status_notification(ocpp::v2::UploadLogStatusEnum status, std::int32_t requestId) = 0;
     virtual void on_meter_value(std::int32_t evse_id, std::optional<float> soc,
                                 const types::powermeter::Powermeter& power_meter) = 0;
+    /// \brief Forward a DER grid-event alarm to the CSMS as a NotifyDERAlarm. No-op in OCPP 1.6 mode.
+    virtual void on_der_alarm(const ocpp::v21::NotifyDERAlarmRequest& request) = 0;
+    /// \brief Re-emit the current active DER directive set through the der_active_directives_callback. No-op
+    /// in OCPP 1.6 mode.
+    virtual void on_der_republish_active_directives() = 0;
     virtual void on_reservation_status(std::int32_t reservation_id, ocpp::v2::ReservationUpdateStatusEnum status) = 0;
     virtual void on_security_event(const ocpp::CiString<50>& event_type,
                                    const std::optional<ocpp::CiString<255>>& tech_info,

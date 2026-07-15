@@ -127,6 +127,8 @@ public:
     void on_log_status_notification(ocpp::v2::UploadLogStatusEnum status, std::int32_t requestId) override;
     void on_meter_value(std::int32_t evse_id, std::optional<float> soc,
                         const types::powermeter::Powermeter& power_meter) override;
+    void on_der_alarm(const ocpp::v21::NotifyDERAlarmRequest& request) override;
+    void on_der_republish_active_directives() override;
     void on_reservation_status(std::int32_t reservation_id, ocpp::v2::ReservationUpdateStatusEnum status) override;
     void on_security_event(const ocpp::CiString<50>& event_type, const std::optional<ocpp::CiString<255>>& tech_info,
                            const std::optional<bool>& critical,

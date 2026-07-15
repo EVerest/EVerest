@@ -28,6 +28,7 @@ target_sources(${MODULE_NAME}
 
     generic_chargepoint.cpp
     generic_ocpp.cpp
+    grid_support/grid_support_state.cpp
     v2_chargepoint.cpp
     v16_chargepoint.cpp
     v16_conversions.cpp

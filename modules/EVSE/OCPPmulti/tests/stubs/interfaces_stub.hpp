@@ -283,6 +283,7 @@ public:
     std::vector<std::unique_ptr<external_energy_limitsIntf>> r_evse_energy_sink;
     std::vector<std::unique_ptr<evse_managerIntf>> r_evse_manager;
     std::vector<std::unique_ptr<iso15118_extensionsIntf>> r_extensions_15118;
+    std::vector<std::unique_ptr<grid_supportIntf>> r_grid_support;
     std::vector<std::unique_ptr<reservationIntf>> r_reservation;
     evse_securityIntf r_security{&m_adapter, m_requirement, "security", std::nullopt};
     systemIntf r_system{&m_adapter, m_requirement, "system", std::nullopt};
@@ -337,6 +338,12 @@ public:
         req.index = r_extensions_15118.size();
         r_extensions_15118.emplace_back(
             std::make_unique<iso15118_extensionsIntf>(&m_adapter, req, module_id, std::nullopt));
+    }
+
+    void add_grid_support(const std::string& module_id, int evse) {
+        auto req = m_requirement;
+        req.index = r_grid_support.size();
+        r_grid_support.emplace_back(std::make_unique<grid_supportIntf>(&m_adapter, req, module_id, Mapping{evse}));
     }
 
     void add_reservation(const std::string& module_id) {
@@ -400,7 +407,8 @@ public:
 private:
     provides_t m_provides{p_auth_validator, p_auth_provider, p_data_transfer, p_ocpp_generic, p_session_cost};
     requires_t m_requires{r_auth,         r_charger_information, r_data_transfer, r_display_message, r_evse_energy_sink,
-                          r_evse_manager, r_extensions_15118,    r_reservation,   r_security,        r_system};
+                          r_evse_manager, r_extensions_15118,    r_grid_support,  r_reservation,     r_security,
+                          r_system};
 };
 
 } // namespace stubs

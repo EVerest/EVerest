@@ -50,6 +50,9 @@ std::string ConfigAccess::getEverestDeviceModelDatabasePath() const {
 int ConfigAccess::getOcpp16NetworkConfigSlot() const {
     return m_config.Ocpp16NetworkConfigSlot;
 }
+int ConfigAccess::getGridSupportHeartbeatS() const {
+    return m_config.grid_support_heartbeat_s;
+}
 std::string ConfigAccess::getMessageLogPath() const {
     return m_config.MessageLogPath;
 }

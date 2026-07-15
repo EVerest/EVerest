@@ -4,6 +4,7 @@
 #pragma once
 
 #include "generic_chargepoint_interface.hpp"
+#include "grid_support/grid_support_state.hpp"
 #include "ocpp_module_common_aliases.hpp"
 
 #include <generated/interfaces/auth/Interface.hpp>
@@ -14,6 +15,7 @@
 #include <generated/interfaces/evse_manager/Interface.hpp>
 #include <generated/interfaces/evse_security/Interface.hpp>
 #include <generated/interfaces/external_energy_limits/Interface.hpp>
+#include <generated/interfaces/grid_support/Interface.hpp>
 #include <generated/interfaces/iso15118_extensions/Interface.hpp>
 #include <generated/interfaces/ocpp/Implementation.hpp>
 #include <generated/interfaces/ocpp_1_6_charge_point/Implementation.hpp>
@@ -36,6 +38,8 @@
 #include <ocpp/v2/messages/TransactionEvent.hpp>
 #include <ocpp/v2/messages/UnlockConnector.hpp>
 #include <ocpp/v2/messages/UpdateFirmware.hpp>
+#include <ocpp/v21/messages/NotifyDERAlarm.hpp>
+#include <ocpp/v21/messages/SetDERControl.hpp>
 
 #include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
@@ -74,6 +78,7 @@ struct GenericOcppInterface {
         const std::vector<std::unique_ptr<external_energy_limitsIntf>>& evse_energy_sink;
         const std::vector<std::unique_ptr<evse_managerIntf>>& evse_manager;
         const std::vector<std::unique_ptr<iso15118_extensionsIntf>>& extensions_15118;
+        const std::vector<std::unique_ptr<grid_supportIntf>>& grid_support;
         const std::vector<std::unique_ptr<reservationIntf>>& reservation;
         evse_securityIntf& security;
         systemIntf& system;
@@ -120,6 +125,7 @@ struct ConfigInterface {
     [[nodiscard]] virtual bool getEnableLegacyConfigMigration() const = 0;
     [[nodiscard]] virtual int getOcpp16NetworkConfigSlot() const = 0;
     [[nodiscard]] virtual std::string getEverestDeviceModelDatabasePath() const = 0;
+    [[nodiscard]] virtual int getGridSupportHeartbeatS() const = 0;
     [[nodiscard]] virtual std::string getMessageLogPath() const = 0;
     [[nodiscard]] virtual int getMessageQueueResumeDelay() const = 0;
     [[nodiscard]] virtual int getRequestCompositeScheduleDurationS() const = 0;
@@ -156,6 +162,7 @@ private:
     module::MREC_ERROR_MAP_TYPE mv_mrec_error_map;
 
     std::atomic<std::int32_t> mv_event_id_counter{0};
+    std::atomic<GenericChargePointInterface::modes_t> mv_mode{GenericChargePointInterface::modes_t::prefer_ocpp_2};
     std::atomic<ocpp::OcppProtocolVersion> mv_ocpp_protocol_version{ocpp::OcppProtocolVersion::Unknown};
     std::atomic_bool mv_started{false};
     std::atomic_bool mv_shutting_down{false};
@@ -176,6 +183,14 @@ private:
     std::map<std::int32_t, bool> m_evse_service_renegotiation_supported;
 
     Everest::SteadyTimer m_charging_schedules_timer;
+    Everest::SteadyTimer m_grid_support_heartbeat_timer;
+
+    everest::lib::util::monitor<GridSupportState> m_grid_support_state;
+
+    /// \brief evse_id -> grid_support connection serving it, from each connection's framework mapping.
+    /// Written once in ready() before the charge point exists (der_active_directives_callback fires during
+    /// its construction) and before any reader thread; read-only afterwards, so no lock.
+    std::map<std::int32_t, grid_supportIntf*> m_grid_support_by_evse;
 
     std::mutex m_chargepoint_state_mutex; // mutex used for start/stop operations
     std::mutex m_session_event_mutex;
@@ -209,6 +224,7 @@ public:
     }
 
     void set_mode(GenericChargePointInterface::modes_t new_mode) {
+        mv_mode = new_mode;
         mv_charge_point.set_mode(new_mode);
     }
 
@@ -314,6 +330,7 @@ protected:
     void cb_connection_state_changed(bool is_connected, ocpp::OcppProtocolVersion protocol_version) override;
     ocpp::v2::DataTransferResponse cb_data_transfer(const ocpp::v2::DataTransferRequest& request) override;
     void cb_default_price(const types::session_cost::DefaultPrice& messages) override;
+    void cb_der_active_directives(const std::vector<ocpp::v21::SetDERControlRequest>& active_controls) override;
     void cb_ev_info(std::int32_t evse_id, const types::evse_manager::EVInfo& ev_info) override;
     void cb_fault_cleared_handler(std::int32_t evse_id, const Everest::error::Error& error) override;
     void cb_fault_handler(std::int32_t evse_id, const Everest::error::Error& error) override;
@@ -391,6 +408,59 @@ protected:
     bool charging_schedules_timer_running();
     void charging_schedules_timer_start();
     void charging_schedules_timer_stop();
+
+    // ------------------------------------------------------------------------
+    // grid_support / DER
+
+    /// \brief True when the selected mode runs an OCPP 2.x charge point.
+    bool ocpp_2_selected() const;
+
+    /// \brief True when at least one grid_support connection is wired and the active charge point is OCPP
+    /// 2.x (DER is a 2.x-only feature). In 1.6-only mode grid_support wiring is inert.
+    bool grid_support_active() const;
+
+    /// \brief Outcome of applying a DER capability for one EVSE via apply_der_capability.
+    struct DerApplyResult {
+        bool accepted{false};
+        /// \brief Per-variable rejection details when accepted is false; empty when accepted.
+        std::string rejected_details;
+    };
+
+    /// \brief Apply the DER capability config for \p evse_id from \p capability. Shared path for both the
+    /// live set_capability handler and the ready() flush of pre-construction buffered capabilities.
+    ///
+    /// Registers the EVSE before the device-model write (so a republish emit reaches it). On rejection: if
+    /// the EVSE already had an accepted capability, rolls back to it (restoring its config variables,
+    /// leaving Enabled untouched); otherwise unregisters the EVSE.
+    DerApplyResult apply_der_capability(std::int32_t evse_id, const types::grid_support::DERCapability& capability);
+
+    /// \brief Flip capabilities live and empty the pre-construction buffered DER capabilities into libocpp
+    /// at ready(). Only meaningful when a grid_support consumer is connected.
+    void flush_pending_grid_support();
+
+    /// \brief Snapshot each registered EVSE's active directive set under one state handle, then push each
+    /// to the grid_support consumer after releasing the handle. No-op when no consumer is connected.
+    void push_active_directive_sets();
+
+    /// \brief Populate m_grid_support_by_evse from the connections' framework mappings. Every connection
+    /// must carry a mapping; an unmapped connection is logged and excluded. Any EVSE without a wired
+    /// grid_support connection has its DER controller forced to Available=false.
+    void init_grid_support_routing(const std::map<std::int32_t, std::int32_t>& evse_connector_structure);
+
+    /// \brief Resolve the grid_support connection mapped to \p evse_id, or nullptr if none.
+    grid_supportIntf* grid_support_for_evse(std::int32_t evse_id) const;
+
+    void grid_support_heartbeat_timer_callback();
+    void grid_support_heartbeat_timer_start();
+    void grid_support_heartbeat_timer_stop();
+
+    /// \brief Handle a DER capability published by the grid_support provider for one EVSE. Buffers until the
+    /// charge point exists, then applies it via apply_der_capability.
+    void on_grid_support_capability(const types::grid_support::EVSECapability& evse_capability);
+
+    /// \brief Forward a grid alarm raised by the grid_support provider to the CSMS. Buffers until the charge
+    /// point exists.
+    void on_grid_support_alarm(const types::grid_support::GridAlarm& alarm);
 
     std::optional<types::energy::ScheduleReqEntry>
     create_limits_entry(const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
