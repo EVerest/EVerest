@@ -207,6 +207,8 @@ struct v2g_context {
 
     std::string tls_key_logging_path;
 
+    uint16_t tcp_port;
+    uint16_t tls_port;
     uint32_t network_read_timeout;     /* in milli seconds */
     uint32_t network_read_timeout_tls; /* in milli seconds */
 

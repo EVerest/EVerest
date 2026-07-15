@@ -24,6 +24,7 @@ namespace iso15118 {
 struct TbdConfig {
     config::SSLConfig ssl{config::CertificateBackend::EVEREST_LAYOUT, {}, {}, {}, {}, {}, {}};
     std::string interface_name;
+    uint16_t tcp_port{50000};
     config::TlsNegotiationStrategy tls_negotiation_strategy{config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER};
     bool enable_sdp_server{true};
 };

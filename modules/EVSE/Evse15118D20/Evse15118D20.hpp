@@ -26,6 +26,7 @@ namespace module {
 
 struct Conf {
     std::string device;
+    int tcp_port;
     std::string logging_path;
     std::string tls_negotiation_strategy;
     bool enforce_tls_1_3;

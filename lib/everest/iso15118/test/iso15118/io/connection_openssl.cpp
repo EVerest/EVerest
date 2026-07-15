@@ -16,7 +16,7 @@ static constexpr auto POLL_MANAGER_TIMEOUT_MS = 50;
 static constexpr auto STOP_TIME = 30;
 
 const char* short_opts = "hi:";
-std::string interface {};
+std::string interface{};
 
 void parse_options(int argc, char** argv) {
     int c{0};
@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
                                 false,   // enforce_tls_1_3
                                 "/tmp"}; // tls_key_log_file_path
 
-    auto connection = io::ConnectionSSL(poll_manager, interface_name, ssl);
+    auto connection = io::ConnectionSSL(poll_manager, interface_name, ssl, 50000);
     connection.set_event_callback([](io::ConnectionEvent event) { handle_connection_event(event); });
 
     auto next_event = get_current_time_point();
