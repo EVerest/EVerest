@@ -28,8 +28,9 @@ using Description = std::string; // MaxLength: 160
 static constexpr auto SESSION_ID_LENGTH = 8;
 using SessionId = std::array<uint8_t, SESSION_ID_LENGTH>;
 
-using MeterId = std::string;        // MaxLength: 32
-using MeterSignature = std::string; // Base64 encoded, MaxLength: 64
+using MeterId = std::string; // MaxLength: 32
+static constexpr auto METER_SIGNATURE_LENGTH = 64;
+using MeterSignature = std::array<uint8_t, METER_SIGNATURE_LENGTH>; // Base64 encoded, MaxLength: 64
 
 static constexpr auto GEN_CHALLENGE_LENGTH = 16;
 using GenChallenge = std::array<uint8_t, GEN_CHALLENGE_LENGTH>; // Base64 encoded, MaxLength: 16

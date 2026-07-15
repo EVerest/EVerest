@@ -2,6 +2,7 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <algorithm>
 #include <stdexcept>
 
 #include <cbv2g/common/exi_bitstream.h>
@@ -28,7 +29,7 @@
     if (in.bytesLen > out.size()) {                                                                                    \
         throw std::runtime_error("Byte array too long");                                                               \
     }                                                                                                                  \
-    std::copy(std::begin(in.bytes), std::end(in.bytes), out.begin());
+    std::copy_n(std::begin(in.bytes), in.bytesLen, std::begin(out));
 
 #define CB_SET_USED(property) (property##_isUsed = 1)
 #define CB2CPP_ASSIGN_IF_USED(in, out)                                                                                 \
