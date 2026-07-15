@@ -349,7 +349,7 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
 void Session::close() {
     connection->close();
     // transport gone; a rate-limiter-deferred response is undeliverable
-    (void)message_exchange.check_and_clear_response();
+    [[maybe_unused]] auto res = message_exchange.check_and_clear_response();
     ctx.feedback.signal(session::feedback::Signal::DLINK_TERMINATE);
     ctx.session_stopped = true;
 }
