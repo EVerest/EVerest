@@ -79,7 +79,8 @@ public:
                 (override));
     MOCK_METHOD(void, on_transaction_finished,
                 (std::int32_t, const ocpp::DateTime&, const MeterValue&, ReasonEnum, TriggerReasonEnum,
-                 const std::optional<IdToken>&, const std::optional<std::string>&, ChargingStateEnum),
+                 const std::optional<IdToken>&, const std::optional<std::string>&, ChargingStateEnum,
+                 const std::optional<SignedMeterValue>&),
                 (override));
     MOCK_METHOD(void, transaction_event_req,
                 (const TransactionEventEnum&, const ocpp::DateTime&, const Transaction&, const TriggerReasonEnum&,
@@ -116,7 +117,7 @@ protected: // Members
     DeviceModelTestHelper device_model_test_helper;
     NiceMock<MockMessageDispatcher> mock_dispatcher;
     DeviceModel* device_model;
-    NiceMock<ConnectivityManagerMock> connectivity_manager;
+    NiceMock<ocpp::ConnectivityManagerMock> connectivity_manager;
     NiceMock<DatabaseHandlerMock> database_handler_mock;
     ocpp::EvseSecurityMock evse_security;
     EvseManagerFake evse_manager;

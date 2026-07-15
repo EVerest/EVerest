@@ -126,12 +126,14 @@ set(TEST_REMOTE_TRANSACTION_CONTROL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../devic
 )
 
 target_sources(libocpp_test_remote_transaction_control PRIVATE
-        ${TEST_REMOTE_TRANSACTION_CONTROL_SOURCES})
+        ${TEST_REMOTE_TRANSACTION_CONTROL_SOURCES}
+)
 
 target_include_directories(libocpp_test_remote_transaction_control PUBLIC
         ${LIBOCPP_INCLUDE_PATH}
         ${LIBOCPP_3RDPARTY_PATH}
         ${CMAKE_CURRENT_SOURCE_DIR}/../mocks
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
         ${LIBOCPP_TESTS_V2_ROOT_DIR}
 )
 

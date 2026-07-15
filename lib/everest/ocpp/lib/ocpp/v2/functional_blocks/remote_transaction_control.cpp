@@ -213,6 +213,9 @@ void RemoteTransactionControl::handle_remote_start_transaction_request(Call<Requ
             }
 
             if (response.status == RequestStartStopStatusEnum::Rejected) {
+                response.statusInfo = StatusInfo{
+                    "NoEvseAvailable",
+                    " RequestStartTransactionRequest requested without providing an EVSE, but no EVSE is available."};
                 EVLOG_info << "Remote start transaction requested without evse id, but no evse is available.";
             }
         }

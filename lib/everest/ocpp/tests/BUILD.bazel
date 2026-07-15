@@ -8,10 +8,14 @@ cc_test(
         "lib/ocpp/v2/device_model_test_helper.cpp",
         "lib/ocpp/v2/device_model_test_helper.hpp",
         "lib/ocpp/v2/functional_blocks/test_remote_transaction_control.cpp",
-    ] + glob(["lib/ocpp/v2/mocks/*.hpp"]),
+    ] + glob([
+        "lib/ocpp/v2/mocks/*.hpp",
+        "lib/ocpp/common/mocks/*.hpp",
+    ]),
     data = ["//lib/everest/ocpp:config"],
     includes = [
         "lib/ocpp/common",
+        "lib/ocpp/common/mocks",
         "lib/ocpp/v2",
         "lib/ocpp/v2/mocks",
     ],
