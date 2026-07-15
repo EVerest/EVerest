@@ -544,6 +544,14 @@ using log_handler_t = void (*)(log_level_t level, const std::string& err);
  */
 log_handler_t set_log_handler(log_handler_t handler);
 
+/**
+ * \brief return true when the supported_versions extension payload lists TLS 1.3
+ * \param[in] in pointer to the extension payload (1-byte length prefix followed by 2-byte version IDs)
+ * \param[in] inlen length of the payload in bytes
+ * \return true when the payload advertises TLS 1.3
+ */
+bool is_tls_1_3(const std::uint8_t* in, std::size_t inlen);
+
 } // namespace openssl
 
 #endif // OPENSSL_UTIL_HPP_

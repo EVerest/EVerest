@@ -26,7 +26,7 @@ void vlogf(const LogLevel&, const char* fmt, va_list ap);
 
 void log(const LogLevel&, const std::string&);
 
-void log_and_throw(const char* msg);
+[[noreturn]] void log_and_throw(const char* msg);
 
 std::string adding_err_msg(const std::string& msg);
 

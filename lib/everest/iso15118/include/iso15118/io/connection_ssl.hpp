@@ -12,11 +12,21 @@
 
 namespace iso15118::io {
 
-// forward declaration
+// forward declaration of the implementation-detail context. The definition lives
+// in connection_ssl.cpp so that OpenSSL and the tls:: types stay out of public headers.
 struct SSLContext;
+
+/**
+ * \brief TLS-backed implementation of IConnection
+ *
+ * Drives a single TLS server endpoint. The TLS termination, certificate-chain
+ * selection, OCSP stapling and key logging are delegated to `tls::Server`;
+ * this class adapts that server to the ISO 15118 connection interface and the
+ * surrounding poll loop.
+ */
 class ConnectionSSL : public IConnection {
 public:
-    ConnectionSSL(PollManager&, const std::string& interface_name, const config::SSLConfig&);
+    ConnectionSSL(PollManager&, const std::string& interface_name, const config::SSLConfig& ssl_config);
 
     void set_event_callback(const ConnectionEventCallback&) final;
     Ipv6EndPoint get_public_endpoint() const final;

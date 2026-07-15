@@ -13,7 +13,7 @@ std::string adding_err_msg(const std::string& msg) {
     return (msg + " (reason: " + strerror(errno) + ")");
 }
 
-void log_and_throw(const char* msg) {
+[[noreturn]] void log_and_throw(const char* msg) {
     throw std::runtime_error(std::string(msg) + " (reason: " + strerror(errno) + ")");
 }
 
