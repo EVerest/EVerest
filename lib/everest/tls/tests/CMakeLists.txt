@@ -76,6 +76,7 @@ target_include_directories(${TLS_MAIN_NAME} PRIVATE
 
 target_compile_definitions(${TLS_MAIN_NAME} PRIVATE
     -DUNIT_TEST
+    -DLIBEVSE_CRYPTO_SUPPLIER_OPENSSL
 )
 
 target_sources(${TLS_MAIN_NAME} PRIVATE
@@ -106,6 +107,7 @@ target_include_directories(${TLS_CLIENT_NAME} PRIVATE
 
 target_compile_definitions(${TLS_CLIENT_NAME} PRIVATE
     -DUNIT_TEST
+    -DLIBEVSE_CRYPTO_SUPPLIER_OPENSSL
 )
 
 target_sources(${TLS_CLIENT_NAME} PRIVATE
@@ -136,6 +138,7 @@ target_include_directories(${TLS_PATCH_NAME} PRIVATE
 
 target_compile_definitions(${TLS_PATCH_NAME} PRIVATE
     -DUNIT_TEST
+    -DLIBEVSE_CRYPTO_SUPPLIER_OPENSSL
 )
 
 target_sources(${TLS_PATCH_NAME} PRIVATE
