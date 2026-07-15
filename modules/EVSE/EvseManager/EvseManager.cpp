@@ -1024,15 +1024,19 @@ void EvseManager::ready() {
         // implement Auth handlers
         r_hlc[0]->subscribe_require_auth_eim([this]() {
             //  Do we have auth already (i.e. delayed HLC after charging already running)?
-            if ((config.dbg_hlc_auth_after_tstep and charger->get_authorized_eim_ready_for_hlc()) or
-                (not config.dbg_hlc_auth_after_tstep and charger->get_authorized_eim())) {
+            const bool authorized_eim =
+                (config.dbg_hlc_auth_after_tstep and charger->get_authorized_eim_ready_for_hlc()) or
+                (not config.dbg_hlc_auth_after_tstep and charger->get_authorized_eim());
+            // Only release the EV towards PowerDelivery once the signed-meter transaction has actually been
+            // started.
+            if (authorized_eim and charger->get_transaction_active()) {
                 hlc_waiting_for_auth_eim = false;
                 hlc_waiting_for_auth_pnc = false;
                 r_hlc[0]->call_authorization_response(types::authorization::AuthorizationStatus::Accepted,
                                                       types::authorization::CertificateStatus::NoCertificateAvailable);
                 charger->get_stopwatch().mark("Auth EIM Done");
             } else {
-                if (config.enable_autocharge) {
+                if (config.enable_autocharge and not authorized_eim) {
                     p_token_provider->publish_provided_token(autocharge_token);
                 }
                 hlc_waiting_for_auth_eim = true;
@@ -1068,6 +1072,22 @@ void EvseManager::ready() {
                 p_token_provider->publish_provided_token(copied_token);
                 hlc_waiting_for_auth_eim = false;
                 hlc_waiting_for_auth_pnc = true;
+            }
+        });
+
+        charger->signal_transaction_started_event.connect([this](const types::authorization::ProvidedIdToken&) {
+            if (hlc_waiting_for_auth_pnc) {
+                hlc_waiting_for_auth_eim = false;
+                hlc_waiting_for_auth_pnc = false;
+                r_hlc[0]->call_authorization_response(types::authorization::AuthorizationStatus::Accepted,
+                                                      types::authorization::CertificateStatus::Accepted);
+                charger->get_stopwatch().mark("Auth PnC Done");
+            } else if (hlc_waiting_for_auth_eim) {
+                hlc_waiting_for_auth_eim = false;
+                hlc_waiting_for_auth_pnc = false;
+                r_hlc[0]->call_authorization_response(types::authorization::AuthorizationStatus::Accepted,
+                                                      types::authorization::CertificateStatus::NoCertificateAvailable);
+                charger->get_stopwatch().mark("Auth EIM Done");
             }
         });
 
@@ -1901,25 +1921,6 @@ void EvseManager::log_v2g_message(types::iso15118::V2gMessages const& v2g_messag
         session_log.car(true, fmt::format("V2G {}", msg), xml, exi_hex, exi_base64, json_str);
     } else {
         session_log.evse(true, fmt::format("V2G {}", msg), xml, exi_hex, exi_base64, json_str);
-    }
-}
-
-void EvseManager::charger_was_authorized() {
-
-    if (hlc_waiting_for_auth_pnc and charger->get_authorized_pnc()) {
-        r_hlc[0]->call_authorization_response(types::authorization::AuthorizationStatus::Accepted,
-                                              types::authorization::CertificateStatus::Accepted);
-        hlc_waiting_for_auth_eim = false;
-        hlc_waiting_for_auth_pnc = false;
-        charger->get_stopwatch().mark("Auth PnC Done");
-    }
-
-    if (hlc_waiting_for_auth_eim and charger->get_authorized_eim()) {
-        r_hlc[0]->call_authorization_response(types::authorization::AuthorizationStatus::Accepted,
-                                              types::authorization::CertificateStatus::NoCertificateAvailable);
-        hlc_waiting_for_auth_eim = false;
-        hlc_waiting_for_auth_pnc = false;
-        charger->get_stopwatch().mark("Auth EIM Done");
     }
 }
 

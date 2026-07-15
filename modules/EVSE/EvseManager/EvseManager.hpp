@@ -223,8 +223,6 @@ public:
 
     sigslot::signal<types::evse_manager::SessionEvent> signalReservationEvent;
 
-    void charger_was_authorized();
-
     const std::vector<std::unique_ptr<powermeterIntf>>& r_powermeter_billing();
 
     // FIXME: this will be removed with proper integration of BPT on ISO-20
