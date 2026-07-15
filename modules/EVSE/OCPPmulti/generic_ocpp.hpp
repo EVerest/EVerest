@@ -194,7 +194,7 @@ private:
     std::atomic_bool recompute_pending{false};
 
     // Queue the event if OCPP hasn't started yet; returns true when it was queued.
-    bool enqueue_if_not_started(std::int32_t evse_id, Event event);
+    bool enqueue_if_not_started(std::int32_t evse_id, const Event& event);
 
 public:
     using ConfigServiceClient = std::shared_ptr<Everest::config::ConfigServiceClient>;
