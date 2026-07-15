@@ -6,8 +6,8 @@ Acceptance suite for the OCPP 2.1 functional block R (DER control), exercised
 end-to-end over a real CSMS websocket against the d20 DC SIL.
 
 The grid_support interface is inverted: the DER device is the *provider* and the
-OCPP201 module *optionally requires* it. A probe module stands in for the DER
-device. It:
+OCPP module (the combined OCPPmulti module) *optionally requires* it. A probe
+module stands in for the DER device. It:
 
   * implements the ``set_active_directives`` command - OCPP201 calls it to push
     the active directive set per EVSE (on a CSMS SetDERControl and on the
@@ -74,7 +74,9 @@ from ocpp.v21.enums import (
 
 log = logging.getLogger("gridSupportTest")
 
-# The id of the OCPP201 module in everest-config-ocpp201-sil-dc-d20-eim.yaml.
+# The id of the OCPP module in everest-config-ocppmulti-sil-dc-d20-eim.yaml.
+# The config names it OCPP201 on disk; OCPPMultiConfigurationStrategy swaps it to
+# the combined OCPPmulti module at runtime (the module id "ocpp" is unchanged).
 OCPP_MODULE_ID = "ocpp"
 # The probe module is always injected under this fixed module id.
 PROBE_MODULE_ID = "probe"
@@ -125,16 +127,20 @@ def make_evse_capability(
 
 
 class GridSupportProbeWiringAdjustment(EverestConfigAdjustmentStrategy):
-    """Wires the OCPP201 grid_support requirement to the probe's provided
+    """Wires the OCPP module's grid_support requirement to the probe's provided
     implementation and speeds up the active-directive heartbeat.
 
     The probe module itself is injected by the ``probe_module`` marker; this
-    strategy points the OCPP201 module's (optional) grid_support requirement at
-    the probe, so OCPP201 becomes the consumer and the probe the DER-device
+    strategy points the OCPP module's (optional) grid_support requirement at the
+    probe, so the OCPP module becomes the consumer and the probe the DER-device
     provider. It also sets grid_support_heartbeat_s so the heartbeat fires every
-    second for fast test feedback. Because OCPP201 now requires every
+    second for fast test feedback. Because the OCPP module now requires every
     grid_support connection to carry a framework mapping, it also maps the probe
     module to DER_EVSE_ID so the connection is not excluded from DER routing.
+
+    This adjustment keys on the module id (OCPP_MODULE_ID), so it runs before
+    OCPPMultiConfigurationStrategy renames the on-disk OCPP201 module to OCPPmulti
+    and is unaffected by that rename.
     """
 
     def __init__(self, heartbeat_s: int = 1):
@@ -251,14 +257,17 @@ FREQ_DROOP = FreqDroopType(
 
 
 # Common marker stack: a real CSMS over the d20 DC SIL config, OCPP 2.1, with the
-# probe wired as the grid_support provider (OCPP201 the consumer) and the OCPP201
-# heartbeat sped up to 1s.
+# probe wired as the grid_support provider (the OCPP module the consumer) and the
+# heartbeat sped up to 1s. DER lives only in the combined OCPPmulti module, so
+# ocpp_multi_only pins every test to the multi variant (the config's on-disk
+# OCPP201 module is swapped to OCPPmulti at runtime).
 def grid_support_markers(func):
     func = pytest.mark.asyncio(func)
     func = pytest.mark.xdist_group(name="ISO15118")(func)
     func = pytest.mark.ocpp_version("ocpp2.1")(func)
+    func = pytest.mark.ocpp_multi_only(func)
     func = pytest.mark.everest_core_config(
-        "everest-config-ocpp201-sil-dc-d20-eim.yaml"
+        "everest-config-ocppmulti-sil-dc-d20-eim.yaml"
     )(func)
     func = pytest.mark.ocpp_config_adaptions(
         GenericOCPP2XConfigAdjustment(
