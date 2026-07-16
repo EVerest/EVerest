@@ -193,6 +193,11 @@ types::text_message::MessageFormat to_everest_message_format(const ocpp::v2::Mes
 /// types::ocpp::MessageContent
 types::text_message::MessageContent to_everest_message_content(const ocpp::v2::MessageContent& message_content);
 
+/// \brief Converts the description of a given ocpp::v2::Tariff \p tariff to a vector of
+/// types::text_message::MessageContent
+std::vector<types::text_message::MessageContent>
+to_everest_message_contents(const std::optional<ocpp::v2::Tariff>& tariff);
+
 /// \brief Converts a given ocpp::v2::TransactionEventResponse \p transaction_event_response to a
 /// types::ocpp::OcppTransactionEventResponse
 types::ocpp::OcppTransactionEventResponse

@@ -5,6 +5,7 @@
 #define MODULEADAPRERSTUB_H_
 
 #include <framework/ModuleAdapter.hpp>
+#include <utils/config_service.hpp>
 
 #include <optional>
 #include <utils/error/error_database_map.hpp>
@@ -50,6 +51,7 @@ struct ModuleAdapterStub : public Everest::ModuleAdapter {
         telemetry_publish = [this](const std::string& s1, const std::string& s2, const std::string& s3,
                                    const Everest::TelemetryMap& tm) { this->telemetry_publish_fn(s1, s2, s3, tm); };
         get_mapping = [this]() { return this->get_mapping_fn(); };
+        get_config_service_client = [this]() { return this->get_config_service_client_fn(); };
     }
 
     virtual Result call_fn(const Requirement&, const std::string&, Parameters) {
@@ -120,6 +122,10 @@ struct ModuleAdapterStub : public Everest::ModuleAdapter {
         std::printf("get_mapping_fn\n");
         return {};
     }
+    virtual std::shared_ptr<Everest::config::ConfigServiceClient> get_config_service_client_fn() {
+        std::printf("get_config_service_client_fn\n");
+        return {};
+    }
 };
 
 struct QuietModuleAdapterStub : public ModuleAdapterStub {
@@ -173,6 +179,9 @@ struct QuietModuleAdapterStub : public ModuleAdapterStub {
                               const Everest::TelemetryMap&) override {
     }
     std::optional<ModuleTierMappings> get_mapping_fn() override {
+        return {};
+    }
+    virtual std::shared_ptr<Everest::config::ConfigServiceClient> get_config_service_client_fn() {
         return {};
     }
 };
