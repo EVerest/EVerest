@@ -1437,6 +1437,18 @@ types::text_message::MessageContent to_everest_message_content(const ocpp::v2::M
     return everest_message_content;
 }
 
+std::vector<types::text_message::MessageContent>
+to_everest_message_contents(const std::optional<ocpp::v2::Tariff>& tariff) {
+    std::vector<types::text_message::MessageContent> result;
+    if (tariff.has_value() && tariff->description.has_value()) {
+        result.reserve(tariff->description->size());
+        for (const auto& item : tariff->description.value()) {
+            result.push_back(to_everest_message_content(item));
+        }
+    }
+    return result;
+}
+
 types::ocpp::OcppTransactionEventResponse
 to_everest_transaction_event_response(const ocpp::v2::TransactionEventResponse& transaction_event_response) {
     types::ocpp::OcppTransactionEventResponse everest_transaction_event_response;

@@ -19,8 +19,6 @@
 #include <ocpp/v2/ocpp16_component_config_patcher.hpp>
 #include <ocpp/v2/ocpp16_custom_config_mappings.hpp>
 
-namespace module {
-
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
@@ -57,7 +55,7 @@ struct DeviceModelInitializationContext {
 };
 
 DeviceModelInitializationContext resolve_device_model_initialization_context(const fs::path& ocpp_share_path,
-                                                                             const Conf& config) {
+                                                                             const module::Conf& config) {
     DeviceModelInitializationContext context;
 
     const auto configured_device_model_database_path = fs::path(config.DeviceModelDatabasePath);
@@ -116,7 +114,7 @@ struct ChargePointConfigStrategy {
     std::optional<DeviceModelInitializationContext> dm_context;
 };
 
-ChargePointConfigStrategy validate_and_derive_strategy(const fs::path& ocpp_share_path, const Conf& config) {
+ChargePointConfigStrategy validate_and_derive_strategy(const fs::path& ocpp_share_path, const module::Conf& config) {
     ChargePointConfigStrategy strategy;
 
     if (config.ConfigBackend == "legacy") {
@@ -224,6 +222,8 @@ create_device_model_charge_point_configuration(const fs::path& ocpp_share_path,
 }
 
 } // namespace
+
+namespace module {
 
 std::unique_ptr<ocpp::v16::ChargePointConfigurationInterface>
 create_charge_point_configuration(const fs::path& ocpp_share_path, const Conf& config, int32_t n_evse) {
