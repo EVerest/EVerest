@@ -224,6 +224,14 @@ struct GenericChargePointInterface {
                        bool start_connecting) = 0;
     virtual void stop() = 0;
 
+    /// \brief Returns true if the underlying OCPP message queue has no message queued or in flight. Used to bound-wait
+    /// for pending messages (e.g. a final TransactionEvent(Ended) or a FirmwareStatusNotification) to be flushed to the
+    /// CSMS before the connection is torn down for a reset or shutdown. Defaults to true for backends that do not track
+    /// this (e.g. OCPP1.6), so callers never block on them.
+    virtual bool is_message_queue_idle() {
+        return true;
+    }
+
     virtual std::optional<ocpp::v2::DataTransferResponse>
     data_transfer_req(const ocpp::v2::DataTransferRequest& request) = 0;
 

@@ -29,6 +29,13 @@ constexpr const auto TX_STOP_POINT_VAR_NAME = "TxStopPoint";
 constexpr std::int32_t LOWEST_SETPOINT_PRIORITY = 1000;
 constexpr std::int32_t HIGHEST_SETPOINT_PRIORITY = 0;
 
+// Upper bound on how long a reset/shutdown teardown waits for the OCPP message queue to flush a pending
+// TransactionEvent(Ended) or FirmwareStatusNotification before closing the connection anyway. Generous enough
+// to cover a slow transaction stop yet bounded so a wedged or offline queue can never block the reset.
+constexpr auto RESET_DRAIN_TIMEOUT = std::chrono::seconds(10);
+// Polling granularity while waiting for the queue to drain.
+constexpr auto DRAIN_POLL_INTERVAL = std::chrono::milliseconds(50);
+
 std::optional<ocpp::v2::IdToken> get_authorised_id_token(const types::evse_manager::SessionEvent& session_event) {
     using namespace module::conversions;
 
@@ -1202,6 +1209,38 @@ ocpp::v2::ReserveNowStatusEnum GenericOcpp::cb_reserve_now(const ocpp::v2::Reser
     return result;
 }
 
+bool GenericOcpp::any_transaction_active() {
+    const auto n_managers = static_cast<std::int32_t>(mv_requires.evse_manager.size());
+    for (std::int32_t evse_id = 1; evse_id <= n_managers; ++evse_id) {
+        if (transaction_data(evse_id) != nullptr) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void GenericOcpp::wait_for_message_queue_drained(std::chrono::milliseconds timeout, bool await_transactions) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        // The queue is drained once it is empty and nothing is in flight. On the reset path we additionally wait
+        // for any ongoing transaction to finish first, so its TransactionEvent(Ended) has been enqueued before we
+        // conclude the queue is drained (otherwise we could observe a momentarily-empty queue too early).
+        const bool transactions_settled = !await_transactions || !any_transaction_active();
+        if (transactions_settled && mv_charge_point.is_message_queue_idle()) {
+            return;
+        }
+        // If the link is already down there is no point waiting: queued messages cannot be sent and will be
+        // persisted/retried after the reboot instead.
+        if (mv_ocpp_protocol_version.load() == ocpp::OcppProtocolVersion::Unknown) {
+            EVLOG_info << "Not waiting for OCPP message queue to drain: connection is down";
+            return;
+        }
+        std::this_thread::sleep_for(DRAIN_POLL_INTERVAL);
+    }
+    EVLOG_warning << "Timed out waiting for OCPP message queue to drain before teardown; "
+                     "pending messages may be delivered after reconnect";
+}
+
 void GenericOcpp::cb_reset(const std::optional<const std::int32_t>& evse_id, ResetType type) {
     if (evse_id.has_value()) {
         EVLOG_warning << "Reset of EVSE is currently not supported";
@@ -1229,8 +1268,23 @@ void GenericOcpp::cb_reset(const std::optional<const std::int32_t>& evse_id, Res
         }
 
         if (do_reset) {
+            // If this reset stopped an ongoing transaction, its TransactionEvent(Ended) is generated
+            // asynchronously once the EvseManager reports the transaction finished. Snapshot that here so we
+            // only pay the extra drain wait when there actually was a transaction to flush (a Reset on an idle
+            // charge point must not be delayed).
+            const bool had_active_transaction = any_transaction_active();
+
             // small delay before stopping the charge point to make sure all responses are received
             std::this_thread::sleep_for(std::chrono::seconds(mv_config.getResetStopDelay()));
+
+            if (had_active_transaction) {
+                // Wait (bounded) for the stopped transaction(s) to actually finish and for the resulting
+                // TransactionEvent(Ended) to be handed to the websocket before tearing the connection down.
+                // Without this the reboot path can close the socket while the Ended event is still queued,
+                // which makes the CSMS time out waiting for it (OCTT TC_B_22_CS).
+                wait_for_message_queue_drained(RESET_DRAIN_TIMEOUT, /*await_transactions=*/true);
+            }
+
             mv_charge_point.stop();
             mv_requires.system.call_reset(r_type, scheduled);
         }
@@ -1659,6 +1713,12 @@ void GenericOcpp::shutdown() {
     mv_started.store(false);
     mv_shutting_down.store(true);
     charging_schedules_timer_stop();
+    // Flush any message the CSMS is still waiting on (e.g. a FirmwareStatusNotification{InstallRebooting}
+    // emitted right before a post-install reboot) before GenericChargePoint::shutdown() closes the socket,
+    // so the CSMS does not miss it (OCTT TC_L_13_CS). Bounded and a no-op when already idle or offline.
+    // await_transactions is false: a transaction interrupted by shutdown never produces an Ended event, so we
+    // only flush what is already queued rather than block for a transaction that will never finish.
+    wait_for_message_queue_drained(RESET_DRAIN_TIMEOUT, /*await_transactions=*/false);
     std::lock_guard<std::mutex> lock(recompute_mutex);
 }
 

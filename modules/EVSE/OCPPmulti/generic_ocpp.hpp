@@ -6,6 +6,8 @@
 #include "generic_chargepoint_interface.hpp"
 #include "ocpp_module_common_aliases.hpp"
 
+#include <chrono>
+
 #include <generated/interfaces/auth/Interface.hpp>
 #include <generated/interfaces/auth_token_provider/Implementation.hpp>
 #include <generated/interfaces/auth_token_validator/Implementation.hpp>
@@ -278,6 +280,18 @@ protected:
     }
 
     EventInfo convert_error(const Everest::error::Error& error);
+
+    /// \brief Returns true if the module currently tracks an ongoing transaction on any EVSE. Used before a reset to
+    /// detect whether a stopped transaction still needs its TransactionEvent(Ended) to be generated and flushed.
+    bool any_transaction_active();
+
+    /// \brief Bounded wait until the OCPP message queue has flushed all pending messages (no message queued or in
+    /// flight), the connection is lost, or \p timeout elapses. Used before tearing the connection down for a reset or
+    /// shutdown so that a final TransactionEvent(Ended) or a FirmwareStatusNotification is not dropped.
+    /// \param await_transactions when true, also waits for any ongoing transaction to finish first, so its
+    /// TransactionEvent(Ended) is generated and enqueued before draining (used by the reset path). Must be false for
+    /// plain shutdown, where a transaction interrupted by process exit will never produce an Ended event.
+    void wait_for_message_queue_drained(std::chrono::milliseconds timeout, bool await_transactions);
 
     void init_check_energy_sink();
     void init_error_handlers();
