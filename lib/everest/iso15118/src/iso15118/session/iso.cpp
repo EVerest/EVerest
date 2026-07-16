@@ -215,7 +215,7 @@ TimePoint const& Session::poll() {
 
         for (const auto& timeout : reached) {
             if (timeout == d20::TimeoutType::SEQUENCE) {
-                logf_error("Sequence Timeout 40secs is reached. Stopping the session");
+                logf_error("Sequence timeout (60s) reached. Stopping the session");
                 ctx.session_stopped = true;
                 break;
             } else {
@@ -348,6 +348,8 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
 
 void Session::close() {
     connection->close();
+    // transport gone; a rate-limiter-deferred response is undeliverable
+    [[maybe_unused]] auto res = message_exchange.check_and_clear_response();
     ctx.feedback.signal(session::feedback::Signal::DLINK_TERMINATE);
     ctx.session_stopped = true;
 }

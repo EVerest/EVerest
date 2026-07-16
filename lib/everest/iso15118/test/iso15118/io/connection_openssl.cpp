@@ -511,6 +511,42 @@ SCENARIO("ConnectionSSL tears down when the peer closes during the handshake") {
     }
 }
 
+SCENARIO("ConnectionSSL close before connect releases the listener") {
+
+    GIVEN("A ConnectionSSL configured with a single SECC chain and no client") {
+        iso15118::io::set_logging_callback([](iso15118::LogLevel, const std::string&) {});
+
+        iso15118::io::PollManager poll_manager;
+        const auto ssl_cfg = make_ssl_config(false, "/tmp", false);
+
+        std::atomic<int> closed_count{0};
+
+        WHEN("close() is called before any client connects, then the connection is destroyed") {
+            {
+                iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+                connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
+                    if (event == iso15118::io::ConnectionEvent::CLOSED) {
+                        closed_count.fetch_add(1);
+                    }
+                });
+
+                connection.close();
+                connection.close(); // repeated close after listener release must be a no-op
+            }
+
+            // Pre-fix, close() early-returned without releasing the listener or
+            // firing CLOSED, leaving a this-capturing handle_connect callback
+            // registered on listen_fd (a latent UAF once the fd became readable).
+            // Polling after destruction confirms no dangling registration remains.
+            poll_manager.poll(0);
+
+            THEN("close() emits exactly one CLOSED and releases the listener") {
+                REQUIRE(closed_count.load() == 1);
+            }
+        }
+    }
+}
+
 SCENARIO("ConnectionSSL writes an SSLKEYLOGFILE-format keylog when enabled") {
 
     GIVEN("A ConnectionSSL configured with key logging enabled and a writable keylog dir") {
