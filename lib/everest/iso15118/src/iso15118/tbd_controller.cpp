@@ -48,8 +48,8 @@ void TbdController::loop() {
 
     if (not config.enable_sdp_server) {
         auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
-        session =
-            std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup), callbacks, pause_ctx);
+        session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(*evse_setup.handle()), callbacks,
+                                            pause_ctx);
     }
 
     auto next_event = get_current_time_point();
@@ -95,7 +95,7 @@ void TbdController::loop() {
 
                 if (not shutdown_active.load() and not config.enable_sdp_server) {
                     auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
-                    session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup),
+                    session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(*evse_setup.handle()),
                                                         callbacks, pause_ctx);
                 }
             }
@@ -118,18 +118,24 @@ void TbdController::send_control_event(const d20::ControlEvent& event) {
 void TbdController::update_authorization_services(const std::vector<message_20::datatypes::Authorization>& services,
                                                   bool cert_install_service) {
 
-    evse_setup.enable_certificate_install_service = cert_install_service;
+    {
+        auto s = evse_setup.handle();
+        s->enable_certificate_install_service = cert_install_service;
 
-    if (services.empty()) {
-        logf_warning("The authorization services are not updated because services are empty!");
-        return;
+        if (services.empty()) {
+            logf_warning("The authorization services are not updated because services are empty!");
+            return;
+        }
+        s->authorization_services = services;
     }
-    evse_setup.authorization_services = services;
 }
 
 void TbdController::update_dc_limits(const d20::DcTransferLimits& limits) {
 
-    evse_setup.dc_limits = limits;
+    {
+        auto s = evse_setup.handle();
+        s->dc_limits = limits;
+    }
 
     if (session) {
         session->push_control_event(limits);
@@ -137,11 +143,15 @@ void TbdController::update_dc_limits(const d20::DcTransferLimits& limits) {
 }
 
 void TbdController::update_powersupply_limits(const d20::DcTransferLimits& limits) {
-    evse_setup.powersupply_limits = limits;
+    auto s = evse_setup.handle();
+    s->powersupply_limits = limits;
 }
 
 void TbdController::update_energy_modes(const std::vector<message_20::datatypes::ServiceCategory>& modes) {
-    evse_setup.supported_energy_services = modes;
+    {
+        auto s = evse_setup.handle();
+        s->supported_energy_services = modes;
+    }
 
     if (session) {
         session->push_control_event(modes);
@@ -150,7 +160,10 @@ void TbdController::update_energy_modes(const std::vector<message_20::datatypes:
 
 void TbdController::update_supported_vas_services(const d20::SupportedVASs& vas_services) {
 
-    evse_setup.supported_vas_services = vas_services;
+    {
+        auto s = evse_setup.handle();
+        s->supported_vas_services = vas_services;
+    }
 
     if (session) {
         session->push_control_event(vas_services);
@@ -159,7 +172,10 @@ void TbdController::update_supported_vas_services(const d20::SupportedVASs& vas_
 
 void TbdController::update_ac_limits(const d20::AcTransferLimits& limits) {
 
-    evse_setup.ac_limits = limits;
+    {
+        auto s = evse_setup.handle();
+        s->ac_limits = limits;
+    }
 
     if (session) {
         session->push_control_event(limits);
@@ -179,20 +195,19 @@ void TbdController::set_dlink_ready(bool ready) {
     }
 }
 
-// TODO(SL): For both functions the update does only work before a session is started.
-// During a session, the updated der functions will be considered in the next session
 void TbdController::update_supported_der_functions(iec::DERControlName der_control,
                                                    const iec::DERControlFunction& function) {
-    auto& der_setup = evse_setup.der_setup_config.has_value() ? evse_setup.der_setup_config.value()
-                                                              : evse_setup.der_setup_config.emplace();
+    auto s = evse_setup.handle();
+    auto& der_setup = s->der_setup_config.has_value() ? s->der_setup_config.value() : s->der_setup_config.emplace();
 
     der_setup.supported_der_control_functions[der_control] = function;
 }
 
 void TbdController::update_unsupported_der_functions(iec::DERControlName der_control) {
-    if (evse_setup.der_setup_config.has_value()) {
+    auto s = evse_setup.handle();
+    if (s->der_setup_config.has_value()) {
         logf_info("Removing supported DER control function: %u", static_cast<uint32_t>(der_control));
-        auto& der_setup = evse_setup.der_setup_config.value();
+        auto& der_setup = s->der_setup_config.value();
         der_setup.supported_der_control_functions.erase(der_control);
     }
 }
@@ -250,7 +265,8 @@ void TbdController::handle_sdp_server_input() {
 
     const auto ipv6_endpoint = connection->get_public_endpoint();
 
-    session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup), callbacks, pause_ctx);
+    session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(*evse_setup.handle()), callbacks,
+                                        pause_ctx);
     communication_setup_timeout.reset();
 
     sdp_server->send_response(request, ipv6_endpoint);

@@ -21,6 +21,7 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
+#include <functional>
 #include <optional>
 
 #include <everest/util/async/monitor.hpp>
@@ -73,6 +74,8 @@ public:
     // insert your public definitions here
     void set_active_der_directives(const types::grid_support::ActiveDirectiveSet& directives);
     std::optional<types::grid_support::ActiveDirectiveSet> get_active_der_directives() const;
+    void register_der_directive_callback(std::function<void()> callback);
+    void notify_der_directives_changed();
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
@@ -88,6 +91,9 @@ private:
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
     mutable everest::lib::util::monitor<std::optional<types::grid_support::ActiveDirectiveSet>> active_der_directives;
+    // Set once during init() (before any command handling) and never rewritten, so the command-thread
+    // read in notify_der_directives_changed() needs no lock.
+    std::function<void()> der_directive_callback;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

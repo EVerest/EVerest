@@ -1556,6 +1556,10 @@ types:
           type: string
           $ref: /iso15118#/Connector
         minItems: 1
+      evse_max_reactive_power:
+        description: Maximum reactive power the EVSE supports in var; de-normalization base for AC_DER_IEC percentage control curves
+        type: number
+        minimum: 0
   AcEvseMaximumPower:
     description: Maximum ac power values (charge and discharge) the EVSE can deliver
     type: object

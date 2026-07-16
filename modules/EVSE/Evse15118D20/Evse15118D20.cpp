@@ -25,4 +25,14 @@ std::optional<types::grid_support::ActiveDirectiveSet> Evse15118D20::get_active_
     return *active_der_directives.handle();
 }
 
+void Evse15118D20::register_der_directive_callback(std::function<void()> callback) {
+    der_directive_callback = std::move(callback);
+}
+
+void Evse15118D20::notify_der_directives_changed() {
+    if (der_directive_callback) {
+        der_directive_callback();
+    }
+}
+
 } // namespace module

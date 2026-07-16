@@ -30,6 +30,11 @@ config:
     description: Nominal AC voltage between phase and neutral in Volt
     type: number
     default: 230
+  ac_max_reactive_power:
+    description: Maximum EVSE reactive power in var; passed to the HLC stack as the AC_DER_IEC de-normalization base. 0 means the EVSE has no reactive-power capability.
+    type: number
+    minimum: 0
+    default: 0
   ev_receipt_required:
     description: "Unsupported: request receipt from EV with HLC"
     type: boolean

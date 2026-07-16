@@ -16,8 +16,10 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     DerSetupTest.cpp
     DerChargingParametersTest.cpp
     DerControlsTest.cpp
+    DerRelayTest.cpp
     GridEventTest.cpp
     ../charger/der_setup.cpp
+    ../charger/der_relay.cpp
     ../charger/grid_event.cpp
 )
 

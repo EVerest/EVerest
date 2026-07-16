@@ -12,12 +12,17 @@ DER grid support
 ================
 
 Active DER directives received via ``grid_support::set_active_directives`` are
-accepted and stored, but are not yet applied to the EV: the DER control-function
-relay that would push a directive into the session is not implemented. The DER
+stored and relayed to the EV as AC_DER_IEC control functions. The relay is
+implemented for the curve family: ``VoltVar`` maps to ``VoltVarMode``,
+``WattVar`` to ``WattVarMode``, and ``WattPF`` to ``WattCosPhiMode``, each encoded
+as an absolute-unit ISO 15118-20 control curve. Non-curve directives (frequency,
+volt-watt, setpoint, ride-through, and similar) have no AC_DER_IEC counterpart
+here; they are logged and skipped.
+
+Application is next-session-dynamic: a directive arriving mid-session takes
+effect at the next V2G session rather than interrupting the running one. The DER
 transfer limits advertised at each session's charge parameter discovery derive
-from the module's AC transfer limits (``ac_limits``), not from the directives.
-Applying directives (including via an in-session service renegotiation) is
-planned but not yet implemented.
+from the module's AC transfer limits (``ac_limits``).
 
 This module does not publish DER ``capability``; for the AC_DER_IEC service an
 empty capability is expected.
@@ -25,13 +30,9 @@ empty capability is expected.
 The DER control functions the EV negotiates during service selection are
 surfaced upward in ``ChargingNeeds.der_charging_parameters.ev_supported_dercontrol``
 so the backend can learn what the EV supports without the EVSE advertising a
-guess. Relaying grid directives back down onto those control functions is a
-planned follow-up: it depends on this EV-supported set plus a source for the
-nominal-voltage and reactive-power bases needed to encode the ISO 15118-20
-absolute-unit control curves, neither of which this module currently holds.
+guess.
 
 Discharge power limits advertised to the EV follow ISO 15118-20 8.3.5.2.1: they
 are emitted as negative values when the ``negative_bidirectional_limits`` config
-key is set, and the nominal discharge power is never advertised above the
-maximum discharge power (V2G20-3229), including under a ``LimitMaxDischarge``
-curtailment directive.
+key is set, and the nominal discharge power is set equal to the maximum discharge
+power so the advertised pair never violates V2G20-3229.
