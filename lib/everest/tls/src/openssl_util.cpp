@@ -835,6 +835,43 @@ bool certificate_sha_1(openssl::sha_1_digest_t& digest, const X509* cert) {
     return bResult;
 }
 
+bool is_tls_1_3(const std::uint8_t* in, std::size_t inlen) {
+    // supported_versions extension payload (RFC 8446 4.2.1):
+    // first byte is the length of the version list, followed by
+    // two-byte version IDs (e.g. TLS 1.3 = 0x0304).
+    //
+    // Byte 1   -> length
+    // Byte 2+3 -> first version  (e.g. 03 04)
+    // Byte 4+5 -> second version (e.g. 03 03)
+    // ...
+    bool result{false};
+
+    if (in != nullptr && inlen > 0) {
+        const std::uint8_t length_supported_versions = *(in++);
+        inlen -= 1;
+
+        if (length_supported_versions != inlen) {
+            log_error("length_supported_versions does not match remaining bytes");
+        } else if (length_supported_versions % 2 != 0) {
+            log_error("length_supported_versions is not divisible by 2");
+        } else {
+            for (std::size_t i = 0; i < length_supported_versions; i += 2) {
+                const std::uint8_t first_byte = *(in++);
+                const std::uint8_t second_byte = *(in++);
+
+                const auto tls_version = static_cast<int>(first_byte) << 8 | second_byte;
+
+                if (tls_version == TLS1_3_VERSION) {
+                    result = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
 bool certificate_subject_public_key_sha_1(openssl::sha_1_digest_t& digest, const X509* cert) {
     assert(cert != nullptr);
 

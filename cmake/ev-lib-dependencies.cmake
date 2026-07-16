@@ -61,7 +61,7 @@ set(EVEREST_LIB_DEPS_run_application "log")
 set(EVEREST_LIB_DEPS_evse_security "log;timer")
 # Tier 2
 set(EVEREST_LIB_DEPS_ocpp "log;timer;evse_security;sqlite;util")
-set(EVEREST_LIB_DEPS_iso15118 "cbv2g;util")
+set(EVEREST_LIB_DEPS_iso15118 "cbv2g;util;tls")
 set(EVEREST_LIB_DEPS_ieee2030_1_1 "util")
 # Tier 3 (framework-coupled)
 set(EVEREST_LIB_DEPS_tls "util;evse_security;framework")
