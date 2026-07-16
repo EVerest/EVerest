@@ -275,8 +275,29 @@ GenericOcpp::handle_set_variables(const std::vector<types::ocpp::SetVariableRequ
 
     if (mv_started.load()) {
         const auto _requests = to_ocpp_set_variable_data_vector(requests);
-        const auto response_v2 = mv_charge_point.set_variables(_requests, source);
+        const auto outcomes = mv_charge_point.set_variables(_requests, source);
+        std::vector<ocpp::v2::SetVariableResult> response_v2;
+        response_v2.reserve(outcomes.size());
+        for (const auto& outcome : outcomes) {
+            response_v2.push_back(outcome.result);
+        }
         results = to_everest_set_variable_result_vector(response_v2);
+
+        // direct device-model writes (v16 mode) bypass the 1.6 key-change callback; synthesize the monitor event
+        for (const auto& outcome : outcomes) {
+            if (!outcome.monitor_value.has_value()) {
+                continue;
+            }
+            bool monitored;
+            {
+                std::lock_guard lock(m_member_mux);
+                monitored =
+                    m_monitor_list.count(MonitorListEntry{outcome.result.component, outcome.result.variable}) > 0;
+            }
+            if (monitored) {
+                cb_variable_monitor(outcome.result.component, outcome.result.variable, outcome.monitor_value.value());
+            }
+        }
     } else {
         EVLOG_warning << "ChargePoint not yet initialized. Cannot handle set variables request.";
         for (const auto& req : requests) {
@@ -314,29 +335,42 @@ void GenericOcpp::handle_monitor_variables(const std::vector<types::ocpp::Compon
     using namespace module::conversions;
 
     if (mv_started.load()) {
-        // register_variable_listener needs to support OCPP 1.6 and 2.x
-        // for 1.6 every variable needs to be separately registered
-        // for 2.0 only a single register is required
-        // charge point implementations take care of these differences
-
-        std::vector<MonitorListEntry> entries;
-        entries.reserve(component_variables.size());
+        // canonical entry -> requested form; events echo the requested form
+        std::vector<std::pair<MonitorListEntry, types::ocpp::ComponentVariable>> resolved;
+        resolved.reserve(component_variables.size());
         for (const auto& cv : component_variables) {
-            entries.emplace_back(to_ocpp_component(cv.component), to_ocpp_variable(cv.variable));
+            const auto component = to_ocpp_component(cv.component);
+            const auto variable = to_ocpp_variable(cv.variable);
+            const auto canonical = mv_charge_point.resolve_to_canonical(component, variable);
+            if (!canonical.has_value() || !canonical->variable.has_value()) {
+                EVLOG_warning << "handle_monitor_variables: cannot resolve " << cv.component.name << ':'
+                              << cv.variable.name << " to a canonical ComponentVariable - skipped";
+                continue;
+            }
+            resolved.emplace_back(MonitorListEntry{canonical->component, canonical->variable.value()}, cv);
         }
 
         {
-            // failures to insert are likely to
-            // be the same variable being requested again
             std::lock_guard lock(m_member_mux);
-            for (const auto& entry : entries) {
-                (void)m_monitor_list.insert(entry);
+            for (const auto& [entry, requested] : resolved) {
+                // skip exact duplicates: same canonical key and same requested form
+                const auto range = m_monitor_list.equal_range(entry);
+                bool duplicate = false;
+                for (auto it = range.first; it != range.second; ++it) {
+                    if (it->second == requested) {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                if (!duplicate) {
+                    m_monitor_list.emplace(entry, requested);
+                }
             }
         }
 
-        // register outside m_member_mux
-        for (const auto& [component, variable] : entries) {
-            mv_charge_point.register_variable_listener(component, variable,
+        // register outside m_member_mux with the canonical CV
+        for (const auto& [entry, requested] : resolved) {
+            mv_charge_point.register_variable_listener(entry.first, entry.second,
                                                        [this](auto&&... args) { cb_variable_monitor(args...); });
         }
     } else {
@@ -1507,28 +1541,29 @@ GenericOcpp::cb_validate_network_profile(const ocpp::v2::NetworkConnectionProfil
 
 void GenericOcpp::cb_variable_monitor(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
                                       const std::string& value) {
-    using namespace module::conversions;
-
     MonitorListEntry entry{component, variable};
-    bool publish;
+    std::vector<types::ocpp::ComponentVariable> requested_forms;
     {
         std::lock_guard lock(m_member_mux);
-        const auto it = m_monitor_list.find(entry);
-        publish = it != m_monitor_list.end();
+        const auto range = m_monitor_list.equal_range(entry);
+        for (auto it = range.first; it != range.second; ++it) {
+            requested_forms.push_back(it->second);
+        }
     }
-    if (publish) {
-        // monitor entry exists - publish
+    if (requested_forms.empty()) {
+        EVLOG_warning << "cb_variable_monitor: unexpected variable: " << component.name << ':' << variable.name;
+        return;
+    }
+    // one echo per registered form (canonical or legacy key-only)
+    for (const auto& form : requested_forms) {
         types::ocpp::EventData event_data;
-        event_data.component_variable.component = to_everest_component(component);
-        event_data.component_variable.variable = to_everest_variable(variable);
+        event_data.component_variable = form;
         event_data.event_id = 0;
         event_data.timestamp = ocpp::DateTime();
         event_data.trigger = types::ocpp::EventTriggerEnum::Alerting;
         event_data.actual_value = value;
         event_data.event_notification_type = types::ocpp::EventNotificationType::CustomMonitor;
         mv_provides.ocpp_generic.publish_event_data(event_data);
-    } else {
-        EVLOG_warning << "cb_variable_monitor: unexpected variable: " << component.name << ':' << variable.name;
     }
 }
 
@@ -1750,9 +1785,10 @@ GenericOcpp::DerApplyResult GenericOcpp::apply_der_capability(std::int32_t evse_
         }
     }
 
-    const auto collect_rejected = [](const std::vector<ocpp::v2::SetVariableResult>& set_results) {
+    const auto collect_rejected = [](const std::vector<SetVariableOutcome>& outcomes) {
         std::string rejected_details;
-        for (const auto& set_result : set_results) {
+        for (const auto& outcome : outcomes) {
+            const auto& set_result = outcome.result;
             if (set_result.attributeStatus != ocpp::v2::SetVariableStatusEnum::Accepted) {
                 if (not rejected_details.empty()) {
                     rejected_details += ", ";

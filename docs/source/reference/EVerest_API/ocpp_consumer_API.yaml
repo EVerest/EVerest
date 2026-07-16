@@ -334,6 +334,17 @@ components:
     send_request_get_variables:
       title: 'Request variables'
       summary: 'Request the variables.'
+      description: |
+        Reads variables using canonical component/variable addressing (e.g. component
+        OCPPCommCtrlr, variable HeartbeatInterval), identical for OCPP 1.6 and 2.x.
+        An empty component.name marks the deprecated OCPP 1.6 legacy key form
+        (variable.name = configuration key); it is only accepted while OCPP 1.6 is
+        active and will be removed per the deprecation policy. A non-empty
+        component.name is never reinterpreted as a configuration key. Each result
+        echoes the requested component_variable and carries a status.
+
+        See the OCPPmulti module documentation ("Configuration access" and
+        "Migration from OCPP 1.6 key addressing") for examples and the migration guide.
       contentType: application/json
       payload:
         type: object
@@ -376,6 +387,18 @@ components:
     send_request_set_variables:
       title: 'Request set variables'
       summary: 'Request setting the variables.'
+      description: |
+        Writes variables using the same canonical component/variable addressing as
+        get_variables, identical for OCPP 1.6 and 2.x; the empty-component OCPP 1.6
+        legacy key form is deprecated and scheduled for removal.
+        Connection-configuration writes (component NetworkConfiguration with the
+        profile slot number as component instance, and the
+        OCPPCommCtrlr/NetworkConfigurationPriority selector) return RebootRequired:
+        the value is validated and persisted immediately and takes effect on the
+        next (re)connect or reboot.
+
+        See the OCPPmulti module documentation ("Configuration access" and
+        "Migration from OCPP 1.6 key addressing") for examples and the migration guide.
       contentType: application/json
       payload:
         type: object
@@ -422,13 +445,15 @@ components:
       title: 'Monitor variables'
       summary: 'Monitor the variables.'
       description: |
-        Command to start monitoring the given ComponentVariable(s). Any of the provided
-        configuration keys will be published on change by the CSMS (or via this API).
+        Command to start monitoring the given ComponentVariable(s), using the same
+        canonical component/variable addressing as get_variables, identical for
+        OCPP 1.6 and 2.x; the empty-component OCPP 1.6 legacy key form is deprecated.
+        Changes to monitored variables are published on the event_data channel and
+        echo the addressing form used at registration.
         Consecutive calls of this operation will not override but extend the existing monitors.
 
-        With OCPP1.6: This command can be used to monitor configuration keys
-
-        With OCPP2.0.1: This command can be used to monitor any kind of variable in the device model storage
+        See the OCPPmulti module documentation ("Configuration access" and
+        "Migration from OCPP 1.6 key addressing") for examples and the migration guide.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/MonitorVariableRequestList'
@@ -436,16 +461,15 @@ components:
         - summary: ""
           payload:
             items:
-            - component_variable:
-                component:
-                  name: string
-                  instance: string
-                  evse:
-                    id: 1
-                    connector_id: 1
-                variable:
-                  name: string
-                  instance: string
+            - component:
+                name: string
+                instance: string
+                evse:
+                  id: 1
+                  connector_id: 1
+              variable:
+                name: string
+                instance: string
 
     receive_ocpp_transaction_event:
       name: receive_ocpp_transaction_event

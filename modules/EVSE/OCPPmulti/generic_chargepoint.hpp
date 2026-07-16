@@ -137,8 +137,10 @@ public:
 
     void register_variable_listener(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
                                     listener_t listener) override;
+    std::optional<ocpp::v2::ComponentVariable> resolve_to_canonical(const ocpp::v2::Component& component,
+                                                                    const ocpp::v2::Variable& variable) override;
     bool set_powermeter_public_key(std::int32_t connector, const std::string& public_key_pem) override;
-    std::vector<ocpp::v2::SetVariableResult>
+    std::vector<SetVariableOutcome>
     set_variables(const std::vector<ocpp::v2::SetVariableData>& set_variable_data_vector,
                   const std::string& source) override;
 

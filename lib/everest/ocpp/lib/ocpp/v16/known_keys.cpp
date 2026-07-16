@@ -4,6 +4,7 @@
 #include "ocpp/v2/ocpp_enums.hpp"
 #include <everest/logging.hpp>
 #include <ocpp/v16/known_keys.hpp>
+#include <ocpp/v2/comparators.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 
 #include <algorithm>
@@ -101,38 +102,14 @@ constexpr valid_keys hidden[] = {FOR_ALL_HIDDEN(VALUE)};
 
 #undef VALUE
 
-constexpr char convert(ocpp::v2::AttributeEnum attribute) {
-    char result{'.'};
-    switch (attribute) {
-    case ocpp::v2::AttributeEnum::Actual:
-        result = 'A';
-        break;
-    case ocpp::v2::AttributeEnum::MaxSet:
-        result = '+';
-        break;
-    case ocpp::v2::AttributeEnum::MinSet:
-        result = '-';
-        break;
-    case ocpp::v2::AttributeEnum::Target:
-        result = '=';
-        break;
-    default:
-        break;
-    }
-    return result;
-}
-
-inline std::string mapping_name(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
-                                ocpp::v2::AttributeEnum attribute) {
-    return std::string{component.name} + std::string{variable.name} + std::string{variable.instance.value_or("")} +
-           convert(attribute);
-}
+// ocpp/v2/comparators.hpp ordering, so instance/evse-qualified CVs never alias the unqualified mapping
+using ReverseKey = std::tuple<ocpp::v2::Component, ocpp::v2::Variable, ocpp::v2::AttributeEnum>;
 
 class V2ConfigMap {
 private:
     bool configured{false};
     std::map<std::string_view, const ocpp::v2::ComponentVariable*> map;
-    std::map<std::string, std::string_view> reverse_map;
+    std::map<ReverseKey, std::string_view> reverse_map;
 
     void configure(const std::string_view& v16, const ocpp::v2::ComponentVariable& cv);
     void configure();
@@ -163,11 +140,12 @@ void V2ConfigMap::configure(const std::string_view& v16, const ocpp::v2::Compone
             return;
         }
 
-        std::string name = mapping_name(cv.component, cv.variable.value(), ocpp::v2::AttributeEnum::Actual);
-        if (const auto it = reverse_map.find(name); it != reverse_map.end()) {
-            EVLOG_error << "V2 " << name << ": '" << it->second << "' replaced with '" << v16 << '\'';
+        ReverseKey reverse_key{cv.component, cv.variable.value(), ocpp::v2::AttributeEnum::Actual};
+        if (const auto it = reverse_map.find(reverse_key); it != reverse_map.end()) {
+            EVLOG_error << "V2 " << cv.component.name << '/' << cv.variable->name << ": '" << it->second
+                        << "' replaced with '" << v16 << '\'';
         }
-        reverse_map.insert_or_assign(std::move(name), v16);
+        reverse_map.insert_or_assign(std::move(reverse_key), v16);
     }
 }
 
@@ -211,8 +189,7 @@ std::optional<std::string> V2ConfigMap::convert_v2(const ocpp::v2::Component& co
                                                    ocpp::v2::AttributeEnum attribute) {
     configure();
     std::optional<std::string> result;
-    std::string name = mapping_name(component, variable, attribute);
-    if (const auto it = reverse_map.find(name); it != reverse_map.end()) {
+    if (const auto it = reverse_map.find(ReverseKey{component, variable, attribute}); it != reverse_map.end()) {
         result = it->second;
     }
     return result;

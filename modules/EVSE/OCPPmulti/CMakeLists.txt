@@ -32,6 +32,7 @@ target_sources(${MODULE_NAME}
     v2_chargepoint.cpp
     v16_chargepoint.cpp
     v16_conversions.cpp
+    v16_variable_access.cpp
 )
 target_link_libraries(${MODULE_NAME}
     PRIVATE

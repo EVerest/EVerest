@@ -37,7 +37,13 @@ public:
 };
 
 struct ChargePointStub : public ocpp_multi::GenericChargePointInterface {
-    ChargePointStub() = default;
+    ChargePointStub() {
+        // identity resolution by default; tests override for legacy/unresolvable forms
+        ON_CALL(*this, resolve_to_canonical(::testing::_, ::testing::_))
+            .WillByDefault([](const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) {
+                return std::optional<ocpp::v2::ComponentVariable>(ocpp::v2::ComponentVariable{component, variable});
+            });
+    }
 
     // in general use MOCK except for device model get
 
@@ -186,9 +192,11 @@ struct ChargePointStub : public ocpp_multi::GenericChargePointInterface {
     MOCK_METHOD(void, register_variable_listener,
                 (const ocpp::v2::Component& component, const ocpp::v2::Variable& variable, listener_t listener),
                 (override));
+    MOCK_METHOD(std::optional<ocpp::v2::ComponentVariable>, resolve_to_canonical,
+                (const ocpp::v2::Component& component, const ocpp::v2::Variable& variable), (override));
     MOCK_METHOD(bool, set_powermeter_public_key, (std::int32_t connector, const std::string& public_key_pem),
                 (override));
-    MOCK_METHOD((std::vector<ocpp::v2::SetVariableResult>), set_variables,
+    MOCK_METHOD((std::vector<ocpp_multi::SetVariableOutcome>), set_variables,
                 (const std::vector<ocpp::v2::SetVariableData>& set_variable_data_vector, const std::string& source),
                 (override));
 

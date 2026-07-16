@@ -43,6 +43,7 @@ target_sources(${TEST_TARGET_NAME}
     grid_support_state_test.cpp
     main.cpp
     v16_chargepoint_tests.cpp
+    v16_variable_access_tests.cpp
     v2_chargepoint_tests.cpp
 
     everest/logging.cpp
@@ -53,6 +54,7 @@ target_sources(${TEST_TARGET_NAME}
     ../grid_support/grid_support_state.cpp
     ../v16_chargepoint.cpp
     ../v16_conversions.cpp
+    ../v16_variable_access.cpp
     ../v2_chargepoint.cpp
     ../charge_point_config_factory_v16.cpp
 )

@@ -5,28 +5,30 @@
 
 #include "generic_chargepoint_interface.hpp"
 #include "ocpp/v2/ocpp_types.hpp"
+#include "v16_variable_access.hpp"
 
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
 #include <everest/util/async/monitor.hpp>
-#include <ocpp/v16/charge_point_configuration_interface.hpp>
+#include <ocpp/v16/charge_point_configuration_devicemodel.hpp>
+#include <ocpp/v16/variable_resolver.hpp>
+
+#include <optional>
 
 namespace ocpp_multi {
 
 class ChargePointV16 : public GenericChargePointInterface {
 private:
-    using key_monitor_map_t = std::map<std::string, std::pair<ocpp::v2::Component, ocpp::v2::Variable>>;
-
     std::shared_ptr<EvseSecurity> m_evse_security;
-    std::unique_ptr<ocpp::v16::ChargePointConfigurationInterface> m_charge_point_configuration;
+    std::unique_ptr<ocpp::v16::ChargePointConfigurationDeviceModel> m_charge_point_configuration;
+    ocpp::v2::Ocpp16CustomConfigMappings m_custom_mappings;
+    // resolver must outlive m_variable_access, which holds a reference to it
+    std::optional<ocpp::v16::VariableResolver> m_variable_resolver;
+    std::optional<V16VariableAccess> m_variable_access;
     std::unique_ptr<ocpp::v16::ChargePoint> m_charge_point;
     ocpp_multi::GenericChargePointCallbacks* m_callbacks_ptr{nullptr};
 
-    struct variable_monitors_t {
-        listener_t listener{nullptr};
-        key_monitor_map_t map;
-    };
     // written from command threads (register_variable_listener), read from libocpp callback thread
-    everest::lib::util::monitor<variable_monitors_t> m_variable_monitors;
+    everest::lib::util::monitor<listener_t> m_variable_listener;
     ConnectorStructureV16 m_connector_mapping;
 
     struct evse_connector_t {
@@ -193,8 +195,10 @@ public:
 
     void register_variable_listener(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
                                     listener_t listener) override;
+    std::optional<ocpp::v2::ComponentVariable> resolve_to_canonical(const ocpp::v2::Component& component,
+                                                                    const ocpp::v2::Variable& variable) override;
     bool set_powermeter_public_key(std::int32_t connector, const std::string& public_key_pem) override;
-    std::vector<ocpp::v2::SetVariableResult>
+    std::vector<SetVariableOutcome>
     set_variables(const std::vector<ocpp::v2::SetVariableData>& set_variable_data_vector,
                   const std::string& source) override;
 
