@@ -174,6 +174,54 @@ void ISO15118_chargerImpl::init() {
                 update_supported_vas_services();
             });
     }
+
+    mod->register_der_directive_callback([this]() { apply_active_der_directives(); });
+}
+
+void ISO15118_chargerImpl::apply_active_der_directives() {
+    // Hold for the whole function so two concurrent applies cannot interleave their per-name update loops.
+    std::scoped_lock apply_lock(der_apply_mutex);
+
+    const auto directives = mod->get_active_der_directives();
+    if (not directives.has_value()) {
+        return;
+    }
+
+    // Snapshot the GEL-protected setup_config fields under the lock, then release it before touching the
+    // controller: update_*_der_functions reach into the evse_setup monitor (a second lock), and holding GEL
+    // across that would risk lock inversion. controller is set once in ready() and lives for the impl lifetime,
+    // so the snapshotted pointer stays valid after the lock is released.
+    iso15118::TbdController* controller_ptr = nullptr;
+    float volt_base = 0.0f;
+    float watt_base = 0.0f;
+    std::optional<float> var_base;
+    {
+        std::scoped_lock lock(GEL);
+        controller_ptr = controller.get();
+        volt_base =
+            setup_config.ac_setup_config.has_value() ? static_cast<float>(setup_config.ac_setup_config->voltage) : 0.0f;
+        watt_base = dt::from_RationalNumber(setup_config.ac_limits.charge_power.max);
+        var_base = evse_max_reactive_power;
+    }
+
+    if (controller_ptr == nullptr) {
+        EVLOG_info << "grid_support DER directives stored before HLC controller ready; will apply once the first V2G "
+                      "session starts.";
+        return;
+    }
+
+    const auto der_map =
+        module::map_active_directives_to_der_functions(directives.value(), volt_base, watt_base, var_base);
+
+    for (const auto name : {iso15118::iec::DERControlName::VoltVarMode, iso15118::iec::DERControlName::WattVarMode,
+                            iso15118::iec::DERControlName::WattCosPhiMode}) {
+        const auto it = der_map.find(name);
+        if (it != der_map.end()) {
+            controller_ptr->update_supported_der_functions(name, it->second);
+        } else {
+            controller_ptr->update_unsupported_der_functions(name);
+        }
+    }
 }
 
 void ISO15118_chargerImpl::ready() {
@@ -260,6 +308,8 @@ void ISO15118_chargerImpl::ready() {
         std::scoped_lock lock(vas_mutex);
         update_supported_vas_services();
     }
+
+    apply_active_der_directives();
 
     try {
         controller->loop();
@@ -1063,49 +1113,63 @@ void ISO15118_chargerImpl::handle_update_ac_max_current(double& max_current) {
 }
 
 void ISO15118_chargerImpl::handle_update_ac_parameters(types::iso15118::AcParameters& ac_parameters) {
-    std::scoped_lock lock(GEL);
+    {
+        std::scoped_lock lock(GEL);
 
-    setup_config.ac_limits.nominal_frequency = dt::from_float(ac_parameters.nominal_frequency);
-    setup_config.ac_limits.max_power_asymmetry = convert_from_optional(ac_parameters.max_power_asymmetry);
-    setup_config.ac_limits.power_ramp_limitation = convert_from_optional(ac_parameters.power_ramp_limitation);
+        setup_config.ac_limits.nominal_frequency = dt::from_float(ac_parameters.nominal_frequency);
+        setup_config.ac_limits.max_power_asymmetry = convert_from_optional(ac_parameters.max_power_asymmetry);
+        setup_config.ac_limits.power_ramp_limitation = convert_from_optional(ac_parameters.power_ramp_limitation);
 
-    // Exisiting values in ac_setup_config will be overwritten
-    auto& ac_setup_config = setup_config.ac_setup_config.emplace();
-    ac_setup_config.voltage = static_cast<uint32_t>(ac_parameters.nominal_voltage);
-    for (const auto& connector : ac_parameters.connectors) {
-        if (connector == types::iso15118::Connector::SinglePhase) {
-            ac_setup_config.connectors.emplace_back(dt::AcConnector::SinglePhase);
-        } else if (connector == types::iso15118::Connector::ThreePhase) {
-            ac_setup_config.connectors.emplace_back(dt::AcConnector::ThreePhase);
+        // Exisiting values in ac_setup_config will be overwritten
+        auto& ac_setup_config = setup_config.ac_setup_config.emplace();
+        ac_setup_config.voltage = static_cast<uint32_t>(ac_parameters.nominal_voltage);
+        for (const auto& connector : ac_parameters.connectors) {
+            if (connector == types::iso15118::Connector::SinglePhase) {
+                ac_setup_config.connectors.emplace_back(dt::AcConnector::SinglePhase);
+            } else if (connector == types::iso15118::Connector::ThreePhase) {
+                ac_setup_config.connectors.emplace_back(dt::AcConnector::ThreePhase);
+            }
+        }
+
+        evse_max_reactive_power = ac_parameters.evse_max_reactive_power;
+
+        if (controller) {
+            controller->update_ac_limits(setup_config.ac_limits);
         }
     }
 
-    if (controller) {
-        controller->update_ac_limits(setup_config.ac_limits);
-    }
+    // volt_base and var_base changed; re-apply DER directives on the fresh bases. Must run after GEL is
+    // released (GEL is non-recursive and apply_active_der_directives snapshots it internally).
+    apply_active_der_directives();
 }
 
 void ISO15118_chargerImpl::handle_update_ac_maximum_limits(types::iso15118::AcEvseMaximumPower& maximum_limits) {
-    std::scoped_lock lock(GEL);
+    {
+        std::scoped_lock lock(GEL);
 
-    // NOTE(SL): Only the total values are used here right now. The forwarding of the individual L1, L2 and L3 values
-    // will come later.
-    setup_config.ac_limits.charge_power.max = dt::from_float(maximum_limits.charge_power.total);
+        // NOTE(SL): Only the total values are used here right now. The forwarding of the individual L1, L2 and L3
+        // values will come later.
+        setup_config.ac_limits.charge_power.max = dt::from_float(maximum_limits.charge_power.total);
 
-    if (maximum_limits.discharge_power.has_value()) {
-        auto& discharge_power = (setup_config.ac_limits.discharge_power.has_value())
-                                    ? setup_config.ac_limits.discharge_power.value()
-                                    : setup_config.ac_limits.discharge_power.emplace();
-        discharge_power.max = dt::from_float((mod->config.negative_bidirectional_limits)
-                                                 ? -std::fabs(maximum_limits.discharge_power.value().total)
-                                                 : maximum_limits.discharge_power.value().total);
+        if (maximum_limits.discharge_power.has_value()) {
+            auto& discharge_power = (setup_config.ac_limits.discharge_power.has_value())
+                                        ? setup_config.ac_limits.discharge_power.value()
+                                        : setup_config.ac_limits.discharge_power.emplace();
+            discharge_power.max = dt::from_float((mod->config.negative_bidirectional_limits)
+                                                     ? -std::fabs(maximum_limits.discharge_power.value().total)
+                                                     : maximum_limits.discharge_power.value().total);
+        }
+
+        if (controller) {
+            controller->update_ac_limits(setup_config.ac_limits);
+        }
+
+        setup_steps_done.set(to_underlying_value(SetupStep::MAX_LIMITS));
     }
 
-    if (controller) {
-        controller->update_ac_limits(setup_config.ac_limits);
-    }
-
-    setup_steps_done.set(to_underlying_value(SetupStep::MAX_LIMITS));
+    // watt_base changed; re-apply DER directives on the fresh base. Must run after GEL is released
+    // (GEL is non-recursive and apply_active_der_directives snapshots it internally).
+    apply_active_der_directives();
 }
 
 void ISO15118_chargerImpl::handle_update_ac_minimum_limits(types::iso15118::AcEvseMinimumPower& minimum_limits) {

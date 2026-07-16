@@ -39,6 +39,7 @@ types::iso15118::DERChargingParameters to_der_charging_parameters(const dt::DER_
 
     if (ev.reactive_power_limits.has_value()) {
         const auto& reactive = ev.reactive_power_limits.value();
+        // TODO: clamp EV reactive_power_limits against evse_max_reactive_power (min(EV, EVSE))
 
         params.max_charge_reactive_power = dt::from_RationalNumber(reactive.max_charge_reactive_power);
         params.max_charge_reactive_power_l2 = charger::convert_from_optional(reactive.max_charge_reactive_power_L2);

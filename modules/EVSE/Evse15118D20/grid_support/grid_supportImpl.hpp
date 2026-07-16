@@ -50,9 +50,9 @@ private:
 
     // ev@d014281f-feb6-4c48-8134-117ade18f2ba:v1
     // insert your private definitions here
-    // Logged the first time a non-empty directive set arrives: applying directives to the EV
-    // (the DER control-function relay) is not yet wired, so accepting them has no effect yet.
-    std::once_flag directive_seam_log_flag;
+    // Logged once when the first non-empty directive set arrives: directives are relayed to the EV
+    // at the next V2G session (next-session-dynamic), not applied mid-session.
+    std::once_flag directive_relay_log_flag;
     // ev@d014281f-feb6-4c48-8134-117ade18f2ba:v1
 };
 

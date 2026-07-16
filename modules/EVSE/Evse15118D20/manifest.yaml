@@ -92,8 +92,9 @@ provides:
     interface: grid_support
     description: >-
       Raises grid alarms from EV grid-event conditions and accepts active DER
-      directives. Directive application to the EV is not yet wired; DER
-      capability is not published by this module.
+      directives. Curve-family directives (VoltVar, WattVar, WattPF) are
+      relayed to the EV as AC_DER_IEC control functions at the next V2G
+      session; non-curve directives are logged and skipped.
 requires:
   security:
     interface: evse_security

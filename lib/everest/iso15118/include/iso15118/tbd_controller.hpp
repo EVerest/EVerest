@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include <everest/util/async/monitor.hpp>
+
 #include "config.hpp"
 #include <iso15118/d20/config.hpp>
 #include <iso15118/d20/control_event.hpp>
@@ -67,7 +69,7 @@ private:
     const TbdConfig config;
     const session::feedback::Callbacks callbacks;
 
-    d20::EvseSetupConfig evse_setup;
+    everest::lib::util::monitor<d20::EvseSetupConfig> evse_setup;
 
     std::string interface_name;
 
