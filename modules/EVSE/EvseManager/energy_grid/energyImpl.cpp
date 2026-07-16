@@ -387,8 +387,19 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
         // EVLOG_info << "Incoming enforce limits" << value;
 
         //   set hardware limit
+        const int active_phasecount = mod->ac_nr_phases_active;
+
+        static bool warning_shown{false};
+        if (active_phasecount == 0) {
+            if (not warning_shown) {
+                EVLOG_warning << "Number of active phases is still uninitialized, skipping limits calculation "
+                                 "while waiting for BSP";
+                warning_shown = true;
+            }
+            return;
+        }
+
         float limit = 0.;
-        int active_phasecount = mod->ac_nr_phases_active;
 
         // apply enforced limits
 
