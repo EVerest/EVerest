@@ -226,8 +226,10 @@ int enforce_certificate_rules(evse_security::X509Handle* ctx) {
             return -1;
 
         const std::string profile = get_file_name(cert);
-        EVLOG_info << "No matching security profile found for certificate, skipping rule enforcement.";
-        return 0;
+	if (profile.empty()) {
+        	EVLOG_info << "No matching security profile found for certificate, skipping rule enforcement.";
+        	return 0;
+	}
 
         std::string key = std::filesystem::path(profile).stem().string();
         key.erase(std::remove(key.begin(), key.end(), ' '), key.end());
