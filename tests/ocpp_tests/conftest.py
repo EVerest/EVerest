@@ -531,6 +531,13 @@ def probe_module(
         "get_all_valid_certificates_info",
         lambda arg: {"status": "NotFound", "info": []},
     )
+    implement_command(
+        module,
+        skip_implementation,
+        "ProbeModuleSecurity",
+        "set_max_fs_certificate_store_entries",
+        lambda arg: None,
+    )
 
     return module
 
