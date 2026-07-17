@@ -162,6 +162,9 @@ void ChargePoint::stop() {
     this->availability->stop_heartbeat_timer();
     this->provisioning->stop_bootnotification_timer();
     this->connectivity_manager->disconnect();
+    // Disarm before tearing down the message queue: a late websocket-thread disconnect callback
+    // must not reach into members being destroyed.
+    this->connectivity_manager->disarm_connection_callbacks();
     this->security->stop_certificate_expiration_check_timers();
     this->diagnostics->stop_monitoring();
     this->message_queue->stop();

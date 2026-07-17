@@ -38,6 +38,10 @@ void Websocket::disconnect(const WebsocketCloseReason code) {
     this->websocket->disconnect(code);
 }
 
+void Websocket::suppress_reconnect() {
+    this->websocket->suppress_reconnect();
+}
+
 void Websocket::reconnect(long delay) {
     this->logging->sys("Reconnecting");
     this->websocket->reconnect(delay);

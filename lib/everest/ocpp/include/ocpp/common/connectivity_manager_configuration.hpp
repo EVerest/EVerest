@@ -65,6 +65,10 @@ public:
     /// \brief Persist the currently active network-profile slot.
     virtual void set_active_network_profile_slot(std::int32_t slot, const std::string& source) = 0;
 
+    /// \brief Read the persisted active network-profile slot, or std::nullopt if none is stored.
+    ///        Survives reboot, used to seed the last-successful profile for B10.FR.07 fallback.
+    virtual std::optional<std::int32_t> get_active_network_profile_slot() = 0;
+
     /// \brief Persist the negotiated OCPP protocol version for a specific slot.
     virtual void set_per_slot_ocpp_version(std::int32_t slot, const std::string& version,
                                            const std::string& source) = 0;
