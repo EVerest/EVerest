@@ -22,6 +22,7 @@
 // insert your custom include headers here
 #include "v2g_ctx.hpp"
 #include <everest/tls/tls.hpp>
+#include <string>
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -76,6 +77,15 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
+    void run_network_lifecycle();
+    bool try_start_network();
+    void cleanup_failed_network_start();
+    void wait_for_shutdown();
+    void report_network_startup_failure(const std::string& reason);
+    void clear_network_startup_failure();
+    std::string network_device_label() const;
+    std::string startup_fault_message;
+    bool startup_fault_raised{false};
     tls::Server tls_server;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };

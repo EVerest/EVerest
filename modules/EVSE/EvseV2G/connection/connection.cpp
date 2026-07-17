@@ -35,6 +35,12 @@
 #define ERROR_SESSION_ALREADY_STARTED 2
 #define CLIENT_FIN_TIMEOUT            3000
 
+static void set_failure_detail(std::string* failure_detail, const std::string& detail) {
+    if (failure_detail != nullptr) {
+        *failure_detail = detail;
+    }
+}
+
 /*!
  * \brief connection_create_socket This function creates a tcp/tls socket
  * \param sockaddr to bind the socket to an interface
@@ -105,8 +111,9 @@ static int connection_create_socket(struct sockaddr_in6* sockaddr) {
  * \param sockaddr to bind the socket to an interface
  * \return Returns \c 0 on success, otherwise \c -1
  */
-int check_interface(struct v2g_context* v2g_ctx) {
+int check_interface(struct v2g_context* v2g_ctx, std::string* failure_detail) {
     if (v2g_ctx == nullptr || v2g_ctx->if_name == nullptr) {
+        set_failure_detail(failure_detail, "No interface configured");
         return -1;
     }
 
@@ -114,20 +121,52 @@ int check_interface(struct v2g_context* v2g_ctx) {
     std::memset(&mreq, 0, sizeof(mreq));
 
     if (strcmp(v2g_ctx->if_name, "auto") == 0) {
-        v2g_ctx->if_name = choose_first_ipv6_interface();
+        v2g_ctx->if_name = choose_first_ipv6_interface(failure_detail);
     }
 
     if (v2g_ctx->if_name == nullptr) {
+        if (failure_detail == nullptr || failure_detail->empty()) {
+            set_failure_detail(failure_detail, "No interface with an IPv6 address found");
+        }
         return -1;
     }
 
     mreq.ipv6mr_interface = if_nametoindex(v2g_ctx->if_name);
     if (!mreq.ipv6mr_interface) {
-        dlog(DLOG_LEVEL_ERROR, "No such interface: %s", v2g_ctx->if_name);
+        set_failure_detail(failure_detail, std::string("No such interface: ") + v2g_ctx->if_name);
+        if (failure_detail == nullptr) {
+            dlog(DLOG_LEVEL_ERROR, "No such interface: %s", v2g_ctx->if_name);
+        }
         return -1;
     }
 
     return (v2g_ctx->if_name == nullptr) ? -1 : 0;
+}
+
+void connection_cleanup(struct v2g_context* ctx) {
+    if (ctx == nullptr) {
+        return;
+    }
+
+    if (ctx->tls_server != nullptr) {
+        ctx->tls_server->stop();
+        ctx->tls_server->wait_stopped();
+    }
+
+    if (ctx->tcp_socket != -1) {
+        close(ctx->tcp_socket);
+        ctx->tcp_socket = -1;
+    }
+
+    if (ctx->tls_socket.fd != -1) {
+        close(ctx->tls_socket.fd);
+        ctx->tls_socket.fd = -1;
+    }
+
+    free(ctx->local_tcp_addr);
+    ctx->local_tcp_addr = nullptr;
+    free(ctx->local_tls_addr);
+    ctx->local_tls_addr = nullptr;
 }
 
 /*!
@@ -136,13 +175,20 @@ int check_interface(struct v2g_context* v2g_ctx) {
  * \return Returns \c 0 on success, otherwise \c -1
  */
 int connection_init(struct v2g_context* v2g_ctx) {
-    if (check_interface(v2g_ctx) == -1) {
+    return connection_init(v2g_ctx, nullptr);
+}
+
+int connection_init(struct v2g_context* v2g_ctx, std::string* failure_detail) {
+    set_failure_detail(failure_detail, "Failed to initialize connection");
+
+    if (check_interface(v2g_ctx, failure_detail) == -1) {
         return -1;
     }
 
     if (v2g_ctx->tls_security != TLS_SECURITY_FORCE) {
         v2g_ctx->local_tcp_addr = static_cast<sockaddr_in6*>(calloc(1, sizeof(*v2g_ctx->local_tcp_addr)));
         if (v2g_ctx->local_tcp_addr == nullptr) {
+            set_failure_detail(failure_detail, "Failed to allocate memory for TCP address");
             dlog(DLOG_LEVEL_ERROR, "Failed to allocate memory for TCP address");
             return -1;
         }
@@ -151,87 +197,110 @@ int connection_init(struct v2g_context* v2g_ctx) {
     if (v2g_ctx->tls_security != TLS_SECURITY_PROHIBIT) {
         v2g_ctx->local_tls_addr = static_cast<sockaddr_in6*>(calloc(1, sizeof(*v2g_ctx->local_tls_addr)));
         if (!v2g_ctx->local_tls_addr) {
+            set_failure_detail(failure_detail, "Failed to allocate memory for TLS address");
             dlog(DLOG_LEVEL_ERROR, "Failed to allocate memory for TLS address");
+            connection_cleanup(v2g_ctx);
             return -1;
         }
     }
 
-    while (1) {
-        if (v2g_ctx->local_tcp_addr) {
-            get_interface_ipv6_address(v2g_ctx->if_name, ADDR6_TYPE_LINKLOCAL, v2g_ctx->local_tcp_addr);
-            if (v2g_ctx->local_tls_addr) {
-                // Handle allowing TCP with TLS (TLS_SECURITY_ALLOW)
-                memcpy(v2g_ctx->local_tls_addr, v2g_ctx->local_tcp_addr, sizeof(*v2g_ctx->local_tls_addr));
+    if (v2g_ctx->local_tcp_addr) {
+        if (get_interface_ipv6_address(v2g_ctx->if_name, ADDR6_TYPE_LINKLOCAL, v2g_ctx->local_tcp_addr) == -1) {
+            set_failure_detail(failure_detail,
+                               std::string("No IPv6 link-local address found on interface ") + v2g_ctx->if_name);
+            if (failure_detail == nullptr) {
+                dlog(DLOG_LEVEL_WARNING,
+                     "No IPv6 link-local address found on interface %s, connection setup will be retried",
+                     v2g_ctx->if_name);
             }
-        } else {
-            // Handle forcing TLS security (TLS_SECURITY_FORCE)
-            get_interface_ipv6_address(v2g_ctx->if_name, ADDR6_TYPE_LINKLOCAL, v2g_ctx->local_tls_addr);
+            connection_cleanup(v2g_ctx);
+            return -1;
         }
-
-        if (v2g_ctx->local_tcp_addr) {
-            char buffer[INET6_ADDRSTRLEN];
-
-            /*
-             * When we bind with port = 0, the kernel assigns a dynamic port from the range configured
-             * in /proc/sys/net/ipv4/ip_local_port_range. This is on a recent Ubuntu Linux e.g.
-             * $ cat /proc/sys/net/ipv4/ip_local_port_range
-             * 32768   60999
-             * However, in ISO15118 spec the IANA range with 49152 to 65535 is referenced. So we have the
-             * problem that the kernel (without further configuration - and we want to avoid this) could
-             * hand out a port which is not "range compatible".
-             * To fulfill the ISO15118 standard, we simply try to bind to static port numbers.
-             */
-            v2g_ctx->local_tcp_addr->sin6_port = htons(DEFAULT_TCP_PORT);
-            v2g_ctx->tcp_socket = connection_create_socket(v2g_ctx->local_tcp_addr);
-            if (v2g_ctx->tcp_socket < 0) {
-                /* retry until interface is ready */
-                sleep(1);
-                continue;
-            }
-            if (inet_ntop(AF_INET6, &v2g_ctx->local_tcp_addr->sin6_addr, buffer, sizeof(buffer)) != nullptr) {
-                dlog(DLOG_LEVEL_INFO, "TCP server on %s is listening on port [%s%%%" PRIu32 "]:%" PRIu16,
-                     v2g_ctx->if_name, buffer, v2g_ctx->local_tcp_addr->sin6_scope_id,
-                     ntohs(v2g_ctx->local_tcp_addr->sin6_port));
-            } else {
-                dlog(DLOG_LEVEL_ERROR, "TCP server on %s is listening, but inet_ntop failed: %s", v2g_ctx->if_name,
-                     strerror(errno));
-                return -1;
-            }
-        }
-
         if (v2g_ctx->local_tls_addr) {
-            char buffer[INET6_ADDRSTRLEN];
-
-            /* see comment above for reason */
-            v2g_ctx->local_tls_addr->sin6_port = htons(DEFAULT_TLS_PORT);
-
-            v2g_ctx->tls_socket.fd = connection_create_socket(v2g_ctx->local_tls_addr);
-            if (v2g_ctx->tls_socket.fd < 0) {
-                if (v2g_ctx->tcp_socket != -1) {
-                    /* free the TCP socket */
-                    close(v2g_ctx->tcp_socket);
-                }
-                /* retry until interface is ready */
-                sleep(1);
-                continue;
-            }
-
-            if (inet_ntop(AF_INET6, &v2g_ctx->local_tls_addr->sin6_addr, buffer, sizeof(buffer)) != nullptr) {
-                dlog(DLOG_LEVEL_INFO, "TLS server on %s is listening on port [%s%%%" PRIu32 "]:%" PRIu16,
-                     v2g_ctx->if_name, buffer, v2g_ctx->local_tls_addr->sin6_scope_id,
-                     ntohs(v2g_ctx->local_tls_addr->sin6_port));
-            } else {
-                dlog(DLOG_LEVEL_INFO, "TLS server on %s is listening, but inet_ntop failed: %s", v2g_ctx->if_name,
-                     strerror(errno));
-                return -1;
-            }
+            // Handle allowing TCP with TLS (TLS_SECURITY_ALLOW)
+            memcpy(v2g_ctx->local_tls_addr, v2g_ctx->local_tcp_addr, sizeof(*v2g_ctx->local_tls_addr));
         }
-        /* Sockets should be ready, leave the loop */
-        break;
+    } else {
+        // Handle forcing TLS security (TLS_SECURITY_FORCE)
+        if (get_interface_ipv6_address(v2g_ctx->if_name, ADDR6_TYPE_LINKLOCAL, v2g_ctx->local_tls_addr) == -1) {
+            set_failure_detail(failure_detail,
+                               std::string("No IPv6 link-local address found on interface ") + v2g_ctx->if_name);
+            if (failure_detail == nullptr) {
+                dlog(DLOG_LEVEL_WARNING,
+                     "No IPv6 link-local address found on interface %s, connection setup will be retried",
+                     v2g_ctx->if_name);
+            }
+            connection_cleanup(v2g_ctx);
+            return -1;
+        }
+    }
+
+    if (v2g_ctx->local_tcp_addr) {
+        char buffer[INET6_ADDRSTRLEN];
+
+        /*
+         * When we bind with port = 0, the kernel assigns a dynamic port from the range configured
+         * in /proc/sys/net/ipv4/ip_local_port_range. This is on a recent Ubuntu Linux e.g.
+         * $ cat /proc/sys/net/ipv4/ip_local_port_range
+         * 32768   60999
+         * However, in ISO15118 spec the IANA range with 49152 to 65535 is referenced. So we have the
+         * problem that the kernel (without further configuration - and we want to avoid this) could
+         * hand out a port which is not "range compatible".
+         * To fulfill the ISO15118 standard, we simply try to bind to static port numbers.
+         */
+        v2g_ctx->local_tcp_addr->sin6_port = htons(DEFAULT_TCP_PORT);
+        v2g_ctx->tcp_socket = connection_create_socket(v2g_ctx->local_tcp_addr);
+        if (v2g_ctx->tcp_socket < 0) {
+            set_failure_detail(failure_detail,
+                               std::string("Failed to create TCP server socket on interface ") + v2g_ctx->if_name);
+            connection_cleanup(v2g_ctx);
+            return -1;
+        }
+        if (inet_ntop(AF_INET6, &v2g_ctx->local_tcp_addr->sin6_addr, buffer, sizeof(buffer)) != nullptr) {
+            dlog(DLOG_LEVEL_INFO, "TCP server on %s is listening on port [%s%%%" PRIu32 "]:%" PRIu16, v2g_ctx->if_name,
+                 buffer, v2g_ctx->local_tcp_addr->sin6_scope_id, ntohs(v2g_ctx->local_tcp_addr->sin6_port));
+        } else {
+            set_failure_detail(failure_detail, std::string("TCP server inet_ntop failed: ") + strerror(errno));
+            dlog(DLOG_LEVEL_ERROR, "TCP server on %s is listening, but inet_ntop failed: %s", v2g_ctx->if_name,
+                 strerror(errno));
+            connection_cleanup(v2g_ctx);
+            return -1;
+        }
     }
 
     if (v2g_ctx->local_tls_addr) {
-        return tls::connection_init(v2g_ctx);
+        char buffer[INET6_ADDRSTRLEN];
+
+        /* see comment above for reason */
+        v2g_ctx->local_tls_addr->sin6_port = htons(DEFAULT_TLS_PORT);
+
+        v2g_ctx->tls_socket.fd = connection_create_socket(v2g_ctx->local_tls_addr);
+        if (v2g_ctx->tls_socket.fd < 0) {
+            set_failure_detail(failure_detail,
+                               std::string("Failed to create TLS server socket on interface ") + v2g_ctx->if_name);
+            connection_cleanup(v2g_ctx);
+            return -1;
+        }
+
+        if (inet_ntop(AF_INET6, &v2g_ctx->local_tls_addr->sin6_addr, buffer, sizeof(buffer)) != nullptr) {
+            dlog(DLOG_LEVEL_INFO, "TLS server on %s is listening on port [%s%%%" PRIu32 "]:%" PRIu16, v2g_ctx->if_name,
+                 buffer, v2g_ctx->local_tls_addr->sin6_scope_id, ntohs(v2g_ctx->local_tls_addr->sin6_port));
+        } else {
+            set_failure_detail(failure_detail, std::string("TLS server inet_ntop failed: ") + strerror(errno));
+            dlog(DLOG_LEVEL_INFO, "TLS server on %s is listening, but inet_ntop failed: %s", v2g_ctx->if_name,
+                 strerror(errno));
+            connection_cleanup(v2g_ctx);
+            return -1;
+        }
+    }
+
+    if (v2g_ctx->local_tls_addr) {
+        const auto result = tls::connection_init(v2g_ctx);
+        if (result == -1) {
+            set_failure_detail(failure_detail, "Failed to initialize TLS connection");
+            connection_cleanup(v2g_ctx);
+        }
+        return result;
     }
     return 0;
 }
