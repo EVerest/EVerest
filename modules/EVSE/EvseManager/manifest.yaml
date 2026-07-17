@@ -90,6 +90,24 @@ config:
       Special mode that switches between AC and DC charging to get SoC percentage with AC charging
     type: boolean
     default: false
+  reinit_duration_ms:
+    description: Duration in milliseconds of the reinit state before going back to normal operation
+    type: integer
+    default: 3000
+  reinit_method:
+    description: >-
+      Configures the control pilot behaviour during reinitialization of the connection to the EV. Reinitialization
+      may be used to recover from an unsuccessful PLC link setup, wake up the EV, or switch between HLC and basic AC
+      charging in AC with SoC mode.
+        CPStateE: set CP to state E (0 V) to simulate an unplug. This requires BSP support for CP state E.
+        CPStateF: set CP to state F (-12 V) to signal a temporary unavailability.
+        CPStateX1: keep CP powered with 100% duty cycle to signal that no energy is available.
+    type: string
+    enum:
+      - CPStateE
+      - CPStateF
+      - CPStateX1
+    default: CPStateF
   internal_over_voltage_duration_ms:
     description: >-
       Time in milliseconds the internal software over voltage monitor waits before raising MREC5 once the measured
@@ -293,6 +311,7 @@ config:
     type: string
     enum:
       - X1
+      - E
       - F
     default: X1
   soft_over_current_timeout_ms:

@@ -513,6 +513,8 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
         &conn->exi_out.dinEXIDocument->V2G_Message.Body.ChargeParameterDiscoveryRes;
     enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
 
+    const bool first_req = conn->ctx->last_v2g_msg != V2G_CHARGE_PARAMETER_DISCOVERY_MSG;
+
     /* At first, publish the received EV request message to the customer MQTT interface */
     publish_din_charge_parameter_discovery_req(conn->ctx, req);
 
@@ -520,14 +522,14 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
     res->ResponseCode = din_responseCodeType_OK; // [V2G-DC-388]
     res->AC_EVSEChargeParameter_isUsed = 0u;
 
-    if (((req->EVRequestedEnergyTransferType != din_EVRequestedEnergyTransferType_DC_core) &&
-         (req->EVRequestedEnergyTransferType != din_EVRequestedEnergyTransferType_DC_extended)) ||
-        conn->ctx->evse_v2g_data.charge_service.SupportedEnergyTransferMode.EnergyTransferMode.array[0] !=
+    if (((req->EVRequestedEnergyTransferType == din_EVRequestedEnergyTransferType_DC_core) ||
+         (req->EVRequestedEnergyTransferType == din_EVRequestedEnergyTransferType_DC_extended)) &&
+        conn->ctx->evse_v2g_data.charge_service.SupportedEnergyTransferMode.EnergyTransferMode.array[0] ==
             (iso2_EnergyTransferModeType)req->EVRequestedEnergyTransferType) {
+        log_selected_energy_transfer_type((int)req->EVRequestedEnergyTransferType);
+    } else if (conn->ctx->is_fake_dc == false) {
         res->ResponseCode = din_responseCodeType_FAILED_WrongEnergyTransferType; // [V2G-DC-397] Failed reponse code is
                                                                                  // logged at the end of the function
-    } else {
-        log_selected_energy_transfer_type((int)req->EVRequestedEnergyTransferType);
     }
 
     res->ResponseCode = (req->AC_EVChargeParameter_isUsed == (unsigned int)1)
@@ -645,12 +647,30 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
         res->DC_EVSEChargeParameter.DC_EVSEStatus.NotificationMaxDelay = 0;
     }
 
+    /* If fake HLC DC is active, try to stop the charging session over EVSENotification and EVSEStatusCode first.
+     * If the EV is ignoring the shutdown request, stop the charging session in the next response message with a failed
+     * response code.
+     */
+    if (conn->ctx->is_fake_dc) {
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSENotification = din_EVSENotificationType_StopCharging;
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.NotificationMaxDelay = 0;
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEStatusCode = din_DC_EVSEStatusCodeType_EVSE_Shutdown;
+
+        if (first_req == true) {
+            dlog(DLOG_LEVEL_INFO, "Initiate stop of the fake HLC DIN DC session");
+            res->EVSEProcessing = din_EVSEProcessingType_Ongoing;
+        } else {
+            res->ResponseCode = din_responseCodeType_FAILED;
+        }
+    }
+
     /* Check the current response code and check if no external error has occurred */
     nextEvent = utils::din_validate_response_code(&res->ResponseCode, conn);
 
     /* Set next expected req msg */
     if (res->EVSEProcessing == din_EVSEProcessingType_Finished) {
-        if (res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEStatusCode != din_DC_EVSEStatusCodeType_EVSE_Ready) {
+        if ((res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEStatusCode != din_DC_EVSEStatusCodeType_EVSE_Ready) &&
+            (conn->ctx->is_fake_dc == false)) {
             dlog(DLOG_LEVEL_WARNING,
                  "EVSE wants to finish charge parameter phase, but status code is not set to 'ready' (1)");
         }

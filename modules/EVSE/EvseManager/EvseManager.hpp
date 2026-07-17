@@ -75,6 +75,8 @@ struct Conf {
     bool ac_hlc_use_5percent;
     bool ac_enforce_hlc;
     bool ac_with_soc;
+    int reinit_duration_ms;
+    std::string reinit_method;
     int internal_over_voltage_duration_ms;
     bool dbg_hlc_auth_after_tstep;
     int dc_isolation_voltage_V;
@@ -238,6 +240,7 @@ public:
     void process_dc_ev_target_voltage_current(const types::iso15118::DcEvseMaximumLimits& hlc_limits);
 
     std::string selected_protocol = "Unknown";
+    bool fake_dc_enabled{false};
 
     std::atomic_bool sae_bidi_active{false};
 
@@ -368,7 +371,7 @@ private:
     // Voltage plausibility monitor
     std::unique_ptr<VoltagePlausibilityMonitor> voltage_plausibility_monitor;
 
-    void setup_AC_mode();
+    void setup_AC_mode(bool ac_hlc_enabled = true);
     void setup_fake_DC_mode();
 
     // special funtion to switch mode while session is active
