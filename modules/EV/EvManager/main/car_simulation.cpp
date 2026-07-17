@@ -352,6 +352,7 @@ bool CarSimulation::iso_start_v2g_session(const CmdArguments& arguments, bool th
     } else {
         return false;
     }
+    sim_data.v2g_session_active = true;
     return true;
 }
 
@@ -374,6 +375,8 @@ bool CarSimulation::iso_stop_charging(const CmdArguments& arguments) {
     r_ev_board_support->call_allow_power_on(false);
     if (sim_data.state != SimState::UNPLUGGED) {
         sim_data.state = SimState::PLUGGED_IN;
+    } else {
+        EVLOG_warning << "iso_stop_charging: sim state is UNPLUGGED, staying unplugged (no suspend)";
     }
     charge_mode = ChargeMode::None;
     return true;
@@ -431,11 +434,11 @@ bool CarSimulation::iso_wait_for_stop(const CmdArguments& arguments, size_t loop
 }
 
 bool CarSimulation::iso_wait_v2g_session_stopped(const CmdArguments& arguments) {
-    if (sim_data.v2g_finished) {
-        sim_data.v2g_finished = false;
+    if (not sim_data.v2g_session_active) {
+        EVLOG_warning << "iso_wait_v2g_session_stopped: no active V2G session, skipping wait";
         return true;
     }
-    return false;
+    return sim_data.advance_wait_v2g_session_stopped();
 }
 
 bool CarSimulation::iso_pause_charging(const CmdArguments& arguments) {

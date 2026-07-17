@@ -1624,8 +1624,18 @@ bool Charger::deauthorize() {
 
 bool Charger::deauthorize_internal() {
     if (shared_context.session_active) {
+        const auto s = shared_context.current_state;
+
+        // A timeout withdrawal and an explicit one before plug-in are indistinguishable here;
+        // report any authorized, not-yet-plugged-in idle deauthorization as a Timeout stop.
+        if (s == EvseState::Idle and shared_context.flag_authorized and not shared_context.flag_ev_plugged_in and
+            not shared_context.flag_transaction_active) {
+            shared_context.last_stop_transaction_reason = types::evse_manager::StopTransactionReason::Timeout;
+            signal_transaction_finished_event(types::evse_manager::StopTransactionReason::Timeout,
+                                              shared_context.id_token);
+        }
+
         signal_simple_event(types::evse_manager::SessionEventEnum::Deauthorized);
-        auto s = shared_context.current_state;
 
         if (s == EvseState::Disabled or s == EvseState::Idle or s == EvseState::WaitingForAuthentication) {
 

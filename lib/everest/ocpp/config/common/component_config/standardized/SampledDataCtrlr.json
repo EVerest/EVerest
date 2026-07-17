@@ -135,11 +135,11 @@
         {
           "type": "Actual",
           "mutability": "ReadWrite",
-          "value": "Energy.Active.Import.Register,Current.Import,Voltage,Power.Active.Import,Power.Reactive.Import,Frequency,SoC"
+          "value": "Energy.Active.Import.Register,Current.Import,Voltage,Power.Active.Import"
         }
       ],
       "description": "Sampled measurands to be included in the meterValues element of TransactionEventRequest (eventType = Ended)",
-      "default": "Energy.Active.Import.Register,Current.Import,Voltage,Power.Active.Import,Power.Reactive.Import,Frequency",
+      "default": "Energy.Active.Import.Register,Current.Import,Voltage,Power.Active.Import",
       "type": "string"
     },
     "RegisterValuesWithoutPhases": {
