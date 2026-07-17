@@ -352,7 +352,7 @@ void Manager::publish_startup_metadata(const RuntimeContext& ctx) const {
 }
 
 /// \brief Unregister all module ready handlers and clear tracked ready state.
-void Manager::unregister_module_ready_handlers(ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
+void Manager::unregister_module_ready_handlers(const ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
     ModulesReadyType modules_ready_moved;
     {
         const std::lock_guard<std::mutex> lck(modules_ready_mutex_);
@@ -373,13 +373,13 @@ void Manager::unregister_module_ready_handlers(ManagerConfig& config, MQTTAbstra
     }
 }
 
-void Manager::cleanup_modules_state(ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
+void Manager::cleanup_modules_state(const ManagerConfig& config, MQTTAbstraction& mqtt_abstraction) {
     unregister_module_ready_handlers(config, mqtt_abstraction);
     mqtt_abstraction.clear_retained_topics();
 }
 
 /// \brief Stop all remaining module processes, escalating SIGTERM to SIGKILL.
-void Manager::shutdown_modules(const std::map<pid_t, std::string>& modules, ManagerConfig& config,
+void Manager::shutdown_modules(const std::map<pid_t, std::string>& modules, const ManagerConfig& config,
                                MQTTAbstraction& mqtt_abstraction) {
 
     unregister_module_ready_handlers(config, mqtt_abstraction);
@@ -490,11 +490,19 @@ void Manager::handle_restart_modules_after_shutdown(RuntimeContext& ctx) {
     // called from advance_lifecycle_state_if_ready() (crash-with-restart path) which does not go
     // through handle_finish_* finalize functions.
     cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
-
-    ctx.config = std::make_shared<ManagerConfig>(ctx.ms);
-    module_handles_ = handle_start_modules(ctx);
-    reset_shutdown_state();
-    EVLOG_info << "Modules restart initiated with reloaded configuration.";
+    if (reload_and_update_context(ctx)) {
+        module_handles_ = handle_start_modules(ctx);
+        shutdown_cause_ = ShutdownCause::None;
+        shutdown_start_time_ = std::nullopt;
+        force_terminate_start_time_ = std::nullopt;
+        force_kill_sent_ = false;
+        shutdown_info_.clear();
+        EVLOG_info << "Modules restart initiated with reloaded configuration.";
+    } else {
+        EVLOG_error << "Failed to reload the configuration.";
+        config_service_core_->notice_cfg_validation_failed();
+        transition_to(ManagerState::Idle);
+    }
 }
 
 std::optional<int> Manager::handle_finish_normal_shutdown(RuntimeContext& ctx, ManagerAdminPanel& admin_panel) {
@@ -542,7 +550,11 @@ std::optional<int> Manager::handle_finish_crash_recovery(RuntimeContext& ctx, Ma
     }
 
     cleanup_modules_state(*ctx.config, ctx.mqtt_abstraction);
-    reset_shutdown_state();
+    shutdown_info_.clear();
+    shutdown_start_time_ = std::nullopt;
+    shutdown_cause_ = ShutdownCause::None;
+    force_terminate_start_time_ = std::nullopt;
+    force_kill_sent_ = false;
 
     // Stay idle only when the user has not requested a stop via SIGINT/SIGTERM.
     if (recover_module_crashes_ && !sigint_received_) {
@@ -588,10 +600,33 @@ void Manager::handle_initiate_graceful_shutdown(const std::chrono::steady_clock:
     }
 }
 
+bool Manager::reload_and_update_context(RuntimeContext& ctx) {
+    config_service_core_->reinitialize_from_db();
+    auto module_cfg_ptr = config_service_core_->get_active_module_configurations();
+    // create a copy, because load_and_validate_config below will take ownership
+    everest::config::ModuleConfigurations module_cfg = *module_cfg_ptr;
+
+    std::shared_ptr<const ManagerConfig> config;
+    try {
+        config = load_and_validate_config(ctx.ms, module_cfg);
+    } catch (...) {
+        return false;
+    }
+
+    ctx.standalone_modules = collect_standalone_modules(*config);
+    ctx.ignored_modules = collect_ignored_modules();
+    ctx.config = config;
+
+    return true;
+}
+
 // ---- Core run loop ----------------------------------------------------------
 
 int Manager::run() {
     const bool check = (vm_.count("check") != 0);
+    const bool boot_into_idle = vm_.count("into-idle") != 0;
+    const bool cfg_api_active = vm_.count("configuration-api") != 0;
+    const bool lfc_api_active = vm_.count("lifecycle-api") != 0;
     sigint_received_ = false;
     shutdown_cause_ = ShutdownCause::None;
     transition_to(ManagerState::Initializing);
@@ -640,19 +675,6 @@ int Manager::run() {
         EVLOG_info << "Catching and forwarding command exceptions to callers";
     }
 
-    std::unique_ptr<everest::config::SqliteStorage> db_storage;
-    std::shared_ptr<everest::db::sqlite::ConnectionInterface> shared_db;
-    bool db_storage_has_module_configs = false;
-    std::optional<everest::config::ModuleConfigurations> preloaded_module_configs;
-
-    {
-        auto bs = init_database_bootstrap(ms, reset_from_yaml);
-        db_storage = std::move(bs.storage);
-        shared_db = std::move(bs.db_connection);
-        db_storage_has_module_configs = bs.module_configs_initialized;
-        preloaded_module_configs = std::move(bs.module_configs);
-    }
-
     auto admin_panel = ManagerAdminPanel::create(ms);
 
     EVLOG_verbose << fmt::format("EVerest prefix was set to {}", ms.runtime_settings.prefix.string());
@@ -677,16 +699,37 @@ int Manager::run() {
         return EXIT_SUCCESS;
     }
 
-    const bool retain_topics = (vm_.count("retain-topics") != 0);
+    {
+        auto bs = init_database_bootstrap(ms, reset_from_yaml);
+        db_connection_ = std::move(bs.db_connection);
+        if (not bs.module_configs_initialized) {
+            // no valid database entry AND it's impossible to write one
+            // it would be brave to continue here
+            EVLOG_critical << "Couldn't initialize the configuration database!";
+            return EXIT_FAILURE;
+        }
+    }
 
-    std::shared_ptr<ManagerConfig> config; // TODO: maybe this can stay unique when we re-work start_modules()
-    try {
-        config = load_and_validate_config(ms, db_storage, db_storage_has_module_configs, preloaded_module_configs);
-    } catch (...) {
+    config_service_core_ = std::make_unique<config::ConfigServiceCore>(ms, db_connection_);
+
+    // create StatusFifo object
+    auto status_fifo = StatusFifo::create_from_path(vm_["status-fifo"].as<std::string>());
+
+    auto mqtt_abstraction = create_and_connect_mqtt(ms);
+    if (!mqtt_abstraction) {
         return EXIT_FAILURE;
     }
 
-    // dump config if requested
+    const bool retain_topics = (vm_.count("retain-topics") != 0);
+
+    std::shared_ptr<const Everest::ManagerConfig> config;
+    std::vector<std::string> standalone_modules;
+    std::vector<std::string> ignored_modules;
+
+    RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules, ms, status_fifo, retain_topics};
+
+    bool runtime_ctx_has_valid_config = reload_and_update_context(runtime_ctx);
+
     if (vm_.count("dump")) {
         const auto dump_path = fs::path(vm_["dump"].as<std::string>());
         EVLOG_debug << fmt::format("Dumping validated config and manifests into '{}'", dump_path.string());
@@ -695,9 +738,9 @@ int Manager::run() {
 
         std::ofstream output_config_stream(config_dump_path);
 
-        output_config_stream << json(config->get_module_configurations()).dump(DUMP_INDENT);
+        output_config_stream << json(runtime_ctx.config->get_module_configurations()).dump(DUMP_INDENT);
 
-        const auto manifests = config->get_manifests();
+        const auto manifests = runtime_ctx.config->get_manifests();
 
         for (const auto& module : manifests.items()) {
             const std::string filename = module.key() + ".json";
@@ -710,34 +753,34 @@ int Manager::run() {
 
     // only config check (and or config dumping) was requested, log check result and exit
     if (check) {
-        EVLOG_debug << "Config is valid, terminating as requested";
+        EVLOG_debug << "Checked config, terminating as requested";
         return EXIT_SUCCESS;
     }
 
-    std::vector<std::string> standalone_modules = collect_standalone_modules(*config);
-    std::vector<std::string> ignored_modules = collect_ignored_modules();
+    auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core_);
 
-    // create StatusFifo object
-    auto status_fifo = StatusFifo::create_from_path(vm_["status-fifo"].as<std::string>());
+    register_state_transition_handler([this](ManagerState from, ManagerState to) {
+        if (to == ManagerState::Running) {
+            config_service_core_->set_modules_running();
+        } else if (from == ManagerState::Running) {
+            config_service_core_->set_modules_stopping();
+            // we consider ShutdownFinalizing to be "stopped": this allows ConfigServiceCore to consider the modules
+            // stopped and allow to process reinitilization
+        } else if (to == ManagerState::ShutdownFinalizing) {
+            config_service_core_->set_modules_stopped();
+        } else if (to == ManagerState::StartingModules) {
+            config_service_core_->set_modules_starting();
+        }
+    });
 
-    auto mqtt_abstraction = create_and_connect_mqtt(ms);
-    if (!mqtt_abstraction) {
-        return EXIT_FAILURE;
-    }
-
-    const auto migrations_dir = ms.runtime_settings.data_dir / "migrations";
-    auto config_service_core = std::make_unique<config::ConfigServiceCore>(
-        config->get_module_configurations(), ms, std::move(shared_db),
-        reset_from_yaml ? std::make_optional<int>(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID)
-                        : std::nullopt);
-
-    auto config_service = std::make_unique<config::MqttConfigServiceHandler>(*mqtt_abstraction, *config_service_core);
-
-    RuntimeContext runtime_ctx{config, *mqtt_abstraction, ignored_modules, standalone_modules,
-                               ms,     status_fifo,       retain_topics};
-    if (vm_.count("into-idle") == 0) {
+    if (not boot_into_idle and runtime_ctx_has_valid_config) {
         module_handles_ = handle_start_modules(runtime_ctx);
     } else {
+        if (boot_into_idle) {
+            EVLOG_info << "Requested by command-line-parameter -> entering Idle";
+        } else if (not runtime_ctx_has_valid_config) {
+            EVLOG_error << "No valid module configuration found -> entering Idle";
+        }
         transition_to(ManagerState::Idle);
     }
 
@@ -804,27 +847,13 @@ std::string_view Manager::state_to_string(ManagerState state) const {
     }
 }
 
-std::shared_ptr<ManagerConfig> Manager::load_and_validate_config(
-    const ManagerSettings& ms, const std::unique_ptr<everest::config::SqliteStorage>& db_storage,
-    bool db_storage_has_module_configs,
-    const std::optional<everest::config::ModuleConfigurations>& preloaded_module_configs) const {
+std::shared_ptr<const ManagerConfig>
+Manager::load_and_validate_config(const ManagerSettings& ms,
+                                  everest::config::ModuleConfigurations& preloaded_module_configs) const {
     const auto start_time = std::chrono::steady_clock::now();
-    std::shared_ptr<ManagerConfig> config;
+    std::shared_ptr<const ManagerConfig> config;
     try {
-        if (db_storage_has_module_configs) {
-            config = std::make_shared<ManagerConfig>(ms, std::move(*preloaded_module_configs));
-        } else {
-            config = std::make_shared<ManagerConfig>(ms);
-            // Seed the database: parse() enriched module_configs with manifest metadata needed for storage writes.
-            const auto& mc = config->get_module_configurations();
-            if (db_storage->write_module_configs(mc) != everest::config::GenericResponseStatus::Failed) {
-                EVLOG_info << "Module configs written to database successfully, marking config as valid";
-                db_storage->mark_valid(true, nlohmann::json(mc).dump(), ms.config_file, std::nullopt);
-            } else {
-                EVLOG_warning << "Failed to write module configs to database, marking config as invalid";
-                db_storage->mark_valid(false, nlohmann::json(mc).dump(), ms.config_file, std::nullopt);
-            }
-        }
+        config = std::make_shared<const ManagerConfig>(ms, std::move(preloaded_module_configs));
     } catch (EverestInternalError& e) {
         EVLOG_error << fmt::format("Failed to load and validate config!\n{}", boost::diagnostic_information(e, true));
         throw;
@@ -862,11 +891,19 @@ std::unique_ptr<MQTTAbstraction> Manager::create_and_connect_mqtt(const ManagerS
 
 std::vector<std::string> Manager::collect_standalone_modules(const ManagerConfig& config) const {
     std::vector<std::string> standalone_modules;
+    const auto& module_configurations = config.get_module_configurations();
+
     if (vm_.count("standalone")) {
-        standalone_modules = vm_["standalone"].as<std::vector<std::string>>();
+        // Make sure to only list existing modules and each only once
+        for (const auto& module_id : vm_["standalone"].as<std::vector<std::string>>()) {
+            if (module_configurations.find(module_id) != module_configurations.end() &&
+                std::find(standalone_modules.begin(), standalone_modules.end(), module_id) ==
+                    standalone_modules.end()) {
+                standalone_modules.push_back(module_id);
+            }
+        }
     }
 
-    const auto& module_configurations = config.get_module_configurations();
     for (const auto& [module_id, module_config] : module_configurations) {
         if (!module_config.standalone) {
             continue;
@@ -984,7 +1021,7 @@ std::map<pid_t, std::string> Manager::handle_start_modules(const RuntimeContext&
                                       fmt::join(capabilities.begin(), capabilities.end(), " "));
         }
 
-        const Handler module_ready_handler = [this, module_id, &mqtt_abstraction, &config, standalone_modules,
+        const Handler module_ready_handler = [this, module_id, &mqtt_abstraction, standalone_modules,
                                               mqtt_everest_prefix = ms.mqtt_settings.everest_prefix, &status_fifo,
                                               retain_topics](const std::string&, const nlohmann::json& json) {
             EVLOG_debug << fmt::format("received module ready signal for module: {}({})", module_id, json.dump());

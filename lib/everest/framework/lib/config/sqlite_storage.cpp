@@ -21,6 +21,7 @@ const std::string& default_module_implementation_id() {
     static const std::string DEFAULT_MODULE_IMPLEMENTATION_ID = "!module";
     return DEFAULT_MODULE_IMPLEMENTATION_ID;
 }
+
 } // namespace
 
 /// \brief Helper for accessing the column indices of the CONFIGURATION table
@@ -107,12 +108,19 @@ SqliteStorage::~SqliteStorage() {
 
 GenericResponseStatus SqliteStorage::write_module_configs(const ModuleConfigurations& module_configs) {
     try {
-        auto transaction = this->db->begin_transaction();
+        auto check = this->db->new_statement("SELECT 1 FROM CONFIG WHERE ID = ?");
+        check->bind_int(1, config_id_);
+        if (check->step() != SQLITE_ROW) {
+            throw std::logic_error("Cannot write module configs: Config slot " + std::to_string(config_id_) +
+                                   " does not exist. A slot must be created first.");
+        }
 
-        write_module_config_items(module_configs);
+        auto transaction = db->begin_transaction_with_deferred_fkeys();
+
+        auto response = write_module_config_items(module_configs);
 
         transaction->commit();
-        return GenericResponseStatus::OK;
+        return response;
     } catch (const std::exception& e) {
         EVLOG_error << "Failed writing config to database: " << e.what();
         return GenericResponseStatus::Failed;
@@ -121,14 +129,21 @@ GenericResponseStatus SqliteStorage::write_module_configs(const ModuleConfigurat
 
 GenericResponseStatus SqliteStorage::replace_module_configs(const ModuleConfigurations& module_configs) {
     try {
-        auto transaction = this->db->begin_transaction();
+        auto check = this->db->new_statement("SELECT 1 FROM CONFIG WHERE ID = ?");
+        check->bind_int(1, config_id_);
+        if (check->step() != SQLITE_ROW) {
+            throw std::logic_error("Cannot replace module configs: Config slot " + std::to_string(config_id_) +
+                                   " does not exist. A slot must be created first.");
+        }
+
+        auto transaction = db->begin_transaction_with_deferred_fkeys();
 
         delete_module_config_items();
 
-        write_module_config_items(module_configs);
+        auto response = write_module_config_items(module_configs);
 
         transaction->commit();
-        return GenericResponseStatus::OK;
+        return response;
     } catch (const std::exception& e) {
         EVLOG_error << "Failed writing config to database: " << e.what();
         return GenericResponseStatus::Failed;
@@ -269,6 +284,9 @@ SqliteStorage::get_configuration_parameter(const ConfigurationParameterIdentifie
         const auto status = stmt->step();
 
         if (status == SQLITE_DONE) {
+            EVLOG_error << "failed to get parameter " << identifier.module_id << " | "
+                        << identifier.module_implementation_id.value_or("<unspecified>") << " | "
+                        << identifier.configuration_parameter_name;
             response.status = GetSetResponseStatus::NotFound;
             return response;
         }
@@ -278,19 +296,22 @@ SqliteStorage::get_configuration_parameter(const ConfigurationParameterIdentifie
 
             ConfigurationParameter configuration_parameter;
             configuration_parameter.name = identifier.configuration_parameter_name;
+
             const auto value_str = stmt->column_text(0);
             ConfigurationParameterCharacteristics characteristics;
+
             characteristics.mutability = static_cast<Mutability>(stmt->column_int(1));
             characteristics.datatype = static_cast<Datatype>(stmt->column_int(2));
             characteristics.unit = stmt->column_text_nullable(3);
             configuration_parameter.characteristics = characteristics;
             configuration_parameter.value = parse_config_value(characteristics.datatype, value_str);
             response.configuration_parameter = configuration_parameter;
+
             return response;
         }
     } catch (const std::exception& e) {
         EVLOG_error << "Failed to get config value with module_id: " << identifier.module_id
-                    << " and config_parameter_name: " << identifier.configuration_parameter_name;
+                    << " and config_parameter_name: " << identifier.configuration_parameter_name << ": " << e.what();
         response.status = GetSetResponseStatus::Failed;
         return response;
     }
@@ -342,40 +363,6 @@ SqliteStorage::write_configuration_parameter(const ConfigurationParameterIdentif
         EVLOG_error << "Failed to set config value with module_id: " << identifier.module_id
                     << " and config_parameter_name: " << identifier.configuration_parameter_name;
         return GetSetResponseStatus::Failed;
-    }
-}
-
-void SqliteStorage::mark_valid(const bool is_valid, const std::string& config_dump,
-                               const std::optional<fs::path>& config_file_path,
-                               const std::optional<std::string>& description) {
-    const std::string sql =
-        "INSERT INTO CONFIG_META (ID, LAST_UPDATED, VALID, CONFIG_DUMP, CONFIG_FILE_PATH, DESCRIPTION) VALUES "
-        "(@config_id, @last_updated, @is_valid, @config_dump, @config_file_path, @description) "
-        "ON CONFLICT(ID) DO UPDATE SET "
-        "LAST_UPDATED=excluded.LAST_UPDATED, VALID=excluded.VALID, "
-        "CONFIG_DUMP=excluded.CONFIG_DUMP, CONFIG_FILE_PATH=excluded.CONFIG_FILE_PATH, "
-        "DESCRIPTION=excluded.DESCRIPTION;";
-    auto stmt = this->db->new_statement(sql);
-
-    stmt->bind_int("@config_id", config_id_);
-    const auto last_updated = Everest::Date::to_rfc3339(date::utc_clock::now());
-    stmt->bind_text("@last_updated", last_updated);
-    stmt->bind_int("@is_valid", is_valid ? 1 : 0);
-    stmt->bind_text("@config_dump", config_dump, SQLiteString::Transient);
-    if (config_file_path.has_value()) {
-        stmt->bind_text("@config_file_path", config_file_path.value().string(), SQLiteString::Transient);
-    } else {
-        stmt->bind_null("@config_file_path");
-    }
-    if (description.has_value()) {
-        stmt->bind_text("@description", description.value(), SQLiteString::Transient);
-    } else {
-        stmt->bind_null("@description");
-    }
-    if (stmt->step() != SQLITE_DONE) {
-        EVLOG_error << "Failed to mark config as valid";
-    } else {
-        EVLOG_debug << "Marked config as valid";
     }
 }
 
@@ -478,6 +465,9 @@ GenericResponseStatus SqliteStorage::write_module_config_items(const ModuleConfi
                     GetSetResponseStatus::OK) {
                     EVLOG_error << "Failed to write configuration parameter for module: " << module_id
                                 << ", param: " << identifier.configuration_parameter_name;
+                } else {
+                    EVLOG_debug << "Written configuration parameter for module: " << module_id
+                                << ", impl_id: " << impl_id << ", param: " << identifier.configuration_parameter_name;
                 }
             }
         }

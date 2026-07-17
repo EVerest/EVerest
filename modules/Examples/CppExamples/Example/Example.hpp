@@ -23,28 +23,66 @@
 
 namespace module {
 
-struct Conf {};
+struct RwConf {
+    int log_interval;
+    std::string enum_test;
+};
 
-class Example : public Everest::ModuleBase {
+struct RwConfUpdate {
+    using ConfigChangeResult = Everest::config::ConfigChangeResult;
+
+    virtual ~RwConfUpdate() = default;
+
+    // override in class Example adding the implementation to Example.cpp
+    // or inline
+    // e.g.
+    // ConfigChangeResult on_log_interval_changed(const double& value) override {
+    //     rw_config.log_interval = value;
+    //     return ConfigChangeResult::Accepted();
+    // }
+
+    virtual ConfigChangeResult on_log_interval_changed(const int& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
+    virtual ConfigChangeResult on_enum_test_changed(const std::string& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
+};
+
+struct Conf {
+
+    const int& log_interval;
+    const std::string& enum_test;
+
+    Conf(const RwConf& rw) : log_interval(rw.log_interval), enum_test(rw.enum_test) {
+    }
+};
+
+class Example : public Everest::ModuleBase, public RwConfUpdate {
 public:
     Example() = delete;
     Example(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider, std::unique_ptr<exampleImplBase> p_example,
-            std::unique_ptr<kvsImplBase> p_store, std::unique_ptr<kvsIntf> r_kvs, Conf& config) :
+            std::unique_ptr<kvsImplBase> p_store, std::unique_ptr<kvsIntf> r_kvs, Conf& config, RwConf& rw_config) :
         ModuleBase(info),
         mqtt(mqtt_provider),
         p_example(std::move(p_example)),
         p_store(std::move(p_store)),
         r_kvs(std::move(r_kvs)),
-        config(config){};
+        config(config),
+        rw_config(rw_config){};
 
     Everest::MqttProvider& mqtt;
     const std::unique_ptr<exampleImplBase> p_example;
     const std::unique_ptr<kvsImplBase> p_store;
     const std::unique_ptr<kvsIntf> r_kvs;
     const Conf& config;
+    RwConf& rw_config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
+    ConfigChangeResult on_log_interval_changed(const int& new_interval) override;
+    ConfigChangeResult on_enum_test_changed(const std::string& new_value) override;
+    RwConf original_config{};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:

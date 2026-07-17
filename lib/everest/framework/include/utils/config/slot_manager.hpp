@@ -22,7 +22,6 @@ struct DuplicateSlotResult {
 struct SlotInfo {
     int id;
     std::string last_updated;
-    bool is_valid;
     std::optional<std::string> config_file_path;
     std::optional<std::string> description;
 };
@@ -44,10 +43,32 @@ public:
     ~SqliteConfigSlotManager();
 
     bool exists(int slot_id);
-    bool is_valid(int slot_id = DEFAULT_SLOT_ID);
     /// \brief Returns the next available slot ID (MAX(ID) + 1, or 0 if no slots exist).
     int next_slot_id();
-    GenericResponseStatus write_config_slot(int slot_id);
+    /// \brief Writes a new configuration slot
+    /// \param slot_id Id of the new slot; must not exist yet
+    /// \param config_dump JSON dump of the config file that was used to create the configuration
+    /// \param config_file_path Path to the config file that was used to create the configuration
+    /// \param description Arbitrary text
+    GenericResponseStatus write_config_slot(int slot_id, const std::string& config_dump,
+                                            const std::optional<std::filesystem::path>& config_file_path,
+                                            const std::optional<std::string>& description);
+    /// \brief Updates an existing configuration slot
+    /// Optionals without a value will set the corresponding value to NULL in the DB
+    /// \param slot_id Id of the slot; must not exist yet
+    /// \param config_dump JSON dump of the config file that was used to create the configuration
+    /// \param config_file_path Path to the config file that was used to create the configuration
+    /// \param description Arbitrary text
+    GenericResponseStatus update_config_slot(int slot_id, const std::string& config_dump,
+                                             const std::optional<std::filesystem::path>& config_file_path,
+                                             const std::optional<std::string>& description);
+    /// \brief Updates an existing configuration slot's description
+    /// Optionals without a value will set the corresponding value to NULL in the DB
+    /// \param slot_id Id of the slot; must not exist yet
+    /// \param description Arbitrary text
+    GenericResponseStatus update_description(int slot_id,
+                                                                      const std::optional<std::string>& description);
+
     std::vector<SlotInfo> list_slots();
     GenericResponseStatus delete_slot(int slot_id);
 
@@ -64,6 +85,9 @@ public:
 
 private:
     std::shared_ptr<everest::db::sqlite::ConnectionInterface> db;
+
+    // a conservative maximum slot_id value, compatible with sqlite but more than big enough for practical usage
+    const int max_slot_id{(2 << 16) - 1};
 };
 
 } // namespace everest::config

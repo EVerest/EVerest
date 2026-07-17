@@ -48,29 +48,61 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
 
     everest::config::SqliteConfigSlotManager slot_mgr(db_conn);
 
-    const bool db_valid = slot_mgr.is_valid(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
-    if (db_valid && !reset_from_yaml) {
+    auto boot_slot_id = slot_mgr.get_next_boot_slot_id();
+    auto db_storage = std::make_unique<everest::config::SqliteStorage>(db_conn, boot_slot_id);
+
+    const bool slot_exists = slot_mgr.exists(boot_slot_id);
+    if (slot_exists && !reset_from_yaml) {
         EVLOG_info << "Booting and parsing configuration from database: " << ms.db_dir;
-        bs.storage = std::make_unique<everest::config::SqliteStorage>(
-            db_conn, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
-        bs.module_configs_initialized = true;
-        const auto resp = bs.storage->get_module_configs();
+        const auto resp = db_storage->get_module_configs();
         if (resp.status == everest::config::GenericResponseStatus::Failed) {
             EVLOG_AND_THROW(EverestConfigError("Failed to pre-load module configs from database"));
         }
-        bs.module_configs = resp.module_configs;
+        bs.module_configs_initialized = true;
     } else {
-        if (reset_from_yaml && db_valid) {
+        if (reset_from_yaml && slot_exists) {
             EVLOG_info << "--reset-from-yaml requested, discarding existing database slot and re-seeding from YAML: "
                        << ms.config_file;
         } else {
-            EVLOG_info << "Database not initialized or valid, seeding from YAML config file: " << ms.config_file;
+            EVLOG_info << "Database not initialized or not valid, seeding from YAML config file: " << ms.config_file;
         }
-        slot_mgr.delete_slot(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
-        slot_mgr.write_config_slot(everest::config::SqliteConfigSlotManager::DEFAULT_SLOT_ID);
-        bs.storage = std::make_unique<everest::config::SqliteStorage>(
-            db_conn, everest::config::SqliteStorage::DEFAULT_CONFIG_ID);
-        bs.module_configs_initialized = false;
+
+        std::shared_ptr<const ManagerConfig> mgr_config;
+        bool valid_config = false;
+        try {
+            mgr_config = std::make_shared<const ManagerConfig>(ms);
+            valid_config = true;
+        } catch (EverestInternalError& e) {
+            EVLOG_error << fmt::format("Failed to load and validate config!\n{}",
+                                       boost::diagnostic_information(e, true));
+        } catch (boost::exception& e) {
+            EVLOG_error << "Failed to load and validate config!";
+            EVLOG_critical << fmt::format("Caught top level boost::exception:\n{}",
+                                          boost::diagnostic_information(e, true));
+        } catch (std::exception& e) {
+            EVLOG_error << "Failed to load and validate config!";
+            EVLOG_critical << fmt::format("Caught top level std::exception:\n{}",
+                                          boost::diagnostic_information(e, true));
+        }
+
+        if (valid_config) {
+            // Delete the slot (no-op if it doesn't exist)
+            slot_mgr.delete_slot(boot_slot_id);
+            // Seed the database: parse() enriched module_configs with manifest metadata needed for storage writes.
+            const auto& module_config = mgr_config->get_module_configurations();
+            if (slot_mgr.write_config_slot(boot_slot_id, nlohmann::json(module_config).dump(), ms.config_file,
+                                           std::nullopt) == everest::config::GenericResponseStatus::OK) {
+                if (db_storage->write_module_configs(module_config) != everest::config::GenericResponseStatus::Failed) {
+                    EVLOG_info << "Module configs written to database successfully";
+                    bs.module_configs_initialized = true;
+                } else {
+                    EVLOG_warning << "Failed to write module configs to database";
+                    slot_mgr.delete_slot(boot_slot_id);
+                }
+            } else {
+                EVLOG_error << "Could not write config slot " << boot_slot_id;
+            }
+        }
     }
 
     return bs;

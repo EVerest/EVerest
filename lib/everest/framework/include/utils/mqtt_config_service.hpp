@@ -3,7 +3,9 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <memory>
+#include <string_view>
 #include <unordered_map>
 
 #include <utils/config/types.hpp>
@@ -120,8 +122,27 @@ struct ModuleIdType {
     bool operator<(const ModuleIdType& rhs) const;
 };
 
+struct ConfigChangeResult {
+    SetResponseStatus status;
+    std::string reason; ///< only meaningful when status == Rejected
+
+    static ConfigChangeResult Accepted() {
+        return {SetResponseStatus::Accepted, {}};
+    }
+
+    static ConfigChangeResult AcceptedRebootRequired() {
+        return {SetResponseStatus::RebootRequired, {}};
+    }
+
+    static ConfigChangeResult Rejected(const std::string& reason) {
+        return {SetResponseStatus::Rejected, reason};
+    }
+};
+
 class ConfigServiceClient {
 public:
+    using ConfigChangeHandler = std::function<ConfigChangeResult(const std::string& new_value)>;
+
     /// \brief ConfigService client using the provided \p mqtt_abstraction for the module identified by \p module_id
     /// \p module_names is a mapping of all module ids to module names/types for usage in get_module_configs()
     ConfigServiceClient(std::shared_ptr<MQTTAbstraction> mqtt_abstraction, const std::string& module_id,
@@ -142,10 +163,17 @@ public:
     /// \returns a result containing the configuration item or an error
     GetConfigResult get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier);
 
+    void register_config_change_handler(const std::string& impl_id, const std::string_view param_name,
+                                        ConfigChangeHandler handler);
+
 private:
     std::shared_ptr<MQTTAbstraction> mqtt_abstraction;
     std::string origin;
     std::map<std::string, std::string, std::less<>> module_names;
+    // a key-value (parameter-name to handler) store for each implementation_id
+    std::map<std::string, std::map<std::string, ConfigChangeHandler>> change_callbacks;
+
+    void mqtt_set_request(const nlohmann::json& data);
 };
 
 class MqttConfigServiceHandler {
@@ -158,6 +186,14 @@ public:
     ///                          set_config_parameters) are routed through this interface.
     MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstraction, ConfigServiceInterface& config_svc);
 
+    /// \brief This class provides an MQTT interface to modules and uses the ConfigServiceInterface to fulfill incoming
+    /// requests. This function allows to request a config parameter change from a module. This function skips validating
+    /// module_ids and characteristics on purpose. It should only be called with inputs known to work. \param
+    /// cfg_param_id  The identifier for the parameter to be changed \param value         The new configuration
+    /// parameter value as string
+    std::optional<Everest::config::SetResponse>
+    cmd_set_cfg_param(const everest::config::ConfigurationParameterIdentifier& cfg_param_id, const std::string& value);
+
 private:
     MQTTAbstraction& mqtt_abstraction;
     std::shared_ptr<TypedHandler> get_config_token;
@@ -165,6 +201,13 @@ private:
 };
 
 namespace conversions {
+
+// strings should already be valid
+template <typename T> T ConfigFromString(const std::string& value) = delete;
+template <> bool ConfigFromString<bool>(const std::string& value);
+template <> int ConfigFromString<int>(const std::string& value);
+template <> double ConfigFromString<double>(const std::string& value);
+
 std::string type_to_string(Type type);
 
 Type string_to_type(const std::string& type);
@@ -211,6 +254,18 @@ void from_json(const nlohmann::json& j, Request& r);
 void to_json(nlohmann::json& j, const Response& r);
 
 void from_json(const nlohmann::json& j, Response& r);
+
+void to_json(nlohmann::json& j, const SetConfigResult& r);
+
+void from_json(const nlohmann::json& j, SetConfigResult& r);
+
+void to_json(nlohmann::json& j, const GetConfigResult& r);
+
+void from_json(const nlohmann::json& j, GetConfigResult& r);
+
+void to_json(nlohmann::json& j, const ConfigChangeResult& r);
+
+void from_json(const nlohmann::json& j, ConfigChangeResult& r);
 } // namespace config
 } // namespace Everest
 

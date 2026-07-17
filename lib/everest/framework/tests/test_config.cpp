@@ -228,23 +228,25 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
         }
         Everest::ManagerSettings ms(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", db_path);
         auto bs = Everest::init_database_bootstrap(ms);
-        CHECK(bs.module_configs_initialized == false);
+        CHECK(bs.module_configs_initialized == true);
         THEN("In the first instantiation the database is not initialized — ManagerConfig parses YAML") {
             auto config = Everest::ManagerConfig(ms);
-            // Seed the database so subsequent bootstraps see it as valid.
-            const auto& mc = config.get_module_configurations();
-            bs.storage->write_module_configs(mc);
-            bs.storage->mark_valid(true, nlohmann::json(mc).dump(), ms.config_file, std::nullopt);
 
             THEN("In the second instantiation the database is initialized and valid") {
                 auto bs2 = Everest::init_database_bootstrap(ms);
+                auto storage = std::make_unique<everest::config::SqliteStorage>(bs2.db_connection);
+                auto get_mod_cfg_response = storage->get_module_configs();
+                CHECK(get_mod_cfg_response.status == everest::config::GenericResponseStatus::OK);
                 CHECK(bs2.module_configs_initialized == true);
-                CHECK_NOTHROW(Everest::ManagerConfig(ms, std::move(*bs2.module_configs)));
+                CHECK_NOTHROW(Everest::ManagerConfig(ms, std::move(get_mod_cfg_response.module_configs)));
             }
             THEN("It should be possible to bootstrap again from the initialized database") {
                 auto bs3 = Everest::init_database_bootstrap(ms);
+                auto storage = std::make_unique<everest::config::SqliteStorage>(bs3.db_connection);
+                auto get_mod_cfg_response = storage->get_module_configs();
+                CHECK(get_mod_cfg_response.status == everest::config::GenericResponseStatus::OK);
                 CHECK(bs3.module_configs_initialized == true);
-                CHECK_NOTHROW(Everest::ManagerConfig(ms, std::move(*bs3.module_configs)));
+                CHECK_NOTHROW(Everest::ManagerConfig(ms, std::move(get_mod_cfg_response.module_configs)));
             }
         }
     }

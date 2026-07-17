@@ -17,13 +17,25 @@ using namespace Everest::tests;
 // ─── Minimal ConfigServiceInterface stub for handler tests ───────────────────
 
 struct StubConfigService : Everest::config::ConfigServiceInterface {
-    std::vector<SetConfigParameterResult> last_set_results{SetConfigParameterResult::Applied};
+    SetConfigParameterResult last_set_results;
     everest::config::ModuleConfigurations module_configurations;
+
+    using SetParamCallback =
+        std::function<void(const everest::config::ConfigurationParameterIdentifier&, const std::string&)>;
+    SetParamCallback set_parameter_callback_;
+
+    StubConfigService() {
+        last_set_results.parameter_results.emplace(
+            1, SetConfigPerParameterResult{SetConfigParameterResultEnum::Applied, ""});
+    }
 
     std::vector<SlotInfo> list_all_slots() override {
         return {};
     }
     int get_active_slot_id() override {
+        return 0;
+    }
+    int get_next_boot_slot_id() override {
         return 0;
     }
     SetActiveSlotStatus mark_active_slot(int) override {
@@ -35,31 +47,63 @@ struct StubConfigService : Everest::config::ConfigServiceInterface {
     DuplicateSlotResult duplicate_slot(int, std::optional<std::string>) override {
         return {};
     }
-    LoadFromYamlResult load_from_yaml(const std::string&, std::optional<std::string>, std::optional<int> slot_id) override {
+    LoadFromYamlResult load_from_yaml(const std::string&, std::optional<std::string>,
+                                      std::optional<int> slot_id) override {
         return {};
+    }
+    bool set_description(int, const std::string&) {
+        return true;
     }
     GetConfigurationResult get_configuration(int) override {
         return {GetConfigurationStatus::Success, module_configurations};
     }
-    std::vector<SetConfigParameterResult> set_config_parameters(int,
-                                                                const std::vector<ConfigParameterUpdate>&) override {
+
+    SetConfigParameterResult set_config_parameters(int, const std::vector<ConfigParameterUpdate>& update,
+                                                   const Origin& origin) override {
+        last_set_results.status = SetConfigParameterStatus::Ok;
+        SetConfigPerParameterResult set_result{SetConfigParameterResultEnum::Rejected, ""};
+
+        if (update.front().identifier.configuration_parameter_name == "ro_param") {
+            set_result.status = SetConfigParameterResultEnum::WillApplyOnRestart;
+        } else if (update.front().identifier.configuration_parameter_name == "no_such_param") {
+            set_result.status = SetConfigParameterResultEnum::DoesNotExist;
+        } else {
+            if (set_parameter_callback_) {
+                set_parameter_callback_(update.at(0).identifier, update.at(0).value);
+            }
+            if (update.front().value == "new_value") {
+                set_result.status = SetConfigParameterResultEnum::Applied;
+            } else if (update.front().value == "bad_value") {
+                set_result.status = SetConfigParameterResultEnum::Rejected;
+            }
+        }
+        last_set_results.parameter_results = {set_result};
         return last_set_results;
     }
-    StopModulesResult stop_modules() override {
-        return StopModulesResult::NoModulesToStop;
-    }
-    RestartModulesResult restart_modules() override {
-        return RestartModulesResult::NoConfigToStart;
+    GetConfigParametersResult
+    get_config_parameters(int slot_id,
+                          const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters) override {
+        return GetConfigParametersResult{};
     }
     void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)>) override {
     }
     void register_config_update_handler(std::function<void(const ConfigurationUpdate&)>) override {
     }
-    const everest::config::ModuleConfigurations& get_active_module_configurations() const override {
-        return module_configurations;
+
+    void set_modules_stopped() override {
     }
-    const everest::config::ModuleConfigurations& reload_from_storage() override {
-        return module_configurations;
+    void set_modules_running() override {
+    }
+    void set_modules_starting() override {
+    }
+    void set_modules_stopping() override {
+    }
+    void notice_cfg_validation_failed() override {
+    }
+    void notice_module_restart_triggered() override {
+    }
+    std::shared_ptr<const everest::config::ModuleConfigurations> get_active_module_configurations() const override {
+        return std::make_shared<const everest::config::ModuleConfigurations>(module_configurations);
     }
 };
 
@@ -277,6 +321,11 @@ TEST_CASE("MqttConfigServiceHandler", "[config_service]") {
     stub_svc.module_configurations = config->get_module_configurations();
 
     MqttConfigServiceHandler service(mock, stub_svc);
+
+    stub_svc.set_parameter_callback_ = [&service](const everest::config::ConfigurationParameterIdentifier& cfg_param_id,
+                                                  const std::string& value) {
+        service.cmd_set_cfg_param(cfg_param_id, value);
+    };
 
     const std::string config_topic = prefix + "config/request";
 

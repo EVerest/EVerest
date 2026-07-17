@@ -8,6 +8,19 @@ PRAGMA foreign_keys = OFF;
 -- Determine the config to keep (lowest ID = the original pre-migration config).
 -- We work backwards through the dependency chain so we don't violate constraints.
 
+
+-- 10. MUTABILITY and DATATYPE
+INSERT OR REPLACE INTO MUTABILITY (ID, MUTABILITY) VALUES 
+  (1, "WriteOnly"),
+  (2, "ReadWrite");
+INSERT
+  OR REPLACE INTO DATATYPE VALUES 
+  (0, "string"),
+  (1, "decimal"),
+  (2, "integer"),
+  (3, "boolean");
+DELETE FROM DATATYPE WHERE ID=4;
+
 -- 8. MODULE_CONFIG_ACCESS
 CREATE TABLE MODULE_CONFIG_ACCESS_NEW (
     MODULE_ID           TEXT,
@@ -116,16 +129,17 @@ ALTER TABLE MODULE_NEW RENAME TO MODULE;
 DROP TABLE IF EXISTS BOOT_CONFIG;
 
 -- 2. CONFIG_META: restore without FK, remap lowest CONFIG_ID back to ID=0.
---    DESCRIPTION column is dropped (not present in pre-migration schema).
+--    DESCRIPTION column is dropped (not present in pre-migration schema)
+--    VALID assumed to be true.
 CREATE TABLE CONFIG_META_NEW (
     ID               INTEGER PRIMARY KEY,
     LAST_UPDATED     TEXT    NOT NULL,
-    VALID            INTEGER NOT NULL,
+    VALID            TEXT INTEGER NOT NULL,
     CONFIG_DUMP      TEXT    NOT NULL,
     CONFIG_FILE_PATH TEXT
 );
 INSERT INTO CONFIG_META_NEW
-    SELECT 0, LAST_UPDATED, VALID, CONFIG_DUMP, CONFIG_FILE_PATH
+    SELECT 0, LAST_UPDATED, "1", CONFIG_DUMP, CONFIG_FILE_PATH
     FROM CONFIG_META
     WHERE ID = (SELECT MIN(ID) FROM CONFIG);
 DROP TABLE CONFIG_META;

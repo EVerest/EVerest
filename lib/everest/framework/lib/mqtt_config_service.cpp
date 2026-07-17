@@ -176,18 +176,6 @@ GetResponse handle_get_all_configs(const std::string& origin,
     return get_response;
 }
 
-bool is_set_read_only_allowed(const everest::config::Access& access, const std::string& target_module_id) {
-    if (not access.config.has_value()) {
-        return false;
-    }
-    const auto& config_access = access.config.value();
-    if (config_access.allow_set_read_only) {
-        return true;
-    }
-    const auto it = config_access.modules.find(target_module_id);
-    return it != config_access.modules.end() && it->second.allow_set_read_only;
-}
-
 std::optional<everest::config::ConfigurationParameterCharacteristics>
 find_param_characteristics(const everest::config::ModuleConfigurationParameters& params, const std::string& impl_id,
                            const std::string& param_name) {
@@ -210,53 +198,23 @@ GetResponse handle_get_all_mappings(const std::string& origin,
     json all_mappings = json::object();
     const everest::config::Access access = module_configurations.at(origin).access;
     for (const auto& [module_id, module_cfg] : module_configurations) {
-        if (not access_allowed(access, origin, module_id, AccessMethod::Read)) {
-            // request.origin has no access to module_id.mappings
-            continue;
+        if (access_allowed(access, origin, module_id, AccessMethod::Read)) {
+            all_mappings[module_id] = module_cfg.mapping;
         }
-        all_mappings[module_id] = module_cfg.mapping;
     }
 
     get_response.data = all_mappings;
     return get_response;
 }
 
-// Persist a config write through ConfigServiceInterface (fires ConfigurationUpdate events).
-// \p immediately_applied should be true when the module confirmed the new value took effect
-// at runtime (Applied); false when the change only takes effect after a reboot.
-SetResponseStatus persist_config_value(const everest::config::ConfigurationParameterIdentifier& id,
-                                       const std::string& raw_value,
-                                       Everest::config::ConfigServiceInterface& config_svc,
-                                       bool immediately_applied = false) {
-    Everest::config::ConfigParameterUpdate update;
-    update.identifier = id;
-    update.value = raw_value;
-    update.immediately_applied = immediately_applied;
-    const auto results =
-        config_svc.set_config_parameters(Everest::config::ConfigServiceInterface::ACTIVE_SLOT, std::vector{update});
-    if (results.empty()) {
-        return SetResponseStatus::Rejected;
-    }
-    switch (results.front()) {
-    case Everest::config::SetConfigParameterResult::Applied:
-        return SetResponseStatus::Accepted;
-    case Everest::config::SetConfigParameterResult::WillApplyOnRestart:
-        return SetResponseStatus::RebootRequired;
-    default:
-        return SetResponseStatus::Rejected;
-    }
-
-    // TODO: What if update was Accepted by target module but Rejected by ConfigServiceInterface?
-}
-
 Response handle_set_request(const SetRequest& set_request, const std::string& origin,
                             const everest::config::ModuleConfigurations& module_configs,
                             MQTTAbstraction& mqtt_abstraction, Everest::config::ConfigServiceInterface& config_svc) {
+
     Response response;
     response.type = Type::Set;
     SetResponse set_response;
     set_response.status = SetResponseStatus::Rejected;
-
     const auto& id = set_request.identifier;
 
     const auto origin_it = module_configs.find(origin);
@@ -268,6 +226,7 @@ Response handle_set_request(const SetRequest& set_request, const std::string& or
     }
     const everest::config::Access access = origin_it->second.access;
 
+    // ConfigServiceCore
     if (not access_allowed(access, origin, id.module_id, AccessMethod::Write)) {
         response.status = ResponseStatus::AccessDenied;
         response.status_info = fmt::format("Access to config item denied: {} cannot access {}", origin, id.module_id);
@@ -275,73 +234,48 @@ Response handle_set_request(const SetRequest& set_request, const std::string& or
         return response;
     }
 
-    const auto target_it = module_configs.find(id.module_id);
-    if (target_it == module_configs.end()) {
-        response.status = ResponseStatus::Error;
-        response.status_info = fmt::format("Unknown target module: {}", id.module_id);
-        response.response = set_response;
-        return response;
-    }
+    Origin origin_full{false, origin};
+    ConfigParameterUpdate update;
+    update.identifier = set_request.identifier;
+    update.value = set_request.value;
+    const auto results =
+        config_svc.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, std::vector{update}, origin_full);
+    response.status = ResponseStatus::Ok;
+    response.type = Type::Set;
 
-    const bool allow_set_read_only = is_set_read_only_allowed(access, id.module_id);
-    const auto impl_id = id.module_implementation_id.value_or(MODULE_IMPLEMENTATION_ID);
-    const auto characteristics = find_param_characteristics(target_it->second.configuration_parameters, impl_id,
-                                                            id.configuration_parameter_name);
-
-    if (not characteristics.has_value()) {
-        response.status = ResponseStatus::Error;
-        response.status_info =
-            fmt::format("Config parameter {} not found in module {}", id.configuration_parameter_name, id.module_id);
-        response.response = set_response;
-        return response;
-    }
-
-    // TODO: input validation using ConfigurationParameterCharacteristics (min/max)
-
-    try {
-        if (characteristics->mutability == everest::config::Mutability::ReadWrite) {
-            // Forward set request to target module via MQTT and wait for its response.
-            MQTTRequest mqtt_request;
-            mqtt_request.response_topic =
-                fmt::format("{}modules/{}/config/set_response", mqtt_abstraction.get_everest_prefix(), id.module_id);
-            mqtt_request.request_topic =
-                fmt::format("{}modules/{}/config/set_request", mqtt_abstraction.get_everest_prefix(), id.module_id);
-            mqtt_request.request_data = nlohmann::json(set_request).dump();
-
-            const Response module_response = mqtt_abstraction.get(mqtt_request, mqtt_get_config_retries);
-            response.status = ResponseStatus::Ok;
-            if (module_response.status == ResponseStatus::Ok && module_response.type == Type::Set) {
-                const SetResponse module_set_response = std::get<SetResponse>(module_response.response);
-                set_response.status = module_set_response.status;
-                if (module_set_response.status == SetResponseStatus::Accepted ||
-                    module_set_response.status == SetResponseStatus::RebootRequired) {
-                    // Persist only if the module accepted. Route through ConfigServiceInterface so that
-                    // ConfigurationUpdate events are fired regardless of transport.
-                    // Pass immediately_applied=true when the module confirmed it hot-reloaded the value.
-                    const bool applied = module_set_response.status == SetResponseStatus::Accepted;
-                    persist_config_value(id, set_request.value, config_svc, applied);
-                }
-            } else {
-                set_response.status = SetResponseStatus::Rejected;
-            }
-        } else if (characteristics->mutability == everest::config::Mutability::ReadOnly) {
-            if (allow_set_read_only) {
-                // Persist for next reboot, no runtime forwarding.
-                set_response.status = persist_config_value(id, set_request.value, config_svc);
-            } else {
-                response.status_info = fmt::format("Config parameter {} of module {} is ReadOnly",
-                                                   id.configuration_parameter_name, id.module_id);
-            }
-            response.status = ResponseStatus::Ok;
-        } else {
-            // WriteOnly or unknown mutability: persist directly.
-            set_response.status = persist_config_value(id, set_request.value, config_svc);
-            response.status = ResponseStatus::Ok;
+    // fill the response to be sent via MQTT correctly from the results
+    if (results.status != SetConfigParameterStatus::Ok or !results.parameter_results.has_value() or
+        results.parameter_results.value().empty()) {
+        set_response.status = SetResponseStatus::Rejected;
+        if (results.status == SetConfigParameterStatus::Error) {
+            response.status = ResponseStatus::Error;
         }
-    } catch (const std::exception& e) {
-        response.status = ResponseStatus::Error;
-        response.status_info = fmt::format("Could not set config entry {} of module {}: {}",
-                                           id.configuration_parameter_name, id.module_id, e.what());
+    } else {
+        set_response.status_info = results.parameter_results.value().front().status_info;
+        switch (results.parameter_results.value().front().status) {
+        case Everest::config::SetConfigParameterResultEnum::Applied:
+            set_response.status = SetResponseStatus::Accepted;
+            break;
+        case Everest::config::SetConfigParameterResultEnum::WillApplyOnRestart:
+            set_response.status = SetResponseStatus::RebootRequired;
+            break;
+        case Everest::config::SetConfigParameterResultEnum::AccessDenied:
+            response.status = ResponseStatus::AccessDenied;
+            response.status_info = fmt::format("Access to config item denied: {} cannot access {}", origin,
+                                               set_request.identifier.module_id);
+            break;
+        case Everest::config::SetConfigParameterResultEnum::DoesNotExist:
+            response.status = ResponseStatus::Error;
+            response.status_info =
+                fmt::format("Config parameter {} not found in module {}",
+                            set_request.identifier.configuration_parameter_name, set_request.identifier.module_id);
+            break;
+        case Everest::config::SetConfigParameterResultEnum::Rejected:
+            response.status = ResponseStatus::Ok;
+            break;
+        default:
+            set_response.status = SetResponseStatus::Rejected;
+        }
     }
 
     response.response = set_response;
@@ -497,6 +431,75 @@ ConfigServiceClient::get_config_value(const everest::config::ConfigurationParame
     return result;
 }
 
+void ConfigServiceClient::register_config_change_handler(const std::string& impl_id, const std::string_view param_name,
+                                                         ConfigChangeHandler handler) {
+    if (change_callbacks.empty()) {
+        // subscribe to the MQTT topic
+        const auto mqtt_handler = [this](const std::string& /*topic*/, const nlohmann::json& data) {
+            mqtt_set_request(data);
+        };
+
+        auto change_token =
+            std::make_shared<TypedHandler>(HandlerType::ConfigurationRequest, std::make_shared<Handler>(mqtt_handler));
+        const auto topic =
+            fmt::format("{}modules/{}/config/set_request", mqtt_abstraction->get_everest_prefix(), origin);
+
+        mqtt_abstraction->register_handler(topic, change_token, QOS::QOS2);
+    }
+
+    if (change_callbacks[impl_id].empty()) {
+        change_callbacks[impl_id] = {};
+    }
+
+    // store handler
+    change_callbacks[impl_id].emplace(param_name, std::move(handler));
+}
+
+void ConfigServiceClient::mqtt_set_request(const nlohmann::json& data) {
+    Response response;
+    response.type = Type::Set;
+    SetResponse set_response;
+
+    try {
+        SetRequest set_request = data;
+        const auto& name = set_request.identifier.configuration_parameter_name;
+
+        const auto impl_it = change_callbacks.find(set_request.identifier.module_implementation_id.value_or("!module"));
+        bool handler_found = false;
+        if (impl_it != change_callbacks.end()) {
+            const auto it = impl_it->second.find(name);
+            if (it != impl_it->second.end()) {
+                // keep the value as a string. The module code applies the string to
+                // underlying type conversion (in the autogenerated code)
+
+                // call the 'on_' handler
+                const auto result = it->second(set_request.value);
+                response.status = ResponseStatus::Ok;
+                set_response.status = result.status;
+                response.status_info = result.reason;
+                handler_found = true;
+            }
+        }
+        if (!handler_found) {
+            response.status = ResponseStatus::Ok;
+            set_response.status = SetResponseStatus::Rejected;
+            response.status_info = "No handler registered for parameter: " + name;
+        }
+    } catch (const std::exception& e) {
+        response.status = ResponseStatus::Error;
+        response.status_info = std::string("Exception in config change handler: ") + e.what();
+    }
+
+    response.response = set_response;
+
+    // Publish response back to manager using the existing Response type
+    const std::string topic =
+        fmt::format("{}modules/{}/config/set_response", mqtt_abstraction->get_everest_prefix(), origin);
+
+    MqttMessagePayload payload{MqttMessageType::ConfigurationResponse, response};
+    mqtt_abstraction->publish(topic, payload, QOS::QOS2);
+}
+
 MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstraction,
                                                    ConfigServiceInterface& config_svc) :
     mqtt_abstraction(mqtt_abstraction), config_svc(config_svc) {
@@ -513,7 +516,8 @@ MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstrac
             const auto response_topic =
                 fmt::format("{}modules/{}/response", mqtt_abstraction.get_everest_prefix(), request.origin);
 
-            const auto& module_configs = config_svc.get_active_module_configurations();
+            const auto module_configs_ptr = config_svc.get_active_module_configurations();
+            const auto& module_configs = *module_configs_ptr;
 
             if (request.type == Type::Get) {
                 const GetRequest get_request = std::get<GetRequest>(request.request);
@@ -530,8 +534,9 @@ MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstrac
                     response.status = ResponseStatus::Ok;
                 }
             } else if (request.type == Type::Set) {
-                response = handle_set_request(std::get<SetRequest>(request.request), request.origin, module_configs,
-                                              mqtt_abstraction, config_svc);
+                auto set_request = std::get<SetRequest>(request.request);
+                response =
+                    handle_set_request(set_request, request.origin, module_configs, mqtt_abstraction, config_svc);
             }
 
             MqttMessagePayload payload{MqttMessageType::ConfigurationResponse, response};
@@ -551,7 +556,59 @@ MqttConfigServiceHandler::MqttConfigServiceHandler(MQTTAbstraction& mqtt_abstrac
     mqtt_abstraction.register_handler(global_config_request_topic, this->get_config_token, QOS::QOS2);
 }
 
+std::optional<Everest::config::SetResponse>
+MqttConfigServiceHandler::cmd_set_cfg_param(const everest::config::ConfigurationParameterIdentifier& cfg_param_id,
+                                            const std::string& value) {
+    std::optional<SetResponse> response = std::nullopt;
+    SetRequest set_request;
+    set_request.identifier = cfg_param_id;
+    set_request.value = value;
+
+    // Forward set request to target module via MQTT and wait for its response.
+    MQTTRequest mqtt_request;
+    mqtt_request.response_topic =
+        fmt::format("{}modules/{}/config/set_response", mqtt_abstraction.get_everest_prefix(), cfg_param_id.module_id);
+    mqtt_request.request_topic =
+        fmt::format("{}modules/{}/config/set_request", mqtt_abstraction.get_everest_prefix(), cfg_param_id.module_id);
+    mqtt_request.request_data = nlohmann::json(set_request).dump();
+
+    const Response module_response = mqtt_abstraction.get(mqtt_request, mqtt_get_config_retries);
+
+    if (module_response.status == ResponseStatus::Ok && module_response.type == Type::Set) {
+        response = std::get<SetResponse>(module_response.response);
+    }
+
+    return response;
+}
 namespace conversions {
+
+template <> bool ConfigFromString<bool>(const std::string& value) {
+    std::string out = value;
+    std::transform(out.begin(), out.end(), out.begin(), ::tolower);
+    if (out == "true") {
+        return true;
+    } else if (out == "false") {
+        return false;
+    }
+    throw std::out_of_range("Could not convert string '" + value + "' to bool");
+}
+
+template <> int ConfigFromString<int>(const std::string& value) {
+    try {
+        return std::stoi(value);
+    } catch (const std::exception& ex) {
+        throw std::out_of_range("Could not convert string '" + value + "' to int: " + ex.what());
+    }
+}
+
+template <> double ConfigFromString<double>(const std::string& value) {
+    try {
+        return std::stod(value);
+    } catch (const std::exception& ex) {
+        throw std::out_of_range("Could not convert string '" + value + "' to double: " + ex.what());
+    }
+}
+
 std::string type_to_string(Type type) {
     switch (type) {
     case Type::Get:
@@ -758,6 +815,55 @@ void from_json(const nlohmann::json& j, Response& r) {
         } else if (type == Type::Set) {
             r.response = j.at("response").get<SetResponse>();
         }
+    }
+}
+
+void to_json(nlohmann::json& j, const SetConfigResult& r) {
+    j = {
+        {"status", conversions::response_status_to_string(r.status)},
+        {"status_info", r.status_info},
+        {"set_status", conversions::set_response_status_to_string(
+                           conversions::set_config_status_to_set_response_status(r.set_status))},
+    };
+}
+
+void from_json(const nlohmann::json& j, SetConfigResult& r) {
+    r.status = conversions::string_to_response_status(j.at("status"));
+    r.status_info = j.value("status_info", "");
+    r.set_status = conversions::set_response_status_to_set_config_status(
+        conversions::string_to_set_response_status(j.at("set_status")));
+}
+
+void to_json(nlohmann::json& j, const GetConfigResult& r) {
+    j = {
+        {"status", conversions::response_status_to_string(r.status)},
+        {"status_info", r.status_info},
+        {"value", r.configuration_parameter.value},
+    };
+}
+
+void from_json(const nlohmann::json& j, GetConfigResult& r) {
+    r.status = conversions::string_to_response_status(j.at("status"));
+    r.status_info = j.value("status_info", "");
+    r.configuration_parameter.value = j.at("value").get<everest::config::ConfigEntry>();
+}
+
+void to_json(nlohmann::json& j, const ConfigChangeResult& r) {
+    j = {
+        {"status", conversions::set_response_status_to_string(r.status)},
+        {"reason", r.reason},
+    };
+}
+
+void from_json(const nlohmann::json& j, ConfigChangeResult& r) {
+    const std::string status = j.value("status", "Rejected");
+    const std::string reason = j.value("reason", "");
+    if (status == "Accepted") {
+        r = ConfigChangeResult::Accepted();
+    } else if (status == "RebootRequired") {
+        r = ConfigChangeResult::AcceptedRebootRequired();
+    } else {
+        r = ConfigChangeResult::Rejected(reason);
     }
 }
 
