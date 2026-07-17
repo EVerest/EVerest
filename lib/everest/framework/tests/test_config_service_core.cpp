@@ -155,7 +155,7 @@ active_modules:
         }
     }
 
-    SECTION("Set Parameters: ReadOnly handling based on allow_set_read_only") {
+    SECTION("Set Parameters: ReadOnly handling based on allow_set_read_only always the same") {
         // 1. Manually craft the module configurations to inject into the database
         everest::config::ModuleConfigurations mock_configs;
 
@@ -241,8 +241,8 @@ active_modules:
         REQUIRE(strict_result.status == SetConfigParameterStatus::Ok);
         REQUIRE(strict_result.parameter_results.has_value());
         // Since allow_set_read_only is false, it is rejected immediately
-        CHECK(strict_result.parameter_results->front().status == SetConfigParameterResultEnum::AccessDenied);
-        CHECK(strict_result.parameter_results->front().status_info == "Is a ReadOnly parameter");
+        CHECK(strict_result.parameter_results->front().status == SetConfigParameterResultEnum::WillApplyOnRestart);
+        CHECK(strict_result.parameter_results->front().status_info == "");
     }
 
     SECTION("Slot Management: mark_active_slot and delete_slot") {
@@ -575,7 +575,7 @@ active_modules:
         INFO(result.parameter_results->at(0).status_info);
         CHECK(result.parameter_results->at(0).status == SetConfigParameterResultEnum::WillApplyOnRestart);
         INFO(result.parameter_results->at(1).status_info);
-        CHECK(result.parameter_results->at(1).status == SetConfigParameterResultEnum::Rejected);
+        CHECK(result.parameter_results->at(1).status == SetConfigParameterResultEnum::WillApplyOnRestart);
     }
 
     SECTION("Set Parameters: direct modification of an inactive slot") {
@@ -656,6 +656,10 @@ active_modules:
         config_service.reinitialize_from_db(true);
         config_service.set_modules_running();
 
+        bool config_event_fired = false;
+        config_service.register_config_update_handler(
+            [&config_event_fired](const ConfigurationUpdate&) { config_event_fired = true; });
+
         everest::config::ConfigurationParameterIdentifier unknown_id{"dummy_module", "ghost_param", "!module"};
         ConfigParameterUpdate update{unknown_id, "ghost_value"};
         Origin origin{false, "manager"};
@@ -682,49 +686,6 @@ active_modules:
         CHECK(inactive_result.parameter_results->front().status == SetConfigParameterResultEnum::DoesNotExist);
         CHECK(inactive_result.parameter_results->front().status_info ==
               "Unknown parameter: ghost_param in module: dummy_module");
-    }
-
-    SECTION("Event Publishing: no config update event when all updates are rejected") {
-        everest::config::ModuleConfigurations mock_configs;
-        everest::config::ModuleConfig dummy_module;
-        dummy_module.module_name = "DummyModule";
-        dummy_module.module_id = "dummy_module";
-
-        everest::config::ConfigurationParameter rw_param;
-        rw_param.name = "rw_param";
-        rw_param.value = "initial_value";
-        rw_param.characteristics.datatype = everest::config::Datatype::String;
-        rw_param.characteristics.mutability = everest::config::Mutability::ReadWrite;
-        dummy_module.configuration_parameters["!module"].push_back(rw_param);
-        mock_configs["dummy_module"] = dummy_module;
-
-        auto storage = std::make_unique<everest::config::SqliteStorage>(db, 0);
-        everest::config::SqliteConfigSlotManager slot_manager(db);
-        slot_manager.write_config_slot(0, "{}", std::nullopt, "Test Slot");
-        storage->write_module_configs(mock_configs);
-
-        config_service.mark_active_slot(0);
-        config_service.reinitialize_from_db(true);
-        config_service.set_modules_running();
-
-        // Module rejects every change, so nothing becomes effective
-        config_service.register_set_runtime_parameter_handler(
-            [](const everest::config::ConfigurationParameterIdentifier&, const std::string&) {
-                return SetParameterResponse::ModuleReplied_Rejected;
-            });
-
-        bool config_event_fired = false;
-        config_service.register_config_update_handler(
-            [&config_event_fired](const ConfigurationUpdate&) { config_event_fired = true; });
-
-        everest::config::ConfigurationParameterIdentifier param_id{"dummy_module", "rw_param", "!module"};
-        ConfigParameterUpdate update{param_id, "new_value"};
-        Origin origin{false, "manager"};
-
-        auto result = config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {update}, origin);
-
-        REQUIRE(result.parameter_results.has_value());
-        REQUIRE(result.parameter_results->front().status == SetConfigParameterResultEnum::Rejected);
         // With no effective updates, publish_config_update() must not be called
         CHECK_FALSE(config_event_fired);
     }

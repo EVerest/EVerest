@@ -101,17 +101,11 @@ find_parameter_or_explain(const ec::ConfigurationParameterIdentifier& id, ec::Mo
     return std::nullopt;
 }
 
-// A change is "effective" -- and therefore worth recording in the update event and persisting --
-// when it was applied now or will be applied on the next restart.
-bool is_effective(SetConfigParameterResultEnum status) {
-    return status == SetConfigParameterResultEnum::Applied or
-           status == SetConfigParameterResultEnum::WillApplyOnRestart;
-}
-
 // Persist a change the module already accepted, logging (but not failing) on a storage error.
 void persist_accepted_change(ec::SqliteStorage& storage, const ec::ConfigurationParameterIdentifier& identifier,
-                             const ec::ConfigurationParameter& parameter, const std::string& value) {
-    const auto write_status = storage.write_configuration_parameter(identifier, parameter.characteristics, value);
+                             const ec::ConfigurationParameterCharacteristics& characteristics,
+                             const std::string& value) {
+    const auto write_status = storage.write_configuration_parameter(identifier, characteristics, value);
     if (write_status != ec::GetSetResponseStatus::OK) {
         EVLOG_error << "ConfigServiceCore: Couldn't persist a configuration parameter change which was "
                        "accepted by the module.";
@@ -267,9 +261,10 @@ DeleteSlotStatus ConfigServiceCore::delete_slot(int slot_id) {
 DeleteSlotStatus ConfigServiceCore::internal_delete_slot(int slot_id) {
     if (slot_id == active_slot_id_ and active_slot_id_ != next_boot_slot_id_ and
         module_status_ == ActiveSlotStatus::Stopped) {
-            active_slot_id_ = next_boot_slot_id_;
-            internal_reinitialize_from_db(true);
-            EVLOG_warning << "Switched the active slot to the next boot slot (" << active_slot_id_ << ") and deleted the old one.";
+        active_slot_id_ = next_boot_slot_id_;
+        internal_reinitialize_from_db(true);
+        EVLOG_warning << "Switched the active slot to the next boot slot (" << active_slot_id_
+                      << ") and deleted the old one.";
     }
     if (slot_id == active_slot_id_ or slot_id == next_boot_slot_id_) {
         EVLOG_warning << "Failed to delete slot " << slot_id << ": cannot delete the active or next boot slot.";
@@ -478,13 +473,19 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
 
         auto lookup = find_parameter_or_explain(update.identifier, module_configs_, per_result);
         if (not lookup.has_value()) {
+            // result_enum already set to DoesNotExist
             continue;
         }
-        auto [parameter, parameter_access] = lookup.value();
-        const auto mutability = parameter->characteristics.mutability;
+        auto [in_memory_parameter, parameter_access] = lookup.value();
+        const auto mutability = in_memory_parameter->characteristics.mutability;
 
+        // The parameter exists -> store the update in the database so it can be applied on the next restart
+        persist_accepted_change(*active_storage_, update.identifier, in_memory_parameter->characteristics,
+                                update.value);
+        result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
+
+        // Now test if the module applies the update at runtime
         if (mutability == ec::Mutability::ReadWrite and modules_are_running) {
-            // The module must confirm the change
             if (not set_parameter_callback_) {
                 result_enum = SetConfigParameterResultEnum::Rejected;
                 EVLOG_error << "ConfigServiceCore: No callback registered for setting the configuration parameter "
@@ -495,40 +496,26 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
 
             switch (set_result) {
             case SetParameterResponse::SetCallFailed:
-                [[fallthrough]];
+                per_result.status_info = "Module not responding";
+                break;
             case SetParameterResponse::ModuleReplied_Rejected:
-                result_enum = SetConfigParameterResultEnum::Rejected;
-                per_result.status_info = "Rejected by module";
-                continue;
+                per_result.status_info = "Runtime change rejected by module";
+                break;
             case SetParameterResponse::ModuleReplied_Applied: {
                 result_enum = SetConfigParameterResultEnum::Applied;
                 // Module confirmed it immediately applied the value; mutate the in-memory state
-                const auto parsed_value = ec::parse_config_value(parameter->characteristics.datatype, update.value);
-                parameter->value = parsed_value;
+                const auto parsed_value =
+                    ec::parse_config_value(in_memory_parameter->characteristics.datatype, update.value);
+                in_memory_parameter->value = parsed_value;
                 break;
             }
             case SetParameterResponse::ModuleReplied_RequiresRestart:
-                result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
                 break;
             }
-        } else if (mutability == ec::Mutability::ReadOnly and modules_are_running) {
-            if (is_set_read_only_allowed(*parameter_access, update.identifier.module_id)) {
-                result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
-            } else {
-                per_result.status_info = "Is a ReadOnly parameter";
-                result_enum = SetConfigParameterResultEnum::AccessDenied;
-            }
-        } else {
-            // ReadOnly/WriteOnly don't reach the module at runtime, and neither does anything while
-            // modules are stopped: persist for the next restart and update the in-memory copy.
-            result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
-            parameter->value = ec::parse_config_value(parameter->characteristics.datatype, update.value);
         }
-
-        if (is_effective(result_enum)) {
-            event.updates.push_back({update.identifier, update.value, result_enum});
-            persist_accepted_change(*active_storage_, update.identifier, *parameter, update.value);
-        }
+        // Now that we know if the change was applied at runtime or only after the next reboot, extend the update notice
+        // record
+        event.updates.push_back({update.identifier, update.value, result_enum});
     }
 }
 
