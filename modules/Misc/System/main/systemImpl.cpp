@@ -29,6 +29,14 @@ const std::string SIGNED_FIRMWARE_DOWNLOADER = "signed_firmware_downloader.sh";
 const std::string SIGNED_FIRMWARE_METADATA_PARSER = "signed_firmware_metadata_parser.sh";
 const std::string SIGNED_FIRMWARE_INSTALLER = "signed_firmware_installer.sh";
 
+// Grace period after publishing FirmwareStatusNotification{InstallRebooting} and before triggering the
+// post-install reboot. The System module cannot observe when the OCPP layer has actually transmitted the
+// notification, so this bounded pause gives the (asynchronous) publish time to reach the CSMS before the
+// reboot tears the connection down. Without it the socket can close before InstallRebooting is sent and the
+// CSMS aborts the firmware-update test (OCTT TC_L_13_CS). The OCPP module additionally drains its message
+// queue during shutdown, so this only needs to cover the cross-module publish latency.
+constexpr auto INSTALL_REBOOTING_NOTIFICATION_GRACE = std::chrono::seconds(2);
+
 namespace fs = std::filesystem;
 
 // FIXME (aw): this function needs to be refactored into some kind of utility library
@@ -60,6 +68,7 @@ bool split_key_value(const std::string& key_value, std::string& key, std::string
 
 void systemImpl::init() {
     this->scripts_path = mod->info.paths.libexec;
+    this->interrupt_firmware_download = std::make_shared<std::atomic_bool>(false);
     this->log_upload_running = false;
     this->firmware_download_running = false;
     this->firmware_installation_running = false;
@@ -242,7 +251,7 @@ void systemImpl::download_signed_firmware(const types::system::FirmwareUpdateReq
     if (this->firmware_download_running) {
         EVLOG_info
             << "Received Firmware update request and firmware update already running - cancelling firmware update";
-        this->interrupt_firmware_download.exchange(true);
+        this->interrupt_firmware_download->exchange(true);
         EVLOG_info << "Waiting for other firmware download to finish...";
         std::unique_lock<std::mutex> lk(this->firmware_update_mutex);
         this->firmware_update_cv.wait(lk, [this]() { return !this->firmware_download_running; });
@@ -251,7 +260,7 @@ void systemImpl::download_signed_firmware(const types::system::FirmwareUpdateReq
 
     std::lock_guard<std::mutex> lg(this->firmware_update_mutex);
     EVLOG_info << "Starting Firmware update";
-    this->interrupt_firmware_download.exchange(false);
+    this->interrupt_firmware_download->exchange(false);
     this->firmware_download_running = true;
 
     // // create temporary file
@@ -276,30 +285,45 @@ void systemImpl::download_signed_firmware(const types::system::FirmwareUpdateReq
     firmware_status.firmware_update_status = firmware_status_enum;
 
     while (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::DownloadFailed &&
-           retries < total_retries && !this->interrupt_firmware_download) {
-        run_application(
-            firmware_downloader.string(), download_args, [this, &firmware_status](const std::string& output_line) {
-                firmware_status.firmware_update_status =
-                    types::system::string_to_firmware_update_status_enum(output_line);
-                // Defer sending the SignatureVerified message because it needs to have the metadata attached to it
-                if (firmware_status.firmware_update_status !=
-                    types::system::FirmwareUpdateStatusEnum::SignatureVerified) {
-                    this->publish_firmware_update_status(firmware_status);
-                }
-                if (this->interrupt_firmware_download) {
-                    EVLOG_info << "Updating firmware was interrupted, terminating firmware update script, requestId: "
-                               << firmware_status.request_id;
-                    return CmdControl::Terminate;
-                }
-                return CmdControl::Continue;
-            });
+           retries < total_retries && !this->interrupt_firmware_download->load()) {
+        RunOptions run_options;
+        // Hand the interrupt flag to run_application so a cancel actively SIGTERM/SIGKILLs the running
+        // download script rather than only being sampled on its next output line. The download script
+        // emits no progress lines while curl is running, so without this the first checkpoint would be
+        // the terminal line and the cancel could never suppress a success status.
+        run_options.stop_requested = this->interrupt_firmware_download;
+        run_options.callback = [this, &firmware_status](const std::string& output_line) {
+            // Honor the cancel before publishing: a superseded download must never leak the script's
+            // terminal "Downloaded" success status; a canceled request is torn down silently, with
+            // no status notification.
+            if (this->interrupt_firmware_download->load()) {
+                return CmdControl::Terminate;
+            }
+            firmware_status.firmware_update_status = types::system::string_to_firmware_update_status_enum(output_line);
+            // Defer sending the SignatureVerified message because it needs to have the metadata attached to it
+            if (firmware_status.firmware_update_status != types::system::FirmwareUpdateStatusEnum::SignatureVerified) {
+                this->publish_firmware_update_status(firmware_status);
+            }
+            return CmdControl::Continue;
+        };
+        run_application(firmware_downloader.string(), download_args, run_options);
         retries += 1;
-        if (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::DownloadFailed &&
-            retries < total_retries) {
+        if (this->interrupt_firmware_download->load()) {
+            // A newer request superseded this download; tear it down silently, without a status
+            // notification.
+            EVLOG_info << "Firmware update was interrupted by a newer request; tearing down the canceled "
+                          "download without a status notification, requestId: "
+                       << firmware_status.request_id;
+        } else if (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::DownloadFailed &&
+                   retries < total_retries) {
             std::this_thread::sleep_for(std::chrono::seconds(retry_interval));
         }
     }
-    if (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::SignatureVerified) {
+    // A cancel can land after the script emitted SignatureVerified but before the loop exited; the
+    // metadata parse below would then publish a status and schedule an install for the canceled
+    // request, so skip all downstream publishing when interrupted.
+    if (!this->interrupt_firmware_download->load() &&
+        firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::SignatureVerified) {
         const std::vector<std::string> parser_args = {constants.string(), firmware_update_request.location,
                                                       firmware_file_path.string()};
         std::map<std::string, std::string> parsed_metadata;
@@ -384,6 +408,9 @@ void systemImpl::install_signed_firmware(const types::system::FirmwareUpdateRequ
             if (this->mod->config.ResetAfterUpdate) {
                 firmware_status.firmware_update_status = types::system::FirmwareUpdateStatusEnum::InstallRebooting;
                 this->publish_firmware_update_status(firmware_status);
+
+                // Give the asynchronous notification time to be transmitted to the CSMS before rebooting.
+                std::this_thread::sleep_for(INSTALL_REBOOTING_NOTIFICATION_GRACE);
 
                 if (!this->mod->r_store.empty()) {
                     this->mod->r_store.at(0)->call_store(
