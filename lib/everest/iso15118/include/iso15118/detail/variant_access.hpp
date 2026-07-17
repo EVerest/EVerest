@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cassert>
+#include <memory>
 
 #include <iso15118/message/variant.hpp>
 
@@ -15,19 +16,17 @@ struct VariantAccess {
     exi_bitstream_t input_stream;
 
     // output
-    void*& data;
+    std::unique_ptr<void, Variant::CustomDeleter>& data;
     iso15118::message_20::Type& type;
-    iso15118::message_20::Variant::CustomDeleter& custom_deleter;
     std::string& error;
 
     template <typename MessageType, typename CbExiMessageType> void insert_type(const CbExiMessageType& in) {
-        assert(data == nullptr);
-
-        data = new MessageType;
+        assert(data.get() == nullptr);
         type = iso15118::message_20::TypeTrait<MessageType>::type;
-        custom_deleter = [](void* ptr) { delete static_cast<MessageType*>(ptr); };
 
-        convert(in, *static_cast<MessageType*>(data));
+        data = std::unique_ptr<void, Variant::CustomDeleter>(new MessageType,
+                                                             [](void* ptr) { delete static_cast<MessageType*>(ptr); });
+        convert(in, *static_cast<MessageType*>(data.get()));
     };
 };
 
