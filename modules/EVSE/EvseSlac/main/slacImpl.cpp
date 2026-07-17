@@ -186,5 +186,12 @@ void slacImpl::handle_dlink_pause() {
                   "optional in -3)";
 };
 
+void slacImpl::handle_count_bc(int& count) {
+    // EvseManager pushes the running count of Control-Pilot B/C transitions here on every transition. This
+    // (legacy) EvseSlac does not implement CM_VALIDATE BCB-toggle validation (it answers CM_VALIDATE.REQ with
+    // result failure), so the count is only logged. The BCB-toggle detection logic lives in EvseSlacNeo.
+    EVLOG_debug << "count_bc received (B/C transition count = " << count << "); not used by EvseSlac";
+};
+
 } // namespace main
 } // namespace module
