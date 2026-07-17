@@ -888,6 +888,106 @@ TEST_F(AuthorizationTest, validate_token_auth_cache_accepted) {
               AuthorizationStatusEnum::Accepted);
 }
 
+// F01.FR.20 / F01.FR.21: when AuthorizeRemoteStart is enabled and the idToken has a pending remote start, the
+// Authorization Cache must not be consulted; an AuthorizeRequest must be sent to the CSMS instead (and the result
+// cached).
+TEST_F(AuthorizationTest, validate_token_remote_start_bypasses_auth_cache) {
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(true));
+    // Enable auth cache.
+    this->set_auth_cache_enabled(this->device_model, true);
+    // Disable local auth list.
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, false);
+    // Set auth cache lifetime to some high value
+    this->set_auth_cache_lifetime(this->device_model, 5000);
+    // Allow local pre authorize.
+    this->set_local_pre_authorize(this->device_model, true);
+    // Enable AuthorizeRemoteStart.
+    const auto& authorize_remote_start = ControllerComponentVariables::AuthorizeRemoteStart;
+    EXPECT_EQ(device_model->set_value(authorize_remote_start.component, authorize_remote_start.variable.value(),
+                                      AttributeEnum::Actual, "true", "default", true),
+              SetVariableStatusEnum::Accepted);
+
+    // Signal that the idToken currently has a pending remote start.
+    this->authorization->set_remote_start_pending_check([](const IdToken&) { return true; });
+
+    // The auth cache must not be read for this remote-start authorization.
+    EXPECT_CALL(this->database_handler_mock, authorization_cache_get_entry(_)).Times(0);
+    // An AuthorizeRequest must be sent to the CSMS.
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillOnce(Return(std::async(std::launch::deferred, [this]() {
+        return create_example_authorize_response(std::nullopt, AuthorizationStatusEnum::Accepted);
+    })));
+    // The CSMS result must still be written to the cache.
+    EXPECT_CALL(this->database_handler_mock, authorization_cache_insert_entry(_, _)).Times(1);
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::ISO14443;
+    id_token.idToken = "test_token";
+
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Accepted);
+}
+
+// M-a1: the F01.FR.20 bypass only applies while online. Offline, a cached-Accepted token with a pending remote start
+// must still be served from the Authorization Cache (the CSMS is unreachable).
+TEST_F(AuthorizationTest, validate_token_remote_start_offline_served_from_cache) {
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(false));
+    // Enable auth cache and allow offline local authorization.
+    this->set_auth_cache_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, false);
+    this->set_auth_cache_lifetime(this->device_model, 5000);
+    this->set_local_authorize_offline(this->device_model, true);
+    // Enable AuthorizeRemoteStart and signal a pending remote start for the token.
+    const auto& authorize_remote_start = ControllerComponentVariables::AuthorizeRemoteStart;
+    EXPECT_EQ(device_model->set_value(authorize_remote_start.component, authorize_remote_start.variable.value(),
+                                      AttributeEnum::Actual, "true", "default", true),
+              SetVariableStatusEnum::Accepted);
+    this->authorization->set_remote_start_pending_check([](const IdToken&) { return true; });
+
+    // Offline: no AuthorizeRequest may be sent; the cache must be consulted and its Accepted result served.
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).Times(0);
+    AuthorizationCacheEntry authorization_cache_entry =
+        create_authorization_cache_entry(AuthorizationStatusEnum::Accepted, true, false, false, 5000);
+    EXPECT_CALL(this->database_handler_mock, authorization_cache_get_entry(_))
+        .WillOnce(Return(authorization_cache_entry));
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::ISO14443;
+    id_token.idToken = "test_token";
+
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Accepted);
+}
+
+// L5(b): with AuthorizeRemoteStart disabled, a pending remote start must not bypass the cache; a cached-Accepted token
+// is still served from the Authorization Cache.
+TEST_F(AuthorizationTest, validate_token_remote_start_authorize_disabled_served_from_cache) {
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(true));
+    this->set_auth_cache_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, false);
+    this->set_auth_cache_lifetime(this->device_model, 5000);
+    this->set_local_pre_authorize(this->device_model, true);
+    // AuthorizeRemoteStart disabled.
+    const auto& authorize_remote_start = ControllerComponentVariables::AuthorizeRemoteStart;
+    EXPECT_EQ(device_model->set_value(authorize_remote_start.component, authorize_remote_start.variable.value(),
+                                      AttributeEnum::Actual, "false", "default", true),
+              SetVariableStatusEnum::Accepted);
+    // A pending remote start exists, but it must not matter while AuthorizeRemoteStart is disabled.
+    this->authorization->set_remote_start_pending_check([](const IdToken&) { return true; });
+
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).Times(0);
+    AuthorizationCacheEntry authorization_cache_entry =
+        create_authorization_cache_entry(AuthorizationStatusEnum::Accepted, true, false, false, 5000);
+    EXPECT_CALL(this->database_handler_mock, authorization_cache_get_entry(_))
+        .WillOnce(Return(authorization_cache_entry));
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::ISO14443;
+    id_token.idToken = "test_token";
+
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Accepted);
+}
+
 TEST_F(AuthorizationTest, validate_token_auth_local_pre_authorize_disabled) {
     EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(true));
     // Enable auth cache.

@@ -647,6 +647,14 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
         this->callbacks.pause_charging_callback, this->callbacks.transaction_event_callback,
         this->callbacks.transaction_event_response_callback, this->callbacks.reset_callback);
 
+    // Cross-block wiring: let validate_token (authorization) bypass the Local Authorization List and Authorization
+    // Cache for a pending remote start when AuthorizeRemoteStart is enabled (F01.FR.20 / F01.FR.21). The predicate
+    // targets the transaction block, which clears it in its destructor (transaction is destroyed before
+    // authorization), so authorization can never call a dangling target.
+    this->authorization->set_remote_start_pending_check([&transaction = *this->transaction](const IdToken& id_token) {
+        return transaction.is_id_token_awaiting_remote_start(id_token);
+    });
+
     this->provisioning = std::make_unique<Provisioning>(
         *this->functional_block_context, *this->message_queue, this->ocsp_updater, *this->availability,
         *this->meter_values, *this->security, *this->diagnostics, *this->transaction,

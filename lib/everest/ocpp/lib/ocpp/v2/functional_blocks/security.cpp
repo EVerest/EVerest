@@ -161,61 +161,89 @@ void Security::security_event_notification_req(const CiString<50>& event_type,
     }
 }
 
-void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certificate_signing_use,
-                                    const bool initiated_by_trigger_message) {
-    if (this->awaited_certificate_signing_use_enum.has_value()) {
-        EVLOG_warning
-            << "Not sending new SignCertificate.req because still waiting for CertificateSigned.req from CSMS";
-        return;
-    }
-
-    SignCertificateRequest req;
-
+std::optional<Security::CsrInputs>
+Security::get_csr_inputs(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const {
     std::optional<std::string> common;
     std::optional<std::string> country;
     std::optional<std::string> organization;
-    bool should_use_tpm = false;
 
     if (certificate_signing_use == ocpp::CertificateSigningUseEnum::ChargingStationCertificate) {
-        req.certificateType = ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate;
         common = this->context.device_model.get_optional_value<std::string>(
             ControllerComponentVariables::ChargeBoxSerialNumber);
         organization =
             this->context.device_model.get_optional_value<std::string>(ControllerComponentVariables::OrganizationName);
         country = this->context.device_model.get_optional_value<std::string>(
             ControllerComponentVariables::ISO15118CtrlrCountryName);
-        should_use_tpm =
-            this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::UseTPM).value_or(false);
     } else {
-        req.certificateType = ocpp::v2::CertificateSigningUseEnum::V2GCertificate;
         common = this->context.device_model.get_optional_value<std::string>(
             ControllerComponentVariables::ISO15118CtrlrSeccId);
         organization = this->context.device_model.get_optional_value<std::string>(
             ControllerComponentVariables::ISO15118CtrlrOrganizationName);
         country = this->context.device_model.get_optional_value<std::string>(
             ControllerComponentVariables::ISO15118CtrlrCountryName);
+    }
+
+    if (!common.has_value()) {
+        EVLOG_warning << "Missing commonName configuration to generate CSR";
+        return std::nullopt;
+    }
+
+    if (!country.has_value()) {
+        EVLOG_warning << "Missing country configuration to generate CSR";
+        return std::nullopt;
+    }
+
+    if (!organization.has_value()) {
+        EVLOG_warning << "Missing organizationName configuration to generate CSR";
+        return std::nullopt;
+    }
+
+    return CsrInputs{common.value(), organization.value(), country.value()};
+}
+
+bool Security::is_sign_certificate_possible(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const {
+    return this->get_csr_inputs(certificate_signing_use).has_value();
+}
+
+void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certificate_signing_use,
+                                    const bool initiated_by_trigger_message) {
+    if (this->awaited_certificate_signing_use_enum.has_value()) {
+        if (!initiated_by_trigger_message) {
+            EVLOG_warning
+                << "Not sending new SignCertificate.req because still waiting for CertificateSigned.req from CSMS";
+            return;
+        }
+        // A TriggerMessage is an explicit CSMS instruction to send a SignCertificate.req now. The awaited state can go
+        // stale (e.g. CertSigningWaitMinimum/CertSigningRepeatTimes unset leaves it set with no retry timer), so honor
+        // the trigger by superseding the in-flight request instead of silently dropping it (F06.FR.05).
+        EVLOG_info << "TriggerMessage received while awaiting CertificateSigned.req: superseding in-flight "
+                      "SignCertificate.req";
+        this->certificate_signed_timer.stop();
+        this->awaited_certificate_signing_use_enum = std::nullopt;
+    }
+
+    const auto csr_inputs = this->get_csr_inputs(certificate_signing_use);
+    if (!csr_inputs.has_value()) {
+        return;
+    }
+
+    SignCertificateRequest req;
+    bool should_use_tpm = false;
+
+    if (certificate_signing_use == ocpp::CertificateSigningUseEnum::ChargingStationCertificate) {
+        req.certificateType = ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate;
+        should_use_tpm =
+            this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::UseTPM).value_or(false);
+    } else {
+        req.certificateType = ocpp::v2::CertificateSigningUseEnum::V2GCertificate;
         should_use_tpm =
             this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::UseTPMSeccLeafCertificate)
                 .value_or(false);
     }
 
-    if (!common.has_value()) {
-        EVLOG_warning << "Missing configuration of commonName to generate CSR";
-        return;
-    }
-
-    if (!country.has_value()) {
-        EVLOG_warning << "Missing configuration country to generate CSR";
-        return;
-    }
-
-    if (!organization.has_value()) {
-        EVLOG_warning << "Missing configuration of organizationName to generate CSR";
-        return;
-    }
-
     const auto result = this->context.evse_security.generate_certificate_signing_request(
-        certificate_signing_use, country.value(), organization.value(), common.value(), should_use_tpm);
+        certificate_signing_use, csr_inputs->country, csr_inputs->organization, csr_inputs->common_name,
+        should_use_tpm);
 
     if (result.status != GetCertificateSignRequestStatus::Accepted or !result.csr.has_value()) {
         EVLOG_error << "CSR generation was unsuccessful for sign request: "

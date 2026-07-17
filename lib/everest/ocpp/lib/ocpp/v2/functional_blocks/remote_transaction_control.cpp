@@ -302,16 +302,24 @@ void RemoteTransactionControl::handle_trigger_message(Call<TriggerMessageRequest
         break;
 
     case MessageTriggerEnum::SignChargingStationCertificate:
-        response.status = TriggerMessageStatusEnum::Accepted;
+        if (this->security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::ChargingStationCertificate)) {
+            response.status = TriggerMessageStatusEnum::Accepted;
+        } else {
+            EVLOG_warning << "CSMS requested SignChargingStationCertificate but the CSR cannot be generated with the "
+                             "current configuration, so the TriggerMessage is rejected!";
+            response.status = TriggerMessageStatusEnum::Rejected;
+        }
         break;
     case MessageTriggerEnum::SignV2GCertificate:
         if (this->context.device_model
                 .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
-                .value_or(false)) {
+                .value_or(false) and
+            this->security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::V2GCertificate)) {
             response.status = TriggerMessageStatusEnum::Accepted;
         } else {
             EVLOG_warning << "CSMS requested SignV2GCertificate but V2GCertificateInstallationEnabled is configured as "
-                             "false, so the TriggerMessage is rejected!";
+                             "false or the CSR cannot be generated with the current configuration, so the "
+                             "TriggerMessage is rejected!";
             response.status = TriggerMessageStatusEnum::Rejected;
         }
 
