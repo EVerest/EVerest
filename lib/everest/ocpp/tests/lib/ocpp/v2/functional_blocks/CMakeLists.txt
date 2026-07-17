@@ -5,6 +5,7 @@ target_include_directories(libocpp_unit_tests PUBLIC
 
 target_sources(libocpp_unit_tests PRIVATE
         test_data_transfer.cpp
+        test_firmware_update.cpp
         test_provisioning.cpp
         test_reservation.cpp
         test_remote_transaction_control.cpp
