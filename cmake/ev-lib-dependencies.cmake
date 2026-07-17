@@ -63,14 +63,14 @@ set(EVEREST_LIB_DEPS_evse_security "log;timer")
 set(EVEREST_LIB_DEPS_ocpp "log;timer;evse_security;sqlite;util")
 set(EVEREST_LIB_DEPS_iso15118 "cbv2g;util;tls")
 set(EVEREST_LIB_DEPS_ieee2030_1_1 "util")
+set(EVEREST_LIB_DEPS_tls "util;evse_security")
+set(EVEREST_LIB_DEPS_slac "tls;fsm")
 # Tier 3 (framework-coupled)
-set(EVEREST_LIB_DEPS_tls "util;evse_security;framework")
 set(EVEREST_LIB_DEPS_helpers "tls;framework")
 set(EVEREST_LIB_DEPS_external_energy_limits "framework")
 set(EVEREST_LIB_DEPS_everest_api_types "")
 set(EVEREST_LIB_DEPS_conversions "framework;evse_security")
 set(EVEREST_LIB_DEPS_ocpp_module_common "ocpp;conversions;framework")
-set(EVEREST_LIB_DEPS_slac "tls")
 
 # --- Transitive dependency resolver ---
 # Given a list of library names, computes the full transitive closure
