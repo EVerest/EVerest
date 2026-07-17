@@ -173,6 +173,19 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
         this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::DisableRemoteAuthorization)
             .value_or(false);
 
+    // F01.FR.20 / F01.FR.21: with AuthorizeRemoteStart enabled a remote start must be authorized by
+    // the CSMS, so it must not be served from the Local Authorization List or Authorization Cache. Only bypass while
+    // online; offline the CSMS is unreachable and a cached-Accepted token must still be honored.
+    const bool bypass_local_authorization_for_remote_start =
+        is_online and
+        this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::AuthorizeRemoteStart)
+            .value_or(false) and
+        this->is_token_awaiting_remote_start and this->is_token_awaiting_remote_start(id_token);
+    if (bypass_local_authorization_for_remote_start) {
+        EVLOG_info << "Remote start authorization with AuthorizeRemoteStart enabled: bypassing Local Authorization "
+                      "List and Authorization Cache and sending AuthorizeRequest";
+    }
+
     // C07: Authorization using contract certificates
     if (id_token.type == IdTokenEnumStringType::eMAID) {
         // Temporary variable that is set to true to avoid immediate response to allow the local auth list
@@ -292,7 +305,8 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
     const bool local_pre_authorize =
         this->context.device_model.get_value<bool>(ControllerComponentVariables::LocalPreAuthorize);
     const bool can_locally_check = ((is_online and local_pre_authorize) or (!is_online and local_authorize_offline));
-    if (this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::LocalAuthListCtrlrEnabled)
+    if (!bypass_local_authorization_for_remote_start and
+        this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::LocalAuthListCtrlrEnabled)
             .value_or(false) and
         can_locally_check) {
         std::optional<IdTokenInfo> id_token_info = std::nullopt;
@@ -329,7 +343,7 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
     const auto hashed_id_token = utils::generate_token_hash(id_token);
     const auto auth_cache_enabled = this->is_auth_cache_ctrlr_enabled();
 
-    if (auth_cache_enabled and can_locally_check) {
+    if (!bypass_local_authorization_for_remote_start and auth_cache_enabled and can_locally_check) {
         try {
             const auto cache_entry = this->authorization_cache_get_entry(hashed_id_token);
             if (cache_entry.has_value()) {
@@ -404,6 +418,11 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
 
     response.idTokenInfo.status = AuthorizationStatusEnum::Unknown;
     return response;
+}
+
+void ocpp::v2::Authorization::set_remote_start_pending_check(
+    std::function<bool(const IdToken& id_token)> is_token_awaiting_remote_start) {
+    this->is_token_awaiting_remote_start = std::move(is_token_awaiting_remote_start);
 }
 
 void ocpp::v2::Authorization::stop_auth_cache_cleanup_thread() {

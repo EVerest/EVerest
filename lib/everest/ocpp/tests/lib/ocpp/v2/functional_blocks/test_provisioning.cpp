@@ -70,6 +70,7 @@ public:
                 (const CiString<50>&, const std::optional<CiString<255>>&, bool, bool, const std::optional<DateTime>&),
                 (override));
     MOCK_METHOD(void, sign_certificate_req, (const ocpp::CertificateSigningUseEnum&, bool), (override));
+    MOCK_METHOD(bool, is_sign_certificate_possible, (const ocpp::CertificateSigningUseEnum&), (const, override));
     MOCK_METHOD(void, stop_certificate_signed_timer, (), (override));
     MOCK_METHOD(void, init_certificate_expiration_check_timers, (), (override));
     MOCK_METHOD(void, stop_certificate_expiration_check_timers, (), (override));
@@ -106,6 +107,7 @@ public:
                  const std::optional<std::int32_t>&, bool, const std::optional<std::int32_t>&, bool),
                 (override));
     MOCK_METHOD(void, set_remote_start_id_for_evse, (std::int32_t, IdToken, std::int32_t), (override));
+    MOCK_METHOD(bool, is_id_token_awaiting_remote_start, (const IdToken&), (const, override));
     MOCK_METHOD(void, schedule_reset, (std::optional<std::int32_t>), (override));
 };
 

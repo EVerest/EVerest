@@ -36,6 +36,9 @@ public:
                                                  const std::optional<DateTime>& timestamp = std::nullopt) = 0;
     virtual void sign_certificate_req(const ocpp::CertificateSigningUseEnum& certificate_signing_use,
                                       const bool initiated_by_trigger_message = false) = 0;
+    /// \brief Check if all device model values required to generate a CSR for \p certificate_signing_use are present.
+    /// Logs which input is missing. Used to reject a TriggerMessage instead of accepting then never sending.
+    virtual bool is_sign_certificate_possible(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const = 0;
     virtual void stop_certificate_signed_timer() = 0;
     virtual void init_certificate_expiration_check_timers() = 0;
     virtual void stop_certificate_expiration_check_timers() = 0;
@@ -62,8 +65,22 @@ public:
                                          const std::optional<DateTime>& timestamp = std::nullopt) override;
     void sign_certificate_req(const ocpp::CertificateSigningUseEnum& certificate_signing_use,
                               const bool initiated_by_trigger_message = false) override;
+    bool is_sign_certificate_possible(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const override;
 
 private:
+    /// \brief CSR device-model inputs, read together at a single point (see \ref get_csr_inputs).
+    struct CsrInputs {
+        std::string common_name;
+        std::string organization;
+        std::string country;
+    };
+
+    /// \brief Read all CSR device-model inputs for \p certificate_signing_use at once. Returns them only when all are
+    /// present, logging which one is missing otherwise. Single read point so a device-model write cannot land between
+    /// separate reads and cause a bad_optional_access. Used by both \ref is_sign_certificate_possible and
+    /// \ref sign_certificate_req.
+    std::optional<CsrInputs> get_csr_inputs(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const;
+
     // Members
     const FunctionalBlockContext& context;
     MessageLogging& logging;

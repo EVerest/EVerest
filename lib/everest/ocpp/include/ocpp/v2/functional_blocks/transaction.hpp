@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <chrono>
+#include <mutex>
+
 #include <ocpp/v2/message_handler.hpp>
 
 namespace ocpp::v2 {
@@ -75,6 +78,13 @@ public:
 
     virtual void set_remote_start_id_for_evse(const std::int32_t evse_id, const IdToken id_token,
                                               const std::int32_t remote_start_id) = 0;
+
+    /// \brief Indicates whether \p id_token currently has a pending remote start (i.e. a
+    /// RequestStartTransactionRequest was accepted for this idToken but the transaction has not been started yet).
+    /// \param id_token The idToken to check for a pending remote start.
+    /// \return true if a remote start is pending for the given idToken, false otherwise.
+    virtual bool is_id_token_awaiting_remote_start(const IdToken& id_token) const = 0;
+
     virtual void schedule_reset(const std::optional<std::int32_t> reset_scheduled_evseid) = 0;
 };
 
@@ -88,6 +98,7 @@ public:
                      std::optional<TransactionEventCallback> transaction_event_callback,
                      std::optional<TransactionEventResponseCallback> transaction_event_response_callback,
                      ResetCallback reset_callback);
+    ~TransactionBlock() override;
     void handle_message(const ocpp::EnhancedMessage<MessageType>& message) override;
     void on_transaction_started(const std::int32_t evse_id, const std::int32_t connector_id,
                                 const std::string& session_id, const DateTime& timestamp,
@@ -112,6 +123,7 @@ public:
                                const bool initiated_by_trigger_message = false) override;
     void set_remote_start_id_for_evse(const std::int32_t evse_id, const IdToken id_token,
                                       const std::int32_t remote_start_id) override;
+    bool is_id_token_awaiting_remote_start(const IdToken& id_token) const override;
     void schedule_reset(const std::optional<std::int32_t> reset_scheduled_evseid) override;
 
 private:
@@ -128,7 +140,18 @@ private:
     std::optional<TransactionEventResponseCallback> transaction_event_response_callback;
     ResetCallback reset_callback;
 
-    std::map<std::int32_t, std::pair<IdToken, std::int32_t>> remote_start_id_per_evse;
+    /// \brief A remote start accepted for an EVSE, stamped when set so stale entries (EV never plugged in) can expire.
+    struct RemoteStartEntry {
+        IdToken id_token;
+        std::int32_t remote_start_id;
+        std::chrono::steady_clock::time_point created_at;
+    };
+    /// \brief Guards \ref remote_start_id_per_evse: written from the message-handler thread and read from the
+    /// authorization (validate_token) thread via \ref is_id_token_awaiting_remote_start.
+    mutable std::mutex remote_start_mutex;
+    /// \brief Accepted-but-not-yet-started remote starts, keyed by EVSE id. Mutable so the const remote-start check
+    /// can lazily evict expired entries.
+    mutable std::map<std::int32_t, RemoteStartEntry> remote_start_id_per_evse;
     /// \brief Used when an 'OnIdle' reset is requested, to perform the reset after the charging has stopped.
     bool reset_scheduled;
     /// \brief If `reset_scheduled` is true and the reset is for a specific evse id, it will be stored in this member.

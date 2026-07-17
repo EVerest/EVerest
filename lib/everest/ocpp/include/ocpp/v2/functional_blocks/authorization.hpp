@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <functional>
+
 #include <ocpp/v2/message_handler.hpp>
 
 namespace ocpp::v2 {
@@ -39,6 +41,14 @@ public:
     /// \return AuthorizeResponse containing the result of the validation
     virtual AuthorizeResponse validate_token(const IdToken id_token, const std::optional<CiString<10000>>& certificate,
                                              const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data) = 0;
+
+    /// \brief Registers a predicate that reports whether an \ref IdToken currently has a pending remote start.
+    ///
+    /// When \ref ControllerComponentVariables::AuthorizeRemoteStart is enabled, a remote start must be authorized
+    /// through the regular (online) authorization process. This predicate lets \ref validate_token detect such a
+    /// remote-start authorization so it can bypass the Local Authorization List and Authorization Cache.
+    virtual void
+    set_remote_start_pending_check(std::function<bool(const IdToken& id_token)> is_token_awaiting_remote_start) = 0;
 };
 
 class Authorization : public AuthorizationInterface {
@@ -51,6 +61,10 @@ private: // Members
     std::mutex auth_cache_cleanup_mutex;
     std::thread auth_cache_cleanup_thread;
     std::atomic_bool auth_cache_cleanup_handler_running;
+
+    /// \brief Predicate returning whether an idToken currently has a pending remote start. Empty by default, in which
+    /// case remote-start detection is disabled and authorization behaves as before.
+    std::function<bool(const IdToken& id_token)> is_token_awaiting_remote_start;
 
 public:
     explicit Authorization(const FunctionalBlockContext& context);
@@ -73,6 +87,8 @@ public:
     /// \return AuthorizeResponse containing the result of the validation
     AuthorizeResponse validate_token(const IdToken id_token, const std::optional<CiString<10000>>& certificate,
                                      const std::optional<std::vector<OCSPRequestData>>& ocsp_request_data) override;
+    void set_remote_start_pending_check(
+        std::function<bool(const IdToken& id_token)> is_token_awaiting_remote_start) override;
 
 private: // Functions
     void stop_auth_cache_cleanup_thread();

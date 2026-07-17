@@ -43,6 +43,12 @@ TransactionBlock::TransactionBlock(
     reset_scheduled(false) {
 }
 
+TransactionBlock::~TransactionBlock() {
+    // The remote-start predicate registered on the authorization block (see charge_point.cpp wiring) captures this
+    // block. Clear it before destruction so authorization, which outlives this block, cannot call a dangling target.
+    this->authorization.set_remote_start_pending_check(nullptr);
+}
+
 void TransactionBlock::handle_message(const ocpp::EnhancedMessage<MessageType>& message) {
     const auto& json_message = message.message;
 
@@ -267,28 +273,32 @@ void TransactionBlock::transaction_event_req(const TransactionEventEnum& event_t
     // Check if id token is in the remote start map, because when a remote
     // start request is done, the first transaction event request should
     // always contain trigger reason 'RemoteStart'.
-    auto it = std::find_if(
-        remote_start_id_per_evse.begin(), remote_start_id_per_evse.end(),
-        [&id_token, &evse](const std::pair<std::int32_t, std::pair<IdToken, std::int32_t>>& remote_start_per_evse) {
-            if (id_token.has_value() and remote_start_per_evse.second.first.idToken == id_token.value().idToken) {
+    {
+        const std::lock_guard<std::mutex> lock(this->remote_start_mutex);
+        auto it =
+            std::find_if(remote_start_id_per_evse.begin(), remote_start_id_per_evse.end(),
+                         [&id_token, &evse](const std::pair<std::int32_t, RemoteStartEntry>& remote_start_per_evse) {
+                             if (id_token.has_value() and
+                                 remote_start_per_evse.second.id_token.idToken == id_token.value().idToken) {
 
-                if (remote_start_per_evse.first == 0) {
-                    return true;
-                }
+                                 if (remote_start_per_evse.first == 0) {
+                                     return true;
+                                 }
 
-                if (evse.has_value() and evse.value().id == remote_start_per_evse.first) {
-                    return true;
-                }
-            }
-            return false;
-        });
+                                 if (evse.has_value() and evse.value().id == remote_start_per_evse.first) {
+                                     return true;
+                                 }
+                             }
+                             return false;
+                         });
 
-    if (it != remote_start_id_per_evse.end()) {
-        // Found remote start. Set remote start id and the trigger reason.
-        call.msg.triggerReason = TriggerReasonEnum::RemoteStart;
-        call.msg.transactionInfo.remoteStartId = it->second.second;
+        if (it != remote_start_id_per_evse.end()) {
+            // Found remote start. Set remote start id and the trigger reason.
+            call.msg.triggerReason = TriggerReasonEnum::RemoteStart;
+            call.msg.transactionInfo.remoteStartId = it->second.remote_start_id;
 
-        remote_start_id_per_evse.erase(it);
+            remote_start_id_per_evse.erase(it);
+        }
     }
 
     this->context.message_dispatcher.dispatch_call(call, initiated_by_trigger_message);
@@ -300,7 +310,33 @@ void TransactionBlock::transaction_event_req(const TransactionEventEnum& event_t
 
 void TransactionBlock::set_remote_start_id_for_evse(const std::int32_t evse_id, const IdToken id_token,
                                                     const std::int32_t remote_start_id) {
-    remote_start_id_per_evse[evse_id] = {id_token, remote_start_id};
+    const std::lock_guard<std::mutex> lock(this->remote_start_mutex);
+    remote_start_id_per_evse[evse_id] = {id_token, remote_start_id, std::chrono::steady_clock::now()};
+}
+
+bool TransactionBlock::is_id_token_awaiting_remote_start(const IdToken& id_token) const {
+    // An accepted remote start whose EV never plugs in would otherwise linger forever and keep bypassing the Local
+    // Authorization List and Authorization Cache for this idToken. Expire entries older than EVConnectionTimeOut
+    // (seconds), the same window the CSMS grants the EV to connect.
+    constexpr int default_ev_connection_timeout_seconds = 60;
+    const auto expiry = std::chrono::seconds(
+        this->context.device_model.get_optional_value<int>(ControllerComponentVariables::EVConnectionTimeOut)
+            .value_or(default_ev_connection_timeout_seconds));
+    const auto now = std::chrono::steady_clock::now();
+
+    const std::lock_guard<std::mutex> lock(this->remote_start_mutex);
+    bool awaiting = false;
+    for (auto it = remote_start_id_per_evse.begin(); it != remote_start_id_per_evse.end();) {
+        if (now - it->second.created_at > expiry) {
+            it = remote_start_id_per_evse.erase(it);
+            continue;
+        }
+        if (it->second.id_token.idToken == id_token.idToken) {
+            awaiting = true;
+        }
+        ++it;
+    }
+    return awaiting;
 }
 
 void TransactionBlock::schedule_reset(const std::optional<std::int32_t> reset_scheduled_evseid) {
