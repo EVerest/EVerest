@@ -5,14 +5,17 @@
 
 #include "everest/slac/slac_messages.hpp"
 #include <array>
+#include <atomic>
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <everest/slac/EvseSlacConfig.hpp>
 #include <everest/slac/slac.hpp>
 #include <everest/slac/slac_types.hpp>
 #include <everest/slac/telemetry.hpp>
+#include <everest/slac/timer.hpp>
 
 namespace everest::lib::slac::fsm::evse {
 
@@ -33,6 +36,9 @@ template <> struct MMTYPE<messages::cm_validate_cnf> {
 };
 template <> struct MMTYPE<messages::cm_slac_match_cnf> {
     static const uint16_t value = defs::MMTYPE_CM_SLAC_MATCH | defs::MMTYPE_MODE_CNF;
+};
+template <> struct MMTYPE<messages::cm_amp_map_cnf> {
+    static const uint16_t value = defs::MMTYPE_CM_AMP_MAP | defs::MMTYPE_MODE_CNF;
 };
 
 template <> struct MMTYPE<messages::qualcomm::cm_reset_device_req> {
@@ -87,6 +93,11 @@ template <typename SlacMessageType> struct MMV {
     // CM_AMP_MAP and CM_NW_STATS, these need to use AV_2_0
     // older av 1.0 message need to use AV_1_0
     static constexpr auto value = defs::MMV::AV_1_1;
+};
+
+// CM_AMP_MAP is not backward-compatible to AV 1.1 and must use AV 2.0 framing.
+template <> struct MMV<messages::cm_amp_map_cnf> {
+    static constexpr auto value = defs::MMV::AV_2_0;
 };
 
 template <> struct MMV<messages::qualcomm::cm_reset_device_req> {
@@ -181,6 +192,27 @@ struct Context {
         return send_slac_message(byte_array_from_wire<MacAddress>(mac), message);
     }
 
+    // CM_AMP_MAP.REQ carries a variable-length amplitude map (am_len 4-bit entries,
+    // packed 2 per byte) that does not fit the fixed-struct send_slac_message path,
+    // so it is framed here directly (AV 2.0, per defs::MMV). am_data holds the
+    // ceil(am_len/2) pre-packed amplitude bytes.
+    bool send_amp_map_req(MacAddress const& mac, std::uint16_t am_len, std::vector<std::uint8_t> const& am_data) {
+        std::vector<std::uint8_t> payload;
+        payload.reserve(sizeof(std::uint16_t) + am_data.size());
+        payload.push_back(static_cast<std::uint8_t>(am_len & 0xFF));
+        payload.push_back(static_cast<std::uint8_t>((am_len >> 8) & 0xFF));
+        payload.insert(payload.end(), am_data.begin(), am_data.end());
+
+        messages::HomeplugMessage hp_message;
+        hp_message.setup_payload(payload.data(), payload.size(),
+                                 defs::MMTYPE_CM_AMP_MAP | defs::MMTYPE_MODE_REQ, defs::MMV::AV_2_0);
+        hp_message.set_destination(mac);
+        if (not callbacks.send_raw_slac) {
+            return false;
+        }
+        return callbacks.send_raw_slac(hp_message);
+    }
+
     // signal handlers
     void signal_cm_slac_parm_req(const uint8_t* ev_mac);
     void signal_cm_slac_match_cnf(const uint8_t* ev_mac);
@@ -205,6 +237,19 @@ struct Context {
     defs::ModemVendor modem_vendor{defs::ModemVendor::Unknown};
     MacAddress evse_mac{};
     MatchConfirmCache match_confirm_cache;
+
+    // Running count of Control-Pilot B/C transitions, pushed in from EvseManager via the slac
+    // count_bc command (see FSMController::signal_count_bc). Used by the CM_VALIDATE handler to detect
+    // the number of BCB toggles the EV performed. Written from the framework/command thread and read
+    // from the FSM thread, hence atomic.
+    std::atomic<int> bc_transition_count{0};
+
+    // Set once the CM_VALIDATE process has produced its step-2 SUCCESS: the matching session must
+    // then receive the CM_SLAC_MATCH.REQ within TT_match_sequence (ISO 15118-5 CmSlacMatch_003/004
+    // cmValidate variant), which is much shorter than the overall TT_EVSE_match_session used when no
+    // validation is performed. validation_match_window bounds that post-validation match window.
+    bool validation_done{false};
+    everest::lib::slac::timer validation_match_window;
 
     SlacTelemetry status;
 

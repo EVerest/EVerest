@@ -23,6 +23,9 @@ public:
     void signal_reset();
     bool signal_enter_bcd();
     bool signal_leave_bcd();
+    // Push the running Control-Pilot B/C transition count (from EvseManager's count_bc command) into the
+    // FSM context for CM_VALIDATE BCB-toggle detection. Thread-safe atomic write, no event-loop hop.
+    void signal_count_bc(int count);
 
     void run();
 

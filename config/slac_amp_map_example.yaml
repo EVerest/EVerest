@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+#
+# Example CM_AMP_MAP amplitude map for EvseSlacNeo (ISO 15118-3 A.9.6,
+# transmit-power limitation). Point EvseSlacNeo's `amp_map_file` config option at
+# a copy of this file (and set `initiate_amp_map: true`) so the SECC programs the
+# PLC modem's per-carrier transmit power once the AVLN is established.
+#
+# This default sets every carrier to the maximum transmit power (15), i.e. it
+# applies NO reduction. When integrating with real hardware, lower the amplitude
+# of the carriers you must attenuate for EMC compliance via `overrides` (or lower
+# `default_amplitude` for a blanket reduction).
+
+# Number of OFDM carriers covered by the amplitude map. Use the value from your
+# PLC modem's datasheet (HomePlug GreenPHY typically 1155).
+carriers: 1155
+
+# Amplitude (0..15) applied to every carrier not listed under `overrides`.
+# 15 = maximum transmit power (no reduction); 0 = carrier fully suppressed.
+default_amplitude: 15
+
+# Optional per-carrier amplitude overrides, keyed by carrier index (0-based).
+# Example (commented out): attenuate a small band around an amateur-radio segment.
+overrides: {}
+  # 720: 4
+  # 721: 4
+  # 722: 2

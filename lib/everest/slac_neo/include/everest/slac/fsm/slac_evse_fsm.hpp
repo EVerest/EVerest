@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 
@@ -53,6 +54,37 @@ inline std::string format_session_nmk_for_log(Nmk const& nmk) {
         out.push_back(hex_chars[octet & 0x0FU]);
     }
     return out;
+}
+
+inline std::string format_mac_for_log(MacAddress const& mac) {
+    static constexpr char hex_chars[] = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(mac.size() * 3U);
+    for (auto const octet : mac) {
+        if (not out.empty()) {
+            out.push_back(':');
+        }
+        out.push_back(hex_chars[(octet >> 4U) & 0x0FU]);
+        out.push_back(hex_chars[octet & 0x0FU]);
+    }
+    return out;
+}
+
+inline std::string format_run_id_for_log(RunId const& run_id) {
+    static constexpr char hex_chars[] = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(run_id.size() * 2U);
+    for (auto const octet : run_id) {
+        out.push_back(hex_chars[(octet >> 4U) & 0x0FU]);
+        out.push_back(hex_chars[octet & 0x0FU]);
+    }
+    return out;
+}
+
+// Log prefix identifying a matching session, same style as EvseSlac's session_log().
+inline std::string session_log_prefix(fsm::evse::MatchingSessionData const& session_data) {
+    return "Session (run_id=" + format_run_id_for_log(session_data.run_id) +
+           ", ev_mac=" + format_mac_for_log(session_data.ev_mac) + "): ";
 }
 
 // Guards
@@ -108,6 +140,10 @@ struct link_status_req
 {
     template <class Fsm, class Evt, class SrcT, class TarT>
     void operator()(Evt const&, Fsm& fsm, SrcT&, TarT& tar) {
+        // Re-arm the poll timer only when we actually poll, so the link-status
+        // poll cadence is not disturbed by unrelated self-transitions (see
+        // CheckLink::on_entry).
+        tar.to.reset();
         tar.link_status_req(fsm);
     }
 };
@@ -118,8 +154,14 @@ struct SessionMatched{};
 struct CheckLink     : public state<> {
     template <class Event, class Fsm>
     void on_entry(Event const&, Fsm& fsm) {
+        // Only (re)arm the poll duration here -- do NOT reset the timer's
+        // reference. The poll timer is reset when a LINK_STATUS.REQ is actually
+        // sent (see the link_status_req action). Otherwise every self-transition
+        // that re-enters this substate for another reason (notably the Neo-only
+        // CM_AMP_MAP retransmit/responder in the matched state) would restart the
+        // countdown and starve the link-status poll, so a connection loss would
+        // not be detected within TP_match_leave (ISO 15118-5 PLCLinkStatus_005).
         to.setDuration(std::chrono::milliseconds(fsm.link_check_to_ms));
-        to.reset();
     }
 
     timer to;
@@ -219,6 +261,9 @@ struct Session_def     : public state_machine_def<Session_def> {
                     fsm.session_data.captured_aags[i] += msg->aag[i];
                 }
                 fsm.session_data.captured_sounds++;
+                fsm.ctx->log_debug(session_log_prefix(fsm.session_data) + "Received CM_ATTEN_PROFILE.IND (" +
+                                   std::to_string(fsm.session_data.captured_sounds) + " of " +
+                                   std::to_string(slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS) + " sounds captured)");
             }
         };
         struct is_atten_profile_ind {
@@ -275,45 +320,101 @@ struct Session_def     : public state_machine_def<Session_def> {
     bool enough_sounds(message const&) {
         return session_data.captured_sounds >= slac::defs::CM_SLAC_PARM_CNF_NUM_SOUNDS;
     }
+    // After a CM_VALIDATE process, the CM_SLAC_MATCH.REQ must arrive within TT_match_sequence (much
+    // shorter than the overall TT_EVSE_match_session that bounds WaitSlacMatch otherwise). When that
+    // shorter window elapses the matching has FAILED (ISO 15118-5 CmSlacMatch_003/004 cmValidate
+    // variant); a late CM_SLAC_MATCH.REQ must then get no CM_SLAC_MATCH.CNF.
+    struct validation_window_expired {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            return fsm.ctx->validation_done and fsm.ctx->validation_match_window.timeout();
+        }
+    };
     struct retry_limit {
         template <class Fsm, class Evt, class SrcT, class TarT>
         bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
-            return fsm.session_data.num_retries > slac::defs::C_EV_MATCH_RETRY;
+            // CM_ATTEN_CHAR.IND retransmission is limited to C_EV_match_retry (2)
+            // retries after the initial IND (ISO 15118-3, C_EV_match_retry). Fail
+            // once num_retries reaches the limit (>=), matching EvseSlac which
+            // retransmits at num_retries 1 and 2 then fails; a strict '>' sent a
+            // third retransmission and failed AttenuationCharacterization_004..011.
+            return fsm.session_data.num_retries >= slac::defs::C_EV_MATCH_RETRY;
+        }
+    };
+    // Accept CM_START_ATTEN_CHAR.IND only while WaitStartAtten is still within
+    // TT_match_sequence. The plain timeout->Failed transition only fires on the
+    // periodic update event, so a CM_START_ATTEN_CHAR.IND arriving after the
+    // deadline but before the next update tick would otherwise race past it and
+    // wrongly start sounding. Checking state_timeout() here as well drops such a
+    // late frame; the next update then fails the session and no CM_ATTEN_CHAR.IND
+    // is produced (ISO 15118-5 AttenuationCharacterization_012).
+    struct start_atten_in_time {
+        template <class Fsm, class SrcT, class TarT>
+        bool operator()(message const& e, Fsm& fsm, SrcT& src, TarT&) {
+            return not src.state_timeout() and fsm.is_start_atten_char(e);
         }
     };
 
     // Actions
+    struct sounding_started {
+        template <class Fsm, class SrcT, class TarT>
+        void operator()(message const&, Fsm& fsm, SrcT&, TarT&) {
+            fsm.ctx->log_info(session_log_prefix(fsm.session_data) +
+                              "Received CM_START_ATTEN_CHAR.IND, MNBC sounding started");
+        }
+    };
+    // Shared by finalize_snd and retry_snd: send the CM_ATTEN_CHAR.IND and log the averaged
+    // attenuation, matching EvseSlac's "Avg atten.: ..." session log line.
+    template <class Fsm> static void send_atten_char(Fsm& fsm) {
+        auto atten_char = fsm.session_data.create_cm_atten_char_ind(fsm.ctx->slac_config.sounding_atten_adjustment);
+        if (not fsm.ctx->send_slac_message(fsm.session_data.ev_mac, atten_char)) {
+            fsm.ctx->log_warn("Failed to send CM_ATTEN_CHAR.IND");
+        }
+        int aag_overall_sum = 0;
+        for (size_t i = 0; i < slac::defs::AAG_LIST_LEN; ++i) {
+            aag_overall_sum += atten_char.attenuation_profile.aag[i];
+        }
+        fsm.ctx->status.average_attenuation = aag_overall_sum / slac::defs::AAG_LIST_LEN;
+        std::ostringstream ss;
+        ss << "Avg atten.: " << std::fixed << std::setprecision(1)
+           << (static_cast<double>(aag_overall_sum) / slac::defs::AAG_LIST_LEN) << " dB";
+        if (fsm.ctx->slac_config.sounding_atten_adjustment != 0) {
+            ss << " plus offset " << std::to_string(fsm.ctx->slac_config.sounding_atten_adjustment) << " dB";
+        }
+        ss << ", from " << std::to_string(slac::defs::AAG_LIST_LEN) << " groups, "
+           << fsm.session_data.captured_sounds << " sounds";
+        fsm.ctx->log_info(session_log_prefix(fsm.session_data) + ss.str());
+    }
     struct finalize_snd {
         template <class Fsm, class Evt, class SrcT, class TarT>
         void operator()(Evt const&, Fsm& fsm, SrcT&, TarT& ) {
-            // action
-            auto atten_char = fsm.session_data.create_cm_atten_char_ind(fsm.ctx->slac_config.sounding_atten_adjustment);
-            if (not fsm.ctx->send_slac_message(fsm.session_data.ev_mac, atten_char)) {
-                fsm.ctx->log_warn("Failed to send CM_ATTEN_CHAR.IND");
-            }
-            // logging
-            // FIXME (jh) Still need to add all logging
-            int aag_overall_sum = 0;
-            for (size_t i = 0; i < slac::defs::AAG_LIST_LEN; ++i) {
-                aag_overall_sum += atten_char.attenuation_profile.aag[i];
-            }
-            fsm.ctx->status.average_attenuation = aag_overall_sum / slac::defs::AAG_LIST_LEN;
+            fsm.ctx->log_info(session_log_prefix(fsm.session_data) + "Finalize sounding, sending CM_ATTEN_CHAR.IND");
+            send_atten_char(fsm);
         }
     };
     struct retry_snd {
         template <class Fsm, class Evt, class SrcT, class TarT>
-        void operator()(Evt const& e, Fsm& fsm, SrcT& src, TarT& tar) {
-            finalize_snd obj;
-            obj(e, fsm, src, tar);
+        void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            fsm.ctx->log_info(session_log_prefix(fsm.session_data) +
+                              "No CM_ATTEN_CHAR.RSP yet, retransmitting CM_ATTEN_CHAR.IND (retry " +
+                              std::to_string(fsm.session_data.num_retries + 1) + " of " +
+                              std::to_string(slac::defs::C_EV_MATCH_RETRY) + ")");
+            send_atten_char(fsm);
             fsm.session_data.num_retries++;
         }
     };
+    void on_atten_char_rsp(message const&) {
+        ctx->log_info(session_log_prefix(session_data) +
+                      "Received CM_ATTEN_CHAR.RSP, waiting for CM_SLAC_MATCH.REQ");
+    }
     void match_cnf(message const& e){
         messages::cm_slac_match_cnf& reply = ctx->match_confirm_cache.message;
         auto const msg = e.payload.payload_as<slac::messages::cm_slac_match_req>();
         if (not msg.has_value()) {
             return;
         }
+        ctx->log_info(session_log_prefix(session_data) +
+                      "Received CM_SLAC_MATCH.REQ, sending CM_SLAC_MATCH.CNF -> session complete");
         static constexpr Nmk failed_match_session_nmk{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
                                                      0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10};
 
@@ -332,6 +433,22 @@ struct Session_def     : public state_machine_def<Session_def> {
         std::copy(std::begin(session_data.ev_mac), std::end(session_data.ev_mac), std::begin(ctx->status.ev_mac));
     }
 
+    // Failure logging: state why the session failed, so the log tells where matching stopped.
+    template <char const* Reason> struct log_session_failed {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            fsm.ctx->log_info(session_log_prefix(fsm.session_data) + Reason);
+        }
+    };
+    static constexpr char const fail_no_start_atten[] =
+        "Timeout waiting for CM_START_ATTEN_CHAR.IND, session failed";
+    static constexpr char const fail_no_atten_rsp[] =
+        "No CM_ATTEN_CHAR.RSP after all retries, session failed";
+    static constexpr char const fail_no_slac_match[] =
+        "Timeout waiting for CM_SLAC_MATCH.REQ, session failed";
+    static constexpr char const fail_validation_window[] =
+        "No CM_SLAC_MATCH.REQ within TT_match_sequence after CM_VALIDATE, session failed";
+
     // Transitions
     using initial_state = WaitStartAtten;
     using p = Session_def;
@@ -340,15 +457,16 @@ struct Session_def     : public state_machine_def<Session_def> {
         //    +------------------+---------+------------------+---------------+--------------------------+
         //    | Source           | Event   | Target           | Action        | Guard                    |
         //    +------------------+---------+------------------+---------------+--------------------------+
-        Row   < WaitStartAtten   , update  , Failed           , none          , timeout                  >,
-        g_row < WaitStartAtten   , message , Sounding         /* none */      , &p::is_start_atten_char  >,
+        Row   < WaitStartAtten   , update  , Failed           , log_session_failed<fail_no_start_atten> , timeout >,
+        Row   < WaitStartAtten   , message , Sounding         , sounding_started , start_atten_in_time   >,
         Row   < Sounding         , update  , FinalizeSounding , none          , timeout                  >,
         g_row < Sounding         , message , FinalizeSounding /* none */      , &p::enough_sounds        >,
         Row   < FinalizeSounding , update  , WaitAttenRsp     , finalize_snd  , timeout                  >,
         Row   < WaitAttenRsp     , update  , WaitAttenRsp     , retry_snd     , timeout                  >,
-        Row   < WaitAttenRsp     , update  , Failed           , none          , retry_timeout            >,
-        g_row < WaitAttenRsp     , message , WaitSlacMatch    /* none */      , &p::is_atten_char_rsp    >,
-        Row   < WaitSlacMatch    , update  , Failed           , none          , timeout                  >,
+        Row   < WaitAttenRsp     , update  , Failed           , log_session_failed<fail_no_atten_rsp> , retry_timeout >,
+        row   < WaitAttenRsp     , message , WaitSlacMatch    , &p::on_atten_char_rsp , &p::is_atten_char_rsp >,
+        Row   < WaitSlacMatch    , update  , Failed           , log_session_failed<fail_no_slac_match> , timeout >,
+        Row   < WaitSlacMatch    , update  , Failed           , log_session_failed<fail_validation_window> , validation_window_expired>,
         row   < WaitSlacMatch    , message , MatchComplete    , &p::match_cnf , &p::is_slac_match_req    >
         //    +------------------+---------+------------------+---------------+--------------------------+
         >{};
@@ -405,16 +523,121 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         }
     };
 
-    struct send_validate_cnf {
-        template <class Evt, class Fsm, class SrcT, class TarT>
-        void operator()(Evt const& e, Fsm& fsm, SrcT&, TarT&) {
-            messages::cm_validate_cnf reply{};
-            reply.signal_type = defs::CM_VALIDATE_REQ_SIGNAL_TYPE;
-            reply.toggle_num = 0;
-            reply.result = defs::CM_VALIDATE_REQ_RESULT_FAILURE;
-            if (not fsm.ctx->send_slac_message(e.payload.get_src_mac(), reply)) {
-                fsm.ctx->log_warn("Failed to send CM_VALIDATE.CNF");
+    // ISO 15118-3 9.4 CM_VALIDATE BCB-toggle validation. The EV proves it sits on the same Control-Pilot
+    // wire by switching its CP B->C->B (a "toggle") a number of times. The exchange has two steps,
+    // distinguished by the REQ's pilotTimer field:
+    //   step 1 (pilotTimer == 0): the EVSE answers CM_VALIDATE.CNF result=READY(0x01), toggle_num=0, and
+    //     arms the observation. If the EV sends no step 2, the EVSE autonomously repeats the step-1 CNF
+    //     every TT_match_sequence, limited to C_EV_match_retry repetitions, then FAILS silently.
+    //   step 2 (pilotTimer != 0): the EV sends the REQ carrying TP_EV_vald_toggle (pilotTimer, 100 ms
+    //     units) and then performs its BCB toggles during that window. Per ISO 15118-3 the EVSE waits out
+    //     the window and only THEN answers result=SUCCESS(0x02) with toggle_num = number of toggles seen.
+    // EvseManager counts one B->C edge per BCB toggle into ctx->bc_transition_count via the slac
+    // count_bc command, so the delta over the window is the toggle count. A step-2 REQ from the owner carrying a non-READY result is
+    // the EV's decision to terminate/skip -> no CNF. A step-1 REQ from a different EV while a validation is
+    // in progress is answered NOT_READY(0x00) (processing blocked, [V2G3-M09-13] / CmValidate_009).
+    struct handle_validate_req {
+        template <class Fsm, class SrcT, class TarT>
+        void operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+            const auto* src_mac = e.payload.get_src_mac();
+            const auto req = e.payload.payload_as<messages::cm_validate_req>();
+
+            // Invalid/unsupported signalType: ignore it and leave any in-progress step-1 repetition
+            // running (ISO 15118-5 CmValidate_004 sends signalType 0xFF between step-1 CNFs).
+            if (not req.has_value() or req->signal_type != defs::CM_VALIDATE_REQ_SIGNAL_TYPE) {
+                return;
             }
+
+            if (req->timer == 0x00) {
+                // Step 1. A different EV mid-validation is blocked (0x00).
+                if (fsm.validate_armed and src_mac != nullptr and
+                    not wire_pointer_equal(src_mac, fsm.validate_owner_mac)) {
+                    if (src_mac != nullptr) {
+                        fsm.send_validate_cnf_reply(byte_array_from_wire<MacAddress>(src_mac),
+                                                    defs::CM_VALIDATE_REQ_RESULT_NOT_READY, 0);
+                    }
+                    return;
+                }
+                // (Re-)arm: answer READY and (re)start the step-1 repetition interval. A repeated step-1
+                // REQ resets the retry counter (CmValidate_002).
+                if (src_mac != nullptr) {
+                    fsm.validate_owner_mac = byte_array_from_wire<MacAddress>(src_mac);
+                }
+                fsm.validate_armed = true;
+                fsm.validate_step2_pending = false;
+                fsm.validate_step1_retries = 0;
+                // Snapshot the edge counter now, at step 1: no BCB toggle has happened yet (the EV
+                // toggles only during the step-2 window), so any edges counted from here to the end of
+                // that window are exactly the toggles. Snapshotting at step 2 instead would race the
+                // CP path (MQTT) against the slower SLAC-frame path and miss the first toggle's edges.
+                fsm.validate_baseline_bc = fsm.ctx->bc_transition_count.load();
+                fsm.validate_timer.setDurationMilliSeconds(defs::TT_MATCH_SEQUENCE_MS);
+                fsm.validate_timer.reset();
+                fsm.send_validate_cnf_reply(fsm.validate_owner_mac, defs::CM_VALIDATE_REQ_RESULT_READY, 0);
+                return;
+            }
+
+            // Step 2 (pilotTimer != 0): only the owner of the armed validation may proceed.
+            if (not fsm.validate_armed or src_mac == nullptr or
+                not wire_pointer_equal(src_mac, fsm.validate_owner_mac)) {
+                return;
+            }
+            // A non-READY result is the EV's decision to terminate/skip: no CNF, end the validation
+            // (CmValidate_005/006/007/008).
+            if (req->result != defs::CM_VALIDATE_REQ_RESULT_READY) {
+                fsm.validate_armed = false;
+                fsm.validate_step2_pending = false;
+                return;
+            }
+            // Start the toggle-observation window: wait out TP_EV_vald_toggle (pilotTimer in 100 ms
+            // units) before counting. The baseline was snapshotted at step 1 (before any toggle); the
+            // CNF is sent by validate_tick when the window elapses.
+            fsm.validate_step2_pending = true;
+            fsm.validate_timer.setDurationMilliSeconds((static_cast<long long>(req->timer) + 1) * 100);
+            fsm.validate_timer.reset();
+        }
+    };
+
+    // Serviced on every `update` tick while a validation is armed (guard validate_needs_service): either
+    // close the step-2 toggle window with a SUCCESS CNF, or repeat/expire the step-1 CNF.
+    struct validate_tick {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            if (fsm.validate_step2_pending) {
+                // EvseManager counts one B->C edge per BCB toggle, so the delta since the baseline IS
+                // the number of toggles the EV performed during the observation window.
+                const int toggles_seen = fsm.ctx->bc_transition_count.load() - fsm.validate_baseline_bc;
+                const int toggles = std::max(0, std::min(toggles_seen, 255));
+                fsm.send_validate_cnf_reply(fsm.validate_owner_mac,
+                                            defs::CM_VALIDATE_REQ_RESULT_SUCCESS,
+                                            static_cast<std::uint8_t>(toggles));
+                fsm.validate_armed = false;
+                fsm.validate_step2_pending = false;
+                fsm.ctx->log_info("CM_VALIDATE: detected " + std::to_string(toggles) +
+                                  " BCB toggle(s) during the toggle window");
+                // Validation done: the CM_SLAC_MATCH.REQ must now arrive within TT_match_sequence
+                // (ISO 15118-5 CmSlacMatch_003/004 cmValidate variant), not the full match session.
+                fsm.ctx->validation_done = true;
+                fsm.ctx->validation_match_window.setDurationMilliSeconds(defs::TT_MATCH_SEQUENCE_MS);
+                fsm.ctx->validation_match_window.reset();
+            } else if (fsm.validate_armed) {
+                if (fsm.validate_step1_retries < slac::defs::C_EV_MATCH_RETRY) {
+                    fsm.validate_step1_retries++;
+                    fsm.send_validate_cnf_reply(fsm.validate_owner_mac,
+                                                defs::CM_VALIDATE_REQ_RESULT_READY, 0);
+                    fsm.validate_timer.reset();
+                } else {
+                    // Retry limit reached with no step 2: the validation (matching) has FAILED; stop
+                    // answering (CmValidate_003/004).
+                    fsm.validate_armed = false;
+                }
+            }
+        }
+    };
+    struct validate_needs_service {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            return (fsm.validate_armed or fsm.validate_step2_pending) and fsm.validate_timer.timeout();
         }
     };
 
@@ -462,6 +685,7 @@ struct Matching_def    : public state_machine_def<Matching_def> {
             session.ctx = fsm.ctx;
             session.start();
             // send reply
+            ctx.log_info(session_log_prefix(data) + "Received CM_SLAC_PARM.REQ, sending CM_SLAC_PARM.CNF");
             auto param_confirm = data.create_cm_slac_parm_cnf();
             if (not ctx.send_slac_message(data.ev_mac, param_confirm)) {
                 ctx.log_warn("Failed to send CM_SLAC_PARM.CNF");
@@ -512,7 +736,8 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         Row   < Init   , update  , Init    , reset_matching_subfsm  , reset_matching    >,
         //    +--------+---------+---------+------------------------+-------------------+
         Row   < Listen , message , Listen  , add_session            , is_slac_param_req >,
-        Row   < Listen , message , Listen  , send_validate_cnf      , is_validate_req   >,
+        Row   < Listen , message , Listen  , handle_validate_req    , is_validate_req   >,
+        Row   < Listen , update  , Listen  , validate_tick          , validate_needs_service >,
         //    +--------+---------+---------+------------------------+-------------------+
         Row   < Pipe   , message , none    , pipe_event             , not_validate_req  >,
         Row   < Pipe   , update  , none    , pipe_event             , none              >
@@ -530,6 +755,12 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         to.setDuration(std::chrono::milliseconds(ctx->slac_config.slac_init_timeout_ms));
         to.reset();
         failed_matching_reset_once = false;
+        validate_armed = false;
+        validate_step2_pending = false;
+        validate_step1_retries = 0;
+        validate_owner_mac = MacAddress{};
+        ctx->validation_done = false;
+        ctx->log_info("Entered Matching state, waiting for CM_SLAC_PARM.REQ");
         ctx->status.match_state = SlacState::Matching;
         ctx->status.d3_state = D3State::Matching;
     }
@@ -540,10 +771,27 @@ struct Matching_def    : public state_machine_def<Matching_def> {
         ctx->status.session_count = 0;
     }
 
+    void send_validate_cnf_reply(MacAddress const& mac, std::uint8_t result, std::uint8_t toggle_num) {
+        messages::cm_validate_cnf reply{};
+        reply.signal_type = defs::CM_VALIDATE_REQ_SIGNAL_TYPE;
+        reply.toggle_num = toggle_num;
+        reply.result = result;
+        if (not ctx->send_slac_message(mac, reply)) {
+            ctx->log_warn("Failed to send CM_VALIDATE.CNF");
+        }
+    }
+
     std::vector<Session> sessions;
     fsm::evse::Context* ctx;
     timer to;
     bool failed_matching_reset_once{false};
+    // CM_VALIDATE (ISO 15118-3 9.4) BCB-toggle validation state (see handle_validate_req / validate_tick).
+    bool validate_armed{false};         // step-1 seen; awaiting step-2 or repeating the step-1 CNF
+    bool validate_step2_pending{false}; // step-2 seen; waiting out the toggle-observation window
+    int validate_step1_retries{0};      // autonomous step-1 CNF repetitions so far (<= C_EV_match_retry)
+    int validate_baseline_bc{0};        // bc_transition_count at the start of the toggle window
+    MacAddress validate_owner_mac{};    // EV that owns the in-progress validation
+    timer validate_timer;               // step-1 repetition interval / step-2 toggle-observation window
 
     static int clamp_max_matching_sessions(int max_matching_sessions) {
         return std::max(1, max_matching_sessions);
@@ -750,6 +998,7 @@ struct Reset_def       : public state_machine_def<Reset_def> {
             this->pending_nmk = fsm.ctx->slac_config.session_nmk;
         }
         this->set_key_attempts = 1;
+        ctx->log_info("Entered Reset state");
         ctx->clear_match_confirm_cache();
         ctx->status.match_state = SlacState::Reset;
         ctx->status.d3_state = D3State::Unmatched;
@@ -862,6 +1111,75 @@ struct Matched_def     : public state_machine_def<Matched_def> {
         }
     };
 
+    // A valid CM_AMP_MAP.REQ (am_len != 0) received while matched. am_len == 0 is
+    // invalid and must be left unanswered (ISO 15118-5 CmAmpMap_005).
+    struct is_amp_map_req {
+        template <class Fsm, class SrcT, class TarT>
+        bool operator()(message const& e, Fsm&, SrcT&, TarT&) {
+            if (e.payload.get_mmtype() != (defs::MMTYPE_CM_AMP_MAP | defs::MMTYPE_MODE_REQ)) {
+                return false;
+            }
+            auto const req = e.payload.payload_as<messages::cm_amp_map_req>();
+            return req.has_value() and req->am_len != 0;
+        }
+    };
+
+    // Answer a valid CM_AMP_MAP.REQ with CM_AMP_MAP.CNF(result=0x00). On real HW
+    // the requested transmit-power reduction is applied to the modem; that RF
+    // effect is out of scope for the SLAC stack.
+    struct send_amp_map_cnf {
+        template <class Fsm, class SrcT, class TarT>
+        void operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+            messages::cm_amp_map_cnf reply{};
+            reply.result = defs::CM_AMP_MAP_CNF_RESULT_SUCCESS;
+            if (not fsm.ctx->send_slac_message(e.payload.get_src_mac(), reply)) {
+                fsm.ctx->log_warn("Failed to send CM_AMP_MAP.CNF");
+            }
+        }
+    };
+
+    // SECC-initiated CM_AMP_MAP.REQ (ISO 15118-3 A.9.6, PICS InitiateCmAmpMap): after sending the
+    // first REQ (on_entry) the SECC retransmits it every TT_match_response until a CM_AMP_MAP.CNF with
+    // result=0x00 arrives, limited to C_EV_match_retry retransmissions (CmAmpMap_003/004).
+    struct amp_map_retransmit_due {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            return fsm.amp_map_awaiting_cnf and fsm.amp_map_timer.timeout();
+        }
+    };
+    struct retransmit_amp_map {
+        template <class Fsm, class Evt, class SrcT, class TarT>
+        void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+            if (fsm.amp_map_retries < slac::defs::C_EV_MATCH_RETRY) {
+                fsm.amp_map_retries++;
+                fsm.ctx->send_amp_map_req(fsm.ctx->status.ev_mac, fsm.ctx->slac_config.amp_map_len,
+                                          fsm.ctx->slac_config.amp_map_data);
+                fsm.amp_map_timer.reset();
+            } else {
+                fsm.amp_map_awaiting_cnf = false; // retry limit reached, stop
+            }
+        }
+    };
+    // A CM_AMP_MAP.CNF with result=0x00 confirms the exchange and stops retransmission; any other
+    // result is ignored ([V2G3-A09-114], CmAmpMap_004 keeps retransmitting on an invalid CNF).
+    struct is_amp_map_cnf_ok {
+        template <class Fsm, class SrcT, class TarT>
+        bool operator()(message const& e, Fsm& fsm, SrcT&, TarT&) {
+            if (not fsm.amp_map_awaiting_cnf or
+                e.payload.get_mmtype() != (defs::MMTYPE_CM_AMP_MAP | defs::MMTYPE_MODE_CNF)) {
+                return false;
+            }
+            auto const cnf = e.payload.payload_as<messages::cm_amp_map_cnf>();
+            return cnf.has_value() and cnf->result == defs::CM_AMP_MAP_CNF_RESULT_SUCCESS;
+        }
+    };
+    struct amp_map_cnf_ack {
+        template <class Fsm, class SrcT, class TarT>
+        void operator()(message const&, Fsm& fsm, SrcT&, TarT&) {
+            fsm.amp_map_awaiting_cnf = false;
+        }
+    };
+
     // Transitions
     using initial_state = Init;
     using p = ResetChip_def;
@@ -870,16 +1188,39 @@ struct Matched_def     : public state_machine_def<Matched_def> {
         //    +----------+---------+----------+-----------------+--------------------+
         //    | Source   | Event   | Target   | Action          | Guard              |
         //    +----------+---------+----------+-----------------+--------------------+
-        Row   < Init     , none    , Other    , none            , none               >,
-        Row   < Init     , none    , Lumissil , link_status_req , is_lumissil        >,
-        Row   < Init     , none    , Qualcomm , link_status_req , is_qualcomm        >,
-        Row   < Init     , none    , NoDetect , none            , link_detection_off >,
+        // Route into the matched substate deterministically: with link detection on
+        // enter the vendor-specific LINK_STATUS-polling substate (Qualcomm/Lumissil),
+        // otherwise the passive NoDetect substate. The guards are mutually exclusive
+        // so there is no anonymous-transition ambiguity -- an earlier unconditional
+        // Init->Other row shadowed the polling routing, so a matched-state connection
+        // loss was never detected and the SECC never left the logical network
+        // (ISO 15118-5 PLCLinkStatus_005 / f_SECC_getPLCLinkTermination).
+        Row   < Init     , none    , Lumissil , link_status_req , And_<detect_link, is_lumissil> >,
+        Row   < Init     , none    , Qualcomm , link_status_req , And_<detect_link, is_qualcomm> >,
+        Row   < Init     , none    , NoDetect , none            , link_detection_off             >,
         //    +----------+---------+----------+-----------------+--------------------+
-        Row   < Lumissil , update  , Lumissil , link_status_req , timeout            >,
-        Row   < Lumissil , message , Failed   , none            , link_status_neg    >,
+        Row   < Lumissil , update  , Lumissil , link_status_req    , timeout               >,
+        Row   < Lumissil , update  , Lumissil , retransmit_amp_map , amp_map_retransmit_due >,
+        Row   < Lumissil , message , Failed   , none               , link_status_neg       >,
+        Row   < Lumissil , message , Lumissil , send_amp_map_cnf   , is_amp_map_req         >,
+        Row   < Lumissil , message , Lumissil , amp_map_cnf_ack    , is_amp_map_cnf_ok      >,
         //    +----------+---------+----------+-----------------+--------------------+
-        Row   < Qualcomm , update  , Qualcomm , link_status_req , timeout            >,
-        Row   < Qualcomm , message , Failed   , none            , link_status_neg    >
+        Row   < Qualcomm , update  , Qualcomm , link_status_req    , timeout               >,
+        Row   < Qualcomm , update  , Qualcomm , retransmit_amp_map , amp_map_retransmit_due >,
+        Row   < Qualcomm , message , Failed   , none               , link_status_neg       >,
+        Row   < Qualcomm , message , Qualcomm , send_amp_map_cnf   , is_amp_map_req         >,
+        Row   < Qualcomm , message , Qualcomm , amp_map_cnf_ack    , is_amp_map_cnf_ok      >,
+        //    +----------+---------+----------+-----------------+--------------------+
+        // Respond to an incoming CM_AMP_MAP.REQ without leaving the matched state
+        // (ISO 15118-5 CmAmpMap responder, TC 001/006/007). The invalid am_len==0
+        // case is filtered by is_amp_map_req so no CNF is emitted (TC 005). Covered
+        // for the link-detection-off (NoDetect) and pre-detection (Other/Init)
+        // substates too so the responder works regardless of the matched substate.
+        Row   < NoDetect , message , NoDetect , send_amp_map_cnf   , is_amp_map_req         >,
+        Row   < NoDetect , update  , NoDetect , retransmit_amp_map , amp_map_retransmit_due >,
+        Row   < NoDetect , message , NoDetect , amp_map_cnf_ack    , is_amp_map_cnf_ok      >,
+        Row   < Other    , message , Other    , send_amp_map_cnf   , is_amp_map_req         >,
+        Row   < Init     , message , Init     , send_amp_map_cnf   , is_amp_map_req         >
         //    +----------+---------+----------+-----------------+--------------------+
         >{};
 
@@ -890,12 +1231,36 @@ struct Matched_def     : public state_machine_def<Matched_def> {
     template <class Event, class Fsm>
     void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
+        {
+            std::ostringstream ss;
+            ss << "Entered Matched state (EV " << format_mac_for_log(ctx->status.ev_mac)
+               << ", avg. attenuation " << std::fixed << std::setprecision(1)
+               << ctx->status.average_attenuation << " dB)";
+            ctx->log_info(ss.str());
+        }
         ctx->clear_match_confirm_cache();
         ctx->signal_dlink_ready(true);
         link_check_to_ms = ctx->slac_config.link_status.poll_in_matched_state_ms;
         ctx->status.match_state = SlacState::Matched;
         ctx->status.d3_state = D3State::Matched;
         ctx->status.modem_link_ready = true;
+
+        // ISO 15118-3 A.9.6 transmit-power limitation: once the AVLN is up, send
+        // the operator-configured amplitude map to the peer (CmAmpMap_002..004).
+        // Disabled by default; the map is provided via the amp_map_file config.
+        amp_map_awaiting_cnf = false;
+        amp_map_retries = 0;
+        if (ctx->slac_config.initiate_amp_map and ctx->slac_config.amp_map_len > 0) {
+            if (not ctx->send_amp_map_req(ctx->status.ev_mac, ctx->slac_config.amp_map_len,
+                                          ctx->slac_config.amp_map_data)) {
+                ctx->log_warn("Failed to send CM_AMP_MAP.REQ");
+            }
+            // Await the CM_AMP_MAP.CNF; retransmit every TT_match_response until it arrives, limited
+            // to C_EV_match_retry retransmissions (serviced by retransmit_amp_map on the update tick).
+            amp_map_awaiting_cnf = true;
+            amp_map_timer.setDurationMilliSeconds(defs::TT_MATCH_RESPONSE_MS);
+            amp_map_timer.reset();
+        }
     }
 
     template <class Event, class Fsm>
@@ -909,6 +1274,10 @@ struct Matched_def     : public state_machine_def<Matched_def> {
 
     fsm::evse::Context* ctx;
     int link_check_to_ms{0};
+    // SECC-initiated CM_AMP_MAP retransmission state (see the amp_map_* guards/actions above).
+    bool amp_map_awaiting_cnf{false};
+    int amp_map_retries{0};
+    timer amp_map_timer;
 };
 struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
     // States
@@ -987,10 +1356,12 @@ struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
     template <class Event, class Fsm>
     void on_entry(Event const&, Fsm& fsm) {
         ctx = fsm.ctx;
+        ctx->log_info("Waiting for Link to be ready...");
         link_check_to_ms = ctx->slac_config.link_status.retry_ms;
         to.setDuration(std::chrono::milliseconds(ctx->slac_config.link_status.timeout_ms));
         to.reset();
         ctx->status.match_state = SlacState::WaitForLink;
+        // Still in the matching phase (post CM_SLAC_MATCH.CNF, awaiting link) -> published as MATCHING.
         ctx->status.d3_state = D3State::Matching;
     }
 
@@ -1114,6 +1485,7 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
     struct Idle   : public state<> {
         template <class Event, class Fsm>
         void on_entry(Event const&, Fsm& fsm) {
+            fsm.ctx->log_info("Entered Idle state");
             fsm.ctx->clear_match_confirm_cache();
             fsm.ctx->status.match_state = SlacState::Idle;
             fsm.ctx->status.d3_state = D3State::Unmatched;
@@ -1124,6 +1496,7 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
         template <class Event, class Fsm>
         void on_entry(Event const&, Fsm& fsm) {
             auto& ctx = *fsm.ctx;
+            ctx.log_info("Entered Failed state");
             if (ctx.slac_config.ac_mode_five_percent) {
                 ctx.signal_error_routine_request();
             }
@@ -1189,7 +1562,13 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
         Row < WaitForLink_Match , message   , Matched     , none            , none              >,
         //  +-------------------+-----------+-------------+-----------------+-------------------+
         Row < Matched           , reset     , Reset       , none            , none              >,
-        Row < Matched_Fail      , message   , Failed      , on_matched_fail , none              >,
+        // A connection loss detected while matched (negative LINK_STATUS) must make the
+        // SECC leave the logical network within TP_match_leave: go to Reset, which
+        // regenerates the session NMK and re-keys the modem (regenerate_key_on_reset),
+        // so the SUT's node drops out of the AVLN -- matching EvseSlac, which re-keys on
+        // ResetState entry (ISO 15118-3 D-LINK termination; ISO 15118-5 PLCLinkStatus_005).
+        // on_matched_fail still logs the loss and signals the error routine.
+        Row < Matched_Fail      , message   , Reset       , on_matched_fail , none              >,
         //  +-------------------+-----------+-------------+-----------------+-------------------+
         Row < Failed            , reset     , Reset       , none            , none              >
         //  +-------------------+-----------+-------------+-----------------+-------------------+

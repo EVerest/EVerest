@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 #include <everest/slac/slac_defs.hpp>
 #include <everest/slac/slac_types.hpp>
 
@@ -82,6 +83,18 @@ struct EvseSlacConfig {
     bool provide_telemetry{false};
 
     bool regenerate_key_on_reset{true};
+
+    // CM_AMP_MAP (ISO 15118-3 A.9.6 transmit-power limitation). When
+    // initiate_amp_map is true the SECC transmits a CM_AMP_MAP.REQ once the AVLN
+    // is established. amp_map_len is the number of 4-bit amplitude entries and
+    // amp_map_data holds them pre-packed (2 per byte); an empty map with
+    // amp_map_len == 0 disables the transmit direction even if the flag is set.
+    // The map is populated by the module from an operator-provided YAML file
+    // (default: all carriers at maximum TX). The SECC always answers an incoming
+    // CM_AMP_MAP.REQ with CM_AMP_MAP.CNF(result=0x00) regardless of this flag.
+    bool initiate_amp_map{false};
+    std::uint16_t amp_map_len{0};
+    std::vector<std::uint8_t> amp_map_data{};
 };
 
 } // namespace everest::lib::slac::fsm::evse
