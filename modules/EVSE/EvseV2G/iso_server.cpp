@@ -2434,6 +2434,15 @@ static enum v2g_event handle_iso_session_stop(struct v2g_connection* conn) {
         conn->ctx->state = static_cast<int>(iso_dc_state_id::WAIT_FOR_TERMINATED_SESSION);
     }
 
+    /* Only a positive SessionStopRes anchors the CP-oscillator retain time ([V2G-DC-968] analogue);
+     * iso_validate_response_code may have downgraded the ResponseCode to FAILED* without changing
+     * the event, so gate on the final code here */
+    if (res->ResponseCode == iso2_responseCodeType_OK) {
+        conn->session_stop_res_pending = (conn->d_link_action == dLinkAction::D_LINK_ACTION_PAUSE)
+                                             ? v2g_connection::SessionStopResPending::PAUSE
+                                             : v2g_connection::SessionStopResPending::TERMINATE;
+    }
+
     return V2G_EVENT_SEND_AND_TERMINATE; // Charging must be terminated after sending the response message [V2G2-571]
 }
 

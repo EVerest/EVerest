@@ -8,14 +8,17 @@ active_modules:
         - module_id: evse_security
           implementation_id: main
   iso15118_car:
-    module: PyEvJosev
+    module: Ev15118
     config_module:
       device: auto
-      supported_DIN70121: false
-      supported_ISO15118_2: false
-      supported_ISO15118_20_DC: true
+      supported_d20_energy_services: "DC,DC_BPT"
       tls_active: true
       enable_tls_1_3: true
+      logging_path: /tmp/everest-logs
+    connections:
+      ev_board_support:
+        - module_id: yeti_driver
+          implementation_id: ev_board_support
   evse_manager:
     module: EvseManager
     config_module:

@@ -124,13 +124,13 @@ active_modules:
       device: auto
       supported_ISO15118_2: true
     connections: {}
-    module: PyEvJosev
+    module: Ev15118
   iso15118_charger:
     config_module:
       device: auto
-      tls_security: allow
       supported_DIN70121: false
-    module: EvseV2G
+      supported_ISO15118_2: true
+    module: Evse15118D20
     connections:
       security:
         - module_id: evse_security

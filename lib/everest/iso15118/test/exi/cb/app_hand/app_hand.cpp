@@ -37,7 +37,30 @@ SCENARIO("App Protocol Ser/Des") {
         }
     }
 
-    // Todo(sl): Missing Decode message
-    // 80400040
-    // {"supportedAppProtocolRes": {"ResponseCode": "OK_SuccessfulNegotiation", "SchemaID": 1}}
+    GIVEN("Round-trip of a supportedAppProtocolRes document") {
+
+        message_20::SupportedAppProtocolResponse res;
+        res.response_code = message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation;
+        res.schema_id = 1;
+
+        uint8_t serialization_buffer[1024];
+        io::StreamOutputView out({serialization_buffer, sizeof(serialization_buffer)});
+
+        const auto size = message_20::serialize(res, out);
+
+        const io::StreamInputView stream_view{serialization_buffer, size};
+
+        message_20::Variant variant(io::v2gtp::PayloadType::SAP, stream_view);
+
+        THEN("It should be decoded succussfully") {
+            REQUIRE(variant.get_type() == message_20::Type::SupportedAppProtocolRes);
+
+            const auto& msg = variant.get<message_20::SupportedAppProtocolResponse>();
+
+            REQUIRE(msg.response_code ==
+                    message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation);
+            REQUIRE(msg.schema_id.has_value());
+            REQUIRE(msg.schema_id.value() == 1);
+        }
+    }
 }

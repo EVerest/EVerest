@@ -106,6 +106,10 @@ void send_sequence_error(const message_20::Type req_type, d20::Context& ctx) {
     } else {
         logf_warning("Unknown code type id: %d ", req_type);
     }
+
+    // Session ends with a FAILED response: oscillator off without delay + SECC-side TCP close
+    // ([V2G-DC-942]/[V2G-DC-940] semantics), reported once the response hit the wire.
+    ctx.session_stop_res_pending = session::feedback::SessionStopAction::FailedTermination;
 }
 
 } // namespace iso15118::d20

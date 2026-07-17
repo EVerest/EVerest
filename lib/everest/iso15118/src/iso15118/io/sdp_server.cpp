@@ -2,6 +2,7 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #include <iso15118/io/sdp_server.hpp>
 
+#include <cerrno>
 #include <cstring>
 
 #include <netdb.h>
@@ -115,6 +116,12 @@ void SdpServer::close() {
     }
 }
 
+// The SDP request payload is a fixed 2 bytes (Security + TransportProtocol); the V2GTP header must
+// declare exactly this length.
+static constexpr uint32_t SDP_REQUEST_PAYLOAD_LEN = 2;
+// A complete SDP request datagram: 8-byte V2GTP header + the fixed 2-byte payload.
+static constexpr ssize_t SDP_REQUEST_DATAGRAM_LEN = 8 + SDP_REQUEST_PAYLOAD_LEN;
+
 PeerRequestContext SdpServer::get_peer_request() {
     decltype(PeerRequestContext::address) peer_address;
     socklen_t peer_addr_len = sizeof(peer_address);
@@ -122,7 +129,10 @@ PeerRequestContext SdpServer::get_peer_request() {
     const auto read_result = recvfrom(fd, udp_buffer, sizeof(udp_buffer), 0,
                                       reinterpret_cast<struct sockaddr*>(&peer_address), &peer_addr_len);
     if (read_result <= 0) {
-        log_and_throw("Read on sdp server socket failed");
+        // A transient error (EINTR from a signal, EAGAIN on a spurious wakeup) must not kill the
+        // controller loop: skip this datagram and wait for the next one.
+        logf_warning("Read on sdp server socket failed with error code: %d", errno);
+        return PeerRequestContext{false};
     }
 
     if (peer_addr_len > sizeof(peer_address)) {
@@ -136,12 +146,29 @@ PeerRequestContext SdpServer::get_peer_request() {
         return PeerRequestContext{false};
     }
 
+    // The datagram must actually contain the full V2GTP header and the 2-byte payload; otherwise
+    // V2GTP20_ReadHeader and the payload bytes below would be read from stale buffer content left
+    // over from a previous datagram.
+    if (read_result < SDP_REQUEST_DATAGRAM_LEN) {
+        logf_warning("Sdp server received a truncated request (%zd bytes), ignoring", read_result);
+        return PeerRequestContext{false};
+    }
+
     uint32_t sdp_payload_len;
     const auto parse_sdp_result = V2GTP20_ReadHeader(udp_buffer, &sdp_payload_len, V2GTP20_SDP_REQUEST_PAYLOAD_ID);
 
     if (parse_sdp_result != V2GTP_ERROR__NO_ERROR) {
         // FIXME (aw): we should not die here immediately
         logf_warning("Sdp server received an unexpected payload");
+        return PeerRequestContext{false};
+    }
+
+    // V2GTP20_ReadHeader only checks the version and payload-type ID, not the length field. An SDP request
+    // must declare the fixed 2-byte payload length; a request with an invalid payloadLength (e.g.
+    // 0x00000000) is ignored so no SDP response is sent -- the EVCC detects it as an SDP message timeout
+    // (TC_SECC_CMN_VTB_V2GTPSDP_002).
+    if (sdp_payload_len != SDP_REQUEST_PAYLOAD_LEN) {
+        logf_warning("Sdp server received a request with an invalid payload length (%u), ignoring", sdp_payload_len);
         return PeerRequestContext{false};
     }
 

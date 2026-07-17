@@ -20,6 +20,7 @@ template <> void convert(const struct iso20_SessionSetupReqType& in, SessionSetu
 }
 
 template <> void convert(const struct iso20_SessionSetupResType& in, SessionSetupResponse& out) {
+    cb_convert_enum(in.ResponseCode, out.response_code);
     convert(in.Header, out.header);
     out.evseid = CB2CPP_STRING(in.EVSEID);
 }

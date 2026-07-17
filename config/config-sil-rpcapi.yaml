@@ -129,15 +129,16 @@ active_modules:
         - implementation_id: energy_grid
           module_id: api_sink_1_evsemgr
   iso15118_car:
-    module: PyEvJosev
+    module: Ev15118
     config_module:
       device: auto
       supported_ISO15118_2: true
+      supported_d20_energy_services: ""
   iso15118_charger:
-    module: EvseV2G
+    module: Evse15118D20
     config_module:
       device: auto
-      tls_security: allow
+      supported_ISO15118_2: true
       supported_DIN70121: false
     connections:
       security:

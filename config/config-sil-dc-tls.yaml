@@ -1,22 +1,29 @@
 active_modules:
   iso15118_charger:
-    module: EvseV2G
+    module: Evse15118D20
     config_module:
       device: auto
-      tls_security: force
-      tls_key_logging: true
+      supported_DIN70121: true
+      supported_ISO15118_2: true
+      tls_negotiation_strategy: ENFORCE_TLS
+      enable_tls_key_logging: true
     connections:
       security:
         - module_id: evse_security
           implementation_id: main
   iso15118_car:
-    module: PyEvJosev
+    module: Ev15118
     config_module:
       device: auto
-      supported_DIN70121: false
       supported_ISO15118_2: true
       tls_active: true
       enforce_tls: true
+      enable_tls_1_3: false
+      verify_server_certificate: true
+    connections:
+      ev_board_support:
+        - module_id: yeti_driver
+          implementation_id: ev_board_support
   evse_manager:
     module: EvseManager
     config_module:

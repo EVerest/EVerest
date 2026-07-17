@@ -51,6 +51,9 @@ struct ISO15118_chargerImplStub : public ISO15118_chargerImplBase {
     virtual void handle_ac_contactor_closed(bool& status) {
         std::cout << "ISO15118_chargerImplBase::handle_ac_contactor_closed called" << std::endl;
     }
+    virtual void handle_cp_state_changed(types::iso15118::CpState& cp_state) {
+        std::cout << "ISO15118_chargerImplBase::handle_cp_state_changed called" << std::endl;
+    }
     virtual void handle_dlink_ready(bool& value) {
         std::cout << "ISO15118_chargerImplBase::handle_dlink_ready called" << std::endl;
     }

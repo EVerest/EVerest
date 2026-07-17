@@ -73,6 +73,21 @@ Result SessionStop::feed(Event ev) {
             m_ctx.pause_ctx.reset();
         }
 
+        // Only a positive Res that ends the session anchors the CP-oscillator retain time (a
+        // ServiceRenegotiation keeps the session running); a FAILED Res ends the session with
+        // immediate oscillator-off + SECC-side TCP close instead. Reported once the response
+        // actually hit the wire (Session::send_response).
+        if (res.response_code == dt::ResponseCode::OK) {
+            if (req->charging_session != message_20::datatypes::ChargingSession::ServiceRenegotiation) {
+                m_ctx.session_stop_res_pending =
+                    (req->charging_session == message_20::datatypes::ChargingSession::Pause)
+                        ? session::feedback::SessionStopAction::Pause
+                        : session::feedback::SessionStopAction::Terminate;
+            }
+        } else {
+            m_ctx.session_stop_res_pending = session::feedback::SessionStopAction::FailedTermination;
+        }
+
         return {};
     } else {
         m_ctx.log("expected SessionStop! But code type id: %d", variant->get_type());

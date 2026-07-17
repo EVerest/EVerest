@@ -37,13 +37,14 @@ SCENARIO("Session teardown primitives") {
     iso15118::session::feedback::Callbacks callbacks;
     callbacks.signal = [](auto) {};
 
-    const iso15118::d20::SessionConfig session_config{iso15118::d20::EvseSetupConfig{}};
+    const iso15118::session::SessionConfig session_config{iso15118::session::EvseSetupConfig{}};
     std::optional<iso15118::d20::PauseContext> pause_ctx{std::nullopt};
+    std::optional<iso15118::d2::PauseContext> d2_pause_ctx{std::nullopt};
 
     auto connection = std::make_unique<MockConnection>();
     auto* conn = connection.get();
 
-    iso15118::Session session{std::move(connection), session_config, callbacks, pause_ctx};
+    iso15118::Session session{std::move(connection), session_config, callbacks, pause_ctx, d2_pause_ctx};
 
     GIVEN("a never-connected session") {
         WHEN("close() is called") {

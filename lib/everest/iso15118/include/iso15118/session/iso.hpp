@@ -7,23 +7,30 @@
 
 #include <iso15118/config.hpp>
 
-#include <everest/util/fsm/fsm.hpp>
-#include <iso15118/d20/config.hpp>
-#include <iso15118/d20/context.hpp>
+#include <iso15118/d2/config.hpp>
+#include <iso15118/d20/control_event.hpp>
 #include <iso15118/d20/control_event_queue.hpp>
-#include <iso15118/d20/states.hpp>
+#include <iso15118/d20/ev_information.hpp>
+#include <iso15118/d20/session.hpp>
+#include <iso15118/d20/timeout.hpp>
 
 #include <iso15118/io/connection_abstract.hpp>
 #include <iso15118/io/poll_manager.hpp>
 #include <iso15118/io/sdp_packet.hpp>
+#include <iso15118/io/sha_hash.hpp>
 #include <iso15118/io/time.hpp>
 
+#include <iso15118/message/supported_app_protocol.hpp>
+#include <iso15118/message/type.hpp>
+
+#include <iso15118/session/config.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/session/logger.hpp>
-
-#include <iso15118/d20/timeout.hpp>
+#include <iso15118/session/protocol.hpp>
 
 namespace iso15118 {
+
+class SeccEngine;
 
 struct SessionState {
     bool connected{false};
@@ -31,17 +38,27 @@ struct SessionState {
     bool fsm_needs_call{false};
 };
 
+// SECC-side session driver. It runs the (protocol-independent) SupportedAppProtocol handshake itself
+// and then delegates the negotiated protocol generation to a swappable SeccEngine.
 class Session {
 public:
-    Session(std::unique_ptr<io::IConnection>, d20::SessionConfig, const session::feedback::Callbacks&,
-            std::optional<d20::PauseContext>&);
+    Session(std::unique_ptr<io::IConnection>, session::SessionConfig, const session::feedback::Callbacks&,
+            std::optional<d20::PauseContext>&, std::optional<d2::PauseContext>&);
     ~Session();
 
     TimePoint const& poll();
     void push_control_event(const d20::ControlEvent&);
 
-    bool is_finished() const {
-        return (ctx.session_stopped or ctx.session_paused) and not message_exchange.has_response();
+    // True once the end-of-session handling completed (TCP closed, D-LINK signal sent) and the
+    // controller can reap the session.
+    bool is_finished() const;
+
+    // True once the V2G communication session is established, i.e. the first application request
+    // (SessionSetupReq) has reached the engine after the SupportedAppProtocol handshake. Until then the
+    // controller keeps V2G_SECC_CommunicationSetup_Timeout armed (it spans SLAC -> SDP -> TCP -> SAP ->
+    // SessionSetupReq); it is cancelled here and the per-message V2G_SECC_Sequence_Timeout takes over.
+    bool is_v2g_session_established() const {
+        return v2g_session_established;
     }
 
     void close();
@@ -49,34 +66,79 @@ public:
     void request_shutdown();
 
 private:
+    // The V2G session is logically over (engine finished / driver stopped); the TCP connection may
+    // still be open while we wait for the EV to close it first.
+    bool session_over() const;
+    // Close the connection (if still open) and send the D-LINK signal; marks the session reapable.
+    void finish_session();
+    // A response staged in response_buffer and ready to be written to the wire.
+    struct PendingOutgoing {
+        size_t payload_size;
+        io::v2gtp::PayloadType payload_type;
+        message_20::Type message_type;
+    };
+
     std::unique_ptr<io::IConnection> connection;
     session::SessionLogger log;
+
+    session::SessionConfig config;
+    session::feedback::Callbacks callbacks;
+    session::Feedback feedback;
 
     SessionState state;
     // input buffer
     io::SdpPacket packet;
 
-    // output buffer
-    uint8_t response_buffer[1028];
-
-    d20::MessageExchange message_exchange{{response_buffer + io::SdpPacket::V2GTP_HEADER_SIZE,
-                                           sizeof(response_buffer) - io::SdpPacket::V2GTP_HEADER_SIZE}};
+    // output buffer, shared with the engine (the SupportedAppProtocol response is staged here too).
+    // Sized to hold a full ISO 15118-2 Plug-and-Charge CertificateInstallationRes (contract certificate
+    // chains push the EXI well past 1 kB; ~4.2 kB observed). Matches EvseV2G's DEFAULT_BUFFER_SIZE.
+    uint8_t response_buffer[8192];
 
     // control event buffer
     d20::ControlEventQueue control_event_queue;
-    std::optional<d20::ControlEvent> active_control_event{std::nullopt};
 
-    d20::Context ctx;
+    // Shared with the engine (the timeouts are protocol-agnostic).
+    d20::Timeouts timeouts;
 
-    fsm::v2::FSM<d20::StateBase> fsm;
+    std::optional<d20::PauseContext>& pause_ctx;
+    // d2 pause context, owned by the controller so it survives the engine teardown on pause (mirrors the
+    // d20 pause_ctx); a returning EV re-joins the retained ISO-2 session with OK_OldSessionJoined.
+    std::optional<d2::PauseContext>& d2_pause_ctx;
+
+    // Vehicle certificate hash captured on connection OPEN, handed to the engine on creation.
+    std::optional<io::sha512_hash_t> vehicle_cert_hash{std::nullopt};
+
+    // SupportedAppProtocol phase (before an engine exists).
+    std::optional<PendingOutgoing> pending_sap_outgoing{std::nullopt};
+    d20::EVSupportedAppProtocols sap_offered_protocols;
+    message_20::SupportedAppProtocol sap_selected_protocol{};
+    bool driver_stopped{false};
+    // Set once the first application request (SessionSetupReq) has reached the engine; the V2G session
+    // is then established and the controller drops the communication-setup timeout (is_v2g_session_established()).
+    bool v2g_session_established{false};
+    // End-of-session handling done (finish_session()/close() ran); controller-facing via is_finished().
+    bool finished_reported{false};
+    // Armed when the session ends while the EV is still connected: deadline for the EV-first TCP
+    // close (CONNECTION_CLOSE_LINGER_MS), after which we close the connection ourselves.
+    std::optional<TimePoint> connection_close_deadline{std::nullopt};
+    // The session ended with a FAILED_* response (sequence error, unknown session): the SECC closes
+    // the TCP connection itself without the EV-first linger ([V2G-DC-940]).
+    bool error_termination{false};
+    // Armed on an SECC-initiated error close: the TCP connection is already closed (FIN out), the
+    // DLINK_TERMINATE signal fires when this deadline passes (FIN-flush grace, DLINK_SIGNAL_GRACE_MS).
+    std::optional<TimePoint> dlink_signal_deadline{std::nullopt};
+
+    std::unique_ptr<SeccEngine> engine{nullptr};
 
     TimePoint next_session_event;
 
-    d20::Timeouts timeouts;
-
     void handle_connection_event(io::ConnectionEvent event);
+    void handle_supported_app_protocol_request(io::v2gtp::PayloadType, const io::StreamInputView&);
+    std::unique_ptr<SeccEngine> create_engine(ProtocolId);
     void send_response();
+
     std::optional<TimePoint> last_response_tx_time; // timestamp of the last response message sent
+    std::optional<TimePoint> last_request_rx_time;  // timestamp of the last request handed to the engine
     std::optional<TimePoint> response_send_after;   // time point when the next response message can be sent
 };
 

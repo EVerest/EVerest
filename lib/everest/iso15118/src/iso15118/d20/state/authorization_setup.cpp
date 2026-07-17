@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
-#include <random>
-
 #include <iso15118/d20/state/authorization.hpp>
 #include <iso15118/d20/state/authorization_setup.hpp>
 
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/detail/random.hpp>
 
 #include <iso15118/detail/d20/state/authorization_setup.hpp>
 #include <iso15118/detail/d20/state/session_stop.hpp>
@@ -41,13 +40,8 @@ message_20::AuthorizationSetupResponse handle_request(const message_20::Authoriz
     } else {
         auto& pnc_auth_mode = res.authorization_mode.emplace<dt::PnC_ASResAuthorizationMode>();
 
-        std::random_device rd;
-        std::mt19937 generator(rd());
-        std::uniform_int_distribution<uint8_t> distribution(0x00, 0xff);
-
-        for (auto& item : pnc_auth_mode.gen_challenge) {
-            item = distribution(generator);
-        }
+        // [V2G2-835]: GenChallenge must be cryptographically random.
+        fill_random(pnc_auth_mode.gen_challenge.data(), pnc_auth_mode.gen_challenge.size());
     }
 
     return response_with_code(res, dt::ResponseCode::OK);

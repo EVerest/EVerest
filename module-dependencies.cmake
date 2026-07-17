@@ -43,7 +43,7 @@ ev_define_dependency(
 ev_define_dependency(
     DEPENDENCY_NAME libiso15118
     OUTPUT_VARIABLE_SUFFIX LIBISO15118
-    DEPENDENT_MODULES_LIST Evse15118D20)
+    DEPENDENT_MODULES_LIST Evse15118D20 Ev15118)
 
 ev_define_dependency(
     DEPENDENCY_NAME libnfc-nci

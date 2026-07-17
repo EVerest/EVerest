@@ -52,19 +52,55 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
     Adjustment strategy to disable DIN SPEC 70121 module
     """
 
-    def __init__(self, zero_power_ignore_pause: bool = False, hlc_charge_loop_without_energy_timeout_s: int = 300, ev_d20_only = False, payment_enable_contract = True, force_payment_option = False, fail_cable_check=False):
+    def __init__(self, zero_power_ignore_pause: bool = False, hlc_charge_loop_without_energy_timeout_s: int = 300, ev_d20_only = False, payment_enable_contract = True, force_payment_option = False, fail_cable_check=False, protocol_mismatch=False, secc_iso20_disabled_mismatch=False):
         self.zero_power_ignore_pause = zero_power_ignore_pause
         self.hlc_charge_loop_without_energy_timeout_s = hlc_charge_loop_without_energy_timeout_s
         self.ev_d20_only = ev_d20_only
         self.payment_enable_contract = payment_enable_contract
         self.force_payment_option = force_payment_option
         self.fail_cable_check = fail_cable_check
+        self.protocol_mismatch = protocol_mismatch
+        self.secc_iso20_disabled_mismatch = secc_iso20_disabled_mismatch
 
     def adjust_everest_configuration(self, everest_config: Dict):
         adjusted_config = deepcopy(everest_config)
-        adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_DIN70121"] = False
-        adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_ISO15118_2"] = not self.ev_d20_only
-        adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_ISO15118_20_DC"] = self.ev_d20_only
+        ev_module = adjusted_config["active_modules"]["iso15118_car"]["module"]
+        ev_config = adjusted_config["active_modules"]["iso15118_car"]["config_module"]
+        if ev_module == "PyEvJosev":
+            # EvseV2G leg: the SECC has no protocol-selection keys, so the
+            # protocol set is steered from the EV side only. EvseV2G speaks
+            # DIN/-2 exclusively, hence an EV offering -20 only produces the
+            # SupportedAppProtocol mismatch.
+            if self.protocol_mismatch or self.ev_d20_only:
+                ev_config["supported_DIN70121"] = False
+                ev_config["supported_ISO15118_2"] = False
+                ev_config["supported_ISO15118_20_DC"] = True
+            else:
+                ev_config["supported_DIN70121"] = False
+                ev_config["supported_ISO15118_2"] = True
+                ev_config["supported_ISO15118_20_DC"] = False
+        elif self.protocol_mismatch:
+            # Disjoint protocol sets so the SupportedAppProtocol handshake fails:
+            # the EV offers DIN SPEC 70121 only while the charger (which always
+            # offers ISO 15118-20) has DIN and ISO 15118-2 disabled.
+            ev_config["supported_DIN70121"] = True
+            ev_config["supported_ISO15118_2"] = False
+            ev_config["supported_d20_energy_services"] = ""
+            adjusted_config["active_modules"]["iso15118_charger"]["config_module"]["supported_DIN70121"] = False
+            adjusted_config["active_modules"]["iso15118_charger"]["config_module"]["supported_ISO15118_2"] = False
+        elif self.secc_iso20_disabled_mismatch:
+            # Exercise the supported_ISO15118_20 off-switch: the EV offers ISO 15118-20 only while
+            # the charger has -20 disabled (offering -2 only), so the handshake must fail.
+            ev_config["supported_DIN70121"] = False
+            ev_config["supported_ISO15118_2"] = False
+            ev_config["supported_d20_energy_services"] = "DC,DC_BPT"
+            adjusted_config["active_modules"]["iso15118_charger"]["config_module"]["supported_ISO15118_20"] = False
+            adjusted_config["active_modules"]["iso15118_charger"]["config_module"]["supported_ISO15118_2"] = True
+            adjusted_config["active_modules"]["iso15118_charger"]["config_module"]["supported_DIN70121"] = False
+        else:
+            ev_config["supported_DIN70121"] = False
+            ev_config["supported_ISO15118_2"] = not self.ev_d20_only
+            ev_config["supported_d20_energy_services"] = "DC,DC_BPT" if self.ev_d20_only else ""
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["hack_allow_bpt_with_iso2"] = False
         adjusted_config["active_modules"]["powersupply_dc"]["config_implementation"] = {"main": {"min_current": 0}}
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["zero_power_ignore_pause"] = self.zero_power_ignore_pause
@@ -112,6 +148,39 @@ class D20TlsConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
             secc["tls_negotiation_strategy"] = "ACCEPT_CLIENT_OFFER"
             secc["enforce_tls_1_3"] = False
         return adjusted_config
+
+
+def iso15118_dc_versions(**strategy_kwargs):
+    """Parametrize a DC ISO 15118 test over the supported SECC/protocol legs:
+
+    - iso15118_dc_d2:         Evse15118D20 SECC, EV offers ISO 15118-2
+    - iso15118_dc_d20:        Evse15118D20 SECC, EV offers ISO 15118-20 only
+    - iso15118_dc_d2_evsev2g: EvseV2G SECC (+PyEvJosev EV), EV offers ISO 15118-2
+
+    The everest_core_config marker is carried on each param (a function-level
+    config marker would take precedence over param marks, so converted tests
+    must not keep one).
+    """
+    def leg(param_id, config, **extra):
+        return pytest.param(
+            param_id,
+            id=param_id,
+            marks=[
+                pytest.mark.everest_core_config(config),
+                pytest.mark.everest_config_adaptions(
+                    DcConfigAdjustmentStrategy(**strategy_kwargs, **extra)
+                ),
+            ],
+        )
+
+    return pytest.mark.parametrize(
+        "iso15118_version",
+        [
+            leg("iso15118_dc_d2", "config-sil-dc.yaml"),
+            leg("iso15118_dc_d20", "config-sil-dc.yaml", ev_d20_only=True),
+            leg("iso15118_dc_d2_evsev2g", "config-sil-dc-evsev2g.yaml"),
+        ],
+    )
 
 
 async def wait_for_session_events(mock, expected_events, timeout=30):
@@ -497,9 +566,23 @@ async def test_pwm_ac_session(
     connections={"evse_manager": [Requirement("connector_1", "evse")]}
 )
 @pytest.mark.everest_config_adaptions(AcConfigAdjustmentStrategy())
-@pytest.mark.everest_core_config("config-sil.yaml")
+@pytest.mark.parametrize(
+    "secc_variant",
+    [
+        pytest.param(
+            "evse15118d20",
+            marks=pytest.mark.everest_core_config("config-sil.yaml"),
+            id="evse15118d20",
+        ),
+        pytest.param(
+            "evsev2g",
+            marks=pytest.mark.everest_core_config("config-sil-evsev2g.yaml"),
+            id="evsev2g",
+        ),
+    ],
+)
 async def test_iso15118_ac_session(
-    test_controller: TestController, everest_core: EverestCore
+    secc_variant, test_controller: TestController, everest_core: EverestCore
 ):
     """Test session events of an ISO 15118 AC charging session."""
     _, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
@@ -544,22 +627,7 @@ async def test_iso15118_ac_session_stop_by_evse(
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
-@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
-@pytest.mark.parametrize(
-    "iso15118_version",
-    [
-        pytest.param(
-            "iso15118_dc_d2",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy()),
-            id="iso15118_dc_d2",
-        ),
-        pytest.param(
-            "iso15118_dc_d20",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(ev_d20_only=True)),
-            id="iso15118_dc_d20",
-        ),
-    ],
-)
+@iso15118_dc_versions()
 async def test_iso15118_dc_session(
     iso15118_version,test_controller: TestController, everest_core: EverestCore
 ):
@@ -619,22 +687,7 @@ async def test_iso15118_20_dc_session_over_tls(
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
-@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
-@pytest.mark.parametrize(
-    "iso15118_version",
-    [
-        pytest.param(
-            "iso15118_dc_d2",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy()),
-            id="iso15118_dc_d2",
-        ),
-        pytest.param(
-            "iso15118_dc_d20",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(ev_d20_only=True)),
-            id="iso15118_dc_d20",
-        ),
-    ],
-)
+@iso15118_dc_versions()
 @pytest.mark.xdist_group(name="ISO15118")
 async def test_iso15118_dc_session_stop_by_evse(
     iso15118_version, test_controller: TestController, everest_core: EverestCore
@@ -665,22 +718,7 @@ async def test_iso15118_dc_session_stop_by_evse(
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
-@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
-@pytest.mark.parametrize(
-    "iso15118_version",
-    [
-        pytest.param(
-            "iso15118_dc_d2",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy()),
-            id="iso15118_dc_d2",
-        ),
-        pytest.param(
-            "iso15118_dc_d20",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(ev_d20_only=True)),
-            id="iso15118_dc_d20",
-        ),
-    ],
-)
+@iso15118_dc_versions()
 async def test_iso15118_dc_session_error_before_session(
     iso15118_version, test_controller: TestController, everest_core: EverestCore
 ):
@@ -820,22 +858,7 @@ async def test_iso15118_dc_session_no_energy_before_session(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
-@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
-@pytest.mark.parametrize(
-    "iso15118_version",
-    [
-        pytest.param(
-            "iso15118_dc_d2",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(zero_power_ignore_pause=True, hlc_charge_loop_without_energy_timeout_s=30)),
-            id="iso15118_dc_d2",
-        ),
-        pytest.param(
-            "iso15118_dc_d20",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(zero_power_ignore_pause=True, hlc_charge_loop_without_energy_timeout_s=30, ev_d20_only=True)),
-            id="iso15118_dc_d20",
-        ),
-    ],
-)
+@iso15118_dc_versions(zero_power_ignore_pause=True, hlc_charge_loop_without_energy_timeout_s=30)
 @pytest.mark.xdist_group(name="ISO15118")
 async def test_iso15118_dc_session_no_energy_before_session_no_pause(
     iso15118_version,test_controller: TestController, everest_core: EverestCore
@@ -946,22 +969,7 @@ async def test_iso15118_ac_session_no_energy_during_session_timeout_triggers(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
-@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
-@pytest.mark.parametrize(
-    "iso15118_version",
-    [
-        pytest.param(
-            "iso15118_dc_d2",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(hlc_charge_loop_without_energy_timeout_s=30)),
-            id="iso15118_dc_d2",
-        ),
-        pytest.param(
-            "iso15118_dc_d20",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(hlc_charge_loop_without_energy_timeout_s=30, ev_d20_only=True)),
-            id="iso15118_dc_d20",
-        ),
-    ],
-)
+@iso15118_dc_versions(hlc_charge_loop_without_energy_timeout_s=30)
 @pytest.mark.xdist_group(name="ISO15118")
 async def test_iso15118_dc_session_no_energy_during_session(
     iso15118_version,test_controller: TestController, everest_core: EverestCore
@@ -987,22 +995,7 @@ async def test_iso15118_dc_session_no_energy_during_session(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
-@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
-@pytest.mark.parametrize(
-    "iso15118_version",
-    [
-        pytest.param(
-            "iso15118_dc_d2",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(hlc_charge_loop_without_energy_timeout_s=5)),
-            id="iso15118_dc_d2",
-        ),
-        pytest.param(
-            "iso15118_dc_d20",
-            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(hlc_charge_loop_without_energy_timeout_s=5, ev_d20_only=True)),
-            id="iso15118_dc_d20",
-        ),
-    ],
-)
+@iso15118_dc_versions(hlc_charge_loop_without_energy_timeout_s=5)
 @pytest.mark.xdist_group(name="ISO15118")
 async def test_iso15118_dc_session_no_energy_during_session_timeout_triggers(
     iso15118_version, test_controller: TestController, everest_core: EverestCore
@@ -1243,10 +1236,37 @@ async def test_iso15118_dc_session_paused_by_evse(
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
-@pytest.mark.everest_core_config("config-sil-dc.yaml")
-@pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(ev_d20_only=True))
+@pytest.mark.parametrize(
+    "secc_variant",
+    [
+        pytest.param(
+            "d20_secc",
+            marks=[
+                pytest.mark.everest_core_config("config-sil-dc.yaml"),
+                pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(protocol_mismatch=True)),
+            ],
+            id="d20_secc",
+        ),
+        pytest.param(
+            "d20_secc_iso20_disabled",
+            marks=[
+                pytest.mark.everest_core_config("config-sil-dc.yaml"),
+                pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(secc_iso20_disabled_mismatch=True)),
+            ],
+            id="d20_secc_iso20_disabled",
+        ),
+        pytest.param(
+            "evsev2g_secc",
+            marks=[
+                pytest.mark.everest_core_config("config-sil-dc-evsev2g.yaml"),
+                pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(protocol_mismatch=True)),
+            ],
+            id="evsev2g_secc",
+        ),
+    ],
+)
 async def test_iso15118_protocol_negotiation_failed(
-    test_controller: TestController, everest_core: EverestCore
+    secc_variant, test_controller: TestController, everest_core: EverestCore
 ):
     """
     Test that a protocol negotiation failure results in ProtocolNegotiationFailed.

@@ -21,7 +21,10 @@ struct ResetState : public FSMSimpleState {
     // for now returns true if CM_SET_KEY_CNF is received
     bool handle_slac_message(slac::messages::HomeplugMessage&);
 
-    bool setup_has_been_send{false};
+    // A lost CM_SET_KEY_CNF must not strand the FSM here: retry the request a
+    // few times before giving up (recovery is then only possible via RESET).
+    static constexpr int SET_KEY_MAX_ATTEMPTS = 3;
+    int set_key_attempts{0};
 };
 
 struct ResetChipState : public FSMSimpleState {
