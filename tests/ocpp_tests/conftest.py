@@ -292,6 +292,13 @@ def probe_module(
     implement_command(
         module,
         skip_implementation,
+        "ProbeModuleConnectorA",
+        "set_der_available",
+        lambda arg: "Accepted",
+    )
+    implement_command(
+        module,
+        skip_implementation,
         "ProbeModuleConnectorB",
         "get_evse",
         lambda arg: {"id": 2, "connectors": [{"id": 1}]},
@@ -379,6 +386,13 @@ def probe_module(
         "ProbeModuleConnectorB",
         "set_plug_and_charge_configuration",
         lambda arg: True,
+    )
+    implement_command(
+        module,
+        skip_implementation,
+        "ProbeModuleConnectorB",
+        "set_der_available",
+        lambda arg: "Accepted",
     )
     implement_command(
         module,

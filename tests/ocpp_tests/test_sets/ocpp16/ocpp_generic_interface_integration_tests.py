@@ -107,6 +107,8 @@ async def _env(
         )
         _add_pm_command_mock(
             evse_manager, "set_plug_and_charge_configuration", True, skip_implementation)
+        _add_pm_command_mock(
+            evse_manager, "set_der_available", "Accepted", skip_implementation)
     _add_pm_command_mock(
         "security", "get_leaf_expiry_days_count", 42, skip_implementation
     )
