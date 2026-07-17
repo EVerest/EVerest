@@ -292,6 +292,9 @@ protected:
     [[nodiscard]] auto& evse_supported_energy_transfer_modes() {
         return m_evse_supported_energy_transfer_modes;
     }
+    [[nodiscard]] auto& grid_support_state() {
+        return m_grid_support_state;
+    }
 
     EventInfo convert_error(const Everest::error::Error& error);
 
@@ -433,6 +436,11 @@ protected:
     /// the EVSE already had an accepted capability, rolls back to it (restoring its config variables,
     /// leaving Enabled untouched); otherwise unregisters the EVSE.
     DerApplyResult apply_der_capability(std::int32_t evse_id, const types::grid_support::DERCapability& capability);
+
+    /// \brief Persisted DERCtrlr Enabled for \p evse_id (AC then DC controller), or nullopt when neither
+    /// controller has a persisted value. Read from the device model so a CSMS-written Enabled survives a
+    /// reboot and a live capability re-report.
+    std::optional<bool> read_persisted_der_enabled(std::int32_t evse_id);
 
     /// \brief Flip capabilities live and empty the pre-construction buffered DER capabilities into libocpp
     /// at ready(). Only meaningful when a grid_support consumer is connected.

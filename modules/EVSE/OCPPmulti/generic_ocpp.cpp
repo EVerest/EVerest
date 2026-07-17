@@ -1735,11 +1735,18 @@ GenericOcpp::DerApplyResult GenericOcpp::apply_der_capability(std::int32_t evse_
     DerApplyResult result;
 
     // Handle per access: set_variables/on_der_republish re-enter der_active_directives_callback (self-deadlock).
+    // get_variables only reads the device model, so it is safe under the handle.
     std::optional<types::grid_support::DERCapability> previous;
     {
         auto state_handle = m_grid_support_state.handle();
         previous = state_handle->capability_for(evse_id);
         state_handle->set_capability(evse_id, capability);
+        // Restore a CSMS-written Enabled so a persisted disable survives a live capability re-report.
+        // Only seed from persistence: leave the runtime state untouched when nothing is persisted.
+        const auto persisted_enabled = read_persisted_der_enabled(evse_id);
+        if (persisted_enabled.has_value()) {
+            state_handle->set_enabled(evse_id, persisted_enabled.value());
+        }
     }
 
     const auto collect_rejected = [](const std::vector<ocpp::v2::SetVariableResult>& set_results) {
@@ -1827,37 +1834,32 @@ GenericOcpp::DerApplyResult GenericOcpp::apply_der_capability(std::int32_t evse_
     return result;
 }
 
-void GenericOcpp::flush_pending_grid_support() {
-    // Persisted DERCtrlr Enabled for evse_id (AC then DC controller), or nullopt if it has no DER controller.
-    const auto read_persisted_der_enabled = [this](std::int32_t evse_id) -> std::optional<bool> {
-        for (const auto& component_variable : {ocpp::v2::DERComponentVariables::get_ac_component_variable(
-                                                   evse_id, ocpp::v2::DERComponentVariables::Enabled),
-                                               ocpp::v2::DERComponentVariables::get_dc_component_variable(
-                                                   evse_id, ocpp::v2::DERComponentVariables::Enabled)}) {
-            ocpp::v2::GetVariableData data;
-            data.component = component_variable.component;
-            data.variable = component_variable.variable.value();
-            data.attributeType = ocpp::v2::AttributeEnum::Actual;
-            const auto results = mv_charge_point.get_variables({data});
-            if (not results.empty() and results.front().attributeStatus == ocpp::v2::GetVariableStatusEnum::Accepted and
-                results.front().attributeValue.has_value()) {
-                return ocpp::conversions::string_to_bool(results.front().attributeValue.value().get());
-            }
+std::optional<bool> GenericOcpp::read_persisted_der_enabled(std::int32_t evse_id) {
+    for (const auto& component_variable :
+         {ocpp::v2::DERComponentVariables::get_ac_component_variable(evse_id, ocpp::v2::DERComponentVariables::Enabled),
+          ocpp::v2::DERComponentVariables::get_dc_component_variable(evse_id,
+                                                                     ocpp::v2::DERComponentVariables::Enabled)}) {
+        ocpp::v2::GetVariableData data;
+        data.component = component_variable.component;
+        data.variable = component_variable.variable.value();
+        data.attributeType = ocpp::v2::AttributeEnum::Actual;
+        const auto results = mv_charge_point.get_variables({data});
+        if (not results.empty() and results.front().attributeStatus == ocpp::v2::GetVariableStatusEnum::Accepted and
+            results.front().attributeValue.has_value()) {
+            return ocpp::conversions::string_to_bool(results.front().attributeValue.value().get());
         }
-        return std::nullopt;
-    };
+    }
+    return std::nullopt;
+}
 
+void GenericOcpp::flush_pending_grid_support() {
+    // apply_der_capability restores each EVSE's persisted Enabled, so the flush only flips the live flag
+    // and drains the pre-construction buffer.
     std::vector<std::pair<std::int32_t, types::grid_support::DERCapability>> pending;
     {
         auto state_handle = m_grid_support_state.handle();
         state_handle->set_capabilities_live();
         pending = state_handle->take_pending_capabilities();
-        for (const auto& [evse_id, capability] : pending) {
-            const auto enabled = read_persisted_der_enabled(evse_id);
-            if (enabled.has_value()) {
-                state_handle->set_enabled(evse_id, enabled.value());
-            }
-        }
     }
     for (const auto& [pending_evse_id, pending_capability] : pending) {
         const auto apply_result = apply_der_capability(pending_evse_id, pending_capability);

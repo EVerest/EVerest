@@ -105,6 +105,12 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::evse_hardware_capabilities_map;
     using ocpp_multi::GenericOcpp::evse_soc_map;
     using ocpp_multi::GenericOcpp::evse_supported_energy_transfer_modes;
+    using ocpp_multi::GenericOcpp::grid_support_state;
+
+    // grid_support / DER
+    using ocpp_multi::GenericOcpp::apply_der_capability;
+    using ocpp_multi::GenericOcpp::flush_pending_grid_support;
+    using ocpp_multi::GenericOcpp::on_grid_support_capability;
 };
 
 // creates the OCPP object and performs initialisation before every test

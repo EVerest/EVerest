@@ -138,6 +138,7 @@ protected:
     virtual std::optional<json> evse_manager_call_get_evse(const Requirement& req, const json& args);
     virtual std::optional<json> evse_manager_call_pause_charging(const Requirement& req, const json& args);
     virtual std::optional<json> evse_manager_call_resume_charging(const Requirement& req, const json& args);
+    virtual std::optional<json> evse_manager_call_set_der_available(const Requirement& req, const json& args);
     virtual std::optional<json> evse_manager_call_set_plug_and_charge_configuration(const Requirement& req,
                                                                                     const json& args);
     virtual std::optional<json> evse_manager_call_stop_transaction(const Requirement& req, const json& args);

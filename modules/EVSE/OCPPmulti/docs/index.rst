@@ -50,7 +50,7 @@ module rolls back to the last accepted capability; an EVSE whose very first capa
 
 The CSMS may write the ``Enabled`` variable (``ReadWrite``). Writing ``Enabled="false"`` makes the module push an empty
 directive replacement set to that EVSE, so the device clears the EV's curves; writing ``Enabled="true"`` republishes the
-filtered active set for that EVSE. A CSMS-written ``Enabled`` persists across reboots and is rehydrated at boot.
+filtered active set for that EVSE. A CSMS-written ``Enabled`` persists across reboots and is restored at boot.
 
 The device reports grid event faults through the ``alarm`` variable, forwarded to the CSMS as a **NotifyDERAlarm.req**.
 Alarms raised before the backend has accepted a capability for any EVSE are buffered and delivered once the first

@@ -39,6 +39,7 @@ target_sources(${TEST_TARGET_NAME}
 
     # general
     generic_ocpp_tests.cpp
+    grid_support_der_tests.cpp
     grid_support_state_test.cpp
     main.cpp
     v16_chargepoint_tests.cpp

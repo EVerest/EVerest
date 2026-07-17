@@ -470,6 +470,20 @@ std::optional<json> ModuleAdapter::evse_manager_call_resume_charging(const Requi
     return result;
 }
 
+std::optional<json> ModuleAdapter::evse_manager_call_set_der_available(const Requirement& req, const json& args) {
+    // evse_manager interface
+    // set_der_available:
+    //   result:
+    //     $ref: /evse_manager#/SetDerAvailableResult (enum: Accepted, NoHlc)
+    EVLOG_debug << "Call call_set_der_available: " << args.dump();
+    publish_fn("evse_manager", "call_set_der_available", req.index, args);
+    auto result = get_cmd_response(R"("Accepted")"_json);
+    if (result) {
+        EVLOG_debug << "result:                     " << result.value().dump();
+    }
+    return result;
+}
+
 std::optional<json> ModuleAdapter::evse_manager_call_set_plug_and_charge_configuration(const Requirement& req,
                                                                                        const json& args) {
     // evse_manager interface
@@ -967,6 +981,7 @@ ModuleAdapter::ModuleAdapter() : m_error_type_map(std::make_shared<Everest::erro
     m_call_implementations.insert({"pause_charging", &ModuleAdapter::evse_manager_call_pause_charging});
     m_call_implementations.insert({"reserve_now", &ModuleAdapter::reservation_call_reserve_now});
     m_call_implementations.insert({"reset", &ModuleAdapter::system_call_reset});
+    m_call_implementations.insert({"set_der_available", &ModuleAdapter::evse_manager_call_set_der_available});
     m_call_implementations.insert({"resume_charging", &ModuleAdapter::evse_manager_call_resume_charging});
     m_call_implementations.insert({"set_connection_timeout", &ModuleAdapter::auth_call_set_connection_timeout});
     m_call_implementations.insert({"set_display_message", &ModuleAdapter::display_message_call_set_display_message});
