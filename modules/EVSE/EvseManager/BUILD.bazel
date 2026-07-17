@@ -22,6 +22,7 @@ cc_everest_module(
     ),
     impls = IMPLS,
     deps = [
+        "//lib/everest/everest_api_types:everest_api_types",
         "//lib/everest/helpers",
         "//lib/everest/util",
         "@pugixml",

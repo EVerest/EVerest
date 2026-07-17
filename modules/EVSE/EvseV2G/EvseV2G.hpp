@@ -20,6 +20,7 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
+#include "telemetry_publisher.hpp"
 #include "v2g_ctx.hpp"
 #include <everest/tls/tls.hpp>
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
@@ -39,21 +40,25 @@ struct Conf {
     int auth_timeout_pnc;
     int auth_timeout_eim;
     bool enable_sdp_server;
+    bool publish_telemetry_only_on_change;
 };
 
 class EvseV2G : public Everest::ModuleBase {
 public:
     EvseV2G() = delete;
-    EvseV2G(const ModuleInfo& info, std::unique_ptr<ISO15118_chargerImplBase> p_charger,
+    EvseV2G(const ModuleInfo& info, Everest::TelemetryProvider& telemetry,
+            std::unique_ptr<ISO15118_chargerImplBase> p_charger,
             std::unique_ptr<iso15118_extensionsImplBase> p_extensions, std::unique_ptr<evse_securityIntf> r_security,
             std::vector<std::unique_ptr<ISO15118_vasIntf>> r_iso15118_vas, Conf& config) :
         ModuleBase(info),
+        telemetry(telemetry),
         p_charger(std::move(p_charger)),
         p_extensions(std::move(p_extensions)),
         r_security(std::move(r_security)),
         r_iso15118_vas(std::move(r_iso15118_vas)),
         config(config){};
 
+    Everest::TelemetryProvider& telemetry;
     const std::unique_ptr<ISO15118_chargerImplBase> p_charger;
     const std::unique_ptr<iso15118_extensionsImplBase> p_extensions;
     const std::unique_ptr<evse_securityIntf> r_security;
@@ -77,6 +82,7 @@ private:
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
     tls::Server tls_server;
+    std::unique_ptr<V2gTelemetryPublisher> telemetry_publisher;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

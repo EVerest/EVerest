@@ -27,6 +27,10 @@
 #include <event2/event.h>
 #include <event2/thread.h>
 
+namespace module {
+class V2gTelemetryPublisher;
+} // namespace module
+
 /* timeouts in milliseconds */
 #define V2G_SEQUENCE_TIMEOUT_60S              60000 /* [V2G2-443] et.al. */
 #define V2G_SEQUENCE_TIMEOUT_10S              10000
@@ -224,6 +228,8 @@ struct v2g_context {
         int fd;
     } tls_socket;
     tls::Server* tls_server;
+
+    module::V2gTelemetryPublisher* telemetry_publisher;
 
     bool tls_key_logging;
 

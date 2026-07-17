@@ -117,6 +117,9 @@ target_sources(everest_api_types
   src/everest_api_types/uk_random_delay/json_codec.cpp
   src/everest_api_types/uk_random_delay/wrapper.cpp
 
+  src/everest_api_types/telemetry/codec.cpp
+  src/everest_api_types/telemetry/json_codec.cpp
+
   src/everest_api_types/generic/codec.cpp
   src/everest_api_types/generic/json_codec.cpp
   src/everest_api_types/generic/string.cpp
@@ -152,5 +155,3 @@ evc_setup_package(
 if(${BUILD_TESTING})
     add_subdirectory(tests)
 endif()
-
-

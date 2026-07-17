@@ -1,0 +1,762 @@
+---
+asyncapi: 3.0.0
+id: 'pionix:de:everest:telemetry'
+info:
+  title: 'EVerest telemetry'
+  version: 1.0.0
+  description: >-
+    Typed telemetry payloads and topics emitted by the EVerest framework and EVSE modules.
+
+  license:
+    name: Apache-2.0
+    url: https://opensource.org/licenses/Apache-2.0
+  tags:
+    - name: EVerest
+    - name: telemetry
+servers:
+  default:
+    pathname: 'everest-telemetry'
+    host: 'localhost:1883'
+    description: default local MQTT
+    protocol: mqtt
+defaultContentType: application/json
+
+
+channels:
+  receive_cert_status:
+    address: 'Cert/{telemetry_id}/status'
+    parameters:
+      telemetry_id:
+        description: Telemetry id used by the framework as numeric identifier.
+    messages:
+      receive_cert_status:
+        $ref: '#/components/messages/receive_cert_status'
+  receive_evse_control:
+    address: 'Evse/{telemetry_id}/control'
+    parameters:
+      telemetry_id:
+        description: Telemetry id used by the framework as numeric identifier.
+    messages:
+      receive_evse_control:
+        $ref: '#/components/messages/receive_evse_control'
+  receive_v2g_transport:
+    address: 'V2G/{telemetry_id}/transport'
+    parameters:
+      telemetry_id:
+        description: Telemetry id used by the framework as numeric identifier.
+    messages:
+      receive_v2g_transport:
+        $ref: '#/components/messages/receive_v2g_transport'
+  receive_v2g_ev_electrical:
+    address: 'V2G/{telemetry_id}/ev_electrical'
+    parameters:
+      telemetry_id:
+        description: Telemetry id used by the framework as numeric identifier.
+    messages:
+      receive_v2g_ev_electrical:
+        $ref: '#/components/messages/receive_v2g_ev_electrical'
+  receive_v2g_payment_service:
+    address: 'V2G/{telemetry_id}/payment_service'
+    parameters:
+      telemetry_id:
+        description: Telemetry id used by the framework as numeric identifier.
+    messages:
+      receive_v2g_payment_service:
+        $ref: '#/components/messages/receive_v2g_payment_service'
+  receive_v2g_charger_status:
+    address: 'V2G/{telemetry_id}/charger_status'
+    parameters:
+      telemetry_id:
+        description: Telemetry id used by the framework as numeric identifier.
+    messages:
+      receive_v2g_charger_status:
+        $ref: '#/components/messages/receive_v2g_charger_status'
+
+
+operations:
+  receive_cert_status:
+    title: 'Receive cert status telemetry'
+    summary: 'Direction: EVerest to telemetry consumer'
+    action: receive
+    description: >-
+      The topic payload contains the framework fields `timestamp`, `connector_id`, and `type`
+      plus the `CertTelemetry` struct for the `status` subcategory.
+    channel:
+      $ref: '#/channels/receive_cert_status'
+  receive_evse_control:
+    title: 'Receive EVSE control telemetry'
+    summary: 'Direction: EVerest to telemetry consumer'
+    action: receive
+    description: >-
+      The topic payload contains the framework fields `timestamp`, `connector_id`, and `type`
+      plus the `EvseControlStatus` struct for the `control` subcategory.
+    channel:
+      $ref: '#/channels/receive_evse_control'
+  receive_v2g_transport:
+    title: 'Receive V2G transport telemetry'
+    summary: 'Direction: EVerest to telemetry consumer'
+    action: receive
+    description: >-
+      The topic payload contains the framework fields `timestamp`, `connector_id`, and `type`
+      plus the `V2gTransport` struct for the `transport` subcategory.
+    channel:
+      $ref: '#/channels/receive_v2g_transport'
+  receive_v2g_ev_electrical:
+    title: 'Receive V2G EV electrical telemetry'
+    summary: 'Direction: EVerest to telemetry consumer'
+    action: receive
+    description: >-
+      The topic payload contains the framework fields `timestamp`, `connector_id`, and `type`
+      plus the `V2gEvElectrical` struct for the `ev_electrical` subcategory.
+    channel:
+      $ref: '#/channels/receive_v2g_ev_electrical'
+  receive_v2g_payment_service:
+    title: 'Receive V2G payment service telemetry'
+    summary: 'Direction: EVerest to telemetry consumer'
+    action: receive
+    description: >-
+      The topic payload contains the framework fields `timestamp`, `connector_id`, and `type`
+      plus the `V2gPaymentService` struct for the `payment_service` subcategory.
+    channel:
+      $ref: '#/channels/receive_v2g_payment_service'
+  receive_v2g_charger_status:
+    title: 'Receive V2G charger status telemetry'
+    summary: 'Direction: EVerest to telemetry consumer'
+    action: receive
+    description: >-
+      The topic payload contains the framework fields `timestamp`, `connector_id`, and `type`
+      plus the `V2gChargerStatus` struct for the `charger_status` subcategory.
+    channel:
+      $ref: '#/channels/receive_v2g_charger_status'
+
+
+components:
+  messages:
+    receive_cert_status:
+      name: cert_status
+      title: 'Cert status telemetry'
+      summary: Certificate chain telemetry.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TelemetryCertStatus'
+    receive_evse_control:
+      name: evse_control
+      title: 'EVSE control telemetry'
+      summary: EVSE control-state telemetry.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TelemetryEvseControl'
+    receive_v2g_transport:
+      name: v2g_transport
+      title: 'V2G transport telemetry'
+      summary: V2G transport telemetry.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TelemetryV2gTransport'
+    receive_v2g_ev_electrical:
+      name: v2g_ev_electrical
+      title: 'V2G EV electrical telemetry'
+      summary: EV electrical telemetry.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TelemetryV2gEvElectrical'
+    receive_v2g_payment_service:
+      name: v2g_payment_service
+      title: 'V2G payment service telemetry'
+      summary: V2G payment service telemetry.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TelemetryV2gPaymentService'
+    receive_v2g_charger_status:
+      name: v2g_charger_status
+      title: 'V2G charger status telemetry'
+      summary: V2G charger status telemetry.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TelemetryV2gChargerStatus'
+
+  schemas:
+    TelemetryEnvelope:
+      description: Common fields injected by the framework for all telemetry publications.
+      type: object
+      additionalProperties: true
+      required:
+        - timestamp
+        - connector_id
+        - type
+      properties:
+        timestamp:
+          description: UTC timestamp added by telemetry_publish.
+          type: string
+          format: date-time
+        connector_id:
+          description: Numeric telemetry id injected by telemetry_publish under the connector_id key.
+          type: integer
+        type:
+          description: Telemetry subtype used in the topic publish call.
+          type: string
+
+    TelemetryCertStatus:
+      description: Cert status payload (`Cert/{telemetry_id}/status`) with framework fields.
+      type: object
+      additionalProperties: true
+      allOf:
+        - $ref: '#/components/schemas/TelemetryEnvelope'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - status
+        - $ref: '#/components/schemas/CertTelemetry'
+
+    TelemetryEvseControl:
+      description: EVSE control payload (`Evse/{telemetry_id}/control`) with framework fields.
+      type: object
+      additionalProperties: true
+      allOf:
+        - $ref: '#/components/schemas/TelemetryEnvelope'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - control
+        - $ref: '#/components/schemas/EvseControlStatus'
+
+    TelemetryV2gTransport:
+      description: V2G transport payload (`V2G/{telemetry_id}/transport`) with framework fields.
+      type: object
+      additionalProperties: true
+      allOf:
+        - $ref: '#/components/schemas/TelemetryEnvelope'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - transport
+        - $ref: '#/components/schemas/V2gTransport'
+
+    TelemetryV2gEvElectrical:
+      description: V2G EV electrical payload (`V2G/{telemetry_id}/ev_electrical`) with framework fields.
+      type: object
+      additionalProperties: true
+      allOf:
+        - $ref: '#/components/schemas/TelemetryEnvelope'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - ev_electrical
+        - $ref: '#/components/schemas/V2gEvElectrical'
+
+    TelemetryV2gPaymentService:
+      description: V2G payment-service payload (`V2G/{telemetry_id}/payment_service`) with framework fields.
+      type: object
+      additionalProperties: true
+      allOf:
+        - $ref: '#/components/schemas/TelemetryEnvelope'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - payment_service
+        - $ref: '#/components/schemas/V2gPaymentService'
+
+    TelemetryV2gChargerStatus:
+      description: V2G charger-status payload (`V2G/{telemetry_id}/charger_status`) with framework fields.
+      type: object
+      additionalProperties: true
+      allOf:
+        - $ref: '#/components/schemas/TelemetryEnvelope'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum:
+                - charger_status
+        - $ref: '#/components/schemas/V2gChargerStatus'
+
+    CertChainState:
+      description: Cert chain status counters and flags.
+      type: object
+      additionalProperties: true
+      required:
+        - configured
+        - synced
+        - num_files
+        - num_useful_files
+      properties:
+        configured:
+          description: Certificate chain has been configured.
+          type: boolean
+        synced:
+          description: Certificate chain is synced.
+          type: boolean
+        num_files:
+          description: Number of certificate files.
+          type: integer
+        num_useful_files:
+          description: Number of useful certificate files.
+          type: integer
+
+    CertTelemetry:
+      description: Certificate status for SECC and MO root chains.
+      type: object
+      additionalProperties: true
+      required:
+        - config_complete
+        - sync_complete
+        - secc_chain
+        - mo_root
+      properties:
+        config_complete:
+          description: Whether all required certificate groups are configured.
+          type: boolean
+        sync_complete:
+          description: Whether all required certificate groups are synced.
+          type: boolean
+        secc_chain:
+          description: V2G certificate chain state.
+          $ref: '#/components/schemas/CertChainState'
+        mo_root:
+          description: MO root certificate chain state.
+          $ref: '#/components/schemas/CertChainState'
+
+    EvseControlStatus:
+      description: EVSE control state flags.
+      type: object
+      additionalProperties: true
+      required:
+        - authorisation_finished
+        - emergency_stop
+        - error_stop
+        - normal_stop
+        - contract_payment_enabled
+        - free_charging_enabled
+      properties:
+        authorisation_finished:
+          description: Authorization is finished.
+          type: boolean
+        emergency_stop:
+          description: Emergency stop active.
+          type: boolean
+        error_stop:
+          description: Error stop active.
+          type: boolean
+        normal_stop:
+          description: Normal stop active.
+          type: boolean
+        contract_payment_enabled:
+          description: Contract payment enabled.
+          type: boolean
+        free_charging_enabled:
+          description: Free charging enabled.
+          type: boolean
+
+    V2gDin70121CommunicationState:
+      description: DIN 70121 transport communication state.
+      type: string
+      enum:
+        - WaitForSessionSetup
+        - WaitForServiceDiscovery
+        - WaitForPaymentServiceSelection
+        - WaitForAuthorization
+        - WaitForChargeParameterDiscovery
+        - WaitForCableCheck
+        - WaitForPreCharge
+        - WaitForPreChargePowerDelivery
+        - WaitForCurrentDemand
+        - WaitForCurrentDemandPowerDelivery
+        - WaitForWeldingDetectionSessionStop
+        - WaitForSessionStop
+        - WaitForTerminatedSession
+
+    V2gIso15118AcCommunicationState:
+      description: ISO 15118-2 AC transport communication state.
+      type: string
+      enum:
+        - WaitForSessionSetup
+        - WaitForServiceDiscovery
+        - WaitForServiceDetailPaymentServiceSelection
+        - WaitForPaymentDetailsCertificateInstallCertificateUpdate
+        - WaitForPaymentDetails
+        - WaitForAuthorization
+        - WaitForChargeParameterDiscovery
+        - WaitForPowerDelivery
+        - WaitForChargingStatus
+        - WaitForChargingStatusPowerDelivery
+        - WaitForMeteringReceipt
+        - WaitForSessionStop
+        - WaitForTerminatedSession
+
+    V2gIso15118DcCommunicationState:
+      description: ISO 15118-2 DC communication state.
+      type: string
+      enum:
+        - WaitForSessionSetup
+        - WaitForServiceDiscovery
+        - WaitForServiceDetailPaymentServiceSelection
+        - WaitForPaymentDetailsCertificateInstallCertificateUpdate
+        - WaitForPaymentDetails
+        - WaitForAuthorization
+        - WaitForChargeParameterDiscovery
+        - WaitForCableCheck
+        - WaitForPreCharge
+        - WaitForPreChargePowerDelivery
+        - WaitForCurrentDemandPowerDelivery
+        - WaitForCurrentDemand
+        - WaitForMeteringReceipt
+        - WaitForWeldingDetectionSessionStop
+        - WaitForTerminatedSession
+
+    V2gCommunicationState:
+      description: Communication state container. Optional fields are omitted when unset.
+      type: object
+      additionalProperties: true
+      properties:
+        din70121:
+          description: DIN 70121 communication state.
+          $ref: '#/components/schemas/V2gDin70121CommunicationState'
+        iso15118_ac:
+          description: ISO 15118-2 AC communication state.
+          $ref: '#/components/schemas/V2gIso15118AcCommunicationState'
+        iso15118_dc:
+          description: ISO 15118-2 DC communication state.
+          $ref: '#/components/schemas/V2gIso15118DcCommunicationState'
+
+    V2gMessageState:
+      description: ISO 15118 protocol message state.
+      type: string
+      enum:
+        - SupportedAppProtocol
+        - SessionSetup
+        - ServiceDiscovery
+        - ServiceDetail
+        - PaymentServiceSelection
+        - PaymentDetails
+        - Authorization
+        - ChargeParameterDiscovery
+        - MeteringReceipt
+        - CertificateUpdate
+        - CertificateInstallation
+        - ChargingStatus
+        - CableCheck
+        - PreCharge
+        - PowerDelivery
+        - CurrentDemand
+        - WeldingDetection
+        - SessionStop
+        - Unknown
+
+    V2gServerStatus:
+      description: Transport server status.
+      type: string
+      enum:
+        - Inactive
+        - Active
+
+    V2gTransport:
+      description: V2G transport state.
+      type: object
+      additionalProperties: true
+      required:
+        - comm_state
+        - message_state
+        - udp_server_status
+        - tcp_listener_status
+        - tcp_server_status
+        - tcp_connection_established
+        - tcp_discovery_enable
+        - tcp_security_enable
+        - tcp_security_required
+        - tcp_port_number
+        - session_setup_requested
+        - authorization_requested
+        - charge_parameter_discovery_requested
+        - cable_check_requested
+        - pre_charge_requested
+        - current_demand_requested
+        - welding_detection_requested
+      properties:
+        comm_state:
+          description: Communication state object.
+          $ref: '#/components/schemas/V2gCommunicationState'
+        message_state:
+          description: Current message state.
+          $ref: '#/components/schemas/V2gMessageState'
+        udp_server_status:
+          description: UDP server status.
+          $ref: '#/components/schemas/V2gServerStatus'
+        tcp_listener_status:
+          description: TCP listener status.
+          $ref: '#/components/schemas/V2gServerStatus'
+        tcp_server_status:
+          description: TCP server status.
+          $ref: '#/components/schemas/V2gServerStatus'
+        tcp_connection_established:
+          description: TCP connection established.
+          type: boolean
+        tcp_discovery_enable:
+          description: TCP discovery enabled.
+          type: boolean
+        tcp_security_enable:
+          description: TCP security enabled.
+          type: boolean
+        tcp_security_required:
+          description: TCP security required.
+          type: boolean
+        tcp_port_number:
+          description: TCP port number.
+          type: integer
+        session_setup_requested:
+          description: Session setup requested.
+          type: boolean
+        authorization_requested:
+          description: Authorization requested.
+          type: boolean
+        charge_parameter_discovery_requested:
+          description: Charge parameter discovery requested.
+          type: boolean
+        cable_check_requested:
+          description: Cable check requested.
+          type: boolean
+        pre_charge_requested:
+          description: Pre-charge requested.
+          type: boolean
+        current_demand_requested:
+          description: Current demand requested.
+          type: boolean
+        welding_detection_requested:
+          description: Welding detection requested.
+          type: boolean
+
+    ChargeProgress:
+      description: EV charge progress state.
+      type: string
+      enum:
+        - Start
+        - Stop
+        - Renegotiate
+        - Pause
+        - Terminate
+
+    V2gEvElectrical:
+      description: EV electrical telemetry.
+      type: object
+      additionalProperties: true
+      required:
+        - charge_progress
+        - battery_soc_percent
+        - error_code
+        - maximum_current_A
+        - maximum_power_W
+        - maximum_voltage_V
+        - maximum_rated_current_A
+        - maximum_rated_power_W
+        - maximum_rated_voltage_V
+        - target_current_A
+        - target_voltage_V
+        - remaining_time_bulk_min
+        - remaining_time_full_min
+        - energy_request_Wh
+        - energy_capacity_Wh
+      properties:
+        charge_progress:
+          description: Current EV charge progress.
+          $ref: '#/components/schemas/ChargeProgress'
+        battery_soc_percent:
+          description: Battery state of charge.
+          type: integer
+        error_code:
+          description: EV error code.
+          $ref: '#/components/schemas/V2gEvErrorCode'
+        maximum_current_A:
+          description: Maximum allowed current in A.
+          type: number
+        maximum_power_W:
+          description: Maximum allowed power in W.
+          type: number
+        maximum_voltage_V:
+          description: Maximum allowed voltage in V.
+          type: number
+        maximum_rated_current_A:
+          description: Maximum rated current in A.
+          type: number
+        maximum_rated_power_W:
+          description: Maximum rated power in W.
+          type: number
+        maximum_rated_voltage_V:
+          description: Maximum rated voltage in V.
+          type: number
+        target_current_A:
+          description: Target current in A.
+          type: number
+        target_voltage_V:
+          description: Target voltage in V.
+          type: number
+        remaining_time_bulk_min:
+          description: Estimated bulk charge time in minutes.
+          type: integer
+        remaining_time_full_min:
+          description: Estimated full charge time in minutes.
+          type: integer
+        energy_request_Wh:
+          description: Requested energy in Wh.
+          type: number
+        energy_capacity_Wh:
+          description: Battery energy capacity in Wh.
+          type: number
+
+    V2gPaymentService:
+      description: V2G payment-service telemetry flags.
+      type: object
+      additionalProperties: true
+      required:
+        - certificate_install_requested
+        - certificate_update_requested
+        - charging_service_requested
+        - external_payment_requested
+        - contract_payment_requested
+        - contract_payment_approved
+        - contract_payment_error
+        - internet_ftp20_requested
+        - internet_ftp21_requested
+        - internet_http80_requested
+        - internet_https443_requested
+      properties:
+        certificate_install_requested:
+          description: Certificate install requested.
+          type: boolean
+        certificate_update_requested:
+          description: Certificate update requested.
+          type: boolean
+        charging_service_requested:
+          description: Charging service requested.
+          type: boolean
+        external_payment_requested:
+          description: External payment requested.
+          type: boolean
+        contract_payment_requested:
+          description: Contract payment requested.
+          type: boolean
+        contract_payment_approved:
+          description: Contract payment approved.
+          type: boolean
+        contract_payment_error:
+          description: Contract payment error.
+          type: boolean
+        internet_ftp20_requested:
+          description: FTP20 internet request raised.
+          type: boolean
+        internet_ftp21_requested:
+          description: FTP21 internet request raised.
+          type: boolean
+        internet_http80_requested:
+          description: HTTP 80 internet request raised.
+          type: boolean
+        internet_https443_requested:
+          description: HTTPS 443 internet request raised.
+          type: boolean
+
+    V2gChargerStatus:
+      description: V2G charger status telemetry.
+      type: object
+      additionalProperties: true
+      required:
+        - evcc_id
+        - selected_protocol
+        - cable_check_status
+        - param_discovery_finished
+        - isolation_status
+        - dynamic_max_current_A
+        - dynamic_max_power_W
+        - dynamic_max_voltage_V
+      properties:
+        evcc_id:
+          description: EVCC ID.
+          type: string
+        selected_protocol:
+          description: Selected protocol identifier.
+          type: string
+        cable_check_status:
+          description: Cable check status.
+          type: boolean
+        param_discovery_finished:
+          description: Parameter discovery complete.
+          type: boolean
+        isolation_status:
+          description: Isolation status string as reported by module.
+          type: string
+        dynamic_max_current_A:
+          description: Dynamic maximum current in A.
+          type: number
+        dynamic_max_power_W:
+          description: Dynamic maximum power in W.
+          type: number
+        dynamic_max_voltage_V:
+          description: Dynamic maximum voltage in V.
+          type: number
+
+    V2gEvErrorCode:
+      description: V2G error code for EV side.
+      type: string
+      enum:
+        - NO_ERROR
+        - FAILED_RESSTemperatureInhibit
+        - FAILED_EVShiftPosition
+        - FAILED_ChargerConnectorLockFault
+        - FAILED_EVRESSMalfunction
+        - FAILED_ChargingCurrentdifferential
+        - FAILED_ChargingVoltageOutOfRange
+        - Reserved_A
+        - Reserved_B
+        - Reserved_C
+        - FAILED_ChargingSystemIncompatibility
+        - NoData
+
+    V2gEvseElectrical:
+      description: EVSE-side electrical telemetry structure.
+      type: object
+      additionalProperties: true
+      required:
+        - present_current_A
+        - present_voltage_V
+        - maximum_rated_current_A
+        - maximum_rated_power_W
+        - maximum_rated_voltage_V
+        - minimum_rated_current_A
+        - minimum_rated_voltage_V
+        - current_ripple_A
+        - current_tolerance_A
+      properties:
+        present_current_A:
+          description: Present current in A.
+          type: number
+        present_voltage_V:
+          description: Present voltage in V.
+          type: number
+        maximum_rated_current_A:
+          description: Maximum rated current in A.
+          type: number
+        maximum_rated_power_W:
+          description: Maximum rated power in W.
+          type: number
+        maximum_rated_voltage_V:
+          description: Maximum rated voltage in V.
+          type: number
+        minimum_rated_current_A:
+          description: Minimum rated current in A.
+          type: number
+        minimum_rated_voltage_V:
+          description: Minimum rated voltage in V.
+          type: number
+        current_ripple_A:
+          description: Current ripple in A.
+          type: number
+        current_tolerance_A:
+          description: Current tolerance in A.
+          type: number

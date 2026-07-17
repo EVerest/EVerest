@@ -4,9 +4,11 @@
 #include "ISO15118_chargerImpl.hpp"
 #include "log.hpp"
 #include "sdp.hpp"
+#include "telemetry_publisher.hpp"
 #include "tools.hpp"
 #include "v2g_ctx.hpp"
 #include <algorithm>
+#include <everest/util/misc/change_tracker.hpp>
 #include <string.h>
 #include <string_view>
 
@@ -14,6 +16,11 @@ const std::string CERTS_SUB_DIR = "certs"; // relativ path of the certs
 
 using namespace std::chrono_literals;
 using BidiMode = types::iso15118::SaeJ2847BidiMode;
+namespace telemetry_types = everest::lib::API::V1_0::types::telemetry;
+using V2gTransportTracker = everest::lib::util::change_tracker<telemetry_types::V2gTransport>;
+using V2gEvElectricalTracker = everest::lib::util::change_tracker<telemetry_types::V2gEvElectrical>;
+using V2gPaymentServiceTracker = everest::lib::util::change_tracker<telemetry_types::V2gPaymentService>;
+using V2gChargerStatusTracker = everest::lib::util::change_tracker<telemetry_types::V2gChargerStatus>;
 
 namespace module {
 namespace charger {
@@ -319,6 +326,12 @@ void ISO15118_chargerImpl::handle_cable_check_finished(bool& status) {
     } else {
         v2g_ctx->evse_v2g_data.evse_processing[PHASE_ISOLATION] = (uint8_t)iso2_EVSEProcessingType_Ongoing;
     }
+
+    if (v2g_ctx->telemetry_publisher) {
+        v2g_ctx->telemetry_publisher->update_charger_status([&](V2gChargerStatusTracker& charger_status) {
+            charger_status.set(&telemetry_types::V2gChargerStatus::cable_check_status, status);
+        });
+    }
 }
 
 void ISO15118_chargerImpl::handle_receipt_is_required(bool& receipt_required) {
@@ -558,6 +571,17 @@ void ISO15118_chargerImpl::handle_update_dc_maximum_limits(types::iso15118::DcEv
     populate_physical_value_float(&v2g_ctx->evse_v2g_data.evse_maximum_voltage_limit,
                                   maximum_limits.evse_maximum_voltage_limit, 1, iso2_unitSymbolType_V);
     v2g_ctx->evse_v2g_data.evse_maximum_voltage_limit_is_used = 1;
+
+    if (v2g_ctx->telemetry_publisher) {
+        v2g_ctx->telemetry_publisher->update_charger_status([&](V2gChargerStatusTracker& charger_status) {
+            charger_status.set_almost_eq<2>(&telemetry_types::V2gChargerStatus::dynamic_max_current_A,
+                                            maximum_limits.evse_maximum_current_limit);
+            charger_status.set_almost_eq<2>(&telemetry_types::V2gChargerStatus::dynamic_max_power_W,
+                                            maximum_limits.evse_maximum_power_limit);
+            charger_status.set_almost_eq<2>(&telemetry_types::V2gChargerStatus::dynamic_max_voltage_V,
+                                            maximum_limits.evse_maximum_voltage_limit);
+        });
+    }
 }
 
 void ISO15118_chargerImpl::handle_update_dc_minimum_limits(types::iso15118::DcEvseMinimumLimits& minimum_limits) {
@@ -573,6 +597,13 @@ void ISO15118_chargerImpl::handle_update_dc_minimum_limits(types::iso15118::DcEv
 void ISO15118_chargerImpl::handle_update_isolation_status(types::iso15118::IsolationStatus& isolation_status) {
     v2g_ctx->evse_v2g_data.evse_isolation_status = (uint8_t)isolation_status;
     v2g_ctx->evse_v2g_data.evse_isolation_status_is_used = 1;
+
+    if (v2g_ctx->telemetry_publisher) {
+        v2g_ctx->telemetry_publisher->update_charger_status([&](V2gChargerStatusTracker& charger_status) {
+            charger_status.set(&telemetry_types::V2gChargerStatus::isolation_status,
+                               types::iso15118::isolation_status_to_string(isolation_status));
+        });
+    }
 }
 
 void ISO15118_chargerImpl::handle_update_dc_present_values(
