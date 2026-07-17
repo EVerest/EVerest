@@ -133,7 +133,7 @@ class GridSupportProbeWiringAdjustment(EverestConfigAdjustmentStrategy):
     The probe module itself is injected by the ``probe_module`` marker; this
     strategy points the OCPP module's (optional) grid_support requirement at the
     probe, so the OCPP module becomes the consumer and the probe the DER-device
-    provider. It also sets grid_support_heartbeat_s so the heartbeat fires every
+    provider. It also sets GridSupportHeartbeatS so the heartbeat fires every
     second for fast test feedback. Because the OCPP module now requires every
     grid_support connection to carry a framework mapping, it also maps the probe
     module to DER_EVSE_ID so the connection is not excluded from DER routing.
@@ -149,7 +149,7 @@ class GridSupportProbeWiringAdjustment(EverestConfigAdjustmentStrategy):
     def adjust_everest_configuration(self, everest_config: Dict) -> Dict:
         adjusted_config = deepcopy(everest_config)
         ocpp_module = adjusted_config["active_modules"][OCPP_MODULE_ID]
-        ocpp_module.setdefault("config_module", {})["grid_support_heartbeat_s"] = self._heartbeat_s
+        ocpp_module.setdefault("config_module", {})["GridSupportHeartbeatS"] = self._heartbeat_s
         ocpp_module.setdefault("connections", {})["grid_support"] = [
             {"module_id": PROBE_MODULE_ID, "implementation_id": GRID_SUPPORT_IMPL_ID}
         ]
@@ -500,7 +500,7 @@ async def test_heartbeat_re_pushes_active_directives(
     probe_grid_support: ProbeModule,
 ):
     """The OCPP201 heartbeat re-pushes the active directive set per EVSE on its
-    interval (grid_support_heartbeat_s=1), even with no state change.
+    interval (GridSupportHeartbeatS=1), even with no state change.
     """
     pushed = provide_grid_support(probe_grid_support)
     probe_grid_support.start()

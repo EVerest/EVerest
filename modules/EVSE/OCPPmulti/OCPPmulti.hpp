@@ -96,7 +96,7 @@ struct Conf {
     int ResetStopDelay;
     std::string UserConfigPath;
     std::string Mode;
-    int grid_support_heartbeat_s;
+    int GridSupportHeartbeatS;
 };
 
 class OCPPmulti : public Everest::ModuleBase {

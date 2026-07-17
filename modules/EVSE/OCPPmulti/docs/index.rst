@@ -61,6 +61,6 @@ In addition to enabling the DER device-model component, the module asserts DER a
 via its **set_der_available** command, so that EvseManager can advertise the corresponding ISO 15118-20 DER energy
 transfer modes. If the device model rejects the capability, DER availability is withdrawn instead.
 
-The configuration parameter **grid_support_heartbeat_s** sets the interval (in seconds) at which the current active
+The configuration parameter **GridSupportHeartbeatS** sets the interval (in seconds) at which the current active
 directive set is re-sent for every registered EVSE. A value of ``0`` disables the heartbeat; the set is then sent only
 when it changes.
