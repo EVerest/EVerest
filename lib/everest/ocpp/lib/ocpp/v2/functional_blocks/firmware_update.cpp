@@ -120,6 +120,33 @@ void FirmwareUpdate::on_firmware_status_notification_request() {
     this->context.message_dispatcher.dispatch_call(call, true);
 }
 
+void FirmwareUpdate::on_transaction_finished() {
+    std::optional<UpdateFirmwareRequest> request;
+    {
+        std::lock_guard<std::mutex> lock(this->deferred_update_firmware_request_mutex);
+        if (this->deferred_update_firmware_request.has_value() and
+            !this->context.evse_manager.any_transaction_active(std::nullopt)) {
+            request = this->deferred_update_firmware_request;
+            this->deferred_update_firmware_request.reset();
+        }
+    }
+    if (request.has_value()) {
+        const UpdateFirmwareResponse response = this->update_firmware_request_callback(request.value());
+        if (response.status != UpdateFirmwareStatusEnum::Accepted) {
+            EVLOG_warning << "Deferred firmware update was not accepted after transaction finished: "
+                          << conversions::update_firmware_status_enum_to_string(response.status);
+            this->on_firmware_update_status_notification(request.value().requestId, FirmwareStatusEnum::DownloadFailed);
+        }
+    }
+}
+
+bool FirmwareUpdate::is_download_deferral_required() const {
+    return this->context.device_model
+               .get_optional_value<bool>(ControllerComponentVariables::DeferFirmwareDownloadDuringTransaction)
+               .value_or(false) and
+           this->context.evse_manager.any_transaction_active(std::nullopt);
+}
+
 void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call) {
     EVLOG_debug << "Received UpdateFirmwareRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
     if (call.msg.firmware.signingCertificate.has_value() or call.msg.firmware.signature.has_value()) {
@@ -141,16 +168,41 @@ void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call
         cert_valid_or_not_set = false;
     }
 
+    bool download_deferred = false;
     if (cert_valid_or_not_set) {
-        // execute firwmare update callback
-        response = update_firmware_request_callback(msg);
+        bool deferral_required = this->is_download_deferral_required();
+        {
+            // Stash and the on_transaction_finished release must not interleave, otherwise a
+            // transaction that ends between the deferral check and the stash write would leave the
+            // request stuck forever. Re-check under the lock and release it if that happened.
+            std::lock_guard<std::mutex> lock(this->deferred_update_firmware_request_mutex);
+            // A newer request supersedes a deferred one; the old one is dropped silently.
+            this->deferred_update_firmware_request.reset();
+            if (deferral_required) {
+                this->deferred_update_firmware_request = msg;
+                if (!this->context.evse_manager.any_transaction_active(std::nullopt)) {
+                    this->deferred_update_firmware_request.reset();
+                    deferral_required = false;
+                }
+            }
+        }
+        if (deferral_required) {
+            // L01.FR.13: busy charging, defer the download until the last transaction ends.
+            response.status = UpdateFirmwareStatusEnum::Accepted;
+            download_deferred = true;
+        } else {
+            response = update_firmware_request_callback(msg);
+        }
     }
 
     const ocpp::CallResult<UpdateFirmwareResponse> call_result(response, call.uniqueId);
     this->context.message_dispatcher.dispatch_call_result(call_result);
 
-    if ((response.status == UpdateFirmwareStatusEnum::InvalidCertificate) or
-        (response.status == UpdateFirmwareStatusEnum::RevokedCertificate)) {
+    if (download_deferred) {
+        this->on_firmware_update_status_notification(msg.requestId, FirmwareStatusEnum::DownloadScheduled);
+        this->change_all_connectors_to_unavailable_for_firmware_update();
+    } else if ((response.status == UpdateFirmwareStatusEnum::InvalidCertificate) or
+               (response.status == UpdateFirmwareStatusEnum::RevokedCertificate)) {
         // L01.FR.02
         this->security.security_event_notification_req(
             CiString<50>(ocpp::security_events::INVALIDFIRMWARESIGNINGCERTIFICATE),

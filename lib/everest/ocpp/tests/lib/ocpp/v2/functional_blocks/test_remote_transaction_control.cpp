@@ -103,6 +103,7 @@ public:
                  const bool disable_connectors_during_install),
                 (override));
     MOCK_METHOD(void, on_firmware_status_notification_request, (), (override));
+    MOCK_METHOD(void, on_transaction_finished, (), (override));
 };
 
 class ProvisioningMock : public ProvisioningInterface {

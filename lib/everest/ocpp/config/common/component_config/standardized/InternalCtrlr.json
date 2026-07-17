@@ -816,6 +816,22 @@
           "default": false,
           "type": "boolean"
       },
+      "DeferFirmwareDownloadDuringTransaction": {
+          "variable_name": "DeferFirmwareDownloadDuringTransaction",
+          "characteristics": {
+            "supportsMonitoring": false,
+            "dataType": "boolean"
+          },
+          "attributes": [
+              {
+                  "type": "Actual",
+                  "mutability": "ReadOnly"
+              }
+          ],
+          "description": "If enabled and a transaction is active, an accepted UpdateFirmware defers the firmware download until the last transaction ends (L01.FR.13). The station reports DownloadScheduled in the meantime.",
+          "default": false,
+          "type": "boolean"
+      },
       "SupportedOcppVersions": {
           "variable_name": "SupportedOcppVersions",
           "characteristics": {
