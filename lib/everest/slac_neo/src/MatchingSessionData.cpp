@@ -46,6 +46,13 @@ bool MatchingSessionData::validate_message(messages::cm_atten_char_rsp const& ms
     if (not wire_equal(msg.source_address, ev_mac)) {
         return false;
     }
+    // The CM_ATTEN_CHAR.RSP must carry this session's runID (ISO 15118-3). Without
+    // this check a mismatched-runID RSP was accepted and the SUT stopped
+    // retransmitting (AttenuationCharacterization_008). EvseSlac routes the RSP by
+    // (ev_mac, run_id) and ignores it otherwise.
+    if (not wire_equal(msg.run_id, run_id)) {
+        return false;
+    }
     return true;
 }
 
@@ -125,6 +132,11 @@ bool MatchingSessionData::validate_message(messages::cm_start_atten_char_ind con
     if (not wire_equal(msg.forwarding_sta, ev_mac)) {
         return false;
     }
+    // The CM_START_ATTEN_CHAR.IND must carry this session's runID (ISO 15118-3).
+    // Without this check a mismatched-runID START was accepted, so the SUT ran the
+    // sounding phase and emitted a CM_ATTEN_CHAR.IND it must not send
+    // (AttenuationCharacterization_018). EvseSlac routes the START by (ev_mac,
+    // run_id) and ignores it otherwise.
     if (not wire_equal(msg.run_id, run_id)) {
         return false;
     }
