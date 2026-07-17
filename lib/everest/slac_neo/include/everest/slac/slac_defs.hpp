@@ -68,6 +68,13 @@ inline constexpr std::uint16_t MMTYPE_CM_MNBC_SOUND = 0x6074;
 inline constexpr std::uint16_t MMTYPE_CM_VALIDATE = 0x6078;
 inline constexpr std::uint16_t MMTYPE_CM_SLAC_MATCH = 0x607C;
 inline constexpr std::uint16_t MMTYPE_CM_ATTEN_PROFILE = 0x6084;
+// CM_AMP_MAP (HomePlug GreenPHY amplitude map, AV 2.0). REQ = base|MODE_REQ = 0x601C,
+// CNF = base|MODE_CNF = 0x601D. Used to reduce the transmit power of selected OFDM
+// carriers (ISO 15118-3 A.9.6, transmit-power limitation).
+inline constexpr std::uint16_t MMTYPE_CM_AMP_MAP = 0x601C;
+
+// CM_AMP_MAP.CNF result codes.
+inline constexpr std::uint8_t CM_AMP_MAP_CNF_RESULT_SUCCESS = 0x00;
 
 // Common D-Link/link status values
 inline constexpr std::uint8_t D_LINK_STATUS_LINKED = 0x01;
@@ -114,8 +121,12 @@ inline constexpr std::uint8_t COMMON_APPLICATION_TYPE = 0x00;
 inline constexpr std::uint8_t COMMON_SECURITY_TYPE = 0x00;
 
 inline constexpr std::uint8_t CM_VALIDATE_REQ_SIGNAL_TYPE = 0x00;
+// CM_VALIDATE.CNF result codes (ISO 15118-3):
+inline constexpr std::uint8_t CM_VALIDATE_REQ_RESULT_NOT_READY = 0x00;
 inline constexpr std::uint8_t CM_VALIDATE_REQ_RESULT_READY = 0x01;
+inline constexpr std::uint8_t CM_VALIDATE_REQ_RESULT_SUCCESS = 0x02;
 inline constexpr std::uint8_t CM_VALIDATE_REQ_RESULT_FAILURE = 0x03;
+inline constexpr std::uint8_t CM_VALIDATE_REQ_RESULT_NOT_REQUIRED = 0x04;
 
 inline constexpr std::uint16_t CM_SLAC_MATCH_REQ_MVF_LENGTH = 0x3e;
 

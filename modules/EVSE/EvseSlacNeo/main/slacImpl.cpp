@@ -6,7 +6,10 @@
 #include <algorithm>
 #include <chrono>
 
+#include <map>
+
 #include <everest/slac/slac_event.hpp>
+#include <everest/utils/yaml_loader.hpp>
 #include <everest_api_types/telemetry/codec.hpp>
 #include <everest_api_types/telemetry/json_codec.hpp>
 #include <fmt/core.h>
@@ -37,6 +40,75 @@ types::slac::State to_interface_state(everest::lib::slac::D3State state) {
         return types::slac::State::UNMATCHED;
     }
     return types::slac::State::UNMATCHED;
+}
+
+// The CM_AMP_MAP amplitude map (ISO 15118-3 A.9.6). Loaded from an operator YAML
+// file so integrators can tune the transmit-power reduction per carrier for their
+// hardware without touching the EVerest config. Schema:
+//   carriers: <int>              # number of OFDM carriers (default 1155)
+//   default_amplitude: <0..15>   # amplitude for carriers without an override
+//                                # (default 15 = maximum TX, i.e. no reduction)
+//   overrides: { <carrier>: <0..15>, ... }   # optional per-carrier reductions
+// Returns the number of 4-bit entries and their packed bytes (2 per byte, the
+// even carrier in the low nibble). Any error falls back to an all-maximum-TX map
+// so the transmit-power-limitation exchange stays valid.
+struct AmpMap {
+    std::uint16_t len{0};
+    std::vector<std::uint8_t> data{};
+};
+
+AmpMap load_amp_map(const std::string& path) {
+    constexpr int DEFAULT_CARRIERS = 1155;
+    constexpr int MAX_AMPLITUDE = 0x0F;
+    constexpr int MAX_CARRIERS = 4096;
+
+    int carriers = DEFAULT_CARRIERS;
+    int default_amplitude = MAX_AMPLITUDE;
+    std::map<int, int> overrides;
+
+    if (not path.empty()) {
+        try {
+            const auto root = Everest::load_yaml(path);
+            if (root.contains("carriers")) {
+                carriers = root.at("carriers").get<int>();
+            }
+            if (root.contains("default_amplitude")) {
+                default_amplitude = root.at("default_amplitude").get<int>();
+            }
+            if (root.contains("overrides") and root.at("overrides").is_object()) {
+                for (const auto& entry : root.at("overrides").items()) {
+                    overrides[std::stoi(entry.key())] = entry.value().get<int>();
+                }
+            }
+        } catch (const std::exception& e) {
+            EVLOG_warning << "Failed to load amp_map_file '" << path << "': " << e.what()
+                          << "; falling back to an all-maximum-TX amplitude map";
+            carriers = DEFAULT_CARRIERS;
+            default_amplitude = MAX_AMPLITUDE;
+            overrides.clear();
+        }
+    }
+
+    carriers = std::clamp(carriers, 1, MAX_CARRIERS);
+    default_amplitude = std::clamp(default_amplitude, 0, MAX_AMPLITUDE);
+
+    AmpMap map;
+    map.len = static_cast<std::uint16_t>(carriers);
+    map.data.assign(static_cast<std::size_t>((carriers + 1) / 2), 0);
+    for (int i = 0; i < carriers; ++i) {
+        int amplitude = default_amplitude;
+        const auto it = overrides.find(i);
+        if (it != overrides.end()) {
+            amplitude = std::clamp(it->second, 0, MAX_AMPLITUDE);
+        }
+        const auto nibble = static_cast<std::uint8_t>(amplitude & MAX_AMPLITUDE);
+        if ((i % 2) == 0) {
+            map.data[i / 2] |= nibble;
+        } else {
+            map.data[i / 2] |= static_cast<std::uint8_t>(nibble << 4);
+        }
+    }
+    return map;
 }
 } // namespace
 
@@ -306,6 +378,20 @@ void slacImpl::configure_fsm_context() {
 
     fsm_ctx->slac_config.reset_instead_of_fail = config.reset_instead_of_fail;
 
+    // CM_AMP_MAP transmit-power limitation (ISO 15118-3 A.9.6). The SECC always
+    // responds to an incoming CM_AMP_MAP.REQ; only the SECC-initiated direction is
+    // gated by initiate_amp_map and needs the amplitude map loaded from the file.
+    fsm_ctx->slac_config.initiate_amp_map = config.initiate_amp_map;
+    if (config.initiate_amp_map) {
+        const auto amp_map = load_amp_map(config.amp_map_file);
+        fsm_ctx->slac_config.amp_map_len = amp_map.len;
+        fsm_ctx->slac_config.amp_map_data = amp_map.data;
+        EVLOG_info << "CM_AMP_MAP initiation enabled with " << fsm_ctx->slac_config.amp_map_len
+                   << " carriers"
+                   << (config.amp_map_file.empty() ? " (built-in all-maximum-TX default)"
+                                                    : " from '" + config.amp_map_file + "'");
+    }
+
     fsm_ctx->slac_config.print_state_transitions = config.print_state_transitions;
     fsm_ctx->slac_config.provide_telemetry = mod->info.telemetry_enabled;
 
@@ -514,6 +600,15 @@ void slacImpl::handle_leave_bcd() {
         local_fsm_ctrl->signal_leave_bcd();
     } else {
         EVLOG_warning << "Ignoring handle_leave_bcd because SLAC controller or PLC I/O is not available.";
+    }
+}
+
+void slacImpl::handle_count_bc(int& count) {
+    // EvseManager pushes the running count of Control-Pilot B/C transitions here on every edge. Forward
+    // it into the FSM context so the CM_VALIDATE handler can detect the number of BCB toggles the EV
+    // performed. Dropping a sample is harmless: the handler reads the latest value on the next request.
+    if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
+        local_fsm_ctrl->signal_count_bc(count);
     }
 }
 

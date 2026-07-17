@@ -138,10 +138,10 @@ messages::HomeplugMessage create_short_cm_slac_match_req(EvMac const& ev_mac, Ru
     return message;
 }
 
-messages::HomeplugMessage create_cm_validate_req(EvMac const& ev_mac) {
+messages::HomeplugMessage create_cm_validate_req(EvMac const& ev_mac, std::uint8_t pilot_timer = 0) {
     messages::cm_validate_req msg{};
     msg.signal_type = defs::CM_VALIDATE_REQ_SIGNAL_TYPE;
-    msg.timer = 0;
+    msg.timer = pilot_timer; // 0 = step 1 (ready); != 0 = step 2 (toggle-observation window)
     msg.result = defs::CM_VALIDATE_REQ_RESULT_READY;
 
     messages::HomeplugMessage message;
@@ -1552,15 +1552,21 @@ bool test_short_link_status_cnf_does_not_leave_matched_or_failed() {
         return false;
     }
     machine.message(short_link_status_cnf);
-    auto failed = wait_for(std::chrono::milliseconds(120), machine,
-                           [&ctx]() { return ctx.status.match_state == SlacState::Failed; });
-    if (!assert_true(not failed, test_name, "short link-status CNF changed matched/failed state")) {
+    auto changed_state = wait_for(std::chrono::milliseconds(120), machine,
+                                  [&ctx]() { return ctx.status.match_state != SlacState::Matched; });
+    if (!assert_true(not changed_state, test_name, "short link-status CNF changed matched state")) {
         return false;
     }
 
+    // A full-length negative link-status CNF is a connection loss: the SECC must leave the AVLN, i.e.
+    // go to Reset (re-key with a fresh NMK), not linger in Matched (ISO 15118-5 PLCLinkStatus_005).
     machine.message(create_lumissil_link_status_cnf(modem_source, 0x00));
-    if (!wait_for_match_state(ctx, SlacState::Failed, machine, 200)) {
-        return assert_true(false, test_name, "did not transition to Failed on negative full-length link-status CNF");
+    auto left_matched = wait_for(std::chrono::milliseconds(200), machine, [&ctx]() {
+        return ctx.status.match_state == SlacState::Reset || ctx.status.match_state == SlacState::Idle;
+    });
+    if (!assert_true(left_matched, test_name,
+                     "did not transition to Reset on negative full-length link-status CNF")) {
+        return false;
     }
 
     return true;
@@ -1624,8 +1630,8 @@ bool test_reset_instead_of_fail_waits_for_new_parm_request() {
     return true;
 }
 
-bool test_cm_validate_req_returns_failure_cnf() {
-    const char* test_name = "test_cm_validate_req_returns_failure_cnf";
+bool test_cm_validate_bcb_toggle_detection() {
+    const char* test_name = "test_cm_validate_bcb_toggle_detection";
     ContextCallbacks callbacks{};
     std::vector<SentMessage> sent_messages;
     callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
@@ -1646,28 +1652,54 @@ bool test_cm_validate_req_returns_failure_cnf() {
     }
 
     EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x04};
-    const auto initial_validate_cnf = count_cm_validate_cnf(sent_messages);
-    const auto expected_validate_cnf_count = initial_validate_cnf + 1;
+
+    // Some B/C transitions may already have happened before validation starts; the handler must count
+    // only the toggles that occur between the two exchanges (relative to the first-exchange baseline).
+    ctx.bc_transition_count.store(7);
+
+    // --- First exchange: EVSE arms counting and answers READY, toggle_num 0 ------------------------
+    auto expected_cnf_count = count_cm_validate_cnf(sent_messages) + 1;
     machine.message(create_cm_validate_req(ev_mac));
-
-    if (!wait_for(std::chrono::milliseconds(200), machine, [&sent_messages, expected_validate_cnf_count]() {
-            return count_cm_validate_cnf(sent_messages) == expected_validate_cnf_count;
+    if (!wait_for(std::chrono::milliseconds(200), machine, [&sent_messages, expected_cnf_count]() {
+            return count_cm_validate_cnf(sent_messages) == expected_cnf_count;
         })) {
-        return assert_true(false, test_name, "did not emit CM_VALIDATE.CNF");
+        return assert_true(false, test_name, "did not emit first CM_VALIDATE.CNF");
     }
-    if (!assert_validate_cnf_count_stays_at(expected_validate_cnf_count, sent_messages, machine, 80)) {
-        return assert_true(false, test_name, "CM_VALIDATE.CNF was emitted more than once");
+    messages::cm_validate_cnf first_cnf{};
+    if (!get_last_cm_validate_cnf(sent_messages, first_cnf)) {
+        return assert_true(false, test_name, "could not parse first CM_VALIDATE.CNF");
+    }
+    if (!assert_true(first_cnf.result == defs::CM_VALIDATE_REQ_RESULT_READY, test_name,
+                     "first CM_VALIDATE.CNF is not READY") or
+        !assert_true(first_cnf.toggle_num == 0, test_name, "first CM_VALIDATE.CNF toggle_num is not 0")) {
+        return false;
     }
 
-    messages::cm_validate_cnf validate_cnf{};
-    if (!get_last_cm_validate_cnf(sent_messages, validate_cnf)) {
-        return assert_true(false, test_name, "could not parse CM_VALIDATE.CNF");
+    // --- EV toggles its CP (B->C->B ...): EvseManager counts one B->C edge per toggle and pushes the
+    //     growing count in. Simulate three BCB toggles = 3 counted edges on top of the baseline of 7. --
+    ctx.bc_transition_count.store(7 + 3);
+
+    // --- Second exchange (step 2): a REQ with a non-zero pilotTimer opens the toggle-observation
+    //     window (pilotTimer 1 = 200 ms). The EVSE does not answer until the window elapses, then
+    //     reports the number of BCB toggles = 3 counted B->C edges, result SUCCESS. -----------------
+    expected_cnf_count = count_cm_validate_cnf(sent_messages) + 1;
+    machine.message(create_cm_validate_req(ev_mac, /*pilot_timer=*/1));
+    if (!wait_for(std::chrono::milliseconds(600), machine, [&sent_messages, expected_cnf_count]() {
+            return count_cm_validate_cnf(sent_messages) == expected_cnf_count;
+        })) {
+        return assert_true(false, test_name, "did not emit second CM_VALIDATE.CNF");
     }
-    return assert_true(validate_cnf.signal_type == defs::CM_VALIDATE_REQ_SIGNAL_TYPE, test_name,
-                       "CM_VALIDATE.CNF has unexpected signal_type") and
-           assert_true(validate_cnf.toggle_num == 0, test_name, "CM_VALIDATE.CNF has unexpected toggle_num") and
-           assert_true(validate_cnf.result == defs::CM_VALIDATE_REQ_RESULT_FAILURE, test_name,
-                       "CM_VALIDATE.CNF has non-failure result");
+    messages::cm_validate_cnf second_cnf{};
+    if (!get_last_cm_validate_cnf(sent_messages, second_cnf)) {
+        return assert_true(false, test_name, "could not parse second CM_VALIDATE.CNF");
+    }
+    return assert_true(second_cnf.signal_type == defs::CM_VALIDATE_REQ_SIGNAL_TYPE, test_name,
+                       "second CM_VALIDATE.CNF has unexpected signal_type") and
+           assert_true(second_cnf.toggle_num == 3, test_name,
+                       "second CM_VALIDATE.CNF toggle_num does not match the detected BCB toggles "
+                       "(3 counted B->C edges = 3 toggles)") and
+           assert_true(second_cnf.result == defs::CM_VALIDATE_REQ_RESULT_SUCCESS, test_name,
+                       "second CM_VALIDATE.CNF result is not SUCCESS");
 }
 
 bool test_no_cm_slac_parm_timeout_resets_then_fails() {
@@ -1798,12 +1830,17 @@ bool test_matched_link_status_rejects_only_negative_cnf() {
         return false;
     }
 
+    // Connection loss while matched: leave the AVLN via Reset (fresh NMK re-key), not Failed
+    // (ISO 15118-5 PLCLinkStatus_005; commit "leave AVLN on matched-state connection loss").
     machine.message(create_lumissil_link_status_cnf(modem_source, 0x00));
-    if (!wait_for_match_state(ctx, SlacState::Failed, machine, 200)) {
-        return assert_true(false, test_name, "did not transition to Failed on negative link-status CNF");
+    auto left_matched = wait_for(std::chrono::milliseconds(200), machine, [&ctx]() {
+        return ctx.status.match_state == SlacState::Reset || ctx.status.match_state == SlacState::Idle;
+    });
+    if (!assert_true(left_matched, test_name, "did not transition to Reset on negative link-status CNF")) {
+        return false;
     }
 
-    return assert_true(not ctx.match_confirm_cache.valid, test_name, "Failed retained cached CM_SLAC_MATCH.CNF");
+    return assert_true(not ctx.match_confirm_cache.valid, test_name, "Reset retained cached CM_SLAC_MATCH.CNF");
 }
 
 bool test_matched_qualcomm_link_status_rejects_only_negative_cnf() {
@@ -1851,9 +1888,14 @@ bool test_matched_qualcomm_link_status_rejects_only_negative_cnf() {
         return false;
     }
 
+    // Connection loss while matched: leave the AVLN via Reset (fresh NMK re-key), not Failed
+    // (ISO 15118-5 PLCLinkStatus_005; commit "leave AVLN on matched-state connection loss").
     machine.message(create_qualcomm_link_status_cnf(modem_source, 0x00));
-    if (!wait_for_match_state(ctx, SlacState::Failed, machine, 200)) {
-        return assert_true(false, test_name, "did not transition to Failed on negative link-status CNF");
+    auto left_matched = wait_for(std::chrono::milliseconds(200), machine, [&ctx]() {
+        return ctx.status.match_state == SlacState::Reset || ctx.status.match_state == SlacState::Idle;
+    });
+    if (!assert_true(left_matched, test_name, "did not transition to Reset on negative link-status CNF")) {
+        return false;
     }
 
     return true;
@@ -1907,7 +1949,7 @@ int main() {
                        test_no_cm_slac_parm_timeout_resets_then_fails),
         std::make_pair("test_no_cm_slac_parm_timeout_fails_when_reset_disabled",
                        test_no_cm_slac_parm_timeout_fails_when_reset_disabled),
-        std::make_pair("test_cm_validate_req_returns_failure_cnf", test_cm_validate_req_returns_failure_cnf),
+        std::make_pair("test_cm_validate_bcb_toggle_detection", test_cm_validate_bcb_toggle_detection),
         std::make_pair("test_matched_link_status_rejects_only_negative_cnf",
                        test_matched_link_status_rejects_only_negative_cnf),
         std::make_pair("test_matched_qualcomm_link_status_rejects_only_negative_cnf",

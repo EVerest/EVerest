@@ -51,6 +51,12 @@ bool FSMController::signal_leave_bcd() {
     return true;
 }
 
+void FSMController::signal_count_bc(int count) {
+    // Just publish the latest count into the shared context; the CM_VALIDATE handler reads it when a
+    // request arrives. An atomic store is safe from any thread, so no event-loop hop is needed.
+    ctx.bc_transition_count.store(count);
+}
+
 void FSMController::handle_retrigger() {
     if (!active.load()) {
         return;
