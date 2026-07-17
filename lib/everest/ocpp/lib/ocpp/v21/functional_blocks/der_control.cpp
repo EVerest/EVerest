@@ -264,7 +264,9 @@ bool validate_yunit(DERControlEnum control_type, const DERCurve& curve) {
 
 } // anonymous namespace
 
-DERControl::DERControl(const v2::FunctionalBlockContext& context) : context(context) {
+DERControl::DERControl(const v2::FunctionalBlockContext& context,
+                       std::optional<DERActiveDirectivesCallback> active_directives_callback) :
+    context(context), active_directives_callback(std::move(active_directives_callback)) {
     // Lambda holds a stopping handle for callback duration so destructor can wait for in-flight runs.
     this->scheduled_control_timer.interval(
         [this]() {
@@ -275,6 +277,8 @@ DERControl::DERControl(const v2::FunctionalBlockContext& context) : context(cont
             this->check_scheduled_controls();
         },
         SCHEDULED_CONTROL_CHECK_INTERVAL);
+
+    this->emit_active_directives();
 }
 
 DERControl::~DERControl() {
@@ -308,18 +312,27 @@ bool DERControl::is_control_type_supported(v2::DERControlEnum control_type) cons
     const auto& evse_manager = this->context.evse_manager;
 
     for (int32_t evse_id = 1; evse_id <= static_cast<int32_t>(evse_manager.get_number_of_evses()); evse_id++) {
-        auto ac_mode = DERComponentVariables::get_ac_component_variable(evse_id, DERComponentVariables::Available);
-        auto is_ac_der = this->context.device_model.get_optional_value<bool>(ac_mode);
+        // A missing Available or Enabled variable means disabled: DER admission is strictly opt-in.
+        auto ac_available_cv =
+            DERComponentVariables::get_ac_component_variable(evse_id, DERComponentVariables::Available);
+        auto ac_enabled_cv = DERComponentVariables::get_ac_component_variable(evse_id, DERComponentVariables::Enabled);
         // Exception is made for AC as we do not know what control types the EV supports, so we accept all
-        if (is_ac_der.has_value() && is_ac_der.value()) {
+        if (this->context.device_model.get_optional_value<bool>(ac_available_cv).value_or(false) &&
+            this->context.device_model.get_optional_value<bool>(ac_enabled_cv).value_or(false)) {
             return true;
         }
 
-        auto dc_modes_cv =
-            DERComponentVariables::get_dc_component_variable(evse_id, DERComponentVariables::ModesSupported);
-        auto dc_modes = this->context.device_model.get_optional_value<std::string>(dc_modes_cv);
-        if (dc_modes.has_value() && mode_list_contains(dc_modes.value(), control_type_str)) {
-            return true;
+        auto dc_available_cv =
+            DERComponentVariables::get_dc_component_variable(evse_id, DERComponentVariables::Available);
+        auto dc_enabled_cv = DERComponentVariables::get_dc_component_variable(evse_id, DERComponentVariables::Enabled);
+        if (this->context.device_model.get_optional_value<bool>(dc_available_cv).value_or(false) &&
+            this->context.device_model.get_optional_value<bool>(dc_enabled_cv).value_or(false)) {
+            auto dc_modes_cv =
+                DERComponentVariables::get_dc_component_variable(evse_id, DERComponentVariables::ModesSupported);
+            auto dc_modes = this->context.device_model.get_optional_value<std::string>(dc_modes_cv);
+            if (dc_modes.has_value() && mode_list_contains(dc_modes.value(), control_type_str)) {
+                return true;
+            }
         }
     }
     return false;
@@ -637,6 +650,8 @@ void DERControl::handle_set_der_control(ocpp::Call<SetDERControlRequest> call) {
             }
             this->send_notify_start_stop(request.controlId, true, ocpp::DateTime(), superseded_opt);
         }
+
+        this->emit_active_directives();
     } catch (const everest::db::QueryExecutionException& e) {
         EVLOG_error << "DER control database error in SetDERControl: " << e.what();
         response.status = DERControlStatusEnum::Rejected;
@@ -722,6 +737,9 @@ void DERControl::handle_clear_der_control(ocpp::Call<ClearDERControlRequest> cal
             response.status = deleted ? DERControlStatusEnum::Accepted : DERControlStatusEnum::NotFound;
             ocpp::CallResult<ClearDERControlResponse> call_result(response, call.uniqueId);
             this->context.message_dispatcher.dispatch_call_result(call_result);
+            if (deleted) {
+                this->emit_active_directives();
+            }
             return;
         }
 
@@ -754,6 +772,10 @@ void DERControl::handle_clear_der_control(ocpp::Call<ClearDERControlRequest> cal
 
         ocpp::CallResult<ClearDERControlResponse> call_result(response, call.uniqueId);
         this->context.message_dispatcher.dispatch_call_result(call_result);
+
+        if (deleted_count > 0) {
+            this->emit_active_directives();
+        }
     } catch (const everest::db::QueryExecutionException& e) {
         EVLOG_error << "DER control database error in ClearDERControl: " << e.what();
         response.status = DERControlStatusEnum::Rejected;
@@ -776,11 +798,97 @@ void DERControl::send_notify_start_stop(const CiString<36>& control_id, bool sta
     this->context.message_dispatcher.dispatch_call(call, false);
 }
 
+std::vector<SetDERControlRequest> DERControl::compute_active_directives() const {
+    // No in-memory cache; recover the active set from the persisted CONTROL_JSON rows.
+    auto controls =
+        this->context.database_handler.get_der_controls_matching_criteria(std::nullopt, std::nullopt, std::nullopt);
+
+    auto now = ocpp::DateTime();
+    std::vector<SetDERControlRequest> active;
+    active.reserve(controls.size());
+    for (const auto& control_json_str : controls) {
+        try {
+            auto control = json::parse(control_json_str);
+            if (control.at("isSuperseded").get<bool>()) {
+                continue;
+            }
+
+            // A scheduled control is effective only between startTime and startTime+duration; a default
+            // control (no startTime) is always effective.
+            if (control.contains("startTime")) {
+                auto start_time = ocpp::DateTime(control.at("startTime").get<std::string>());
+                if (start_time > now) {
+                    continue;
+                }
+                if (control.contains("duration")) {
+                    auto duration_seconds = control.at("duration").get<float>();
+                    if (std::isfinite(duration_seconds) && duration_seconds >= 0.0F) {
+                        auto expiry_tp = start_time.to_time_point() +
+                                         std::chrono::duration_cast<std::chrono::seconds>(
+                                             std::chrono::duration<double>(static_cast<double>(duration_seconds)));
+                        if (ocpp::DateTime(expiry_tp) <= now) {
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            active.push_back(control.at("request").get<SetDERControlRequest>());
+        } catch (const std::exception& e) {
+            // Dropping a row under wholesale-replace means the provider stops enforcing a directive the
+            // DB still holds active — possible DER state desync, so log at error. controlId is best-effort.
+            std::string control_id = "<unknown>";
+            try {
+                control_id = json::parse(control_json_str).at("request").at("controlId").get<std::string>();
+            } catch (const std::exception&) {
+            }
+            EVLOG_error << "Dropping malformed DER control row (controlId=" << control_id
+                        << ") from the active directive set: " << e.what()
+                        << " — enforcement of this directive stops, possible DER state desync";
+        }
+    }
+    return active;
+}
+
+void DERControl::emit_active_directives() const {
+    if (!this->active_directives_callback.has_value()) {
+        return;
+    }
+
+    std::vector<SetDERControlRequest> active;
+    try {
+        active = this->compute_active_directives();
+    } catch (const everest::db::QueryExecutionException& e) {
+        EVLOG_error << "DER active-directives DB read failed: " << e.what()
+                    << " — active directive set could not be recomputed and is now stale";
+        return;
+    }
+
+    try {
+        this->active_directives_callback.value()(active);
+    } catch (const std::exception& e) {
+        EVLOG_error << "DER active-directives callback threw: " << e.what();
+    } catch (...) {
+        EVLOG_error << "DER active-directives callback threw a non-std exception";
+    }
+}
+
+void DERControl::republish_active_directives() const {
+    this->emit_active_directives();
+}
+
+void DERControl::notify_der_alarm(const NotifyDERAlarmRequest& request) {
+    ocpp::Call<NotifyDERAlarmRequest> call(request);
+    this->context.message_dispatcher.dispatch_call(call, false);
+}
+
 void DERControl::check_scheduled_controls() {
     // DB writes inside the transaction; notifications queued and dispatched post-commit
     // so rollback discards them and CSMS never sees a notify for rolled-back state.
     // Reboot replay: FR.20/22 use timestamp = dispatch-time, so first post-boot run fires elapsed schedules.
     std::vector<NotifyDERStartStopRequest> pending_notifications;
+
+    bool active_set_changed = false;
 
     try {
         auto transaction = this->context.database_handler.begin_transaction();
@@ -804,6 +912,7 @@ void DERControl::check_scheduled_controls() {
             start_req.supersededIds = std::optional<std::vector<CiString<36>>>{
                 std::vector<CiString<36>>{CiString<36>(activation.existing_id)}};
             pending_notifications.push_back(std::move(start_req));
+            active_set_changed = true;
         }
 
         // R04.FR.20/21: first-observation start-notify for non-default scheduled controls.
@@ -815,6 +924,7 @@ void DERControl::check_scheduled_controls() {
             start_req.started = true;
             start_req.timestamp = now;
             pending_notifications.push_back(std::move(start_req));
+            active_set_changed = true;
         }
 
         auto controls = this->context.database_handler.get_der_controls_matching_criteria(std::optional<bool>(false),
@@ -870,6 +980,7 @@ void DERControl::check_scheduled_controls() {
                     pending_notifications.push_back(std::move(stop_req));
 
                     this->context.database_handler.delete_der_control(control_id);
+                    active_set_changed = true;
                     // DEBUG: routine, contains CSMS string
                     EVLOG_debug << "DER control " << control_id << " expired, deleted from database";
                 }
@@ -893,6 +1004,10 @@ void DERControl::check_scheduled_controls() {
         } catch (const std::exception& e) {
             EVLOG_error << "DER scheduled-control notify dispatch failed: " << e.what();
         }
+    }
+
+    if (active_set_changed) {
+        this->emit_active_directives();
     }
 }
 

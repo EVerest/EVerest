@@ -39,6 +39,8 @@ target_sources(${TEST_TARGET_NAME}
 
     # general
     generic_ocpp_tests.cpp
+    grid_support_der_tests.cpp
+    grid_support_state_test.cpp
     main.cpp
     v16_chargepoint_tests.cpp
     v2_chargepoint_tests.cpp
@@ -48,6 +50,7 @@ target_sources(${TEST_TARGET_NAME}
     stubs/interfaces_stub.cpp
 
     ../generic_ocpp.cpp
+    ../grid_support/grid_support_state.cpp
     ../v16_chargepoint.cpp
     ../v16_conversions.cpp
     ../v2_chargepoint.cpp

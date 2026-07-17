@@ -5,6 +5,9 @@
 
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 
+#include <string>
+#include <vector>
+
 using ocpp::v2::EVSE;
 using ocpp::v2::VariableCharacteristics;
 
@@ -40,6 +43,20 @@ extern const VariableCharacteristics SupportedEnergyTransferModes;
 extern const VariableCharacteristics SupportedOperationModes;
 } // namespace Characteristics
 } // namespace V2XDefinitions
+
+namespace DERDefinitions {
+namespace Characteristics {
+extern const VariableCharacteristics Available;
+extern const VariableCharacteristics Enabled;
+extern const VariableCharacteristics ModesSupported;
+extern const VariableCharacteristics Decimal;
+extern const VariableCharacteristics InverterString;
+} // namespace Characteristics
+
+// DER controller variable names, shared by the device-model builder and to_der_ctrlr_config_set_variables.
+extern const std::vector<std::string> DecimalVariableNames;
+extern const std::vector<std::string> InverterStringVariableNames;
+} // namespace DERDefinitions
 
 namespace ISO15118Definitions {
 namespace Characteristics {

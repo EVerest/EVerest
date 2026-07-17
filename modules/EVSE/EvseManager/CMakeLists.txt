@@ -12,6 +12,7 @@ ev_setup_cpp_module()
 target_sources(${MODULE_NAME}
     PRIVATE
         Charger.cpp
+        energy_transfer_modes.cpp
         SessionLog.cpp
         v2gMessage.cpp
         CarManufacturer.cpp

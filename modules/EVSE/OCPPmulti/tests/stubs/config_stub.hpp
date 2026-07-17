@@ -21,6 +21,7 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     bool EnableExternalWebsocketControl{true};
     bool EnableLegacyConfigMigration{false};
     std::string EverestDeviceModelDatabasePath{"everest.db"};
+    int GridSupportHeartbeatS{60};
     int Ocpp16NetworkConfigSlot{1};
     std::string MessageLogPath{"log"};
     int MessageQueueResumeDelay{120};
@@ -67,6 +68,9 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     }
     [[nodiscard]] std::string getEverestDeviceModelDatabasePath() const override {
         return EverestDeviceModelDatabasePath;
+    }
+    [[nodiscard]] int getGridSupportHeartbeatS() const override {
+        return GridSupportHeartbeatS;
     }
     [[nodiscard]] int getOcpp16NetworkConfigSlot() const override {
         return Ocpp16NetworkConfigSlot;

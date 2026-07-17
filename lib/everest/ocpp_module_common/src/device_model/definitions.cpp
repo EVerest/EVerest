@@ -147,6 +147,56 @@ const VariableCharacteristics SupportedOperationModes = [] {
 } // namespace Characteristics
 } // namespace V2XDefinitions
 
+namespace DERDefinitions {
+namespace Characteristics {
+const VariableCharacteristics Available = [] {
+    VariableCharacteristics var;
+    var.dataType = DataEnum::boolean;
+    var.supportsMonitoring = false;
+    return var;
+}();
+
+const VariableCharacteristics Enabled = [] {
+    VariableCharacteristics var;
+    var.dataType = DataEnum::boolean;
+    var.supportsMonitoring = false;
+    return var;
+}();
+
+const VariableCharacteristics ModesSupported = [] {
+    VariableCharacteristics var;
+    var.dataType = DataEnum::MemberList;
+    var.supportsMonitoring = false;
+    var.valuesList = "EnterService,FreqDroop,FreqWatt,FixedPFAbsorb,FixedPFInject,FixedVar,Gradients,"
+                     "HFMustTrip,HFMayTrip,HVMustTrip,HVMomCess,HVMayTrip,LimitMaxDischarge,LFMustTrip,"
+                     "LVMustTrip,LVMomCess,LVMayTrip,PowerMonitoringMustTrip,VoltVar,VoltWatt,WattPF,WattVar";
+    return var;
+}();
+
+const VariableCharacteristics Decimal = [] {
+    VariableCharacteristics var;
+    var.dataType = DataEnum::decimal;
+    var.supportsMonitoring = false;
+    return var;
+}();
+
+const VariableCharacteristics InverterString = [] {
+    VariableCharacteristics var;
+    var.dataType = DataEnum::string;
+    var.supportsMonitoring = false;
+    return var;
+}();
+
+} // namespace Characteristics
+
+const std::vector<std::string> DecimalVariableNames = {
+    "MaxW",          "MaxVA",          "MaxVar",       "MaxVarNeg",     "MaxChargeRateW",
+    "OverExcitedPF", "UnderExcitedPF", "OverExcitedW", "UnderExcitedW", "ReactiveSusceptance"};
+
+const std::vector<std::string> InverterStringVariableNames = {"InverterManufacturer", "InverterModel",
+                                                              "InverterSwVersion", "InverterHwVersion"};
+} // namespace DERDefinitions
+
 namespace ISO15118Definitions {
 namespace Characteristics {
 const VariableCharacteristics Enabled = [] {

@@ -293,6 +293,16 @@ void GenericChargePoint::on_meter_value(std::int32_t evse_id, std::optional<floa
     m_active_ptr->on_meter_value(evse_id, soc, power_meter);
 }
 
+void GenericChargePoint::on_der_alarm(const ocpp::v21::NotifyDERAlarmRequest& request) {
+    check_configured("on_der_alarm");
+    m_active_ptr->on_der_alarm(request);
+}
+
+void GenericChargePoint::on_der_republish_active_directives() {
+    check_configured("on_der_republish_active_directives");
+    m_active_ptr->on_der_republish_active_directives();
+}
+
 void GenericChargePoint::on_reservation_status(std::int32_t reservation_id,
                                                ocpp::v2::ReservationUpdateStatusEnum status) {
     check_configured("on_reservation_status");

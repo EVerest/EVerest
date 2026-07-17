@@ -15,6 +15,7 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE
 )
 
 target_sources(${TEST_TARGET_NAME} PRIVATE
+    EnergyTransferModesTest.cpp
     EventQueueTest.cpp
     ErrorHandlingTest.cpp
     IECStateMachineTest.cpp
@@ -25,6 +26,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     ../IECStateMachine.cpp
     ../SessionLog.cpp
     ../backtrace.cpp
+    ../energy_transfer_modes.cpp
     ../over_voltage/OverVoltageMonitor.cpp
     ../voltage_plausibility/VoltagePlausibilityMonitor.cpp
     ../v2gMessage.cpp

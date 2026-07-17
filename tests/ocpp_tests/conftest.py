@@ -69,6 +69,12 @@ def pytest_addoption(parser):
 
 def pytest_generate_tests(metafunc):
     if "ocpp_impl" in metafunc.fixturenames:
+        # Tests marked ocpp_multi_only exercise functionality that only exists in
+        # the combined OCPPmulti module (e.g. DER); pin them to multi regardless
+        # of --ocpp-impl so the legacy OCPP/OCPP201 variant is never collected.
+        if metafunc.definition.get_closest_marker("ocpp_multi_only"):
+            metafunc.parametrize("ocpp_impl", ["multi"])
+            return
         selected = metafunc.config.getoption("--ocpp-impl")
         impls = ["legacy", "multi"] if selected == "both" else [selected]
         metafunc.parametrize("ocpp_impl", impls)
@@ -286,6 +292,13 @@ def probe_module(
     implement_command(
         module,
         skip_implementation,
+        "ProbeModuleConnectorA",
+        "set_der_available",
+        lambda arg: "Accepted",
+    )
+    implement_command(
+        module,
+        skip_implementation,
         "ProbeModuleConnectorB",
         "get_evse",
         lambda arg: {"id": 2, "connectors": [{"id": 1}]},
@@ -373,6 +386,13 @@ def probe_module(
         "ProbeModuleConnectorB",
         "set_plug_and_charge_configuration",
         lambda arg: True,
+    )
+    implement_command(
+        module,
+        skip_implementation,
+        "ProbeModuleConnectorB",
+        "set_der_available",
+        lambda arg: "Accepted",
     )
     implement_command(
         module,

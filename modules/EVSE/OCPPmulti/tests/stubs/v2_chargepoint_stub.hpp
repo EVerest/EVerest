@@ -79,6 +79,8 @@ struct Ocpp2ChargePointMock : public ocpp::v2::ChargePointInterface {
     MOCK_METHOD(void, on_variable_changed, (const ocpp::v2::SetVariableData& set_variable_data), (override));
     MOCK_METHOD(void, on_reservation_status,
                 (const std::int32_t reservation_id, const ocpp::v2::ReservationUpdateStatusEnum status), (override));
+    MOCK_METHOD(void, on_der_alarm, (const ocpp::v21::NotifyDERAlarmRequest& request), (override));
+    MOCK_METHOD(void, on_der_republish_active_directives, (), (override));
     MOCK_METHOD(void, on_ev_charging_needs, (const ocpp::v2::NotifyEVChargingNeedsRequest& request), (override));
     MOCK_METHOD(ocpp::v2::AuthorizeResponse, validate_token,
                 (const ocpp::v2::IdToken id_token, const std::optional<ocpp::CiString<10000>>& certificate,
@@ -136,6 +138,8 @@ struct GenericChargePointCallbacksMock : public ocpp_multi::GenericChargePointCa
     MOCK_METHOD(ocpp::v2::DataTransferResponse, cb_data_transfer, (const ocpp::v2::DataTransferRequest& request),
                 (override));
     MOCK_METHOD(void, cb_default_price, (const types::session_cost::DefaultPrice& messages), (override));
+    MOCK_METHOD(void, cb_der_active_directives, (const std::vector<ocpp::v21::SetDERControlRequest>& active_controls),
+                (override));
     MOCK_METHOD(void, cb_ev_info, (std::int32_t evse_id, const types::evse_manager::EVInfo& ev_info), (override));
     MOCK_METHOD(void, cb_fault_cleared_handler, (std::int32_t evse_id, const Everest::error::Error& error), (override));
     MOCK_METHOD(void, cb_fault_handler, (std::int32_t evse_id, const Everest::error::Error& error), (override));

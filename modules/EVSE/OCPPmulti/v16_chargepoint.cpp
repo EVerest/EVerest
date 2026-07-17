@@ -787,6 +787,14 @@ void ChargePointV16::on_ev_charging_needs(const ocpp::v2::NotifyEVChargingNeedsR
     // not used in OCPP 1.6
 }
 
+void ChargePointV16::on_der_alarm(const ocpp::v21::NotifyDERAlarmRequest& request) {
+    // DER / grid_support is OCPP 2.x only
+}
+
+void ChargePointV16::on_der_republish_active_directives() {
+    // DER / grid_support is OCPP 2.x only
+}
+
 void ChargePointV16::on_event(const EventInfo& event) {
     check_configured("on_event");
     if (event.error) {

@@ -24,6 +24,7 @@
 #include <generated/interfaces/evse_manager/Interface.hpp>
 #include <generated/interfaces/evse_security/Interface.hpp>
 #include <generated/interfaces/external_energy_limits/Interface.hpp>
+#include <generated/interfaces/grid_support/Interface.hpp>
 #include <generated/interfaces/iso15118_extensions/Interface.hpp>
 #include <generated/interfaces/ocpp_data_transfer/Interface.hpp>
 #include <generated/interfaces/reservation/Interface.hpp>
@@ -59,6 +60,7 @@ public:
     [[nodiscard]] bool getEnableLegacyConfigMigration() const override;
     [[nodiscard]] int getOcpp16NetworkConfigSlot() const override;
     [[nodiscard]] std::string getEverestDeviceModelDatabasePath() const override;
+    [[nodiscard]] int getGridSupportHeartbeatS() const override;
     [[nodiscard]] std::string getMessageLogPath() const override;
     [[nodiscard]] int getMessageQueueResumeDelay() const override;
     [[nodiscard]] int getRequestCompositeScheduleDurationS() const override;
@@ -94,6 +96,7 @@ struct Conf {
     int ResetStopDelay;
     std::string UserConfigPath;
     std::string Mode;
+    int GridSupportHeartbeatS;
 };
 
 class OCPPmulti : public Everest::ModuleBase {
@@ -110,6 +113,7 @@ public:
               std::vector<std::unique_ptr<external_energy_limitsIntf>> r_evse_energy_sink,
               std::vector<std::unique_ptr<evse_managerIntf>> r_evse_manager,
               std::vector<std::unique_ptr<iso15118_extensionsIntf>> r_extensions_15118,
+              std::vector<std::unique_ptr<grid_supportIntf>> r_grid_support,
               std::vector<std::unique_ptr<reservationIntf>> r_reservation,
               std::unique_ptr<evse_securityIntf> r_security, std::unique_ptr<systemIntf> r_system, Conf& config) :
         ModuleBase(info),
@@ -126,6 +130,7 @@ public:
         r_evse_energy_sink(std::move(r_evse_energy_sink)),
         r_evse_manager(std::move(r_evse_manager)),
         r_extensions_15118(std::move(r_extensions_15118)),
+        r_grid_support(std::move(r_grid_support)),
         r_reservation(std::move(r_reservation)),
         r_security(std::move(r_security)),
         r_system(std::move(r_system)),
@@ -144,6 +149,7 @@ public:
     const std::vector<std::unique_ptr<external_energy_limitsIntf>> r_evse_energy_sink;
     const std::vector<std::unique_ptr<evse_managerIntf>> r_evse_manager;
     const std::vector<std::unique_ptr<iso15118_extensionsIntf>> r_extensions_15118;
+    const std::vector<std::unique_ptr<grid_supportIntf>> r_grid_support;
     const std::vector<std::unique_ptr<reservationIntf>> r_reservation;
     const std::unique_ptr<evse_securityIntf> r_security;
     const std::unique_ptr<systemIntf> r_system;
@@ -164,7 +170,7 @@ public:
         m_config,
         {*p_auth_validator, *p_auth_provider, *p_data_transfer, *p_ocpp_generic, *p_session_cost},
         {*r_auth, r_charger_information, r_data_transfer, r_display_message, r_evse_energy_sink, r_evse_manager,
-         r_extensions_15118, r_reservation, *r_security, *r_system}};
+         r_extensions_15118, r_grid_support, r_reservation, *r_security, *r_system}};
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
