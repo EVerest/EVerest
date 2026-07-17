@@ -280,6 +280,37 @@ TEST_F(MessageQueueTest, test_non_transactional_message_is_sent) {
     wait_for_calls();
 }
 
+// \brief Test that is_idle() reflects whether there are messages queued or in flight. This is relied upon by the
+// OCPP module to bound-wait for a final TransactionEvent(Ended) or FirmwareStatusNotification to be flushed before
+// tearing the connection down for a reset/shutdown.
+TEST_F(MessageQueueTest, test_is_idle_reflects_pending_and_flushed_messages) {
+    // A freshly started, empty queue is idle.
+    EXPECT_TRUE(message_queue->is_idle());
+
+    EXPECT_CALL(send_callback_mock, Call(testing::_)).WillRepeatedly(MarkAndReturn(true, true));
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, testing::_)).Times(testing::AnyNumber());
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_)).Times(testing::AnyNumber());
+
+    // While paused, a pushed transactional message stays queued -> not idle.
+    message_queue->pause();
+    push_message_call(TestMessageType::TRANSACTIONAL);
+    EXPECT_FALSE(message_queue->is_idle());
+
+    // After resuming, the message is sent, acknowledged, and the queue becomes idle again.
+    message_queue->resume(std::chrono::seconds(0));
+    wait_for_calls(1);
+
+    // in_flight is cleared asynchronously once the (mocked) response is received; poll briefly for it.
+    bool idle = false;
+    for (int i = 0; i < 200 && !idle; ++i) {
+        idle = message_queue->is_idle();
+        if (!idle) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+    EXPECT_TRUE(idle);
+}
+
 // \brief Test transactional messages that are sent while being offline are sent afterwards
 TEST_F(MessageQueueTest, test_queuing_up_of_transactional_messages) {
 

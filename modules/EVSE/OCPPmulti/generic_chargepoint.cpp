@@ -90,6 +90,14 @@ void GenericChargePoint::stop() {
     m_active_ptr->stop();
 }
 
+bool GenericChargePoint::is_message_queue_idle() {
+    // Called during teardown; if not configured there is nothing left to flush.
+    if (m_active_ptr == nullptr) {
+        return true;
+    }
+    return m_active_ptr->is_message_queue_idle();
+}
+
 std::optional<ocpp::v2::DataTransferResponse>
 GenericChargePoint::data_transfer_req(const ocpp::v2::DataTransferRequest& request) {
     check_configured("data_transfer_req");

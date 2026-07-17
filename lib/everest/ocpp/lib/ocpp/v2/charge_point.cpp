@@ -168,6 +168,10 @@ void ChargePoint::stop() {
     this->security->stop_certificate_signed_timer();
 }
 
+bool ChargePoint::is_message_queue_idle() {
+    return this->message_queue == nullptr || this->message_queue->is_idle();
+}
+
 void ChargePoint::disconnect_websocket() {
     this->connectivity_manager->disconnect();
 }

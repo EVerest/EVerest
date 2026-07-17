@@ -77,6 +77,11 @@ public:
     /// \brief Stops the ChargePoint. Disconnects the websocket connection and stops MessageQueue and all timers
     virtual void stop() = 0;
 
+    /// \brief Returns true if the outgoing message queue is idle, i.e. there is no message queued or in flight. Can be
+    /// used to determine whether it is safe to tear down the connection without dropping a pending message (e.g. a
+    /// final TransactionEvent(Ended) or a FirmwareStatusNotification) right before a reset.
+    virtual bool is_message_queue_idle() = 0;
+
     /// \brief Initializes the websocket and connects to a CSMS. Provide a network_profile_slot to connect to that
     /// specific slot.
     ///
@@ -583,6 +588,8 @@ public:
     void start(BootReasonEnum bootreason = BootReasonEnum::PowerUp, bool start_connecting = true) override;
 
     void stop() override;
+
+    bool is_message_queue_idle() override;
 
     void connect_websocket(std::optional<std::int32_t> network_profile_slot = std::nullopt) override;
     void disconnect_websocket() override;

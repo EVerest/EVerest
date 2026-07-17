@@ -986,6 +986,16 @@ public:
         return this->transaction_message_queue.empty();
     }
 
+    /// \brief Returns true if there is no outgoing message waiting to be sent or awaiting a response, i.e. both the
+    /// normal and the transaction message queues are empty and no message is currently in flight. This is used to
+    /// determine when it is safe to tear down the connection (e.g. before a reset) without losing queued messages
+    /// such as a final TransactionEvent(Ended) or a FirmwareStatusNotification.
+    bool is_idle() {
+        const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
+        return this->normal_message_queue.empty() && this->transaction_message_queue.empty() &&
+               this->in_flight == nullptr;
+    }
+
     bool contains_transaction_messages(const CiString<36>& transaction_id) {
         const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
         for (const auto& control_message : this->transaction_message_queue) {

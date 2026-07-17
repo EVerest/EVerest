@@ -16,6 +16,7 @@ namespace stubs {
 struct Ocpp2ChargePointMock : public ocpp::v2::ChargePointInterface {
     MOCK_METHOD(void, start, (ocpp::v2::BootReasonEnum bootreason, bool start_connecting), (override));
     MOCK_METHOD(void, stop, (), (override));
+    MOCK_METHOD(bool, is_message_queue_idle, (), (override));
     MOCK_METHOD(void, connect_websocket, (std::optional<std::int32_t> network_profile_slot), (override));
     MOCK_METHOD(void, disconnect_websocket, (), (override));
     MOCK_METHOD(void, on_websocket_connected,

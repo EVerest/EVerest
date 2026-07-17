@@ -494,6 +494,12 @@ void ChargePointV2::stop() {
     check_configured("stop");
     m_charge_point->stop();
 }
+bool ChargePointV2::is_message_queue_idle() {
+    if (m_charge_point == nullptr) {
+        return true;
+    }
+    return m_charge_point->is_message_queue_idle();
+}
 
 std::optional<ocpp::v2::DataTransferResponse>
 ChargePointV2::data_transfer_req(const ocpp::v2::DataTransferRequest& request) {
