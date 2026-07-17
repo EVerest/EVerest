@@ -1024,6 +1024,7 @@ public:
 
     /// \brief Set message_timeout to given \p timeout (in seconds)
     void update_message_timeout(const int timeout) {
+        const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
         this->config.message_timeout_seconds = timeout;
     }
 

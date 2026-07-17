@@ -171,6 +171,7 @@ public:
     std::optional<WebsocketConnectionOptions> get_websocket_connection_options(std::int32_t slot) override;
     void set_active_security_profile(std::int32_t security_profile, const std::string& source) override;
     void set_active_network_profile_slot(std::int32_t slot, const std::string& source) override;
+    std::optional<std::int32_t> get_active_network_profile_slot() override;
     void set_per_slot_ocpp_version(std::int32_t slot, const std::string& version, const std::string& source) override;
     void set_security_ctrl_security_profile(std::int32_t security_profile, const std::string& source) override;
     void set_security_ctrl_identity(const std::string& identity, const std::string& source) override;

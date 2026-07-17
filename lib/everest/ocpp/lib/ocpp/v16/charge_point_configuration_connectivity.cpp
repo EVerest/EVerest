@@ -116,6 +116,11 @@ void ChargePointConfigurationConnectivity::set_active_network_profile_slot(int32
                   << slot;
 }
 
+std::optional<int32_t> ChargePointConfigurationConnectivity::get_active_network_profile_slot() {
+    // OCPP 1.6 does not support multiple network connection profiles, so there is no fallback target.
+    return std::nullopt;
+}
+
 void ChargePointConfigurationConnectivity::set_per_slot_ocpp_version(int32_t /*slot*/, const std::string& /*version*/,
                                                                      const std::string& /*source*/) {
     EVLOG_warning
