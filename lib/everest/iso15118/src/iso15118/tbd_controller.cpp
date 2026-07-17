@@ -14,11 +14,22 @@
 
 namespace iso15118 {
 
+static constexpr auto POLL_MANAGER_TIMEOUT_MS = 50;
+
 TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_, d20::EvseSetupConfig setup_) :
+    TbdController(std::move(config_), std::move(callbacks_), std::move(setup_),
+                  [](io::PollManager& poll_manager_, const std::string& interface_name_) {
+                      return std::make_unique<io::ConnectionPlain>(poll_manager_, interface_name_);
+                  }) {
+}
+
+TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_, d20::EvseSetupConfig setup_,
+                             ConnectionFactory connection_factory_) :
     config(std::move(config_)),
     callbacks(std::move(callbacks_)),
     evse_setup(std::move(setup_)),
-    interface_name(config.interface_name) {
+    interface_name(config.interface_name),
+    connection_factory(std::move(connection_factory_)) {
 
     const auto result_interface_check = io::check_and_update_interface(interface_name);
     if (result_interface_check) {
@@ -41,18 +52,10 @@ TbdController::~TbdController() {
 }
 
 void TbdController::loop() {
-    static constexpr auto POLL_MANAGER_TIMEOUT_MS = 50;
-
     shutdown_active.store(false);
-    bool shutdown_signaled{false};
+    shutdown_signaled = false;
 
-    if (not config.enable_sdp_server) {
-        auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
-        session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(*evse_setup.handle()), callbacks,
-                                            pause_ctx);
-    }
-
-    auto next_event = get_current_time_point();
+    next_event = get_current_time_point();
 
     while (session or not shutdown_active.load()) {
         const auto poll_timeout_ms = get_timeout_ms_until(next_event, POLL_MANAGER_TIMEOUT_MS);
@@ -64,44 +67,55 @@ void TbdController::loop() {
             break;
         }
 
-        next_event = offset_time_point_by_ms(get_current_time_point(), POLL_MANAGER_TIMEOUT_MS);
-
-        if (communication_setup_timeout && communication_setup_timeout->is_reached()) {
-            logf_warning("V2G communication setup timeout (18s) expired before session was established");
-            communication_setup_timeout.reset();
-            if (sdp_server) {
-                sdp_server->set_dlink_ready(false);
-            }
-            callbacks.signal(session::feedback::Signal::DLINK_ERROR);
-        }
-
-        if (session and shutdown_active.load() and not shutdown_signaled) {
-            session->request_shutdown(); // Stopping the session
-            shutdown_signaled = true;
-        }
-
-        if (session) {
-            try {
-                const auto next_session_event = session->poll();
-                next_event = std::min(next_event, next_session_event);
-            } catch (const std::runtime_error& e) {
-                logf_error("Shutting down session because of: %s", e.what());
-                logf_info("Restarting session ...");
-                session->close();
-            }
-
-            if (session->is_finished()) {
-                session.reset();
-
-                if (not shutdown_active.load() and not config.enable_sdp_server) {
-                    auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
-                    session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(*evse_setup.handle()),
-                                                        callbacks, pause_ctx);
-                }
-            }
-        }
+        tick();
     }
     logf_info("Exiting TbdController loop gracefully");
+}
+
+void TbdController::tick() {
+    next_event = offset_time_point_by_ms(get_current_time_point(), POLL_MANAGER_TIMEOUT_MS);
+
+    if (communication_setup_timeout && communication_setup_timeout->is_reached()) {
+        logf_warning("V2G communication setup timeout (18s) expired before session was established");
+        communication_setup_timeout.reset();
+        if (sdp_server) {
+            sdp_server->set_dlink_ready(false);
+        }
+        callbacks.signal(session::feedback::Signal::DLINK_ERROR);
+    }
+
+    if (session and shutdown_active.load() and not shutdown_signaled) {
+        session->request_shutdown(); // Stopping the session
+        shutdown_signaled = true;
+    }
+
+    // Consume the flag unconditionally so a request raised while no session is
+    // active cannot tear down a later session.
+    const bool terminate = terminate_session_requested.exchange(false);
+    if (session and terminate) {
+        logf_info("Data link lost; terminating active V2G session");
+        session->close();
+    }
+
+    if (session) {
+        try {
+            const auto next_session_event = session->poll();
+            next_event = std::min(next_event, next_session_event);
+        } catch (const std::runtime_error& e) {
+            logf_error("Shutting down session because of: %s", e.what());
+            logf_info("Restarting session ...");
+            session->close();
+        }
+
+        if (session->is_finished()) {
+            session.reset();
+        }
+    }
+
+    if (not session and not shutdown_active.load() and not config.enable_sdp_server) {
+        session = std::make_unique<Session>(connection_factory(poll_manager, interface_name),
+                                            d20::SessionConfig(*evse_setup.handle()), callbacks, pause_ctx);
+    }
 }
 
 void TbdController::shutdown() {
@@ -192,6 +206,7 @@ void TbdController::set_dlink_ready(bool ready) {
         logf_info("V2G communication setup timeout started (%u ms)", V2G_COMMUNICATION_SETUP_TIMEOUT_MS);
     } else {
         communication_setup_timeout.reset();
+        terminate_session_requested.store(true);
     }
 }
 
@@ -226,6 +241,9 @@ void TbdController::handle_sdp_server_input() {
     }
 
     if (session) {
+        // A reconnect SDP arriving in the same poll cycle as a pending teardown
+        // is dropped here; the EVCC retransmits its SDP request (~250 ms) and
+        // recovers.
         logf_warning("Ignoring sdp request message because a session is already created and running");
         return;
     }
@@ -269,6 +287,11 @@ void TbdController::handle_sdp_server_input() {
                                         pause_ctx);
     communication_setup_timeout.reset();
 
+    // Deliberately do not clear terminate_session_requested here. A data-link
+    // loss that races this session creation must win: tick() consumes the flag
+    // and reaps whatever session exists, fresh or not. The EVCC retransmits its
+    // SDP request (~250 ms) so a session torn down this way recovers, whereas
+    // swallowing the flag would strand a session on a dead link.
     sdp_server->send_response(request, ipv6_endpoint);
 }
 
