@@ -421,6 +421,10 @@ private:
 
     std::atomic_bool current_demand_active{false};
     std::atomic_bool slac_unmatched{false};
+    // Running count of Control-Pilot B/C transitions in the current session. Incremented on every B<->C
+    // edge and pushed to the SLAC module via count_bc() so EvseSlacNeo can detect BCB toggles for
+    // CM_VALIDATE. Reset to 0 on plug-in.
+    int bc_transition_count{0};
     std::mutex powermeter_mutex;
     std::condition_variable powermeter_cv;
     bool initial_powermeter_value_received{false};
