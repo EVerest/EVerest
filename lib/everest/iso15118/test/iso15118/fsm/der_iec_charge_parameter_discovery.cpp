@@ -48,7 +48,7 @@ SCENARIO("ISO15118-20 der iec ac charge parameter discovery state transitions") 
     const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
         {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
 
-    const d20::EvseSetupConfig evse_setup{evse_id,
+    const session::EvseSetupConfig evse_setup{evse_id,
                                           supported_energy_services,
                                           auth_services,
                                           vas_services,
@@ -66,7 +66,7 @@ SCENARIO("ISO15118-20 der iec ac charge parameter discovery state transitions") 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
     session::feedback::Callbacks callbacks{};
 
-    auto state_helper = FsmStateHelper(d20::SessionConfig(evse_setup), pause_ctx, callbacks);
+    auto state_helper = FsmStateHelper(session::SessionConfig(evse_setup), pause_ctx, callbacks);
     auto ctx = state_helper.get_context();
 
     GIVEN("Bad Case - Unknown session") {

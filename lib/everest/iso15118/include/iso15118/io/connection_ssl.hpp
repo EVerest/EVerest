@@ -39,8 +39,11 @@ private:
     ConnectionEventCallback event_callback{nullptr};
 
     bool handshake_complete{false};
+    // set once the socket is gone, whether we closed it or the peer's close/EOF was seen in read()
+    bool closed{false};
 
     void handle_connect();
     void handle_data();
+    void handle_peer_close(bool clean);
 };
 } // namespace iso15118::io

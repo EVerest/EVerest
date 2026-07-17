@@ -14,7 +14,7 @@
 
 namespace iso15118 {
 
-TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_, d20::EvseSetupConfig setup_) :
+TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_, session::EvseSetupConfig setup_) :
     config(std::move(config_)),
     callbacks(std::move(callbacks_)),
     evse_setup(std::move(setup_)),
@@ -49,7 +49,8 @@ void TbdController::loop() {
     if (not config.enable_sdp_server) {
         auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
         session =
-            std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup), callbacks, pause_ctx);
+            std::make_unique<Session>(std::move(connection), session::SessionConfig(evse_setup), callbacks, pause_ctx,
+                                                        d2_pause_ctx);
     }
 
     auto next_event = get_current_time_point();
@@ -80,6 +81,15 @@ void TbdController::loop() {
             shutdown_signaled = true;
         }
 
+        if (kill_session_requested.exchange(false) and session) {
+            // D-LINK went down (e.g. the EV unplugged): the TCP link over the
+            // PLC is dead, terminate the session now instead of letting it
+            // linger until the sequence timeout ([V2G2-536]: a D-LINK
+            // termination terminates the V2G session).
+            logf_info("D-LINK down: terminating the running V2G session");
+            session->close();
+        }
+
         if (session) {
             try {
                 const auto next_session_event = session->poll();
@@ -95,8 +105,8 @@ void TbdController::loop() {
 
                 if (not shutdown_active.load() and not config.enable_sdp_server) {
                     auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
-                    session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup),
-                                                        callbacks, pause_ctx);
+                    session = std::make_unique<Session>(std::move(connection), session::SessionConfig(evse_setup),
+                                                        callbacks, pause_ctx, d2_pause_ctx);
                 }
             }
         }
@@ -140,6 +150,10 @@ void TbdController::update_powersupply_limits(const d20::DcTransferLimits& limit
     evse_setup.powersupply_limits = limits;
 }
 
+void TbdController::update_receipt_required(bool receipt_required) {
+    evse_setup.iso2_receipt_required = receipt_required;
+}
+
 void TbdController::update_energy_modes(const std::vector<message_20::datatypes::ServiceCategory>& modes) {
     evse_setup.supported_energy_services = modes;
 
@@ -176,6 +190,7 @@ void TbdController::set_dlink_ready(bool ready) {
         logf_info("V2G communication setup timeout started (%u ms)", V2G_COMMUNICATION_SETUP_TIMEOUT_MS);
     } else {
         communication_setup_timeout.reset();
+        kill_session_requested.store(true);
     }
 }
 
@@ -250,7 +265,8 @@ void TbdController::handle_sdp_server_input() {
 
     const auto ipv6_endpoint = connection->get_public_endpoint();
 
-    session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup), callbacks, pause_ctx);
+    session = std::make_unique<Session>(std::move(connection), session::SessionConfig(evse_setup), callbacks, pause_ctx,
+                                                        d2_pause_ctx);
     communication_setup_timeout.reset();
 
     sdp_server->send_response(request, ipv6_endpoint);

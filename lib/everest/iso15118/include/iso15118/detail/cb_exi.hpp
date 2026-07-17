@@ -3,6 +3,7 @@
 #pragma once
 
 #include <stdexcept>
+#include <string>
 
 #include <cbv2g/common/exi_bitstream.h>
 
@@ -79,10 +80,11 @@ template <typename T1, typename T2> void cb_convert_enum(const T1& in, T2& out) 
 exi_bitstream_t get_exi_input_stream(const iso15118::io::StreamInputView&);
 exi_bitstream_t get_exi_output_stream(const iso15118::io::StreamOutputView&);
 
-namespace iso15118::message_20 {
+namespace iso15118 {
 
-template <typename MessageType> int serialize_to_exi(const MessageType& in, exi_bitstream_t& out);
-
+// Shared EXI serialization helper for every protocol namespace (message_2, message_din, message_20).
+// The unqualified serialize_to_exi() call is a dependent name resolved via ADL to the per-protocol
+// overload set (and explicit specializations) of the argument's namespace at instantiation time.
 template <typename MessageType>
 size_t serialize_helper(const MessageType& in, const io::StreamOutputView& stream_view) {
     auto out = get_exi_output_stream(stream_view);
@@ -95,5 +97,11 @@ size_t serialize_helper(const MessageType& in, const io::StreamOutputView& strea
 
     return exi_bitstream_get_length(&out);
 }
+
+} // namespace iso15118
+
+namespace iso15118::message_20 {
+
+template <typename MessageType> int serialize_to_exi(const MessageType& in, exi_bitstream_t& out);
 
 } // namespace iso15118::message_20

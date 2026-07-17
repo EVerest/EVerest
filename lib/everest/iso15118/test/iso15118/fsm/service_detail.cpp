@@ -28,7 +28,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
         {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
 
-    const d20::EvseSetupConfig evse_setup{evse_id,
+    const session::EvseSetupConfig evse_setup{evse_id,
                                           supported_energy_services,
                                           auth_services,
                                           vas_services,
@@ -70,7 +70,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
         return std::make_optional(service_parameter_list);
     };
 
-    auto state_helper = FsmStateHelper(d20::SessionConfig(evse_setup), pause_ctx, callbacks);
+    auto state_helper = FsmStateHelper(session::SessionConfig(evse_setup), pause_ctx, callbacks);
     auto ctx = state_helper.get_context();
     ctx.session = d20::Session();
 

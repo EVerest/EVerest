@@ -29,7 +29,7 @@ void Feedback::ac_charge_loop_req(const feedback::AcChargeLoopReq& req_values) c
     call_if_available(callbacks.ac_charge_loop_req, req_values);
 }
 
-void Feedback::v2g_message(const message_20::Type& v2g_message) const {
+void Feedback::v2g_message(const V2gMessageType& v2g_message) const {
     call_if_available(callbacks.v2g_message, v2g_message);
 }
 
@@ -80,6 +80,15 @@ void Feedback::selected_vas_services(const dt::VasSelectedServiceList& vas_servi
 
 void Feedback::ac_limits(const feedback::AcLimits& limits) const {
     call_if_available(callbacks.ac_limits, limits);
+}
+
+void Feedback::require_auth_pnc(const std::string& emaid, const std::string& contract_chain_pem) const {
+    call_if_available(callbacks.require_auth_pnc, emaid, contract_chain_pem);
+}
+
+void Feedback::certificate_request(const std::string& exi_request_base64,
+                                   feedback::CertificateExchangeAction action) const {
+    call_if_available(callbacks.certificate_request, exi_request_base64, action);
 }
 
 } // namespace iso15118::session

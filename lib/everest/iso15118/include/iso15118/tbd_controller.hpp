@@ -9,13 +9,14 @@
 #include <vector>
 
 #include "config.hpp"
-#include <iso15118/d20/config.hpp>
+#include <iso15118/d2/config.hpp>
 #include <iso15118/d20/control_event.hpp>
 #include <iso15118/d20/limits.hpp>
 #include <iso15118/io/poll_manager.hpp>
 #include <iso15118/io/sdp_server.hpp>
 #include <iso15118/io/time.hpp>
 #include <iso15118/message/common_types.hpp>
+#include <iso15118/session/config.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/session/iso.hpp>
 
@@ -30,7 +31,7 @@ struct TbdConfig {
 
 class TbdController {
 public:
-    TbdController(TbdConfig, session::feedback::Callbacks, d20::EvseSetupConfig);
+    TbdController(TbdConfig, session::feedback::Callbacks, session::EvseSetupConfig);
     ~TbdController();
 
     void loop();
@@ -43,6 +44,8 @@ public:
                                        bool cert_install_service);
     void update_dc_limits(const d20::DcTransferLimits&);
     void update_powersupply_limits(const d20::DcTransferLimits&);
+    // ISO 15118-2: request a (signed) MeteringReceipt from the EV (ReceiptRequired in the charge loop).
+    void update_receipt_required(bool);
     void update_energy_modes(const std::vector<message_20::datatypes::ServiceCategory>&);
     void update_ac_limits(const d20::AcTransferLimits&);
 
@@ -60,6 +63,9 @@ private:
     std::unique_ptr<Session> session;
 
     std::atomic_bool shutdown_active{false};
+    // Set on set_dlink_ready(false): the data link is gone, so a running
+    // session must be terminated (handled on the loop() thread).
+    std::atomic_bool kill_session_requested{false};
 
     // callbacks for sdp server
     void handle_sdp_server_input();
@@ -67,11 +73,13 @@ private:
     const TbdConfig config;
     const session::feedback::Callbacks callbacks;
 
-    d20::EvseSetupConfig evse_setup;
+    session::EvseSetupConfig evse_setup;
 
     std::string interface_name;
 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
+    // ISO 15118-2 pause context, owned here so it outlives the per-session D2SeccEngine (mirrors pause_ctx).
+    std::optional<d2::PauseContext> d2_pause_ctx{std::nullopt};
 
     static constexpr uint32_t V2G_COMMUNICATION_SETUP_TIMEOUT_MS{18000};
     std::optional<Timeout> communication_setup_timeout;

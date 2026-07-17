@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <variant>
 #include <vector>
 
@@ -87,8 +88,17 @@ private:
 // TODO(SL): Define this globally for message and states
 using SupportedVASs = std::vector<uint16_t>;
 
+// ISO 15118-2 Plug-and-Charge CertificateInstallation relay: the module injects the raw
+// CertificateInstallationRes EXI (base64, as delivered by the CSMS/CPS backend over the
+// iso15118_extensions interface) back into the d2 SECC engine, which splices it onto the wire verbatim.
+struct CertificateResponse {
+    bool status_accepted{false};
+    std::string exi_response_base64{};
+};
+
 using ControlEvent = std::variant<CableCheckFinished, PresentVoltageCurrent, AuthorizationResponse, StopCharging,
                                   PauseCharging, DcTransferLimits, AcTransferLimits, UpdateDynamicModeParameters,
-                                  ClosedContactor, AcTargetPower, AcPresentPower, EnergyServices, SupportedVASs>;
+                                  ClosedContactor, AcTargetPower, AcPresentPower, EnergyServices, SupportedVASs,
+                                  CertificateResponse>;
 
 } // namespace iso15118::d20

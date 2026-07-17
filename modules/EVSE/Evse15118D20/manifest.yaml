@@ -20,7 +20,24 @@ config:
       - ENFORCE_NO_TLS
     default: ACCEPT_CLIENT_OFFER  
   enforce_tls_1_3:
-    description: Enforcing tls version 1.3. Only applies if tls_negotiation_strategy is ENFORCE_TLS.
+    description: >-
+      Enforcing tls version 1.3. Applies whenever a TLS connection is established, independently of
+      tls_negotiation_strategy: it pins the min/max protocol version, the cipher list and the
+      client_hello certificate-verify elevation. Set to true for ISO 15118-20 (mandates TLS 1.3 mTLS).
+      Set to false to offer TLS 1.2 (cipher ECDHE-ECDSA-AES128-SHA256, no client-certificate request),
+      which is required for ISO 15118-2 / DIN SPEC 70121.
+    type: boolean
+    default: false
+  supported_DIN70121:
+    description: >-
+      Offer DIN SPEC 70121 (DC only) in the SupportedAppProtocol handshake. Negotiated with the
+      lowest priority (after ISO 15118-20 and ISO 15118-2).
+    type: boolean
+    default: false
+  supported_ISO15118_2:
+    description: >-
+      Offer ISO 15118-2 (AC and DC) in the SupportedAppProtocol handshake. Negotiated with a lower
+      priority than ISO 15118-20 but higher than DIN SPEC 70121.
     type: boolean
     default: false
   enable_ssl_logging:

@@ -60,7 +60,7 @@ void fill_parking_parameter_list(std::vector<message_20::datatypes::ParkingParam
 } // namespace
 
 message_20::ServiceDetailResponse handle_request(const message_20::ServiceDetailRequest& req, d20::Session& session,
-                                                 const d20::SessionConfig& config,
+                                                 const session::SessionConfig& config,
                                                  const std::optional<dt::ServiceParameterList>& custom_vas_parameters) {
 
     message_20::ServiceDetailResponse res;

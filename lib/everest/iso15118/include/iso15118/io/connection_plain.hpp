@@ -35,6 +35,8 @@ private:
     int fd{-1};
 
     bool connection_open{false};
+    // set once the socket is gone, whether we closed it or the peer's EOF was seen in read()
+    bool closed{false};
 
     ConnectionEventCallback event_callback{nullptr};
 

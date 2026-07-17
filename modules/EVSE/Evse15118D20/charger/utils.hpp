@@ -17,6 +17,7 @@
 #include <iso15118/message/dc_charge_loop.hpp>
 #include <iso15118/message/service_detail.hpp>
 #include <iso15118/message/type.hpp>
+#include <iso15118/message/v2g_message_type.hpp>
 
 #include <everest/util/vector/fixed_vector.hpp>
 
@@ -120,6 +121,147 @@ constexpr types::iso15118::V2gMessageId convert_v2g_message_type(iso15118::messa
     }
 
     return Id::UnknownMessage;
+}
+
+// ISO 15118-2 message type -> V2gMessageId. The pre-20 names map 1:1 onto the shared interface enum.
+constexpr types::iso15118::V2gMessageId convert_v2g_message_type(iso15118::message_2::Type type) {
+
+    using Type = iso15118::message_2::Type;
+    using Id = types::iso15118::V2gMessageId;
+
+    switch (type) {
+    case Type::None:
+        return Id::UnknownMessage;
+    case Type::SessionSetupReq:
+        return Id::SessionSetupReq;
+    case Type::SessionSetupRes:
+        return Id::SessionSetupRes;
+    case Type::ServiceDiscoveryReq:
+        return Id::ServiceDiscoveryReq;
+    case Type::ServiceDiscoveryRes:
+        return Id::ServiceDiscoveryRes;
+    case Type::ServiceDetailReq:
+        return Id::ServiceDetailReq;
+    case Type::ServiceDetailRes:
+        return Id::ServiceDetailRes;
+    case Type::PaymentServiceSelectionReq:
+        return Id::PaymentServiceSelectionReq;
+    case Type::PaymentServiceSelectionRes:
+        return Id::PaymentServiceSelectionRes;
+    case Type::PaymentDetailsReq:
+        return Id::PaymentDetailsReq;
+    case Type::PaymentDetailsRes:
+        return Id::PaymentDetailsRes;
+    case Type::AuthorizationReq:
+        return Id::AuthorizationReq;
+    case Type::AuthorizationRes:
+        return Id::AuthorizationRes;
+    case Type::ChargeParameterDiscoveryReq:
+        return Id::ChargeParameterDiscoveryReq;
+    case Type::ChargeParameterDiscoveryRes:
+        return Id::ChargeParameterDiscoveryRes;
+    case Type::PowerDeliveryReq:
+        return Id::PowerDeliveryReq;
+    case Type::PowerDeliveryRes:
+        return Id::PowerDeliveryRes;
+    case Type::ChargingStatusReq:
+        return Id::ChargingStatusReq;
+    case Type::ChargingStatusRes:
+        return Id::ChargingStatusRes;
+    case Type::CableCheckReq:
+        return Id::CableCheckReq;
+    case Type::CableCheckRes:
+        return Id::CableCheckRes;
+    case Type::PreChargeReq:
+        return Id::PreChargeReq;
+    case Type::PreChargeRes:
+        return Id::PreChargeRes;
+    case Type::CurrentDemandReq:
+        return Id::CurrentDemandReq;
+    case Type::CurrentDemandRes:
+        return Id::CurrentDemandRes;
+    case Type::WeldingDetectionReq:
+        return Id::WeldingDetectionReq;
+    case Type::WeldingDetectionRes:
+        return Id::WeldingDetectionRes;
+    case Type::SessionStopReq:
+        return Id::SessionStopReq;
+    case Type::SessionStopRes:
+        return Id::SessionStopRes;
+    case Type::MeteringReceiptReq:
+        return Id::MeteringReceiptReq;
+    case Type::MeteringReceiptRes:
+        return Id::MeteringReceiptRes;
+    case Type::CertificateInstallationReq:
+        return Id::CertificateInstallationReq;
+    case Type::CertificateUpdateReq:
+        return Id::CertificateUpdateReq;
+    }
+
+    return Id::UnknownMessage;
+}
+
+// DIN SPEC 70121 message type -> V2gMessageId.
+constexpr types::iso15118::V2gMessageId convert_v2g_message_type(iso15118::message_din::Type type) {
+
+    using Type = iso15118::message_din::Type;
+    using Id = types::iso15118::V2gMessageId;
+
+    switch (type) {
+    case Type::None:
+        return Id::UnknownMessage;
+    case Type::SessionSetupReq:
+        return Id::SessionSetupReq;
+    case Type::SessionSetupRes:
+        return Id::SessionSetupRes;
+    case Type::ServiceDiscoveryReq:
+        return Id::ServiceDiscoveryReq;
+    case Type::ServiceDiscoveryRes:
+        return Id::ServiceDiscoveryRes;
+    case Type::ServicePaymentSelectionReq:
+        return Id::ServicePaymentSelectionReq;
+    case Type::ServicePaymentSelectionRes:
+        return Id::ServicePaymentSelectionRes;
+    case Type::ContractAuthenticationReq:
+        return Id::ContractAuthenticationReq;
+    case Type::ContractAuthenticationRes:
+        return Id::ContractAuthenticationRes;
+    case Type::ChargeParameterDiscoveryReq:
+        return Id::ChargeParameterDiscoveryReq;
+    case Type::ChargeParameterDiscoveryRes:
+        return Id::ChargeParameterDiscoveryRes;
+    case Type::CableCheckReq:
+        return Id::CableCheckReq;
+    case Type::CableCheckRes:
+        return Id::CableCheckRes;
+    case Type::PreChargeReq:
+        return Id::PreChargeReq;
+    case Type::PreChargeRes:
+        return Id::PreChargeRes;
+    case Type::PowerDeliveryReq:
+        return Id::PowerDeliveryReq;
+    case Type::PowerDeliveryRes:
+        return Id::PowerDeliveryRes;
+    case Type::CurrentDemandReq:
+        return Id::CurrentDemandReq;
+    case Type::CurrentDemandRes:
+        return Id::CurrentDemandRes;
+    case Type::WeldingDetectionReq:
+        return Id::WeldingDetectionReq;
+    case Type::WeldingDetectionRes:
+        return Id::WeldingDetectionRes;
+    case Type::SessionStopReq:
+        return Id::SessionStopReq;
+    case Type::SessionStopRes:
+        return Id::SessionStopRes;
+    }
+
+    return Id::UnknownMessage;
+}
+
+// Dispatcher over the protocol-neutral V2gMessageType variant reported by the feedback callbacks.
+inline types::iso15118::V2gMessageId convert_v2g_message_type(const iso15118::V2gMessageType& type) {
+    return std::visit([](auto&& concrete) { return convert_v2g_message_type(concrete); }, type);
 }
 
 std::optional<float> convert_from_optional(const std::optional<dt::RationalNumber>& in);

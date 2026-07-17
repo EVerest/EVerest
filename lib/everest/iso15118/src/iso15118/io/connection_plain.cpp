@@ -3,10 +3,8 @@
 #include <iso15118/io/connection_plain.hpp>
 
 #include <cassert>
-#include <chrono>
 #include <cinttypes>
 #include <cstring>
-#include <thread>
 
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -63,7 +61,13 @@ ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, const std::string& 
     poll_manager.register_fd(fd, [this]() { this->handle_connect(); });
 }
 
-ConnectionPlain::~ConnectionPlain() = default;
+ConnectionPlain::~ConnectionPlain() {
+    // Make sure the socket is closed and unregistered from the poll manager even if the session was
+    // torn down without an explicit close(). The event callback targets the (dying) session, so
+    // silence it first.
+    event_callback = nullptr;
+    close();
+}
 
 void ConnectionPlain::set_event_callback(const ConnectionEventCallback& callback) {
     this->event_callback = callback;
@@ -91,8 +95,23 @@ ReadResult ConnectionPlain::read(uint8_t* buf, size_t len) {
     const auto read_result = ::read(fd, buf, len);
     const auto did_block = (len > 0) and (not cmp_equal(read_result, len));
 
-    if (read_result >= 0) {
+    if (read_result > 0) {
         return {did_block, static_cast<size_t>(read_result)};
+    }
+
+    if (read_result == 0 and len > 0) {
+        // TCP EOF: the peer (EV) closed its side of the connection. This is the regular way a
+        // session ends -- the EVCC closes first (DIN [V2G-DC-937], ISO 15118-2 [V2G2-025]) -- but
+        // it also covers a mid-session EV disconnect. Surface it as CLOSED so the session driver
+        // reacts now instead of running into a sequence timeout (EOF keeps the fd readable and
+        // would otherwise be indistinguishable from EAGAIN here).
+        logf_info("TCP connection closed by the peer");
+        poll_manager.unregister_fd(fd);
+        ::close(fd);
+        connection_open = false;
+        closed = true;
+        call_if_available(event_callback, ConnectionEvent::CLOSED);
+        return {true, 0};
     }
 
     // should be an error
@@ -141,18 +160,25 @@ void ConnectionPlain::handle_data() {
 }
 
 void ConnectionPlain::close() {
+    if (closed) {
+        // already closed, either locally or by the peer (EOF path in read()); keep close() idempotent
+        return;
+    }
+    closed = true;
 
-    /* tear down TCP connection gracefully */
+    /* tear down the TCP connection (or the not-yet-accepted listening socket) */
     logf_info("Closing TCP connection");
 
-    const auto shutdown_result = shutdown(fd, SHUT_RDWR);
+    if (connection_open) {
+        // Established connection: send our FIN. The grace period for an EV-initiated close happens
+        // non-blocking in the session driver *before* this call (DIN [V2G-DC-937/938], ISO 15118-20
+        // [V2G20-1633]); close() itself must never stall the shared poll loop.
+        const auto shutdown_result = shutdown(fd, SHUT_RDWR);
 
-    if (shutdown_result == -1) {
-        logf_error("shutdown() failed");
+        if (shutdown_result == -1) {
+            logf_error("shutdown() failed");
+        }
     }
-
-    // Waiting for client closing the connection
-    std::this_thread::sleep_for(std::chrono::seconds(2));
 
     poll_manager.unregister_fd(fd);
 

@@ -11,10 +11,10 @@
 #include <iso15118/d20/timeout.hpp>
 #include <iso15118/message/payload_type.hpp>
 #include <iso15118/message/variant.hpp>
+#include <iso15118/session/config.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/session/logger.hpp>
 
-#include "config.hpp"
 #include "control_event.hpp"
 #include "ev_information.hpp"
 #include "ev_session_info.hpp"
@@ -57,6 +57,9 @@ public:
     bool has_response() const {
         return response_available;
     }
+    bool has_request() const {
+        return request != nullptr;
+    }
 
 private:
     // input
@@ -79,7 +82,7 @@ using BasePointerType = std::unique_ptr<StateBase>;
 class Context {
 public:
     // FIXME (aw): bundle arguments
-    Context(session::feedback::Callbacks, session::SessionLogger&, d20::SessionConfig, std::optional<PauseContext>&,
+    Context(session::feedback::Callbacks, session::SessionLogger&, session::SessionConfig, std::optional<PauseContext>&,
             const std::optional<ControlEvent>&, MessageExchange&, Timeouts&);
 
     template <typename StateType, typename... Args> BasePointerType create_state(Args&&... args) {
@@ -154,7 +157,7 @@ public:
 
     Session session;
 
-    SessionConfig session_config;
+    session::SessionConfig session_config;
 
     // Contains the EV received data
     EVSessionInfo session_ev_info;

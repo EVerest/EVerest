@@ -1,0 +1,107 @@
+description: >-
+  ISO 15118 EV-side (EVCC) implementation based on libiso15118, supporting
+  DIN SPEC 70121, ISO 15118-2 and ISO 15118-20
+config:
+  device:
+    description: >-
+      Ethernet device used for HLC. Any local interface that has an ipv6
+      link-local and a MAC addr will work
+    type: string
+    default: auto
+  supported_d20_energy_services:
+    description: >-
+      The supported ISO15118-20 energy services (DC, DC_BPT, AC, AC_BPT) the EV supports,
+      provided as a prioritized list. The first entry in the list has the highest priority
+      and is the most likely to be selected. The services should be separated only with commas.
+    type: string
+    default: "DC,DC_BPT"
+  supported_DIN70121:
+    description: >-
+      The EV offers DIN SPEC 70121 (DC, plaintext only) in the SAP handshake
+    type: boolean
+    default: false
+  supported_ISO15118_2:
+    description: >-
+      The EV offers ISO 15118-2 (AC and DC, EIM, TLS 1.2 or plaintext) in the SAP handshake
+    type: boolean
+    default: false
+  tls_active:
+    description: If true, EVCC connects to SECC as TLS client
+    type: boolean
+    default: false
+  enforce_tls:
+    description: >-
+      The EVCC will enforce a TLS connection. Takes precedence over tls_active: when true a TLS
+      connection is always used (tls_active is implied), and an SDP response that does not offer TLS
+      security is rejected (no plaintext downgrade) until a TLS-capable SECC is found or the
+      communication setup times out.
+    type: boolean
+    default: false
+  enable_tls_1_3:
+    description: >-
+      The EVCC will enable TLS version 1.3. Must be false when
+      supported_ISO15118_2 is used, since ISO 15118-2 uses TLS 1.2.
+    type: boolean
+    default: false
+  verify_server_certificate:
+    description: If true, the EVCC will verify the server (SECC) certificate against the V2G root
+    type: boolean
+    default: true
+  evccid:
+    description: The EVCC ID (vehicle identification) used during the session
+    type: string
+    default: WMIV1234567890ABCDEX
+  logging_path:
+    description: Path to logging directory (will be created if non existent)
+    type: string
+    default: "."
+  enable_ssl_logging:
+    description: Verbosely log the ssl/tls connection
+    type: boolean
+    default: false
+  enable_tls_key_logging:
+    description: >-
+      Enable/Disable the export of TLS session keys (pre-master-secret)
+      during a TLS handshake. Note that this option is for testing and
+      simulation purpose only
+    type: boolean
+    default: false
+  tls_key_logging_path:
+    description: >-
+      Output directory for the TLS key log file
+    type: string
+    default: /tmp
+  v2g_root_cert_path:
+    description: >-
+      Path to the V2G root certificate. If empty, it is resolved relative to
+      the installed etc/everest/certs defaults (ca/v2g/V2G_ROOT_CA.pem).
+    type: string
+    default: ""
+  device_cert_chain_path:
+    description: >-
+      Path to the vehicle (TLS client) certificate chain, leaf first. If empty, it is resolved
+      relative to the installed etc/everest/certs defaults (client/vehicle/VEHICLE_CERT_CHAIN.pem).
+    type: string
+    default: ""
+  device_key_path:
+    description: >-
+      Path to the vehicle leaf private key. If empty, it is resolved relative to
+      the installed etc/everest/certs defaults (client/vehicle/VEHICLE_LEAF.key).
+    type: string
+    default: ""
+  device_key_password_path:
+    description: >-
+      Path to the file containing the password for the vehicle leaf private key.
+      If empty, it is resolved relative to the installed etc/everest/certs defaults
+      (client/vehicle/VEHICLE_LEAF_PASSWORD.txt).
+    type: string
+    default: ""
+provides:
+  ev:
+    interface: ISO15118_ev
+    description: This module implements the ISO15118 (DIN 70121 / -2 / -20) implementation of an EV
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - aw@pionix.de
+    - Sebastian Lukas

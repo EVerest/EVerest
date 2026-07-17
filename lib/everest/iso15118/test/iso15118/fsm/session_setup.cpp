@@ -28,7 +28,7 @@ SCENARIO("ISO15118-20 session setup state transitions") {
     const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
         {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
 
-    const d20::EvseSetupConfig evse_setup{evse_id,
+    const session::EvseSetupConfig evse_setup{evse_id,
                                           supported_energy_services,
                                           auth_services,
                                           vas_services,
@@ -47,7 +47,7 @@ SCENARIO("ISO15118-20 session setup state transitions") {
 
     const session::feedback::Callbacks callbacks{};
 
-    auto state_helper = FsmStateHelper(d20::SessionConfig(evse_setup), pause_ctx, callbacks);
+    auto state_helper = FsmStateHelper(session::SessionConfig(evse_setup), pause_ctx, callbacks);
     auto ctx = state_helper.get_context();
 
     const auto session_id = std::array<uint8_t, 8>{0x10, 0x34, 0xAB, 0x7A, 0x01, 0xF3, 0x95, 0x02};

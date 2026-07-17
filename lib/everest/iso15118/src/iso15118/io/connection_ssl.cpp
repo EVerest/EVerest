@@ -25,6 +25,7 @@
 #include <iso15118/detail/io/helper_ssl.hpp>
 #include <iso15118/detail/io/socket_helper.hpp>
 #include <iso15118/io/sdp_server.hpp>
+#include <iso15118/io/tls_ciphers.hpp>
 
 namespace std {
 template <> class default_delete<SSL> {
@@ -90,7 +91,7 @@ auto x509_name_oneline(const X509_NAME* a, char* buf, int size) {
 
 // I found no get or callback function for the supported_versions extension, so I wrote my own parser.
 bool is_tls_1_3(const uint8_t* data, std::size_t remaining) {
-    if (data == nullptr) {
+    if (data == nullptr || remaining < 1) {
         return false;
     }
 
@@ -220,10 +221,6 @@ int private_key_callback(char* buf, int size, [[maybe_unused]] int rwflag, void*
 
 SSL_CTX* init_ssl(const config::SSLConfig& ssl_config) {
 
-    // Note: openssl does not provide support for ECDH-ECDSA-AES128-SHA256 anymore
-    static constexpr auto TLS1_2_CIPHERSUITES = "ECDHE-ECDSA-AES128-SHA256";
-    static constexpr auto TLS1_3_CIPHERSUITES = "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256";
-
     const SSL_METHOD* method = TLS_server_method();
     const auto ctx = SSL_CTX_new(method);
 
@@ -231,6 +228,10 @@ SSL_CTX* init_ssl(const config::SSLConfig& ssl_config) {
         log_and_raise_openssl_error("Failed in SSL_CTX_new()");
     }
 
+    // ISO 15118-20 pins TLS 1.3 (min == TLS1_3); ISO 15118-2 / DIN SPEC 70121 use TLS 1.2, so cap both
+    // min and max at TLS 1.2 to avoid silently negotiating 1.3 despite the 1.3 ciphersuites configured
+    // below. The enforce_tls_1_3 == true path is kept bit-for-bit identical to the previous -20 behaviour
+    // (min TLS1_3, max left at the library default).
     const int result_set_min_proto_version = (ssl_config.enforce_tls_1_3)
                                                  ? SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION)
                                                  : SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
@@ -241,6 +242,10 @@ SSL_CTX* init_ssl(const config::SSLConfig& ssl_config) {
 
     if (result_set_min_proto_version == 0) {
         log_and_raise_openssl_error("Failed in SSL_CTX_set_min_proto_version()");
+    }
+
+    if (not ssl_config.enforce_tls_1_3 and SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION) == 0) {
+        log_and_raise_openssl_error("Failed in SSL_CTX_set_max_proto_version()");
     }
 
     if (not ssl_config.enforce_tls_1_3 and SSL_CTX_set_cipher_list(ctx, TLS1_2_CIPHERSUITES) == 0) {
@@ -278,7 +283,13 @@ SSL_CTX* init_ssl(const config::SSLConfig& ssl_config) {
 
     SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, nullptr);
 
-    SSL_CTX_set_client_hello_cb(ctx, &client_hello_cb, nullptr);
+    // The client_hello_cb detects a TLS 1.3 ClientHello and elevates the verify mode to request (and
+    // require) a client certificate (mTLS). This is the ISO 15118-20 path only. For ISO 15118-2 / DIN
+    // SPEC 70121 the server offers TLS 1.2, presents its V2G leaf and must NOT request a client
+    // certificate (matching EvseV2G), so the callback is only registered when enforcing TLS 1.3.
+    if (ssl_config.enforce_tls_1_3) {
+        SSL_CTX_set_client_hello_cb(ctx, &client_hello_cb, nullptr);
+    }
 
     // TODO(SL): Adding multi root support with certificate_authorities extension
     // SSL_CTX_set_cert_cb(ctx, &handle_certificate_cb, nullptr);
@@ -369,7 +380,13 @@ ConnectionSSL::ConnectionSSL(PollManager& poll_manager_, const std::string& inte
     poll_manager.register_fd(ssl->fd, [this]() { this->handle_connect(); });
 }
 
-ConnectionSSL::~ConnectionSSL() = default;
+ConnectionSSL::~ConnectionSSL() {
+    // Make sure the socket is closed and unregistered from the poll manager even if the session was
+    // torn down without an explicit close(). The event callback targets the (dying) session, so
+    // silence it first.
+    event_callback = nullptr;
+    close();
+}
 
 void ConnectionSSL::set_event_callback(const ConnectionEventCallback& callback) {
     event_callback = callback;
@@ -418,9 +435,53 @@ ReadResult ConnectionSSL::read(uint8_t* buf, size_t len) {
         return {true, 0};
     }
 
+    // The peer (EV) closed the connection. This is the regular way a session ends -- the EVCC
+    // closes first (DIN [V2G-DC-937], ISO 15118-2 [V2G2-025]) -- so surface it as CLOSED for the
+    // session driver instead of raising it as an error.
+    if (ssl_error == SSL_ERROR_ZERO_RETURN) {
+        // clean TLS shutdown: the peer sent a close_notify alert
+        logf_info("TLS connection closed by the peer (close_notify)");
+        handle_peer_close(true);
+        return {true, 0};
+    }
+
+    const bool unexpected_eof =
+#ifdef SSL_R_UNEXPECTED_EOF_WHILE_READING
+        // OpenSSL >= 3.0 reports a plain TCP EOF without close_notify this way
+        (ssl_error == SSL_ERROR_SSL) and
+        (ERR_GET_REASON(ERR_peek_error()) == SSL_R_UNEXPECTED_EOF_WHILE_READING);
+#else
+        false;
+#endif
+    if (unexpected_eof or (ssl_error == SSL_ERROR_SYSCALL)) {
+        // TCP EOF/RST without a TLS close_notify (EVs commonly just close the socket)
+        ERR_clear_error();
+        logf_info("TLS connection closed by the peer (without close_notify)");
+        handle_peer_close(false);
+        return {true, 0};
+    }
+
     log_and_raise_openssl_error("Failed to SSL_read_ex(): " + std::to_string(ssl_error));
 
     return {false, 0};
+}
+
+void ConnectionSSL::handle_peer_close(bool clean) {
+    if (closed) {
+        return;
+    }
+    closed = true;
+
+    if (clean) {
+        // answer the peer's close_notify with ours (best effort, non-blocking)
+        SSL_shutdown(ssl->ssl.get());
+    }
+
+    poll_manager.unregister_fd(ssl->accept_fd);
+    ::close(ssl->accept_fd);
+    ssl->accept_fd = -1;
+
+    call_if_available(event_callback, ConnectionEvent::CLOSED);
 }
 
 void ConnectionSSL::handle_connect() {
@@ -443,7 +504,10 @@ void ConnectionSSL::handle_connect() {
     call_if_available(event_callback, ConnectionEvent::ACCEPTED);
 
     ssl->ssl = std::unique_ptr<SSL>(SSL_new(ssl->ssl_ctx.get()));
-    const auto socket_bio = BIO_new_socket(ssl->accept_fd, BIO_CLOSE);
+    // BIO_NOCLOSE: accept_fd is owned and closed by this class (close()/handle_peer_close()). With
+    // BIO_CLOSE, SSL_free() would close the fd number a second time at destruction -- after the
+    // kernel may have reused it for an unrelated socket.
+    const auto socket_bio = BIO_new_socket(ssl->accept_fd, BIO_NOCLOSE);
 
     const auto ssl_ptr = ssl->ssl.get();
 
@@ -533,24 +597,39 @@ void ConnectionSSL::handle_data() {
 }
 
 void ConnectionSSL::close() {
-    /* tear down TLS connection gracefully */
+    if (closed) {
+        // already closed, either locally or by the peer (handle_peer_close()); keep close() idempotent
+        return;
+    }
+    closed = true;
+
+    /* tear down the TLS connection (or the not-yet-accepted listening socket) */
     logf_info("Closing TLS connection");
 
-    const auto ssl_ptr = ssl->ssl.get();
+    if (ssl->ssl) {
+        // An EV connection was accepted: send our close_notify. The grace period for an EV-initiated
+        // close happens non-blocking in the session driver *before* this call (DIN [V2G-DC-937/938],
+        // ISO 15118-20 [V2G20-1633]); close() itself must never stall the shared poll loop, so we do
+        // not wait for the peer's close_notify.
+        const auto ssl_ptr = ssl->ssl.get();
+        const auto ssl_close_result = SSL_shutdown(ssl_ptr);
 
-    const auto ssl_close_result = SSL_shutdown(ssl_ptr); // TODO(sl): Correct shutdown handling
-
-    if (ssl_close_result < 0) {
-        const auto ssl_error = SSL_get_error(ssl_ptr, ssl_close_result);
-        if ((ssl_error != SSL_ERROR_WANT_READ) and (ssl_error != SSL_ERROR_WANT_WRITE)) {
-            logf_error("%s", log_openssl_error("Failed to SSL_shutdown(): " + std::to_string(ssl_error)).c_str());
+        if (ssl_close_result < 0) {
+            const auto ssl_error = SSL_get_error(ssl_ptr, ssl_close_result);
+            if ((ssl_error != SSL_ERROR_WANT_READ) and (ssl_error != SSL_ERROR_WANT_WRITE)) {
+                logf_error("%s", log_openssl_error("Failed to SSL_shutdown(): " + std::to_string(ssl_error)).c_str());
+            }
         }
+
+        poll_manager.unregister_fd(ssl->accept_fd);
+        ::close(ssl->accept_fd);
+        ssl->accept_fd = -1;
+    } else {
+        // no EV ever connected: only the listening socket exists
+        poll_manager.unregister_fd(ssl->fd);
+        ::close(ssl->fd);
+        ssl->fd = -1;
     }
-
-    // TODO(sl): Test if correct
-
-    ::close(ssl->accept_fd);
-    poll_manager.unregister_fd(ssl->accept_fd);
 
     logf_info("TLS connection closed gracefully");
 
