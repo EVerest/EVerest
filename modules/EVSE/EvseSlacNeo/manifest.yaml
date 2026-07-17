@@ -117,7 +117,7 @@ provides:
         description: Maximum number of simultaneous CM_SLAC_PARM sessions the EVSE keeps active.
         type: integer
         minimum: 1
-        default: 4
+        default: 5
       startup_delay_ms:
         description: >-
           Delay initialization of SLAC I/O by the given amount.
@@ -142,6 +142,22 @@ provides:
           Hack: Do not regenerate NMK on reset, this is not spec compliant and should only be set for debugging purposes.
         type: boolean
         default: false
+      initiate_amp_map:
+        description: >-
+          Send a CM_AMP_MAP.REQ once the AVLN is established to reduce the transmit power of
+          selected OFDM carriers (ISO 15118-3 A.9.6 transmit-power limitation). The amplitude
+          map is read from amp_map_file. The SECC always answers an incoming CM_AMP_MAP.REQ
+          with CM_AMP_MAP.CNF regardless of this option.
+        type: boolean
+        default: false
+      amp_map_file:
+        description: >-
+          Path to a YAML file describing the CM_AMP_MAP amplitude map (keys: carriers,
+          default_amplitude 0..15, overrides {carrier: amplitude}). Empty uses a built-in
+          all-maximum-TX default (no reduction). See config/slac_amp_map_example.yaml.
+          Only used when initiate_amp_map is true.
+        type: string
+        default: ""
 enable_telemetry: true
 metadata:
   base_license: https://directory.fsf.org/wiki/License:BSD-3-Clause-Clear

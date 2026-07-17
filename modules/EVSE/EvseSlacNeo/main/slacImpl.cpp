@@ -6,7 +6,10 @@
 #include <algorithm>
 #include <chrono>
 
+#include <map>
+
 #include <everest/slac/slac_event.hpp>
+#include <everest/utils/yaml_loader.hpp>
 #include <everest_api_types/telemetry/codec.hpp>
 #include <everest_api_types/telemetry/json_codec.hpp>
 #include <fmt/core.h>
@@ -20,6 +23,11 @@ namespace main {
 
 namespace {
 namespace api_telemetry = everest::lib::API::V1_0::types::telemetry;
+
+// Extra time init() grants the worker beyond startup_delay_ms to open the PLC device and
+// receive the first I/O ready (or error) event before giving up and continuing with a
+// CommunicationFault (see slacImpl::init). Bring-up normally settles within milliseconds.
+constexpr std::chrono::milliseconds IO_BRING_UP_TIMEOUT_MARGIN{10000};
 
 template <typename T> nlohmann::json to_telemetry_json(std::string const& value) {
     return api_telemetry::deserialize<T>(value);
@@ -37,6 +45,75 @@ types::slac::State to_interface_state(everest::lib::slac::D3State state) {
         return types::slac::State::UNMATCHED;
     }
     return types::slac::State::UNMATCHED;
+}
+
+// The CM_AMP_MAP amplitude map (ISO 15118-3 A.9.6). Loaded from an operator YAML
+// file so integrators can tune the transmit-power reduction per carrier for their
+// hardware without touching the EVerest config. Schema:
+//   carriers: <int>              # number of OFDM carriers (default 1155)
+//   default_amplitude: <0..15>   # amplitude for carriers without an override
+//                                # (default 15 = maximum TX, i.e. no reduction)
+//   overrides: { <carrier>: <0..15>, ... }   # optional per-carrier reductions
+// Returns the number of 4-bit entries and their packed bytes (2 per byte, the
+// even carrier in the low nibble). Any error falls back to an all-maximum-TX map
+// so the transmit-power-limitation exchange stays valid.
+struct AmpMap {
+    std::uint16_t len{0};
+    std::vector<std::uint8_t> data{};
+};
+
+AmpMap load_amp_map(const std::string& path) {
+    constexpr int DEFAULT_CARRIERS = 1155;
+    constexpr int MAX_AMPLITUDE = 0x0F;
+    constexpr int MAX_CARRIERS = 4096;
+
+    int carriers = DEFAULT_CARRIERS;
+    int default_amplitude = MAX_AMPLITUDE;
+    std::map<int, int> overrides;
+
+    if (not path.empty()) {
+        try {
+            const auto root = Everest::load_yaml(path);
+            if (root.contains("carriers")) {
+                carriers = root.at("carriers").get<int>();
+            }
+            if (root.contains("default_amplitude")) {
+                default_amplitude = root.at("default_amplitude").get<int>();
+            }
+            if (root.contains("overrides") and root.at("overrides").is_object()) {
+                for (const auto& entry : root.at("overrides").items()) {
+                    overrides[std::stoi(entry.key())] = entry.value().get<int>();
+                }
+            }
+        } catch (const std::exception& e) {
+            EVLOG_warning << "Failed to load amp_map_file '" << path << "': " << e.what()
+                          << "; falling back to an all-maximum-TX amplitude map";
+            carriers = DEFAULT_CARRIERS;
+            default_amplitude = MAX_AMPLITUDE;
+            overrides.clear();
+        }
+    }
+
+    carriers = std::clamp(carriers, 1, MAX_CARRIERS);
+    default_amplitude = std::clamp(default_amplitude, 0, MAX_AMPLITUDE);
+
+    AmpMap map;
+    map.len = static_cast<std::uint16_t>(carriers);
+    map.data.assign(static_cast<std::size_t>((carriers + 1) / 2), 0);
+    for (int i = 0; i < carriers; ++i) {
+        int amplitude = default_amplitude;
+        const auto it = overrides.find(i);
+        if (it != overrides.end()) {
+            amplitude = std::clamp(it->second, 0, MAX_AMPLITUDE);
+        }
+        const auto nibble = static_cast<std::uint8_t>(amplitude & MAX_AMPLITUDE);
+        if ((i % 2) == 0) {
+            map.data[i / 2] |= nibble;
+        } else {
+            map.data[i / 2] |= static_cast<std::uint8_t>(nibble << 4);
+        }
+    }
+    return map;
 }
 } // namespace
 
@@ -73,10 +150,24 @@ void slacImpl::shutdown() {
 void slacImpl::init() {
     // setup evse fsm thread
     worker = std::thread(&slacImpl::run, this);
+
+    // Do not report readiness (init() returning -> signal_ready -> global ready) before the PLC
+    // I/O is usable or its bring-up has failed: EvseManager starts issuing enter_bcd/reset right
+    // after global ready and this module drops commands while !slac_io_ready, so a car already
+    // plugged in at boot would silently lose its first SLAC session. EvseSlac holds back
+    // readiness the same way by running startup_delay_ms and the socket open inside init(); this
+    // also restores that meaning of startup_delay_ms. On failure or timeout init() still
+    // returns: the raised generic/CommunicationFault makes EvseManager set the connector
+    // inoperative instead of the whole EVerest stack stalling on this module.
+    const auto timeout = std::chrono::milliseconds(config.startup_delay_ms) + IO_BRING_UP_TIMEOUT_MARGIN;
+    if (wait_for_io_bring_up(lifecycle_state, timeout) == IoBringUpResult::TimedOut) {
+        raise_communication_fault(fmt::format("SLAC I/O on device {} reported neither ready nor an error within {} ms; "
+                                              "continuing startup with SLAC unavailable",
+                                              config.device, timeout.count()));
+    }
 }
 
 void slacImpl::ready() {
-    // let the waiting run thread go
     {
         auto lifecycle = lifecycle_state.handle();
         if (lifecycle->ready_requested) {
@@ -85,6 +176,7 @@ void slacImpl::ready() {
         lifecycle->ready_requested = true;
     }
     lifecycle_state.notify_all();
+    start_fsm_if_ready();
 }
 
 void slacImpl::run() {
@@ -108,10 +200,6 @@ void slacImpl::run() {
         }
     } fsm_ctrl_clearer(*this);
 
-    if (!wait_for_ready_or_shutdown()) {
-        return;
-    }
-
     if (!wait_for_startup_delay_or_shutdown()) {
         return;
     }
@@ -129,12 +217,6 @@ void slacImpl::run() {
 
     configure_slac_io_callbacks();
     run_blocking_event_loop();
-}
-
-bool slacImpl::wait_for_ready_or_shutdown() {
-    auto lifecycle = lifecycle_state.handle();
-    lifecycle.wait([&] { return lifecycle->ready_requested || lifecycle->shutting_down; });
-    return !lifecycle->shutting_down;
 }
 
 bool slacImpl::wait_for_startup_delay_or_shutdown() {
@@ -306,6 +388,20 @@ void slacImpl::configure_fsm_context() {
 
     fsm_ctx->slac_config.reset_instead_of_fail = config.reset_instead_of_fail;
 
+    // CM_AMP_MAP transmit-power limitation (ISO 15118-3 A.9.6). The SECC always
+    // responds to an incoming CM_AMP_MAP.REQ; only the SECC-initiated direction is
+    // gated by initiate_amp_map and needs the amplitude map loaded from the file.
+    fsm_ctx->slac_config.initiate_amp_map = config.initiate_amp_map;
+    if (config.initiate_amp_map) {
+        const auto amp_map = load_amp_map(config.amp_map_file);
+        fsm_ctx->slac_config.amp_map_len = amp_map.len;
+        fsm_ctx->slac_config.amp_map_data = amp_map.data;
+        EVLOG_info << "CM_AMP_MAP initiation enabled with " << fsm_ctx->slac_config.amp_map_len
+                   << " carriers"
+                   << (config.amp_map_file.empty() ? " (built-in all-maximum-TX default)"
+                                                    : " from '" + config.amp_map_file + "'");
+    }
+
     fsm_ctx->slac_config.print_state_transitions = config.print_state_transitions;
     fsm_ctx->slac_config.provide_telemetry = mod->info.telemetry_enabled;
 
@@ -379,30 +475,46 @@ void slacImpl::run_blocking_event_loop() {
 }
 
 void slacImpl::handle_slac_io_ready() {
-    FSMController* local_fsm_ctrl{nullptr};
     {
         auto lifecycle = lifecycle_state.handle();
         if (lifecycle->shutting_down) {
             return;
         }
         lifecycle->slac_io_ready = true;
-        local_fsm_ctrl = lifecycle->fsm_ctrl;
+    }
+
+    if (slac_io && fsm_ctx) {
+        std::copy_n(slac_io->get_mac_addr(), fsm_ctx->evse_mac.size(), fsm_ctx->evse_mac.begin());
     }
 
     clear_communication_fault();
+    start_fsm_if_ready();
+}
+
+void slacImpl::start_fsm_if_ready() {
+    // Called from both handle_slac_io_ready() and ready(): the FSM starts on whichever of
+    // {PLC I/O ready, global ready} happens second (see LifecycleStateT::fsm_start_allowed).
+    FSMController* local_fsm_ctrl{nullptr};
+    {
+        auto lifecycle = lifecycle_state.handle();
+        if (!lifecycle->fsm_start_allowed()) {
+            return;
+        }
+        local_fsm_ctrl = lifecycle->fsm_ctrl;
+    }
 
     if (local_fsm_ctrl) {
         EVLOG_info << "SLAC I/O is ready. Starting the SLAC state machine.";
         local_fsm_ctrl->init();
     } else {
-        EVLOG_warning << "SLAC I/O ready callback received without an active controller. Start dropped.";
+        EVLOG_warning << "SLAC state machine start requested without an active controller. Start dropped.";
     }
 }
 
 void slacImpl::handle_slac_io_error(bool on_error, const std::string& detail) {
     if (on_error) {
         if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
-            local_fsm_ctrl->stop();
+            local_fsm_ctrl->teardown();
         }
         auto const detail_message = detail.empty() ? "unknown error" : detail;
         auto const fault_message =
@@ -445,6 +557,9 @@ void slacImpl::raise_communication_fault(const std::string& message) {
     if ((should_raise || should_replace) && error_factory && error_manager) {
         raise_error(error_factory->create_error("generic/CommunicationFault", "", message));
     }
+
+    // Wake init(), which blocks in wait_for_io_bring_up() until ready or fault.
+    lifecycle_state.notify_all();
 }
 
 void slacImpl::clear_communication_fault() {
@@ -462,6 +577,9 @@ void slacImpl::clear_communication_fault() {
     if (should_clear && error_manager) {
         clear_error("generic/CommunicationFault");
     }
+
+    // Wake init(), which blocks in wait_for_io_bring_up() until ready or fault.
+    lifecycle_state.notify_all();
 }
 
 void slacImpl::mark_worker_offline(const std::string& reason) {
@@ -478,7 +596,9 @@ void slacImpl::mark_worker_offline(const std::string& reason) {
     }
 
     if (local_fsm_ctrl) {
-        local_fsm_ctrl->stop();
+        // Worker-thread only (all callers run on the worker); see handle_slac_io_error for why the
+        // FSM must be torn down through a reset event instead of frozen with stop().
+        local_fsm_ctrl->teardown();
     }
 
     if (should_raise_fault) {
@@ -514,6 +634,15 @@ void slacImpl::handle_leave_bcd() {
         local_fsm_ctrl->signal_leave_bcd();
     } else {
         EVLOG_warning << "Ignoring handle_leave_bcd because SLAC controller or PLC I/O is not available.";
+    }
+}
+
+void slacImpl::handle_count_bc(int& count) {
+    // EvseManager pushes the running count of Control-Pilot B/C transitions here on every edge. Forward
+    // it into the FSM context so the CM_VALIDATE handler can detect the number of BCB toggles the EV
+    // performed. Dropping a sample is harmless: the handler reads the latest value on the next request.
+    if (auto* local_fsm_ctrl = get_available_fsm_controller()) {
+        local_fsm_ctrl->signal_count_bc(count);
     }
 }
 
