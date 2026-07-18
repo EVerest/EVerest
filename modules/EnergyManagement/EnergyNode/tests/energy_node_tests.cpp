@@ -2,11 +2,13 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <generated/types/energy.hpp>
+#include <generated/types/powermeter.hpp>
 
 #include <gtest/gtest.h>
 
 // Include the utility header
 #include "../energy_grid/energy_schedule_utils.hpp"
+#include "../energy_grid/phase_rotation_utils.hpp"
 
 // Helper function to create test schedule entries
 static types::energy::ScheduleReqEntry create_test_entry(double total_power = 0.0,
@@ -225,4 +227,76 @@ TEST_F(EnergyNodeTest, TestConfigurableVoltage240V) {
 
     EXPECT_TRUE(schedule[0].limits_to_root.ac_max_current_A.has_value());
     EXPECT_EQ(schedule[0].limits_to_root.ac_max_current_A->value, expected_current);
+}
+
+// Helper to create a powermeter reading with distinct, identifiable per-phase values
+static types::powermeter::Powermeter create_test_powermeter() {
+    types::powermeter::Powermeter pm;
+    pm.timestamp = "2024-01-01T00:00:00Z";
+    pm.energy_Wh_import = types::units::Energy{0.0f, 1.0f, 2.0f, 3.0f};
+    pm.voltage_V = types::units::Voltage{std::nullopt, 231.0f, 232.0f, 233.0f};
+    pm.current_A = types::units::Current{std::nullopt, 11.0f, 12.0f, 13.0f, std::nullopt};
+    pm.power_W = types::units::Power{0.0f, 21.0f, 22.0f, 23.0f};
+    pm.frequency_Hz = types::units::Frequency{50.0f, 50.0f, 50.0f};
+    return pm;
+}
+
+/// Identity rotation ("123") must not change any values
+TEST_F(EnergyNodeTest, PhaseRotationIdentity) {
+    auto pm = create_test_powermeter();
+    auto rotated = pm;
+
+    module::energy_grid::apply_phase_rotation(rotated, "123");
+
+    EXPECT_EQ(rotated.voltage_V->L1, pm.voltage_V->L1);
+    EXPECT_EQ(rotated.voltage_V->L2, pm.voltage_V->L2);
+    EXPECT_EQ(rotated.voltage_V->L3, pm.voltage_V->L3);
+}
+
+/// "312": reported L1 becomes grid L2, reported L2 becomes grid L3, reported L3 becomes grid L1
+TEST_F(EnergyNodeTest, PhaseRotation312) {
+    auto pm = create_test_powermeter();
+
+    module::energy_grid::apply_phase_rotation(pm, "312");
+
+    EXPECT_FLOAT_EQ(*pm.voltage_V->L1, 233.0f);
+    EXPECT_FLOAT_EQ(*pm.voltage_V->L2, 231.0f);
+    EXPECT_FLOAT_EQ(*pm.voltage_V->L3, 232.0f);
+
+    EXPECT_FLOAT_EQ(*pm.current_A->L1, 13.0f);
+    EXPECT_FLOAT_EQ(*pm.current_A->L2, 11.0f);
+    EXPECT_FLOAT_EQ(*pm.current_A->L3, 12.0f);
+
+    EXPECT_FLOAT_EQ(*pm.power_W->L1, 23.0f);
+    EXPECT_FLOAT_EQ(*pm.power_W->L2, 21.0f);
+    EXPECT_FLOAT_EQ(*pm.power_W->L3, 22.0f);
+
+    // total is invariant under rotation
+    EXPECT_FLOAT_EQ(pm.power_W->total, 0.0f);
+
+    // frequency is intentionally left untouched
+    EXPECT_FLOAT_EQ(pm.frequency_Hz->L1, 50.0f);
+}
+
+/// "231": reported L1 becomes grid L3, reported L2 becomes grid L1, reported L3 becomes grid L2
+TEST_F(EnergyNodeTest, PhaseRotation231) {
+    auto pm = create_test_powermeter();
+
+    module::energy_grid::apply_phase_rotation(pm, "231");
+
+    EXPECT_FLOAT_EQ(*pm.voltage_V->L1, 232.0f);
+    EXPECT_FLOAT_EQ(*pm.voltage_V->L2, 233.0f);
+    EXPECT_FLOAT_EQ(*pm.voltage_V->L3, 231.0f);
+}
+
+/// Missing optional per-phase fields must not crash and stay unset
+TEST_F(EnergyNodeTest, PhaseRotationHandlesMissingOptionalFields) {
+    types::powermeter::Powermeter pm;
+    pm.timestamp = "2024-01-01T00:00:00Z";
+    pm.energy_Wh_import = types::units::Energy{0.0f};
+
+    module::energy_grid::apply_phase_rotation(pm, "312");
+
+    EXPECT_FALSE(pm.voltage_V.has_value());
+    EXPECT_FALSE(pm.current_A.has_value());
 }
