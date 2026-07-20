@@ -45,6 +45,8 @@ struct Conf {
     double temperature_hysteresis_K;
     int temperature_min_time_as_valid_ms;
     int command_timeout_ms;
+    double min_import_current_A;
+    double min_export_current_A;
 };
 
 class LemDCBM400600 : public Everest::ModuleBase {
