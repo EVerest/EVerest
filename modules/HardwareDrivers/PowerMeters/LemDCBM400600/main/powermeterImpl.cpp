@@ -47,6 +47,8 @@ void powermeterImpl::init() {
 }
 
 void powermeterImpl::ready() {
+    publish_configured_capabilities();
+
     // Start the live_measure_publisher thread, which periodically publishes the live measurements of the device
     this->live_measure_publisher_thread = std::thread([this] {
         while (true) {
@@ -93,6 +95,19 @@ void powermeterImpl::ready() {
             }
         }
     });
+}
+
+void powermeterImpl::publish_configured_capabilities() {
+    if (mod->config.min_import_current_A > 0 or mod->config.min_export_current_A > 0) {
+        types::powermeter::Capabilities capabilities;
+        if (mod->config.min_import_current_A > 0) {
+            capabilities.min_import_current_A = static_cast<float>(mod->config.min_import_current_A);
+        }
+        if (mod->config.min_export_current_A > 0) {
+            capabilities.min_export_current_A = static_cast<float>(mod->config.min_export_current_A);
+        }
+        publish_capabilities(capabilities);
+    }
 }
 
 types::powermeter::TransactionStartResponse
