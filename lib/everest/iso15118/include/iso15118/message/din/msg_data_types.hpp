@@ -15,7 +15,7 @@ template <typename InType, typename OutType> void convert(const InType&, OutType
 
 namespace data_types {
 
-enum ResponseCode {
+enum class ResponseCode : uint8_t {
     OK,
     OK_NewSessionEstablished,
     OK_OldSessionJoined,
@@ -45,7 +45,7 @@ constexpr auto SESSION_ID_LENGTH = 8;
 using SESSION_ID = std::array<uint8_t, SESSION_ID_LENGTH>; // hexBinary, max length 8
 
 using ServiceScope = std::string; // MaxLength: 32
-enum ServiceCategory {
+enum class ServiceCategory : uint8_t {
     EVCharging,
     Internet,
     ContractCertificate,

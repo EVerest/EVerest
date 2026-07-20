@@ -4,39 +4,38 @@
 
 #include <iso15118/message/din/msg_data_types.hpp>
 
-#include <array>
-#include <ctype.h>
 #include <everest/util/vector/fixed_vector.hpp>
 #include <optional>
-#include <string>
 #include <vector>
 
 namespace iso15118::din::msg {
 
 namespace data_types {
 
-enum PaymentOption {
+enum class PaymentOption : uint8_t {
     Contract,
     ExternalPayment,
 };
-using PaymentOptions = std::vector<PaymentOption>;
+using PaymentOptions = everest::lib::util::fixed_vector<PaymentOption, din_paymentOptionType_2_ARRAY_SIZE>;
 
-enum EvseSupportedEnergyTransfer {
-    AC_single_phase_core,
-    AC_three_phase_core,
-    DC_core,
-    DC_extended,
-    DC_combo_core,
-    DC_dual,
-    AC_core1p_DC_extended,
-    AC_single_DC_core,
-    AC_single_phase_three_phase_core_DC_extended,
-    AC_core3p_DC_extended
+enum class EvseSupportedEnergyTransfer : uint8_t {
+    AC_Single_Phase_Core,
+    AC_Three_Phase_Core,
+    DC_Core,
+    DC_Extended,
+    DC_Combo_Core,
+    DC_Dual,
+    AC_Core1p_DC_Extended,
+    AC_Single_DC_Core,
+    AC_Single_Phase_Three_Phase_Core_DC_extended,
+    AC_Core3p_DC_Extended
 };
 
 struct ChargeService : Service {
     EvseSupportedEnergyTransfer energy_transfer_type;
 };
+
+using ServiceTagList = everest::lib::util::fixed_vector<Service, 1>; // Size is bound to 1 in libcbv2g
 } // namespace data_types
 
 struct ServiceDiscoveryRequest {
@@ -50,6 +49,7 @@ struct ServiceDiscoveryResponse {
     data_types::ResponseCode response_code;
     data_types::PaymentOptions payment_option_list;
     data_types::ChargeService charge_service;
+    std::optional<data_types::ServiceTagList> service_list;
 };
 
 } // namespace iso15118::din::msg

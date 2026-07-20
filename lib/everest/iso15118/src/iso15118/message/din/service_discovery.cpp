@@ -60,6 +60,13 @@ template <> void convert(const ServiceDiscoveryResponse& in, struct din_ServiceD
     }
     out.PaymentOptions.PaymentOption.arrayLen = payment_option_length;
 
+    if (in.service_list.has_value() && in.service_list.value().size() > 0) {
+        // ServicesList size is bound to 1 in libcbv2g
+        const auto& in_service = in.service_list.value().at(0);
+        convert(in_service, out.ServiceList.Service);
+        CB_SET_USED(out.ServiceList);
+    }
+
     convert(in.charge_service, out.ChargeService);
 }
 
