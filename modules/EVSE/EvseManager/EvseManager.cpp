@@ -11,6 +11,7 @@
 #include "SessionLog.hpp"
 #include "Timeout.hpp"
 #include "energy_transfer_modes.hpp"
+#include "powermeter_limits.hpp"
 #include "scoped_lock_timeout.hpp"
 #include "utils.hpp"
 
@@ -238,6 +239,13 @@ void EvseManager::init() {
                 }
             });
         }
+    }
+
+    if (config.charge_mode == "DC" and not r_powermeter_car_side.empty()) {
+        // The car side power meter may restrict the minimum current (e.g. it is only precise above a
+        // minimum current according to calibration law). Applied on top of the power supply capabilities.
+        r_powermeter_car_side[0]->subscribe_capabilities(
+            [this](const types::powermeter::Capabilities& caps) { update_powermeter_capabilities(caps); });
     }
 
     r_bsp->subscribe_request_stop_transaction(
@@ -2695,7 +2703,79 @@ types::power_supply_DC::Capabilities EvseManager::get_powersupply_capabilities()
     caps.max_export_power_W = min_optional(caps.max_export_power_W, derate.max_export_power_W);
     caps.max_import_power_W = min_optional(caps.max_import_power_W, derate.max_import_power_W);
 
+    // Raise minimum current limits according to power meter capabilities
+    caps = apply_powermeter_limits(caps);
+
     return caps;
+}
+
+types::power_supply_DC::Capabilities EvseManager::apply_powermeter_limits(types::power_supply_DC::Capabilities caps) {
+    std::optional<types::powermeter::Capabilities> meter;
+    {
+        std::scoped_lock lock(powermeter_capabilities_mutex);
+        meter = powermeter_capabilities;
+    }
+
+    return module::apply_powermeter_limits(std::move(caps), meter);
+}
+
+void EvseManager::update_powersupply_capabilities(types::power_supply_DC::Capabilities caps) {
+    {
+        std::scoped_lock lock(powersupply_capabilities_mutex);
+        powersupply_capabilities = caps;
+    }
+    push_powersupply_capabilities_to_hlc();
+}
+
+void EvseManager::update_powermeter_capabilities(const types::powermeter::Capabilities& caps) {
+    {
+        std::scoped_lock lock(powermeter_capabilities_mutex);
+        if (powermeter_capabilities.has_value() and powermeter_capabilities.value() == caps) {
+            return;
+        }
+        powermeter_capabilities = caps;
+    }
+
+    session_log.evse(
+        false, fmt::format("Received power meter capabilities: min_import_current_A (charging): {}, "
+                           "min_export_current_A (discharging): {}",
+                           caps.min_import_current_A.has_value() ? std::to_string(*caps.min_import_current_A) : "N/A",
+                           caps.min_export_current_A.has_value() ? std::to_string(*caps.min_export_current_A) : "N/A"));
+
+    if (hlc_enabled and config.charge_mode == "DC") {
+        push_powersupply_capabilities_to_hlc();
+    }
+}
+
+void EvseManager::push_powersupply_capabilities_to_hlc() {
+    // Hold the lock across merge and send so concurrent pushes cannot reach HLC out of order
+    std::scoped_lock lock(powersupply_capabilities_mutex);
+    const auto caps = apply_powermeter_limits(powersupply_capabilities);
+
+    if (not last_hlc_capabilities.has_value() or caps != last_hlc_capabilities.value()) {
+        r_hlc[0]->call_set_powersupply_capabilities(caps);
+    }
+    last_hlc_capabilities = caps;
+
+    // Inform HLC layer about update of physical values
+    types::iso15118::SetupPhysicalValues setup_physical_values;
+    setup_physical_values.dc_current_regulation_tolerance = caps.current_regulation_tolerance_A;
+    setup_physical_values.dc_peak_current_ripple = caps.peak_current_ripple_A;
+    setup_physical_values.dc_energy_to_be_delivered = 10000;
+    r_hlc[0]->call_set_charging_parameters(setup_physical_values);
+
+    types::iso15118::DcEvseMinimumLimits evse_min_limits;
+    evse_min_limits.evse_minimum_current_limit = caps.min_export_current_A;
+    evse_min_limits.evse_minimum_voltage_limit = caps.min_export_voltage_V;
+    evse_min_limits.evse_minimum_power_limit =
+        evse_min_limits.evse_minimum_current_limit * evse_min_limits.evse_minimum_voltage_limit;
+    r_hlc[0]->call_update_dc_minimum_limits(evse_min_limits);
+
+    // HLC layer will also get new maximum current/voltage/watt limits etc, but those will need to run through
+    // energy management first. Those limits will be applied in energy_grid implementation when requesting
+    // energy, so it is enough to set the powersupply_capabilities here.
+    // FIXME: this is not implemented yet: enforce_limits uses the enforced limits to tell HLC, but capabilities
+    // limits are not yet included in request.
 }
 
 void EvseManager::set_external_derating(types::dc_external_derate::ExternalDerating d) {
