@@ -23,7 +23,7 @@ to the corresponding migration guide.
    * - Evse15118D20 `logging_path` config option
      - 2026.10.0
      - 2027.03.0
-     - Not necessary
+     - Remove every `logging_path` entry from the EVerest config(s). An alternative to save EXI messages from the actual ISO15118-20 session the `PacketSniffer` module, `tcpdump` or `Wireshark` can be used.  
    * - 
      - 
      - 
