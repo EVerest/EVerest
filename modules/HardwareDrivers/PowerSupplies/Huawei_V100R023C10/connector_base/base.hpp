@@ -121,10 +121,10 @@ private:
     double export_current_limit{0.};
 
     struct {
-        std::atomic<float> upstream_voltage;
-        std::atomic<float> output_voltage;
-        std::atomic<float> output_current;
-        std::atomic<ContactorStatus> contactor_status;
+        std::atomic<float> upstream_voltage{0.0f};
+        std::atomic<float> output_voltage{0.0f};
+        std::atomic<float> output_current{0.0f};
+        std::atomic<ContactorStatus> contactor_status{ContactorStatus::OFF};
     } external_provided_data;
 };
 
