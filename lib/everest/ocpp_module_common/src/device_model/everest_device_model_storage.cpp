@@ -544,8 +544,8 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
     const std::vector<std::unique_ptr<iso15118_extensionsIntf>>& r_extensions_15118,
     const std::map<int32_t, types::evse_board_support::HardwareCapabilities>& evse_hardware_capabilities_map,
     const std::map<int32_t, std::vector<types::iso15118::EnergyTransferMode>>& evse_supported_energy_transfers,
-    const std::map<int32_t, bool>& evse_service_renegotiation_supported, const std::filesystem::path& db_path,
-    const std::filesystem::path& migration_files_path,
+    const std::map<int32_t, bool>& evse_service_renegotiation_supported, const bool with_der_components,
+    const std::filesystem::path& db_path, const std::filesystem::path& migration_files_path,
     std::shared_ptr<Everest::config::ConfigServiceClient> config_service_client) :
     r_evse_manager(r_evse_manager),
     r_extensions_15118(r_extensions_15118),
@@ -586,9 +586,11 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
         const auto connected_ev_component_key = get_connected_ev_component_key(evse_info.id);
         component_configs[connected_ev_component_key] = build_connected_ev_variables();
 
-        auto der_ctrlr_config = build_der_ctrlr_component_config(evse_info.id, supported_energy_transfer_modes);
-        if (der_ctrlr_config.has_value()) {
-            component_configs[der_ctrlr_config->first] = std::move(der_ctrlr_config->second);
+        if (with_der_components) {
+            auto der_ctrlr_config = build_der_ctrlr_component_config(evse_info.id, supported_energy_transfer_modes);
+            if (der_ctrlr_config.has_value()) {
+                component_configs[der_ctrlr_config->first] = std::move(der_ctrlr_config->second);
+            }
         }
     }
     for (const auto& extension : r_extensions_15118) {

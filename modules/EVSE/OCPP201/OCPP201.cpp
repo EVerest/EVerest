@@ -1012,10 +1012,12 @@ void OCPP201::ready() {
         device_model_database_path, device_model_database_migration_path, device_model_config_path);
 
     // initialize everest device model
+    // no DER components: this module does not implement der_active_directives_callback (DER is OCPPmulti-only)
     this->everest_device_model_storage = std::make_shared<device_model::EverestDeviceModelStorage>(
         r_evse_manager, r_extensions_15118, this->evse_hardware_capabilities_map,
         this->evse_supported_energy_transfer_modes, this->evse_service_renegotiation_supported,
-        everest_device_model_database_path, device_model_database_migration_path, get_config_service_client());
+        /*with_der_components=*/false, everest_device_model_database_path, device_model_database_migration_path,
+        get_config_service_client());
 
     // initialize composed device model, this will be provided to the ChargePoint constructor
     auto composed_device_model_storage = std::make_unique<module::device_model::ComposedDeviceModelStorage>();

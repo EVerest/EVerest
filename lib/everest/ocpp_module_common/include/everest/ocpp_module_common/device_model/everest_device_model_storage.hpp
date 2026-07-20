@@ -50,13 +50,16 @@ void disable_der_ctrlr(ocpp::v2::DeviceModelStorageInterface& storage, int32_t e
 
 class EverestDeviceModelStorage : public ocpp::v2::DeviceModelStorageInterface {
 public:
+    /// \param with_der_components When true, DER-capable EVSEs get a DCDERCtrlr/ACDERCtrlr component. Pass true
+    ///        only if the module implements der_active_directives_callback: a present DER component makes that
+    ///        callback mandatory in ocpp::v2::Callbacks::all_callbacks_valid.
     EverestDeviceModelStorage(
         const std::vector<std::unique_ptr<evse_managerIntf>>& r_evse_manager,
         const std::vector<std::unique_ptr<iso15118_extensionsIntf>>& r_extensions_15118,
         const std::map<int32_t, types::evse_board_support::HardwareCapabilities>& evse_hardware_capabilities_map,
         const std::map<int32_t, std::vector<types::iso15118::EnergyTransferMode>>& evse_supported_energy_transfers,
-        const std::map<int32_t, bool>& evse_service_renegotiation_supported, const std::filesystem::path& db_path,
-        const std::filesystem::path& migration_files_path,
+        const std::map<int32_t, bool>& evse_service_renegotiation_supported, const bool with_der_components,
+        const std::filesystem::path& db_path, const std::filesystem::path& migration_files_path,
         std::shared_ptr<Everest::config::ConfigServiceClient> config_service_client);
     virtual ~EverestDeviceModelStorage() override = default;
     virtual ocpp::v2::DeviceModelMap get_device_model() override;
