@@ -20,7 +20,11 @@ to the corresponding migration guide.
      - Deprecated in
      - Earliest removal
      - Migration guide
-   * - *(no active deprecations)*
-     -
-     -
-     -
+   * - Evse15118D20 `logging_path` config option
+     - 2026.10.0
+     - 2027.03.0
+     - Not necessary
+   * - 
+     - 
+     - 
+     - 
