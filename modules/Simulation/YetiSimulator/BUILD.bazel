@@ -8,6 +8,7 @@ cc_everest_module(
         "ev_board_support",
         "powermeter",
         "rcd",
+        "temperature_sensor",
         "util",
     ],
 )

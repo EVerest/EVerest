@@ -1,0 +1,70 @@
+description: >-
+  Applies AC current limits to an EnergyNode based on temperature sensor readings
+  and configurable derating curves using linear interpolation between points.
+config:
+  derating_curves_json:
+    description: >-
+      JSON object: each key is module_id.identification, each value is an array of
+      derating points {"temp_C": number, "max_current_A": number}. Points must be
+      sorted by ascending temp_C; the module linearly interpolates between them and
+      clamps below the first / above the last point.
+
+      module_id is the temperature provider instance id from active_modules /
+      connections.temperature.module_id (not the module type name and not
+      implementation_id). identification is Temperature.identification from the
+      published reading. Each Temperature.identification in a batch needs a matching curve key.
+      Readings without identification log a warning and use fallback_max_current_A.
+
+      Every connected temperature provider must have at least one curve key with prefix
+      module_id. Missing curves at runtime log a warning and apply fallback_max_current_A.
+
+      No derating (constant limit at all temperatures):
+      {"my_module.Powermeter": [{"temp_C": -20, "max_current_A": 32}, {"temp_C": 25, "max_current_A": 32}, {"temp_C": 80, "max_current_A": 32}]}
+
+      With derating:
+      {"yeti_driver_1.Powermeter": [{"temp_C": 25, "max_current_A": 32}, {"temp_C": 40, "max_current_A": 16}, {"temp_C": 55, "max_current_A": 6}]}
+    type: string
+    default: "{}"
+  temperature_provider_ignore_list:
+    description: >-
+      Comma-separated list of module_id.identification entries to exclude from derating.
+      module_id is the temperature provider instance id from connections.temperature.module_id.
+      identification is Temperature.identification from the published reading. Ignored readings
+      do not contribute to the effective limit. Configuring a derating curve for an ignored
+      entry prevents module startup.
+    type: string
+    default: ""
+  fallback_max_current_A:
+    description: Conservative limit applied when a temperature reading is missing, stale, or has no matching curve
+    type: number
+    minimum: 0.0
+    default: 0.0
+  temperature_stale_timeout_ms:
+    description: >-
+      Time after which a temperature reading is considered stale. The module also
+      re-evaluates limits periodically (at most half this interval) so staleness is
+      detected even when a provider stops publishing.
+    type: integer
+    minimum: 100
+    default: 10000
+  update_debounce_ms:
+    description: >-
+      Minimum time between external limit updates when the computed limit increases
+      (relaxing derating). Limit decreases are applied immediately for thermal safety.
+      Debounced increases are retried on the periodic re-evaluation.
+    type: integer
+    minimum: 0
+    default: 1000
+requires:
+  temperature:
+    interface: temperature_sensor
+    min_connections: 1
+    max_connections: 16
+  energy_node:
+    interface: external_energy_limits
+    min_connections: 1
+    max_connections: 1
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - florin.mihut@pionix.com
