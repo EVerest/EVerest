@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -20,6 +20,7 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
+#include <atomic>
 #include <condition_variable>
 #include <list>
 #include <memory>
@@ -193,11 +194,13 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
     std::vector<std::thread> api_threads;
-    bool running = true;
+    // written by shutdown() from the framework's shutdown-handler thread while the api_threads read it
+    std::atomic<bool> running{true};
 
     StartupMonitor evse_manager_check;
 

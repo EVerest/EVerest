@@ -41,6 +41,12 @@ public:
         init_done(nullptr);
     }
 
+    void shutdown_handler(const std::function<void()>& on_shutdown_handler) {
+        if (on_shutdown_handler) {
+            handle->register_on_shutdown_handler(on_shutdown_handler);
+        }
+    }
+
     Everest::Config& get_config() {
         return *config_;
     }

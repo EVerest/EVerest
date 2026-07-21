@@ -3,16 +3,22 @@
 
 #include "system_unix.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cassert>
+#include <chrono>
 #include <stdexcept>
+#include <thread>
 
 #include <fcntl.h>
 #include <grp.h>
 #include <linux/securebits.h>
+#include <poll.h>
 #include <pwd.h>
 #include <signal.h>
 #include <sys/capability.h>
 #include <sys/prctl.h>
+#include <sys/signalfd.h>
 #include <unistd.h>
 
 #include <fmt/core.h>
@@ -22,6 +28,7 @@
 namespace Everest::system {
 
 const auto PARENT_DIED_SIGNAL = SIGTERM;
+const int SIGNAL_POLL_TIMEOUT_MS = 50;
 
 struct GetPasswdEntryResult {
     explicit GetPasswdEntryResult(const std::string& error_) : error(error_) {
@@ -257,11 +264,83 @@ SubProcess SubProcess::create(const std::string& run_as_user, const std::vector<
             kill(getpid(), PARENT_DIED_SIGNAL);
         }
 
+        // The manager blocks signals for signalfd polling.
+        // Child module processes must unblock SIGTERM so manager can terminate them directly, and
+        // SIGCHLD so modules that spawn their own subprocesses (e.g. Python asyncio child watchers)
+        // keep working. Keep SIGINT blocked in children so Ctrl+C is coordinated by manager instead
+        // of interrupting module internals (e.g. Python waits), which can produce noisy/asynchronous
+        // failures.
+        sigset_t unblocked_signals;
+        sigemptyset(&unblocked_signals);
+        sigaddset(&unblocked_signals, SIGTERM);
+        sigaddset(&unblocked_signals, SIGCHLD);
+        if (sigprocmask(SIG_UNBLOCK, &unblocked_signals, nullptr) != 0) {
+            handle.send_error_and_exit(fmt::format("Syscall to sigprocmask() failed ({})", strerror(errno)));
+        }
+
         return handle;
     } else {
         close(writing_end_fd);
         return {reading_end_fd, pid};
     }
+}
+
+namespace {
+int setup_signal_fd() {
+    sigset_t mask;
+
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT);
+    sigaddset(&mask, SIGTERM);
+    // SIGCHLD is part of the mask so a child exit wakes up a (long) blocking poll on the
+    // signal fd; the manager then reaps the child via waitpid
+    sigaddset(&mask, SIGCHLD);
+    if (sigprocmask(SIG_BLOCK, &mask, NULL) == -1) {
+        return -1;
+    }
+
+    const int fd = signalfd(-1, &mask, 0);
+    if (fd == -1) {
+        // restore default signal delivery, otherwise the blocked signals could neither be polled
+        // nor delivered and the process could not be terminated with SIGINT/SIGTERM anymore
+        sigprocmask(SIG_UNBLOCK, &mask, NULL);
+    }
+    return fd;
+}
+} // namespace
+
+SignalPolling::SignalPolling() {
+    signal_fd = setup_signal_fd();
+    if (signal_fd != -1) {
+        available = true;
+    }
+}
+
+std::optional<uint32_t> SignalPolling::poll_signal(int timeout_ms, int extra_wakeup_fd) {
+    if (not available) {
+        // no signal fd: sleep instead of poll so the caller's loop does not busy-spin; signals
+        // use their default disposition since the mask was restored in setup_signal_fd()
+        std::this_thread::sleep_for(std::chrono::milliseconds(std::min(timeout_ms, SIGNAL_POLL_TIMEOUT_MS)));
+        return std::nullopt;
+    }
+    std::array<struct pollfd, 2> pollfds{};
+    pollfds[0] = {signal_fd, POLLIN, 0};
+    nfds_t nfds = 1;
+    if (extra_wakeup_fd != -1) {
+        pollfds[1] = {extra_wakeup_fd, POLLIN, 0};
+        nfds = 2;
+    }
+    std::optional<uint32_t> received_signal = std::nullopt;
+    auto poll_retval = poll(pollfds.data(), nfds, timeout_ms);
+    if (poll_retval > 0 && (pollfds[0].revents & POLLIN) != 0) {
+        struct signalfd_siginfo siginfo;
+        auto read_retval = read(signal_fd, &siginfo, sizeof(siginfo));
+        if (read_retval == sizeof(siginfo)) {
+            received_signal.emplace(siginfo.ssi_signo);
+        } // TODO(kai): should we go to not available in this case?
+    }
+
+    return received_signal;
 }
 
 } // namespace Everest::system
