@@ -15,6 +15,12 @@ Have a look at this categorized list of all EVerest tutorials:
 
         Write an EVerest module from scratch.
 
+    .. grid-item-card:: OCPP (combined module)
+        :link: ocpp-combined
+        :link-type: doc
+
+        Learn how to use the combined OCPP module supporting OCPP 1.6, 2.0.1 and 2.1 in EVerest; this is the recommended way to run OCPP
+
     .. grid-item-card:: OCPP 1.6
         :link: ocpp16
         :link-type: doc
@@ -56,6 +62,7 @@ Have a look at this categorized list of all EVerest tutorials:
     :hidden:
 
     develop-new-module
+    ocpp-combined
     ocpp16
     ocpp2
     plug-and-charge

@@ -317,9 +317,10 @@ OCPP sub-system
 ==================
 
 Especially for public charging stations, authentication is done via a
-cloud backend instead of a simple local whitelist. For this, we use OCPP
-1.6 in this example. OCPP 2.0.1 can be used in a similar way by using
-the OCPP201 module instead.
+cloud backend instead of a simple local whitelist. For this, we use OCPP.
+The recommended module is OCPPmulti, which supports OCPP 1.6 and
+OCPP 2.x; the deprecated OCPP (1.6) and OCPP201 (2.0.1) modules can be
+used in the same way.
 
 OCPP is both a token provider and a token validator.
 
@@ -361,8 +362,10 @@ OCPP requires several connections. Let's go through them step by step:
 For more detailed information about the OCPP configuration, check out the 
 following resources:
 
-- :ref:`OCPP1.6 module documentation <everest_modules_OCPP>`
-- :ref:`OCPP2.0.1 module documentation <everest_modules_OCPP201>`
+- :ref:`Combined OCPP module documentation <everest_modules_OCPPmulti>` (recommended)
+- :ref:`Combined OCPP module tutorial <tutorial-ocpp-combined>`
+- :ref:`OCPP1.6 module documentation <everest_modules_OCPP>` (deprecated)
+- :ref:`OCPP2.0.1 module documentation <everest_modules_OCPP201>` (deprecated)
 - :doc:`OCPP1.6 tutorial </tutorials/ocpp16>`
 - :doc:`OCPP2.0.1 tutorial </tutorials/ocpp2>`
 
