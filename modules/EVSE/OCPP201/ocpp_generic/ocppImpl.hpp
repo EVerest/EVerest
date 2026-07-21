@@ -58,6 +58,12 @@ private:
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here
+<<<<<<< HEAD
+=======
+    std::mutex chargepoint_state_mutex; // mutex used for start/stop operations
+    std::mutex monitor_list_mutex;
+    bool variable_listener_registered{false}; // guarded by monitor_list_mutex
+>>>>>>> e2e5d92 (fix(ocpp): make v2 DeviceModel thread-safe (#2471))
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
