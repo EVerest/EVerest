@@ -22,7 +22,9 @@ bool operator==(const Error& lhs, const Error& rhs) {
 namespace {
 
 struct ErrorHandlingTest : public module::ErrorHandling {
+    using module::ErrorHandling::ErrorCauseLess;
     using module::ErrorHandling::ErrorHandling;
+    using module::ErrorHandling::InoperativeCauses;
     using module::ErrorHandling::raise_inoperative_error;
 };
 
@@ -140,6 +142,10 @@ struct ErrorHandlingTesting : public testing::Test {
 
     std::unique_ptr<ErrorHandlingTest> error_handler;
 
+    // Cause-tracking set that production code keeps inside the inoperative_causes monitor; the tests drive
+    // raise_inoperative_error() directly, so they own it and pass it across calls to exercise the refresh logic.
+    ErrorHandlingTest::InoperativeCauses inoperative_causes;
+
     void construct(bool _inoperative_error_use_vendor_id, bool connect_slac = false, bool connect_hlc = false) {
         error_types_map = {{"evse_board_support/VendorWarning", "warning"},
                            {"generic/CommunicationFault", "communication fault"},
@@ -156,6 +162,7 @@ struct ErrorHandlingTesting : public testing::Test {
         adapter.hlc_active_errors.clear();
         r_slac.clear();
         r_hlc.clear();
+        inoperative_causes.clear();
         for (const auto& [error, description] : error_types_map) {
             adapter.error_list.push_back(error);
         }
@@ -188,7 +195,7 @@ struct ErrorHandlingTesting : public testing::Test {
         error.message = "message";
         error.description = default_description;
         error.vendor_id = default_vendor_id;
-        error_handler->raise_inoperative_error(error);
+        error_handler->raise_inoperative_error({error}, inoperative_causes);
 
         EXPECT_EQ(adapter.active_errors.size(), 1);
         auto& active = adapter.active_errors.front();
@@ -349,7 +356,7 @@ TEST_F(ErrorHandlingTesting, NoVendorId) {
     raised_error.vendor_id = "";
 
     construct(true);
-    error_handler->raise_inoperative_error(raised_error);
+    error_handler->raise_inoperative_error({raised_error}, inoperative_causes);
     EXPECT_EQ(adapter.active_errors.size(), 1);
     auto& error = adapter.active_errors.front();
     EXPECT_EQ(error.type, "evse_manager/Inoperative");
@@ -359,7 +366,7 @@ TEST_F(ErrorHandlingTesting, NoVendorId) {
     EXPECT_EQ(error.vendor_id, default_no_vendor_id);
 
     construct(false);
-    error_handler->raise_inoperative_error(raised_error);
+    error_handler->raise_inoperative_error({raised_error}, inoperative_causes);
     EXPECT_EQ(adapter.active_errors.size(), 1);
     error = adapter.active_errors.front();
     EXPECT_EQ(error.type, "evse_manager/Inoperative");
@@ -380,7 +387,7 @@ TEST_F(ErrorHandlingTesting, IsActive) {
     construct(true);
     EXPECT_FALSE(p_evse->error_state_monitor->is_error_active("evse_manager/Inoperative", ""));
 
-    error_handler->raise_inoperative_error(first_error);
+    error_handler->raise_inoperative_error({first_error}, inoperative_causes);
     EXPECT_EQ(adapter.active_errors.size(), 1);
     auto error = adapter.active_errors.front();
     EXPECT_EQ(error.type, "evse_manager/Inoperative");
@@ -398,13 +405,43 @@ TEST_F(ErrorHandlingTesting, IsActive) {
     raised_error.description = "new-description";
     raised_error.vendor_id = "new-vendor_id";
 
-    // should not be a new error
-    error_handler->raise_inoperative_error(raised_error);
+    // The fatal cause changed: the Inoperative error is refreshed to the new cause, not frozen at the first.
+    error_handler->raise_inoperative_error({raised_error}, inoperative_causes);
     EXPECT_EQ(adapter.active_errors.size(), 1);
     error = adapter.active_errors.front();
-    // should be first error
     EXPECT_EQ(error.type, "evse_manager/Inoperative");
     EXPECT_EQ(error.sub_type, "");
+    EXPECT_EQ(error.message, raised_error.type);
+    EXPECT_EQ(error.description, "new-type/new-sub-type");
+    EXPECT_EQ(error.vendor_id, raised_error.vendor_id);
+
+    EXPECT_TRUE(p_evse->error_state_monitor->is_error_active("evse_manager/Inoperative", ""));
+}
+
+TEST_F(ErrorHandlingTesting, SameCausesDoNotRefresh) {
+    Everest::error::Error first_error{};
+    first_error.type = "module/type";
+    first_error.sub_type = "sub-type";
+    first_error.message = "message";
+    first_error.description = "description";
+    first_error.vendor_id = "vendor_id";
+
+    construct(true);
+    error_handler->raise_inoperative_error({first_error}, inoperative_causes);
+    EXPECT_EQ(adapter.active_errors.size(), 1);
+
+    // The same set of causes must not clear / re-raise: the existing Inoperative error keeps its original fields
+    // (and, in production, its uuid + timestamp).
+    Everest::error::Error same_cause{};
+    same_cause.type = "module/type";
+    same_cause.sub_type = "sub-type";
+    same_cause.message = "different-message";
+    same_cause.description = "different-description";
+    same_cause.vendor_id = "different-vendor_id";
+
+    error_handler->raise_inoperative_error({same_cause}, inoperative_causes);
+    EXPECT_EQ(adapter.active_errors.size(), 1);
+    const auto& error = adapter.active_errors.front();
     EXPECT_EQ(error.message, first_error.type);
     EXPECT_EQ(error.description, "type/sub-type");
     EXPECT_EQ(error.vendor_id, first_error.vendor_id);
@@ -457,6 +494,56 @@ TEST_F(ErrorHandlingTesting, HlcVendorWarningIsNotFatal) {
     raise_hlc_error("generic/VendorWarning");
 
     EXPECT_FALSE(p_evse->error_state_monitor->is_error_active("evse_manager/Inoperative", ""));
+}
+
+TEST_F(ErrorHandlingTesting, DescriptionAggregatesAllCauses) {
+    Everest::error::Error cause_a{};
+    cause_a.type = "module/type-a";
+    cause_a.sub_type = "sub-a";
+    cause_a.vendor_id = "vendor-a";
+    cause_a.severity = Everest::error::Severity::High;
+
+    Everest::error::Error cause_b{};
+    cause_b.type = "module/type-b";
+    cause_b.sub_type = "";
+    cause_b.vendor_id = "vendor-b";
+    cause_b.severity = Everest::error::Severity::Medium;
+
+    construct(true);
+    error_handler->raise_inoperative_error({cause_a, cause_b}, inoperative_causes);
+    EXPECT_EQ(adapter.active_errors.size(), 1);
+    const auto& error = adapter.active_errors.front();
+    EXPECT_EQ(error.type, "evse_manager/Inoperative");
+    // message and vendor_id come from the first cause; the description lists every active cause.
+    EXPECT_EQ(error.message, cause_a.type);
+    EXPECT_EQ(error.vendor_id, cause_a.vendor_id);
+    EXPECT_EQ(error.description, "type-a/sub-a, type-b");
+}
+
+TEST_F(ErrorHandlingTesting, RefreshWhenACauseClears) {
+    Everest::error::Error cause_a{};
+    cause_a.type = "module/type-a";
+    cause_a.sub_type = "sub-a";
+    cause_a.vendor_id = "vendor-a";
+
+    Everest::error::Error cause_b{};
+    cause_b.type = "module/type-b";
+    cause_b.sub_type = "sub-b";
+    cause_b.vendor_id = "vendor-b";
+
+    construct(true);
+    error_handler->raise_inoperative_error({cause_a, cause_b}, inoperative_causes);
+    EXPECT_EQ(adapter.active_errors.size(), 1);
+    EXPECT_EQ(adapter.active_errors.front().description, "type-a/sub-a, type-b/sub-b");
+
+    // cause_a clears, cause_b remains: the Inoperative error is refreshed to the remaining cause, not frozen at
+    // cause_a.
+    error_handler->raise_inoperative_error({cause_b}, inoperative_causes);
+    EXPECT_EQ(adapter.active_errors.size(), 1);
+    const auto& error = adapter.active_errors.front();
+    EXPECT_EQ(error.message, cause_b.type);
+    EXPECT_EQ(error.vendor_id, cause_b.vendor_id);
+    EXPECT_EQ(error.description, "type-b/sub-b");
 }
 
 } // namespace
