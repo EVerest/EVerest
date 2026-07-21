@@ -4,6 +4,7 @@
 #ifndef DEVICE_MODEL_HPP
 #define DEVICE_MODEL_HPP
 
+#include <mutex>
 #include <type_traits>
 
 #include <everest/logging.hpp>
@@ -29,6 +30,12 @@ using on_monitor_updated = std::function<void(const VariableMonitoringMeta& upda
 class DeviceModel : public DeviceModelAbstract {
 
 private:
+    // Serializes access to device_model_map / device_model storage. Recursive: locked methods call back into
+    // public methods (e.g. via DeviceModelInterface& composites). Invariant: never held while listeners are
+    // invoked; set_value / clear_value / set_monitors copy listeners and payload, unlock, then notify, and
+    // no method may hold the mutex around a call into them.
+    mutable std::recursive_mutex mutex;
+
     DeviceModelMap device_model_map;
     std::unique_ptr<DeviceModelStorageInterface> device_model;
 
@@ -136,10 +143,16 @@ public:
     std::int32_t clear_custom_monitors() override;
 
     void register_variable_listener(on_variable_changed&& listener) override {
+<<<<<<< HEAD
         variable_listener = std::move(listener);
+=======
+        std::lock_guard<std::recursive_mutex> lock(this->mutex);
+        variable_listener.push_back(std::move(listener));
+>>>>>>> e2e5d92 (fix(ocpp): make v2 DeviceModel thread-safe (#2471))
     }
 
     void register_monitor_listener(on_monitor_updated&& listener) override {
+        std::lock_guard<std::recursive_mutex> lock(this->mutex);
         monitor_update_listener = std::move(listener);
     }
 

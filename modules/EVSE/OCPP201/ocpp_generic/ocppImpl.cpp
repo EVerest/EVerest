@@ -90,7 +90,58 @@ ocppImpl::handle_change_availability(types::ocpp::ChangeAvailabilityRequest& req
 }
 
 void ocppImpl::handle_monitor_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) {
+<<<<<<< HEAD
     // your code for cmd monitor_variables goes here
+=======
+    using namespace ocpp::v2;
+
+    if (mod->charge_point == nullptr) {
+        EVLOG_warning << "ChargePoint not initialized, cannot handle monitor variables command";
+    } else {
+        std::lock_guard lock(monitor_list_mutex);
+
+        // guard with a flag, not monitor_list.empty(): a first call with an empty list would
+        // otherwise register the handler again on the next call
+        if (!variable_listener_registered) {
+            mod->charge_point->register_variable_listener(
+                [this](auto&, const Component& component, const Variable& variable, auto&, auto&, auto&,
+                       const std::string& value) { variable_changed(component, variable, value); });
+            variable_listener_registered = true;
+        }
+
+        // add variables to monitor list
+        for (const auto& cv : component_variables) {
+            // failures to insert are likely to be the same variable being
+            // requested again
+            (void)monitor_list.insert(convert(cv));
+        }
+    }
+}
+
+void ocppImpl::variable_changed(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
+                                const std::string& value) {
+    using namespace conversions;
+
+    MonitorListEntry entry{component, variable};
+    bool publish;
+    {
+        std::lock_guard lock(monitor_list_mutex);
+        const auto it = monitor_list.find(entry);
+        publish = it != monitor_list.end();
+    }
+    if (publish) {
+        // monitor entry exists - publish
+        types::ocpp::EventData event_data;
+        event_data.component_variable.component = to_everest_component(component);
+        event_data.component_variable.variable = to_everest_variable(variable);
+        event_data.event_id = 0;
+        event_data.timestamp = ocpp::DateTime();
+        event_data.trigger = types::ocpp::EventTriggerEnum::Delta;
+        event_data.actual_value = value;
+        event_data.event_notification_type = types::ocpp::EventNotificationType::CustomMonitor;
+        publish_event_data(event_data);
+    }
+>>>>>>> e2e5d92 (fix(ocpp): make v2 DeviceModel thread-safe (#2471))
 }
 
 } // namespace ocpp_generic
