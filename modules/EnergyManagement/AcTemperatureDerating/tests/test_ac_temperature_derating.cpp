@@ -42,8 +42,12 @@ std::optional<double> extract_ac_max_current_A(const types::energy::ExternalLimi
 
 std::unique_ptr<module::AcTemperatureDerating> make_module(CapturingEnergyLimitsAdapter& adapter,
                                                            module::Conf& config) {
-    Requirement temperature_req{.id = "temperature", .index = 0};
-    Requirement energy_node_req{.id = "energy_node", .index = 0};
+    Requirement temperature_req;
+    temperature_req.id = "temperature";
+    temperature_req.index = 0;
+    Requirement energy_node_req;
+    energy_node_req.id = "energy_node";
+    energy_node_req.index = 0;
 
     std::vector<std::unique_ptr<temperature_sensorIntf>> temperature_providers;
     temperature_providers.push_back(

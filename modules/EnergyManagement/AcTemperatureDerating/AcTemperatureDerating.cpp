@@ -50,7 +50,9 @@ void AcTemperatureDerating::init() {
 
     provider_states_.reserve(r_temperature.size());
     for (const auto& sensor : r_temperature) {
-        provider_states_.push_back(ProviderState{.module_id = sensor->module_id});
+        ProviderState provider_state;
+        provider_state.module_id = sensor->module_id;
+        provider_states_.push_back(provider_state);
     }
 }
 
@@ -131,11 +133,11 @@ void AcTemperatureDerating::update_and_publish_limits() {
             if (provider.has_reading_without_identification) {
                 const auto& state = provider.reading_without_identification;
                 if (state.ever_received && (now - state.last_update) <= stale_timeout) {
-                    readings.push_back(ac_temperature_derating::SensorReadingInput{
-                        .module_id = provider.module_id,
-                        .identification = std::nullopt,
-                        .temperature_C = state.temperature_C,
-                    });
+                    ac_temperature_derating::SensorReadingInput reading;
+                    reading.module_id = provider.module_id;
+                    reading.identification = std::nullopt;
+                    reading.temperature_C = state.temperature_C;
+                    readings.push_back(reading);
                     any_non_ignored_reading_added = true;
                 } else {
                     // The unidentified reading has lapsed; clear it so a transient or unmappable
@@ -157,21 +159,21 @@ void AcTemperatureDerating::update_and_publish_limits() {
                     temperature_C = state.temperature_C;
                 }
 
-                readings.push_back(ac_temperature_derating::SensorReadingInput{
-                    .module_id = provider.module_id,
-                    .identification = identification,
-                    .temperature_C = temperature_C,
-                });
+                ac_temperature_derating::SensorReadingInput reading;
+                reading.module_id = provider.module_id;
+                reading.identification = identification;
+                reading.temperature_C = temperature_C;
+                readings.push_back(reading);
                 any_non_ignored_reading_added = true;
             }
 
             if (!any_non_ignored_reading_added && provider.readings_by_identification.empty() &&
                 !provider.has_reading_without_identification) {
-                readings.push_back(ac_temperature_derating::SensorReadingInput{
-                    .module_id = provider.module_id,
-                    .identification = std::nullopt,
-                    .temperature_C = std::nullopt,
-                });
+                ac_temperature_derating::SensorReadingInput reading;
+                reading.module_id = provider.module_id;
+                reading.identification = std::nullopt;
+                reading.temperature_C = std::nullopt;
+                readings.push_back(reading);
             }
         }
     }

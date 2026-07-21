@@ -12,9 +12,11 @@ namespace {
 
 std::vector<types::temperature::Temperature>
 temperatures_from_powermeter(const state::PowermeterData& powermeter_data) {
-    return {{.temperature = static_cast<float>(powermeter_data.tempL1),
-             .identification = "Powermeter",
-             .location = "Powermeter"}};
+    types::temperature::Temperature reading;
+    reading.temperature = static_cast<float>(powermeter_data.tempL1);
+    reading.identification = "Powermeter";
+    reading.location = "Powermeter";
+    return {reading};
 }
 
 types::powermeter::Powermeter power_meter_external(const state::PowermeterData& powermeter_data) {

@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 namespace ac_temperature_derating {
 namespace {
 
@@ -177,6 +179,17 @@ TEST(DeratingCurveTest, validate_ignore_list_rejects_curve_for_ignored_reading) 
         R"({"meter1.internal":[{"temp_C":20,"max_current_A":32}],"meter1.body":[{"temp_C":20,"max_current_A":16}]})");
     const auto ignore_list = parse_temperature_provider_ignore_list("meter1.body");
     EXPECT_THROW(validate_ignore_list_vs_curves(curves, ignore_list), std::invalid_argument);
+}
+
+TEST(DeratingCurveTest, non_finite_temperature_uses_fallback) {
+    const auto curves = make_curves();
+    const std::vector<SensorReadingInput> readings = {
+        {"sensor_a", "internal", std::numeric_limits<double>::infinity()},
+    };
+
+    const auto result = compute_effective_limit_A(curves, readings, 6.0);
+    ASSERT_TRUE(result.effective_limit_A.has_value());
+    EXPECT_DOUBLE_EQ(result.effective_limit_A.value(), 6.0);
 }
 
 TEST(DeratingCurveTest, is_temperature_reading_ignored) {

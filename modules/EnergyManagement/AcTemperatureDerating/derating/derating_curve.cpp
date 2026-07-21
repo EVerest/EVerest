@@ -29,18 +29,17 @@ DeratingCurve parse_curve_points(const nlohmann::json& points_json) {
         if (!point_json.is_object() || !point_json.contains("temp_C") || !point_json.contains("max_current_A")) {
             throw std::invalid_argument("derating curve point must contain temp_C and max_current_A");
         }
-        DeratingPoint point{
-            point_json.at("temp_C").get<double>(),
-            point_json.at("max_current_A").get<double>(),
-        };
+        DeratingPoint point;
+        point.m_temp_c = point_json.at("temp_C").get<double>();
+        point.m_max_current_a = point_json.at("max_current_A").get<double>();
         curve.push_back(point);
     }
 
     std::sort(curve.begin(), curve.end(),
-              [](const DeratingPoint& lhs, const DeratingPoint& rhs) { return lhs.temp_C < rhs.temp_C; });
+              [](const DeratingPoint& lhs, const DeratingPoint& rhs) { return lhs.m_temp_c < rhs.m_temp_c; });
 
     for (std::size_t i = 1; i < curve.size(); ++i) {
-        if (curve[i].temp_C == curve[i - 1].temp_C) {
+        if (curve[i].m_temp_c == curve[i - 1].m_temp_c) {
             throw std::invalid_argument("derating curve contains duplicate temp_C values");
         }
     }
@@ -136,26 +135,26 @@ double interpolate_max_current_A(const DeratingCurve& curve, double temp_C) {
     if (curve.empty()) {
         return 0.0;
     }
-    if (temp_C <= curve.front().temp_C) {
-        return curve.front().max_current_A;
+    if (temp_C <= curve.front().m_temp_c) {
+        return curve.front().m_max_current_a;
     }
-    if (temp_C >= curve.back().temp_C) {
-        return curve.back().max_current_A;
+    if (temp_C >= curve.back().m_temp_c) {
+        return curve.back().m_max_current_a;
     }
 
     const auto upper_it =
         std::upper_bound(curve.begin(), curve.end(), temp_C,
-                         [](double value, const DeratingPoint& point) { return value < point.temp_C; });
+                         [](double value, const DeratingPoint& point) { return value < point.m_temp_c; });
     const DeratingPoint& upper = *upper_it;
     const DeratingPoint& lower = *std::prev(upper_it);
 
-    const double span = upper.temp_C - lower.temp_C;
+    const double span = upper.m_temp_c - lower.m_temp_c;
     if (span <= 0.0) {
-        return upper.max_current_A;
+        return upper.m_max_current_a;
     }
 
-    const double ratio = (temp_C - lower.temp_C) / span;
-    return lower.max_current_A + ratio * (upper.max_current_A - lower.max_current_A);
+    const double ratio = (temp_C - lower.m_temp_c) / span;
+    return lower.m_max_current_a + ratio * (upper.m_max_current_a - lower.m_max_current_a);
 }
 
 const DeratingCurve* find_derating_curve(const DeratingCurveMap& curves, const std::string& curve_key) {
@@ -180,6 +179,12 @@ ComputeLimitResult compute_effective_limit_A(const DeratingCurveMap& curves,
         double sensor_limit = fallback_max_current_A;
 
         if (!reading.temperature_C.has_value()) {
+            any_limit_applied = true;
+            effective_limit = std::min(effective_limit, sensor_limit);
+            continue;
+        }
+
+        if (!std::isfinite(reading.temperature_C.value())) {
             any_limit_applied = true;
             effective_limit = std::min(effective_limit, sensor_limit);
             continue;

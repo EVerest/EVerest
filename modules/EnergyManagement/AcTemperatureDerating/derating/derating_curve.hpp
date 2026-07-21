@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#ifndef AC_TEMPERATURE_DERATING_DERATING_CURVE_HPP
-#define AC_TEMPERATURE_DERATING_DERATING_CURVE_HPP
+#pragma once
 
 #include <map>
 #include <optional>
@@ -13,8 +12,8 @@
 namespace ac_temperature_derating {
 
 struct DeratingPoint {
-    double temp_C{0.0};
-    double max_current_A{0.0};
+    double m_temp_c{0.0};
+    double m_max_current_a{0.0};
 };
 
 using DeratingCurve = std::vector<DeratingPoint>;
@@ -68,5 +67,3 @@ ComputeLimitResult compute_effective_limit_A(const DeratingCurveMap& curves,
                                              double fallback_max_current_A);
 
 } // namespace ac_temperature_derating
-
-#endif // AC_TEMPERATURE_DERATING_DERATING_CURVE_HPP

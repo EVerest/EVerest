@@ -19,11 +19,11 @@ std::string cmd_topic(const std::string& module_id, const std::string& command) 
 } // namespace
 
 types::temperature::Temperature temperature_sensorImpl::current_reading() const {
-    return {
-        .temperature = temperature_C,
-        .identification = identification,
-        .location = location,
-    };
+    types::temperature::Temperature reading;
+    reading.temperature = temperature_C;
+    reading.identification = identification;
+    reading.location = location;
+    return reading;
 }
 
 void temperature_sensorImpl::subscribe_mqtt_control_topics() {
