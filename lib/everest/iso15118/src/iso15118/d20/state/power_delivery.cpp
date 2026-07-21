@@ -48,7 +48,7 @@ message_20::PowerDeliveryResponse handle_request(const message_20::PowerDelivery
 }
 
 void PowerDelivery::enter() {
-    m_ctx.log.enter_state("PowerDelivery");
+    logf_debug("Enter state: PowerDelivery");
 }
 
 Result PowerDelivery::feed(Event ev) {
@@ -162,14 +162,14 @@ Result PowerDelivery::feed(Event ev) {
         if (m_ctx.session.is_dc_charger()) {
             return m_ctx.create_state<DC_ChargeLoop>();
         }
-        m_ctx.log("expected selected_energy_service AC, AC_BPT, DC, DC_BPT! But code type id: %d",
-                  static_cast<int>(selected_energy_service));
+        logf_warning("Expected selected_energy_service AC, AC_BPT, DC, DC_BPT! But code type id: %d",
+                     static_cast<int>(selected_energy_service));
 
         m_ctx.session_stopped = true;
         return {};
 
     } else {
-        m_ctx.log("Expected PowerDeliveryReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected PowerDeliveryReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

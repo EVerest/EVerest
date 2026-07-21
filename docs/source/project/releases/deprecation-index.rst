@@ -20,7 +20,11 @@ to the corresponding migration guide.
      - Deprecated in
      - Earliest removal
      - Migration guide
-   * - *(no active deprecations)*
-     -
-     -
-     -
+   * - Evse15118D20 `logging_path` config option
+     - 2026.10.0
+     - 2027.03.0
+     - Remove every `logging_path` entry from the EVerest config(s). An alternative to save EXI messages from the actual ISO15118-20 session the `PacketSniffer` module, `tcpdump` or `Wireshark` can be used.  
+   * - 
+     - 
+     - 
+     - 

@@ -27,7 +27,7 @@ message_20::DC_PreChargeResponse handle_request(const message_20::DC_PreChargeRe
 }
 
 void DC_PreCharge::enter() {
-    m_ctx.log.enter_state("DC_PreCharge");
+    logf_debug("Enter state: DC_PreCharge");
 }
 
 Result DC_PreCharge::feed(Event ev) {
@@ -80,7 +80,7 @@ Result DC_PreCharge::feed(Event ev) {
 
         return {};
     } else {
-        m_ctx.log("expected DC_PreChargeReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected DC_PreChargeReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

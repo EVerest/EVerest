@@ -75,7 +75,7 @@ message_20::SessionSetupResponse handle_request([[maybe_unused]] const message_2
 }
 
 void SessionSetup::enter() {
-    m_ctx.log.enter_state("SessionSetup");
+    logf_debug("Enter state: SessionSetup");
 }
 
 Result SessionSetup::feed(Event ev) {
@@ -152,7 +152,7 @@ Result SessionSetup::feed(Event ev) {
         return m_ctx.create_state<AuthorizationSetup>();
 
     } else {
-        m_ctx.log("expected SessionSetupReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected SessionSetupReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

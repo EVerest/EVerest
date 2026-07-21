@@ -6,14 +6,12 @@
 
 #include "der_setup.hpp"
 #include "grid_event.hpp"
-#include "session_logger.hpp"
 #include "utils.hpp"
 
 #include <utils/date.hpp>
 
 #include <iso15118/config.hpp>
 #include <iso15118/io/logging.hpp>
-#include <iso15118/session/logger.hpp>
 
 namespace module {
 namespace charger {
@@ -235,8 +233,6 @@ void ISO15118_chargerImpl::ready() {
         }
         std::this_thread::sleep_for(WAIT_FOR_SETUP_DONE_MS);
     }
-
-    const auto session_logger = std::make_unique<SessionLogger>(mod->config.logging_path);
 
     // Obtain certificate location from the security module
     const auto certificate_response = mod->r_security->call_get_leaf_certificate_info(
