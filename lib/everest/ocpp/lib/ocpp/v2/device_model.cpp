@@ -288,6 +288,8 @@ GetVariableStatusEnum DeviceModel::get_variable(const Component& component_id, c
 GetVariableStatusEnum DeviceModel::request_value_internal(const Component& component_id, const Variable& variable_id,
                                                           const AttributeEnum& attribute_enum, std::string& value,
                                                           bool allow_write_only) const {
+    // Choke point for all value reads (get_variable and the get_*_value/request_value templates).
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     const auto component_it = this->device_model_map.find(component_id);
     if (component_it == this->device_model_map.end()) {
         EVLOG_debug << "unknown component in " << component_id.name << "." << variable_id.name;
@@ -320,6 +322,7 @@ GetVariableStatusEnum DeviceModel::request_value_internal(const Component& compo
 
 std::optional<MutabilityEnum> DeviceModel::get_mutability(const Component& component, const Variable& variable,
                                                           const AttributeEnum& attribute_enum) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     const auto attribute = this->device_model->get_variable_attribute(component, variable, attribute_enum);
     if (!attribute.has_value()) {
         return std::nullopt;
@@ -331,6 +334,7 @@ std::optional<MutabilityEnum> DeviceModel::get_mutability(const Component& compo
 SetVariableStatusEnum DeviceModel::set_value(const Component& component, const Variable& variable,
                                              const AttributeEnum& attribute_enum, const std::string& value,
                                              const std::string& source, bool allow_read_only) {
+    std::unique_lock<std::recursive_mutex> lock(this->mutex);
 
     if (this->device_model_map.find(component) == this->device_model_map.end()) {
         return SetVariableStatusEnum::UnknownComponent;
@@ -381,8 +385,14 @@ SetVariableStatusEnum DeviceModel::set_value(const Component& component, const V
             const std::string& value_current = value;
 
             if (value_previous != value_current) {
-                variable_listener(monitors, component, variable, characteristics, attribute.value(), value_previous,
-                                  value_current);
+                // Copy the listener and release the lock before invoking it: a listener taking its own lock
+                // would otherwise invert lock order against a thread calling register_variable_listener
+                // while holding that lock. The payload below refers to locals (variable_map is a copy) and
+                // to caller-owned parameters, so it stays valid after unlocking.
+                const auto listener = variable_listener;
+                lock.unlock();
+                listener(monitors, component, variable, characteristics, attribute.value(), value_previous,
+                         value_current);
             }
         }
     }
@@ -398,7 +408,8 @@ DeviceModel::DeviceModel(std::unique_ptr<DeviceModelStorageInterface> device_mod
 SetVariableStatusEnum DeviceModel::set_read_only_value(const Component& component, const Variable& variable,
                                                        const AttributeEnum& attribute_enum, const std::string& value,
                                                        const std::string& source) {
-
+    // No lock: allow_set_read_only_value is a pure check and set_value locks itself. Holding the
+    // recursive mutex here would keep it owned while set_value invokes the listeners.
     if (allow_set_read_only_value(component, variable, attribute_enum)) {
         return this->set_value(component, variable, attribute_enum, value, source, true);
     }
@@ -408,6 +419,7 @@ SetVariableStatusEnum DeviceModel::set_read_only_value(const Component& componen
 
 std::optional<VariableMetaData> DeviceModel::get_variable_meta_data(const Component& component,
                                                                     const Variable& variable) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     if ((this->device_model_map.count(component) != 0) and
         (this->device_model_map.at(component).count(variable) != 0)) {
         return this->device_model_map.at(component).at(variable);
@@ -416,6 +428,7 @@ std::optional<VariableMetaData> DeviceModel::get_variable_meta_data(const Compon
 }
 
 std::vector<ReportData> DeviceModel::get_base_report_data(const ReportBaseEnum& report_base) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     std::vector<ReportData> report_data_vec;
 
     for (const auto& [component, variable_map] : this->device_model_map) {
@@ -461,6 +474,7 @@ std::vector<ReportData> DeviceModel::get_base_report_data(const ReportBaseEnum& 
 std::vector<ReportData>
 DeviceModel::get_custom_report_data(const std::optional<std::vector<ComponentVariable>>& component_variables,
                                     const std::optional<std::vector<ComponentCriterionEnum>>& component_criteria) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     std::vector<ReportData> report_data_vec;
 
     for (const auto& [component, variable_map] : this->device_model_map) {
@@ -492,6 +506,7 @@ DeviceModel::get_custom_report_data(const std::optional<std::vector<ComponentVar
 }
 
 void DeviceModel::check_integrity(const std::map<std::int32_t, std::int32_t>& evse_connector_structure) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     EVLOG_debug << "Checking integrity of device model in storage";
     try {
         this->check_required_variables();
@@ -593,6 +608,7 @@ void DeviceModel::check_integrity(const std::map<std::int32_t, std::int32_t>& ev
 }
 
 bool DeviceModel::update_monitor_reference(std::int32_t monitor_id, const std::string& reference_value) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     bool found_monitor = false;
     VariableMonitoringMeta* monitor_meta = nullptr;
 
@@ -651,11 +667,14 @@ bool DeviceModel::update_monitor_reference(std::int32_t monitor_id, const std::s
 
 std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<SetMonitoringData>& requests,
                                                            const VariableMonitorType type) {
+    std::unique_lock<std::recursive_mutex> lock(this->mutex);
     if (requests.empty()) {
         return {};
     }
 
     std::vector<SetMonitoringResult> set_monitors_res;
+    // Listener notifications deferred until the lock is released: see set_value.
+    std::vector<std::function<void()>> pending_notifications;
 
     for (auto& request : requests) {
         SetMonitoringResult result;
@@ -796,10 +815,14 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
 
                     if (attribute.has_value()) {
                         static const std::string empty_value{};
-                        const auto& current_value = attribute.value().value.value_or(empty_value);
+                        const std::string current_value = attribute.value().value.value_or(empty_value);
 
-                        monitor_update_listener(monitor_meta.value(), component_it->first, variable_it->first,
-                                                characteristics, attribute.value(), current_value);
+                        pending_notifications.push_back(
+                            [listener = monitor_update_listener, monitor_meta = monitor_meta.value(),
+                             component = component_it->first, variable = variable_it->first, characteristics,
+                             attribute = attribute.value(), current_value]() {
+                                listener(monitor_meta, component, variable, characteristics, attribute, current_value);
+                            });
                     } else {
                         EVLOG_warning << "Could not notify monitor update listener, missing variable attribute: "
                                       << variable_it->first;
@@ -822,10 +845,16 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
         set_monitors_res.push_back(result);
     }
 
+    lock.unlock();
+    for (const auto& notify : pending_notifications) {
+        notify();
+    }
+
     return set_monitors_res;
 }
 
 std::vector<VariableMonitoringPeriodic> DeviceModel::get_periodic_monitors() {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     std::vector<VariableMonitoringPeriodic> periodics;
 
     for (const auto& [component, variable_map] : this->device_model_map) {
@@ -850,6 +879,7 @@ std::vector<VariableMonitoringPeriodic> DeviceModel::get_periodic_monitors() {
 
 std::vector<MonitoringData> DeviceModel::get_monitors(const std::vector<MonitoringCriterionEnum>& criteria,
                                                       const std::vector<ComponentVariable>& component_variables) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     std::vector<MonitoringData> get_monitors_res{};
 
     if (!component_variables.empty()) {
@@ -930,6 +960,7 @@ std::vector<MonitoringData> DeviceModel::get_monitors(const std::vector<Monitori
 }
 std::vector<ClearMonitoringResult> DeviceModel::clear_monitors(const std::vector<int>& request_ids,
                                                                bool allow_protected) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     if (request_ids.empty()) {
         return {};
     }
@@ -964,6 +995,7 @@ std::vector<ClearMonitoringResult> DeviceModel::clear_monitors(const std::vector
 }
 
 std::int32_t DeviceModel::clear_custom_monitors() {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     try {
         const std::int32_t deleted = this->device_model->clear_custom_variable_monitors();
 
