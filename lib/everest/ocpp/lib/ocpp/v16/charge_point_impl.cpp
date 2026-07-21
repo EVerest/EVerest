@@ -2087,7 +2087,7 @@ void ChargePointImpl::handleClearCacheRequest(ocpp::Call<ClearCacheRequest> call
 
     ClearCacheResponse response;
 
-    if (this->configuration.getAuthorizationCacheEnabled()) {
+    if (this->configuration.getAuthorizationCacheEnabled().value_or(false)) {
         try {
             this->database_handler->clear_authorization_cache();
             response.status = ClearCacheStatus::Accepted;
@@ -3558,7 +3558,7 @@ EnhancedIdTagInfo ChargePointImpl::authorize_id_token(CiString<20> id_token, con
             }
         }
 
-        if (this->configuration.getAuthorizationCacheEnabled()) {
+        if (this->configuration.getAuthorizationCacheEnabled().value_or(false)) {
             if (this->validate_against_cache_entries(id_token)) {
                 try {
                     const auto auth_cache_entry = this->database_handler->get_authorization_cache_entry(id_token);
