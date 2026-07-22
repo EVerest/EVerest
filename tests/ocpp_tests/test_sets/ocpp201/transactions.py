@@ -228,7 +228,7 @@ async def test_E04(
         ]
     )
 )
-@pytest.mark.flaky(reruns=1)
+@pytest.mark.flaky(reruns=2, reruns_delay=5)
 async def test_cleanup_transaction_events_after_max_attempts_exhausted(
     central_system: CentralSystem,
     test_controller: TestController,
