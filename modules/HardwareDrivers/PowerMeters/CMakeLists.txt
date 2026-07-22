@@ -8,4 +8,5 @@ ev_add_module(CarloGavazzi_EM580)
 
 if(${EVEREST_ENABLE_RS_SUPPORT})
     ev_add_module(RsIskraMeter)
+    ev_add_module(RsModDefMeter)
 endif()

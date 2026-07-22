@@ -18,3 +18,11 @@ pollster = "0.3"
 anyhow = "1.0"
 log = "0.4"
 chrono = "0.4"
+# Optional, mirrors RsIskraMeter: the everestrs-generated code gates its mock
+# publisher behind these, so declaring them keeps `cfg(feature = "mockall")`
+# known (no warnings) and enables mock-based unit tests.
+mockall = { version = "0.12.1", optional = true }
+mockall_double = { version = "0.3.1", optional = true }
+
+[features]
+default = ["mockall", "mockall_double"]
