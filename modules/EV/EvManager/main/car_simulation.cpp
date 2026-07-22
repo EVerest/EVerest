@@ -8,6 +8,10 @@
 
 constexpr double MS_FACTOR = (1.0 / 60.0 / 60.0 / 1000.0);
 
+constexpr auto MIN_ISO_DUTY_CYCLE = 4.0;
+constexpr auto MIN_DUTY_CYCLE = 7.0;
+constexpr auto MAX_DUTY_CYCLE = 97.0;
+
 void CarSimulation::state_machine() {
     using types::ev_board_support::EvCpState;
 
@@ -39,7 +43,7 @@ void CarSimulation::state_machine() {
         if (state_has_changed || sim_data.pwm_duty_cycle != sim_data.last_pwm_duty_cycle) {
             sim_data.last_pwm_duty_cycle = sim_data.pwm_duty_cycle;
             // do not draw power if EVSE paused by stopping PWM
-            if (sim_data.pwm_duty_cycle > 7.0 && sim_data.pwm_duty_cycle < 97.0) {
+            if (sim_data.pwm_duty_cycle > MIN_DUTY_CYCLE && sim_data.pwm_duty_cycle < MAX_DUTY_CYCLE) {
                 r_ev_board_support->call_set_cp_state(EvCpState::C);
                 r_ev_board_support->call_allow_power_on(true);
             } else {
@@ -179,12 +183,12 @@ bool CarSimulation::sleep(const CmdArguments& arguments, size_t loop_interval_ms
 
 bool CarSimulation::iec_wait_pwr_ready(const CmdArguments& arguments) {
     sim_data.state = SimState::PLUGGED_IN;
-    return (sim_data.pwm_duty_cycle > 7.0f && sim_data.pwm_duty_cycle < 97.0f);
+    return (sim_data.pwm_duty_cycle > MIN_DUTY_CYCLE && sim_data.pwm_duty_cycle < MAX_DUTY_CYCLE);
 }
 
 bool CarSimulation::iso_wait_pwm_is_running(const CmdArguments& arguments) {
     sim_data.state = SimState::PLUGGED_IN;
-    return (sim_data.pwm_duty_cycle > 4.0f && sim_data.pwm_duty_cycle < 97.0f);
+    return (sim_data.pwm_duty_cycle > MIN_ISO_DUTY_CYCLE && sim_data.pwm_duty_cycle < MAX_DUTY_CYCLE);
 }
 
 bool CarSimulation::draw_power_regulated(const CmdArguments& arguments) {
@@ -395,6 +399,18 @@ bool CarSimulation::iso_wait_for_stop(const CmdArguments& arguments, size_t loop
     }
     if (sim_data.iso_stopped) {
         EVLOG_info << "POWER OFF iso stopped";
+        r_ev_board_support->call_allow_power_on(false);
+        sim_data.state = SimState::PLUGGED_IN;
+        sim_data.sleep_ticks_left.reset();
+        return true;
+    }
+    const auto active_error =
+        (sim_data.actual_bsp_event == types::board_support_common::Event::E or
+         sim_data.actual_bsp_event == types::board_support_common::Event::F or
+         sim_data.pwm_duty_cycle <= MIN_ISO_DUTY_CYCLE or sim_data.pwm_duty_cycle >= MAX_DUTY_CYCLE);
+    if (active_error) {
+        EVLOG_warning << "Error detected";
+        r_ev[0]->call_stop_charging();
         r_ev_board_support->call_allow_power_on(false);
         sim_data.state = SimState::PLUGGED_IN;
         sim_data.sleep_ticks_left.reset();
