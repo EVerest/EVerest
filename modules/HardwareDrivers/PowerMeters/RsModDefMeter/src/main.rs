@@ -845,3 +845,262 @@ fn main(module: &Module) {
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use generated::types::powermeter::{
+        OCMFIdentificationFlags, OCMFIdentificationType, OCMFUserIdentificationStatus,
+    };
+    use generated::types::serial_comm_hub_requests::Result as HubResult;
+    use mockall::predicate::eq;
+
+    const UNIT: i64 = 1;
+
+    fn leak_doc(yaml: &str) -> &'static ModDefDocument {
+        let doc = moddef_core::parse_document(yaml.as_bytes(), moddef_core::DocumentFormat::Yaml)
+            .expect("parse test profile");
+        Box::leak(Box::new(doc))
+    }
+
+    fn make_dev(doc: &'static ModDefDocument, hub: SerialCommunicationHubClientPublisher) -> Dev {
+        Device::from_profile(&doc.devices[0], HubBridge { hub, unit_id: UNIT })
+    }
+
+    fn ok_read(words: Vec<i64>) -> ::everestrs::Result<HubResult> {
+        Ok(HubResult {
+            status_code: StatusCodeEnum::Success,
+            value: Some(words),
+        })
+    }
+
+    // A meter with a voltage (V) and an import-energy (kWh) point.
+    const METER_YAML: &str = r#"
+doc_id: test.meter
+name: Test Meter
+version: 1.0.0
+devices:
+  - device_id: test
+    vendor: Test
+    model: M
+    supported_transports: [MODBUS_RTU]
+    blocks:
+      - block_id: m
+        space: INPUT_REGISTER
+        length_words: 4
+        points:
+          - point_id: v_l1
+            access: READ_ONLY
+            storage_type: S32
+            value_type: { primitive: DECIMAL }
+            mapping: { space: INPUT_REGISTER, offset: 0, length_words: 2, byte_order: BIG_ENDIAN, word_order: WORD_LITTLE_ENDIAN }
+            transform: { scale: { numerator: 1, denominator: 10 } }
+            unit: V
+            measurand: { base_quantity: voltage, phase_ref: L1_N }
+          - point_id: e_imp
+            access: READ_ONLY
+            storage_type: S32
+            value_type: { primitive: DECIMAL }
+            mapping: { space: INPUT_REGISTER, offset: 2, length_words: 2, byte_order: BIG_ENDIAN, word_order: WORD_LITTLE_ENDIAN }
+            transform: { scale: { numerator: 1, denominator: 10 } }
+            unit: kWh
+            measurand: { base_quantity: energy_active, direction: IMPORT, accumulation: REGISTER, aggregation: TOTAL }
+"#;
+
+    // A meter that declares a typed-register start_transaction command.
+    const TXN_YAML: &str = r#"
+doc_id: test.txn
+name: Test Txn
+version: 1.0.0
+enums:
+  - type_id: id_type
+    name: ID Type
+    values:
+      - { value: 0, name: NONE }
+      - { value: 10, name: ISO14443 }
+devices:
+  - device_id: test
+    vendor: Test
+    model: M
+    supported_transports: [MODBUS_RTU]
+    blocks:
+      - block_id: ctrl
+        space: HOLDING_REGISTER
+        start_offset: 30
+        length_words: 2
+        points:
+          - point_id: cmd
+            access: WRITE_ONLY
+            storage_type: U16
+            value_type: { primitive: UINT32 }
+            mapping: { space: HOLDING_REGISTER, offset: 30, length_words: 1, byte_order: BIG_ENDIAN }
+            write: { behavior: COMMAND_TRIGGER }
+          - point_id: st
+            access: READ_ONLY
+            storage_type: U16
+            value_type: { primitive: UINT32 }
+            mapping: { space: HOLDING_REGISTER, offset: 31, length_words: 1, byte_order: BIG_ENDIAN }
+    commands:
+      - command_id: start_transaction
+        command_ref: "ocmf:start_transaction"
+        params:
+          - field: identification_type
+            storage_type: U16
+            value_type: { enum_ref: { type_id: id_type } }
+            mapping: { space: HOLDING_REGISTER, offset: 10, length_words: 1, byte_order: BIG_ENDIAN }
+        steps:
+          - name: w_type
+            write: { param: identification_type }
+          - name: begin
+            write: { trigger: { point_id: cmd, value: 66 } }
+        results:
+          - field: status
+            from: st
+            value_type: { primitive: UINT32 }
+"#;
+
+    // ----- pure helpers -----
+
+    #[test]
+    fn unit_scale_rescales_to_everest_units() {
+        assert_eq!(unit_scale("kWh", Kind::Energy), Some(1000.0));
+        assert_eq!(unit_scale("Wh", Kind::Energy), Some(1.0));
+        assert_eq!(unit_scale("kW", Kind::Power), Some(1000.0));
+        assert_eq!(unit_scale("mA", Kind::Amp), Some(0.001));
+        assert_eq!(unit_scale("V", Kind::Volt), Some(1.0));
+        assert_eq!(unit_scale("Hz", Kind::Hertz), Some(1.0));
+        // Unit that doesn't belong to the requested kind is rejected.
+        assert_eq!(unit_scale("kWh", Kind::Power), None);
+    }
+
+    #[test]
+    fn flag_group_routing() {
+        assert_eq!(
+            flag_group_field("RFID_PLAIN"),
+            Some("identification_flags_rfid")
+        );
+        assert_eq!(
+            flag_group_field("OCPP_RS"),
+            Some("identification_flags_ocpp")
+        );
+        assert_eq!(
+            flag_group_field("ISO15118_PNC"),
+            Some("identification_flags_iso15118")
+        );
+        assert_eq!(
+            flag_group_field("PLMN_SMS"),
+            Some("identification_flags_plmn")
+        );
+        assert_eq!(flag_group_field("NONSENSE"), None);
+    }
+
+    #[test]
+    fn everest_enum_debug_equals_ocmf_value_name() {
+        // The enum mapping relies on Debug producing the exact OCMF value name.
+        assert_eq!(enum_name(&OCMFIdentificationType::ISO14443), "ISO14443");
+        assert_eq!(
+            enum_name(&OCMFUserIdentificationStatus::ASSIGNED),
+            "ASSIGNED"
+        );
+        assert_eq!(
+            enum_name(&OCMFIdentificationFlags::RFID_PLAIN),
+            "RFID_PLAIN"
+        );
+    }
+
+    #[test]
+    fn resolve_enum_by_value_name() {
+        let doc = leak_doc(TXN_YAML);
+        assert_eq!(resolve_enum(doc, "id_type", "ISO14443"), Some(10));
+        assert_eq!(resolve_enum(doc, "id_type", "NONE"), Some(0));
+        assert_eq!(resolve_enum(doc, "id_type", "MISSING"), None);
+        assert_eq!(resolve_enum(doc, "no_such_enum", "ISO14443"), None);
+    }
+
+    #[test]
+    fn capability_detection_via_command_ref() {
+        let with = leak_doc(TXN_YAML);
+        assert_eq!(
+            find_command(&with.devices[0], ROLE_START, ID_START),
+            Some("start_transaction".to_string())
+        );
+        // A metering-only profile advertises no transaction command.
+        let without = leak_doc(METER_YAML);
+        assert_eq!(
+            find_command(&without.devices[0], ROLE_START, ID_START),
+            None
+        );
+    }
+
+    // ----- metering (mock hub) -----
+
+    #[test]
+    fn metering_maps_measurands_and_rescales_units() {
+        let mut hub = SerialCommunicationHubClientPublisher::default();
+        // voltage L1-N: S32, LSW-first, 2300 -> 230.0 V (kept in V).
+        hub.expect_modbus_read_input_registers()
+            .with(eq(0i64), eq(2i64), eq(UNIT))
+            .times(1)
+            .returning(|_, _, _| ok_read(vec![0x08FC, 0x0000]));
+        // import energy: 5000 -> 500.0 kWh -> rescaled to 500000 Wh.
+        hub.expect_modbus_read_input_registers()
+            .with(eq(2i64), eq(2i64), eq(UNIT))
+            .times(1)
+            .returning(|_, _, _| ok_read(vec![0x1388, 0x0000]));
+
+        let doc = leak_doc(METER_YAML);
+        let mut dev = make_dev(doc, hub);
+        let pm = read_powermeter(&mut dev).expect("read_powermeter");
+
+        assert_eq!(pm.voltage_v.expect("voltage").l_1, Some(230.0));
+        assert_eq!(pm.energy_wh_import.total, 500_000.0);
+        // No active-power point in the profile -> total defaults to 0.0.
+        assert_eq!(pm.power_w.expect("power").total, 0.0);
+        // No export-energy point -> field absent.
+        assert!(pm.energy_wh_export.is_none());
+    }
+
+    // ----- transactions (mock hub) -----
+
+    #[test]
+    fn start_transaction_resolves_enum_and_triggers() {
+        let mut hub = SerialCommunicationHubClientPublisher::default();
+        // identification_type ISO14443 -> value 10 written to holding reg 10.
+        hub.expect_modbus_write_multiple_registers()
+            .withf(|data, addr, unit| data.data == vec![10i64] && *addr == 10 && *unit == UNIT)
+            .times(1)
+            .returning(|_, _, _| Ok(StatusCodeEnum::Success));
+        // begin command 'B' (0x42 = 66) written to the trigger register.
+        hub.expect_modbus_write_multiple_registers()
+            .withf(|data, addr, _| data.data == vec![66i64] && *addr == 30)
+            .times(1)
+            .returning(|_, _, _| Ok(StatusCodeEnum::Success));
+        // result read of the status register.
+        hub.expect_modbus_read_holding_registers()
+            .with(eq(31i64), eq(1i64), eq(UNIT))
+            .returning(|_, _, _| ok_read(vec![7]));
+
+        let doc = leak_doc(TXN_YAML);
+        let mut dev = make_dev(doc, hub);
+        let req = TransactionReq {
+            evse_id: String::new(),
+            transaction_id: String::new(),
+            identification_status: OCMFUserIdentificationStatus::ASSIGNED,
+            identification_type: OCMFIdentificationType::ISO14443,
+            identification_flags: Vec::new(),
+            identification_data: None,
+            identification_level: None,
+            tariff_text: None,
+        };
+        let resp = run_start(&mut dev, "start_transaction", &req, doc).expect("run_start");
+        assert!(matches!(resp.status, TransactionRequestStatus::OK));
+    }
+
+    #[test]
+    fn start_transaction_not_supported_response() {
+        let r = start_not_supported();
+        assert!(matches!(r.status, TransactionRequestStatus::NOT_SUPPORTED));
+        let s = stop_not_supported();
+        assert!(matches!(s.status, TransactionRequestStatus::NOT_SUPPORTED));
+    }
+}
