@@ -28,6 +28,7 @@ target_sources(cbv2g_json_wrapper
         src/json_utils.c
         src/apphand_converter.c
         src/din_converter.c
+        src/iso2_converter.c
 )
 
 target_include_directories(cbv2g_json_wrapper
@@ -47,6 +48,7 @@ target_link_libraries(cbv2g_json_wrapper
     PRIVATE
         cjson
         cbv2g::din
+        cbv2g::iso2
 )
 
 # Hide all symbols by default; the public API is tagged CBV2G_API in the
@@ -137,4 +139,22 @@ if(BUILD_CBV2G_JSON_WRAPPER_TESTS)
             cjson
             GTest::gtest_main
     )
+
+    add_executable(cbv2g_test_iso2)
+    target_sources(cbv2g_test_iso2
+        PRIVATE
+            tests/test_iso2.cpp
+    )
+    target_include_directories(cbv2g_test_iso2 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cJSON
+    )
+    target_compile_features(cbv2g_test_iso2 PRIVATE cxx_std_17)
+    target_link_libraries(cbv2g_test_iso2
+        PRIVATE
+            cbv2g_json_wrapper
+            cjson
+            GTest::gtest_main
+    )
+    add_test(NAME cbv2g_test_iso2 COMMAND cbv2g_test_iso2)
 endif()
