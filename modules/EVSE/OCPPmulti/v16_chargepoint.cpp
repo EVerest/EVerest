@@ -388,10 +388,11 @@ ocpp::v16::ErrorInfo ChargePointV16::convert_error(const Everest::error::Error& 
         std::find_if(ocpp_module_common::v16::MREC_ERROR_MAP.begin(), ocpp_module_common::v16::MREC_ERROR_MAP.end(),
                      [error_type](const auto& entry) { return error_type.find(entry.first) != std::string::npos; });
     if (mrec_it != ocpp_module_common::v16::MREC_ERROR_MAP.end()) {
+        const auto& [error_code, vendor_error_code] = mrec_it->second;
         // update the result
-        result.error_code = mrec_it->second.first;
+        result.error_code = error_code;
         result.vendor_id = ocpp_module_common::v16::CHARGE_X_MREC_VENDOR_ID;
-        result.vendor_error_code = mrec_it->second.second;
+        result.vendor_error_code = ocpp::CiString<50>(vendor_error_code, ocpp::StringTooLarge::Truncate);
         incomplete = false;
     }
 
@@ -413,9 +414,9 @@ ocpp::v16::ErrorInfo ChargePointV16::convert_error(const Everest::error::Error& 
         if (error_type == INOPERATIVE_ERROR_TYPE) {
             // update the result
             result.is_fault = true;
-            result.info = "caused_by:" + error.message;
-            result.vendor_id = error.vendor_id;
-            result.vendor_error_code = error.description;
+            result.info = ocpp::CiString<50>("caused_by:" + error.message, ocpp::StringTooLarge::Truncate);
+            result.vendor_id = ocpp::CiString<255>(error.vendor_id, ocpp::StringTooLarge::Truncate);
+            result.vendor_error_code = ocpp::CiString<50>(error.description, ocpp::StringTooLarge::Truncate);
             incomplete = false;
         }
     }
@@ -423,9 +424,9 @@ ocpp::v16::ErrorInfo ChargePointV16::convert_error(const Everest::error::Error& 
     if (incomplete) {
         // default processing
         result.is_fault = default_is_fault(error);
-        result.info = error.origin.to_string();
-        result.vendor_id = error.message;
-        result.vendor_error_code = default_vendor_error_code(error);
+        result.info = ocpp::CiString<50>(error.origin.to_string(), ocpp::StringTooLarge::Truncate);
+        result.vendor_id = ocpp::CiString<255>(error.message, ocpp::StringTooLarge::Truncate);
+        result.vendor_error_code = ocpp::CiString<50>(default_vendor_error_code(error), ocpp::StringTooLarge::Truncate);
     }
 
     return result;
