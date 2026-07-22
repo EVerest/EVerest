@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
    "HardwareDrivers/PowerMeters/RsIskraMeter",
+   "HardwareDrivers/PowerMeters/RsModDefMeter",
    "HardwareDrivers/Payment/RsPaymentTerminal",
    "Examples/RustExamples/RsExample",
    "Examples/RustExamples/RsExampleUser",

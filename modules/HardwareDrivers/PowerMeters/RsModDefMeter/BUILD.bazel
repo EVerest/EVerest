@@ -1,0 +1,70 @@
+# NOTE: The Bazel build additionally requires `moddef-core` (git) and `pollster`
+# to be present in the EVerest crate universe so `all_crate_deps` can resolve
+# them. Until the crate index is updated, build via cargo:
+#   EVEREST_CORE_ROOT=<repo root> cargo build   (from this module directory)
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+load("@everest_crate_index//:defs.bzl", "all_crate_deps")
+load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
+
+cargo_build_script(
+    name = "build_script",
+    srcs = ["build.rs"],
+    edition = "2021",
+    build_script_env = {
+        "EVEREST_CORE_ROOT": "../../../..",
+    },
+    data = [
+        "manifest.yaml",
+        "@everest-core//errors",
+        "@everest-core//interfaces",
+        "@everest-core//types",
+    ],
+    deps = all_crate_deps(build = True) + [
+        "//lib/everest/framework/everestrs/everestrs-build",
+    ],
+)
+
+rust_binary(
+    name = "RsModDefMeterBinary",
+    srcs = glob(["src/*.rs"]),
+    edition = "2021",
+    proc_macro_deps = all_crate_deps(proc_macro = True),
+    visibility = ["//visibility:public"],
+    deps = all_crate_deps(normal = True) + [
+        ":build_script",
+        "//lib/everest/framework/everestrs/everestrs",
+        "//lib/everest/framework/everestrs/everestrs:everestrs_sys",
+        "//lib/everest/framework/everestrs/everestrs:everestrs_bridge",
+    ],
+)
+
+rust_test(
+    name = "RsModDefMeterTest",
+    edition = "2021",
+    srcs = [],
+    crate = ":RsModDefMeterBinary",
+)
+
+binary = ":RsModDefMeterBinary"
+manifest = ":manifest.yaml"
+name = "RsModDefMeter"
+
+genrule(
+    name = "copy_to_subdir",
+    srcs = [binary, manifest],
+    outs = [
+        "{}/manifest.yaml".format(name),
+        "{}/{}".format(name, name),
+    ],
+    cmd = "mkdir -p $(RULEDIR)/{} && ".format(name) +
+          "cp $(location {}) $(RULEDIR)/{}/{} && ".format(binary, name, name) +
+          "cp $(location {}) $(RULEDIR)/{}/".format(manifest, name),
+)
+
+filegroup(
+    name = name,
+    srcs = [
+        ":copy_to_subdir",
+    ],
+    visibility = ["//visibility:public"],
+)

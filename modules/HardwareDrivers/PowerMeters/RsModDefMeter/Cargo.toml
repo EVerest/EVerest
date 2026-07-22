@@ -1,0 +1,20 @@
+[package]
+name = "RsModDefMeter"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+everestrs-build = { workspace = true }
+
+[dependencies]
+everestrs = { workspace = true }
+# ModDef runtime: profile loading, the Device facade, run_command and the
+# Transport trait we bridge onto the serial_communication_hub.
+moddef-core = { git = "https://github.com/ModDefOrg/moddef-rs" }
+# Minimal futures executor: drives moddef-core's async Device/Transport methods
+# to completion synchronously on the calling thread (all awaits complete without
+# a reactor because the transport and delay are blocking).
+pollster = "0.3"
+anyhow = "1.0"
+log = "0.4"
+chrono = "0.4"
