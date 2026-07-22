@@ -19,6 +19,8 @@ std::string serialize(V2gCommunicationState val) noexcept;
 std::string serialize(V2gMessageState val) noexcept;
 std::string serialize(V2gServerStatus val) noexcept;
 std::string serialize(V2gEvErrorCode val) noexcept;
+std::string serialize(SlacState val) noexcept;
+std::string serialize(SlacD3State val) noexcept;
 std::string serialize(CertChainState const& val) noexcept;
 std::string serialize(CertTelemetry const& val) noexcept;
 std::string serialize(EvseControlStatus const& val) noexcept;
@@ -27,6 +29,8 @@ std::string serialize(V2gEvElectrical const& val) noexcept;
 std::string serialize(V2gPaymentService const& val) noexcept;
 std::string serialize(V2gChargerStatus const& val) noexcept;
 std::string serialize(V2gEvseElectrical const& val) noexcept;
+std::string serialize(SlacStatus const& val) noexcept;
+std::string serialize(SlacFsmState const& val) noexcept;
 
 std::ostream& operator<<(std::ostream& os, ChargeProgress const& val);
 std::ostream& operator<<(std::ostream& os, V2gCommunicationState const& val);
@@ -36,6 +40,8 @@ std::ostream& operator<<(std::ostream& os, V2gIso15118DcCommunicationState const
 std::ostream& operator<<(std::ostream& os, V2gMessageState const& val);
 std::ostream& operator<<(std::ostream& os, V2gServerStatus const& val);
 std::ostream& operator<<(std::ostream& os, V2gEvErrorCode const& val);
+std::ostream& operator<<(std::ostream& os, SlacState const& val);
+std::ostream& operator<<(std::ostream& os, SlacD3State const& val);
 std::ostream& operator<<(std::ostream& os, CertChainState const& val);
 std::ostream& operator<<(std::ostream& os, CertTelemetry const& val);
 std::ostream& operator<<(std::ostream& os, EvseControlStatus const& val);
@@ -44,6 +50,8 @@ std::ostream& operator<<(std::ostream& os, V2gEvElectrical const& val);
 std::ostream& operator<<(std::ostream& os, V2gPaymentService const& val);
 std::ostream& operator<<(std::ostream& os, V2gChargerStatus const& val);
 std::ostream& operator<<(std::ostream& os, V2gEvseElectrical const& val);
+std::ostream& operator<<(std::ostream& os, SlacStatus const& val);
+std::ostream& operator<<(std::ostream& os, SlacFsmState const& val);
 
 #include <everest_api_types/utilities/deserialize_templates.inc>
 
