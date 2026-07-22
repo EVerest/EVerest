@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ModDefOrg and Contributors to EVerest
+#
 # NOTE: The Bazel build additionally requires `moddef-core` (git) and `pollster`
 # to be present in the EVerest crate universe so `all_crate_deps` can resolve
 # them. Until the crate index is updated, build via cargo:

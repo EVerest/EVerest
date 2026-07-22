@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 ModDefOrg and Contributors to EVerest
 //
 // RsModDefMeter — a generic EVerest powermeter driven by a ModDef device profile.
 //
