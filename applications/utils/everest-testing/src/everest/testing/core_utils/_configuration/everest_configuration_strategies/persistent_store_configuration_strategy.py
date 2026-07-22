@@ -39,7 +39,15 @@ class PersistentStoreConfigurationStrategy(EverestConfigAdjustmentStrategy):
 
         adjusted_config = deepcopy(everest_config)
 
-        module_cfg = adjusted_config["active_modules"][self._determine_module_id(adjusted_config)]
+        try:
+            module_id = self._determine_module_id(adjusted_config)
+        except ValueError:
+            # No PersistentStore module in this configuration; nothing to adjust. This allows
+            # applying use_temporary_persistent_store to whole test classes that are parametrized
+            # over configs with and without a PersistentStore module.
+            return adjusted_config
+
+        module_cfg = adjusted_config["active_modules"][module_id]
 
         module_cfg.setdefault("config_module", {})["sqlite_db_file_path"] = str(self._sqlite_db_file_path)
 

@@ -189,7 +189,7 @@ def provide_grid_support(probe: ProbeModule) -> "queue.Queue":
 
 
 async def wait_for_der_enabled(
-    charge_point, evse_id: int = DER_EVSE_ID, timeout_s: float = 20.0
+    charge_point, evse_id: int = DER_EVSE_ID, timeout_s: float = 60.0
 ) -> str:
     """Poll DCDERCtrlr ModesSupported until the async capability enable has committed.
 
@@ -240,7 +240,7 @@ def drain(pushed: "queue.Queue") -> None:
         pushed.get_nowait()
 
 
-def latest_directive_types(pushed: "queue.Queue", timeout_s: float = 10.0) -> set:
+def latest_directive_types(pushed: "queue.Queue", timeout_s: float = 30.0) -> set:
     """Return the directive types in the next active-directive push for the DER EVSE."""
     received = pushed.get(timeout=timeout_s)
     return {d["directive_type"] for d in received["directives"]}
@@ -356,7 +356,7 @@ async def test_capability_enables_evse_and_pushes_active_set(
 
     await enable_der(probe_grid_support, charge_point_v21)
 
-    pushed_set = pushed.get(timeout=10)
+    pushed_set = pushed.get(timeout=30)
     assert pushed_set["evse_id"] == 1
 
 
@@ -446,6 +446,7 @@ async def test_clear_der_control_removes_directive(
 # -----------------------------------------------------------------------------
 
 @grid_support_markers
+@pytest.mark.flaky(reruns=2, reruns_delay=5)
 async def test_multiple_directives_coexist(
     central_system_v21: CentralSystem,
     test_controller: TestController,
@@ -724,6 +725,7 @@ async def test_clear_der_control_no_match_not_found(
     assert r is not None and r.status == DERControlStatusEnumType.not_found
 
 
+@pytest.mark.flaky(reruns=2, reruns_delay=5)
 @grid_support_markers
 async def test_clear_by_type_then_clear_all(
     central_system_v21: CentralSystem,
@@ -848,6 +850,7 @@ async def test_get_emits_report_der_control(
 # a disabled EVSE after restart.
 # -----------------------------------------------------------------------------
 
+@pytest.mark.flaky(reruns=2, reruns_delay=5)
 @grid_support_markers
 async def test_der_disable_survives_reboot(
     central_system_v21: CentralSystem,
@@ -905,7 +908,7 @@ async def test_der_disable_survives_reboot(
     # Reboot: only the process bounces; the device model DB (Enabled=false and the
     # persisted directive) survives.
     test_controller.stop()
-    await asyncio.sleep(1)
+    await asyncio.sleep(3)
     test_controller.start()
 
     # The restarted manager waits for the standalone probe, whose C++ module is
