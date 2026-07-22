@@ -70,6 +70,7 @@ EXTRA_OECMAKE += " \
     -DTIMER_INSTALL=ON \
     -DEVSE_SECURITY_INSTALL=ON \
     -DOCPP_INSTALL=ON \
+    -DTLS_INSTALL=ON \
 "
 
 # there are issues with pybind11 and the sstate cache
