@@ -73,7 +73,7 @@ enum class FaultCode {
     UnknownError,
 };
 
-enum PaymentOption {
+enum class PaymentOption : uint8_t {
     Contract,
     ExternalPayment,
 };

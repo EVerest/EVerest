@@ -9,12 +9,10 @@
 namespace iso15118::din::msg {
 
 namespace data_types {
+using ParameterSetID = int16_t;
 struct SelectedService {
     ServiceID service_id;
-    // TODO(kd): "In the scope of DIN SPEC 70121,
-    // this optional element shall not be used."
-    // Do we want to include the parameter_set_id regardless?
-    // std::optional<ParameterSetID> parameter_set_id;
+    std::optional<ParameterSetID> parameter_set_id;
 };
 
 using SelectedServicesList = std::vector<SelectedService>;

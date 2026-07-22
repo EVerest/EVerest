@@ -11,7 +11,7 @@ namespace dt = din::msg::data_types;
 SCENARIO("Ser/Deserialize din service payment selection messages") {
     GIVEN("Deserialize service payment selection req") {
         uint8_t doc_raw[] = {0x80, 0x9A, 0x02, 0x00, 0xB6, 0xC8, 0x81, 0xCE, 0xC2,
-                             0x13, 0x4B, 0x51, 0xB2, 0x00, 0xA0, 0x00, 0x08};
+                             0x13, 0x4B, 0x51, 0xB2, 0x00, 0xA0, 0x02, 0x88};
 
         const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
 

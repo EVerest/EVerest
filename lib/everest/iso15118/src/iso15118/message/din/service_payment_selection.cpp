@@ -18,6 +18,9 @@ template <> void convert(const struct din_ServicePaymentSelectionReqType& in, Se
     for (int i = 0; i < in.SelectedServiceList.SelectedService.arrayLen; i++) {
         const auto& in_service = in.SelectedServiceList.SelectedService.array[i];
         data_types::SelectedService service;
+        if (in_service.ParameterSetID_isUsed) {
+            service.parameter_set_id = in_service.ParameterSetID;
+        }
         service.service_id = in_service.ServiceID;
         out.selected_service_list.push_back(service);
     }
