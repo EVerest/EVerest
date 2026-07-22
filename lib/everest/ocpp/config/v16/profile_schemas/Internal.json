@@ -338,6 +338,11 @@
             "type": "boolean",
             "readOnly": true
         },
+        "ReportClearedErrors": {
+            "$comment": "Enables sending a StatusNotification.req with information about cleared errors, even when the connector remains faulted. Defaults to false.",
+            "type": "boolean",
+            "readOnly": true
+        },
         "MessageTypesDiscardForQueueing": {
             "$comment": "Comma seperated list of message types that shall not be queued (when offline) even in case QueueAllMessages is true. If QueueAllMessages is false, the configuration of this paramater has no effect.",
             "type": "string",

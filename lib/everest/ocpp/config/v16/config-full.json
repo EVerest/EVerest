@@ -57,6 +57,7 @@
         "WaitForStopTransactionsOnResetTimeout": 60,
         "SwitchSecurityProfileConnectionTimeout": 30,
         "QueueAllMessages": true,
+        "ReportClearedErrors": false,
         "MessageTypesDiscardForQueueing": "Heartbeat",
         "MessageQueueSizeThreshold": 5000,
         "SupportedMeasurands": "Energy.Active.Import.Register,Energy.Active.Export.Register,Power.Active.Import,Voltage,Current.Import,Frequency,Current.Offered,Power.Offered,SoC",

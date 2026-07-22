@@ -50,6 +50,7 @@ using ocpp::v16::keys::valid_keys;
     key(WebsocketPingPayload) \
     key(WebsocketPongTimeout) \
     key(QueueAllMessages) \
+    key(ReportClearedErrors) \
     key(MessageTypesDiscardForQueueing) \
     key(MessageQueueSizeThreshold) \
     key(ConnectorPhaseRotationMaxLength) \

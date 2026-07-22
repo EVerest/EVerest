@@ -100,6 +100,7 @@ public:
     virtual std::optional<std::string> getSeccLeafSubjectOrganization() = 0;
     virtual std::optional<bool> getAllowChargingProfileWithoutStartSchedule() = 0;
     virtual std::optional<bool> getQueueAllMessages() = 0;
+    virtual std::optional<bool> getReportClearedErrors() = 0;
     virtual std::optional<int> getMessageQueueSizeThreshold() = 0;
     virtual std::optional<std::int32_t> getCompositeScheduleDefaultLimitAmps() = 0;
     virtual std::optional<std::int32_t> getCompositeScheduleDefaultLimitWatts() = 0;
@@ -157,6 +158,7 @@ public:
     virtual std::optional<KeyValue> getMessageQueueSizeThresholdKeyValue() = 0;
     virtual std::optional<KeyValue> getPublicKeyKeyValue(std::uint32_t connector_id) = 0;
     virtual std::optional<KeyValue> getQueueAllMessagesKeyValue() = 0;
+    virtual std::optional<KeyValue> getReportClearedErrorsKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectCommonNameKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectCountryKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectOrganizationKeyValue() = 0;

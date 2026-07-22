@@ -179,7 +179,8 @@ ChargePointImpl::ChargePointImpl(
             }
 
             c->previous_status = status;
-        });
+        },
+        this->configuration.getReportClearedErrors().value_or(false));
 
     for (int id = 0; id <= this->configuration.getNumberOfConnectors(); id++) {
         this->connectors.insert(std::make_pair(id, std::make_shared<Connector>(id)));

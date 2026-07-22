@@ -749,6 +749,15 @@ TEST_P(Configuration, QueueAllMessages) {
     ASSERT_FALSE(kv.has_value());
 }
 
+TEST_P(Configuration, ReportClearedErrors) {
+    ASSERT_NE(get(), nullptr);
+    // initial values are from the JSON unit test config files
+
+    EXPECT_FALSE(get()->getReportClearedErrors().has_value());
+    auto kv = get()->getReportClearedErrorsKeyValue();
+    ASSERT_FALSE(kv.has_value());
+}
+
 TEST_P(Configuration, SeccLeafSubjectCommonName) {
     ASSERT_NE(get(), nullptr);
     // No initial value set - hence set() doesn't work

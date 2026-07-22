@@ -178,6 +178,9 @@ public:
     std::optional<bool> getQueueAllMessages() override;
     std::optional<KeyValue> getQueueAllMessagesKeyValue() override;
 
+    std::optional<bool> getReportClearedErrors() override;
+    std::optional<KeyValue> getReportClearedErrorsKeyValue() override;
+
     std::optional<std::string> getMessageTypesDiscardForQueueing() override;
     std::optional<KeyValue> getMessageTypesDiscardForQueueingKeyValue() override;
 

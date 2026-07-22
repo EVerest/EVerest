@@ -165,6 +165,7 @@ The implementation in code (for example `known_keys` conversion logic and patchi
 | 118 | `WaitForSetUserPriceTimeout` | VariableAttribute | `OCPP16LegacyCtrlr` | `WaitForSetUserPriceTimeout` | `Actual` |
 | 119 | `NumberOfConnectors` | VariableAttribute | `OCPP16LegacyCtrlr` | `NumberOfConnectors` | `Actual` |
 | 120 | `ConnectorEvseIds` | VariableAttribute | `OCPP16LegacyCtrlr` | `ConnectorEvseIds` | `Actual` |
+| 127 | `ReportClearedErrors` | VariableAttribute | `OCPP16LegacyCtrlr` | `ReportClearedErrors` | `Actual` |
 
 
 ## Network Connection Profile
