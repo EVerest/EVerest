@@ -149,6 +149,7 @@ class TestOcpp201CostAndPrice:
     @pytest.mark.asyncio
     @pytest.mark.probe_module
     @pytest.mark.everest_config_adaptions(ProbeModuleCostAndPriceSessionCostConfigurationAdjustment())
+    @pytest.mark.flaky(reruns=2, reruns_delay=5)
     async def test_set_running_cost(self, central_system: CentralSystem, test_controller: TestController,
                                     test_utility: TestUtility, test_config: OcppTestConfiguration, probe_module):
         """

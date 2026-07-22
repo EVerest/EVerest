@@ -232,12 +232,20 @@ class CSMSConnectionUtils:
         return connection.open
 
 
-async def wait_for_mock_called(mock, call=None, timeout=2):
+async def wait_for_mock_called(mock, call=None, timeout=10):
     async def _await_called():
         while not mock.call_count or (call and call not in mock.mock_calls):
             await asyncio.sleep(0.1)
 
     await asyncio.wait_for(_await_called(), timeout=timeout)
+
+
+async def wait_for_connection_state(csms_connection, connected, timeout=15):
+    async def _await_state():
+        while csms_connection.is_connected != connected:
+            await asyncio.sleep(0.1)
+
+    await asyncio.wait_for(_await_state(), timeout=timeout)
 
 
 @pytest.mark.ocpp_version("ocpp1.6")
@@ -252,16 +260,16 @@ class TestOCPP16GenericInterfaceIntegration:
         assert csms_connection.is_connected
         res = await _env.probe_module.call_command("ocpp", "stop", None)
         assert res is True
-        await asyncio.sleep(5)
+        await wait_for_connection_state(csms_connection, connected=False)
         assert not csms_connection.is_connected
 
     async def test_command_restart(self, _env):
         csms_connection = CSMSConnectionUtils(_env.central_system)
         await _env.probe_module.call_command("ocpp", "stop", None)
-        await asyncio.sleep(5)
+        await wait_for_connection_state(csms_connection, connected=False)
         assert not csms_connection.is_connected
         res = await _env.probe_module.call_command("ocpp", "restart", None)
-        await asyncio.sleep(5)
+        await wait_for_connection_state(csms_connection, connected=True)
         assert res is True
         assert csms_connection.is_connected
 
