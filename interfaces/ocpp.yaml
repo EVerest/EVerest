@@ -32,9 +32,15 @@ cmds:
         $ref: /ocpp#/SecurityEvent
   get_variables:
     description: >-
-      Command to get a variable from OCPP.
-      With OCPP1.6: Retrieves a configuration key.
-      With OCPP2.0.1: Retrieves a variable with value from the device model storage
+      Command to read variables from OCPP. Variables are addressed canonically by
+      component and variable name (e.g. component OCPPCommCtrlr, variable
+      HeartbeatInterval), regardless of whether OCPP1.6 or OCPP2.x is active.
+      An empty component.name marks the deprecated OCPP1.6 legacy key form
+      (variable.name = configuration key); it is only accepted while OCPP1.6 is
+      active and will be removed per the deprecation policy. A request with a
+      non-empty component.name is never reinterpreted as a configuration key.
+      Canonical addressing across protocol versions is provided by the OCPPmulti
+      module; other modules implementing this interface may differ.
     arguments:
       requests:
         description: List of GetVariableRequest
@@ -46,15 +52,23 @@ cmds:
     result:
       description: >-
         List of GetVariableResult containing the result for every requested value. Preserves the order of the input requests.
+        Each result echoes the requested component_variable and carries a status
+        (Accepted, Rejected, UnknownComponent, UnknownVariable or NotSupportedAttributeType).
       type: array
       items:
         type: object
         $ref: /ocpp#/GetVariableResult
   set_variables:
     description: >-
-      Command to set a variable at OCPP.
-      With OCPP1.6: This command can be used to set configuration keys
-      With OCPP2.0.1: This command can be used to set variables in the device model storage
+      Command to write variables at OCPP. Uses the same canonical component/variable
+      addressing as get_variables in both protocol versions; the empty-component
+      OCPP1.6 legacy key form is deprecated and scheduled for removal.
+      Connection-configuration writes (component NetworkConfiguration with the
+      profile slot number as component instance, and the
+      OCPPCommCtrlr/NetworkConfigurationPriority selector) return RebootRequired:
+      the value is validated and persisted immediately and takes effect on the
+      next (re)connect or reboot. Slot-based connection configuration is provided
+      by the OCPPmulti module; other modules implementing this interface may differ.
     arguments:
       requests:
         description: List of SetVariableRequests
@@ -68,7 +82,9 @@ cmds:
         type: string
     result:
       description: >-
-        List of SetVariableResult containing the result for every requested set operation
+        List of SetVariableResult containing the result for every requested set operation.
+        Each result echoes the requested component_variable and carries a status
+        (Accepted, RebootRequired, Rejected, UnknownComponent, UnknownVariable or NotSupportedAttributeType).
       type: array
       items:
         type: object
@@ -90,11 +106,11 @@ cmds:
       $ref: /ocpp#/ChangeAvailabilityResponse
   monitor_variables:
     description: >-
-      Command to start monitoring the given ComponentVariable(s). Any of the provided
-      configuration keys will be published on change by the CSMS.
+      Command to start monitoring the given ComponentVariable(s), using the same
+      canonical component/variable addressing as get_variables in both protocol
+      versions; the empty-component OCPP1.6 legacy key form is deprecated.
+      Changes to monitored variables are published on the event_data var.
       Consecutive calls of this operation will not override but extend the existing monitors.
-      With OCPP1.6: This command can be used to monitor configuration keys
-      With OCPP2.0.1: This command can be used to monitor any kind of variable in the device model storage
     arguments:
       component_variables:
         description: List of ComponentVariable(s) to monitor
@@ -127,10 +143,12 @@ vars:
     $ref: /ocpp#/SecurityEvent
   event_data:
     description: >-
-      Published for a component variable combination when a variable with a monitor has been changed
-      For OCPP1.6: The object may only contain the required properties of the EventData type because in OCPP1.6
-        there is not more information available or required.
-      For OCPP2.0.1: The object may contain all available properties
+      Published when a variable registered via monitor_variables has been changed.
+      The event echoes the addressing form used at registration: canonical
+      registrations receive the canonical component_variable, deprecated legacy
+      key registrations (empty component.name) receive legacy-shaped events.
+      With OCPP1.6 the object may only contain the required properties of the
+      EventData type; with OCPP2.x it may contain all available properties.
     type: object
     $ref: /ocpp#/EventData
   boot_notification_response:

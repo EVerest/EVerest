@@ -32,6 +32,7 @@
 #include <ocpp/v21/messages/SetDERControl.hpp>
 
 #include <cstdint>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -39,6 +40,14 @@
 namespace ocpp_multi {
 
 constexpr const auto SQL_CORE_MIGRATIONS = "core_migrations";
+
+/// \brief SetVariableResult plus the value for a synthesized monitor event (v16 direct
+///        device-model writes only).
+struct SetVariableOutcome {
+    ocpp::v2::SetVariableResult result;
+    /// Unset: no event. Empty: committed write-only value (masked like the v2 MonitoringUpdater).
+    std::optional<std::string> monitor_value;
+};
 
 struct GenericChargePointCallbacks {
     virtual ~GenericChargePointCallbacks() = default;
@@ -300,8 +309,12 @@ struct GenericChargePointInterface {
 
     virtual void register_variable_listener(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
                                             listener_t listener) = 0;
+    /// \brief Resolve a requested (possibly legacy key-only) addressing form to the canonical CV;
+    ///        nullopt when no canonical form exists
+    virtual std::optional<ocpp::v2::ComponentVariable> resolve_to_canonical(const ocpp::v2::Component& component,
+                                                                            const ocpp::v2::Variable& variable) = 0;
     virtual bool set_powermeter_public_key(std::int32_t connector, const std::string& public_key_pem) = 0;
-    virtual std::vector<ocpp::v2::SetVariableResult>
+    virtual std::vector<SetVariableOutcome>
     set_variables(const std::vector<ocpp::v2::SetVariableData>& set_variable_data_vector,
                   const std::string& source) = 0;
 

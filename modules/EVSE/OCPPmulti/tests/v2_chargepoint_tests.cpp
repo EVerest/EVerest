@@ -241,4 +241,56 @@ TEST_F(ChargePointV2Test, variableListenerForwardsChanges) {
     EXPECT_EQ(reported_value.value(), "60");
 }
 
+// key-only (empty component) get request is passed through unchanged; rejection comes from libocpp
+TEST_F(ChargePointV2Test, getVariablesEmptyComponentIsPassedThrough) {
+    ocpp::v2::GetVariableData data;
+    data.variable.name = "HeartbeatInterval";
+
+    ocpp::v2::GetVariableResult rejected;
+    rejected.attributeStatus = ocpp::v2::GetVariableStatusEnum::UnknownComponent;
+    rejected.component = data.component;
+    rejected.variable = data.variable;
+
+    EXPECT_CALL(*m_libocpp, get_variables(Truly([](const std::vector<ocpp::v2::GetVariableData>& requests) {
+        return requests.size() == 1 && requests[0].component.name.get().empty() &&
+               requests[0].variable.name.get() == "HeartbeatInterval";
+    }))).WillOnce(Return(std::vector<ocpp::v2::GetVariableResult>{rejected}));
+
+    const auto results = m_chargepoint.get_variables({data});
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].attributeStatus, ocpp::v2::GetVariableStatusEnum::UnknownComponent);
+    EXPECT_EQ(results[0].component.name.get(), "");
+    EXPECT_EQ(results[0].variable.name.get(), "HeartbeatInterval");
+}
+
+// key-only (empty component) set request is passed through unchanged; rejection comes from libocpp
+TEST_F(ChargePointV2Test, setVariablesEmptyComponentIsPassedThrough) {
+    ocpp::v2::SetVariableData data;
+    data.attributeValue = "42";
+    data.variable.name = "HeartbeatInterval";
+
+    ocpp::v2::SetVariableResult rejected;
+    rejected.attributeStatus = ocpp::v2::SetVariableStatusEnum::Rejected;
+    rejected.component = data.component;
+    rejected.variable = data.variable;
+
+    std::map<ocpp::v2::SetVariableData, ocpp::v2::SetVariableResult> libocpp_result;
+    libocpp_result.emplace(data, rejected);
+    EXPECT_CALL(*m_libocpp, set_variables(Truly([](const std::vector<ocpp::v2::SetVariableData>& requests) {
+                                              return requests.size() == 1 && requests[0].component.name.get().empty() &&
+                                                     requests[0].variable.name.get() == "HeartbeatInterval";
+                                          }),
+                                          "test"))
+        .WillOnce(Return(libocpp_result));
+
+    const auto results = m_chargepoint.set_variables({data}, "test");
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Rejected);
+    EXPECT_EQ(results[0].result.component.name.get(), "");
+    EXPECT_EQ(results[0].result.variable.name.get(), "HeartbeatInterval");
+    EXPECT_FALSE(results[0].monitor_value.has_value()); // libocpp owns monitors on the v2 path
+}
+
 } // namespace

@@ -137,7 +137,8 @@ struct ConfigInterface {
 class GenericOcpp : public GenericOcppInterface, public GenericChargePointCallbacks {
 public:
     using MonitorListEntry = std::pair<ocpp::v2::Component, ocpp::v2::Variable>;
-    using MonitorList = std::set<MonitorListEntry>;
+    // canonical CV -> requested addressing form (canonical or legacy key-only); one event echo per form
+    using MonitorList = std::multimap<MonitorListEntry, types::ocpp::ComponentVariable>;
     using ConnectorMap = std::map<std::int32_t, std::int32_t>;
     using EventInfo = GenericChargePointInterface::EventInfo;
 

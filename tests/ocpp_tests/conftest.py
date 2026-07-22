@@ -69,11 +69,14 @@ def pytest_addoption(parser):
 
 def pytest_generate_tests(metafunc):
     if "ocpp_impl" in metafunc.fixturenames:
-        # Tests marked ocpp_multi_only exercise functionality that only exists in
-        # the combined OCPPmulti module (e.g. DER); pin them to multi regardless
-        # of --ocpp-impl so the legacy OCPP/OCPP201 variant is never collected.
+        # Tests marked ocpp_multi_only / ocpp_legacy_only exercise behavior specific
+        # to one implementation (e.g. DER, variable addressing); pin them regardless
+        # of --ocpp-impl so the other variant is never collected.
         if metafunc.definition.get_closest_marker("ocpp_multi_only"):
             metafunc.parametrize("ocpp_impl", ["multi"])
+            return
+        if metafunc.definition.get_closest_marker("ocpp_legacy_only"):
+            metafunc.parametrize("ocpp_impl", ["legacy"])
             return
         selected = metafunc.config.getoption("--ocpp-impl")
         impls = ["legacy", "multi"] if selected == "both" else [selected]

@@ -3,6 +3,8 @@
 
 #include "v2_chargepoint.hpp"
 
+#include <algorithm>
+
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/ocpp_module_common/conversions.hpp>
 #include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
@@ -19,6 +21,20 @@ constexpr const auto PNC_ENABLED_VAR_NAME = "PnCEnabled";
 constexpr const auto SETPOINT_PRIORITY_VAR_NAME = "SetpointPriority";
 constexpr const auto TX_START_POINT_VAR_NAME = "TxStartPoint";
 constexpr const auto TX_STOP_POINT_VAR_NAME = "TxStopPoint";
+
+void warn_key_only(std::string_view fn) {
+    EVLOG_warning << fn
+                  << ": key-only addressing is an OCPP 1.6 legacy form, not supported with OCPP 2.x - use "
+                     "canonical ComponentVariable addressing (see the OCPPmulti documentation)";
+}
+
+// key-only addressing (empty component) is an OCPP 1.6 legacy form; warn once per call
+template <typename T> void warn_if_key_only(const std::vector<T>& requests, std::string_view fn) {
+    if (std::any_of(requests.begin(), requests.end(),
+                    [](const T& request) { return request.component.name.get().empty(); })) {
+        warn_key_only(fn);
+    }
+}
 
 auto convert(const ocpp::v2::MessageContent& value) {
     ocpp::DisplayMessageContent result{};
@@ -546,6 +562,7 @@ ChargePointV2::get_all_composite_schedules(std::int32_t duration_s, ocpp::v2::Ch
 std::vector<ocpp::v2::GetVariableResult>
 ChargePointV2::get_variables(const std::vector<ocpp::v2::GetVariableData>& get_variable_data_vector) {
     check_configured("get_variables");
+    warn_if_key_only(get_variable_data_vector, "get_variables");
     return m_charge_point->get_variables(get_variable_data_vector);
 }
 
@@ -965,15 +982,26 @@ void ChargePointV2::register_variable_listener(const ocpp::v2::Component& compon
     }
 }
 
-std::vector<ocpp::v2::SetVariableResult>
+std::optional<ocpp::v2::ComponentVariable> ChargePointV2::resolve_to_canonical(const ocpp::v2::Component& component,
+                                                                               const ocpp::v2::Variable& variable) {
+    if (component.name.get().empty()) {
+        warn_key_only("resolve_to_canonical");
+        return std::nullopt;
+    }
+    return ocpp::v2::ComponentVariable{component, variable};
+}
+
+std::vector<SetVariableOutcome>
 ChargePointV2::set_variables(const std::vector<ocpp::v2::SetVariableData>& set_variable_data_vector,
                              const std::string& source) {
     check_configured("set_variables");
+    warn_if_key_only(set_variable_data_vector, "set_variables");
     const auto res = m_charge_point->set_variables(set_variable_data_vector, source);
-    std::vector<ocpp::v2::SetVariableResult> result;
+    std::vector<SetVariableOutcome> result;
     result.reserve(res.size());
     for (const auto& item : res) {
-        result.push_back(item.second);
+        // libocpp handles its own monitors on the v2 path
+        result.push_back({item.second, std::nullopt});
     }
     return result;
 }

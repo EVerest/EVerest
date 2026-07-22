@@ -173,7 +173,7 @@ void initialize_device_model_with_migration(const fs::path& ocpp_share_path, con
     EVLOG_info << "Successfully migrated OCPP1.6 configuration to device model database at " << context.database_path;
 }
 
-std::unique_ptr<ocpp::v16::ChargePointConfigurationInterface>
+config_factory_result_t
 create_device_model_charge_point_configuration(const fs::path& ocpp_share_path,
                                                const DeviceModelInitializationContext& context) {
     auto device_model_storage = std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(context.database_path);
@@ -187,8 +187,10 @@ create_device_model_charge_point_configuration(const fs::path& ocpp_share_path,
         custom_mappings = ocpp::v2::load_ocpp16_custom_config_mappings_from_yaml(context.custom_mappings_path.value());
     }
 
-    return std::make_unique<ocpp::v16::ChargePointConfigurationDeviceModel>(
-        ocpp_share_path.string(), std::move(device_model), std::move(custom_mappings));
+    // Pass a copy so the returned mappings match the ones the configuration runs with.
+    auto configuration = std::make_unique<ocpp::v16::ChargePointConfigurationDeviceModel>(
+        ocpp_share_path.string(), std::move(device_model), custom_mappings);
+    return {std::move(configuration), std::move(custom_mappings)};
 }
 
 /// \brief Loads the legacy OCPP 1.6 JSON config used as the one-time device-model migration source.
@@ -232,9 +234,8 @@ std::string load_charge_point_config_json(const fs::path& configured_config_path
 
 } // namespace
 
-std::unique_ptr<ocpp::v16::ChargePointConfigurationInterface>
-create_charge_point_configuration(const fs::path& ocpp_share_path, const Ocpp16DeviceModelParams& config,
-                                  std::int32_t n_evse) {
+config_factory_result_t create_charge_point_configuration(const fs::path& ocpp_share_path,
+                                                          const Ocpp16DeviceModelParams& config, std::int32_t n_evse) {
     const auto context = resolve_device_model_initialization_context(ocpp_share_path, config);
 
     const bool db_initialized =
@@ -264,9 +265,9 @@ create_charge_point_configuration(const fs::path& ocpp_share_path, const Ocpp16D
         initialize_device_model_direct(context, n_evse);
     }
 
-    auto dm_config = create_device_model_charge_point_configuration(ocpp_share_path, context);
-    dm_config->check_integrity(n_evse);
-    return dm_config;
+    auto result = create_device_model_charge_point_configuration(ocpp_share_path, context);
+    result.configuration->check_integrity(n_evse);
+    return result;
 }
 
 } // namespace module::config_factory_v16

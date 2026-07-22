@@ -108,6 +108,11 @@ public:
                                                  ocpp::v2::Ocpp16CustomConfigMappings custom_config_mappings = {});
     virtual ~ChargePointConfigurationDeviceModel() = default;
 
+    /// \brief The device model backing this configuration.
+    v2::DeviceModelInterface& get_device_model() {
+        return *storage;
+    }
+
     void check_integrity(int32_t expected_number_of_connectors) override;
 
     // UserConfig and Internal

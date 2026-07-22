@@ -44,17 +44,17 @@ gs::DERCapability make_capability(const std::vector<gs::DirectiveType>& supporte
 }
 
 // Return every set_variables write as Accepted (config writes succeed).
-std::vector<ocpp::v2::SetVariableResult> accept_all_set(const std::vector<ocpp::v2::SetVariableData>& in,
-                                                        const std::string&) {
-    std::vector<ocpp::v2::SetVariableResult> out;
+std::vector<ocpp_multi::SetVariableOutcome> accept_all_set(const std::vector<ocpp::v2::SetVariableData>& in,
+                                                           const std::string&) {
+    std::vector<ocpp_multi::SetVariableOutcome> out;
     out.reserve(in.size());
     for (const auto& data : in) {
-        ocpp::v2::SetVariableResult result;
-        result.attributeStatus = ocpp::v2::SetVariableStatusEnum::Accepted;
-        result.component = data.component;
-        result.variable = data.variable;
-        result.attributeType = data.attributeType;
-        out.push_back(result);
+        ocpp_multi::SetVariableOutcome outcome;
+        outcome.result.attributeStatus = ocpp::v2::SetVariableStatusEnum::Accepted;
+        outcome.result.component = data.component;
+        outcome.result.variable = data.variable;
+        outcome.result.attributeType = data.attributeType;
+        out.push_back(outcome);
     }
     return out;
 }

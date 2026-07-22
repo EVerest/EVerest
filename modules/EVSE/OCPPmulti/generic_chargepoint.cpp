@@ -328,12 +328,18 @@ void GenericChargePoint::register_variable_listener(const ocpp::v2::Component& c
     m_active_ptr->register_variable_listener(component, variable, std::move(listener));
 }
 
+std::optional<ocpp::v2::ComponentVariable>
+GenericChargePoint::resolve_to_canonical(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) {
+    check_configured("resolve_to_canonical");
+    return m_active_ptr->resolve_to_canonical(component, variable);
+}
+
 bool GenericChargePoint::set_powermeter_public_key(std::int32_t connector, const std::string& public_key_pem) {
     check_configured("set_powermeter_public_key");
     return m_active_ptr->set_powermeter_public_key(connector, public_key_pem);
 }
 
-std::vector<ocpp::v2::SetVariableResult>
+std::vector<SetVariableOutcome>
 GenericChargePoint::set_variables(const std::vector<ocpp::v2::SetVariableData>& set_variable_data_vector,
                                   const std::string& source) {
     check_configured("set_variables");

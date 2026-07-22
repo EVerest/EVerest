@@ -363,22 +363,15 @@ ocpp::v16::GetLogResponse ChargePointV16::cb_upload_logs(ocpp::v16::GetLogReques
 }
 
 void ChargePointV16::cb_variable_listener(const ocpp::v16::KeyValue& key_value) {
-    listener_t listener{nullptr};
-    std::optional<std::pair<ocpp::v2::Component, ocpp::v2::Variable>> mapping;
-    {
-        auto monitors = m_variable_monitors.handle();
-        listener = monitors->listener;
-        const auto it = monitors->map.find(key_value.key);
-        if (it != monitors->map.end()) {
-            mapping = it->second;
-        }
-    }
+    // copy under lock, invoke outside
+    const listener_t listener = *m_variable_listener.handle();
+    // fired key -> canonical CV
+    const auto mapping = m_variable_resolver->key_to_cv(key_value.key.get());
     if (listener == nullptr) {
         EVLOG_warning << "cb_variable_listener: no listener configured";
     } else if (!mapping.has_value()) {
         EVLOG_warning << "cb_variable_listener: no mapping for " << key_value.key;
     } else if (key_value.value.has_value()) {
-        // invoke outside the lock
         listener(mapping->first, mapping->second, key_value.value.value());
     }
 }
@@ -557,8 +550,27 @@ void ChargePointV16::configure_data_model(const config_info_t& config) {
         config.user_config_path,                     // UserConfigPath
     };
 
-    m_charge_point_configuration = module::config_factory_v16::create_charge_point_configuration(
+    auto factory_result = module::config_factory_v16::create_charge_point_configuration(
         ocpp_share_path, params, static_cast<int32_t>(config.number_of_connectors));
+    m_charge_point_configuration = std::move(factory_result.configuration);
+    m_custom_mappings = std::move(factory_result.custom_mappings);
+
+    // m_charge_point is constructed later in init(); the lambdas resolve it at call time.
+    // check_configured() guards get/set_variables until then.
+    m_variable_access.reset();
+    m_variable_resolver.emplace(m_custom_mappings);
+    m_variable_access.emplace(
+        m_variable_resolver.value(), m_charge_point_configuration->get_device_model(),
+        [this](const std::vector<ocpp::CiString<50>>& keys) {
+            ocpp::v16::GetConfigurationRequest request;
+            if (!keys.empty()) {
+                request.key = keys;
+            }
+            return m_charge_point->get_configuration_key(request);
+        },
+        [this](const ocpp::CiString<50>& key, const ocpp::CiString<500>& value) {
+            return m_charge_point->set_configuration_key(key, value);
+        });
 
     // The factory does not create the message-log directory; retain that here.
     if (!fs::exists(config.message_log_path)) {
@@ -714,44 +726,7 @@ ChargePointV16::get_all_composite_schedules(std::int32_t duration_s, ocpp::v2::C
 std::vector<ocpp::v2::GetVariableResult>
 ChargePointV16::get_variables(const std::vector<ocpp::v2::GetVariableData>& get_variable_data_vector) {
     check_configured("get_variables");
-    ocpp::v16::GetConfigurationRequest request;
-    if (!get_variable_data_vector.empty()) {
-        std::vector<ocpp::CiString<50>> keys;
-        keys.reserve(get_variable_data_vector.size());
-        for (const auto& item : get_variable_data_vector) {
-            keys.push_back(item.variable.name);
-        }
-        request.key = std::move(keys);
-    }
-
-    const auto response = m_charge_point->get_configuration_key(request);
-
-    std::vector<ocpp::v2::GetVariableResult> result;
-
-    if (!get_variable_data_vector.empty()) {
-        result.reserve(get_variable_data_vector.size());
-        // maintain the order
-        for (const auto& item : get_variable_data_vector) {
-            result.push_back({ocpp::v2::GetVariableStatusEnum::UnknownVariable, {}, {item.variable.name}});
-        }
-    }
-
-    // populate values - maintaining the order
-    if (response.configurationKey) {
-        for (const auto& item : response.configurationKey.value()) {
-            auto it = std::find_if(result.begin(), result.end(),
-                                   [item](const auto& entry) { return entry.variable.name == item.key; });
-            if (it != result.end()) {
-                if (item.value) {
-                    it->attributeValue = item.value.value().get();
-                }
-                it->attributeStatus = ocpp::v2::GetVariableStatusEnum::Accepted;
-                it->attributeType = ocpp::v2::AttributeEnum::Actual;
-            }
-        }
-    }
-
-    return result;
+    return m_variable_access->get(get_variable_data_vector);
 }
 
 void ChargePointV16::on_authorized(std::int32_t evse_id, std::int32_t connector_id, const ocpp::v2::IdToken& id_token) {
@@ -1024,19 +999,38 @@ void ChargePointV16::on_unavailable(std::int32_t evse_id, std::int32_t connector
 void ChargePointV16::register_variable_listener(const ocpp::v2::Component& component,
                                                 const ocpp::v2::Variable& variable, listener_t listener) {
     check_configured("register_variable_listener");
-    const std::string key = variable.name;
-    if (!key.empty()) {
-        {
-            auto monitors = m_variable_monitors.handle();
-            if (monitors->listener == nullptr && listener != nullptr) {
-                monitors->listener = std::move(listener);
-            }
-            monitors->map.insert_or_assign(key, std::make_pair(component, variable));
+    {
+        auto handle = m_variable_listener.handle();
+        if (*handle == nullptr && listener != nullptr) {
+            *handle = std::move(listener);
         }
+    }
+    const auto reverse = m_variable_resolver->cv_to_key(component, variable);
+    if (reverse.usable()) {
         // register outside the lock: libocpp may fire the callback synchronously
         m_charge_point->register_configuration_key_changed_callback(
-            key, [this](auto&&... args) { cb_variable_listener(args...); });
+            reverse.key.value(), [this](auto&&... args) { cb_variable_listener(args...); });
+    } else if (reverse.ambiguous) {
+        // writes to ambiguous CVs are rejected, so this monitor can never fire
+        EVLOG_warning << "register_variable_listener: ambiguous custom config mapping for " << component.name << '/'
+                      << variable.name << "; fix DeviceModelConfigMappings";
     }
+    // no 1.6 key: nothing to hook; direct writes are covered by synthesized monitor events
+}
+
+std::optional<ocpp::v2::ComponentVariable> ChargePointV16::resolve_to_canonical(const ocpp::v2::Component& component,
+                                                                                const ocpp::v2::Variable& variable) {
+    check_configured("resolve_to_canonical");
+    if (component.name.get().empty()) {
+        // legacy key-only form: canonical form is the mapped CV, if any
+        const auto mapping = m_variable_resolver->key_to_cv(variable.name.get());
+        if (!mapping.has_value()) {
+            return std::nullopt;
+        }
+        return ocpp::v2::ComponentVariable{mapping->first, mapping->second};
+    }
+    // device-model existence is checked at get/set/monitor time, not here
+    return ocpp::v2::ComponentVariable{component, variable};
 }
 
 bool ChargePointV16::set_powermeter_public_key(std::int32_t connector, const std::string& public_key_pem) {
@@ -1044,45 +1038,11 @@ bool ChargePointV16::set_powermeter_public_key(std::int32_t connector, const std
     return m_charge_point->set_powermeter_public_key(connector, public_key_pem);
 }
 
-std::vector<ocpp::v2::SetVariableResult>
+std::vector<SetVariableOutcome>
 ChargePointV16::set_variables(const std::vector<ocpp::v2::SetVariableData>& set_variable_data_vector,
                               const std::string& source) {
     check_configured("set_variables");
-
-    std::vector<ocpp::v2::SetVariableResult> result;
-
-    for (const auto& item : set_variable_data_vector) {
-        ocpp::v2::SetVariableResult set_result;
-        set_result.component = item.component;
-        set_result.variable = item.variable;
-        // set_result.attributeType = item.attributeType;
-        // set_result.customData = item.customData;
-
-        ocpp::CiString<500> value = static_cast<std::string>(item.attributeValue);
-        const auto response = m_charge_point->set_configuration_key(item.variable.name, value);
-
-        switch (response) {
-        case ocpp::v16::ConfigurationStatus::Accepted:
-            set_result.attributeStatus = ocpp::v2::SetVariableStatusEnum::Accepted;
-            break;
-        case ocpp::v16::ConfigurationStatus::RebootRequired:
-            set_result.attributeStatus = ocpp::v2::SetVariableStatusEnum::RebootRequired;
-            break;
-        case ocpp::v16::ConfigurationStatus::NotSupported:
-            // NotSupported in OCPP1.6 means that the configuration key is not known / not supported, so it's best
-            // to go with UnknownVariable
-            set_result.attributeStatus = ocpp::v2::SetVariableStatusEnum::UnknownVariable;
-            break;
-        case ocpp::v16::ConfigurationStatus::Rejected:
-        default:
-            set_result.attributeStatus = ocpp::v2::SetVariableStatusEnum::Rejected;
-            break;
-        }
-
-        result.push_back(std::move(set_result));
-    }
-
-    return result;
+    return m_variable_access->set(set_variable_data_vector, source);
 }
 
 ocpp::v2::AuthorizeResponse
