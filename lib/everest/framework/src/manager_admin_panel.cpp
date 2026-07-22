@@ -19,7 +19,6 @@
 #include <everest/logging.hpp>
 #include <framework/runtime.hpp>
 #include <utils/config.hpp>
-#include <utils/mqtt_abstraction.hpp>
 
 #include "controller/ipc.hpp"
 #include "system_unix.hpp"
@@ -173,7 +172,6 @@ void ManagerAdminPanel::shutdown_controller() const {
 }
 
 std::optional<int> ManagerAdminPanel::poll_controller_ipc(bool& restart_modules, bool& modules_started,
-                                                          MQTTAbstraction& mqtt, const ManagerSettings& ms,
                                                           const std::string& prefix_opt) {
 #ifdef ENABLE_ADMIN_PANEL
     if (not impl) {
@@ -183,11 +181,11 @@ std::optional<int> ManagerAdminPanel::poll_controller_ipc(bool& restart_modules,
     if (msg.status == controller_ipc::MESSAGE_RETURN_STATUS::OK) {
         const auto& payload = msg.json;
         if (payload.at("method") == "restart_modules") {
+            // The manager decides how to drain modules (graceful broadcast vs immediate
+            // termination) when it acts on the restart_modules flag.
             restart_modules = true;
             modules_started = false;
-            mqtt.publish(fmt::format("{}shutdown", ms.mqtt_settings.everest_prefix), std::string("true"), QOS::QOS2,
-                         false);
-            EVLOG_info << "Controller requested graceful module restart (config will be reloaded).";
+            EVLOG_info << "Controller requested module restart (config will be reloaded).";
         } else if (payload.at("method") == "check_config") {
             const std::string check_config_file_path = payload.at("params");
 
@@ -210,8 +208,6 @@ std::optional<int> ManagerAdminPanel::poll_controller_ipc(bool& restart_modules,
 #else
     static_cast<void>(restart_modules);
     static_cast<void>(modules_started);
-    static_cast<void>(mqtt);
-    static_cast<void>(ms);
     static_cast<void>(prefix_opt);
     return std::nullopt;
 #endif

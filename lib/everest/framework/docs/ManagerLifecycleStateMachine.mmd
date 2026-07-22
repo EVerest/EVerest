@@ -13,9 +13,9 @@ stateDiagram-v2
     }
 
     state "Shutdown / drain" as G_DRAIN {
-        ShutdownRequested --> ForceTerminating : SHUTDOWN_TIMEOUT_MS exceeded
-        CrashShutdownInProgress --> ForceTerminating : SHUTDOWN_TIMEOUT_MS exceeded
-        RestartRequested --> ForceTerminating : SHUTDOWN_TIMEOUT_MS exceeded
+        ShutdownRequested --> ForceTerminating : drain deadline exceeded\n(SHUTDOWN_TIMEOUT_MS with --graceful-shutdown,\nimmediate otherwise)
+        CrashShutdownInProgress --> ForceTerminating : drain deadline exceeded\n(SHUTDOWN_TIMEOUT_MS with --graceful-shutdown,\nimmediate otherwise)
+        RestartRequested --> ForceTerminating : drain deadline exceeded\n(SHUTDOWN_TIMEOUT_MS with --graceful-shutdown,\nimmediate otherwise)
         ShutdownRequested --> CrashShutdownInProgress : crash path\n(immediate after MQTT shutdown)
     }
 
@@ -25,7 +25,7 @@ stateDiagram-v2
     }
 
     %% Cross-region: signals and IPC while starting or running
-    Running --> ShutdownRequested : first SIGINT/SIGTERM,\nShutdownCause Normal,\nMQTT shutdown published
+    Running --> ShutdownRequested : first SIGINT/SIGTERM,\nShutdownCause Normal,\nMQTT shutdown published\n(--graceful-shutdown only)
     StartingModules --> ShutdownRequested : first SIGINT/SIGTERM,\nShutdownCause Normal
 
     Running --> CrashShutdownInProgress : unexpected module exit,\nShutdownCause Crash

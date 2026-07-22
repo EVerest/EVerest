@@ -9,7 +9,6 @@
 #include <sys/types.h>
 
 namespace Everest {
-class MQTTAbstraction;
 struct ManagerSettings;
 } // namespace Everest
 
@@ -30,8 +29,7 @@ struct ManagerAdminPanel {
 
     /// Process controller IPC for one main-loop iteration.
     /// Returns an exit code for `boot`, or `nullopt` to continue.
-    std::optional<int> poll_controller_ipc(bool& restart_modules, bool& modules_started, Everest::MQTTAbstraction& mqtt,
-                                           const Everest::ManagerSettings& ms, const std::string& prefix_opt);
+    std::optional<int> poll_controller_ipc(bool& restart_modules, bool& modules_started, const std::string& prefix_opt);
 
     /// File descriptor of the controller IPC socket, usable as an extra wakeup fd for the
     /// manager main-loop poll. nullopt when the admin panel is disabled or not initialized.

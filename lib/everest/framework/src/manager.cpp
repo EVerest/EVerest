@@ -46,6 +46,9 @@ using namespace Everest;
 // instead of ticking every SIGNAL_POLL_TIMEOUT_MS.
 const auto IDLE_SIGNAL_POLL_TIMEOUT_MS = 60000;
 const auto SIGNAL_POLL_TIMEOUT_MS = 50;
+// Graceful-shutdown deadline before force-terminating modules; only applies with
+// --graceful-shutdown. Without the flag the deadline is zero and modules are terminated
+// immediately when the shutdown flow starts.
 const auto SHUTDOWN_TIMEOUT_MS = 5000;
 const auto FORCE_KILL_GRACE_TIMEOUT_MS = 5000;
 const std::uint8_t MAX_UNEXPECTED_MODULE_RESTARTS = 3;
@@ -595,8 +598,10 @@ void Manager::handle_initiate_graceful_shutdown(const std::chrono::steady_clock:
         if (info_log.has_value()) {
             EVLOG_critical << info_log.value();
         }
-        mqtt_abstraction.publish(fmt::format("{}shutdown", ms.mqtt_settings.everest_prefix), std::string("true"),
-                                 QOS::QOS2, false);
+        if (graceful_shutdown_enabled_) {
+            mqtt_abstraction.publish(fmt::format("{}shutdown", ms.mqtt_settings.everest_prefix), std::string("true"),
+                                     QOS::QOS2, false);
+        }
     }
 }
 
@@ -952,7 +957,9 @@ bool Manager::is_in_shutdown_flow_state_unlocked() const {
 }
 
 Manager::Manager(const po::variables_map& vm) :
-    vm_(vm), recover_module_crashes_(vm.count("recover-module-crashes") != 0) {
+    vm_(vm),
+    recover_module_crashes_(vm.count("recover-module-crashes") != 0),
+    graceful_shutdown_enabled_(vm.count("graceful-shutdown") != 0) {
 }
 
 // ---- State predicates -------------------------------------------------------
@@ -1241,8 +1248,10 @@ bool Manager::handle_child_exit(pid_t pid, int wstatus, RuntimeContext& ctx, Man
         // During startup/running, an exiting module is unexpected: trigger graceful shutdown.
         shutdown_cause_ = ShutdownCause::Crash;
         ++unexpected_module_exit_count_;
-        const auto shutdown_info_log = "Module " + fmt::format(TERMINAL_STYLE_BLUE, "{}", module_name) +
-                                       " exited unexpectedly, signaling remaining modules to shut down gracefully...";
+        const auto shutdown_info_log =
+            "Module " + fmt::format(TERMINAL_STYLE_BLUE, "{}", module_name) +
+            (graceful_shutdown_enabled_ ? " exited unexpectedly, signaling remaining modules to shut down gracefully..."
+                                        : " exited unexpectedly, terminating remaining modules...");
         handle_initiate_graceful_shutdown(module_exited_time, true, shutdown_info_log, ctx.mqtt_abstraction, ctx.ms);
         transition_to(ManagerState::CrashShutdownInProgress);
         shutdown_info_.push_back({module_name, wstatus});
@@ -1290,8 +1299,10 @@ std::optional<int> Manager::handle_signal(int signo, RuntimeContext& ctx, Manage
         }
         transition_to(ManagerState::ShutdownRequested);
         EVLOG_info << "Shutting down modules...";
-        ctx.mqtt_abstraction.publish(fmt::format("{}shutdown", ctx.ms.mqtt_settings.everest_prefix),
-                                     std::string("true"), QOS::QOS2, false);
+        if (graceful_shutdown_enabled_) {
+            ctx.mqtt_abstraction.publish(fmt::format("{}shutdown", ctx.ms.mqtt_settings.everest_prefix),
+                                         std::string("true"), QOS::QOS2, false);
+        }
         return std::nullopt;
     }
 
@@ -1312,11 +1323,18 @@ void Manager::handle_shutdown_timeout(RuntimeContext& ctx) {
          state_ == ManagerState::RestartRequested) &&
         shutdown_start_time_.has_value();
 
+    // Without --graceful-shutdown there is no drain phase: force-terminate as soon as the
+    // shutdown flow starts (legacy behavior, no FORCE_SHUTDOWN_TIMEOUT event).
+    const auto shutdown_timeout_ms = graceful_shutdown_enabled_ ? SHUTDOWN_TIMEOUT_MS : 0;
     if (should_check_shutdown_timeout &&
-        now >= shutdown_start_time_.value() + std::chrono::milliseconds(SHUTDOWN_TIMEOUT_MS)) {
+        now >= shutdown_start_time_.value() + std::chrono::milliseconds(shutdown_timeout_ms)) {
         transition_to(ManagerState::ForceTerminating);
-        notify_status_fifo(StatusFifo::FORCE_SHUTDOWN_TIMEOUT);
-        EVLOG_warning << "Not all modules shut down within the timeout. Forcefully terminating remaining modules.";
+        if (graceful_shutdown_enabled_) {
+            notify_status_fifo(StatusFifo::FORCE_SHUTDOWN_TIMEOUT);
+            EVLOG_warning << "Not all modules shut down within the timeout. Forcefully terminating remaining modules.";
+        } else {
+            EVLOG_info << "Terminating modules (graceful shutdown not enabled)...";
+        }
         shutdown_modules(module_handles_, *ctx.config, ctx.mqtt_abstraction);
         force_terminate_start_time_ = now;
         force_kill_sent_ = false;
@@ -1377,8 +1395,7 @@ std::optional<int> Manager::handle_controller_ipc_poll(RuntimeContext& ctx, Mana
     bool modules_started = are_modules_started();
     const bool restart_already_requested = is_restart_requested();
     bool restart_requested = restart_already_requested;
-    if (const auto exit_from_panel = admin_panel.poll_controller_ipc(restart_requested, modules_started,
-                                                                     ctx.mqtt_abstraction, ctx.ms, prefix_opt)) {
+    if (const auto exit_from_panel = admin_panel.poll_controller_ipc(restart_requested, modules_started, prefix_opt)) {
         return *exit_from_panel;
     }
 
@@ -1387,6 +1404,10 @@ std::optional<int> Manager::handle_controller_ipc_poll(RuntimeContext& ctx, Mana
     if (restart_requested && !restart_already_requested) {
         shutdown_cause_ = ShutdownCause::Restart;
         transition_to(ManagerState::RestartRequested);
+        if (graceful_shutdown_enabled_) {
+            ctx.mqtt_abstraction.publish(fmt::format("{}shutdown", ctx.ms.mqtt_settings.everest_prefix),
+                                         std::string("true"), QOS::QOS2, false);
+        }
         // Arm the graceful-shutdown deadline once so timeout/fallback handling covers modules
         // that do not exit after the MQTT shutdown publish. Re-arming on subsequent loop
         // iterations would push the force-terminate deadline back forever.
@@ -1445,6 +1466,10 @@ int main(int argc, char* argv[]) {
     desc.add_options()("recover-module-crashes",
                        "After unexpected module exit, reload config and restart modules (bounded by an internal retry "
                        "limit). Default: shut down all modules and exit the manager.");
+    desc.add_options()("graceful-shutdown",
+                       "On shutdown/restart, publish the shutdown signal via MQTT so modules can run their shutdown "
+                       "handlers, and force-terminate stragglers only after a timeout. Default: terminate module "
+                       "processes immediately (SIGTERM, escalating to SIGKILL).");
     desc.add_options()("status-fifo", po::value<std::string>()->default_value(""),
                        "Path to a named pipe, that shall be used for status updates from the manager");
     desc.add_options()("retain-topics", "Retain configuration MQTT topics setup by manager for inspection, by default "

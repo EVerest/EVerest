@@ -10,6 +10,23 @@ step can distinguish normal stop, admin-driven restart, and crash recovery.
 Timeouts and limits that drive transitions are defined in `src/manager.cpp` (for example graceful
 shutdown duration before `ForceTerminating`, and the cap on automatic crash restarts).
 
+## Graceful shutdown is opt-in (`--graceful-shutdown`)
+
+By default the manager **does not** publish the MQTT shutdown signal and does not wait for modules
+to exit on their own: whenever the shutdown flow starts (SIGINT/SIGTERM, unexpected module exit,
+admin restart), remaining module processes are terminated immediately via `ForceTerminating`
+(SIGTERM, escalating to SIGKILL after a grace period). This matches the pre-lifecycle manager
+behavior and keeps teardown fast while most modules do not yet shut down cleanly.
+
+With `--graceful-shutdown`, the manager first publishes the MQTT shutdown signal so modules can run
+their registered shutdown handlers and exit by themselves, and only escalates to `ForceTerminating`
+after the graceful shutdown timeout (`SHUTDOWN_TIMEOUT_MS`). The state machine is identical in both
+modes; without the flag the drain deadline is simply zero and the `FORCE_SHUTDOWN_TIMEOUT` status
+event is not emitted (immediate termination is expected, not a timeout).
+
+The sections below describe the graceful (`--graceful-shutdown`) flow; in default mode the
+MQTT shutdown publish is skipped and the force-terminate escalation happens immediately.
+
 ## Startup (happy path)
 
 - `Idle` (initial C++ object state) → `Initializing` when `run()` begins.
@@ -122,8 +139,11 @@ wait on these lines instead of parsing manager logs.
 **Semantic events** (not always paired 1:1 with a state name):
 
 - `SIGINT_RECEIVED` — first SIGINT/SIGTERM handled by the manager.
-- `ALL_MODULES_STOPPED_CLEAN` — normal shutdown after SIGINT with no unclean module exits.
+- `ALL_MODULES_STOPPED_CLEAN` — normal shutdown after SIGINT with no unclean module exits
+  (in practice only reachable with `--graceful-shutdown`; force-terminated modules exit by signal).
 - `FORCE_SHUTDOWN_TIMEOUT` — graceful shutdown deadline exceeded; force-terminate path started.
+  Only emitted with `--graceful-shutdown`; in default mode immediate termination is expected and
+  not reported as a timeout.
 - `CRASH_RECOVERY_ATTEMPT:n/max` — crash recovery reload/restart (`--recover-module-crashes`).
 - `CRASH_RECOVERY_EXHAUSTED` — recovery cap exceeded; manager will stay idle after shutdown.
 

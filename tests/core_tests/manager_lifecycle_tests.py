@@ -72,6 +72,7 @@ def test_manager_stop_during_startup(everest_core: EverestCore):
 
 
 @pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+@pytest.mark.everest_manager_args("--graceful-shutdown")
 def test_manager_graceful_shutdown_from_running(everest_core: EverestCore):
     shutdown_errors = []
 
@@ -119,7 +120,7 @@ def test_manager_into_idle_skips_module_startup(everest_core: EverestCore):
 
 
 @pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
-@pytest.mark.everest_manager_args("--recover-module-crashes")
+@pytest.mark.everest_manager_args("--recover-module-crashes", "--graceful-shutdown")
 def test_manager_restarts_modules_after_unexpected_exit(
     everest_core: EverestCore, connected_mqtt_client
 ):
@@ -156,7 +157,7 @@ def test_manager_restarts_modules_after_unexpected_exit(
 
 
 @pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
-@pytest.mark.everest_manager_args("--recover-module-crashes")
+@pytest.mark.everest_manager_args("--recover-module-crashes", "--graceful-shutdown")
 def test_manager_restarts_modules_after_unexpected_exit_max_3_times(
     everest_core: EverestCore, connected_mqtt_client
 ):
@@ -231,7 +232,7 @@ def test_manager_does_not_transition_back_to_running_when_stopped_during_startup
 
 
 @pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
-@pytest.mark.everest_manager_args("--recover-module-crashes")
+@pytest.mark.everest_manager_args("--recover-module-crashes", "--graceful-shutdown")
 def test_manager_recovers_after_crash_with_blocked_module_timeout(
     everest_core: EverestCore, connected_mqtt_client
 ):
@@ -271,3 +272,45 @@ def test_manager_recovers_after_crash_with_blocked_module_timeout(
         baseline_ready + 1,
         timeout_s=60.0,
     )
+
+
+@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+def test_manager_default_stop_terminates_modules_immediately(everest_core: EverestCore):
+    """Without --graceful-shutdown, stop() must force-terminate modules right away:
+    no MQTT shutdown drain, no FORCE_SHUTDOWN_TIMEOUT event, no clean-stop event."""
+    everest_core.start()
+    everest_core.stop()
+
+    everest_core.wait_for_manager_status(ManagerStatusFifo.SIGINT_RECEIVED, timeout_s=5.0)
+    everest_core.wait_for_manager_status(ManagerStatusFifo.MANAGER_FORCE_TERMINATING, timeout_s=5.0)
+    everest_core.wait_for_manager_status(ManagerStatusFifo.MANAGER_EXITING, timeout_s=5.0)
+    # Immediate termination is expected behavior, not a graceful-shutdown timeout.
+    everest_core.assert_no_manager_status(ManagerStatusFifo.FORCE_SHUTDOWN_TIMEOUT, timeout_s=1.0)
+    everest_core.assert_no_manager_status(ManagerStatusFifo.ALL_MODULES_STOPPED_CLEAN, timeout_s=1.0)
+
+    assert everest_core.process.returncode == 0
+
+
+@pytest.mark.everest_core_config("config-sil-immortal_manager.yaml")
+def test_manager_default_crash_terminates_remaining_modules_and_exits(
+    everest_core: EverestCore, connected_mqtt_client
+):
+    """Without --recover-module-crashes and --graceful-shutdown, an unexpected module exit must
+    lead to immediate termination of the remaining modules and a manager exit with failure."""
+    mqtt_external_prefix = everest_core.mqtt_external_prefix
+    exit_cmd_topic = f"{mqtt_external_prefix}everest_api/exit_simulator/cmd/exit"
+
+    everest_core.start()
+
+    connected_mqtt_client.publish(exit_cmd_topic, "1")
+
+    everest_core.wait_for_manager_status(ManagerStatusFifo.MANAGER_CRASH_SHUTDOWN_IN_PROGRESS, timeout_s=60.0)
+    everest_core.wait_for_manager_status(ManagerStatusFifo.MANAGER_FORCE_TERMINATING, timeout_s=60.0)
+    everest_core.wait_for_manager_status(ManagerStatusFifo.MANAGER_EXITING, timeout_s=60.0)
+    everest_core.assert_no_manager_status(ManagerStatusFifo.FORCE_SHUTDOWN_TIMEOUT, timeout_s=1.0)
+    everest_core.assert_no_manager_status(
+        ManagerStatusFifo.crash_recovery_attempt(1, 3),
+        timeout_s=1.0,
+    )
+
+    assert everest_core.process.wait(timeout=60.0) != 0

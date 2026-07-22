@@ -242,7 +242,9 @@ private:
     ///         (`--recover-module-crashes` and restart cap exceeded).
     std::optional<int> handle_finish_crash_recovery(RuntimeContext& ctx, ManagerAdminPanel& admin_panel);
 
-    /// \brief Start graceful shutdown and publish shutdown topic when required.
+    /// \brief Start the shutdown flow; publishes the shutdown topic when graceful shutdown is
+    ///        enabled (`--graceful-shutdown`), otherwise modules are force-terminated by the
+    ///        zero-deadline path in handle_shutdown_timeout().
     /// \param module_exited_time Timestamp used as shutdown start reference.
     /// \param publish_when_sigint_received Whether to publish shutdown topic even after SIGINT.
     /// \param info_log Optional critical log message emitted before publish.
@@ -303,6 +305,10 @@ private:
     const boost::program_options::variables_map& vm_;
     Everest::StatusFifo* status_fifo_{nullptr};
     bool recover_module_crashes_{false};
+    // Opt-in via --graceful-shutdown: publish the MQTT shutdown signal and give modules
+    // SHUTDOWN_TIMEOUT_MS to exit on their own. Default (false): terminate module processes
+    // immediately (SIGTERM, escalating to SIGKILL after FORCE_KILL_GRACE_TIMEOUT_MS).
+    bool graceful_shutdown_enabled_{false};
     // state_ is atomic because the module-ready handler runs on the MQTT thread; transitions are
     // serialized with state_transition_mutex_ (main loop and ready handler).
     std::atomic<ManagerState> state_{ManagerState::Idle};
