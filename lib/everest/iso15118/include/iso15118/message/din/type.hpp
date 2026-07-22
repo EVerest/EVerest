@@ -14,6 +14,8 @@ enum class Type {
     SessionSetupRes,
     ServiceDiscoveryReq,
     ServiceDiscoveryRes,
+    ServicePaymentSelectionReq,
+    ServicePaymentSelectionRes,
 };
 
 template <typename T> struct TypeTrait {
@@ -43,6 +45,8 @@ CREATE_TYPE_TRAIT(SessionSetupRequest, SessionSetupReq);
 CREATE_TYPE_TRAIT(SessionSetupResponse, SessionSetupRes);
 CREATE_TYPE_TRAIT(ServiceDiscoveryRequest, ServiceDiscoveryReq);
 CREATE_TYPE_TRAIT(ServiceDiscoveryResponse, ServiceDiscoveryRes);
+CREATE_TYPE_TRAIT(ServicePaymentSelectionRequest, ServicePaymentSelectionReq);
+CREATE_TYPE_TRAIT(ServicePaymentSelectionResponse, ServicePaymentSelectionRes);
 
 #ifdef CREATE_TYPE_TRAIT_PUSHED
 #define CREATE_TYPE_TRAIT CREATE_TYPE_TRAIT_PUSHED

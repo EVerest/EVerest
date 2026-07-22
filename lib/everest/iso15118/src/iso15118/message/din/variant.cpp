@@ -45,6 +45,8 @@ void handle_v2g(VariantAccess& va) {
 
     if (doc.V2G_Message.Body.ServiceDiscoveryReq_isUsed) {
         insert_type(va, doc.V2G_Message.Body.ServiceDiscoveryReq, doc.V2G_Message.Header);
+    } else if (doc.V2G_Message.Body.ServicePaymentSelectionReq_isUsed) {
+        insert_type(va, doc.V2G_Message.Body.ServicePaymentSelectionReq, doc.V2G_Message.Header);
     } else {
         va.error = "chosen message type unhandled";
     }

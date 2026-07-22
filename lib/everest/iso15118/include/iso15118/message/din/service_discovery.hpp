@@ -12,10 +12,6 @@ namespace iso15118::din::msg {
 
 namespace data_types {
 
-enum class PaymentOption : uint8_t {
-    Contract,
-    ExternalPayment,
-};
 using PaymentOptions = everest::lib::util::fixed_vector<PaymentOption, din_paymentOptionType_2_ARRAY_SIZE>;
 
 enum class EvseSupportedEnergyTransfer : uint8_t {
