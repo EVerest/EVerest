@@ -181,6 +181,38 @@
             "description": "Whether to accept charging profiles without startSchedule field",
             "type": "boolean"
         },
+        "RejectRemoteStartTransactionWithoutConnectorId": {
+            "variable_name": "RejectRemoteStartTransactionWithoutConnectorId",
+            "characteristics": {
+                "supportsMonitoring": true,
+                "dataType": "boolean"
+            },
+            "attributes": [
+                {
+                    "type": "Actual",
+                    "mutability": "ReadWrite"
+                }
+            ],
+            "description": "If true, RemoteStartTransaction requests without a connectorId are rejected",
+            "type": "boolean",
+            "default": false
+        },
+        "RemoteStartTransactionWithoutConnectorIdFindFirst": {
+            "variable_name": "RemoteStartTransactionWithoutConnectorIdFindFirst",
+            "characteristics": {
+                "supportsMonitoring": true,
+                "dataType": "boolean"
+            },
+            "attributes": [
+                {
+                    "type": "Actual",
+                    "mutability": "ReadWrite"
+                }
+            ],
+            "description": "If true, RemoteStartTransaction requests without a connectorId only reference the first connector available for remote start instead of all connectors. RejectRemoteStartTransactionWithoutConnectorId takes precedence",
+            "type": "boolean",
+            "default": false
+        },
         "WaitForStopTransactionsOnResetTimeout": {
             "variable_name": "WaitForStopTransactionsOnResetTimeout",
             "characteristics": {

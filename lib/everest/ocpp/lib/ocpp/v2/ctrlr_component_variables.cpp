@@ -1322,6 +1322,18 @@ const ComponentVariable StopTransactionIfUnlockNotSupported = {
         "StopTransactionIfUnlockNotSupported",
     }),
 };
+const ComponentVariable RejectRemoteStartTransactionWithoutConnectorId = {
+    ControllerComponents::OCPP16LegacyCtrlr,
+    std::optional<Variable>({
+        "RejectRemoteStartTransactionWithoutConnectorId",
+    }),
+};
+const ComponentVariable RemoteStartTransactionWithoutConnectorIdFindFirst = {
+    ControllerComponents::OCPP16LegacyCtrlr,
+    std::optional<Variable>({
+        "RemoteStartTransactionWithoutConnectorIdFindFirst",
+    }),
+};
 const ComponentVariable MeterPublicKeys = {
     ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({

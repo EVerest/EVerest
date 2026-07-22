@@ -2144,10 +2144,17 @@ void ChargePointImpl::handleGetConfigurationRequest(ocpp::Call<GetConfigurationR
 void ChargePointImpl::handleRemoteStartTransactionRequest(ocpp::Call<RemoteStartTransactionRequest> call) {
     EVLOG_debug << "Received RemoteStartTransactionRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
 
-    // a charge point may reject a remote start transaction request without a connectorId
-    // TODO(kai): what is our policy here? reject for now
     RemoteStartTransactionResponse response;
     std::vector<std::int32_t> referenced_connectors;
+
+    if (!call.msg.connectorId.has_value() and
+        this->configuration.getRejectRemoteStartTransactionWithoutConnectorId().value_or(false)) {
+        EVLOG_warning << "Rejecting RemoteStartTransactionRequest without connector id";
+        response.status = RemoteStartStopStatus::Rejected;
+        const ocpp::CallResult<RemoteStartTransactionResponse> call_result(response, call.uniqueId);
+        this->message_dispatcher->dispatch_call_result(call_result);
+        return;
+    }
 
     if (call.msg.connectorId) {
         if (call.msg.connectorId.value() <= 0 or
@@ -2168,6 +2175,7 @@ void ChargePointImpl::handleRemoteStartTransactionRequest(ocpp::Call<RemoteStart
 
     // Check if at least one conenctor is able to execute RemoteStart (obtainable == true).
     bool obtainable = true;
+    std::optional<std::int32_t> first_obtainable_connector;
     for (const auto connector : referenced_connectors) {
         obtainable = true;
 
@@ -2197,6 +2205,7 @@ void ChargePointImpl::handleRemoteStartTransactionRequest(ocpp::Call<RemoteStart
 
         if (obtainable) {
             // at least one connector can do the remote start
+            first_obtainable_connector = connector;
             break;
         }
     }
@@ -2207,6 +2216,12 @@ void ChargePointImpl::handleRemoteStartTransactionRequest(ocpp::Call<RemoteStart
         const ocpp::CallResult<RemoteStartTransactionResponse> call_result(response, call.uniqueId);
         this->message_dispatcher->dispatch_call_result(call_result);
         return;
+    }
+
+    if (!call.msg.connectorId.has_value() and
+        this->configuration.getRemoteStartTransactionWithoutConnectorIdFindFirst().value_or(false)) {
+        // only reference the first connector that is able to execute the remote start
+        referenced_connectors = {first_obtainable_connector.value()};
     }
 
     if (call.msg.chargingProfile) {
@@ -2229,26 +2244,14 @@ void ChargePointImpl::handleRemoteStartTransactionRequest(ocpp::Call<RemoteStart
         }
     }
 
-    {
-        std::vector<std::int32_t> referenced_connectors;
+    response.status = RemoteStartStopStatus::Accepted;
+    const ocpp::CallResult<RemoteStartTransactionResponse> call_result(response, call.uniqueId);
+    this->message_dispatcher->dispatch_call_result(call_result);
 
-        if (!call.msg.connectorId) {
-            for (int connector = 1; connector <= this->configuration.getNumberOfConnectors(); connector++) {
-                referenced_connectors.push_back(connector);
-            }
-        } else {
-            referenced_connectors.push_back(call.msg.connectorId.value());
-        }
-
-        response.status = RemoteStartStopStatus::Accepted;
-        const ocpp::CallResult<RemoteStartTransactionResponse> call_result(response, call.uniqueId);
-        this->message_dispatcher->dispatch_call_result(call_result);
-
-        if (this->configuration.getAuthorizeRemoteTxRequests()) {
-            this->provide_token_callback(call.msg.idTag.get(), referenced_connectors, false);
-        } else {
-            this->provide_token_callback(call.msg.idTag.get(), referenced_connectors, true); // prevalidated
-        }
+    if (this->configuration.getAuthorizeRemoteTxRequests()) {
+        this->provide_token_callback(call.msg.idTag.get(), referenced_connectors, false);
+    } else {
+        this->provide_token_callback(call.msg.idTag.get(), referenced_connectors, true); // prevalidated
     }
 }
 

@@ -534,6 +534,30 @@ ChargePointConfigurationDeviceModel::setInternalAllowChargingProfileWithoutStart
 }
 
 ChargePointConfigurationDeviceModel::SetResult
+ChargePointConfigurationDeviceModel::setInternalRejectRemoteStartTransactionWithoutConnectorId(
+    const std::string& value) {
+    if (not getRejectRemoteStartTransactionWithoutConnectorId().has_value()) {
+        return SetResult::UnknownVariable;
+    }
+    if (not isBool(value)) {
+        return SetResult::Rejected;
+    }
+    return set_value_check(*storage, keys::valid_keys::RejectRemoteStartTransactionWithoutConnectorId, value);
+}
+
+ChargePointConfigurationDeviceModel::SetResult
+ChargePointConfigurationDeviceModel::setInternalRemoteStartTransactionWithoutConnectorIdFindFirst(
+    const std::string& value) {
+    if (not getRemoteStartTransactionWithoutConnectorIdFindFirst().has_value()) {
+        return SetResult::UnknownVariable;
+    }
+    if (not isBool(value)) {
+        return SetResult::Rejected;
+    }
+    return set_value_check(*storage, keys::valid_keys::RemoteStartTransactionWithoutConnectorIdFindFirst, value);
+}
+
+ChargePointConfigurationDeviceModel::SetResult
 ChargePointConfigurationDeviceModel::setInternalCentralSystemURI(const std::string& value) {
     namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
     const auto cv = NC::get_component_variable(get_active_network_slot(*storage), NC::OcppCsmsUrl);
@@ -1785,6 +1809,14 @@ std::optional<bool> ChargePointConfigurationDeviceModel::getAllowChargingProfile
     return get_optional<bool>(*storage, keys::valid_keys::AllowChargingProfileWithoutStartSchedule);
 }
 
+std::optional<bool> ChargePointConfigurationDeviceModel::getRejectRemoteStartTransactionWithoutConnectorId() {
+    return get_optional<bool>(*storage, keys::valid_keys::RejectRemoteStartTransactionWithoutConnectorId);
+}
+
+std::optional<bool> ChargePointConfigurationDeviceModel::getRemoteStartTransactionWithoutConnectorIdFindFirst() {
+    return get_optional<bool>(*storage, keys::valid_keys::RemoteStartTransactionWithoutConnectorIdFindFirst);
+}
+
 std::optional<bool> ChargePointConfigurationDeviceModel::getAllowOfflineTxForUnknownId() {
     return get_optional<bool>(*storage, keys::valid_keys::AllowOfflineTxForUnknownId);
 }
@@ -1998,6 +2030,16 @@ std::optional<KeyValue> ChargePointConfigurationDeviceModel::getAllowChargingPro
     return get_key_value_optional(*storage, keys::valid_keys::AllowChargingProfileWithoutStartSchedule);
 }
 
+std::optional<KeyValue>
+ChargePointConfigurationDeviceModel::getRejectRemoteStartTransactionWithoutConnectorIdKeyValue() {
+    return get_key_value_optional(*storage, keys::valid_keys::RejectRemoteStartTransactionWithoutConnectorId);
+}
+
+std::optional<KeyValue>
+ChargePointConfigurationDeviceModel::getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue() {
+    return get_key_value_optional(*storage, keys::valid_keys::RemoteStartTransactionWithoutConnectorIdFindFirst);
+}
+
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getAllowOfflineTxForUnknownIdKeyValue() {
     return get_key_value_optional(*storage, keys::valid_keys::AllowOfflineTxForUnknownId);
 }
@@ -2103,6 +2145,14 @@ std::optional<KeyValue> ChargePointConfigurationDeviceModel::getSwitchSecurityPr
 
 void ChargePointConfigurationDeviceModel::setAllowChargingProfileWithoutStartSchedule(bool allow) {
     setInternalAllowChargingProfileWithoutStartSchedule(to_string(allow));
+}
+
+void ChargePointConfigurationDeviceModel::setRejectRemoteStartTransactionWithoutConnectorId(bool reject) {
+    setInternalRejectRemoteStartTransactionWithoutConnectorId(to_string(reject));
+}
+
+void ChargePointConfigurationDeviceModel::setRemoteStartTransactionWithoutConnectorIdFindFirst(bool find_first) {
+    setInternalRemoteStartTransactionWithoutConnectorIdFindFirst(to_string(find_first));
 }
 
 void ChargePointConfigurationDeviceModel::setAllowOfflineTxForUnknownId(bool enabled) {
@@ -3307,6 +3357,12 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
             break;
         case keys::valid_keys::OcspRequestInterval:
             result = convert(setInternalOcspRequestInterval(value_str));
+            break;
+        case keys::valid_keys::RejectRemoteStartTransactionWithoutConnectorId:
+            result = convert(setInternalRejectRemoteStartTransactionWithoutConnectorId(value_str));
+            break;
+        case keys::valid_keys::RemoteStartTransactionWithoutConnectorIdFindFirst:
+            result = convert(setInternalRemoteStartTransactionWithoutConnectorIdFindFirst(value_str));
             break;
         case keys::valid_keys::RetryBackoffRandomRange:
             result = convert(setInternalRetryBackoffRandomRange(value_str));

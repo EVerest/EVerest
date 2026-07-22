@@ -100,6 +100,8 @@ public:
     virtual std::optional<std::string> getSeccLeafSubjectOrganization() = 0;
     virtual std::optional<bool> getAllowChargingProfileWithoutStartSchedule() = 0;
     virtual std::optional<bool> getQueueAllMessages() = 0;
+    virtual std::optional<bool> getRejectRemoteStartTransactionWithoutConnectorId() = 0;
+    virtual std::optional<bool> getRemoteStartTransactionWithoutConnectorIdFindFirst() = 0;
     virtual std::optional<int> getMessageQueueSizeThreshold() = 0;
     virtual std::optional<std::int32_t> getCompositeScheduleDefaultLimitAmps() = 0;
     virtual std::optional<std::int32_t> getCompositeScheduleDefaultLimitWatts() = 0;
@@ -157,6 +159,8 @@ public:
     virtual std::optional<KeyValue> getMessageQueueSizeThresholdKeyValue() = 0;
     virtual std::optional<KeyValue> getPublicKeyKeyValue(std::uint32_t connector_id) = 0;
     virtual std::optional<KeyValue> getQueueAllMessagesKeyValue() = 0;
+    virtual std::optional<KeyValue> getRejectRemoteStartTransactionWithoutConnectorIdKeyValue() = 0;
+    virtual std::optional<KeyValue> getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectCommonNameKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectCountryKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectOrganizationKeyValue() = 0;
@@ -172,6 +176,8 @@ public:
     virtual bool setIgnoredProfilePurposesOffline(const std::string& ignored_profile_purposes_offline) = 0;
     virtual bool setMeterPublicKey(std::int32_t connector_id, const std::string& public_key_pem) = 0;
     virtual void setOcspRequestInterval(std::int32_t ocsp_request_interval) = 0;
+    virtual void setRejectRemoteStartTransactionWithoutConnectorId(bool reject) = 0;
+    virtual void setRemoteStartTransactionWithoutConnectorIdFindFirst(bool find_first) = 0;
     virtual void setRetryBackoffRandomRange(std::int32_t retry_backoff_random_range) = 0;
     virtual void setRetryBackoffRepeatTimes(std::int32_t retry_backoff_repeat_times) = 0;
     virtual void setRetryBackoffWaitMinimum(std::int32_t retry_backoff_wait_minimum) = 0;

@@ -475,6 +475,14 @@ public:
     void setAllowChargingProfileWithoutStartSchedule(bool allow) override;
     std::optional<KeyValue> getAllowChargingProfileWithoutStartScheduleKeyValue() override;
 
+    std::optional<bool> getRejectRemoteStartTransactionWithoutConnectorId() override;
+    void setRejectRemoteStartTransactionWithoutConnectorId(bool reject) override;
+    std::optional<KeyValue> getRejectRemoteStartTransactionWithoutConnectorIdKeyValue() override;
+
+    std::optional<bool> getRemoteStartTransactionWithoutConnectorIdFindFirst() override;
+    void setRemoteStartTransactionWithoutConnectorIdFindFirst(bool find_first) override;
+    std::optional<KeyValue> getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue() override;
+
     std::int32_t getWaitForStopTransactionsOnResetTimeout() override;
     void setWaitForStopTransactionsOnResetTimeout(std::int32_t wait_for_stop_transactions_on_reset_timeout) override;
     KeyValue getWaitForStopTransactionsOnResetTimeoutKeyValue() override;

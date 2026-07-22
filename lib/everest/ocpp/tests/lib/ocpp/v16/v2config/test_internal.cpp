@@ -480,6 +480,74 @@ TEST_P(Configuration, StopTransactionIfUnlockNotSupported) {
     EXPECT_FALSE(kv.readonly);
 }
 
+TEST_P(Configuration, RejectRemoteStartTransactionWithoutConnectorIdAbsent) {
+    ASSERT_NE(get(), nullptr);
+
+    EXPECT_FALSE(get()->getRejectRemoteStartTransactionWithoutConnectorId().has_value());
+    EXPECT_FALSE(get()->getRejectRemoteStartTransactionWithoutConnectorIdKeyValue().has_value());
+    EXPECT_EQ(get()->set("RejectRemoteStartTransactionWithoutConnectorId", "true"),
+              ocpp::v16::ConfigurationStatus::NotSupported);
+}
+
+TEST_P(ConfigurationFull, RejectRemoteStartTransactionWithoutConnectorId) {
+    ASSERT_NE(get(), nullptr);
+    // initial values are from the JSON unit test config files
+    ASSERT_TRUE(get()->getRejectRemoteStartTransactionWithoutConnectorId().has_value());
+    EXPECT_EQ(get()->getRejectRemoteStartTransactionWithoutConnectorId().value(), false);
+    auto kv = get()->getRejectRemoteStartTransactionWithoutConnectorIdKeyValue();
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv.value().key, "RejectRemoteStartTransactionWithoutConnectorId");
+    EXPECT_EQ(kv.value().value, "false");
+    EXPECT_FALSE(kv.value().readonly);
+
+    get()->setRejectRemoteStartTransactionWithoutConnectorId(true);
+    ASSERT_TRUE(get()->getRejectRemoteStartTransactionWithoutConnectorId().has_value());
+    EXPECT_EQ(get()->getRejectRemoteStartTransactionWithoutConnectorId().value(), true);
+    kv = get()->getRejectRemoteStartTransactionWithoutConnectorIdKeyValue();
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv.value().key, "RejectRemoteStartTransactionWithoutConnectorId");
+    EXPECT_EQ(kv.value().value, "true");
+    EXPECT_FALSE(kv.value().readonly);
+
+    EXPECT_EQ(get()->set("RejectRemoteStartTransactionWithoutConnectorId", "not-a-bool"),
+              ocpp::v16::ConfigurationStatus::Rejected);
+    EXPECT_EQ(get()->getRejectRemoteStartTransactionWithoutConnectorId().value(), true);
+}
+
+TEST_P(Configuration, RemoteStartTransactionWithoutConnectorIdFindFirstAbsent) {
+    ASSERT_NE(get(), nullptr);
+
+    EXPECT_FALSE(get()->getRemoteStartTransactionWithoutConnectorIdFindFirst().has_value());
+    EXPECT_FALSE(get()->getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue().has_value());
+    EXPECT_EQ(get()->set("RemoteStartTransactionWithoutConnectorIdFindFirst", "true"),
+              ocpp::v16::ConfigurationStatus::NotSupported);
+}
+
+TEST_P(ConfigurationFull, RemoteStartTransactionWithoutConnectorIdFindFirst) {
+    ASSERT_NE(get(), nullptr);
+    // initial values are from the JSON unit test config files
+    ASSERT_TRUE(get()->getRemoteStartTransactionWithoutConnectorIdFindFirst().has_value());
+    EXPECT_EQ(get()->getRemoteStartTransactionWithoutConnectorIdFindFirst().value(), false);
+    auto kv = get()->getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue();
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv.value().key, "RemoteStartTransactionWithoutConnectorIdFindFirst");
+    EXPECT_EQ(kv.value().value, "false");
+    EXPECT_FALSE(kv.value().readonly);
+
+    get()->setRemoteStartTransactionWithoutConnectorIdFindFirst(true);
+    ASSERT_TRUE(get()->getRemoteStartTransactionWithoutConnectorIdFindFirst().has_value());
+    EXPECT_EQ(get()->getRemoteStartTransactionWithoutConnectorIdFindFirst().value(), true);
+    kv = get()->getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue();
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv.value().key, "RemoteStartTransactionWithoutConnectorIdFindFirst");
+    EXPECT_EQ(kv.value().value, "true");
+    EXPECT_FALSE(kv.value().readonly);
+
+    EXPECT_EQ(get()->set("RemoteStartTransactionWithoutConnectorIdFindFirst", "not-a-bool"),
+              ocpp::v16::ConfigurationStatus::Rejected);
+    EXPECT_EQ(get()->getRemoteStartTransactionWithoutConnectorIdFindFirst().value(), true);
+}
+
 TEST_P(Configuration, UseSslDefaultVerifyPaths) {
     ASSERT_NE(get(), nullptr);
     // initial values are from the JSON unit test config files
