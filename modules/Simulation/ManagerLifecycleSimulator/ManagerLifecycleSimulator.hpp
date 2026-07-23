@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifndef EXAMPLE_USER_HPP
-#define EXAMPLE_USER_HPP
+#ifndef MANAGER_LIFECYCLE_SIMULATOR_HPP
+#define MANAGER_LIFECYCLE_SIMULATOR_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
@@ -9,12 +9,6 @@
 //
 
 #include "ld-ev.hpp"
-
-// headers for provided interface implementations
-#include <generated/interfaces/example_user/Implementation.hpp>
-
-// headers for required interface implementations
-#include <generated/interfaces/example/Interface.hpp>
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
@@ -24,15 +18,14 @@ namespace module {
 
 struct Conf {};
 
-class ExampleUser : public Everest::ModuleBase {
+class ManagerLifecycleSimulator : public Everest::ModuleBase {
 public:
-    ExampleUser() = delete;
-    ExampleUser(const ModuleInfo& info, std::unique_ptr<example_userImplBase> p_example_user,
-                std::unique_ptr<exampleIntf> r_example, Conf& config) :
-        ModuleBase(info), p_example_user(std::move(p_example_user)), r_example(std::move(r_example)), config(config){};
+    ManagerLifecycleSimulator() = delete;
+    ManagerLifecycleSimulator(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider, Conf& config) :
+        ModuleBase(info), mqtt(mqtt_provider), config(config) {
+    }
 
-    const std::unique_ptr<example_userImplBase> p_example_user;
-    const std::unique_ptr<exampleIntf> r_example;
+    Everest::MqttProvider& mqtt;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
@@ -52,6 +45,7 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
+    bool blocked = false;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 
@@ -61,4 +55,4 @@ private:
 
 } // namespace module
 
-#endif // EXAMPLE_USER_HPP
+#endif // MANAGER_LIFECYCLE_SIMULATOR_HPP

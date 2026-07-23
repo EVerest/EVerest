@@ -3,7 +3,7 @@
 #ifndef {{ info.hpp_guard }}
 #define {{ info.hpp_guard }}
 
-{{ print_template_info('3', 'marked regions will be kept') }}
+{{ print_template_info('4', 'marked regions will be kept') }}
 
 #include <{{ info.base_class_header }}>
 
@@ -49,6 +49,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
     {{ insert_block(info.blocks.private_defs, indent=4) }}
 };

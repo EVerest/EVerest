@@ -13,6 +13,24 @@ public:
     static constexpr auto ALL_MODULES_STARTED = "ALL_MODULES_STARTED\n";
     static constexpr auto WAITING_FOR_STANDALONE_MODULES = "WAITING_FOR_STANDALONE_MODULES\n";
 
+    // manager lifecycle state notifications (written on ManagerState transitions)
+    static constexpr auto MANAGER_INITIALIZING = "MANAGER_INITIALIZING\n";
+    static constexpr auto MANAGER_STARTING_MODULES = "MANAGER_STARTING_MODULES\n";
+    static constexpr auto MANAGER_RUNNING = "MANAGER_RUNNING\n";
+    static constexpr auto MANAGER_RESTART_REQUESTED = "MANAGER_RESTART_REQUESTED\n";
+    static constexpr auto MANAGER_CRASH_SHUTDOWN_IN_PROGRESS = "MANAGER_CRASH_SHUTDOWN_IN_PROGRESS\n";
+    static constexpr auto MANAGER_SHUTDOWN_REQUESTED = "MANAGER_SHUTDOWN_REQUESTED\n";
+    static constexpr auto MANAGER_FORCE_TERMINATING = "MANAGER_FORCE_TERMINATING\n";
+    static constexpr auto MANAGER_SHUTDOWN_FINALIZING = "MANAGER_SHUTDOWN_FINALIZING\n";
+    static constexpr auto MANAGER_IDLE = "MANAGER_IDLE\n";
+    static constexpr auto MANAGER_EXITING = "MANAGER_EXITING\n";
+
+    // semantic lifecycle events (not 1:1 with ManagerState)
+    static constexpr auto SIGINT_RECEIVED = "SIGINT_RECEIVED\n";
+    static constexpr auto ALL_MODULES_STOPPED_CLEAN = "ALL_MODULES_STOPPED_CLEAN\n";
+    static constexpr auto FORCE_SHUTDOWN_TIMEOUT = "FORCE_SHUTDOWN_TIMEOUT\n";
+    static constexpr auto CRASH_RECOVERY_EXHAUSTED = "CRASH_RECOVERY_EXHAUSTED\n";
+
     static StatusFifo create_from_path(const std::string&);
     void update(const std::string&);
 

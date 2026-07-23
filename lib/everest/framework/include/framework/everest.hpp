@@ -60,6 +60,8 @@ public:
             std::shared_ptr<MQTTAbstraction> mqtt_abstraction, const std::string& telemetry_prefix,
             bool telemetry_enabled, bool forward_exceptions = false);
 
+    ~Everest();
+
     // forbid copy assignment and copy construction
     // NOTE (aw): move assignment and construction are also not supported because we're creating explicit references to
     // our instance due to callback registration
@@ -201,6 +203,17 @@ public:
     void register_on_ready_handler(const std::function<void()>& handler);
 
     ///
+    /// \brief registers a callback \p handler that is called when the global shutdown signal is received via mqtt
+    ///
+    /// Receiving the shutdown signal stops all module communication: after the registered handler
+    /// has returned, the MQTT connection is disconnected, so no further variable publications or
+    /// command calls are sent or received. Commands still waiting for their result at that point
+    /// fail with a Shutdown exception. Commands invoked from within the handler itself are still
+    /// processed normally. An empty \p handler is ignored.
+    ///
+    void register_on_shutdown_handler(const std::function<void()>& handler);
+
+    ///
     /// \brief  Blocks until ready is processed;
     ///
     void ensure_ready() const;
@@ -221,9 +234,12 @@ private:
     std::map<std::string, std::set<std::string>> registered_cmds;
     std::atomic<bool> ready_received;
     std::atomic<bool> ready_processed;
+    std::atomic<bool> shutdown_received;
+    std::atomic<bool> shutdown_processed;
     std::chrono::seconds remote_cmd_res_timeout;
     bool validate_data_with_schema;
     std::unique_ptr<std::function<void()>> on_ready;
+    std::unique_ptr<std::function<void()>> on_shutdown;
     std::thread heartbeat_thread;
     std::string module_name;
     std::shared_future<void> main_loop_end{};
@@ -238,6 +254,8 @@ private:
     bool forward_exceptions;
 
     void handle_ready(const nlohmann::json& data);
+
+    void handle_shutdown(const nlohmann::json& data);
 
     void heartbeat();
 

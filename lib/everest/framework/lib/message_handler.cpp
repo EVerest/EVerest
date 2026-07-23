@@ -116,6 +116,13 @@ MessageHandler::~MessageHandler() {
 }
 
 void MessageHandler::add(const ParsedMessage& message) {
+    // Once stopped (during teardown) no further messages must be dispatched: doing so could
+    // enqueue work or spawn the ready thread after the worker threads have been joined and
+    // while the objects the handlers reference are being destroyed.
+    if (!this->running) {
+        return;
+    }
+
     EVLOG_verbose << "Adding message to queue: " << message.topic << " with data: " << message.data;
 
     MqttMessageType msg_type = MqttMessageType::ExternalMQTT; // Default to ExternalMQTT if msg_type is not present

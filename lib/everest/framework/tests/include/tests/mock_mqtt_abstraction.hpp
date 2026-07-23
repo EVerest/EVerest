@@ -94,6 +94,8 @@ public:
     }
     void disconnect() override {
     }
+    void stop_message_handling() override {
+    }
     void subscribe(const std::string& /*topic*/) override {
     }
     void subscribe(const std::string& /*topic*/, QOS /*qos*/) override {

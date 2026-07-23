@@ -33,6 +33,8 @@ struct MqttStub : public Everest::MQTTAbstraction {
     }
     void disconnect() override {
     }
+    void stop_message_handling() override {
+    }
     void publish(const std::string& topic, const nlohmann::json& json) override {
     }
     void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false) override {

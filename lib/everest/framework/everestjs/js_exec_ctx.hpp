@@ -41,6 +41,13 @@ public:
 
     void exec(const ArgFuncType& arg_func, const ResFuncType& res_func);
 
+    /// \brief Stop this thread-safe function from keeping the node event loop alive. Must be
+    /// called from the main js thread. Used during shutdown so the process can exit once the
+    /// module's own work has drained.
+    void unref(const Napi::Env& env) {
+        tsfn.Unref(env);
+    }
+
 private:
     ArgFuncType arg_func;
     ResFuncType res_func;
