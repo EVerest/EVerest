@@ -55,6 +55,24 @@ cmds:
         description: The actual State of Charge from the EV
         type: number
         minimum: 0
+  set_evcc_id:
+    description: >-
+      Override the EVCCID that the EV announces in SessionSetupReq. Implementations normally derive it from the
+      MAC address of the HLC network interface, which is fixed for the lifetime of the process. Overriding it
+      lets a single simulator present itself as a series of different vehicles, which is what Autocharge keys
+      off. Takes effect on the next V2G session, so call it before plugging in.
+    arguments:
+      EvccId:
+        description: >-
+          MAC address to announce, with an optional "VID:" prefix and with or without separators, e.g.
+          "VID:0242AC110099", "02:42:AC:11:00:99" or "0242ac110099". An empty string clears the override and
+          restores the MAC address of the network interface.
+        type: string
+    result:
+      description: >-
+        The EVCCID that will be announced on the next session, as 12 uppercase hex digits, or an empty string if
+        the argument was not a MAC address - in which case the previous EVCCID stays in use.
+      type: string
 vars:
   v2g_session_finished:
     description: The v2g session between the charger and the car is finished
