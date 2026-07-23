@@ -5,6 +5,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -12,6 +13,7 @@
 #include <everest/util/async/monitor.hpp>
 
 #include "config.hpp"
+#include <iso15118/d2/config.hpp>
 #include <iso15118/d20/config.hpp>
 #include <iso15118/d20/control_event.hpp>
 #include <iso15118/d20/limits.hpp>
@@ -20,6 +22,7 @@
 #include <iso15118/io/sdp_server.hpp>
 #include <iso15118/io/time.hpp>
 #include <iso15118/message/common_types.hpp>
+#include <iso15118/session/config.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/session/iso.hpp>
 
@@ -38,14 +41,15 @@ public:
     using ConnectionFactory =
         std::function<std::unique_ptr<io::IConnection>(io::PollManager&, const std::string& interface_name)>;
 
-    TbdController(TbdConfig, session::feedback::Callbacks, d20::EvseSetupConfig);
-    TbdController(TbdConfig, session::feedback::Callbacks, d20::EvseSetupConfig, ConnectionFactory);
+    TbdController(TbdConfig, session::feedback::Callbacks, session::EvseSetupConfig);
+    TbdController(TbdConfig, session::feedback::Callbacks, session::EvseSetupConfig, ConnectionFactory);
     ~TbdController();
 
     void loop();
     void tick();
 
     bool has_active_session() const {
+        std::lock_guard<std::mutex> lock(session_mutex);
         return session != nullptr;
     }
 
@@ -55,8 +59,13 @@ public:
 
     void update_authorization_services(const std::vector<message_20::datatypes::Authorization>& services,
                                        bool cert_install_service);
+    // ISO 15118-2 Plug-and-Charge per-session setup: whether Contract is offered and whether a locally
+    // unverifiable contract chain may be forwarded to the CSMS (central contract validation).
+    void update_iso2_pnc_config(bool pnc_enabled, bool central_contract_validation_allowed);
     void update_dc_limits(const d20::DcTransferLimits&);
     void update_powersupply_limits(const d20::DcTransferLimits&);
+    // ISO 15118-2: request a (signed) MeteringReceipt from the EV (ReceiptRequired in the charge loop).
+    void update_receipt_required(bool);
     void update_energy_modes(const std::vector<message_20::datatypes::ServiceCategory>&);
     void update_ac_limits(const d20::AcTransferLimits&);
 
@@ -71,6 +80,11 @@ private:
     io::PollManager poll_manager;
     std::unique_ptr<io::SdpServer> sdp_server;
 
+    // Guards the session pointer. Only the controller loop thread creates, resets and closes the
+    // session, but module command threads dereference it to push control events (the event queue
+    // itself is thread-safe). Command threads hold this mutex across the null-check-and-call so a
+    // concurrent reset() on the loop thread cannot free the Session mid-call.
+    mutable std::mutex session_mutex;
     std::unique_ptr<Session> session;
 
     std::atomic_bool shutdown_active{false};
@@ -85,14 +99,21 @@ private:
     const TbdConfig config;
     const session::feedback::Callbacks callbacks;
 
-    everest::lib::util::monitor<d20::EvseSetupConfig> evse_setup;
+    everest::lib::util::monitor<session::EvseSetupConfig> evse_setup;
 
     std::string interface_name;
 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
+    // ISO 15118-2 pause context, owned here so it outlives the per-session D2SeccEngine (mirrors pause_ctx).
+    std::optional<d2::PauseContext> d2_pause_ctx{std::nullopt};
 
     static constexpr uint32_t V2G_COMMUNICATION_SETUP_TIMEOUT_MS{18000};
+    // Owned by the loop thread (tick). Module command threads request changes via set_dlink_ready(),
+    // which only publishes dlink_ready_requested + bumps dlink_ready_generation; tick applies them.
     std::optional<Timeout> communication_setup_timeout;
+    std::atomic_bool dlink_ready_requested{false};
+    std::atomic<uint64_t> dlink_ready_generation{0};
+    uint64_t dlink_ready_applied{0};
 
     ConnectionFactory connection_factory;
 };

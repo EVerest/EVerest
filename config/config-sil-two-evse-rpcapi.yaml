@@ -15,19 +15,21 @@ active_modules:
         - module_id: evse_manager_2_api_sink
           implementation_id: external_limits
   iso15118_charger:
-    module: EvseV2G
+    module: Evse15118D20
     config_module:
       device: auto
-      tls_security: allow
+      supported_ISO15118_2: true
+      supported_DIN70121: true
     connections:
       security:
         - module_id: evse_security
           implementation_id: main
   iso15118_car:
-    module: PyEvJosev
+    module: Ev15118
     config_module:
       device: auto
       supported_ISO15118_2: true
+      supported_d20_energy_services: ""
   evse_manager_1:
     module: EvseManager
     mapping:

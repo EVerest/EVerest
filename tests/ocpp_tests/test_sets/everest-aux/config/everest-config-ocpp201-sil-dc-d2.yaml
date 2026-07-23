@@ -1,10 +1,10 @@
 active_modules:
   iso15118_charger:
-    module: EvseV2G
+    module: Evse15118D20
     config_module:
       device: auto
-      tls_security: allow
-      verify_contract_cert_chain: true
+      supported_ISO15118_2: true
+      supported_DIN70121: true
     connections:
       security:
         - module_id: evse_security
@@ -13,13 +13,18 @@ active_modules:
       module:
         evse: 1
   iso15118_car:
-    module: PyEvJosev
+    module: Ev15118
     config_module:
       device: auto
       supported_DIN70121: false
       supported_ISO15118_2: true
       tls_active: true
-      is_cert_install_needed: true
+      supported_d20_energy_services: ""
+      # ISO 15118-2 Plug-and-Charge. These tests exercise contract *installation*, so force a
+      # CertificateInstallation (the EV has no pre-provisioned contract) signed with the OEM provisioning
+      # certificate; the contract chain + encrypted key are delivered by the mock CSMS EXIGenerator.
+      enable_pnc: true
+      pnc_force_cert_install: true
   evse_manager:
     module: EvseManager
     config_module:

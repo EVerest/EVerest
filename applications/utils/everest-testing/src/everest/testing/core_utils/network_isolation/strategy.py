@@ -15,7 +15,7 @@ from typing import Dict, Optional
 from everest.testing.core_utils import EverestConfigAdjustmentStrategy
 
 # EV-facing modules: listen on the EV-side of the veth pair
-_EV_SIDE_MODULES = frozenset({"PyEvJosev", "IsoMux"})
+_EV_SIDE_MODULES = frozenset({"Ev15118", "PyEvJosev", "IsoMux"})
 
 # EVSE proxy-side modules: listen on the EVSE/proxy-side of the veth pair
 _PROXY_SIDE_MODULES = frozenset({"EvseV2G", "Evse15118D20"})

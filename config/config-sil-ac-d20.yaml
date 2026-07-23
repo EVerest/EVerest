@@ -8,16 +8,13 @@ active_modules:
         - module_id: evse_security
           implementation_id: main
   iso15118_car:
-    module: PyEvJosev
+    module: Ev15118
     config_module:
       device: auto
-      supported_DIN70121: false
-      supported_ISO15118_2: false
-      supported_ISO15118_20_DC: false
-      supported_ISO15118_20_AC: true
       supported_d20_energy_services: "AC_BPT,AC"
       tls_active: true
       enable_tls_1_3: true
+      logging_path: /tmp/everest-logs
   evse_manager:
     module: EvseManager
     config_module:

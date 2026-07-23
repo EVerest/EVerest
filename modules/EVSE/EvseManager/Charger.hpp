@@ -190,6 +190,12 @@ public:
     void dlink_error();
     void dlink_terminate();
 
+    // A positive SessionStopRes was sent to the EV: remember terminate/pause and arm the
+    // CP-oscillator retain timer [V2G-DC-968] (PWM off V2G_SECC_CP_OSCILLATOR_RETAIN after the Res,
+    // independent of the EV's TCP close). The later dlink_terminate()/dlink_pause() still runs as
+    // today and applies a harmless second X1.
+    void notify_session_stop_res_sent(types::iso15118::SessionStopAction action);
+
     void set_hlc_charging_active();
     void set_hlc_allow_close_contactor(bool on);
 
@@ -440,6 +446,10 @@ private:
         bool dc_statistics_printed{false};
 
         types::evse_manager::ChargingPausedEVSEReasons last_charging_paused_evse_reasons;
+
+        // Armed by notify_session_stop_res_sent(); when it expires, the state machine switches the
+        // CP oscillator off (X1), whatever state it is in ([V2G-DC-968] retain time).
+        std::optional<std::chrono::time_point<std::chrono::steady_clock>> session_stop_pwm_off_deadline{};
     } internal_context;
 
     // main Charger thread
@@ -471,6 +481,11 @@ private:
         std::chrono::milliseconds(3500 + 200); // We give 200 msecs tolerance to the norm values (table 3 ISO15118-3)
     static constexpr auto MAINLOOP_UPDATE_RATE = std::chrono::milliseconds(100);
     static constexpr float PWM_5_PERCENT = 0.05;
+    // [V2G-DC-968] V2G_SECC_CPOscillator_Retain_Time: keep the 5% oscillator on for 1.5 s after
+    // sending SessionStopRes(OK), then switch it off. The DIN 70122 ATS accepts the off-transition
+    // in [1.5 s, 1.7 s] after the Res; with the 100 ms main-loop tick the X1 lands in
+    // [deadline, deadline + 100 ms], so 1550 ms centers it with >= 50 ms margin on both sides.
+    static constexpr auto V2G_SECC_CP_OSCILLATOR_RETAIN = std::chrono::milliseconds(1550);
     static constexpr int T_REPLUG_MS = 4000;
     // 3 seconds according to IEC61851-1
     static constexpr int T_STEP_X1 = 3000;

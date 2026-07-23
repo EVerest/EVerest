@@ -45,6 +45,10 @@ void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
     // your code for cmd ac_contactor_closed goes here
 }
 
+void ISO15118_chargerImpl::handle_cp_state_changed(types::iso15118::CpState& cp_state) {
+    // your code for cmd cp_state_changed goes here
+}
+
 void ISO15118_chargerImpl::handle_dlink_ready(bool& value) {
     // your code for cmd dlink_ready goes here
 }

@@ -1,19 +1,28 @@
 active_modules:
   iso15118_charger:
-    module: EvseV2G
+    module: Evse15118D20
     config_module:
       device: auto
-      tls_security: allow
+      supported_DIN70121: true
+      supported_ISO15118_2: true
+      # Offer Scheduled mode so the SIL EV (Ev15118, Scheduled preference) drives its
+      # 400 V/20 A targets; in Dynamic mode the supply would be set to the EV maximum
+      # voltage, which the SIL voltage-source supply outputs verbatim (OVM trip at 900 V).
+      supported_scheduled_mode: true
     connections:
       security:
         - module_id: evse_security
           implementation_id: main
   iso15118_car:
-    module: PyEvJosev
+    module: Ev15118
     config_module:
       device: auto
       supported_DIN70121: true
       supported_ISO15118_2: true
+    connections:
+      ev_board_support:
+        - module_id: yeti_driver
+          implementation_id: ev_board_support
   evse_manager:
     module: EvseManager
     config_module:

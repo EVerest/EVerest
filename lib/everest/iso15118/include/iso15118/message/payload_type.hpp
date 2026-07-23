@@ -25,6 +25,24 @@ template <typename T> struct PayloadTypeTrait;
 
 CREATE_TYPE_TRAIT(SupportedAppProtocolResponse, SAP);
 CREATE_TYPE_TRAIT(SessionSetupResponse, Part20Main);
+// EV-side (EVCC) outgoing request payload types
+CREATE_TYPE_TRAIT(SupportedAppProtocolRequest, SAP);
+CREATE_TYPE_TRAIT(SessionSetupRequest, Part20Main);
+CREATE_TYPE_TRAIT(AuthorizationSetupRequest, Part20Main);
+CREATE_TYPE_TRAIT(AuthorizationRequest, Part20Main);
+CREATE_TYPE_TRAIT(ServiceDiscoveryRequest, Part20Main);
+CREATE_TYPE_TRAIT(ServiceDetailRequest, Part20Main);
+CREATE_TYPE_TRAIT(ServiceSelectionRequest, Part20Main);
+CREATE_TYPE_TRAIT(ScheduleExchangeRequest, Part20Main);
+CREATE_TYPE_TRAIT(PowerDeliveryRequest, Part20Main);
+CREATE_TYPE_TRAIT(SessionStopRequest, Part20Main);
+CREATE_TYPE_TRAIT(DC_ChargeParameterDiscoveryRequest, Part20DC);
+CREATE_TYPE_TRAIT(DC_CableCheckRequest, Part20DC);
+CREATE_TYPE_TRAIT(DC_PreChargeRequest, Part20DC);
+CREATE_TYPE_TRAIT(DC_ChargeLoopRequest, Part20DC);
+CREATE_TYPE_TRAIT(DC_WeldingDetectionRequest, Part20DC);
+CREATE_TYPE_TRAIT(AC_ChargeParameterDiscoveryRequest, Part20AC);
+CREATE_TYPE_TRAIT(AC_ChargeLoopRequest, Part20AC);
 CREATE_TYPE_TRAIT(AuthorizationSetupResponse, Part20Main);
 CREATE_TYPE_TRAIT(AuthorizationResponse, Part20Main);
 CREATE_TYPE_TRAIT(ServiceDiscoveryResponse, Part20Main);

@@ -1,0 +1,176 @@
+description: >-
+  ISO 15118 EV-side (EVCC) implementation based on libiso15118, supporting
+  DIN SPEC 70121, ISO 15118-2 and ISO 15118-20
+config:
+  device:
+    description: >-
+      Ethernet device used for HLC. Any local interface that has an ipv6
+      link-local and a MAC addr will work
+    type: string
+    default: auto
+  supported_d20_energy_services:
+    description: >-
+      The supported ISO15118-20 energy services (DC, DC_BPT, AC, AC_BPT) the EV supports,
+      provided as a prioritized list. The first entry in the list has the highest priority
+      and is the most likely to be selected. The services should be separated only with commas.
+    type: string
+    default: "DC,DC_BPT"
+  d20_control_mode:
+    description: >-
+      Preferred ISO 15118-20 charge-loop control mode (Scheduled or Dynamic).
+      The EV picks the SECC service parameter set matching this preference and
+      falls back to the first offered set when the preference is not offered.
+    type: string
+    enum:
+      - Scheduled
+      - Dynamic
+    default: Scheduled
+  supported_DIN70121:
+    description: >-
+      The EV offers DIN SPEC 70121 (DC, plaintext only) in the SAP handshake
+    type: boolean
+    default: false
+  supported_ISO15118_2:
+    description: >-
+      The EV offers ISO 15118-2 (AC and DC, EIM, TLS 1.2 or plaintext) in the SAP handshake
+    type: boolean
+    default: false
+  tls_active:
+    description: If true, EVCC connects to SECC as TLS client
+    type: boolean
+    default: false
+  enforce_tls:
+    description: >-
+      The EVCC will enforce a TLS connection. Takes precedence over tls_active: when true a TLS
+      connection is always used (tls_active is implied), and an SDP response that does not offer TLS
+      security is rejected (no plaintext downgrade) until a TLS-capable SECC is found or the
+      communication setup times out.
+    type: boolean
+    default: false
+  enable_tls_1_3:
+    description: >-
+      The EVCC will enable TLS version 1.3. Must be false when
+      supported_ISO15118_2 is used, since ISO 15118-2 uses TLS 1.2.
+    type: boolean
+    default: false
+  verify_server_certificate:
+    description: If true, the EVCC will verify the server (SECC) certificate against the V2G root
+    type: boolean
+    default: true
+  evccid:
+    description: The EVCC ID (vehicle identification) used during the session
+    type: string
+    default: WMIV1234567890ABCDEX
+  logging_path:
+    description: Path to logging directory (will be created if non existent)
+    type: string
+    default: "."
+  enable_ssl_logging:
+    description: Verbosely log the ssl/tls connection
+    type: boolean
+    default: false
+  enable_tls_key_logging:
+    description: >-
+      Enable/Disable the export of TLS session keys (pre-master-secret)
+      during a TLS handshake. Note that this option is for testing and
+      simulation purpose only
+    type: boolean
+    default: false
+  tls_key_logging_path:
+    description: >-
+      Output directory for the TLS key log file
+    type: string
+    default: /tmp
+  v2g_root_cert_path:
+    description: >-
+      Path to the V2G root certificate. If empty, it is resolved relative to
+      the installed etc/everest/certs defaults (ca/v2g/V2G_ROOT_CA.pem).
+    type: string
+    default: ""
+  device_cert_chain_path:
+    description: >-
+      Path to the vehicle (TLS client) certificate chain, leaf first. If empty, it is resolved
+      relative to the installed etc/everest/certs defaults (client/vehicle/VEHICLE_CERT_CHAIN.pem).
+    type: string
+    default: ""
+  device_key_path:
+    description: >-
+      Path to the vehicle leaf private key. If empty, it is resolved relative to
+      the installed etc/everest/certs defaults (client/vehicle/VEHICLE_LEAF.key).
+    type: string
+    default: ""
+  device_key_password_path:
+    description: >-
+      Path to the file containing the password for the vehicle leaf private key.
+      If empty, it is resolved relative to the installed etc/everest/certs defaults
+      (client/vehicle/VEHICLE_LEAF_PASSWORD.txt).
+    type: string
+    default: ""
+  enable_pnc:
+    description: >-
+      Enable ISO 15118-2 Plug-and-Charge (Contract). When true (and TLS is active) the EVCC prefers the
+      Contract payment option whenever the SECC offers it, otherwise it falls back to EIM. Requires the
+      contract certificate material below.
+    type: boolean
+    default: false
+  pnc_contract_cert_chain_path:
+    description: >-
+      Path to the PnC contract (MO) certificate chain, leaf first (PEM). Presented in PaymentDetailsReq.
+      If empty, resolved relative to etc/everest/certs (client/mo/MO_CERT_CHAIN.pem).
+    type: string
+    default: ""
+  pnc_contract_key_path:
+    description: >-
+      Path to the PnC contract (MO) leaf private key (PEM). Signs the PnC AuthorizationReq.
+      If empty, resolved relative to etc/everest/certs (client/mo/MO_LEAF.key).
+    type: string
+    default: ""
+  pnc_contract_key_password_path:
+    description: >-
+      Path to the file with the PnC contract leaf private key password.
+      If empty, resolved relative to etc/everest/certs (client/mo/MO_LEAF_PASSWORD.txt).
+    type: string
+    default: ""
+  pnc_oem_prov_cert_path:
+    description: >-
+      Path to the OEM provisioning certificate (PEM or DER). Signs CertificateInstallationReq and is the
+      static ECDH key holder that decrypts the delivered contract private key. Only needed when the EVCC
+      must obtain a contract certificate via CertificateInstallation. If empty, resolved relative to
+      etc/everest/certs (client/oem/OEM_LEAF.pem).
+    type: string
+    default: ""
+  pnc_oem_prov_key_path:
+    description: >-
+      Path to the OEM provisioning private key (PEM). If empty, resolved relative to etc/everest/certs
+      (client/oem/OEM_LEAF.key).
+    type: string
+    default: ""
+  pnc_oem_prov_key_password_path:
+    description: >-
+      Path to the file with the OEM provisioning private key password.
+      If empty, resolved relative to etc/everest/certs (client/oem/OEM_LEAF_PASSWORD.txt).
+    type: string
+    default: ""
+  pnc_force_cert_install:
+    description: >-
+      Force a CertificateInstallation even when a contract certificate is already configured (obtain a
+      fresh contract certificate from the backend). Requires the SECC to offer the Certificate service.
+    type: boolean
+    default: false
+provides:
+  ev:
+    interface: ISO15118_ev
+    description: This module implements the ISO15118 (DIN 70121 / -2 / -20) implementation of an EV
+# The optional ev_board_support connection feeds back the applied control pilot state (bsp_event).
+# When connected, the DC cable check waits for CP state C/D before sending the first CableCheckReq,
+# as required by ISO 15118-2 / -20 and DIN SPEC 70121.
+requires:
+  ev_board_support:
+    interface: ev_board_support
+    min_connections: 0
+    max_connections: 1
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - aw@pionix.de
+    - Sebastian Lukas
