@@ -802,6 +802,39 @@ public:
     std::unique_ptr<SmartChargingMock> smart_charging;
 };
 
+// Test the single-fire guard around callbacks.all_connectors_unavailable_callback. Shared between the transaction and availability functional blocks
+TEST_F(ChargePointCommonTestFixtureV2, FirmwareUpdate_AllConnectorsUnavailableGuardResetsOnFirmwareEndState) {
+    configure_callbacks_with_mocks();
+    testing::MockFunction<void()> all_connectors_unavailable_callback_mock;
+    callbacks.all_connectors_unavailable_callback = all_connectors_unavailable_callback_mock.AsStdFunction();
+
+    auto database_handler = create_database_handler();
+    auto charge_point = std::make_unique<TestChargePoint>(
+        create_evse_connector_structure(), device_model, database_handler, create_message_queue(database_handler),
+        TEMP_OUTPUT_PATH, std::make_shared<EvseSecurityMock>(), callbacks);
+    charge_point->start();
+
+    // First firmware update cycle: opting in on InstallScheduled with no active transaction disables all
+    // connectors and fires the callback exactly once.
+    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
+    charge_point->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
+    testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable_callback_mock);
+
+    // A duplicate notification must not re-fire the callback: the guard still holds.
+    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(0);
+    charge_point->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, true);
+    testing::Mock::VerifyAndClearExpectations(&all_connectors_unavailable_callback_mock);
+
+    // Reaching a firmware end state (Installed) resets the guard for the next update cycle.
+    charge_point->on_firmware_update_status_notification(1, FirmwareStatusEnum::Installed, std::nullopt);
+
+    // Second update cycle: the guard was reset, so the callback can fire again.
+    EXPECT_CALL(all_connectors_unavailable_callback_mock, Call()).Times(1);
+    charge_point->on_firmware_update_status_notification(2, FirmwareStatusEnum::InstallScheduled, true);
+
+    charge_point->stop();
+}
+
 // Test currently disabled because this is not working now. Should be added to the transaction functional block.
 TEST_F(ChargePointFunctionalityTestFixtureV2,
        K05FR05_RequestStartTransactionRequest_SmartChargingCtrlrEnabledTrue_ValidatesTxProfiles) {

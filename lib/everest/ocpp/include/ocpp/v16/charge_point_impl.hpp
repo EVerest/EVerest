@@ -106,6 +106,7 @@ private:
     bool boot_notification_callerror;
     bool firmware_update_is_pending = false;
     bool disable_connectors_during_install = true;
+    std::atomic_bool all_connectors_unavailable_notified{false};
 
     std::shared_ptr<ocpp::ConnectivityManagerInterface> connectivity_manager;
     std::unique_ptr<ocpp::MessageDispatcherInterface<MessageType>> message_dispatcher;
@@ -264,6 +265,15 @@ private:
     /// change. If all connectors are unavailable signal to the firmware updater that installation of the firmware
     /// update can proceed
     void change_all_connectors_to_unavailable_for_firmware_update();
+
+    /// \brief Marks a firmware install as pending; connectors will be disabled (now or once running transactions
+    /// end) when \p disable_connectors is true.
+    void set_firmware_install_pending(bool disable_connectors);
+
+    /// \brief Clears all pending-install state set by \ref set_firmware_install_pending, re-arms the
+    /// all_connectors_unavailable_callback single-fire guard and drops availability changes queued for the
+    /// firmware update that have not been executed yet.
+    void clear_firmware_install_pending();
 
     /// \brief Tries to resume the transactions given by \p resuming_session_ids . This function retrieves open
     /// transactions from the internal database (e.g. because of power loss). In case the \p
@@ -708,11 +718,13 @@ public:
     /// \param request_id A \p request_id of -1 indicates a FirmwareStatusNotification.req, else a
     /// SignedFirmwareUpdateStatusNotification.req .
     /// \param firmware_update_status The \p firmware_update_status
-    /// \param disable_connectors_during_install By default, all connectors will be disabled before installing the
-    /// firmware update. Setting this parameter to false will keep the connectors available during the update.
-    void on_firmware_update_status_notification(std::int32_t request_id,
-                                                const ocpp::FirmwareStatusNotification firmware_update_status,
-                                                const bool disable_connectors_during_install = true);
+    /// \param disable_connectors_during_install Whether all connectors should be made unavailable (disabled) for the
+    /// duration of the firmware install. Keep unset to use the defaults (disable connectors in the Downloaded and
+    /// SignatureVerified phases for unsigned and signed updates respectively)
+    void
+    on_firmware_update_status_notification(std::int32_t request_id,
+                                           const ocpp::FirmwareStatusNotification firmware_update_status,
+                                           const std::optional<bool> disable_connectors_during_install = std::nullopt);
 
     /// \brief This function must be called when a reservation is started at the given \p connector .
     /// \param connector

@@ -377,11 +377,13 @@ public:
     /// \param request_id A \p request_id of -1 indicates a FirmwareStatusNotification.req, else a
     /// SignedFirmwareUpdateStatusNotification.req .
     /// \param firmware_update_status The \p firmware_update_status
-    /// \param disable_connectors_during_install By default, all connectors will be disabled before installing the
-    /// firmware update. Setting this parameter to false will keep the connectors available during the update.
-    void on_firmware_update_status_notification(std::int32_t request_id,
-                                                const ocpp::FirmwareStatusNotification firmware_update_status,
-                                                const bool disable_connectors_during_install = true);
+    /// \param disable_connectors_during_install Whether all connectors should be made unavailable (disabled) for the
+    /// duration of the firmware install. Keep unset to use the defaults (disable connectors in the Downloaded and
+    /// SignatureVerified phases for unsigned and signed updates respectively)
+    void
+    on_firmware_update_status_notification(std::int32_t request_id,
+                                           const ocpp::FirmwareStatusNotification firmware_update_status,
+                                           const std::optional<bool> disable_connectors_during_install = std::nullopt);
 
     /// \brief This function must be called when a reservation is started at the given \p connector .
     /// \param connector

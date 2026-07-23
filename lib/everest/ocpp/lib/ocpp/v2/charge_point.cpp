@@ -178,7 +178,13 @@ void ChargePoint::on_network_disconnected(OCPPInterfaceEnum ocpp_interface) {
 
 void ChargePoint::on_firmware_update_status_notification(std::int32_t request_id,
                                                          const FirmwareStatusEnum& firmware_update_status,
-                                                         const bool disable_connectors_during_install) {
+                                                         std::optional<bool> disable_connectors_during_install) {
+    if (is_firmware_status_end_state(firmware_update_status) or
+        firmware_update_status == FirmwareStatusEnum::DownloadScheduled or
+        firmware_update_status == FirmwareStatusEnum::Downloading) {
+        // Re-arm the single-fire guard at the start and end of a firmware update
+        this->all_connectors_unavailable_notified = false;
+    }
     this->firmware_update->on_firmware_update_status_notification(request_id, firmware_update_status,
                                                                   disable_connectors_during_install);
 }
@@ -645,8 +651,18 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
 
     this->meter_values = std::make_unique<MeterValues>(*this->functional_block_context);
 
+    // Wrap the all_connectors_unavailable_callback so that it can fire only once per update cycle
+    std::optional<AllConnectorsUnavailableCallback> guarded_all_connectors_unavailable_callback;
+    if (this->callbacks.all_connectors_unavailable_callback.has_value()) {
+        guarded_all_connectors_unavailable_callback = [this]() {
+            if (!this->all_connectors_unavailable_notified.exchange(true)) {
+                this->callbacks.all_connectors_unavailable_callback.value()();
+            }
+        };
+    }
+
     this->availability = std::make_unique<Availability>(*functional_block_context, this->callbacks.time_sync_callback,
-                                                        this->callbacks.all_connectors_unavailable_callback);
+                                                        guarded_all_connectors_unavailable_callback);
 
     if (this->callbacks.configure_network_connection_profile_callback.has_value()) {
         this->connectivity_manager->set_configure_network_connection_profile_callback(
@@ -666,7 +682,7 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
 
     this->firmware_update = std::make_unique<FirmwareUpdate>(
         *this->functional_block_context, *this->availability, *this->security,
-        this->callbacks.update_firmware_request_callback, this->callbacks.all_connectors_unavailable_callback);
+        this->callbacks.update_firmware_request_callback, guarded_all_connectors_unavailable_callback);
 
     this->transaction = std::make_unique<TransactionBlock>(
         *this->functional_block_context, *this->message_queue, *this->authorization, *this->availability,
