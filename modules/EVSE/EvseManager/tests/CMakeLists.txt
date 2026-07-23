@@ -37,6 +37,11 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     everest::log
     everest::framework
     everest::helpers
+<<<<<<< HEAD
+=======
+    pugixml::pugixml
+    everest::util
+>>>>>>> 3b7541f (fix(EvseManager): refresh Inoperative error when the active fatal cause set changes (#2374))
     sigslot
 )
 
@@ -68,6 +73,7 @@ target_link_libraries(${CHARGER_TEST_TARGET_NAME} PRIVATE
     GTest::gtest_main
     everest::framework
     everest::helpers
+    everest::util
     sigslot
 )
 
