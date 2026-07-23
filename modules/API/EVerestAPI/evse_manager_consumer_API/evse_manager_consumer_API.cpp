@@ -339,8 +339,6 @@ void evse_manager_consumer_API::generate_api_var_session_info() {
             static const auto topic = helper.get_topics().everest_to_extern("session_info");
             try {
                 latched_publish(external);
-                // auto&& payload = serialize(external);
-                // mqtt_v.publish(topic, payload);
             } catch (const std::exception& e) {
                 EVLOG_warning << "Variable: '" << topic << "' failed with -> " << e.what();
             } catch (...) {
