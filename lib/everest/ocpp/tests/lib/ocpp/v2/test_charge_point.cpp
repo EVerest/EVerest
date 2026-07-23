@@ -802,7 +802,8 @@ public:
     std::unique_ptr<SmartChargingMock> smart_charging;
 };
 
-// Test the single-fire guard around callbacks.all_connectors_unavailable_callback. Shared between the transaction and availability functional blocks
+// Test the single-fire guard around callbacks.all_connectors_unavailable_callback. Shared between the transaction and
+// availability functional blocks
 TEST_F(ChargePointCommonTestFixtureV2, FirmwareUpdate_AllConnectorsUnavailableGuardResetsOnFirmwareEndState) {
     configure_callbacks_with_mocks();
     testing::MockFunction<void()> all_connectors_unavailable_callback_mock;

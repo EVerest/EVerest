@@ -85,9 +85,9 @@ protected: // Functions
             }
         };
         availability = std::make_unique<Availability>(functional_block_context, std::nullopt, guarded_callback);
-        firmware_update = std::make_unique<FirmwareUpdate>(functional_block_context, *availability, security,
-                                                           update_firmware_request_callback_mock.AsStdFunction(),
-                                                           guarded_callback);
+        firmware_update =
+            std::make_unique<FirmwareUpdate>(functional_block_context, *availability, security,
+                                             update_firmware_request_callback_mock.AsStdFunction(), guarded_callback);
 
         ON_CALL(evse_manager, any_transaction_active(_)).WillByDefault(Return(false));
         ON_CALL(evse_1, get_number_of_connectors()).WillByDefault(Return(1));
@@ -144,7 +144,8 @@ TEST_F(FirmwareUpdateTest, InstallScheduled_Nullopt_OnlyForwardsToCsms) {
     firmware_update->on_firmware_update_status_notification(1, FirmwareStatusEnum::InstallScheduled, std::nullopt);
 }
 
-// Test that disable_connectors_during_install = false on an InstallScheduled message has the same behavior as an unset value
+// Test that disable_connectors_during_install = false on an InstallScheduled message has the same behavior as an unset
+// value
 TEST_F(FirmwareUpdateTest, InstallScheduled_ExplicitFalse_OnlyForwardsToCsms) {
     EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillOnce(Invoke([](const json& call, bool) {
         auto request = call[ocpp::CALL_PAYLOAD].get<FirmwareStatusNotificationRequest>();

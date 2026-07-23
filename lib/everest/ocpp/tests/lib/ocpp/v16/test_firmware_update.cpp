@@ -58,8 +58,8 @@ protected:
         // Each test gets its own temporary directory so the on-disk sqlite db and message logs do not collide.
         // Tests within a gtest binary run sequentially, so a simple incrementing counter is unique.
         static int test_dir_counter = 0;
-        this->tmp_dir = fs::temp_directory_path() /
-                        ("ocpp_v16_firmware_update_test_" + std::to_string(test_dir_counter++));
+        this->tmp_dir =
+            fs::temp_directory_path() / ("ocpp_v16_firmware_update_test_" + std::to_string(test_dir_counter++));
         fs::create_directories(this->tmp_dir);
     }
 
@@ -117,7 +117,8 @@ protected:
 
 using ChargePointFirmwareUpdateTest = ChargePointFirmwareUpdateTestBase;
 
-// Test that InstallScheduled with disable_connectors_during_install = true disables all connectors and triggers all_connectors_unavailable_callback exactly once
+// Test that InstallScheduled with disable_connectors_during_install = true disables all connectors and triggers
+// all_connectors_unavailable_callback exactly once
 TEST_F(ChargePointFirmwareUpdateTest, InstallScheduledOptInDisablesConnectorsSingleFire) {
     auto& charge_point = start_charge_point();
 
@@ -135,7 +136,8 @@ TEST_F(ChargePointFirmwareUpdateTest, InstallScheduledOptInDisablesConnectorsSin
     EXPECT_EQ(this->all_connectors_unavailable_count, 1);
 }
 
-// Test that InstallScheduled without disable_connectors_during_install set does not disable connnectors and does not trigger all_connectors_unavailable_callback
+// Test that InstallScheduled without disable_connectors_during_install set does not disable connnectors and does not
+// trigger all_connectors_unavailable_callback
 class InstallScheduledNoOptInTest : public ChargePointFirmwareUpdateTestBase,
                                     public ::testing::WithParamInterface<std::optional<bool>> {};
 
@@ -151,7 +153,8 @@ TEST_P(InstallScheduledNoOptInTest, ForwardOnlyNoConnectorDisable) {
 INSTANTIATE_TEST_SUITE_P(InstallScheduledNoOptIn, InstallScheduledNoOptInTest,
                          ::testing::Values(std::optional<bool>{std::nullopt}, std::optional<bool>{false}));
 
-// Test that Downloaded without disable_connectors_during_install set (nullopt) still disables the connectors and triggers all_connectors_unavailable_callback
+// Test that Downloaded without disable_connectors_during_install set (nullopt) still disables the connectors and
+// triggers all_connectors_unavailable_callback
 TEST_F(ChargePointFirmwareUpdateTest, DownloadedDefaultsToDisablingConnectors) {
     auto& charge_point = start_charge_point();
 
@@ -161,7 +164,8 @@ TEST_F(ChargePointFirmwareUpdateTest, DownloadedDefaultsToDisablingConnectors) {
     EXPECT_EQ(this->all_connectors_unavailable_count, 1);
 }
 
-// Test that Downloaded with disable_connectors_during_install = false does not disable the connectors and does not trigger all_connectors_unavailable_callback
+// Test that Downloaded with disable_connectors_during_install = false does not disable the connectors and does not
+// trigger all_connectors_unavailable_callback
 TEST_F(ChargePointFirmwareUpdateTest, DownloadedWithFalseDoesNotDisableConnectors) {
     auto& charge_point = start_charge_point();
 
