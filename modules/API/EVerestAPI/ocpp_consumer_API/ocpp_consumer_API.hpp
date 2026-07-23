@@ -34,6 +34,7 @@ struct Conf {
     int cfg_communication_check_to_s;
     int cfg_heartbeat_interval_ms;
     int cfg_request_reply_to_s;
+    bool latch_variable_values;
 };
 
 class ocpp_consumer_API : public Everest::ModuleBase {
@@ -76,7 +77,7 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
-    auto forward_api_var(std::string const& var);
+    auto forward_and_cache_api_var(std::string const& var);
 
     void generate_api_cmd_data_transfer();
     void generate_api_cmd_get_variables();

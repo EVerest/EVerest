@@ -82,6 +82,16 @@ channels:
     messages:
       receive_ocpp_transaction_event:
         $ref: '#/components/messages/receive_ocpp_transaction_event'
+  send_request_get_ocpp_transaction_event:
+    address: 'm2e/ocpp_transaction_event/get'
+    messages:
+      send_request_get_ocpp_transaction_event:
+        $ref: '#/components/messages/send_request_get_ocpp_transaction_event'
+  receive_reply_get_ocpp_transaction_event:
+    address: null
+    messages:
+      receive_reply_get_ocpp_transaction_event:
+        $ref: '#/components/messages/receive_reply_get_ocpp_transaction_event'
   receive_is_connected:
     address: 'e2m/is_connected'
     messages:
@@ -92,26 +102,86 @@ channels:
     messages:
       receive_security_event:
         $ref: '#/components/messages/receive_security_event'
+  send_request_get_security_event:
+    address: 'm2e/security_event/get'
+    messages:
+      send_request_get_security_event:
+        $ref: '#/components/messages/send_request_get_security_event'
+  receive_reply_get_security_event:
+    address: null
+    messages:
+      receive_reply_get_security_event:
+        $ref: '#/components/messages/receive_reply_get_security_event'
   receive_boot_notification_response:
     address: 'e2m/boot_notification_response'
     messages:
       receive_boot_notification_response:
         $ref: '#/components/messages/receive_boot_notification_response'
+  send_request_get_boot_notification_response:
+    address: 'm2e/boot_notification_response/get'
+    messages:
+      send_request_get_boot_notification_response:
+        $ref: '#/components/messages/send_request_get_boot_notification_response'
+  receive_reply_get_boot_notification_response:
+    address: null
+    messages:
+      receive_reply_get_boot_notification_response:
+        $ref: '#/components/messages/receive_reply_get_boot_notification_response'
   receive_event_data:
     address: 'e2m/event_data'
     messages:
       receive_event_data:
         $ref: '#/components/messages/receive_event_data'
+  send_request_get_event_data:
+    address: 'm2e/event_data/get'
+    messages:
+      send_request_get_event_data:
+        $ref: '#/components/messages/send_request_get_event_data'
+  receive_reply_get_event_data:
+    address: null
+    messages:
+      receive_reply_get_event_data:
+        $ref: '#/components/messages/receive_reply_get_event_data'
   receive_charging_schedules:
     address: 'e2m/charging_schedules'
     messages:
       receive_charging_schedules:
         $ref: '#/components/messages/receive_charging_schedules'
+  send_request_get_is_connected:
+    address: 'm2e/is_connected/get'
+    messages:
+      send_request_get_is_connected:
+        $ref: '#/components/messages/send_request_get_is_connected'
+  receive_reply_get_is_connected:
+    address: null
+    messages:
+      receive_reply_get_is_connected:
+        $ref: '#/components/messages/receive_reply_get_is_connected'
+  send_request_get_charging_schedules:
+    address: 'm2e/charging_schedules/get'
+    messages:
+      send_request_get_charging_schedules:
+        $ref: '#/components/messages/send_request_get_charging_schedules'
+  receive_reply_get_charging_schedules:
+    address: null
+    messages:
+      receive_reply_get_charging_schedules:
+        $ref: '#/components/messages/receive_reply_get_charging_schedules'
   receive_ocpp_message:
     address: e2m/ocpp_message
     messages:
       receive_ocpp_message:
         $ref: '#/components/messages/receive_ocpp_message'
+  send_request_get_ocpp_message:
+    address: 'm2e/ocpp_message/get'
+    messages:
+      send_request_get_ocpp_message:
+        $ref: '#/components/messages/send_request_get_ocpp_message'
+  receive_reply_get_ocpp_message:
+    address: null
+    messages:
+      receive_reply_get_ocpp_message:
+        $ref: '#/components/messages/receive_reply_get_ocpp_message'
 
 
   receive_heartbeat:
@@ -219,27 +289,160 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_security_event'
+  send_request_get_ocpp_transaction_event:
+    title: 'Request current ocpp transaction event'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_ocpp_transaction_event'
+    description: >-
+      Request the most recently published (latched) ocpp transaction event.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_ocpp_transaction_event'
+  receive_reply_get_ocpp_transaction_event:
+    title: 'Reply to get ocpp transaction event request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_ocpp_transaction_event'
+  send_request_get_security_event:
+    title: 'Request current security event'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_security_event'
+    description: >-
+      Request the most recently published (latched) security event.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_security_event'
+  receive_reply_get_security_event:
+    title: 'Reply to get security event request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_security_event'
   receive_boot_notification_response:
     title: 'Receive boot notification response'
     action: receive
     channel:
       $ref: '#/channels/receive_boot_notification_response'
+  send_request_get_boot_notification_response:
+    title: 'Request current boot notification response'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_boot_notification_response'
+    description: >-
+      Request the most recently published (latched) boot notification response.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_boot_notification_response'
+  receive_reply_get_boot_notification_response:
+    title: 'Reply to get boot notification response request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_boot_notification_response'
   receive_event_data:
     title: 'Receive event data'
     action: receive
     channel:
       $ref: '#/channels/receive_event_data'
+  send_request_get_event_data:
+    title: 'Request current event data'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_event_data'
+    description: >-
+      Request the most recently published (latched) event data.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_event_data'
+  receive_reply_get_event_data:
+    title: 'Reply to get event data request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_event_data'
   receive_charging_schedules:
     title: 'Receive composite charging schedules'
     action: receive
     channel:
       $ref: '#/channels/receive_charging_schedules'
+  send_request_get_is_connected:
+    title: 'Request current Is Connected'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_is_connected'
+    description: >-
+      Request the most recently published (latched) Is Connected.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_is_connected'
+  receive_reply_get_is_connected:
+    title: 'Reply to get Is Connected request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_is_connected'
+  send_request_get_charging_schedules:
+    title: 'Request current Charging Schedules'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_charging_schedules'
+    description: >-
+      Request the most recently published (latched) Charging Schedules.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_charging_schedules'
+  receive_reply_get_charging_schedules:
+    title: 'Reply to get Charging Schedules request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_charging_schedules'
   receive_ocpp_message:
     title: Receive ocpp message
     action: receive
     channel:
       $ref: '#/channels/receive_ocpp_message'
     description: A serialized OCPP message
+  send_request_get_ocpp_message:
+    title: 'Request current ocpp message'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_ocpp_message'
+    description: >-
+      Request the most recently published (latched) ocpp message.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_ocpp_message'
+  receive_reply_get_ocpp_message:
+    title: 'Reply to get ocpp message request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_ocpp_message'
 
 
   receive_heartbeat:
@@ -478,6 +681,38 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/OcppTransactionEvent'
+    send_request_get_ocpp_transaction_event:
+      name: send_request_get_ocpp_transaction_event
+      title: 'Request current ocpp transaction event'
+      summary: 'Request the most recently published (latched) ocpp transaction event.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_ocpp_transaction_event:
+      name: receive_reply_get_ocpp_transaction_event
+      title: 'Reply to get ocpp transaction event request'
+      summary: 'The most recently published ocpp transaction event.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/OcppTransactionEvent'
+          - type: 'null'
     receive_is_connected:
       name: receive_is_connected
       title: 'Receive is connected'
@@ -492,6 +727,38 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/SecurityEvent'
+    send_request_get_security_event:
+      name: send_request_get_security_event
+      title: 'Request current security event'
+      summary: 'Request the most recently published (latched) security event.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_security_event:
+      name: receive_reply_get_security_event
+      title: 'Reply to get security event request'
+      summary: 'The most recently published security event.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/SecurityEvent'
+          - type: 'null'
     receive_boot_notification_response:
       name: receive_boot_notification_response
       title: 'Receive boot notification response'
@@ -500,6 +767,38 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/BootNotificationResponse'
+    send_request_get_boot_notification_response:
+      name: send_request_get_boot_notification_response
+      title: 'Request current boot notification response'
+      summary: 'Request the most recently published (latched) boot notification response.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_boot_notification_response:
+      name: receive_reply_get_boot_notification_response
+      title: 'Reply to get boot notification response request'
+      summary: 'The most recently published boot notification response.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/BootNotificationResponse'
+          - type: 'null'
     receive_event_data:
       name: receive_event_data
       title: 'Receive event data'
@@ -508,6 +807,38 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/EventData'
+    send_request_get_event_data:
+      name: send_request_get_event_data
+      title: 'Request current event data'
+      summary: 'Request the most recently published (latched) event data.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_event_data:
+      name: receive_reply_get_event_data
+      title: 'Reply to get event data request'
+      summary: 'The most recently published event data.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/EventData'
+          - type: 'null'
     receive_charging_schedules:
       name: receive_charging_schedules
       title: 'Receive composite charging schedules'
@@ -525,6 +856,70 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ChargingSchedules'
+    send_request_get_is_connected:
+      name: send_request_get_is_connected
+      title: 'Request current Is Connected'
+      summary: 'Request the most recently published (latched) Is Connected.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_is_connected:
+      name: receive_reply_get_is_connected
+      title: 'Reply to get Is Connected request'
+      summary: 'The most recently published Is Connected.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/ConnectedStatus'
+          - type: 'null'
+    send_request_get_charging_schedules:
+      name: send_request_get_charging_schedules
+      title: 'Request current Charging Schedules'
+      summary: 'Request the most recently published (latched) Charging Schedules.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_charging_schedules:
+      name: receive_reply_get_charging_schedules
+      title: 'Reply to get Charging Schedules request'
+      summary: 'The most recently published Charging Schedules.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/ChargingSchedules'
+          - type: 'null'
     receive_ocpp_message:
       name: receive_ocpp_message
       title: Receive ocpp message
@@ -532,6 +927,39 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/Message'
+
+    send_request_get_ocpp_message:
+      name: send_request_get_ocpp_message
+      title: 'Request current ocpp message'
+      summary: 'Request the most recently published (latched) ocpp message.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_ocpp_message:
+      name: receive_reply_get_ocpp_message
+      title: 'Reply to get ocpp message request'
+      summary: 'The most recently published ocpp message.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/Message'
+          - type: 'null'
 
 
     receive_heartbeat:

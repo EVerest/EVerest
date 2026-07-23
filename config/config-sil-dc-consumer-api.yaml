@@ -10,6 +10,18 @@ active_modules:
       evse_manager:
         - module_id: evse_manager
           implementation_id: evse
+      evse_bsp:
+        - module_id: yeti_driver
+          implementation_id: board_support
+      slac:
+        - module_id: slac
+          implementation_id: evse
+      imd:
+        - module_id: imd
+          implementation_id: main
+      ps_dc:
+        - module_id: powersupply_dc
+          implementation_id: main
 
   auth_api:
     module: auth_consumer_API
