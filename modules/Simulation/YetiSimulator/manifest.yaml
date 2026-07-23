@@ -19,6 +19,20 @@ config:
     description: Dummy meter value blob sent on transaction stop to be used for testing
     type: string
     default: "test stop value"
+  max_current_A_import:
+    description: >-
+      Maximum import current in amps reported as a hardware capability. The default matches a 32 A AC wallbox. DC
+      configurations must raise this, since the energy manager derives the available power from
+      max_current_A_import * max_phase_count_import * nominal_voltage_V and would otherwise cap a high-power DC
+      supply at the AC-side figure.
+    type: number
+    minimum: 0
+    default: 32.0
+  min_current_A_import:
+    description: Minimum import current in amps reported as a hardware capability
+    type: number
+    minimum: 0
+    default: 6.0
 provides:
   powermeter:
     interface: powermeter

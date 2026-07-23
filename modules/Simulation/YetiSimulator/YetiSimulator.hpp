@@ -30,6 +30,8 @@ struct Conf {
     bool dummy_meter_value_send_on_transaction_start;
     std::string dummy_meter_value_blob_start;
     std::string dummy_meter_value_blob_stop;
+    double max_current_A_import;
+    double min_current_A_import;
 };
 
 class YetiSimulator : public Everest::ModuleBase {
