@@ -1,0 +1,207 @@
+# SIL config for AC temperature derating with a single connector.
+# TemperatureSensorSimulator publishes MQTT-controllable temperature readings; AcTemperatureDerating
+# applies interpolated current limits via a dedicated EnergyNode in the energy tree.
+#
+# MQTT control topics (module id temp_sensor_sim), logged at startup:
+#   everest_api/temp_sensor_sim/cmd/set_temperature_C
+#   everest_api/temp_sensor_sim/cmd/set_identification
+#   everest_api/temp_sensor_sim/cmd/set_location
+#   everest_api/temp_sensor_sim/cmd/set_publish_interval_ms
+#   everest_api/temp_sensor_sim/cmd/stop_publishing
+#   everest_api/temp_sensor_sim/cmd/start_publishing
+active_modules:
+  iso15118_charger:
+    module: EvseV2G
+    config_module:
+      device: auto
+      tls_security: allow
+    connections:
+      security:
+        - module_id: evse_security
+          implementation_id: main
+  iso15118_car:
+    module: PyEvJosev
+    config_module:
+      device: auto
+      supported_ISO15118_2: true
+  evse_manager_1:
+    module: EvseManager
+    mapping:
+      module:
+        evse: 1
+    config_module:
+      connector_id: 1
+      evse_id: DE*PNX*E12345*1
+      session_logging: true
+      session_logging_xml: false
+      session_logging_path: /tmp
+      ac_hlc_enabled: true
+      ac_hlc_use_5percent: false
+      ac_enforce_hlc: false
+      request_zero_power_in_idle: false
+    connections:
+      bsp:
+        - module_id: yeti_driver_1
+          implementation_id: board_support
+      powermeter_grid_side:
+        - module_id: yeti_driver_1
+          implementation_id: powermeter
+      slac:
+        - module_id: slac
+          implementation_id: evse
+      hlc:
+        - module_id: iso15118_charger
+          implementation_id: charger
+  yeti_driver_1:
+    module: YetiSimulator
+    config_module:
+      connector_id: 1
+  slac:
+    module: SlacSimulator
+  ev_manager_1:
+    module: EvManager
+    config_module:
+      connector_id: 1
+      auto_enable: true
+      auto_exec: true
+      auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
+    connections:
+      ev_board_support:
+        - module_id: yeti_driver_1
+          implementation_id: ev_board_support
+      ev:
+        - module_id: iso15118_car
+          implementation_id: ev
+      slac:
+        - module_id: slac
+          implementation_id: ev
+  auth:
+    module: Auth
+    config_module:
+      connection_timeout: 10
+      selection_algorithm: PlugEvents
+    connections:
+      token_provider:
+        - module_id: token_provider_1
+          implementation_id: main
+      token_validator:
+        - module_id: token_validator
+          implementation_id: main
+      evse_manager:
+        - module_id: evse_manager_1
+          implementation_id: evse
+  evse_security:
+    module: EvseSecurity
+    config_module:
+      private_key_password: "123456"
+  token_provider_1:
+    module: DummyTokenProvider
+    config_implementation:
+      main:
+        token: TOKEN1
+    connections:
+      evse:
+        - module_id: evse_manager_1
+          implementation_id: evse
+  token_validator:
+    module: DummyTokenValidator
+    config_implementation:
+      main:
+        validation_result: Accepted
+        validation_reason: Token seems valid
+        sleep: 0.25
+  energy_manager:
+    module: EnergyManager
+    config_module:
+      schedule_total_duration: 2
+      schedule_interval_duration: 15
+      debug: false
+    connections:
+      energy_trunk:
+        - module_id: grid_connection_point
+          implementation_id: energy_grid
+  temp_sensor_sim:
+    module: TemperatureSensorSimulator
+    config_implementation:
+      temperature_sensor:
+        temperature_C: 25.0
+        identification: internal
+        location: cabinet
+        publish_interval_ms: 1000
+  ac_temp_derating:
+    module: AcTemperatureDerating
+    config_module:
+      fallback_max_current_A: 0
+      temperature_stale_timeout_ms: 10000
+      update_debounce_ms: 5000
+      derating_curves_json: |
+        {"temp_sensor_sim": {"internal": [{"temp_C": 25, "max_current_A": 32}, {"temp_C": 40, "max_current_A": 16}, {"temp_C": 55, "max_current_A": 6}]}}
+      temperature_provider_ignore_list: "temp_sensor_sim.internal1"
+    connections:
+      temperature:
+        - module_id: temp_sensor_sim
+          implementation_id: temperature_sensor
+      energy_node:
+        - module_id: temp_derate_node
+          implementation_id: external_limits
+  temp_derate_node:
+    module: EnergyNode
+    config_module:
+      fuse_limit_A: 32.0
+      phase_count: 3
+    connections:
+      energy_consumer:
+        - module_id: evse_manager_1_sink
+          implementation_id: energy_grid
+  grid_connection_point:
+    module: EnergyNode
+    config_module:
+      fuse_limit_A: 32.0
+      phase_count: 3
+    connections:
+      price_information: []
+      energy_consumer:
+        - module_id: temp_derate_node
+          implementation_id: energy_grid
+      powermeter:
+        - module_id: yeti_driver_1
+          implementation_id: powermeter
+  evse_manager_1_sink:
+    module: EnergyNode
+    mapping:
+      module:
+        evse: 1
+    config_module:
+      fuse_limit_A: 32.0
+      phase_count: 3
+    connections:
+      energy_consumer:
+        - module_id: evse_manager_1
+          implementation_id: energy_grid
+  api:
+    module: API
+    connections:
+      evse_manager:
+        - module_id: evse_manager_1
+          implementation_id: evse
+      random_delay:
+        - module_id: evse_manager_1
+          implementation_id: random_delay
+      error_history:
+        - module_id: error_history
+          implementation_id: error_history
+      evse_energy_sink:
+        - module_id: evse_manager_1_sink
+          implementation_id: external_limits
+  ev_api:
+    module: EvAPI
+    connections:
+      ev_manager:
+        - implementation_id: ev_manager
+          module_id: ev_manager_1
+  error_history:
+    module: ErrorHistory
+    config_implementation:
+      error_history:
+        database_path: /tmp/error_history.db
+x-module-layout: {}

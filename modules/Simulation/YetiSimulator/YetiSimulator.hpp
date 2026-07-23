@@ -16,6 +16,7 @@
 #include <generated/interfaces/ev_board_support/Implementation.hpp>
 #include <generated/interfaces/evse_board_support/Implementation.hpp>
 #include <generated/interfaces/powermeter/Implementation.hpp>
+#include <generated/interfaces/temperature_sensor/Implementation.hpp>
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 #include "util/errors.hpp"
@@ -37,6 +38,7 @@ public:
     YetiSimulator() = delete;
     YetiSimulator(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider, Everest::TelemetryProvider& telemetry,
                   std::unique_ptr<powermeterImplBase> p_powermeter,
+                  std::unique_ptr<temperature_sensorImplBase> p_temperature_sensor,
                   std::unique_ptr<evse_board_supportImplBase> p_board_support,
                   std::unique_ptr<ev_board_supportImplBase> p_ev_board_support, std::unique_ptr<ac_rcdImplBase> p_rcd,
                   std::unique_ptr<connector_lockImplBase> p_connector_lock, Conf& config) :
@@ -44,6 +46,7 @@ public:
         mqtt(mqtt_provider),
         telemetry(telemetry),
         p_powermeter(std::move(p_powermeter)),
+        p_temperature_sensor(std::move(p_temperature_sensor)),
         p_board_support(std::move(p_board_support)),
         p_ev_board_support(std::move(p_ev_board_support)),
         p_rcd(std::move(p_rcd)),
@@ -53,6 +56,7 @@ public:
     Everest::MqttProvider& mqtt;
     Everest::TelemetryProvider& telemetry;
     const std::unique_ptr<powermeterImplBase> p_powermeter;
+    const std::unique_ptr<temperature_sensorImplBase> p_temperature_sensor;
     const std::unique_ptr<evse_board_supportImplBase> p_board_support;
     const std::unique_ptr<ev_board_supportImplBase> p_ev_board_support;
     const std::unique_ptr<ac_rcdImplBase> p_rcd;

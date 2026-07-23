@@ -77,6 +77,9 @@ provides:
           the charging session can be stopped when fail_on_powermeter_errors is enabled in the EvseManager module.
         type: boolean
         default: false
+  temperature_sensor:
+    description: Internal temperature readings from the EM580 device
+    interface: temperature_sensor
 requires:
   modbus:
     interface: serial_communication_hub
@@ -85,4 +88,3 @@ metadata:
   authors:
     - florin.mihut@pionix.com
 enable_external_mqtt: false
-

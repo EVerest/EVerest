@@ -1,0 +1,14 @@
+description: >-
+  Generic temperature sensor reporting interface. Providers publish one or more
+  temperature readings (e.g. ambient temperature, internal temperature, etc.).
+vars:
+  temperatures:
+    description: >-
+      Temperature readings in degree Celsius. The meaning of each entry is product
+      specific and may be specified via the identification or location fields.
+    type: array
+    items:
+      type: object
+      $ref: /temperature#/Temperature
+errors:
+  - reference: /errors/generic
