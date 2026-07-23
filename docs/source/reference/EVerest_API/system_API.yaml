@@ -565,9 +565,10 @@ components:
       type: object
       properties:
         disable_connectors_during_install:
-          description: Whether all connectors should be made unavailable (disabled) for the duration of the firmware install
+          description: >-
+            Whether all connectors should be made unavailable (disabled) for the duration of the firmware install.
+            Keep unset to use the defaults (disable connectors in the Downloaded and SignatureVerified phases for unsigned and signed updates respectively)
           type: boolean
-          default: true
     LogStatusEnum:
       description: |
         State describing the current status of log upload of the system:
