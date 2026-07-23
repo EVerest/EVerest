@@ -35,13 +35,17 @@ DeratingCurve parse_curve_points(const nlohmann::json& points_json) {
         curve.push_back(point);
     }
 
+    // Sort by ascending temp_C so interpolation can assume ordering; this also makes any duplicate
+    // temperatures adjacent, so a single adjacent_find pass detects them.
     std::sort(curve.begin(), curve.end(),
               [](const DeratingPoint& lhs, const DeratingPoint& rhs) { return lhs.m_temp_c < rhs.m_temp_c; });
 
-    for (std::size_t i = 1; i < curve.size(); ++i) {
-        if (curve[i].m_temp_c == curve[i - 1].m_temp_c) {
-            throw std::invalid_argument("derating curve contains duplicate temp_C values");
-        }
+    const auto duplicate =
+        std::adjacent_find(curve.begin(), curve.end(), [](const DeratingPoint& lhs, const DeratingPoint& rhs) {
+            return lhs.m_temp_c == rhs.m_temp_c;
+        });
+    if (duplicate != curve.end()) {
+        throw std::invalid_argument("derating curve contains duplicate temp_C values");
     }
 
     return curve;
@@ -67,9 +71,7 @@ std::string make_curve_key(const std::string& module_id, const std::string& iden
 }
 
 bool has_curve_for_provider(const DeratingCurveMap& curves, const std::string& module_id) {
-    const auto prefix = module_id + ".";
-    return std::any_of(curves.begin(), curves.end(),
-                       [&](const auto& entry) { return entry.first.rfind(prefix, 0) == 0; });
+    return curves.count(module_id) != 0;
 }
 
 DeratingCurveMap parse_derating_curves_json(const std::string& json) {
@@ -79,9 +81,25 @@ DeratingCurveMap parse_derating_curves_json(const std::string& json) {
     }
 
     DeratingCurveMap curves;
-    for (const auto& [key, value] : parsed.items()) {
-        validate_curve_key_format(key);
-        curves.emplace(key, parse_curve_points(value));
+    for (const auto& [module_id, identifications] : parsed.items()) {
+        if (module_id.empty()) {
+            throw std::invalid_argument("derating_curves_json contains an empty module_id");
+        }
+        if (!identifications.is_object()) {
+            throw std::invalid_argument("derating_curves_json entry for module_id '" + module_id +
+                                        "' must be an object of identification -> point array");
+        }
+        if (identifications.empty()) {
+            throw std::invalid_argument("derating_curves_json entry for module_id '" + module_id +
+                                        "' must define at least one identification");
+        }
+        for (const auto& [identification, points] : identifications.items()) {
+            if (identification.empty()) {
+                throw std::invalid_argument("derating_curves_json contains an empty identification for module_id '" +
+                                            module_id + "'");
+            }
+            curves[module_id].emplace(identification, parse_curve_points(points));
+        }
     }
     return curves;
 }
@@ -118,10 +136,13 @@ TemperatureProviderIgnoreList parse_temperature_provider_ignore_list(const std::
 }
 
 void validate_ignore_list_vs_curves(const DeratingCurveMap& curves, const TemperatureProviderIgnoreList& ignore_list) {
-    for (const auto& [curve_key, curve] : curves) {
-        (void)curve;
-        if (ignore_list.count(curve_key) != 0) {
-            throw std::invalid_argument("derating curve configured for ignored temperature reading: " + curve_key);
+    for (const auto& [module_id, identifications] : curves) {
+        for (const auto& [identification, curve] : identifications) {
+            (void)curve;
+            const auto curve_key = make_curve_key(module_id, identification);
+            if (ignore_list.count(curve_key) != 0) {
+                throw std::invalid_argument("derating curve configured for ignored temperature reading: " + curve_key);
+            }
         }
     }
 }
@@ -131,11 +152,14 @@ bool is_temperature_reading_ignored(const TemperatureProviderIgnoreList& ignore_
     return ignore_list.count(make_curve_key(module_id, identification)) != 0;
 }
 
-double interpolate_max_current_A(const DeratingCurve& curve, double temp_C) {
+std::optional<double> interpolate_max_current_A(const DeratingCurve& curve, double temp_C) {
     if (curve.empty()) {
-        return 0.0;
+        return std::nullopt;
     }
-    if (temp_C <= curve.front().m_temp_c) {
+    if (temp_C < curve.front().m_temp_c) {
+        return std::nullopt;
+    }
+    if (temp_C == curve.front().m_temp_c) {
         return curve.front().m_max_current_a;
     }
     if (temp_C >= curve.back().m_temp_c) {
@@ -157,11 +181,17 @@ double interpolate_max_current_A(const DeratingCurve& curve, double temp_C) {
     return lower.m_max_current_a + ratio * (upper.m_max_current_a - lower.m_max_current_a);
 }
 
-const DeratingCurve* find_derating_curve(const DeratingCurveMap& curves, const std::string& curve_key) {
-    if (const auto it = curves.find(curve_key); it != curves.end()) {
-        return &it->second;
+const DeratingCurve* find_derating_curve(const DeratingCurveMap& curves, const std::string& module_id,
+                                         const std::string& identification) {
+    const auto provider_it = curves.find(module_id);
+    if (provider_it == curves.end()) {
+        return nullptr;
     }
-    return nullptr;
+    const auto curve_it = provider_it->second.find(identification);
+    if (curve_it == provider_it->second.end()) {
+        return nullptr;
+    }
+    return &curve_it->second;
 }
 
 ComputeLimitResult compute_effective_limit_A(const DeratingCurveMap& curves,
@@ -178,35 +208,39 @@ ComputeLimitResult compute_effective_limit_A(const DeratingCurveMap& curves,
     for (const auto& reading : readings) {
         double sensor_limit = fallback_max_current_A;
 
-        if (!reading.temperature_C.has_value()) {
+        if (!reading.m_temperature_C.has_value()) {
             any_limit_applied = true;
             effective_limit = std::min(effective_limit, sensor_limit);
             continue;
         }
 
-        if (!std::isfinite(reading.temperature_C.value())) {
+        if (!std::isfinite(reading.m_temperature_C.value())) {
             any_limit_applied = true;
             effective_limit = std::min(effective_limit, sensor_limit);
             continue;
         }
 
-        if (!reading.identification.has_value() || reading.identification->empty()) {
-            result.missing_identification_curve_keys.push_back(reading.module_id);
+        if (!reading.m_identification.has_value() || reading.m_identification->empty()) {
+            result.m_missing_identification_curve_keys.push_back(reading.m_module_id);
             any_limit_applied = true;
             effective_limit = std::min(effective_limit, sensor_limit);
             continue;
         }
 
-        const std::string curve_key = make_curve_key(reading.module_id, reading.identification.value());
-        const DeratingCurve* curve = find_derating_curve(curves, curve_key);
+        const DeratingCurve* curve = find_derating_curve(curves, reading.m_module_id, reading.m_identification.value());
         if (curve == nullptr || curve->empty()) {
-            result.missing_curve_keys.push_back(curve_key);
+            result.m_missing_curve_keys.push_back(
+                make_curve_key(reading.m_module_id, reading.m_identification.value()));
             any_limit_applied = true;
             effective_limit = std::min(effective_limit, sensor_limit);
             continue;
         }
 
-        sensor_limit = interpolate_max_current_A(*curve, reading.temperature_C.value());
+        const auto limit = interpolate_max_current_A(*curve, reading.m_temperature_C.value());
+        if (!limit.has_value()) {
+            continue; // below the curve's first point -> this sensor imposes no limit
+        }
+        sensor_limit = limit.value();
         any_limit_applied = true;
         effective_limit = std::min(effective_limit, sensor_limit);
     }
@@ -215,7 +249,7 @@ ComputeLimitResult compute_effective_limit_A(const DeratingCurveMap& curves,
         return result;
     }
 
-    result.effective_limit_A = effective_limit;
+    result.m_effective_limit_A = effective_limit;
     return result;
 }
 

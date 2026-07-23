@@ -19,11 +19,11 @@ namespace {
 using namespace std::chrono_literals;
 
 struct CapturingEnergyLimitsAdapter : module::stub::QuietModuleAdapterStub {
-    std::vector<types::energy::ExternalLimits> published_limits;
+    std::vector<types::energy::ExternalLimits> m_published_limits;
 
     Result call_fn(const Requirement&, const std::string& cmd, Parameters parameters) override {
         if (cmd == "set_external_limits") {
-            published_limits.push_back(parameters.at("value").get<types::energy::ExternalLimits>());
+            m_published_limits.push_back(parameters.at("value").get<types::energy::ExternalLimits>());
         }
         return {};
     }
@@ -67,7 +67,7 @@ std::unique_ptr<module::AcTemperatureDerating> make_module(CapturingEnergyLimits
 module::Conf make_test_conf() {
     module::Conf config{};
     config.derating_curves_json =
-        R"({"sensor1.Powermeter": [{"temp_C": 25, "max_current_A": 32}, {"temp_C": 55, "max_current_A": 6}]})";
+        R"({"sensor1": {"Powermeter": [{"temp_C": 25, "max_current_A": 32}, {"temp_C": 55, "max_current_A": 6}]}})";
     config.temperature_provider_ignore_list = "";
     config.fallback_max_current_A = 5.0;
     config.temperature_stale_timeout_ms = 10000;
@@ -85,15 +85,15 @@ TEST(AcTemperatureDeratingModuleTest, LimitDecreaseIsPublishedImmediately) {
 
     module::AcTemperatureDerating::TestAccess::set_identified_reading(*module, 0, "Powermeter", 25.0, 0ms);
     module::AcTemperatureDerating::TestAccess::update_and_publish_limits(*module);
-    ASSERT_EQ(adapter.published_limits.size(), 1U);
-    ASSERT_TRUE(extract_ac_max_current_A(adapter.published_limits.front()).has_value());
-    EXPECT_NEAR(extract_ac_max_current_A(adapter.published_limits.front()).value(), 32.0, 0.01);
+    ASSERT_EQ(adapter.m_published_limits.size(), 1U);
+    ASSERT_TRUE(extract_ac_max_current_A(adapter.m_published_limits.front()).has_value());
+    EXPECT_NEAR(extract_ac_max_current_A(adapter.m_published_limits.front()).value(), 32.0, 0.01);
 
     module::AcTemperatureDerating::TestAccess::set_identified_reading(*module, 0, "Powermeter", 55.0, 0ms);
     module::AcTemperatureDerating::TestAccess::update_and_publish_limits(*module);
-    ASSERT_EQ(adapter.published_limits.size(), 2U);
-    ASSERT_TRUE(extract_ac_max_current_A(adapter.published_limits.back()).has_value());
-    EXPECT_NEAR(extract_ac_max_current_A(adapter.published_limits.back()).value(), 6.0, 0.01);
+    ASSERT_EQ(adapter.m_published_limits.size(), 2U);
+    ASSERT_TRUE(extract_ac_max_current_A(adapter.m_published_limits.back()).has_value());
+    EXPECT_NEAR(extract_ac_max_current_A(adapter.m_published_limits.back()).value(), 6.0, 0.01);
 }
 
 TEST(AcTemperatureDeratingModuleTest, LimitIncreaseIsDebounced) {
@@ -104,17 +104,17 @@ TEST(AcTemperatureDeratingModuleTest, LimitIncreaseIsDebounced) {
 
     module::AcTemperatureDerating::TestAccess::set_identified_reading(*module, 0, "Powermeter", 55.0, 0ms);
     module::AcTemperatureDerating::TestAccess::update_and_publish_limits(*module);
-    ASSERT_EQ(adapter.published_limits.size(), 1U);
+    ASSERT_EQ(adapter.m_published_limits.size(), 1U);
 
     module::AcTemperatureDerating::TestAccess::set_identified_reading(*module, 0, "Powermeter", 25.0, 0ms);
     module::AcTemperatureDerating::TestAccess::update_and_publish_limits(*module);
-    EXPECT_EQ(adapter.published_limits.size(), 1U);
+    EXPECT_EQ(adapter.m_published_limits.size(), 1U);
 
     module::AcTemperatureDerating::TestAccess::set_last_publish_time_age(*module, 1001ms);
     module::AcTemperatureDerating::TestAccess::update_and_publish_limits(*module);
-    ASSERT_EQ(adapter.published_limits.size(), 2U);
-    ASSERT_TRUE(extract_ac_max_current_A(adapter.published_limits.back()).has_value());
-    EXPECT_NEAR(extract_ac_max_current_A(adapter.published_limits.back()).value(), 32.0, 0.01);
+    ASSERT_EQ(adapter.m_published_limits.size(), 2U);
+    ASSERT_TRUE(extract_ac_max_current_A(adapter.m_published_limits.back()).has_value());
+    EXPECT_NEAR(extract_ac_max_current_A(adapter.m_published_limits.back()).value(), 32.0, 0.01);
 }
 
 TEST(AcTemperatureDeratingModuleTest, StaleReadingUsesFallbackLimit) {
@@ -125,11 +125,12 @@ TEST(AcTemperatureDeratingModuleTest, StaleReadingUsesFallbackLimit) {
 
     module::AcTemperatureDerating::TestAccess::set_identified_reading(*module, 0, "Powermeter", 25.0, 0ms);
     module::AcTemperatureDerating::TestAccess::update_and_publish_limits(*module);
-    ASSERT_EQ(adapter.published_limits.size(), 1U);
+    ASSERT_EQ(adapter.m_published_limits.size(), 1U);
 
     module::AcTemperatureDerating::TestAccess::set_identified_reading(*module, 0, "Powermeter", 25.0, 10001ms);
     module::AcTemperatureDerating::TestAccess::update_and_publish_limits(*module);
-    ASSERT_EQ(adapter.published_limits.size(), 2U);
-    ASSERT_TRUE(extract_ac_max_current_A(adapter.published_limits.back()).has_value());
-    EXPECT_NEAR(extract_ac_max_current_A(adapter.published_limits.back()).value(), config.fallback_max_current_A, 0.01);
+    ASSERT_EQ(adapter.m_published_limits.size(), 2U);
+    ASSERT_TRUE(extract_ac_max_current_A(adapter.m_published_limits.back()).has_value());
+    EXPECT_NEAR(extract_ac_max_current_A(adapter.m_published_limits.back()).value(), config.fallback_max_current_A,
+                0.01);
 }

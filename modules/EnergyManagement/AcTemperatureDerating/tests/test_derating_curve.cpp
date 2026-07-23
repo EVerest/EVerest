@@ -12,12 +12,12 @@ namespace {
 
 DeratingCurveMap make_curves() {
     DeratingCurveMap curves;
-    curves["sensor_a.internal"] = {
+    curves["sensor_a"]["internal"] = {
         {20.0, 32.0},
         {60.0, 16.0},
         {80.0, 6.0},
     };
-    curves["sensor_b.internal"] = {
+    curves["sensor_b"]["internal"] = {
         {25.0, 32.0},
         {75.0, 10.0},
     };
@@ -34,17 +34,25 @@ TEST(DeratingCurveTest, parse_rejects_non_object_json) {
 }
 
 TEST(DeratingCurveTest, parse_rejects_empty_curve_array) {
-    EXPECT_THROW(parse_derating_curves_json(R"({"meter1.internal":[]})"), std::invalid_argument);
+    EXPECT_THROW(parse_derating_curves_json(R"({"meter1":{"internal":[]}})"), std::invalid_argument);
 }
 
 TEST(DeratingCurveTest, parse_rejects_missing_point_fields) {
-    EXPECT_THROW(parse_derating_curves_json(R"({"meter1.internal":[{"temp_C":20}]})"), std::invalid_argument);
+    EXPECT_THROW(parse_derating_curves_json(R"({"meter1":{"internal":[{"temp_C":20}]}})"), std::invalid_argument);
 }
 
 TEST(DeratingCurveTest, parse_rejects_duplicate_temp_c) {
     EXPECT_THROW(parse_derating_curves_json(
-                     R"({"meter1.internal":[{"temp_C":20,"max_current_A":32},{"temp_C":20,"max_current_A":16}]})"),
+                     R"({"meter1":{"internal":[{"temp_C":20,"max_current_A":32},{"temp_C":20,"max_current_A":16}]}})"),
                  std::invalid_argument);
+}
+
+TEST(DeratingCurveTest, parse_rejects_non_object_module_value) {
+    EXPECT_THROW(parse_derating_curves_json(R"({"meter1":[{"temp_C":20,"max_current_A":32}]})"), std::invalid_argument);
+}
+
+TEST(DeratingCurveTest, parse_rejects_empty_identifications) {
+    EXPECT_THROW(parse_derating_curves_json(R"({"meter1":{}})"), std::invalid_argument);
 }
 
 TEST(DeratingCurveTest, validate_provider_curves_rejects_empty_curve_map) {
@@ -54,7 +62,7 @@ TEST(DeratingCurveTest, validate_provider_curves_rejects_empty_curve_map) {
 TEST(DeratingCurveTest, compute_empty_readings_returns_no_limit) {
     const auto curves = make_curves();
     const auto result = compute_effective_limit_A(curves, {}, 6.0);
-    EXPECT_FALSE(result.effective_limit_A.has_value());
+    EXPECT_FALSE(result.m_effective_limit_A.has_value());
 }
 
 TEST(DeratingCurveTest, ignored_reading_excluded_from_minimum) {
@@ -64,8 +72,8 @@ TEST(DeratingCurveTest, ignored_reading_excluded_from_minimum) {
     };
 
     const auto result = compute_effective_limit_A(curves, readings, 0.0);
-    ASSERT_TRUE(result.effective_limit_A.has_value());
-    EXPECT_DOUBLE_EQ(result.effective_limit_A.value(), 24.0);
+    ASSERT_TRUE(result.m_effective_limit_A.has_value());
+    EXPECT_DOUBLE_EQ(result.m_effective_limit_A.value(), 24.0);
 }
 
 TEST(DeratingCurveTest, make_curve_key) {
@@ -73,27 +81,47 @@ TEST(DeratingCurveTest, make_curve_key) {
 }
 
 TEST(DeratingCurveTest, parse_json) {
-    const auto curves = parse_derating_curves_json(R"({"meter1.internal":[{"temp_C":20,"max_current_A":32}]})");
+    const auto curves = parse_derating_curves_json(R"({"meter1":{"internal":[{"temp_C":20,"max_current_A":32}]}})");
     ASSERT_EQ(curves.size(), 1U);
-    ASSERT_NE(curves.find("meter1.internal"), curves.end());
-    ASSERT_EQ(curves.at("meter1.internal").size(), 1U);
+    ASSERT_NE(curves.find("meter1"), curves.end());
+    ASSERT_EQ(curves.at("meter1").size(), 1U);
+    ASSERT_NE(curves.at("meter1").find("internal"), curves.at("meter1").end());
+    ASSERT_EQ(curves.at("meter1").at("internal").size(), 1U);
 }
 
-TEST(DeratingCurveTest, parse_rejects_key_without_dot) {
-    EXPECT_THROW(parse_derating_curves_json(R"({"meter1":[{"temp_C":20,"max_current_A":32}]})"), std::invalid_argument);
+TEST(DeratingCurveTest, parse_multiple_identifications_per_module) {
+    const auto curves = parse_derating_curves_json(
+        R"({"meter1":{"internal":[{"temp_C":20,"max_current_A":32}],"external":[{"temp_C":25,"max_current_A":16}]}})");
+    ASSERT_EQ(curves.size(), 1U);
+    EXPECT_EQ(curves.at("meter1").size(), 2U);
+    EXPECT_NE(curves.at("meter1").find("internal"), curves.at("meter1").end());
+    EXPECT_NE(curves.at("meter1").find("external"), curves.at("meter1").end());
 }
 
 TEST(DeratingCurveTest, validate_provider_curves) {
-    const auto curves = parse_derating_curves_json(R"({"meter1.internal":[{"temp_C":20,"max_current_A":32}]})");
+    const auto curves = parse_derating_curves_json(R"({"meter1":{"internal":[{"temp_C":20,"max_current_A":32}]}})");
     EXPECT_NO_THROW(validate_curves_for_providers(curves, {"meter1"}));
     EXPECT_THROW(validate_curves_for_providers(curves, {"meter2"}), std::invalid_argument);
 }
 
 TEST(DeratingCurveTest, interpolate_between_points) {
     const DeratingCurve curve{{20.0, 32.0}, {60.0, 16.0}};
-    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, 20.0), 32.0);
-    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, 40.0), 24.0);
-    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, 70.0), 16.0);
+    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, 20.0).value(), 32.0);
+    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, 40.0).value(), 24.0);
+    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, 70.0).value(), 16.0);
+}
+
+TEST(DeratingCurveTest, interpolate_below_first_point_returns_nullopt) {
+    const DeratingCurve curve{{20.0, 32.0}, {60.0, 16.0}};
+    EXPECT_FALSE(interpolate_max_current_A(curve, 10.0).has_value());
+    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, 20.0).value(), 32.0);
+}
+
+TEST(DeratingCurveTest, single_point_curve_caps_above_threshold) {
+    const DeratingCurve curve{{60.0, 16.0}};
+    EXPECT_FALSE(interpolate_max_current_A(curve, 50.0).has_value());
+    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, 60.0).value(), 16.0);
+    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, 80.0).value(), 16.0);
 }
 
 TEST(DeratingCurveTest, compute_minimum_across_sensors) {
@@ -104,11 +132,11 @@ TEST(DeratingCurveTest, compute_minimum_across_sensors) {
     };
 
     const auto result = compute_effective_limit_A(curves, readings, 0.0);
-    ASSERT_TRUE(result.effective_limit_A.has_value());
-    EXPECT_TRUE(result.missing_curve_keys.empty());
+    ASSERT_TRUE(result.m_effective_limit_A.has_value());
+    EXPECT_TRUE(result.m_missing_curve_keys.empty());
     // sensor_a@40C -> 24A (between 20C/32A and 60C/16A); sensor_b@50C -> 21A (between 25C/32A
     // and 75C/10A); the effective limit is the minimum across sensors.
-    EXPECT_DOUBLE_EQ(result.effective_limit_A.value(), 21.0);
+    EXPECT_DOUBLE_EQ(result.m_effective_limit_A.value(), 21.0);
 }
 
 TEST(DeratingCurveTest, stale_sensor_uses_fallback) {
@@ -118,8 +146,8 @@ TEST(DeratingCurveTest, stale_sensor_uses_fallback) {
     };
 
     const auto result = compute_effective_limit_A(curves, readings, 6.0);
-    ASSERT_TRUE(result.effective_limit_A.has_value());
-    EXPECT_DOUBLE_EQ(result.effective_limit_A.value(), 6.0);
+    ASSERT_TRUE(result.m_effective_limit_A.has_value());
+    EXPECT_DOUBLE_EQ(result.m_effective_limit_A.value(), 6.0);
 }
 
 TEST(DeratingCurveTest, missing_curve_uses_fallback) {
@@ -129,10 +157,10 @@ TEST(DeratingCurveTest, missing_curve_uses_fallback) {
     };
 
     const auto result = compute_effective_limit_A(curves, readings, 6.0);
-    ASSERT_TRUE(result.effective_limit_A.has_value());
-    ASSERT_EQ(result.missing_curve_keys.size(), 1U);
-    EXPECT_EQ(result.missing_curve_keys.front(), "sensor_a.unknown");
-    EXPECT_DOUBLE_EQ(result.effective_limit_A.value(), 6.0);
+    ASSERT_TRUE(result.m_effective_limit_A.has_value());
+    ASSERT_EQ(result.m_missing_curve_keys.size(), 1U);
+    EXPECT_EQ(result.m_missing_curve_keys.front(), "sensor_a.unknown");
+    EXPECT_DOUBLE_EQ(result.m_effective_limit_A.value(), 6.0);
 }
 
 TEST(DeratingCurveTest, missing_identification_uses_fallback) {
@@ -142,25 +170,52 @@ TEST(DeratingCurveTest, missing_identification_uses_fallback) {
     };
 
     const auto result = compute_effective_limit_A(curves, readings, 6.0);
-    ASSERT_TRUE(result.effective_limit_A.has_value());
-    ASSERT_EQ(result.missing_identification_curve_keys.size(), 1U);
-    EXPECT_EQ(result.missing_identification_curve_keys.front(), "sensor_a");
-    EXPECT_DOUBLE_EQ(result.effective_limit_A.value(), 6.0);
+    ASSERT_TRUE(result.m_effective_limit_A.has_value());
+    ASSERT_EQ(result.m_missing_identification_curve_keys.size(), 1U);
+    EXPECT_EQ(result.m_missing_identification_curve_keys.front(), "sensor_a");
+    EXPECT_DOUBLE_EQ(result.m_effective_limit_A.value(), 6.0);
+}
+
+TEST(DeratingCurveTest, compute_all_sensors_below_curve_publishes_no_limit) {
+    const auto curves = make_curves();
+    const std::vector<SensorReadingInput> readings = {
+        {"sensor_a", "internal", 10.0}, // below sensor_a's first point (20C)
+        {"sensor_b", "internal", 15.0}, // below sensor_b's first point (25C)
+    };
+
+    const auto result = compute_effective_limit_A(curves, readings, 6.0);
+    EXPECT_FALSE(result.m_effective_limit_A.has_value());
+    EXPECT_TRUE(result.m_missing_curve_keys.empty());
+    EXPECT_TRUE(result.m_missing_identification_curve_keys.empty());
+}
+
+TEST(DeratingCurveTest, compute_below_curve_sensor_drops_out_of_minimum) {
+    const auto curves = make_curves();
+    const std::vector<SensorReadingInput> readings = {
+        {"sensor_a", "internal", 10.0}, // below first point -> no limit
+        {"sensor_b", "internal", 50.0}, // between 25C/32A and 75C/10A -> 21A
+    };
+
+    const auto result = compute_effective_limit_A(curves, readings, 6.0);
+    ASSERT_TRUE(result.m_effective_limit_A.has_value());
+    EXPECT_DOUBLE_EQ(result.m_effective_limit_A.value(), 21.0);
 }
 
 TEST(DeratingCurveTest, flat_curve_is_no_derating) {
     const DeratingCurve curve{{-20.0, 32.0}, {25.0, 32.0}, {80.0, 32.0}};
-    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, -20.0), 32.0);
-    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, 25.0), 32.0);
-    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, 50.0), 32.0);
-    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, 80.0), 32.0);
+    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, -20.0).value(), 32.0);
+    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, 25.0).value(), 32.0);
+    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, 50.0).value(), 32.0);
+    EXPECT_DOUBLE_EQ(interpolate_max_current_A(curve, 80.0).value(), 32.0);
 }
 
 TEST(DeratingCurveTest, find_curve_by_key) {
-    const auto curves = parse_derating_curves_json(R"({"meter1.internal":[{"temp_C":30,"max_current_A":20}]})");
-    const DeratingCurve* curve = find_derating_curve(curves, "meter1.internal");
+    const auto curves = parse_derating_curves_json(R"({"meter1":{"internal":[{"temp_C":30,"max_current_A":20}]}})");
+    const DeratingCurve* curve = find_derating_curve(curves, "meter1", "internal");
     ASSERT_NE(curve, nullptr);
-    EXPECT_DOUBLE_EQ(interpolate_max_current_A(*curve, 30.0), 20.0);
+    EXPECT_DOUBLE_EQ(interpolate_max_current_A(*curve, 30.0).value(), 20.0);
+    EXPECT_EQ(find_derating_curve(curves, "meter1", "external"), nullptr);
+    EXPECT_EQ(find_derating_curve(curves, "meter2", "internal"), nullptr);
 }
 
 TEST(DeratingCurveTest, parse_ignore_list) {
@@ -176,7 +231,7 @@ TEST(DeratingCurveTest, parse_ignore_list_rejects_invalid_key) {
 
 TEST(DeratingCurveTest, validate_ignore_list_rejects_curve_for_ignored_reading) {
     const auto curves = parse_derating_curves_json(
-        R"({"meter1.internal":[{"temp_C":20,"max_current_A":32}],"meter1.body":[{"temp_C":20,"max_current_A":16}]})");
+        R"({"meter1":{"internal":[{"temp_C":20,"max_current_A":32}],"body":[{"temp_C":20,"max_current_A":16}]}})");
     const auto ignore_list = parse_temperature_provider_ignore_list("meter1.body");
     EXPECT_THROW(validate_ignore_list_vs_curves(curves, ignore_list), std::invalid_argument);
 }
@@ -188,8 +243,8 @@ TEST(DeratingCurveTest, non_finite_temperature_uses_fallback) {
     };
 
     const auto result = compute_effective_limit_A(curves, readings, 6.0);
-    ASSERT_TRUE(result.effective_limit_A.has_value());
-    EXPECT_DOUBLE_EQ(result.effective_limit_A.value(), 6.0);
+    ASSERT_TRUE(result.m_effective_limit_A.has_value());
+    EXPECT_DOUBLE_EQ(result.m_effective_limit_A.value(), 6.0);
 }
 
 TEST(DeratingCurveTest, is_temperature_reading_ignored) {

@@ -4,25 +4,48 @@ description: >-
 config:
   derating_curves_json:
     description: >-
-      JSON object: each key is module_id.identification, each value is an array of
-      derating points {"temp_C": number, "max_current_A": number}. Points must be
-      sorted by ascending temp_C; the module linearly interpolates between them and
-      clamps below the first / above the last point.
+      Nested JSON object: {module_id: {identification: point_array}}. Each point array holds
+      derating points {"temp_C": number, "max_current_A": number}. Points may be in
+      any order (the module sorts by ascending temp_C); duplicate temp_C values are
+      rejected. The curve is defined from its first point upward: below the first
+      point's temp_C no derating is applied (that sensor imposes no limit), between
+      points the module linearly interpolates, and at/above the last point the final
+      limit is held. A single-point curve therefore means "no limit below temp_C, cap
+      at max_current_A at/above temp_C". To cap current even at low temperatures, place
+      the first point at a sufficiently low temperature.
 
       module_id is the temperature provider instance id from active_modules /
       connections.temperature.module_id (not the module type name and not
       implementation_id). identification is Temperature.identification from the
-      published reading. Each Temperature.identification in a batch needs a matching curve key.
+      published reading. Each Temperature.identification in a batch needs a matching curve.
       Readings without identification log a warning and use fallback_max_current_A.
 
-      Every connected temperature provider must have at least one curve key with prefix
-      module_id. Missing curves at runtime log a warning and apply fallback_max_current_A.
+      Every connected temperature provider must have at least one curve. Missing curves at
+      runtime log a warning and apply fallback_max_current_A.
 
       No derating (constant limit at all temperatures):
-      {"my_module.Powermeter": [{"temp_C": -20, "max_current_A": 32}, {"temp_C": 25, "max_current_A": 32}, {"temp_C": 80, "max_current_A": 32}]}
+      { "my_module": {
+          "Powermeter":[
+            {"temp_C": -20, "max_current_A": 32}, 
+            {"temp_C": 25, "max_current_A": 32}, 
+            {"temp_C": 80, "max_current_A": 32}
+          ]
+        }
+      }
 
-      With derating:
-      {"yeti_driver_1.Powermeter": [{"temp_C": 25, "max_current_A": 32}, {"temp_C": 40, "max_current_A": 16}, {"temp_C": 55, "max_current_A": 6}]}
+      With derating (one provider, two identifications):
+      { "yeti_driver_1":{
+          "Powermeter":[
+            { "temp_C":25, "max_current_A":32 },
+            { "temp_C":40, "max_current_A":16 },
+            { "temp_C":55, "max_current_A":6 }
+          ],
+          "Connector":[
+            { "temp_C":30, "max_current_A":32 },
+            { "temp_C":60, "max_current_A":10 }
+          ]
+        }
+      }
     type: string
     default: "{}"
   temperature_provider_ignore_list:

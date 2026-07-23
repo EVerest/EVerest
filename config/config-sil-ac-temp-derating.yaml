@@ -135,7 +135,7 @@ active_modules:
       temperature_stale_timeout_ms: 10000
       update_debounce_ms: 5000
       derating_curves_json: |
-        {"temp_sensor_sim.internal": [{"temp_C": 25, "max_current_A": 32}, {"temp_C": 40, "max_current_A": 16}, {"temp_C": 55, "max_current_A": 6}]}
+        {"temp_sensor_sim": {"internal": [{"temp_C": 25, "max_current_A": 32}, {"temp_C": 40, "max_current_A": 16}, {"temp_C": 55, "max_current_A": 6}]}}
       temperature_provider_ignore_list: "temp_sensor_sim.internal1"
     connections:
       temperature:

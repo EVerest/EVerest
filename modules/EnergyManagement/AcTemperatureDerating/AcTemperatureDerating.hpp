@@ -62,11 +62,11 @@ public:
                                            const std::string& identification, double temp_C,
                                            std::chrono::milliseconds age_before_now) {
             const auto now = std::chrono::steady_clock::now();
-            auto& provider = self.provider_states_.at(provider_index);
-            auto& state = provider.readings_by_identification[identification];
-            state.temperature_C = temp_C;
-            state.last_update = now - age_before_now;
-            state.ever_received = true;
+            auto& provider = self.m_provider_states.at(provider_index);
+            auto& state = provider.m_readings_by_identification[identification];
+            state.m_temperature_C = temp_C;
+            state.m_last_update = now - age_before_now;
+            state.m_ever_received = true;
         }
 
         static void update_and_publish_limits(AcTemperatureDerating& self) {
@@ -74,12 +74,12 @@ public:
         }
 
         static void set_last_publish_time_age(AcTemperatureDerating& self, std::chrono::milliseconds age_before_now) {
-            self.last_publish_time_ = std::chrono::steady_clock::now() - age_before_now;
+            self.m_last_publish_time = std::chrono::steady_clock::now() - age_before_now;
         }
 
         static void clear_last_published_limit(AcTemperatureDerating& self) {
-            self.last_published_limit_A_.reset();
-            self.last_publish_time_ = {};
+            self.m_last_published_limit_A.reset();
+            self.m_last_publish_time = {};
         }
     };
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
@@ -96,26 +96,25 @@ private:
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     struct ReadingState {
-        std::optional<double> temperature_C;
-        std::chrono::steady_clock::time_point last_update{};
-        bool ever_received{false};
+        std::optional<double> m_temperature_C;
+        std::chrono::steady_clock::time_point m_last_update{};
+        bool m_ever_received{false};
     };
 
     struct ProviderState {
-        std::string module_id;
-        bool has_reading_without_identification{false};
-        ReadingState reading_without_identification{};
-        std::unordered_map<std::string, ReadingState> readings_by_identification;
+        std::string m_module_id;
+        std::optional<ReadingState> m_reading_without_identification;
+        std::unordered_map<std::string, ReadingState> m_readings_by_identification;
     };
 
-    ac_temperature_derating::DeratingCurveMap derating_curves_;
-    ac_temperature_derating::TemperatureProviderIgnoreList ignore_list_;
-    std::vector<ProviderState> provider_states_;
-    std::mutex state_mutex_;
+    ac_temperature_derating::DeratingCurveMap m_derating_curves;
+    ac_temperature_derating::TemperatureProviderIgnoreList m_ignore_list;
+    std::vector<ProviderState> m_provider_states;
+    std::mutex m_state_mutex;
 
-    std::optional<double> last_published_limit_A_;
-    std::chrono::steady_clock::time_point last_publish_time_{};
-    std::set<std::string> warned_missing_curve_keys_;
+    std::optional<double> m_last_published_limit_A;
+    std::chrono::steady_clock::time_point m_last_publish_time{};
+    std::set<std::string> m_warned_missing_curve_keys;
 
     void report_missing_curves(const ac_temperature_derating::ComputeLimitResult& result);
     void update_and_publish_limits();
@@ -124,7 +123,7 @@ private:
     // Periodically re-evaluates limits so staleness/fallback are enforced even when a provider
     // stops publishing (no subscription callback would otherwise fire). Declared last so it is
     // destroyed first and its callback cannot run while other members are torn down.
-    Everest::SteadyTimer reevaluate_timer_;
+    Everest::SteadyTimer m_reevaluate_timer;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

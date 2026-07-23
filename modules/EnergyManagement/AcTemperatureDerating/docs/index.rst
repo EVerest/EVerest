@@ -21,7 +21,8 @@ The EnergyManager merges limits from all nodes; OCPP/API external limits on othe
 Configuration
 -------------
 
-``derating_curves_json`` maps ``module_id.identification`` to an array of ``{"temp_C", "max_current_A"}`` points.
+``derating_curves_json`` is a nested object ``{module_id: {identification: point_array}}`` where each
+point array holds ``{"temp_C", "max_current_A"}`` points.
 
 - ``module_id``: temperature provider instance id from the Everest config (``active_modules`` / ``connections.temperature.module_id``)
 - ``identification``: ``Temperature.identification`` published by that provider
@@ -55,7 +56,7 @@ Example module config::
       temperature_stale_timeout_ms: 10000
       update_debounce_ms: 1000
       derating_curves_json: |
-        {"cgem580.Powermeter": [{"temp_C": 25, "max_current_A": 32}, {"temp_C": 70, "max_current_A": 10}]}
+        {"cgem580": {"Powermeter": [{"temp_C": 25, "max_current_A": 32}, {"temp_C": 70, "max_current_A": 10}]}}
     connections:
       temperature:
         - module_id: cgem580
@@ -67,7 +68,7 @@ Example module config::
 No derating (constant limit at all temperatures)::
 
   derating_curves_json: |
-    {"yeti_driver_1.Powermeter": [{"temp_C": -20, "max_current_A": 32}, {"temp_C": 25, "max_current_A": 32}, {"temp_C": 80, "max_current_A": 32}]}
+    {"yeti_driver_1": {"Powermeter": [{"temp_C": -20, "max_current_A": 32}, {"temp_C": 25, "max_current_A": 32}, {"temp_C": 80, "max_current_A": 32}]}}
 
 See also ``config/config-sil-ac-temp-derating.yaml`` for a full SIL example using
 :ref:`TemperatureSensorSimulator <everest_modules_handwritten_TemperatureSensorSimulator>`.
