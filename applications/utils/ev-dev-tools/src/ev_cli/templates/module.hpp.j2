@@ -3,7 +3,7 @@
 #ifndef {{ info.hpp_guard }}
 #define {{ info.hpp_guard }}
 
-{{ print_template_info('2', 'marked regions will be kept') }}
+{{ print_template_info('3', 'marked regions will be kept') }}
 
 #include "{{ info.ld_ev_header }}"
 
@@ -97,6 +97,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     {{ insert_block(info.blocks.private_defs, indent=4) }}
 

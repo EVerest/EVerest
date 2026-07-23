@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2022 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef MODULE_ADAPTER_HPP
 #define MODULE_ADAPTER_HPP
 
@@ -44,13 +44,16 @@ struct ModuleBase;
 class ImplementationBase {
 public:
     friend class ModuleAdapter; // for accessing gather_cmds
-    friend class ModuleBase;    // for accessing init & ready
+    friend class ModuleBase;    // for accessing init, ready & shutdown
     virtual ~ImplementationBase() = default;
 
 private:
     virtual void _gather_cmds(std::vector<cmd>&) = 0;
     virtual void init() = 0;
     virtual void ready() = 0;
+    virtual void shutdown() {
+        EVLOG_debug << "No shutdown handler installed! Please implement shutdown() in your implementation!";
+    }
 };
 
 class ModuleBase {
@@ -64,6 +67,17 @@ protected:
     void invoke_init(ImplementationBase& impl);
 
     void invoke_ready(ImplementationBase& impl);
+
+    void invoke_shutdown(ImplementationBase& impl) {
+        impl.shutdown();
+    }
+
+    /// Default when a module has not yet declared its own \c shutdown() (legacy generated headers).
+    /// Generated modules define a private \c shutdown() that calls \c invoke_shutdown() on each impl.
+    void shutdown() {
+        EVLOG_debug << "No shutdown handler installed! Please implement shutdown() in your module! (" << info.name
+                    << ")";
+    }
 };
 
 namespace error {

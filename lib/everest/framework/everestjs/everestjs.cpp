@@ -63,6 +63,8 @@ struct EvModCtx {
     std::map<std::pair<std::string, std::string>, Napi::FunctionReference> cmd_handlers;
 
     std::map<std::string, Napi::FunctionReference> mqtt_subscriptions;
+
+    Napi::FunctionReference js_shutdown_handler_ref;
 };
 
 // FIXME (aw): this could go into a class with singleton pattern
@@ -197,6 +199,54 @@ void framework_ready_handler() {
             return args;
         },
         nullptr);
+}
+
+static Napi::Value register_shutdown_callback(const Napi::CallbackInfo& info) {
+    BOOST_LOG_FUNCTION();
+
+    const auto& env = info.Env();
+
+    try {
+        if (!info[0].IsFunction()) {
+            EVTHROW(EVEXCEPTION(Everest::EverestApiError, "on_shutdown expects a function argument"));
+        }
+        ctx->js_shutdown_handler_ref = Napi::Persistent(info[0].As<Napi::Function>());
+    } catch (std::exception& e) {
+        EVLOG_AND_RETHROW(env);
+    }
+
+    return env.Undefined();
+}
+
+void framework_shutdown_handler() {
+    BOOST_LOG_FUNCTION();
+    // the module's shutdown handler must run inside the main js context; exec() blocks until the
+    // returned value (or promise, for async handlers) has settled, so module communication stays
+    // up while the handler runs and is cut by the framework only afterwards
+    auto handle_shutdown_js = [](const Napi::CallbackInfo& info) -> Napi::Value {
+        auto env = info.Env();
+        Napi::Value result = env.Undefined();
+        if (!ctx->js_shutdown_handler_ref.IsEmpty()) {
+            result = ctx->js_shutdown_handler_ref.Value().Call({ctx->js_module_ref.Value()});
+        } else {
+            EVLOG_warning << "No shutdown handler registered! Please register one via on_shutdown() in your module!";
+        }
+        // stop keeping the node event loop alive: once the module's own handles (timers,
+        // sockets, ...) are cleaned up by its shutdown handler, the process exits on its own
+        ctx->js_cb->unref(env);
+        return result;
+    };
+
+    ctx->js_cb->exec(
+        [handle_shutdown_js](Napi::Env& env) {
+            std::vector<napi_value> args{Napi::Function::New(env, handle_shutdown_js)};
+            return args;
+        },
+        [](const Napi::CallbackInfo&, bool is_rejected) {
+            if (is_rejected) {
+                EVLOG_error << "Module shutdown handler rejected/threw; continuing shutdown";
+            }
+        });
 }
 
 static Napi::Value mqtt_publish(const Napi::CallbackInfo& info) {
@@ -942,6 +992,7 @@ static Napi::Value boot_module(const Napi::CallbackInfo& info) {
         ctx->js_module_ref = Napi::Persistent(module_this);
         ctx->js_cb = std::make_unique<JsExecCtx>(env, callback_wrapper);
         ctx->everest->register_on_ready_handler(framework_ready_handler);
+        ctx->everest->register_on_shutdown_handler(framework_shutdown_handler);
 
         const auto end_time = std::chrono::steady_clock::now();
         EVLOG_info << "Module " << fmt::format(Everest::TERMINAL_STYLE_BLUE, "{}", module_id) << " initialized ["
@@ -997,6 +1048,9 @@ static Napi::Object Init(Napi::Env env, Napi::Object exports) {
 
     exports.DefineProperty(
         Napi::PropertyDescriptor::Value("signal_ready", Napi::Function::New(env, signal_ready), napi_enumerable));
+
+    exports.DefineProperty(Napi::PropertyDescriptor::Value(
+        "register_shutdown_callback", Napi::Function::New(env, register_shutdown_callback), napi_enumerable));
 
     exports.DefineProperty(
         Napi::PropertyDescriptor::Value("boot_module", Napi::Function::New(env, boot_module), napi_enumerable));

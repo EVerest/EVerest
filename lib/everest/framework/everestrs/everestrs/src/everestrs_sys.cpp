@@ -123,6 +123,8 @@ JsonBlob Module::get_manifest() const {
 
 void Module::signal_ready(const Runtime& rt) const {
     handle_->register_on_ready_handler([&rt]() { rt.on_ready(); });
+    // like the ready handler, the shutdown handler relies on the Runtime outliving the module
+    handle_->register_on_shutdown_handler([&rt]() { rt.on_shutdown(); });
     handle_->signal_ready();
 }
 

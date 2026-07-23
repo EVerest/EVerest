@@ -37,13 +37,42 @@ def probe_module_config(request) -> Optional[EverestEnvironmentProbeModuleConfig
 @pytest.fixture
 def core_config(request) -> EverestEnvironmentCoreConfiguration:
     everest_prefix = Path(request.config.getoption("--everest-prefix"))
+    if not everest_prefix.is_absolute():
+        # Accept both invocation styles:
+        # - from repo root: --everest-prefix build/dist
+        # - from tests dir: --everest-prefix ../build/dist
+        candidates = [
+            (Path.cwd() / everest_prefix).resolve(),
+            (request.config.rootpath / everest_prefix).resolve(),
+            (request.config.rootpath.parent / everest_prefix).resolve(),
+        ]
+        everest_prefix = next((path for path in candidates if path.exists()), candidates[0])
 
     marker = request.node.get_closest_marker("everest_core_config")
     if marker is None:
         everest_config_path = None  # config auto-detected by everest core
     else:
-        path = Path('/etc/everest') if everest_prefix == '/usr' else everest_prefix / 'etc/everest'
-        everest_config_path = path / marker.args[0]
+        config_name = marker.args[0]
+        installed_config_dir = Path('/etc/everest') if everest_prefix == '/usr' else everest_prefix / 'etc/everest'
+        installed_config_path = installed_config_dir / config_name
+        if installed_config_path.exists():
+            everest_config_path = installed_config_path
+        else:
+            # Local dev runs can point at a prefix that is not freshly installed.
+            # In that case, fall back to repository config directories.
+            repo_config_candidates = [
+                request.config.rootpath / "config" / config_name,
+                request.config.rootpath.parent / "config" / config_name,
+            ]
+            matching_repo_path = next((path for path in repo_config_candidates if path.exists()), None)
+            if matching_repo_path is not None:
+                everest_config_path = matching_repo_path
+            else:
+                searched_paths = "', '".join(str(path.parent) for path in [installed_config_path] + repo_config_candidates)
+                raise FileNotFoundError(
+                    f"EVerest config '{config_name}' not found in '{searched_paths}'. "
+                    "Install/update the build output or provide a valid config marker."
+                )
 
     return EverestEnvironmentCoreConfiguration(
         everest_core_path=everest_prefix,
@@ -100,6 +129,7 @@ def everest_environment(request,
                  everest_config_strategies
                  ):
     standalone_module_marker = request.node.get_closest_marker('standalone_module')
+    manager_args_marker = request.node.get_closest_marker('everest_manager_args')
 
     environment_setup = EverestTestEnvironmentSetup(
         core_config=core_config,
@@ -108,6 +138,7 @@ def everest_environment(request,
         evse_security_config=evse_security_config,
         persistent_store_config=persistent_store_config,
         standalone_module=list(standalone_module_marker.args) if standalone_module_marker else None,
+        manager_extra_args=list(manager_args_marker.args) if manager_args_marker else None,
         everest_config_strategies=everest_config_strategies
     )
 

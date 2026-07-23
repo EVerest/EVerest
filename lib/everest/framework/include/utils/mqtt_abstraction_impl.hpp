@@ -49,6 +49,7 @@ public:
 
     bool connect() override;
     void disconnect() override;
+    void stop_message_handling() override;
     void publish(const std::string& topic, const nlohmann::json& json) override;
     void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false) override;
     void publish(const std::string& topic, const std::string& data) override;
@@ -109,7 +110,7 @@ private:
     void on_mqtt_connect();
     void handle_mqtt_message(const Message& message);
 
-    static void on_mqtt_disconnect();
+    void on_mqtt_disconnect();
     nlohmann::json get_internal(const MQTTRequest& request);
 };
 } // namespace Everest
