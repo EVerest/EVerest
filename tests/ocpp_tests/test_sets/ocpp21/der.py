@@ -40,6 +40,7 @@ import pytest
 import pytest_asyncio
 import logging
 import queue
+import time
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Dict, Iterable
@@ -240,10 +241,22 @@ def drain(pushed: "queue.Queue") -> None:
         pushed.get_nowait()
 
 
-def latest_directive_types(pushed: "queue.Queue", timeout_s: float = 30.0) -> set:
-    """Return the directive types in the next active-directive push for the DER EVSE."""
-    received = pushed.get(timeout=timeout_s)
-    return {d["directive_type"] for d in received["directives"]}
+def wait_for_directive_types(pushed: "queue.Queue", predicate, timeout_s: float = 30.0) -> set:
+    """Consume active-directive pushes until one's directive-type set satisfies ``predicate``."""
+    deadline = time.monotonic() + timeout_s
+    seen = []
+    while (remaining := deadline - time.monotonic()) > 0:
+        try:
+            received = pushed.get(timeout=remaining)
+        except queue.Empty:
+            break
+        types = {d["directive_type"] for d in received["directives"]}
+        seen.append(types)
+        if predicate(types):
+            return types
+    raise AssertionError(
+        f"No active-directive push matched within {timeout_s}s; pushed type sets seen: {seen}"
+    )
 
 
 FREQ_DROOP = FreqDroopType(
@@ -392,10 +405,10 @@ async def test_set_der_control_applies_directive(
     )
     assert r is not None and r.status == DERControlStatusEnumType.accepted
 
-    # Drain stale pushes (enable republish + earlier heartbeats), then the next
-    # heartbeat push reflects the new active set containing the directive.
+    # Drain stale pushes (enable republish + earlier heartbeats), then await a
+    # push that reflects the new active set containing the directive.
     drain(pushed)
-    assert "FreqDroop" in latest_directive_types(pushed)
+    wait_for_directive_types(pushed, lambda types: "FreqDroop" in types)
 
 
 # -----------------------------------------------------------------------------
@@ -438,7 +451,7 @@ async def test_clear_der_control_removes_directive(
 
     # After the clear, a fresh push must no longer carry the FreqDroop slot.
     drain(pushed)
-    assert "FreqDroop" not in latest_directive_types(pushed)
+    wait_for_directive_types(pushed, lambda types: "FreqDroop" not in types)
 
 
 # -----------------------------------------------------------------------------
@@ -486,7 +499,7 @@ async def test_multiple_directives_coexist(
     assert r2 is not None and r2.status == DERControlStatusEnumType.accepted
 
     drain(pushed)
-    assert {"FreqDroop", "VoltWatt"}.issubset(latest_directive_types(pushed))
+    wait_for_directive_types(pushed, lambda types: {"FreqDroop", "VoltWatt"}.issubset(types))
 
 
 # -----------------------------------------------------------------------------
@@ -523,10 +536,10 @@ async def test_heartbeat_re_pushes_active_directives(
 
     # Drain, then expect a subsequent heartbeat tick to re-push the set unchanged.
     drain(pushed)
-    assert "FreqDroop" in latest_directive_types(pushed)
+    wait_for_directive_types(pushed, lambda types: "FreqDroop" in types)
     # A further drained push proves the heartbeat keeps re-pushing without a state change.
     drain(pushed)
-    assert "FreqDroop" in latest_directive_types(pushed)
+    wait_for_directive_types(pushed, lambda types: "FreqDroop" in types)
 
 
 # -----------------------------------------------------------------------------
@@ -629,7 +642,7 @@ async def test_alarm_then_directive_round_trip(
     assert r is not None and r.status == DERControlStatusEnumType.accepted
 
     drain(pushed)
-    assert "FreqDroop" in latest_directive_types(pushed)
+    wait_for_directive_types(pushed, lambda types: "FreqDroop" in types)
 
 
 # -----------------------------------------------------------------------------
@@ -886,7 +899,7 @@ async def test_der_disable_survives_reboot(
 
     # The directive reaches the enabled device.
     drain(pushed)
-    assert "FreqDroop" in latest_directive_types(pushed)
+    wait_for_directive_types(pushed, lambda types: "FreqDroop" in types)
 
     # CSMS disables the DER controller; the device is cleared.
     disable = await charge_point_v21.set_variables_req(
@@ -903,7 +916,7 @@ async def test_der_disable_survives_reboot(
     )
     assert disable.set_variable_result[0]["attribute_status"] == "Accepted"
     drain(pushed)
-    assert "FreqDroop" not in latest_directive_types(pushed)
+    wait_for_directive_types(pushed, lambda types: "FreqDroop" not in types)
 
     # Reboot: only the process bounces; the device model DB (Enabled=false and the
     # persisted directive) survives.
@@ -930,7 +943,7 @@ async def test_der_disable_survives_reboot(
     # The persisted directive must not return: the DER block is gated on the
     # persisted Enabled=false, so the disabled EVSE receives an empty set.
     drain(pushed)
-    assert "FreqDroop" not in latest_directive_types(pushed)
+    wait_for_directive_types(pushed, lambda types: "FreqDroop" not in types)
 
     # Re-enabling proves the directive was persisted and merely suppressed: once
     # Enabled=true, the stored control is rebuilt and pushed to the device again.
@@ -948,4 +961,4 @@ async def test_der_disable_survives_reboot(
     )
     assert reenable.set_variable_result[0]["attribute_status"] == "Accepted"
     drain(pushed)
-    assert "FreqDroop" in latest_directive_types(pushed)
+    wait_for_directive_types(pushed, lambda types: "FreqDroop" in types)
