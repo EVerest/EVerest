@@ -93,11 +93,12 @@ evse_managerImpl::handle_update_allowed_energy_transfer_modes(
     std::vector<types::iso15118::EnergyTransferMode>& allowed_energy_transfer_modes) {
     // your code for cmd update_allowed_energy_transfer_modes goes here
     return types::evse_manager::UpdateAllowedEnergyTransferModesResult::NoHlc;
+}
 
-    types::evse_manager::SetDerAvailableResult evse_managerImpl::handle_set_der_available(bool& available) {
-        // your code for cmd set_der_available goes here
-        return types::evse_manager::SetDerAvailableResult::Accepted;
-    }
+types::evse_manager::SetDerAvailableResult evse_managerImpl::handle_set_der_available(bool& available) {
+    // your code for cmd set_der_available goes here
+    return types::evse_manager::SetDerAvailableResult::Accepted;
+}
 
 } // namespace evse
 } // namespace module
