@@ -33,6 +33,8 @@ struct Conf {
     std::string dummy_meter_value_blob_stop;
     double ac_nominal_voltage;
     double ac_nominal_frequency;
+    double max_current_A_import;
+    double min_current_A_import;
 };
 
 class YetiSimulator : public Everest::ModuleBase {
