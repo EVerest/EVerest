@@ -32,6 +32,7 @@ void system_API::ready() {
 
     generate_api_var_firmware_update_status();
     generate_api_var_log_status();
+    generate_api_var_configure_network_status();
 
     helper.generate_api_var_communication_check(&comm_check);
     comm_check.start(config.cfg_communication_check_to_s);
@@ -55,6 +56,17 @@ void system_API::generate_api_var_log_status() {
         API_types_ext::LogStatus payload;
         if (deserialize(data, payload)) {
             p_main->publish_log_status(to_internal_api(payload));
+            return true;
+        }
+        return false;
+    });
+}
+
+void system_API::generate_api_var_configure_network_status() {
+    helper.subscribe_api_topic("configure_network_status", [this](std::string const& data) {
+        API_types_ext::ConfigureNetworkStatus payload;
+        if (deserialize(data, payload)) {
+            p_main->publish_configure_network_status(to_internal_api(payload));
             return true;
         }
         return false;

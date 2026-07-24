@@ -5,6 +5,7 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wignored-qualifiers"
 #pragma GCC diagnostic ignored "-Wunused-function"
+#include "generated/types/network.hpp"
 #include "generated/types/system.hpp"
 #pragma GCC diagnostic pop
 
@@ -87,5 +88,65 @@ using FirmwareUpdateStatus_External = FirmwareUpdateStatus;
 
 FirmwareUpdateStatus_Internal to_internal_api(FirmwareUpdateStatus_External const& val);
 FirmwareUpdateStatus_External to_external_api(FirmwareUpdateStatus_Internal const& val);
+
+using InterfaceClass_Internal = ::types::network::InterfaceClass;
+using InterfaceClass_External = InterfaceClass;
+
+InterfaceClass_Internal to_internal_api(InterfaceClass_External const& val);
+InterfaceClass_External to_external_api(InterfaceClass_Internal const& val);
+
+using APNAuthenticationEnum_Internal = ::types::network::Apn_authentication;
+using APNAuthenticationEnum_External = APNAuthenticationEnum;
+
+APNAuthenticationEnum_Internal to_internal_api(APNAuthenticationEnum_External const& val);
+APNAuthenticationEnum_External to_external_api(APNAuthenticationEnum_Internal const& val);
+
+using VPNTypeEnum_Internal = ::types::network::Type;
+using VPNTypeEnum_External = VPNTypeEnum;
+
+VPNTypeEnum_Internal to_internal_api(VPNTypeEnum_External const& val);
+VPNTypeEnum_External to_external_api(VPNTypeEnum_Internal const& val);
+
+using ConfigureNetworkStatusEnum_Internal = ::types::network::ConfigureNetworkStatusEnum;
+using ConfigureNetworkStatusEnum_External = ConfigureNetworkStatusEnum;
+
+ConfigureNetworkStatusEnum_Internal to_internal_api(ConfigureNetworkStatusEnum_External const& val);
+ConfigureNetworkStatusEnum_External to_external_api(ConfigureNetworkStatusEnum_Internal const& val);
+
+using ConfigureNetworkFinalStatusEnum_Internal = ::types::network::ConfigureNetworkFinalStatusEnum;
+using ConfigureNetworkFinalStatusEnum_External = ConfigureNetworkFinalStatusEnum;
+
+ConfigureNetworkFinalStatusEnum_Internal to_internal_api(ConfigureNetworkFinalStatusEnum_External const& val);
+ConfigureNetworkFinalStatusEnum_External to_external_api(ConfigureNetworkFinalStatusEnum_Internal const& val);
+
+using APN_Internal = ::types::network::APN;
+using APN_External = APN;
+
+APN_Internal to_internal_api(APN_External const& val);
+APN_External to_external_api(APN_Internal const& val);
+
+using VPN_Internal = ::types::network::VPN;
+using VPN_External = VPN;
+
+VPN_Internal to_internal_api(VPN_External const& val);
+VPN_External to_external_api(VPN_Internal const& val);
+
+using ConfigureNetworkRequest_Internal = ::types::network::ConfigureNetworkRequest;
+using ConfigureNetworkRequest_External = ConfigureNetworkRequest;
+
+ConfigureNetworkRequest_Internal to_internal_api(ConfigureNetworkRequest_External const& val);
+ConfigureNetworkRequest_External to_external_api(ConfigureNetworkRequest_Internal const& val);
+
+using ConfigureNetworkResponse_Internal = ::types::network::ConfigureNetworkResponse;
+using ConfigureNetworkResponse_External = ConfigureNetworkResponse;
+
+ConfigureNetworkResponse_Internal to_internal_api(ConfigureNetworkResponse_External const& val);
+ConfigureNetworkResponse_External to_external_api(ConfigureNetworkResponse_Internal const& val);
+
+using ConfigureNetworkStatus_Internal = ::types::network::ConfigureNetworkStatus;
+using ConfigureNetworkStatus_External = ConfigureNetworkStatus;
+
+ConfigureNetworkStatus_Internal to_internal_api(ConfigureNetworkStatus_External const& val);
+ConfigureNetworkStatus_External to_external_api(ConfigureNetworkStatus_Internal const& val);
 
 } // namespace everest::lib::API::V1_0::types::system

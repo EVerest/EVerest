@@ -49,4 +49,34 @@ void from_json(const json& j, ResetType& k);
 void to_json(json& j, const BootReason& k) noexcept;
 void from_json(const json& j, BootReason& k);
 
+void to_json(json& j, const InterfaceClass& k) noexcept;
+void from_json(const json& j, InterfaceClass& k);
+
+void to_json(json& j, const APNAuthenticationEnum& k) noexcept;
+void from_json(const json& j, APNAuthenticationEnum& k);
+
+void to_json(json& j, const VPNTypeEnum& k) noexcept;
+void from_json(const json& j, VPNTypeEnum& k);
+
+void to_json(json& j, const ConfigureNetworkStatusEnum& k) noexcept;
+void from_json(const json& j, ConfigureNetworkStatusEnum& k);
+
+void to_json(json& j, const ConfigureNetworkFinalStatusEnum& k) noexcept;
+void from_json(const json& j, ConfigureNetworkFinalStatusEnum& k);
+
+void to_json(json& j, const APN& k) noexcept;
+void from_json(const json& j, APN& k);
+
+void to_json(json& j, const VPN& k) noexcept;
+void from_json(const json& j, VPN& k);
+
+void to_json(json& j, const ConfigureNetworkRequest& k) noexcept;
+void from_json(const json& j, ConfigureNetworkRequest& k);
+
+void to_json(json& j, const ConfigureNetworkResponse& k) noexcept;
+void from_json(const json& j, ConfigureNetworkResponse& k);
+
+void to_json(json& j, const ConfigureNetworkStatus& k) noexcept;
+void from_json(const json& j, ConfigureNetworkStatus& k);
+
 } // namespace everest::lib::API::V1_0::types::system

@@ -375,4 +375,288 @@ FirmwareUpdateStatus_External to_external_api(FirmwareUpdateStatus_Internal cons
     return result;
 }
 
+InterfaceClass_Internal to_internal_api(InterfaceClass_External const& val) {
+    using SrcT = InterfaceClass_External;
+    using TarT = InterfaceClass_Internal;
+    switch (val) {
+    case SrcT::Wired0:
+        return TarT::Wired0;
+    case SrcT::Wired1:
+        return TarT::Wired1;
+    case SrcT::Wired2:
+        return TarT::Wired2;
+    case SrcT::Wired3:
+        return TarT::Wired3;
+    case SrcT::Wireless0:
+        return TarT::Wireless0;
+    case SrcT::Wireless1:
+        return TarT::Wireless1;
+    case SrcT::Wireless2:
+        return TarT::Wireless2;
+    case SrcT::Wireless3:
+        return TarT::Wireless3;
+    case SrcT::Any:
+        return TarT::Any;
+    }
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::system::InterfaceClass_External");
+}
+InterfaceClass_External to_external_api(InterfaceClass_Internal const& val) {
+    using SrcT = InterfaceClass_Internal;
+    using TarT = InterfaceClass_External;
+    switch (val) {
+    case SrcT::Wired0:
+        return TarT::Wired0;
+    case SrcT::Wired1:
+        return TarT::Wired1;
+    case SrcT::Wired2:
+        return TarT::Wired2;
+    case SrcT::Wired3:
+        return TarT::Wired3;
+    case SrcT::Wireless0:
+        return TarT::Wireless0;
+    case SrcT::Wireless1:
+        return TarT::Wireless1;
+    case SrcT::Wireless2:
+        return TarT::Wireless2;
+    case SrcT::Wireless3:
+        return TarT::Wireless3;
+    case SrcT::Any:
+        return TarT::Any;
+    }
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::system::InterfaceClass_Internal");
+}
+
+APNAuthenticationEnum_Internal to_internal_api(APNAuthenticationEnum_External const& val) {
+    using SrcT = APNAuthenticationEnum_External;
+    using TarT = APNAuthenticationEnum_Internal;
+    switch (val) {
+    case SrcT::CHAP:
+        return TarT::CHAP;
+    case SrcT::NONE:
+        return TarT::NONE;
+    case SrcT::PAP:
+        return TarT::PAP;
+    case SrcT::AUTO:
+        return TarT::AUTO;
+    }
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::system::APNAuthenticationEnum_External");
+}
+APNAuthenticationEnum_External to_external_api(APNAuthenticationEnum_Internal const& val) {
+    using SrcT = APNAuthenticationEnum_Internal;
+    using TarT = APNAuthenticationEnum_External;
+    switch (val) {
+    case SrcT::CHAP:
+        return TarT::CHAP;
+    case SrcT::NONE:
+        return TarT::NONE;
+    case SrcT::PAP:
+        return TarT::PAP;
+    case SrcT::AUTO:
+        return TarT::AUTO;
+    }
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::system::APNAuthenticationEnum_Internal");
+}
+
+VPNTypeEnum_Internal to_internal_api(VPNTypeEnum_External const& val) {
+    using SrcT = VPNTypeEnum_External;
+    using TarT = VPNTypeEnum_Internal;
+    switch (val) {
+    case SrcT::IKEv2:
+        return TarT::IKEv2;
+    case SrcT::IPSec:
+        return TarT::IPSec;
+    case SrcT::L2TP:
+        return TarT::L2TP;
+    case SrcT::PPTP:
+        return TarT::PPTP;
+    case SrcT::Other:
+        return TarT::Other;
+    }
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::system::VPNTypeEnum_External");
+}
+VPNTypeEnum_External to_external_api(VPNTypeEnum_Internal const& val) {
+    using SrcT = VPNTypeEnum_Internal;
+    using TarT = VPNTypeEnum_External;
+    switch (val) {
+    case SrcT::IKEv2:
+        return TarT::IKEv2;
+    case SrcT::IPSec:
+        return TarT::IPSec;
+    case SrcT::L2TP:
+        return TarT::L2TP;
+    case SrcT::PPTP:
+        return TarT::PPTP;
+    case SrcT::Other:
+        return TarT::Other;
+    }
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::system::VPNTypeEnum_Internal");
+}
+
+ConfigureNetworkStatusEnum_Internal to_internal_api(ConfigureNetworkStatusEnum_External const& val) {
+    using SrcT = ConfigureNetworkStatusEnum_External;
+    using TarT = ConfigureNetworkStatusEnum_Internal;
+    switch (val) {
+    case SrcT::Ready:
+        return TarT::Ready;
+    case SrcT::Processing:
+        return TarT::Processing;
+    case SrcT::Failed:
+        return TarT::Failed;
+    case SrcT::Rejected:
+        return TarT::Rejected;
+    case SrcT::NotSupported:
+        return TarT::NotSupported;
+    }
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::system::ConfigureNetworkStatusEnum_External");
+}
+ConfigureNetworkStatusEnum_External to_external_api(ConfigureNetworkStatusEnum_Internal const& val) {
+    using SrcT = ConfigureNetworkStatusEnum_Internal;
+    using TarT = ConfigureNetworkStatusEnum_External;
+    switch (val) {
+    case SrcT::Ready:
+        return TarT::Ready;
+    case SrcT::Processing:
+        return TarT::Processing;
+    case SrcT::Failed:
+        return TarT::Failed;
+    case SrcT::Rejected:
+        return TarT::Rejected;
+    case SrcT::NotSupported:
+        return TarT::NotSupported;
+    }
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::system::ConfigureNetworkStatusEnum_Internal");
+}
+
+ConfigureNetworkFinalStatusEnum_Internal to_internal_api(ConfigureNetworkFinalStatusEnum_External const& val) {
+    using SrcT = ConfigureNetworkFinalStatusEnum_External;
+    using TarT = ConfigureNetworkFinalStatusEnum_Internal;
+    switch (val) {
+    case SrcT::Ready:
+        return TarT::Ready;
+    case SrcT::Failed:
+        return TarT::Failed;
+    }
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::system::ConfigureNetworkFinalStatusEnum_External");
+}
+ConfigureNetworkFinalStatusEnum_External to_external_api(ConfigureNetworkFinalStatusEnum_Internal const& val) {
+    using SrcT = ConfigureNetworkFinalStatusEnum_Internal;
+    using TarT = ConfigureNetworkFinalStatusEnum_External;
+    switch (val) {
+    case SrcT::Ready:
+        return TarT::Ready;
+    case SrcT::Failed:
+        return TarT::Failed;
+    }
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::system::ConfigureNetworkFinalStatusEnum_Internal");
+}
+
+APN_Internal to_internal_api(APN_External const& val) {
+    APN_Internal result;
+    result.apn = val.apn;
+    result.apn_user_name = val.apn_user_name;
+    result.apn_password = val.apn_password;
+    result.sim_pin = val.sim_pin;
+    result.preferred_network = val.preferred_network;
+    result.use_only_preferred_network = val.use_only_preferred_network;
+    if (val.apn_authentication.has_value()) {
+        result.apn_authentication.emplace(to_internal_api(val.apn_authentication.value()));
+    }
+    return result;
+}
+APN_External to_external_api(APN_Internal const& val) {
+    APN_External result;
+    result.apn = val.apn;
+    result.apn_user_name = val.apn_user_name;
+    result.apn_password = val.apn_password;
+    result.sim_pin = val.sim_pin;
+    result.preferred_network = val.preferred_network;
+    result.use_only_preferred_network = val.use_only_preferred_network;
+    if (val.apn_authentication.has_value()) {
+        result.apn_authentication.emplace(to_external_api(val.apn_authentication.value()));
+    }
+    return result;
+}
+
+VPN_Internal to_internal_api(VPN_External const& val) {
+    VPN_Internal result;
+    result.server = val.server;
+    result.user = val.user;
+    result.group = val.group;
+    result.password = val.password;
+    result.key = val.key;
+    result.type = to_internal_api(val.type);
+    return result;
+}
+VPN_External to_external_api(VPN_Internal const& val) {
+    VPN_External result;
+    result.server = val.server;
+    result.user = val.user;
+    result.group = val.group;
+    result.password = val.password;
+    result.key = val.key;
+    result.type = to_external_api(val.type);
+    return result;
+}
+
+ConfigureNetworkRequest_Internal to_internal_api(ConfigureNetworkRequest_External const& val) {
+    ConfigureNetworkRequest_Internal result;
+    result.request_id = val.request_id;
+    result.interface = to_internal_api(val.interface);
+    result.interface_name = val.interface_name;
+    if (val.apn.has_value()) {
+        result.apn.emplace(to_internal_api(val.apn.value()));
+    }
+    if (val.vpn.has_value()) {
+        result.vpn.emplace(to_internal_api(val.vpn.value()));
+    }
+    return result;
+}
+ConfigureNetworkRequest_External to_external_api(ConfigureNetworkRequest_Internal const& val) {
+    ConfigureNetworkRequest_External result;
+    result.request_id = val.request_id;
+    result.interface = to_external_api(val.interface);
+    result.interface_name = val.interface_name;
+    if (val.apn.has_value()) {
+        result.apn.emplace(to_external_api(val.apn.value()));
+    }
+    if (val.vpn.has_value()) {
+        result.vpn.emplace(to_external_api(val.vpn.value()));
+    }
+    return result;
+}
+
+ConfigureNetworkResponse_Internal to_internal_api(ConfigureNetworkResponse_External const& val) {
+    ConfigureNetworkResponse_Internal result;
+    result.status = to_internal_api(val.status);
+    result.interface_address = val.interface_address;
+    return result;
+}
+ConfigureNetworkResponse_External to_external_api(ConfigureNetworkResponse_Internal const& val) {
+    ConfigureNetworkResponse_External result;
+    result.status = to_external_api(val.status);
+    result.interface_address = val.interface_address;
+    return result;
+}
+
+ConfigureNetworkStatus_Internal to_internal_api(ConfigureNetworkStatus_External const& val) {
+    ConfigureNetworkStatus_Internal result;
+    result.request_id = val.request_id;
+    result.status = to_internal_api(val.status);
+    result.interface_address = val.interface_address;
+    return result;
+}
+ConfigureNetworkStatus_External to_external_api(ConfigureNetworkStatus_Internal const& val) {
+    ConfigureNetworkStatus_External result;
+    result.request_id = val.request_id;
+    result.status = to_external_api(val.status);
+    result.interface_address = val.interface_address;
+    return result;
+}
+
 } // namespace everest::lib::API::V1_0::types::system

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace everest::lib::API::V1_0::types::system {
 
@@ -113,6 +114,86 @@ struct FirmwareUpdateStatus {
 struct ResetRequest {
     ResetType type;
     bool scheduled;
+};
+
+// Network configuration (mirrors types/network.yaml)
+
+enum class InterfaceClass {
+    Wired0,
+    Wired1,
+    Wired2,
+    Wired3,
+    Wireless0,
+    Wireless1,
+    Wireless2,
+    Wireless3,
+    Any,
+};
+
+enum class APNAuthenticationEnum {
+    CHAP,
+    NONE,
+    PAP,
+    AUTO,
+};
+
+enum class VPNTypeEnum {
+    IKEv2,
+    IPSec,
+    L2TP,
+    PPTP,
+    Other,
+};
+
+enum class ConfigureNetworkStatusEnum {
+    Ready,
+    Processing,
+    Failed,
+    Rejected,
+    NotSupported,
+};
+
+enum class ConfigureNetworkFinalStatusEnum {
+    Ready,
+    Failed,
+};
+
+struct APN {
+    std::string apn;
+    std::optional<std::string> apn_user_name;
+    std::optional<std::string> apn_password;
+    std::optional<std::string> sim_pin;
+    std::optional<std::string> preferred_network;
+    std::optional<bool> use_only_preferred_network;
+    std::optional<APNAuthenticationEnum> apn_authentication;
+};
+
+struct VPN {
+    std::string server;
+    std::optional<std::string> user;
+    std::optional<std::string> group;
+    std::optional<std::string> password;
+    std::optional<std::string> key;
+    VPNTypeEnum type;
+};
+
+struct ConfigureNetworkRequest {
+    int32_t request_id;
+    InterfaceClass interface;
+    std::optional<std::string> interface_name;
+    std::optional<APN> apn;
+    std::optional<VPN> vpn;
+};
+
+struct ConfigureNetworkResponse {
+    ConfigureNetworkStatusEnum status;
+    std::optional<std::string> interface_address;
+};
+
+struct ConfigureNetworkStatus {
+    int32_t request_id;
+    ConfigureNetworkFinalStatusEnum status;
+    std::optional<std::string> interface_address;
 };
 
 } // namespace everest::lib::API::V1_0::types::system
