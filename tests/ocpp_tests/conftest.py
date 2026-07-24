@@ -445,6 +445,13 @@ def probe_module(
     implement_command(
         module,
         skip_implementation,
+        "ProbeModuleSystem",
+        "configure_network",
+        lambda arg: {"status": "NotSupported"},
+    )
+    implement_command(
+        module,
+        skip_implementation,
         "ProbeModuleSecurity",
         "get_leaf_expiry_days_count",
         lambda arg: 42,
