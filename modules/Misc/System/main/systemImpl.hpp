@@ -14,7 +14,9 @@
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
+#include <atomic>
 #include <filesystem>
+#include <memory>
 
 #include <everest/timer.hpp>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
@@ -62,7 +64,9 @@ private:
 
     std::filesystem::path scripts_path;
 
-    std::atomic<bool> interrupt_firmware_download;
+    // Shared with run_application as its stop_requested watcher: a cancel both interrupts the
+    // download callback and actively SIGTERM/SIGKILLs the running download script.
+    std::shared_ptr<std::atomic_bool> interrupt_firmware_download;
     std::atomic<bool> interrupt_log_upload;
 
     bool log_upload_running;
