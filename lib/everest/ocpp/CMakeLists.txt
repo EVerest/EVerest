@@ -46,6 +46,10 @@ endif()
 # dependencies
 find_package(Boost COMPONENTS program_options thread REQUIRED)
 find_package(SQLite3 REQUIRED)
+if(NOT TARGET SQLite3::SQLite3) # CMake < 4.3
+  set_target_properties(SQLite::SQLite3 PROPERTIES IMPORTED_GLOBAL TRUE)
+  add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
+endif()
 find_package(OpenSSL 3 REQUIRED)
 
 if(NOT DISABLE_EDM)
