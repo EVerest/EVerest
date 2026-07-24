@@ -270,6 +270,9 @@ void to_json(json& j, SessionEventEnum const& k) noexcept {
     case SessionEventEnum::StoppingCharging:
         j = "StoppingCharging";
         return;
+    case SessionEventEnum::StoppingTransaction:
+        j = "StoppingTransaction";
+        return;
     case SessionEventEnum::ChargingFinished:
         j = "ChargingFinished";
         return;
@@ -347,6 +350,10 @@ void from_json(json const& j, SessionEventEnum& k) {
     }
     if (s == "StoppingCharging") {
         k = SessionEventEnum::StoppingCharging;
+        return;
+    }
+    if (s == "StoppingTransaction") {
+        k = SessionEventEnum::StoppingTransaction;
         return;
     }
     if (s == "ChargingFinished") {

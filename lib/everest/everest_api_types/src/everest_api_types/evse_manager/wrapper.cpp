@@ -219,6 +219,8 @@ SessionEventEnum_Internal to_internal_api(SessionEventEnum_External const& val) 
         return TarT::ChargingPausedEVSE;
     case SrcT::StoppingCharging:
         return TarT::StoppingCharging;
+    case SrcT::StoppingTransaction:
+        return TarT::StoppingTransaction;
     case SrcT::ChargingFinished:
         return TarT::ChargingFinished;
     case SrcT::TransactionFinished:
@@ -270,6 +272,8 @@ SessionEventEnum_External to_external_api(SessionEventEnum_Internal const& val) 
         return TarT::ChargingPausedEVSE;
     case SrcT::StoppingCharging:
         return TarT::StoppingCharging;
+    case SrcT::StoppingTransaction:
+        return TarT::StoppingTransaction;
     case SrcT::ChargingFinished:
         return TarT::ChargingFinished;
     case SrcT::TransactionFinished:
