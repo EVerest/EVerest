@@ -43,6 +43,8 @@ protected:
     virtual void handle_reset(types::system::ResetType& type, bool& scheduled) override;
     virtual bool handle_set_system_time(std::string& timestamp) override;
     virtual types::system::BootReason handle_get_boot_reason() override;
+    virtual types::network::ConfigureNetworkResponse
+    handle_configure_network(types::network::ConfigureNetworkRequest& request) override;
 
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
     // insert your protected definitions here

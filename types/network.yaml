@@ -1,0 +1,169 @@
+description: Protocol-agnostic network configuration types for system-level interface preparation
+types:
+  InterfaceClass:
+    description: >-
+      Network interface class a connection is bound to. Maps 1:1 to OCPP 2.x
+      OCPPInterfaceEnum but is protocol-neutral.
+    type: string
+    enum:
+      - Wired0
+      - Wired1
+      - Wired2
+      - Wired3
+      - Wireless0
+      - Wireless1
+      - Wireless2
+      - Wireless3
+      - Any
+  APN:
+    description: Access Point Name configuration for cellular interfaces
+    type: object
+    additionalProperties: false
+    required:
+      - apn
+    properties:
+      apn:
+        description: The Access Point Name as an URL
+        type: string
+      apn_user_name:
+        description: APN username
+        type: string
+      apn_password:
+        description: APN password
+        type: string
+      sim_pin:
+        description: SIM card pin code
+        type: string
+      preferred_network:
+        description: Preferred network, written to the SIM card
+        type: string
+      use_only_preferred_network:
+        description: Use only the preferred network
+        type: boolean
+      apn_authentication:
+        description: Authentication method
+        type: string
+        enum:
+          - CHAP
+          - NONE
+          - PAP
+          - AUTO
+  VPN:
+    description: VPN configuration
+    type: object
+    additionalProperties: false
+    required:
+      - server
+      - type
+    properties:
+      server:
+        description: VPN server address
+        type: string
+      user:
+        description: VPN username, if required by the VPN type
+        type: string
+      group:
+        description: VPN group
+        type: string
+      password:
+        description: VPN password, if required by the VPN type
+        type: string
+      key:
+        description: VPN shared secret or key, if required by the VPN type
+        type: string
+      type:
+        description: Type of VPN
+        type: string
+        enum:
+          - IKEv2
+          - IPSec
+          - L2TP
+          - PPTP
+          - Other
+  ConfigureNetworkRequest:
+    description: Request to prepare a network interface for use
+    type: object
+    additionalProperties: false
+    required:
+      - request_id
+      - interface
+    properties:
+      request_id:
+        description: Caller-chosen correlation id, echoed in configure_network_status
+        type: integer
+      interface:
+        description: Standardized interface class; the provider maps it to a concrete system interface
+        type: string
+        $ref: /network#/InterfaceClass
+      interface_name:
+        description: >-
+          Optional concrete system interface name (e.g. eth0, wwan0). If present it
+          overrides the provider's mapping of the interface class. Providers reject
+          unknown names (status Rejected).
+        type: string
+      apn:
+        description: Access Point Name configuration for cellular interfaces
+        type: object
+        $ref: /network#/APN
+      vpn:
+        description: VPN configuration
+        type: object
+        $ref: /network#/VPN
+  ConfigureNetworkStatusEnum:
+    description: >-
+      Ready: interface prepared, usable now. Processing: preparation started,
+      final result follows on the configure_network_status var. Failed: preparation
+      failed. Rejected: request invalid/refused (e.g. unknown interface_name or
+      unmapped interface class). NotSupported: this provider does not implement
+      network configuration (consumers fall back to legacy behavior).
+    type: string
+    enum:
+      - Ready
+      - Processing
+      - Failed
+      - Rejected
+      - NotSupported
+  ConfigureNetworkFinalStatusEnum:
+    description: >-
+      Final outcome of a network configuration that was previously answered with
+      Processing. Ready: interface prepared, usable now. Failed: preparation failed.
+    type: string
+    enum:
+      - Ready
+      - Failed
+  ConfigureNetworkResponse:
+    description: Direct (synchronous) response to configure_network
+    type: object
+    additionalProperties: false
+    required:
+      - status
+    properties:
+      status:
+        description: Status of the configure network request
+        type: string
+        $ref: /network#/ConfigureNetworkStatusEnum
+      interface_address:
+        description: >-
+          Interface name or IP address to bind to (present when status is Ready).
+          Passed verbatim into ConfigNetworkResult.interface_address and from there
+          to libwebsockets' iface binding.
+        type: string
+  ConfigureNetworkStatus:
+    description: Asynchronous final outcome of a request answered with Processing
+    type: object
+    additionalProperties: false
+    required:
+      - request_id
+      - status
+    properties:
+      request_id:
+        description: Correlation id echoed from the ConfigureNetworkRequest
+        type: integer
+      status:
+        description: Final state — Ready or Failed
+        type: string
+        $ref: /network#/ConfigureNetworkFinalStatusEnum
+      interface_address:
+        description: >-
+          Interface name or IP address to bind to (present when status is Ready)
+        type: string

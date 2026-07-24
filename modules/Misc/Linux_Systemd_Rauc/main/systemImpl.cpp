@@ -187,5 +187,12 @@ void systemImpl::handle_allow_firmware_installation() {
     this->mod->firmware_update_may_proceed_with_reboot_callback();
 }
 
+types::network::ConfigureNetworkResponse
+systemImpl::handle_configure_network(types::network::ConfigureNetworkRequest& request) {
+    types::network::ConfigureNetworkResponse response;
+    response.status = types::network::ConfigureNetworkStatusEnum::NotSupported;
+    return response;
+}
+
 } // namespace main
 } // namespace module
