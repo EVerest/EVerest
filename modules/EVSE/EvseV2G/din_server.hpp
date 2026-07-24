@@ -115,6 +115,7 @@ enum v2g_event handle_din_session_setup(struct v2g_connection* conn);
 enum v2g_event handle_din_service_discovery(struct v2g_connection* conn);
 enum v2g_event handle_din_contract_authentication(struct v2g_connection* conn);
 enum v2g_event handle_din_power_delivery(struct v2g_connection* conn);
+enum v2g_event handle_din_welding_detection(struct v2g_connection* conn);
 
 } // namespace states
 

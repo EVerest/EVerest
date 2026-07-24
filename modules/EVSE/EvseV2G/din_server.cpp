@@ -925,7 +925,7 @@ static enum v2g_event handle_din_current_demand(struct v2g_connection* conn) {
  * \param conn is the structure with the V2G msg pair.
  * \return Returns the next V2G-event.
  */
-static enum v2g_event handle_din_welding_detection(struct v2g_connection* conn) {
+enum v2g_event states::handle_din_welding_detection(struct v2g_connection* conn) {
     struct din_WeldingDetectionReqType* req = &conn->exi_in.dinEXIDocument->V2G_Message.Body.WeldingDetectionReq;
     struct din_WeldingDetectionResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.WeldingDetectionRes;
     enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
@@ -1115,7 +1115,7 @@ enum v2g_event din_handle_request(v2g_connection* conn) {
         }
         exi_out->V2G_Message.Body.WeldingDetectionRes_isUsed = 1u;
         init_din_WeldingDetectionResType(&exi_out->V2G_Message.Body.WeldingDetectionRes);
-        next_v2g_event = handle_din_welding_detection(conn);
+        next_v2g_event = states::handle_din_welding_detection(conn);
     } else if (exi_in->V2G_Message.Body.SessionStopReq_isUsed) {
         dlog(DLOG_LEVEL_TRACE, "Handling SessionStopReq");
         conn->ctx->current_v2g_msg = V2G_SESSION_STOP_MSG;
