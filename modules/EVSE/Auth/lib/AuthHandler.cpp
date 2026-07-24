@@ -1037,6 +1037,15 @@ WithdrawAuthorizationResult AuthHandler::handle_withdraw_authorization(const Wit
             this->stop_transaction_callback(evse.evse_index, req);
         } else {
             this->withdraw_authorization_callback(evse.evse_index);
+            if (evse.identifier.has_value()) {
+                const auto& identifier = evse.identifier.value();
+                ProvidedIdToken provided_token;
+                provided_token.id_token = identifier.id_token;
+                provided_token.authorization_type = identifier.type;
+                provided_token.parent_id_token = identifier.parent_id_token;
+                provided_token.connectors = std::vector<int32_t>{evse.evse_id};
+                this->publish_token_validation_status(provided_token, TokenValidationStatus::Withdrawn);
+            }
         }
     };
 
