@@ -193,6 +193,56 @@ TEST_F(ChargePointStateMachineTest, HandleErrorCleared__MultipleFaults__OutOfOrd
     state_machine->handle_error_cleared(error_info_2.uuid);
 }
 
+TEST_F(ChargePointStateMachineTest, HandleErrorCleared__ReportsResolvedErrorInfo) {
+    create_state_machine(true);
+    ErrorInfo error_info_1("uuid1", ChargePointErrorCode::ConnectorLockFailure, true, "Info1", "VendorA", "VE1");
+    ErrorInfo error_info_2("uuid2", ChargePointErrorCode::GroundFailure, true, "Info2", "VendorB", "VE2");
+
+    InSequence seq;
+    EXPECT_CALL(mock_callback,
+                Call(FSMState::Faulted, ChargePointErrorCode::ConnectorLockFailure, _,
+                     std::optional<ocpp::CiString<50>>("Info1"), std::optional<ocpp::CiString<255>>("VendorA"),
+                     std::optional<ocpp::CiString<50>>("VE1")));
+    EXPECT_CALL(mock_callback,
+                Call(FSMState::Faulted, ChargePointErrorCode::GroundFailure, _,
+                     std::optional<ocpp::CiString<50>>("Info2"), std::optional<ocpp::CiString<255>>("VendorB"),
+                     std::optional<ocpp::CiString<50>>("VE2")));
+    // clearing uuid1 reports it as resolved (info/vendor fields of the cleared error), while the error code still
+    // reflects the remaining active error
+    EXPECT_CALL(mock_callback,
+                Call(FSMState::Faulted, ChargePointErrorCode::GroundFailure, _,
+                     std::optional<ocpp::CiString<50>>("VE1 resolved"), std::optional<ocpp::CiString<255>>("VendorA"),
+                     std::optional<ocpp::CiString<50>>("VE1")));
+    // clearing uuid2 reports it as resolved and the connector leaves Faulted
+    EXPECT_CALL(mock_callback,
+                Call(FSMState::Available, ChargePointErrorCode::NoError, _,
+                     std::optional<ocpp::CiString<50>>("VE2 resolved"), std::optional<ocpp::CiString<255>>("VendorB"),
+                     std::optional<ocpp::CiString<50>>("VE2")));
+
+    state_machine->handle_error(error_info_1);
+    state_machine->handle_error(error_info_2);
+    state_machine->handle_error_cleared(error_info_1.uuid);
+    state_machine->handle_error_cleared(error_info_2.uuid);
+}
+
+TEST_F(ChargePointStateMachineTest, HandleErrorCleared__ResolvedErrorInfoTruncated) {
+    create_state_machine(true);
+    const std::string long_vendor_error_code(50, 'X');
+    ErrorInfo error_info("uuid1", ChargePointErrorCode::ConnectorLockFailure, true, std::nullopt, "VendorA",
+                         long_vendor_error_code);
+
+    InSequence seq;
+    EXPECT_CALL(mock_callback, Call(FSMState::Faulted, ChargePointErrorCode::ConnectorLockFailure, _, _, _, _));
+    // "<long_vendor_error_code> resolved" exceeds the 50 character limit of the info field and is truncated
+    EXPECT_CALL(mock_callback, Call(FSMState::Available, ChargePointErrorCode::NoError, _,
+                                    std::optional<ocpp::CiString<50>>(long_vendor_error_code),
+                                    std::optional<ocpp::CiString<255>>("VendorA"),
+                                    std::optional<ocpp::CiString<50>>(long_vendor_error_code)));
+
+    state_machine->handle_error(error_info);
+    state_machine->handle_error_cleared(error_info.uuid);
+}
+
 TEST_F(ChargePointStateMachineTest, HandleErrorCleared__NonFault__StillActive__Disabled__ReportsLatestRemainingInfo) {
     create_state_machine(false);
     ErrorInfo error_info_1("uuid1", ChargePointErrorCode::ConnectorLockFailure, false, "Info1", "VendorA", "VE1");
