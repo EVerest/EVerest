@@ -1924,5 +1924,97 @@
                 "620b0d248a89ece0"
             ]
         ]
+    },
+    {
+        "id": "b1d0ae5efa11ce00",
+        "type": "comment",
+        "z": "ed603c51db9dcbb9",
+        "name": "Simulated vehicle identity (Autocharge)",
+        "info": "The EV announces its MAC address as the EVCCID in SessionSetupReq. EvseManager turns that into the Autocharge token \"VID:<mac>\" and sends it to the CSMS as the Authorize idTag.\n\nWithout an override the MAC comes from the container's network interface, so every simulated session looks like the same car. Setting a value here makes a different vehicle turn up on the next plug-in.\n\nAccepts VID:0242AC110099, 02:42:AC:11:00:99 or 0242AC110099. Leave blank to go back to the interface MAC address.",
+        "x": 240,
+        "y": 1240,
+        "wires": []
+    },
+    {
+        "id": "b1d0ae5efa11ce01",
+        "type": "ui_text_input",
+        "z": "ed603c51db9dcbb9",
+        "name": "Vehicle MAC (VID)",
+        "label": "Vehicle MAC (VID)",
+        "tooltip": "Applied on the next plug-in. Blank restores the network interface MAC address.",
+        "group": "b364f7eb4621082b",
+        "order": 14,
+        "width": 0,
+        "height": 0,
+        "passthru": false,
+        "mode": "text",
+        "delay": "0",
+        "topic": "everest_external/nodered/#/carsim/cmd/set_evcc_id",
+        "sendOnBlur": true,
+        "className": "",
+        "topicType": "str",
+        "x": 200,
+        "y": 1300,
+        "wires": [
+            [
+                "361b3d846c4e6673"
+            ]
+        ]
+    },
+    {
+        "id": "b1d0ae5efa11ce02",
+        "type": "mqtt in",
+        "z": "ed603c51db9dcbb9",
+        "name": "",
+        "topic": "everest_external/nodered/+/carsim/state/evcc_id",
+        "qos": "2",
+        "datatype": "auto",
+        "broker": "fc8686af.48d178",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 290,
+        "y": 620,
+        "wires": [
+            [
+                "b1d0ae5efa11ce03"
+            ]
+        ]
+    },
+    {
+        "id": "b1d0ae5efa11ce03",
+        "type": "function",
+        "z": "ed603c51db9dcbb9",
+        "name": "Filter connector number",
+        "func": "// The retained EVCCID is delivered the instant the broker connects, which can beat the inject node that\n// seeds connector_number, so fall back to this tab's connector rather than dropping the value silently.\nconst connector = flow.get('connector_number') || '1';\nif (msg.topic.indexOf(String(connector)) > -1) return msg;",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 710,
+        "y": 620,
+        "wires": [
+            [
+                "b1d0ae5efa11ce04"
+            ]
+        ]
+    },
+    {
+        "id": "b1d0ae5efa11ce04",
+        "type": "ui_text",
+        "z": "ed603c51db9dcbb9",
+        "group": "b364f7eb4621082b",
+        "order": 15,
+        "width": 0,
+        "height": 0,
+        "name": "",
+        "label": "Announced VID",
+        "format": "{{msg.payload}}",
+        "layout": "row-spread",
+        "x": 1000,
+        "y": 620,
+        "wires": []
     }
 ]
