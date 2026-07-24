@@ -61,6 +61,9 @@ void from_json(const json& j, VPNTypeEnum& k);
 void to_json(json& j, const ConfigureNetworkStatusEnum& k) noexcept;
 void from_json(const json& j, ConfigureNetworkStatusEnum& k);
 
+void to_json(json& j, const ConfigureNetworkFinalStatusEnum& k) noexcept;
+void from_json(const json& j, ConfigureNetworkFinalStatusEnum& k);
+
 void to_json(json& j, const APN& k) noexcept;
 void from_json(const json& j, APN& k);
 

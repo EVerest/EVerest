@@ -113,6 +113,12 @@ using ConfigureNetworkStatusEnum_External = ConfigureNetworkStatusEnum;
 ConfigureNetworkStatusEnum_Internal to_internal_api(ConfigureNetworkStatusEnum_External const& val);
 ConfigureNetworkStatusEnum_External to_external_api(ConfigureNetworkStatusEnum_Internal const& val);
 
+using ConfigureNetworkFinalStatusEnum_Internal = ::types::network::ConfigureNetworkFinalStatusEnum;
+using ConfigureNetworkFinalStatusEnum_External = ConfigureNetworkFinalStatusEnum;
+
+ConfigureNetworkFinalStatusEnum_Internal to_internal_api(ConfigureNetworkFinalStatusEnum_External const& val);
+ConfigureNetworkFinalStatusEnum_External to_external_api(ConfigureNetworkFinalStatusEnum_Internal const& val);
+
 using APN_Internal = ::types::network::APN;
 using APN_External = APN;
 

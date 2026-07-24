@@ -531,6 +531,31 @@ ConfigureNetworkStatusEnum_External to_external_api(ConfigureNetworkStatusEnum_I
         "Unexpected value for everest::lib::API::V1_0::types::system::ConfigureNetworkStatusEnum_Internal");
 }
 
+ConfigureNetworkFinalStatusEnum_Internal to_internal_api(ConfigureNetworkFinalStatusEnum_External const& val) {
+    using SrcT = ConfigureNetworkFinalStatusEnum_External;
+    using TarT = ConfigureNetworkFinalStatusEnum_Internal;
+    switch (val) {
+    case SrcT::Ready:
+        return TarT::Ready;
+    case SrcT::Failed:
+        return TarT::Failed;
+    }
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::system::ConfigureNetworkFinalStatusEnum_External");
+}
+ConfigureNetworkFinalStatusEnum_External to_external_api(ConfigureNetworkFinalStatusEnum_Internal const& val) {
+    using SrcT = ConfigureNetworkFinalStatusEnum_Internal;
+    using TarT = ConfigureNetworkFinalStatusEnum_External;
+    switch (val) {
+    case SrcT::Ready:
+        return TarT::Ready;
+    case SrcT::Failed:
+        return TarT::Failed;
+    }
+    throw std::out_of_range(
+        "Unexpected value for everest::lib::API::V1_0::types::system::ConfigureNetworkFinalStatusEnum_Internal");
+}
+
 APN_Internal to_internal_api(APN_External const& val) {
     APN_Internal result;
     result.apn = val.apn;

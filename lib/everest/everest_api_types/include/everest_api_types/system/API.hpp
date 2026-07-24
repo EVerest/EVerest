@@ -153,6 +153,11 @@ enum class ConfigureNetworkStatusEnum {
     NotSupported,
 };
 
+enum class ConfigureNetworkFinalStatusEnum {
+    Ready,
+    Failed,
+};
+
 struct APN {
     std::string apn;
     std::optional<std::string> apn_user_name;
@@ -187,7 +192,7 @@ struct ConfigureNetworkResponse {
 
 struct ConfigureNetworkStatus {
     int32_t request_id;
-    ConfigureNetworkStatusEnum status;
+    ConfigureNetworkFinalStatusEnum status;
     std::optional<std::string> interface_address;
 };
 

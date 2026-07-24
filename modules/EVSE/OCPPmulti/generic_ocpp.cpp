@@ -576,13 +576,13 @@ void GenericOcpp::init_subscribe() {
     mv_requires.system.subscribe_log_status([this](auto arg) { cb_log_status(arg); });
 
     mv_requires.system.subscribe_configure_network_status([this](const types::network::ConfigureNetworkStatus status) {
-        if (status.status != types::network::ConfigureNetworkStatusEnum::Ready) {
+        if (status.status != types::network::ConfigureNetworkFinalStatusEnum::Ready) {
             EVLOG_warning << "configure_network_status for request_id " << status.request_id << " reported "
-                          << types::network::configure_network_status_enum_to_string(status.status)
+                          << types::network::configure_network_final_status_enum_to_string(status.status)
                           << "; treating as failure";
         }
         ocpp::ConfigNetworkResult result{};
-        result.success = (status.status == types::network::ConfigureNetworkStatusEnum::Ready);
+        result.success = (status.status == types::network::ConfigureNetworkFinalStatusEnum::Ready);
         result.interface_address = status.interface_address;
         fulfill_network_request(status.request_id, result);
     });

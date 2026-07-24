@@ -82,6 +82,10 @@ std::string serialize(ConfigureNetworkStatusEnum val) noexcept {
     return utilities::dump_json(val);
 }
 
+std::string serialize(ConfigureNetworkFinalStatusEnum val) noexcept {
+    return utilities::dump_json(val);
+}
+
 std::string serialize(APN const& val) noexcept {
     return utilities::dump_json(val);
 }
@@ -187,6 +191,11 @@ std::ostream& operator<<(std::ostream& os, ConfigureNetworkStatusEnum const& val
     return os;
 }
 
+std::ostream& operator<<(std::ostream& os, ConfigureNetworkFinalStatusEnum const& val) {
+    os << serialize(val);
+    return os;
+}
+
 std::ostream& operator<<(std::ostream& os, APN const& val) {
     os << serialize(val);
     return os;
@@ -278,6 +287,10 @@ template <> VPNTypeEnum deserialize(std::string_view val) {
 
 template <> ConfigureNetworkStatusEnum deserialize(std::string_view val) {
     return utilities::parse_json<ConfigureNetworkStatusEnum>(val);
+}
+
+template <> ConfigureNetworkFinalStatusEnum deserialize(std::string_view val) {
+    return utilities::parse_json<ConfigureNetworkFinalStatusEnum>(val);
 }
 
 template <> APN deserialize(std::string_view val) {

@@ -739,6 +739,32 @@ void from_json(const json& j, ConfigureNetworkStatusEnum& k) {
                             " could not be converted to enum of type ConfigureNetworkStatusEnum");
 }
 
+void to_json(json& j, const ConfigureNetworkFinalStatusEnum& k) noexcept {
+    switch (k) {
+    case ConfigureNetworkFinalStatusEnum::Ready:
+        j = "Ready";
+        return;
+    case ConfigureNetworkFinalStatusEnum::Failed:
+        j = "Failed";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::system::ConfigureNetworkFinalStatusEnum";
+}
+void from_json(const json& j, ConfigureNetworkFinalStatusEnum& k) {
+    std::string s = j;
+    if (s == "Ready") {
+        k = ConfigureNetworkFinalStatusEnum::Ready;
+        return;
+    }
+    if (s == "Failed") {
+        k = ConfigureNetworkFinalStatusEnum::Failed;
+        return;
+    }
+
+    throw std::out_of_range("Provided string " + s +
+                            " could not be converted to enum of type ConfigureNetworkFinalStatusEnum");
+}
+
 void to_json(json& j, const APN& k) noexcept {
     j = json{
         {"apn", k.apn},
