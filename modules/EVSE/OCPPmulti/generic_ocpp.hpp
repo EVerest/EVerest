@@ -45,6 +45,8 @@
 #include <everest/ocpp_module_common/error_handling.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
 
+#include <future>
+#include <map>
 #include <mutex>
 #include <queue>
 #include <utility>
@@ -171,6 +173,19 @@ private:
     everest::lib::util::monitor<std::map<std::int32_t, std::string>> mv_evse_evcc_id;
     everest::lib::util::monitor<std::map<std::int32_t, bool>> mv_evse_ready_map;
     everest::lib::util::monitor<std::map<std::int32_t, std::optional<float>>> mv_evse_soc_map;
+
+    // Pending configure_network requests, keyed by a unique request_id (not configuration_slot, which
+    // repeats across libocpp's per-slot retries). The stored slot lets a re-request drop the stale attempt.
+    struct PendingNetworkConfigRequest {
+        std::int32_t configuration_slot;
+        std::promise<ocpp::ConfigNetworkResult> promise;
+    };
+    std::int32_t mv_next_network_config_request_id{1}; // guarded by the monitor lock below
+    everest::lib::util::monitor<std::map<std::int32_t, PendingNetworkConfigRequest>> mv_pending_network_config_requests;
+
+    /// \brief Fails all pending configure_network promises so a ConnectivityManager blocked on one of the
+    /// futures does not have to run into its NetworkConfigTimeout during shutdown.
+    void drain_pending_network_config_requests();
 
     // these need to be thread safe - used by libocpp and this object
     std::shared_ptr<module::device_model::EverestDeviceModelStorage> m_everest_device_model_storage;
@@ -309,6 +324,11 @@ protected:
     void ready_module_configuration();
     void ready_transaction_handler();
 
+    // Pop-and-set discipline for configure_network promises: find the pending request keyed by \p request_id
+    // under the monitor lock, move the promise out and erase it while holding the lock, then release the lock
+    // and only THEN call set_value. First popper wins; if the entry is already gone this is a no-op.
+    void fulfill_network_request(std::int32_t request_id, const ocpp::ConfigNetworkResult& result);
+
     // every Event alternative needs an overload; a missing one is a compile error
     void visit_impl(std::int32_t, const std::monostate&) {
     }
@@ -328,7 +348,8 @@ protected:
     void cb_charging_needs(std::int32_t extensions_id, const types::iso15118::ChargingNeeds& charging_needs) override;
     ocpp::v2::ClearDisplayMessageResponse
     cb_clear_display_message(const ocpp::v2::ClearDisplayMessageRequest& request) override;
-    std::future<ocpp::ConfigNetworkResult> cb_configure_network_connection_profile() override;
+    std::future<ocpp::ConfigNetworkResult> cb_configure_network_connection_profile(
+        std::int32_t configuration_slot, const ocpp::v2::NetworkConnectionProfile& network_connection_profile) override;
     bool cb_connector_effective_operative_status(std::int32_t evse_id, std::int32_t connector_id,
                                                  ocpp::v2::OperationalStatusEnum new_status) override;
     void cb_connection_state_changed(bool is_connected, ocpp::OcppProtocolVersion protocol_version) override;

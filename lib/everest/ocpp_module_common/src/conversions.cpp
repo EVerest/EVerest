@@ -1976,6 +1976,110 @@ to_everest_change_availability_response(const ocpp::v2::ChangeAvailabilityRespon
     return result;
 }
 
+types::network::InterfaceClass to_everest_interface_class(const ocpp::v2::OCPPInterfaceEnum iface) {
+    switch (iface) {
+    case ocpp::v2::OCPPInterfaceEnum::Wired0:
+        return types::network::InterfaceClass::Wired0;
+    case ocpp::v2::OCPPInterfaceEnum::Wired1:
+        return types::network::InterfaceClass::Wired1;
+    case ocpp::v2::OCPPInterfaceEnum::Wired2:
+        return types::network::InterfaceClass::Wired2;
+    case ocpp::v2::OCPPInterfaceEnum::Wired3:
+        return types::network::InterfaceClass::Wired3;
+    case ocpp::v2::OCPPInterfaceEnum::Wireless0:
+        return types::network::InterfaceClass::Wireless0;
+    case ocpp::v2::OCPPInterfaceEnum::Wireless1:
+        return types::network::InterfaceClass::Wireless1;
+    case ocpp::v2::OCPPInterfaceEnum::Wireless2:
+        return types::network::InterfaceClass::Wireless2;
+    case ocpp::v2::OCPPInterfaceEnum::Wireless3:
+        return types::network::InterfaceClass::Wireless3;
+    case ocpp::v2::OCPPInterfaceEnum::Any:
+        return types::network::InterfaceClass::Any;
+    }
+    throw std::out_of_range("Could not convert OCPPInterfaceEnum to types::network::InterfaceClass");
+}
+
+/// \brief Converts a given ocpp::v2::APNAuthenticationEnum \p authentication to a types::network::Apn_authentication.
+static types::network::Apn_authentication
+to_everest_apn_authentication(const ocpp::v2::APNAuthenticationEnum authentication) {
+    switch (authentication) {
+    case ocpp::v2::APNAuthenticationEnum::PAP:
+        return types::network::Apn_authentication::PAP;
+    case ocpp::v2::APNAuthenticationEnum::CHAP:
+        return types::network::Apn_authentication::CHAP;
+    case ocpp::v2::APNAuthenticationEnum::NONE:
+        return types::network::Apn_authentication::NONE;
+    case ocpp::v2::APNAuthenticationEnum::AUTO:
+        return types::network::Apn_authentication::AUTO;
+    }
+    throw std::out_of_range("Could not convert APNAuthenticationEnum to types::network::Apn_authentication");
+}
+
+/// \brief Converts a given ocpp::v2::VPNEnum \p type to a types::network::Type.
+static types::network::Type to_everest_vpn_type(const ocpp::v2::VPNEnum type) {
+    switch (type) {
+    case ocpp::v2::VPNEnum::IKEv2:
+        return types::network::Type::IKEv2;
+    case ocpp::v2::VPNEnum::IPSec:
+        return types::network::Type::IPSec;
+    case ocpp::v2::VPNEnum::L2TP:
+        return types::network::Type::L2TP;
+    case ocpp::v2::VPNEnum::PPTP:
+        return types::network::Type::PPTP;
+    }
+    throw std::out_of_range("Could not convert VPNEnum to types::network::Type");
+}
+
+types::network::APN to_everest_network_apn(const ocpp::v2::APN& apn) {
+    types::network::APN result;
+    result.apn = apn.apn.get();
+    result.apn_authentication = to_everest_apn_authentication(apn.apnAuthentication);
+    if (apn.apnUserName.has_value()) {
+        result.apn_user_name = apn.apnUserName.value().get();
+    }
+    if (apn.apnPassword.has_value()) {
+        result.apn_password = apn.apnPassword.value().get();
+    }
+    if (apn.simPin.has_value()) {
+        result.sim_pin = std::to_string(apn.simPin.value());
+    }
+    if (apn.preferredNetwork.has_value()) {
+        result.preferred_network = apn.preferredNetwork.value().get();
+    }
+    if (apn.useOnlyPreferredNetwork.has_value()) {
+        result.use_only_preferred_network = apn.useOnlyPreferredNetwork.value();
+    }
+    return result;
+}
+
+types::network::VPN to_everest_network_vpn(const ocpp::v2::VPN& vpn) {
+    types::network::VPN result;
+    result.server = vpn.server.get();
+    result.user = vpn.user.get();
+    result.password = vpn.password.get();
+    result.key = vpn.key.get();
+    result.type = to_everest_vpn_type(vpn.type);
+    if (vpn.group.has_value()) {
+        result.group = vpn.group.value().get();
+    }
+    return result;
+}
+
+types::network::ConfigureNetworkRequest
+to_everest_configure_network_request(const int32_t request_id, const ocpp::v2::NetworkConnectionProfile& profile) {
+    types::network::ConfigureNetworkRequest request;
+    request.request_id = request_id;
+    request.interface = to_everest_interface_class(profile.ocppInterface);
+    if (profile.apn.has_value()) {
+        request.apn = to_everest_network_apn(profile.apn.value());
+    }
+    if (profile.vpn.has_value()) {
+        request.vpn = to_everest_network_vpn(profile.vpn.value());
+    }
+    return request;
+}
+
 types::grid_support::DirectiveType to_grid_support_directive_type(const ocpp::v2::DERControlEnum control_type) {
     switch (control_type) {
     case ocpp::v2::DERControlEnum::EnterService:

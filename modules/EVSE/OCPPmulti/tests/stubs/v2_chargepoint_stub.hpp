@@ -129,7 +129,8 @@ struct GenericChargePointCallbacksMock : public ocpp_multi::GenericChargePointCa
                 (std::int32_t extensions_id, const types::iso15118::ChargingNeeds& charging_needs), (override));
     MOCK_METHOD(ocpp::v2::ClearDisplayMessageResponse, cb_clear_display_message,
                 (const ocpp::v2::ClearDisplayMessageRequest& request), (override));
-    MOCK_METHOD(std::future<ocpp::ConfigNetworkResult>, cb_configure_network_connection_profile, (), (override));
+    MOCK_METHOD(std::future<ocpp::ConfigNetworkResult>, cb_configure_network_connection_profile,
+                (std::int32_t, const ocpp::v2::NetworkConnectionProfile&), (override));
     MOCK_METHOD(bool, cb_connector_effective_operative_status,
                 (std::int32_t evse_id, std::int32_t connector_id, ocpp::v2::OperationalStatusEnum new_status),
                 (override));

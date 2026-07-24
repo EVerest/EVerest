@@ -9,6 +9,9 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <future>
+
 namespace {
 
 using namespace ocpp_multi;
@@ -187,6 +190,30 @@ TEST_F(ChargePointV2Test, remoteStartForwardsGroupIdToken) {
     EXPECT_EQ(provided.group_id_token->idToken.get(), "PARENT456");
     EXPECT_EQ(provided.evse_id, EVSE_ID);
     EXPECT_EQ(provided.request_id, 42);
+}
+
+// The configure_network callback forwards slot and profile to the module callback sink and returns its future
+TEST_F(ChargePointV2Test, configureNetworkCallbackForwardsToModuleCallbacks) {
+    auto callbacks = m_chargepoint.configure_callbacks();
+    ASSERT_TRUE(callbacks.configure_network_connection_profile_callback.has_value());
+
+    std::promise<ocpp::ConfigNetworkResult> promise;
+    ocpp::ConfigNetworkResult expected{};
+    expected.success = true;
+    expected.interface_address = "192.168.5.1";
+    promise.set_value(expected);
+    EXPECT_CALL(m_callbacks, cb_configure_network_connection_profile(5, _))
+        .WillOnce(Return(testing::ByMove(promise.get_future())));
+
+    ocpp::v2::NetworkConnectionProfile profile{};
+    profile.ocppInterface = ocpp::v2::OCPPInterfaceEnum::Wired0;
+    auto future = callbacks.configure_network_connection_profile_callback.value()(5, profile);
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    const auto result = future.get();
+    EXPECT_TRUE(result.success);
+    ASSERT_TRUE(result.interface_address.has_value());
+    EXPECT_EQ(result.interface_address.value(), "192.168.5.1");
 }
 
 // SessionStarted(Authorized) creates transaction data with token, group token, reservation and remote start id
