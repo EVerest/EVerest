@@ -17,7 +17,6 @@
 
 #include <list>
 #include <memory>
-#include <mutex>
 #include <string>
 
 namespace stubs {
@@ -121,8 +120,6 @@ private:
     void publish_fn(const std::string& interface, const std::string& variable, int instance, const json& value);
 
     var_cb_list_t m_subscribe_var_callbacks;
-    // guarded by m_cmd_response_mutex: commands may be invoked from module threads concurrently
-    std::mutex m_cmd_response_mutex;
     std::list<json> m_cmd_response_list;
 
 protected:
