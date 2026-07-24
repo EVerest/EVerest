@@ -4,6 +4,7 @@
 #include <fstream>
 #include <gtest/gtest.h>
 #include <openssl/crypto.h>
+#include <openssl/pkcs12.h>
 #include <regex>
 #include <sstream>
 #include <string>
@@ -12,6 +13,7 @@
 #include <evse_security/certificate/x509_bundle.hpp>
 #include <evse_security/certificate/x509_wrapper.hpp>
 #include <evse_security/evse_security.hpp>
+#include <evse_security/utils/enforce_certificate_rules.hpp>
 #include <evse_security/utils/evse_filesystem.hpp>
 
 #include <evse_security/crypto/evse_crypto.hpp>
@@ -1445,6 +1447,73 @@ TEST_F(EvseSecurityTestsMulti, verify_with_invalid_cert_fails) {
     ASSERT_EQ(result, CertificateValidationResult::Unknown);
 }
 
-} // namespace evse_security
+// ============================================================
+// enforce_certificate_rules tests
+// ============================================================
+/*
+TEST_F(EvseSecurityTests, verify_valid_leaf_passes_rules) {
+    fs::path leaf_path = fs::path("eonti_addon_test_certs/valid/V2G SECC Valid cert.pem");
+    if (!fs::exists(leaf_path)) {
+        GTEST_SKIP() << "V2G SECC Valid cert.pem not found, skipping";
+    }
 
+    std::ifstream f(leaf_path);
+    std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    X509Wrapper wrapper(pem, EncodingFormat::PEM);
+
+    int result = enforce_certificate_rules(wrapper.get());
+    EXPECT_EQ(result, 0) << "Valid leaf certificate should pass rules";
+}
+*/
+TEST_F(EvseSecurityTests, verify_valid_root_ca_passes_rules) {
+    fs::path root_path = fs::path("eonti_addon_test_certs/valid/V2G TEST Root CA.crt");
+    if (!fs::exists(root_path)) {
+        GTEST_SKIP() << "eonti_addon_test_certs/valid/V2G TEST RootCA.crt not found, skipping";
+    }
+
+    std::ifstream f(root_path);
+    std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    X509Wrapper wrapper(pem, EncodingFormat::PEM);
+
+    int result = enforce_certificate_rules(wrapper.get());
+    EXPECT_EQ(result, 0) << "Valid root CA should pass rules";
+}
+
+TEST_F(EvseSecurityTests, verify_valid_subca_passes_rules) {
+    fs::path bundle_path = fs::path("eonti_addon_test_certs/valid/V2G TEST SUB CA.pem");
+    if (!fs::exists(bundle_path)) {
+        GTEST_SKIP() << "V2G_CA_BUNDLE.pem not found, skipping";
+    }
+
+    X509CertificateBundle bundle(bundle_path, EncodingFormat::PEM);
+    auto certs = bundle.split();
+
+    bool found_subca = false;
+    for (auto& cert : certs) {
+        if (!cert.is_selfsigned()) {
+            found_subca = true;
+            int result = enforce_certificate_rules(cert.get());
+            EXPECT_EQ(result, 0) << "Valid SubCA should pass rules";
+            break;
+        }
+    }
+
+    if (!found_subca) {
+        GTEST_SKIP() << "No SubCA found in bundle, skipping";
+    }
+}
+
+TEST_F(EvseSecurityTests, verify_expired_cert_does_not_crash) {
+    fs::path cert_path = fs::path("expired_leaf/SECC_LEAF_EXPIRED.pem");
+    if (!fs::exists(cert_path)) {
+        GTEST_SKIP() << "SECC_LEAF_EXPIRED.pem not found, skipping";
+    }
+
+    std::ifstream f(cert_path);
+    std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    X509Wrapper wrapper(pem, EncodingFormat::PEM);
+
+    ASSERT_NO_THROW(enforce_certificate_rules(wrapper.get()));
+} // namespace evse_security
+} // namespace evse_security
 // FIXME(piet): Add more tests for getRootCertificateHashData (incl. V2GCertificateChain etc.)

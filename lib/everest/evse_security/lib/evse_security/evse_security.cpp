@@ -11,12 +11,14 @@
 #include <iostream>
 #include <optional>
 #include <set>
+#include <stdio.h>
 
 #include <cert_rehash/c_rehash.hpp>
 
 #include <evse_security/certificate/x509_bundle.hpp>
 #include <evse_security/certificate/x509_hierarchy.hpp>
 #include <evse_security/certificate/x509_wrapper.hpp>
+#include <evse_security/utils/enforce_certificate_rules.hpp>
 #include <evse_security/utils/evse_filesystem.hpp>
 
 namespace evse_security {
@@ -1447,6 +1449,22 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
 
                 if (is_valid) {
                     any_valid_certificate = true;
+
+                    for (size_t i = 0; i < chain.size(); ++i) {
+                        std::string subType;
+                        if (i == 0)
+                            subType = "leaf";
+                        else if (i == chain.size() - 1)
+                            subType = "root";
+                        else
+                            subType = "intermediate";
+
+                        if (enforce_certificate_rules(chain.at(i).get())) {
+                            EVLOG_error << "Certificate chain invalid at " << subType;
+                            result.status = GetCertificateInfoStatus::NotFoundValid;
+                            return false; // skip this chain
+                        }
+                    }
 
                     // Search for the private key
                     auto priv_key_path =
