@@ -3,9 +3,14 @@
 
 #include "energy/wrapper.hpp"
 #include "energy/API.hpp"
+#include "powermeter/wrapper.hpp"
+#include <stdexcept>
 #include <vector>
 
 namespace everest::lib::API::V1_0::types::energy {
+
+using everest::lib::API::V1_0::types::powermeter::to_external_api;
+using everest::lib::API::V1_0::types::powermeter::to_internal_api;
 
 namespace {
 template <class SrcT, class ConvT>
@@ -265,6 +270,132 @@ CapabilityLimits_External to_external_api(CapabilityLimits_Internal const& val) 
     result.max_phase_count = val.max_phase_count;
     result.nominal_voltage_V = val.nominal_voltage_V;
     result.total_power_W = val.total_power_W;
+    return result;
+}
+
+NodeType_Internal to_internal_api(NodeType_External const& val) {
+    switch (val) {
+    case NodeType_External::Undefined:
+        return NodeType_Internal::Undefined;
+    case NodeType_External::Evse:
+        return NodeType_Internal::Evse;
+    case NodeType_External::Generic:
+        return NodeType_Internal::Generic;
+    }
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::energy::NodeType_External");
+}
+
+NodeType_External to_external_api(NodeType_Internal const& val) {
+    switch (val) {
+    case NodeType_Internal::Undefined:
+        return NodeType_External::Undefined;
+    case NodeType_Internal::Evse:
+        return NodeType_External::Evse;
+    case NodeType_Internal::Generic:
+        return NodeType_External::Generic;
+    }
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::energy::NodeType_Internal");
+}
+
+EvseState_Internal to_internal_api(EvseState_External const& val) {
+    switch (val) {
+    case EvseState_External::Unplugged:
+        return EvseState_Internal::Unplugged;
+    case EvseState_External::WaitForAuth:
+        return EvseState_Internal::WaitForAuth;
+    case EvseState_External::WaitForEnergy:
+        return EvseState_Internal::WaitForEnergy;
+    case EvseState_External::PrepareCharging:
+        return EvseState_Internal::PrepareCharging;
+    case EvseState_External::PausedEV:
+        return EvseState_Internal::PausedEV;
+    case EvseState_External::PausedEVSE:
+        return EvseState_Internal::PausedEVSE;
+    case EvseState_External::Charging:
+        return EvseState_Internal::Charging;
+    case EvseState_External::Finished:
+        return EvseState_Internal::Finished;
+    case EvseState_External::Disabled:
+        return EvseState_Internal::Disabled;
+    }
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::energy::EvseState_External");
+}
+
+EvseState_External to_external_api(EvseState_Internal const& val) {
+    switch (val) {
+    case EvseState_Internal::Unplugged:
+        return EvseState_External::Unplugged;
+    case EvseState_Internal::WaitForAuth:
+        return EvseState_External::WaitForAuth;
+    case EvseState_Internal::WaitForEnergy:
+        return EvseState_External::WaitForEnergy;
+    case EvseState_Internal::PrepareCharging:
+        return EvseState_External::PrepareCharging;
+    case EvseState_Internal::PausedEV:
+        return EvseState_External::PausedEV;
+    case EvseState_Internal::PausedEVSE:
+        return EvseState_External::PausedEVSE;
+    case EvseState_Internal::Charging:
+        return EvseState_External::Charging;
+    case EvseState_Internal::Finished:
+        return EvseState_External::Finished;
+    case EvseState_Internal::Disabled:
+        return EvseState_External::Disabled;
+    }
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::energy::EvseState_Internal");
+}
+
+OptimizerTarget_Internal to_internal_api(OptimizerTarget_External const& val) {
+    OptimizerTarget_Internal result;
+    result.energy_amount_needed = val.energy_amount_needed;
+    result.charge_to_max_percent = val.charge_to_max_percent;
+    result.car_battery_soc = val.car_battery_soc;
+    result.leave_time = val.leave_time;
+    result.price_limit = val.price_limit;
+    result.full_autonomy = val.full_autonomy;
+    return result;
+}
+
+OptimizerTarget_External to_external_api(OptimizerTarget_Internal const& val) {
+    OptimizerTarget_External result;
+    result.energy_amount_needed = val.energy_amount_needed;
+    result.charge_to_max_percent = val.charge_to_max_percent;
+    result.car_battery_soc = val.car_battery_soc;
+    result.leave_time = val.leave_time;
+    result.price_limit = val.price_limit;
+    result.full_autonomy = val.full_autonomy;
+    return result;
+}
+
+EnergyFlowRequest_Internal to_internal_api(EnergyFlowRequest_External const& val) {
+    EnergyFlowRequest_Internal result;
+    result.children = vecToInternal(val.children);
+    result.uuid = val.uuid;
+    result.node_type = to_internal_api(val.node_type);
+    result.schedule_import = vecToInternal(val.schedule_import);
+    result.schedule_export = vecToInternal(val.schedule_export);
+    result.schedule_setpoints = vecToInternal(val.schedule_setpoints);
+    result.priority_request = val.priority_request;
+    result.evse_state = optToInternal(val.evse_state);
+    result.optimizer_target = optToInternal(val.optimizer_target);
+    result.energy_usage_root = optToInternal(val.energy_usage_root);
+    result.energy_usage_leaves = optToInternal(val.energy_usage_leaves);
+    return result;
+}
+
+EnergyFlowRequest_External to_external_api(EnergyFlowRequest_Internal const& val) {
+    EnergyFlowRequest_External result;
+    result.children = vecToExternal(val.children);
+    result.uuid = val.uuid;
+    result.node_type = to_external_api(val.node_type);
+    result.schedule_import = vecToExternal(val.schedule_import);
+    result.schedule_export = vecToExternal(val.schedule_export);
+    result.schedule_setpoints = vecToExternal(val.schedule_setpoints);
+    result.priority_request = val.priority_request;
+    result.evse_state = optToExternal(val.evse_state);
+    result.optimizer_target = optToExternal(val.optimizer_target);
+    result.energy_usage_root = optToExternal(val.energy_usage_root);
+    result.energy_usage_leaves = optToExternal(val.energy_usage_leaves);
     return result;
 }
 

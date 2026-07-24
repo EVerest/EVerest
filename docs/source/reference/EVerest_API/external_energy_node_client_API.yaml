@@ -1,0 +1,185 @@
+---
+asyncapi: 3.0.0
+id: 'pionix:de:everest:external_energy_node_client_API'
+info:
+  title: 'EVerest API definition for the external energy node client'
+  version: 1.0.0
+  description: >-
+    API to subscribe to an external_energy_node_API server's aggregated
+    energy_flow_request over external MQTT and present it as a local energy_consumer
+    to the site-level EnergyNode (grid connection point). Routes enforce_limits
+    computed by the local (site-level) EnergyManager back to the remote cluster
+    server.
+
+    This module has two MQTT identities: its own module_id (used for this module's
+    own heartbeat/communication_check, like any other API module) and the remote
+    server_id it is configured to connect to (used for the energy_flow_request /
+    enforce_limits exchange, on the remote external_energy_node_API server's topics).
+
+  license:
+    name: Apache-2.0
+    url: https://opensource.org/licenses/Apache-2.0
+  tags:
+    - name: EVerest
+    - name: external energy node
+servers:
+  default:
+    pathname: 'everest_api/1/external_energy_node_client/{module_id}'
+    host: 'localhost:1883'
+    description: default local MQTT — this module's own identity
+    protocol: mqtt
+    variables:
+      module_id:
+        description: The ID of the module as defined in the EVerest config file.
+  remote_server:
+    pathname: 'everest_api/1/external_energy_node/{server_id}'
+    host: 'localhost:1883'
+    description: >-
+      The remote external_energy_node_API server this client is configured to
+      connect to (config parameter server_id).
+    protocol: mqtt
+    variables:
+      server_id:
+        description: >-
+          Module ID of the external_energy_node_API server, as set in this
+          module's server_id config parameter.
+defaultContentType: application/json
+
+channels:
+  send_energy_flow_request:
+    address: 'e2m/energy_flow_request'
+    servers:
+      - $ref: '#/servers/remote_server'
+    messages:
+      send_energy_flow_request:
+        $ref: '#/components/messages/send_energy_flow_request'
+
+  receive_enforce_limits:
+    address: 'm2e/enforce_limits'
+    servers:
+      - $ref: '#/servers/remote_server'
+    messages:
+      receive_enforce_limits:
+        $ref: '#/components/messages/receive_enforce_limits'
+
+  receive_heartbeat:
+    address: 'e2m/heartbeat'
+    messages:
+      receive_heartbeat:
+        $ref: '#/components/messages/receive_heartbeat'
+
+  send_communication_check:
+    address: 'm2e/communication_check'
+    messages:
+      send_communication_check:
+        $ref: '#/components/messages/send_communication_check'
+
+operations:
+  send_energy_flow_request:
+    title: 'Receive aggregated energy flow request from the remote server'
+    action: receive
+    channel:
+      $ref: '#/channels/send_energy_flow_request'
+
+  receive_enforce_limits:
+    title: 'Send enforce limits to the remote server'
+    action: send
+    channel:
+      $ref: '#/channels/receive_enforce_limits'
+
+  receive_heartbeat:
+    title: 'Receive heartbeat'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_heartbeat'
+
+  send_communication_check:
+    title: 'Send communication check'
+    action: send
+    channel:
+      $ref: '#/channels/send_communication_check'
+
+components:
+  messages:
+    send_energy_flow_request:
+      name: send_energy_flow_request
+      title: 'Receive aggregated energy flow request from the remote server'
+      summary: >-
+        Aggregated energy_flow_request produced by the remote external_energy_node_API
+        server. This client subscribes to it and presents it locally as an
+        energy_consumer to the site-level EnergyNode.
+      contentType: application/json
+      payload:
+        $ref: 'external_energy_node_API.yaml#/components/schemas/EnergyFlowRequest'
+      examples:
+        - summary: "Aggregate energy flow request with one child"
+          payload:
+            {
+              "uuid": "cluster_m0_api",
+              "node_type": "Generic",
+              "schedule_import": [],
+              "schedule_export": [],
+              "schedule_setpoints": [],
+              "children": [
+                {
+                  "uuid": "evse_1",
+                  "node_type": "Evse",
+                  "evse_state": "Charging",
+                  "schedule_import": [
+                    {
+                      "timestamp": "2019-08-24T14:15:22Z",
+                      "limits_to_root": {
+                        "ac_max_current_A": { "value": 16, "source": "evse_1" }
+                      },
+                      "limits_to_leaves": {}
+                    }
+                  ],
+                  "schedule_export": [],
+                  "schedule_setpoints": [],
+                  "children": []
+                }
+              ]
+            }
+
+    receive_enforce_limits:
+      name: receive_enforce_limits
+      title: 'Send enforce limits to the remote server'
+      summary: >-
+        Enforced limits computed by the local (site-level) EnergyManager. Routed back
+        to the remote external_energy_node_API server, which applies them to its child
+        EnergyNodes with priority over its internal EnergyManager.
+      contentType: application/json
+      payload:
+        $ref: 'evse_manager_consumer_API.yaml#/components/schemas/EnforcedLimits'
+      examples:
+        - summary: "Enforce a total power limit"
+          payload:
+            {
+              "uuid": "cluster_m0_api",
+              "valid_for": 60,
+              "limits_root_side": {
+                "total_power_W": { "value": 11000, "source": "site_energy_manager" }
+              },
+              "schedule": []
+            }
+
+    receive_heartbeat:
+      name: receive_heartbeat
+      title: 'Receive heartbeat'
+      summary: Heartbeat produced by EVerest as configured via cfg_heartbeat_interval_ms in the EVerest configuration
+      contentType: application/json
+      payload:
+        $ref: 'external_energy_limits_consumer_API.yaml#/components/schemas/HeartBeatId'
+      examples:
+        - summary: "Heartbeat"
+          payload: 42
+
+    send_communication_check:
+      name: send_communication_check
+      title: 'Send communication check'
+      summary: Signal to EVerest that communication is good or check shall be stopped
+      payload:
+        $ref: 'external_energy_limits_consumer_API.yaml#/components/schemas/CommunicationCheck'
+      examples:
+        - summary: "CommunicationCheck"
+          payload: true

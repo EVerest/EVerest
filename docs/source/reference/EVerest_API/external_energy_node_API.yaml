@@ -1,0 +1,289 @@
+---
+asyncapi: 3.0.0
+id: 'pionix:de:everest:external_energy_node_API'
+info:
+  title: 'EVerest API definition for the external energy node server'
+  version: 1.0.0
+  description: >-
+    API to aggregate energy_flow_requests from locally connected EnergyNodes and publish
+    the aggregate to external MQTT, so a remote site-level EnergyManager (connected via
+    external_energy_node_client_API) can participate in load management. Routes
+    enforce_limits received from the external EnergyManager to all child EnergyNodes,
+    taking priority over the internal EnergyManager.
+
+  license:
+    name: Apache-2.0
+    url: https://opensource.org/licenses/Apache-2.0
+  tags:
+    - name: EVerest
+    - name: external energy node
+servers:
+  default:
+    pathname: 'everest_api/1/external_energy_node/{module_id}'
+    host: 'localhost:1883'
+    description: default local MQTT
+    protocol: mqtt
+    variables:
+      module_id:
+        description: The ID of the module as defined in the EVerest config file.
+defaultContentType: application/json
+
+channels:
+  receive_energy_flow_request:
+    address: 'e2m/energy_flow_request'
+    messages:
+      receive_energy_flow_request:
+        $ref: '#/components/messages/receive_energy_flow_request'
+
+  send_enforce_limits:
+    address: 'm2e/enforce_limits'
+    messages:
+      send_enforce_limits:
+        $ref: '#/components/messages/send_enforce_limits'
+
+  receive_heartbeat:
+    address: 'e2m/heartbeat'
+    messages:
+      receive_heartbeat:
+        $ref: '#/components/messages/receive_heartbeat'
+
+  send_communication_check:
+    address: 'm2e/communication_check'
+    messages:
+      send_communication_check:
+        $ref: '#/components/messages/send_communication_check'
+
+operations:
+  receive_energy_flow_request:
+    title: 'Receive aggregated energy flow request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_energy_flow_request'
+
+  send_enforce_limits:
+    title: 'Send enforce limits'
+    action: send
+    channel:
+      $ref: '#/channels/send_enforce_limits'
+
+  receive_heartbeat:
+    title: 'Receive heartbeat'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_heartbeat'
+
+  send_communication_check:
+    title: 'Send communication check'
+    action: send
+    channel:
+      $ref: '#/channels/send_communication_check'
+
+components:
+  messages:
+    receive_energy_flow_request:
+      name: receive_energy_flow_request
+      title: 'Receive aggregated energy flow request'
+      summary: >-
+        Aggregate of all energy_flow_requests from the locally connected EnergyNodes
+        (this module's children). Published on every update from a child.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EnergyFlowRequest'
+      examples:
+        - summary: "Aggregate energy flow request with one child"
+          payload:
+            {
+              "uuid": "cluster_m0_api",
+              "node_type": "Generic",
+              "schedule_import": [],
+              "schedule_export": [],
+              "schedule_setpoints": [],
+              "children": [
+                {
+                  "uuid": "evse_1",
+                  "node_type": "Evse",
+                  "evse_state": "Charging",
+                  "schedule_import": [
+                    {
+                      "timestamp": "2019-08-24T14:15:22Z",
+                      "limits_to_root": {
+                        "ac_max_current_A": { "value": 16, "source": "evse_1" }
+                      },
+                      "limits_to_leaves": {}
+                    }
+                  ],
+                  "schedule_export": [],
+                  "schedule_setpoints": [],
+                  "children": []
+                }
+              ]
+            }
+
+    send_enforce_limits:
+      name: send_enforce_limits
+      title: 'Send enforce limits'
+      summary: >-
+        Enforced limits computed by the external (site-level) EnergyManager. Routed
+        to all child EnergyNodes, taking priority over limits from the internal
+        EnergyManager.
+      contentType: application/json
+      payload:
+        $ref: 'evse_manager_consumer_API.yaml#/components/schemas/EnforcedLimits'
+      examples:
+        - summary: "Enforce a total power limit"
+          payload:
+            {
+              "uuid": "cluster_m0_api",
+              "valid_for": 60,
+              "limits_root_side": {
+                "total_power_W": { "value": 11000, "source": "site_energy_manager" }
+              },
+              "schedule": []
+            }
+
+    receive_heartbeat:
+      name: receive_heartbeat
+      title: 'Receive heartbeat'
+      summary: Heartbeat produced by EVerest as configured via cfg_heartbeat_interval_ms in the EVerest configuration
+      contentType: application/json
+      payload:
+        $ref: 'external_energy_limits_consumer_API.yaml#/components/schemas/HeartBeatId'
+      examples:
+        - summary: "Heartbeat"
+          payload: 42
+
+    send_communication_check:
+      name: send_communication_check
+      title: 'Send communication check'
+      summary: Signal to EVerest that communication is good or check shall be stopped
+      payload:
+        $ref: 'external_energy_limits_consumer_API.yaml#/components/schemas/CommunicationCheck'
+      examples:
+        - summary: "CommunicationCheck"
+          payload: true
+
+  schemas:
+    NodeType:
+      description: Enum Type for different Nodes on the energy tree
+      type: string
+      enum:
+        - Undefined
+        - Evse
+        - Generic
+
+    EvseState:
+      description: Enum for simplified EVSE state
+      type: string
+      enum:
+        - Unplugged
+        - WaitForAuth
+        - WaitForEnergy
+        - PrepareCharging
+        - PausedEV
+        - PausedEVSE
+        - Charging
+        - Finished
+        - Disabled
+
+    OptimizerTarget:
+      description: User defined optimizer targets for this evse
+      type: object
+      additionalProperties: true
+      properties:
+        energy_amount_needed:
+          description: Amount of kwh the car needs to fulfill its charging target
+          type: number
+        charge_to_max_percent:
+          description: Charge car battery to max NN percent
+          type: number
+        car_battery_soc:
+          description: Car battery State Of Charge in percent
+          type: number
+          minimum: 0
+          maximum: 100
+        leave_time:
+          description: >-
+            RFC3339 UTC format time when the car needs to drive away with
+            charging targets fulfilled. Will charge cheapest within this timeframe.
+          type: string
+          format: date-time
+        price_limit:
+          description: >-
+            Always charge if price below this limit. This includes solar
+            charging and price for solar energy if price levels set correctly.
+          type: number
+        full_autonomy:
+          description: >-
+            Only charge from locally generated energy. Do not draw power
+            from grid for charging.
+          type: boolean
+
+    EnergyFlowRequest:
+      description: >-
+        Request energy flow parameters to supply/limit energy import (direction from grid
+        to car) and/or consume/limit energy export (car to grid) at a specific point in the tree
+      type: object
+      additionalProperties: true
+      required:
+        - uuid
+        - children
+        - node_type
+        - schedule_import
+        - schedule_export
+        - schedule_setpoints
+      properties:
+        uuid:
+          description: >-
+            UUID for this node. This UUID will be used again when enforce_limits()
+            command propagates through the tree.
+          type: string
+        node_type:
+          description: Node Type Enum
+          type: object
+          $ref: '#/components/schemas/NodeType'
+        priority_request:
+          description: >-
+            If set to true, this is a high priority request that needs to be handled now.
+            Otherwise energymanager may merge multiple requests and address them later.
+          type: boolean
+        evse_state:
+          description: State of the EVSE
+          type: object
+          $ref: '#/components/schemas/EvseState'
+        optimizer_target:
+          description: User defined optimizer targets for this evse
+          type: object
+          $ref: '#/components/schemas/OptimizerTarget'
+        energy_usage_root:
+          description: Energy usage measurement of this node at root side
+          type: object
+          $ref: 'powermeter_API.yaml#/components/schemas/Powermeter'
+        energy_usage_leaves:
+          description: Energy usage measurement of this node at leaves side
+          type: object
+          $ref: 'powermeter_API.yaml#/components/schemas/Powermeter'
+        schedule_import:
+          description: Energy import/limits time series.
+          type: array
+          items:
+            type: object
+            $ref: 'external_energy_limits_consumer_API.yaml#/components/schemas/ScheduleReqEntry'
+        schedule_export:
+          description: Energy export/limits time series.
+          type: array
+          items:
+            type: object
+            $ref: 'external_energy_limits_consumer_API.yaml#/components/schemas/ScheduleReqEntry'
+        schedule_setpoints:
+          description: Setpoints time series.
+          type: array
+          items:
+            type: object
+            $ref: 'external_energy_limits_consumer_API.yaml#/components/schemas/ScheduleSetpointEntry'
+        children:
+          description: Array of child node energy flow requests (in the direction to consumer/car)
+          type: array
+          items:
+            description: One entry per child node
+            type: object
+            $ref: '#/components/schemas/EnergyFlowRequest'

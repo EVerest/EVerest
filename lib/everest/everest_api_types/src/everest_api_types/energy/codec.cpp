@@ -62,6 +62,22 @@ std::string serialize(CapabilityLimits const& val) noexcept {
     return utilities::dump_json(val);
 }
 
+std::string serialize(NodeType val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(EvseState val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(OptimizerTarget const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
+std::string serialize(EnergyFlowRequest const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
 std::ostream& operator<<(std::ostream& os, NumberWithSource const& val) {
     os << serialize(val);
     return os;
@@ -127,6 +143,26 @@ std::ostream& operator<<(std::ostream& os, CapabilityLimits const& val) {
     return os;
 }
 
+std::ostream& operator<<(std::ostream& os, NodeType val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, EvseState val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, OptimizerTarget const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, EnergyFlowRequest const& val) {
+    os << serialize(val);
+    return os;
+}
+
 template <> NumberWithSource deserialize(std::string_view val) {
     return utilities::parse_json<NumberWithSource>(val);
 }
@@ -177,6 +213,22 @@ template <> EnforcedLimits deserialize(std::string_view val) {
 
 template <> CapabilityLimits deserialize(std::string_view val) {
     return utilities::parse_json<CapabilityLimits>(val);
+}
+
+template <> NodeType deserialize(std::string_view val) {
+    return utilities::parse_json<NodeType>(val);
+}
+
+template <> EvseState deserialize(std::string_view val) {
+    return utilities::parse_json<EvseState>(val);
+}
+
+template <> OptimizerTarget deserialize(std::string_view val) {
+    return utilities::parse_json<OptimizerTarget>(val);
+}
+
+template <> EnergyFlowRequest deserialize(std::string_view val) {
+    return utilities::parse_json<EnergyFlowRequest>(val);
 }
 
 } // namespace everest::lib::API::V1_0::types::energy
