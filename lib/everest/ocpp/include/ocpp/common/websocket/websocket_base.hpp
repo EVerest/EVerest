@@ -42,6 +42,21 @@ struct WebsocketConnectionOptions {
     std::optional<std::string> everest_version;
 };
 
+/// \brief Decide whether another connection attempt should be made after a failure.
+/// \param attempts_made Attempts already made on the current profile (1 after the first).
+/// \param max_connection_attempts Allowed attempts per profile; -1 means unlimited.
+/// \return true if another attempt is allowed, so N allowed attempts yield exactly N attempts.
+bool should_attempt_reconnect(int attempts_made, int max_connection_attempts);
+
+/// \brief Compute the reconnect backoff wait in milliseconds per OCPP 2.0.1 part 4 section 5.3:
+/// RetryBackOffWaitMinimum plus random jitter in [0, RetryBackOffRandomRange], doubled per attempt
+/// up to RetryBackOffRepeatTimes doublings. Shared by WebsocketBase and ConnectivityManager.
+/// \param attempt_number 1-based attempt index; values <= 1 yield the first wait.
+/// \param previous_backoff_ms Result for the previous attempt; the base that is doubled.
+/// \param retry_backoff_random_range_s 0 makes the result deterministic (used by tests).
+long get_reconnect_backoff_ms(int attempt_number, long previous_backoff_ms, int retry_backoff_wait_minimum_s,
+                              int retry_backoff_repeat_times, int retry_backoff_random_range_s);
+
 ///
 /// \brief contains a websocket abstraction
 ///
@@ -64,6 +79,15 @@ protected:
     std::atomic_int reconnect_backoff_ms;
     std::atomic_int connection_attempts;
     std::atomic_bool shutting_down;
+    /// \brief When set, the internal retry loop schedules no further connection attempts, even for
+    /// a peer-initiated close. Ownership contract: armed only by suppress_reconnect(), cleared only
+    /// by clear_reconnect_suppression() (called from every subclass start_connecting), read only by
+    /// should_reconnect(). Subclasses must not touch the flag directly.
+    std::atomic_bool reconnect_suppressed;
+
+    /// \brief Clear the reconnect-suppression flag. Subclass start_connecting() must call this so a
+    /// fresh connect always resumes normal auto-reconnect and no subclass can forget the reset.
+    void clear_reconnect_suppression();
 
     /// \brief Indicates if the required callbacks are registered
     /// \returns true if the websocket is properly initialized
@@ -109,6 +133,14 @@ public:
 
     /// \brief disconnect the websocket
     void disconnect(const WebsocketCloseReason code);
+
+    /// \brief Suppress the internal reconnect loop without closing the live socket, so queued
+    /// messages can still flush. The flag is cleared on the next fresh connect.
+    void suppress_reconnect();
+
+    /// \brief Whether the internal retry loop should schedule another attempt: the attempt budget
+    /// is not exhausted and reconnect has not been suppressed.
+    bool should_reconnect() const;
 
     /// \brief indicates if the websocket is connected
     bool is_connected();

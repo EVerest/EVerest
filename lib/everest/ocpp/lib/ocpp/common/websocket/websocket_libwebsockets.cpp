@@ -130,7 +130,11 @@ struct ConnectionData {
     }
 
     /// \brief Requests the threads that are processing to exit as soon as possible
-    /// in a ordered manner
+    /// in a ordered manner.
+    /// Note: this only flips is_running (behind this->mutex); it does not wake the recv thread,
+    /// which waits on the recv_message_queue condition variable behind a different lock. Callers
+    /// must follow this with recv_message_queue notification (safe_close_threads() does so via
+    /// clear_all_queues()) or the recv thread only observes the interrupt on its next poll timeout.
     void do_interrupt_and_exit() {
         if (std::this_thread::get_id() == this->websocket_client_thread_id) {
             EVLOG_AND_THROW(std::runtime_error("Attempted to interrupt connection from websocket thread!"));
@@ -610,7 +614,11 @@ void WebsocketLibwebsockets::thread_websocket_message_recv_loop(std::shared_ptr<
         // if we receive a certain message type that will cause the implementation
         // in the charge point to attempt a reconnect (BasicAuthPass for example)
         if (!local_data->is_interupted()) {
-            recv_message_queue.wait_on_queue_element(1s);
+            // Wake immediately when interrupted: the interrupt flag lives behind a different lock, so
+            // without this predicate a teardown that races the thread into the wait is only observed
+            // when the poll times out, stalling disconnect() for the poll interval.
+            recv_message_queue.wait_on_queue_element_or_predicate([&local_data] { return local_data->is_interupted(); },
+                                                                  1s);
         }
     }
 
@@ -832,9 +840,7 @@ void WebsocketLibwebsockets::thread_websocket_client_loop(std::shared_ptr<Connec
         } else if (local_data->get_state() != EConnectionState::CONNECTED) {
             // Any other failure than a successful connect
 
-            // -1 indicates to always attempt to reconnect
-            if (this->connection_options.max_connection_attempts == -1 or
-                this->connection_attempts <= this->connection_options.max_connection_attempts) {
+            if (this->should_reconnect()) {
                 local_data->update_state(EConnectionState::RECONNECTING);
                 reconnect_delay = this->get_reconnect_interval();
                 try_reconnect = true;
@@ -857,13 +863,17 @@ void WebsocketLibwebsockets::thread_websocket_client_loop(std::shared_ptr<Connec
         if (local_data->get_state() == EConnectionState::RECONNECTING) {
             auto end_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(reconnect_delay);
 
-            while ((std::chrono::steady_clock::now() < end_time) && (false == local_data->is_interupted())) {
+            // Exit the wait early on interrupt or if reconnect gets suppressed mid-wait, so a
+            // suppress_reconnect() landing during the backoff cancels the scheduled re-dial. Only
+            // suppression is re-checked here: the attempt budget cannot change during the wait.
+            while ((std::chrono::steady_clock::now() < end_time) && (false == local_data->is_interupted()) &&
+                   (false == this->reconnect_suppressed)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
 
-            if (true == local_data->is_interupted()) {
+            if (local_data->is_interupted() || this->reconnect_suppressed) {
                 try_reconnect = false;
-                EVLOG_info << "Interrupred reconnect attempt, not reconnecting!";
+                EVLOG_info << "Interrupted or suppressed reconnect attempt, not reconnecting!";
             } else {
                 EVLOG_info << "Attempting reconnect after a wait of: " << reconnect_delay << "ms";
             }
@@ -972,6 +982,10 @@ bool WebsocketLibwebsockets::start_connecting() {
     // Clear shutting down so we allow to reconnect again as well
     this->shutting_down = false;
 
+    // A fresh connect is the single point that clears any reconnect suppression armed before a
+    // reset, mirroring the connection_attempts reset below.
+    this->clear_reconnect_suppression();
+
     EVLOG_info << "Starting connection attempts to uri: " << this->connection_options.csms_uri.string()
                << " with security-profile " << this->connection_options.security_profile
                << (this->connection_options.use_tpm_tls ? " with TPM keys" : "");
@@ -1029,6 +1043,10 @@ void WebsocketLibwebsockets::close_internal(const WebsocketCloseReason code, con
     if (!trying_connecting) {
         EVLOG_warning << "Trying to close inactive websocket with code: " << (int)code << " and reason: " << reason
                       << ", returning";
+        // The client loop can self-exit once reconnect attempts are exhausted, leaving its worker
+        // threads finished but still joinable. Join them here so a later close or destruction cannot
+        // destroy a joinable std::thread and terminate.
+        safe_close_threads();
         return;
     }
 

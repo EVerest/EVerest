@@ -1228,6 +1228,10 @@ void DeviceModel::set_active_network_profile_slot(int32_t slot, const std::strin
     }
 }
 
+std::optional<std::int32_t> DeviceModel::get_active_network_profile_slot() {
+    return this->get_optional_value<std::int32_t>(ControllerComponentVariables::ActiveNetworkProfile);
+}
+
 void DeviceModel::set_per_slot_ocpp_version(int32_t slot, const std::string& version, const std::string& source) {
     const auto nc_cv = NetworkConfigurationComponentVariables::get_component_variable(
         slot, NetworkConfigurationComponentVariables::OcppVersion);
