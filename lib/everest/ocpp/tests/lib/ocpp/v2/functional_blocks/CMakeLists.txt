@@ -94,6 +94,42 @@ target_include_directories(libocpp_test_availability PUBLIC
         ${LIBOCPP_TESTS_V2_ROOT_DIR}
 )
 
+set(TEST_FIRMWARE_UPDATE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helper.cpp
+            ${TEST_FUNCTIONAL_BLOCK_CONTEXT_SOURCES}
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/evse_manager.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/firmware_update.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/availability.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/security.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/FirmwareStatusNotification.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/UpdateFirmware.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/ChangeAvailability.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetCompositeSchedule.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/Heartbeat.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/StatusNotification.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/SecurityEventNotification.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/CertificateSigned.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/DeleteCertificate.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetInstalledCertificateIds.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/InstallCertificate.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/SignCertificate.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/Get15118EVCertificate.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/Reset.cpp
+            ${LIBOCPP_TEST_INCLUDE_COMMON_SOURCES}
+            ${LIBOCPP_TEST_INCLUDE_V2_SOURCES}
+)
+
+target_sources(libocpp_test_firmware_update PRIVATE
+        ${TEST_FIRMWARE_UPDATE_SOURCES})
+
+target_include_directories(libocpp_test_firmware_update PUBLIC
+        ${LIBOCPP_INCLUDE_PATH}
+        ${LIBOCPP_3RDPARTY_PATH}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../mocks
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../common/mocks
+        ${LIBOCPP_TESTS_V2_ROOT_DIR}
+)
+
 set(TEST_TARIFF_AND_COST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helper.cpp
             ${TEST_FUNCTIONAL_BLOCK_CONTEXT_SOURCES}
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/tariff_and_cost.cpp

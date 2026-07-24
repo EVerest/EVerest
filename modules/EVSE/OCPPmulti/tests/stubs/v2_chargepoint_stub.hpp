@@ -29,7 +29,7 @@ struct Ocpp2ChargePointMock : public ocpp::v2::ChargePointInterface {
     MOCK_METHOD(void, on_network_disconnected, (ocpp::v2::OCPPInterfaceEnum ocpp_interface), (override));
     MOCK_METHOD(void, on_firmware_update_status_notification,
                 (std::int32_t request_id, const ocpp::v2::FirmwareStatusEnum& firmware_update_status,
-                 const bool disable_connectors_during_install),
+                 std::optional<bool> disable_connectors_during_install),
                 (override));
     MOCK_METHOD(void, on_session_started, (const std::int32_t evse_id, const std::int32_t connector_id), (override));
     MOCK_METHOD(ocpp::v2::Get15118EVCertificateResponse, on_get_15118_ev_certificate_request,
