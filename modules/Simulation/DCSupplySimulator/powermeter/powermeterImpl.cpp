@@ -10,6 +10,16 @@ void powermeterImpl::init() {
 }
 
 void powermeterImpl::ready() {
+    if (config.min_import_current_A > 0 or config.min_export_current_A > 0) {
+        types::powermeter::Capabilities caps;
+        if (config.min_import_current_A > 0) {
+            caps.min_import_current_A = static_cast<float>(config.min_import_current_A);
+        }
+        if (config.min_export_current_A > 0) {
+            caps.min_export_current_A = static_cast<float>(config.min_export_current_A);
+        }
+        publish_capabilities(caps);
+    }
 }
 
 types::powermeter::TransactionStartResponse

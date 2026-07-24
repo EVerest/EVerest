@@ -219,4 +219,9 @@ struct RequestStartTransaction {
     std::optional<std::string> tariff_text;
 };
 
+struct Capabilities {
+    std::optional<float> min_import_current_A; ///< Minimum current (charging) measurable within accuracy class
+    std::optional<float> min_export_current_A; ///< Minimum current (discharging) measurable within accuracy class
+};
+
 } // namespace everest::lib::API::V1_0::types::powermeter

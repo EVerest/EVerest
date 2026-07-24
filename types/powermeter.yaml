@@ -1,5 +1,25 @@
 description: Powermeter types
 types:
+  Capabilities:
+    description: >-
+      Capabilities of this power meter. All fields are optional; an absent field
+      means no restriction / not supported. Directions follow the metering
+      convention of this interface (see energy_Wh_import): import is the charging
+      direction (energy flow towards the EV), export is the discharge direction.
+    type: object
+    additionalProperties: false
+    properties:
+      min_import_current_A:
+        description: >-
+          Minimum current in Ampere in import direction (charging) the meter can
+          measure within its accuracy class (e.g. required by German Calibration
+          Law).
+        type: number
+      min_export_current_A:
+        description: >-
+          Minimum current in Ampere in export direction (discharging) the meter
+          can measure within its accuracy class.
+        type: number
   TransactionReq:
     description: Required input parameter for starting an OCMF transaction. These values will be included in the signed OCMF packet.
     type: object
