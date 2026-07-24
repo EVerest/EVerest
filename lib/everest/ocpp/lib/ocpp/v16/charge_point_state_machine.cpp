@@ -113,12 +113,7 @@ ErrorInfo::ErrorInfo(const std::string uuid, const ChargePointErrorCode error_co
         return;
     }
 
-    // CiString for info is allowed to have max of 50 characters
-    if (info.value().size() > 50) {
-        this->info = info.value().substr(0, 50);
-    } else {
-        this->info = info;
-    }
+    this->info = CiString<50>(info.value(), StringTooLarge::Truncate);
 }
 
 ErrorInfo::ErrorInfo(const std::string uuid, const ChargePointErrorCode error_code, const bool is_fault,
@@ -128,12 +123,7 @@ ErrorInfo::ErrorInfo(const std::string uuid, const ChargePointErrorCode error_co
         return;
     }
 
-    // CiString for vendor_id is allowed to have max of 50 characters
-    if (vendor_id.value().size() > 255) {
-        this->vendor_id = vendor_id.value().substr(0, 255);
-    } else {
-        this->vendor_id = vendor_id;
-    }
+    this->vendor_id = CiString<255>(vendor_id.value(), StringTooLarge::Truncate);
 }
 
 ErrorInfo::ErrorInfo(const std::string uuid, const ChargePointErrorCode error_code, const bool is_fault,
@@ -143,12 +133,8 @@ ErrorInfo::ErrorInfo(const std::string uuid, const ChargePointErrorCode error_co
     if (!vendor_error_code.has_value()) {
         return;
     }
-    // CiString for vendor_error_code is allowed to have max of 50 characters
-    if (vendor_error_code.value().size() > 50) {
-        this->vendor_error_code = vendor_error_code.value().substr(0, 50);
-    } else {
-        this->vendor_error_code = vendor_error_code;
-    }
+
+    this->vendor_error_code = CiString<50>(vendor_error_code.value(), StringTooLarge::Truncate);
 }
 
 ChargePointFSM::ChargePointFSM(const StatusNotificationCallback& status_notification_callback_, FSMState initial_state,
@@ -256,8 +242,7 @@ bool ChargePointFSM::handle_error_cleared(const std::string uuid) {
         // Report the cleared error as resolved
         auto cleared_error = std::move(node.mapped());
         if (cleared_error.vendor_error_code.has_value()) {
-            info =
-                std::string("Error ") + std::string(cleared_error.vendor_error_code.value()) + std::string(" resolved");
+            info = CiString<50>(cleared_error.vendor_error_code.value().get() + " resolved", StringTooLarge::Truncate);
         }
         vendor_id = cleared_error.vendor_id;
         vendor_error_code = cleared_error.vendor_error_code;
