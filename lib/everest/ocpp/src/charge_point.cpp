@@ -20,6 +20,7 @@
 #include <everest/logging.hpp>
 
 #include <ocpp/v16/charge_point.hpp>
+#include <ocpp/v16/charge_point_configuration.hpp>
 #include <ocpp/v16/database_handler.hpp>
 
 #include <ocpp/common/cistring.hpp>
@@ -135,8 +136,9 @@ int main(int argc, char* argv[]) {
     secConfig.secc_leaf_cert_directory = fs::path("/tmp/client/cso/");
     secConfig.secc_leaf_key_directory = fs::path("/tmp/client/cso/");
 
-    charge_point = new ocpp::v16::ChargePoint(json_config.dump(), share_path, user_config_path, database_path,
-                                              sql_init_path, fs::path("/tmp"), nullptr, secConfig);
+    ocpp::v16::ChargePointConfiguration cfg(json_config.dump(), share_path, user_config_path);
+    charge_point = new ocpp::v16::ChargePoint(cfg, share_path, database_path, sql_init_path,
+                                              fs::path("/tmp"), nullptr, secConfig);
 
     /************************************** START REGISTERING CALLBACKS **************************************/
 
