@@ -102,7 +102,7 @@ private:
     std::string log_prefix;
     std::string telemetry_subtopic;
 
-    std::atomic<bool> module_placeholder_allocation_failure_raised;
+    std::atomic<bool> module_placeholder_allocation_failure_raised{false};
 
     std::mutex connector_mutex;
 
@@ -114,8 +114,8 @@ private:
     Everest::PtrContainer<Huawei_V100R023C10> mod;
 
     types::power_supply_DC::Capabilities caps;
-    types::power_supply_DC::Mode last_mode;
-    types::power_supply_DC::ChargingPhase last_phase;
+    types::power_supply_DC::Mode last_mode{types::power_supply_DC::Mode::Off};
+    types::power_supply_DC::ChargingPhase last_phase{types::power_supply_DC::ChargingPhase::Other};
 
     double export_voltage{0.};
     double export_current_limit{0.};
