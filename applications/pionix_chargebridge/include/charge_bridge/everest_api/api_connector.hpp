@@ -10,6 +10,7 @@
 #include <everest/io/event/fd_event_register_interface.hpp>
 #include <everest/io/event/timer_fd.hpp>
 #include <everest/io/mqtt/mqtt_client.hpp>
+#include <everest/util/misc/observable.hpp>
 #include <everest_api_types/evse_board_support/API.hpp>
 #include <everest_api_types/evse_manager/API.hpp>
 #include <everest_api_types/utilities/Topics.hpp>
@@ -36,11 +37,13 @@ struct everest_api_config {
 class api_connector : public everest::lib::io::event::fd_event_register_interface {
     using tx_ftor = std::function<void(evse_bsp_host_to_cb const&)>;
     using rx_ftor = std::function<void(evse_bsp_cb_to_host const&)>;
+    using error_ftor = std::function<void(bool /*status [true=noerror, false=error]*/)>;
 
 public:
     api_connector(everest_api_config const& config, std::string const& cb_identifier);
     void set_cb_tx(tx_ftor const& handler);
     void set_cb_message(evse_bsp_cb_to_host const& msg);
+    void set_error_handler(error_ftor const& handler);
 
     bool register_events(everest::lib::io::event::fd_event_handler& handler) override;
     bool unregister_events(everest::lib::io::event::fd_event_handler& handler) override;
@@ -72,5 +75,6 @@ private:
     evse_bsp_api m_evse_bsp;
     ovm_api m_ovm;
     ev_bsp_api m_ev_bsp;
+    everest::lib::util::observable<bool> m_ready{false};
 };
 } // namespace charge_bridge::evse_bsp

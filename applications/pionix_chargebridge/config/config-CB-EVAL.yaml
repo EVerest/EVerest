@@ -11,6 +11,12 @@ heartbeat:
   interval_s: 1
   connection_to_s: 10
 
+telemetry:
+  enable: true
+  mqtt_remote: "localhost"
+  mqtt_port: 1883
+  telemetry_topic: "pionix/chargebridge/telemetry"
+
 safety:
   pp_mode: "disabled"
   cp_avg_ms: 10

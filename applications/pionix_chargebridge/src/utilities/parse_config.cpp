@@ -170,10 +170,16 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
     };
 
     get_node(c.cb_name, "charge_bridge", "name");
-
     get_node(c.cb_remote, "charge_bridge", "ip");
-
     c.cb_port = g_cb_port_management;
+
+    get_block("telemetry", c.telemetry, [&](auto& cfg, auto const& main) {
+        get_node(cfg.mqtt_remote, main, "mqtt_remote");
+        get_node(cfg.mqtt_port, main, "mqtt_port");
+        get_node_or_default(cfg.mqtt_bind, main, "mqtt_bind", "");
+        get_node_or_default(cfg.mqtt_ping_interval_ms, main, "mqtt_ping_interval_ms", default_mqtt_ping_interval_ms);
+        get_node(cfg.telemetry_topic, main, "telemetry_topic");
+    });
 
     get_block("can_0", c.can0, [&](auto& cfg, auto const& main) {
         get_node(cfg.can_device, main, "local");
