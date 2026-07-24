@@ -202,6 +202,8 @@ async def _env(
     _add_pm_command_mock("system", "reset", None, skip_implementation)
     _add_pm_command_mock("system", "set_system_time",
                          True, skip_implementation)
+    _add_pm_command_mock("system", "configure_network",
+                         {"status": "NotSupported"}, skip_implementation)
 
     probe_module.start()
     await probe_module.wait_to_be_ready()
