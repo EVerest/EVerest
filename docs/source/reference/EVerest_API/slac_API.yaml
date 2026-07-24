@@ -361,7 +361,10 @@ components:
           description: Sub-type of the error.
         message:
           type: string
-          description: Addition information about the error
+          description: |-
+            Optional additional information about the error
+            OCPP 1.6: Sets `info` on MREC errors and `vendorId` otherwise
+            OCPP 2.x: Sets `techInfo`
     ErrorEnum:
       type: string
       description: |

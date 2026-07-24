@@ -55,7 +55,11 @@ static ocpp::v16::ErrorInfo get_error_info(const Everest::error::Error& error) {
     if (mrec_it != MREC_ERROR_MAP.end()) {
         // lambda to create MREC error info
         auto make_mrec_error_info = [&](ocpp::v16::ChargePointErrorCode code, const std::string& vendor_error_code) {
-            return ocpp::v16::ErrorInfo{uuid, code, false, std::nullopt, CHARGE_X_MREC_VENDOR_ID, vendor_error_code};
+            std::optional<std::string> info = std::nullopt;
+            if (!error.message.empty()) {
+                info = error.message;
+            }
+            return ocpp::v16::ErrorInfo{uuid, code, false, info, CHARGE_X_MREC_VENDOR_ID, vendor_error_code};
         };
         return make_mrec_error_info(mrec_it->second.first, mrec_it->second.second);
     }
@@ -67,7 +71,7 @@ static ocpp::v16::ErrorInfo get_error_info(const Everest::error::Error& error) {
     if (ocpp_it != OCPP_ERROR_MAP.end()) {
         // lambda to create OCPP error info
         auto make_ocpp_error_info = [&](ocpp::v16::ChargePointErrorCode code) {
-            return ocpp::v16::ErrorInfo{uuid, code, false, std::nullopt};
+            return ocpp::v16::ErrorInfo{uuid, code, false, std::nullopt, error.message};
         };
         return make_ocpp_error_info(ocpp_it->second);
     }
