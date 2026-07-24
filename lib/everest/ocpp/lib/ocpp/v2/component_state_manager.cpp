@@ -6,6 +6,32 @@
 
 namespace ocpp::v2 {
 
+namespace {
+/// \brief Single definition of the connector-status precedence:
+/// faulted > inoperative > unavailable > occupied > reserved > available.
+/// \p effective_operational_status is the connector's effective operational status; pass Operative to skip the
+/// inoperative rung (used by the raw session-flag mapping which has no operational-status concept).
+ConnectorStatusEnum derive_connector_status(OperationalStatusEnum effective_operational_status,
+                                            const FullConnectorStatus& status) {
+    if (status.faulted) {
+        return ConnectorStatusEnum::Faulted;
+    }
+    if (effective_operational_status == OperationalStatusEnum::Inoperative) {
+        return ConnectorStatusEnum::Unavailable;
+    }
+    if (status.unavailable) {
+        return ConnectorStatusEnum::Unavailable;
+    }
+    if (status.occupied) {
+        return ConnectorStatusEnum::Occupied;
+    }
+    if (status.reserved) {
+        return ConnectorStatusEnum::Reserved;
+    }
+    return ConnectorStatusEnum::Available;
+}
+} // namespace
+
 ComponentStateManagerInterface::~ComponentStateManagerInterface() = default;
 
 void ComponentStateManager::read_all_states_from_database_or_set_defaults(
@@ -48,8 +74,7 @@ void ComponentStateManager::initialize_reported_state_cache() {
 
         const OperationalStatusEnum evse_effective = this->get_evse_effective_operational_status(evse_id);
         for (int connector_id = 1; connector_id <= num_connectors; connector_id++) {
-            const ConnectorStatusEnum connector_status =
-                this->individual_connector_status(evse_id, connector_id).to_connector_status();
+            const ConnectorStatusEnum connector_status = this->get_connector_effective_status(evse_id, connector_id);
             connector_statuses.push_back(connector_status);
             connector_op_statuses.push_back(this->get_connector_effective_operational_status(evse_id, connector_id));
         }
@@ -229,20 +254,8 @@ void ComponentStateManager::set_connector_individual_operational_status(std::int
 }
 
 ConnectorStatusEnum FullConnectorStatus::to_connector_status() const {
-    // faulted has precedence over unavailable
-    if (this->faulted) {
-        return ConnectorStatusEnum::Faulted;
-    }
-    if (this->unavailable) {
-        return ConnectorStatusEnum::Unavailable;
-    }
-    if (this->occupied) {
-        return ConnectorStatusEnum::Occupied;
-    }
-    if (this->reserved) {
-        return ConnectorStatusEnum::Reserved;
-    }
-    return ConnectorStatusEnum::Available;
+    // Raw session-flag mapping: no operational-status concept, so pass Operative.
+    return derive_connector_status(OperationalStatusEnum::Operative, *this);
 }
 
 OperationalStatusEnum ComponentStateManager::get_evse_effective_operational_status(std::int32_t evse_id) {
@@ -255,11 +268,17 @@ OperationalStatusEnum ComponentStateManager::get_evse_effective_operational_stat
 ConnectorStatusEnum ComponentStateManager::get_connector_effective_status(std::int32_t evse_id,
                                                                           std::int32_t connector_id) {
     this->check_evse_and_connector_id(evse_id, connector_id);
+    const FullConnectorStatus& connector = this->individual_connector_status(evse_id, connector_id);
+    // The EVSE or CS being Inoperative hides every other connector state, including faults.
     if (this->get_evse_effective_operational_status(evse_id) == OperationalStatusEnum::Inoperative) {
         return ConnectorStatusEnum::Unavailable;
     }
-
-    return this->individual_connector_status(evse_id, connector_id).to_connector_status();
+    // Connector-scoped fault still has precedence over a connector-scoped Inoperative (G03.FR.06); the shared
+    // precedence in derive_connector_status handles that.
+    // Ordering contract: a caller clearing the Unavailable session flag (ConnectorEvent::UnavailableCleared) must
+    // first restore individual_operational_status to Operative, otherwise this Inoperative rung keeps the effective
+    // status at Unavailable and the Available notification is suppressed.
+    return derive_connector_status(connector.individual_operational_status, connector);
 }
 OperationalStatusEnum ComponentStateManager::get_connector_effective_operational_status(std::int32_t evse_id,
                                                                                         std::int32_t connector_id) {
@@ -316,8 +335,7 @@ void ComponentStateManager::send_status_notification_single_connector_internal(s
                                                                                std::int32_t connector_id,
                                                                                bool only_if_changed,
                                                                                bool intiated_by_trigger_message) {
-    const ConnectorStatusEnum connector_status =
-        this->individual_connector_status(evse_id, connector_id).to_connector_status();
+    const ConnectorStatusEnum connector_status = this->get_connector_effective_status(evse_id, connector_id);
     ConnectorStatusEnum& last_reported_status = this->last_connector_reported_status(evse_id, connector_id);
     if (!only_if_changed || last_reported_status != connector_status) {
         if (this->send_connector_status_notification_callback(evse_id, connector_id, connector_status,

@@ -473,4 +473,130 @@ TEST_F(ComponentStateManagerTest, test_send_status_notification_single_connector
     state_mgr.send_status_notification_changed_connectors();
 }
 
+/// \brief Connector-scope scheduled Inoperative (TC_G_17_CS): when a transaction ends on a connector that has been
+/// individually set Inoperative, the connector must report Unavailable directly, never a transient Available.
+TEST_F(ComponentStateManagerTest, test_no_transient_available_connector_scope) {
+    // Prepare
+    std::shared_ptr<DatabaseHandler> mock_database = std::make_shared<DatabaseHandlerMock>();
+    auto state_mgr = this->component_state_manager(mock_database, {1});
+
+    // Set up mock expectations
+    EXPECT_CALL(this->callbacks, connector_status_update(testing::_, testing::_, "Available")).Times(0);
+    testing::Sequence seq;
+    EXPECT_CALL(this->callbacks, connector_status_update(1, 1, "Occupied"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(true));
+    EXPECT_CALL(this->callbacks, connector_status_update(1, 1, "Unavailable"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(true));
+
+    // Act & Verify
+    // Transaction active: connector occupied, reported Occupied
+    state_mgr.set_connector_occupied(1, 1, true);
+    // Scheduled ChangeAvailability(Inoperative) applied while occupied (no notification yet)
+    state_mgr.set_connector_individual_operational_status(1, 1, OperationalStatusEnum::Inoperative, true);
+    // Transaction ends: occupied cleared -> must report Unavailable, not Available
+    state_mgr.set_connector_occupied(1, 1, false);
+}
+
+/// \brief EVSE-scope scheduled Inoperative (TC_G_11_CS): when a transaction ends on a connector whose EVSE has been
+/// set Inoperative, the connector must report Unavailable directly, never a transient Available.
+TEST_F(ComponentStateManagerTest, test_no_transient_available_evse_scope) {
+    // Prepare
+    std::shared_ptr<DatabaseHandler> mock_database = std::make_shared<DatabaseHandlerMock>();
+    auto state_mgr = this->component_state_manager(mock_database, {1});
+
+    // Set up mock expectations
+    EXPECT_CALL(this->callbacks, connector_status_update(testing::_, testing::_, "Available")).Times(0);
+    testing::Sequence seq;
+    EXPECT_CALL(this->callbacks, connector_status_update(1, 1, "Occupied"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(true));
+    EXPECT_CALL(this->callbacks, connector_status_update(1, 1, "Unavailable"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(true));
+
+    // Act & Verify
+    state_mgr.set_connector_occupied(1, 1, true);
+    state_mgr.set_evse_individual_operational_status(1, OperationalStatusEnum::Inoperative, true);
+    state_mgr.set_connector_occupied(1, 1, false);
+}
+
+/// \brief CS-scope scheduled Inoperative (TC_G_14_CS): when a transaction ends while the charging station has been set
+/// Inoperative, the connector must report Unavailable directly, never a transient Available.
+TEST_F(ComponentStateManagerTest, test_no_transient_available_cs_scope) {
+    // Prepare
+    std::shared_ptr<DatabaseHandler> mock_database = std::make_shared<DatabaseHandlerMock>();
+    auto state_mgr = this->component_state_manager(mock_database, {1});
+
+    // Set up mock expectations
+    EXPECT_CALL(this->callbacks, connector_status_update(testing::_, testing::_, "Available")).Times(0);
+    testing::Sequence seq;
+    EXPECT_CALL(this->callbacks, connector_status_update(1, 1, "Occupied"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(true));
+    EXPECT_CALL(this->callbacks, connector_status_update(1, 1, "Unavailable"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(true));
+
+    // Act & Verify
+    state_mgr.set_connector_occupied(1, 1, true);
+    state_mgr.set_cs_individual_operational_status(OperationalStatusEnum::Inoperative, true);
+    state_mgr.set_connector_occupied(1, 1, false);
+}
+
+/// \brief Ordering contract (L2): restoring individual_operational_status to Operative before the Unavailable session
+/// flag is cleared yields the Available notification. This pins the in-tree op-status-then-event ordering.
+TEST_F(ComponentStateManagerTest, test_available_after_op_status_restored_then_flag_cleared) {
+    // Prepare
+    std::shared_ptr<DatabaseHandler> mock_database = std::make_shared<DatabaseHandlerMock>();
+    auto state_mgr = this->component_state_manager(mock_database, {1});
+
+    testing::Sequence seq;
+    EXPECT_CALL(this->callbacks, connector_status_update(1, 1, "Unavailable"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(true));
+    EXPECT_CALL(this->callbacks, connector_status_update(1, 1, "Available"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(true));
+
+    // Act & Verify
+    // Connector made Inoperative and its Unavailable session flag set: reported Unavailable.
+    state_mgr.set_connector_individual_operational_status(1, 1, OperationalStatusEnum::Inoperative, true);
+    state_mgr.set_connector_unavailable(1, 1, true);
+    // Restore op-status to Operative first (still Unavailable, flag holds it), then clear the flag: now Available.
+    state_mgr.set_connector_individual_operational_status(1, 1, OperationalStatusEnum::Operative, true);
+    state_mgr.set_connector_unavailable(1, 1, false);
+}
+
+/// \brief Reversed ordering (L2): clearing the Unavailable session flag before restoring individual_operational_status
+/// to Operative suppresses the Available StatusNotification entirely. Restoring op-status afterwards drives only the
+/// operational-status callback, not a StatusNotification, so Available is never sent. This documents why callers must
+/// restore op-status first.
+TEST_F(ComponentStateManagerTest, test_available_suppressed_when_flag_cleared_before_op_status) {
+    // Prepare
+    std::shared_ptr<DatabaseHandler> mock_database = std::make_shared<DatabaseHandlerMock>();
+    auto state_mgr = this->component_state_manager(mock_database, {1});
+
+    // Available must never be reported in the reversed order.
+    EXPECT_CALL(this->callbacks, connector_status_update(1, 1, "Available")).Times(0);
+    EXPECT_CALL(this->callbacks, connector_status_update(1, 1, "Unavailable")).Times(1).WillOnce(testing::Return(true));
+
+    // Act & Verify
+    state_mgr.set_connector_individual_operational_status(1, 1, OperationalStatusEnum::Inoperative, true);
+    state_mgr.set_connector_unavailable(1, 1, true);
+    // Reversed: clear the flag while still Inoperative (stays Unavailable, no StatusNotification) ...
+    state_mgr.set_connector_unavailable(1, 1, false);
+    // ... then restore op-status. This does not emit a StatusNotification, so Available stays suppressed.
+    state_mgr.set_connector_individual_operational_status(1, 1, OperationalStatusEnum::Operative, true);
+}
+
 } // namespace ocpp::v2
