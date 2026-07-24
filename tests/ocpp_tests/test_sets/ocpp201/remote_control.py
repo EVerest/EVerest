@@ -125,9 +125,9 @@ async def test_F01_F02_F03(
         validate_status_notification_201,
     )
 
-    # send RequestStartTransaction while EVSE in unavailable and expect rejected
+    # send RequestStartTransaction targeting the unavailable EVSE and expect rejected (F01.FR.23)
     await charge_point_v201.request_start_transaction_req(
-        id_token=id_token, remote_start_id=remote_start_id
+        id_token=id_token, remote_start_id=remote_start_id, evse_id=evse_id
     )
     assert await wait_for_and_validate(
         test_utility,
@@ -157,22 +157,11 @@ async def test_F01_F02_F03(
 
     await asyncio.sleep(2)
 
-    # send RequestStartTransaction without evse_id and expect Rejected
+    # send RequestStartTransaction without evse_id and expect Accepted: with no evse_id given the
+    # request is accepted as long as at least one EVSE can start a transaction (F01.FR.07). The
+    # transaction is then started on the first available EVSE once the vehicle is plugged in.
     await charge_point_v201.request_start_transaction_req(
         id_token=id_token, remote_start_id=remote_start_id
-    )
-    assert await wait_for_and_validate(
-        test_utility,
-        charge_point_v201,
-        "RequestStartTransaction",
-        call_result201.RequestStartTransaction(
-            status=RequestStartStopStatusEnumType.rejected
-        ),
-    )
-
-    # send RequestStartTransaction and expect Accepted
-    await charge_point_v201.request_start_transaction_req(
-        id_token=id_token, remote_start_id=remote_start_id, evse_id=evse_id
     )
     assert await wait_for_and_validate(
         test_utility,
