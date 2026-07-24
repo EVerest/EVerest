@@ -112,7 +112,7 @@ set(
     ${Python3_EXECUTABLE} -B "${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/main.py"
      "${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/include/"
      "${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/"
-     "${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/disable.csv"
+     "${TEST_DISABLE_FILE}"
      "${GENERATED_TESTS_LOCATION}"
     VERBATIM
 )

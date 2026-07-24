@@ -230,11 +230,13 @@ class ValueGenerator:
                 result_object + ".has_value());\nif (" + result_object + \
                 ".has_value()) {"
             optional_wrapper_rear = "}\n"
-        wraped = self.generate_corresponding_test_unsafe(
+        wrapped = self.generate_corresponding_test_unsafe(
             original_object, result_object, field_type, namespace, is_optional)
-        return optional_wrapper_front + wraped + optional_wrapper_rear
+        return optional_wrapper_front + wrapped + optional_wrapper_rear
 
     def generate_corresponding_test_unsafe(self, original_object, result_object, field_type, namespace, is_optional):
+        original_field_type = field_type
+
         if "std::vector<" in field_type:
             vector_type = self.namespace_cleanup(get_vector_type(field_type))
             assign_a = "= " + original_object
@@ -271,7 +273,10 @@ class ValueGenerator:
                 field_type)
             return self.generate_corresponding_test(original_object, result_object, type_in_different_namespace, different_namespace, False)
 
-        return self.manual_generator.get_tester(field_type, original_object, result_object) + ";\n"
+        raise TypeError(
+            f"Unrecognized type '{original_field_type}'. It is not a supported API base type, "
+            "a parsed enum/struct, or explicitly registered for manual generation."
+        )
 
     @staticmethod
     def generics_extractor(generic_call, whole_call):
