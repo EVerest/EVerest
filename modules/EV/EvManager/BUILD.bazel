@@ -22,6 +22,8 @@ cc_test(
         exclude = [
             "main/car_simulatorImpl.*",
             "main/car_simulation.*",
+            "main/simulation_data.hpp",
+            "tests/SimulationDataTest.cpp",
         ],
     ),
     includes = ["."],

@@ -28,8 +28,8 @@ public:
         timepoint_last_update(std::chrono::steady_clock::now()){};
     ~CarSimulation() = default;
 
-    void reset() {
-        sim_data = SimulationData();
+    void reset(ResetBehavior behavior = ResetBehavior::Full) {
+        sim_data.reset(behavior);
         sim_data.battery_capacity_wh = config.dc_energy_capacity;
         double soc = config.soc;
         sim_data.battery_charge_wh = config.dc_energy_capacity * (soc / 100.0);

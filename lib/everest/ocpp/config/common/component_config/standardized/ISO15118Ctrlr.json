@@ -133,7 +133,8 @@
       "attributes": [
         {
           "type": "Actual",
-          "mutability": "ReadWrite"
+          "mutability": "ReadWrite",
+          "value": "DE"
         }
       ],
       "description": "The countryName of the SECC in the ISO 3166-1 format. It is used as the countryName (C) of the SECC leaf certificate. Example: \"DE\"",

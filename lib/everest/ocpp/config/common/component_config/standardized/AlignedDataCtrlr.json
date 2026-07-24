@@ -65,7 +65,7 @@
         {
           "type": "Actual",
           "mutability": "ReadWrite",
-          "value": "Energy.Active.Import.Register,Voltage,Frequency"
+          "value": "Energy.Active.Import.Register,Voltage"
         }
       ],
       "description": "Clock-aligned measurand(s) to be included in MeterValuesRequest, every AlignedDataInterval seconds.",

@@ -13,6 +13,7 @@ target_sources(${TEST_TARGET_NAME}
     PRIVATE
         CommandRegistryTest.cpp
         SimCommandTest.cpp
+        SimulationDataTest.cpp
         ../main/simulation_command.cpp
 )
 

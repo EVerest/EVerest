@@ -61,7 +61,7 @@ private:
     void setup_ev_parameters();
     void call_ev_board_support_functions();
     void subscribe_to_external_mqtt();
-    void reset_car_simulation_defaults();
+    void reset_car_simulation_defaults(ResetBehavior behavior = ResetBehavior::Full);
     void update_command_queue(std::string& value);
     void set_execution_active(bool value);
     void cancel_charging_session();

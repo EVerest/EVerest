@@ -128,7 +128,11 @@ void car_simulatorImpl::run() {
                 EVLOG_info << "Finished simulation.";
                 set_execution_active(false);
 
-                reset_car_simulation_defaults();
+                // Keep the sim plug/CP state consistent with the physical CP line, which stays
+                // frozen (state machine is no longer ticked once execution is inactive). Reverting
+                // to the UNPLUGGED default here would make a later modify command act on a phantom
+                // state and silently drive a physical unplug.
+                reset_car_simulation_defaults(ResetBehavior::KeepPlugState);
 
                 // If we have auto_exec_infinite configured, restart simulation when it is done
                 if (mod->config.auto_exec && mod->config.auto_exec_infinite) {
@@ -417,9 +421,9 @@ void car_simulatorImpl::subscribe_to_external_mqtt() {
                    });
 }
 
-void car_simulatorImpl::reset_car_simulation_defaults() {
+void car_simulatorImpl::reset_car_simulation_defaults(ResetBehavior behavior) {
     const std::lock_guard<std::mutex> lock{car_simulation_mutex};
-    car_simulation->reset();
+    car_simulation->reset(behavior);
 }
 
 void car_simulatorImpl::update_command_queue(std::string& value) {
