@@ -237,7 +237,7 @@ TEST_F(EvseSecurityTests, verify_basics) {
         search_start = match.suffix().first;
     }
 
-    ASSERT_TRUE(certificate_strings.size() == 3);
+    ASSERT_TRUE(certificate_strings.size() == 7);
 
     X509CertificateBundle bundle(fs::path(bundle_path), EncodingFormat::PEM);
     ASSERT_TRUE(bundle.is_using_bundle_file());
@@ -245,7 +245,7 @@ TEST_F(EvseSecurityTests, verify_basics) {
     std::cout << "Bundle hierarchy: " << std::endl << bundle.get_certificate_hierarchy().to_debug_string();
 
     auto certificates = bundle.split();
-    ASSERT_TRUE(certificates.size() == 3);
+    ASSERT_TRUE(certificates.size() == 7);
 
     for (int i = 0; i < certificate_strings.size() - 1; ++i) {
         X509Wrapper cert(certificate_strings[i], EncodingFormat::PEM);
@@ -308,11 +308,11 @@ TEST_F(EvseSecurityTests, verify_certificate_counts) {
     // This contains the 'real' fs certifs, we have the leaf chain + the leaf in a seaparate folder
     ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::V2GCertificateChain}), 4);
     // We have 3 certs in the root bundle
-    ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::V2GRootCertificate}), 3);
+    ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::V2GRootCertificate}), 7);
     // MF is using the same V2G bundle in our case
-    ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::MFRootCertificate}), 3);
+    ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::MFRootCertificate}), 7);
     // None were defined
-    ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::MORootCertificate}), 3);
+    ASSERT_EQ(this->evse_security->get_count_of_installed_certificates({CertificateType::MORootCertificate}), 7);
 }
 
 TEST_F(EvseSecurityTestsMulti, verify_multi_root_leaf_retrieval) {

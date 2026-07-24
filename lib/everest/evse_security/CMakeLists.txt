@@ -64,6 +64,20 @@ endif()
 
 add_subdirectory(lib)
 
+if(NOT DISABLE_EDM)
+    install(
+        DIRECTORY CTL/
+        DESTINATION share/everest/CTL
+    )
+    target_compile_definitions(evse_security PRIVATE
+        CTL_DIR="${CMAKE_INSTALL_PREFIX}/share/everest/CTL"
+    )
+else()
+    target_compile_definitions(evse_security PRIVATE
+        CTL_DIR="${CMAKE_INSTALL_PREFIX}/CTL"
+    )
+endif()
+
 # packaging
 if (EVSE_SECURITY_INSTALL)
     install(
