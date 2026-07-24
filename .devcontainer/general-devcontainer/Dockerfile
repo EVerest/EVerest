@@ -56,9 +56,16 @@ RUN ls -al /tmp/everest_dev_tool \
 ##################################################################
 
 # Modify the existing docker user and group to match the host's USER_UID and USER_GID
-RUN groupmod --gid ${USER_GID} ${USERNAME} && \
-    usermod --uid ${USER_UID} --gid ${USER_GID} ${USERNAME} && \
-    usermod -aG dialout ${USERNAME}
+# If a group with USER_GID already exists (e.g. GID 20 = dialout on macOS hosts),
+# reuse it as the user's primary group instead of renumbering
+RUN if getent group ${USER_GID} >/dev/null; then \
+        usermod --uid ${USER_UID} --gid ${USER_GID} ${USERNAME}; \
+    else \
+        groupmod --gid ${USER_GID} ${USERNAME} && \
+        usermod --uid ${USER_UID} --gid ${USER_GID} ${USERNAME}; \
+    fi && \
+    usermod -aG dialout ${USERNAME} && \
+    chown -R ${USER_UID}:${USER_GID} /home/${USERNAME}
 
 # Switch to the docker user
 USER ${USERNAME}
