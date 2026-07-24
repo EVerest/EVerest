@@ -7,6 +7,13 @@ endif()
 
 find_package(ryml QUIET)
 
+# ftxui powers the interactive terminal status UI. The top-level project resolves it via
+# find_package(ftxui 6 QUIET); it is mandatory for this application.
+if(NOT TARGET ftxui::component)
+    message(FATAL_ERROR "pionix_chargebridge requires ftxui (ftxui::component target not found). "
+            "Enable the ftxui dependency (EVEREST_DEPENDENCY_ENABLED_FTXUI).")
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -24,15 +31,17 @@ add_executable(pionix_chargebridge
   src/utilities/logging.cpp
   src/utilities/parse_config.cpp
   src/utilities/print_config.cpp
+  src/utilities/print_status.cpp
   src/utilities/string.cpp
   src/utilities/symlink.cpp
   src/utilities/sync_udp_client.cpp
   src/utilities/type_converters.cpp
+  src/status_ui.cpp
 
+  src/io_bridge.cpp
   src/can_bridge.cpp
   src/charge_bridge.cpp
   src/bsp_bridge.cpp
-  src/gpio_bridge.cpp
   src/heartbeat_service.cpp
   src/plc_bridge.cpp
   src/serial_bridge.cpp
@@ -46,6 +55,9 @@ target_link_libraries(pionix_chargebridge
   everest::everest_api_types
   nlohmann_json::nlohmann_json
   ryml::ryml
+  ftxui::component
+  ftxui::dom
+  ftxui::screen
 )
 
 target_include_directories(pionix_chargebridge

@@ -195,6 +195,7 @@ enum class SafetyErrorMask : std::uint32_t {
     external_allow_power_on = (1 << 12),
     config_mem_error = (1 << 13),
     dc_hv_ov = (1 << 14),
+    rcd_error = (1 << 16),
 };
 
 // Table that maps a mask to our API error + message
@@ -216,6 +217,7 @@ static constexpr FlagSpec error_specs[] = {
     {SafetyErrorMask::vdd_refint_out_of_range, "Internal supply VREF voltage out of range"},
     {SafetyErrorMask::config_mem_error, "Internal config memory error"},
     {SafetyErrorMask::dc_hv_ov, "DC HV OVM. FIXME: This should be on OVM not EVSE interface"},
+    {SafetyErrorMask::rcd_error, "RCD error detected"},
 };
 
 static constexpr FlagSpec print_warning_specs[] = {

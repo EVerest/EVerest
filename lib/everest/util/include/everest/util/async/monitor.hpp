@@ -95,6 +95,23 @@ public:
     }
 
     /**
+     * @brief Temporarily release the held lock.
+     * @details Use to run a long, self-contained operation that does not touch the guarded resource
+     * without blocking other threads that need the monitor. The caller must \ref lock again before
+     * the handle is used for access or waiting (and before it is destroyed).
+     */
+    void unlock() {
+        m_lock.unlock();
+    }
+
+    /**
+     * @brief Re-acquire the lock previously released via \ref unlock.
+     */
+    void lock() {
+        m_lock.lock();
+    }
+
+    /**
      * @brief Blocks the thread until the provided predicate returns true.
      * @details This function atomically releases the lock (allowing other threads to acquire it)
      * and waits for a notification on the condition variable. When woken, it re-acquires

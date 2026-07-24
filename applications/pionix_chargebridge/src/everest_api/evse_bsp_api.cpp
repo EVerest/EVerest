@@ -48,6 +48,7 @@ bool evse_bsp_api::register_events(everest::lib::io::event::fd_event_handler& ha
     return
         handler.register_event_handler(&m_capabilities_timer, [this](auto&) {
             send_capabilities();
+            handle_pp_type2(cb_status.pp_state_type2);
         });
     // clang-format on
 }
@@ -226,12 +227,20 @@ void evse_bsp_api::handle_pp_type2(std::uint8_t data) {
     case PpState_Type2_STATE_FAULT:
         // Raise error check state
         bc_ampacity_valid = false;
-        send_raise_error(API_BSP::ErrorEnum::MREC23ProximityFault, "", "Proximity Pilot Fault State");
+        if (not m_pp_fault_raised) {
+            send_raise_error(API_BSP::ErrorEnum::MREC23ProximityFault, "", "Proximity Pilot Fault State");
+            m_pp_fault_raised = true;
+        }
         break;
     default:
         bc_ampacity_valid = false;
     }
     if (bc_ampacity_valid) {
+        // Firmware reports a non-fault state again: clear a previously raised proximity fault
+        if (m_pp_fault_raised) {
+            send_clear_error(API_BSP::ErrorEnum::MREC23ProximityFault, "", "");
+            m_pp_fault_raised = false;
+        }
         send_ac_pp_amapcity(bc_ampacity);
     }
 }
@@ -264,6 +273,7 @@ enum class SafetyErrorMask : std::uint32_t {
     external_allow_power_on = (1 << 12),
     config_mem_error = (1 << 13),
     dc_hv_ov = (1 << 14),
+    rcd_error = (1 << 16),
 };
 
 // Table that maps a mask to our API error + message
@@ -294,6 +304,7 @@ static constexpr FlagSpec error_specs[] = {
     {SafetyErrorMask::config_mem_error, API_BSP::ErrorEnum::VendorError, "CONFIGMEM", "Internal config memory error"},
     {SafetyErrorMask::dc_hv_ov, API_BSP::ErrorEnum::VendorError, "DV_HV",
      "DC HV OVM. FIXME: This should be on OVM not EVSE interface"},
+    {SafetyErrorMask::rcd_error, API_BSP::ErrorEnum::MREC2GroundFailure, "", "RCD error detected"},
 };
 
 static constexpr FlagSpec print_warning_specs[] = {
@@ -501,6 +512,10 @@ void evse_bsp_api::handle_everest_connection_state() {
         if (status) {
             utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 0) << "EVerest connected" << std::endl;
             send_capabilities();
+            // A freshly (re)started EVerest lost any previously raised error: re-raise an
+            // active proximity fault instead of assuming it is still known.
+            m_pp_fault_raised = false;
+            handle_pp_type2(cb_status.pp_state_type2);
         } else {
             utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 1) << "Waiting for EVerest...." << std::endl;
             host_status.allow_power_on = 0;

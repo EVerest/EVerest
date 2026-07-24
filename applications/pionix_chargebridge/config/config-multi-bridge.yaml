@@ -10,6 +10,14 @@ charge_bridge:
 heartbeat:
   interval_s: 1
   connection_to_s: 10
+  # Forward MCU debug-UART (printf) to this host over UDP; logged on console as "[MCU] ...".
+  enable_debug_uart_udp: false
+
+telemetry:
+  enable: true
+  mqtt_remote: "localhost"
+  mqtt_port: 1883
+  telemetry_topic: "pionix/chargebridge/telemetry"
 
 safety:
   pp_mode: "disabled"
@@ -86,7 +94,7 @@ evse_bsp:
   ovm_enabled: true
   ovm_module_id: "ovm_1"
 
-gpio:
+io:
   enable: false
   interval_s: 4
   mqtt_remote: "localhost"
@@ -141,3 +149,85 @@ gpio:
     pulls: "PullUp"
     mdns: false
     config: 32767
+  gpio_10:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_11:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_12:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_13:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_14:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_15:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_16:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_17:
+    mode: "Input"
+    pulls: "PullUp"
+    mdns: false
+    config: 32767
+  gpio_18:
+    mode: "StatusLED_B"
+    pulls: "NoPull"
+    mdns: false
+    config: 0
+  gpio_19:
+    mode: "StatusLED_G"
+    pulls: "NoPull"
+    mdns: false
+    config: 0
+  gpio_20:
+    mode: "StatusLED_R"
+    pulls: "NoPull"
+    mdns: false
+    config: 0
+  # ADC channels (calibrated values pushed by the MCU in the combined IO packet).
+  # Per-channel calibration polynomial: out = c0 + c1*x + c2*x^2 + c3*x^3, x = raw ADC mV.
+  # Output unit: m°C for "OverTemperature" channels, mV otherwise. Identity = (0, 1, 0, 0).
+  adc_0:
+    mode: "OVM"
+    calib_c0: 0.0
+    calib_c1: 1.0
+    calib_c2: 0.0
+    calib_c3: 0.0
+  adc_1:
+    mode: "OverTemperature"
+    calib_c0: 0.0
+    calib_c1: 1.0
+    calib_c2: 0.0
+    calib_c3: 0.0
+  adc_2:
+    mode: "OverTemperature"
+    calib_c0: 0.0
+    calib_c1: 1.0
+    calib_c2: 0.0
+    calib_c3: 0.0
+  adc_3:
+    mode: "Generic"
+    calib_c0: 0.0
+    calib_c1: 1.0
+    calib_c2: 0.0
+    calib_c3: 0.0
