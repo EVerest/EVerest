@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "energyImpl.hpp"
+#include "../dc_hlc_limits.hpp"
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -530,6 +531,11 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
         mod->signalNrOfPhasesAvailable(mod->ac_nr_phases_active);
 
         if (mod->config.charge_mode == "DC") {
+            // Once the HLC session is gone (link terminated or charger no longer in a charging state),
+            // ev_info only contains stale values from the previous session, so stop updating the limits.
+            if (not should_update_dc_hlc_limits(charger_state, mod->charger->get_hlc_terminate_pause())) {
+                return;
+            }
             // DC mode apply limit at the leave side, we get root side limits here from EnergyManager on ACDC!
             // FIXME: multiply by conversion_efficiency here!
             if (value.limits_root_side.total_power_W.has_value() and

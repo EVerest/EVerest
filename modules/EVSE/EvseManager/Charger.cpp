@@ -2085,6 +2085,11 @@ void Charger::set_hlc_charging_active() {
     shared_context.hlc_charging_active = true;
 }
 
+Charger::HlcTerminatePause Charger::get_hlc_terminate_pause() {
+    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_get_hlc_terminate_pause);
+    return shared_context.hlc_charging_terminate_pause;
+}
+
 void Charger::set_hlc_allow_close_contactor(bool on) {
     Everest::scoped_lock_timeout lock(state_machine_mutex,
                                       Everest::MutexDescription::Charger_set_hlc_allow_close_contactor);
