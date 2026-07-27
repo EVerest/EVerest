@@ -89,7 +89,6 @@ class TestConfigureNetwork:
         # request_id is an opaque module-generated id; interface derives from the profile.
         assert isinstance(request["request_id"], int)
         assert request["request_id"] > 0
-        assert request["interface"] in _VALID_INTERFACE_CLASSES
         assert request["interface"] == EXPECTED_INTERFACE
 
     @pytest.mark.parametrize(
