@@ -11,6 +11,7 @@
 #include "SessionLog.hpp"
 #include "Timeout.hpp"
 #include "energy_transfer_modes.hpp"
+#include "powermeter_limits.hpp"
 #include "scoped_lock_timeout.hpp"
 #include "utils.hpp"
 
@@ -74,20 +75,6 @@ float min_optional(float a, std::optional<float> b) {
     }
     // else return a
     return a;
-}
-
-std::optional<float> max_optional(std::optional<float> const& a, std::optional<float> const& b) {
-    // if both a and b have values, return the bigger one.
-    if (a.has_value() and b.has_value()) {
-        return (b.value() > a.value() ? b.value() : a.value());
-    }
-    // if a has a value, return that one.
-    if (a.has_value()) {
-        return a;
-    }
-
-    // else return b. It is either the only value or empty.
-    return b;
 }
 
 types::dc_external_derate::ExternalDerating
@@ -2728,49 +2715,8 @@ types::power_supply_DC::Capabilities EvseManager::apply_powermeter_limits(types:
         std::scoped_lock lock(powermeter_capabilities_mutex);
         meter = powermeter_capabilities;
     }
-    if (not meter.has_value()) {
-        return caps;
-    }
 
-    // Note the convention crossing: the powermeter interface uses the metering convention
-    // (import = charging), while power_supply_DC uses the PSU convention (export = charging).
-
-    if (meter.value().min_import_current_A.has_value()) {
-        const float meter_min = meter.value().min_import_current_A.value();
-        caps.min_export_current_A = std::max(caps.min_export_current_A, meter_min);
-        caps.nominal_min_export_current_A = max_optional(caps.nominal_min_export_current_A, meter_min);
-
-        if (caps.min_export_current_A > caps.max_export_current_A) {
-            EVLOG_warning << "Power meter minimum current in charging direction (" << meter_min
-                          << " A) exceeds power supply maximum (" << caps.max_export_current_A
-                          << " A), clamping minimum to maximum";
-            caps.min_export_current_A = caps.max_export_current_A;
-        }
-        if (caps.nominal_min_export_current_A.has_value() and caps.nominal_max_export_current_A.has_value() and
-            caps.nominal_min_export_current_A.value() > caps.nominal_max_export_current_A.value()) {
-            caps.nominal_min_export_current_A = caps.nominal_max_export_current_A;
-        }
-    }
-
-    if (meter.value().min_export_current_A.has_value()) {
-        const float meter_min = meter.value().min_export_current_A.value();
-        caps.min_import_current_A = max_optional(caps.min_import_current_A, meter_min);
-        caps.nominal_min_import_current_A = max_optional(caps.nominal_min_import_current_A, meter_min);
-
-        if (caps.max_import_current_A.has_value() and
-            caps.min_import_current_A.value() > caps.max_import_current_A.value()) {
-            EVLOG_warning << "Power meter minimum current in discharge direction (" << meter_min
-                          << " A) exceeds power supply maximum (" << caps.max_import_current_A.value()
-                          << " A), clamping minimum to maximum";
-            caps.min_import_current_A = caps.max_import_current_A;
-        }
-        if (caps.nominal_min_import_current_A.has_value() and caps.nominal_max_import_current_A.has_value() and
-            caps.nominal_min_import_current_A.value() > caps.nominal_max_import_current_A.value()) {
-            caps.nominal_min_import_current_A = caps.nominal_max_import_current_A;
-        }
-    }
-
-    return caps;
+    return module::apply_powermeter_limits(std::move(caps), meter);
 }
 
 void EvseManager::update_powersupply_capabilities(types::power_supply_DC::Capabilities caps) {

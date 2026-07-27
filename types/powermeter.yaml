@@ -15,11 +15,13 @@ types:
           measure within its accuracy class (e.g. required by German Calibration
           Law).
         type: number
+        minimum: 0
       min_export_current_A:
         description: >-
           Minimum current in Ampere in export direction (discharging) the meter
           can measure within its accuracy class.
         type: number
+        minimum: 0
   TransactionReq:
     description: Required input parameter for starting an OCMF transaction. These values will be included in the signed OCMF packet.
     type: object
