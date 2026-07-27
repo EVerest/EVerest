@@ -2574,6 +2574,7 @@ components:
         - ChargingPausedEV: Signaled when charging is paused by the EV
         - ChargingPausedEVSE: Signaled when charging is paused by the EVSE
         - StoppingCharging: EVSE has started to stop the charging process. DC: CurrentDemand has finished, now doing WeldingCheck etc, AC: Wait for car to return to state B or A
+        - StoppingTransaction: Signaled right before the transaction is stopped in the power meter. At this point the transaction is really ending (not resumable) and the contactor/relais is confirmed open (power is off).
         - ChargingFinished: Charging is finished. Essentially the same as TransactionFinished, but emitted for clarity
         - TransactionFinished: Signaled when the transaction finished. Transaction finishes at the point where one of the preconditions for charging irrevocably becomes false: When a user swipes to stop the transaction and the stop is authorized.
         - SessionFinished: Session finishes at the point that the EVSE is available again (no cable plugged)
@@ -2596,6 +2597,7 @@ components:
         - ChargingPausedEV
         - ChargingPausedEVSE
         - StoppingCharging
+        - StoppingTransaction
         - ChargingFinished
         - TransactionFinished
         - SessionFinished
