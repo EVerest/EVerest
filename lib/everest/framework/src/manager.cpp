@@ -998,6 +998,7 @@ void Manager::transition_to_unlocked(ManagerState new_state) {
     }
     EVLOG_info << "Manager state transition: " << state_to_string(current_state) << " -> "
                << state_to_string(new_state);
+    ManagerState old_state = state_;
     state_ = new_state;
     for (const auto& handler : state_transition_handlers_) {
         handler(old_state, new_state);

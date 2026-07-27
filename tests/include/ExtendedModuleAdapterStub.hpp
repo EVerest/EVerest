@@ -104,6 +104,8 @@ public:
     void unregister_handler(const std::string& topic, const Token& token) override {
         std::printf("unregister(%s)\n", topic.c_str());
     }
+    void stop_message_handling() {
+    }
 
     // ========================================================================
     // methods to interact with handlers

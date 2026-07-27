@@ -5,7 +5,7 @@
 #define MODULEADAPRERSTUB_H_
 
 #include <framework/ModuleAdapter.hpp>
-#include <utils/config_service.hpp>
+#include <utils/mqtt_config_service.hpp>
 
 #include <optional>
 #include <utils/error/error_database_map.hpp>
