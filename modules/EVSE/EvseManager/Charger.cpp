@@ -639,6 +639,9 @@ void Charger::run_state_machine() {
             if (initialize_state) {
                 signal_simple_event(types::evse_manager::SessionEventEnum::PrepareCharging);
                 bcb_toggle_reset();
+                // A new HLC session may start here without passing through Idle (e.g. EV wake-up from
+                // ChargingPausedEV after D-LINK_TERMINATE), so allow limit updates to the HLC stack again
+                shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Unknown;
                 internal_context.hlc_charge_loop_no_energy_timeout_running = false;
 
                 if (config_context.charge_mode == ChargeMode::DC) {
