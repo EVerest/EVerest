@@ -127,6 +127,48 @@ active_modules:
         CHECK(captured_event->updates.front().result == SetConfigParameterResultEnum::Applied);
     }
 
+    SECTION("Set Parameters: for a stopped module") {
+        std::string empty_yaml = R"({})";
+        std::string valid_yaml = R"(
+active_modules:
+  dummy_module:
+    module: TESTValidManifest
+    config_module:
+      valid_config_entry: "hello there"
+    config_implementation:
+      main:
+        valid_config_entry: "hello there"
+)";
+
+        // Make sure slot 0 exists
+        auto empty_lfy_result = config_service.load_from_yaml(empty_yaml, "Test description", 0);
+        INFO(empty_lfy_result.error_message);
+        REQUIRE(empty_lfy_result.success == true);
+
+        // Ensure active_slot is 0 but modules are stopped
+        config_service.mark_active_slot(0);
+        config_service.reinitialize_from_db(true);
+
+        // Load from YAML
+        auto lfy_result = config_service.load_from_yaml(valid_yaml, "Test description", 0);
+        INFO(lfy_result.error_message);
+        REQUIRE(lfy_result.success == true);
+
+        everest::config::ConfigurationParameterIdentifier param_id{"dummy_module", "valid_config_entry", "!module"};
+        ConfigParameterUpdate update{param_id, "to_be_applied_later"};
+        Origin origin{true, std::nullopt};
+
+        auto result = config_service.set_config_parameters(0, {update}, origin);
+
+        REQUIRE(result.status == SetConfigParameterStatus::Ok);
+        REQUIRE(result.parameter_results.has_value());
+        INFO(result.parameter_results->front().status_info);
+
+        // Since modules are not running, the configuration update should be accepted
+        // but it will only be applied after a restart.
+        REQUIRE(result.parameter_results->front().status == SetConfigParameterResultEnum::WillApplyOnRestart);
+    }
+
     SECTION("State Tracking: run-state transitions publish events with correct data") {
         std::vector<ActiveSlotUpdate> events;
         config_service.register_active_slot_update_handler(
@@ -141,8 +183,8 @@ active_modules:
         config_service.notice_module_restart_triggered();
 
         const std::vector<ActiveSlotStatus> expected_statuses{
-            ActiveSlotStatus::Starting,     ActiveSlotStatus::Running,          ActiveSlotStatus::Stopping,
-            ActiveSlotStatus::Stopped,      ActiveSlotStatus::FailedToStart,    ActiveSlotStatus::RestartTriggered};
+            ActiveSlotStatus::Starting, ActiveSlotStatus::Running,       ActiveSlotStatus::Stopping,
+            ActiveSlotStatus::Stopped,  ActiveSlotStatus::FailedToStart, ActiveSlotStatus::RestartTriggered};
 
         REQUIRE(events.size() == expected_statuses.size());
         for (size_t i = 0; i < expected_statuses.size(); ++i) {

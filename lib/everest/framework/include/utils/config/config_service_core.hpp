@@ -108,7 +108,7 @@ private:
     // "Threading model" comment at the top of config_service_core.cpp.
     everest::lib::util::thread_safe_queue<std::function<void()>> command_queue_;
     std::thread worker_thread_;
-    std::atomic<bool> running_{false};
+    std::atomic<bool> worker_thread_running_{false};
 
     void process_queue();
 

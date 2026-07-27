@@ -41,8 +41,8 @@ namespace Everest::config {
 //
 // Runtime module callbacks are processed sequentially.
 //
-// Shutdown: ~ConfigServiceCore() clears running_, stops command_queue_ and
-// joins the worker thread.
+// Shutdown: ~ConfigServiceCore() clears worker_thread_running_, stops
+// command_queue_ and joins the worker thread.
 // ============================================================================
 
 namespace {
@@ -121,14 +121,14 @@ ConfigServiceCore::ConfigServiceCore(const ConfigParseSettings& parse_settings,
     next_boot_slot_id_(slot_manager_.get_next_boot_slot_id()) {
     active_configs_ptr_ = std::make_shared<const ec::ModuleConfigurations>();
 
-    running_ = true;
+    worker_thread_running_ = true;
     worker_thread_ = std::thread(&ConfigServiceCore::process_queue, this);
 
     post_to_actor([this]() { internal_reinitialize_from_db(true); });
 }
 
 ConfigServiceCore::~ConfigServiceCore() {
-    running_ = false;
+    worker_thread_running_ = false;
     command_queue_.stop();
     if (worker_thread_.joinable()) {
         worker_thread_.join();
@@ -136,7 +136,7 @@ ConfigServiceCore::~ConfigServiceCore() {
 }
 
 void ConfigServiceCore::process_queue() {
-    while (running_) {
+    while (worker_thread_running_) {
         try {
             auto task = command_queue_.wait_and_pop();
             if (task) {
