@@ -65,7 +65,7 @@ public:
     bool set_description(int slot_id, const std::string& description) override;
 
     // --- Slot-scoped configuration ---
-    GetConfigurationResult get_configuration(int slot_id) override;
+    GetConfigurationResult get_configuration(int slot_id, bool force_read_from_db=false) override;
     SetConfigParameterResult set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates,
                                                    const Origin& origin) override;
     GetConfigParametersResult
@@ -143,7 +143,7 @@ private:
                                                const std::optional<std::string>& description,
                                                std::optional<int> slot_id);
     bool internal_set_description(int slot_id, const std::string& description);
-    GetConfigurationResult internal_get_configuration(int slot_id);
+    GetConfigurationResult internal_get_configuration(int slot_id, bool force_read_from_db=false);
     SetConfigParameterResult internal_set_config_parameters(int slot_id,
                                                             const std::vector<ConfigParameterUpdate>& updates,
                                                             const Origin& origin);

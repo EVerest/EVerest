@@ -393,12 +393,13 @@ bool ConfigServiceCore::internal_set_description(int slot_id, const std::string&
 
 // --- Slot-scoped configuration ---
 
-GetConfigurationResult ConfigServiceCore::get_configuration(int slot_id) {
-    return post_to_actor([this, slot_id]() { return internal_get_configuration(slot_id); });
+GetConfigurationResult ConfigServiceCore::get_configuration(int slot_id, bool force_read_from_db) {
+    return post_to_actor(
+        [this, slot_id, force_read_from_db]() { return internal_get_configuration(slot_id, force_read_from_db); });
 }
-GetConfigurationResult ConfigServiceCore::internal_get_configuration(int slot_id) {
+GetConfigurationResult ConfigServiceCore::internal_get_configuration(int slot_id, bool force_read_from_db) {
     const int resolved_slot_id = (slot_id == ConfigServiceInterface::ACTIVE_SLOT) ? active_slot_id_ : slot_id;
-    if (resolved_slot_id == active_slot_id_) {
+    if (resolved_slot_id == active_slot_id_ and not force_read_from_db) {
         return {GetConfigurationStatus::Success, module_configs_};
     }
 

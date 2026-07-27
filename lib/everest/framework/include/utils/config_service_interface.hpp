@@ -164,7 +164,7 @@ public:
     virtual std::shared_ptr<const everest::config::ModuleConfigurations> get_active_module_configurations() const = 0;
 
     // --- Slot-scoped configuration ---
-    virtual GetConfigurationResult get_configuration(int slot_id) = 0;
+    virtual GetConfigurationResult get_configuration(int slot_id, bool force_read_from_db) = 0;
     virtual SetConfigParameterResult
     set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates, const Origin& origin) = 0;
     virtual GetConfigParametersResult

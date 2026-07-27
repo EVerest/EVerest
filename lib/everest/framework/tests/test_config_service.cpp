@@ -54,7 +54,7 @@ struct StubConfigService : Everest::config::ConfigServiceInterface {
     bool set_description(int, const std::string&) {
         return true;
     }
-    GetConfigurationResult get_configuration(int) override {
+    GetConfigurationResult get_configuration(int, bool) override {
         return {GetConfigurationStatus::Success, module_configurations};
     }
 
