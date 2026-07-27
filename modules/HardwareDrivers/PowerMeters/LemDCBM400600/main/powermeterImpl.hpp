@@ -66,6 +66,9 @@ private:
     // Temperature monitoring with warning/error thresholds and hysteresis
     std::unique_ptr<TemperatureMonitor> temperature_monitor;
     void handle_temperature_events(const TemperatureMonitor::Events& events, double max_temperature);
+
+    // Publish the configured minimum current capabilities once on startup
+    void publish_configured_capabilities();
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
