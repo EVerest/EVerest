@@ -1,0 +1,12 @@
+description: EvseManager Simulator module
+provides:
+  evse:
+    interface: evse_manager
+    description: This is the main evsemanager interface
+  energy_grid:
+    description: This is the tree leaf interface to build the energy supply tree
+    interface: energy
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Piet Gömpel (Pionix GmbH)
