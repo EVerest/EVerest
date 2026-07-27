@@ -712,6 +712,42 @@ async def test_iso15118_dc_session_error_before_session(
     ), "No session events should occur while error is active"
 
 ###########################################################
+################ External Limits Capabilities Tests #######
+###########################################################
+
+@pytest.mark.asyncio
+@pytest.mark.probe_module(
+    connections={
+        "gcp": [Requirement("grid_connection_point", "external_limits")],
+    }
+)
+@pytest.mark.everest_core_config("config-sil.yaml")
+async def test_energy_node_publishes_capabilities_on_startup(
+    test_controller: TestController, everest_core: EverestCore
+):
+    """EnergyNode must publish its 'capabilities' var on its external_limits
+    interface at startup (i.e. invoke_ready must be called for that
+    implementation), matching config-sil.yaml's grid_connection_point
+    (fuse_limit_A: 40, phase_count: 3, default nominal_voltage_V: 230)."""
+    test_controller.start()
+    probe_module = ProbeModule(everest_core.get_runtime_session())
+
+    capabilities_mock = Mock()
+    probe_module.subscribe_variable("gcp", "capabilities", capabilities_mock)
+
+    probe_module.start()
+    await probe_module.wait_to_be_ready()
+
+    await wait_for_ready(capabilities_mock, timeout=5)
+
+    capabilities = capabilities_mock.call_args[0][0]
+    assert capabilities["max_current_A"] == 40
+    assert capabilities["max_phase_count"] == 3
+    assert capabilities["nominal_voltage_V"] == 230
+    assert capabilities["total_power_W"] == 40 * 3 * 230
+
+
+###########################################################
 ################ Pause and No Energy Tests ################
 ###########################################################
 
