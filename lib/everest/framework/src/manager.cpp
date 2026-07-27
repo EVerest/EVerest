@@ -725,10 +725,16 @@ int Manager::run() {
 
     config_service_core_ = std::make_unique<config::ConfigServiceCore>(ms, db_connection_);
 
-    // create StatusFifo object
-    auto status_fifo = StatusFifo::create_from_path(vm_["status-fifo"].as<std::string>());
-
     auto mqtt_abstraction = create_and_connect_mqtt(ms);
+    std::unique_ptr<MQTTAbstraction> mqtt_abstraction;
+    if (lfc_api_active) {
+        LwtCfg lwt_cfg;
+        lwt_cfg.topic = Everest::api::lifecycle::LifecycleAPI::Lwt::get_topic();
+        lwt_cfg.data = Everest::api::lifecycle::LifecycleAPI::Lwt::get_data();
+        mqtt_abstraction = create_and_connect_mqtt(ms, std::optional<LwtCfg>{lwt_cfg});
+    } else {
+        mqtt_abstraction = create_and_connect_mqtt(ms, std::nullopt);
+    }
     if (!mqtt_abstraction) {
         return EXIT_FAILURE;
     }
