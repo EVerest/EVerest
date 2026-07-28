@@ -65,12 +65,8 @@ public:
     bool set_description(int slot_id, const std::string& description) override;
 
     // --- Slot-scoped configuration ---
-    GetConfigurationResult get_configuration(int slot_id, bool force_read_from_db=false) override;
     SetConfigParameterResult set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates,
                                                    const Origin& origin) override;
-    GetConfigParametersResult
-    get_config_parameters(int slot_id,
-                          const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters) override;
 
     // --- Push-event subscriptions ---
     void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) override;
@@ -88,6 +84,14 @@ public:
     void set_modules_stopping() override;
     void notice_cfg_validation_failed() override;
     void notice_module_restart_triggered() override;
+
+protected:
+    // --- Slot-scoped configuration ---
+    GetConfigurationResult get_configuration_v(int slot_id, bool force_read_from_db) override;
+    GetConfigParametersResult
+    get_config_parameters_v(int slot_id,
+                            const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters,
+                            bool force_read_from_db) override;
 
 private:
     everest::config::ModuleConfigurations module_configs_;
@@ -143,7 +147,7 @@ private:
                                                const std::optional<std::string>& description,
                                                std::optional<int> slot_id);
     bool internal_set_description(int slot_id, const std::string& description);
-    GetConfigurationResult internal_get_configuration(int slot_id, bool force_read_from_db=false);
+    GetConfigurationResult internal_get_configuration(int slot_id, bool force_read_from_db);
     SetConfigParameterResult internal_set_config_parameters(int slot_id,
                                                             const std::vector<ConfigParameterUpdate>& updates,
                                                             const Origin& origin);
@@ -156,7 +160,8 @@ private:
                                      SetConfigParameterResult& result, ConfigurationUpdate& event);
     GetConfigParametersResult
     internal_get_config_parameters(int slot_id,
-                                   const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters);
+                                   const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters,
+                                   bool force_read_from_db);
     void internal_set_modules_stopped();
     void internal_set_modules_running();
     void internal_set_modules_starting();

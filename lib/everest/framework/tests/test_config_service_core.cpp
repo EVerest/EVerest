@@ -145,7 +145,7 @@ active_modules:
         INFO(empty_lfy_result.error_message);
         REQUIRE(empty_lfy_result.success == true);
 
-        // Ensure active_slot is 0 but modules are stopped
+        // Ensure active_slot is 0
         config_service.mark_active_slot(0);
         config_service.reinitialize_from_db(true);
 
@@ -511,6 +511,53 @@ active_modules:
         // Non-existent slot
         auto bad_result = config_service.get_config_parameters(99, {unknown_id});
         CHECK(bad_result.status == GetConfigurationStatus::SlotDoesNotExist);
+    }
+
+    SECTION("Retrieval: get_config_parameters after modification with running modules") {
+        std::string valid_yaml = R"(
+active_modules:
+  dummy_module:
+    module: TESTValidManifest
+    config_module:
+      valid_config_entry: "hello there"
+    config_implementation:
+      main:
+        valid_config_entry: "hello there"
+)";
+        config_service.load_from_yaml(valid_yaml, "Slot 1", 1);
+        config_service.mark_active_slot(1);
+        config_service.reinitialize_from_db(true);
+        config_service.set_modules_running();
+
+        everest::config::ConfigurationParameterIdentifier param_id{"dummy_module", "valid_bool_config_entry",
+                                                                   "!module"};
+
+        ConfigParameterUpdate update{param_id, "false"};
+        Origin origin{false, "manager"};
+
+        // Set a config parameter which is not runtime changeable and check that it will apply on restart (== written to
+        // the DB)
+        auto set_result = config_service.set_config_parameters(1, {update}, origin);
+
+        REQUIRE(set_result.status == SetConfigParameterStatus::Ok);
+        REQUIRE(set_result.parameter_results.has_value());
+        CHECK(set_result.parameter_results->front().status == SetConfigParameterResultEnum::WillApplyOnRestart);
+
+        // get the runtime config parameter -> old value
+        auto get_result = config_service.get_config_parameters(1, {param_id});
+
+        REQUIRE(get_result.status == GetConfigurationStatus::Success);
+        REQUIRE(get_result.parameters.size() == 1);
+        CHECK(get_result.parameters[0].has_value());
+        CHECK(std::get<bool>(get_result.parameters[0]->value) == true);
+
+        // get the config parameter again, but force reading from db -> new value
+        auto get_force_result = config_service.get_config_parameters(1, {param_id}, true);
+
+        REQUIRE(get_force_result.status == GetConfigurationStatus::Success);
+        REQUIRE(get_force_result.parameters.size() == 1);
+        CHECK(get_force_result.parameters[0].has_value());
+        CHECK(std::get<bool>(get_force_result.parameters[0]->value) == false);
     }
 
     SECTION("Edge Cases: reinitialize_from_db safety guard") {

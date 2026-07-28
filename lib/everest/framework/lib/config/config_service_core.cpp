@@ -393,7 +393,7 @@ bool ConfigServiceCore::internal_set_description(int slot_id, const std::string&
 
 // --- Slot-scoped configuration ---
 
-GetConfigurationResult ConfigServiceCore::get_configuration(int slot_id, bool force_read_from_db) {
+GetConfigurationResult ConfigServiceCore::get_configuration_v(int slot_id, bool force_read_from_db) {
     return post_to_actor(
         [this, slot_id, force_read_from_db]() { return internal_get_configuration(slot_id, force_read_from_db); });
 }
@@ -562,15 +562,15 @@ void ConfigServiceCore::apply_inactive_slot_updates(int slot_id, const std::vect
     }
 }
 
-GetConfigParametersResult
-ConfigServiceCore::get_config_parameters(int slot_id,
-                                         const std::vector<ec::ConfigurationParameterIdentifier>& parameters) {
-    return post_to_actor([this, slot_id, parameters]() { return internal_get_config_parameters(slot_id, parameters); });
+GetConfigParametersResult ConfigServiceCore::get_config_parameters_v(
+    int slot_id, const std::vector<ec::ConfigurationParameterIdentifier>& parameters, bool force_read_from_db) {
+    return post_to_actor([this, slot_id, parameters, force_read_from_db]() {
+        return internal_get_config_parameters(slot_id, parameters, force_read_from_db);
+    });
 }
-GetConfigParametersResult
-ConfigServiceCore::internal_get_config_parameters(int slot_id,
-                                                  const std::vector<ec::ConfigurationParameterIdentifier>& parameters) {
-    GetConfigurationResult get_cfg_result = internal_get_configuration(slot_id);
+GetConfigParametersResult ConfigServiceCore::internal_get_config_parameters(
+    int slot_id, const std::vector<ec::ConfigurationParameterIdentifier>& parameters, bool force_read_from_db) {
+    GetConfigurationResult get_cfg_result = internal_get_configuration(slot_id, force_read_from_db);
 
     GetConfigParametersResult result;
     result.status = GetConfigurationStatus::SlotDoesNotExist;

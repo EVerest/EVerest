@@ -4,10 +4,10 @@
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
-#include <memory>
 
 #include <utils/config/slot_manager.hpp>
 #include <utils/config/types.hpp>
@@ -164,12 +164,16 @@ public:
     virtual std::shared_ptr<const everest::config::ModuleConfigurations> get_active_module_configurations() const = 0;
 
     // --- Slot-scoped configuration ---
-    virtual GetConfigurationResult get_configuration(int slot_id, bool force_read_from_db) = 0;
     virtual SetConfigParameterResult
     set_config_parameters(int slot_id, const std::vector<ConfigParameterUpdate>& updates, const Origin& origin) = 0;
-    virtual GetConfigParametersResult
-    get_config_parameters(int slot_id,
-                          const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters) = 0;
+    GetConfigurationResult get_configuration(int slot_id, bool force_read_from_db = false) {
+        return get_configuration_v(slot_id, force_read_from_db);
+    }
+    GetConfigParametersResult
+    get_config_parameters(int slot_id, const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters,
+                          bool force_read_from_db = false) {
+        return get_config_parameters_v(slot_id, parameters, force_read_from_db);
+    }
 
     // --- Push-event subscriptions ---
     virtual void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)> handler) = 0;
@@ -182,6 +186,14 @@ public:
     virtual void set_modules_stopping() = 0;
     virtual void notice_cfg_validation_failed() = 0;
     virtual void notice_module_restart_triggered() = 0;
+
+protected:
+    virtual GetConfigurationResult get_configuration_v(int slot_id, bool force_read_from_db) = 0;
+
+    virtual GetConfigParametersResult
+    get_config_parameters_v(int slot_id,
+                            const std::vector<everest::config::ConfigurationParameterIdentifier>& parameters,
+                            bool force_read_from_db) = 0;
 };
 
 } // namespace Everest::config
