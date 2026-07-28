@@ -687,11 +687,14 @@ int Manager::run() {
     const auto config_path = config_opt.empty() ? conf_opt : config_opt;
 
     const bool have_config = not config_path.empty();
-    if (not have_config) {
-        throw BootException("--config is required. A YAML config is always needed to provide ManagerSettings.");
+    if (reset_from_yaml && not have_config) {
+        throw BootException("--reset-from-yaml requires --config; there is no YAML to re-seed from.");
     }
 
-    ManagerSettings ms(prefix_opt, config_opt, db_opt);
+    // Without --config the manager runs on built-in defaults; module configs then come from the
+    // database (seeded empty on a fresh database, so the manager boots into Idle).
+    ManagerSettings ms = have_config ? ManagerSettings(prefix_opt, config_path, db_opt)
+                                     : ManagerSettings(ManagerSettings::WithoutConfig{}, prefix_opt, db_opt);
 
     // CLI override for mqtt_everest_prefix (e.g. for parallel test execution).
     if (vm_.count("mqtt_everest_prefix") != 0) {
@@ -1557,14 +1560,16 @@ int main(int argc, char* argv[]) {
     desc.add_options()("dontvalidateschema", "Don't validate json schema on every message");
     desc.add_options()("config", po::value<std::string>(),
                        "Full path to a config file.  If the file does not exist and has no extension, it will be "
-                       "looked up in the default config directory");
+                       "looked up in the default config directory. Optional: if omitted, the manager boots from the "
+                       "database, or seeds an empty config and boots into Idle on a fresh database.");
     desc.add_options()("conf", po::value<std::string>(), "Deprecated: Same as --config. Do not use both.");
-    desc.add_options()(
-        "db", po::value<std::string>(),
-        "Full path to the configuration database file. Required. "
-        "The database is initialized automatically from active_modules in the YAML config on first run.");
+    desc.add_options()("db", po::value<std::string>(),
+                       "Full path to the configuration database file. Required. "
+                       "The database is initialized automatically from active_modules in the YAML config on first run, "
+                       "or with an empty config when no --config is given.");
     desc.add_options()("reset-from-yaml", "Discard the existing database slot and re-seed from the YAML config file. "
-                                          "Intended for development use when you want to reset to a known YAML state.");
+                                          "Intended for development use when you want to reset to a known YAML state. "
+                                          "Requires --config.");
     desc.add_options()("into-idle", "Boot into idle state (no modules are started)");
     desc.add_options()("recover-module-crashes",
                        "After unexpected module exit, reload config and restart modules (bounded by an internal retry "

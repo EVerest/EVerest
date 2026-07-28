@@ -68,6 +68,9 @@ struct ManagerSettings : public ConfigParseSettings {
     MQTTSettings mqtt_settings;       ///< MQTT connection settings
     RuntimeSettings runtime_settings; ///< Runtime settings needed to successfully run modules
 
+    /// \brief Tag type selecting the "no config file at all" construction path.
+    struct WithoutConfig {};
+
     ManagerSettings() = default;
 
     /// \brief Constructor that initializes the ManagerSettings with the given prefix and config file.
@@ -76,11 +79,19 @@ struct ManagerSettings : public ConfigParseSettings {
     /// \brief Constructor that initializes the ManagerSettings with the given prefix, config file and database path.
     ManagerSettings(const std::string& prefix, const std::string& config, const std::string& db_path);
 
+    /// \brief Constructor that initializes the ManagerSettings without any config file: config_file stays empty,
+    /// config is an empty object and all settings come from compiled-in defaults (no default.yaml fallback).
+    /// An empty \p db_path falls back to prefix/everest.db.
+    ManagerSettings(WithoutConfig, const std::string& prefix, const std::string& db_path);
+
     /// \brief Initializes the ManagerSettings with the given settings and prefix.
     void init_settings(const everest::config::Settings& settings);
 
     /// \brief Initializes the ManagerSettings based on the user provided \p config file or fallback options
     void init_config_file(const std::string& config);
+
+    /// \brief Initializes the ManagerSettings for the no-config case: config_file = "", config = empty object.
+    void init_no_config();
 
     /// \brief Initializes the ManagerSettings prefix and data_dir base on user provided \p prefix or the default
     /// prefix.

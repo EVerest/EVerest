@@ -72,6 +72,58 @@ SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
         }
     }
 }
+
+SCENARIO("Check ManagerSettings without a config file", "[!throws]") {
+    auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
+    // The empty_yaml fixture uses the filesystem hierarchy standard layout (share/everest/...,
+    // etc/everest/default_logging.cfg, libexec/everest/modules) but contains no etc/everest/default.yaml.
+    auto prefix = bin_dir + "empty_yaml/";
+
+    GIVEN("A valid prefix without any config file and without a default.yaml") {
+        THEN("Construction should not throw (proves there is no default.yaml fallback) and use built-in defaults") {
+            auto ms = Everest::ManagerSettings(Everest::ManagerSettings::WithoutConfig{}, prefix, "");
+            CHECK(ms.config_file.empty());
+            CHECK(ms.config.is_object());
+            CHECK(ms.config.empty());
+            CHECK(ms.db_dir == ms.runtime_settings.prefix / "everest.db");
+        }
+    }
+    GIVEN("A valid prefix without a config file and an explicit database path") {
+        auto db_path = bin_dir + "empty_yaml/no_config.db";
+        if (fs::exists(db_path)) {
+            fs::remove(db_path);
+        }
+        Everest::ManagerSettings ms(Everest::ManagerSettings::WithoutConfig{}, prefix, db_path);
+        CHECK(ms.db_dir == fs::path(db_path));
+
+        THEN("Bootstrap on a fresh database should seed an empty config slot") {
+            auto bs = Everest::init_database_bootstrap(ms);
+            CHECK(bs.module_configs_initialized == true);
+
+            everest::config::SqliteConfigSlotManager slot_mgr(bs.db_connection);
+            const auto boot_slot_id = slot_mgr.get_next_boot_slot_id();
+            CHECK(slot_mgr.exists(boot_slot_id));
+
+            auto storage = std::make_unique<everest::config::SqliteStorage>(bs.db_connection, boot_slot_id);
+            auto get_mod_cfg_response = storage->get_module_configs();
+            CHECK(get_mod_cfg_response.status == everest::config::GenericResponseStatus::OK);
+            CHECK(get_mod_cfg_response.module_configs.empty());
+
+            const auto slots = slot_mgr.list_slots();
+            REQUIRE(slots.size() == 1);
+            CHECK(slots.front().id == boot_slot_id);
+            CHECK_FALSE(slots.front().config_file_path.has_value());
+
+            THEN("A second bootstrap (restart) should boot from the now-existing database slot") {
+                auto bs2 = Everest::init_database_bootstrap(ms);
+                CHECK(bs2.module_configs_initialized == true);
+            }
+        }
+        THEN("Bootstrap with reset-from-yaml should throw, since there is no YAML to re-seed from") {
+            CHECK_THROWS_AS(Everest::init_database_bootstrap(ms, true), Everest::BootException);
+        }
+    }
+}
 SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
     auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
     GIVEN("A config without modules") {
