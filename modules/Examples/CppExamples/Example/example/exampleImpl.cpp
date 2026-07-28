@@ -102,7 +102,7 @@ Everest::config::ConfigChangeResult exampleImpl::on_enum_test_changed(const std:
     std::string desc = "rejected, as invalid enum value";
     Everest::config::ConfigChangeResult ret =
         Everest::config::ConfigChangeResult::Rejected("New value is invalid enum value.");
-    const std::string& old_value = rw_config.enum_test;
+    const std::string old_value = rw_config.enum_test;
 
     if (is_valid_enum_test(new_value)) {
         if (new_value == old_value) {
@@ -118,7 +118,7 @@ Everest::config::ConfigChangeResult exampleImpl::on_enum_test_changed(const std:
         }
     }
 
-    EVLOG_info << log_prefix << "old == '" << rw_config.enum_test << "', new == '" << new_value << "' " << desc;
+    EVLOG_info << log_prefix << "old == '" << old_value << "', new == '" << new_value << "' " << desc;
     return ret;
 }
 
