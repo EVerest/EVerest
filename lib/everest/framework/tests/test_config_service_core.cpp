@@ -64,6 +64,40 @@ active_modules:
         REQUIRE(slots.size() >= 1);
     }
 
+    SECTION("Empty seeded slot: as produced by a no-config manager boot") {
+        // Mirror init_database_bootstrap without a config file: an existing slot with zero modules
+        everest::config::SqliteConfigSlotManager slot_mgr(db);
+        const auto boot_slot_id = slot_mgr.get_next_boot_slot_id();
+        REQUIRE(slot_mgr.write_config_slot(boot_slot_id, "{}", std::nullopt, std::nullopt) ==
+                everest::config::GenericResponseStatus::OK);
+        everest::config::SqliteStorage storage(db, boot_slot_id);
+        REQUIRE(storage.write_module_configs({}) == everest::config::GenericResponseStatus::OK);
+
+        config_service.reinitialize_from_db(true);
+
+        auto active_configs = config_service.get_active_module_configurations();
+        REQUIRE(active_configs != nullptr);
+        CHECK(active_configs->empty());
+        CHECK(config_service.get_active_slot_id() == boot_slot_id);
+
+        // Runtime config arrival after a no-config boot: load a real config into a new slot
+        std::string valid_yaml = R"(
+active_modules:
+  dummy_module:
+    module: TESTValidManifest
+    config_module:
+      valid_config_entry: "hello there"
+    config_implementation:
+      main:
+        valid_config_entry: "hello there"
+)";
+        auto result = config_service.load_from_yaml(valid_yaml, "Loaded after no-config boot", std::nullopt);
+        INFO(result.error_message);
+        REQUIRE(result.success == true);
+        REQUIRE(result.slot_id.has_value());
+        CHECK(result.slot_id.value() != boot_slot_id);
+    }
+
     SECTION("Set Parameters: for a running module") {
         std::string valid_yaml = R"(
 active_modules:
