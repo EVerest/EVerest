@@ -51,6 +51,11 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
     auto boot_slot_id = slot_mgr.get_next_boot_slot_id();
     auto db_storage = std::make_unique<everest::config::SqliteStorage>(db_conn, boot_slot_id);
 
+    const bool no_config = ms.config_file.empty();
+    if (reset_from_yaml && no_config) {
+        EVLOG_AND_THROW(BootException("--reset-from-yaml requires --config; there is no YAML to re-seed from."));
+    }
+
     const bool slot_exists = slot_mgr.exists(boot_slot_id);
     if (slot_exists && !reset_from_yaml) {
         EVLOG_info << "Booting and parsing configuration from database: " << ms.db_dir;
@@ -63,6 +68,9 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
         if (reset_from_yaml && slot_exists) {
             EVLOG_info << "--reset-from-yaml requested, discarding existing database slot and re-seeding from YAML: "
                        << ms.config_file;
+        } else if (no_config) {
+            EVLOG_info << "No config file and no existing database slot; seeding an empty config slot " << boot_slot_id
+                       << " (manager will boot into Idle).";
         } else {
             EVLOG_info << "Database not initialized or not valid, seeding from YAML config file: " << ms.config_file;
         }
@@ -90,7 +98,9 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
             slot_mgr.delete_slot(boot_slot_id);
             // Seed the database: parse() enriched module_configs with manifest metadata needed for storage writes.
             const auto& module_config = mgr_config->get_module_configurations();
-            if (slot_mgr.write_config_slot(boot_slot_id, nlohmann::json(module_config).dump(), ms.config_file,
+            const std::optional<std::filesystem::path> config_file_path =
+                no_config ? std::nullopt : std::optional<std::filesystem::path>{ms.config_file};
+            if (slot_mgr.write_config_slot(boot_slot_id, nlohmann::json(module_config).dump(), config_file_path,
                                            std::nullopt) == everest::config::GenericResponseStatus::OK) {
                 if (db_storage->write_module_configs(module_config) != everest::config::GenericResponseStatus::Failed) {
                     EVLOG_info << "Module configs written to database successfully";
@@ -117,6 +127,20 @@ ManagerSettings::ManagerSettings(const std::string& prefix, const std::string& c
 
 ManagerSettings::ManagerSettings(const std::string& prefix, const std::string& config, const std::string& db_path) :
     ManagerSettings(prefix, config) {
+
+    if (db_path.length() != 0) {
+        db_dir = fs::path(db_path);
+    } else {
+        db_dir = this->runtime_settings.prefix / defaults::DB_FILE_NAME;
+    }
+}
+
+ManagerSettings::ManagerSettings(WithoutConfig, const std::string& prefix, const std::string& db_path) {
+    init_prefix_and_data_dir(prefix);
+    init_no_config();
+    // parse_settings({}) yields all-nullopt Settings, so init_settings() uses the compiled-in defaults.
+    const auto settings = everest::config::parse_settings(this->config.value("settings", json::object()));
+    init_settings(settings);
 
     if (db_path.length() != 0) {
         db_dir = fs::path(db_path);
@@ -445,6 +469,17 @@ void ManagerSettings::init_config_file(const std::string& config_) {
     } else if (!config.is_object()) {
         throw BootException(fmt::format("Config file '{}' is not an object", config_file.string()));
     }
+}
+
+void ManagerSettings::init_no_config() {
+    if (this->runtime_settings.prefix.empty()) {
+        throw std::runtime_error(
+            "Prefix must be set before initializing the config. Please call init_prefix_and_data_dir() first.");
+    }
+
+    EVLOG_info << "Booting without config file, using built-in defaults";
+    config_file.clear();
+    config = json::object();
 }
 
 ModuleCallbacks::ModuleCallbacks(
