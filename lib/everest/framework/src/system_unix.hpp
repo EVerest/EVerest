@@ -45,11 +45,12 @@ public:
     SignalPolling();
 
     /// \brief Wait up to \p timeout_ms for a blocked signal (SIGINT/SIGTERM/SIGCHLD) to arrive.
-    ///        When \p extra_wakeup_fd is not -1, the poll also returns (with std::nullopt) as soon
-    ///        as that fd becomes readable, so the caller can service it without waiting for the
-    ///        timeout.
+    ///        When \p extra_wakeup_fd / \p extra_wakeup_fd2 are not -1, the poll also returns (with
+    ///        std::nullopt) as soon as either fd becomes readable, so the caller can service it
+    ///        without waiting for the timeout. Neither extra fd is read/drained here; the caller
+    ///        owns draining them.
     /// \return The received signal number, or std::nullopt on timeout/extra fd wakeup.
-    std::optional<uint32_t> poll_signal(int timeout_ms, int extra_wakeup_fd = -1);
+    std::optional<uint32_t> poll_signal(int timeout_ms, int extra_wakeup_fd = -1, int extra_wakeup_fd2 = -1);
 
 private:
     bool available = false;

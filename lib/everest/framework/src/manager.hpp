@@ -75,6 +75,16 @@ enum class ShutdownCause {
     Crash
 };
 
+/// \brief Deferred lifecycle-API intent recorded on the MQTT thread and consumed by the main loop.
+///
+/// The LifecycleAPI stop/restart command handlers run on an MQTT worker thread. Stop/Restart
+/// are mutually exclusive, so a single atomic with last-writer-wins semantics is sufficient.
+enum class LifecycleApiRequest {
+    None,
+    Stop,
+    Restart
+};
+
 class Manager {
 public:
     /// \brief Construct manager with parsed CLI arguments.
@@ -319,6 +329,13 @@ private:
     /// \brief Register a callback invoked on every state transition with (old_state, new_state).
     void register_state_transition_handler(std::function<void(ManagerState, ManagerState)> handler);
 
+    /// \brief Wake the main-loop poll after recording a lifecycle-API request (MQTT-thread safe).
+    void poke_lifecycle_wakeup();
+
+    /// \brief Consume a deferred lifecycle-API stop/restart request on the main loop.
+    /// \param ctx Runtime dependencies for the current run.
+    void handle_lifecycle_api_request(RuntimeContext& ctx);
+
     const boost::program_options::variables_map& vm_;
     Everest::StatusFifo* status_fifo_{nullptr};
     bool recover_module_crashes_{false};
@@ -331,6 +348,14 @@ private:
     std::atomic<ManagerState> state_{ManagerState::Idle};
     ShutdownCause shutdown_cause_{ShutdownCause::None};
     std::atomic<bool> sigint_received_{false};
+    // Deferred lifecycle-API intent: set on the MQTT worker thread by the stop/restart command
+    // handlers, consumed on the main loop by handle_lifecycle_api_request(). Keeps all mutation of
+    // module_handles_/shutdown_* on the main thread. Last-writer-wins (Stop/Restart exclusive).
+    std::atomic<LifecycleApiRequest> lifecycle_api_request_{LifecycleApiRequest::None};
+    // eventfd owned by run(): the MQTT stop/restart handlers write to it after setting
+    // lifecycle_api_request_ to wake up the main-loop poll() immediately.
+    // -1 when not yet created / after run() returns.
+    int lifecycle_wakeup_fd_{-1};
     // Unexpected-exit recovery attempts for this manager process lifetime (current config).
     // Not cleared on transition to Running; resets when run() starts (future: also on config change).
     std::uint8_t unexpected_module_exit_count_{0};
