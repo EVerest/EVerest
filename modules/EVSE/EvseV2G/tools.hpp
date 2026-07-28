@@ -40,6 +40,7 @@ enum Addr6Type {
 };
 
 const char* choose_first_ipv6_interface();
+const char* choose_first_ipv6_interface(std::string* failure_detail);
 int get_interface_ipv6_address(const char* if_name, enum Addr6Type type, struct sockaddr_in6* addr);
 
 void set_normalized_timespec(struct timespec* ts, time_t sec, int64_t nsec);
