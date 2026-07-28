@@ -56,7 +56,13 @@ RUN ls -al /tmp/everest_dev_tool \
 ##################################################################
 
 # Modify the existing docker user and group to match the host's USER_UID and USER_GID
-RUN groupmod --gid ${USER_GID} ${USERNAME} && \
+# If the target GID is already in use by another group (e.g. host GID 20 collides with
+# Debian's "dialout" group), move that group out of the way first so groupmod can proceed.
+RUN existing_group="$(getent group ${USER_GID} | cut -d: -f1)"; \
+    if [ -n "${existing_group}" ] && [ "${existing_group}" != "${USERNAME}" ]; then \
+        groupmod --gid $(($(getent group | cut -d: -f3 | sort -n | tail -1) + 1)) "${existing_group}"; \
+    fi && \
+    groupmod --gid ${USER_GID} ${USERNAME} && \
     usermod --uid ${USER_UID} --gid ${USER_GID} ${USERNAME} && \
     usermod -aG dialout ${USERNAME}
 
