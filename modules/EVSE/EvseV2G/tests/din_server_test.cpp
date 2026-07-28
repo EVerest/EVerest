@@ -214,6 +214,23 @@ TEST_F(DinServerTest, din_service_discovery_good_case) {
     EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_INFO).size(), 0);
 }
 
+TEST_F(DinServerTest, din_service_discovery_free_service) {
+
+    exi_out->V2G_Message.Body.ServiceDiscoveryRes_isUsed = true;
+    init_din_ServiceDiscoveryResType(&exi_out->V2G_Message.Body.ServiceDiscoveryRes);
+
+    const auto& res = exi_out->V2G_Message.Body.ServiceDiscoveryRes;
+
+    // Without set_free_service the charge service is not advertised as free
+    EXPECT_EQ(states::handle_din_service_discovery(conn.get()), V2G_EVENT_NO_EVENT);
+    EXPECT_EQ(res.ChargeService.FreeService, 0);
+
+    ctx->evse_v2g_data.charge_service.FreeService = 1;
+
+    EXPECT_EQ(states::handle_din_service_discovery(conn.get()), V2G_EVENT_NO_EVENT);
+    EXPECT_EQ(res.ChargeService.FreeService, 1);
+}
+
 TEST_F(DinServerTest, handle_din_contract_authentication_check_evse_processing_finished) {
 
     // TODO: set a prober session id
