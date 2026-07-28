@@ -725,7 +725,6 @@ int Manager::run() {
 
     config_service_core_ = std::make_unique<config::ConfigServiceCore>(ms, db_connection_);
 
-    auto mqtt_abstraction = create_and_connect_mqtt(ms);
     std::unique_ptr<MQTTAbstraction> mqtt_abstraction;
     if (lfc_api_active) {
         LwtCfg lwt_cfg;
