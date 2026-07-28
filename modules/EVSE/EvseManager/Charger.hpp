@@ -67,6 +67,26 @@ public:
         DC
     };
 
+    struct SetupConfig {
+        bool has_ventilation;
+        ChargeMode charge_mode;
+        bool ac_hlc_enabled;
+        bool ac_hlc_use_5percent;
+        bool ac_enforce_hlc;
+        bool ac_with_soc_timeout;
+        float soft_over_current_tolerance_percent;
+        float soft_over_current_measurement_noise_A;
+        int switch_3ph1ph_delay_s;
+        std::string switch_3ph1ph_cp_state;
+        int soft_over_current_timeout_ms;
+        int state_F_after_fault_ms;
+        bool fail_on_powermeter_errors;
+        bool raise_mrec9;
+        int sleep_before_enabling_pwm_hlc_mode_ms;
+        utils::SessionIdType session_id_type;
+        int hlc_charge_loop_without_energy_timeout_s;
+    };
+
     enum class EvseState {
         Disabled,
         Idle,
@@ -100,13 +120,7 @@ public:
 
     sigslot::signal<float> signal_max_current;
 
-    void setup(bool has_ventilation, const ChargeMode charge_mode, bool ac_hlc_enabled, bool ac_hlc_use_5percent,
-               bool ac_enforce_hlc, bool ac_with_soc_timeout, float soft_over_current_tolerance_percent,
-               float soft_over_current_measurement_noise_A, const int switch_3ph1ph_delay_s,
-               const std::string switch_3ph1ph_cp_state, const int soft_over_current_timeout_ms,
-               const int _state_F_after_fault_ms, const bool fail_on_powermeter_errors, const bool raise_mrec9,
-               const int sleep_before_enabling_pwm_hlc_mode_ms, const utils::SessionIdType session_id_type,
-               const int hlc_charge_loop_without_energy_timeout_s);
+    void setup(const SetupConfig& config);
 
     void enable_disable_initial_state_publish();
     bool enable_disable(int connector_id, const types::evse_manager::EnableDisableSource& source);
