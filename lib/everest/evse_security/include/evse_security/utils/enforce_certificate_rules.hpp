@@ -1,14 +1,12 @@
-#include <vector>
 #include <openssl/ssl.h>
-#include <openssl/pem.h>
 #include <openssl/x509.h>
 #include <evse_security/evse_security.hpp>
-#include <iostream>
+#include <string>
 
 #pragma once
 
-#ifndef EONTI_ADDONS
-#define EONTI_ADDONS
+#ifndef ENFORCE_CERTIFICATE_RULES
+#define ENFORCE_CERTIFICATE_RULES
 enum class CertPart { Subject, Issuer };
 
 struct CertRule {
