@@ -1558,10 +1558,12 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
         //  +-------------------+-----------+-------------+-----------------+-------------------+
         Row < WaitForLink       , update    , Failed      , none            , timeout           >,
         Row < WaitForLink       , reset     , Reset       , none            , none              >,
+        Row < WaitForLink       , leave_bcd , Reset       , none            , none              >,
         Row < WaitForLink_Fail  , none      , Failed      , none            , none              >,
         Row < WaitForLink_Match , message   , Matched     , none            , none              >,
         //  +-------------------+-----------+-------------+-----------------+-------------------+
         Row < Matched           , reset     , Reset       , none            , none              >,
+        Row < Matched           , leave_bcd , Reset       , none            , none              >,
         // A connection loss detected while matched (negative LINK_STATUS) must make the
         // SECC leave the logical network within TP_match_leave: go to Reset, which
         // regenerates the session NMK and re-keys the modem (regenerate_key_on_reset),
@@ -1570,8 +1572,20 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
         // on_matched_fail still logs the loss and signals the error routine.
         Row < Matched_Fail      , message   , Reset       , on_matched_fail , none              >,
         //  +-------------------+-----------+-------------+-----------------+-------------------+
-        Row < Failed            , reset     , Reset       , none            , none              >
+        Row < Failed            , reset     , Reset       , none            , none              >,
+        Row < Failed            , leave_bcd , Reset       , none            , none              >
         //  +-------------------+-----------+-------------+-----------------+-------------------+
+        // Unplug (CP -> A/E/F) must ALWAYS fully restore the SECC, using leave_bcd alone: it is
+        // the only event EvseManager is guaranteed to send. Its follow-up call_reset(false) is
+        // conditional on the last published SLAC state not being UNMATCHED, so any state that
+        // publishes UNMATCHED (Failed) would otherwise never be left again and the SECC would
+        // stop answering CM_SLAC_PARM.REQ for good -- the -5 SLAC TCs that dwell past
+        // TT_EVSE_SLAC_init (CmSlacParm_004..006 with reset_instead_of_fail=false) wedged the
+        // SUT for every following TC that way. leave_bcd therefore targets Reset, which leaves
+        // the logical network, regenerates the NMK and re-keys the modem before landing in Idle.
+        // The states without a leave_bcd row need none: Init/Reset/ResetChip are transient and
+        // reach Idle on their own, Idle already IS the unplugged-and-ready state, and Matching
+        // goes straight to Idle (no AVLN or session key of its own to tear down).
         > {};
     template <class FSM,class Event>
     void no_transition(Event const&, FSM&, int) {

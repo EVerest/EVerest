@@ -1901,10 +1901,118 @@ bool test_matched_qualcomm_link_status_rejects_only_negative_cnf() {
     return true;
 }
 
+// An unplug is signalled by leave_bcd alone: EvseManager only follows up with reset(false) when
+// the last published SLAC state is not UNMATCHED, which Failed publishes. So leave_bcd on its own
+// must fully restore the SECC, otherwise the first matching failure wedges it for good and every
+// later CM_SLAC_PARM.REQ goes unanswered.
+bool test_leave_bcd_recovers_from_failed_state() {
+    const char* test_name = "test_leave_bcd_recovers_from_failed_state";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+
+    Context ctx(callbacks);
+    configure_common(ctx);
+    // Reach the matching timeout quickly; reset_instead_of_fail is already false in
+    // configure_common, so the first expiry goes straight to Failed (conformance config).
+    ctx.slac_config.slac_init_timeout_ms = 60;
+    fill_session_nmk(ctx, 0x41);
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    if (!wait_for_match_state(ctx, SlacState::Failed, machine, 600)) {
+        return assert_true(false, test_name, "matching timeout did not transition to Failed");
+    }
+
+    // The unplug: leave_bcd only, exactly what EvseManager sends when SLAC is UNMATCHED.
+    machine.leave_bcd();
+    if (!wait_for_match_state(ctx, SlacState::Reset, machine, 200)) {
+        return assert_true(false, test_name, "leave_bcd in Failed did not transition to Reset");
+    }
+
+    machine.message(create_cm_set_key_cnf(defs::CM_SET_KEY_CNF_RESULT_MODEM_COMPAT_SUCCESS));
+    if (!wait_for_match_state(ctx, SlacState::Idle, machine, 200)) {
+        return assert_true(false, test_name, "did not re-key and return to Idle after the unplug");
+    }
+
+    // Re-plug: matching must work again and the SECC must answer CM_SLAC_PARM.REQ.
+    ctx.slac_config.slac_init_timeout_ms = 5000;
+    machine.enter_bcd();
+    if (!wait_for_match_state(ctx, SlacState::Matching, machine, 200)) {
+        return assert_true(false, test_name, "did not re-enter Matching on the next enter_bcd");
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x09};
+    auto run_id = fill_run_id(0x91);
+    const auto initial_parm_count = count_slac_parm_cnf(sent_messages);
+    machine.message(create_cm_slac_parm_req(ev_mac, run_id));
+    if (!wait_for_parm_cnf_count(sent_messages, initial_parm_count + 1, machine, 300)) {
+        return assert_true(false, test_name, "did not answer CM_SLAC_PARM.REQ after recovering from Failed");
+    }
+
+    return true;
+}
+
+// Same requirement from Matched: the unplug must leave the logical network and re-key even when
+// EvseManager's conditional reset(false) does arrive first-or-not-at-all.
+bool test_leave_bcd_leaves_matched_state() {
+    const char* test_name = "test_leave_bcd_leaves_matched_state";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    bool dlink_ready = false;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+    callbacks.signal_dlink_ready = [&dlink_ready](bool value) { dlink_ready = value; };
+
+    Context ctx(callbacks);
+    configure_common(ctx);
+    fill_session_nmk(ctx, 0x42);
+
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x0A};
+    auto run_id = fill_run_id(0xA1);
+    if (!perform_full_match_sequence(ctx, sent_messages, machine, ev_mac, run_id, SlacState::Matched, 700)) {
+        return false;
+    }
+    if (!assert_true(dlink_ready, test_name, "expected d_link_ready after a full match")) {
+        return false;
+    }
+
+    machine.leave_bcd();
+    if (!wait_for_match_state(ctx, SlacState::Reset, machine, 200)) {
+        return assert_true(false, test_name, "leave_bcd in Matched did not transition to Reset");
+    }
+    if (!assert_true(not dlink_ready, test_name, "d_link_ready was not withdrawn on the unplug")) {
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 27>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 29>{
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_same_session",
                        test_duplicate_cm_slac_parm_req_restarts_same_session),
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_inflight_session",
@@ -1954,6 +2062,8 @@ int main() {
                        test_matched_link_status_rejects_only_negative_cnf),
         std::make_pair("test_matched_qualcomm_link_status_rejects_only_negative_cnf",
                        test_matched_qualcomm_link_status_rejects_only_negative_cnf),
+        std::make_pair("test_leave_bcd_recovers_from_failed_state", test_leave_bcd_recovers_from_failed_state),
+        std::make_pair("test_leave_bcd_leaves_matched_state", test_leave_bcd_leaves_matched_state),
     };
 
     int failed_count = 0;
