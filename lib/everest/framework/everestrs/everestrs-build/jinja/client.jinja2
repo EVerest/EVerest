@@ -55,9 +55,12 @@ fn dispatch_error_to_{{ trait.name | snake }} (
 ) {
 {%- if trait.errors %}
     // The type is errors::{{ trait.name | snake }}::Error
-    let Ok(v) = __serde_yaml::from_str(&error.error_type) else {
-        everestrs::log::error!("Failed to deserialize error `{}`", error.error_type);
-        return;
+    let v = match __serde_yaml::from_str(&error.error_type) {
+        Ok(v) => v,
+        Err(err) => {
+            everestrs::log::error!("Failed to deserialize error `{}`: {}", error.error_type, err);
+            return;
+        }
     };
 
     let error_type = ::everestrs::ErrorType {
