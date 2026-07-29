@@ -446,6 +446,14 @@ config:
       Maximum ampere per second limit for up/down ramping of current in charging loop.
     type: integer
     default: 25
+  enable_nodered_interface:
+    description: >-
+      Enable the external MQTT interface to the Node-RED debug UI (topics below
+      everest_external/nodered/<connector_id>/). This publishes powermeter and state
+      updates and subscribes to UI commands (enable/disable/pause/resume/phase switch).
+      Only needed when the Node-RED simulation/debug UI is used.
+    type: boolean
+    default: false
 provides:
   evse:
     interface: evse_manager
