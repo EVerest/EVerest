@@ -108,7 +108,7 @@ private:
 
     void on_mqtt_message();
     void on_mqtt_connect();
-    void handle_mqtt_message(const Message& message);
+    void handle_mqtt_message(Message&& message);
 
     void on_mqtt_disconnect();
     nlohmann::json get_internal(const MQTTRequest& request);
