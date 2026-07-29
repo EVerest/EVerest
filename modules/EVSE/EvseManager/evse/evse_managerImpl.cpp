@@ -58,31 +58,31 @@ void evse_managerImpl::init() {
     });
 
     // Interface to Node-RED debug UI
+    if (mod->config.enable_nodered_interface) {
+        mod->mqtt.subscribe(fmt::format("everest_external/nodered/{}/cmd/enable", mod->config.connector_id),
+                            [&charger = mod->charger](const std::string& data) {
+                                charger->enable_disable(0, {types::evse_manager::Enable_source::LocalAPI,
+                                                            types::evse_manager::Enable_state::Enable, 100});
+                            });
 
-    mod->mqtt.subscribe(fmt::format("everest_external/nodered/{}/cmd/enable", mod->config.connector_id),
-                        [&charger = mod->charger](const std::string& data) {
-                            charger->enable_disable(0, {types::evse_manager::Enable_source::LocalAPI,
-                                                        types::evse_manager::Enable_state::Enable, 100});
-                        });
+        mod->mqtt.subscribe(fmt::format("everest_external/nodered/{}/cmd/disable", mod->config.connector_id),
+                            [&charger = mod->charger](const std::string& data) {
+                                charger->enable_disable(0, {types::evse_manager::Enable_source::LocalAPI,
+                                                            types::evse_manager::Enable_state::Disable, 100});
+                            });
 
-    mod->mqtt.subscribe(fmt::format("everest_external/nodered/{}/cmd/disable", mod->config.connector_id),
-                        [&charger = mod->charger](const std::string& data) {
-                            charger->enable_disable(0, {types::evse_manager::Enable_source::LocalAPI,
-                                                        types::evse_manager::Enable_state::Disable, 100});
-                        });
+        mod->mqtt.subscribe(fmt::format("everest_external/nodered/{}/cmd/switch_three_phases_while_charging",
+                                        mod->config.connector_id),
+                            [&charger = mod->charger](const std::string& data) {
+                                charger->switch_three_phases_while_charging(str_to_bool(data));
+                            });
 
-    mod->mqtt.subscribe(
-        fmt::format("everest_external/nodered/{}/cmd/switch_three_phases_while_charging", mod->config.connector_id),
-        [&charger = mod->charger](const std::string& data) {
-            charger->switch_three_phases_while_charging(str_to_bool(data));
-        });
+        mod->mqtt.subscribe(fmt::format("everest_external/nodered/{}/cmd/pause_charging", mod->config.connector_id),
+                            [&charger = mod->charger](const std::string& data) { charger->pause_charging(); });
 
-    mod->mqtt.subscribe(fmt::format("everest_external/nodered/{}/cmd/pause_charging", mod->config.connector_id),
-                        [&charger = mod->charger](const std::string& data) { charger->pause_charging(); });
-
-    mod->mqtt.subscribe(fmt::format("everest_external/nodered/{}/cmd/resume_charging", mod->config.connector_id),
-                        [&charger = mod->charger](const std::string& data) { charger->resume_charging(); });
-
+        mod->mqtt.subscribe(fmt::format("everest_external/nodered/{}/cmd/resume_charging", mod->config.connector_id),
+                            [&charger = mod->charger](const std::string& data) { charger->resume_charging(); });
+    }
     // /Interface to Node-RED debug UI
 
     if (mod->r_powermeter_billing().size() > 0) {
@@ -115,8 +115,10 @@ void evse_managerImpl::ready() {
 
     mod->r_bsp->subscribe_telemetry([this](types::evse_board_support::Telemetry telemetry) {
         // external Nodered interface
-        mod->mqtt.publish(fmt::format("everest_external/nodered/{}/state/temperature", mod->config.connector_id),
-                          telemetry.evse_temperature_C);
+        if (mod->config.enable_nodered_interface) {
+            mod->mqtt.publish(fmt::format("everest_external/nodered/{}/state/temperature", mod->config.connector_id),
+                              telemetry.evse_temperature_C);
+        }
         // external Nodered interface
         publish_telemetry(telemetry);
     });
@@ -386,19 +388,24 @@ void evse_managerImpl::ready() {
     // Note: Deprecated. Only kept for Node red compatibility, will be removed in the future
     // Legacy external mqtt pubs
     mod->charger->signal_max_current.connect([this](float c) {
-        mod->mqtt.publish(fmt::format("everest_external/nodered/{}/state/max_current", mod->config.connector_id), c);
+        if (mod->config.enable_nodered_interface) {
+            mod->mqtt.publish(fmt::format("everest_external/nodered/{}/state/max_current", mod->config.connector_id),
+                              c);
+        }
 
         limits.uuid = mod->info.id;
         limits.max_current = c;
         publish_limits(limits);
     });
 
-    mod->charger->signal_state.connect([this](Charger::EvseState s) {
-        mod->mqtt.publish(fmt::format("everest_external/nodered/{}/state/state_string", mod->config.connector_id),
-                          mod->charger->evse_state_to_string(s));
-        mod->mqtt.publish(fmt::format("everest_external/nodered/{}/state/state", mod->config.connector_id),
-                          static_cast<int>(s));
-    });
+    if (mod->config.enable_nodered_interface) {
+        mod->charger->signal_state.connect([this](Charger::EvseState s) {
+            mod->mqtt.publish(fmt::format("everest_external/nodered/{}/state/state_string", mod->config.connector_id),
+                              mod->charger->evse_state_to_string(s));
+            mod->mqtt.publish(fmt::format("everest_external/nodered/{}/state/state", mod->config.connector_id),
+                              static_cast<int>(s));
+        });
+    }
 }
 
 types::evse_manager::Evse evse_managerImpl::handle_get_evse() {
