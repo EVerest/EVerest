@@ -40,7 +40,7 @@ static HttpClientError client_error(const std::string& host, unsigned int port, 
 }
 
 static void setup_connection(CURL* connection, struct payloadInTransit& request_payload, std::string& response_body,
-                             curl_slist*& headers, const int command_timeout_ms) {
+                             curl_slist*& headers, const int command_timeout_ms, const bool forbid_reuse) {
     // Override the Content-Type header
     headers = curl_slist_append(nullptr, CONTENT_TYPE_HEADER);
     if (curl_easy_setopt(connection, CURLOPT_HTTPHEADER, headers) != CURLE_OK) {
@@ -56,7 +56,9 @@ static void setup_connection(CURL* connection, struct payloadInTransit& request_
     curl_easy_setopt(connection, CURLOPT_TIMEOUT_MS, command_timeout_ms);
 
     // Misc. settings come here
-    curl_easy_setopt(connection, CURLOPT_FORBID_REUSE, 1);
+    if (forbid_reuse) {
+        curl_easy_setopt(connection, CURLOPT_FORBID_REUSE, 1);
+    }
     if (curl_easy_setopt(connection, CURLOPT_FOLLOWLOCATION, 0) != CURLE_OK) {
         throw std::runtime_error(
             "libcurl signals that HTTP is unsupported. Your build or linkage might be misconfigured.");
@@ -103,7 +105,10 @@ HttpResponse HttpClient::perform_request(CURL* connection, const std::string& re
         request_body, 0
     };
     struct curl_slist* headers;
-    setup_connection(connection, request_payload, response_body, headers, command_timeout_ms);
+    // if there is no connection share, connections must not be reused: without the share, each
+    // request uses a fresh handle, and keeping its connection open would just leak it
+    setup_connection(connection, request_payload, response_body, headers, command_timeout_ms,
+                     /*forbid_reuse=*/this->share == nullptr);
 
     // Set up TLS options if TLS is enabled
     // we define dcbm_cert outside the "if" statement to ensure it outlives curl_easy_perform().
@@ -147,6 +152,11 @@ CURL* HttpClient::create_curl_handle_and_setup_url(const std::string& path) cons
     if (!this->network_interface.empty()) {
         if (curl_easy_setopt(connection, CURLOPT_INTERFACE, this->network_interface.c_str()) != CURLE_OK) {
             throw std::runtime_error("Could not bind to the specified network interface: " + this->network_interface);
+        }
+    }
+    if (this->share != nullptr) {
+        if (curl_easy_setopt(connection, CURLOPT_SHARE, this->share) != CURLE_OK) {
+            throw std::runtime_error("Could not attach the connection share to the CURL handle");
         }
     }
 
