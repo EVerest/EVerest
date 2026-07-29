@@ -458,7 +458,7 @@ Up to path substitution this will have the following content::
     PATH=$EVEREST_TUTORIAL_DIR/dist/bin:$PATH \
     manager \
         --prefix $EVEREST_TUTORIAL_DIR/dist \
-        --conf $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml
+        --config $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml
 
 It puts the compiled libraries and binaries into the respective paths, and
 then runs EVerest by calling the `manager` binary with the respective
@@ -550,7 +550,7 @@ With EVerest built as described before, but with the additonal option
 
     LD_LIBRARY_PATH=$EVEREST_TUTORIAL_DIR/dist/lib:$LD_LIBRARY_PATH \
     PATH=$EVEREST_TUTORIAL_DIR/dist/bin:$PATH \
-    manager --prefix $EVEREST_TUTORIAL_DIR/dist  --conf $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml --standalone tutorial_module_instance
+    manager --prefix $EVEREST_TUTORIAL_DIR/dist --config $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml --standalone tutorial_module_instance
 
 This starts EVerest, but without your module. Instead, the output contains a
 line::
@@ -567,7 +567,7 @@ Now open a second terminal (while keeping EVerest running in the frist
 terminal), and start your  module via ``gdb``::
 
     cd $EVEREST_TUTORIAL_DIR/build
-    gdb --args ./modules/TutorialModule/TutorialModule --module tutorial_module_instance  --conf $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml --prefix $EVEREST_TUTORIAL_DIR/dist
+    gdb --args ./modules/TutorialModule/TutorialModule --module tutorial_module_instance --config $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml --prefix $EVEREST_TUTORIAL_DIR/dist
 
 
 In gdb, we set a break in the line that returns the payload when  your test

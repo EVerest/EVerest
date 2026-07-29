@@ -65,7 +65,7 @@ fi
 
 # Start manager first, then powermeters. When the manager window closes, all others will be closed as well.
 # Important: run with CWD in ${DIST_ETC_DIR} (matches previous scripts and avoids any CWD-sensitive behavior).
-xterm -bg black -fg white -geometry 400x150 -e bash -lc "cd \"${DIST_ETC_DIR}\" && \"${MANAGER_BIN}\" --prefix \"${DIST_DIR}\" --conf \"${config_file}\"" &
+xterm -bg black -fg white -geometry 400x150 -e bash -lc "cd \"${DIST_ETC_DIR}\" && \"${MANAGER_BIN}\" --prefix \"${DIST_DIR}\" --config \"${config_file}\"" &
 manager_pid=$!
 
 for i in $(seq 1 "${device_count}"); do
