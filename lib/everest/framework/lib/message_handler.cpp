@@ -115,7 +115,7 @@ MessageHandler::~MessageHandler() {
     stop();
 }
 
-void MessageHandler::add(const ParsedMessage& message) {
+void MessageHandler::add(ParsedMessage message) {
     // Once stopped (during teardown) no further messages must be dispatched: doing so could
     // enqueue work or spawn the ready thread after the worker threads have been joined and
     // while the objects the handlers reference are being destroyed.
@@ -136,7 +136,7 @@ void MessageHandler::add(const ParsedMessage& message) {
 
     if (msg_type == MqttMessageType::CmdResult || msg_type == MqttMessageType::GetConfigResponse) {
         EVLOG_verbose << "Pushing cmd_result message to queue: " << message.data;
-        result_message_queue.push(message);
+        result_message_queue.push(std::move(message));
     } else if (msg_type == MqttMessageType::GlobalReady) {
         const auto topic_copy = message.topic;
         const auto data_copy = message.data.at("data");
@@ -163,9 +163,9 @@ void MessageHandler::add(const ParsedMessage& message) {
             old_ready.join();
         }
     } else if (msg_type == MqttMessageType::ExternalMQTT) {
-        external_mqtt_message_queue.push(message);
+        external_mqtt_message_queue.push(std::move(message));
     } else {
-        operation_message_queue.push(message);
+        operation_message_queue.push(std::move(message));
     }
 }
 
