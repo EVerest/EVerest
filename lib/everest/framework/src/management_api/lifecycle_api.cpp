@@ -41,7 +41,7 @@ using ev_API::deserialize;
 
 const ev_API::Topics LifecycleAPI::Lwt::topics = [] {
     ev_API::Topics topics;
-    topics.setup("_unused_", "lifecycle", 0);
+    topics.setup("_unused_", "lifecycle", 1);
     return topics;
 }();
 
