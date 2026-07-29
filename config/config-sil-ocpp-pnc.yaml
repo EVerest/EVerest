@@ -25,6 +25,7 @@ active_modules:
       module:
         evse: 1
     config_module:
+      enable_nodered_interface: true
       connector_id: 1
       evse_id: "DE*PNX*00001"
       session_logging: true
@@ -54,6 +55,7 @@ active_modules:
       module:
         evse: 2
     config_module:
+      enable_nodered_interface: true
       connector_id: 2
       evse_id: "2"
       session_logging: true
