@@ -4,6 +4,7 @@
 
 #include <vector>
 
+#include <everest/util/vector/fixed_vector.hpp>
 #include <iso15118/message/din/msg_data_types.hpp>
 
 namespace iso15118::din::msg {
@@ -15,10 +16,9 @@ struct SelectedService {
     std::optional<ParameterSetID> parameter_set_id;
 };
 
-using SelectedServicesList = std::vector<SelectedService>;
 // DIN 70121 specifies it as "unbounded" but:
 // [V2G-DC-635] The number of SelectedService elements in the SelectedServiceListType shall be limited to 1.
-constexpr auto SelectedServiceListMaxLength = 1;
+using SelectedServicesList = everest::lib::util::fixed_vector<SelectedService, 1>;
 } // namespace data_types
 
 struct ServicePaymentSelectionRequest {
